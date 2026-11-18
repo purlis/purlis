@@ -110,6 +110,24 @@ fn tell(root: &Path) {
     }
 }
 
+/// **Whether a window-only refusal in the project at `root` is raised as an ask**, as
+/// `[policy] consents` runs (Q308b): enforced, it is, as it always has been; under `log` it is
+/// not, and one line says it would have been; under `off` it is not. The control stays the
+/// window's in every mode: a press here releases a credential or makes a change only the
+/// person makes, and which of them a chat may make needs a ruling of its own.
+pub fn asks(root: &Path) -> bool {
+    crate::enforcement::judged(
+        root,
+        None,
+        crate::enforcement::Family::Consents,
+        crate::enforcement::mode(root, crate::enforcement::Family::Consents),
+        crate::enforcement::RULE_WINDOW_ONLY_ASK,
+        None,
+        (),
+    )
+    .is_some()
+}
+
 /// **Raises chat `session`'s refusal in the project at `root`, whose way out is `control`**:
 /// one ask per chat and control. A chat's earlier Trust this clone for the same folder at
 /// another place goes: its remote changed, so that ask's press would trust nothing, and the new

@@ -29,12 +29,13 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use purlis_core::files::{Answer, Ask, Branch, Reader};
 use purlis_core::panelinks::{
     Asking, Asks, Candidate, ChatAt, ChatNumber, FileAt, Goes, Home, HomeIs, Hover, Kind,
-    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, Runs, Target, UNASKABLE, UNCHECKED, WebAddress,
+    NOT_A_LINK, Opening, Pane, ReadFrom, Resolver, RunnerFile, Runs, Target, UNASKABLE, UNCHECKED,
+    WebAddress,
 };
 use serde::{Deserialize, Serialize};
 
@@ -133,11 +134,17 @@ fn pane_of(planes: &Planes, from: LinkFrom) -> (Pane, Option<Arc<Held>>) {
         let local = chats.runner_of(session).is_none() && chats.pool_of(session).is_none();
         local.then_some(at)
     });
+    // A chat on a runner whose files the window can read there (#6387).
+    let on_runner = from
+        .session
+        .is_some_and(|session| here.is_none() && chats.reads_files_on_runner(session));
     let pane = Pane {
         project: Some(held.root().to_path_buf()),
         session: from.session,
         runs: if here.is_some() {
             Runs::Here
+        } else if on_runner {
+            Runs::OnRunner
         } else {
             Runs::Elsewhere
         },
@@ -246,7 +253,7 @@ pub(crate) struct ChatsHere<'a> {
 /// How an ended or closed chat's card is drawn from its number and where its link goes (its
 /// dispatch record, or the app's record of a chat no dispatch started, #6304): none for one with
 /// no card.
-pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Goes) -> Option<ChatCard> + 'a>;
+pub(crate) type CardOf<'a> = Box<dyn Fn(u32, &Goes) -> Option<ChatCard> + Send + Sync + 'a>;
 
 impl ChatsHere<'_> {
     /// A pane in no project: no chat links.
@@ -332,6 +339,9 @@ pub enum LinkFileAt {
     Project { path: String },
     /// Not in the project.
     Outside { path: String },
+    /// On the runner the chat runs on, by its path there, read from there and read-only
+    /// ([`pane_link_runner_file`], #6387).
+    Runner { runner: String, path: String },
 }
 
 /// **What a chat counts as its own**, for the ask that says a file is not in it, with its folder.
@@ -360,6 +370,12 @@ pub enum LinkAsk {
     Link,
     /// A file outside the chat's home (the prototype's S7), and that home where it has one.
     FileOutside { home: Option<LinkHome> },
+    /// A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+    /// that home there, as the runner said it.
+    FileOnRunner {
+        runner: String,
+        home: Option<LinkHome>,
+    },
     /// A link a program marked whose words read as another address or path (the prototype's
     /// S8, #6218): what its target is, and a web address's host, which the ask draws apart.
     Misleading {
@@ -499,16 +515,32 @@ fn file_at(file: &FileAt) -> LinkFileAt {
         ReadFrom::Outside => LinkFileAt::Outside {
             path: file.path.display().to_string(),
         },
+        ReadFrom::Runner { runner, .. } => LinkFileAt::Runner {
+            runner: runner.clone(),
+            path: file.path.display().to_string(),
+        },
     }
 }
 
-/// What an ask for `target` in `pane`, about `about`, is about in the window's words.
+/// What an ask for `target` in `pane`, about `about`, is about in the window's words: a file
+/// outside a runner chat's home names its runner and that home there (#6387).
 fn ask_about(about: Asking, target: &Target, pane: &Pane) -> LinkAsk {
     match about {
         Asking::Link => LinkAsk::Link,
-        Asking::FileOutside => LinkAsk::FileOutside {
-            home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
-        },
+        Asking::FileOutside => {
+            if let Target::File(file) = target
+                && let ReadFrom::Runner { runner, home, .. } = &file.read_from
+            {
+                LinkAsk::FileOnRunner {
+                    runner: runner.clone(),
+                    home: home.clone().map(LinkHome::from),
+                }
+            } else {
+                LinkAsk::FileOutside {
+                    home: purlis_core::panelinks::home_of(pane).map(LinkHome::from),
+                }
+            }
+        }
         Asking::Misleading => LinkAsk::Misleading {
             kind: target.kind().into(),
             host: match target {
@@ -697,11 +729,18 @@ pub const NOT_LOOKED: &str = "purlis could not look at that file in time, so it 
 /// **The resolver for a pane in `held`'s project, and what it knows of its chats**: every kind,
 /// the chat kind given the chats open there now. A pane in no project the window holds links no
 /// chat.
-fn for_project(held: Option<&Held>) -> (Resolver, ChatsHere<'_>) {
+fn for_project(held: Option<&Held>, session: Option<u32>) -> (Resolver, ChatsHere<'_>) {
     // With no project, the chat kind still reads a chat's number, and finds none: it says
     // nothing on a hover.
     let open = held.map(crate::chatcard::open_chats).unwrap_or_default();
-    let resolver = resolver().with_kind(Box::new(ChatNumber::with_open(open.clone())));
+    let mut resolver = resolver().with_kind(Box::new(ChatNumber::with_open(open.clone())));
+    // A runner chat's paths are read on its runner (#6387).
+    if let Some(reads) = held
+        .zip(session)
+        .and_then(|(held, session)| held.chats().runner_files_of(session))
+    {
+        resolver = resolver.with_kind(Box::new(RunnerFile::new(Box::new(reads))));
+    }
     let Some(held) = held else {
         return (resolver, ChatsHere::none());
     };
@@ -739,15 +778,14 @@ pub async fn pane_link_resolve(
     candidates: Vec<LinkCandidate>,
 ) -> Vec<Option<LinkSeen>> {
     use tauri::Manager as _;
+    let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let count = candidates.len();
     // A chat's number reads the project's dispatch records: looked at as a file is.
     let look = move || {
-        let (resolver, chats) = for_project(held.as_deref());
-        candidates
-            .into_iter()
-            .map(|candidate| seen_in(&resolver, &pane, &candidate.into(), &chats))
-            .collect::<Vec<_>>()
+        let (resolver, chats) = for_project(held.as_deref(), session);
+        let candidates: Vec<Candidate> = candidates.into_iter().map(Into::into).collect();
+        seen_on_line(&resolver, &pane, &candidates, &chats)
     };
     // Waited for off the window's thread; a look that did not end in time is no link.
     tauri::async_runtime::spawn_blocking(move || looked(LOOK_FOR, look))
@@ -755,6 +793,86 @@ pub async fn pane_link_resolve(
         .ok()
         .flatten()
         .unwrap_or_else(|| vec![None; count])
+}
+
+/// The most paths asked of runners at once, across every pane's lines: one more answers at once
+/// that it did not look.
+pub const MOST_RUNNER_LOOKS: usize = 8;
+
+/// The runner looks under way now, across every pane.
+static RUNNER_LOOKING: AtomicUsize = AtomicUsize::new(0);
+
+/// How long before the pane's wait ends a runner look may still start: one started later could
+/// outlast that wait, and with it the whole line.
+const LAST_RUNNER_LOOK: Duration = LOOK_FOR
+    .saturating_sub(crate::runnerfiles::LOOK_WITHIN)
+    .saturating_sub(Duration::from_millis(300));
+
+/// Places taken among [`MOST_RUNNER_LOOKS`], given back when dropped.
+pub(crate) struct RunnerLooks(usize);
+
+impl RunnerLooks {
+    /// Up to `wanted` places, as many as are free now.
+    pub(crate) fn take(wanted: usize) -> Self {
+        let mut took = 0;
+        let _ = RUNNER_LOOKING.try_update(Ordering::SeqCst, Ordering::SeqCst, |now| {
+            took = wanted.min(MOST_RUNNER_LOOKS.saturating_sub(now));
+            Some(now + took)
+        });
+        Self(took)
+    }
+}
+
+impl Drop for RunnerLooks {
+    fn drop(&mut self) {
+        RUNNER_LOOKING.fetch_sub(self.0, Ordering::SeqCst);
+    }
+}
+
+/// **What each candidate on a line in `pane` is**, in order. On a runner chat's line the paths
+/// are asked of the runner by a pool of the places free among [`MOST_RUNNER_LOOKS`], each with
+/// its own wait (`runnerfiles::LOOK_WITHIN`). None starts past [`LAST_RUNNER_LOOK`], so the
+/// line is answered inside the pane's wait: the paths found stay linked, and those not looked
+/// at are no link.
+pub(crate) fn seen_on_line(
+    resolver: &Resolver,
+    pane: &Pane,
+    candidates: &[Candidate],
+    chats: &ChatsHere<'_>,
+) -> Vec<Option<LinkSeen>> {
+    if pane.runs != Runs::OnRunner || candidates.len() < 2 {
+        return candidates
+            .iter()
+            .map(|candidate| seen_in(resolver, pane, candidate, chats))
+            .collect();
+    }
+    let started = Instant::now();
+    let places = RunnerLooks::take(candidates.len());
+    let next = AtomicUsize::new(0);
+    let mut seen = vec![None; candidates.len()];
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..places.0)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut found = Vec::new();
+                    while started.elapsed() < LAST_RUNNER_LOOK {
+                        let at = next.fetch_add(1, Ordering::SeqCst);
+                        let Some(candidate) = candidates.get(at) else {
+                            break;
+                        };
+                        found.push((at, seen_in(resolver, pane, candidate, chats)));
+                    }
+                    found
+                })
+            })
+            .collect();
+        for worker in workers {
+            for (at, one) in worker.join().unwrap_or_default() {
+                seen[at] = one;
+            }
+        }
+    });
+    seen
 }
 
 /// **Opens a link a pane found** (⌘-click, Ctrl+click off a Mac): the candidate's text,
@@ -768,6 +886,7 @@ pub async fn pane_link_open(
     token: Option<String>,
 ) -> LinkOpened {
     use tauri::Manager as _;
+    let session = from.session;
     let (pane, held) = pane_of(&app.state::<Planes>(), from);
     let candidate: Candidate = candidate.into();
     // A web address opens here, in the browser, read by the web kind alone: no branch's file list
@@ -789,7 +908,7 @@ pub async fn pane_link_open(
     let handle = app.clone();
     let look = move || {
         let asks = handle.state::<PaneLinkAsks>();
-        let (resolver, chats) = for_project(held.as_deref());
+        let (resolver, chats) = for_project(held.as_deref(), session);
         answer_in(
             &resolver,
             &pane,
@@ -838,6 +957,39 @@ pub async fn pane_link_file(
         purlis_core::files::folder::read_absolute(&path, identity).map(|opened| LinkFile::File {
             file: PieceFile::from(opened),
         })
+    })
+    .await
+}
+
+/// **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
+/// chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
+/// run of the app and within the hour, and it is still the file it was then. Read on the runner, as data, through its kind's adapter.
+#[tauri::command]
+#[specta::specta]
+pub async fn pane_link_runner_file(
+    app: tauri::AppHandle,
+    from: LinkFrom,
+    runner: String,
+    path: String,
+) -> Result<LinkFile, String> {
+    use tauri::Manager as _;
+    let session = from.session;
+    let (pane, held) = pane_of(&app.state::<Planes>(), from);
+    let reads = held
+        .zip(session)
+        .and_then(|(held, session)| held.chats().runner_files_of(session))
+        .filter(|reads| reads.runner() == runner)
+        .ok_or_else(|| crate::runnerfiles::not_reachable(&runner))?;
+    let opened = app
+        .state::<PaneLinkAsks>()
+        .0
+        .opened_on_runner(&pane, &runner, &path);
+    crate::off_the_window("reading the file", move || {
+        reads
+            .read(&path, opened.as_deref())
+            .map(|read| LinkFile::File {
+                file: crate::runnerfiles::shown(read),
+            })
     })
     .await
 }

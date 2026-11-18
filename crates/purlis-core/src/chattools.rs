@@ -1607,6 +1607,45 @@ fn run(
     }
 }
 
+/// **The workspace whose repo [`FORGE_MILESTONES`] reads**: the chat's own, `ws`, unless
+/// `args` names a repo it does not hold and `[policy] guards.forge` does not enforce the
+/// workspace's bound (Q308b): then the project's other workspace that holds a repo of that name,
+/// where one does, with one line under `log`. Enforced, the read refuses as it always has.
+fn milestones_workspace(root: &Path, ws: &str, args: &Map<String, Value>, chat: &str) -> String {
+    let holds = |workspace: &str, name: &str| {
+        crate::repos::clones(root, workspace)
+            .is_ok_and(|clones| clones.repos.iter().any(|repo| repo.name == name))
+    };
+    let Some(name) = args.get("repo").and_then(Value::as_str) else {
+        return ws.to_owned();
+    };
+    if holds(ws, name) {
+        return ws.to_owned();
+    }
+    let elsewhere = crate::recall::read_workspaces(root)
+        .map(|(names, _)| names)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|other| other != ws && holds(other, name));
+    match elsewhere {
+        Some(other)
+            if crate::enforcement::judged(
+                root,
+                Some(chat),
+                crate::enforcement::Family::GuardsForge,
+                crate::enforcement::mode(root, crate::enforcement::Family::GuardsForge),
+                crate::enforcement::RULE_FORGE_WORKSPACE,
+                None,
+                (),
+            )
+            .is_none() =>
+        {
+            other
+        }
+        _ => ws.to_owned(),
+    }
+}
+
 /// **[`FORGE_MILESTONES`] for chat `chat`** at `place`: the milestones of a repo of its
 /// workspace, asked as `Caller::mcp(chat)` through `backend_of`, one line each.
 pub fn forge_milestones(
@@ -1632,8 +1671,9 @@ pub fn forge_milestones(
         caller: crate::forge::Caller::mcp(chat),
         backend_of,
     };
+    let ws = milestones_workspace(root, ws, &args, chat);
     let data =
-        crate::catalogue::milestones::read(root, ws, &args, &reach).map_err(|why| why.message)?;
+        crate::catalogue::milestones::read(root, &ws, &args, &reach).map_err(|why| why.message)?;
     let path = data["path"].as_str().unwrap_or_default();
     let listed = data["milestones"].as_array().cloned().unwrap_or_default();
     if listed.is_empty() {

@@ -1386,6 +1386,17 @@ impl SessionHost for RoutedSessions {
     }
 
     /// Asked of the host of the pool it runs on, where there is one already: never made for it.
+    fn reads_files_on_runner(&self, id: u32) -> bool {
+        self.host_of(id)
+            .is_some_and(|host| host.reads_files_on_runner(id))
+    }
+
+    /// As [`Self::reads_files_on_runner`].
+    fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        self.host_of(id)?.runner_files_of(id)
+    }
+
+    /// Asked of the host of the pool it runs on, where there is one already: never made for it.
     fn clones_come_back(&self, id: u32) -> bool {
         self.host_of(id)
             .is_some_and(|host| host.clones_come_back(id))
@@ -1634,6 +1645,12 @@ impl SessionHost for RoutedSessions {
             }
         }
         self.here.close_what_was_not_reattached();
+    }
+
+    /// This machine's host's alone: a pool's chat is taken back by the record of where it runs,
+    /// which a refused record is not (#6737).
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        self.here.runs_left()
     }
 
     /// This machine's host's alone: a browser runs only there (#2025).

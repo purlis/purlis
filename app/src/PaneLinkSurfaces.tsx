@@ -309,11 +309,15 @@ export function LinkAnswer({
   onClose: () => void;
   onConfirm: (token: string) => void;
 }) {
-  if (answer.answer === "ask" && answer.about.about === "file-outside")
+  if (
+    answer.answer === "ask" &&
+    (answer.about.about === "file-outside" || answer.about.about === "file-on-runner")
+  )
     return (
       <FileOutsideAsk
         target={answer.target}
         home={answer.about.home}
+        runner={answer.about.about === "file-on-runner" ? answer.about.runner : null}
         chat={chat}
         onClose={onClose}
         onOpen={() => onConfirm(answer.token)}
@@ -375,17 +379,21 @@ export function LinkAnswer({
  * the family's rule that an ask starts on its safe answer. `home` is the chat's workspace, or
  * the project for a chat at its root; with none, its row is left out. `chat` is the chat whose
  * output named the file, said under the title as the prototype's S7 draws it (#6355): none for
- * a shell's pane, which is no chat, so its ask says the pane's output named it (#6516).
+ * a shell's pane, which is no chat, so its ask says the pane's output named it (#6516). `runner`
+ * names the runner a runner chat's file is on (#6387), and `home` is then the chat's home there:
+ * the ask is the same, with the runner's row.
  */
 export function FileOutsideAsk({
   target,
   home,
+  runner = null,
   chat,
   onClose,
   onOpen,
 }: {
   target: string;
   home: LinkHome | null;
+  runner?: string | null;
   chat?: AskingChat;
   onClose: () => void;
   onOpen: () => void;
@@ -414,8 +422,13 @@ export function FileOutsideAsk({
         <Fact label="File">
           <span className="pane-link-path">{target}</span>
         </Fact>
+        {runner !== null && (
+          <Fact label="Runner">
+            <span className="pane-link-path">{runner}</span>
+          </Fact>
+        )}
         {home !== null && (
-          <Fact label={workspace ? "Workspace" : "Project"}>
+          <Fact label={home.is === "workspace" ? "Workspace" : "Project"}>
             <span className="pane-link-path">{home.folder}</span>
           </Fact>
         )}

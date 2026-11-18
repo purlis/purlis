@@ -32,6 +32,8 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
         for family in Family::ALL {
             let want = match family {
                 Family::Secrets | Family::Vaults | Family::GuardsCredential => Mode::Enforce,
+                // An unapproved profile or declaration still asks (Q329).
+                Family::Trust => Mode::Enforce,
                 // The person's own credential files are theirs at the floor (Q325).
                 Family::CredentialFiles => Mode::Off,
                 // The floor is a wrap.
@@ -58,11 +60,13 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             "{}",
             family.key()
         );
-        let hold = if secret.contains(&family) || family == Family::GuardsMerge {
-            Mode::Enforce
-        } else {
-            Mode::Log
-        };
+        let hold =
+            if secret.contains(&family) || family == Family::GuardsMerge || family == Family::Trust
+            {
+                Mode::Enforce
+            } else {
+                Mode::Log
+            };
         assert_eq!(Template::Hold.mode(family), hold, "{}", family.key());
         let team = if secret.contains(&family)
             || family.added_by_q308b()
@@ -956,6 +960,147 @@ fn a_dispatched_chat_s_vaults_are_checked_where_its_chain_checked_them() {
     assert!(!crate::secrets::brokered::vaults_off(
         &ctx.under_chain(Some(STRICT_CHAIN))
     ));
+}
+
+#[test]
+fn every_family_q308b_added_switches_under_open_and_keeps_its_template_defaults() {
+    // Q308b, item 7 of the follow-up: the nine families switch, each at its template's mode.
+    let nine = Family::ALL
+        .into_iter()
+        .filter(|family| family.added_by_q308b())
+        .collect::<Vec<_>>();
+    assert_eq!(nine.len(), 9);
+    for family in nine {
+        assert!(family.switchable(), "{}", family.key());
+        // Q329: `trust` is enforced under every template but `open`.
+        let floor = if family == Family::Trust {
+            Mode::Enforce
+        } else {
+            Mode::Log
+        };
+        for (template, want) in [
+            ("open", Mode::Off),
+            ("watch", floor),
+            ("hold", floor),
+            ("team", Mode::Enforce),
+            ("strict", Mode::Enforce),
+        ] {
+            let settings = said(&format!("[policy]\ntemplate = \"{template}\"\n"));
+            assert_eq!(
+                under(&settings, &Locks::none(), family),
+                want,
+                "{template} {}",
+                family.key()
+            );
+        }
+        let off = said(&format!(
+            "[policy]\ntemplate = \"strict\"\n{} = \"off\"\n",
+            family.key()
+        ));
+        assert_eq!(
+            under(&off, &Locks::none(), family),
+            Mode::Off,
+            "{}",
+            family.key()
+        );
+        // An administrator's lock still wins.
+        assert_eq!(
+            under(&off, &Locks::locking_enforcement(family), family),
+            Mode::Enforce,
+            "{}",
+            family.key()
+        );
+    }
+}
+
+#[test]
+fn the_rules_of_the_nine_families_are_known_to_their_own_family_alone() {
+    // The app keeps a line a chat's process hands over only for a rule it knows (#7061).
+    for (family, rule) in [
+        (Family::GuardsForge, RULE_FORGE_WORKSPACE),
+        (Family::HarnessMode, RULE_ASKS_NOBODY),
+        (Family::Tools, RULE_DENY_LIST),
+        (Family::Trust, RULE_PROFILE_APPROVAL),
+        (Family::Trust, RULE_DECLARATION_APPROVAL),
+        (Family::Runners, RULE_RUNNER_DISPATCH),
+        (Family::Runners, RULE_RUNNER_WRITE),
+        (Family::Consents, RULE_WINDOW_ONLY_ASK),
+        (Family::Limits, RULE_COMMIT_RATE),
+        (Family::Limits, "dispatch.depth"),
+        (Family::Limits, "dispatch.running-per-chat"),
+        (Family::GuardsPlane, "A3"),
+        (Family::GuardsShape, "caps"),
+    ] {
+        assert!(known_rule(family, rule), "{} {rule}", family.key());
+        assert!(!known_rule(Family::Dispatch, rule), "{rule}");
+    }
+    assert!(!known_rule(Family::Limits, "dispatch.anything"));
+    assert!(!known_rule(Family::GuardsGit, "A3"));
+}
+
+#[test]
+fn a_project_that_named_guards_git_keeps_the_plane_roots_arms_as_strict_after_their_move() {
+    // #7104: A3 and A3b moved from `guards.git` to `guards.plane` (Q308b). A project on `watch`
+    // that enforced `guards.git` keeps them enforced; one that names `guards.plane` decides.
+    for (text, want) in [
+        ("[policy]\nguards.git = \"enforce\"\n", Mode::Enforce),
+        (
+            "[policy]\ntemplate = \"hold\"\nguards.git = \"enforce\"\n",
+            Mode::Enforce,
+        ),
+        ("[policy]\n", Mode::Log),
+        (
+            "[policy]\ntemplate = \"strict\"\nguards.git = \"off\"\n",
+            Mode::Enforce,
+        ),
+        (
+            "[policy]\nguards.git = \"enforce\"\nguards.plane = \"log\"\n",
+            Mode::Log,
+        ),
+    ] {
+        assert_eq!(
+            under(&said(text), &Locks::none(), Family::GuardsPlane),
+            want,
+            "{text}"
+        );
+    }
+    // An administrator's lock on `guards.git` held A3 and A3b at enforce before the move, and
+    // still does, whatever the project says of either family (the re-review of #7104).
+    assert_eq!(
+        under(
+            &said("[policy]\nguards.shape = \"off\"\n"),
+            &Locks::parse(
+                r#"{"enforcement": ["guards.git"]}"#,
+                Path::new("/etc/purlis/policy.json")
+            ),
+            Family::GuardsShape
+        ),
+        Mode::Off,
+        "a lock on guards.git leaves guards.shape the project's"
+    );
+    let git_locked = Locks::parse(
+        r#"{"enforcement": ["guards.git"]}"#,
+        Path::new("/etc/purlis/policy.json"),
+    );
+    for text in [
+        "[policy]\n",
+        "[policy]\ntemplate = \"open\"\n",
+        "[policy]\nguards.git = \"off\"\nguards.plane = \"off\"\n",
+        "[policy]\nguards.shape = \"off\"\n",
+    ] {
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsPlane),
+            Mode::Enforce,
+            "{text}"
+        );
+        // Only `guards.plane` moves with it: `guards.shape` stays the project's to switch, so a
+        // refused lock file (which locks everything) cannot pass this test (#7155).
+        assert_eq!(
+            under(&said(text), &git_locked, Family::GuardsShape),
+            under(&said(text), &Locks::none(), Family::GuardsShape),
+            "{text}"
+        );
+    }
 }
 
 /// `git <args>` in `root`, with no configuration but the repository's.

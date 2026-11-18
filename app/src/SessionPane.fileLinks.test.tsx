@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type { Terminal } from "@xterm/xterm";
@@ -505,5 +505,90 @@ describe("a file outside the workspace", () => {
     expect(writeText).toHaveBeenCalledWith(HOSTS);
     expect(asked("pane_link_open")).toHaveLength(1);
     expect(outside).toEqual([]);
+  });
+});
+
+describe("a file a runner chat printed (#6387)", () => {
+  const ON_RUNNER = "/home/purlis/projects/p/workspaces/app/src/main.rs";
+
+  it("opens in a read-only tab of its own, for its runner, at its line and column", async () => {
+    opens = [
+      {
+        answer: "file",
+        target: `${ON_RUNNER}:42:7`,
+        at: { in: "runner", runner: "docker/runner-1", path: ON_RUNNER },
+        line: 42,
+        column: 7,
+      },
+    ];
+    const { drawn, outside, jumps } = await pane(`at ${PATH} now`);
+    hover(drawn, 3, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+
+    click(drawn, 3, 0, { ctrlKey: true });
+
+    await waitFor(() => expect(outside).toHaveLength(1));
+    expect(outside[0]).toEqual({
+      plane: "/planes/one",
+      session: 1,
+      runner: "docker/runner-1",
+      path: ON_RUNNER,
+      line: 42,
+      column: 7,
+    });
+    expect(jumps).toEqual([]);
+  });
+
+  it("asks first outside the chat's workspace on its runner as it does here, naming the runner", async () => {
+    opens = [
+      {
+        ...ASKS,
+        reason: "outside app on runner docker/runner-1",
+        about: {
+          about: "file-on-runner",
+          runner: "docker/runner-1",
+          home: { is: "workspace", name: "app", folder: "/home/purlis/p/workspaces/app" },
+        },
+      },
+    ];
+    const { drawn } = await pane(`wrote ${HOSTS} now`, "Fix the login form");
+    hover(drawn, 8, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const ask = await screen.findByRole("dialog", {
+      name: "Open a file outside this workspace?",
+    });
+    expect(ask).toHaveTextContent("This chat's output names a file that is not in app.");
+    expect(within(ask).getByText("Runner")).toBeInTheDocument();
+    expect(ask).toHaveTextContent("docker/runner-1");
+    expect(within(ask).getByText("Workspace")).toBeInTheDocument();
+    expect(ask).toHaveTextContent("/home/purlis/p/workspaces/app");
+    expect(ask).toHaveTextContent(HOSTS);
+    expect(ask).toHaveTextContent("It opens in an editor tab. Nothing is run.");
+  });
+
+  it("asks about the project for a runner chat at the project's root", async () => {
+    opens = [
+      {
+        ...ASKS,
+        reason: "outside the project on runner docker/runner-1",
+        about: {
+          about: "file-on-runner",
+          runner: "docker/runner-1",
+          home: { is: "project", folder: "/home/purlis/p" },
+        },
+      },
+    ];
+    const { drawn } = await pane(`wrote ${HOSTS} now`, "Fix the login form");
+    hover(drawn, 8, 0);
+    await waitFor(() => expect(asked("pane_link_resolve")).toHaveLength(1));
+    click(drawn, 8, 0, { ctrlKey: true });
+
+    const ask = await screen.findByRole("dialog", {
+      name: "Open a file outside the project?",
+    });
+    expect(ask).toHaveTextContent("This chat's output names a file that is not in the project.");
+    expect(within(ask).getByText("Project")).toBeInTheDocument();
   });
 });

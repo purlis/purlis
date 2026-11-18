@@ -3994,6 +3994,20 @@ impl Chats {
         self.sessions.pool_of(session)
     }
 
+    /// **The runner chat `session` runs on, as its pane's file links read it there** (#6387):
+    /// none for a chat here, or on a runner the window can't read files on now.
+    pub(crate) fn runner_files_of(
+        &self,
+        session: u32,
+    ) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        self.sessions.runner_files_of(session)
+    }
+
+    /// Whether the window can read chat `session`'s files on its runner now (#6387).
+    pub fn reads_files_on_runner(&self, session: u32) -> bool {
+        self.sessions.reads_files_on_runner(session)
+    }
+
     /// Whether Move here brings back a clone the runner chat `session` runs on made (#3811).
     pub fn clones_come_back(&self, session: u32) -> bool {
         self.sessions.clones_come_back(session)
@@ -5389,8 +5403,12 @@ impl Chats {
             };
         // Known to mask the chat's kept screen with once it has its number, as it is announced
         // (#6309): the values themselves go to its start.
-        let signed_in_with =
-            (!handed.is_empty()).then(|| (handed.named(&self.project), handed.known()));
+        let signed_in_with = (!handed.is_empty()).then(|| {
+            (
+                handed.named(&self.project, identity.id.as_deref()),
+                handed.known(),
+            )
+        });
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -6038,12 +6056,18 @@ impl Chats {
             // what masks its screen, and where that fails the chat is ended below.
             if let Some((named, known)) = &signed_in_with {
                 let remembered = match named {
-                    Ok(named) => purlis_core::secrets::handedto::remember_known(
-                        &self.project,
-                        session,
-                        named,
-                        known.clone(),
-                    ),
+                    // Named for its id, which `named` was sealed with: one it had none for
+                    // failed above.
+                    Ok(named) => match identity.id.as_deref() {
+                        Some(id) => purlis_core::secrets::handedto::remember_known(
+                            &self.project,
+                            session,
+                            id,
+                            named,
+                            known.clone(),
+                        ),
+                        None => Err(purlis_core::secrets::handedto::no_chat_id()),
+                    },
                     Err(why) => Err(std::io::Error::new(why.kind(), why.to_string())),
                 };
                 if let Err(why) = remembered {
@@ -8108,6 +8132,7 @@ impl Chats {
                 root: root.to_path_buf(),
                 env: purlis_core::secrets::Env::from_process(),
                 chat: session,
+                id: running.chat.identity.id.clone(),
                 // Whose vaults it may use, as `secret exec` judges them (#2599, #2691).
                 persona: running.persona().started_as,
                 folder: running.chat.cwd.clone(),
@@ -9499,6 +9524,29 @@ impl Chats {
             .filter(|chat| self.left_running(chat))
             .filter_map(task_ref)
             .collect();
+        KeepingLeft {
+            screens: crate::chatcard::start_keeping_screens_left(
+                &self.project,
+                &self.sessions,
+                &left,
+            ),
+            by,
+            chats: left.into_iter().map(|chat| chat.chat).collect(),
+        }
+    }
+
+    /// **Starts keeping the screens of the finished task chats the session host left, where the
+    /// record of what was open was refused** (#6737): each proven a task's by its run
+    /// ([`crate::chatcard::finished_tasks_left_by_run`]), since no record says which chats were
+    /// tasks. Waited for and closed as [`Self::start_keeping_screens_left`]'s are.
+    pub(crate) fn start_keeping_screens_proven_left(&self) -> KeepingLeft {
+        let by = crate::chatcard::screens_by_from_now();
+        let events = match crate::EVENT_LOG.get() {
+            Some(Ok(dir)) => Some(dir.as_path()),
+            _ => None,
+        };
+        let left =
+            crate::chatcard::finished_tasks_left_by_run(&self.project, &*self.sessions, events);
         KeepingLeft {
             screens: crate::chatcard::start_keeping_screens_left(
                 &self.project,

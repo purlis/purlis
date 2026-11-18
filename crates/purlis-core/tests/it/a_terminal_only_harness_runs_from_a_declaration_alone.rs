@@ -866,3 +866,59 @@ fn a_local_replacement_in_a_file_git_would_carry_changes_nothing() {
     let id = ready.session.clone().unwrap();
     assert_eq!(ready.args, ["--session-id", id.as_str(), "--name", "ide.7"]);
 }
+
+#[test]
+fn a_chat_another_chat_asked_for_drops_a_declared_harness_s_own_prompts_off_words() {
+    purlis_core::unsteered!();
+    // The re-review of #7104: the cap at auto reads the words a declaration adds after the
+    // profile's command too, not the command alone.
+    let project = Project::new();
+    project.declares(
+        "shelly",
+        &SHELLY.replace(
+            "new = [\"--session={id}\"]",
+            "new = [\"--session={id}\", \"--dangerously-skip-permissions\"]",
+        ),
+    );
+    project.approve("shelly");
+    let asked = Start {
+        made: purlis_core::sandbox::Made::Asked {
+            how: purlis_core::sandbox::Asking::Dispatch,
+            above: Some(vec![None]),
+        },
+        ..project.start("shelly")
+    };
+
+    let ready = start::ready(&asked, project.root()).expect("it starts");
+    assert!(
+        !ready
+            .args
+            .iter()
+            .any(|w| w == "--dangerously-skip-permissions"),
+        "{:?}",
+        ready.args
+    );
+    assert!(
+        ready.args.iter().any(|w| w.starts_with("--session=")),
+        "{:?}",
+        ready.args
+    );
+    assert!(
+        ready
+            .notices
+            .iter()
+            .any(|n| n.contains("started without it")),
+        "{:?}",
+        ready.notices
+    );
+    // The person's own start runs the declaration as written.
+    let ready = start::ready(&project.start("shelly"), project.root()).expect("it starts");
+    assert!(
+        ready
+            .args
+            .iter()
+            .any(|w| w == "--dangerously-skip-permissions"),
+        "{:?}",
+        ready.args
+    );
+}

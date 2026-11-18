@@ -165,3 +165,24 @@ fn a_project_that_ended_keeps_no_ask_and_tells_no_one() {
     project_ended(root);
     project_ended(other.path());
 }
+
+#[test]
+fn a_window_only_refusal_is_raised_as_an_ask_as_policy_consents_runs() {
+    // Q308b: the ask is `consents`'. Logged, it is not raised, and one line says it would be.
+    for (policy, asked, lines) in [("", true, 0), ("consents = \"log\"\n", false, 1)] {
+        let root = tempfile::tempdir().expect("a project");
+        std::fs::write(
+            crate::names::manifest(root.path()),
+            format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+        )
+        .expect("the manifest");
+        assert_eq!(asks(root.path()), asked, "{policy:?}");
+        let logged = crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
+        assert_eq!(logged.len(), lines, "{policy:?}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.family == "consents" && line.rule == "window-only.ask")
+        );
+    }
+}

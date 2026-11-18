@@ -9,6 +9,37 @@
 
 use crate::brokered::{Store, Write};
 
+/// What a chat on a pool's runner asks of this machine that waits for the person (#2046,
+/// ADR 0078 §7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunnerAsk {
+    /// A dispatch or a handoff.
+    Dispatch,
+    /// A write to the project: a persona, a workspace's files, memory.
+    Write,
+}
+
+/// **Whether a runner chat's `ask` waits for the person**, as `[policy] runners` runs for the
+/// project at `root` (Q308b): enforced, it is held for their Approve or Apply, as it always has
+/// been; under `off` it is answered as this machine's own chat's would be, and under `log` too,
+/// with one line saying it would have been held. The app asks it before it holds anything.
+pub fn held_for_the_person(root: &std::path::Path, ask: RunnerAsk) -> bool {
+    let rule = match ask {
+        RunnerAsk::Dispatch => crate::enforcement::RULE_RUNNER_DISPATCH,
+        RunnerAsk::Write => crate::enforcement::RULE_RUNNER_WRITE,
+    };
+    crate::enforcement::judged(
+        root,
+        None,
+        crate::enforcement::Family::Runners,
+        crate::enforcement::mode(root, crate::enforcement::Family::Runners),
+        rule,
+        None,
+        (),
+    )
+    .is_some()
+}
+
 /// The longest stretch of a write's text shown in its proposal's line: the rest is said to be
 /// there, never cut silently.
 pub const MOST_SHOWN_CHARS: usize = 600;

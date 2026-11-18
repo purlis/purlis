@@ -326,9 +326,7 @@ fn keep_screen(
     };
     // Never one of purlis's own secrets (#6309): what the chat was handed is masked first, and
     // a screen whose secrets could not be known is not kept.
-    let read_again = purlis_core::secrets::handedto::read_again(root);
-    let Some(screen) =
-        purlis_core::secrets::handedto::masked_for(root, session, &screen, &read_again)
+    let Some(screen) = purlis_core::secrets::handedto::masked_for(root, session, id, &screen)
     else {
         tracing::info!(
             "purlis: task chat {session}'s screen was not kept: what it was handed could not be \
@@ -339,6 +337,50 @@ fn keep_screen(
     if let Err(why) = purlis_core::chatscreens::keep(root, id, &screen) {
         tracing::info!("purlis: task chat {session}'s screen was not kept ({why})");
     }
+}
+
+/// **The finished task chats among those the session host left, each proven by its run**
+/// (#6737): what a launch whose record of what was open was refused keeps the screens of. The
+/// host says only a number and a run for each chat it left; the run's own start in the event
+/// log at `events` names the chat it is a run of, by its id, and that chat's dispatch record
+/// says it was a task that had finished ([`crate::finished::is_finished`]), **by that id**: a
+/// record that names its worker by number alone proves nothing, as a number alone may be a
+/// person's own chat's, and a kept screen is never one of those.
+/// None where this machine keeps no event log, or it cannot be read.
+pub(crate) fn finished_tasks_left_by_run(
+    root: &std::path::Path,
+    host: &dyn crate::host::SessionHost,
+    events: Option<&std::path::Path>,
+) -> Vec<dispatchrecord::ChatRef> {
+    let left = host.runs_left();
+    let Some(events) = events.filter(|_| !left.is_empty()) else {
+        return Vec::new();
+    };
+    let runs: Vec<&str> = left.iter().map(|(_, run)| run.as_str()).collect();
+    let chats = match purlis_core::eventlog::chats_of_runs(events, &runs) {
+        Ok(chats) => chats,
+        Err(why) => {
+            tracing::info!(
+                "purlis: the event log could not be read, so no finished task's screen the \
+                 session host left is kept ({why})"
+            );
+            return Vec::new();
+        }
+    };
+    left.iter()
+        .filter_map(|(number, run)| {
+            let id = chats.get(run)?;
+            let me = dispatchrecord::ChatRef {
+                chat: *number,
+                id: Some(id.clone()),
+                ..Default::default()
+            };
+            dispatchrecord::latest_for(root, &me)
+                .filter(|record| record.worker.chat.id.as_deref() == Some(id.as_str()))
+                .is_some_and(|record| crate::finished::is_finished(&record))
+                .then_some(me)
+        })
+        .collect()
 }
 
 /// How long a quit waits, over every project together, for the screens of the tasks that had
@@ -1143,6 +1185,7 @@ mod tests {
         purlis_core::secrets::handedto::remember(
             &root,
             7,
+            Some(TASK),
             &purlis_core::secrets::handedto::Entry::new("team", "github-token"),
             "FAKE-VAULT-VALUE-6309",
         )
@@ -1177,15 +1220,14 @@ mod tests {
     }
 
     /// What the window that crashed named on disk for task chat 7: one entry of vault `team`,
-    /// which the project holds in a plain file as `value` (an obvious fake), or not at all.
-    fn handed_before_the_crash(root: &std::path::Path, value: Option<&str>) {
+    /// handed as `value` (an obvious fake), with `provider` the vault's: a launch reads none of
+    /// it again (#6907).
+    fn handed_before_the_crash(root: &std::path::Path, value: &str, provider: &str) {
         use purlis_core::secrets::handedto::{Entry, Named};
         let named = purlis_core::secrets::handedto::dir(root);
         std::fs::create_dir_all(&named).expect("made");
-        // Named as the crashed window named it: with the seal of what it handed, the value the
-        // vault holds where there is one.
-        let handed = value.unwrap_or("FAKE-VAULT-VALUE-6682");
-        let line = Named::of(root, Entry::new("team", "github-token"), handed).expect("sealed");
+        let line =
+            Named::of(root, TASK, Entry::new("team", "github-token"), value).expect("sealed");
         std::fs::write(
             named.join("7.names"),
             format!("{}\n", serde_json::to_string(&line).expect("a line")),
@@ -1193,14 +1235,171 @@ mod tests {
         .expect("named");
         std::fs::write(
             root.join("vaults.json"),
-            r#"{"vaults": {"team": {"provider": "plain-file", "config": {"file": "team.json"}}}}"#,
+            format!(r#"{{"vaults": {{"team": {{"provider": "{provider}", "config": {{}}}}}}}}"#),
         )
         .expect("registered");
-        let held = value.map_or_else(
-            || "{}".to_owned(),
-            |value| format!(r#"{{"github-token": "{value}"}}"#),
+    }
+
+    /// [`a_task`], ended with its report: a task that had finished (#6737).
+    fn a_finished_task() -> (tempfile::TempDir, std::path::PathBuf) {
+        let (dir, root) = a_task();
+        let record = dispatchrecord::latest_for(&root, &a_task_s_ref()).expect("recorded");
+        let report = dispatchrecord::Report {
+            outcome: dispatchrecord::Outcome::Done,
+            text: "prod is green".to_owned(),
+            changed: dispatchrecord::Changed::default(),
+        };
+        dispatchrecord::close(
+            &root,
+            &record.id,
+            dispatchrecord::Ending {
+                report: Some(report),
+                usage: None,
+            },
+            jiff::Timestamp::now(),
+        )
+        .expect("ended");
+        (dir, root)
+    }
+
+    /// An event log holding the start of run `run` of chat `chat` (#6737).
+    fn a_log_where(chat: &str, run: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("a folder");
+        let mut log = purlis_core::eventlog::Log::open(dir.path(), "01K6DEVICE00000000000000DV")
+            .expect("opened");
+        log.append(
+            Some(chat),
+            Some(run),
+            None,
+            "run.started",
+            serde_json::json!({}),
+        )
+        .expect("written");
+        dir
+    }
+
+    #[test]
+    fn a_finished_task_the_host_left_is_proven_by_its_run_where_no_record_says_so() {
+        let host = Pretend::default();
+        let (_dir, root) = a_finished_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN0000000000000000007");
+        let log = a_log_where(TASK, "01K6RUN0000000000000000007");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![a_task_s_ref()]
         );
-        std::fs::write(root.join("team.json"), held).expect("held");
+    }
+
+    #[test]
+    fn a_chat_left_under_a_finished_task_s_number_but_another_chat_s_run_is_not_a_task() {
+        // A person's own chat dealt number 7 after the task's: its screen is never kept.
+        let host = Pretend::default();
+        let (_dir, root) = a_finished_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN000000000000000000P");
+        let log = a_log_where("01K6PERSONSCHAT0000000000P", "01K6RUN000000000000000000P");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_chat_left_whose_run_the_log_never_started_or_with_no_log_proves_nothing() {
+        let host = Pretend::default();
+        let (_dir, root) = a_finished_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN0000000000000000007");
+        let empty = tempfile::tempdir().expect("a folder");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(empty.path())),
+            vec![]
+        );
+        assert_eq!(finished_tasks_left_by_run(&root, &host, None), vec![]);
+    }
+
+    #[test]
+    fn a_finished_task_whose_record_names_its_chat_by_number_alone_is_not_proven_by_a_run() {
+        // An older record with no id matches any chat dealt its number: a person's own chat
+        // left under number 7, whose run proves only its own id, is never taken for it.
+        let host = Pretend::default();
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        let record = dispatchrecord::open(
+            &root,
+            Opening {
+                mode: Mode::Task,
+                asker: Asker {
+                    chat: ChatRef {
+                        chat: 4,
+                        id: Some("01K6ASKER0000000000000000A".to_owned()),
+                        name: "steward 4".to_owned(),
+                        persona: None,
+                    },
+                    workspace: None,
+                    by_person: false,
+                    session_record: None,
+                },
+                persona: Some("devops".to_owned()),
+                worker: Worker {
+                    chat: ChatRef {
+                        chat: 7,
+                        id: None,
+                        name: "devops 7".to_owned(),
+                        persona: Some("devops".to_owned()),
+                    },
+                    harness: None,
+                    profile: None,
+                    session_record: None,
+                },
+                task: Some("check prod".to_owned()),
+                place: Place::default(),
+                brief: "check prod".to_owned(),
+                report_owed: true,
+            },
+            jiff::Timestamp::now(),
+        )
+        .expect("recorded");
+        dispatchrecord::close(
+            &root,
+            &record.id,
+            dispatchrecord::Ending {
+                report: Some(dispatchrecord::Report {
+                    outcome: dispatchrecord::Outcome::Done,
+                    text: "prod is green".to_owned(),
+                    changed: dispatchrecord::Changed::default(),
+                }),
+                usage: None,
+            },
+            jiff::Timestamp::now(),
+        )
+        .expect("ended");
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN000000000000000000P");
+        let log = a_log_where("01K6PERSONSCHAT0000000000P", "01K6RUN000000000000000000P");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![]
+        );
+    }
+
+    #[test]
+    fn a_task_still_working_the_host_left_is_not_proven_finished() {
+        let host = Pretend::default();
+        let (_dir, root) = a_task();
+        host.leaves_running(7, None);
+        host.left_in_run(7, "01K6RUN0000000000000000007");
+        let log = a_log_where(TASK, "01K6RUN0000000000000000007");
+
+        assert_eq!(
+            finished_tasks_left_by_run(&root, &host, Some(log.path())),
+            vec![]
+        );
     }
 
     #[test]
@@ -1209,7 +1408,7 @@ mod tests {
         let (_dir, root) = a_task();
         host.leaves_running(7, None);
         host.shows(7, "token: FAKE-VAULT-VALUE-6680\r\n");
-        handed_before_the_crash(&root, Some("FAKE-VAULT-VALUE-6680"));
+        handed_before_the_crash(&root, "FAKE-VAULT-VALUE-6680", "plain-file");
         let shared: Arc<dyn SessionHost> = Arc::new(host);
 
         start_keeping_screens_left(&root, &shared, &[a_task_s_ref()])
@@ -1222,12 +1421,41 @@ mod tests {
     }
 
     #[test]
-    fn a_task_left_by_a_crashed_window_keeps_no_screen_where_what_it_was_handed_cannot_be_read() {
+    fn a_task_left_by_a_crashed_window_whose_vault_may_ask_the_person_keeps_its_screen_masked() {
+        // #6907: a 1Password vault's value is read through `op`, which may ask the person. The
+        // launch reads nothing of it, and keeps the screen masked all the same.
+        let host = Pretend::default();
+        let (_dir, root) = a_task();
+        host.leaves_running(7, None);
+        host.shows(7, "token: FAKE-VAULT-VALUE-6907\r\n");
+        handed_before_the_crash(&root, "FAKE-VAULT-VALUE-6907", "1password");
+        let shared: Arc<dyn SessionHost> = Arc::new(host);
+
+        start_keeping_screens_left(&root, &shared, &[a_task_s_ref()])
+            .wait_until(Instant::now() + SCREENS_KEPT_WITHIN);
+
+        assert_eq!(
+            purlis_core::chatscreens::kept(&root, TASK).as_deref(),
+            Some("token: ‹secret: github-token›\r\n")
+        );
+    }
+
+    #[test]
+    fn a_task_left_by_a_crashed_window_keeps_no_screen_where_its_names_are_not_purlis_s() {
         let host = Pretend::default();
         let (_dir, root) = a_task();
         host.leaves_running(7, None);
         host.shows(7, "token: FAKE-VAULT-VALUE-6681\r\n");
-        handed_before_the_crash(&root, None);
+        let named = purlis_core::secrets::handedto::dir(&root);
+        std::fs::create_dir_all(&named).expect("made");
+        std::fs::write(
+            named.join("7.names"),
+            format!(
+                "{{\"vault\":\"team\",\"key\":\"k\",\"shown\":[],\"seal\":\"{}\"}}\n",
+                "0".repeat(64)
+            ),
+        )
+        .expect("named");
         let shared: Arc<dyn SessionHost> = Arc::new(host);
 
         start_keeping_screens_left(&root, &shared, &[a_task_s_ref()])

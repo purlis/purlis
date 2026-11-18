@@ -641,3 +641,49 @@ export const Osc8MismatchAFile: StoryObj<typeof meta> = {
     await waitFor(() => expect(page.queryByRole("dialog")).toBeNull());
   },
 };
+
+/**
+ * **A runner chat's file outside its workspace on the runner** (#6387): asked as a file outside
+ * the workspace on this machine is, with the runner the file is on in its own row, and opened
+ * read-only, read there. It starts on *Open file*, as that ask does (D9).
+ */
+export const RunnerFileOutsideTheWorkspace: StoryObj<typeof meta> = {
+  render: () => (
+    <Answer
+      answer={{
+        answer: "ask",
+        reason: "outside app on runner docker/runner-1",
+        shown: "/etc/hosts:3",
+        target: "/etc/hosts:3",
+        token: "a-one-use-token",
+        about: {
+          about: "file-on-runner",
+          runner: "docker/runner-1",
+          home: {
+            is: "workspace",
+            name: "app",
+            folder: "/home/purlis/projects/smart-ide/workspaces/app",
+          },
+        },
+      }}
+      candidate={{ kind: "file", text: "/etc/hosts:3" }}
+      chat={{ number: 641, title: "Fix the login form" }}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement.ownerDocument.body);
+    const dialog = await page.findByRole("dialog", {
+      name: "Open a file outside this workspace?",
+    });
+    await expect(dialog).toHaveTextContent("This chat's output names a file that is not in app.");
+    await expect(dialog).toHaveTextContent("docker/runner-1");
+    await expect(dialog).toHaveTextContent("/home/purlis/projects/smart-ide/workspaces/app");
+    const open = within(dialog).getByRole("button", { name: "Open file" });
+    await untilFocused(() => open, "It starts on Open file (D9)");
+    expectFocusInSight();
+    await pictureNow();
+
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(page.queryByRole("dialog")).toBeNull());
+  },
+};

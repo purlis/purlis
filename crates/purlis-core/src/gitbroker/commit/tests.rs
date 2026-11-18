@@ -348,6 +348,32 @@ fn a_chat_is_held_to_a_number_of_commits_in_a_while() {
 }
 
 #[test]
+fn the_commit_cap_is_counted_not_applied_where_policy_limits_logs() {
+    // Q308b: under `limits = "log"` a commit past the cap goes ahead and one line says so;
+    // under `strict` the cap refuses as it always has.
+    let now = std::time::Instant::now();
+    for (policy, refused, lines) in [("", true, 0), ("limits = \"log\"\n", false, 1)] {
+        let root = tempfile::tempdir().expect("a project");
+        std::fs::write(
+            crate::names::manifest(root.path()),
+            format!("[policy]\ntemplate = \"strict\"\n{policy}"),
+        )
+        .expect("the manifest");
+        for _ in 0..COMMITS_A_WHILE {
+            assert!(paced(root.path(), 7, now).is_ok());
+        }
+        assert_eq!(paced(root.path(), 7, now).is_err(), refused, "{policy:?}");
+        let logged = crate::enforcement::read_log(root.path(), crate::enforcement::UNKNOWN_CHAT);
+        assert_eq!(logged.len(), lines, "{policy:?}");
+        assert!(
+            logged
+                .iter()
+                .all(|line| line.rule == "commit.rate" && line.family == "limits")
+        );
+    }
+}
+
+#[test]
 fn a_message_carrying_purlis_s_own_provenance_is_refused() {
     // #1476: purlis writes these; one a chat wrote would claim what purlis did not check.
     for message in [

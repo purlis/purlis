@@ -65,6 +65,7 @@ macro_rules! app_commands {
                 pane_links::pane_link_resolve,
                 pane_links::pane_link_open,
                 pane_links::pane_link_file,
+                pane_links::pane_link_runner_file,
                 artifact_search::artifact_search,
                 artifactdiscuss::artifact_discuss,
                 portal::session_bus,

@@ -1122,6 +1122,34 @@ fn a_profile_command_that_turns_the_prompts_off_keeps_a_grade_from_running() {
     assert!(why.contains("pick another profile"), "{why}");
 }
 
+/// Round 3 of #7165: the grade's sentence says what the words do, whether they can silence
+/// purlis's guards or purlis cannot read them.
+#[test]
+fn a_profile_command_that_can_switch_guards_off_or_cannot_be_read_keeps_a_grade_from_running() {
+    let config = tempfile::tempdir().unwrap();
+    let chat = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        config.path().display().to_string(),
+    )];
+    let env = settings_in(&chat);
+    for (words, must) in [
+        (
+            vec!["--safe-mode"],
+            "settings that can switch the permission prompts or purlis's guards off (--safe-mode)",
+        ),
+        (
+            vec!["--settings", "{not json"],
+            "cannot tell whether they switch the permission prompts or its guards off (--settings (unreadable))",
+        ),
+    ] {
+        let why = adapter()
+            .grade_refused(&line(&words), &env)
+            .expect("refused");
+        assert!(why.contains(must), "{why}");
+        assert!(why.contains("pick another profile"), "{why}");
+    }
+}
+
 /// SK-16, #3352: a `--permission-mode` in the profile's command outranks the mode a grade's chat
 /// pins, so any mode but the two that ask keeps a grade from running, in each spelling the
 /// bypass check reads, with the same sentence as the bypass flags.
@@ -2125,7 +2153,7 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
         &crate::sandbox::policy::Locks::none(),
     );
     assert_eq!(
-        guards_failing(&under_policy(armed_args(), &open)),
+        guards_failing(&under_policy(armed_args(), &open, false)),
         pairs([
             ("pretooluse", "continue"),
             ("pretooluse-read", "continue"),
@@ -2134,14 +2162,57 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
         ])
     );
     assert_eq!(
-        guards_failing(&under_policy(armed_args(), &Resolved::all(Mode::Enforce))),
+        guards_failing(&under_policy(
+            armed_args(),
+            &Resolved::all(Mode::Enforce),
+            false
+        )),
         pairs([
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
             ("pretooluse-edit", "continue"),
-            ("pretooluse-dispatch", "continue"),
+            // `guards.shape`, the dispatch guard's family, switches since Q308b's nine did
+            // (#7104), so where it is enforced a dead dispatch guard refuses too.
+            ("pretooluse-dispatch", "block"),
         ])
     );
+}
+
+#[test]
+fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_template() {
+    // The re-review of #7104 (ruling for Q327): A7c, behind the person's own ask and deny rules,
+    // counts as an enforced family, so where they name a program a dead Bash guard refuses
+    // rather than lets the call run. Only the Bash guard reads them.
+    use crate::enforcement::{Resolved, Settings};
+    for text in [
+        "[policy]\ntemplate = \"open\"\n",
+        "[policy]\nsecrets = \"log\"\nguards.credential = \"log\"\n",
+    ] {
+        let policy = Resolved::of(
+            &Settings::from_text(Some(text)),
+            &crate::sandbox::policy::Locks::none(),
+        );
+        assert_eq!(
+            guards_failing(&under_policy(armed_args(), &policy, false)),
+            pairs([
+                ("pretooluse", "continue"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]),
+            "{text}, no rule names a program"
+        );
+        assert_eq!(
+            guards_failing(&under_policy(armed_args(), &policy, true)),
+            pairs([
+                ("pretooluse", "block"),
+                ("pretooluse-read", "continue"),
+                ("pretooluse-edit", "continue"),
+                ("pretooluse-dispatch", "continue"),
+            ]),
+            "{text}, a rule names a program"
+        );
+    }
 }
 
 #[test]
@@ -2150,6 +2221,7 @@ fn the_permission_hook_fails_open_under_every_policy() {
     let args = under_policy(
         armed_args(),
         &crate::enforcement::Resolved::all(crate::enforcement::Mode::Enforce),
+        true,
     );
     let at = args
         .iter()

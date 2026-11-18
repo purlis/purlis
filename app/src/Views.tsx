@@ -1097,13 +1097,20 @@ const PieceTab = lazy(() =>
     default: function PieceTab(
       props: ComponentProps<typeof FilesTab> & {
         path?: string;
-        outside?: { session: number | null; path: string };
+        outside?: { session: number | null; path: string; runner?: string };
       },
     ) {
       const { path, outside, ...files } = props;
       // A file outside the project (#6216), in the same chunk, so the first one suspends once.
       if (outside !== undefined)
-        return <OutsideFileTab plane={files.plane} session={outside.session} path={outside.path} />;
+        return (
+          <OutsideFileTab
+            plane={files.plane}
+            session={outside.session}
+            runner={outside.runner}
+            path={outside.path}
+          />
+        );
       return path === undefined ? (
         <PieceFilesTab {...files} />
       ) : (

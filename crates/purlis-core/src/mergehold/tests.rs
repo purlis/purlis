@@ -498,6 +498,7 @@ fn every_refusal_names_only_the_commands_of_its_ways_out() {
             AppSaid::Held("The person is asked in Asks to merge request 12."),
             AppSaid::Refused("chat 4 is not one this app has open."),
             AppSaid::OtherBuild,
+            AppSaid::OlderApp,
             AppSaid::Unheard,
         ] {
             let said = refusal(&held_, &app);
@@ -522,5 +523,83 @@ fn every_refusal_names_only_the_commands_of_its_ways_out() {
                 assert!(said.contains("A yes in this chat merges nothing"), "{said}");
             }
         }
+    }
+}
+
+/// #7177: a refusal reads as sentences: the app's words end in a full stop before what follows
+/// them, and the other-build refusals name a restart of purlis, never a new chat.
+#[test]
+fn a_refusal_ends_the_apps_words_with_a_full_stop_and_names_a_restart() {
+    let request = Held::Request(Request {
+        repo: None,
+        number: 12,
+    });
+    for why in [
+        "the app could not read this line: it is from a purlis this app does not know",
+        "chat 4 is not one this app has open.",
+    ] {
+        let said = refusal(&request, &AppSaid::Refused(why));
+        assert!(
+            said.contains(&format!("{}. Ask the person", why.trim_end_matches('.'))),
+            "{said}"
+        );
+    }
+    // A new chat is no way out: the same app starts it with the same binary (#7177).
+    for app in [AppSaid::OtherBuild, AppSaid::OlderApp] {
+        let said = refusal(&request, &app);
+        assert!(!said.contains("start a new chat"), "{said}");
+        assert!(said.contains("restart purlis"), "{said}");
+    }
+    let said = refusal(&request, &AppSaid::OlderApp);
+    assert!(
+        said.contains("purlis was updated on disk but the running app is older: restart purlis"),
+        "{said}"
+    );
+    assert!(said.contains("then run the same line again"), "{said}");
+    assert!(!said.contains("update the purlis plugin"), "{said}");
+    assert!(refusal(&request, &AppSaid::OtherBuild).contains("update the purlis plugin"));
+}
+
+/// #7177: `glab mr merge <n>` reaches the request with the right number and repo under each
+/// flag glab merges with, alone and combined: a boolean flag never hides the number, and a value
+/// flag's value (`--sha`) is never read as it.
+#[test]
+fn a_glab_merge_is_read_to_its_request_under_each_of_its_flags() {
+    let sha = "0123456789abcdef0123456789abcdef01234567";
+    let ask = |repo: Option<&str>, number: u64| {
+        Some(Held::Request(Request {
+            repo: repo.map(|repo| Repo::try_from(repo).unwrap()),
+            number,
+        }))
+    };
+    for (cmd, repo) in [
+        ("glab mr merge 7", None),
+        ("glab mr merge 7 -R grp/sub/api", Some("grp/sub/api")),
+        ("glab mr merge -R grp/sub/api 7", Some("grp/sub/api")),
+        ("glab mr merge 7 --repo grp/sub/api", Some("grp/sub/api")),
+        ("glab mr merge 7 --repo=grp/sub/api", Some("grp/sub/api")),
+        ("glab mr merge 7 --squash", None),
+        ("glab mr merge --squash 7", None),
+        ("glab mr merge 7 --remove-source-branch", None),
+        ("glab mr merge 7 --yes", None),
+        ("glab mr merge 7 -y", None),
+        (&format!("glab mr merge 7 --sha {sha}"), None),
+        (&format!("glab mr merge --sha {sha} 7"), None),
+        (&format!("glab mr merge --sha={sha} 7"), None),
+        (
+            &format!(
+                "glab mr merge 7 -R grp/sub/api --squash --remove-source-branch --sha {sha} --yes"
+            ),
+            Some("grp/sub/api"),
+        ),
+        (
+            &format!(
+                "glab mr merge --yes --sha {sha} --squash -R grp/sub/api 7 --remove-source-branch"
+            ),
+            Some("grp/sub/api"),
+        ),
+        ("glab mr accept 7 --squash --yes", None),
+    ] {
+        assert_eq!(held(cmd), ask(repo, 7), "{cmd}");
     }
 }

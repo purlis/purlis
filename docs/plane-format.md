@@ -1774,11 +1774,11 @@ of that name at that level replaces it.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults` and `guards.credential` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. The sandbox level each template names is decided and wired in a later release; today `[sandbox]` decides it. |
+| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults`, `guards.credential` and `trust` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. The sandbox level each template names is decided and wired in a later release; today `[sandbox]` decides it. |
 | `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. **Not switchable yet**: enforced. |
 | `ports` | as `network` | the template's | local sockets, listening and connect ports. **Not switchable yet**: enforced. |
 | `processes` | as `network` | the template's | **Not switchable yet**: enforced. The wrap's refusal of a program that would run outside it (`launchctl`, `osascript`, `open`, cron, Apple Events) is part of the sandbox and is kept whenever a wrap is applied, whatever this key says. |
-| `guards.git` | as `network` | the template's | the Bash guard's git arms: a branch move and a destroying reset in the plane root (A3, A3b), and git in a branch folder another chat holds (A11). The arms that exist because of the wrap (A3c, A3d, A9, A9b) are the sandbox's, kept whenever a wrap is applied. |
+| `guards.git` | as `network` | the template's | the Bash guard's git arms: git in a branch folder another chat holds (A11). A branch move and a destroying reset in the plane root (A3, A3b) are `guards.plane`'s (Q308b); where the file names `guards.git` and not `guards.plane`, they run at least as strictly as `guards.git` says, so the move loosens nothing a project set. The arms that exist because of the wrap (A3c, A3d, A9, A9b) are the sandbox's, kept whenever a wrap is applied. |
 | `guards.merge` | as `network` | the template's | the merge hold: a chat's merge is refused and handed to the person. Under `log` nobody is asked. |
 | `guards.release` | as `network` | the template's | the release floor (A4), and a live substitution in a forge's prose (A5). |
 | `guards.save` | as `network` | the template's | personal data in what a chat commits and pushes, a commit that skips the hooks (A8), and a live substitution in purlis's own text (A6). |
@@ -1790,7 +1790,7 @@ of that name at that level replaces it.
 | `skills` | as `network` | the template's | a skill's install or load. **Not switchable yet**: enforced. |
 | `secrets` | as `network` | the template's | a vault's value kept out of a chat: masking of `secret exec`'s output, the leak guard (A), and the vault-file guard on Read and Grep. |
 | `secrets.credential_files` | `"off"` or `"enforce"` | `"off"` under `open`, `watch` and `hold`; `"enforce"` under `team` and `strict` | whether the floor (Basic) holds the person's own credential files from a chat: `~/.ssh` but its `config`, `known_hosts*` and public keys, and the forge and cloud credential files (ADR 0067 §5 class 6, Q325). The full sandbox holds them whatever this says. `log` is enforced. A dotted key, so `secrets` becomes a table; beside `secrets = …` write it as the quoted key `"secrets.credential_files"`. |
-| `guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`, `trust`, `runners`, `consents`, `limits` | as `network` | the template's: enforced by `team` and `strict`, logged by `watch` and `hold`, off under `open` | the families ruling Q308b adds: a forge's verbs and login; the shape of a call (the tool gate's caps and the backstops on the consent rules' spelling, A7b and A7c, are `guards.shape`'s); the plane itself; the harness's permission mode and attendance; persona tools and MCP; profiles, declarations and extensions; runners and pools; the window-only presses; and depth, concurrency, rates, timeouts and budgets (under `log` a limit is counted, not applied). **Keys now, not switchable yet**: enforced. |
+| `guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`, `trust`, `runners`, `consents`, `limits` | as `network` | the template's: enforced by `team` and `strict`, logged by `watch` and `hold`, off under `open`; `trust` is enforced by every template but `open` (Q329) | the families ruling Q308b adds: a forge's verbs and login; the shape of a call (the tool gate's caps, run at the strictest family the gate asks, the consent rules' spelling backstop A7b, and the handoff and dispatch call arms A7, A7d, A7e and A10, are `guards.shape`'s; A7c, behind the person's own rules, holds in every mode); the plane itself (A3 and A3b); the harness's permission mode and attendance; persona tools and MCP; profiles, declarations and extensions (a profile or declaration that starts unapproved, under `open` or a pressed `trust = "off"` or `"log"`, says so on its chat's tab); runners and pools; the window-only presses; and depth, concurrency, rates, timeouts and budgets (under `log` a limit is counted, not applied). Each switches at the choke points [`docs/policy-inventory-families.md`](policy-inventory-families.md) names; a decision of theirs no choke point asks yet stays enforced. |
 
 **What `log` writes:** one line per refusal that would have been made, in the chat's
 [enforcement log](#appenforcementchatjsonl--what-a-chat-would-have-been-refused). Nothing is
@@ -1799,7 +1799,10 @@ shown to the chat or the person: no Notice, no ask, no denial.
 **What stays outside the policy** (Q308b): a chat changing its own policy (the scan's
 runs-under check, the brokered write's, the sandbox's hold on the file), the kill switch, and a
 grader's lock bundles. **The person's own denies hold in every mode**, `open` included: dispatch
-nevers and "Keep blocked" hosts.
+nevers and "Keep blocked" hosts. **Nor does `limits` lift an administrator's ceiling**: a
+limit it lifts goes up to the ceiling, where there is one. A chat another chat asked for never
+runs on its profile's words that switch the prompts off, whatever `mode` says: they are dropped
+and its tab says so (#3787).
 
 ### `[skill_policy]` — the org's controls over skill sources
 
@@ -7883,21 +7886,37 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 ### `app/chat-handed/<chat>.names` — what a chat was handed, by vault and key
 - **What:** each vault entry purlis handed chat `<chat>` (its number in the project), through a
   brokered `purlis secret exec`, a runner chat's tool, its profile's sign-in, a browser fill or
-  a browser login (#6309, parent #5820), named before the value is handed. A launch after a window crashed reads these entries again to mask
-  the kept screen of a task the crash left (`app/chat-screens/`, above), since the crashed
-  process took what it knew of the values with it. **Never a value**: the values themselves
-  are known only in memory, as a keyed digest (`secrets::handedto`), and here only as a seal.
-- **Format:** one JSON object per line, `{"vault": "<vault>", "key": "<key>", "seal": "<64 hex>"}`,
-  and `"form"`
-  where the value was handed in another form than as read: `"dotenv-escaped"`, as a dotenv file
-  holds it; `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>,
-  "escaped": <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or
-  `"unrepeatable"`, a one-time code or a minted token, made once. `seal` is `HMAC-SHA256` of the
-  vault, the key and the value as handed (in its form), each ended by a NUL, under a key derived
-  from `fingerprint.key` for this purpose alone (`fingerprint::seal`, purpose `a value handed
-  to a chat`): no use without the plane's key, which no sandboxed chat reads. Each entry, form
-  and seal once, written whole through a temp file (mode 0600, its folder 0700) and read through
-  no link.
+  a browser login (#6309, parent #5820), named before the value is handed, with what finds that
+  value on a screen again. A launch after a window crashed masks the kept screen of a task the
+  crash left (`app/chat-screens/`, above) by these lines alone, since the crashed process took
+  what it knew of the values with it, and **reads no vault** to do it (#6907, ADR 0126).
+  **Never a value**: the values themselves are known only in memory, as a keyed digest
+  (`secrets::handedto`), and here only as prints and seals under the plane's key.
+- **Format:** one JSON object per line, `{"chat": "<ULID>", "vault": "<vault>", "key": "<key>",
+  "nonce": "<32 hex>", "shown": [...], "seal": "<64 hex>"}`, and `"form"` where the value was
+  handed in another form than as read: `"dotenv-escaped"`, as a dotenv file holds it;
+  `{"tunnelled": {"port": <n>, "pgsslmode": <mode or null>, "reads_hostaddr": <bool>, "escaped":
+  <bool>}}`, pointed at a tunnel on the loopback's port `<n>` (#1667); or `"unrepeatable"`, a one-time code or a minted token, made once. `form`
+  is a record of how the chat was handed it; nothing reads it to mask. `shown` holds, for each
+  way the value as handed may be shown (as handed; trimmed; and for a value of several lines,
+  whole with CRLF line ends and each line alone, trimmed; each once, none under 4 bytes),
+  `{"bytes": <n>, "print": "<16 hex>", "seal": "<64 hex>"}`: its length; its Rabin–Karp print
+  modulo 2⁶¹−1 under a base of its own, the first 64 bits of the seal (purpose `the base a value
+  handed to a chat is printed by`) of the chat's id, the vault, the key, the line's nonce and its
+  place in `shown`, so no two prints share a base, of one line or of two lines of one entry; and
+  the seal (purpose `a value handed to a chat, v2`) of the chat's id, the vault, the key, the
+  nonce and the form. `nonce` is 16 bytes drawn at random as the line is written. The line's
+  `seal` (purpose `a line naming what a chat was handed`) covers the chat's id, the vault, the
+  key, the nonce and `[<entry>, <shown>]` as JSON. **`chat` is the id (ULID) of the chat the line
+  was written for, in clear, and every seal covers it** (#7129): a line masks the screen of the
+  chat it names alone, and a line purlis sealed for another chat, left under the same number by
+  a crash, is dropped as this chat names its own. Every seal is `HMAC-SHA256` of its parts,
+  each ended by a NUL, under a key derived from `fingerprint.key` for its purpose alone
+  (`fingerprint::seal`): no use without the plane's key, which no sandboxed chat reads. A value
+  handed again in the same form is not named again by the process that named it, though the
+  window and the session host, or a launch after a crash, each name it once more. Written whole
+  through a temp file (mode 0600, its folder 0700) under an `flock` of the folder, since the
+  window and the session host both write it, and read through no link.
 - **Status:** **internal** — **purlis only**. Written by the app before it hands a chat a
   value, for every chat, and deleted as the chat closes for good. A value whose entry cannot be
   named here is not handed: the chat is told so, and a chat whose profile's sign-in cannot be
@@ -7905,13 +7924,13 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   and writing under every harness: a chat that rewrote its own would choose what its kept
   screen is masked with. **Collected at the project's open** (`secrets::handedto::on_open`, from
   `retention::on_open`) once last written 30 days or more before, but a chat's the reopen record
-  will bring back. A file that does not read, a line in it that does not, a line with no seal
-  or one that is not the seal of its entry's value read again and made again in its form (an
-  entry changed since it was handed, or a line purlis did not write), a form that cannot be
-  made again (`unrepeatable`), and an entry that cannot be read again without asking anybody (a
-  vault whose value is read through a program that may ask the person, as a 1Password vault's
-  is and a reference vault's `op read` or `vault kv get` is, or an entry linked into one; an
-  entry gone; a GitHub App's token) leave that task's screen not kept.
+  will bring back. A file that does not read, a line in it that does not, and a line whose own
+  seal is not purlis's as it stands and for that chat (edited, written for another chat, of an
+  earlier shape, sealed under a key since made again, or one purlis did not write), or that the
+  plane has no key to check, leave that task's screen not kept. A write keeps every line but one
+  purlis provably sealed for another chat: one it cannot check stays, and keeps the screen not
+  kept. A chat with no id is handed nothing. A window of a screen is masked only where
+  its print matches and it seals the same.
 - **Tier:** Clone state — names of vault entries only; lost, a task a crash left keeps its
   screen with what was handed before the crash unmasked, and nothing else is lost.
 - **Git:** gitignored (under `/.charter/`).
