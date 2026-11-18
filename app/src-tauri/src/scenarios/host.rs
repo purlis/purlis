@@ -189,16 +189,24 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
     }
     let at_start = purlis_core::enforcement::at_start(root);
     let standing = purlis_core::enforcement::standing(root);
+    let kept = purlis_core::sandbox::local::path(root);
+    let on_disk = std::fs::read_to_string(&kept).map_or_else(
+        |why| format!("not read ({why})"),
+        |text| text.chars().take(1200).collect::<String>(),
+    );
     assert_eq!(
         at_start,
         resolved_under(template, root),
-        "a chat in the project starts under {} as the scenario asked: {} (an acceptance that does not hold: {}; what the file refused: {:?}; what a press would lift: {:?}; the denies in force: {:?})",
+        "a chat in the project starts under {} as the scenario asked: {} (an acceptance that does not hold: {}; what the file refused: {:?}; what a press would lift: {:?}; the denies in force: {:?}; this process can seal: {}; its record {}: {})",
         template.word(),
         at_start.spelled(),
         standing.unsealed,
         standing.refused,
         standing.lifted,
-        purlis_core::enforcement::denies_in_force(root)
+        purlis_core::enforcement::denies_in_force(root),
+        purlis_core::secrets::seal::can_seal(),
+        kept.display(),
+        on_disk
     );
     if template == Template::Strict {
         assert_eq!(
