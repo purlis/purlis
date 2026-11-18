@@ -153,6 +153,7 @@ const CONTEXTS = (pools: string[]) => ({
   joining: false,
   pinned: null,
   key_changed: false,
+  kubeconfig: null,
 });
 
 const KEY = "ed25519:" + "b".repeat(64);
@@ -454,5 +455,63 @@ describe("Send to your admin, and waiting (#4496)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Stop waiting" }));
     await waitFor(() => expect(recheck).toHaveBeenCalled());
     expect(sent.map((one) => one.cmd)).toContain("pool_setup_stop_waiting");
+  });
+});
+
+describe("A credential plugin the kubeconfig needs (#7192)", () => {
+  const missing = (): PoolSetupStep => ({
+    ...install([]),
+    id: "check",
+    name: "Check the cluster",
+    state: "attention",
+    undo: null,
+    see: null,
+    findings: [
+      "Needs gke-gcloud-auth-plugin, not found. Your kubeconfig signs in with it, and purlis looks in the usual install folders only. Name the folder it is in.",
+    ],
+    next: {
+      id: "use-plugin-folder",
+      label: "Use this folder",
+      does: "Adds only that folder.",
+      command: null,
+      url: null,
+    },
+  });
+
+  it("names the missing plugin and keeps only the folder typed, then checks again", async () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      return null;
+    });
+    const recheck = vi.fn();
+    render(
+      <CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />,
+    );
+    expect(screen.getByText(/Needs gke-gcloud-auth-plugin, not found/)).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Folder with the plugin" }),
+      "/Users/me/google-cloud-sdk/bin",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Use this folder" }));
+    await waitFor(() => expect(recheck).toHaveBeenCalled());
+    expect(sent).toContainEqual({
+      cmd: "pool_setup_plugin_folder",
+      args: { folder: "/Users/me/google-cloud-sdk/bin" },
+    });
+  });
+
+  it("keeps nothing and says why where the folder is refused", async () => {
+    mockIPC((cmd) =>
+      cmd === "pool_setup_plugin_folder" ? Promise.reject("there is no such folder") : null,
+    );
+    const recheck = vi.fn();
+    render(
+      <CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />,
+    );
+    await userEvent.type(screen.getByRole("textbox", { name: "Folder with the plugin" }), "/nope");
+    await userEvent.click(screen.getByRole("button", { name: "Use this folder" }));
+    expect(await screen.findByText("there is no such folder")).toBeInTheDocument();
+    expect(recheck).not.toHaveBeenCalled();
   });
 });

@@ -103,6 +103,19 @@ pub struct ClusterFacts {
     /// on the chosen context's cluster, and their sign-in may not read the install itself. Then
     /// nothing of the install is read or offered, and doctor isn't asked: those are an admin's.
     pub joining: bool,
+    /// The kubeconfig file the contexts were read from, as a path ([`kubeconfig_shown`]).
+    pub kubeconfig: Option<String>,
+    /// The credential plugin the chosen context signs in with, and where it is (#7192).
+    pub plugin: Option<PluginFacts>,
+}
+
+/// **A chosen context's credential plugin** (#7192): its command, the names of the variables its
+/// `exec` hands it, and the folder it was found in, where it was.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PluginFacts {
+    pub command: String,
+    pub env: Vec<String>,
+    pub found: Option<std::path::PathBuf>,
 }
 
 /// **What this machine keeps of a cluster pool** (#4494): where it reaches its cluster, and the
@@ -523,6 +536,54 @@ fn pools_of(kubectl: &Kubectl) -> Option<Vec<String>> {
     )
 }
 
+/// **This machine's kubectl, pointed at the kubeconfig file chosen on Where** (#7192), where one
+/// was: only that file is read, and `KUBECONFIG` is never inherited (#3292).
+#[must_use]
+pub fn pointed(kubectl: &Kubectl, choices: &Choices) -> Kubectl {
+    match &choices.kubeconfig {
+        Some(file) => kubectl.clone().with_kubeconfig(file),
+        None => kubectl.clone(),
+    }
+}
+
+/// **The kubeconfig file Where shows** (#7192): the one chosen, else `.kube/config` in the home
+/// where it exists, which is the file kubectl reads when none is named.
+#[must_use]
+pub fn kubeconfig_shown(choices: &Choices, home: Option<&std::path::Path>) -> Option<std::path::PathBuf> {
+    choices.kubeconfig.clone().or_else(|| {
+        let default = home?.join(".kube").join("config");
+        default.is_file().then_some(default)
+    })
+}
+
+/// **The credential plugin `context` signs in with, and where it is** (#7192), read through
+/// kubectl, which leaves every credential out: none where the context signs in another way.
+#[must_use]
+pub fn plugin_facts(
+    kubectl: &Kubectl,
+    context: &str,
+    named: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
+) -> Option<PluginFacts> {
+    let view = kubectl
+        .clone()
+        .with_context(context)
+        .asked(&["config", "view", "--minify", "--output", "json"], None)
+        .ok()
+        .filter(|answer| answer.ok)?;
+    let view: serde_json::Value = serde_json::from_str(&view.printed).ok()?;
+    let wanted = super::plugin::wanted(&view)?;
+    let found = match super::plugin::find(&wanted.command, named, home) {
+        super::plugin::Where::In(folder) => Some(folder),
+        super::plugin::Where::Missing => None,
+    };
+    Some(PluginFacts {
+        command: wanted.command,
+        env: wanted.env,
+        found,
+    })
+}
+
 /// **Reads a cluster for Pool setup**: the kubeconfig's contexts, and on the chosen one, what the
 /// cluster holds of the install and, before an operator runs there, doctor. `deep` is whether the
 /// cluster itself is asked: only where the setup is on a cluster.
@@ -749,6 +810,22 @@ fn check_again(does: &str) -> Option<Action> {
 /// apply is left to Install; anything else stops the set-up here, with what it lacks.
 pub(super) fn check_reading(facts: &Facts) -> Reading {
     let cluster = &facts.cluster;
+    if let Some(PluginFacts {
+        command,
+        found: None,
+        ..
+    }) = &cluster.plugin
+    {
+        return Reading::attention(
+            super::plugin::needs(command),
+            action(
+                ActionId::UsePluginFolder,
+                "Use this folder",
+                "Adds only that folder to the commands purlis runs for this cluster, and checks \
+                 again. Nothing else on this machine changes.",
+            ),
+        );
+    }
     if let Some(Ok(Installed {
         operator: Operator::Running { image },
         ..

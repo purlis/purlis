@@ -57,6 +57,7 @@ const setup = (at: string, steps: PoolSetupStep[], pool: string | null = null): 
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
 });
 
@@ -577,6 +578,7 @@ describe("Where, on a cluster (#4492)", () => {
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: "/Users/me/.kube/config",
     },
   });
 
@@ -598,32 +600,88 @@ describe("Where, on a cluster (#4492)", () => {
     await waitFor(() =>
       expect(sent).toContainEqual({
         cmd: "pool_setup_choose_cluster",
-        args: { context: "kind-team" },
+        args: { context: "kind-team", kubeconfig: "/Users/me/.kube/config" },
       }),
     );
   });
 
-  it("keeps the context chosen under Options instead", async () => {
+  it("keeps the context picked from the file's contexts instead", async () => {
     const sent = asking();
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(await screen.findByRole("button", { name: "Options" }));
-    await userEvent.click(screen.getByRole("radio", { name: "prod-eu" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Context/ }));
+    await userEvent.click(await screen.findByRole("option", { name: "prod-eu" }));
     await userEvent.click(screen.getByRole("button", { name: "Continue with this cluster" }));
     await waitFor(() =>
       expect(sent).toContainEqual({
         cmd: "pool_setup_choose_cluster",
-        args: { context: "prod-eu" },
+        args: { context: "prod-eu", kubeconfig: "/Users/me/.kube/config" },
       }),
     );
   });
 
-  it("offers Docker as the place purlis didn't recommend", async () => {
+  it("offers This machine as the place purlis didn't recommend, as a card", async () => {
     const sent = asking();
     render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("radio", { name: /This machine/ }));
     await userEvent.click(
-      await screen.findByRole("button", { name: "Use Docker on this machine instead" }),
+      screen.getByRole("button", { name: "Use Docker on this machine instead" }),
     );
     await waitFor(() => expect(sent.map((one) => one.cmd)).toContain("pool_setup_choose_docker"));
+  });
+
+  it("reads the contexts of another kubeconfig file typed, and keeps that file with the context", async () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      if (cmd === "cluster_contexts")
+        return { kubeconfig: "/work/team.yaml", contexts: ["team-a", "team-b"], current: "team-b" };
+      return cmd === "pool_setup" ? onACluster() : null;
+    });
+    render(<PoolSetupTab plane="p" />);
+    const file = await screen.findByRole("textbox", { name: "Kubeconfig file" });
+    await userEvent.clear(file);
+    await userEvent.type(file, "/work/team.yaml");
+    await waitFor(() =>
+      expect(sent).toContainEqual({ cmd: "cluster_contexts", args: { kubeconfig: "/work/team.yaml" } }),
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /Context/ })).toHaveTextContent("team-b"));
+    await userEvent.click(screen.getByRole("button", { name: "Continue with this cluster" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "pool_setup_choose_cluster",
+        args: { context: "team-b", kubeconfig: "/work/team.yaml" },
+      }),
+    );
+  });
+});
+
+describe("Where offers three places, always (#7191)", () => {
+  const dockerReady = (): PoolSetupShown => ({
+    ...setup("where", [
+      step("where", "Where chats run", "current", {
+        findings: ["Docker is ready."],
+        next: action("use-docker", "Continue with Docker"),
+        other: action("use-remote-docker", "Set up Docker on another machine"),
+      }),
+      step("pool", "Pool", "later"),
+    ]),
+  });
+
+  it("shows the cluster card where Docker here is ready and no kubeconfig context is found", async () => {
+    core(() => dockerReady());
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("radio", { name: /A Kubernetes cluster/ }));
+    expect(await screen.findByRole("textbox", { name: "Kubeconfig file" })).toBeInTheDocument();
+    expect(screen.getByText(/Name the kubeconfig file/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use this cluster" })).toBeDisabled();
+  });
+
+  it("shows the cluster card where Docker is missing, so a cluster is not out of reach", async () => {
+    core(() => MISSING);
+    render(<PoolSetupTab plane="p" />);
+    expect(await screen.findByRole("radio", { name: /A Kubernetes cluster/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /This machine/ })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: /Another machine with Docker/ })).toBeInTheDocument();
   });
 });
 
@@ -707,9 +765,8 @@ describe("Docker here pointing at another machine (#6268)", () => {
   it("offers Set up Docker on another machine, opening Connect with DOCKER_HOST's address", async () => {
     const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: null }));
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
-    );
+    await userEvent.click(await screen.findByRole("radio", { name: /Another machine with Docker/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "pool_setup_machine",
@@ -721,9 +778,8 @@ describe("Docker here pointing at another machine (#6268)", () => {
   it("opens Connect with the current context, read again by its name", async () => {
     const calls = core(() => elsewhere({ route: "ssh://me@build-box", context: "build-box" }));
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
-    );
+    await userEvent.click(await screen.findByRole("radio", { name: /Another machine with Docker/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls).toContainEqual({
         cmd: "pool_setup_docker_context",
@@ -735,9 +791,8 @@ describe("Docker here pointing at another machine (#6268)", () => {
   it("with nothing to fill in, opens Docker on another machine as it is", async () => {
     const calls = core(() => elsewhere(null));
     render(<PoolSetupTab plane="p" />);
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Set up Docker on another machine" }),
-    );
+    await userEvent.click(await screen.findByRole("radio", { name: /Another machine with Docker/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Set up Docker on another machine" }));
     await waitFor(() =>
       expect(calls.map((one) => one.cmd)).toContain("pool_setup_choose_remote_docker"),
     );

@@ -165,6 +165,9 @@ pub struct PoolSetupContexts {
     pub chosen: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
+    /// The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+    /// home's `.kube/config` where it exists. Its path, nothing of what is in it.
+    pub kubeconfig: Option<String>,
     /// Whether the person joins their team's install (#4495): the key is then confirmed by
     /// pasting the one their admin gave them.
     pub joining: bool,
@@ -248,6 +251,7 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
             recommended: setup.contexts.recommended.clone(),
             chosen: setup.contexts.chosen.clone(),
             pools: setup.contexts.pools.clone(),
+            kubeconfig: setup.contexts.kubeconfig.clone(),
             joining: setup.contexts.joining,
             pinned: setup.contexts.pinned.clone(),
             key_changed: setup.contexts.named_now.is_some(),
@@ -470,16 +474,23 @@ pub async fn pool_setup_choose_remote_docker() -> Result<(), String> {
 /// **Keeps that the person chose their team's cluster on Where**, through kubeconfig context
 /// `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
 /// kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
+/// `kubeconfig` is the one file the context is read from (#7192): a path, never `KUBECONFIG`'s
+/// list; none is kubectl's default.
 #[tauri::command]
 #[specta::specta]
-pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), String> {
+pub async fn pool_setup_choose_cluster(
+    context: Option<String>,
+    kubeconfig: Option<String>,
+) -> Result<(), String> {
     #[cfg(unix)]
     {
         crate::off_the_window("keeping your choice", move || {
             use purlis_core::poolsetup::{self, Kind};
             let config = config_root()?;
             if let Some(context) = context {
-                return poolsetup::choose_cluster(&config, &context).map_err(|why| why.to_string());
+                let file = kubeconfig.as_deref().map(std::path::Path::new);
+                return poolsetup::choose_cluster_in(&config, file, &context)
+                    .map_err(|why| why.to_string());
             }
             poolsetup::choose_kind(&config, Kind::Cluster).map_err(|why| why.to_string())
         })
@@ -487,7 +498,29 @@ pub async fn pool_setup_choose_cluster(context: Option<String>) -> Result<(), St
     }
     #[cfg(not(unix))]
     {
-        let _ = context;
+        let _ = (context, kubeconfig);
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Keeps the folder a kubeconfig's credential plugin is in** (#7192), named where purlis found
+/// it in none of the usual install folders. Only that folder is added to the commands purlis runs
+/// for the cluster.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_plugin_folder(folder: String) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("keeping the folder", move || {
+            let config = config_root()?;
+            purlis_core::poolsetup::choose_plugin_folder(&config, std::path::Path::new(&folder))
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = folder;
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

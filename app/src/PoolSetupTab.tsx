@@ -16,7 +16,13 @@ import {
 import { Notice } from "./Notice";
 import { linkToGroup, settingsPlace } from "./settings/links";
 import { POOLS } from "./settings/pools";
-import { CheckStep, ClusterPoolStep, ContextOptions, InstallStep } from "./poolsetup/ClusterSteps";
+import {
+  CheckStep,
+  ClusterFields,
+  ClusterPoolStep,
+  ContextOptions,
+  InstallStep,
+} from "./poolsetup/ClusterSteps";
 import { ConnectStep } from "./poolsetup/ConnectStep";
 import { Action, Recommended, Say, SeeWhat, StepHead } from "./poolsetup/parts";
 import { GET_HELP_SAYS, GetHelp, PoolSetupPlane } from "./poolsetup/GetHelp";
@@ -123,8 +129,11 @@ function Where({
   onChoseCluster,
   onRecheck,
   said,
+  pool,
 }: {
   step: PoolSetupStep;
+  /** The pool this setup made, if any: three places are offered only before there is one. */
+  pool: string | null;
   /** Where the chats of this setup run: `docker`, `cluster` or `remote-docker` (#6266). */
   kind: string;
   contexts: PoolSetupContexts;
@@ -132,11 +141,15 @@ function Where({
   onChose: () => void;
   /** Docker on another machine, with the machine to open Connect with where there is one. */
   onChoseRemote: (prefill?: PoolSetupPrefill | null) => void;
-  onChoseCluster: (context: string) => void;
+  /** The context chosen, and the one kubeconfig file it is read from (#7192). */
+  onChoseCluster: (context: string, kubeconfig: string) => void;
   onRecheck: () => void;
   said: (trouble: string) => void;
 }) {
-  const [picking, pick] = useState(kind === "remote-docker" ? "remote" : "local");
+  const [picking, pick] = useState(
+    kind === "remote-docker" ? "remote" : kind === "cluster" ? "cluster" : "local",
+  );
+  const [kubeconfig, setKubeconfig] = useState(contexts.kubeconfig ?? "");
   const next = step.next;
   const [context, setContext] = useState<string | undefined>(
     contexts.chosen ?? contexts.recommended ?? undefined,
@@ -151,8 +164,8 @@ function Where({
     } else if (action.id === "use-docker") onChose();
     else if (action.id === "use-cluster") {
       const to = context ?? contexts.recommended ?? contexts.names[0];
-      if (to === undefined) said("Choose a context under Options first.");
-      else onChoseCluster(to);
+      if (to === undefined) said("Choose a context first.");
+      else onChoseCluster(to, kubeconfig.trim());
     } else onRecheck();
   };
   const also = step.also;
@@ -161,17 +174,28 @@ function Where({
       {also.label}
     </Button>
   );
-  // **This machine, or another one with Docker** (ADR 0123 §6, #6265): offered while there is no
-  // pool, the core's own next for each.
-  if (step.other && step.state !== "attention") {
-    const local = kind === "docker" ? next : step.other;
-    const remote = kind === "remote-docker" ? next : step.other;
-    const chosen = picking === "remote" ? remote : local;
+  // **Three places, always** (#7191): This machine, another one with Docker, and a cluster, while
+  // there is no pool. The cluster is reachable whatever Docker here is, and whether or not a
+  // context was found: the card says what it lacks.
+  if (step.other || step.also || (pool === null && step.state !== "done")) {
+    const needsDocker = step.state === "attention";
+    const local = kind === "docker" ? next : (step.other ?? also);
+    const remote = kind === "remote-docker" ? next : (step.other ?? undefined);
+    const clusterNext = kind === "cluster" ? next : (also ?? undefined);
     const here = kind === "docker" && step.state !== "attention";
+    const named = picking === "cluster";
+    const chosen = picking === "remote" ? remote : picking === "local" ? local : undefined;
     // The core's own words for each way on, and Continue where it is already the one chosen.
     const chosenAlready =
-      step.state === "done" && picking === (kind === "docker" ? "local" : "remote");
-    const mainLabel = chosenAlready ? "Continue" : (chosen?.label ?? "Continue");
+      step.state === "done" &&
+      picking === (kind === "docker" ? "local" : kind === "cluster" ? "cluster" : "remote");
+    const clusterLabel = clusterNext?.id === "use-cluster" ? clusterNext.label : "Use this cluster";
+    const mainLabel = chosenAlready
+      ? "Continue"
+      : named
+        ? clusterLabel
+        : (chosen?.label ?? "Continue");
+    const canCluster = context !== undefined && kubeconfig.trim() !== "";
     return (
       <>
         <StepHead title={WHERE_TITLE} lead={WHERE_LEAD} />
@@ -190,28 +214,58 @@ function Where({
             title={<span className="pool-setup-choice">Another machine with Docker</span>}
             detail="A second Mac, a Linux box or a server, reached over SSH. Your chats keep running there while this machine sleeps."
           />
+          <OptionCard
+            value="cluster"
+            icon={<Server size={18} />}
+            title={<span className="pool-setup-choice">A Kubernetes cluster</span>}
+            detail="Your team's cluster. Each chat gets its own pod, made for you alone by the cluster operator. purlis signs in with your kubeconfig."
+          />
         </OptionCards>
-        {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+        {picking === "local" &&
+          (needsDocker ? (
+            <Card>
+              <Findings step={step} />
+              <Rechecking />
+            </Card>
+          ) : (
+            <Findings step={step} />
+          ))}
+        {named && (
+          <ClusterFields
+            contexts={contexts}
+            kubeconfig={kubeconfig}
+            onKubeconfig={setKubeconfig}
+            context={context}
+            onContext={setContext}
+          />
+        )}
+        {!named && step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
         <Action
           does={
-            step.state === "done" && picking === (kind === "docker" ? "local" : "remote")
+            chosenAlready
               ? undefined
-              : chosen?.does
+              : named
+                ? "Keeps this context for the pool. Next, doctor looks at what the cluster has."
+                : chosen?.does
           }
-          main={mainLabel}
-          reserve={[local?.label, remote?.label, "Continue"].filter(
+          main={picking === "local" && needsDocker && !chosen ? undefined : mainLabel}
+          busy={named && !chosenAlready && !canCluster}
+          reserve={[local?.label, remote?.label, clusterLabel, "Continue"].filter(
             (one): one is string => one !== undefined,
           )}
           onMain={() => {
-            if (picking === "remote") {
+            if (named) {
+              if (chosenAlready) onNext();
+              else if (canCluster) onChoseCluster(context, kubeconfig.trim());
+            } else if (picking === "remote") {
               if (kind === "remote-docker" && step.state === "done") onNext();
+              else if (step.prefill && kind === "docker") onChoseRemote(step.prefill);
               else onChoseRemote();
-            } else if (kind === "docker" && step.state === "done") onNext();
+            } else if (needsDocker && chosen) press(chosen);
+            else if (kind === "docker" && step.state === "done") onNext();
             else onChose();
           }}
-        >
-          {picking === "local" && other}
-        </Action>
+        />
       </>
     );
   }
@@ -255,12 +309,6 @@ function Where({
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
       {next && onlySaid ? (
         <Action does={next.does}>
-          {/* Docker here points at another machine: set up a pool there (#6268). */}
-          {step.other?.id === "use-remote-docker" && (
-            <Button variant="secondary" onPress={() => onChoseRemote(step.prefill)}>
-              {step.other.label}
-            </Button>
-          )}
           {other}
         </Action>
       ) : next ? (
@@ -568,10 +616,11 @@ function PoolSetupGuide({
               }}
               contexts={setup.contexts}
               said={setTrouble}
-              onChoseCluster={(context) => {
+              pool={setup.pool}
+              onChoseCluster={(context, kubeconfig) => {
                 setTrouble(undefined);
                 setShowing(undefined);
-                void commands.poolSetupChooseCluster(context).then((answer) => {
+                void commands.poolSetupChooseCluster(context, kubeconfig).then((answer) => {
                   if (answer.status === "error") setTrouble(answer.error);
                   else reread();
                 });

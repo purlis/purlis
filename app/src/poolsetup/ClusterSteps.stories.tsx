@@ -67,6 +67,7 @@ const CONTEXTS = {
   joining: false,
   pinned: null,
   key_changed: false,
+  kubeconfig: null,
 };
 
 const shown = (
@@ -188,6 +189,7 @@ export const NoClusterInTheKubeconfig: Story = {
         joining: false,
         pinned: null,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
   ),
@@ -220,6 +222,7 @@ export const NoKubectl: Story = {
         joining: false,
         pinned: null,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
   ),
@@ -489,6 +492,7 @@ const onPool = (findings: string, next: PoolSetupAction, pools: string[]) =>
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: null,
     },
   );
 
@@ -574,6 +578,7 @@ export const MarkThePoolAsYourOwn: Story = {
         joining: false,
         pinned: null,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
   ),
@@ -604,6 +609,7 @@ const TEAMMATE = {
   joining: true,
   pinned: null,
   key_changed: false,
+  kubeconfig: null,
 };
 
 const ADMINS_KEY = "ed25519:4b7e1a9c3d5f7b2e8a0c6d4f1b3e5a7c9d2f4b6e8a1c3d5f7b9e2a4c6d8f0b1e";
@@ -721,6 +727,7 @@ export const AChangedKeyAsksAgain: Story = {
         joining: false,
         pinned: KEY,
         key_changed: true,
+        kubeconfig: null,
       },
     ),
     pool: "team",
@@ -752,6 +759,7 @@ export const TheKeyPinnedHereForTeammates: Story = {
         joining: false,
         pinned: KEY,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
     pool: "team",

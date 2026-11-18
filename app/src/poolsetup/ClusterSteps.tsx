@@ -17,6 +17,7 @@ import { Radio, RadioGroup } from "../ui/choice/Radio";
 import { CodeBlock } from "../ui/code/CodeBlock";
 import { Disclosure } from "../ui/disclosure/Disclosure";
 import { TextField } from "../ui/field/Field";
+import { Select } from "../ui/select/Select";
 import { addClusterPool, checkClusterPoolKey, keyNotConfirmed } from "../pools";
 import { Action, Busy, Options, Recommended, Say, SeeWhat, StepHead } from "./parts";
 
@@ -64,6 +65,96 @@ export function ContextOptions({
   );
 }
 
+/**
+ * **The cluster card's two fields** (#7192): the one kubeconfig file, named and never inherited
+ * from `KUBECONFIG` (#3292), and a pick among that file's contexts. Typing another file reads its
+ * contexts again, through kubectl, which leaves every credential out. Only the file's path and
+ * the context's name are kept, on this machine, and never committed.
+ */
+export function ClusterFields({
+  contexts,
+  kubeconfig,
+  onKubeconfig,
+  context,
+  onContext,
+}: {
+  contexts: PoolSetupContexts;
+  kubeconfig: string;
+  onKubeconfig: (to: string) => void;
+  context: string | undefined;
+  onContext: (to: string | undefined) => void;
+}) {
+  // What a file typed holds, read by its own path; nothing while it is the file the core read.
+  const [typed, setTyped] = useState<
+    { file: string; names: string[]; current: string | null } | { file: string; trouble: string }
+  >();
+  const same = kubeconfig.trim() === (contexts.kubeconfig ?? "");
+  useEffect(() => {
+    const file = kubeconfig.trim();
+    if (same || file === "") return;
+    let live = true;
+    const timer = window.setTimeout(() => {
+      void commands.clusterContexts(file).then((answer) => {
+        if (!live) return;
+        if (answer.status === "error") {
+          setTyped({ file, trouble: answer.error });
+          onContext(undefined);
+        } else {
+          setTyped({ file, names: answer.data.contexts, current: answer.data.current });
+          const pick = answer.data.current ?? answer.data.contexts[0];
+          onContext(pick);
+        }
+      });
+    }, 300);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+    // The context is set by the answer, never read back into this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kubeconfig, same]);
+  const settled = typed && typed.file === kubeconfig.trim() ? typed : undefined;
+  const trouble = settled && "trouble" in settled ? settled.trouble : undefined;
+  const names = settled && "names" in settled ? settled.names : same ? contexts.names : [];
+  const recommended =
+    settled && "names" in settled ? (settled.current ?? undefined) : (contexts.recommended ?? undefined);
+  const none = names.length === 0 && trouble === undefined;
+  return (
+    <div className="pool-setup-cluster-fields">
+      <TextField
+        label="Kubeconfig file"
+        value={kubeconfig}
+        onChange={onKubeconfig}
+        placeholder="~/.kube/config"
+        help="One file, as kubectl reads it. purlis keeps its path here and never merges several."
+        error={trouble}
+      />
+      <Select
+        aria-label="Context"
+        value={context ?? ""}
+        placeholder={none ? "No context in this file" : "Choose a context"}
+        isDisabled={names.length === 0}
+        options={names.map((name) => ({
+          value: name,
+          label: name === recommended ? `${name} (recommended)` : name,
+        }))}
+        onValueChange={onContext}
+      />
+      {none && (
+        <p className="pool-setup-does">
+          {kubeconfig.trim() === ""
+            ? "Name the kubeconfig file your cluster's sign-in is in."
+            : "This file names no context, so there is no cluster to reach through it."}
+        </p>
+      )}
+      <p className="pool-setup-does">
+        purlis reaches the cluster with your own sign-in, through kubectl, and keeps only the
+        file&apos;s path and the context&apos;s name.
+      </p>
+    </div>
+  );
+}
+
 const CHECK_LEAD =
   "Doctor looks at what the cluster has before anything changes. It only reads, with your own sign-in.";
 
@@ -90,7 +181,16 @@ export function CheckStep({
   onRecheck: () => void;
 }) {
   const [refused, setRefused] = useState<string>();
+  const [folder, setFolder] = useState("");
   const waiting = step.state === "waiting";
+  const needsPlugin = step.next?.id === "use-plugin-folder";
+  const keepFolder = () => {
+    setRefused(undefined);
+    void commands.poolSetupPluginFolder(folder.trim()).then((answer) => {
+      if (answer.status === "error") setRefused(answer.error);
+      else onRecheck();
+    });
+  };
   const press = (id: string) => {
     setRefused(undefined);
     const done =
@@ -142,8 +242,22 @@ export function CheckStep({
         </Say>
       )}
       {step.see && <SeeWhat text={step.see.text} note={step.see.note} />}
+      {needsPlugin && (
+        <TextField
+          label="Folder with the plugin"
+          value={folder}
+          onChange={setFolder}
+          placeholder="~/google-cloud-sdk/bin"
+          help="Only this folder is added to the commands purlis runs for this cluster. Your shell's own search path isn't."
+        />
+      )}
       {step.next ? (
-        <Action does={also?.does ?? step.next.does} main={step.next.label} onMain={onRecheck}>
+        <Action
+          does={also?.does ?? step.next.does}
+          main={step.next.label}
+          busy={needsPlugin && folder.trim() === ""}
+          onMain={needsPlugin ? keepFolder : onRecheck}
+        >
           {also && (also.id === "send-to-admin" || also.id === "stop-waiting") && (
             <Button variant="secondary" onPress={() => press(also.id)}>
               {also.label}

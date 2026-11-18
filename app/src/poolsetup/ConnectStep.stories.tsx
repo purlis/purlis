@@ -111,6 +111,7 @@ const shown = (step: PoolSetupStep, pool: string | null = null): PoolSetupShown 
     joining: false,
     pinned: null,
     key_changed: false,
+    kubeconfig: null,
   },
   steps: [step],
 });

@@ -695,6 +695,7 @@ macro_rules! app_commands {
                 poolsetuptab::pool_setup_tls_files,
                 poolsetuptab::pool_setup_choose_owned,
                 poolsetuptab::pool_setup_choose_cluster,
+                poolsetuptab::pool_setup_plugin_folder,
                 poolsetuptab::pool_setup_install,
                 poolsetuptab::pool_setup_operator_image,
                 poolsetuptab::pool_setup_cluster_pool,

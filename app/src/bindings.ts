@@ -4464,7 +4464,13 @@ export const commands = {
 	 *  `context` (#4492): its name alone. Nothing on the cluster changes. With no context, only the
 	 *  kind is kept, as Add a cluster pool… opens Pool setup: Where then recommends a context.
 	 */
-	poolSetupChooseCluster: (context: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context })),
+	poolSetupChooseCluster: (context: string | null, kubeconfig: string | null) => typedError<null, string>(__TAURI_INVOKE("pool_setup_choose_cluster", { context, kubeconfig })),
+	/**
+	 *  **Keeps the folder a kubeconfig's credential plugin is in** (#7192), named where purlis found
+	 *  it in none of the usual install folders. Only that folder is added to the commands purlis runs
+	 *  for the cluster.
+	 */
+	poolSetupPluginFolder: (folder: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_plugin_folder", { folder })),
 	/**
 	 *  **Applies one part of a cluster's install** (#4493), on that part's own button: `upstream`,
 	 *  `definitions`, `signing-key` or `operator`, to the cluster chosen on Where, with the person's
@@ -14793,6 +14799,11 @@ export type PoolSetupContexts = {
 	chosen: string | null,
 	/**  The chosen cluster's Pools, by name, where its operator runs (#4494). */
 	pools: string[],
+	/**
+	 *  The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+	 *  home's `.kube/config` where it exists. Its path, nothing of what is in it.
+	 */
+	kubeconfig: string | null,
 	/**
 	 *  Whether the person joins their team's install (#4495): the key is then confirmed by
 	 *  pasting the one their admin gave them.
