@@ -108,7 +108,15 @@ fn a_desktop_waiting(
     pinned: impl Fn(&Kept) -> Pinned,
     waits: Arc<dyn Fn() + Send + Sync>,
 ) -> (Hosting, Hosting) {
-    let b = Hosting::running_with(Echo, StandIns::default());
+    a_desktop_over(Hosting::running_with(Echo, StandIns::default()), pinned, waits)
+}
+
+/// [`a_desktop_waiting`], whose runner is the host `b`.
+fn a_desktop_over(
+    b: Hosting,
+    pinned: impl Fn(&Kept) -> Pinned,
+    waits: Arc<dyn Fn() + Send + Sync>,
+) -> (Hosting, Hosting) {
     let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
     let pinned = pinned(&runner);
     let connector = ToTheRunner {
@@ -1034,4 +1042,66 @@ async fn a_start_that_takes_too_long_is_stopped_naming_the_step_it_was_stuck_on(
     let said = refused.to_string();
     assert!(said.contains("300 milliseconds"), "{said}");
     assert!(said.contains("linking to the runner"), "{said}");
+}
+
+/// A runner whose start takes `0` to compose: it began, and answers after the desktop gave up.
+struct SlowEcho(Duration);
+
+impl Compose for SlowEcho {
+    fn compose(&self, starting: &ToCompose<'_>) -> Result<Spec, String> {
+        std::thread::sleep(self.0);
+        Ok(Spec::new("/bin/echo", starting.size))
+    }
+}
+
+/// **A start that gave up does not leave its chat on the runner** (#7187, the steward's decision
+/// 2): the runner began the program, the three minutes ran out before it answered, and the
+/// window was told the start failed. The desktop's host closes what it began there, so no chat
+/// the window never heard of is left running on the runner.
+#[tokio::test]
+async fn a_start_given_up_on_is_closed_on_the_runner_if_it_began_after_all() {
+    const PROJECT: &str = "01J9PRJCT00000000000000000";
+    const PROGRAM: &str = "01J9PROGRAM000000000000000";
+    let b = Hosting::running_with(SlowEcho(Duration::from_millis(900)), StandIns::default());
+    let (a, b) = a_desktop_over(b, Kept::pinned, Arc::new(|| {}));
+    let a = a
+        .waiting_for_a_down_link(PATIENCE)
+        .starting_within(Duration::from_millis(300));
+    let window = routed(Scope::LocalUi, a).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let folder = tempfile::tempdir().expect("a folder for the project");
+    window
+        .hold_project(PROJECT, &folder.path().to_string_lossy())
+        .await
+        .expect("held");
+    let mut start = session::StartProgram::of(PROJECT, session::ProgramKind::Shell);
+    start.program = Some(PROGRAM.into());
+    let refused = window
+        .start_program(start)
+        .await
+        .expect_err("the start was given up on");
+    assert_eq!(code(&refused), Some(session::NOT_STARTED), "{refused}");
+    // It began there all the same: the runner answers late, and the program is closed.
+    let there = straight(b).await;
+    there
+        .hold_project(PROJECT, &folder.path().to_string_lossy())
+        .await
+        .expect("held there too");
+    let began = std::time::Instant::now();
+    let mut seen = false;
+    loop {
+        let held = there.programs_of(PROJECT).await.expect("the runner answers");
+        seen |= !held.is_empty();
+        if seen && held.is_empty() {
+            break;
+        }
+        assert!(
+            began.elapsed() < PATIENCE,
+            "the runner began it ({seen}) and a program the window never heard of is left: {held:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
 }

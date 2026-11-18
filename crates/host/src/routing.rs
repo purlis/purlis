@@ -342,6 +342,19 @@ impl session::Host for Routed {
                 // (#7187): nothing on the remote path hangs for ever.
                 if matches!(command, Command::StartProgram(_)) {
                     let within = self.hosting.start_within();
+                    // The window's start names its program, so a start given up on can be
+                    // closed on the runner if the runner began it all the same; one that names
+                    // none is given a name here.
+                    let mut command = command;
+                    let program = match &mut command {
+                        Command::StartProgram(start) if peer.scope() == Scope::LocalUi => Some(
+                            start
+                                .program
+                                .get_or_insert_with(|| ulid::Ulid::generate().to_string())
+                                .clone(),
+                        ),
+                        _ => None,
+                    };
                     return match tokio::time::timeout(
                         within,
                         self.goes_there(&relay, command, peer),
@@ -349,14 +362,25 @@ impl session::Host for Routed {
                     .await
                     {
                         Ok(answered) => answered,
-                        Err(_) => Err(Refusal {
-                            code: session::NOT_STARTED.into(),
-                            why: format!(
-                                "the start took longer than {} and was stopped while {}",
-                                how_long(within),
-                                relay.step_of(peer)
-                            ),
-                        }),
+                        Err(_) => {
+                            let step = relay.step_of(peer);
+                            // Decision 2 (#7187): a start the runner began after the window
+                            // was told it failed does not leave a chat running there.
+                            if let Some(program) = program {
+                                relay.closes_a_late_start(
+                                    peer,
+                                    program,
+                                    (within / 180).max(std::time::Duration::from_millis(10)),
+                                );
+                            }
+                            Err(Refusal {
+                                code: session::NOT_STARTED.into(),
+                                why: format!(
+                                    "the start took longer than {} and was stopped while {step}",
+                                    how_long(within),
+                                ),
+                            })
+                        }
                     };
                 }
                 self.goes_there(&relay, command, peer).await

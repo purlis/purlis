@@ -279,6 +279,10 @@ impl Relay {
     }
 }
 
+/// How many times a start given up on is closed on the runner, if the runner began it
+/// ([`Relay::closes_a_late_start`]): at once, then after `every`, twice that, and so on.
+const LATE_START_TRIES: usize = 9;
+
 impl Relay {
     /// **The step `peer`'s start is on, in words** (#7187): where the link to the other host is.
     /// Said when a start has taken too long.
@@ -294,6 +298,46 @@ impl Relay {
             Standing::Over(None) => "the link to the runner, which had ended".to_owned(),
             Standing::Up(_) => "the runner starting the program".to_owned(),
         }
+    }
+
+    /// **Closes `program` on the other host, if a start that was given up on began it after all**
+    /// (#7187): the start ran out of time and its client was told it failed, but the runner may
+    /// have begun the program meanwhile, and a chat nobody knows of would run there for ever.
+    /// Tried at once and again, each time after twice the last pause from `every`, for as long as
+    /// [`LATE_START_TRIES`] say, on the link the start went over; a runner that holds no such
+    /// program refuses each try, which is the usual end of it. Done on a task of its own: the
+    /// start's refusal does not wait for it.
+    pub(crate) fn closes_a_late_start(
+        &self,
+        peer: &Peer,
+        program: String,
+        every: std::time::Duration,
+    ) {
+        let Ok(relayed) = self.relayed(peer) else {
+            return;
+        };
+        let standing = relayed.standing.clone();
+        tokio::spawn(async move {
+            let mut pause = std::time::Duration::ZERO;
+            for _ in 0..LATE_START_TRIES {
+                tokio::time::sleep(pause).await;
+                let up = match &*standing.borrow() {
+                    Standing::Up(up) => Some(Arc::clone(up)),
+                    _ => None,
+                };
+                if let Some(up) = up
+                    && up
+                        .call(Command::Close {
+                            program: program.clone(),
+                        })
+                        .await
+                        .is_ok()
+                {
+                    return;
+                }
+                pause = if pause.is_zero() { every } else { pause * 2 };
+            }
+        });
     }
 
     /// **Waits, for at most `patience`, for the link `peer`'s commands go over to come up** (#4403):
