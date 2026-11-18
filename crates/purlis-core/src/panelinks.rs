@@ -31,6 +31,7 @@ mod asks;
 mod file;
 mod osc8;
 pub use asks::{Asks, Identity};
+pub(crate) use file::guarded_folders;
 pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
 mod chat;
 pub mod onrunner;

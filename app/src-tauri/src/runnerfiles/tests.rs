@@ -318,6 +318,7 @@ mod over_real_files {
                 reach,
                 at,
                 machine: &purlis_core::sandbox::Machine::this(),
+                guarded: &[],
             }))
         }
     }

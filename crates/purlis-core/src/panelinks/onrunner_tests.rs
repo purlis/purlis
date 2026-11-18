@@ -19,6 +19,8 @@ struct Runner {
     /// The runner's home, beside the project, and the runner as purlis knows it.
     home: PathBuf,
     machine: crate::sandbox::Machine,
+    /// The folders a hover never looks in there.
+    guarded: Vec<PathBuf>,
 }
 
 /// A runner whose home is `home`, as purlis knows a runner: Linux, with no variable moving a
@@ -55,6 +57,7 @@ fn runner() -> Runner {
         outside,
         machine: machine_at(&home),
         home,
+        guarded: Vec::new(),
     }
 }
 
@@ -67,6 +70,7 @@ impl Runner {
             reach,
             at,
             machine: &self.machine,
+            guarded: &self.guarded,
         }
     }
 
@@ -280,6 +284,7 @@ fn a_workspace_reached_through_a_link_holds_only_what_resolves_inside_it() {
         reach: FileReach::Workspace,
         at: None,
         machine: &r.machine,
+        guarded: &[],
     };
 
     assert_eq!(
@@ -638,6 +643,7 @@ fn a_project_the_runner_keeps_in_its_data_home_is_read_and_the_rest_of_it_is_not
             reach: FileReach::Anywhere,
             at: Some(0),
             machine: &machine,
+            guarded: &[],
         })
     };
 
@@ -703,7 +709,59 @@ fn a_hard_link_between_two_files_of_a_project_in_the_data_home_is_read() {
         reach: FileReach::Workspace,
         at: Some(0),
         machine: &machine,
+        guarded: &[],
     });
 
     assert_eq!(piece(&read).bytes, b"# notes\n");
+}
+
+/// A runner whose `mnt/` beside the project is a folder a hover never looks in, with a file on
+/// it.
+fn with_a_mount() -> (Runner, PathBuf) {
+    let mut r = runner();
+    let mount = r.project.parent().expect("a parent").join("mnt");
+    write(&mount.join("usb/notes.txt"), b"on a volume\n");
+    r.guarded = vec![mount.clone()];
+    (r, mount)
+}
+
+#[test]
+fn a_file_on_a_folder_the_host_never_looks_in_is_not_looked_at_on_the_runner_either() {
+    let (r, mount) = with_a_mount();
+    let path = r.shown(&mount.join("usb/notes.txt"));
+
+    assert_eq!(r.look_anywhere(&path), FileRead::NotThere);
+    assert_eq!(r.read(&path, FileReach::Anywhere, 0), FileRead::NotThere);
+    // As far as the folder itself: the walk stops before it asks about it.
+    assert_eq!(r.look_anywhere(&r.shown(&mount)), FileRead::NotThere);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_out_of_the_workspace_into_a_folder_never_looked_in_is_not_followed() {
+    let (r, mount) = with_a_mount();
+    std::os::unix::fs::symlink(mount.join("usb"), r.cwd.join("usb")).expect("a link");
+
+    assert_eq!(r.look_anywhere("usb/notes.txt"), FileRead::NotThere);
+}
+
+#[test]
+fn a_file_outside_the_workspace_elsewhere_is_looked_at_as_the_host_looks() {
+    let (r, _mount) = with_a_mount();
+
+    let found = r.look_anywhere(&r.shown(&r.outside));
+
+    assert_eq!(plain(&found), (r.shown(&r.outside).as_str(), None));
+}
+
+#[test]
+fn the_chats_own_project_is_read_inside_a_folder_never_looked_in() {
+    let mut r = runner();
+    // The project itself is on such a volume: what purlis reads already is read.
+    r.guarded = vec![r.project.parent().expect("a parent").to_path_buf()];
+
+    assert_eq!(
+        plain(&r.look("src/main.rs")).1,
+        Some("repos/web/src/main.rs")
+    );
 }

@@ -14,6 +14,9 @@
 //!   the path is resolved on this side, the side that owns the file, and only the resolved path
 //!   is held to the chat's workspace, so `..` and a link that leads out are outside, and one
 //!   that stays in is followed.
+//! - **Some folders are never looked in** (#7076), as the host's own hover never looks in them
+//!   ([`Asked::guarded`]: removable, network and automounted volumes): a path into one, or a
+//!   link that leads into one, is not there, unless it is in the chat's project or folder.
 //! - **The workspace** is the chat's workspace folder in its project, or the project for a chat
 //!   at its root, as the desktop counts a chat's home (`super::home_of`).
 //! - **Outside it is not read** unless the person answered an ask for it
@@ -48,6 +51,9 @@ pub struct Asked<'a> {
     /// The runner, as purlis knows its home and its environment: where its own folders and
     /// each harness's sign-in are ([`kept`]).
     pub machine: &'a crate::sandbox::Machine,
+    /// The folders a hover never looks in there, as the host's own hover never does
+    /// (`file::guarded_folders`, #7076): removable, network and automounted volumes.
+    pub guarded: &'a [PathBuf],
 }
 
 /// The folders of the system's own files, which are never read, whatever they say they are.
@@ -68,7 +74,13 @@ pub fn read_for_window(asked: &Asked<'_>) -> FileRead {
             None => return FileRead::NotThere,
         }
     };
-    let Ok(resolved) = std::fs::canonicalize(&joined) else {
+    // Walked as the host walks a path for its hover (#7076): every link followed on this side,
+    // and never into a folder a hover never looks in, but the chat's project and folder.
+    let allowed: Vec<PathBuf> = std::iter::once(asked.project)
+        .chain(asked.cwd)
+        .filter_map(|folder| std::fs::canonicalize(folder).ok())
+        .collect();
+    let Some(resolved) = super::file::walked(&joined, asked.guarded, &allowed) else {
         return FileRead::NotThere;
     };
     let Some(path) = resolved.to_str().map(str::to_owned) else {
