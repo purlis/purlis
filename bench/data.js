@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794969076384,
+  "lastUpdate": 1794976076097,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51114,6 +51114,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1421905,
             "unit": "ms",
             "extra": "median of 5 runs: 100.084, 100.979, 102.142, 102.193, 102.707 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "74d70227e5703f7ca84507ffc26420722d4b354d",
+          "message": "Dispatch's full precedence over sealed grants, sealed nevers, the vaults family, and the chat's id at the app's choke points (Q308 follow-up B, T1.1-73) (#7113)\n\n* plane-format: the sealed set of dispatch answers, sealed nevers with a presence marker, and [dispatch.denies] (#6968)\n\nThe format comes first (ticket T1.1-73): each dispatch grant, acceptance and never carries its\nown seal over kind, anchor, text and generation; the set's counter and live list are anchored in\nthe purlis-seal keyring item (Tier: Keyring); a deleted or emptied nevers file reads as unread.\n[dispatch.denies] is the policy deny of dispatch's precedence.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Dispatch's full precedence over sealed grants, sealed nevers, the vaults family and the chat's id at the app's choke points (#6968)\n\nItems 2, 4 and 8 of the Q308 follow-up with ticket T1.1-73: a per-entry sealed set\n(secrets/sealed_set.rs) for dispatch grants, acceptances and nevers; covers() in the order\nlock > never > policy deny > same persona > policy allow > sealed grant > policy ask, with\n[dispatch.denies]; Unsandboxed only at an ask with no sealed grant, kept for needs-you; a\nsealed grant honoured for an unsandboxed unattended chat on macOS only; a dispatched chat never\nlooser than its asker; vaults off/enforce; the chat's id carried to brokered commit, brokered\nsecret exec and the dispatch decision.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Fit main's new seal helpers and tests, and the Dispatch settings' new fields in the bindings (#6968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Answer a policy deny in the app's dispatch paths, fit the app's no-sandbox tests to T1.1-73, and format (#6968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Prettier on the Dispatch settings (#6968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Fit the tests that pinned unsealed grants and the old no-sandbox answer to T1.1-73; the crossing rule stands aside only where no seal holds (#6968)\n\nContracts moved on purpose: grants and acceptances an older build or a hand wrote count as none;\nan unsandboxed unattended chat with a grant is refused NotSealedHere where no seal holds, and with\nnone is refused Unsandboxed and kept for needs-you; a dispatched chat's record carries its asker's\npolicy. The handoff's crossing rule now holds for an unsandboxed chat where a sealed grant could\ncover it, so it is never skipped for a dispatch the seal lets through.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* A hand-edited dormant entry's test grants through the app, as a sealed grant must be made (#6968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* DO NOT MERGE: deliberate mutations for T1.1-73's red-first evidence, reverted by the next commit (#6968)\n\nEach MUTATION(n) disables one guarantee, so CI shows which test goes red for it:\n1 lock after never, 2 never let through under log/off, 3 no policy deny, 4 same persona needs a\ngrant, 5 project grants no policy allow, 6 no sealed grant for an unsandboxed chat, 7 no-sandbox\nask not kept, 8 lists read unsealed, 9 nevers' seal not read, 10 HOLD_ARG writer takes the seal\nservice, 11 no dispatch log line, 12 child runs as its project alone, 13 vaults never off.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Revert the deliberate mutations: every T1.1-73 guarantee was seen red under its own (#6968)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7M2R8WE9DETPPHY97E3DZ7H\nPurlis-Persona: steward\n\n* Dispatch denies are read as [policy] is, and the nevers' anchor follows the plane's path (review of #7113)\n\n- [dispatch.denies] is read from the committed file at HEAD with [policy], kept in the sealed\n  acceptance: a deny taken away waits for the press, and a file that does not read denies every\n  dispatch across personas.\n- The keyring anchors a plane by its path as reached (parent resolved, last folder never\n  followed): a plane moved with a link left at its old path keeps its anchor. A set the app\n  wrote once with no anchor now reads as broken.\n- reseal: a write while the key does not read takes its removals' seals with it; a seal never\n  follows an answer to a wider workspace; a limited grant's workspace count is sealed.\n- No keyring is told apart from a keyring that fails, and the window says so.\n- A dispatched chat's chain is carried at the unattended answer (with its log line), the\n  brokered commit's scan, the vaults check and the masking of a brokered run.\n- rests_on_a_seal, which nothing called, is gone.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NF609HS9JZYRTRSZEQD26Q\nPurlis-Persona: steward\n\n* DO NOT MERGE: deliberate mutations for the #7113 fix round's red-first evidence, reverted by the next commit\n\nThirteen tagged MUTATION(n)s, one per new guarantee and one for each of the two pins that\nstayed green last round (off-macOS NotSealedHere, a hand-added never).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NF609HS9JZYRTRSZEQD26Q\nPurlis-Persona: steward\n\n* Revert the deliberate mutations: every new guarantee of the #7113 fix round was seen red under its own\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NF609HS9JZYRTRSZEQD26Q\nPurlis-Persona: steward\n\n* A task's handed-from record in the task blocks' test keeps one policy\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7NF609HS9JZYRTRSZEQD26Q\nPurlis-Persona: steward\n\n* Regenerate the bindings and the UI RPC client for the policy pane's lifted denies, and format the no-keyring test (#7113)\n\nThe two generated-TypeScript checks were red on 46cbf456: PolicyWaiting's doc\nnow names a lifted dispatch deny.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P32S0WAK9P8RRGWG54K8TS\nPurlis-Persona: steward\n\n* An unreadable HEAD reads as strict with every dispatch denied, in main's #7073 test too (#7113)\n\nMain's new a_head_git_could_not_read_once_is_never_kept_as_accepted compared\nin_force against every family enforced alone; this PR makes a policy that\ndoes not read deny every dispatch across personas as well (Resolved::strict),\nas its own unread tests already assert.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7P32S0WAK9P8RRGWG54K8TS\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-18T03:48:26Z",
+          "tree_id": "4570d2ac762a7a28fa7f678d1adcf71849025835",
+          "url": "https://github.com/purlis/purlis/commit/74d70227e5703f7ca84507ffc26420722d4b354d"
+        },
+        "date": 1794976069635,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33519999999999994,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.318, 0.327, 0.335, 0.343, 0.348 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.318161999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.143, 16.261, 16.318, 16.330, 16.541 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.31548649999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.777, 100.982, 101.315, 101.871, 102.044 ms"
           }
         ]
       }
