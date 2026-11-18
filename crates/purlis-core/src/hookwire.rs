@@ -323,7 +323,8 @@ impl Report {
     }
 
     /// The report as it may be kept on disk: the same report without its prompt's marks, which
-    /// are digests of what the person typed and matter only to a host that hears it live.
+    /// are digests of what the person typed and matter only to a host that hears it live, and
+    /// without the folder the chat works in (#6367), which matters only live too.
     pub(crate) fn at_rest(&self) -> Report {
         let mut kept = self.clone();
         kept.detail.prompt_marks = crate::skillspan::PromptMarks::default();

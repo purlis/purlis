@@ -1179,3 +1179,22 @@ fn a_word_holding_a_colon_that_is_no_scheme_or_port_is_read_part_by_part() {
     ));
     assert!(asks_about_its_words("fe80::1%25eth0", "https://good.com/"));
 }
+
+#[test]
+fn a_folder_the_program_said_it_moved_to_never_quiets_a_marked_link_s_ask() {
+    // #6367: OSC 7 is the program's own word, as OSC 8 is. Words that name another file from
+    // where the chat started still ask, wherever it says it is now.
+    let here = fixture();
+    let links = links();
+    let main = here.url_of(&here.ws().join("src/main.rs"));
+    let moved = Pane {
+        now_in: Some(here.ws().join("src")),
+        ..here.chat()
+    };
+    let Opening::Ask { about, .. } =
+        ask(&links, &marked("main.rs", &main), &moved, &Asks::default())
+    else {
+        unreachable!()
+    };
+    assert_eq!(about, Asking::Misleading);
+}

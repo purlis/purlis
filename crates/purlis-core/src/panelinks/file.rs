@@ -6,10 +6,10 @@
 //! names, at its line and column.
 //!
 //! - **Only a file that is there links.** The text is joined to the folder the chat is in now,
-//!   or the one it started in (a relative path, #6367) or the home folder (`~/`), and walked one part at a time, every link on
-//!   the way followed by hand ([`LocalFile::walked`]). What is left must be a regular file.
-//!   Anything else is no link and says nothing on its hover ([`Resolved::Quiet`]): path-shaped
-//!   words are everywhere in a harness's output.
+//!   or the one it started in (a relative path, #6367) or the home folder (`~/`), and walked one
+//!   part at a time, every link on the way followed by hand ([`LocalFile::walked`]). What is
+//!   left must be a regular file. Anything else is no link and says nothing on its hover
+//!   ([`Resolved::Quiet`]): path-shaped words are everywhere in a harness's output.
 //! - **Some folders are never looked in for a hover** ([`LocalFile::guarded`]): the folders the
 //!   operating system asks the person before an app reads them (macOS's Documents, Desktop,
 //!   Downloads, Mail…), and removable, network and automounted volumes, where a look can stall.
@@ -441,7 +441,8 @@ impl LinkKind for LocalFile {
 
 impl LocalFile {
     /// `words` as a path on this machine: from `/`, from the home folder for `~/`, and from the
-    /// folder the chat is in now otherwise, or the one it started in ([`Pane::starts_from`]). `None` where there is no folder to start from.
+    /// folder the chat is in now otherwise, or the one it started in ([`Pane::starts_from`]).
+    /// `None` where there is no folder to start from.
     fn joined(&self, words: &str, pane: &Pane) -> Option<PathBuf> {
         if let Some(rest) = words.strip_prefix("~/") {
             return Some(self.home.as_ref()?.join(rest));

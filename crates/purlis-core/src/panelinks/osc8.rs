@@ -561,7 +561,9 @@ fn same_file(words: &str, file: &Path, pane: &Pane) -> bool {
     } else if Path::new(words).is_absolute() {
         PathBuf::from(words)
     } else {
-        let Some(base) = pane.starts_from().or(pane.project.as_deref()) else {
+        // From where the chat started, never where it says it is now (#6367): a program that
+        // marks a link could say it moved, and quiet the ask its words raise (ADR 0126).
+        let Some(base) = pane.folder.as_deref().or(pane.project.as_deref()) else {
             return false;
         };
         base.join(words)

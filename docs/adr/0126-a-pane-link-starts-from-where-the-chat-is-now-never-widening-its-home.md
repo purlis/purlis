@@ -36,8 +36,10 @@ that printed it, which may be a file the agent showed.
 
 ### 2. Where it is now moves one thing only: where a relative path starts
 
-`Pane::now_in` is used by `Pane::starts_from` alone: the file kind's `joined` and OSC 8's
-same-file check. **The home is still judged from the start folder**, and so is the list of
+`Pane::now_in` is used by `Pane::starts_from` alone: the file kind's `joined`, and an issue's
+number, whose remote is read only from a folder in the project. **OSC 8's check of a marked
+link's words still reads them from the start folder**: a program that marks a link could also
+say, by OSC 7, that it moved to where its words name the target, and so quiet the ask they raise. **The home is still judged from the start folder**, and so is the list of
 guarded folders a hover may look in because they are the chat's. So a folder the chat moved to
 outside its workspace makes a relative path there exactly what the same path typed in full is: a
 link that asks first ("outside smart-ide"). One in a guarded folder is never looked in. A folder
