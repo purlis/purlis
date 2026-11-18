@@ -364,8 +364,16 @@ pub fn answer(
         // How each family of refusals runs for the asking chat (Q308): the app alone verifies
         // what the person accepted, so a hook asks it. No ticket, for the record's reason: the
         // answer is of the project this app holds the chat in, never one the line names.
-        Ask::Policy(_) => Answer::Policy {
-            spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
+        // A dispatched chat is never looser than its chain (Q308a, Q308b), by the app's record.
+        Ask::Policy(asked) => Answer::Policy {
+            spelled: purlis_core::enforcement::in_force(held.root())
+                .for_chat(
+                    held.chats()
+                        .handed_from(asked.chat)
+                        .and_then(|from| from.policy)
+                        .as_deref(),
+                )
+                .spelled(),
         },
         // One log line a hook hands over (Q308): written under the app's own record of the open
         // chat whose token the line carries, by its id. Refused (the re-review of #6992, S3) for
@@ -373,7 +381,14 @@ pub fn answer(
         // that is no `host:port`; nothing is written for an unidentified caller.
         Ask::PolicyLog(line) => match policy_line(held, &line) {
             Ok(()) => Answer::Policy {
-                spelled: purlis_core::enforcement::in_force(held.root()).spelled(),
+                spelled: purlis_core::enforcement::in_force(held.root())
+                    .for_chat(
+                        held.chats()
+                            .handed_from(line.chat)
+                            .and_then(|from| from.policy)
+                            .as_deref(),
+                    )
+                    .spelled(),
             },
             Err(why) => no(why),
         },
@@ -1900,7 +1915,7 @@ fn create_it(root: &std::path::Path, ws: &str, vision: &str) -> Result<(), Strin
     if wscmd::workspace_dir_exists(root, ws) {
         return Err(format!("workspace '{ws}' already exists"));
     }
-    wscmd::ensure::ensure(root, ws, chrono::Utc::now(), &wscmd::ensure::author())?;
+    wscmd::ensure::ensure(root, ws, jiff::Timestamp::now(), &wscmd::ensure::author())?;
     // The vision is written into the workspace `ensure` just scaffolded.
     let plane_on_disk = purlis_core::workspaces::Plane::open(root);
     if let Ok(workspace) = plane_on_disk.workspace(ws) {
@@ -2319,7 +2334,9 @@ pub const KEPT_BLOCKED_LISTED: usize = 50;
 
 /// A time as the dispatch records write one: RFC 3339, in UTC, to the second.
 fn now_stamp() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    jiff::Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 impl HeldDispatches {
@@ -2675,8 +2692,14 @@ fn dispatch_it(
 /// `dispatchgrants::asking_from` read it), so the no-sandbox refusal answers instead
 /// ([`purlis_core::dispatchunattended::answer_of`]). The same comparison that refusal makes,
 /// so the rule never stands aside for a dispatch the refusal would let through.
+///
+/// **Only where no seal keeps a grant out of the chat's reach** (ticket T1.1-73): where one
+/// does (`dispatchunattended::sealed_here`), a sealed grant covers such a chat, so the
+/// refusal does not answer and the crossing rule holds as for a sandboxed chat.
 fn crossing_stands_aside(to: Option<&str>, runs_with: Option<&str>, sandboxed: bool) -> bool {
-    !sandboxed && to.is_some_and(|to| runs_with != Some(to))
+    !sandboxed
+        && !purlis_core::dispatchunattended::sealed_here()
+        && to.is_some_and(|to| runs_with != Some(to))
 }
 
 /// Why a dispatch started nothing ([`dispatch_noting`]).
@@ -2824,7 +2847,7 @@ fn dispatch_noting(
     // handoff's is the command's own stamp, with the asking chat named the way the person
     // sees it; where it works is the workspace that stamp's command named, so it has no line
     // of `on_a_branch` (D-T61-2).
-    let when = chrono::Local::now().naive_local();
+    let when = jiff::Zoned::now().datetime();
     let message = match (&wanted.moved, wanted.by) {
         (Some(moved), _) => handoff::delivered_noting(&moved.message, &asker, note.as_deref())
             .expect("the stamp was read a moment ago"),
@@ -3170,6 +3193,9 @@ fn dispatch_noting(
             by_person: wanted.by == By::Person,
             // A chat's own task, as it asked (#3905).
             long: wanted.long_task(),
+            // Never looser than the chat that asked (Q308a, Q308b): its policy, as the decision
+            // read it from this app's record of it.
+            policy: asked.policy,
         };
         // Its number is dealt here, so the slot is the chat it is about to be.
         let number = held.chats().sessions().deal();
@@ -3451,7 +3477,7 @@ fn dispatch_noting(
         )
         // By its stable id too: what its branch folder's one live writer is named by (#3901).
         .for_chat(held.chats().id_of(arrived.session));
-        if purlis_core::chatpiece::claim(root, cut, &who, chrono::Utc::now()).is_none() {
+        if purlis_core::chatpiece::claim(root, cut, &who, jiff::Timestamp::now()).is_none() {
             tracing::warn!("purlis: a dispatch's worktree was not logged as claimed");
         }
     }
@@ -3556,7 +3582,7 @@ fn held_handoff_todo(held: &Held, moved: &Moved) -> Option<String> {
         return None;
     }
     target
-        .add_todo(&text, chrono::Local::now().naive_local())
+        .add_todo(&text, jiff::Zoned::now().datetime())
         .err()
         .map(|why| {
             format!(
@@ -4679,6 +4705,7 @@ pub(crate) fn said_to_the_person(why: &dispatchdecision::Refused) -> String {
         | Refused::Held
         | Refused::NoPersonaNamed
         | Refused::Never(_)
+        | Refused::Denied(_)
         | Refused::Limit(Limit::TooManyMessages { .. }) => why.say(),
     }
 }

@@ -39,11 +39,31 @@ forge and cloud credential files from chats at the floor too, as `team` and `str
 sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
 `open` included: a dispatch never and a host you kept blocked.
 
+## Where the window shows it
+
+- **A chat's pane head** says the template and how many families are set apart from it (`team
+  +2`); its tooltip says the whole policy. A narrow pane drops it first.
+- **Settings › Project › Policy** lists the template, each family set apart and how your chats
+  run it now (stricter where a lock, a family not wired yet or a loosening that waits for your
+  Accept holds it), the families an administrator locks, and Accept for a loosening. Its
+  **Would have blocked** count is every chat's enforcement log, and opens it: the newest lines,
+  by rule, family, chat and the `host:port` a rule was about. A line that is not as purlis
+  writes it (an unknown rule, a host that is no `host:port`, another chat's) is left out and
+  counted apart.
+- **Where this machine's acceptance does not hold**, every family is enforced: the pane head says
+  `strict`, Settings says why and offers the Accept that seals it again, and nothing says
+  `watch` is the default.
+- **The move to `watch`** is announced once on each machine, in the first project that names no
+  template, and never while the acceptance does not hold.
+
+The window only says the policy; the app resolves it, as below.
+
 ## Who can change it
 
 - **Only a committed change counts**: the file is read as it stands at the plane root's `HEAD`.
-  Where git cannot read `HEAD` in time, or the repository has no commit yet, the project runs
-  `strict`, never the working tree's file.
+  Where git cannot read `HEAD` or the file's content in time, the plane's `.git` does not read,
+  or the repository has no commit yet, the project runs `strict`, never the working tree's file.
+  That is not kept as what you accepted: once git reads it again, the project runs as before.
 - **A tightening applies at once**, to every chat, from its next tool call.
 - **A loosening waits for your press.** The window names each family the project now runs looser
   than you accepted, with **Accept**, which accepts exactly what it showed you: if the committed

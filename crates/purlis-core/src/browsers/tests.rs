@@ -35,7 +35,7 @@ mod an_engines_age_at_a_start {
     use std::io;
     use std::sync::Mutex;
 
-    use chrono::{DateTime, TimeDelta};
+    use jiff::{SignedDuration, Timestamp};
     use purlis_browser_engine::install::{
         EngineSettings, Engines, Fetch, Manifest, NoSigner, Platform, Refused,
     };
@@ -68,7 +68,7 @@ mod an_engines_age_at_a_start {
 
     /// The start this build's pin gets `after` it was issued, neither read answering, on a
     /// machine that has installed nothing.
-    fn started(after: TimeDelta) -> Started {
+    fn started(after: SignedDuration) -> Started {
         let home = tempfile::tempdir().unwrap();
         let shipped = Manifest::shipped();
         let now = shipped.issued + after;
@@ -94,7 +94,7 @@ mod an_engines_age_at_a_start {
             answer,
             manifests,
             archives,
-        } = started(TimeDelta::days(22));
+        } = started(SignedDuration::from_hours(22 * 24));
         let refused = answer.expect_err("an engine past the limit does not start");
         assert!(
             matches!(refused, Refused::Outdated { days: 22 }),
@@ -119,7 +119,7 @@ mod an_engines_age_at_a_start {
             answer,
             manifests,
             archives,
-        } = started(TimeDelta::zero());
+        } = started(SignedDuration::ZERO);
         assert!(
             matches!(answer, Err(Refused::Download(_))),
             "it went on to download the pinned engine: {answer:?}"
@@ -130,11 +130,9 @@ mod an_engines_age_at_a_start {
 
     #[test]
     fn only_a_debug_build_takes_its_engines_clock_from_the_variable() {
-        let real = DateTime::parse_from_rfc3339("2030-01-01T00:00:00Z")
-            .unwrap()
-            .to_utc();
+        let real = str::parse::<Timestamp>("2030-01-01T00:00:00Z").unwrap();
         let asked = "2026-10-14T11:19:22Z";
-        let named = DateTime::parse_from_rfc3339(asked).unwrap().to_utc();
+        let named = str::parse::<Timestamp>(asked).unwrap();
         assert_eq!(engines_clock(true, Some(asked), real), named);
         assert_eq!(
             engines_clock(false, Some(asked), real),
@@ -457,7 +455,7 @@ fn a_machine_that_never_used_the_pinned_engine_is_never_checked_for_one() {
         &EngineSettings::default(),
         &asked,
         &asked,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     assert!(checked.is_none());
     assert!(asked.0.borrow().is_empty(), "nothing reached the network");
@@ -475,7 +473,7 @@ fn a_machine_with_the_pinned_engine_installed_reads_the_published_manifest_and_i
         &EngineSettings::default(),
         &manifests,
         &archives,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     assert!(
         matches!(checked, Some(Err(Refused::Download(_)))),
@@ -1922,9 +1920,7 @@ fn a_cancelled_download_keeps_nothing_in_the_engines_folder() {
         .prepare(
             &EngineSettings::default(),
             &reads,
-            chrono::DateTime::parse_from_rfc3339("2026-10-15T00:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc),
+            str::parse::<jiff::Timestamp>("2026-10-15T00:00:00Z").unwrap(),
         )
         .unwrap_err();
 
@@ -2242,5 +2238,115 @@ fn a_download_is_judged_on_what_its_browser_and_its_login_say_of_it_now() {
             keeps_off: None,
             signing_on: None,
         }
+    );
+}
+
+#[test]
+fn a_frame_tells_the_host_the_browsers_pages_by_id_title_and_origin_alone() {
+    // #6989: as `browser_pages` lists them, with no path, and which is current.
+    let painted = drive::Painted {
+        aim: drive::Aim {
+            page: drive::PageId::new("p1"),
+            document: 1,
+        },
+        address: "https://docs.example.test/a".into(),
+        title: "Docs".into(),
+        load: drive::PageLoad::Loaded,
+        pages: vec![
+            drive::ListedPage {
+                id: drive::PageId::new("p1"),
+                title: "Docs".into(),
+                origin: Some("https://docs.example.test".into()),
+                current: true,
+            },
+            drive::ListedPage {
+                id: drive::PageId::new("p2"),
+                title: String::new(),
+                origin: None,
+                current: false,
+            },
+        ],
+        downloads: Vec::new(),
+        jpeg: Vec::new(),
+    };
+    let page = super::page_of(&painted);
+    assert_eq!(
+        page.pages,
+        [
+            wire::ListedPage {
+                id: "p1".into(),
+                title: "Docs".into(),
+                origin: "https://docs.example.test".into(),
+                current: true,
+            },
+            wire::ListedPage {
+                id: "p2".into(),
+                title: String::new(),
+                origin: String::new(),
+                current: false,
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_persons_pick_of_a_page_reaches_the_engine_as_theirs_to_watch() {
+    let input = super::input_of(&wire::Input::Watch {
+        aim: wire::Aim {
+            page: "p1".into(),
+            document: 4,
+        },
+        page: "p2".into(),
+    });
+    assert_eq!(
+        input,
+        drive::PersonInput::Watch {
+            aim: drive::Aim {
+                page: drive::PageId::new("p1"),
+                document: 4,
+            },
+            page: drive::PageId::new("p2"),
+        }
+    );
+}
+
+#[test]
+fn a_frame_tells_the_host_the_browsers_downloads_with_no_file_or_origin() {
+    // #6990: as `browser_downloads` names them; the engine's name for the file stays its own.
+    let painted = drive::Painted {
+        aim: drive::Aim {
+            page: drive::PageId::new("p1"),
+            document: 1,
+        },
+        address: String::new(),
+        title: String::new(),
+        load: drive::PageLoad::Loaded,
+        pages: Vec::new(),
+        downloads: vec![drive::DownloadInfo {
+            id: "d1".into(),
+            name: "report.pdf".into(),
+            origin: Some("https://docs.example.test".into()),
+            received: 10,
+            total: Some(20),
+            state: drive::DownloadState::Going,
+            file: "8f1c-guid".into(),
+        }],
+        jpeg: Vec::new(),
+    };
+    let page = super::page_of(&painted);
+    assert_eq!(
+        page.downloads,
+        [wire::DownloadShown {
+            id: "d1".into(),
+            name: "report.pdf".into(),
+            state: wire::DownloadState::Going,
+            received: 10,
+            total: Some(20),
+        }]
+    );
+    let said = serde_json::to_string(&page).unwrap();
+    assert!(
+        !said.contains("8f1c-guid") && !said.contains("docs.example.test"),
+        "{said}"
     );
 }

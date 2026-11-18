@@ -372,9 +372,9 @@ fn wake_up(piece: Option<&Piece>, due: Option<i64>, now: i64) -> Item {
 
 /// `secs` since 1970 as the line says a time: `2026-11-08 14:05 UTC`.
 fn at(secs: i64) -> String {
-    chrono::DateTime::from_timestamp(secs, 0).map_or_else(
+    jiff::Timestamp::from_second(secs).ok().map_or_else(
         || "an unknown time".to_owned(),
-        |at| at.format("%Y-%m-%d %H:%M UTC").to_string(),
+        |at| at.strftime("%Y-%m-%d %H:%M UTC").to_string(),
     )
 }
 
@@ -403,7 +403,7 @@ pub fn of_chat_with_news(
             own_work: chat.own_work.as_ref(),
             pieces: &chat.own_pieces,
             mid_turn: chat.mid_turn,
-            now: chrono::Utc::now().timestamp(),
+            now: jiff::Timestamp::now().as_second(),
             last: &last,
         }
     } else {

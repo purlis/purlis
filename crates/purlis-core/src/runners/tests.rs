@@ -1855,8 +1855,14 @@ const HOST_KEY: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINiGzfjDDJsgYLYCmdkf8Fel9sE6Ma14Y2+c33Y/qZ2n";
 
 fn remote() -> Remote {
+    remote_on("build-box")
+}
+
+/// A pool's machine `host`, reached over SSH and pinned.
+pub(crate) fn remote_on(host: &str) -> Remote {
     Remote {
-        route: crate::sshroute::Route::parse("ssh://me@build-box/var/run/docker.sock").unwrap(),
+        route: crate::sshroute::Route::parse(&format!("ssh://me@{host}/var/run/docker.sock"))
+            .unwrap(),
         pin: crate::sshroute::Pin {
             host_key: crate::sshroute::HostKey::parse(HOST_KEY).unwrap(),
             engine: crate::sshroute::EnginePin::Docker("ABCD:EFGH:IJKL".to_owned()),

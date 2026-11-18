@@ -448,7 +448,7 @@ fn ran(plane: &Path, id: &str, skill: &str, workspace: Option<&str>, level: Opti
             ran: None,
         },
         None,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         "box",
     )
     .unwrap();
@@ -547,7 +547,7 @@ fn a_load_with_no_host_to_hear_it_logs_its_start_with_its_copy() {
             payload: &Value::Null,
             env: &env,
             cwd: p.path(),
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             host: "box",
         };
         start_run(&hook, "deploy");
@@ -625,11 +625,7 @@ fn runs_tells_the_copy_a_persona_names_by_its_workspace_from_the_chats_own() {
         origin: crate::skills::Origin::Workspace,
         local: false,
     });
-    let at = |stamp: &str| {
-        chrono::DateTime::parse_from_rfc3339(stamp)
-            .unwrap()
-            .with_timezone(&chrono::Utc)
-    };
+    let at = |stamp: &str| str::parse::<jiff::Timestamp>(stamp).unwrap();
     for (id, persona, when) in [
         (
             "01JB000000000000000000RUN1",

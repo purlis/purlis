@@ -184,6 +184,9 @@ pub enum Refused {
     /// above it in its chain. The whole sentence ([`crate::dispatchgrant::never_said`],
     /// [`crate::dispatchgrant::never_above_said`]). No grant covers it and nobody is asked.
     Never(String),
+    /// The project's policy denies the pair (`[dispatch.denies]`, ticket T1.1-73): the whole
+    /// sentence ([`crate::dispatchgrant::denied_said`]). No grant lifts it and nobody is asked.
+    Denied(String),
     /// The asking chat, by its number, is not among the chats the app has open when the
     /// decision is made (#1521): it closed or ended while its ask was on its way. Its chain and
     /// depth are on its own record, so nothing is decided without it.
@@ -215,7 +218,7 @@ impl Refused {
             Self::Locked(why) => format!("{why} {LOCKED}"),
             Self::Profile(why) => why.say(),
             Self::Limit(why) => why.say(),
-            Self::Never(said) => said.clone(),
+            Self::Never(said) | Self::Denied(said) => said.clone(),
             Self::NotOpen(chat) => format!("chat {chat} is not one this app has open"),
         }
     }
@@ -381,6 +384,11 @@ pub struct Asked {
     /// sent. `None` where purlis cannot read that chain whole, which the new chat's own asks
     /// are then held to ([`crate::dispatchlimits::Lineage::chain_unread`]).
     pub above: Option<Vec<Option<String>>>,
+    /// **The policy the asking chat runs under** (Q308a, Q308b), as
+    /// [`crate::enforcement::Resolved::spelled`] spells it: what the new chat's record keeps
+    /// ([`crate::reopen::HandedFrom::policy`]), so it is never looser than its asker. `None`
+    /// where the asking chat is not open.
+    pub policy: Option<String>,
 }
 
 /// The decision for a dispatch the chat `number` asks for, naming `named` (or no persona, for
@@ -420,6 +428,7 @@ pub fn asked_by_a_chat(
             asker: None,
             root: None,
             above: None,
+            policy: None,
         };
     };
     let pair = pair_of(asking, named, moment.default);
@@ -452,7 +461,7 @@ pub fn asked_by_a_chat(
             moment.open,
             moment.default,
             crate::dispatchchain::MOST_RECORDS_READ,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     {
         lineage.depth = lineage.depth.max(chain_depth(&chain));
@@ -460,6 +469,10 @@ pub fn asked_by_a_chat(
         lineage.chain_unread = false;
     }
     let locks = crate::sandbox::policy::Locks::of(root);
+    // **How the asking chat runs** (Q308a, Q308b): the project's policy now, never looser than
+    // the chain that dispatched it. What the new chat inherits.
+    let policy = crate::enforcement::in_force(root)
+        .for_chat(asking.from.as_ref().and_then(|from| from.policy.as_deref()));
     // **Where the task works** (#1505): the workspace the dispatch names or moves into, else
     // the asking chat's own. Said here, from the app's record of both, so a grant limited to
     // one workspace is judged against where the new chat will run whatever the caller read.
@@ -492,9 +505,13 @@ pub fn asked_by_a_chat(
     // **The `dispatch` family** (Q308, instruction 50): under `off` or `log` a pair nothing
     // covers starts with no grant. A lock, the person's never, a never above and a nevers record
     // that does not read hold in every mode, read exactly as before.
-    let grant = crate::dispatchgrant::as_the_policy_runs(
+    // Under `log`, the asking chat's enforcement log names the rule (item 8 of the follow-up):
+    // the app knows the chat by its record, so the line carries its id.
+    let grant = crate::dispatchgrant::as_the_policy_runs_for(
+        root,
+        asking.identity.id.as_deref(),
         grant,
-        crate::enforcement::mode(root, crate::enforcement::Family::Dispatch),
+        policy.mode(crate::enforcement::Family::Dispatch),
     );
     let its = AskingChat {
         persona: pair.asking.as_deref(),
@@ -585,6 +602,7 @@ pub fn asked_by_a_chat(
         root: root_of(number, moment.open),
         above: above_the_new_chat(asking, moment.default, &lineage, depth),
         to: pair.to,
+        policy: Some(policy.spelled()),
     }
 }
 
@@ -675,6 +693,10 @@ pub fn decide(request: &Request<'_>) -> Decision {
         (Some(to), Covers::NeverAbove(above)) => refused(Refused::Never(
             crate::dispatchgrant::never_above_said(above, to),
         )),
+        // The project's policy denies it: no grant lifts it, so nobody is asked.
+        (Some(to), Covers::Denied(_)) => {
+            refused(Refused::Denied(crate::dispatchgrant::denied_said(to)))
+        }
         // No grant, or none that counts while the record of nevers does not read: the person
         // is asked. Policy was answered at step 4.
         (Some(to), Covers::NeedsGrant | Covers::Unread | Covers::Locked(_)) => {
@@ -1184,6 +1206,7 @@ mod tests {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..chat(persona)
         }
@@ -1568,8 +1591,13 @@ mod tests {
     fn a_chats_ask_is_built_from_its_record_and_names_its_own_persona_when_none_is_named() {
         // Dispatched by a chat on no persona, which has since closed.
         let steward = kept(1, &[None], Some("steward"));
+        let got = asked(&steward, None, None);
+        assert!(
+            got.policy.is_some(),
+            "the asker's policy goes with the new chat"
+        );
         assert_eq!(
-            asked(&steward, None, None),
+            got,
             Asked {
                 decision: Decision::Start,
                 to: Some("steward".to_owned()),
@@ -1577,6 +1605,7 @@ mod tests {
                 asker: None,
                 root: None,
                 above: Some(vec![Some("steward".to_owned()), None]),
+                policy: got.policy.clone(),
             }
         );
         // A name with blanks around it is the name; a blank one is none.
@@ -3452,7 +3481,7 @@ mod tests {
                 brief: "Do the work.".to_owned(),
                 report_owed: true,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("a record");
     }

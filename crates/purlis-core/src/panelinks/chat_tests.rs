@@ -18,10 +18,8 @@ fn project() -> (tempfile::TempDir, PathBuf) {
     (dir, root)
 }
 
-fn at(time: &str) -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&chrono::Utc)
+fn at(time: &str) -> jiff::Timestamp {
+    str::parse::<jiff::Timestamp>(time).unwrap()
 }
 
 const WORKER_ID: &str = "01K6W0RKER000000000000000B";
@@ -106,6 +104,7 @@ fn chat(text: &str) -> Candidate {
     Candidate {
         kind: Kind::Chat,
         text: text.to_owned(),
+        target: None,
     }
 }
 

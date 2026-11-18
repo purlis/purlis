@@ -11,9 +11,7 @@ yanked = "deny"
 # Transitive crates Tauri pulls in (unic-*, proc-macro-error) are reported upstream, not here.
 # Anything charter depends on directly still fails the check.
 unmaintained = "workspace"
-ignore = [
-  { id = "RUSTSEC-2026-0543", reason = "2026-11-17: unmaintained, not a vulnerability; chrono is direct in 8 crates and comes through rmcp→schemars; the move to jiff is tracked in #7089" },
-]
+ignore = []
 
 [licenses]
 version = 2

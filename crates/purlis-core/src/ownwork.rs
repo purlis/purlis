@@ -27,7 +27,7 @@
 //! [`crate::state::Waits::now`]), and ends the wait at its limit whether or not the chat ever
 //! wakes ([`crate::state::Board::own_work_lapsed`]).
 
-use chrono::Duration;
+use jiff::SignedDuration;
 
 pub mod kept;
 pub mod last;
@@ -36,12 +36,12 @@ pub mod pieces;
 /// **How long a background shell, or the wait for a recurring wake-up's next run, holds a
 /// chat's turn's end from the person** (#3878): one hour, the operator's ruling. Past it with no
 /// wake, the chat needs the person.
-pub const OWN_WORK_LIMIT: Duration = Duration::minutes(60);
+pub const OWN_WORK_LIMIT: SignedDuration = SignedDuration::from_mins(60);
 
 /// **How long past its time a wake-up may come before the wait for it is over** (#3878): the
 /// harness fires a due wake-up at its next idle check, and a wait that lapsed on the minute
 /// would raise the hand a moment before the turn the wake-up starts.
-pub const A_WAKE_UP_IS_LATE_AFTER: Duration = Duration::minutes(5);
+pub const A_WAKE_UP_IS_LATE_AFTER: SignedDuration = SignedDuration::from_mins(5);
 
 /// The kinds of background work a harness can say are in flight at its turn's end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -176,8 +176,8 @@ impl OwnWork {
 /// wake-ups `wake_ups` a harness said it has at its turn's end. A recurring wake-up not due
 /// within [`OWN_WORK_LIMIT`] counts as nothing.
 pub fn said(in_flight: InFlight, wake_ups: &[WakeUp]) -> Said {
-    let limit = OWN_WORK_LIMIT.num_seconds();
-    let late = A_WAKE_UP_IS_LATE_AFTER.num_seconds();
+    let limit = OWN_WORK_LIMIT.as_secs();
+    let late = A_WAKE_UP_IS_LATE_AFTER.as_secs();
     let secs = |n: i64| u32::try_from(n.max(0)).unwrap_or(u32::MAX);
     let mut ends: Vec<i64> = Vec::new();
     if in_flight.shells > 0 {

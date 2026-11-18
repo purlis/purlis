@@ -60,8 +60,7 @@ bytes = "1"
 changelog.workspace = true
 # `wscmd::create` is handed the moment the workspace was made, because `charter workspace
 # create` stamps it into the manifest and the two implementations must stamp the same field.
-# The same spelling `purlis-cli` uses, so one version of chrono is in the tree.
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+jiff.workspace = true
 # An artifact page names the data file it asks for percent-encoded (#5961); the core's version.
 percent-encoding = "2"
 # The one-time token an artifact page's link report must carry (ADR 0122 §5); the core's version.

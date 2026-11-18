@@ -41,8 +41,8 @@ enum Command {
         seed: u64,
         /// The newest moment the project carries, UTC. The nightly run passes the time it
         /// runs: the app collects a dispatch record 30 days after it ended.
-        #[arg(long, default_value = "2026-11-06T12:00:00")]
-        at: chrono::NaiveDateTime,
+        #[arg(long, default_value = "2026-11-06T12:00:00", value_parser = purlis_core::wallclock::reading)]
+        at: jiff::civil::DateTime,
         /// A few of everything instead of the target size.
         #[arg(long)]
         small: bool,
@@ -83,7 +83,7 @@ fn main() -> ExitCode {
                 "{}",
                 serde_json::json!({
                     "seed": seed,
-                    "at": at.to_string(),
+                    "at": purlis_core::oldspelling::date_and_time(at),
                     "workspaces": size.workspaces,
                     "personas": size.personas,
                     "workspace_memories": size.workspace_memories,

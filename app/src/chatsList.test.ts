@@ -287,14 +287,18 @@ describe("a closed chat found by the filter (#6484)", () => {
   const CLOSED: ClosedChat[] = [
     {
       number: 731,
+      id: "01K6CHATS0000000000000000C",
       earlier: [702],
+      found_by: null,
       title: "Tidy the changelog",
       place: "smart-ide",
       ended: "2026-11-12T11:00:00Z",
     },
     {
       number: 650,
+      id: "01K6CHATS0000000000000000D",
       earlier: [],
+      found_by: null,
       title: "Sign commits",
       place: "docs",
       ended: "2026-11-12T09:00:00Z",
@@ -309,11 +313,13 @@ describe("a closed chat found by the filter (#6484)", () => {
     expect(words("tidy docs")).toEqual([]);
   });
 
-  it("is found by its number, or one it had before a restart, and by nothing else then", () => {
-    // Bare here: `#` and three digits would read as a colour to the theme's guard.
-    expect(words("731").map((one) => one.number)).toEqual([731]);
-    expect(words("702").map((one) => one.number)).toEqual([731]);
-    expect(words("70")).toEqual([]);
+  it("for a number typed, is what the core answered for it, never matched by words (#7125)", () => {
+    // The core answers `closed_chats` for the number typed with the chats that had it, each
+    // saying the number it was found by (`chatcard::closed_chats_of`): the window decides
+    // neither. Bare here: `#` and three digits would read as a colour to the theme's guard.
+    const answered = [{ ...CLOSED[0], found_by: 702 }];
+    expect(closedFound(answered, { text: "702", ranks: [] }, new Set())).toEqual(answered);
+    expect(closedFound(answered, { text: "702", ranks: [] }, new Set([731]))).toEqual([]);
   });
 
   it("is never found by a chip, nor with nothing typed: both ask about running chats", () => {

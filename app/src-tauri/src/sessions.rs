@@ -568,6 +568,7 @@ mod tests {
         let handed = Opening {
             handed: purlis_core::profilesignin::Handed::of(vec![(
                 "ANTHROPIC_API_KEY".to_owned(),
+                purlis_core::secrets::handedto::Entry::new("team", "anthropic-api-key"),
                 "handed-at-this-start".to_owned(),
             )]),
             ..opening("printf 'got:%s.' \"$ANTHROPIC_API_KEY\"; read line")

@@ -11,5 +11,5 @@
   stops at 10,000 lines.
 - **A seal key purlis's app did not make is not trusted.** The app uses the key only once it has
   shown it owns the keychain item. Where another program owns it, every family is enforced and
-  dispatches across personas are refused until you press Accept again. A sealed acceptance
-  whose keychain anchor is gone now counts as broken too.
+  dispatches across personas are refused, and Accept says which keychain item to delete before
+  you press it again. A sealed acceptance whose keychain anchor is gone now counts as broken too.

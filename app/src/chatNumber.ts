@@ -16,10 +16,27 @@ export function numberedName(number: number, name: string): string {
 }
 
 /**
+ * **A closed chat by the number it closed under, its name, and the number it was found by**
+ * where that is one it had before a restart (#6685): `#731 · Tidy the changelog (was #702)`, so
+ * a person following an old link knows it for the chat they asked for.
+ */
+export function numberedNameWas(number: number, name: string, was: number | null): string {
+  const named = numberedName(number, name);
+  return was === null ? named : `${named} (was ${chatNumberSaid(was)})`;
+}
+
+/** The largest number a chat is dealt: the core's chat numbers are `u32`s. */
+const MOST_DEALT = 0xffff_ffff;
+
+/**
  * **The chat number a search asks for** (#6213): `641` or `#641`, spaces round it ignored, or
  * nothing for any other words. Only a whole number is one: `#64` asks for chat 64, never 641.
+ * A number past any a chat is dealt is none, as the core refuses it as an argument rather than
+ * finding no chat by it (#7125's review).
  */
 export function chatNumberIn(query: string): number | undefined {
   const found = /^#?(\d+)$/.exec(query.trim());
-  return found === null ? undefined : Number(found[1]);
+  if (found === null) return undefined;
+  const number = Number(found[1]);
+  return number <= MOST_DEALT ? number : undefined;
 }

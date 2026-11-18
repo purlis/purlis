@@ -152,6 +152,13 @@ impl ChatRecord {
         self.reopened().err()
     }
 
+    /// **The number this chat was found by, where it is not the one it closed under**
+    /// (#6685): `asked`, where it is one it had before a restart, so what shows it can say
+    /// `(was #702)` beside `#731`. The one place this rule is written for the core and the app.
+    pub fn found_by(&self, asked: u32) -> Option<u32> {
+        (asked != self.number && self.earlier.contains(&asked)).then_some(asked)
+    }
+
     /// Whether this chat had `number`, as it closed or before a restart (#6486).
     pub fn answers_to(&self, number: u32) -> bool {
         self.number == number || self.earlier.contains(&number)
@@ -328,7 +335,7 @@ fn an_id(id: &str) -> bool {
 }
 
 fn a_time(time: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(time).is_ok()
+    str::parse::<jiff::Timestamp>(time).is_ok()
 }
 
 /// Whether `chat` is one this store keeps: a ULID, two times, a title.
@@ -415,11 +422,31 @@ pub fn every(root: &Path) -> Vec<ChatRecord> {
         .collect()
 }
 
+/// **The highest number a closed chat in the project at `root` answers to** (#6740): the one it
+/// closed under or one it had before a restart, or 0 where none closed. A launch holds the
+/// counter of numbers dealt (`reopen::Record::dealt`) at or above it, so a number a closed
+/// record still answers to is never dealt to a new chat, even where the record of open chats was
+/// lost.
+pub fn highest_number(root: &Path) -> u32 {
+    every(root)
+        .iter()
+        .flat_map(|chat| std::iter::once(chat.number).chain(chat.earlier.iter().copied()))
+        .max()
+        .unwrap_or(0)
+}
+
 /// **The chat that closed under `number`**, or had it before a restart (#6486), in `chats` as
 /// [`every`] read them: the newest close, as a number is never dealt twice in a project
 /// (`reopen::Record::dealt`).
 pub fn of_number(chats: &[ChatRecord], number: u32) -> Option<&ChatRecord> {
     chats.iter().find(|chat| chat.answers_to(number))
+}
+
+/// **The chat whose ULID is `id`**, in `chats` as [`every`] read them (#7125, #7123): its own
+/// record, where more than one may answer to a number it had (#6740). What a card found by its
+/// ULID is numbered by, and what its *Reopen* starts again.
+pub fn of_id<'c>(chats: &'c [ChatRecord], id: &str) -> Option<&'c ChatRecord> {
+    chats.iter().find(|chat| chat.id == id)
 }
 
 /// Writes `chats`, newest first, whole, under the folder's lock already held: at most
@@ -469,9 +496,9 @@ fn locked(root: &Path) -> std::io::Result<crate::rewrite::Lock> {
 /// `ended`, or now where it stands in the future: a clock ahead wrote it, and an entry kept with
 /// it would never age ([`sweep`]).
 fn no_later_than_now(ended: &str) -> String {
-    let now = chrono::Utc::now();
-    match chrono::DateTime::parse_from_rfc3339(ended) {
-        Ok(at) if at > now => now.to_rfc3339(),
+    let now = jiff::Timestamp::now();
+    match str::parse::<jiff::Timestamp>(ended) {
+        Ok(at) if at > now => crate::oldspelling::rfc3339(now),
         _ => ended.to_owned(),
     }
 }
@@ -607,7 +634,7 @@ fn left_behind(name: &str) -> bool {
 
 /// Whether `chat` is [`crate::retention::KEEP_FOR`] or more old at `now`, or ended after `now`.
 fn due(chat: &ChatRecord, now: SystemTime) -> bool {
-    chrono::DateTime::parse_from_rfc3339(&chat.ended).map_or(true, |ended| {
+    str::parse::<jiff::Timestamp>(&chat.ended).map_or(true, |ended| {
         now.duration_since(SystemTime::from(ended))
             .map_or(true, |age| age >= crate::retention::KEEP_FOR)
     })

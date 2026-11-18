@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::observe::{Observation, Observed, observe};
 use super::record::Record;
@@ -47,12 +47,12 @@ pub struct Drawn {
 }
 
 /// The changes of workspace `ws`, each read from the forge now.
-pub fn blocks(plane: &Path, ws: &str, now: DateTime<Utc>) -> Vec<Block> {
+pub fn blocks(plane: &Path, ws: &str, now: Timestamp) -> Vec<Block> {
     view(plane, ws, now).blocks
 }
 
 /// [`blocks`], with where each change's list is.
-pub fn view(plane: &Path, ws: &str, now: DateTime<Utc>) -> Drawn {
+pub fn view(plane: &Path, ws: &str, now: Timestamp) -> Drawn {
     let listing = store::read_all(plane, ws);
     let observed: Vec<(Record, Observation)> = listing
         .records
@@ -75,7 +75,7 @@ pub fn view(plane: &Path, ws: &str, now: DateTime<Utc>) -> Drawn {
 /// The blocks for what was read: pure, so what the tab says is testable without a forge.
 pub fn drawn(
     ws: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     troubles: &[String],
     changes: &[(Record, Observation)],
 ) -> Vec<Block> {
@@ -85,7 +85,7 @@ pub fn drawn(
 /// [`drawn`], with where each change's list is.
 pub fn drawn_view(
     ws: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     troubles: &[String],
     changes: &[(Record, Observation)],
 ) -> Drawn {
@@ -97,7 +97,7 @@ pub fn drawn_view(
         },
         Fact {
             label: "read from the forge".into(),
-            value: now.format("%Y-%m-%d %H:%M:%S UTC").to_string(),
+            value: now.strftime("%Y-%m-%d %H:%M:%S UTC").to_string(),
         },
     ])];
     for why in troubles {
@@ -242,10 +242,8 @@ mod tests {
     use crate::forge::checks::Checks;
     use crate::forge::pr::Request;
 
-    fn at() -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339("2026-09-26T10:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc)
+    fn at() -> Timestamp {
+        str::parse::<Timestamp>("2026-09-26T10:00:00Z").unwrap()
     }
 
     fn record() -> Record {

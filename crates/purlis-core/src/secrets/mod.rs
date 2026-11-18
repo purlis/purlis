@@ -36,6 +36,7 @@ pub mod cmd;
 pub mod dotenv;
 pub mod exec;
 pub mod fingerprint;
+pub mod handedto;
 pub mod identity;
 pub mod keyhold;
 pub mod keyring;
@@ -51,6 +52,7 @@ pub mod reference;
 pub mod registry;
 pub mod run;
 pub mod seal;
+pub mod sealed_set;
 pub mod seen;
 pub mod setup;
 pub mod tokeyring;
@@ -278,6 +280,9 @@ pub struct Ctx {
     /// once ([`identity::Kept`]). A clone shares it; a new context starts empty, except in the
     /// app, where every context shares the app's one memory.
     pub(crate) kept: identity::Kept,
+    /// The strictest `[policy]` along the chain that dispatched the chat this context reads
+    /// for ([`Ctx::under_chain`]): none but for a read the app makes for one chat.
+    pub(crate) policy: Option<String>,
 }
 
 impl Ctx {
@@ -293,7 +298,17 @@ impl Ctx {
             env,
             chat_writes: Vec::new(),
             kept: identity::Kept::for_a_new_context(),
+            policy: None,
         }
+    }
+
+    /// This context, for a chat whose chain ran under `policy` at its strictest
+    /// ([`crate::reopen::HandedFrom::policy`]): a family is run for it no looser (Q308a, Q308b;
+    /// the review of #7113).
+    #[must_use]
+    pub fn under_chain(mut self, policy: Option<&str>) -> Self {
+        self.policy = policy.map(str::to_owned);
+        self
     }
 
     /// The directory the state directory's files are gated from (#440), as
@@ -372,9 +387,16 @@ pub fn redact(text: &[u8], secrets: &[String]) -> Vec<u8> {
 /// **The values a command's output is masked of in the project at `root`** (Q308a, the `secrets`
 /// family): `secrets` where the family is enforced, which every template but `open` does; none
 /// where it is off or logs, the log keeping one line that masking was let go, for chat `chat`.
-pub fn masked_of<'a>(root: &Path, chat: Option<&str>, secrets: &'a [String]) -> &'a [String] {
+pub fn masked_of<'a>(
+    root: &Path,
+    (chat, policy): (Option<&str>, Option<&str>),
+    secrets: &'a [String],
+) -> &'a [String] {
     use crate::enforcement::{self, Family, Mode};
-    let mode = enforcement::mode(root, Family::Secrets);
+    // Never looser than the chain that dispatched the chat (the review of #7113).
+    let mode = enforcement::in_force(root)
+        .for_chat(policy)
+        .mode(Family::Secrets);
     if mode == Mode::Enforce || secrets.is_empty() {
         return secrets;
     }
@@ -784,6 +806,15 @@ pub fn make_private_dir(dir: &Path) -> std::io::Result<()> {
 /// does not know is held to do so too.
 pub fn reads_on_open(provider: &str) -> bool {
     !matches!(provider, "keyring" | "plain-file" | "reference")
+}
+
+/// **Whether reading one value of a vault of `provider` asks nobody** (#6309): a keyring vault's
+/// value is its own item, and a plain-file vault's is in its own file. Not so a reference
+/// vault's, though opening one does not read ([`reads_on_open`]): its value is what `op read` or
+/// `vault kv get` answers, either of which may ask the person; nor any other provider's, which
+/// reads through its program; nor one this build does not know.
+pub fn reads_a_value_without_asking(provider: &str) -> bool {
+    matches!(provider, "keyring" | "plain-file")
 }
 
 #[cfg(test)]

@@ -140,7 +140,7 @@ pub(super) fn handing(plane: &Path, source: &Source) -> Result<Handing, String> 
     Ok(Handing {
         config: vec![helper()],
         pass,
-        secrets: prepared.secret_values.clone(),
+        secrets: prepared.secret_values().to_vec(),
     })
 }
 

@@ -42,7 +42,7 @@ fn plain(plane: &Path, name: &str) {
         None,
         None,
         &Who::here(None, None, None),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
         &mut |_| {},
     );
     assert_eq!(code, 0, "{name} was not cut");
@@ -71,6 +71,7 @@ fn the_asker(plane: &Path) -> crate::gitbroker::Asker {
         harnessed: true,
         unsandboxed: false,
         roots_git_held: false,
+        policy: None,
         unreadable: Vec::new(),
         config: None,
         id: None,
@@ -104,7 +105,7 @@ fn a_chats_prune_of_many_folders_says_it_is_alive_as_it_goes() {
             &the_asker(&plane),
             &the_ask(true),
             &Isolated::identity(Some("Tester"), Some("t@e.invalid")),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     });
     let ended = Instant::now();

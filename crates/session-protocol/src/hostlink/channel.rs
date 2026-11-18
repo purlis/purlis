@@ -68,11 +68,7 @@ pub(super) async fn word<S: AsyncRead + AsyncWrite + Unpin>(
 ) -> Result<(), LinkRefused> {
     let frame = match messages.next().await {
         Some(frame) => frame?,
-        None => {
-            return Err(LinkRefused::HandshakeFailed(
-                "the other end closed the stream".into(),
-            ));
-        }
+        None => return Err(LinkRefused::WentAway),
     };
     let plain = open.open(&frame).map_err(LinkRefused::HandshakeFailed)?;
     match plain.split_first() {

@@ -864,6 +864,7 @@ fn a_task_started_from_a_session_holding_a_grant_compiles_its_sandbox_without_it
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..plain.clone()
     };
@@ -1146,6 +1147,7 @@ fn a_start_is_made_as_the_record_says_and_a_dispatched_chat_names_its_asker() {
         above,
         by_person,
         long: false,
+        policy: None,
     };
     let chat = |from| Chat {
         from,
@@ -5142,6 +5144,7 @@ fn one_dispatched_on_work(root: &std::path::Path) -> Record {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..record.chats[0].clone()
         }],
@@ -6292,6 +6295,7 @@ fn a_pane_shows_a_chat_that_is_not_its_tab_s_own_beside_an_empty_pane_and_the_co
                     above: None,
                     by_person: false,
                     long: false,
+                    policy: None,
                 }),
                 ..chat(&a_claude(dir.path()), "talk", None)
             },
@@ -6456,6 +6460,7 @@ fn started_by(dir: &std::path::Path, name: &str, mode: purlis_core::reopen::Mode
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..chat(&a_claude(dir), name, None)
     }
@@ -7176,6 +7181,7 @@ fn a_dispatched_chat_started_again_in_its_own_place_keeps_its_lineage_and_its_ta
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     };
     let task = Chat {
         from: Some(lineage.clone()),
@@ -7267,7 +7273,7 @@ fn a_dispatched_chat_whose_conversation_was_lost_is_handed_its_brief_on_its_fres
             brief: BRIEF.to_owned(),
             report_owed: false,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .unwrap();
     chats.brief_was_sent(&record, BRIEF);
@@ -8304,12 +8310,23 @@ fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_n
         ..a_claude_ready()
     };
 
-    chats
+    let session = chats
         .start_ready(&chat("/bin/sh", "dev 1", None), &ready, SIZE)
         .expect("it starts");
 
     let opening = host.openings().pop().expect("opened");
     assert_eq!(opening.handed.names(), ["AWS_ACCESS_KEY_ID"]);
+    assert_eq!(
+        purlis_core::secrets::handedto::masked_for(
+            &root,
+            session,
+            "id the-aws-id-for-this-test",
+            &|_| None
+        )
+        .as_deref(),
+        Some("id ‹secret: id›"),
+        "its kept screen masks it, under its entry's name (#6309)"
+    );
     assert_eq!(
         purlis_core::profilesignin::handed_onto(Vec::new(), &opening.handed),
         [(
@@ -11311,6 +11328,7 @@ fn a_dispatched_chats_choice_of_where_it_runs_puts_nothing_on_a_claim() {
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     });
     let window = Chat {
         runs_on: on_builds.clone(),
@@ -11366,6 +11384,7 @@ fn a_task_pressed_into_a_pane_is_held_from_that_layout_and_the_chat_it_replaced_
                     above: None,
                     by_person: false,
                     long: false,
+                    policy: None,
                 }),
                 ..chat(&a_claude(dir.path()), "talk", None)
             },
@@ -11428,7 +11447,7 @@ fn a_studio_chats_job_is_done_once_its_draft_came_and_stays_done() {
         Some("deploy".to_owned()),
         purlis_core::skills::verbs::Level::project(),
         purlis_core::reopen::StudioWork::OutcomeEvals,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let session = chats
         .start(
@@ -11503,7 +11522,7 @@ fn a_studio_chat_finishes_as_its_program_ends_and_stays_on_runs_once_closed() {
         Some("deploy".to_owned()),
         purlis_core::skills::verbs::Level::project(),
         purlis_core::reopen::StudioWork::Checks,
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let session = chats
         .start(

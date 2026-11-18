@@ -86,7 +86,7 @@ pub(super) fn answer<R: tauri::Runtime>(
     match admitted(app, config, of, snapshot, declared, asked, params) {
         // Admitted, so its plane grant, where it needs one, is held.
         Ok((id, _)) => ask(app, &of.plane, &of.workspace, &id, params),
-        Err(kind) => Answer::error(kind, chrono::Utc::now()),
+        Err(kind) => Answer::error(kind, jiff::Timestamp::now()),
     }
 }
 
@@ -99,7 +99,7 @@ pub(super) fn ask<R: tauri::Runtime>(
     id: &str,
     params: &Value,
 ) -> Answer {
-    let at = chrono::Utc::now();
+    let at = jiff::Timestamp::now();
     let root = app
         .try_state::<Planes>()
         .and_then(|planes| planes.held(plane).ok())

@@ -1651,8 +1651,7 @@ pub(crate) fn a_host_home(home: &Path) -> HostHome {
         // turns neither on today's date nor on reading the published manifest.
         (
             purlis_core::browsers::ENGINES_CLOCK_VAR,
-            purlis_core::browsers::when_the_pin_was_issued()
-                .to_rfc3339()
+            purlis_core::oldspelling::rfc3339(purlis_core::browsers::when_the_pin_was_issued())
                 .into(),
         ),
         ("XDG_RUNTIME_DIR", run.clone().into_os_string()),
@@ -4068,7 +4067,7 @@ fn a_chat_ending_with_the_window_gone_still_writes_its_record_and_its_dispatch_r
             brief: "Look at the queue.".into(),
             report_owed: true,
         },
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
     .expect("a running dispatch");
 

@@ -945,7 +945,7 @@ fn recorded_as(
         name: name.to_owned(),
         persona: Some("steward".to_owned()),
     };
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     let record = dispatchrecord::open_as(
         root,
         id.to_owned(),

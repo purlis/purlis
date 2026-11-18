@@ -296,7 +296,7 @@ fn a_chat_starting_beside_it_is_told_to_name_it_to_the_operator() {
             cwd: &f.clone,
             payload: &payload,
             env: &lookup,
-            now: chrono::Utc::now(),
+            now: jiff::Timestamp::now(),
             attendance: purlis_core::dispatchunattended::Attendance::Attended,
         },
         None,

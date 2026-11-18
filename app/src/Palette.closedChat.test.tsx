@@ -32,6 +32,7 @@ const CARD: ChatCard = {
   started_by: "steward 4",
   screen_kept: true,
   chat_reopen: null,
+  found_by: null,
   task: {
     id: "01K9DISPATCH0000000000000A",
     asker: 0,
@@ -144,7 +145,7 @@ describe("a closed chat found by its number in the palette", () => {
     expect(screen.getByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
   });
 
-  it("a chat no dispatch started opens its card, Closed, and Reopen reopens it by its number", async () => {
+  it("a chat no dispatch started opens its card, Closed, and Reopen reopens it by its ULID", async () => {
     // #6304: the app kept its number, title and times as it closed, and no screen; and what a
     // reopen needs (#6485).
     const ordinary: ChatCard = {
@@ -157,6 +158,7 @@ describe("a closed chat found by its number in the palette", () => {
       screen_kept: false,
       chat_reopen: "reopens",
       task: null,
+      found_by: null,
     };
     core((n) => (n === 702 ? { is: "ended", card: ordinary } : { is: "no_chat" }));
     const ran: Offer[] = [];
@@ -187,7 +189,7 @@ describe("a closed chat found by its number in the palette", () => {
     expect(onRun).not.toHaveBeenCalled();
     await userEvent.click(within(card).getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(onRun).toHaveBeenCalledTimes(1));
-    expect(ran[0].does).toEqual({ verb: "reopenClosedChat", number: 702 });
+    expect(ran[0].does).toEqual({ verb: "reopenClosedChat", chat: "01K6CHATS0000000000000000C" });
   });
 
   it("a number no chat had adds no row, and words are never looked up", async () => {

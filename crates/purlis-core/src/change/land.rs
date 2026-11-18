@@ -42,7 +42,7 @@
 
 use std::path::Path;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::cmd::{REFUSED, load, named, workspace_ok};
 use super::landing::{self, Landing, Landings};
@@ -122,7 +122,7 @@ pub fn land(
     slug: &str,
     repos: &[String],
     how: How,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     land_with(
@@ -211,7 +211,7 @@ struct Books<'p> {
     ws: &'p str,
     slug: &'p str,
     device: &'p str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     log: Landings,
     pending: Pendings,
 }
@@ -249,7 +249,7 @@ pub fn land_with(
     how: How,
     backend_of: &dyn Fn(&Repo) -> Box<dyn ForgeBackend>,
     device: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     gated(
@@ -351,7 +351,7 @@ pub fn verify(
     ws: &str,
     slug: &str,
     repo: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> Result<Verified, u8> {
     verify_with(
@@ -375,7 +375,7 @@ pub fn verify_with(
     repo: &str,
     backend_of: &dyn Fn(&Repo) -> Box<dyn ForgeBackend>,
     device: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> Result<Verified, u8> {
     let mut found = None;
@@ -404,7 +404,7 @@ pub fn land_verified(
     slug: &str,
     confirmed: &Verified,
     how: How,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     land_verified_with(
@@ -430,7 +430,7 @@ pub fn land_verified_with(
     how: How,
     backend_of: &dyn Fn(&Repo) -> Box<dyn ForgeBackend>,
     device: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     say: &mut dyn FnMut(Say),
 ) -> u8 {
     gated(
@@ -494,7 +494,7 @@ fn gated(
     how: How,
     backend_of: &dyn Fn(&Repo) -> Box<dyn ForgeBackend>,
     device: &str,
-    now: DateTime<Utc>,
+    now: Timestamp,
     asked: Asked,
     found: &mut Option<Verified>,
     say: &mut dyn FnMut(Say),

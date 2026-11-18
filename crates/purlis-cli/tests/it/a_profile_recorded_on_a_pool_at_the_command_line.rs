@@ -119,6 +119,10 @@ fn in_a_chat_nothing_is_recorded() {
     ];
     let out = purlis(config, &["pool", "add-profile", "builds", "home"], &env);
     assert!(!out.status.success(), "{}", said(&out));
-    assert!(said(&out).contains("own terminal"), "{}", said(&out));
+    assert!(
+        said(&out).contains("a terminal outside purlis"),
+        "{}",
+        said(&out)
+    );
     assert_eq!(named(config), Some(vec!["work".into()]));
 }

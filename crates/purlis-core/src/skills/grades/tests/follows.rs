@@ -569,7 +569,9 @@ fn a_local_grade_under_way_across_a_rename_shows_under_the_new_name_4104() {
     .unwrap();
     // It ends after the rename, and is recorded by the name it began under, stamped then.
     let ended = Graded {
-        ts: (chrono::Utc::now() + chrono::Duration::seconds(1)).to_rfc3339(),
+        ts: crate::oldspelling::rfc3339(
+            jiff::Timestamp::now() + jiff::SignedDuration::from_secs(1),
+        ),
         ..row
     };
     record(root, &local, &ended, "laptop");

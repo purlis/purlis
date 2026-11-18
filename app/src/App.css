@@ -530,6 +530,15 @@ body {
   display: none;
 }
 
+/* **The project's policy on a chat's pane head** (Q308a, instruction 45): its template's word and
+   the count of the families set apart, after a mark. A fact, never a control. */
+.pane-policy {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
 /* **A chat's browsers on its pane head** (#2024, #5524): each a live thumbnail, with nothing of a
    button's chrome but a hairline frame the page's picture sits in. As tall as a mark and as wide
    as a page that tall; a browser's mark until its first frame. */
@@ -747,7 +756,8 @@ body {
     .pane-from,
     .pane-work-item,
     .pane-head-where,
-    .pane-using
+    .pane-using,
+    .pane-policy
   ) {
   height: var(--size-chrome);
 }
@@ -9701,4 +9711,44 @@ nav.piece-files-head {
 
 .browser-bar-loading {
   color: var(--text-primary);
+}
+
+/* **The browser's pages** (#6989): "Page 2 of 3" keeps its words whole, and gives up its room
+   after the title does. */
+.browser-pages {
+  flex: 0 0 auto;
+}
+
+/* **A narrow head keeps the site readable** (#6989, #6990): the counts of pages, downloads and
+   secrets say their numbers alone ("2 of 3", "3"), each still named whole, so the site keeps
+   room for its host beside the pane's own actions. */
+.browser-head {
+  container: browser-head / inline-size;
+}
+
+@container browser-head (max-width: 36rem) {
+  .browser-count-word {
+    display: none;
+  }
+}
+
+/* **The browser's downloads** (#6990): the count keeps its words whole, as the pages' does; its
+   list says each name whole, over as many lines as it takes, and how far it came under it. */
+.browser-downloads {
+  flex: 0 0 auto;
+}
+
+.browser-downloads-list {
+  display: grid;
+  gap: var(--space-3);
+  max-inline-size: 28rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.browser-downloads-list > li {
+  display: grid;
+  gap: var(--space-1);
+  overflow-wrap: anywhere;
 }

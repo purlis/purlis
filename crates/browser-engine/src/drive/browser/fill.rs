@@ -308,7 +308,8 @@ impl Browser {
                 filled => filled,
             }
         };
-        self.kept_out(answer.map(|answer| self.with_asked(answer)))
+        self.inner
+            .kept_out(answer.map(|answer| self.with_asked(answer)))
     }
 
     fn filling(&self, fill: &SecretFill, hold: Arc<dyn FillHold>) -> Result<Answer, Refusal> {

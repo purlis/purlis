@@ -86,7 +86,7 @@ fn with_records<R>(
 
 /// **Chat `session` of `plane` moved on its board now.**
 pub fn moved(plane: &PlaneId, session: u32) {
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     last_moves()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -267,6 +267,7 @@ mod tests {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }
     }
 

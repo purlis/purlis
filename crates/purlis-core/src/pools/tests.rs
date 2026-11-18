@@ -2480,9 +2480,10 @@ mod cluster {
         added(config.path(), &cluster);
         let added_at = judged(config.path()).paired;
         let at = |seconds: u64| {
-            chrono::DateTime::from_timestamp(i64::try_from(seconds).unwrap(), 0)
+            jiff::Timestamp::from_second(i64::try_from(seconds).unwrap())
                 .unwrap()
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+                .strftime("%Y-%m-%dT%H:%M:%SZ")
+                .to_string()
         };
         let now = added_at + 4 * 3600;
         let ours = crate::clusterpool::desktop_label(OURS);
@@ -5338,6 +5339,24 @@ fn a_pool_on_a_machine_no_longer_trusted_is_forgotten_here_and_nothing_is_sent_t
     );
     assert!(runners::runner_for(config.path(), "first").is_err());
     assert!(runners::pools(config.path()).unwrap().is_empty());
+}
+
+/// **A pool forgotten here says its machine still lists this one as its runner's peer** (Remove of
+/// a pool whose machine doesn't answer): the peer is kept in the runner's home, so it goes with
+/// the home volume the words already say how to remove.
+#[test]
+fn a_pool_forgotten_here_says_its_machine_still_lists_this_one_as_its_runners_peer() {
+    let config = tempfile::tempdir().unwrap();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &desktop());
+    on_another_machine(config.path());
+
+    let left = forget_untrusted(config.path(), "first").unwrap();
+
+    assert!(
+        left.contains("build-box still lists this machine as the runner's peer"),
+        "{left}"
+    );
 }
 
 #[test]

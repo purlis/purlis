@@ -58,6 +58,7 @@ pub struct CommandConnector {
     args: Vec<String>,
     before_each: BeforeEachChecked,
     prepare: Option<Prepare>,
+    within: Option<std::time::Duration>,
 }
 
 impl CommandConnector {
@@ -85,6 +86,7 @@ impl CommandConnector {
             args,
             before_each,
             prepare: None,
+            within: None,
         }
     }
 
@@ -92,6 +94,17 @@ impl CommandConnector {
     #[must_use]
     pub fn preparing(mut self, prepare: Prepare) -> CommandConnector {
         self.prepare = Some(prepare);
+        self
+    }
+
+    /// **This connector, its check and what it prepares held to `within`** (#7008 follow-up):
+    /// one that takes longer refuses the connection, saying so, so the link says why it is down
+    /// before whoever waits for it gives up in the middle of the handshake that would follow. A
+    /// Docker runner's check runs `docker` over its pool's SSH forward several times, and after
+    /// its machine restarts one of them can hang.
+    #[must_use]
+    pub fn within(mut self, within: std::time::Duration) -> CommandConnector {
+        self.within = Some(within);
         self
     }
 }
@@ -112,52 +125,69 @@ impl Connector for CommandConnector {
     fn connect(&self) -> BoxFuture<'static, std::io::Result<Connected>> {
         let this = self.clone();
         Box::pin(async move {
-            let checked = this.before_each.clone();
-            tokio::task::spawn_blocking(move || checked())
+            let Some(within) = this.within else {
+                return this.connected().await;
+            };
+            tokio::time::timeout(within, this.connected())
                 .await
-                .map_err(std::io::Error::other)?
-                .map_err(|why| match why {
-                    NotChecked::Refused(why) => std::io::Error::other(why),
-                    NotChecked::KeyChanged(why) => std::io::Error::other(
-                        purlis_session_protocol::hostlink::KeyNoLongerHeld(why),
-                    ),
-                    NotChecked::Gone(why) => {
-                        std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
-                    }
-                })?;
-            let prepared = match this.prepare.clone() {
-                Some(prepare) => Some(
-                    tokio::task::spawn_blocking(move || prepare())
-                        .await
-                        .map_err(std::io::Error::other)?
-                        .map_err(std::io::Error::other)?,
-                ),
-                None => None,
-            };
-            let mut command = tokio::process::Command::new(&this.program);
-            let held = prepared.map(|prepared| {
-                command.envs(prepared.env);
-                for name in &prepared.cleared {
-                    command.env_remove(name);
+                .unwrap_or_else(|_| {
+                    Err(std::io::Error::other(format!(
+                        "the check before connecting did not finish within {} seconds",
+                        within.as_secs().max(1)
+                    )))
+                })
+        })
+    }
+}
+
+impl CommandConnector {
+    /// One connection: checked, prepared and run.
+    async fn connected(self) -> std::io::Result<Connected> {
+        let checked = self.before_each.clone();
+        tokio::task::spawn_blocking(move || checked())
+            .await
+            .map_err(std::io::Error::other)?
+            .map_err(|why| match why {
+                NotChecked::Refused(why) => std::io::Error::other(why),
+                NotChecked::KeyChanged(why) => {
+                    std::io::Error::other(purlis_session_protocol::hostlink::KeyNoLongerHeld(why))
                 }
-                prepared.held
-            });
-            let mut child = command
-                .args(&this.args)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::inherit())
-                .kill_on_drop(true)
-                .spawn()?;
-            let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
-                return Err(std::io::Error::other("the connector's stdio was not piped"));
-            };
-            Ok(Connected {
-                _child: child,
-                _held: held,
-                stdout,
-                stdin: Some(stdin),
-            })
+                NotChecked::Gone(why) => {
+                    std::io::Error::other(purlis_session_protocol::hostlink::FarEndGone(why))
+                }
+            })?;
+        let prepared = match self.prepare.clone() {
+            Some(prepare) => Some(
+                tokio::task::spawn_blocking(move || prepare())
+                    .await
+                    .map_err(std::io::Error::other)?
+                    .map_err(std::io::Error::other)?,
+            ),
+            None => None,
+        };
+        let mut command = tokio::process::Command::new(&self.program);
+        let held = prepared.map(|prepared| {
+            command.envs(prepared.env);
+            for name in &prepared.cleared {
+                command.env_remove(name);
+            }
+            prepared.held
+        });
+        let mut child = command
+            .args(&self.args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::inherit())
+            .kill_on_drop(true)
+            .spawn()?;
+        let (Some(stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+            return Err(std::io::Error::other("the connector's stdio was not piped"));
+        };
+        Ok(Connected {
+            _child: child,
+            _held: held,
+            stdout,
+            stdin: Some(stdin),
         })
     }
 }

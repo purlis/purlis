@@ -114,7 +114,7 @@ impl Persona {
     /// straight through `memstore.write`: a persona whose `memory/` has no `MEMORY.md` yet
     /// (`charter init` leaves a `.gitkeep`) gets the store's generic `# Memory Index`
     /// header, not the persona's. [`Persona::scaffold_memory`] is the header's writer.
-    pub fn remember(&self, text: &str, stamp: chrono::NaiveDateTime) -> io::Result<PathBuf> {
+    pub fn remember(&self, text: &str, stamp: jiff::civil::DateTime) -> io::Result<PathBuf> {
         self.remember_titled(text, None, stamp)
     }
 
@@ -125,7 +125,7 @@ impl Persona {
         &self,
         text: &str,
         title: Option<&str>,
-        stamp: chrono::NaiveDateTime,
+        stamp: jiff::civil::DateTime,
     ) -> io::Result<PathBuf> {
         self.writable(&self.dir.join("memory"))?;
         let dir = self.dir.join("memory");
@@ -1296,7 +1296,7 @@ mod read_only_tests {
         let steward = crate::workspaces::Plane::open(&root)
             .persona("steward")
             .unwrap();
-        let stamp = chrono::NaiveDateTime::default();
+        let stamp = jiff::civil::date(1970, 1, 1).at(0, 0, 0, 0);
         let refusals = [
             steward.remember("A persona fact", stamp).err(),
             steward.scaffold_memory().err(),

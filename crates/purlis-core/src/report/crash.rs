@@ -73,7 +73,7 @@ impl CrashReport {
             .unwrap_or(crate::adopt::release_version());
         let at = record
             .at
-            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0));
+            .and_then(|at| jiff::Timestamp::from_second(i64::try_from(at).ok()?).ok());
         Fields {
             platform: "native",
             kind: "panic".to_string(),
@@ -174,7 +174,7 @@ impl CrashReport {
         let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
         let at = crash
             .at
-            .and_then(|at| chrono::DateTime::from_timestamp(i64::try_from(at).ok()?, 0));
+            .and_then(|at| jiff::Timestamp::from_second(i64::try_from(at).ok()?).ok());
         Fields {
             platform: "native",
             kind,
@@ -282,7 +282,7 @@ struct Fields {
 
 impl Fields {
     /// The envelope of these fields, made `at` (now when not known), for the intake at `dsn`.
-    fn envelope(self, at: Option<chrono::DateTime<chrono::Utc>>, dsn: &str) -> CrashReport {
+    fn envelope(self, at: Option<jiff::Timestamp>, dsn: &str) -> CrashReport {
         let event_id = uuid::Uuid::new_v4().simple().to_string();
         let mut event = fixed_fields(&event_id, self.platform, at);
         event["exception"] = json!({"values": [{
@@ -311,14 +311,10 @@ impl Fields {
 
 /// The fields every Crash report carries, and nothing else: when (`at`, or now), which purlis on
 /// which channel, and which operating system.
-fn fixed_fields(
-    event_id: &str,
-    platform: &str,
-    at: Option<chrono::DateTime<chrono::Utc>>,
-) -> serde_json::Value {
+fn fixed_fields(event_id: &str, platform: &str, at: Option<jiff::Timestamp>) -> serde_json::Value {
     let timestamp = at
-        .unwrap_or_else(chrono::Utc::now)
-        .format("%Y-%m-%dT%H:%M:%SZ")
+        .unwrap_or_else(jiff::Timestamp::now)
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
         .to_string();
     let channel = channel();
     json!({
@@ -337,7 +333,7 @@ fn fixed_fields(
 fn header(event_id: &str, dsn: &str) -> String {
     let header = json!({
         "event_id": event_id,
-        "sent_at": chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+        "sent_at": jiff::Timestamp::now().strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
         "dsn": dsn,
     });
     format!("{header}\n")

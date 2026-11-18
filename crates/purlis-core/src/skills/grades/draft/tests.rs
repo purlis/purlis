@@ -44,7 +44,7 @@ fn row_of(id: &str, draft: &Draft, plan: &Planned) -> Graded {
         commit: None,
         harness: None,
         profile: Some("work".into()),
-        ts: crate::dispatch::stamp(chrono::Utc::now()),
+        ts: crate::dispatch::stamp(jiff::Timestamp::now()),
         runs: 3,
         report: super::super::underway::interrupted_report(1000, None, None),
         spent: Spent::default(),
@@ -195,7 +195,7 @@ fn a_drafts_grade_is_kept_here_and_stays_out_of_the_skills_grades() {
 
     assert_eq!(
         path,
-        local_path_for(root, chrono::Utc::now()).unwrap(),
+        local_path_for(root, jiff::Timestamp::now()).unwrap(),
         "this machine's, for a committed skill too"
     );
     assert!(

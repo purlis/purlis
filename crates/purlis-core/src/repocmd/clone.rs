@@ -63,7 +63,7 @@ pub struct Request<'a> {
     pub ws: &'a str,
     pub repos: &'a [String],
     /// When the manifest says it was last touched: `updated_at`.
-    pub now: chrono::DateTime<chrono::Utc>,
+    pub now: jiff::Timestamp,
     /// Who it says touched it: `updated_by`, `$USER` in Python.
     pub author: &'a str,
     /// The hosts a clone may reach, where it runs for a sandboxed chat (#1335): the chat's
@@ -743,7 +743,7 @@ fn record_membership(request: &Request, members: &[String], say: Sink) {
     let Ok(ws) = Plane::open(request.root).workspace(request.ws) else {
         return;
     };
-    let now = request.now.format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
+    let now = request.now.strftime("%Y-%m-%dT%H:%M:%S+00:00").to_string();
     // From the first look to the last write, one lock (#1249 U2): a removal or another clone
     // writing in between would lose its change to the manifest read here.
     let _held = match ws.manifest_lock() {

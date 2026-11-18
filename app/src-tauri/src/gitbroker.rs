@@ -110,6 +110,7 @@ fn asker(held: &Held, chat: u32) -> Result<Asker, Answer> {
         config: held.config().map(std::path::Path::to_path_buf),
         id: held.chats().id_of(chat),
         live: Some(live_chats(held)),
+        policy: held.chats().handed_from(chat).and_then(|from| from.policy),
     })
 }
 
@@ -241,7 +242,7 @@ pub fn answer(held: &Held, ask: &GitAsk) -> Answer {
             &asker,
             ask,
             &isolation,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     };
     let root_update = matches!(ask.work, GitWork::RootUpdate {});

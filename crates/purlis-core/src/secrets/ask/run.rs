@@ -903,7 +903,7 @@ impl Asks {
                 ("program", Value::from(program)),
                 ("chat", Value::from(chat)),
             ],
-            chrono::Local::now().naive_local(),
+            jiff::Zoned::now().datetime(),
         );
         self.tell(
             Some(chat),
@@ -1411,7 +1411,7 @@ impl Asks {
                 ("program", Value::from(bound.program.display().to_string())),
                 ("chat", Value::from(bound.chat)),
             ],
-            chrono::Local::now().naive_local(),
+            jiff::Zoned::now().datetime(),
         );
     }
 

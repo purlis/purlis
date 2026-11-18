@@ -1920,6 +1920,7 @@ fn handed() -> HandedFrom {
         above: None,
         by_person: false,
         long: false,
+        policy: None,
     }
 }
 
@@ -3133,11 +3134,7 @@ fn a_studio_link_that_does_not_read_whole_reads_as_none_5185() {
 #[test]
 fn a_studio_chat_keeps_when_it_started_and_finished_across_a_relaunch_5248() {
     let plane = tempfile::tempdir().unwrap();
-    let now = |time: &str| {
-        chrono::DateTime::parse_from_rfc3339(time)
-            .unwrap()
-            .with_timezone(&chrono::Utc)
-    };
+    let now = |time: &str| str::parse::<jiff::Timestamp>(time).unwrap();
     let mut evals = StudioJob::new(
         Some("test-design".to_owned()),
         crate::skills::verbs::Level::project(),
@@ -3165,9 +3162,7 @@ fn a_studio_chat_keeps_when_it_started_and_finished_across_a_relaunch_5248() {
 
 #[test]
 fn a_studio_job_runs_again_with_its_chat_unless_its_draft_came_5248() {
-    let now = chrono::DateTime::parse_from_rfc3339("2026-11-04T17:31:00Z")
-        .unwrap()
-        .with_timezone(&chrono::Utc);
+    let now = str::parse::<jiff::Timestamp>("2026-11-04T17:31:00Z").unwrap();
     let mut job = StudioJob::new(
         None,
         crate::skills::verbs::Level::project(),

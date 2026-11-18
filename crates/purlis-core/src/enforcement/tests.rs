@@ -530,7 +530,7 @@ fn secrets_under_watch_still_mask() {
     ] {
         let root = plane(text, None);
         at_start(root.path());
-        let masked = crate::secrets::masked_of(root.path(), Some(CHAT), &values);
+        let masked = crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values);
         assert_eq!(masked, values.as_slice(), "{text:?}");
         assert_eq!(
             crate::secrets::redact(b"token s3cr3t-value", masked),
@@ -548,11 +548,11 @@ fn secrets_off_or_logged_stop_masking_only_once_the_person_pressed() {
         // Not pressed: still masked, and nothing logged.
         at_start(root.path());
         assert_eq!(
-            crate::secrets::masked_of(root.path(), Some(CHAT), &values),
+            crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values),
             values.as_slice()
         );
         press(root.path(), &digest_of(root.path())).expect("the press is kept");
-        assert!(crate::secrets::masked_of(root.path(), Some(CHAT), &values).is_empty());
+        assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
         assert_eq!(read_log(root.path(), CHAT).len(), lines, "{}", mode.word());
     }
 }
@@ -606,7 +606,7 @@ fn an_acceptance_removed_after_one_was_kept_reads_as_strict() {
     object.remove("policy_accepted");
     object.remove("policy_seal");
     std::fs::write(&file, doc.to_string()).expect("written");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 #[test]
@@ -630,7 +630,7 @@ fn an_older_sealed_acceptance_put_back_reads_as_strict() {
         "[policy]\ntemplate = \"open\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 #[test]
@@ -696,7 +696,7 @@ fn a_whole_machine_file_put_back_from_before_a_tightening_reads_as_strict() {
         "[policy]\ntemplate = \"watch\"\n",
     )
     .expect("loosened");
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 /// A pair nothing covers, as a cross-persona dispatch from `root` would be judged.
@@ -787,7 +787,7 @@ fn a_git_folder_copied_aside_and_back_is_no_fresh_install() {
         "a new clone key"
     );
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), Resolved::all(Mode::Enforce));
+    assert_eq!(in_force(root.path()), Resolved::strict());
     assert_eq!(
         a_dispatch_across_personas(root.path()),
         crate::dispatchgrant::Covers::Unread
@@ -862,7 +862,8 @@ fn a_sealed_acceptance_whose_anchor_is_gone_is_broken() {
     assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
     crate::secrets::seal::forget_kept_for_this_test();
     assert!(broken(root.path()));
-    assert_eq!(in_force(root.path()), strict());
+    // Every family enforced, and every dispatch across personas denied.
+    assert_eq!(in_force(root.path()), Resolved::strict());
 }
 
 #[test]
@@ -874,5 +875,247 @@ fn a_seal_key_another_program_made_breaks_every_acceptance_until_the_next_press(
     let found = (broken(never.path()), in_force(never.path()));
     crate::secrets::seal::set_foreign_for_this_test(false);
     assert!(found.0, "a project never pressed is broken too");
-    assert_eq!(found.1, strict());
+    assert_eq!(found.1, Resolved::strict());
+}
+
+/// **The `vaults` family** (item 4 of the Q308 follow-up): off or enforce only. `open`, or
+/// `vaults = "off"` once the person pressed, opens a registered vault to a chat of any persona;
+/// `strict`, `watch`, `hold` and `team` keep a vault to the personas it is tagged for.
+#[test]
+fn vaults_off_opens_a_registered_vault_and_watch_hold_and_team_keep_it_enforced() {
+    use crate::secrets::{Ctx, Env, brokered};
+    let _home = OwnConfigHome::new();
+    for (text, opened) in [
+        ("[policy]\ntemplate = \"strict\"\n", false),
+        ("[policy]\ntemplate = \"watch\"\n", false),
+        ("[policy]\ntemplate = \"hold\"\n", false),
+        ("[policy]\ntemplate = \"team\"\n", false),
+        ("[policy]\ntemplate = \"strict\"\nvaults = \"off\"\n", true),
+        ("[policy]\ntemplate = \"open\"\n", true),
+    ] {
+        let root = plane(text, None);
+        std::fs::write(
+            root.path().join("vaults.json"),
+            serde_json::json!({ "vaults": {
+                "prod": {"provider": "plain-file", "config": {"file": "prod.json"}, "persona": "devops"},
+            }})
+            .to_string(),
+        )
+        .expect("the registry");
+        at_start(root.path());
+        press(root.path(), &digest_of(root.path())).expect("the press is kept");
+        assert_eq!(
+            mode(root.path(), Family::Vaults) == Mode::Off,
+            opened,
+            "{text}"
+        );
+        let ctx = Ctx::new(root.path(), Env::of(&[]));
+        assert_eq!(
+            brokered::authorise(&ctx, Some("steward"), "prod").is_ok(),
+            opened,
+            "{text}"
+        );
+        // Its own persona, always; a vault the project does not register, never.
+        assert_eq!(brokered::authorise(&ctx, Some("devops"), "prod"), Ok(()));
+        assert!(
+            brokered::authorise(&ctx, Some("devops"), "nope").is_err(),
+            "{text}"
+        );
+    }
+}
+
+/// A plane whose project lets masking and the vaults check go, pressed: and the chain that
+/// dispatched a chat enforced both (the review of #7113).
+fn loosened_plane() -> tempfile::TempDir {
+    let root = plane("[policy]\nsecrets = \"off\"\nvaults = \"off\"\n", None);
+    at_start(root.path());
+    press(root.path(), &digest_of(root.path())).expect("the press is kept");
+    root
+}
+
+const STRICT_CHAIN: &str = "secrets=enforce,vaults=enforce";
+
+#[test]
+fn a_dispatched_chat_s_output_is_masked_where_its_chain_masked_it() {
+    let _home = OwnConfigHome::new();
+    let values = vec!["s3cr3t-value".to_owned()];
+    let root = loosened_plane();
+    assert!(crate::secrets::masked_of(root.path(), (Some(CHAT), None), &values).is_empty());
+    assert_eq!(
+        crate::secrets::masked_of(root.path(), (Some(CHAT), Some(STRICT_CHAIN)), &values),
+        values.as_slice()
+    );
+}
+
+#[test]
+fn a_dispatched_chat_s_vaults_are_checked_where_its_chain_checked_them() {
+    let _home = OwnConfigHome::new();
+    let root = loosened_plane();
+    let ctx = crate::secrets::Ctx::new(root.path(), crate::secrets::Env::of(&[]));
+    assert!(crate::secrets::brokered::vaults_off(&ctx));
+    assert!(!crate::secrets::brokered::vaults_off(
+        &ctx.under_chain(Some(STRICT_CHAIN))
+    ));
+}
+
+/// `git <args>` in `root`, with no configuration but the repository's.
+fn git_in(root: &Path, args: &[&str]) -> std::process::Output {
+    let mut git = std::process::Command::new("git");
+    git.arg("-C")
+        .arg(root)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1");
+    crate::forklock::output(&mut git).expect("git runs")
+}
+
+/// A plane whose file says `committed`, committed at `HEAD`.
+fn a_committed_plane(committed: &str) -> tempfile::TempDir {
+    let root = plane(committed, None);
+    for args in [
+        &["init", "-q"][..],
+        &["add", "charter.toml"],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "p",
+        ],
+    ] {
+        let ran = git_in(root.path(), args);
+        assert!(ran.status.success(), "{args:?}: {ran:?}");
+    }
+    root
+}
+
+/// The object file of the committed settings file's blob, which git cannot read once it is gone.
+fn the_files_blob(root: &Path) -> PathBuf {
+    let ran = git_in(root, &["rev-parse", "HEAD:charter.toml"]);
+    assert!(ran.status.success(), "{ran:?}");
+    let sha = String::from_utf8(ran.stdout).expect("utf-8");
+    let sha = sha.trim();
+    root.join(".git/objects").join(&sha[..2]).join(&sha[2..])
+}
+
+#[test]
+fn a_blob_git_cannot_read_at_head_is_strict_and_only_a_missing_path_is_no_file() {
+    // #7073: `git show` exits 128 for a blob it cannot read as well as for a path that is not
+    // there. Only git's own "no such path" reads as a project that says nothing.
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
+    assert_eq!(Settings::read(root.path()).template, Template::Open);
+    std::fs::remove_file(the_files_blob(root.path())).expect("the blob gone");
+    let settings = Settings::read(root.path());
+    assert_eq!(settings.template, Template::Strict);
+    assert!(settings.unread);
+
+    // A file on disk and never committed, and one in no commit at all: no file at `HEAD`.
+    let uncommitted = a_committed_plane("");
+    let ran = git_in(
+        uncommitted.path(),
+        &["rm", "-q", "--cached", "charter.toml"],
+    );
+    assert!(ran.status.success(), "{ran:?}");
+    let ran = git_in(
+        uncommitted.path(),
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.invalid",
+            "commit",
+            "-q",
+            "-m",
+            "untracked",
+        ],
+    );
+    assert!(ran.status.success(), "{ran:?}");
+    std::fs::write(
+        uncommitted.path().join("charter.toml"),
+        "[policy]\ntemplate = \"open\"\n",
+    )
+    .expect("on disk");
+    let settings = Settings::read(uncommitted.path());
+    assert_eq!(settings.template, Template::Watch, "{settings:?}");
+    assert!(!settings.unread);
+    std::fs::remove_file(uncommitted.path().join("charter.toml")).expect("gone from disk");
+    let settings = Settings::read(uncommitted.path());
+    assert_eq!(settings.template, Template::Watch, "{settings:?}");
+    assert!(!settings.unread);
+}
+
+#[test]
+fn a_head_git_could_not_read_once_is_never_kept_as_accepted() {
+    // #7073: strict while git cannot read `HEAD`, and back to what was pressed once it can,
+    // with no press: a git that failed once is no tightening the project made.
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
+    press(root.path(), &digest_of(root.path())).expect("pressed");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    // `HEAD` names a branch with no commit for a moment, as a git cut short might leave it.
+    let branch = git_in(root.path(), &["symbolic-ref", "HEAD"]);
+    let branch = String::from_utf8(branch.stdout).expect("utf-8");
+    let ran = git_in(root.path(), &["symbolic-ref", "HEAD", "refs/heads/not-yet"]);
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(in_force(root.path()), Resolved::strict());
+    let ran = git_in(root.path(), &["symbolic-ref", "HEAD", branch.trim()]);
+    assert!(ran.status.success(), "{ran:?}");
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
+    assert!(waiting(root.path()).is_empty());
+}
+
+#[test]
+fn a_git_folder_git_cannot_read_is_strict_and_never_the_working_tree_file() {
+    // #7073: git calls a plane whose `.git/HEAD` is corrupted no repository, as it calls one
+    // with no `.git`. Only one with no `.git` at all reads its working tree's file.
+    let _home = OwnConfigHome::new();
+    let root = a_committed_plane("[policy]\ntemplate = \"open\"\n");
+    std::fs::write(root.path().join(".git/HEAD"), "not a ref\n").expect("a corrupted HEAD");
+    assert_eq!(Settings::read(root.path()).template, Template::Strict);
+    std::fs::remove_dir_all(root.path().join(".git")).expect("no repository");
+    assert_eq!(Settings::read(root.path()).template, Template::Open);
+}
+
+#[test]
+fn a_log_line_is_not_a_read_of_the_whole_log() {
+    // #7073: the cap counts the lines once and keeps the count, full or not.
+    let root = tempfile::tempdir().expect("a folder");
+    let path = log_file(root.path(), CHAT).expect("a log file");
+    std::fs::create_dir_all(path.parent().expect("its folder")).expect("its folder");
+    std::fs::write(&path, "{}\n".repeat(MOST_LINES - 2)).expect("a log near full");
+    let before = counted_whole();
+    for _ in 0..4 {
+        write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
+    }
+    assert_eq!(counted_whole() - before, 1, "counted once");
+    let kept = std::fs::read_to_string(&path).expect("the log");
+    assert_eq!(kept.lines().count(), MOST_LINES);
+    // A log taken away is counted again, from nothing.
+    std::fs::remove_file(&path).expect("the log gone");
+    write_line(root.path(), CHAT, Family::GuardsGit, "A3", None);
+    assert_eq!(read_log(root.path(), CHAT).len(), 1);
+}
+
+#[test]
+fn a_press_with_a_seal_key_another_program_made_says_how_to_recover_and_then_accepts() {
+    // #7073: the app cannot delete an item another program owns, so the press says which item
+    // to delete and how; once it is gone, the next press makes a key and accepts.
+    let _home = OwnConfigHome::new();
+    let root = plane("[policy]\ntemplate = \"open\"\n", None);
+    crate::secrets::seal::set_foreign_for_this_test(true);
+    let refused = press(root.path(), &digest_of(root.path()));
+    crate::secrets::seal::set_foreign_for_this_test(false);
+    let why = refused.expect_err("nothing accepted").to_string();
+    assert_eq!(why, crate::secrets::seal::FOREIGN_KEY);
+    assert!(
+        why.contains("security delete-generic-password -s purlis-seal"),
+        "{why}"
+    );
+    press(root.path(), &digest_of(root.path())).expect("accepted once the item is gone");
+    assert!(!broken(root.path()));
+    assert_eq!(in_force(root.path()).mode(Family::GuardsGit), Mode::Off);
 }

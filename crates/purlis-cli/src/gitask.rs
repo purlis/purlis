@@ -6,15 +6,18 @@
 //! they said (#1335, ADR 0067 §2). A sandboxed chat may not write a clone's `.git/config`, its
 //! hooks or the editor settings a checkout carries; the app does.
 //!
-//! **Forwarded whenever the command runs in a chat the app started** (`$PURLIS_HOOK_SOCKET` and
-//! the chat's number), sandboxed or not, so a chat gets one behaviour (D-2). Outside a chat, or
-//! where no app takes the ask, the command runs here as it always has.
+//! **Forwarded whenever the command runs in a chat the app started**, sandboxed or not, so a chat
+//! gets one behaviour (D-2). Which chat, and where the app is, are the app's and the plane's to
+//! say, never the environment's (#6995, [`hookwire::reach`]). Outside a chat the command runs
+//! here as it always has, and so it does where the app answers that nothing takes the ask. A
+//! chat whose app cannot be reached, or whose socket is answered by something that is not the
+//! app, is refused: nothing runs here for it.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use purlis_core::gitbroker::commit as broker;
-use purlis_core::hookwire::{self, CommitAsk, FolderName, GitAsk, GitWork, SOCKET_ENV, Stage};
+use purlis_core::hookwire::{self, CommitAsk, FolderName, GitAsk, GitWork, Stage};
 use purlis_core::repocmd::Say;
 use purlis_core::worktree::git;
 
@@ -105,18 +108,20 @@ pub fn unsure_prune(dry_run: bool, cause: &str, removed: &[String]) -> String {
     )
 }
 
-/// Hands the app that started this chat the ask `of` makes for the chat's number, or answers
-/// [`Forwarded::NotTaken`] where there is none.
+/// Hands the app that started this chat the ask `of` makes for the chat's number, as the app
+/// names it ([`hookwire::reach`]); answers [`Forwarded::NotTaken`] where this is no chat's, and
+/// refuses where it is one's and no app, or something that is not the app, answers.
 fn asked(of: impl FnOnce(u32) -> hookwire::Ask, within: Duration) -> Forwarded {
-    let socket = purlis_core::envvar::var_os(SOCKET_ENV).filter(|s| !s.is_empty());
-    let (Some(socket), Some(chat)) = (socket, crate::session::chat_number()) else {
-        return Forwarded::NotTaken;
-    };
-    let Ok(mut asking) = hookwire::Asking::on(Path::new(&socket), hookwire::ChatToken::from_env())
-    else {
-        return Forwarded::NotTaken;
-    };
-    answered(asking.ask(&of(chat), within))
+    use hookwire::reach::{self, Unreached};
+    let cwd = std::env::current_dir().unwrap_or_default();
+    match reach::reach(&cwd, &purlis_core::envvar::var, within) {
+        Ok(reached) => {
+            let mut asking = hookwire::Asking::over(reached.stream, reached.token);
+            answered(asking.ask(&of(reached.chat), within))
+        }
+        Err(Unreached::NotAChat) => Forwarded::NotTaken,
+        Err(not) => Forwarded::Refused(not.said().unwrap_or_default()),
+    }
 }
 
 /// How long the app may take to update a branch folder, or stay silent pushing one: a fetch and

@@ -413,6 +413,12 @@ export const commands = {
 	projectPolicyState: (plane: PlaneId) => typedError<PolicyState, string>(__TAURI_INVOKE("project_policy_state", { plane })),
 	acceptProjectPolicy: __WINDOW_ONLY_RESULT,
 	/**
+	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
+	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
+	 *  thread.
+	 */
+	policyLog: (plane: PlaneId) => typedError<PolicyLog, string>(__TAURI_INVOKE("policy_log", { plane })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 * 
@@ -569,6 +575,18 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  The pools' runners whose links are down now, for `plane`'s chats (#7134): read as a window
+	 *  is drawn, and again each time `chats-reconnecting` says the plane's chats moved, since a try
+	 *  to link again that failed for another reason says so there.
+	 */
+	runnerLinksDown: (plane: PlaneId) => typedError<RunnerLinkDown[], string>(__TAURI_INVOKE("runner_links_down", { plane })),
+	/**
+	 *  **Try now** (#7134): pool `pool`'s runner, whose link is down, is tried again at once rather
+	 *  than after the pause between tries. Answered before the try: what it finds is said as ever,
+	 *  on `chats-reconnecting`.
+	 */
+	runnerLinkNow: (plane: PlaneId, pool: string) => typedError<null, string>(__TAURI_INVOKE("runner_link_now", { plane, pool })),
 	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
 	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
 	fetchFreshRunnerAgain: __WINDOW_ONLY_RESULT,
@@ -946,6 +964,7 @@ export const commands = {
 	agentIdentityCreate: __WINDOW_ONLY_RESULT,
 	agentIdentityCreateCancel: __WINDOW_ONLY,
 	agentIdentityReopen: __WINDOW_ONLY_RESULT,
+	agentIdentityCreateFromAddress: __WINDOW_ONLY_RESULT,
 	agentIdentityStand: __WINDOW_ONLY_RESULT,
 	agentIdentityLines: __WINDOW_ONLY_RESULT,
 	agentIdentityFinish: __WINDOW_ONLY_RESULT,
@@ -1613,6 +1632,7 @@ export const commands = {
 	 */
 	taskFolderShared: (plane: PlaneId, session: number, place: string | null) => typedError<string | null, string>(__TAURI_INVOKE("task_folder_shared", { plane, session, place })),
 	chatByNumber: __WINDOW_ONLY_RESULT,
+	chatById: __WINDOW_ONLY_RESULT,
 	closedChats: __WINDOW_ONLY_RESULT,
 	chatScreen: __WINDOW_ONLY_RESULT,
 	taskScreens: __WINDOW_ONLY_RESULT,
@@ -2055,6 +2075,7 @@ export const commands = {
 	poolSetupOpenDocker: __WINDOW_ONLY_RESULT,
 	addDockerPool: __WINDOW_ONLY_RESULT,
 	removeDockerPool: __WINDOW_ONLY_RESULT,
+	forgetDockerPool: __WINDOW_ONLY_RESULT,
 	dockerPoolLink: __WINDOW_ONLY_RESULT,
 	poolsPinChanged: __WINDOW_ONLY_RESULT,
 	dockerPoolsRemoved: __WINDOW_ONLY_RESULT,
@@ -4298,7 +4319,12 @@ export type BrowserFrame = {
  */
 export type BrowserInput = { kind: "mouse"; aim: string; action: MouseAct; x: number; y: number; button: MouseButton; clicks: number; modifiers: number; delta_x: number; delta_y: number } | { kind: "key"; aim: string; action: KeyAct; key: string; physical: string; key_code: number; modifiers: number } | 
 /**  Back, Forward, Reload or Stop (#6938), aimed at what the frame the person saw showed. */
-{ kind: "navigate"; aim: string; step: BrowserStep };
+{ kind: "navigate"; aim: string; step: BrowserStep } | 
+/**
+ *  The person watches another of the browser's pages (#6989): `page` is its id, as the view
+ *  was told it.
+ */
+{ kind: "watch"; aim: string; page: string };
 
 /**  Which limit a row sets. */
 export type BrowserLimit = "per_project" | "on_this_device" | "idle_minutes";
@@ -4744,6 +4770,13 @@ export type ChatCard = {
 	 *  row's (`task.reopens`).
 	 */
 	chat_reopen: ChatReopen | null,
+	/**
+	 *  **The number it was found by, where that is one it had before a restart** (#6685): the
+	 *  card is titled by the number it closed under, and says this one too
+	 *  ([`purlis_core::chatrecords::ChatRecord::found_by`]). `None` where it was found by that
+	 *  number, by its ULID, and for a card drawn from its task.
+	 */
+	found_by: number | null,
 };
 
 /**
@@ -5311,12 +5344,24 @@ export type CloseHanded = {
 
 /**
  *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
- *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
- *  card (`chat_by_number`).
+ *  before a restart, what its tab said, where it ran and when it closed, and the number it was
+ *  found by where that is one it had before a restart (#7125). Choosing it opens its card
+ *  (`chat_by_id`).
  */
 export type ClosedChat = {
 	number: number,
+	/**
+	 *  Its ULID: what choosing its row opens it by (`chat_by_id`), as more than one record may
+	 *  answer to a number (#6740).
+	 */
+	id: string,
 	earlier: number[],
+	/**
+	 *  **The number typed that found it, where it is one it had before a restart** (#6685): its
+	 *  row says `(was #702)` beside `#731`, by
+	 *  [`purlis_core::chatrecords::ChatRecord::found_by`], the rule's one home (#7125).
+	 */
+	found_by: number | null,
 	title: string,
 	place: string,
 	/**  When it closed, UTC, RFC 3339. */
@@ -6170,6 +6215,35 @@ export type DispatchStanding = {
 	 *  name. **It grants nothing, and nothing here is in force by it.**
 	 */
 	wants: DispatchWants[],
+	/**
+	 *  The grants and acceptances kept here whose seal does not hold (ticket T1.1-73): none of
+	 *  them counts, and the table lists them read-only.
+	 */
+	unsealed: DispatchUnsealed[],
+	/**
+	 *  Where purlis's app cannot read the key it seals answers with, the sentence saying so and
+	 *  what to do: no grant of yours and no acceptance counts until it reads.
+	 */
+	seals_unread: string | null,
+};
+
+/**
+ *  **A dispatch answer kept here that does not count** (ticket T1.1-73): written by something
+ *  other than purlis's app, edited, copied from another clone or put back after it was taken
+ *  away, so its seal does not hold. Shown read-only; the pair is granted again only through its
+ *  ordinary ask.
+ */
+export type DispatchUnsealed = {
+	/**
+	 *  Which list it is in: `mine`, `any`, `mine-in`, `seen`, `any-seen`, `seen-in`, `dormant`
+	 *  or `aside`.
+	 */
+	kind: string,
+	/**
+	 *  The answer as the list spells it: `asking -> target`, `asking -> *`, either `in
+	 *  <workspace>`.
+	 */
+	text: string,
 };
 
 /**
@@ -6318,6 +6392,26 @@ export type Doing = {
 	 */
 	over: boolean,
 };
+
+/**
+ *  **One download of a browser's, as its view is told** (#6990): its id (`d1`), its name as
+ *  `browser_downloads` names it (which the view draws with every character a reader does not see
+ *  marked, #2020), how far it came, and its size in bytes, `null` where the site did not say.
+ *  Bytes are `f64`, so they are a `number` in TypeScript and not a `bigint`: whole up to 2⁵³.
+ */
+export type DownloadListed = {
+	id: string,
+	name: string,
+	state: DownloadStateSaid,
+	received: number | null,
+	total: number | null,
+};
+
+/**
+ *  **How far a download came** (#6990): under way, done, cancelled by the page or the engine,
+ *  or cancelled by purlis for its size.
+ */
+export type DownloadStateSaid = "going" | "done" | "cancelled" | "too_large";
 
 /**  What became of a draft the person filed. */
 export type DraftFiled = 
@@ -8265,7 +8359,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url" | "file" | "chat";
+export type KindHint = "url" | "file" | "chat" | "osc8";
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -8500,12 +8594,22 @@ export type LinkAsk =
 /**  A link, asked about in general words. */
 { about: "link" } | 
 /**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
-{ about: "file-outside"; home: LinkHome | null };
+{ about: "file-outside"; home: LinkHome | null } | 
+/**
+ *  A link a program marked whose words read as another address or path (the prototype's
+ *  S8, #6218): what its target is, and a web address's host, which the ask draws apart.
+ */
+{ about: "misleading"; kind: KindHint; host: string | null };
 
-/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+/**
+ *  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. A
+ *  link a program marked (`osc8`) also carries `target`, the address the program named, as the
+ *  pane was handed it: the core reads it again, and a target the pane resolved is never sent.
+ */
 export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
+	target?: string | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
@@ -8579,6 +8683,8 @@ export type LinkSeen = {
 	target: string,
 	shown: string,
 	does: LinkDoes,
+	/**  The words of a link a program marked, where they name another target than it goes to. */
+	its_text?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };
@@ -10003,6 +10109,18 @@ export type PageAt = {
 };
 
 /**
+ *  **One of a browser's pages, as its view is told** (#6989): its id (`p2`), what the person's
+ *  pick of it names; its title as `browser_pages` lists it, `null` for none; the origin of its
+ *  address alone, `null` for none; and whether it is the page shown now.
+ */
+export type PageListed = {
+	id: string,
+	title: string | null,
+	origin: string | null,
+	current: boolean,
+};
+
+/**
  *  **Where a page's load stands** (#6938): loading, loaded, failed with the engine's reason
  *  (`net::ERR_NAME_NOT_RESOLVED`, `null` where it gave none), or crashed.
  */
@@ -10862,6 +10980,52 @@ export type PluginOffShown = {
 export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
 
 /**
+ *  What the project's enforcement log holds, newest first, at most [`MOST_LINES`], with how
+ *  many lines it holds in all.
+ */
+export type PolicyLog = {
+	/**  How many refusals were let through and logged, every chat's. */
+	count: number,
+	/**  The newest of them. */
+	lines: PolicyLogLine[],
+	/**
+	 *  How many lines the log holds that are not as purlis writes them, left out of the count
+	 *  and the lines: what a process other than the app wrote there.
+	 */
+	dropped: number,
+};
+
+/**  One line of the project's enforcement log: a refusal a family set to `log` let through. */
+export type PolicyLogLine = {
+	/**  When, UTC, RFC 3339. */
+	at: string,
+	/**  The id of the rule that would have refused. */
+	rule: string,
+	/**  The family's key. */
+	family: string,
+	/**
+	 *  The number of the chat it was in, while that chat is open here; `null` for one that has
+	 *  closed, or that purlis could not name: the window says it is unknown.
+	 */
+	session: number | null,
+	/**  The host it was about, where the rule is about one. */
+	host: string | null,
+};
+
+/**  One family the project's `[policy]` sets apart from its template. */
+export type PolicyOverride = {
+	/**  The family's key, as `[policy]` spells it. */
+	family: string,
+	/**  What the file says: `off`, `log` or `enforce`. */
+	said: string,
+	/**
+	 *  How your chats here run it now: stricter than `said` where a lock holds it, where the
+	 *  family is not switchable yet, or where a loosening waits for your press.
+	 */
+	runs: string,
+};
+
+/**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
  *  when it can be taken where it is refused for its age alone.
  */
@@ -10888,9 +11052,23 @@ export type PolicyState = {
 	 *  file that changed since it was shown accepts nothing.
 	 */
 	digest: string,
+	/**
+	 *  The template the project's committed file names (`open`, `watch`, `hold`, `team` or
+	 *  `strict`), or `watch` where it names none (Q308a: the window says it, Q308 instruction 45).
+	 */
+	template: string,
+	/**  Whether the file named no template, so `watch`, the shipped default, holds. */
+	template_default: boolean,
+	/**  Each family the project sets apart from its template, in the docs' order. */
+	overrides: PolicyOverride[],
+	/**
+	 *  Each family an administrator's lock holds enforced on this machine, whatever the file
+	 *  says (Q308a: Settings shows it as locked).
+	 */
+	locked: string[],
 };
 
-/**  One family the project now runs looser than you accepted. */
+/**  One family the project now runs looser than you accepted, or one dispatch deny it lifted. */
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,
@@ -11169,6 +11347,17 @@ export type PoolProfiles = {
 	 */
 	fresh_claim: boolean,
 };
+
+/**
+ *  **What a pool's Remove came to**: removed, with what could not be removed where something
+ *  stays; or nothing removed because the pool's machine doesn't answer, in Pool setup's words,
+ *  so the window offers to forget it here ([`forget_docker_pool`]).
+ */
+export type PoolRemoval = 
+/**  It is gone, or what of it stays is said in `left`. */
+{ state: "removed"; left: string | null } | 
+/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
+{ state: "unreachable"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -13625,6 +13814,19 @@ export type RunnerImageOffered =
 /**  None: a local build, with no update channel, names none. */
 { state: "local_build" };
 
+/**
+ *  **A pool's runner whose link is down, and why** (#7134): what the window says once its
+ *  chats have said Reconnecting… for longer than a blip.
+ */
+export type RunnerLinkDown = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  The host's own words: what ended the link, or what the last try to link again found. */
+	why: string,
+	/**  When the link went down, in seconds since 1970. */
+	since: number,
+};
+
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 
 /**  Over the link, which is up. */
@@ -14811,6 +15013,16 @@ export type ShownPage = {
 	address: string | null,
 	title: string | null,
 	load: PageLoadSaid,
+	/**
+	 *  **The browser's pages** (#6989), as `browser_pages` lists them to its chat, in the order
+	 *  they opened: empty from a host before 1.91, and the view then lists none.
+	 */
+	pages: PageListed[],
+	/**
+	 *  **The browser's downloads** (#6990), as `browser_downloads` lists them to its chat, in the
+	 *  order they began: empty from a host before 1.91, and the view then counts none.
+	 */
+	downloads: DownloadListed[],
 };
 
 /**

@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::{self, Cursor, Read, Write};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use purlis_browser_engine::install::{Fetch, Manifest};
 use sha2::{Digest, Sha256};
 
@@ -71,10 +71,8 @@ pub fn manifest(version: &str, issued: &str, digest: &str) -> Manifest {
     Manifest::parse(manifest_text(version, issued, digest).as_bytes()).unwrap()
 }
 
-pub fn at(time: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(time)
-        .unwrap()
-        .with_timezone(&Utc)
+pub fn at(time: &str) -> Timestamp {
+    str::parse::<Timestamp>(time).unwrap()
 }
 
 /// Serves `files` from memory and remembers every address asked for.

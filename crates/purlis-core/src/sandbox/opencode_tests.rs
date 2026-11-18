@@ -1113,7 +1113,7 @@ mod live {
                 brief: "a brief for devops alone".to_owned(),
                 report_owed: false,
             },
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
         .expect("the app opens a record");
         let store = crate::dispatchrecord::dir(plane.path());

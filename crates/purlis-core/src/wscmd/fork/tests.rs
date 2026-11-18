@@ -16,7 +16,7 @@ fn plane() -> tempfile::TempDir {
     dir
 }
 
-fn now() -> chrono::DateTime<chrono::Utc> {
+fn now() -> jiff::Timestamp {
     "2026-05-04T11:32:17Z".parse().unwrap()
 }
 
@@ -42,10 +42,16 @@ fn a_parent(root: &Path, name: &str) {
     let plane = crate::workspaces::Plane::open(root);
     let ws = plane.workspace(name).unwrap();
     ws.set_vision("Ship the widget").unwrap();
-    ws.remember("The API returns 418 on Mondays", now().naive_utc())
-        .unwrap();
-    ws.add_todo("Write the migration", now().naive_utc())
-        .unwrap();
+    ws.remember(
+        "The API returns 418 on Mondays",
+        now().to_zoned(jiff::tz::TimeZone::UTC).datetime(),
+    )
+    .unwrap();
+    ws.add_todo(
+        "Write the migration",
+        now().to_zoned(jiff::tz::TimeZone::UTC).datetime(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -122,7 +128,7 @@ fn the_two_todo_lists_diverge_from_the_fork() {
     plane
         .workspace("gamma")
         .unwrap()
-        .close_todo(&slug, now().naive_utc())
+        .close_todo(&slug, now().to_zoned(jiff::tz::TimeZone::UTC).datetime())
         .unwrap();
     assert_eq!(plane.workspace("gamma").unwrap().todos().unwrap().len(), 0);
     assert_eq!(plane.workspace("alpha").unwrap().todos().unwrap().len(), 1);

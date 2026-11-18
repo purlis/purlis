@@ -27,7 +27,7 @@ fn chat(number: u32, id: &str, ended: &str) -> ChatRecord {
 }
 
 fn at(time: &str) -> SystemTime {
-    chrono::DateTime::parse_from_rfc3339(time).unwrap().into()
+    str::parse::<jiff::Timestamp>(time).unwrap().into()
 }
 
 #[test]
@@ -39,6 +39,18 @@ fn a_chat_kept_as_it_closed_reads_back_by_its_number() {
         Some(&chat(702, ID, "2026-11-12T09:40:00Z"))
     );
     assert_eq!(of_number(&every(&root), 703), None);
+}
+
+#[test]
+fn a_chat_is_found_by_its_ulid_where_a_newer_record_answers_to_its_number() {
+    // #7123: 702 was dealt twice (#6740), so its number finds the newer close, its ULID its own.
+    let (_dir, root) = project();
+    let older = chat(702, OTHER, "2026-11-12T09:40:00Z");
+    let newer = chat(702, ID, "2026-11-12T11:00:00Z");
+    keep_all(&root, &[newer.clone(), older.clone()]).unwrap();
+    assert_eq!(of_number(&every(&root), 702), Some(&newer));
+    assert_eq!(of_id(&every(&root), OTHER), Some(&older));
+    assert_eq!(of_id(&every(&root), "01K6CHATS0000000000000000E"), None);
 }
 
 #[test]
@@ -208,7 +220,7 @@ fn a_chat_whose_end_stands_in_the_future_is_swept_though_other_chats_keep_closin
     // at once, as a dispatch record's words are (`dispatchrecord::talk_is_due`).
     let (_dir, root) = project();
     let now = SystemTime::now();
-    let stamp = |time: SystemTime| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339();
+    let stamp = |time: SystemTime| crate::oldspelling::rfc3339(crate::wallclock::instant(time));
     let a_year = std::time::Duration::from_secs(365 * 24 * 3600);
     let ahead = serde_json::to_value(OnDisk::of(&chat(702, ID, &stamp(now + a_year)))).unwrap();
     std::fs::create_dir_all(dir(&root)).unwrap();
@@ -231,11 +243,14 @@ fn a_chat_whose_end_stands_in_the_future_is_swept_though_other_chats_keep_closin
 #[test]
 fn a_chat_kept_with_an_end_ahead_of_this_clock_is_kept_as_ending_now() {
     let (_dir, root) = project();
-    let before = chrono::Utc::now();
-    let ahead = (before + chrono::Duration::days(365)).to_rfc3339();
+    let before = jiff::Timestamp::now();
+    let ahead = crate::oldspelling::rfc3339(before + jiff::SignedDuration::from_hours(24 * 365));
     keep(&root, &chat(702, ID, &ahead)).unwrap();
-    let ended = chrono::DateTime::parse_from_rfc3339(&every(&root)[0].ended).unwrap();
-    assert!(ended >= before && ended <= chrono::Utc::now(), "{ended}");
+    let ended = str::parse::<jiff::Timestamp>(&every(&root)[0].ended).unwrap();
+    assert!(
+        ended >= before && ended <= jiff::Timestamp::now(),
+        "{ended}"
+    );
     assert_eq!(
         sweep(&root, SystemTime::now()),
         0,
@@ -408,6 +423,7 @@ fn a_closed_handoff_reopens_as_an_ordinary_chat_that_owes_nobody_anything() {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..as_it_ran(Some(CONVERSATION))
     };
@@ -539,4 +555,18 @@ fn words_longer_than_a_record_keeps_are_cut_as_they_are_read() {
         panic!("started by a chat");
     };
     assert_eq!(name.chars().count(), 200);
+}
+
+#[test]
+fn the_highest_number_counts_every_number_a_closed_chat_answers_to() {
+    // #6740: the counter of numbers dealt is held above these, earlier ones too.
+    let (_dir, root) = project();
+    assert_eq!(highest_number(&root), 0, "no closed chat");
+    let restarted = ChatRecord {
+        earlier: vec![760],
+        ..chat(731, ID, "2026-11-12T09:40:00Z")
+    };
+    keep(&root, &restarted).unwrap();
+    keep(&root, &chat(745, OTHER, "2026-11-12T10:40:00Z")).unwrap();
+    assert_eq!(highest_number(&root), 760);
 }

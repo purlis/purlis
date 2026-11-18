@@ -306,6 +306,7 @@ fn what_a_profile_hands_a_chat_on_purlis_s_own_wrap_is_carried_to_its_program() 
     );
     let handed = crate::profilesignin::Handed::of(vec![(
         "API_KEY".to_owned(),
+        crate::secrets::handedto::Entry::new("team", "api-key"),
         "from-the-profile".to_owned(),
     )]);
     let wrapped = with_handed(wrapped, &handed);
@@ -327,6 +328,7 @@ fn what_a_profile_hands_a_chat_is_set_last() {
     let plain = spec(app(), &a_chat(&set, None));
     let handed = crate::profilesignin::Handed::of(vec![(
         "API_KEY".to_owned(),
+        crate::secrets::handedto::Entry::new("team", "api-key"),
         "from-the-profile".to_owned(),
     )]);
     let plain = with_handed(plain, &handed);

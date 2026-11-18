@@ -47,6 +47,7 @@ fn from_a_chat(f: &support::Fixture, cut: &Cut, delete: bool) -> (Answer, String
             harnessed: true,
             unsandboxed: false,
             roots_git_held: false,
+            policy: None,
             unreadable: Vec::new(),
             config: None,
             id: None,
@@ -63,7 +64,7 @@ fn from_a_chat(f: &support::Fixture, cut: &Cut, delete: bool) -> (Answer, String
             },
         },
         &Isolated::identity(Some("Tester"), Some("t@e.invalid")),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     let said = match &answer {
         Answer::Said { lines, .. } => lines.iter().map(spoken).collect::<Vec<_>>().join("\n"),

@@ -11,6 +11,7 @@ fn asker(cwd: Option<&Path>) -> Asker {
         harnessed: true,
         unsandboxed: false,
         roots_git_held: false,
+        policy: None,
         unreadable: Vec::new(),
         config: None,
         id: None,
@@ -77,7 +78,7 @@ fn a_refused_workspace_is_answered_no_and_nothing_runs() {
             },
         },
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     assert!(matches!(answer, Answer::No { .. }), "{answer:?}");
     assert!(!root.join("workspaces/beta/pieces").exists());
@@ -129,7 +130,7 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
             asker,
             &ask(act),
             &git::Isolated::default(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     };
     let may = Answer::Said {
@@ -180,7 +181,7 @@ fn plain_git_s_claim_is_taken_by_the_first_live_chat_and_refused_to_a_second() {
         &chat(4, "01A", true),
         &odd,
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
     assert!(matches!(odd, Answer::No { .. }), "{odd:?}");
 }
@@ -225,7 +226,7 @@ fn a_holder_not_back_since_a_restart_is_answered_no_and_not_held() {
                 },
             },
             &git::Isolated::default(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     };
     // Chat 4 takes the folder while it runs.
@@ -420,7 +421,7 @@ fn a_worktree_of(root: &Path, repo: &str) -> Answer {
             },
         },
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
 }
 
@@ -533,7 +534,7 @@ fn a_commondir_pointed_at_a_config_the_chat_wrote_is_refused_and_its_filter_neve
             },
         },
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
 
     let Answer::No { why } = answer else {
@@ -792,7 +793,7 @@ fn a_removal_for_a_chat_in_another_workspace_or_in_the_folder_is_answered_no() {
                 },
             },
             &git::Isolated::default(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     };
     for (cwd, workspace) in [
@@ -848,6 +849,7 @@ fn saved_project() -> (tempfile::TempDir, PathBuf) {
 fn held_chat(root: &Path) -> Asker {
     Asker {
         roots_git_held: true,
+        policy: None,
         ..asker(Some(root))
     }
 }
@@ -869,7 +871,7 @@ fn saved_for(root: &Path, asker: &Asker, message: &str) -> Answer {
             },
         },
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     )
 }
 
@@ -905,7 +907,7 @@ fn a_chat_whose_sandbox_does_not_hold_the_projects_git_saves_and_updates_it_itse
                 work: GitWork::RootUpdate {},
             },
             &git::Isolated::default(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         assert_eq!(updated, left);
     }
@@ -1027,7 +1029,7 @@ fn a_chats_save_with_pull_is_refused_and_names_the_update() {
             },
         },
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
 
     let Answer::Said { code, lines } = answered else {
@@ -1093,7 +1095,7 @@ fn a_chats_save_with_sign_is_committed_unsigned_and_says_so() {
             },
         },
         &git::Isolated::default(),
-        chrono::Utc::now(),
+        jiff::Timestamp::now(),
     );
 
     let Answer::Said { code, lines } = answered else {

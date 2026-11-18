@@ -301,7 +301,7 @@ mod tests {
     type Hub = super::Hub<&'static str, (&'static str, u64)>;
 
     fn answer(n: u64) -> Answer {
-        Answer::data(json!({ "n": n }), chrono::DateTime::UNIX_EPOCH)
+        Answer::data(json!({ "n": n }), jiff::Timestamp::UNIX_EPOCH)
     }
 
     fn runs(done: &[Do<&'static str, (&'static str, u64)>]) -> Vec<&'static str> {
@@ -577,7 +577,7 @@ mod tests {
         );
         let later = t + MIN_INTERVAL;
         assert_eq!(runs(&hub.moved(later, |_| true)), ["chats"]);
-        let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        let same = Answer::data(json!({ "n": 1 }), jiff::Timestamp::now());
         assert!(handed(&hub.finished(&"chats", same, later)).is_empty());
         // A page that subscribes now is handed it, and a new answer goes to every page.
         let late = hub.subscribe("chats", ("page-b", 1), later);
@@ -599,7 +599,7 @@ mod tests {
         hub.finished(&"todos", answer(1), t);
         let later = t + MIN_INTERVAL;
         assert_eq!(runs(&hub.moved(later, |_| true)), ["todos"]);
-        let same = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        let same = Answer::data(json!({ "n": 1 }), jiff::Timestamp::now());
         assert_eq!(
             handed(&hub.finished(&"todos", same, later)),
             [("page-a", 1)]
@@ -614,7 +614,7 @@ mod tests {
         hub.subscribe_every("slack", ("page-a", 1), t, Some(every));
         hub.finished(&"slack", answer(1), t);
         assert_eq!(runs(&hub.tick(t + every)), ["slack"]);
-        let fresh = Answer::data(json!({ "n": 1 }), chrono::Utc::now());
+        let fresh = Answer::data(json!({ "n": 1 }), jiff::Timestamp::now());
         assert_eq!(
             handed(&hub.finished(&"slack", fresh, t + every)),
             [("page-a", 1)],
@@ -707,7 +707,7 @@ mod tests {
         let t = Instant::now();
         let mut hub = Hub::default();
         hub.subscribe("todos", ("page-a", 1), t);
-        let failed = Answer::error(ErrorKind::Failed, chrono::DateTime::UNIX_EPOCH);
+        let failed = Answer::error(ErrorKind::Failed, jiff::Timestamp::UNIX_EPOCH);
         assert_eq!(
             hub.finished(&"todos", failed.clone(), t),
             [Do::Hand(("page-a", 1), failed)]

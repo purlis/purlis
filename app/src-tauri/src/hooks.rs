@@ -4055,7 +4055,7 @@ fn moving(
 /// the chat's own is stamped at, whatever clock the chat keeps.
 fn waits_at(waits: &Mutex<Option<WaitsOf>>, report: &Report) -> purlis_core::state::Waits {
     use purlis_core::state::Event;
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
     if report.agent.is_some()
         || !matches!(
             report.event,
@@ -4099,7 +4099,7 @@ fn lapse_at(on: OnTime, chat: u32, until: i64) {
         .name("purlis-own-work".to_owned())
         .spawn(move || {
             loop {
-                let now = chrono::Utc::now().timestamp();
+                let now = jiff::Timestamp::now().as_second();
                 let same = held_board(&timer.board)
                     .own_work(chat)
                     .is_some_and(|work| work.until == Some(until));
@@ -4112,7 +4112,7 @@ fn lapse_at(on: OnTime, chat: u32, until: i64) {
                 let left = std::time::Duration::from_secs(until.abs_diff(now));
                 std::thread::sleep(left.min(A_WAIT_LOOKS_AT_THE_CLOCK_EVERY));
             }
-            lapse(&timer, chat, chrono::Utc::now().timestamp());
+            lapse(&timer, chat, jiff::Timestamp::now().as_second());
         });
     // **A wait nothing can end on time ends now** (#3878): it fails toward telling the person,
     // never toward a chat left waiting with no hand.

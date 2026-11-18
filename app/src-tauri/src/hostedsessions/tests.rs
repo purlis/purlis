@@ -411,6 +411,7 @@ fn a_chat_its_profile_hands_credentials_is_never_started_in_the_host() {
     let handed = Opening {
         handed: purlis_core::profilesignin::Handed::of(vec![(
             "AWS_REGION".to_owned(),
+            purlis_core::secrets::handedto::Entry::new("team", "aws-region"),
             "a-region-for-this-test".to_owned(),
         )]),
         ..a_shell("true")
@@ -2833,6 +2834,61 @@ fn a_window_that_fell_behind_its_host_leaves_no_chat_reconnecting() {
     assert!(hosted.sessions.reconnecting().is_empty());
 }
 
+/// A runner whose link stays down says why (#7134): the last reason its host told, which a try
+/// to link again that failed changes, from when the link first went, and nothing once it is back.
+#[test]
+fn a_runner_link_that_stays_down_says_the_last_reason_told_until_it_is_back() {
+    let runs = StandIns::default();
+    let host = Between::new(
+        Hosting::running_with(
+            crate::sessionhost::Composes::as_the_tests_ship(),
+            runs.clone(),
+        ),
+        false,
+    );
+    let pushes = host.pushes.clone();
+    let hosted = hosted_in(host, runs);
+    let (_id, _seen) = a_drawn_chat(&hosted);
+    assert_eq!(hosted.sessions.link_down(), None);
+
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the link to it ended".into(),
+            key_changed: false,
+            gone: false,
+        })
+        .unwrap();
+    until("the link is said to be down", || {
+        hosted
+            .sessions
+            .link_down()
+            .is_some_and(|down| down.why == "the link to it ended")
+    });
+    let since = hosted.sessions.link_down().expect("it is down").since;
+    pushes
+        .send(session::Pushed::LinkDown {
+            why: "the connector did not connect: Docker didn't answer".into(),
+            key_changed: false,
+            gone: false,
+        })
+        .unwrap();
+    until("the link is said to be down for the new reason", || {
+        hosted
+            .sessions
+            .link_down()
+            .is_some_and(|down| down.why.contains("Docker didn't answer"))
+    });
+    assert_eq!(
+        hosted.sessions.link_down().expect("still down").since,
+        since
+    );
+
+    pushes.send(session::Pushed::LinkBack {}).unwrap();
+    until("the link is no longer said to be down", || {
+        hosted.sessions.link_down().is_none()
+    });
+}
+
 /// A runner that answered the relay with another key than the one pinned for it (#2752): its
 /// chats are dimmed as for any outage, and the window is told the key changed, so it says why.
 #[test]
@@ -3267,6 +3323,25 @@ fn named_in(config: &Path, root: &Path) -> (HostedSessions, HostTold, tokio::run
     let (connection, _link) = in_memory(host, &runtime);
     connection.naming_in(config.to_path_buf());
     (HostedSessions::new(connection, root), told, runtime)
+}
+
+/// Try now (#7134): the window asks the host that relays the project's link to link to its
+/// runner again now, on the project's own link.
+#[test]
+fn try_now_asks_the_host_on_the_projects_link_to_link_again_now() {
+    let config = tempfile::tempdir().unwrap();
+    let (_dir, root) = a_project();
+    let (sessions, told, _runtime) = named_in(config.path(), &root);
+    sessions.hold().unwrap();
+
+    sessions.link_now();
+
+    until("the host is asked to link again now", || {
+        told.lock()
+            .unwrap()
+            .iter()
+            .any(|(word, _)| *word == "link_now")
+    });
 }
 
 #[test]

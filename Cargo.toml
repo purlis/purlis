@@ -19,6 +19,9 @@ license = "Apache-2.0"
 repository = "https://github.com/purlis/purlis"
 
 [workspace.dependencies]
+# Times, in our own crates: chrono is unmaintained (RUSTSEC-2026-0543, #7089), and jiff is
+# already in the tree through gix.
+jiff = "0.2"
 purlis-core = { path = "crates/purlis-core" }
 # What each release of the app brought: About Charter and the release body both read it.
 changelog = { path = "crates/changelog" }

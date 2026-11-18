@@ -40,7 +40,7 @@ impl Close {
 /// Finish closing every todo of `ws` a promote already aliased to an issue, when a crash cut
 /// the promote short after its alias (ADR 0088 §5). Best effort: a log or a store purlis cannot
 /// read closes nothing here, and `ws todo` goes on as it would have.
-pub fn finish_promotes(plane: &Plane, ws: &Workspace, stamp: chrono::NaiveDateTime, say: Sink) {
+pub fn finish_promotes(plane: &Plane, ws: &Workspace, stamp: jiff::civil::DateTime, say: Sink) {
     use crate::work::{log, promote};
     if !log::dir_for(plane.root(), ws.name()).exists() {
         return;
@@ -73,7 +73,7 @@ pub fn close(
     ws: &Workspace,
     how: Close,
     slug: &str,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
     say: Sink,
 ) -> u8 {
     close_as(plane, ws, how, slug, stamp, Asker::Person, say)
@@ -87,7 +87,7 @@ pub fn close_as(
     ws: &Workspace,
     how: Close,
     slug: &str,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
     asker: Asker,
     say: Sink,
 ) -> u8 {

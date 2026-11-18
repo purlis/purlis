@@ -541,7 +541,7 @@ fn a_task_whose_record_does_not_end_is_not_forgotten_and_nobody_is_told() {
             held.root(),
             &it.record,
             dispatchrecord::Ending::default(),
-            chrono::Utc::now()
+            jiff::Timestamp::now()
         )
         .expect("closed")
     );

@@ -160,7 +160,7 @@ fn a_limited_grant_is_kept_under_a_key_of_its_own_and_never_among_the_ones_that_
 }
 
 #[test]
-fn a_grant_written_before_the_condition_holds_in_any_workspace() {
+fn a_grant_written_before_the_condition_is_not_carried_over_unsealed() {
     let dir = project(&["runners", "web"]);
     let root = dir.path();
     // The record as a build before the condition wrote it.
@@ -169,9 +169,11 @@ fn a_grant_written_before_the_condition_holds_in_any_workspace() {
         r#"{"dispatch_mine": [{"asking": "steward", "target": "devops"}],
             "dispatch_any": ["qa"]}"#,
     );
+    // Ticket T1.1-73: grants an earlier build kept are not carried over, since nothing sealed
+    // them; the pair is granted again through its ask.
     for place in [Some("runners"), Some("web"), None] {
-        assert_eq!(asked(root, "steward", "devops", place), Covers::Covered);
-        assert_eq!(asked(root, "qa", "devops", place), Covers::Covered);
+        assert_eq!(asked(root, "steward", "devops", place), Covers::NeedsGrant);
+        assert_eq!(asked(root, "qa", "devops", place), Covers::NeedsGrant);
     }
     // And the project's file, in the spelling it always had.
     let read = committed(Some("[dispatch.grants]\nsteward = [\"devops\", \"*\"]\n"));
@@ -518,8 +520,8 @@ fn no_standing_grant_is_made_accepted_or_set_for_a_name_that_is_no_workspace() {
 
 // ---- purlis's own workspace commands -------------------------------------------------------------
 
-fn now() -> chrono::DateTime<chrono::Utc> {
-    chrono::DateTime::from_timestamp(1_760_000_000, 0).expect("a time")
+fn now() -> jiff::Timestamp {
+    jiff::Timestamp::from_second(1_760_000_000).expect("a time")
 }
 
 /// A project whose workspaces `names` purlis itself made.

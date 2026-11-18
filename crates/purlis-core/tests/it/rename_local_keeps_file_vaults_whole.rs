@@ -87,8 +87,8 @@ fn ctx(m: &Machine) -> Ctx {
     Ctx::new(&m.plane, Env::of(&[("HOME", m.home.to_str().unwrap())]))
 }
 
-fn day() -> chrono::NaiveDate {
-    chrono::NaiveDate::from_ymd_opt(2026, 10, 6).unwrap()
+fn day() -> jiff::civil::Date {
+    purlis_core::wallclock::day(2026, 10, 6).unwrap()
 }
 
 /// Every file under the project, with its bytes.

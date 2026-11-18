@@ -104,7 +104,7 @@ impl Which {
 
     /// The file at `root`, under the name the plane has it by (RN-2a): a write lands in the
     /// file that is there, never beside it.
-    fn path(self, root: &Path) -> PathBuf {
+    pub(crate) fn path(self, root: &Path) -> PathBuf {
         root.join(self.file_at(root))
     }
 

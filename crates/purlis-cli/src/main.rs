@@ -975,6 +975,18 @@ fn serve(_suspends_after: Option<std::time::Duration>, _as_a_service: bool) -> E
     ExitCode::FAILURE
 }
 
+/// **A runner's data home, begun as `purlis/` where it has neither folder**
+/// (`purlis_core::datahome::begin_a_runners`): what could not be made is said, and the runner goes
+/// on with the folder the data home's ladder names.
+#[cfg(unix)]
+fn begin_a_runners_data_home() {
+    if let Err(why) = purlis_core::datahome::begin_a_runners(&purlis_core::envvar::var) {
+        voice::err(format!(
+            "purlis could not begin this runner's data folder: {why}"
+        ));
+    }
+}
+
 /// `purlis serve --install` and `--remove`, on macOS and Linux only.
 #[cfg(not(unix))]
 fn serve_kept(_install: bool) -> ExitCode {
@@ -1082,6 +1094,11 @@ fn serve(suspends_after: Option<std::time::Duration>, as_a_service: bool) -> Exi
     // The host keeps its credentials in the config home: it stays where it is while the host
     // runs (`renamelocal::busy::LOCK`, D-RN5-11).
     let _holds = purlis_core::renamelocal::busy::hold_shared(&config);
+    // A Docker pool's runner (what `--suspends-unlinked` is made for): a fresh home begins as
+    // `purlis/`, one that has its folder keeps it (ADR 0091, amended 2026-11-17).
+    if suspends_after.is_some() {
+        begin_a_runners_data_home();
+    }
     // The skills folders a last host laid out and no running program uses, tidied as it
     // starts, as the window tidies them as it starts (#2879).
     purlis_core::skills::tidy_here_later(std::time::Duration::ZERO);
@@ -2122,12 +2139,12 @@ struct Common {
 }
 
 impl Common {
-    fn stamp(&self) -> Result<chrono::NaiveDateTime, String> {
+    fn stamp(&self) -> Result<jiff::civil::DateTime, String> {
         match &self.now {
             Some(text) => text
                 .parse()
                 .map_err(|e| format!("--now is not a local naive timestamp: {e}")),
-            None => Ok(chrono::Local::now().naive_local()),
+            None => Ok(jiff::Zoned::now().datetime()),
         }
     }
 }
@@ -3139,13 +3156,11 @@ fn instant(now: Option<&str>) -> Result<f64, String> {
             .map(|since| since.as_secs_f64())
             .unwrap_or(0.0));
     };
-    let naive: chrono::NaiveDateTime = text
-        .parse()
+    let naive = purlis_core::wallclock::reading(text)
         .map_err(|e| format!("--now is not a local naive timestamp: {e}"))?;
     // A naive stamp is LOCAL time, as `--now` is everywhere in this binary.
-    chrono::TimeZone::from_local_datetime(&chrono::Local, &naive)
-        .single()
-        .map(|local| local.timestamp() as f64)
+    purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive)
+        .map(|local| local.as_second() as f64)
         .ok_or_else(|| "--now names no single local instant".to_string())
 }
 
@@ -3311,12 +3326,11 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
         } => {
             let on_a_test_clock = now.is_some();
             let now = match now {
-                Some(text) => match text.parse::<chrono::NaiveDateTime>() {
+                Some(text) => match purlis_core::wallclock::reading(text) {
                     // A naive stamp is LOCAL time, as `--now` is everywhere in this binary.
                     Ok(naive) => {
-                        match chrono::TimeZone::from_local_datetime(&chrono::Local, &naive).single()
-                        {
-                            Some(local) => local.with_timezone(&chrono::Utc),
+                        match purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive) {
+                            Some(local) => local,
                             None => {
                                 eprintln!("purlis: --now names no single local instant");
                                 return Some(ExitCode::FAILURE);
@@ -3328,7 +3342,7 @@ fn repo_command(command: &Command) -> Option<ExitCode> {
                         return Some(ExitCode::FAILURE);
                     }
                 },
-                None => chrono::Utc::now(),
+                None => jiff::Timestamp::now(),
             };
             // Who a manifest says last touched it. Python's `_author`: `$USER`, and a word
             // that says nobody knows rather than an empty field.
@@ -3742,11 +3756,10 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
             now,
         } => {
             let now = match now {
-                Some(text) => match text.parse::<chrono::NaiveDateTime>() {
+                Some(text) => match purlis_core::wallclock::reading(text) {
                     Ok(naive) => {
-                        match chrono::TimeZone::from_local_datetime(&chrono::Local, &naive).single()
-                        {
-                            Some(local) => local.with_timezone(&chrono::Utc),
+                        match purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive) {
+                            Some(local) => local,
                             None => {
                                 eprintln!("purlis: --now names no single local instant");
                                 return Some(ExitCode::FAILURE);
@@ -3758,7 +3771,7 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
                         return Some(ExitCode::FAILURE);
                     }
                 },
-                None => chrono::Utc::now(),
+                None => jiff::Timestamp::now(),
             };
             // In a sandboxed chat the app records the chat's own workspace (#2046): its sandbox
             // writes no workspace's manifest. Another workspace's is refused.
@@ -3804,19 +3817,19 @@ fn workspace_command(command: &Command) -> Option<ExitCode> {
 ///
 /// A naive stamp is LOCAL time, as `--now` is everywhere in this binary. `None` back means the
 /// value was not an instant and the caller has already had the reason printed.
-fn pinned(now: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {
+fn pinned(now: &Option<String>) -> Option<jiff::Timestamp> {
     let Some(text) = now else {
-        return Some(chrono::Utc::now());
+        return Some(jiff::Timestamp::now());
     };
-    let naive: chrono::NaiveDateTime = match text.parse() {
+    let naive = match purlis_core::wallclock::reading(text) {
         Ok(naive) => naive,
         Err(e) => {
             eprintln!("purlis: --now is not a local naive timestamp: {e}");
             return None;
         }
     };
-    match chrono::TimeZone::from_local_datetime(&chrono::Local, &naive).single() {
-        Some(local) => Some(local.with_timezone(&chrono::Utc)),
+    match purlis_core::wallclock::single(&jiff::tz::TimeZone::system(), naive) {
+        Some(local) => Some(local),
         None => {
             eprintln!("purlis: --now names no single local instant");
             None
@@ -4251,7 +4264,7 @@ fn todo(
     words: &[String],
     done: bool,
     repo: Option<&str>,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> u8 {
     let root = plane.root();
     let name = ws.name();
@@ -4302,7 +4315,7 @@ fn todo(
                 let file = todo.path.file_name().unwrap_or_default().to_string_lossy();
                 let stem = todo.path.file_stem().unwrap_or_default().to_string_lossy();
                 let age = purlis_core::memstore::memory_date(&todo.text, &file)
-                    .map_or(0, |d| (today - d).num_days());
+                    .map_or(0, |d| i64::from((today - d).get_days()));
                 println!(
                     "  {stem}  {age}d  {}",
                     purlis_core::personas::one_line(&todo.title)
@@ -4391,7 +4404,7 @@ fn said_todo_recorded(plane: &Plane, name: &str, path: &str) {
 fn finish_promotes(
     plane: &Plane,
     ws: &purlis_core::workspaces::Workspace,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) {
     purlis_core::wscmd::todo::finish_promotes(plane, ws, stamp, &mut speak);
 }
@@ -4411,7 +4424,7 @@ fn promote_todo(
     ws: &purlis_core::workspaces::Workspace,
     slug: &str,
     repo: Option<&str>,
-    stamp: chrono::NaiveDateTime,
+    stamp: jiff::civil::DateTime,
 ) -> u8 {
     use purlis_core::work::promote::{self, Step};
     let root = plane.root();
@@ -5707,6 +5720,11 @@ fn main() -> ExitCode {
             );
             return bridge();
         }
+        // Its pairing can run before the runner's host has begun its home.
+        #[cfg(unix)]
+        if *pair {
+            begin_a_runners_data_home();
+        }
         #[cfg(unix)]
         let asked = match (make_key, publish) {
             (Some(handoff), Some(published)) => bridge::Asked::MakeKey {
@@ -5811,7 +5829,7 @@ fn main() -> ExitCode {
                 // the differential can pin the first workspace's manifest, and a pin that
                 // silently did not take would make that comparison green for the wrong reason.
                 now: match instant(init.now.as_deref()) {
-                    Ok(secs) => chrono::DateTime::from_timestamp(secs as i64, 0),
+                    Ok(secs) => jiff::Timestamp::from_second(secs as i64).ok(),
                     Err(why) => {
                         eprintln!("purlis: {why}");
                         return ExitCode::FAILURE;
@@ -5913,8 +5931,8 @@ fn main() -> ExitCode {
             // on the row, and a pin that silently did not take would make the comparison
             // green for the wrong reason.
             let when = match instant(now.as_deref()) {
-                Ok(secs) => chrono::DateTime::from_timestamp(secs as i64, 0)
-                    .unwrap_or_else(chrono::Utc::now),
+                Ok(secs) => jiff::Timestamp::from_second(secs as i64)
+                    .unwrap_or_else(|_| jiff::Timestamp::now()),
                 Err(why) => {
                     eprintln!("purlis: {why}");
                     return ExitCode::FAILURE;

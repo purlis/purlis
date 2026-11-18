@@ -369,7 +369,23 @@ pub enum Reader {
 /// (V90a) and the sandbox. This keeps purlis itself from raising a question on the chat's
 /// behalf, and says what to do.
 pub fn refused_in_this_chat(ctx: &Ctx, vault: &registry::Vault, reader: Reader) -> Option<Markup> {
+    if vaults_off(ctx) {
+        return None;
+    }
     refused_where(ctx, vault, reader, &|| super::setup::sandboxed_chat(ctx))
+}
+
+/// **Whether the project's `[policy]` turns the `vaults` family off** (Q308, Q308a; item 4 of
+/// the follow-up): only `open`, or `vaults = "off"`, which a loosening press accepted; `watch`,
+/// `hold` and `team` enforce it, and it takes no `log`. **Never where an administrator locks a
+/// vault to its persona** (ADR 0112, [`crate::sandbox::policy::Locks::forbids_vault_grants`]): a
+/// lock wins. Read as the app resolved it for this process ([`crate::enforcement::mode`]).
+pub fn vaults_off(ctx: &Ctx) -> bool {
+    !crate::sandbox::policy::Locks::of(&ctx.root).forbids_vault_grants()
+        && crate::enforcement::in_force(&ctx.root)
+            .for_chat(ctx.policy.as_deref())
+            .mode(crate::enforcement::Family::Vaults)
+            == crate::enforcement::Mode::Off
 }
 
 /// [`refused_in_this_chat`], with where this process runs asked of `located` only when the
@@ -1782,6 +1798,14 @@ pub struct Asker {
     /// found open, where the caller looked it up: a chat that ends from then on keeps no GitHub
     /// App token minted for it (#3808). `None` counts from when the run is served.
     pub ends_seen: Option<u64>,
+    /// **The chat's stable id** (ADR 0066), from the app's record of it: what a quiet line in its
+    /// enforcement log names it by (item 8 of the Q308 follow-up). `None` for a chat with none
+    /// yet, which is logged as unknown.
+    pub chat_id: Option<String>,
+    /// The strictest `[policy]` along the chain that dispatched the chat, from the app's record
+    /// of it ([`crate::reopen::HandedFrom::policy`]): a family is run for it no looser (Q308a,
+    /// Q308b; the review of #7113). `None` for a chat no dispatch started.
+    pub policy: Option<String>,
 }
 
 /// Why nothing is run where purlis has no sandbox to run it in: neither macOS nor Linux. The
@@ -1971,6 +1995,14 @@ const ALLOW: &str = "ask the operator to press Allow on this chat's vault notice
 /// forward named: there is nothing to allow and nobody to dispatch to, and no Notice is raised
 /// for it ([`not_tagged`]).
 pub fn authorise(ctx: &Ctx, persona: Option<&str>, vault: &str) -> Result<(), String> {
+    // The `vaults` family off (item 4 of the Q308 follow-up): the check does not run. The vault
+    // must still be one the project registers.
+    if vaults_off(ctx) {
+        let doc = registry::load_registry(ctx).map_err(|e| e.message.to_string())?;
+        return registry::vault_in(&doc, vault)
+            .map(|_| ())
+            .map_err(|e| e.message.to_string());
+    }
     let Some(persona) = persona.filter(|p| !p.is_empty()) else {
         return Err(format!(
             "this chat runs as no persona, so purlis hands it no vault. Start the chat as the \
@@ -2619,7 +2651,25 @@ pub fn fill_value(
         return Ok(None);
     };
     goes_into_a_page(asker, &value, vault, key)?;
+    // It goes to the chat's browser and not its terminal, but it is the chat's all the same, so
+    // the chat's kept screen never keeps it either (#6309).
+    super::handedto::remember(
+        &asker.root,
+        asker.chat,
+        &super::handedto::Entry::new(vault, key),
+        value.expose(),
+    )
+    .map_err(|why| not_named_said(&why))?;
     Ok(Some(value))
+}
+
+/// **What a chat is told where what it is about to be handed could not be named for its kept
+/// screen** (#6309): nothing is handed, so no screen of it is kept unmasked after a crash.
+pub fn not_named_said(why: &std::io::Error) -> String {
+    format!(
+        "purlis could not note which vault entries this chat was handed ({why}), so it handed \
+         nothing: a screen of it kept after a crash would show them"
+    )
 }
 
 /// **The rules for a value that goes into a page**, a fill's and a login's alike (#5272): no private
@@ -2691,19 +2741,27 @@ pub fn fill_code(
     let seed = super::totp::Seed::parse(value.expose())
         .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
     drop(value);
-    Ok(Some(purlis_session_protocol::browsing::Secret::new(
-        seed.code_now(),
-    )))
+    let code = purlis_session_protocol::browsing::Secret::new(seed.code_now());
+    // A code is made for now from its seed: a launch after a crash cannot know it (#6309).
+    super::handedto::remember(
+        &asker.root,
+        asker.chat,
+        &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
+        code.expose(),
+    )
+    .map_err(|why| not_named_said(&why))?;
+    Ok(Some(code))
 }
 
 /// What a vault is read through for chat `asker`: the app's record of the chat.
 fn reading_for(asker: &Asker) -> Ctx {
-    match &asker.confines {
+    let ctx = match &asker.confines {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
         None => Ctx::new(&asker.root, asker.env.clone()),
-    }
+    };
+    ctx.under_chain(asker.policy.as_deref())
 }
 
 /// `key` of `vault`, read for chat `asker`'s fill: the value whole, `None` where the vault holds
@@ -2813,6 +2871,17 @@ fn read_login(
     goes_into_a_page(asker, &password, vault, pass_key)?;
     if let (Some(user), Some(user_key)) = (&user, user_key) {
         goes_into_a_page(asker, user, vault, user_key)?;
+    }
+    // Filled into the chat's page, they are the chat's, as a fill's are, so its kept screen
+    // never keeps one either (#6309).
+    let handed = user_key
+        .zip(user.as_ref())
+        .into_iter()
+        .chain([(pass_key, &password)]);
+    for (key, value) in handed {
+        let entry = super::handedto::Entry::new(vault, key);
+        super::handedto::remember(&asker.root, asker.chat, &entry, value.expose())
+            .map_err(|why| not_named_said(&why))?;
     }
     Ok((
         LogIn {
@@ -4177,7 +4246,7 @@ pub(crate) fn serve_recorded(
             ),
         );
     }
-    let _ = values.set(zeroize::Zeroizing::new(prepared.secret_values.clone()));
+    let _ = values.set(prepared.secret_values());
     let mut prepared = prepared;
     let given: Vec<PathBuf> = Vec::new();
     // A value that points at a host the chat may reach goes through a tunnel to exactly it, and
@@ -4205,6 +4274,13 @@ pub(crate) fn serve_recorded(
             );
         }
     };
+    // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
+    for one in &prepared.values {
+        let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
+        if let Err(why) = super::handedto::remember(&asker.root, asker.chat, &entry, &one.value) {
+            return refuse(&mut *writer, 1, not_named_said(&why));
+        }
+    }
     #[cfg(test)]
     if let Wrap::Refusing(targets) = wrap {
         for target in targets.split_whitespace() {
@@ -4333,6 +4409,7 @@ pub(crate) fn serve_recorded(
         env: Env::of(&[(crate::active::SESSION_ID_ENV, &chat)]),
         chat_writes: Vec::new(),
         kept: super::identity::Kept::default(),
+        policy: asker.policy.clone(),
     };
     exec::record(
         &ctx_traced,
@@ -4406,21 +4483,26 @@ pub(crate) fn serve_recorded(
         let _ = spawned.wait();
         return;
     }
-    // The app runs this for a chat it knows by number, not by id: a masking the project lets go
-    // under `log` is let go with no line (Q308a).
+    let secret_values = prepared.secret_values();
+    // A masking the project lets go under `log` is let go with one line in the asking chat's
+    // log, by the id the app holds for it (Q308a; item 8 of the follow-up).
     let code = run(
         spawned,
         &group,
         reader,
         &mut *writer,
-        super::masked_of(&ctx.root, None, &prepared.secret_values),
+        super::masked_of(
+            &ctx.root,
+            (asker.chat_id.as_deref(), asker.policy.as_deref()),
+            &secret_values,
+        ),
     );
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()
         .into_iter()
-        .partition(|target| carries_a_value(target, &prepared.secret_values));
+        .partition(|target| carries_a_value(target, &secret_values));
     for target in named {
-        let note = super::redact_str(&refused_note(&target), &prepared.secret_values);
+        let note = super::redact_str(&refused_note(&target), &secret_values);
         let _ = send(&mut *writer, &Frame::Note(note));
     }
     if !withheld.is_empty() {
@@ -4505,10 +4587,11 @@ fn tunnelled(
         } else {
             let swapped = pointed.at(at);
             exec::set_var(&mut prepared.env, name, swapped.clone());
-            prepared.secret_values.push(swapped);
+            prepared.handed_instead(&value, tunnelled_form(&client, at, false), swapped);
         }
     }
     // A value a credential file holds, pointed in the file itself, every other line as it was.
+    let mut pointed_in_files: Vec<(zeroize::Zeroizing<String>, u16, String)> = Vec::new();
     for handed in &mut prepared.handed {
         let mut moved = false;
         for (entry, value) in &mut handed.entries {
@@ -4519,15 +4602,8 @@ fn tunnelled(
             let routed = route(value, &client, &opening.reach, &opening.own);
             if let Some((pointed, at)) = opening.open(&name, routed)? {
                 // The value it was is wiped as the file is pointed (#3420).
-                drop(zeroize::Zeroizing::new(std::mem::replace(
-                    value,
-                    pointed.at(at),
-                )));
-                prepared.secret_values.push(value.clone());
-                let escaped = super::dotenv::escaped(value);
-                if escaped != *value {
-                    prepared.secret_values.push(escaped);
-                }
+                let was = zeroize::Zeroizing::new(std::mem::replace(value, pointed.at(at)));
+                pointed_in_files.push((was, at, value.clone()));
                 moved = true;
             }
         }
@@ -4536,7 +4612,30 @@ fn tunnelled(
             std::fs::write(&handed.path, body.as_bytes())?;
         }
     }
+    // Redacted as the value it was, and masked under its entry (#6309), as written and escaped.
+    for (was, at, now) in pointed_in_files {
+        let escaped = super::dotenv::escaped(&now);
+        if escaped != now {
+            prepared.handed_instead(&was, tunnelled_form(&client, at, true), escaped);
+        }
+        prepared.handed_instead(&was, tunnelled_form(&client, at, false), now);
+    }
     Ok((opening.tunnels, opening.notes))
+}
+
+/// How a value pointed at the tunnel on port `at` for `client` is made again from the value
+/// read (#6309), dotenv-escaped where `escaped`.
+fn tunnelled_form(
+    client: &crate::sandbox::tunnel::Client,
+    at: u16,
+    escaped: bool,
+) -> super::handedto::Form {
+    super::handedto::Form::Tunnelled {
+        port: at,
+        pgsslmode: client.pgsslmode.clone(),
+        reads_hostaddr: client.reads_hostaddr,
+        escaped,
+    }
 }
 
 /// What a credential file holds: a `--file`'s one value, or a `--dotenv` file's lines, as

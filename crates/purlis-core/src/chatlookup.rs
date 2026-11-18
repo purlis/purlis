@@ -92,6 +92,27 @@ pub fn by_number(number: u32, open: &[OpenChat], known: &Known) -> Found {
     open_under(number, open).unwrap_or_else(|| not_open(number, open, known))
 }
 
+/// **What the chat whose ULID is `id` is now** in the project at `root`, given the chats open
+/// now (#6685's review): open again under a number, ended with the dispatch record that draws
+/// its card, closed with its own record, or no chat. A row of the Chats list's filter opens its
+/// chat by this, never by the number typed: more than one record may answer to a number where
+/// it was dealt twice (#6740), and only the ULID is the chat's own.
+pub fn by_id_in(root: &Path, id: &str, open: &[OpenChat]) -> Found {
+    if let Some(now) = open.iter().find(|chat| chat.id.as_deref() == Some(id)) {
+        return Found::Restarted { now: now.number };
+    }
+    let known = Known::read(root);
+    if let Some(record) = known.dispatches.iter().find(|record| {
+        record.worker.chat.id.as_deref() == Some(id)
+            && dispatchrecord::sound(record)
+            && makes_a_card(record)
+    }) {
+        return Found::Ended(Box::new(record.clone()));
+    }
+    chatrecords::of_id(&known.chats, id)
+        .map_or(Found::NoChat, |chat| Found::Closed(Box::new(chat.clone())))
+}
+
 /// What `number` names where no open chat answers to it.
 fn not_open(number: u32, open: &[OpenChat], known: &Known) -> Found {
     // A chat open under a later number had it before a restart (#6486): a number is never

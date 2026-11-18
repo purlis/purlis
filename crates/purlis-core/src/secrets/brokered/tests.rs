@@ -123,6 +123,8 @@ fn asker(root: &Path, persona: Option<&str>) -> Asker {
         confines: Some(compiled(root)),
         harness: Some(Harness::ClaudeCode),
         ends_seen: None,
+        chat_id: None,
+        policy: None,
     }
 }
 
@@ -3499,6 +3501,52 @@ fn a_value_in_a_credential_file_the_chat_may_reach_is_pointed_at_a_tunnel_there(
         "pointed at the tunnel, not at the host itself: {out}"
     );
     assert_eq!(told, Vec::new());
+    // What the file was pointed at is masked under its entry, in this process and in one a
+    // crash leaves to read the entry again (#6309).
+    let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders", at.port());
+    masked_as_pointed(project.path(), &format!("postgres://app:pw@{went}"), &dsn);
+    drop(database);
+}
+
+/// #6309: a value a `--file` holds that ends a line, pointed at a tunnel there, is masked as a
+/// dotenv file would escape it too, whole, in this process and after a crash. Binds sockets:
+/// first run on CI.
+#[test]
+fn a_tunnelled_value_in_a_file_is_masked_in_its_escaped_form_too() {
+    let database = std::net::TcpListener::bind("127.0.0.1:0").expect("a stand-in database");
+    let at = database.local_addr().unwrap();
+    let project = project();
+    let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders\n", at.port());
+    holding_dsn(project.path(), &dsn);
+    let mut want = wanted(
+        project.path(),
+        "team",
+        sh(r#"d=$(cat "$DSN_FILE"); printf '%s' "${d#*@}""#),
+    );
+    want.file = vec!["DSN_FILE=DSN".into()];
+    let listed = format!("127.0.0.1:{}", at.port());
+    let (frames, _, _) = served_recorded(
+        &reaching(asker(project.path(), Some("devops")), &[listed.as_str()]),
+        want,
+    );
+    let went = stdout(&frames);
+    assert!(went.starts_with("127.0.0.1:"), "{frames:?}");
+    assert!(!went.contains(&listed), "pointed at the tunnel: {went}");
+    let escaped = format!("postgres://app:pw@{went}\\n");
+    use super::super::handedto::{as_a_crash_leaves_it, masked_for};
+    let shown = format!("dsn {escaped}\r\n");
+    assert_eq!(
+        masked_for(project.path(), 7, &shown, &|_| None).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "as handed"
+    );
+    as_a_crash_leaves_it(project.path(), 7);
+    let read = |_: &super::super::handedto::Entry| Some(zeroize::Zeroizing::new(dsn.clone()));
+    assert_eq!(
+        masked_for(project.path(), 7, &shown, &read).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "after a crash"
+    );
     drop(database);
 }
 
@@ -3561,6 +3609,32 @@ fn a_connection_string_to_a_host_the_chat_may_reach_goes_through_a_tunnel_to_exa
     assert!(
         reached.contains(&(Some(listed.clone()), "open", 1)),
         "every tunnelled connection is told: {reached:?}"
+    );
+    let dsn = format!("postgres://app:pw@127.0.0.1:{}/orders", at.port());
+    masked_as_pointed(
+        project.path(),
+        &format!("postgres://app:pw@{went}/orders"),
+        &dsn,
+    );
+}
+
+/// `pointed`, the value read as `dsn` and pointed at a tunnel, masked in chat 7's screen under
+/// its entry `DSN` (#6309): by what this process remembers, and, once a crash has left only
+/// what is named on disk, by `dsn` read again and pointed again.
+fn masked_as_pointed(root: &Path, pointed: &str, dsn: &str) {
+    use super::super::handedto::{as_a_crash_leaves_it, masked_for};
+    let shown = format!("dsn {pointed}\r\n");
+    assert_eq!(
+        masked_for(root, 7, &shown, &|_| None).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "as handed"
+    );
+    as_a_crash_leaves_it(root, 7);
+    let read = |_: &super::super::handedto::Entry| Some(zeroize::Zeroizing::new(dsn.to_owned()));
+    assert_eq!(
+        masked_for(root, 7, &shown, &read).as_deref(),
+        Some("dsn ‹secret: DSN›\r\n"),
+        "after a crash"
     );
 }
 
@@ -4172,6 +4246,17 @@ fn a_browser_logins_values_are_read_for_the_tool_the_chats_start_armed() {
         Some("qa-person")
     );
     assert!(!format!("{login:?}").contains(TOKEN));
+    // #6309: and, filled into the chat's page, they mask its kept screen.
+    assert_eq!(
+        super::super::handedto::masked_for(
+            project.path(),
+            7,
+            &format!("qa-person {TOKEN}"),
+            &|_| None
+        )
+        .as_deref(),
+        Some("‹secret: NAME› ‹secret: TOKEN›")
+    );
 }
 
 /// A private key is filled on no page, however its login came to be declared (#4595).
@@ -5038,6 +5123,27 @@ fn under_a_service_a_brokered_run_is_logged_by_its_program_and_never_its_vault()
         "the program is said: {logged}"
     );
     assert!(!logged.contains("team"), "the vault was logged: {logged}");
+}
+
+/// #6309: a value a brokered run was handed is known to mask the chat's kept screen with, under
+/// its vault entry's name, and only that chat's.
+#[test]
+fn a_value_a_brokered_run_was_handed_masks_the_chat_s_kept_screen_under_its_entry_s_name() {
+    let project = project();
+    let mut ran = wanted(project.path(), "team", sh("echo ok"));
+    ran.env = vec!["X=TOKEN".into()];
+    let frames = served(&asker(project.path(), Some("devops")), ran);
+    assert_eq!(frames.first(), Some(&Frame::Started), "{frames:?}");
+
+    let shown = format!("printed {TOKEN}\r\n");
+    assert_eq!(
+        super::super::handedto::masked_for(project.path(), 7, &shown, &|_| None).as_deref(),
+        Some("printed ‹secret: TOKEN›\r\n")
+    );
+    assert_eq!(
+        super::super::handedto::masked_for(project.path(), 8, &shown, &|_| None).as_deref(),
+        Some(shown.as_str())
+    );
 }
 
 // ----------------------------------------------------------------------------------------
@@ -5948,6 +6054,58 @@ fn a_fill_reads_a_key_the_vault_holds_and_says_none_of_one_it_doesnt() {
         fill_value(&chat, "team", "NOT_THERE")
             .expect("a missing key is no refusal")
             .is_none()
+    );
+}
+
+/// #6309: a value filled into a chat's page is the chat's, so its kept screen masks it, under
+/// its entry's name.
+#[test]
+fn a_value_filled_into_a_chat_s_page_masks_its_kept_screen() {
+    let tmp = project();
+    let chat = Asker {
+        confines: None,
+        ..asker(tmp.path(), Some("devops"))
+    };
+    fill_value(&chat, "team", "TOKEN").expect("read");
+
+    assert_eq!(
+        super::super::handedto::masked_for(tmp.path(), 7, &format!("{TOKEN}!"), &|_| None)
+            .as_deref(),
+        Some("‹secret: TOKEN›!")
+    );
+}
+
+/// #6309: a code filled into a chat's page masks its kept screen too, and, made once, leaves a
+/// launch after a crash nothing to mask it with, so that screen is not kept.
+#[test]
+fn a_code_filled_into_a_chat_s_page_masks_its_kept_screen_and_after_a_crash_it_is_not_kept() {
+    let tmp = project();
+    // The seed every authenticator's documentation shows: no account's.
+    std::fs::write(
+        tmp.path().join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN, "SEED": "JBSWY3DPEHPK3PXP"}).to_string(),
+    )
+    .unwrap();
+    let chat = Asker {
+        confines: None,
+        ..asker(tmp.path(), Some("devops"))
+    };
+    let code = fill_code(&chat, "team", "SEED")
+        .expect("read")
+        .expect("held");
+    let shown = format!("code {}", code.expose());
+
+    assert_eq!(
+        super::super::handedto::masked_for(tmp.path(), 7, &shown, &|_| None).as_deref(),
+        Some("code ‹secret: SEED›")
+    );
+    super::super::handedto::as_a_crash_leaves_it(tmp.path(), 7);
+    let seed = |_: &super::super::handedto::Entry| {
+        Some(zeroize::Zeroizing::new("JBSWY3DPEHPK3PXP".to_owned()))
+    };
+    assert_eq!(
+        super::super::handedto::masked_for(tmp.path(), 7, &shown, &seed),
+        None
     );
 }
 

@@ -732,14 +732,16 @@ export const WithATaskABrowserAndFinished: Story = {
 /** "#731 · Tidy the changelog", closed at 11:00 local time, once #702 before a restart. */
 const CLOSED: ClosedChat = {
   number: 731,
+  id: "01K6CHATS0000000000000000C",
   earlier: [702],
+  found_by: null,
   title: "Tidy the changelog",
   place: "smart-ide",
   // Local time, so every cell says 11:00 whatever its clock's zone.
   ended: "2026-11-12T11:00:00",
 };
 
-/** Its card, as `chat_by_number` answers for it. */
+/** Its card, as `chat_by_id` answers for it. */
 const CLOSED_CARD: ChatCard = {
   number: 731,
   chat: "01K6CHATS0000000000000000C",
@@ -750,6 +752,7 @@ const CLOSED_CARD: ChatCard = {
   screen_kept: false,
   chat_reopen: "reopens",
   task: null,
+  found_by: null,
 };
 
 /** The open chats beside it: none of them about the changelog. */
@@ -785,8 +788,8 @@ export const AClosedChatTheFilterFinds: Story = {
   beforeEach: () => {
     mockIPC((cmd, args) => {
       if (cmd === "closed_chats") return [CLOSED];
-      if (cmd === "chat_by_number")
-        return (args as { number: number }).number === 731
+      if (cmd === "chat_by_id")
+        return (args as { id: string }).id === CLOSED.id
           ? { is: "ended", card: CLOSED_CARD }
           : { is: "no_chat" };
       return null;

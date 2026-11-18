@@ -285,11 +285,13 @@ export function matchesFinished(task: FinishedTask, filter: Filter): boolean {
 }
 
 /**
- * **The closed chats a filter finds** (#6484), newest close first, as `closed` came: by the
- * number typed, `702` or `#702`, which a chat had as it closed or before a restart, and by
- * nothing else then; otherwise by every word in its title or where it ran. Never by a chip, nor
- * with nothing typed, as a finished task is never (both ask about a chat still running). One the
- * list draws already as a finished task (`drawn`, by its chat's number) is not found twice.
+ * **The closed chats a filter finds** (#6484), newest close first, as `closed` came. For a
+ * number typed, `702` or `#702`, `closed` is what the core answered for that number
+ * (`closed_chats`, #7125): the chats that had it as they closed or before a restart, each with
+ * the number it was found by where it is an earlier one, and nothing else then. Otherwise, by
+ * every word in its title or where it ran. Never by a chip, nor with nothing typed, as a
+ * finished task is never (both ask about a chat still running). One the list draws already as a
+ * finished task (`drawn`, by its chat's number) is not found twice.
  */
 export function closedFound(
   closed: readonly ClosedChat[],
@@ -301,9 +303,7 @@ export function closedFound(
   return closed.filter(
     (chat) =>
       !drawn.has(chat.number) &&
-      (number === undefined
-        ? inFields(filter.text, [chat.title, chat.place])
-        : chat.number === number || chat.earlier.includes(number)),
+      (number !== undefined || inFields(filter.text, [chat.title, chat.place])),
   );
 }
 

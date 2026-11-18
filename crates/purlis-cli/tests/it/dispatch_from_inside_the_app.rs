@@ -762,7 +762,14 @@ fn the_refusals() -> Vec<(&'static str, String)> {
         ),
         (
             "dispatch-from-an-unattended-chat-with-no-sandbox-is-refused",
-            purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say(),
+            purlis_core::dispatchunattended::Refusal::Unsandboxed(
+                purlis_core::dispatchunattended::Missing {
+                    asking: Some("steward".to_owned()),
+                    target: "devops".to_owned(),
+                    unreviewed: false,
+                },
+            )
+            .say(),
         ),
         // Where the new chat is to work (#1453).
         (
@@ -1247,7 +1254,7 @@ impl StandIn {
             .and_then(|cwd| purlis_core::active::workspace_of_tree(&self.root, cwd))
             .map_or(Place::PlaneRoot, Place::Workspace);
         let asker = purlis_core::reopen::shown_name(&asking, Some("claude"));
-        let when: chrono::NaiveDateTime = "2026-10-07T14:32:05".parse().unwrap();
+        let when: jiff::civil::DateTime = "2026-10-07T14:32:05".parse().unwrap();
         let message = purlis_core::handoff::task_message(&asker, &place, when, &ask.brief);
         let start = dispatchdecision::start_for(
             &asking,
@@ -1281,6 +1288,7 @@ impl StandIn {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..Default::default()
         };
@@ -1427,6 +1435,7 @@ fn a_task_goes_end_to_end() {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         })
     );
     // In the asking chat's folder, on its profile, as its persona.

@@ -176,12 +176,12 @@ pub fn keep(
     folder: &str,
     real: &Path,
     declared: &Declared,
-    at: chrono::DateTime<chrono::Utc>,
+    at: jiff::Timestamp,
 ) -> Result<String, String> {
     let base = crate::machine::dir(config).join(DIR);
     let dir = base.join(super::approval::key(workspace, folder));
     private_dir(&base).and_then(|()| private_dir(&dir))?;
-    let secs = at.timestamp().max(0);
+    let secs = at.as_second().max(0);
     let id = (0..100)
         .map(|n| format!("{secs:012}-{n:02}"))
         .find(|id| !dir.join(id).exists())

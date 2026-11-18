@@ -84,8 +84,8 @@ fn held(reports: &Reports) -> Held {
         .expect("held")
 }
 
-fn after_the_hold() -> chrono::DateTime<chrono::Utc> {
-    chrono::Utc::now() + chrono::Duration::seconds(i64::from(HOLD_SECS) + 1)
+fn after_the_hold() -> jiff::Timestamp {
+    jiff::Timestamp::now() + jiff::SignedDuration::from_secs(i64::from(HOLD_SECS) + 1)
 }
 
 #[test]
@@ -103,7 +103,7 @@ fn an_always_send_draft_is_held_then_goes_to_the_intake_and_never_to_github() {
     let one = held(&reports);
     assert!(one.sends_at.is_some(), "held with Undo: {one:?}");
     assert_eq!(
-        reports.send_held_due(chrono::Utc::now()),
+        reports.send_held_due(jiff::Timestamp::now()),
         0,
         "nothing leaves within the hold"
     );

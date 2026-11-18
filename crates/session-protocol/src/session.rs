@@ -587,9 +587,38 @@ use crate::view::{Limits, Views};
 /// `browser_input` may carry the person's Back, Forward, Reload or Stop
 /// ([`crate::browsing::Input::Navigate`]), refused as any input is unless the person drives. A
 /// view of a link before 1.90 is sent no page frame, and a host before 1.90 is sent no step.
+///
+/// 1.91 tells a browser's views its other pages, and lets the person watch another (#6989): a
+/// page frame lists the browser's pages as `browser_pages` lists them to its chat
+/// ([`crate::browsing::PageShown::pages`]: each one's id, scrubbed title and origin, and which is
+/// current), and `browser_input` may carry the person's pick of one
+/// ([`crate::browsing::Input::Watch`]), refused as any input is unless the person drives. It
+/// lists the browser's downloads too, as `browser_downloads` lists them to its chat
+/// ([`crate::browsing::PageShown::downloads`]: each one's id, name, state and how far it came,
+/// #6990). A view of a link before 1.91 is sent neither list, and a host before 1.91 is sent no
+/// pick.
+///
+/// 1.92 has a relaying host link again now when the window asks (`link_now`, #7134), its Try
+/// now while the link to a runner is down; and say `link_down` again while it is down each time
+/// why changes, so the window says what the last try found. A host before 1.92 is sent no
+/// `link_now`.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 90,
+    minor: 92,
+};
+
+/// The version that first lists a browser's pages and downloads to its views and takes the
+/// person's pick of a page to watch (#6989, #6990): none is sent to a host before.
+pub const KNOWS_PAGES_LISTED: Version = Version {
+    major: 1,
+    minor: 91,
+};
+
+/// The version that first links again when the window asks (`link_now`, #7134): none is sent
+/// to a host before.
+pub const KNOWS_LINK_NOW: Version = Version {
+    major: 1,
+    minor: 92,
 };
 
 /// The version that first tells a browser's views what its page is and takes the person's
@@ -1316,6 +1345,12 @@ pub enum Command {
     /// do with it. The window's alone ([`crate::grants::Power::NameWindow`]), never sent on, and
     /// never shown by `Debug`.
     NameWindow { name: crate::browsing::Secret },
+    /// The window asks the host that relays its link to link to the other host again now (1.92,
+    /// #7134): its Try now, while that link is down, rather than once the pause between tries
+    /// has passed. Answered [`Answer::Done`] at once, before the try: whether it links is said
+    /// as ever, `link_back` or `link_down` again. A host that relays nothing has nothing to
+    /// link. The window's alone ([`crate::grants::Power::LinkNow`]), never sent on.
+    LinkNow,
     /// The window asks the desktop's host to relay this link to `runner` (1.33, #2679, ADR 0078
     /// §4): the runner this machine keeps under that name, reached through its connector and
     /// linked with the key pinned at its pairing. Sent only as a link's first command but its
@@ -3001,7 +3036,9 @@ pub enum Pushed {
     /// what the client has there, its chats and browsers among them, is on that other host,
     /// which this host is linking to again. Until [`Pushed::LinkBack`] every command it would
     /// send on is refused; nothing is sent later in its place. Pushed once for each time the
-    /// link goes down, to every subscriber of the relaying host.
+    /// link goes down, to every subscriber of the relaying host, and again while it is down
+    /// each time `why` changes (#7134): a try to link again that failed for another reason
+    /// than the one told. A client before that takes the second as the first.
     LinkDown {
         why: String,
         /// The other host answered with another key than the one pinned at its pairing (1.33,
@@ -3227,6 +3264,7 @@ wire_words!(Command {
     FillSecret => "fill_secret",
     TakeBack => "take_back",
     NameWindow => "name_window",
+    LinkNow => "link_now",
     Unpair => "unpair",
     KeepProfile => "keep_profile",
     ForgetProfile => "forget_profile",
@@ -3305,6 +3343,7 @@ impl Command {
             Command::Quit => Power::Quit,
             Command::TakeBack { .. } => Power::TakeBack,
             Command::NameWindow { .. } => Power::NameWindow,
+            Command::LinkNow => Power::LinkNow,
             Command::Unpair => Power::Unpair,
             Command::KeepProfile(_)
             | Command::ForgetProfile { .. }
@@ -3862,6 +3901,7 @@ impl Lane {
             | Command::Quit
             | Command::TakeBack { .. }
             | Command::NameWindow { .. }
+            | Command::LinkNow
             | Command::Unpair
             | Command::KeepProfile(_)
             | Command::ForgetProfile { .. }

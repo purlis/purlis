@@ -60,7 +60,8 @@ fn only_a_refusal_for_lack_of_a_grant_between_two_personas_is_kept() {
         Refusal::Never("steward".to_owned(), "devops".to_owned()),
         Refusal::NeverAbove("steward".to_owned(), "devops".to_owned()),
         Refusal::NeversUnread,
-        Refusal::Unsandboxed("devops".to_owned()),
+        Refusal::NotSealedHere("devops".to_owned()),
+        Refusal::Denied("devops".to_owned()),
     ] {
         assert_eq!(pair_kept(&other), None, "{other:?}");
     }

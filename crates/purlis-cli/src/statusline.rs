@@ -219,12 +219,7 @@ pub const NO_PLANE: &str =
 /// `config.STATE_DIR` is `<cwd>/.charter`, so a spawn here would scatter charter's caches
 /// into whatever directory the render happened to run in"); this is the same rule applied to
 /// the write beside it.
-pub fn run(
-    plane: Option<&Path>,
-    payload: &str,
-    ambient: &Ambient,
-    now: chrono::DateTime<chrono::Utc>,
-) {
+pub fn run(plane: Option<&Path>, payload: &str, ambient: &Ambient, now: jiff::Timestamp) {
     // Parsed once and shared by both branches, so the drawn turn and the recorded turn can
     // never be two readings of one payload. An unparsable payload is an empty document, as
     // Python's `except Exception: payload = {}` makes it.
