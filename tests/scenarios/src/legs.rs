@@ -10,7 +10,7 @@
 use std::fs;
 use std::path::Path;
 
-use crate::coverage::{Coverage, Ran, Repo, judge_ran_legs};
+use crate::coverage::{Census, Coverage, Ran, Repo, census, judge_ran_legs};
 use crate::model::{LegRecord, Os, ReportLeg, TimingsMode};
 use crate::plan::Trigger;
 
@@ -97,10 +97,23 @@ pub fn ran_from(spec: &str) -> Result<Vec<Ran>, String> {
 /// nightly and the merge queue run every leg's job, so every leg is judged. `live:` covers are
 /// ticket 44's. An unreadable report or list is an `Err`, never a pass.
 pub fn judge_job(folder: &Path, trigger: &str, ran: &str) -> Result<Vec<String>, String> {
+    judge_job_counted(folder, trigger, ran).map(|(problems, _)| problems)
+}
+
+/// [`judge_job`], and the [`Census`] of what it judged, for the gate to say how much it checked.
+pub fn judge_job_counted(
+    folder: &Path,
+    trigger: &str,
+    ran: &str,
+) -> Result<(Vec<String>, Census), String> {
     let trigger = trigger_from(trigger)?;
     let ran = ran_from(ran)?;
     let records = read_reports(folder)?;
     let covered = Coverage::read()?;
     let repo = Repo::read()?;
-    Ok(judge_ran_legs(&covered, &repo, trigger, &ran, &records))
+    let census = census(&covered, &repo, trigger, &ran);
+    Ok((
+        judge_ran_legs(&covered, &repo, trigger, &ran, &records),
+        census,
+    ))
 }

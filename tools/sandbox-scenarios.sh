@@ -18,11 +18,13 @@
 # **Repeated runs, compared** (T1.1-54). `REPEAT=3` runs the set three times, each time with its
 # batches (a test's module path) in an order `tools/scenario-legs.mjs shuffle` seeds from
 # `SHUFFLE_SEED` and the run's number, never its cells (they depend on earlier cells' state). A
-# cell whose verdict differs between runs is flaky: it opens a public `flaky-scenario` issue, and
-# the run is red (`tools/scenario-legs.mjs flaky`). `STRESS=true` runs the set 20 times under
+# cell whose verdict differs between runs is flaky: it is a public `flaky-scenario` issue, and
+# the run is red (`tools/scenario-legs.mjs flaky`). Only the compare
+# happens here: the issues are opened by the action's own step after the tests, the one step that
+# holds a token that can (nightly only), so no test process inherits it. `STRESS=true` runs the set 20 times under
 # `stress-ng` on every CPU (the `stress-x20` label), over the batches this change touched when it
 # touched any (`BASE`, the commit it is measured against) and never M-NET-25 (Q300), and compares
-# them the same way. Every run's own report is kept under `target/sandbox-scenarios-runs/`; the
+# them the same way. Every run's own report is kept under `target/sandbox-scenarios-runs/<set>/`; the
 # reports a leg uploads are the first run's.
 #
 # `CARGO_PACKAGES` is the packages the test build was built with (`-p purlis-app -p purlis-scenarios`
@@ -45,7 +47,7 @@ esac
 # The tools are found beside this script; the reports are under the folder it runs in.
 here=$(cd "$(dirname "$0")" && pwd)
 report=target/sandbox-scenarios
-runs=target/sandbox-scenarios-runs
+runs=target/sandbox-scenarios-runs/$1
 mkdir -p "$report"
 rm -rf "$runs"
 

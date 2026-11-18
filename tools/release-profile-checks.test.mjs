@@ -74,7 +74,7 @@ test("the_release_profile_job_runs_nightly_and_on_pull_requests_that_change_an_e
   const job = jobsOf(workflow).find((j) => j.id === "linux-release-profile");
   assert.ok(job, "sandbox-scenarios.yml has the job linux-release-profile");
   assert.match(job.text, /uses: \.\/\.github\/actions\/linux-release-profile/);
-  assert.match(job.text, /needs\.plan\.outputs\.release-profile == 'true'/);
+  assert.match(job.text, /needs\.plan\.outputs\.release-profile != 'false'/);
   // The action builds the bundle as `release.yml` does, with the same profile, and runs the checks.
   const action = readFileSync(join(root, ".github/actions/linux-release-profile/action.yml"), "utf8");
   assert.match(action, /release-profile-checks\.mjs run target release/);

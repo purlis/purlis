@@ -35,7 +35,7 @@ inputs:
     required: false
     default: ""
   github-token:
-    description: "The token that opens a flaky scenario's issue (issues: write); without it the run is red and says so."
+    description: "The token that opens a flaky scenario's issue (issues: write). Only the nightly's compare step holds it, never a test step; elsewhere the compare is a dry run."
     required: false
     default: ""
 runs:
@@ -117,7 +117,6 @@ runs:
         # The nightly's shuffle: a new order each night, the same for every OS that night.
         SHUFFLE_SEED: ${{ inputs.repeat != '1' && github.run_id || '' }}
         BASE: ${{ inputs.base }}
-        GH_TOKEN: ${{ inputs.github-token }}
         CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh suite
     - name: The production-timing entries
@@ -126,11 +125,31 @@ runs:
       env:
         STRESS: ${{ inputs.stress }}
         BASE: ${{ inputs.base }}
-        GH_TOKEN: ${{ inputs.github-token }}
         # The nightly takes M-NET-25 at its real 15 minutes; the label and the queue skip it (Q300).
         SCENARIOS_TRIGGER: ${{ inputs.trigger }}
         CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
       run: tools/sandbox-scenarios.sh production-timings
+    # **The flaky scenarios' issues** (T1.1-54): after every test step, in a step of its own, the
+    # only one that holds `GH_TOKEN`, and only on the nightly: each set's runs are compared (the
+    # test steps compared them already) and an entry that differs opens, or comments on, a public
+    # issue. A pull request's `stress-x20` run, and anything not the nightly, is a dry run: it
+    # prints what would open and opens none.
+    - name: Flaky scenarios, compared across the runs
+      if: ${{ !cancelled() && (inputs.repeat != '1' || inputs.stress == 'true') }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.trigger == 'nightly' && inputs.github-token || '' }}
+        SOURCE: ${{ inputs.stress == 'true' && 'stress-x20' || 'nightly' }}
+        HOW: ${{ inputs.trigger == 'nightly' && '--open' || '--dry-run' }}
+      run: |
+        status=0
+        for dir in target/sandbox-scenarios-runs/*/; do
+          [ -d "$dir" ] || continue
+          echo "::group::$dir"
+          node tools/scenario-legs.mjs flaky "$dir" --source "$SOURCE" "$HOW" || status=1
+          echo "::endgroup::"
+        done
+        exit "$status"
     # **The fixture and e2e covers this OS owes** (T1.1-54): each named test runs on the OS its
     # cover names, through the setup the repo already has, and writes its record in ticket 5's
     # schema beside the legs' (`target/sandbox-scenarios/<os>-covers.jsonl`). `macos-live-check`
