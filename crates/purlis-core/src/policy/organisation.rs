@@ -474,8 +474,9 @@ fn array(words: &[&str]) -> String {
 ///
 /// - `owner` becomes the Organisation's owner;
 /// - `hosts` (and the hosts of `presets`, where both are set) become Organisation permits on
-///   `connect`, and where `hosts` is set, a forbid on every other host, with the `network` family locked, so no level adds one
-///   (`personal-hosts` and `persona-hosts` lock it too). A listed host reads as `Host::covers`
+///   `connect`, and where `hosts` is set, a forbid on every other host. `presets` alone restricts
+///   no host, but with `hosts`, `never-hosts`, `personal-hosts` and `persona-hosts` it locks the
+///   `network` family, so no level adds one (`personal-hosts` and `persona-hosts` lock it too). A listed host reads as `Host::covers`
 ///   reads it ([`host_matches`]): a wildcard is a suffix set, a port is `context.port`;
 /// - `never-hosts` become forbids on `connect`, and `dispatch` pairs forbids on `dispatch-to`;
 /// - a `false` of `dispatch.allow`, `opt-out`, `persona-tools`, `vault-grants` or `live-asks` is a
@@ -485,16 +486,13 @@ fn array(words: &[&str]) -> String {
 ///   `run`), and `enforcement` its families;
 /// - `allow-scopes` becomes the `keep` lock, at the widest scope it names;
 /// - dispatch limits become `[policy.limits]`, which slice 12 reads;
-/// - every forbid written is pinned by `[policy.rules]` to `enforce`: an Organisation's forbid
-///   holds whatever the project's mode or template;
+/// - every Organisation forbid, these included, is enforced whatever the project's mode or
+///   template: `levels` defaults its mode to `enforce`;
 /// - `relayed-internal` is not a permission on a policy action: it stays where it is read today.
 pub fn translate_locks(locks: &Locks) -> Translation {
     let mut families: Vec<&'static str> = Vec::new();
     let mut actions: Vec<&'static str> = Vec::new();
     let mut rules = String::from("// purlis-policy 1\n");
-    // Every forbid written is pinned to `enforce` below: an Organisation's forbid holds
-    // whatever the project's mode or template, as the legacy locks did (round 3, NB1).
-    let mut forbid_ids: Vec<String> = Vec::new();
     fn lock_family(families: &mut Vec<&'static str>, family: &'static str) {
         if !families.contains(&family) {
             families.push(family);
@@ -535,7 +533,6 @@ pub fn translate_locks(locks: &Locks) -> Translation {
             ));
         }
         let set = any_host_matches(&hosts);
-        forbid_ids.push("network-organisation-fixed-hosts".to_owned());
         rules.push_str(&format!(
             "@id(\"network-organisation-fixed-hosts\") @level(\"organisation\")\n\
              forbid (principal, action == Action::\"connect\", resource)\n  \
@@ -543,7 +540,6 @@ pub fn translate_locks(locks: &Locks) -> Translation {
         ));
     }
     for (n, host) in locks.never_hosts().iter().enumerate() {
-        forbid_ids.push(format!("network-organisation-never-{n}"));
         rules.push_str(&format!(
             "@id(\"network-organisation-never-{n}\") @level(\"organisation\")\n\
              forbid (principal, action == Action::\"connect\", resource)\n  \
@@ -551,8 +547,15 @@ pub fn translate_locks(locks: &Locks) -> Translation {
             host_matches(host)
         ));
     }
-    if locks.forbids_personal_hosts() || locks.forbids_persona_hosts() {
+    if locks.fixes_presets()
+        || !locks.never_hosts().is_empty()
+        || locks.forbids_personal_hosts()
+        || locks.forbids_persona_hosts()
+    {
         lock_family(&mut families, "network");
+    }
+    if !locks.locked_pairs().is_empty() {
+        lock_family(&mut families, "dispatch");
     }
 
     // ── a `false` is a no: a hard forbid, never an ask (round 2, steward ruling) ─────────
@@ -606,7 +609,6 @@ pub fn translate_locks(locks: &Locks) -> Translation {
             for family in locked {
                 lock_family(&mut families, family);
             }
-            forbid_ids.push(id.to_owned());
             rules.push_str(&format!("@id(\"{id}\") @level(\"organisation\")\n{rule}\n"));
         }
     }
@@ -625,7 +627,6 @@ pub fn translate_locks(locks: &Locks) -> Translation {
         }
     }
     for (n, (from, to)) in locks.locked_pairs().iter().enumerate() {
-        forbid_ids.push(format!("dispatch-organisation-pair-{n}"));
         rules.push_str(&format!(
             "@id(\"dispatch-organisation-pair-{n}\") @level(\"organisation\")\n\
              forbid (principal in Persona::{}, action == Action::\"dispatch-to\", \
@@ -666,12 +667,6 @@ pub fn translate_locks(locks: &Locks) -> Translation {
     if !limits.is_empty() {
         settings.push_str("[policy.limits]\n");
         settings.extend(limits);
-    }
-    if !forbid_ids.is_empty() {
-        settings.push_str("[policy.rules]\n");
-        for id in &forbid_ids {
-            settings.push_str(&format!("{} = \"enforce\"\n", quoted(id)));
-        }
     }
     Translation {
         owner: locks.owner(),

@@ -66,3 +66,18 @@ sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in 
 Set its family to `log` in `[policy]`, commit it, and press Accept in the window; the chat's
 next start runs it that way. Or run the command yourself, in your own terminal: these guards
 bound what an agent does with your authority, never what you do.
+
+## What an administrator's forbid does, and what is never asked
+
+- **An administrator's forbid is always enforced**, whatever the project's template or family
+  mode: every forbid in `/etc/purlis/policy.cedar` and every one `policy.json` translates to is
+  `enforce` unless the administrator's own `[policy.rules]` says otherwise. A project can't
+  loosen it by a mode, a rule mode or a rule of the same `@id`.
+- **A request's host is a name or an address alone**, lower case, with no path, no port (the
+  port is the request's `context.port`) and no wildcard. A host that is not one, such as
+  `localhost`, a single-label name, a loopback, link-local or cloud-metadata address, an IPv6
+  address without its brackets, or `evil.com/x.corp.example`, is **unasked**: it is refused in
+  every mode, `off` and `log` included, because no rule can be put on it. The members of the sets
+  `known-hosts` and `production-hosts` are read the same way, and a member that is not such a
+  host (or carries a port, or starts with `*.`) makes the file broken. A set can't be named
+  `*.something`: that is the name the policy gives the hosts under a domain.

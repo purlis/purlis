@@ -119,13 +119,17 @@ fn connect_in_project(
     project: Option<&str>,
 ) -> [decide::Decision; 2] {
     let mut request = connect(host);
+    request.of = Chat {
+        workspace: Some("web"),
+        persona: Some("builder"),
+    };
     request.context["port"] = port.into();
     let found = purlis_core::policy::organisation::in_force();
     let root = tempfile::tempdir().expect("a folder");
     let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
         root: root.path(),
-        workspaces: &[],
-        personas: &[],
+        workspaces: &["web"],
+        personas: &["builder"],
         organisation: found.as_ref().map(|f| f.as_sources()),
         accepted: project.map(|settings| Accepted {
             settings: Some(settings),
@@ -393,11 +397,13 @@ fn a_locked_dispatch_pair_refuses_that_pair_alone() {
 
 /// The project files that would loosen the `network` family or one rule: no policy at all, the
 /// family off, the shipped `watch` template, and a rule turned off by its id.
-const LOOSE_PROJECTS: [Option<&str>; 4] = [
+const LOOSE_PROJECTS: [Option<&str>; 6] = [
     None,
     Some("[policy]\nnetwork = \"off\"\n"),
     Some("[policy]\ntemplate = \"watch\"\n"),
     Some("[policy.rules]\n\"network-organisation-never-0\" = \"off\"\n"),
+    Some("[policy.workspaces.web]\nnetwork = \"off\"\n"),
+    Some("[policy.personas.builder]\nnetwork = \"off\"\n"),
 ];
 
 #[test]
@@ -632,4 +638,211 @@ fn an_organisations_limits_are_kept_for_slice_12() {
         accepted: None,
     });
     assert_eq!(loaded.organisation_limits.get("dispatch.depth"), Some(&2));
+}
+
+/// A plane's decision on `request` where no family lock applies: the Organisation's locks are
+/// cleared, so what holds the forbid is its mode alone.
+fn decide_with_no_lock(
+    organisation_rules: Option<&str>,
+    json: &str,
+    project: Option<&str>,
+    request: &Request<'_>,
+) -> decide::Decision {
+    organisation(json);
+    let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+    let mut sources = found.as_sources();
+    if let Some(rules) = organisation_rules {
+        sources.rules = Some(rules);
+    }
+    let root = tempfile::tempdir().expect("a folder");
+    let mut loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+        root: root.path(),
+        workspaces: &["web"],
+        personas: &["builder"],
+        organisation: Some(sources),
+        accepted: project.map(|settings| Accepted {
+            settings: Some(settings),
+            rules: None,
+        }),
+    });
+    assert!(
+        !loaded.notices.iter().any(|n| n.what.contains("is broken")),
+        "{:?}",
+        loaded.notices
+    );
+    loaded.organisation_locks = purlis_core::policy::levels::Locks::default();
+    loaded.project_locks = purlis_core::policy::levels::Locks::default();
+    let world = purlis_core::policy::World::from_json(serde_json::json!([])).expect("a world");
+    decide::decide(&loaded, request, &world)
+}
+
+#[test]
+fn a_native_organisation_forbid_is_enforced_whatever_the_projects_mode() {
+    purlis_core::unsteered!();
+    let native = "// purlis-policy 1\n@id(\"network-corp-no-evil\") @level(\"organisation\")\n\
+                  forbid (principal, action == Action::\"connect\", resource == Host::\"evil.example\");\n";
+    for project in LOOSE_PROJECTS {
+        let said = decide_with_no_lock(Some(native), "{}", project, &connect("evil.example"));
+        assert!(
+            refused_by(&said, "network-corp-no-evil"),
+            "under {project:?}: {said:?}"
+        );
+    }
+    // Its own `[policy.rules]` can still say otherwise.
+    organisation("{}");
+}
+
+#[test]
+fn a_translated_forbid_holds_with_no_lock_at_all() {
+    purlis_core::unsteered!();
+    // Without the family lock, the forbid's own mode is all that holds it.
+    for (json, host, id) in [
+        (
+            r#"{"sandbox": {"never-hosts": ["evil.example"]}}"#,
+            "evil.example",
+            "network-organisation-never-0",
+        ),
+        (
+            r#"{"sandbox": {"hosts": ["fine.example"]}}"#,
+            "evil.example",
+            "network-organisation-fixed-hosts",
+        ),
+    ] {
+        for project in LOOSE_PROJECTS {
+            let said = decide_with_no_lock(None, json, project, &connect(host));
+            assert!(refused_by(&said, id), "{json} under {project:?}: {said:?}");
+        }
+    }
+}
+
+#[test]
+fn presets_only_never_hosts_only_and_locked_pairs_lock_their_families() {
+    purlis_core::unsteered!();
+    for (json, family) in [
+        (r#"{"sandbox": {"presets": ["forge"]}}"#, "network"),
+        (
+            r#"{"sandbox": {"never-hosts": ["evil.example"]}}"#,
+            "network",
+        ),
+        (
+            r#"{"dispatch": {"locked": [{"from": "builder", "to": "reviewer"}]}}"#,
+            "dispatch",
+        ),
+    ] {
+        organisation(json);
+        let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+        let root = tempfile::tempdir().expect("a folder");
+        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+            root: root.path(),
+            workspaces: &[],
+            personas: &[],
+            organisation: Some(found.as_sources()),
+            accepted: Some(Accepted {
+                settings: Some("[policy]\ntemplate = \"open\"\n"),
+                rules: None,
+            }),
+        });
+        assert!(
+            loaded.organisation_locks.families.contains(family),
+            "{json} locks {family}"
+        );
+        assert_eq!(
+            loaded.mode_for(
+                family,
+                Chat {
+                    workspace: None,
+                    persona: None
+                }
+            ),
+            purlis_core::enforcement::Mode::Enforce,
+            "{json}"
+        );
+    }
+}
+
+#[test]
+fn a_locked_dispatch_pair_holds_in_a_plane_under_a_loose_project() {
+    purlis_core::unsteered!();
+    organisation(r#"{"dispatch": {"locked": [{"from": "builder", "to": "reviewer"}]}}"#);
+    let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+    let world = purlis_core::policy::World::from_json(
+        serde_json::from_str(
+            &std::fs::read_to_string(
+                Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/policy/world.json"),
+            )
+            .expect("the world fixture"),
+        )
+        .expect("JSON"),
+    )
+    .expect("the world loads");
+    let ask = Request {
+        chat: "web/builder",
+        of: Chat {
+            workspace: Some("web"),
+            persona: Some("builder"),
+        },
+        action: "dispatch-to",
+        resource: ("Persona", "reviewer"),
+        context: serde_json::json!({
+            "sandbox": "floor", "attended": true, "harness_mode": "default", "depth": 0,
+            "kind": "dispatch", "profile": "default", "subagent": false
+        }),
+    };
+    for project in [
+        None,
+        Some("[policy]\ndispatch = \"off\"\n"),
+        Some("[policy.workspaces.web]\ndispatch = \"off\"\n"),
+        Some("[policy.personas.builder]\ndispatch = \"log\"\n"),
+        Some("[policy.rules]\n\"dispatch-organisation-pair-0\" = \"off\"\n"),
+    ] {
+        let root = tempfile::tempdir().expect("a folder");
+        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+            root: root.path(),
+            workspaces: &["web"],
+            personas: &["builder"],
+            organisation: Some(found.as_sources()),
+            accepted: project.map(|settings| Accepted {
+                settings: Some(settings),
+                rules: None,
+            }),
+        });
+        let said = decide::decide(&loaded, &ask, &world);
+        assert!(
+            refused_by(&said, "dispatch-organisation-pair-0"),
+            "under {project:?}: {said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_host_set_member_that_is_no_bare_host_breaks_the_file() {
+    purlis_core::unsteered!();
+    organisation("{}");
+    let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
+    for member in [
+        "evil.example:8443",
+        "*.evil.example",
+        "not a host",
+        "evil.com/x",
+    ] {
+        let root = tempfile::tempdir().expect("a folder");
+        let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
+            root: root.path(),
+            workspaces: &[],
+            personas: &[],
+            organisation: Some(found.as_sources()),
+            accepted: Some(Accepted {
+                settings: Some(&format!("[policy.sets]\nknown-hosts = [\"{member}\"]\n")),
+                rules: None,
+            }),
+        });
+        assert!(
+            loaded
+                .notices
+                .iter()
+                .any(|n| n.what.contains("known-hosts")),
+            "{member}: {:?}",
+            loaded.notices
+        );
+    }
 }

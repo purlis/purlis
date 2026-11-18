@@ -619,6 +619,28 @@ fn strings(item: &toml_edit::Item) -> Option<Vec<String>> {
         .collect()
 }
 
+/// The sets whose members are hosts, each read as `Host::parse` reads one.
+const HOST_SETS: [&str; 2] = ["known-hosts", "production-hosts"];
+
+/// `members` as hosts in their one spelling, or why one is not a host as a request asks for it:
+/// a name or an address alone, with no port and no wildcard.
+fn canonical_hosts(members: &[String]) -> Result<Vec<String>, String> {
+    members
+        .iter()
+        .map(|member| {
+            let host = crate::sandbox::hosts::Host::parse(member)
+                .map_err(|why| format!("lists \"{member}\", which is no host: {why}"))?;
+            let spelt = host.to_string();
+            if host.port().is_some() || spelt.starts_with("*.") {
+                return Err(format!(
+                    "lists \"{member}\": a request's host is a name or an address alone, with no port and no wildcard"
+                ));
+            }
+            Ok(spelt)
+        })
+        .collect()
+}
+
 /// `[policy.sets]`: each named set's members, and its line.
 fn read_sets(
     item: &toml_edit::Item,
@@ -647,6 +669,13 @@ fn read_sets(
             continue;
         }
         match strings(v) {
+            Some(members) if HOST_SETS.contains(&name) => match canonical_hosts(&members) {
+                Ok(members) => {
+                    tables.sets.insert(name.to_owned(), members);
+                    tables.set_lines.insert(name.to_owned(), line);
+                }
+                Err(why) => problem(line, format!("the set \"{name}\" {why}")),
+            },
             Some(members) => {
                 tables.sets.insert(name.to_owned(), members);
                 tables.set_lines.insert(name.to_owned(), line);
@@ -1144,13 +1173,19 @@ fn read_organisation(
             }
             tables.locks.add(&more.tables.locks);
             tables.lock_lines.extend(more.tables.lock_lines);
-            // The translation pins each forbid it writes to `enforce`, and an Organisation's
-            // forbid is enforced whatever the mode of the project (round 3, NB1): its modes
-            // replace `policy.toml`'s of the same rule. Its limits join `policy.toml`'s.
-            tables.rules.extend(more.tables.rules);
+            // Its limits join `policy.toml`'s (slice 12 reads them).
             tables.limits.extend(more.tables.limits);
             rules.extend(more.rules);
         }
+    }
+    // **An Organisation forbid is always enforced**, whatever the project's mode or template
+    // (round 4, steward ruling): a forbid's mode defaults to `enforce` unless the
+    // Organisation's own `[policy.rules]` says otherwise.
+    for rule in rules.iter().filter(|r| r.policy.effect() == Effect::Forbid) {
+        tables.rules.entry(rule.id.clone()).or_insert(Said {
+            value: Mode::Enforce,
+            line: 1,
+        });
     }
     OrgRead {
         tables,

@@ -862,8 +862,8 @@ fn world_with_suffix_sets(
     if kind != "Host" {
         return Ok(None);
     }
-    let name = id.to_ascii_lowercase();
-    let name = name.strip_suffix('.').unwrap_or(&name);
+    // `decide` has made the id canonical: lower case, no final dot.
+    let name = id;
     if name.starts_with('[') || name.parse::<std::net::Ipv4Addr>().is_ok() {
         return Ok(None);
     }
@@ -900,7 +900,10 @@ fn world_with_suffix_sets(
 /// **A `Host` resource's one canonical spelling** (lower case, no final dot, a canonical IPv6
 /// address in brackets, no path), or `None` where the resource is no host. An id that is not a
 /// host, that carries a port (the port is the context's) or that is a wildcard cannot be asked:
-/// it is `Unasked`, a deny.
+/// it is `Unasked`, a deny **in every mode** (an `Unasked` has no rule to put in a mode). That
+/// is `Host::parse`'s refusals too: `localhost`, a single-label name, loopback, link-local,
+/// cloud-metadata addresses and an unbracketed IPv6 address. A caller that asks of them asks
+/// nothing, and is refused.
 fn canonical_host(question: &Question<'_>) -> Result<Option<String>, String> {
     let (kind, id) = question.resource;
     if kind != "Host" {
