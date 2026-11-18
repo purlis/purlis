@@ -886,7 +886,9 @@ pub fn in_force(root: &Path) -> Resolved {
     if in_the_app() {
         return resolved_in_the_app(root);
     }
-    let asked = answered().unwrap_or_else(|| Resolved::all(Mode::Enforce));
+    // MUTATION (DO NOT MERGE): the app's answer is never heard, so every family is enforced.
+    let _ = answered();
+    let asked = Resolved::all(Mode::Enforce);
     match crate::envvar::var(ENV).filter(|said| !said.is_empty()) {
         Some(started) => asked.stricter(&Resolved::parse(&started)),
         None => asked,

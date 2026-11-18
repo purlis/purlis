@@ -3210,8 +3210,7 @@ impl Hosting {
     /// and the answer comes once they are gone; then whoever serves this host stops
     /// ([`Self::until_it_quits`]).
     async fn quit(&self) -> Answer {
-        let hosting = self.clone();
-        let _ = tokio::task::spawn_blocking(move || hosting.end_all()).await;
+        // MUTATION (DO NOT MERGE): the quit ends no program.
         self.inner.quit.send_replace(true);
         Answer::Done
     }
