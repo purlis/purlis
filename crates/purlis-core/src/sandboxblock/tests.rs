@@ -2739,3 +2739,51 @@ fn a_block_in_the_chats_own_branch_folders_git_record_is_its_own_to_retry() {
         assert!(!told.contains(never), "{never}: {told}");
     }
 }
+
+/// #1349: gh's config load at start fails with its own words, and a failed command hands them
+/// back in the failure's `error`. A refusal of one of the person's credential files raises a
+/// block there, naming the path, as it does in a result that came back.
+#[test]
+fn a_failed_gh_config_load_on_a_credential_file_is_a_block_naming_it() {
+    for line in [
+        "failed to read configuration: open /Users/dev/.config/gh/hosts.yml: operation not permitted",
+        "open /Users/dev/.config/glab-cli/config.yml: operation not permitted",
+    ] {
+        let path = line
+            .split_whitespace()
+            .rev()
+            .nth(3)
+            .unwrap()
+            .trim_end_matches(':');
+        assert_eq!(
+            detect_with_targets(
+                &failed("gh pr list", &format!("Exit code 1\n{line}")),
+                &place()
+            ),
+            vec![(
+                block(Operation::File, Kind::ProtectedFile, false),
+                Some(path.to_owned())
+            )],
+            "{line}"
+        );
+    }
+}
+
+/// A failed command's own refusal of a path that is no credential stays unread there (its
+/// words could name any path): only the credentials class is read from a failure's `error`.
+#[test]
+fn a_failed_commands_refusal_of_no_credential_is_still_not_read_from_its_error() {
+    for line in [
+        "open /Users/dev/notes/todo.md: operation not permitted",
+        "open /Users/dev/.config/gh/config.yml: operation not permitted",
+    ] {
+        assert!(
+            detect(
+                &failed("gh pr list", &format!("Exit code 1\n{line}")),
+                &place()
+            )
+            .is_empty(),
+            "{line}"
+        );
+    }
+}

@@ -932,3 +932,46 @@ fn a_wait_that_runs_out_says_so_and_where_the_app_may_be() {
         "{why}"
     );
 }
+
+/// #1349: a chat whose sandbox holds the person's own credentials, in a project with a GitHub
+/// remote and no agent identity minting its token, is told so at its start, with both ways out.
+#[test]
+fn a_start_with_the_class_on_a_github_remote_and_no_identity_says_the_ways_out() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    std::fs::write(root.join("charter.toml"), "schema = 1\n").unwrap();
+    for folder in ["personas", "inventory", "workspaces"] {
+        std::fs::create_dir_all(root.join(folder)).unwrap();
+    }
+    clone_with_remotes(&root, "svc", &["https://github.com/acme/svc.git"]);
+    let forges = hosts_of_the_project(&root);
+    let said = credentials_note(true, false, &forges).expect("it says");
+    assert!(said.contains("Settings › Agent identity"), "{said}");
+    assert!(said.contains("credentials class is off"), "{said}");
+}
+
+#[test]
+fn the_credentials_note_is_said_only_where_it_is_true() {
+    let github = [HostFound {
+        host: "github.com".into(),
+        kind: Some(Kind::GitHub),
+    }];
+    let gitlab = [HostFound {
+        host: "gitlab.com".into(),
+        kind: Some(Kind::GitLab),
+    }];
+    let none = [HostFound {
+        host: "bitbucket.org".into(),
+        kind: None,
+    }];
+    assert_eq!(credentials_note(false, false, &github), None, "class off");
+    assert_eq!(credentials_note(true, true, &github), None, "a mint holds");
+    assert_eq!(credentials_note(true, false, &[]), None, "no remote");
+    assert_eq!(credentials_note(true, false, &none), None, "no known forge");
+    let gitlab_said = credentials_note(true, false, &gitlab).expect("gitlab");
+    assert!(!gitlab_said.contains("Agent identity"), "{gitlab_said}");
+    assert!(
+        gitlab_said.contains("credentials class is off"),
+        "{gitlab_said}"
+    );
+}

@@ -726,6 +726,7 @@ pub fn detect_with_record(
     if let Some(mixed) = payload["error"].as_str() {
         found.extend(violations(mixed, place));
         found.extend(on_stdout(mixed, place, Said::Failed));
+        found.extend(credential_refusals(mixed, place));
     }
     // The certificate check is one service, purlis's own word for it: a line that runs a
     // program names it however the line ended ([`runs_a_program`]). Read only where a check
@@ -740,6 +741,42 @@ pub fn detect_with_record(
         }
     }
     at_most(found)
+}
+
+/// **A failed command's own refusal of one of the person's credential files** (#1349): gh's
+/// config load at start fails with its own "open …/hosts.yml: operation not permitted", and a
+/// command that failed hands that line back in the failure's `error`, where a program's own
+/// words are otherwise not read (they could name any path, and `error` holds standard output
+/// too). A line that names a path of the credentials class ([`crate::sandbox::is_credential`],
+/// ADR 0067 §5 class 6) is the sandbox's refusal all the same, and its path is the block's
+/// target, so the Notice says the way that works.
+fn credential_refusals(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
+    let Some(home) = place.home else {
+        return Vec::new();
+    };
+    let machine = crate::sandbox::Machine {
+        env: crate::secrets::Env::from_process(),
+        home: Some(home.to_path_buf()),
+        os: crate::sandbox::Os::this(),
+    };
+    let lines: Vec<&str> = text.lines().collect();
+    (0..lines.len())
+        .filter_map(|at| refused_path(&lines, at, place))
+        .filter(|(_, _, path)| {
+            Path::new(path).is_absolute()
+                && crate::sandbox::is_credential(Path::new(path), &machine)
+        })
+        .map(|(operation, kind, path)| {
+            (
+                Block {
+                    operation,
+                    kind,
+                    ours: false,
+                },
+                Some(path),
+            )
+        })
+        .collect()
 }
 
 /// Whether `block` is a refused certificate check that a grant may name: the one kind with a

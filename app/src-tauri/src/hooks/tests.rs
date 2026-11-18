@@ -3850,3 +3850,42 @@ fn a_refused_read_or_write_of_a_credential_says_the_credentials_way_out() {
         )
     );
 }
+
+/// #1349: a `gh` call that fails on its own config load, which a harness hands back as the
+/// failure's `error`, raises the credentials Notice through the real path, detection and then the
+/// Notice's offer: the person's way out, not silence. Run against a path in the person's own home
+/// as a string, so no real credential file is read.
+#[test]
+fn a_gh_call_that_fails_on_its_config_load_raises_the_credentials_notice() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Place, detect_with_targets};
+    let project = tempfile::tempdir().expect("a project");
+    let home = purlis_core::sandbox::Machine::this().home.expect("a home");
+    let place = Place {
+        root: project.path(),
+        chat: project.path(),
+        cwd: project.path(),
+        home: Some(&home),
+    };
+    let hosts = home.join(".config/gh/hosts.yml");
+    let payload = serde_json::json!({
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "error": format!(
+            "Exit code 1\nfailed to read configuration: open {}: operation not permitted",
+            hosts.display()
+        ),
+    });
+    let found = detect_with_targets(&payload, &place);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let (block, target) = &found[0];
+    assert_eq!(
+        offered_to(project.path(), block, target.as_deref(), false),
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::brokered_route(Class::Credentials).to_owned())
+        )
+    );
+}

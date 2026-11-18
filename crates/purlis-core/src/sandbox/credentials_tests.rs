@@ -684,3 +684,82 @@ fn a_refused_credential_is_known_as_one() {
         assert!(!is_credential(Path::new(open), &machine), "{open}");
     }
 }
+
+/// **A forge's credential file never ships without its three answers** (#1349): every forge's file
+/// in [`CREDENTIAL_FILES`] names a forge that has (i) a program the shim refuses to run without a
+/// token, (ii) a start-time note for a chat that holds the class with no route, and (iii) the
+/// shim's sentence. A forge's file added to the list with no row here turns this red.
+#[cfg(unix)]
+#[test]
+fn every_forge_credential_file_has_a_shim_a_start_note_and_a_sentence() {
+    use crate::forge::Kind;
+    use crate::forge::agentidentity::{HostFound, credentials_note};
+    use crate::sandbox::tools::{FORGE_PROGRAMS, Handed, Ready, Tool, no_minted_token_said, shim};
+    use std::os::unix::fs::PermissionsExt;
+    const FORGES: [(&str, &str, Kind, &str); 2] = [
+        (".config/gh/hosts.yml", "gh", Kind::GitHub, "GH_TOKEN"),
+        (
+            ".config/glab-cli/config.yml",
+            "glab",
+            Kind::GitLab,
+            "GITLAB_TOKEN",
+        ),
+    ];
+    let forge_files: Vec<&str> = CREDENTIAL_FILES
+        .iter()
+        .copied()
+        .filter(|file| file.contains("/gh/") || file.contains("glab"))
+        .collect();
+    let named: Vec<&str> = FORGES.iter().map(|row| row.0).collect();
+    assert_eq!(
+        forge_files, named,
+        "a forge's credential file has no row here"
+    );
+    for (_, program, kind, var) in FORGES {
+        assert!(
+            FORGE_PROGRAMS.contains(&program),
+            "{program} has no shim rule"
+        );
+        let found = [HostFound {
+            host: "forge.test".into(),
+            kind: Some(kind),
+        }];
+        assert!(
+            credentials_note(true, false, &found).is_some(),
+            "{program}: no start note"
+        );
+        // The shim, run with no app and no token: the sentence, a failure, and the program unrun.
+        let tmp = tempfile::tempdir().unwrap();
+        let ran = tmp.path().join("ran");
+        let bin = tmp.path().join(program);
+        std::fs::write(&bin, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let script = tmp.path().join("shim");
+        std::fs::write(
+            &script,
+            shim(
+                Path::new("/purlis"),
+                "dev",
+                &Ready {
+                    tool: Tool::one(program, "forge", var, Handed::Env, "token"),
+                    program: bin,
+                },
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let out = crate::forklock::output(
+            std::process::Command::new(&script)
+                .env_remove("PURLIS_HOOK_SOCKET")
+                .env_remove("CHARTER_HOOK_SOCKET")
+                .env_remove(var),
+        )
+        .unwrap();
+        assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains(&no_minted_token_said(program)),
+            "{program}: {out:?}"
+        );
+        assert!(!ran.exists(), "{program} ran with no token");
+    }
+}
