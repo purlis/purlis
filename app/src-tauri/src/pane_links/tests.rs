@@ -911,7 +911,7 @@ fn a_renumbered_task_s_link_by_either_number_shows_its_task_s_card_titled_as_it_
     crate::chatcard::fixtures::a_finished_task(held.root(), 702, id);
     let closed = crate::chatcard::fixtures::tidy_the_changelog(vec![702]);
     purlis_core::chatrecords::keep(held.root(), &closed).expect("kept");
-    let (links, chats) = for_project(Some(&*held));
+    let (links, chats) = for_project(Some(&*held), None);
 
     let card = |link: &str| match seen_in(&links, &pane_of_652(held.root()), &chat(link), &chats)
         .and_then(|seen| seen.chat)
