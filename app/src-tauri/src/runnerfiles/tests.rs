@@ -621,16 +621,17 @@ fn every_kind_of_runner_kept(config: &std::path::Path) -> String {
 #[cfg(unix)]
 #[test]
 fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_no_other() {
+    use purlis_session_protocol::session::KNOWS_READ_FILE;
     let config = tempfile::tempdir().unwrap();
     let fresh = every_kind_of_runner_kept(config.path());
 
-    assert!(super::reads_files_on(config.path(), "builds"));
+    assert!(super::reading_files_needs(config.path(), "builds") == Some(KNOWS_READ_FILE));
     assert!(
-        super::reads_files_on(config.path(), "builds/builds"),
+        super::reading_files_needs(config.path(), "builds/builds") == Some(KNOWS_READ_FILE),
         "a Docker pool's runner draining beside its new one"
     );
-    assert!(super::reads_files_on(config.path(), "team"));
-    assert!(super::reads_files_on(config.path(), &fresh));
+    assert!(super::reading_files_needs(config.path(), "team") == Some(KNOWS_READ_FILE));
+    assert!(super::reading_files_needs(config.path(), &fresh) == Some(KNOWS_READ_FILE));
     for none in [
         "empty",
         "builds/builds-01234567",
@@ -639,7 +640,7 @@ fn a_docker_pools_runner_a_cluster_pools_runner_and_a_fresh_runner_are_read_and_
         "nowhere",
     ] {
         assert!(
-            !super::reads_files_on(config.path(), none),
+            super::reading_files_needs(config.path(), none).is_none(),
             "{none} reads no file"
         );
     }

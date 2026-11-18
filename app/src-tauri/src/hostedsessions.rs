@@ -4798,17 +4798,13 @@ impl HostedSessions {
         })
     }
 
-    /// **Whether the window reads this project's chats' files on the runner they run on**
-    /// (#6387, #6949): [`crate::runnerfiles::reads_files_on`] the runner this connection's links
-    /// reach.
-    fn reads_files_on_its_runner(&self) -> bool {
-        let (Some(named), Some(config)) = (
-            self.connection.link_name(),
-            self.connection.runners_config(),
-        ) else {
-            return false;
-        };
-        crate::runnerfiles::reads_files_on(&config, named)
+    /// **What reading this project's chats' files on the runner they run on needs of its link**
+    /// (#6387, #6949): [`crate::runnerfiles::reading_files_needs`] of the runner this
+    /// connection's links reach, `None` where the window reads none there.
+    fn reading_its_runners_files_needs(&self) -> Option<purlis_session_protocol::version::Version> {
+        let named = self.connection.link_name()?;
+        let config = self.connection.runners_config()?;
+        crate::runnerfiles::reading_files_needs(&config, named)
     }
 
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
@@ -5474,14 +5470,15 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
-    /// Only of a link already open, to a runner of a kind the window reads files on, of 1.93 or
-    /// later (#6387, #6949): a hover never opens one to the runner.
+    /// Only of a link already open, to a runner of a kind the window reads files on, of the
+    /// version that needs (#6387, #6949): a hover never opens one to the runner.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
-        if !self.kept_on_the_runner || !self.reads_files_on_its_runner() {
+        if !self.kept_on_the_runner {
             return None;
         }
+        let needs = self.reading_its_runners_files_needs()?;
         let link = self.own_link(Duration::ZERO).ok()?;
-        if link.version() < session::KNOWS_READ_FILE {
+        if link.version() < needs {
             return None;
         }
         let program = lock(&self.running).get(&id)?.id.clone();
