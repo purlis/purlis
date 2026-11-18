@@ -6,15 +6,17 @@ for epic #6677. The ADR decides. This note lists what moves: every private recor
 move onto the record store, every approval adapter with its record, key and lifecycle callers,
 the contract tests that must exist before anything moves, and a proposed order of tickets. It
 proposes and does not decide. Where the ADR records a decision (Q1 to Q16, R6 to R11 from
-review round 1, R12 to R24 from review round 2, R25 to R33 from review round 3, and R34 to R37
-from review round 4), this note follows it and marks the row. [Section 6](#6-review-round-1)
+review round 1, R12 to R24 from review round 2, R25 to R33 from review round 3, R34 to R37
+from review round 4, and R38 and R39 from review round 5), this note follows it and marks the row. [Section 6](#6-review-round-1)
 says where each finding of review round 1 went, [section 7](#7-review-round-2) each finding of
-review round 2, [section 8](#8-review-round-3) each finding of review round 3, and
-[section 9](#9-review-round-4) each finding of review round 4.
+review round 2, [section 8](#8-review-round-3) each finding of review round 3,
+[section 9](#9-review-round-4) each finding of review round 4, and
+[section 10](#10-review-round-5) each finding of review round 5.
 
 Every `path:line` was read at `2dc0d73c2`, except those added in review round 2, which were
 read at `822ef516a`, those added in review round 3, which were read at `c535e1d39`, and those
-added in review round 4, which were read at `f4c66b5a6`. Paths are shortened as in
+added in review round 4, which were read at `f4c66b5a6`, and those added in review round 5, which
+were read at `4f0ec467f`. Paths are shortened as in
 [`docs/surfaces.md`](../surfaces.md): `core` is `crates/purlis-core/src`, `tauri` is
 `app/src-tauri/src`, `ui` is `app/src`, `pf` is `docs/plane-format.md`.
 
@@ -60,21 +62,21 @@ and most stores are rewrites, not switches, because these differ between them:
 | Root, apart from the tier | the config home, `<data>`, `<config home>`, the session host's folder, the plane's `.charter/`, and `hookstate::trust_root` (`core/personaverbs/mcp.rs:390`, for row 6) |
 | Tier and marks | as `pf`'s `**Tier:**` line; **rebuildable** decides *rebuild over* (R9) |
 | Shape | whole file, at one path or at a path keyed per chat, clone or account (rows 12, 19, 20, 21, 36, 45, 47, 63 and 64 are keyed whole files; a keyed whole file of a newer version is refused, never skipped, A-N4, round 4); rows appended to JSONL (row 70 is rows keyed per chat, written over whole); one file per record in a folder, made once (rows 8, 10) or updated under its lock (row 9). Each store ticket states its store's shape in one word (C-F6, round 3) |
-| Version key, own, oldest, migrations | `version`, `v`, or none (unstamped 1); TooOld's migration defaults to the damage rule (D3). A store that reads two versions today declares both (row 49 reads 1 and 2, `core/hookwire/spool.rs:995`) |
+| Version key, own, oldest, migrations | `version`, `v`, or none (unstamped 1); TooOld's migration defaults to the damage rule (D3). A store that reads two versions today declares both (row 49 reads 1 and 2, `core/hookwire/spool.rs:995`; row 26 reads 1 and 2, `core/windowprefs.rs:67`, `LAYOUT_READS`; row 37 reads 1 with its questions unread, `core/dispatchtalk.rs:886`; row 52 is written at 1, or at 2 only when it holds an extension's skill, `core/skills/source/lock.rs:26`-`:31`, so its write keeps the version its writer chooses), and test 5 gains a versions case for each: a file of each version today's reader accepts reads Understood under the store, with the same content (D-F3, round 5) |
 | Version history | for each version the store knows, the release that introduced it, or a development build's version until a release ships it (Q1, D13); it goes into `pf` and a TooOld refusal's detail (A-F15) |
-| Bound | today's, moved into the declaration |
+| Bound | today's, moved into the declaration. A store with no bound today is declared with one well above what its feature can write (at least 4 MiB, unless its ticket gives a reason), and its ticket says what the feature does when a write would pass it; test 57's write-over-the-bound case is switched on per store with that sentence (D-F5, round 5) |
 | Lock | blocking named lock (`core/machine.rs:2640`, `Lock::named`); `rewrite::Lock::bounded` (`core/rewrite.rs:209`); a named lock in the session host's folder waited on with a bound, which every approval record takes (rows 1 to 6; rows 2 and 3 share one, the page subject's; B-F6, D-F6, D-F7); the event log's own; the compare-and-swap of `skills.local.lock`; none today, one added, which waits with a bound wherever the store lives (D-F13, round 3; the kill switch's journal gets one, D-F2, round 4); the vaults' folder lock (`lock_vaults_folder`), shared by rows 62, 63 and 71, the second exception to test 30's rule (A-F4, round 4); `mint-port.lock` (row 65). The lock file's name is recorded in `pf` and pinned by test 30, because it is a contract between builds (D-F6) |
 | Busy sentence | its first half only, which the caller ends with what did not happen, then "Try again." (E42, round 3): an approval record's is "purlis is still recording another approval." ("Nothing was approved.", "Nothing was unpinned.", "The workspace was not removed.", "Nothing was forgotten."); any other store's is "purlis is still recording {what}." ("Nothing was changed.") |
 | `{what}` | the store's name for itself, plural, in lower case ("your extension approvals"), because the sentences say "wrote them" and "were damaged" (E25) |
-| What starting fresh costs | one sentence, drawn on the store's line before the press: for the approval records "every approval asks again", for the spool's keys "queued messages can no longer be checked, and the replay floors are gone" (E21, D-F1) |
-| Starting fresh grants more | rows 33 (the taint file) and 40 (R13), and rows 19 and 69, the level records, a deny whose code already treats an unread record as naming no folder (R13, B-F1, C-F3, A-F3, round 4); each store's ticket checks its own record, among them the extension record's off set (row 1) and `runners-stopped.json` (row 35), and says in its pull request what a fresh record lets through or loses (B-F10, D-F7). Also set on row 59 (`unaccepted.json`, R29), and on row 33's `runners.json` and `runners-left.json` and row 50, whose fresh record loses what others rely on (R31) |
+| What starting fresh costs | one sentence, drawn on the store's line before the press: for the approval records "every approval asks again", for the spool's keys "Queued messages can no longer be checked, and a message already delivered could be delivered again." (E21, D-F1; E82, round 5). For a store where starting fresh grants more, it says what is let through, not only what is forgotten (E71, round 5) |
+| Starting fresh grants more | rows 33 (the taint file) and 40 (R13), and rows 19 and 69, the level records, a deny whose code already treats an unread record as naming no folder (R13, B-F1, C-F3, A-F3, round 4); each store's ticket checks its own record, among them the extension record's off set (row 1) and `runners-stopped.json` (row 35), and says in its pull request what a fresh record lets through or loses (B-F10, D-F7). Also set on row 59 (`unaccepted.json`, R29), and on row 33's `runners.json` and `runners-left.json` and row 50, whose fresh record loses what others rely on (R31); and on row 33's `peers.json`, whose fresh record lets a second pairing through (`core/runnerlink.rs:15`; C-N5, round 5). Where the person's own press repairs a Damaged record (the Skill studio's Accept, for rows 19 and 59), it writes through the store's **replace a Damaged record on the person's press**, which copies the bytes aside and writes the new record in one rename, never leaving it absent (C-F1, round 5) |
 | Serializer | `pyjson::dumps_indent2` (rows 2, 3), `pyjson::dumps_indent2_unicode` (row 6), sorted, serde pretty. Each ticket reads its store's and keeps it, so no file's bytes change |
-| Write kind | the writer each store has today, kept inside the store: private (`rewrite::replace`, `Mode::Private`); secret (`Mode::Secret`: nothing is written where the filesystem cannot hold `0600`; rows 62 and 63); through a same-user folder handle (`purlis_same_user::PrivateDirectory`; rows 15, 33, 34 and 65); pinned to the bytes read (`proposed::write_pinned`, `write_pinned_making`; rows 19, 52, 59 and 69). No store's own code calls any of them (B-F3, C-F4, A-F4, round 4) |
-| This user's alone | rows 15, 33, 34 and 65, read today by `purlis_same_user::read_private_file` ("a regular file, not a link, owned by this user, that nobody else may read or write", `crates/same-user/src/lib.rs:342`): `read` answers Unreadable, with the cause, for a file not owned by the effective user or with any group or other bit, and the write goes through a folder checked the same way. Test 73 (B-F3, C-F4, round 4) |
+| Write kind | the writer each store has today, kept inside the store: private (`rewrite::replace`, `Mode::Private`); secret (`Mode::Secret`: nothing is written where the filesystem cannot hold `0600`; rows 62, 63 and 71, `core/secrets/no_seed.rs:156`; C-F5, round 5); through a same-user folder handle (`purlis_same_user::PrivateDirectory`; rows 15, 33, 34 and 65); pinned to the bytes read (`proposed::write_pinned`, `write_pinned_making`; rows 19, 52, 59 and 69). No store's own code calls any of them, a guard T15 adds (B-F3, C-F4, A-F4, round 4; C-F7, round 5) |
+| This user's alone | rows 15, 33, 34 and 65, read today by `purlis_same_user::read_private_file` ("a regular file, not a link, owned by this user, that nobody else may read or write", `crates/same-user/src/lib.rs:342`): `read` answers Unreadable, with the cause, for a file not owned by the effective user or with any group or other bit, and never judges the folder, as today; the write goes through `PrivateDirectory`, which refuses a folder another user owns and sets a folder of this user's to `0700` (`crates/same-user/src/lib.rs:231`, `:250`), so a loose folder is tightened, never made Unreadable. Test 73 (B-F3, C-F4, round 4; C-F4, round 5) |
 | Kept copies' place | beside the file (R6), except a store the sandbox holds by exact path, for reads or writes, whose copies go into a folder held whole with at least the same access (R25, widened by R35): rows 4, 5 and 6 in `<state folder>/app/kept/`; row 62 in `<state folder>/vaults/kept/`; row 33's `runners.json`, `runners-left.json` and `peers.json` in `<config home>/purlisd/kept/` (B-F2, round 4). Row 15 is held by exact path too, but a row store makes no kept copies |
 | Removal | a store's own lifecycle code and its collectors remove a whole record through the store's `remove`, which reads under the lock and removes only an Understood record, the doctor counting what it keeps; only a store declared transient or rebuildable may remove a whole record whatever its version (R36). Where one does: rows 12 (`forget`, `forget_of`), 47 (`make_room`), 64 (`record_limit`) and 70 (retention's spend sweep). Rows 19, 66 and 67 are transient but keep the stricter rule; row 9's retention keeps what it cannot read (C-F5, A-F6, round 4) |
 | Keeps unknown keys | at which levels, or **refuses unknown keys**, for a store whose reader refuses one today (row 33's `pool-setup.json`, `core/poolsetup.rs`, `deny_unknown_fields`). About 45 of the stores do not keep them today, and each keeps today's answer unless its ticket says otherwise (A-F10, A-F15, C18) |
-| Must not be tracked | rows 4, 5 and 6 (B5, R15): a tracked or un-ignored record approves nothing, and Approve refuses while it is so. The check uses `profiles`' hardened git runner (`core/profiles.rs:1588`, `git_ignore_state`; `:1614`, `kept_local_within`): Ignored passes, NotARepo passes, Tracked and Committable refuse, and Unknown (git missing, timed out, failed) approves nothing, with a sentence of its own (D-F11). A file in such a store's kept-copies place that git tracks or does not ignore is not a kept copy, and the doctor never offers it back (B-F5) |
+| Must not be tracked | rows 4, 5 and 6 (B5, R15): a tracked or un-ignored record approves nothing, and Approve refuses while it is so. The check uses `profiles`' hardened git runner (`core/profiles.rs:1588`, `git_ignore_state`; `:1614`, `kept_local_within`): Ignored passes, NotARepo passes, Tracked and Committable refuse, and Unknown (git missing, timed out, failed) approves nothing, with a sentence of its own (D-F11). A file in such a store's kept-copies place that git tracks or does not ignore is not a kept copy, and the doctor never offers it back (B-F5). **R38:** a record git brought is never read again as the person's. For a tracked record the window draws only the "Ignore them in git" press, and Copy command for `git rm --cached` once the record has been moved; a record git no longer tracks whose content, hashed as git would store it (`git hash-object --path=<path>`), equals the blob the index or `HEAD` holds for its path was untracked by hand and is still brought by git (P1, regression check). The cure (the press and the doctor's fix) first moves it into `app/kept/` as `<record>.git-brought-<UTC>`, by the store's no-replace rename, then adds the ignore line, so it reads Absent and every subject it held asks once; the doctor names a `git-brought` file, by its name, as one git could have brought. Only a record not ignored, untracked and matching no such blob keeps its entries (B-F1, round 5) |
 | Fail-closed answer | the column below |
 | Dispatch MAC | row 8 checks its MAC over the exact bytes written, so its serializer is fixed by the MAC, not chosen |
 | Registry | every declaration is in one static registry, with how a path that has a key in it (per chat, clone, account) is enumerated, so the window, the doctor and test 6 can list every store (C19). A test-only toy declaration is outside it. Each declaration has a short id a person can type (`extension-approvals`); Set it aside takes the id and, for a keyed store, the key, as `purlis doctor --fix set-aside:<id>/<key>` does (C-F16, D-F12, E49). The window's standing sweep reads the whole-file stores that can refuse, and among stores keyed per chat, clone or account only a lockout (row 20); a keyed store that is not a lockout, a rebuildable store, a row store and a file-per-record store raise no line of their own except Unreadable, and the doctor counts what they refuse (C-F13; C-F6, round 4) |
@@ -102,18 +104,18 @@ path, in ticket 14a, A-N2). A row store never locks out, apart from rows 14 and
 
 | # | File | Module | Tier | Today | Under the store | Fail closed | Lock |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 8 | `.charter/app/spool/messages/<chat>/<seq>.json` | `core/dispatchqueue.rs:49` | Machine, device-bound (`pf:7928`; no heading of its own) | **deleted** (`:625`; `hookwire/relay/carrying.rs:402`), and by every other remover: `drop_unchecked` (`core/dispatchqueue.rs:724`, also called at `carrying.rs:213`, `:222`), `forget` (`core/hookwire/spool.rs:1594`, `remove_dir_all` at `:1664`) through `forget_chat`, `forget_all_but` and `forget_ended_at_open`, and `undelivered::set_aside` (`core/dispatchqueue/undelivered.rs:153`), which reports only messages that check (D-F2) | skip, listed as waiting (ADR §2); the drain stops at the lowest skipped message, as it stops at a `.part` (`core/dispatchqueue.rs:583`), and later messages wait (R16); a bad MAC under a key that was read is moved aside into `refused/` (Q15); keys unavailable leave it waiting (D4); keys readable with no key for it report it undelivered and keep it (R17). Each of today's six "does not check" causes has its own answer and says whether it holds the drain (ADR §2's table, round 3); the window's drain (`tauri/dispatched.rs:1035`, `drain_locked`) is a remover too (D-F4); the doctor lists each held message (R26); an ended chat whose queue holds a kept message keeps its key and its queue, and a reused chat number gets a fresh queue only once the old one is empty or removed (R30) | the message waits | none (made once) |
+| 8 | `.charter/app/spool/messages/<chat>/<seq>.json` | `core/dispatchqueue.rs:49` | Machine, device-bound (`pf:7928`; no heading of its own) | **deleted** (`:625`; `hookwire/relay/carrying.rs:402`), and by every other remover: `drop_unchecked` (`core/dispatchqueue.rs:724`, also called at `carrying.rs:213`, `:222`), `forget` (`core/hookwire/spool.rs:1594`, `remove_dir_all` at `:1664`) through `forget_chat`, `forget_all_but` and `forget_ended_at_open`, and `undelivered::set_aside` (`core/dispatchqueue/undelivered.rs:153`), which reports only messages that check (D-F2) | skip, listed as waiting (ADR §2); the drain stops at the lowest skipped message, as it stops at a `.part` (`core/dispatchqueue.rs:583`), and later messages wait (R16); a bad MAC under a key that was read is moved aside into `refused/` (Q15); keys unavailable leave it waiting (D4); keys readable with no key for it report it undelivered and keep it (R17). Each of today's six "does not check" causes has its own answer and says whether it holds the drain (ADR §2's table, round 3); the window's drain (`tauri/dispatched.rs:1035`, `drain_locked`) is a remover too (D-F4), and so is the runner host's own drain, `carry` (`core/hookwire/relay/carrying.rs:201`), which removes a `Found::Unchecked` and goes on today (`:216`-`:223`); both stop at a held message and neither raises the floor past it, and a sender whose fresh message waits behind one is told `Queued`, not delivered, by `carry` (as `stayed`) and by `what_became_of` (`tauri/dispatched.rs:1192`) (D-F1, round 5); an ended or restarted chat's messages that check are reported once, or moved by `dispatchqueue::moved` (`:428`), and only the held ones stay (D-F2, round 5); the doctor lists each held message (R26); an ended chat whose queue holds a kept message keeps its key and its queue, and a reused chat number gets a fresh queue only once the old one is empty or removed (R30) | the message waits | none (made once) |
 | 9 | `.charter/app/dispatches/<ULID>.json` | `core/dispatchrecord.rs:73` | Clone state (`pf:7392`) | skipped | skip; one file per record, updated under its lock as a dispatch moves on (C-F6) | that dispatch is not listed; the doctor counts it | flock |
 | 10 | `.charter/app/spool/<chat>/<key>-<seq>` | `core/hookwire/spool.rs:96` | Clone state, transient (`pf:7829`) | unread; an unparseable line is deleted | skip (gap 7) | the line waits, undelivered | none (made once) |
 | 11 | `…/skill-grades/<YYYY-MM>.jsonl` and `routers/` | `core/skills/grades.rs:35`, `core/skills/grades/routers.rs:39` | Machine, device-bound (`pf:9029`, `:9038`) | skipped | skip | that grade is not counted | none (append) |
 | 12 | `…/skill-grade-resume/<grade>.json` | `core/skills/grades/resumable.rs:40` | Machine, device-bound, transient (`pf:9152`) | skipped | refuse, a keyed whole file (R9: transient is not rebuilt over); not swept, the doctor counts it; its removers may remove it whatever its version (R36; C-F6, A-N4, round 4) | that grade is not resumed | none |
 | 13 | `<data>/events/<device>/events.jsonl` and its sealed segments `events.<seq>.jsonl` | `core/eventlog.rs:79`, `:700` | Machine, device-bound (`pf:8841`) | `v` read, never checked | skip; the sealed segments are the store's, the writer counts `seq` past a skipped row, a subscriber is told a skipped row as a miss, and the bound is per segment (D-F8). Retention may delete a sealed segment whole, skipped rows included, a narrow exception to R2 (R32) | that event is not read | its own flock |
-| 14 | `<config>/kill-switch.jsonl` | `core/halt.rs:35` | Machine, device-bound (`pf:8804`) | none; a bad line is skipped (`core/halt.rs:139`, `stopped_by_journal_in`); 1000 lines kept (`:38`, `JOURNAL_LINES`) | skip | ✱ (R18) a last line this build cannot read counts as halted, and the window says why; this build's own re-arm written after it ends the halt; an Unreadable journal with the marker present counts as halted; a stop or a re-arm is never refused for the bound or the cap, and skipped rows are kept past the cap; one build's re-arm is never read as tampering by another, decided in the window's `look` (R28, `tauri/killswitch.rs:329`). The journal is read from its tail, its bound applying to one line, so it is never Unreadable for its size; it keeps its replace-by-rename write; the host's name for a stop is built from a skipped last line's bytes (B-F7, D-F2, round 3). One core tail read serves every reader, per spelling of the config home; `look` follows only a re-arm written after its own stop (A-N1, B-F6, C-F8, D-F2, round 4) | none; one added, which a re-arm holds from the marker's removal to its line and `look` takes before it reads (D-F2, round 4) |
+| 14 | `<config>/kill-switch.jsonl` | `core/halt.rs:35` | Machine, device-bound (`pf:8804`) | none; a bad line is skipped (`core/halt.rs:139`, `stopped_by_journal_in`); 1000 lines kept (`:38`, `JOURNAL_LINES`) | skip | ✱ (R18) a last line this build cannot read counts as halted, and the window says why; this build's own re-arm written after it ends the halt; an Unreadable journal with the marker present counts as halted; a stop or a re-arm is never refused for the bound or the cap, and skipped rows are kept past the cap; one build's re-arm is never read as tampering by another, decided in the window's `look` (R28, `tauri/killswitch.rs:329`). The journal is read from its tail, its bound applying to one line, so it is never Unreadable for its size; it keeps its replace-by-rename write; the host's name for a stop is built from a skipped last line's bytes (B-F7, D-F2, round 3). One core tail read serves every reader, per spelling of the config home; `look` follows only a re-arm written after its own stop (A-N1, B-F6, C-F8, D-F2, round 4) | none; one added, in the session host's folder (one per spelling), which a re-arm holds from the marker's removal until every spelling's line is written and `look` takes before it reads (D-F2, round 4; B-N1, D-F7, round 5) |
 | 15 | `<config home>/runner-hours.jsonl` | `core/runnerhours.rs:32` | Machine, device-bound (`pf:8874`) | none; a bad line is skipped and dropped on rewrite | skip; never pruned (`:258`, `pruned`) or dropped for the bound (D6) | that line's hours are not counted | flock |
 | 16 | `<data>/network/<key>.jsonl` | `core/sandboxblock_record.rs:46` | Machine, device-bound (`pf:8842`) | none; skipped and kept | skip | that block is not listed | flock only with a config home |
 | 17 | `.charter/save-journal.jsonl` | `core/planegit.rs:3383` | Clone state (`pf:8417`) | none; skipped and kept | skip | that entry is not replayed | none |
 | 18 | `.charter/app/arrived/<chat>.json` | `core/sandbox/arrived.rs:407` | Clone state, rebuildable (`pf:7531`) | overwritten (stamped 1) | rebuild over (R9) | rebuilt | flock |
-| 19 | `…/skill-levels/<chat>.json` | `core/skills/levels.rs:26` | Machine, device-bound, transient (`pf:9256`) | none; replaced, by `confirm` and `repaired` among others, and the sweep removes one it cannot read (`:540`-`:558`) | refuse (R9); marked starting fresh grants more (R13, round 4); not swept (keyed). `confirm` and `repaired` never write over TooNew or Unplaceable, and copy a Damaged one aside before the person's Accept writes; the sweep removes only an Understood record. The folder's `unaccepted.json` and `accepted.json` are rows 59 and 60, and `unnoted.json` row 69, in the same ticket (R29) | every workspace and persona folder is left out until the person accepts it, as today for a record that cannot be read (`made_since_in`, `UNREAD`; B-F1, C-F3, A-F3, round 4) | none; `unaccepted.json` keeps its pinned write |
+| 19 | `…/skill-levels/<chat>.json` | `core/skills/levels.rs:26` | Machine, device-bound, transient (`pf:9256`) | none; replaced, by `confirm` and `repaired` among others, and the sweep removes one it cannot read (`:540`-`:558`) | refuse (R9); marked starting fresh grants more (R13, round 4); not swept (keyed). `confirm` and `repaired` never write over TooNew or Unplaceable, and replace a Damaged one through the store's replace-on-press call (C-F1, round 5); `note` and `noted_again` refuse over it; the sweep removes only an Understood record; the Skill studio's line for a TooNew or Unplaceable record carries Set it aside, sending the store's id and key (A-F4, round 5); its lock is its pinned write's compare-and-swap (C-N3, round 5). The folder's `unaccepted.json` and `accepted.json` are rows 59 and 60, and `unnoted.json` row 69, in the same ticket (R29) | every workspace and persona folder is left out until the person accepts it, as today for a record that cannot be read (`made_since_in`, `UNREAD`; B-F1, C-F3, A-F3, round 4) | none; `unaccepted.json` keeps its pinned write |
 | 20 | `<config>/forge-budget/<account>.json` | `core/forge/budget.rs:236` | Machine, device-bound, transient (`pf:8819`) | none; overwritten | refuse (R9) | ✱ (R19) a budget this build cannot read counts as spent for background requests, never for a request a person waits on, as today's rule for a spent hour (`core/forge/budget.rs:316`, `admit`); listed in `records-unread` | flock; its lock name kept (`:445`, `lock_name`) |
 | 21 | `<config>/forge-etags/…/<sha>.json` | `core/forge/etag.rs:69` | Machine, device-bound, rebuildable (`pf:8818`) | none; replaced | rebuild over (R9) | rebuilt | none |
 | 58 | a LOCAL workspace's `workspaces/<ws>/work/<device>.jsonl` | `core/work/log.rs:208`, `append` | Clone state when LOCAL (`pf:2371`); the LIVE file is the Plane's and keeps its read | skipped and counted (`:805`); append only | skip | that link is not read | none (append) |
@@ -126,18 +128,18 @@ path, in ticket 14a, A-N2). A row store never locks out, apart from rows 14 and
 | 23 | `<config>/profiles.json` | `core/profilestore.rs:46` | Machine, device-bound (`pf:8839`) | refused on update (`:249`) | refuse | ✱ no harness profile of this machine is known | yes | flock |
 | 24 | `<config>/forge-accounts.json` | `core/forge/accounts.rs:62` | Machine, device-bound (`pf:8838`) | **overwritten** (stamped 1, `:689`) | refuse (R2) | no forge account is known; signing in again refuses | yes | mutex |
 | 25 | `<config>/onboarding.json` | `core/onboarding.rs:37` | Machine, device-bound (`pf:8797`) | overwritten | refuse | no progress is known; the steps start again and are not kept | no | none |
-| 26 | `<config>/layout.json` | `core/windowprefs.rs:63` | Machine, syncable (`pf:8795`) | refused on read, overwritten by a whole write | refuse | the defaults, not kept | partly | flock |
+| 26 | `<config>/layout.json` | `core/windowprefs.rs:63` | Machine, syncable (`pf:8795`) | refused on read, overwritten by a whole write; reads versions 1 and 2, and refuses a file with no version (D-F3, round 5) | refuse | the defaults, not kept | partly | flock |
 | 27 | `<config>/runner-log-cursors.json` | `core/runnercursors.rs:29` | Machine, device-bound, rebuildable (`pf:8794`) | overwritten | rebuild over (R9) | rebuilt from the log's end | no | mutex |
 | 28 | `<config>/theme-choices.json` | `core/theme/choices.rs:69` | **not in `docs/plane-format.md`**: add it first | refused on edit | refuse | the default theme, not kept | no | flock |
 | 29 | `<config>/reports.json` | `core/report/consent.rs:35` | Machine, device-bound (`pf:8798`) | overwritten | refuse | nothing answered, so nothing is sent | no | none |
 | 30 | `<config>/report-drafts.json` | `core/report/held.rs:99` | Machine, device-bound (`pf:8800`) | overwritten | refuse | no draft is held or sent | no | mutex |
 | 31 | `<config>/reports-sent.json` | `core/report/sent.rs:33` | Machine, device-bound (`pf:8799`) | overwritten | refuse | nothing waiting is sent | no | none |
 | 32 | `<config>/push-remotes.json` ⚠ | `core/forge/gitcredential.rs:174` | Machine, device-bound (`pf:8796`) | none; one bad entry empties the map | refuse | no remote is recorded, so an automatic save takes the forge CLI's helper, as for a missing file | no | none |
-| 33 | `runners.json`, `runners-left.json`, `runners-unsandboxed.json`, `pool-setup.json`, `peers.json` | `core/runners.rs:47`, `runners/left.rs:29`, `runnertaint.rs:25`, `poolsetup.rs:49`, `runnerlink.rs:38` | Machine, device-bound (`pf:8873`, `:8878`, `:8877`, `:8879`, `:8880`) | refused | refuse | no pool or runner is known, so no chat starts on one. For `runners-unsandboxed.json`, every runner counts as tainted, and the store is marked starting fresh grants more (R13, B-F1; `core/runnertaint.rs:17`); `runners.json` and `runners-left.json` are marked so too, since a fresh one forgets pools and runners that still run (R31) | `pool-setup.json` refuses an unknown key today and keeps refusing; each other file's test 5 records its answer (A-F10, C18) | flock |
-| 34 | `<config home>/charterd/window-names.json` | `core/windownames.rs:26` | Machine, device-bound (`pf:8808`) | overwritten (forced to 1) | refuse | windows keep their default names | no | flock |
-| 35 | `<config home>/purlisd/runners-stopped.json` | `crates/host/src/reach.rs:53`, `RUNNERS_STOPPED` | Machine, device-bound (`pf:8810`) | none; overwritten | **the one exception (R23):** it stays out of the record store, because `crates/host` does not link `purlis-core` (`crates/host/Cargo.toml:14`). Its versioned read is fixed in place in the host: it refuses a newer version and never overwrites. Its ticket checks whether starting fresh grants more (R13). A stop or a re-arm pressed while it is refused still acts and is held in memory (C-F14). While it is refused or damaged, a host that starts stopped counts a runner that answers "stopped already" as reached, so the re-arm reaches it; the core's doctor reads its version itself and prints a line with the hand remedy (R33) | no runner is known as stopped; a stop still acts; the doctor and the host's log say so | no | mutex |
+| 33 | `runners.json`, `runners-left.json`, `runners-unsandboxed.json`, `pool-setup.json`, `peers.json` | `core/runners.rs:47`, `runners/left.rs:29`, `runnertaint.rs:25`, `poolsetup.rs:49`, `runnerlink.rs:38` | Machine, device-bound (`pf:8873`, `:8878`, `:8877`, `:8879`, `:8880`) | refused | refuse | no pool or runner is known, so no chat starts on one. For `runners-unsandboxed.json`, every runner counts as tainted, and the store is marked starting fresh grants more (R13, B-F1; `core/runnertaint.rs:17`); `runners.json` and `runners-left.json` are marked so too, since a fresh one forgets pools and runners that still run (R31), each with a cost line of its own (E72, round 5); and `peers.json`, whose fresh record lets a second pairing through (C-N5, round 5) | `pool-setup.json` refuses an unknown key today and keeps refusing; each other file's test 5 records its answer (A-F10, C18) | flock |
+| 34 | `<config home>/purlisd/window-names.json` (old spelling `charterd`, `core/names.rs:349`; C-N2, round 5) | `core/windownames.rs:26` | Machine, device-bound (`pf:8808`) | overwritten (forced to 1) | refuse | windows keep their default names | no | flock |
+| 35 | `<config home>/purlisd/runners-stopped.json` | `crates/host/src/reach.rs:53`, `RUNNERS_STOPPED` | Machine, device-bound (`pf:8810`) | none; overwritten | **the one exception (R23):** it stays out of the record store, because `crates/host` does not link `purlis-core` (`crates/host/Cargo.toml:14`). Its versioned read is fixed in place in the host: it refuses a newer version and never overwrites. Its ticket checks whether starting fresh grants more (R13). A stop or a re-arm pressed while it is refused still acts and is held in memory (C-F14). While it is refused or damaged, a host that starts stopped counts a runner that answers "stopped already" as reached, so the re-arm reaches it; the core's doctor reads its version itself and prints a line with the hand remedy (R33). A record the host could not read at all (over `MOST_KEPT_BYTES`, or not private) is never written over either (D-F8, round 5) | no runner is known as stopped; a stop still acts; the doctor and the host's log say so | no | mutex |
 | 36 | `<data>/inbox/<key>.json` and `.snoozed`, `.baseline`, `.seen`, `rules.json` | `core/inboxupdates.rs:34`, `askrules.rs:37` | Machine, device-bound (`pf:8846`-`:8850`); the first is transient | none; overwritten | refuse (R9: the transient one too) | no update, snooze or rule is known | no | flock |
-| 37 | `.charter/app/spool/messages/records.json` | `core/dispatchtalk.rs:304` | Machine, device-bound (`pf:7928`) | overwritten (stamped 2) | refuse | no record of a message is shown | no | none |
+| 37 | `.charter/app/spool/messages/records.json` | `core/dispatchtalk.rs:304` | Machine, device-bound (`pf:7928`) | reads 1 and 2, writes 2; a version 1 file's questions read as unread (`:886`; D-F3, round 5) | refuse | no record of a message is shown | no | none |
 | 38 | `.charter/app/dispatches/ended.json` | `core/dispatchrecord/ended.rs:38` | Clone state, rebuildable (`pf:7420`) | overwritten | rebuild over (R9) | rebuilt | no | none |
 | 39 | `.charter/app/dispatches/refused-while-away.json` | `core/dispatchaway.rs:86` | Clone state (`pf:7511`) | refused | refuse | nothing is shown as blocked while away | no | flock |
 | 40 | `.charter/app/dispatch-never.json` | `core/dispatchnever.rs:60` | Clone state (`pf:6664`) | none; a bad entry refuses the change (`core/dispatchnever.rs:9`) | refuse; marked starting fresh grants more, so Damaged is refused too (R13, B-F1) | no grant covers any pair, so the person is asked and told why, and a chat nobody is at is refused (`Covers::Unread`, `core/dispatchgrant.rs:410`), as today (A-F2, round 4) | yes | flock |
@@ -152,7 +154,7 @@ path, in ticket 14a, A-N2). A row store never locks out, apart from rows 14 and
 | 49 | `.charter/app/spool/keys.json` | `core/hookwire/spool.rs:101` | Clone state, transient (`pf:8014`) | refused (and the doctor checks it again, `core/doctor/spool.rs:50`); reads versions 1 and 2 (`:101`, `:104`) | refuse (R9: never rebuilt over, it holds the replay floors); the doctor asks the store; declared with oldest 1 and own 2 and its migration. Once it is started fresh, a queued message whose key it no longer holds is reported undelivered and kept, never moved to `refused/` (R17, D-F1, B-F16) | ✱ no message is delivered, and none is moved to `refused/` (D4) | no | flock |
 | 50 | `app/spool/messages/waits.json` (runner) ⚠ | `core/hookwire/relay/carrying.rs:88` | Machine, device-bound (`pf:7951`) | overwritten, queued messages retired | refuse; marked starting fresh grants more, so Damaged is refused too (R31) | ✱ no message is retired; they wait (D-F3, round 4) | no | mutex |
 | 51 | `…/skill-grade-after-edit.json`, `…/skill-earlier-names.json` | `core/skills/grades/after_edit.rs:33`, `core/skills/grades/earlier.rs:45` | Machine, device-bound (`pf:9070`, `:9098`) | overwritten | refuse | not kept | no | flock |
-| 52 | `skills.local.lock` | `core/skills/source/lock.rs:26` | Clone state (`pf:1767`) | refused | refuse | no local skill source is changed | no | compare-and-swap |
+| 52 | `skills.local.lock` | `core/skills/source/lock.rs:26` | Clone state (`pf:1767`) | refused; written at 1, or 2 only with an extension's skill (D-F3, round 5) | refuse | no local skill source is changed | no | compare-and-swap |
 | 53 | `.charter/cache/skill-sources-checked.json` | `core/skills/source/checked.rs:31` | Clone state, rebuildable (`pf:8663`) | overwritten | rebuild over (R9) | rebuilt | no | mutex |
 | 54 | `.charter/plane-push.json`, `.charter/save-branch.json` | `core/planegit.rs:277`, `planegit/prsave.rs:280` | Clone state (`pf:8184`, `:8226`) | none | refuse | no automatic push or save branch | no | none |
 | 55 | `.charter/guard-seen.json` | `core/guardseen.rs:30` | Clone state, rebuildable, legacy (`pf:8136`) | none; rebuilt | rebuild over (R9) | rebuilt | no | none |
@@ -176,7 +178,7 @@ path, in ticket 14a, A-N2). A row store never locks out, apart from rows 14 and
 `.charter/cache/repostate.json` and `.charter/cache/harness-wiring.json` (`pf:8569`, `pf:5902`),
 which no Rust code reads or writes (they are written by the legacy Python `charter` only), and
 `.charter/app/sandbox.json`, which nothing outside tests reads or writes
-(`core/sandbox/local.rs:20`) and whose `docs/plane-format.md` entry (`pf:6614`) should say so.
+(`core/sandbox/local.rs:20`) and whose `docs/plane-format.md` entry (`pf:6614`) ticket 14d3 makes say so (A-N6, round 5).
 Round 4 adds two (A-F5): `.charter/vaults.json`, the local half of the vault registry, which is
 hand-editable (`pf:4920`), so it is the person's configuration rather than purlis's record, and
 whose other half is the Plane's; and `.charter/vaults/<name>.meta.json`, the plain-file vault's
@@ -189,16 +191,16 @@ repository's journals, not purlis's records, and are out of scope.
 
 | # | File | Module | Tier | Today | Under the store | Fail closed | Keeps unknown keys | Lock |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 59 | `…/skill-levels/unaccepted.json` | `core/skills/levels.rs:30` | Machine, device-bound, transient (`pf:9260`) | none; replaced | refuse; marked starting fresh grants more (R29): what cannot be read is never taken as accepted, so Damaged is refused too | ✱ every level whose acceptance cannot be read stays unaccepted and reaches no chat | its ticket's test 5 says | none; one added |
+| 59 | `…/skill-levels/unaccepted.json` | `core/skills/levels.rs:30` | Machine, device-bound, transient (`pf:9260`) | none; replaced | refuse; marked starting fresh grants more (R29): what cannot be read is never taken as accepted, so Damaged is refused too; the person's Accept (`confirm`, or `accept` in a confirmed project, which writes every folder but the one accepted, as today) stays the remedy for a Damaged file, through the replace-on-press call, and `sweep` and `ask_again_in` refuse (P2, regression check); its cost line says what Set it aside lets through (A-F1, E71, round 5) | ✱ every level whose acceptance cannot be read stays unaccepted and reaches no chat | its ticket's test 5 says | none; one added |
 | 60 | `…/skill-levels/accepted.json` | `core/skills/levels.rs:657` | Machine, device-bound, transient (`pf:9272`) | none; replaced | refuse | nothing counts as accepted, so the levels reach no chat until accepted again | its ticket's test 5 says | none; one added |
 | 61 | `.charter/app/spool/messages/undelivered/` reports | `core/dispatchqueue/undelivered.rs:40` | **not in `pf`**: add it first, Machine, device-bound, as row 8 | skipped (a report carries `v`, and one of another version is passed over and left, `:177`, `:263`; A-N3, round 4) | skip; one file per record, made once | that report is not placed on a dispatch record or shown; it is kept | its ticket's test 5 says | none (made once) |
 | 62 | `.charter/vault-links.json` | `core/secrets/links.rs:48` | Clone state (`pf:5079`) | none | refuse; written in secret mode; its kept copies go into `<state folder>/vaults/kept/`, since the sandbox denies the file by exact path for reads and writes (R35) | no linked entry is known, so none is offered | its ticket's test 5 says | the vaults' folder lock (`lock_vaults_folder`), shared with rows 63 and 71 (A-F4, round 4) |
 | 63 | `.charter/vaults/<name>.keys.json` | `core/secrets/keyring.rs:607` | Clone state (`pf:5029`) | none | refuse; a keyed whole file; written in secret mode | that keyring vault lists no keys, and its index is not written over | its ticket's test 5 says | the vaults' folder lock, and the vault's own `lock_keys` across its keyring and index writes |
 | 64 | `app/spend/<chat>.limit.json` | `core/usage.rs:663` | Clone state, transient (`pf:7572`) | none; `record_limit` removes it unread (`:701`) | refuse (R9); a keyed whole file; `record_limit` may remove it whatever its version (R36) | the chat's limit reset time is not known, and is not shown | its ticket's test 5 says | none; one added |
 | 65 | `<config>/purlisd/mint-port.json` | `core/forge/mintport.rs:45` | Machine, device-bound (`pf:8881`) | refused when it holds another key | refuse; this user's alone (B-F3, round 4) | the runner does not mint, and the run goes to the desktop, as for a file refused today | **refuses unknown keys** ("these keys and no others") | `mint-port.lock` (`:60`), kept and recorded in `pf` (A-F4, round 4) |
-| 66 | `.charter/workspace-rename.json` | `core/wscmd/rename.rs` | Clone state, transient (`pf:3478`) | none | refuse; the rename's removal of it reads under the lock and removes only an Understood record | every rename is refused while it cannot be read, so a rename cut short is never lost | its ticket's test 5 says | its ticket names it |
+| 66 | `.charter/workspace-rename.json` | `core/wscmd/rename.rs` | Clone state, transient (`pf:3478`) | none | refuse; the rename's removal of it reads under the lock and removes only an Understood record; a Damaged one is refused like a newer one (D-F8, round 5) | every rename is refused while it cannot be read, so a rename cut short is never lost | its ticket's test 5 says | its ticket names it |
 | 67 | `.charter/move-into-repos.json` | `core/doctor/fix/move_into_repos.rs` | Clone state, transient (`pf:3479`) | none | refuse; removed as row 66 is | the next move is refused, and the doctor names the journal | its ticket's test 5 says | its ticket names it |
-| 68 | `<config>/purlisd/hosts.jsonl` | `crates/host/src/hostrecord.rs:45`, `HOST_RECORD` | Machine, device-bound, transient (`pf:8811`) | a line it cannot read is passed over and dropped by every write of the file whole: `take_over` at every host start, `empty` at a clean exit, and the rewrite past 256 KiB; a file `take_over` cannot read is emptied (`:156`-`:197`) | **the second exception (R29):** fixed in place in the host, like row 35: a record of rows whose every write of the file whole (`start_again`) carries a line it cannot read through byte for byte, and a file it could not read is never emptied; carried lines count towards `READ_AT_MOST` and not towards `REWRITTEN_PAST` (D-F1, C-F2, round 4) | a program on a line it cannot read is not ended by this host; the line is kept | n/a | the host's own |
+| 68 | `<config>/purlisd/hosts.jsonl` | `crates/host/src/hostrecord.rs:45`, `HOST_RECORD` | Machine, device-bound, transient (`pf:8811`) | a line it cannot read is passed over and dropped by every write of the file whole: `take_over` at every host start, `empty` at a clean exit, and the rewrite past 256 KiB; a file `take_over` cannot read is emptied (`:156`-`:197`) | **the second exception (R29):** fixed in place in the host, like row 35: a record of rows whose every write of the file whole (`start_again`) carries a line it cannot read through byte for byte, and a file it could not read is never emptied; carried lines count towards `READ_AT_MOST` and not towards `REWRITTEN_PAST` (D-F1, C-F2, round 4); a carried line ends with a line end before this host's lines, and the core's doctor prints a line for a record the host could not read (D-F6, round 5) | a program on a line it cannot read is not ended by this host; the line is kept | n/a | the host's own |
 
 **Added in review round 4** (R29's sweep, A-F5; the no-ruling list's `unnoted.json`, C-F3):
 
@@ -206,7 +208,7 @@ repository's journals, not purlis's records, and are out of scope.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 69 | `…/skill-levels/unnoted.json` | `core/skills/levels.rs:157`, `UNNOTED` | Machine, device-bound, transient (`pf:9256`, as row 19) | none; "a record no sweep removes" | refuse; a level record whose key is not a chat's, marked starting fresh grants more with row 19 (R13) | as row 19 | its ticket's test 5 says | as row 19 |
 | 70 | `app/spend/<chat>.json` | `core/usage.rs:581`, `record_spend` | Clone state, transient (`pf:7564`) | none | skip; rows keyed per chat, written over whole at each render, a skipped line carried through; retention's sweep of the spend folder may remove a file whatever its version (R36) | that line's figures are not counted | its ticket's test 5 says | none; one added |
-| 71 | `.charter/vaults/-no-seed.json` | `core/secrets/no_seed.rs:62` | Clone state (`pf:5117`) | none | refuse; its ticket checks whether starting fresh grants more (R13) | no key counts as marked | its ticket's test 5 says | the vaults' folder lock (`no_seed.rs:168`) |
+| 71 | `.charter/vaults/-no-seed.json` | `core/secrets/no_seed.rs:62` | Clone state (`pf:5117`) | none | refuse; written in secret mode, as today (`:156`; C-F5, round 5); its ticket checks whether starting fresh grants more (R13) | no key counts as marked | its ticket's test 5 says | the vaults' folder lock (`no_seed.rs:168`) |
 
 **What the inventory shows beyond versions**, for the tickets that move each store:
 
@@ -318,11 +320,11 @@ moves. A test is trusted only once it has been seen to fail for the right reason
 ticket first shows its test red against a deliberately broken store.
 
 **Who owns a test.** Each test is owned by exactly one ticket, the one that writes it, named in
-brackets after it. The harness tests (1 to 8, 23 to 25, 27 to 31, 57 and 64) are written once
+brackets after it. The harness tests (1 to 8, 23 to 25, 27 to 31, 57, 64, 73 and 74; A-N4, round 5) are written once
 against a toy store and then **switched on** for each real store by the ticket that moves it,
 which runs them and owns none of them. Test 5's pattern is written by ticket 3a, the first
 ticket with a real store. New tests from review round 2 are numbered from 44, and from review
-round 3 from 66 (to 72), and from review round 4 from 73 (to 75); no test is renumbered. Where round 3 moved a clause from one test to a new one,
+round 3 from 66 (to 72), from review round 4 from 73 (to 75), and from review round 5 from 76; no test is renumbered. Where round 3 moved a clause from one test to a new one,
 the old test's text says so.
 
 **The record store, for every declared store** (run against a toy store in tickets 1 and 1b,
@@ -348,7 +350,9 @@ and switched on per store as it moves):
    refusal instead, and the store is declared to refuse unknown keys (A-F10, C18). For rows 2
    and 3, ticket 3a also records the pre-effort reader's answer as a fixture, and tickets 5b
    and 8 switch the test on again with the real stamp and the real `reach`, asserting that every
-   other entry still reads and that the old writer keeps them (D-F17). [3a]
+   other entry still reads and that the old writer keeps them (D-F17). Its versions case: for a store
+   whose reader accepts more than one version today, a file of each such version reads Understood under
+   the store, with the same content (rows 26, 37, 49 and 52; D-F3, round 5). [3a]
 6. *Every store the record store declares is in `docs/plane-format.md`* with its tier, beside
    the existing `every_store_the_plane_format_names_has_a_tier.rs`. It walks the registry. The
    toy store is test-only and outside the registry, and the test is seen red with a registered
@@ -373,7 +377,10 @@ and switched on per store as it moves):
 25. *Each lockout store fails closed* (D1): every ✱ row, refused, does only its declared answer,
     and approving or changing refuses with the store's sentence. It covers too every store
     marked starting fresh grants more (R13): Damaged is refused, writes refuse, and Set it aside
-    on a press names what is forgotten. [1]
+    on a press names what is forgotten, and for these stores says what it lets through (E71, round 5).
+    On a toy store marked so, `update` still refuses a Damaged record, while the call that replaces a
+    Damaged record on the person's press copies it aside and writes the new record with the record never
+    absent, refuses over TooNew, and leaves the bytes when the copy fails (C-F1, round 5). [1]
 26. *One Notice for every refused store* (R10): three stores refused at once raise one
     `records-unread` Notice listing all three (the doctor's half of E23 is test 68); it settles when the last reads again, and a line leaves when
     its store reads (E32). The cause key is keyed by the set of refused stores, so a store that
@@ -402,7 +409,8 @@ and switched on per store as it moves):
 57. *The store's own failure paths* (D-F8): the copy aside fails (a full disk, a read-only
     folder), so the update refuses and the damaged bytes stay; two copies in the same second get
     a counter suffix; an update whose write is over the bound refuses with the store's sentence;
-    Set it aside racing an update re-reads under the lock. [1]
+    Set it aside racing an update re-reads under the lock. The bound case is switched on per store, with
+    the sentence its ticket gives for a write that would pass the bound (D-F5, round 5). [1]
 64. *A newer row is never overwritten*: a row store with a row at `VERSION + 1` keeps it, in its
     place, through every rewrite; a file-per-record store leaves the file. [1b]
 58. *Damaged and TooOld are said* (E14, D-F9): a damaged toy store raises its line in
@@ -431,7 +439,8 @@ and switched on per store as it moves):
    still in `keys.json` and its queue is kept; a later chat given the same number gets a fresh queue
    only once the old one is empty or removed (R30). An open chat whose queue holds a kept `v: 2`
    message, issued a new key and its spool lines drained, still has its old key in `keys.json`
-   (D-F5, round 4). [13a]
+   (D-F5, round 4). With seq 5 behind a held seq 4, seq 5 is reported once across two opens, and a
+   restart moves it to the new number (D-F2, round 5). [13a]
 10. `forge-accounts.json` at version 2 is refused and kept (`core/forge/accounts.rs`; today
     stamped back to 1, UNTESTED). [14a]
 11. Spool `v` other than 1 and `keys.json` at version 3 (`core/hookwire/spool.rs`; UNTESTED).
@@ -442,7 +451,9 @@ and switched on per store as it moves):
     seq 5 waits behind it and is listed, and the floor never rises past 3; a newer purlis delivers
     4, then 5; the person removing seq 4, whose path the doctor lists, lets 5 through. The same
     holds with seq 4 a file that is not JSON, a file over the bound, and a body of an unknown kind
-    whose MAC checks (A-F3, D-F4, round 3). [13a]
+    whose MAC checks (A-F3, D-F4, round 3). The seq 4 and seq 5 case runs through the runner host's
+    `carry` as well as the window's drain: in both the floor stays at 3 and the sender's answer for seq
+    5 is "queued, not delivered" (D-F1, round 5). [13a]
 33. *A key that is unavailable leaves messages waiting* (D4), *and a missing key is not
     tampering* (R17): with `keys.json` refused, damaged or unreadable, no message moves to
     `refused/`; with `keys.json` readable and holding no key for a message, the message is
@@ -481,7 +492,8 @@ and switched on per store as it moves):
     (C-F14, B-F12, round 3); with the record at a newer version and the host restarted while
     stopped, a re-arm re-arms the runners that answered "stopped already", and the same with a
     damaged record, which is refused and never overwritten (D-F6, round 4); and the core's doctor
-    prints a line for the record with its path and how to move it aside (R33). [14d4]
+    prints a line for the record with its path and how to move it aside (R33); a record over
+    `MOST_KEPT_BYTES` is never written over either (D-F8, round 5). [14d4]
 56. *A command that meets a refused record exits 1* (ADR 0120, A-F9): `purlis artifact
     approve-status` over a version-2 approval record exits 1 with the same sentence the window
     and the doctor say. [3a]
@@ -489,7 +501,8 @@ and switched on per store as it moves):
     a delivered message's bytes put back in the queue are not delivered again; and after the person
     removes seq 4 and seq 5 is delivered, a copy of seq 5 put back is not delivered again. It is
     seen red against a drain that passes the skipped message, since main already drops a copy at
-    or below the floor (D-F18, round 3). [13a]
+    or below the floor (D-F18, round 3), for each of the two drains, the window's and `carry` (D-F1,
+    round 5). [13a]
 
 **The ledger:**
 
@@ -559,7 +572,14 @@ and switched on per store as it moves):
     outside a repo the record passes; the sentence settles once the file is ignored and untracked.
     A not-ignored record draws "Ignore them in git"; a tracked one draws Copy command for
     `git rm --cached` and the same press (E46); a kept copy that git tracks or does not ignore is
-    not offered back by the doctor (B-F5, round 3). Ticket 12 switches it on for row 6. [3c]
+    not offered back by the doctor (B-F5, round 3). **R38:** a tracked row 4 record holding an entry for
+    declaration X, after the cure, is in `app/kept/` as `<record>.git-brought-<UTC>`, X stands New and its
+    start asks; the same for row 5; seen red against a cure that only untracks (B-F1, round 5). A tracked
+    record draws only the press, and Copy command only after the move; with `git rm --cached` run by
+    hand before any press, with and without a committed ignore line, and with a committed line-ending
+    rule that makes the working file's bytes differ from its blob (the compare is `git hash-object
+    --path`), X never stands Approved, and after the cure every entry stands New (P1, regression check). Ticket 12
+    switches it on for row 6, where the persona stands New. [3c]
 39. *A page with no `reach`* (D12, C8, D-F5): compared with the baseline, it stands Approved while
     nothing it declares reads more; a test catalogue that moves a declared core query to `plane`,
     or gives it a widening parameter, makes it stand `Changed(reach)`; a query absent from the
@@ -649,8 +669,10 @@ and switched on per store as it moves):
     Not now keeps it away while the project is open, and a new raise of the same subject clears
     Not now (R27); it reuses the sign-in and persona-Allow asks' model (C-F3); it is never offered
     a rule, and never
-    answered by a rule, Quiet, a timeout or a bulk triage action; only a connection that holds
-    the approval scope answers it, never one from a chat's process tree (B-F8). [11c0]
+    answered by a rule, Quiet, a timeout or a bulk triage action; it is answered only by the window's
+    own command (the `local-ui` scope, `the_window()`), never by `purlis inbox` (the `approval` scope),
+    which may list it, and never by a connection from a chat's process tree (B-F8; B-F2, round 5): an
+    answer sent with the approval scope is refused. [11c0]
 61. *The harness ask runs only what it showed* (B-F8): the Notice and the row show the profile's
     whole line (`profiletrust::shown`); Approve is refused when what would be shown now differs;
     "Approve and start" approves, then starts through the full launch gate, and a declaration
@@ -668,9 +690,13 @@ and switched on per store as it moves):
     consent line on one line, and Copy command for `purlis persona approve-mcp`; a dismissed one
     comes back at the next such start; a dispatched chat's start raises none; it settles on a
     re-read at focus after the terminal approves (E44, B-F6, C-F9, round 3); `COPY_ONLY` lists it
-    with its reason. [12b]
+    with its reason; the copied command has no `--yes` and carries only a valid persona name (B-N2,
+    round 5). [12b]
 65. *"Approve and start" finishes the press* (E6, C3): it approves, then starts the held chat
-    again, once; with two chats held, its label names the count and both start. [11c]
+    again, once; with two chats held, its label names the count and both start, and the ask's row
+    shows one line per held start, "{named}: starts with {typed} typed and not sent." (E77, round 5);
+    with two chats held, the new-chat picker's in-place approve of the subject starts both (E74, round
+    5). [11c]
 
 **Added in review round 3:**
 
@@ -698,7 +724,8 @@ and switched on per store as it moves):
 70. *The doctor lists held dispatch messages* (R26, C-F2, E47): for a chat whose queue holds a
     skipped message, an unreadable one and an oversize one, the doctor prints each by chat, seq and
     path, says which messages wait behind it ("waiting behind message {seq}") and gives the
-    command that removes it ("To let the rest through, remove it: `rm {path}`", E63, round 4);
+    command that removes it ("To let the rest through, remove it: `rm {path}`. It is then never
+    delivered.", with the path shell-quoted; E63, round 4; E79, B-N3, round 5);
     `records-unread` has one line that links to the doctor; the chat's own `purlis dispatch list`
     says only "waiting: purlis cannot deliver a message ahead of it. The person can see why with
     `purlis doctor`.", with no path and nothing of another chat; with the chat ended, the doctor
@@ -708,19 +735,23 @@ and switched on per store as it moves):
     role and name, brings a dismissed harness Notice back, and raises the subject's Notice when no
     start was made and none is up (E60, round 4); the card is the new-chat picker's summary of
     the picked row, and shows "Approved", "Not approved" or "Changed since you approved it"; a
-    built-in harness's card has no press. [11c1]
+    built-in harness's card has no press. After the press the picker is closed and the Notice is
+    visible, not only present (E75, round 5). [11c1]
 72. *The host record keeps a line it cannot read* (R29): `hosts.jsonl` holding a line of an
     unknown shape keeps it, byte for byte and in its place, through a host start (`take_over`), a
     clean exit (`empty`) and a rewrite past 256 KiB, each seen red against today's code, and the
     host ends no program it cannot read; a record over `READ_AT_MOST` is byte for byte the same
-    after `take_over` (D-F1, C-F2, round 4). [14d7]
+    after `take_over` and after a program starts (D-F1, C-F2, round 4; C-N6, round 5); a torn last line
+    carried through a host start leaves a started program's line readable, and the core's doctor
+    prints a line for a record the host could not read (D-F6, round 5). [14d7]
 
 **Added in review round 4:**
 
 73. *A store that is this user's alone refuses a file others could read or own* (B-F3, C-F4): on
-    a toy declaration marked this user's alone, a `0644` file, a file owned by another user where
-    the test can make one, and a file in a `0755` folder each read Unreadable with the cause, never
-    Understood. Switched on for rows 15 (ticket 13d2), 33's five files and 34 (tickets 14d1 and
+    a toy declaration marked this user's alone, a `0644` file and a file owned by another user where
+    the test can make one each read Unreadable with the cause, never Understood; a write through a
+    folder another user owns refuses, and a write through a `0755` folder of this user's sets it
+    `0700`, as `PrivateDirectory` does today (C-F4, round 5). Switched on for rows 15 (ticket 13d2), 33's five files and 34 (tickets 14d1 and
     14d5) and 65 (ticket 14f2). [1]
 74. *A store's own removal keeps what it cannot read* (R36; C-F5, A-F6): a toy store's `remove`
     keeps a TooNew, an Unplaceable and a Damaged record and removes an Understood one, and each
@@ -732,7 +763,23 @@ and switched on per store as it moves):
     and code-approval Notice and opens Asks on its row, and its own approving question is gone;
     "Approve and start" starts it again; Not now puts it away, and a new press raises it again;
     the first-task tab's start, refused for a harness, is held the same way and approves nothing
-    by itself. [11c2]
+    by itself, and its button, found by role and name, reads "Start the first chat"; while the chat's
+    profile needs approval, "Retry now" raises the ask too (E73, round 5). [11c2]
+
+**Added in review round 5:**
+
+76. *A level record or acceptance record that refuses has its way out* (A-F1, A-F4, C-F1, E71): a
+    Damaged `unaccepted.json` is repaired by the person's Accept (`confirm`) through the store's
+    replace-on-press call, which grants exactly the folders accepted and leaves every unlisted
+    folder a chat made held; in a confirmed project, where `confirm` is not offered, the per-folder
+    `accept` repairs it through the same call, and every other folder stays held (P2, regression
+    check); `sweep` and `ask_again_in` refuse over it; a Damaged
+    level record is replaced by `repaired` through the same call, and `note` and `noted_again` refuse
+    over it; neither call writes over a TooNew record; the Skill studio's line for a TooNew or
+    Unplaceable level record carries Set it aside, found by role and name, sending the store's id and
+    key, after which that record reads Absent; and Set it aside on `unaccepted.json` shows, before the
+    press, "purlis stops holding back the folders a chat could have made, so their skills reach your
+    chats without your accepting them." [13c1]
 
 ## 4. Order of tickets
 
@@ -753,8 +800,11 @@ ticket owns are named in §3.
   `update_held` with the declared lock, kept and refused unknown keys, the damage rule with its
   exclusive create (R14), Set it aside by store id and key (B-F13, D-F12), starting fresh grants
   more (R13), TooOld, the version history, the kept copies' `pf` entry (A-F9), the write kind and
-  this user's alone (B-F3, C-F4), `remove` with R36's rule, and the private write. Tests 1 to 4, 6
-  to 8, 23 to 25, 27, 30, 31, 57, 73 and 74.
+  this user's alone (B-F3, C-F4), `remove` with R36's rule, the call that replaces a Damaged record
+  on the person's press (C-F1, round 5), and the private write. Tests 1 to 4, 6 to 8, 23 to 25, 27,
+  30, 31, 57, 73 and 74. Round 5 weighed splitting it (C-F7) and kept it one ticket: the new call
+  reuses the lock, the copy aside and the harness this ticket already builds, and the one criterion
+  it could not check moved to 15.
 - **1b. Rows and files of one record each** [1]: skipped rows, torn lines, pruning and the bound,
   line caps, a locked update of one record in a file-per-record store (C-F6). Tests 28, 29 and 64.
 - **2. The refused-records Notice** [1]: `records-unread`, keyed by the set of refused stores,
@@ -802,10 +852,13 @@ ticket owns are named in §3.
 - **11c. The harness asks: the plane's own starts and the picker's in-place approve** [11a,
   11c0]: held (R21), Not now and a new press (R27), the refused dispatch (R27, R37), the
   four places named (R34), the picker reading the ledger, and the three starts `PlaneView.tsx`
-  makes without the picker. Tests 40, 61 and 65.
+  makes without the picker; a subject approved by any press starts the chats held on it (E74), and
+  the ask's row words (E77). Tests 40, 61 and 65. Round 5 weighed moving the picker's row to a ticket
+  of its own (C-F8) and kept it here, since E74 ties the picker's approve to the held starts.
 - **11c1. The Skill studio's and an artifact discussion's starts, and the harness card's press**
-  [11c] (C-F10, R27, R34, E60). Tests 67 and 71.
-- **11c2. A waiting chat's restart and the first-task tab** [11c] (R34, round 4). Test 75.
+  [11c, 9] (C-F10, R27, R34, E60; A-F3, C-F3, E75, round 5). Tests 67 and 71.
+- **11c2. A waiting chat's restart and the first-task tab** [11c, 11c1] (R34, round 4; A-F2, C-F2,
+  E73, round 5). Test 75.
 - **12. The `mcp` adapter** [4, 3c]: row 6 onto the store, in the same pull request as its adapter.
   Test 43.
 - **12b. The MCP Notice** [12, 11a] (C-F9). Test 62.
@@ -820,8 +873,8 @@ row's fail-closed answer tested, C-F12)
 - **13c. Skill grade logs and router logs** [1b, 2]: row 11 (C-F7).
 - **13c1. Skill levels and their acceptance records** [1b, 2, 2b]: rows 19, 59, 60 and 69, rows
   19, 59 and 69 marked starting fresh grants more (R29; round 4), with `confirm`, `repaired` and
-  `sweep`.
-- **13c2. Resume files and arrived files** [1b, 2]: rows 12 and 18 (A-F1, C6, C-F7).
+  `sweep`, the replace-on-press call and the Skill studio's Set it aside (round 5). Test 76.
+- **13c2. Resume files and arrived files** [1b, 2, 2b]: rows 12 and 18 (A-F1, C6, C-F7; D-F4, round 5).
 - **13d. The event log** [1b, 2]: row 13 (C8, D-F8, R32).
 - **13d1. The kill switch** [1b, 2]: row 14 (R18, R28). Tests 48 and 69.
 - **13d2. Runner hours, network blocks, the save journal and a LOCAL work log** [1b, 2]: rows 15,
@@ -838,12 +891,13 @@ row's fail-closed answer tested, C-F12)
   `runners-left.json` and `peers.json` (C-F7; R31 for the first two; R35, this user's alone).
 - **14d5. The runner taint file, pool setup and window names** [1, 2, 2b]: row 33's
   `runners-unsandboxed.json` (R13) and `pool-setup.json`, and row 34 (C-F7).
-- **14d2. The Inbox family** [1, 2]: row 36.
-- **14d3. Sandbox grants and the skill edit records** [1, 2]: rows 45 and 51.
+- **14d2. The Inbox family** [1, 2, 2b]: row 36 (D-F4, round 5).
+- **14d3. Sandbox grants and the skill edit records** [1, 2, 2b]: rows 45 and 51 (D-F4, round 5).
 - **14d4. The host's stop record, fixed in place** [0, 2b]: row 35 (R23, R33), with the doctor's
   line. Test 55.
-- **14d7. The host record, fixed in place** [0]: row 68 (R29), every write of the file whole
-  (D-F1, C-F2). Test 72.
+- **14d7. The host record, fixed in place** [0, 2b]: row 68 (R29), every write of the file whole
+  (D-F1, C-F2), and the core's doctor line for a record the host could not read (D-F6, round 5).
+  Test 72.
 - **14e. Dispatch records, message records and ended dispatches** [1b, 2, 2b]: rows 9, 37 and 38.
 - **14e1. Blocked while away, dispatch nevers and the runner's waits** [1, 2, 2b]: rows 39, 40
   (R13) and 50 (R31).
@@ -851,15 +905,16 @@ row's fail-closed answer tested, C-F12)
 - **14e3. Secret asks, browsers and mirrors** [1, 2, 2b]: rows 44 and 46 to 48.
 - **14e4. The skills lock, plane push and save branch** [1, 2]: rows 52 and 54.
 - **14e5. Rebuildable caches** [1, 2]: rows 53, 55 and 57.
-- **14f. Undelivered reports, spend files and spend limits** [1b, 2]: rows 61, 64 and 70 (R29,
-  R36).
-- **14f1. Vault links, keyring vault indexes and the no-seed marks** [1, 2, 3c0]: rows 62, 63 and
+- **14f. Undelivered reports, spend files and spend limits** [1b, 2, 2b]: rows 61, 64 and 70 (R29,
+  R36; D-F4, round 5).
+- **14f1. Vault links, keyring vault indexes and the no-seed marks** [1, 2, 2b, 3c0]: rows 62, 63 and
   71 (R29, R35), secret mode and the vaults' folder lock.
 - **14f2. The mint port and the rename and move journals** [1, 2, 2b]: rows 65, 66 and 67 (R29).
 - **15. Remove the old private writers** [2b, 3a, 3b, 3c, 12, 13a, 13a1, 13b, 13c, 13c1, 13c2, 13d,
   13d1, 13d2, 14a, 14b, 14c, 14c1, 14d, 14d1, 14d2, 14d3, 14d5, 14d6, 14e, 14e1, 14e2, 14e3, 14e4,
-  14e5, 14f, 14f1, 14f2]: every caller that writes a private file that is not a record calls `rewrite::replace`
-  with `Mode::Private` directly (A-F7, C3).
+  14e5, 14f, 14f1, 14f2]: every former caller of the removed wrappers that is not a record calls
+  `rewrite::replace` with `Mode::Private` directly, and no other writer changes (A-F7, C3; C-F6, round
+  5); the guard that no store's own code calls a private writer, moved from 1 (C-F7, round 5).
 
 Tickets 1, 1b and 4 have no behaviour a person sees. Ticket 2 adds a Notice no one meets until a
 store refuses. Ticket 3a is the first that could refuse a person's record, and only one written by
@@ -875,12 +930,17 @@ a newer purlis or one that is not a record. Tickets 5 to 12b are the ones a pers
 - No lockout store that a process with no window reads can refuse before the terminal can set it
   aside: tickets 3c, 13a (and so 13a1 and 13b), 13c1, 14a, 14b, 14c, 14d1, 14d4, 14d5, 14e, 14e1,
   14e3 and 14f2 are blocked by ticket 2b (D-F10; A-F1, B-F4, D-F3, round 4).
+- No keyed whole-file store that the window does not sweep can refuse before the doctor's line and
+  the terminal's Set it aside exist, since those are its only surfaces: tickets 13c2, 14d2, 14d3,
+  14f and 14f1 are blocked by ticket 2b, and so is 14d7 for the host record's doctor line (D-F4,
+  D-F6, round 5).
 - No kept copy of a record the sandbox holds by exact path is made outside a held folder: tickets
   3c, 12, 14d1 and 14f1 are blocked by ticket 3c0 (R25, R35).
 - No key is written before every reader of its store tolerates it: test 5 for rows 2 and 3 in
   ticket 3a, before tickets 5b and 8 write the stamp and `reach`.
 - No old re-ask is removed before its adapter draws the Notice: 11a before 11b1, 11b1b, 11b2, 11c,
-  11c1 and 11c2.
+  11c1 and 11c2. Test 21's last ban lands after the dialog it bans is gone: 11c1 before 11c2, and the
+  harness card's words before its press: 9 before 11c1 (A-F2, C-F2, A-F3, C-F3, round 5).
 - No adapter answers through the ledger before its record is on the store: tickets 3a to 3c
   before 4, and ticket 12 moves row 6 in the same pull request that adds its adapter.
 
@@ -1249,3 +1309,74 @@ round 3 (E59 onwards).
 | E68 | fix | Ticket 12b (the copied command carries the persona; "them") |
 | E69 | fix | ADR §2; spec; ticket 2; test 58 (`{n}` counts only lines of stores purlis cannot read) |
 | E70 | fix | Spec story 16 lists R29's and R31's stores |
+
+## 10. Review round 5
+
+Five reviewers read spec #6706 and its 60 tickets at `4f0ec46`, one axis each: A integrity, B
+security, C buildability, D failure and recovery, E the person and the language. They found four
+unique must-fix and about twenty should-fix; no ruling was reversed and the ticket order was
+found safe. The operator ruled R38 (P27), R15's cure, and R39 (P28), the process: round 5 is folded
+whole, one reviewer then checks only the folded fixes and the tickets they touch, and if that is
+clean building starts from the frontier (tickets 0 and 1), with no full round 6. The fixes that
+needed no ruling were listed with them: true cost lines, test 25 sharpened, the store's
+replace-on-press call, the two edges, and `carry` named. Ids are each reviewer's own: A's nits are
+A-N1 onwards, B's B-N1, C's C-N1, and E's go on from round 4 (E71 onwards). No ticket was split or
+closed.
+
+| Finding | Kind | Where it went |
+| --- | --- | --- |
+| A-F1 | fix (no-ruling list) | Ticket 13c1: `confirm` repairs a Damaged `unaccepted.json` through the replace-on-press call, other writers refuse; the true cost line; row 59; test 25's criterion; new test 76 |
+| A-F2 | fix (no-ruling list) | Ticket 11c2 blocked by 11c1; §4, §5 |
+| A-F3 | fix | Ticket 11c1 blocked by 9; §4, §5 |
+| A-F4 | fix | Ticket 13c1: the Skill studio's line for a TooNew or Unplaceable level record carries Set it aside; row 19; test 76 |
+| A-N1 | fix | Spec's first paragraph (tests 1 to 76); ticket 0's criterion names R37 to R39 |
+| A-N2 | fix | Ticket 1: the pinned write is rows 19, 52, 59 and 69 |
+| A-N3 | fix | Ticket 13c: skill levels are 13c1, resume and arrived files 13c2 |
+| A-N4 | fix | §3's "Who owns a test" lists 73 and 74 among the harness tests |
+| A-N5 | fix | ADR §10's heading and its folder list name all four new folders |
+| A-N6 | fix | Ticket 14d3 owns `.charter/app/sandbox.json`'s `pf` entry; §1 Out of scope |
+| A-N7 | fix | Ticket 3c: the two recorded scenarios stay as they are (R37) |
+| B-F1 | R38 | ADR §5 and §1; Must not be tracked field; tickets 3c, 12 and 2b; test 38; spec story 36 and the tracked-record bullet |
+| B-F2 | fix | ADR §7; spec "A held chat"; ticket 11c0; test 60: only the window's `local-ui` command answers, never the `approval` scope |
+| B-N1 | fix | Row 14; ticket 13d1: the journal's lock is in the session host's folder |
+| B-N2 | fix | Ticket 12b; test 62: no `--yes`, a valid persona name |
+| B-N3 | fix | As E79 |
+| B-N4 | fix | Ticket 2b's boundary sentence names the data home's app state |
+| C-F1 | fix (no-ruling list) | Ticket 1: replace a Damaged record on the person's press; ADR §1 and §2; spec; Starting fresh grants more field; ticket 13c1; tests 25 and 76 |
+| C-F2 | fix (no-ruling list) | As A-F2 |
+| C-F3 | fix | As A-F3 |
+| C-F4 | fix | Ticket 1 and test 73 keep today's check: the file is judged, a folder is tightened by the write, never made Unreadable; This user's alone field; ADR §1; spec |
+| C-F5 | fix | Rows 62, 63 and 71 written in secret mode: ticket 1, ticket 14f1, the Write kind field, row 71, ADR §1, spec |
+| C-F6 | fix | Ticket 15's criterion names the former wrappers' callers only; §4 |
+| C-F7 | not split | Ticket 1 kept whole: the new call reuses its lock, copy and harness; the unverifiable "never calls" criterion moved to ticket 15 as a guard with a fixture |
+| C-F8 | not split | Ticket 11c kept whole: E74 ties the picker's approve to the held starts it would start |
+| C-N1 | fix | As A-N1 and E80 |
+| C-N2 | fix | Row 34 and ticket 14d5: `purlisd`, old spelling `charterd` |
+| C-N3 | fix | Ticket 1 (row 69); ticket 13c1: rows 19 and 69 keep their compare-and-swap as their lock; `repaired` moves onto the store's call |
+| C-N4 | fix | Tickets 11b1, 11b1b, 11b2, 11c, 11c1 and 11c2 each update test 44's list on purpose |
+| C-N5 | fix | Row 33 and ticket 14d1: `peers.json` starting fresh grants more, with its cost line |
+| C-N6 | fix | Ticket 14d7; test 72: after a program starts |
+| C-N7 | not changed | Harmless, as round 4's N3 |
+| C-N8 | fix | Ticket 3c0: the store makes the folders when it first writes a copy |
+| D-F1 | fix (no-ruling list) | ADR §2; row 8; spec; ticket 13a names `carry`, both drains stop, the sender is told `Queued`; tests 32 and 63 |
+| D-F2 | fix | Ticket 13a; row 8; test 9: messages that check behind a held one are reported once or moved |
+| D-F3 | fix | The common block and test 5's versions case; tickets 14c (row 26), 14e (row 37) and 14e4 (row 52); rows 26, 37 and 52; Version key field |
+| D-F4 | fix | Tickets 13c2, 14d2, 14d3, 14f and 14f1 blocked by 2b; §4, §5 |
+| D-F5 | fix | The common block; Bound field; test 57; ADR §1; spec |
+| D-F6 | fix | Ticket 14d7 blocked by 2b, its doctor line and the carried line's end; row 68; test 72 |
+| D-F7 | fix | Ticket 13d1 and test 69: the "not before" compare and the lock held across both spellings' lines |
+| D-F8 | fix | Ticket 14f2 (a Damaged journal refused) and ticket 14d4 (an unreadable stop record never written over); rows 35 and 66; test 55 |
+| E71 | fix (no-ruling list) | Spec Sentences; tickets 13c1, 14e1 and 14d5 (cost lines that say what is let through); test 25's criteria; test 76 |
+| E72 | fix | Spec Sentences; tickets 14d1 (`runners-left.json`'s own line) and 14e1 (the waits line) |
+| E73 | fix | Ticket 11c2: "Start the first chat", `ApprovalSentence` dropped, Retry now and Try to start again are held starts; test 75 |
+| E74 | fix | ADR §7; spec "A held chat"; ticket 11c; test 65: a subject approved by any press starts its held chats |
+| E75 | fix | ADR §7; ticket 11c1; test 71: the press closes the picker and opens Notices on the Notice |
+| E76 | fix | ADR §7; spec Sentences; ticket 11a: a harness's why line is "It changed since you approved it." |
+| E77 | fix | ADR §7; spec "A held chat"; tickets 11c, 11c1 and 11c2; test 65: the row's words |
+| E78 | fix | ADR §7's first line; spec Solution and stories 37 and 107 |
+| E79 | fix | Spec Sentences; ticket 13a; test 70: the path quoted, and "It is then never delivered." |
+| E80 | fix | As A-N1 and A-N7; spec Further Notes |
+| E81 | fix | Ticket 9's typo; ticket 11c: `charter.local.toml` for a local profile, and Asks opens on Project |
+| E82 | fix | Ticket 13b's cost sentence; §1's starting-fresh-costs field |
+| P1 (regression check) | fix, within R38 | Tickets 3c and 12; ADR §5; Must not be tracked field; test 38: a tracked record draws only the press, Copy command after the move; a record untracked by hand whose bytes equal the index's or `HEAD`'s blob is still brought by git and moved; the by-hand order's case |
+| P2 (regression check) | fix | Ticket 13c1; row 59; test 76: `accept` joins `confirm` on the replace-on-press call for a Damaged `unaccepted.json`, writing every folder but the accepted one; only `sweep` and `ask_again_in` refuse |

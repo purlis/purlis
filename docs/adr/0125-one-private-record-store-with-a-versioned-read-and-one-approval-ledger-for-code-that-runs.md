@@ -16,9 +16,10 @@ thirteen more points, as **R12 to R24**. Review round 3 read the folded spec and
 operator ruled on four more, as **R25 to R28**, and then on the five points the fold left open,
 as **R29 to R33** (both 2026-11-16). Review round 4 read the next fold, and the operator ruled on
 three more, as **R34 to R36** (2026-11-16), and then on the one point it raised, as **R37**
-(2026-11-17). Each is marked (Qn) or (Rn) where it applies and listed under
-[Decisions](#decisions-on-q1-to-q16-r6-to-r11-and-r12-to-r37). The design note's §6 to §9 say
-where every finding of rounds 1 to 4 went. A finding id such
+(2026-11-17). Review round 5 read the fold after that, and the operator ruled on two more, as
+**R38 and R39** (2026-11-18). Each is marked (Qn) or (Rn) where it applies and listed under
+[Decisions](#decisions-on-q1-to-q16-r6-to-r11-and-r12-to-r39). The design note's §6 to §10 say
+where every finding of rounds 1 to 5 went. A finding id such
 as B-F6 or E28 is a review reviewer's (A to E) own number, in the round the note's section names.
 
 The background is [`docs/surfaces.md`](../surfaces.md): gaps 1, 2, 7, 10, 11, 12, 14, 16 and 17,
@@ -131,8 +132,10 @@ build's to choose). This is A. It serves those two tiers and no others. A Plane 
 - its **shape**: **whole file** (one JSON document, replaced whole), **rows** appended to a
   JSONL file, or **one file per record** in a folder, each made once;
 - its **version key** (`version`, `v` or `schema`), the version it writes, the oldest it reads,
-  and a migration for each version below its own that it reads (§2);
-- its **bound** in bytes;
+  and a migration for each version below its own that it reads (§2); a store that reads more than
+  one version today declares each, so a file today's reader takes is still read (D-F3, round 5);
+- its **bound** in bytes: today's, or, for a store that has none, one well above what its feature
+  can write, with what the feature does when a write would pass it (D-F5, round 5);
 - its **lock** (below);
 - its **serializer**, which stays what the file is written with today (Python's `indent=2`, with
   or without `ensure_ascii`, sorted keys, or serde's pretty print), so no file's bytes change
@@ -146,13 +149,15 @@ build's to choose). This is A. It serves those two tiers and no others. A Plane 
 - what **starting fresh costs**, in one sentence the person reads before Set it aside (E21);
 - for each version it knows, the release that introduced it (below);
 - its **write kind**, which keeps the writer the file has today: private, secret
-  (`rewrite::Mode::Secret`, which writes nothing where the filesystem cannot hold `0600`),
+  (`rewrite::Mode::Secret`, which writes nothing where the filesystem cannot hold `0600`; the vault
+  links, the keyring vaults' indexes and the no-seed marks, C-F5, round 5),
   through a same-user folder handle (`purlis_same_user::PrivateDirectory`), or pinned to the bytes
   read (`proposed::write_pinned`) (B-F3, C-F4, A-F4, round 4);
 - whether it is **this user's alone**, which keeps today's owner-and-mode check
   (`purlis_same_user::read_private_file`): such a store's read answers Unreadable for a file not
-  owned by the effective user or with any group or other bit, and its write goes through a folder
-  checked the same way (B-F3, round 4);
+  owned by the effective user or with any group or other bit, as today, and never judges the
+  folder; its write goes through the same-user folder handle, which refuses a folder another user
+  owns and tightens one of this user's to `0700`, as today (B-F3, round 4; C-F4, round 5);
 - where its **kept copies** go, when the sandbox holds its file by exact path (below, R25 and
   R35).
 
@@ -180,9 +185,11 @@ says the same in the TooNew sentence's words.
 started, is in the same crate, so it is fixed in place in the host too: it is a record of rows, and
 every write of the file whole (`take_over` at each host start, `empty` at a clean exit, and the
 rewrite past 256 KiB, all through `start_again`) carries a line it cannot read through byte for
-byte, where today each drops it, so a newer host's line survives an older host. A file the host
-could not read is never emptied; the host keeps its notes in memory and says so in its log (D-F1,
-C-F2, round 4). Round 3's sweep of `docs/plane-format.md`
+byte, where today each drops it, so a newer host's line survives an older host. A carried line
+always ends with a line end before the host's own lines. A file the host could not read is never
+emptied; the host keeps its notes in memory and says so in its log (D-F1, C-F2, round 4), and since
+such a file no longer heals itself at the next start, the core's doctor prints a line for it, as
+for the stop record (D-F6, round 5). Round 3's sweep of `docs/plane-format.md`
 found other private records the inventory never listed; the core's move onto the store in tickets
 of their own (the design note's rows 59 to 67, and 69 to 71 from round 4's sweep, A-F5), and
 `<git dir>/purlis-op.json` and `purlis-resolve.json` are the repository's journals, not purlis's
@@ -209,7 +216,8 @@ Before it places the version, the read sorts out a file it cannot use:
 - **Damaged:** bytes that are not JSON, or not the store's shape (a whole-file store whose
   document is not an object). A row store's line of that kind is a skipped row (§2).
 
-Today's bounded reads keep their bounds; they move into the declaration.
+Today's bounded reads keep their bounds; they move into the declaration. A store with no bound
+today gets one well above what its feature can write (D-F5, round 5).
 
 **The interface:**
 
@@ -226,6 +234,12 @@ Today's bounded reads keep their bounds; they move into the declaration.
   not know, at every level the store declares as open, and writes them back unchanged. A newer
   purlis that added a key without bumping the version loses nothing to an older one. An entry
   that `update` replaces on purpose is replaced whole, unknown keys and all (B4, §4).
+- **Replace a Damaged record on the person's press** is one more call, for a store where starting
+  fresh grants more whose person's own press repairs a Damaged record, as the Skill studio's Accept
+  does for the level records. Under the store's lock it reads again, goes on only while the answer
+  is still Damaged, copies the bytes aside by the damage rule, then writes the value the caller gives
+  in one rename, so the record is never absent between the two. It never runs over TooNew or
+  Unplaceable, and its callers are listed with Set it aside's (C-F1, round 5).
 - **`remove`** is a store's own removal of a whole record, for its lifecycle code and its
   collectors. Under the store's lock it reads the record and removes it only when it is
   Understood; a record it cannot read is kept, and the doctor counts it. Only a store declared
@@ -300,7 +314,9 @@ whole the same way. `app/kept/` would not do for them, since `app/` is denied fo
 A file a commit could have brought is not a kept copy (B-F5, round 3). For a store declared must
 not be tracked, a file in its kept-copies place that git tracks or does not ignore is named by the
 doctor as a file git could have brought, which purlis did not make, and the doctor never says how
-to put it back. The check is the record's own (§5).
+to put it back. The check is the record's own (§5). A record R38's cure moved into the kept folder
+(`<record>.git-brought-<UTC>`, §5) is named the same way, by its name, since the kept folder is
+ignored (B-F1, round 5).
 
 **Set it aside is asked for by the store, never by a path** (B-F13). The window's press and the
 person's terminal (D-F10) name a declared store by its short id, and for a store keyed per chat,
@@ -364,7 +380,11 @@ sentence. `{what}` is the store's own name for itself, such as "your extension a
   fresh record would let through what the person refused, the fail-closed answer holds and writes
   refuse. Its sentence is "purlis cannot read {what}: they are damaged. Nothing was changed. Set
   them aside to start fresh." (E41, round 3). Set it aside and start fresh is offered on the
-  person's press, and its cost line names what is forgotten. This holds for
+  person's press, and its cost line names what it lets through, not only what is forgotten (E71,
+  round 5). Where the person's own press already repairs such a record today (the Skill studio's
+  Accept, for the level records and `unaccepted.json`), that press stays the remedy for Damaged and
+  writes through the store's call that replaces a Damaged record on the person's press (§1), so
+  "writes refuse" holds for every other writer (C-F1, round 5). This holds for
   `.charter/app/dispatch-never.json`, the one deny among dispatch's records, and for
   `runners-unsandboxed.json`, whose fail-closed answer is that every runner counts as tainted.
   Each store's ticket checks its own record for the same property, and says in its pull request
@@ -377,7 +397,8 @@ sentence. `{what}` is the store's own name for itself, such as "your extension a
   than granting more, are refused the same way (R31): the runner's `waits.json`, whose fresh record
   makes the next start retire every queued message, and `runners.json` and `runners-left.json`,
   whose fresh record forgets every pool and runner while their containers run. Their Set it aside
-  names what is lost.
+  names what is lost. `peers.json`, whose fresh record lets a second pairing through, is refused
+  the same way (R13; C-N5, round 5).
 - **Unreadable: refused, and never touched.** "purlis cannot read {what}: {cause}. Nothing was
   changed. Make it a plain file purlis can read, or move it aside." These are the words the
   machine store already says for this case (`docs/plane-format.md`, ruled 2026-11-08). Its way
@@ -458,8 +479,9 @@ to the doctor, which lists each one (R26).
   home, and `stopped_on_disk`, `journal`, `last`, the append, `OnDisk::last_stop`, `rearm_by` and
   the window's `look` all call it. Every rule here applies per spelling, and a re-arm is appended
   to each spelling whose journal ends on a stop or on a line this build cannot read. The journal
-  gets a lock, which a re-arm holds from the marker's removal to its line; a stop is never refused
-  for it, since the marker holds the stop;
+  gets a lock, in the session host's folder, which no chat opens (B-N1, round 5), and a re-arm holds
+  it from the marker's removal until every spelling's line is written (D-F7, round 5); a stop is
+  never refused for it, since the marker holds the stop;
 - an Unreadable journal (a link, not a regular file, or one this process may not read) with the
   marker present counts as halted. Re-arm then refuses, since its line cannot be written, with the
   Unreadable sentence naming the journal: "purlis cannot read its record of stops: {cause}. Make
@@ -470,7 +492,8 @@ to the doctor, which lists each one (R26).
   stopped in memory and the marker is gone, without reading the journal. A window stopped in
   memory that finds the marker gone now reads the journal's end, which is in a folder no chat
   opens:
-  - if it ends on a re-arm this build can read, written after the stop this window holds, and no
+  - if it ends on a re-arm this build can read, written after the stop this window holds (its `at`
+    not before the window's note of its stop, at the journal's one-second grain; D-F7, round 5), and no
     spelling's journal ends on a stop or on a line this build cannot read, the window follows the
     re-arm and runs again;
   - if it ends on a line this build cannot read, the window stays halted with the first rule's
@@ -505,21 +528,27 @@ no hour and no turn time, since neither is known (D-F14, round 3).
   | keys read, no key for it (R17) | kept, undelivered (below) | no |
 
   Every path that removes a queued message keeps what this table keeps: the window's drain
-  (`app/src-tauri/src/dispatched.rs:1035`, `drain_locked`), the host's retire pass
-  (`dispatchqueue.rs:724`, `drop_unchecked`, which both call), an ended chat's `forget`
+  (`app/src-tauri/src/dispatched.rs:1035`, `drain_locked`), the runner host's own drain, `carry`
+  (`hookwire/relay/carrying.rs:201`), which carries a chat's queue to the window on a runner (D-F1,
+  round 5), the host's retire pass (`dispatchqueue.rs:724`, `drop_unchecked`, which the drains call
+  too), an ended chat's `forget`
   (`hookwire/spool.rs:1594`) and the report of an ended chat's queue
   (`dispatchqueue/undelivered.rs:153`, `set_aside`) (D-F2, D-F4). An ended chat whose queue holds
   a kept message keeps its key and its queue, as a chat whose messages could not be set aside does
   today (`hookwire/spool.rs:1601`), so a newer purlis can check the message; a chat given that
   number later gets a fresh queue only once the old one is empty or removed (R30). The key is kept
   on every path that drops keys, the drain's "a chat keeps the key it was issued last" included
-  (D-F5, round 4).
+  (D-F5, round 4). The messages that check behind a held one are still reported once when their
+  chat ends, or moved to its new number when it is started again (`dispatchqueue.rs:428`, `moved`);
+  only the held messages stay (D-F2, round 5).
 - **The delivered floor never passes a message that holds the drain** (D5). Today a delivery raises
   the chat's floor (`dispatchqueue.rs:630`, against `delivered_floor`), and a message at or below it
   is then dropped as delivered (`hookwire/relay/carrying.rs:402`). **A chat's drain stops at the
   lowest message that holds it** (R16, and the table above), as it already stops at the lowest
   `.part` (`dispatchqueue.rs:583`). Later messages wait, and the floor never rises past it, so the
-  floor keeps its second job: no copy of a delivered message is delivered twice. The person can
+  floor keeps its second job: no copy of a delivered message is delivered twice. Both drains stop,
+  the window's and the runner host's `carry`, and a sender whose fresh message waits behind a held
+  one is told it is queued, not delivered, by each (D-F1, round 5). The person can
   remove a held message, whose path is listed, to unblock the queue. There is no format change.
 - **Where a held message is listed** (R26). The person's surface is `purlis doctor`: each skipped,
   Unreadable, refused or keyless message by chat, seq and path, what it holds of its queue, and the
@@ -673,8 +702,19 @@ profiles" and "your MCP server approvals" (E46, round 3). The path and the cause
 detail, as "git tracks this file" or "git does not ignore this file". Each cause draws the
 remedies that cure it (E46): a record git does not ignore offers a press labelled "Ignore them in
 git", which adds the line where `purlis doctor --fix local-ignore` adds it (`profiles.rs:1501`)
-and says so in its detail; a tracked record offers Copy command for `git rm --cached <file>` and
-the same press. The check uses `profiles`' hardened git runner (`profiles.rs:1588`,
+and says so in its detail; a tracked record draws only that press, and Copy command for
+`git rm --cached <file>` once the record has been moved, when only the index holds it. **A record git brought is never read again as the
+person's (R38).** Its cure, the "Ignore them in git" press and the doctor's fix alike, first moves the record into the held kept
+folder (`<state folder>/app/kept/`, §1) as `<record>.git-brought-<UTC>`, with the store's no-replace
+rename, then adds the ignore line; `git rm --cached` then only clears the index. The record reads
+Absent, so every harness and MCP server in that project asks once, and "then approve again" is
+true. The moved file is marked as brought by git and never offered back. A record someone untracked
+by hand is still brought by git: one git no longer tracks whose content, hashed as git would store it
+(`git hash-object --path=<path>`, so a committed line-ending rule cannot dodge the compare), equals
+the blob the index or `HEAD` holds for its path approves nothing, and its cure moves it the same way, so `git rm --cached`
+run first never makes the committed entries stand. Only a record that is not ignored, untracked and
+matching no such blob keeps its entries, since a clone cannot bring an untracked file (B-F1, round
+5; P1, regression check). The check uses `profiles`' hardened git runner (`profiles.rs:1588`,
 `git_ignore_state`): if git cannot answer (missing, timed out, failed), nothing is approved, with
 sentences of its own: the standing line is "purlis could not ask git whether it could share
 {what}: {cause}. It ignores them until git answers.", and an Approve pressed meanwhile ends
@@ -771,7 +811,8 @@ compared with the baseline again: at worst one more ask, never a wider grant.
 
 ### 7. One re-ask, as one Notice (R4, gap 14)
 
-**Every code approval asks in one place: a `Notice`, the code-approval Notice**, following
+**Every code approval asks in one place, except the new-chat picker, which approves a harness in
+place (R34; E78, round 5): a `Notice`, the code-approval Notice**, following
 ADR 0112's "one notice for one need". It is built from the `Notice` family
 (`app/src/Notice.tsx`). Its cause key is `code-approval:<adapter>:<key>:<digest>`, where the
 digest is of what the Notice shows (the fingerprints and the reach), so it settles when the
@@ -797,7 +838,8 @@ is in `KEPT` (`app/src/keptCauses.ts:19`), with the core as its source. It says:
   project", E49), or, for a Regenerate entry that exists with no stamp or in the old framing,
   "purlis now records this approval with its artifact, so it asks once more." (E48), or what changed: its code
   ("Its template changed since you approved it." for a page, "It changed since you approved it."
-  for an extension, "Its command changed since you approved it." for a harness), its pin and who
+  for an extension and for a harness, whose kind, command, environment or any byte of its
+  declaration may be what changed (E76, round 5)), its pin and who
   changed it ("{who} changed its pin since you approved it.", from git history, with "Someone" when
   nobody is known, as today), or its reach, as "Now also reads" and "No longer reads" (E62, round
   4);
@@ -825,7 +867,8 @@ is in `KEPT` (`app/src/keptCauses.ts:19`), with the core as its source. It says:
   (R27). The card that knows its subject is the new-chat picker's summary of the picked row, which
   shows "Approved", "Not approved" or "Changed since you approved it"; its "Review and approve…"
   raises the subject's Notice when none is up, since it is the person's press, and clears a kept
-  dismissal when one is (E60, round 4).
+  dismissal when one is (E60, round 4). The picker is a modal dialog with the Notice behind it, so the
+  press closes the picker and opens Notices on that Notice (E75, round 5).
 
   **Where a harness is approved today, and where it will be** (R34; E59, C-F1, round 4). The
   window approves a harness in four places (`approve_profile`). **The new-chat picker** keeps its
@@ -865,7 +908,9 @@ with no amendment of ADR 0121 needed:
   the ✋, listed in Asks under its project, and notified, like every Blocking ask;
 - a chat is **held** from a start the window made that was refused for this subject, until the
   subject is approved, the ask is answered Not now, the start is cancelled, or the project closes
-  (R21);
+  (R21). When the subject becomes Approved by any press (the picker's in-place approve, the Notice
+  or the ask, in any window), every chat held on it starts through the full launch gate, as
+  "Approve and start" starts them (E74, round 5);
 - its answers are Approve, sent the fingerprints the row showed, and **Not now**, kept in memory
   while the project is open, as a persona's Allow has (R21). Not now puts away the ask for the
   starts already refused; a new start press for the subject clears Not now, is a new hold, and
@@ -876,13 +921,18 @@ with no amendment of ADR 0121 needed:
   (`app/src-tauri/src/asking.rs:3892`, `sign_in`) and the persona's Allow (`PersonaAllow`, with its
   Not now, `persona_allow_not_now` at `:5184`), not as a second model (C-F3, round 3);
 - it is never offered a rule, and never answered by a rule, by Quiet, by a timeout or by a bulk
-  triage action. Only a connection that holds the approval scope answers it, never one from a
-  chat's process tree (B-F8);
+  triage action. It is answered only by the window's own command (the `local-ui` scope,
+  `app/src-tauri/src/asking.rs:1257`, `the_window`), as the persona's Allow is; `purlis inbox`
+  (the `approval` scope) may list it and never answers it, and no connection from a chat's process
+  tree does (B-F8; B-F2, round 5);
 - the Notice and the row show the profile's whole line, and Approve is refused when what would be
   shown now differs. "Approve and start" approves, then starts through the full launch gate, so a
   declaration changed in between starts nothing and asks again (B-F8);
-- the start's press opens Asks on the subject's row, and no second Notice is raised for the
-  refusal. The row keeps the sentence about what is typed and not sent (E18);
+- the start's press opens Asks on the subject's row, under Project, where an ask of no chat is
+  listed, and no second Notice is raised for the refusal. The row says, under the profile's line,
+  one line per held start: "{named}: starts with {typed} typed and not sent.", or for a restart,
+  which types nothing, "{name}: starts again." Today's dialog clause about recording on this machine
+  goes, since the why line says where the approval is kept (E18; E77, E81, round 5);
 - **a refused `purlis dispatch` holds nothing and raises no ask, Notice or notification** (R27,
   E38). It exits 1 with today's sentence shape, pointing at the new-chat picker. **Its words are
   today's, unchanged (R37):** R27 recorded them as "…Start one chat on it from the new-chat picker,
@@ -1016,7 +1066,7 @@ the same press as B1's.
   spooled under `v: 1`, is closed only where the spool is a record: a spool line is a row and
   is placed, skipped and kept like any row. The live wire stays as it is.
 
-### 10. The migration: two added keys, two new folders, no other format change
+### 10. The migration: two added keys, new folders, no other format change
 
 - **Every existing file keeps its name, place, tier and shape.** The page record and the
   Regenerate record stay two files. The ledger joins them by the key they already share, so no
@@ -1025,9 +1075,10 @@ the same press as B1's.
 - **Two keys are added, additively:** `reach` on a page approval's entry (§6), and the template
   stamp on a Regenerate approval's entry (§8). `docs/plane-format.md` records each before the
   code writes it, as the repository's rules require. No `written_by` key is added (Q1).
-- **Two folders are added:** the dispatch queue's `refused/` (§2), and `<state folder>/app/kept/`,
-  which holds the kept copies of rows 4, 5 and 6 (R25, §1), each with its entry and tier in
-  `docs/plane-format.md`; and the kept copies (`<file>.unread*`, `<file>.set-aside-*`), which take
+- **Four folders are added:** the dispatch queue's `refused/` (§2); `<state folder>/app/kept/`,
+  which holds the kept copies of rows 4, 5 and 6 (R25, §1) and a record R38's cure moved; and, by
+  R35, `<state folder>/vaults/kept/` and `<config home>/purlisd/kept/`; each with its entry and tier
+  in `docs/plane-format.md` (A-N5, round 5); and the kept copies (`<file>.unread*`, `<file>.set-aside-*`), which take
   their store's tier and are recorded there before any real store moves (A-F9, round 3).
 - **The approval records' `version: 1` is read at last.** 1, or absent, is Understood. A higher
   version is refused and kept (R2). The two harness approval records have no version, and they
@@ -1140,14 +1191,15 @@ device-bound by its tier, not keyed by the device id.
 - **Give the MCP record a server key** (C6), so it could answer Changed. It is a format change,
   and R11 declined it.
 
-## Decisions on Q1 to Q16, R6 to R11 and R12 to R37
+## Decisions on Q1 to Q16, R6 to R11 and R12 to R39
 
 The operator decided Q1 to Q16 on 2026-11-15, after the draft, and R12 to R24 on the same day,
 after review round 2. R25 to R28 were decided on 2026-11-16, after review round 3, each as
 recommended (their points were P14 to P17), and R29 to R33 on the same day, on the five points the
 round-3 fold left open (P18 to P22), each as recommended. R34 to R36 were decided on the same day,
 after review round 4, each as recommended (P23 to P25), and R37 on 2026-11-17, on the one point
-the round-4 fold left open (P26), as recommended. "Default" means the operator took
+the round-4 fold left open (P26), as recommended, and R38 and R39 on 2026-11-18, after review round
+5 (P27 and P28). "Default" means the operator took
 the draft's recommendation. "Changed" means the operator chose an alternative. "Reverted" and
 "narrowed" mean a ruling of review round 1 changed it.
 
@@ -1211,7 +1263,7 @@ the draft's recommendation. "Changed" means the operator chose an alternative. "
   and under `$PURLIS_HOME`. The copy aside is an exclusive, no-follow `0600` create through the
   gated walk, with a counter suffix when the name is taken. R25 drops the prefix denial and the
   amendment of ADR 0067.
-- **R15, a tracked approval record.** Approve refuses while the record is tracked or not ignored.
+- **R15, a tracked approval record; narrowed by R38.** Approve refuses while the record is tracked or not ignored.
   The sentence says git could share the approvals, so stop git tracking them, then approve again,
   with the path and the cause in the detail. The window adds the ignore line, or offers Copy
   command. If git cannot answer, nothing is approved; outside a repository the record passes. The
@@ -1301,6 +1353,14 @@ the draft's recommendation. "Changed" means the operator chose an alternative. "
   the persona view's line through `APPROVE_IT`, the wiring refusal, and the doctor's line), and
   the recorded scenarios `dispatch-on-a-profile-nobody-approved-is-refused` and
   `doctor-a-profile-nobody-approved-is-not-probed` do not move (E49, E61, round 4).
+- **R38 (P27), R15's cure; narrows R15.** purlis's cure for a tracked approval record moves the
+  record into the held `kept/` folder (R25, R35), marked as brought by git and never offered back.
+  The record then starts empty, so every harness and MCP server in that project asks once. Test 38
+  asserts each entry stands New afterwards. Story 36 holds (B-F1, round 5).
+- **R39 (P28), the process.** Review round 5 is folded whole, every should-fix and nit included, as
+  each review file proposes. One reviewer then checks only the folded fixes and the tickets they
+  touch, for regressions. If that check is clean, building starts from the frontier (#6707, #6708).
+  There is no full round 6.
 
 ## New questions for the operator (decided)
 
