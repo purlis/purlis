@@ -184,44 +184,24 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
         "the project's [policy] did not read: {:?}",
         standing.refused
     );
-    if !standing.waiting.is_empty() {
+    // The window offers the press where the project runs looser than what the person accepted,
+    // and where an acceptance kept for it no longer holds: a scenario that makes its project's
+    // folder again, at the same path, is another clone to purlis, which reads what was accepted
+    // for the one before as broken until the person accepts again.
+    if !standing.waiting.is_empty() || standing.unsealed {
         press(standing.digest);
     }
     let at_start = purlis_core::enforcement::at_start(root);
     let standing = purlis_core::enforcement::standing(root);
-    let kept = purlis_core::sandbox::local::path(root);
-    let beside = kept.parent().map_or_else(String::new, |dir| {
-        std::fs::read_dir(dir).map_or_else(
-            |why| format!("not listed ({why})"),
-            |entries| {
-                entries
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            },
-        )
-    });
-    let on_disk = std::fs::read_to_string(&kept).map_or_else(
-        |why| format!("not read ({why})"),
-        |text| text.chars().take(1200).collect::<String>(),
-    );
     assert_eq!(
         at_start,
         resolved_under(template, root),
-        "a chat in the project starts under {} as the scenario asked: {} (an acceptance that does not hold: {}; what the file refused: {:?}; what a press would lift: {:?}; the denies in force: {:?}; this process can seal: {}; its record {}: {}; beside it: [{}]; the project has .git: {}; its key now: {})",
+        "a chat in the project starts under {} as the scenario asked: {} (an acceptance that does not hold: {}; what a press would lift: {:?}; the denies in force: {:?})",
         template.word(),
         at_start.spelled(),
         standing.unsealed,
-        standing.refused,
         standing.lifted,
-        purlis_core::enforcement::denies_in_force(root),
-        purlis_core::secrets::seal::can_seal(),
-        kept.display(),
-        on_disk,
-        beside,
-        root.join(".git").symlink_metadata().is_ok(),
-        purlis_core::sandbox::local::clone_key(root)
+        purlis_core::enforcement::denies_in_force(root)
     );
     if template == Template::Strict {
         assert_eq!(

@@ -1282,27 +1282,11 @@ pub enum PolicyAccepted {
     Broken,
 }
 
-/// **The acceptance is read and written one thread at a time**: its anchor is kept before its
-/// record is written ([`accept_policy`]), so a read between the two, or a second write that read
-/// the same counter, would find an acceptance that does not hold and read it as `strict`. Held
-/// for the one read or write, never across another.
-fn trace(line: &str) {
-    use std::io::Write;
-    let _ = writeln!(std::io::stderr(), "ACCEPTTRACE {line}");
-}
-
-fn accepting() -> std::sync::MutexGuard<'static, ()> {
-    static ONE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    ONE.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-}
-
 /// **This person's acceptance of the project's `[policy]` at `root`.** The file's own seal must
 /// hold, and so must the copy of that seal the app keeps in the keyring
 /// ([`crate::secrets::seal::keep`]): an older sealed record put back (its counter is behind) or
 /// one removed reads as [`PolicyAccepted::Broken`] wherever the keyring remembers one was kept.
 pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
-    let _one_at_a_time = accepting();
     // A seal key another program made seals nothing (the re-review of #6992, S4).
     if crate::secrets::seal::key_is_foreign() {
         return PolicyAccepted::Broken;
@@ -1320,19 +1304,6 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         || crate::secrets::seal::kept_holds(POLICY_KIND, &clone, ""),
         |text| crate::secrets::seal::kept_holds(POLICY_KIND, &clone, text),
     );
-    trace(&format!(
-        "read root={} real={} id={} thread={:?} key={} anchor={} file_there={} sealed={} kept={:?} accepted={}",
-        root.display(),
-        super::real(root).display(),
-        identity_of(&super::real(root)),
-        std::thread::current().name(),
-        clone_key(root),
-        clone,
-        path(root).exists(),
-        sealed.is_some(),
-        kept,
-        held.policy_accepted.is_some()
-    ));
     match (sealed, kept, held.policy_accepted) {
         // Sealed, and the keyring keeps this very one. A sealed record with no anchor is one
         // the keyring never saw kept, or whose anchor was taken away: broken (the re-review of
@@ -1372,7 +1343,6 @@ pub fn accept_policy(
     // the person has deleted since, or a keyring that answers now. Where it is still another
     // program's, the sentence says how to recover.
     crate::secrets::seal::ready_to_seal().map_err(io::Error::other)?;
-    let _one_at_a_time = accepting();
     let clone = anchor_key(root);
     let counter = read(root).policy_counter + 1;
     let text = policy_text(counter, &accepted);
@@ -1387,20 +1357,11 @@ pub fn accept_policy(
             "purlis could not keep the acceptance's seal in the keyring, so nothing was accepted",
         ));
     }
-    let done = change(root, |held| {
+    change(root, |held| {
         held.policy_accepted = Some(accepted);
         held.policy_seal = Some(seal);
         held.policy_counter = counter;
-    });
-    trace(&format!(
-        "accept root={} key={} anchor={} counter={counter} wrote={:?} git={}",
-        root.display(),
-        clone_key(root),
-        clone,
-        done.as_ref().map_err(ToString::to_string),
-        root.join(".git").symlink_metadata().is_ok()
-    ));
-    done
+    })
 }
 
 /// The upstream commit purlis's own fetch of the project at `root` found, where one was kept.
