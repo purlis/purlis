@@ -245,7 +245,10 @@ pub(crate) fn finish(
         // one that merely closed, which may be resumed, and never another window's live chat.
         let open_here = |id: &str| held.chats().id_is_open(id);
         match crate::chatbrowsers::chats_that_exist(held.root(), &back, &open_here) {
-            Some(exists) => held.browsers().prune_answers(&exists),
+            Some(exists) => held.browsers().prune_answers(
+                &exists,
+                crate::chatbrowsers::answers_spared_since(held.root()),
+            ),
             None => tracing::warn!(
                 "purlis: a chat record did not read, so no kept browser answer was dropped"
             ),

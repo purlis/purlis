@@ -42,6 +42,15 @@ use super::{
     kept_reach,
 };
 
+/// What a chat's reach is, as a kept answer is checked against it.
+enum ReachNow {
+    /// No answer was kept, or no reach was asked for: nothing to check.
+    NotChecked,
+    /// Asked for, and not known (its sandbox's compile was not recorded).
+    Unknown,
+    Known(purlis_core::browserposture::Reach),
+}
+
 /// **Whose a browser is, as its window note says** (#2025).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "owner", rename_all = "snake_case")]
@@ -158,14 +167,7 @@ impl ChatBrowsers {
     }
 
     /// **Chat `session` is `id`** (ADR 0066), as the app's record of it says: what its browsers'
-    /// notes name it by (#2025). It restores no answer kept for the chat: that needs the chat's
-    /// reach ([`Self::identify_for`]).
-    #[cfg(test)]
-    pub fn identify(&self, session: u32, id: Option<String>) {
-        self.identified(session, id, None);
-    }
-
-    /// **[`Self::identify`], restoring the answer the person gave this chat before a restart**
+    /// notes name it by (#2025), **restoring the answer the person gave this chat before a restart**
     /// (#7190), checked against the chat's current reach (`reach`) before it is used: where the
     /// reach narrowed since the chat was asked, the answer is not used and is removed, and the
     /// chat's next call asks again. **Where the reach is not known** (`reach` answers `None`: its
@@ -177,26 +179,18 @@ impl ChatBrowsers {
         id: Option<String>,
         reach: &dyn Fn() -> Option<BrowserReach>,
     ) {
-        self.identified(session, id, Some(reach));
-    }
-
-    fn identified(
-        &self,
-        session: u32,
-        id: Option<String>,
-        reach: Option<&dyn Fn() -> Option<BrowserReach>>,
-    ) {
         // Found by its identity alone, so only this chat's, and read before the chats' lock.
         let kept = id
             .as_deref()
             .zip(self.answers_in.as_deref())
-            .zip(reach)
-            .and_then(|((id, root), _)| purlis_core::browserposture::kept(root, id));
-        // `Some(None)`: asked for, and not known.
-        let now = kept
-            .as_ref()
-            .and(reach)
-            .map(|reach| reach().map(|reach| kept_reach(&reach)));
+            .and_then(|(id, root)| purlis_core::browserposture::kept(root, id));
+        let now = if kept.is_some() {
+            reach().map_or(ReachNow::Unknown, |reach| {
+                ReachNow::Known(kept_reach(&reach))
+            })
+        } else {
+            ReachNow::NotChecked
+        };
         let (found, stale) = {
             let mut chats = self.lock();
             let chat = chats.entry(session).or_default();
@@ -204,11 +198,11 @@ impl ChatBrowsers {
             match (chat.posture, kept) {
                 // Only where it has not been asked since, and its reach is no narrower now.
                 (Posture::Unasked, Some(kept)) => {
-                    let narrowed = match now.as_ref() {
+                    let narrowed = match &now {
                         // Its reach is not known: the answer waits, kept, for a call that knows.
-                        Some(None) => return,
-                        Some(Some(now)) => now.narrower_than(&kept.reach),
-                        None => false,
+                        ReachNow::Unknown => return,
+                        ReachNow::Known(now) => now.narrower_than(&kept.reach),
+                        ReachNow::NotChecked => false,
                     };
                     if narrowed {
                         (false, true)

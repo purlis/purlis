@@ -31,8 +31,9 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    that knows it. A closed chat is not a chat that no longer exists: it may be resumed and keeps
    its answer. The answer goes when purlis lets go of the chat's record, which purlis checks when
    it starts against the record of open chats as it is on disk, the closed chats' records and the
-   chats open, so another window's live chat is never pruned; where a record does not read,
-   nothing is pruned. Both stores are written whole through a temp file renamed over
+   chats open, so another window's live chat is never pruned, and an answer given after the
+   record of open chats was last written is spared, since it may be a chat another window
+   started; where a record does not read, nothing is pruned. Both stores are written whole through a temp file renamed over
    them, under a lock file beside each, so two purlis processes never drop one another's change. There is
    no "for every chat of this persona": that is what Always is, and it is the person's own
    setting. *Why:* the answer is a consent given for one chat's task, so it is bound to that chat
@@ -40,19 +41,22 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
 3. **The pool-login opt-in survives a restart, on this machine only.** It is kept in
    `pool-login-optins.json` in this machine's config folder, 0600, with what it was given for:
    the persona, the login as declared (by identity, with its declared name for the Granted list),
-   the pool, the pool's definition and image, the runner's device, key and image, and the engine,
-   which for a pool on another machine is the pin as trusted (ADR 0123 §5). **The person's mark
-   is not in what it is bound to:** it is checked at every login, as for any login on that pool
-   (`Bound::over_the_link`), and an opt-in stands only where the runner is shown to be theirs at
-   that moment. **Any change to the bound facts asks again**, and so does taking the mark back,
-   forgetting the pool, or the person's Remove on the Granted list (audited as a revoke). A
-   removal the store cannot take (another process holds it) is reported, and the opt-in no longer
-   applies: it is recorded as removed in a list beside the store, which is never read past. It has no time limit,
+   the pool, the pool's definition and image, the runner's device, key and image, the engine,
+   which for a pool on another machine is the pin as trusted (ADR 0123 §5), **and the person's
+   mark** (#7190: the opt-in is bound to the pin with the person's mark). **Any change to the
+   bound facts asks again**, and so does taking the mark back or giving it again, forgetting the
+   pool, or the person's Remove on the Granted list (audited as a revoke). A removal the store
+   cannot take (another process holds it) is reported, and the opt-in no longer applies: it is
+   recorded as removed in a list beside the store, which is never read past. **That list fails
+   closed:** where it cannot be read (a link, a folder, not text, cut short or full) no kept
+   opt-in applies and the person is asked again; a removal that could not be written down holds
+   for this run only, and the person is told so. It has no time limit,
    is never synced, committed or sent to a runner, and holds no value of any login. A Keep off
    is not kept: a refusal holds for the run alone, and replaces the opt-in it contradicts. A
    runner never holds a value or a kept login (#2021). *Why:* the opt-in was asked again at every
-   restart for the same pool and persona; the person's trust is in a pool as they pinned it,
-   so binding it to that pin keeps the question exactly where something moved.
+   restart for the same pool and persona; the person's trust is in a pool as they pinned it and
+   marked it, so binding it to that pin and mark keeps the question exactly where something
+   moved.
 4. **A runner browser's cookies live as long as the browser, and no jar is saved.** Its
    data folder is where the engine keeps them, and the host removes it when the browser ends.
    A test covers the engine ending by itself; a close and a stop end the browser the same way
@@ -67,9 +71,12 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    machine did not answer for is told to the person as left running there until its runner is
    removed. The log's word is `person` (`browser.closed`), not a new one: the person's own act
    ended it, and `docs/plane-format.md`'s record of the event log is unchanged.
-6. **Browser starts on different runners do not queue behind one another.** The window-wide
-   start lock is gone. A start takes its runner's gate (by pool, not link, so a reconnected link keeps
-   it) for the host's count against its budget alone, and holds a slot until its start answers,
-   so two starts cannot both take the last place, a long engine download does not hold the next
-   start, and a start on another runner waits for neither. A start that waits says so in the
-   window's Notice, and Cancel refuses it as it gets its turn (#7187 item 8).
+6. **Browser starts on different engines do not queue behind one another.** The window-wide
+   start lock is gone. A start takes the gate of its runner's engine (not its pool and not its
+   link: two pools on one engine share one gate, and a reconnected link keeps it) for the
+   host's count against its budget alone, and holds a slot until its start answers, so two starts
+   cannot both take the last place, a long engine download does not hold the next start, and a
+   start on another engine waits for neither. A gate goes when the last pool on its engine is
+   removed or forgotten, by either path, and no start holds it; while one does, a pool added
+   again on that engine finds the same gate, so nothing is counted twice. A start that waits
+   says so in the window's Notice, and Cancel refuses it as it gets its turn (#7187 item 8).

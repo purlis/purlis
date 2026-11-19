@@ -38,6 +38,7 @@ fn bound(definition: &str, image: &str) -> Bound {
         runner_image: image.into(),
         pod: String::new(),
         engine: "this machine's Docker".into(),
+        marked: false,
     }
 }
 
@@ -100,7 +101,7 @@ fn an_answer_given_before_the_chats_identity_was_known_is_kept_once_it_is() {
     first.allow(3, false);
     assert!(!purlis_core::browserposture::path(root.path()).exists());
 
-    first.identify(3, Some(CHAT.into()));
+    first.identify_for(3, Some(CHAT.into()), &|| None);
 
     assert_eq!(
         window(root.path(), config.path(), CHAT).posture(3),
@@ -190,7 +191,7 @@ fn a_prune_drops_only_chats_purlis_has_no_record_of() {
     let open_here = |id: &str| id == HERE_ID;
 
     let exists = chats_that_exist(root.path(), &[], &open_here).expect("the records read");
-    window.prune_answers(&exists);
+    window.prune_answers(&exists, u64::MAX);
 
     let kept = |chat| purlis_core::browserposture::kept(root.path(), chat).is_some();
     assert!(kept(HERE_ID), "a chat open in this window");
@@ -200,6 +201,37 @@ fn a_prune_drops_only_chats_purlis_has_no_record_of() {
     );
     assert!(kept(CLOSED_ID), "a closed chat may be resumed");
     assert!(!kept(GONE_ID), "no record of it any more");
+}
+
+#[test]
+fn an_answer_given_after_the_record_was_written_is_not_pruned_for_want_of_a_record() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    records(root.path(), OTHER_WINDOWS, CLOSED_ID);
+    // Another window's chat answered after the record was last written: no record names it yet.
+    keep_off_for(root.path(), &[GONE_ID]);
+    let window = ChatBrowsers::default().keeping_answers(root.path(), Some(config.path()));
+    let exists = chats_that_exist(root.path(), &[], &|_| false).expect("the records read");
+
+    window.prune_answers(
+        &exists,
+        crate::chatbrowsers::answers_spared_since(root.path()),
+    );
+
+    assert!(purlis_core::browserposture::kept(root.path(), GONE_ID).is_some());
+
+    // The record written again after it, and it still names no such chat: that one is gone.
+    let later = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
+    std::fs::File::options()
+        .write(true)
+        .open(purlis_core::reopen::path(root.path()))
+        .unwrap()
+        .set_modified(later)
+        .unwrap();
+    window.prune_answers(
+        &exists,
+        crate::chatbrowsers::answers_spared_since(root.path()),
+    );
+    assert!(purlis_core::browserposture::kept(root.path(), GONE_ID).is_none());
 }
 
 #[test]
@@ -265,7 +297,7 @@ fn an_answer_that_rests_on_a_personas_always_is_not_kept() {
     let as_persona = as_persona("steward", None, None);
     answered_as(&first, &hosted, &ask(3, click()), &as_persona);
     assert_eq!(first.allow_always("steward", false), [3]);
-    first.identify(3, Some(CHAT.into()));
+    first.identify_for(3, Some(CHAT.into()), &|| None);
 
     assert_eq!(
         window(root.path(), config.path(), CHAT).posture(3),
@@ -291,7 +323,7 @@ fn what_is_kept_is_written_under_this_machines_state_and_config_never_the_plane(
         false,
         1,
     );
-    first.answer_pool_login(3, true);
+    first.answer_pool_login_told(3, true);
 
     let mut written = Vec::new();
     for folder in [root.path(), config.path()] {
@@ -343,7 +375,7 @@ fn a_pool_login_opt_in_survives_a_restart_and_a_changed_pool_asks_again() {
             1,
         )
         .unwrap_err();
-    first.answer_pool_login(3, true);
+    first.answer_pool_login_told(3, true);
 
     let restarted = window(root.path(), config.path(), CHAT);
 
@@ -401,7 +433,7 @@ fn the_granted_list_names_an_opt_in_and_remove_makes_the_next_login_ask() {
             1,
         )
         .unwrap_err();
-    first.answer_pool_login(3, true);
+    first.answer_pool_login_told(3, true);
 
     let restarted = window(root.path(), config.path(), CHAT);
     assert_eq!(restarted.pool_login_grants().len(), 1);
@@ -547,7 +579,7 @@ fn answers_of_chats_that_no_longer_exist_are_pruned_when_the_window_starts() {
     .unwrap();
 
     let restarted = ChatBrowsers::default().keeping_answers(root.path(), Some(config.path()));
-    restarted.prune_answers(&|chat| chat == CHAT);
+    restarted.prune_answers(&|chat| chat == CHAT, u64::MAX);
 
     assert!(purlis_core::browserposture::kept(root.path(), CHAT).is_some());
     assert_eq!(

@@ -3049,6 +3049,7 @@ fn a_pool_as(image: &str) -> purlis_core::poollogins::Bound {
         runner_image: image.into(),
         pod: String::new(),
         engine: "this machine's Docker (/var/run/docker.sock)".into(),
+        marked: false,
     }
 }
 
@@ -3109,7 +3110,7 @@ fn once_the_person_allows_a_login_on_the_pool_that_login_goes_ahead_and_no_other
     let _ = on_the_pool(&browsers, 5, "steward", &pool, "bank-login", false, 1000);
     let _ = on_the_pool(&browsers, 6, "reviewer", &pool, "shop-login", false, 1000);
 
-    let answered = browsers.answer_pool_login(3, true);
+    let answered = browsers.answer_pool_login_told(3, true).0;
 
     let sessions: Vec<u32> = answered.iter().map(|one| one.session).collect();
     assert_eq!(
@@ -3127,7 +3128,7 @@ fn once_the_person_allows_a_login_on_the_pool_that_login_goes_ahead_and_no_other
         "another persona is asked apart"
     );
     assert!(
-        browsers.answer_pool_login(4, true).is_empty(),
+        browsers.answer_pool_login_told(4, true).0.is_empty(),
         "chat 4 was answered with chat 3"
     );
 }
@@ -3137,7 +3138,7 @@ fn a_login_that_waited_for_the_window_is_asked_afresh_though_it_was_allowed() {
     let browsers = ChatBrowsers::default();
     let pool = a_pool_as("aaaa");
     let _ = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", false, 1000);
-    browsers.answer_pool_login(3, true);
+    browsers.answer_pool_login_told(3, true);
 
     let waited = on_the_pool(&browsers, 3, "steward", &pool, "shop-login", true, 2000);
 
@@ -3158,7 +3159,7 @@ fn a_changed_pool_image_asks_for_the_opt_in_again() {
         false,
         1000,
     );
-    browsers.answer_pool_login(3, true);
+    browsers.answer_pool_login_told(3, true);
 
     let moved = on_the_pool(
         &browsers,
@@ -3188,7 +3189,7 @@ fn keep_off_refuses_a_login_on_the_pool_until_it_changes() {
         false,
         1000,
     );
-    browsers.answer_pool_login(3, false);
+    browsers.answer_pool_login_told(3, false);
 
     let (why, raised) = on_the_pool(
         &browsers,
@@ -3236,7 +3237,7 @@ fn a_chat_that_closes_takes_its_pool_login_ask_with_it() {
 
     assert!(browsers.pool_logins_waiting().is_empty());
     assert!(
-        browsers.answer_pool_login(3, true).is_empty(),
+        browsers.answer_pool_login_told(3, true).0.is_empty(),
         "and answering it grants nothing"
     );
 }
@@ -3832,4 +3833,49 @@ fn a_site_the_persons_address_held_back_waits_as_its_chats_sites_ask() {
     assert_eq!(waits.len(), 1);
     assert_eq!(waits[0].session, 3);
     assert_eq!(waits[0].sites, [site("example.com:443")]);
+}
+
+// What a removal the machine could not take says (#7190, docs/ui-copy.md).
+
+fn not_taken(lasting: bool) -> purlis_core::poollogins::NotTaken {
+    purlis_core::poollogins::NotTaken {
+        why: std::io::Error::other("os error 28: No space left on device"),
+        lasting,
+    }
+}
+
+#[test]
+fn a_removal_not_taken_says_one_login_in_the_singular_and_shows_no_filesystem_error() {
+    let said = super::login_not_removed("shop", "builds", &not_taken(true));
+
+    assert!(
+        said.contains("the kept login shop on pool builds"),
+        "{said}"
+    );
+    assert!(said.contains("It no longer applies."), "{said}");
+    assert!(!said.contains("store"), "{said}");
+    assert!(
+        !said.contains("os error") && !said.contains("space"),
+        "{said}"
+    );
+    assert!(!said.contains("for this run only"), "it lasts: {said}");
+}
+
+#[test]
+fn a_removal_not_written_down_says_it_holds_for_this_run_only() {
+    let said = super::login_not_removed("shop", "builds", &not_taken(false));
+
+    assert!(said.contains("for this run only"), "{said}");
+    assert!(said.contains("restarts"), "{said}");
+    assert!(
+        !said.contains("store") && !said.contains("os error"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_pools_logins_not_removed_are_said_in_the_plural() {
+    let said = super::not_removed("the kept logins for pool builds", "They", &not_taken(true));
+
+    assert!(said.contains("They no longer apply."), "{said}");
 }

@@ -3621,6 +3621,7 @@ fn a_kept_opt_in(config: &std::path::Path, identity: &str, name: &str) {
             runner_image: "i1".into(),
             pod: String::new(),
             engine: "this machine's Docker".into(),
+            marked: false,
         },
     );
 }

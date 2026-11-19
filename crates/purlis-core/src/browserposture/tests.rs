@@ -219,7 +219,7 @@ fn answers_of_chats_that_no_longer_exist_are_pruned() {
         keep(dir.path(), chat, Answer::Off, &Reach::default()).expect("kept");
     }
 
-    let pruned = prune(dir.path(), |chat| chat.starts_with("alive")).expect("pruned");
+    let pruned = prune(dir.path(), |chat| chat.starts_with("alive"), u64::MAX).expect("pruned");
 
     assert_eq!(pruned, 2);
     assert!(
@@ -228,17 +228,34 @@ fn answers_of_chats_that_no_longer_exist_are_pruned() {
     assert_eq!(answer_of(dir.path(), "gone-1"), None);
     assert_eq!(answer_of(dir.path(), "gone-2"), None);
     assert_eq!(
-        prune(dir.path(), |_| true).expect("pruned"),
+        prune(dir.path(), |_| true, u64::MAX).expect("pruned"),
         0,
         "nothing more to prune"
     );
 }
 
 #[test]
+fn an_answer_given_since_the_record_was_written_is_spared() {
+    let dir = project();
+    keep(dir.path(), "another-window", Answer::Off, &Reach::default()).expect("kept");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
+    // A chat no record names yet, answered after the record was last written: not pruned.
+    assert_eq!(prune(dir.path(), |_| false, now - 5).expect("pruned"), 0);
+    assert!(answer_of(dir.path(), "another-window").is_some());
+    // Answered before it was: a chat the record let go of.
+    assert_eq!(prune(dir.path(), |_| false, now + 5).expect("pruned"), 1);
+    assert_eq!(answer_of(dir.path(), "another-window"), None);
+}
+
+#[test]
 fn pruning_with_nothing_kept_writes_nothing() {
     let dir = project();
 
-    assert_eq!(prune(dir.path(), |_| false).expect("pruned"), 0);
+    assert_eq!(prune(dir.path(), |_| false, u64::MAX).expect("pruned"), 0);
     assert!(walk(dir.path()).is_empty(), "no file, no lock file");
 }
 

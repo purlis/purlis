@@ -32,7 +32,8 @@
 //!   this machine's config folder (Machine, device-bound: never in a plane, never synced,
 //!   never committed), 0600, with the [`Bound`] it was given for. It has no time limit, and
 //!   is read as it stands: any change to what it is bound to (the persona, the pool, the
-//!   pool's definition and image, the runner, and the pin with the person's mark) is
+//!   pool's definition and image, the runner, and the pin with the person's mark: taking the
+//!   mark back or giving it again) is
 //!   [`Standing::Changed`] and asks again. It is listed ([`OptIns::granted`]) for the Granted
 //!   list, and the person removes it ([`OptIns::remove`]). A person who keeps a login off is not
 //!   kept: that refusal holds for this run alone, as before. Nothing of it reaches a runner.
@@ -64,6 +65,12 @@ pub struct Bound {
     pub pod: String,
     /// The engine the pool runs on, as the Ask names it.
     pub engine: String,
+    /// **The person's mark** that the pool's machine is their own, as the pool carries it now
+    /// (#7190: the opt-in is bound to the pin with the person's mark). Taking it back, or giving
+    /// it again, is a change, and asks again. Never set for a pool on this machine's own
+    /// engine, which takes no mark. An entry kept without one reads as unmarked.
+    #[serde(default)]
+    pub marked: bool,
 }
 
 impl Bound {
@@ -78,6 +85,7 @@ impl Bound {
             runner_image: runner.made.runner.image().digest().to_owned(),
             pod: String::new(),
             engine: engine.to_owned(),
+            marked: pool.owned(),
         }
     }
 
@@ -150,6 +158,7 @@ impl Bound {
                     .unwrap_or_default(),
                 shortened(pool.context())
             ),
+            marked: pool.owned(),
         }
     }
 
@@ -526,14 +535,26 @@ pub const IN_CONFIG: &str = "pool-login-optins.json";
 /// **The opt-ins whose removal failed**, relative to this machine's config folder: one entry's
 /// nonce a line, appended without the store's lock (which is what failed, or what another
 /// process holds). An opt-in named here is never read, so a removal that could not be written
-/// still holds ([`OptIns::forget_pool`], [`OptIns::keep_off`]).
+/// still holds ([`OptIns::forget_pool`], [`OptIns::keep_off`]). **A list that cannot be read
+/// holds every kept opt-in back** (a link, a folder, not text, cut short, or full): the person
+/// is asked again, and a store written afresh starts the list afresh.
 pub const REVOKED_IN_CONFIG: &str = "pool-login-optins.revoked";
 
 /// The most bytes read of the opt-ins' file: far past [`MOST_KEPT`] entries.
 const MOST_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
-/// The most bytes read of, and appended to, [`REVOKED_IN_CONFIG`]: a bound on a damaged file.
+/// The most bytes [`REVOKED_IN_CONFIG`] takes: an append that would pass it is refused whole.
 const MOST_REVOKED_BYTES: u64 = 1024 * 1024;
+
+/// The most bytes one batch of nonces appends: [`MOST_KEPT`] nonces a line each, and the line
+/// that starts it.
+const MOST_BATCH_BYTES: u64 = 32 * 1024;
+const _: () = assert!(MOST_KEPT as u64 * 27 < MOST_BATCH_BYTES);
+
+/// **A revoked list past this is full, and holds every kept opt-in back.** Under it, a batch
+/// always fits; so an append refused for want of room finds the list already full, and a restart
+/// asks again instead of applying what could not be written down.
+const FULL_AT: u64 = MOST_REVOKED_BYTES - MOST_BATCH_BYTES;
 
 /// **One opt-in as the Granted list shows it** (#7190 item 2): the persona, the login by its
 /// identity, the name it was declared by and the pool. Never a value of the login.
@@ -560,20 +581,114 @@ struct Stored {
     bound: Bound,
 }
 
+/// **A removal the store could not take**: why, and whether the opt-in stays removed after a
+/// restart. Where `lasting` is false it holds for this run alone, and the person is told so.
+#[derive(Debug)]
+pub struct NotTaken {
+    /// What the store said. For the log: the person is not shown it.
+    pub why: std::io::Error,
+    /// The removal was written down, or its list holds every kept opt-in back, so it holds
+    /// after a restart.
+    pub lasting: bool,
+}
+
 /// How long a writer waits for another's turn at the file.
 const WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The most opt-ins kept: a bound on a damaged file.
 const MOST_KEPT: usize = 1024;
 
-/// What this run holds of an opt-in: how it stands, and the name it was declared by.
-type Held = (Bound, bool, String);
+/// An answer this run holds: the pool as it was asked, whether it was a yes, and the name the
+/// login was declared by.
+#[derive(Debug)]
+struct Given {
+    bound: Bound,
+    allowed: bool,
+    name: String,
+}
+
+/// What the revoked list says.
+enum Revoked {
+    /// The nonces of the opt-ins taken out, in this run and in the file.
+    Names(std::collections::HashSet<String>),
+    /// The list cannot be read: it vouches for nothing.
+    Unreadable,
+}
+
+/// The nonces in the revoked list at `file`, or `None` where it cannot be read as one: a link,
+/// a folder, not text, past [`FULL_AT`], or cut short (its last line has no end).
+fn revoked_on_disk(file: &Path) -> Option<std::collections::HashSet<String>> {
+    use std::io::Read as _;
+    match std::fs::symlink_metadata(file) {
+        Err(none) if none.kind() == std::io::ErrorKind::NotFound => {
+            return Some(std::collections::HashSet::new());
+        }
+        Ok(there) if there.is_file() && there.len() <= FULL_AT => {}
+        _ => return None,
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut bytes = Vec::new();
+    options
+        .open(file)
+        .ok()?
+        .take(FULL_AT + 1)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    if bytes.len() as u64 > FULL_AT {
+        return None;
+    }
+    let text = String::from_utf8(bytes).ok()?;
+    if !text.is_empty() && !text.ends_with('\n') {
+        return None;
+    }
+    Some(
+        text.lines()
+            .map(str::trim)
+            .filter(|one| !one.is_empty())
+            .map(str::to_owned)
+            .collect(),
+    )
+}
+
+/// Appends `text` to the revoked list `file`, never through a link and private, where the whole
+/// of it fits under [`MOST_REVOKED_BYTES`]: else nothing is written.
+fn append_to_revoked(file: &Path, text: &[u8]) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let len = match std::fs::symlink_metadata(file) {
+        Ok(there) if there.file_type().is_symlink() => {
+            return Err(std::io::Error::other("the revoked list is a link"));
+        }
+        Ok(there) => there.len(),
+        Err(none) if none.kind() == std::io::ErrorKind::NotFound => 0,
+        Err(other) => return Err(other),
+    };
+    if len + text.len() as u64 > MOST_REVOKED_BYTES {
+        return Err(std::io::Error::other("the revoked list is full"));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).append(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        // Private, and never through a link in the file's place.
+        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut open = options.open(file)?;
+    open.write_all(text)?;
+    open.sync_all()
+}
 
 /// The opt-ins the person gave, by persona, login and pool. Held in memory for this run, and,
 /// where made by [`OptIns::stored_in`], the allowed ones are kept in this machine's store too.
 #[derive(Debug, Default)]
 pub struct OptIns {
-    held: Mutex<HashMap<Key, Held>>,
+    held: Mutex<HashMap<Key, Given>>,
     /// The config folder the allowed opt-ins are kept in, where they are.
     stored: Option<std::path::PathBuf>,
     /// The nonces of kept opt-ins whose removal failed in this run: never read again.
@@ -591,7 +706,7 @@ impl OptIns {
         }
     }
 
-    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<Key, Held>> {
+    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<Key, Given>> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -602,6 +717,13 @@ impl OptIns {
     /// The file, where opt-ins are kept.
     fn file(&self) -> Option<std::path::PathBuf> {
         self.stored.as_ref().map(|root| root.join(IN_CONFIG))
+    }
+
+    /// The revoked list's file.
+    fn revoked_file(&self) -> Option<std::path::PathBuf> {
+        self.stored
+            .as_ref()
+            .map(|root| root.join(REVOKED_IN_CONFIG))
     }
 
     /// The opt-ins kept, as the file says now, whether or not one was revoked: none where it
@@ -624,45 +746,38 @@ impl OptIns {
         }
     }
 
-    /// **The nonces of the opt-ins whose removal failed**: this run's and the file's.
-    fn revoked(&self) -> std::collections::HashSet<String> {
-        use std::io::Read as _;
+    /// **What the revoked list says now**: this run's removals and the file's, or that the file
+    /// cannot be read (fail closed).
+    fn revoked(&self) -> Revoked {
         let mut all = self
             .revoked
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
-        if let Some(file) = self
-            .stored
-            .as_ref()
-            .map(|root| root.join(REVOKED_IN_CONFIG))
-            && std::fs::symlink_metadata(&file).is_ok_and(|there| there.is_file())
-            && let Ok(open) = std::fs::File::open(&file)
-        {
-            let mut text = String::new();
-            if open
-                .take(MOST_REVOKED_BYTES)
-                .read_to_string(&mut text)
-                .is_ok()
-            {
-                all.extend(
-                    text.lines()
-                        .map(str::trim)
-                        .filter(|one| !one.is_empty())
-                        .map(str::to_owned),
-                );
+        let Some(file) = self.revoked_file() else {
+            return Revoked::Names(all);
+        };
+        match revoked_on_disk(&file) {
+            Some(names) => {
+                all.extend(names);
+                Revoked::Names(all)
             }
+            None => Revoked::Unreadable,
         }
-        all
     }
 
     /// Whether `one` reads: it has a nonce, and its removal did not fail.
-    fn reads(one: &Stored, revoked: &std::collections::HashSet<String>) -> bool {
-        !one.nonce.is_empty() && !revoked.contains(&one.nonce)
+    fn reads(one: &Stored, revoked: &Revoked) -> bool {
+        !one.nonce.is_empty()
+            && match revoked {
+                Revoked::Names(names) => !names.contains(&one.nonce),
+                Revoked::Unreadable => false,
+            }
     }
 
-    /// **The opt-ins kept**, as the file says now: none where it does not read, or is a link, and
-    /// **never one whose removal failed** (fail closed).
+    /// **The opt-ins kept**, as the file says now: none where it does not read, or is a link,
+    /// **never one whose removal failed**, and none where the revoked list cannot be read (fail
+    /// closed).
     fn read(&self) -> Vec<Stored> {
         let revoked = self.revoked();
         self.read_raw()
@@ -672,45 +787,37 @@ impl OptIns {
     }
 
     /// **Says the kept opt-ins `nonces` are removed though the store could not take them out**:
-    /// held in this run, and appended to [`REVOKED_IN_CONFIG`], which needs no lock, so a
-    /// restart does not read them either. Where that cannot be written, this run alone holds it.
-    fn revoke(&self, nonces: Vec<String>) {
-        use std::io::Write as _;
+    /// held in this run, and appended whole to [`REVOKED_IN_CONFIG`], which needs no lock, so a
+    /// restart does not read them either. Says whether that lasts: it does where the append was
+    /// made, or where the list cannot be read, which holds every kept opt-in back. Where it
+    /// does not, this run alone holds the removal.
+    fn revoke(&self, nonces: Vec<String>) -> bool {
         if nonces.is_empty() {
-            return;
+            return true;
         }
         self.revoked
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .extend(nonces.iter().cloned());
-        let Some(file) = self
-            .stored
-            .as_ref()
-            .map(|root| root.join(REVOKED_IN_CONFIG))
-        else {
-            return;
+        let Some(file) = self.revoked_file() else {
+            return false;
         };
-        let big = std::fs::symlink_metadata(&file).is_ok_and(|one| one.len() >= MOST_REVOKED_BYTES);
-        let appended = if big {
-            Err(std::io::Error::other("the revoked list is full"))
-        } else {
-            let mut options = std::fs::OpenOptions::new();
-            options.create(true).append(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt as _;
-                // Private, and never through a link in the file's place.
-                options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        // Each append starts a line of its own, so one cut short never glues onto the next.
+        let text = format!("\n{}\n", nonces.join("\n"));
+        match append_to_revoked(&file, text.as_bytes()) {
+            Ok(()) => true,
+            Err(why) => {
+                let closed = revoked_on_disk(&file).is_none();
+                tracing::warn!(
+                    "purlis: a removed pool login opt-in could not be written down ({why}); {}",
+                    if closed {
+                        "its list holds every kept opt-in back"
+                    } else {
+                        "the removal holds for this run only"
+                    }
+                );
+                closed
             }
-            options.open(&file).and_then(|mut open| {
-                open.write_all(format!("{}\n", nonces.join("\n")).as_bytes())?;
-                open.sync_all()
-            })
-        };
-        if let Err(why) = appended {
-            tracing::warn!(
-                "purlis: a removed pool login opt-in is held removed for this run only ({why})"
-            );
         }
     }
 
@@ -718,7 +825,8 @@ impl OptIns {
     /// [`crate::filelock::beside`]), written through a temp file renamed over it. `change` says
     /// whether it changed anything and so whether to write; a failure to lock or write is
     /// answered, and nothing is ever written without the lock. An entry that does not read
-    /// (no nonce, or revoked) is not written back.
+    /// (no nonce, or revoked, or the revoked list unreadable) is not written back, and the
+    /// revoked list is compacted to the nonces of the entries still there.
     fn update(
         &self,
         wait: std::time::Duration,
@@ -740,18 +848,64 @@ impl OptIns {
             return Ok(());
         }
         if all.is_empty() {
-            return match std::fs::remove_file(&file) {
-                Err(none) if none.kind() == std::io::ErrorKind::NotFound => Ok(()),
-                done => done,
-            };
+            match std::fs::remove_file(&file) {
+                Err(none) if none.kind() == std::io::ErrorKind::NotFound => {}
+                Err(other) => return Err(other),
+                Ok(()) => {}
+            }
+        } else {
+            let text = serde_json::to_string_pretty(&all).map_err(std::io::Error::other)?;
+            crate::rewrite::replace(
+                root,
+                &file,
+                format!("{text}\n").as_bytes(),
+                crate::rewrite::Mode::Private,
+            )?;
         }
-        let text = serde_json::to_string_pretty(&all).map_err(std::io::Error::other)?;
-        crate::rewrite::replace(
-            root,
-            &file,
-            format!("{text}\n").as_bytes(),
-            crate::rewrite::Mode::Private,
-        )
+        self.compact_revoked(&all);
+        Ok(())
+    }
+
+    /// **Drops from the revoked list the nonces of entries no longer in the store** `kept`
+    /// (the store was just written), and a list that cannot be read altogether, which the
+    /// store written afresh no longer needs. A nonce another process appended since is kept
+    /// where its entry is still there. Best effort: a list left as it was still fails closed.
+    fn compact_revoked(&self, kept: &[Stored]) {
+        let Some(file) = self.revoked_file() else {
+            return;
+        };
+        let live: std::collections::HashSet<&str> =
+            kept.iter().map(|one| one.nonce.as_str()).collect();
+        let done = match revoked_on_disk(&file) {
+            Some(names) => {
+                let mut keep: Vec<&String> = names
+                    .iter()
+                    .filter(|nonce| live.contains(nonce.as_str()))
+                    .collect();
+                if keep.len() == names.len() {
+                    return;
+                }
+                keep.sort();
+                if keep.is_empty() {
+                    std::fs::remove_file(&file)
+                } else {
+                    let text: String = keep.iter().map(|nonce| format!("{nonce}\n")).collect();
+                    let Some(root) = self.stored.as_ref() else {
+                        return;
+                    };
+                    crate::rewrite::replace(
+                        root,
+                        &file,
+                        text.as_bytes(),
+                        crate::rewrite::Mode::Private,
+                    )
+                }
+            }
+            None => std::fs::remove_file(&file),
+        };
+        if let Err(why) = done {
+            tracing::warn!("purlis: the revoked pool login list was not compacted ({why})");
+        }
     }
 
     /// Takes the kept opt-ins `matching` names out of the store, and says whether it could.
@@ -771,24 +925,26 @@ impl OptIns {
     }
 
     /// **[`Self::take_out`], and where it could not, the opt-ins are held removed anyway**
-    /// ([`Self::revoke`]): the error is answered, and they no longer apply.
+    /// ([`Self::revoke`]): the error is answered, with whether the removal lasts, and they no
+    /// longer apply.
     fn take_out_or_revoke(
         &self,
         wait: std::time::Duration,
         matching: impl Fn(&Stored) -> bool,
-    ) -> std::io::Result<()> {
-        let done = self.take_out(wait, &matching);
-        if done.is_err() {
-            let nonces = self
-                .read_raw()
-                .iter()
-                .filter(|one| matching(one))
-                .map(|one| one.nonce.clone())
-                .filter(|nonce| !nonce.is_empty())
-                .collect();
-            self.revoke(nonces);
-        }
-        done
+    ) -> Result<(), NotTaken> {
+        let Err(why) = self.take_out(wait, &matching) else {
+            return Ok(());
+        };
+        let nonces = self
+            .read_raw()
+            .iter()
+            .filter(|one| matching(one))
+            .map(|one| one.nonce.clone())
+            .filter(|nonce| !nonce.is_empty())
+            .collect();
+        let lasting = self.revoke(nonces);
+        tracing::warn!("purlis: a pool login opt-in could not be taken out of the store ({why})");
+        Err(NotTaken { why, lasting })
     }
 
     /// The person opts `persona`'s login `login` (its identity), declared as `name`, in for the
@@ -824,7 +980,11 @@ impl OptIns {
         }
         self.held().insert(
             Self::key(persona, login, &bound),
-            (bound, true, name.to_owned()),
+            Given {
+                bound,
+                allowed: true,
+                name: name.to_owned(),
+            },
         );
     }
 
@@ -838,7 +998,7 @@ impl OptIns {
         login: &str,
         name: &str,
         bound: Bound,
-    ) -> std::io::Result<()> {
+    ) -> Result<(), NotTaken> {
         self.keep_off_within(WAIT, persona, login, name, bound)
     }
 
@@ -849,13 +1009,17 @@ impl OptIns {
         login: &str,
         name: &str,
         bound: Bound,
-    ) -> std::io::Result<()> {
+    ) -> Result<(), NotTaken> {
         let taken = self.take_out_or_revoke(wait, |one| {
             one.persona == persona && one.login == login && one.bound.pool == bound.pool
         });
         self.held().insert(
             Self::key(persona, login, &bound),
-            (bound, false, name.to_owned()),
+            Given {
+                bound,
+                allowed: false,
+                name: name.to_owned(),
+            },
         );
         taken
     }
@@ -863,11 +1027,11 @@ impl OptIns {
     /// Every answer given about pool `pool`: its mark was taken back (#4071), or it was
     /// forgotten. **A removal the store could not take is answered, and the opt-ins no longer
     /// apply** ([`REVOKED_IN_CONFIG`]).
-    pub fn forget_pool(&self, pool: &str) -> std::io::Result<()> {
+    pub fn forget_pool(&self, pool: &str) -> Result<(), NotTaken> {
         self.forget_pool_within(WAIT, pool)
     }
 
-    fn forget_pool_within(&self, wait: std::time::Duration, pool: &str) -> std::io::Result<()> {
+    fn forget_pool_within(&self, wait: std::time::Duration, pool: &str) -> Result<(), NotTaken> {
         self.held().retain(|(_, _, of), _| of != pool);
         self.take_out_or_revoke(wait, |one| one.bound.pool == pool)
     }
@@ -876,7 +1040,7 @@ impl OptIns {
     /// Granted list's Remove): the next login asks. Whether one was there, or why it could not be
     /// taken out of the store (a store another process holds is not written): then it is held
     /// removed all the same ([`REVOKED_IN_CONFIG`]) and no longer applies.
-    pub fn remove(&self, persona: &str, login: &str, pool: &str) -> std::io::Result<bool> {
+    pub fn remove(&self, persona: &str, login: &str, pool: &str) -> Result<bool, NotTaken> {
         self.remove_within(WAIT, persona, login, pool)
     }
 
@@ -886,7 +1050,7 @@ impl OptIns {
         persona: &str,
         login: &str,
         pool: &str,
-    ) -> std::io::Result<bool> {
+    ) -> Result<bool, NotTaken> {
         let was = self
             .granted()
             .iter()
@@ -900,49 +1064,51 @@ impl OptIns {
         Ok(was)
     }
 
-    /// **The opt-ins in force**, for the Granted list: kept ones and this run's, never a
-    /// refusal.
+    /// **The opt-ins in force**, for the Granted list: kept ones, as the store and its revoked
+    /// list say now, and this run's, never a refusal.
     pub fn granted(&self) -> Vec<Granted> {
         let shown = |login: &str, name: &str| if name.is_empty() { login } else { name }.to_owned();
-        let mut all: Vec<Granted> = self
-            .held()
-            .iter()
-            .filter(|(_, (_, allowed, _))| *allowed)
-            .map(|((persona, login, pool), (_, _, name))| Granted {
-                persona: persona.clone(),
-                login: login.clone(),
-                name: shown(login, name),
-                pool: pool.clone(),
-            })
-            .chain(self.read().into_iter().map(|one| Granted {
-                name: shown(&one.login, &one.name),
-                persona: one.persona,
-                login: one.login,
-                pool: one.bound.pool,
-            }))
+        let kept = self.read().into_iter().map(|one| Granted {
+            name: shown(&one.login, &one.name),
+            persona: one.persona,
+            login: one.login,
+            pool: one.bound.pool,
+        });
+        let mut all: Vec<Granted> = kept
+            .chain(self.held().iter().filter(|(_, given)| given.allowed).map(
+                |((persona, login, pool), given)| Granted {
+                    persona: persona.clone(),
+                    login: login.clone(),
+                    name: shown(login, &given.name),
+                    pool: pool.clone(),
+                },
+            ))
             .collect();
         all.sort_by(|a, b| (&a.pool, &a.persona, &a.login).cmp(&(&b.pool, &b.persona, &b.login)));
         all.dedup_by(|a, b| (&a.pool, &a.persona, &a.login) == (&b.pool, &b.persona, &b.login));
         all
     }
 
-    /// Where `persona`'s login `login` stands on the pool as `now` says it is.
+    /// Where `persona`'s login `login` stands on the pool as `now` says it is. **The store and
+    /// its revoked list are looked at before this run's memory**, so a removal or a yes another
+    /// process made is seen without a restart.
     pub fn standing(&self, persona: &str, login: &str, now: &Bound) -> Standing {
-        if let Some((then, allowed, _)) = self.held().get(&Self::key(persona, login, now)) {
-            return match (then != now, allowed) {
-                (true, _) => Standing::Changed,
-                (false, true) => Standing::Allowed,
-                (false, false) => Standing::KeptOff,
-            };
-        }
-        match self
+        if let Some(one) = self
             .read()
             .into_iter()
             .find(|one| one.persona == persona && one.login == login && one.bound.pool == now.pool)
         {
+            return if one.bound == *now {
+                Standing::Allowed
+            } else {
+                Standing::Changed
+            };
+        }
+        match self.held().get(&Self::key(persona, login, now)) {
             None => Standing::Unasked,
-            Some(one) if one.bound != *now => Standing::Changed,
-            Some(_) => Standing::Allowed,
+            Some(given) if given.bound != *now => Standing::Changed,
+            Some(given) if given.allowed => Standing::Allowed,
+            Some(_) => Standing::KeptOff,
         }
     }
 }

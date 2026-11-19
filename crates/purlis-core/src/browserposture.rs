@@ -124,6 +124,16 @@ struct Stored {
     answer: String,
     #[serde(default)]
     reach: Reach,
+    /// When it was given, in seconds since 1970: what [`prune`] spares. None in an entry
+    /// written without one.
+    #[serde(default)]
+    at: u64,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
 }
 
 /// The file in the project at `root`.
@@ -230,6 +240,7 @@ fn keep_within(
             Stored {
                 answer: answer.word().to_owned(),
                 reach: reach.clone(),
+                at: now_secs(),
             },
         );
         Ok(true)
@@ -244,9 +255,10 @@ pub fn remove(root: &Path, chat: &str) -> io::Result<()> {
 
 /// **Drops the answers of chats that no longer exist** (`exists` says which do), at start: a
 /// chat whose record purlis let go while the app was not running left its answer behind. The
-/// caller counts a closed chat, and a chat open in another window, as existing. Answers how many
-/// went.
-pub fn prune(root: &Path, exists: impl Fn(&str) -> bool) -> io::Result<usize> {
+/// caller counts a closed chat, and a chat open in another window, as existing. **An answer given
+/// at `since` or after is spared**: it may be a chat another window started that no record names
+/// yet. Answers how many went.
+pub fn prune(root: &Path, exists: impl Fn(&str) -> bool, since: u64) -> io::Result<usize> {
     let mut gone = 0;
     // Nothing kept, no file and no lock file to make.
     if read(root).is_empty() {
@@ -254,7 +266,7 @@ pub fn prune(root: &Path, exists: impl Fn(&str) -> bool) -> io::Result<usize> {
     }
     change(root, WAIT, |all| {
         let before = all.len();
-        all.retain(|chat, _| exists(chat));
+        all.retain(|chat, one| one.at >= since || exists(chat));
         gone = before - all.len();
         Ok(gone > 0)
     })?;

@@ -44,7 +44,8 @@ pub const WAITING_FOR_ANOTHER_START: &str =
     "Waiting for another browser to finish starting on this machine or runner…";
 
 /// What a waiting start the person cancelled is shown as, until it gets its turn and is refused.
-pub const CANCELLING_A_WAITING_START: &str = "Cancelling…";
+pub const CANCELLING_A_WAITING_START: &str =
+    "Cancelling this start. It ends when the browser before it has finished starting.";
 
 /// What a download that has come to `done` bytes, of `total` where known, says: in megabytes of
 /// a million bytes, rounded down.

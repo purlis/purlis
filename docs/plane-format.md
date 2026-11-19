@@ -6861,47 +6861,55 @@ down rather than read off the code.
 ### `app/browser-postures.json`
 - **What:** what the person answered when a chat's first browser call asked what its browser
   may reach (#7190, the person's ruling of 2026-11-18): `{"<chat ULID>": {"answer": "allowed" |
-  "allowed-open-web" | "off", "reach": {"listed", "never", "withdrawn", "open_web", "answered"}}}`,
-  where `reach` is everything the chat's browser reached when it was asked: a kept answer is used only where the chat's
-  reach now is no narrower. One entry per chat, by its identity (ADR 0066), for **that chat
-  only and for its life**: a chat that closed is resumable, so a close keeps its answer, and a
-  resumed chat finds it; a new chat finds none and asks,
-  and there is no answer for a persona (that is its Always). An answer that rests on a
+  "allowed-open-web" | "off", "reach": {"listed", "never", "withdrawn", "open_web", "answered"},
+  "at": <seconds since 1970>}}`, where `reach` is everything the chat's browser reached when it
+  was asked: a kept answer is used only where the chat's reach now is no narrower. One entry per
+  chat, by its identity (ADR 0066), for **that chat only and for its life**: a chat that closed
+  is resumable, so a close keeps its answer, and a resumed chat finds it; a new chat finds none
+  and asks, and there is no answer for a persona (that is its Always). An answer that rests on a
   persona's Always is not kept. No site, no cookie, no value.
 - **Written by** the app on the person's press (`purlis_core::browserposture::keep`), 0600,
-  and an entry is removed when its reach narrowed (`remove`), never when its chat closes; the file
-  is removed with the last entry. At start the answers of chats purlis has no record of (not in
-  the record of open chats as it is on disk, not among the closed chats' records, not open in
-  this window) are dropped (`prune`); where a record does not read, none is.
-  Every change reads the file, changes it and writes it whole through a temp file renamed over
-  it, under the lock file `app/browser-postures.json.lock` beside it. A file that does not
-  read, an unknown word, or a link in its place asks again; a link is never followed.
-  Narrowing a chat's reach still ends its browsers and leaves the answer.
+  and an entry is removed when its reach narrowed (`remove`), never when its chat closes; the
+  file is removed with the last entry. At start the answers of chats purlis has no record of
+  (not in the record of open chats as it is on disk, not among the closed chats' records, not
+  open in this window) are dropped (`prune`), except an answer given after the record of open
+  chats was last written, which may be a chat another window started; where a record does not
+  read, none is dropped. Every change reads the file, changes it and writes it whole through a
+  temp file renamed over it, under the lock file `app/browser-postures.json.lock` beside it. A
+  file that does not read, an unknown word, or a link in its place asks again; a link is never
+  followed. Narrowing a chat's reach still ends its browsers and leaves the answer.
 - **Tier:** Clone state — this machine's, under `.purlis/`: never in the plane, never synced
   or committed. Deleting it makes each chat ask again.
 
 ### `pool-login-optins.json` (this machine's config folder, outside the plane)
 - **What:** the person's opt-ins to log in on a pool's runner (#7190, ruling of 2026-11-18, ADR
-  0123): a list of `{"nonce", "persona", "login", "name", "bound"}` (`login` is the login's identity,
-  `name` the name it was declared by, which the Granted list shows), where `bound` is what the opt-in stands
-  for: the pool's name, the digest of its definition, its image digest, the runner's device
-  id, pinned link key and image, the cluster pod and the engine (for a pool on another machine,
-  the pin as trusted; the person's mark is checked at each login, not stored). Any change to it, or to the persona, login or pool, asks
-  again. No value of any login, and a person's keep-off is not kept.
+  0123): a list of `{"nonce", "persona", "login", "name", "bound"}` (`login` is the login's
+  identity, `name` the name it was declared by, which the Granted list shows), where `bound` is
+  what the opt-in stands for: the pool's name, the digest of its definition, its image digest,
+  the runner's device id, pinned link key and image, the cluster pod, the engine (for a pool on
+  another machine, the pin as trusted) and `marked`, the person's *This is my own* mark as the
+  pool carries it. Any change to it, or to the persona, login or pool, asks again, and so does
+  taking the mark back or giving it again. No value of any login, and a person's keep-off is
+  not kept.
 - **Written by** the app on the person's press (`purlis_core::poollogins::OptIns::allow`),
   0600, through a temp file renamed over it, under the lock file `pool-login-optins.json.lock`
-  beside it; removed by Remove in the Granted list, when the pool is forgotten, or when its mark
-  is taken back. A Remove on the Granted list, a pool forgotten or removed, a mark taken back and a Keep off that the store could not take (another process holds the lock) are reported and the entry is named by its nonce in `pool-login-optins.revoked` beside it (one per line,
-  appended without the lock), which is never read past. It has no time limit. A runner never
-  holds a value or a kept login.
+  beside it; removed by Remove in the Granted list, when the pool is forgotten or removed, or
+  when its mark is taken back. A removal the store could not take (another process holds the
+  lock) is reported, and the entry is named by its nonce in `pool-login-optins.revoked` beside
+  it. It has no time limit. A runner never holds a value or a kept login.
 - **Tier:** Machine, device-bound — never synced, never committed, never in a plane. Deleting
   it makes every login on a pool ask again.
 
 ### `pool-login-optins.revoked` (this machine's config folder, outside the plane)
-- **What:** the nonces of kept opt-ins whose removal the store could not take, one per line, at
-  most 1 MiB. An opt-in named here is never read. Appended 0600 without the store's lock and never
-  through a link; it is not pruned, since a removed opt-in is gone from the store the next time
-  it is written. Where it is full, a removal holds for the run alone (logged).
+- **What:** the nonces of kept opt-ins whose removal the store could not take, each on a line of
+  its own, at most 1 MiB. An opt-in named here is never read. **It fails closed:** where this
+  file cannot be read (a link, a folder, not text, a last line cut short, or full) no kept
+  opt-in applies, and the person is asked again.
+- **Written by** the app, appended 0600 without the store's lock and never through a link; each
+  append starts a line of its own, and one that would pass the cap is refused whole. A removal
+  that could not be written down holds for the run alone, and the person is told so. The next
+  write of the store drops the nonces of entries that are gone, and starts a list that could
+  not be read afresh.
 - **Tier:** Machine, device-bound — never synced, never committed, never in a plane.
 
 ### `app/browser-timelines/<chat>/`
