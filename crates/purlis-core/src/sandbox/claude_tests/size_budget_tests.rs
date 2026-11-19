@@ -38,17 +38,57 @@ const BUDGET: usize = crate::hoststart::HARNESS_SETTINGS_BYTES;
 /// The most a chat's whole generated harness settings file may weigh.
 const FILE_CAP: usize = crate::hoststart::HARNESS_SETTINGS_FILE_BYTES;
 
-/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the plane's folder stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **Per OS, because the plane weighs twice as much on macOS** (#7225 round 3): there every denied path under a firmlink (`/Users`, `/private`, ...) is also denied under its `/System/Volumes/Data` name (`firmlink_twin`), which Linux has no such name for. **On macOS this is 1,242 bytes under the 256,000 budget, and past the 128,000 where allow rules may be shed** (656 deny rules); **on Linux it is 11,795 bytes under the 128,000 and the tiers never fire** (333 deny rules). The figure that matters for the person's notice tiers is macOS's.
+/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the machine's folders (the plane's, the home's, `TMPDIR`) stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **Per OS, because the plane weighs more on macOS** (#7225 round 3): there every denied path under a firmlink (`/Users`, `/private`, ...) is also denied under its `/System/Volumes/Data` name (`firmlink_twin`), which Linux has no such name for. **On macOS this is 26,354 bytes under the 256,000 budget, and past the 128,000 where allow rules may be shed** (590 deny rules; 259,016 and 656 before each workspace's paths were one rule, #7157); the figure that matters for the person's notice tiers is macOS's. Linux's is in [`COUNTED_TODAY`]'s other form.
 #[cfg(target_os = "macos")]
-const COUNTED_TODAY: usize = 254_758;
+const COUNTED_TODAY: usize = 229_646;
 
-/// [`COUNTED_TODAY`] on Linux (and any OS without firmlinks): measured on CI, ubuntu, 2026-11-19.
+/// [`COUNTED_TODAY`] on Linux (and any OS without firmlinks).
 #[cfg(not(target_os = "macos"))]
-const COUNTED_TODAY: usize = 116_205;
+const COUNTED_TODAY: usize = 124_000;
 
 /// What the plane's folder is replaced by before the ratchet weighs a chat's settings, so the
 /// weight does not move with the length of `TMPDIR`.
-const STAND_IN: &str = "/plane";
+///
+/// **As long as a real plane's folder** (`~/Projects/purlis-plane` under a home of a short name):
+/// every rule carries it several times (the rule, its `canonical`, its `pattern`) and once more
+/// as its `root`, so a stand-in shorter than a real one weighed a plane 30 KB lighter than it is
+/// (#7157: `/plane` gave 197 KB where a plane at `/Users/me/Projects/purlis-plane` weighs 230 KB).
+const STAND_IN: &str = "/Users/me/Projects/purlis-plane";
+
+/// What the person's home is replaced by, as [`STAND_IN`] is: the test's home is a folder of its
+/// own in `TMPDIR`, as long as that is, where a real one is `/Users/<name>`.
+const HOME_STAND_IN: &str = "/Users/me";
+
+/// What `TMPDIR` is replaced by: the folders the chat's settings hold apart (`<tmp>/purlis`,
+/// the sockets of a container engine) are in it, and it is a different length on each machine.
+const TMP_STAND_IN: &str = "/tmp";
+
+/// `settings` with each folder that is the machine's own spelled by a stand-in of fixed length:
+/// the plane's, the home's and the temp folder's, each under every name a rule is written by (as
+/// it is, as the kernel names it, and without the `/private` a macOS link leads to). The ratchet
+/// weighs the settings by what is in them, never by where this machine keeps its temp folder (the
+/// macOS runner's weighed 10 KB more than a developer's, #7157).
+fn on_stand_ins(settings: &str, folders: &[(&Path, &str)]) -> String {
+    let mut names: Vec<(String, &str)> = Vec::new();
+    for (folder, stand_in) in folders {
+        let folder = folder.to_path_buf();
+        let real = folder.canonicalize().unwrap_or_else(|_| folder.clone());
+        for name in [folder, real] {
+            let name = name.display().to_string();
+            let bare = name.strip_prefix("/private").map(str::to_owned);
+            names.extend(bare.map(|it| (it, *stand_in)));
+            names.push((name, stand_in));
+        }
+    }
+    // The longest first: the plane's and the home's folders are in the temp folder.
+    names.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
+    names.dedup();
+    names
+        .iter()
+        .fold(settings.to_owned(), |text, (name, stand_in)| {
+            text.replace(name.as_str(), stand_in)
+        })
+}
 
 /// Workspaces in the plane.
 const WORKSPACES: usize = 12;
@@ -199,7 +239,14 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
     // The plane's folder is in each rule several times (as the rule, its `canonical`, its
     // `pattern` and its `root`), and its length is the machine's: a long `TMPDIR` weighs more.
     // The ratchet measures with it stood in for by a fixed-length prefix.
-    let normal = settings.replace(root.to_str().unwrap(), STAND_IN);
+    let normal = on_stand_ins(
+        &settings,
+        &[
+            (&root, STAND_IN),
+            (home.path(), HOME_STAND_IN),
+            (&std::env::temp_dir(), TMP_STAND_IN),
+        ],
+    );
     let parsed: serde_json::Value = serde_json::from_str(&normal).expect("JSON");
     let stood_in = Path::new(STAND_IN).join(cwd.strip_prefix(&root).unwrap());
     let counted = crate::hoststart::auto_mode_weight(
@@ -334,6 +381,73 @@ fn writes(filesystem: &serde_json::Value, cwd: &str, path: &str) -> bool {
             .iter()
             .filter(|held| !glob(held))
             .any(|held| held != path && under(held, path))
+}
+
+/// **Folding a path in each workspace into one glob denies every path it denied** (#7157): on the
+/// large plane, each Edit rule the settings held path by path ([`as_before_6961`]) is held by the
+/// rules written now, and each rule written now that stands for the workspaces is held the other
+/// way, for each workspace there, by the rules written before: the paths denied are the same, and
+/// no workspace of the plane is denied anything it was not.
+///
+/// [`as_before_6961`]: super::claude::as_before_6961
+#[test]
+fn the_workspaces_folded_into_one_rule_deny_the_paths_they_denied() {
+    let plane = tempfile::tempdir().unwrap();
+    let root = plane.path().canonicalize().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    a_large_plane(&root);
+    let cwd =
+        root.join("workspaces/workspace-00/.worktrees/app/t00-a-piece-of-work-named-at-length");
+    let rules = |settings: String| -> Vec<String> {
+        let parsed: serde_json::Value = serde_json::from_str(&settings).expect("JSON");
+        parsed["permissions"]["deny"]
+            .as_array()
+            .expect("deny")
+            .iter()
+            .filter_map(|rule| rule.as_str().map(str::to_owned))
+            .collect()
+    };
+    let before = rules(super::claude::as_before_6961(|| {
+        the_settings_of_a_chat_in(&root, &cwd, home.path())
+    }));
+    let now = rules(the_settings_of_a_chat_in(&root, &cwd, home.path()));
+
+    let folded: Vec<&String> = now
+        .iter()
+        .filter(|rule| rule.starts_with("Edit(") && rule.contains("/workspaces/*/"))
+        // Not every branch folder's git, which the glob of #6961 holds and this does not fold.
+        .filter(|rule| !rule.contains("/.worktrees/*"))
+        .collect();
+    assert!(
+        !folded.is_empty() && now.len() < before.len(),
+        "the plane's workspaces are folded: {} rules were {}",
+        now.len(),
+        before.len()
+    );
+    // Nothing denied before is let go: each Edit rule on a plain path, which is every rule the
+    // fold takes (a glob is for `rule_holds` a rule it does not read in either case).
+    let plain = |rule: &&String| {
+        rule.starts_with("Edit(//")
+            && !rule
+                .trim_end_matches("/**)")
+                .contains(['*', '[', '?', '\\'])
+    };
+    let let_go: Vec<&String> = before
+        .iter()
+        .filter(plain)
+        .filter(|rule| !super::claude::rule_holds(&now, rule))
+        .collect();
+    assert!(let_go.is_empty(), "no longer denied: {let_go:?}");
+    // Nothing is denied that was not, in a workspace the plane has.
+    for rule in folded {
+        for workspace in (0..WORKSPACES).map(|n| format!("workspace-{n:02}")) {
+            let one = rule.replacen("/workspaces/*/", &format!("/workspaces/{workspace}/"), 1);
+            assert!(
+                super::claude::rule_holds(&before, &one),
+                "{one} is denied now, and was not before"
+            );
+        }
+    }
 }
 
 /// **A folder granted while the chat runs still finds every git folder pin** (the review of
