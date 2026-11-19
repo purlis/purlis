@@ -603,3 +603,56 @@ fn a_glab_merge_is_read_to_its_request_under_each_of_its_flags() {
         assert_eq!(held(cmd), ask(repo, 7), "{cmd}");
     }
 }
+
+/// #7246: bash 5.3 runs `${ cmd; }` and `${| cmd; }` inside double quotes as it does outside
+/// them, so the merge in one is a merge the hold reads, as it reads one in `"$( … )"`.
+#[test]
+fn a_merge_in_a_double_quoted_bash_5_3_substitution_is_held() {
+    // A merge inside a quoted substitution is held as one purlis cannot name the request of, as
+    // `"$(gh pr merge 12)"` is.
+    assert_eq!(held(r#"echo "$(gh pr merge 12)""#), Some(Held::Unreadable));
+    for cmd in [
+        r#"echo "${ gh pr merge 12; }""#,
+        r#"x="${| gh pr merge 12; }""#,
+        "x=\"${\ngh pr merge 12\n}\"",
+        r#"echo "a ${ echo "b"; gh pr merge 12; } c""#,
+        r#"echo "${ { true; }; gh pr merge 12; }""#,
+        // Read widely: the shell refuses these, and a guard that reads them only holds more.
+        r#"echo "${;gh pr merge 12; }""#,
+        // A program the quoted substitution prints.
+        r#""${ echo gh; }" pr merge 12"#,
+        r#"echo "${ echo } ; gh pr merge 12; }""#,
+        r#"echo "$( echo "${ gh pr merge 12; }" )""#,
+        r#"echo "${ echo "${ gh pr merge 12; }"; }""#,
+        "x=$(cat <<EOF\n\"${ gh pr merge 12; }\"\nEOF\n)",
+        "echo \"$\\\n{ gh pr merge 12; }\"",
+    ] {
+        assert_eq!(held(cmd), Some(Held::Unreadable), "{cmd}");
+    }
+    // One that never closes is read as unreadable, not as nothing.
+    for cmd in [r#"echo "${ true; ""#, "echo \"${ true; \" x"] {
+        assert!(
+            crate::floorguard::release_floor_reason(cmd, true).is_some(),
+            "{cmd}"
+        );
+    }
+}
+
+/// A quoted parameter expansion is no substitution: nothing in it is read as a command.
+#[test]
+fn a_quoted_parameter_expansion_is_not_a_bash_5_3_substitution() {
+    for cmd in [
+        r#"echo "${TITLE}""#,
+        r#"echo "${#}${1}""#,
+        r#"echo "${TITLE:-x}""#,
+        r#"echo "${arr[@]}" "${!ref}" "${*}${@}${?}${$}${-}${_x}""#,
+        r#"echo '${ gh pr merge 12; }'"#,
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+        assert_eq!(
+            crate::floorguard::release_floor_reason(cmd, true),
+            None,
+            "{cmd}"
+        );
+    }
+}
