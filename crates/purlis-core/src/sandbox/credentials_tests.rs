@@ -728,10 +728,8 @@ fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
             assert_eq!(set("GIT_CONFIG_SYSTEM"), Some("/dev/null"), "{harness:?}");
             assert_eq!(set("GIT_TERMINAL_PROMPT"), Some("0"), "{harness:?}");
             assert_eq!(set("SSH_AUTH_SOCK"), Some(""), "{harness:?}");
-            assert!(
-                set("GIT_SSH_COMMAND").is_some_and(|ssh| ssh.contains("IdentityAgent=none")),
-                "{harness:?}"
-            );
+            // Claude Code's own sandbox sets git's ssh for each command, so its line names none.
+            assert_eq!(set("GIT_SSH_COMMAND"), None, "{harness:?}");
         }
         let (_plane, cwd, applied) = started(FLOOR, harness, &machine);
         assert!(

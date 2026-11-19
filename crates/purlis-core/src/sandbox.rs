@@ -5416,8 +5416,14 @@ impl Applied {
         if self.forge_locked() {
             let scratch = at.confinement.and_then(Confinement::tmp);
             let home = Machine::this().home;
+            // Claude Code's own sandbox sets git's ssh for each command (#1667), so it gets none
+            // here: its harness's line never names one.
+            let sets_ssh = line.env.iter().any(|(key, _)| key == "GIT_SSH_COMMAND");
             line.env = forgelock::apply(std::mem::take(&mut line.env), scratch, home.as_deref())
                 .map_err(|why| under(format!("the forge credential lock was not made: {why}")))?;
+            if matches!(*self.form, Form::ClaudeCode(_)) && !sets_ssh {
+                line.env.retain(|(key, _)| key != "GIT_SSH_COMMAND");
+            }
         }
         // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
         // first on each command's `PATH` through the one file Claude Code reads before each

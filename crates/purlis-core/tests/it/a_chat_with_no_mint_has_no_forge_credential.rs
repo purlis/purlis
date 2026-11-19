@@ -112,6 +112,7 @@ fn chat_env(person: &Person, harness: Harness, scratch: &Path) -> Vec<(String, S
 
 #[test]
 fn a_chat_with_no_mint_has_no_forge_credential() {
+    purlis_core::unsteered!();
     let person = Person::new();
     let mut leaks = Vec::new();
     for harness in Harness::ALL {
