@@ -212,7 +212,7 @@ fn only_merges() -> bool {
 /// **Reads with `cwd`, the hook payload's working directory, as the directory a relative path in
 /// the line is opened against** (#7195): a request edit's `--input body.json` is the file gh
 /// opens in the shell's directory, which only the payload knows. Without it, or where the line
-/// can change directory before the call ([`may_change_directory`]), a relative path is unread.
+/// is not one sole call ([`is_sole_call`]), a body is unread.
 pub fn in_directory<R>(cwd: &str, read: impl FnOnce() -> R) -> R {
     let given = (!cwd.is_empty()).then(|| std::path::PathBuf::from(cwd));
     let outer = DIRECTORY.replace(given);
@@ -233,32 +233,102 @@ std::thread_local! {
     /// The directory the hook's payload says the shell is in ([`in_directory`]).
     static DIRECTORY: std::cell::RefCell<Option<std::path::PathBuf>> =
         const { std::cell::RefCell::new(None) };
-    /// Whether the line being read can change directory before a call in it ([`metered`]).
-    static DIRECTORY_MOVED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Whether the line being read is one sole call ([`is_sole_call`], set by [`metered`]).
+    static SOLE_CALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Where a relative path in the line is opened: the payload's directory, unless the line can
-/// change it first.
+/// Where a relative path in the line is opened: the payload's directory. Only a line that is
+/// one sole call ([`is_sole_call`]) has its bodies read, and no `cd` can come before that.
 fn directory_the_line_runs_in() -> Option<std::path::PathBuf> {
-    if DIRECTORY_MOVED.get() {
-        return None;
-    }
     DIRECTORY.with_borrow(Clone::clone)
 }
 
-/// Whether `cmd` can change the directory a command after it runs in: `cd`, `pushd` or `popd`
-/// as a word anywhere (a subshell or a script's included), or `env -C` / `--chdir`. Read off the
-/// text, so a word in a string counts too, which only costs a relative path a read (`git -C`
-/// moves no shell's directory and is not one).
-fn may_change_directory(cmd: &str) -> bool {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(
-            r#"(?:^|[\s;&|(){`'"])(?:cd|chdir|pushd|popd)(?:$|[\s;&|(){`'")])|\benv\b[^;&|\n]*\s(?:-[A-Za-z]*C|--chdir)"#,
-        )
-        .expect("compiles")
-    })
-    .is_match(cmd)
+/// Whether the line being read lets a request edit's body be read ([`is_sole_call`]).
+fn bodies_are_readable() -> bool {
+    SOLE_CALL.get()
+}
+
+/// **Whether `cmd` is one `gh` or `glab` call and nothing else** (#7195): one command line (a
+/// heredoc's body aside), behind env assignments only, with no `;`, `&`, `|`, parenthesis,
+/// backtick, `$(` or `$'` outside a single quote, no quote left open and no backslash ending
+/// the line. A line that is anything else may run something first (a `cd`, an `eval`, a
+/// `source`, a function, an alias) or feed the call another stdin, so a request body is not read
+/// from it. Read off the text and failing closed: a doubt is `false`.
+fn is_sole_call(cmd: &str) -> bool {
+    let layout = crate::heredoc::heredoc_layout(cmd);
+    let mut commands = layout
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| !l.body && !l.text.trim().is_empty());
+    let (Some((0, first)), None) = (commands.next(), commands.next()) else {
+        return false;
+    };
+    let mut words: Vec<String> = Vec::new();
+    let mut word = String::new();
+    let mut quote: Option<char> = None;
+    let mut chars = first.text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match quote {
+            Some('\'') => {
+                quote = (c != '\'').then_some('\'');
+                word.push(c);
+            }
+            Some(_) => match c {
+                '`' => return false,
+                '$' if chars.peek() == Some(&'(') => return false,
+                '\\' => {
+                    word.push(c);
+                    let Some(next) = chars.next() else {
+                        return false;
+                    };
+                    word.push(next);
+                }
+                '"' => {
+                    quote = None;
+                    word.push(c);
+                }
+                _ => word.push(c),
+            },
+            None => match c {
+                ';' | '&' | '|' | '(' | ')' | '`' => return false,
+                '$' if chars.peek() == Some(&'\'') => return false,
+                '\\' => {
+                    word.push(c);
+                    let Some(next) = chars.next() else {
+                        return false;
+                    };
+                    word.push(next);
+                }
+                '\'' | '"' => {
+                    quote = Some(c);
+                    word.push(c);
+                }
+                c if c.is_whitespace() => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                }
+                _ => word.push(c),
+            },
+        }
+    }
+    if quote.is_some() {
+        return false;
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    let is_assignment = |w: &String| {
+        w.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty()
+                && !name.starts_with(|c: char| c.is_ascii_digit())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    };
+    words
+        .iter()
+        .find(|w| !is_assignment(w))
+        .is_some_and(|w| w == "gh" || w == "glab")
 }
 
 /// [`release_floor_reason`], and how many bytes of text the floor read on the way, every level
@@ -268,9 +338,15 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
         read: 0,
         allowed: cmd.len().saturating_mul(WORK_FACTOR) + WORK_SLACK,
     }));
-    let moved = DIRECTORY_MOVED.replace(DIRECTORY_MOVED.get() || may_change_directory(cmd));
+    // A level nested in a reading keeps the outer line's answer: a call inside `bash -c` is not
+    // the sole command of the line it stands in.
+    let sole = SOLE_CALL.replace(if outer.is_some() {
+        SOLE_CALL.get()
+    } else {
+        is_sole_call(cmd)
+    });
     let said = floor(cmd, unattended, 0);
-    DIRECTORY_MOVED.set(moved);
+    SOLE_CALL.set(sole);
     let read = WORK.replace(outer).map_or(0, |work| work.read);
     (said, read)
 }

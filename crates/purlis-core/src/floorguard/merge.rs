@@ -943,22 +943,44 @@ fn request_edit(segs: &[String]) -> Option<RequestForge> {
 /// The most of a request edit's body purlis reads: a larger one is held, not read in part.
 const INPUT_LIMIT: u64 = 1 << 20;
 
-/// The top-level keys of a JSON object, each with its value where it is a string.
+/// The top-level keys of a JSON object, each with its value where it is a string; `None` for a
+/// text that is not one object, or that names a key twice (which of two a reader keeps is its
+/// own choice, so none is read).
 fn json_entries(text: &str) -> Option<Vec<(String, Option<String>)>> {
-    match serde_json::from_str::<serde_json::Value>(text).ok()? {
-        serde_json::Value::Object(map) => Some(
-            map.into_iter()
-                .map(|(key, value)| (key, value.as_str().map(str::to_owned)))
-                .collect(),
-        ),
-        _ => None,
+    struct Pairs(Vec<(String, Option<String>)>);
+    impl<'de> serde::Deserialize<'de> for Pairs {
+        fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct Walk;
+            impl<'de> serde::de::Visitor<'de> for Walk {
+                type Value = Pairs;
+                fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.write_str("a JSON object")
+                }
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    mut map: A,
+                ) -> Result<Pairs, A::Error> {
+                    let mut out = Vec::new();
+                    while let Some((key, value)) = map.next_entry::<String, serde_json::Value>()? {
+                        out.push((key, value.as_str().map(str::to_owned)));
+                    }
+                    Ok(Pairs(out))
+                }
+            }
+            d.deserialize_map(Walk)
+        }
     }
+    let Pairs(entries) = serde_json::from_str(text).ok()?;
+    let mut keys: Vec<&String> = entries.iter().map(|(k, _)| k).collect();
+    keys.sort();
+    keys.windows(2).all(|w| w[0] != w[1]).then_some(entries)
 }
 
 /// The keys of a JSON object in the file a call's `--input` names, or `None` when they cannot be
 /// read from here: a path the shell fills in, stdin (`-`, read by [`quoted_heredoc_body`]), a
-/// relative path with no directory to read it against ([`super::in_directory`]), a file that is missing,
-/// unreadable, over [`INPUT_LIMIT`] or not one JSON object.
+/// relative path with no directory to read it against ([`super::in_directory`]; the line is one
+/// sole call, so no `cd` came first), a file that is missing,
+/// unreadable, over [`INPUT_LIMIT`] or not one JSON object with distinct keys.
 fn input_entries(path: &str) -> Option<Vec<(String, Option<String>)>> {
     if path.is_empty() || path == "-" || opaque(path) {
         return None;
@@ -967,8 +989,8 @@ fn input_entries(path: &str) -> Option<Vec<(String, Option<String>)>> {
     let file = if file.is_absolute() {
         file.to_path_buf()
     } else {
-        // gh opens it in the directory the shell is in when it runs, which the hook knows only
-        // where nothing in the line could have changed it.
+        // gh opens it in the directory the shell is in when it runs: the payload's, as the line
+        // is one sole call.
         super::directory_the_line_runs_in()?.join(file)
     };
     let meta = std::fs::metadata(&file).ok()?;
@@ -988,11 +1010,14 @@ fn input_entries(path: &str) -> Option<Vec<(String, Option<String>)>> {
     json_entries(std::str::from_utf8(&bytes).ok()?)
 }
 
-/// The literal text of the quoted heredoc (`<<'EOF'`, `<<"EOF"`) that is `args`' stdin, or `None`
-/// when stdin is anything else: an unquoted heredoc (the shell expands it), a pipe, a file, a
-/// substitution, a line with more than one heredoc, or a body that does not end (#7195).
+/// The literal text of the quoted heredoc (`<<'EOF'`, `<<"EOF"`, `<<-'EOF'`) that is `args`'
+/// stdin, or `None` when stdin is anything else: an unquoted heredoc, a pipe, a file, a
+/// substitution, a descriptor other than 0, a line with more than one heredoc, a header line that
+/// ends inside a quote or on a backslash, or a body that does not end the line's text. The line
+/// is one sole call ([`super::is_sole_call`]), so the body is the lines [`heredoc_layout`] takes
+/// for it after the command's own (#7195).
 fn quoted_heredoc_body(args: &[String], cmd: &str) -> Option<String> {
-    use crate::heredoc::{Line, body_extent, heredoc_opener_words, heredoc_openers};
+    use crate::heredoc::{Line, body_extent, heredoc_layout, heredoc_openers};
     // The only redirect from a file is the heredoc: a later `< file` would be stdin instead.
     let redirects: Vec<&String> = args
         .iter()
@@ -1002,8 +1027,18 @@ fn quoted_heredoc_body(args: &[String], cmd: &str) -> Option<String> {
                     .starts_with('<')
         })
         .collect();
-    if redirects.len() != 1 || !(redirects[0].starts_with("<<") && !redirects[0].starts_with("<<<"))
-    {
+    let [redirect] = redirects.as_slice() else {
+        return None;
+    };
+    let digits = redirect
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
+    if !(digits.is_empty() || digits == "0") {
+        return None;
+    }
+    let rest = &redirect[digits.len()..];
+    if !rest.starts_with("<<") || rest.starts_with("<<<") {
         return None;
     }
     let line = Line::of(cmd);
@@ -1011,23 +1046,40 @@ fn quoted_heredoc_body(args: &[String], cmd: &str) -> Option<String> {
     let [opener] = openers.as_slice() else {
         return None;
     };
+    // On descriptor 0: the tokenizer may drop an `fd` prefix, so it is read off the line.
+    let before: Vec<char> = line.chars().get(..opener.start)?.to_vec();
+    let digits: String = before
+        .iter()
+        .rev()
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    let word_start =
+        before.len() == digits.len() || before[before.len() - digits.len() - 1].is_whitespace();
+    if !digits.is_empty() && word_start && digits != "0" {
+        return None;
+    }
     let header = &opener.header;
     if header.expands || opener.maybe_shift || header.shells_disagree {
         return None;
     }
-    // The heredoc belongs to this call: every word of it before the `<<` is among the words the
-    // heredoc's own command has.
-    let words = heredoc_opener_words(&line, opener.start)?;
-    let at = args.iter().position(|a| a == redirects[0])?;
-    if !args[..at].iter().all(|a| words.contains(a)) {
+    let layout = heredoc_layout(cmd);
+    let first = layout.first().filter(|l| !l.body)?;
+    // The header line is the whole command line: it neither ends on a backslash nor inside a
+    // quote (a body would start only where the command does), and every other line is a body's.
+    if first.text.ends_with('\\')
+        || !layout[1..]
+            .iter()
+            .all(|l| l.body || l.text.trim().is_empty())
+    {
         return None;
     }
-    // The body starts on the line after the header's.
-    let text: String = line.chars().get(header.end..)?.iter().collect();
-    let (_, body) = text.split_once('\n')?;
-    let lines: Vec<&str> = body.split('\n').collect();
+    let lines: Vec<&str> = layout[1..].iter().map(|l| l.text.as_str()).collect();
     let (len, found) = body_extent(&lines, &header.delim, false, header.dash);
-    if !found {
+    // The terminator ends the text, bar blank lines.
+    if !found || !lines[len + 1..].iter().all(|l| l.trim().is_empty()) {
         return None;
     }
     let taken = &lines[..len];
@@ -1065,7 +1117,10 @@ fn request_edit_reason(
         .collect();
     let mut unread = call.form_body.then(|| "a `--form` body".to_owned());
     for input in &call.inputs {
-        let entries = if input == "-" {
+        // A body is read only where the call is the line's sole command (#7195).
+        let entries = if !super::bodies_are_readable() {
+            None
+        } else if input == "-" {
             quoted_heredoc_body(args, cmd).and_then(|body| json_entries(&body))
         } else {
             input_entries(input)
@@ -1108,12 +1163,25 @@ fn request_edit_reason(
                 .to_owned(),
         );
     }
+    // GitHub's `state` opens or closes a request; any other value it takes is not read.
+    if matches!(forge, RequestForge::GitHub)
+        && sets
+            .iter()
+            .any(|(k, v)| k == "state" && !matches!(v.as_deref(), Some("open" | "closed")))
+    {
+        return Some(
+            "Editing a request through the API is no merge when its `state` is `open` or \
+             `closed`, but purlis cannot read this call's value as one of those. Write the \
+             value out."
+                .to_owned(),
+        );
+    }
     unread.map(|what| {
         format!(
-            "{UNREADABLE} This edits a request, and purlis cannot read {what}: it must be a \
-             JSON file this call can open (an absolute path, or a relative one in a line that \
-             changes no directory), a quoted heredoc on stdin, or fields written out, with no \
-             variable in its name. {SPLIT}"
+            "{UNREADABLE} This edits a request, and purlis cannot read {what}: a body is read \
+             only where this call is the line's sole command, as a JSON file (an absolute path, \
+             or one beside the shell) or a quoted heredoc on stdin, or fields written out, with \
+             no variable in its name. {SPLIT}"
         )
     })
 }

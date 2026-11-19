@@ -392,7 +392,6 @@ fn a_relative_input_is_read_in_the_payloads_directory_and_held_where_the_line_ma
     for cmd in [
         "gh api -X PATCH repos/o/r/pulls/7 --input body.json",
         "gh api -X PATCH repos/o/r/pulls/7 --input ./body.json",
-        "git -C /elsewhere status && gh api -X PATCH repos/o/r/pulls/7 --input body.json",
         "glab api -X PUT projects/9/merge_requests/3 --input body.json",
     ] {
         assert_eq!(read(cmd), None, "held: {cmd}");
@@ -410,6 +409,14 @@ fn a_relative_input_is_read_in_the_payloads_directory_and_held_where_the_line_ma
         format!("env --chdir={there} gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
         format!("bash -c 'cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input body.json'"),
         format!("cd {there} && bash -c 'gh api -X PATCH repos/o/r/pulls/7 --input body.json'"),
+        format!("\\cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("c'd' {there}; gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("\"c\"d {there}; gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("cd>/dev/null {there}; gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        "source ./env.sh; gh api -X PATCH repos/o/r/pulls/7 --input body.json".to_owned(),
+        "eval \"$GO\"; gh api -X PATCH repos/o/r/pulls/7 --input body.json".to_owned(),
+        "git -C /elsewhere status && gh api -X PATCH repos/o/r/pulls/7 --input body.json"
+            .to_owned(),
     ] {
         assert!(read(&cmd).is_some(), "not held: {cmd}");
     }
@@ -418,13 +425,15 @@ fn a_relative_input_is_read_in_the_payloads_directory_and_held_where_the_line_ma
         mergehold::held("gh api -X PATCH repos/o/r/pulls/7 --input body.json").is_some(),
         "a relative input with no directory"
     );
-    // An absolute path does not depend on the directory, so a `cd` before it holds nothing.
+    // No body is read from a line that is anything but the call, an absolute path's included.
     let absolute = dir.path().join("body.json");
-    let cmd = format!(
-        "cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input {}",
+    let sole = format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {}",
         absolute.display()
     );
-    assert_eq!(read(&cmd), None, "held: {cmd}");
+    assert_eq!(read(&sole), None, "held: {sole}");
+    let cmd = format!("cd {there} && {sole}");
+    assert!(read(&cmd).is_some(), "not held: {cmd}");
 }
 
 /// `--input -` with a quoted heredoc on the same line is the body, read for the keys it sets;
@@ -458,6 +467,42 @@ fn a_quoted_heredoc_on_stdin_is_the_body_and_any_other_stdin_is_held() {
         "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF' < body.json\n{\"title\":\"T\"}\nEOF",
         "gh api -X PATCH repos/o/r/pulls/7 --input - < <(echo '{\"title\":\"T\"}')",
         "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\"}\nEOF\ngh api -X PATCH repos/o/r/pulls/8 --input - <<'EOF'\n{\"base\":\"main\"}\nEOF",
+    ]);
+}
+
+/// A body is read only where the call is the line's sole command, so a heredoc beside anything
+/// else, on another descriptor, or whose header runs on is held; and a body that names a key twice
+/// or a GitHub `state` that is not `open` or `closed` is held (#7195 round 8).
+#[test]
+fn a_body_is_read_only_where_the_call_is_the_lines_sole_command() {
+    purlis_core::unsteered!();
+    passes(&[
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T (x) & y\",\"body\":\"B\"}\nEOF",
+        "GH_TOKEN=x gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"state\":\"open\"}\nEOF",
+        "glab api -X PUT projects/9/merge_requests/5 -f labels=x",
+        "gh api -X PATCH repos/o/r/pulls/7 -f state=closed",
+    ]);
+    held(&[
+        // A backtick in the first of two heredocs.
+        "cat <<'A'\n`x`\nA\ngh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"base\":\"main\"}\nEOF",
+        // Another command feeds, or another descriptor takes, the heredoc.
+        "echo '{\"base\":\"main\"}' | gh api -X PATCH repos/o/r/pulls/7 --input - 3<<'EOF'\n{\"title\":\"T\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - 3<<'EOF'\n{\"title\":\"T\"}\nEOF",
+        // A quoted argument that runs on past the header, holding a line that reads as the end.
+        "gh api -X PATCH repos/o/r/pulls/7 --input - -f title='a <<'EOF'\n{\"title\":\"T\"}\nEOF\nb' <<'EOF'\n{\"base\":\"main\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF' -f title='x\nEOF\ny'\n{\"title\":\"T\"}\nEOF",
+        // A key named twice, whichever a reader keeps.
+        "glab api -X PUT projects/9/merge_requests/5 --input - <<'EOF'\n{\"state_event\":\"merge\",\"state_event\":\"close\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"a\",\"title\":\"b\"}\nEOF",
+        // A state that is neither `open` nor `closed`.
+        "gh api -X PATCH repos/o/r/pulls/7 -f state=merged",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"state\":\"merged\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"state\":3}\nEOF",
+        // Anything around the call.
+        "true && gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\"}\nEOF",
+        "(gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\"}\nEOF\n)",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF' &\n{\"title\":\"T\"}\nEOF",
+        "eval gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\"}\nEOF",
     ]);
 }
 
