@@ -533,11 +533,12 @@ type Key = (String, String, String);
 pub const IN_CONFIG: &str = "pool-login-optins.json";
 
 /// **The opt-ins whose removal failed**, relative to this machine's config folder: one entry's
-/// nonce a line, appended without the store's lock (which is what failed, or what another
-/// process holds). An opt-in named here is never read, so a removal that could not be written
-/// still holds ([`OptIns::forget_pool`], [`OptIns::keep_off`]). **A list that cannot be read
-/// holds every kept opt-in back** (a link, a folder, not text, cut short, or full): the person
-/// is asked again, and a store written afresh starts the list afresh.
+/// nonce a line, appended under the store's own lock file (the same one every write and
+/// compaction takes, so no append lands in a file a compaction replaces). An opt-in named here is never read, so a removal that could not be written
+/// still holds ([`OptIns::forget_pool`], [`OptIns::keep_off`]), for this run where the lock was
+/// not given. **A list that cannot be read holds every kept opt-in back** (a link, a folder, a
+/// FIFO, not text, cut short, or full): the person is asked again, it is never appended to
+/// (that would make it readable again), and a store written afresh starts the list afresh.
 pub const REVOKED_IN_CONFIG: &str = "pool-login-optins.revoked";
 
 /// The most bytes read of the opt-ins' file: far past [`MOST_KEPT`] entries.
@@ -616,30 +617,30 @@ enum Revoked {
 }
 
 /// The nonces in the revoked list at `file`, or `None` where it cannot be read as one: a link,
-/// a folder, not text, past [`FULL_AT`], or cut short (its last line has no end).
+/// a folder, a FIFO or any file that is not a plain one, not text, past [`FULL_AT`], or cut
+/// short (its last line has no end).
+///
+/// **The file opened is the file judged**: it is opened without following a link and without
+/// waiting (`O_NOFOLLOW`, `O_NONBLOCK`), and its own metadata says whether it is a plain file,
+/// so a path swapped for a FIFO or a link after a look at it can neither block this nor send it
+/// elsewhere.
 fn revoked_on_disk(file: &Path) -> Option<std::collections::HashSet<String>> {
     use std::io::Read as _;
-    match std::fs::symlink_metadata(file) {
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    let open = match crate::contain::nofollow(&mut options).open(file) {
+        Ok(open) => open,
         Err(none) if none.kind() == std::io::ErrorKind::NotFound => {
             return Some(std::collections::HashSet::new());
         }
-        Ok(there) if there.is_file() && there.len() <= FULL_AT => {}
-        _ => return None,
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_NOFOLLOW);
+        Err(_) => return None,
+    };
+    let there = open.metadata().ok()?;
+    if !there.is_file() || there.len() > FULL_AT {
+        return None;
     }
     let mut bytes = Vec::new();
-    options
-        .open(file)
-        .ok()?
-        .take(FULL_AT + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
+    open.take(FULL_AT + 1).read_to_end(&mut bytes).ok()?;
     if bytes.len() as u64 > FULL_AT {
         return None;
     }
@@ -657,29 +658,29 @@ fn revoked_on_disk(file: &Path) -> Option<std::collections::HashSet<String>> {
 }
 
 /// Appends `text` to the revoked list `file`, never through a link and private, where the whole
-/// of it fits under [`MOST_REVOKED_BYTES`]: else nothing is written.
+/// of it fits under [`MOST_REVOKED_BYTES`]: else nothing is written. **The caller holds the
+/// store's lock** ([`OptIns::revoke_within`]), so no compaction replaces the file under it.
+/// Opened without waiting, and judged by the file opened: a FIFO or anything but a plain file
+/// is refused.
 fn append_to_revoked(file: &Path, text: &[u8]) -> std::io::Result<()> {
     use std::io::Write as _;
-    let len = match std::fs::symlink_metadata(file) {
-        Ok(there) if there.file_type().is_symlink() => {
-            return Err(std::io::Error::other("the revoked list is a link"));
-        }
-        Ok(there) => there.len(),
-        Err(none) if none.kind() == std::io::ErrorKind::NotFound => 0,
-        Err(other) => return Err(other),
-    };
-    if len + text.len() as u64 > MOST_REVOKED_BYTES {
-        return Err(std::io::Error::other("the revoked list is full"));
-    }
     let mut options = std::fs::OpenOptions::new();
     options.create(true).append(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
-        // Private, and never through a link in the file's place.
-        options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+        options.mode(0o600);
     }
-    let mut open = options.open(file)?;
+    let mut open = crate::contain::nofollow(&mut options).open(file)?;
+    let there = open.metadata()?;
+    if !there.is_file() {
+        return Err(std::io::Error::other(
+            "the revoked list is not a plain file",
+        ));
+    }
+    if there.len() + text.len() as u64 > MOST_REVOKED_BYTES {
+        return Err(std::io::Error::other("the revoked list is full"));
+    }
     open.write_all(text)?;
     open.sync_all()
 }
@@ -787,11 +788,17 @@ impl OptIns {
     }
 
     /// **Says the kept opt-ins `nonces` are removed though the store could not take them out**:
-    /// held in this run, and appended whole to [`REVOKED_IN_CONFIG`], which needs no lock, so a
-    /// restart does not read them either. Says whether that lasts: it does where the append was
-    /// made, or where the list cannot be read, which holds every kept opt-in back. Where it
-    /// does not, this run alone holds the removal.
-    fn revoke(&self, nonces: Vec<String>) -> bool {
+    /// held in this run, and appended whole to [`REVOKED_IN_CONFIG`], so a restart does not
+    /// read them either. Says whether that lasts.
+    ///
+    /// - **The append takes the store's own lock file**, as every compaction does, so none lands
+    ///   in a file a compaction is about to replace. Where that lock is not given within `wait`,
+    ///   nothing is written, and this run alone holds the removal.
+    /// - **A list that cannot be read is never appended to**: an append must not make it
+    ///   readable again. It already holds every kept opt-in back, so the removal lasts.
+    ///
+    /// Says nothing in the log: [`Self::take_out_or_revoke`] says it once.
+    fn revoke_within(&self, wait: std::time::Duration, nonces: Vec<String>) -> bool {
         if nonces.is_empty() {
             return true;
         }
@@ -799,26 +806,20 @@ impl OptIns {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .extend(nonces.iter().cloned());
-        let Some(file) = self.revoked_file() else {
+        let (Some(store), Some(file)) = (self.file(), self.revoked_file()) else {
             return false;
         };
+        let Ok(_alone) = crate::filelock::beside(&store, wait, "the kept pool login opt-ins")
+        else {
+            // No lock: nothing is written. An unreadable list holds all the same.
+            return revoked_on_disk(&file).is_none();
+        };
+        if revoked_on_disk(&file).is_none() {
+            return true;
+        }
         // Each append starts a line of its own, so one cut short never glues onto the next.
         let text = format!("\n{}\n", nonces.join("\n"));
-        match append_to_revoked(&file, text.as_bytes()) {
-            Ok(()) => true,
-            Err(why) => {
-                let closed = revoked_on_disk(&file).is_none();
-                tracing::warn!(
-                    "purlis: a removed pool login opt-in could not be written down ({why}); {}",
-                    if closed {
-                        "its list holds every kept opt-in back"
-                    } else {
-                        "the removal holds for this run only"
-                    }
-                );
-                closed
-            }
-        }
+        append_to_revoked(&file, text.as_bytes()).is_ok() || revoked_on_disk(&file).is_none()
     }
 
     /// **One read-modify-write of the file, alone** (across processes: a lock file beside it,
@@ -925,7 +926,7 @@ impl OptIns {
     }
 
     /// **[`Self::take_out`], and where it could not, the opt-ins are held removed anyway**
-    /// ([`Self::revoke`]): the error is answered, with whether the removal lasts, and they no
+    /// ([`Self::revoke_within`]): the error is answered, with whether the removal lasts, and they no
     /// longer apply.
     fn take_out_or_revoke(
         &self,
@@ -942,8 +943,16 @@ impl OptIns {
             .map(|one| one.nonce.clone())
             .filter(|nonce| !nonce.is_empty())
             .collect();
-        let lasting = self.revoke(nonces);
-        tracing::warn!("purlis: a pool login opt-in could not be taken out of the store ({why})");
+        let lasting = self.revoke_within(wait, nonces);
+        // The one line the failure is told in: what the store said, and whether it lasts.
+        tracing::warn!(
+            "purlis: a pool login opt-in could not be taken out of the store ({why}); {}",
+            if lasting {
+                "the removal is held across a restart"
+            } else {
+                "the removal holds for this run only"
+            }
+        );
         Err(NotTaken { why, lasting })
     }
 

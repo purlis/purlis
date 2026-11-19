@@ -57,7 +57,8 @@
 //!   for the chat's persona on that pool, bound to the pool's definition and image
 //!   (`purlis_core::poollogins`): the first login asks, as one Ask in the registry
 //!   ([`PoolLoginWaits`]); a pool whose definition or image changed since asks again; Keep off
-//!   refuses its logins there until the pool changes. The opt-in survives a restart on this
+//!   refuses its logins there for this run, until the pool changes or another window of this
+//!   machine's person gives a yes, which the store shows first. The opt-in survives a restart on this
 //!   machine alone, listed in the Granted list with Remove (#7190). Its
 //!   values are read here, as the persona declares the login and this machine allowed it (the
 //!   runner armed its tools, of which this window holds no record), and go to the runner's
@@ -1138,11 +1139,22 @@ impl ChatBrowsers {
     /// The name the Granted list shows `persona`'s login `login` on `pool` by, or the identity
     /// where it is not listed.
     fn pool_login_name(&self, persona: &str, login: &str, pool: &str) -> String {
+        self.pool_login_name_or(persona, login, pool, login)
+    }
+
+    /// [`Self::pool_login_name`], by `otherwise` where the Granted list has no such opt-in.
+    fn pool_login_name_or(
+        &self,
+        persona: &str,
+        login: &str,
+        pool: &str,
+        otherwise: &str,
+    ) -> String {
         self.pool_logins
             .granted()
             .into_iter()
             .find(|one| one.persona == persona && one.login == login && one.pool == pool)
-            .map_or_else(|| login.to_owned(), |one| one.name)
+            .map_or_else(|| otherwise.to_owned(), |one| one.name)
     }
 
     /// **Remove** on the Granted list for `persona`'s login `login` on pool `pool` (#7190): the
@@ -2925,7 +2937,13 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|_, waits| waits.bound.pool != pool);
-        taken.map_err(|not| not_removed(&format!("the kept logins for pool {pool}"), "They", &not))
+        taken.map_err(|not| {
+            not_removed(
+                &format!("the kept logins for pool {pool}"),
+                Removed::Many,
+                &not,
+            )
+        })
     }
 
     /// **Every runner chat whose browser login waits on the person's opt-in** (#2050), longest
@@ -2944,7 +2962,8 @@ impl ChatBrowsers {
 
     /// **The person answers chat `session`'s pool login Ask** (#2050): `allow` opts the login it
     /// showed in, for its persona on the pool as the Ask showed it, Keep off keeps that login
-    /// off there, each until the pool or its runner changes. Every chat of that persona whose
+    /// off there, each until the pool or its runner changes (or another window's yes, which the
+    /// store shows before this run's memory). Every chat of that persona whose
     /// same login waits on the pool as it was shown is answered with it. Answers the chats
     /// answered, `session`'s first, or none where it waits no more; and, for Keep off, the words
     /// of a removal the machine could not take: the refusal stands, and the opt-in it replaced no
@@ -2969,13 +2988,22 @@ impl ChatBrowsers {
                 &asked.login,
                 asked.bound.clone(),
             );
-        } else if let Err(why) = self.pool_logins.keep_off(
-            &asked.persona,
-            &asked.identity,
-            &asked.login,
-            asked.bound.clone(),
-        ) {
-            not_taken = Some(login_not_removed(&asked.login, &asked.bound.pool, &why));
+        } else {
+            // The name the Granted list shows, read before the removal takes the entry away.
+            let granted_as = self.pool_login_name_or(
+                &asked.persona,
+                &asked.identity,
+                &asked.bound.pool,
+                &asked.login,
+            );
+            if let Err(why) = self.pool_logins.keep_off(
+                &asked.persona,
+                &asked.identity,
+                &asked.login,
+                asked.bound.clone(),
+            ) {
+                not_taken = Some(login_not_removed(&granted_as, &asked.bound.pool, &why));
+            }
         }
         let others: Vec<u32> = asks
             .values()
@@ -5765,11 +5793,23 @@ pub fn forget_pool_logins_in(
     first
 }
 
-/// What is told where this machine could not take a kept login out: `what` it was, and `it`
-/// as the sentence refers to it. It no longer applies either way; where the removal was not
-/// written down, it holds for this run only. Never the filesystem's words: the log has them.
-fn not_removed(what: &str, it: &str, not: &purlis_core::poollogins::NotTaken) -> String {
-    let verb = if it == "They" { "apply" } else { "applies" };
+/// How many kept logins a removal named, as its sentence refers to them.
+#[derive(Clone, Copy)]
+enum Removed {
+    /// One login: "It no longer applies."
+    One,
+    /// Every login of a pool: "They no longer apply."
+    Many,
+}
+
+/// What is told where this machine could not take a kept login out: `what` it was, and whether
+/// it was one or several. It no longer applies either way; where the removal was not written
+/// down, it holds for this run only. Never the filesystem's words: the log has them.
+fn not_removed(what: &str, which: Removed, not: &purlis_core::poollogins::NotTaken) -> String {
+    let (it, verb) = match which {
+        Removed::One => ("It", "applies"),
+        Removed::Many => ("They", "apply"),
+    };
     if not.lasting {
         format!("purlis could not remove {what}. {it} no longer {verb}.")
     } else {
@@ -5782,7 +5822,11 @@ fn not_removed(what: &str, it: &str, not: &purlis_core::poollogins::NotTaken) ->
 
 /// [`not_removed`] for one login of a persona on a pool.
 fn login_not_removed(name: &str, pool: &str, not: &purlis_core::poollogins::NotTaken) -> String {
-    not_removed(&format!("the kept login {name} on pool {pool}"), "It", not)
+    not_removed(
+        &format!("the kept login {name} on pool {pool}"),
+        Removed::One,
+        not,
+    )
 }
 
 /// What a pool login Ask answered by nothing any more says.
@@ -5791,8 +5835,8 @@ const POOL_LOGIN_WAITS_NO_MORE: &str =
 
 /// **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 /// browser logins may be filled on the pool's runner while the app runs and the pool stays as
-/// the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
-/// person typed. Every chat of that persona that waits on that pool is answered with it, and
+/// the Ask showed it; Keep off refuses them there until the pool changes or another window of
+/// this machine gives a yes, with the reason the person typed. Every chat of that persona that waits on that pool is answered with it, and
 /// each is told on its next turn.
 #[tauri::command]
 #[specta::specta]

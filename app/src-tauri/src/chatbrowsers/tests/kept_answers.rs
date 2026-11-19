@@ -587,3 +587,46 @@ fn answers_of_chats_that_no_longer_exist_are_pruned_when_the_window_starts() {
         None
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_keep_off_the_store_could_not_take_names_the_login_by_its_granted_name() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let window = window(root.path(), config.path(), CHAT);
+    window
+        .pool_login(
+            3,
+            "steward",
+            &bound("d1", "i1"),
+            "shop",
+            "id-shop",
+            false,
+            1,
+        )
+        .unwrap_err();
+    window.answer_pool_login_told(3, true);
+    // The chat asks again by another name for the same login: the Ask shows that one.
+    window
+        .pool_login(
+            3,
+            "steward",
+            &bound("d1", "i1"),
+            "the shop login",
+            "id-shop",
+            true,
+            2,
+        )
+        .unwrap_err();
+    // A folder the store cannot be written in: the removal is not taken.
+    std::fs::set_permissions(config.path(), std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let (_, told) = window.answer_pool_login_told(3, false);
+
+    std::fs::set_permissions(config.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    let told = told.expect("the removal could not be taken, and the person is told");
+    assert!(
+        told.contains("the kept login shop on pool builds"),
+        "named as the Granted list names it, not by the chat's wording: {told}"
+    );
+}

@@ -441,6 +441,11 @@ mod hosted {
     /// last pool on its engine is removed or forgotten ([`Self::forget`]) and no start is
     /// holding it: while one does, a pool added again on that engine finds the same gate, so
     /// nothing is counted twice.
+    ///
+    /// **The budgets are independent on purpose.** This machine's own host ([`GateOf::ThisMachine`])
+    /// and a Docker pool on this machine's engine ([`GateOf::Engine`]) are two engines that
+    /// each run their own browsers, so each has its own gate and its own budget: a start on one
+    /// never waits for the other's, and the two are not summed.
     #[derive(Default)]
     pub(crate) struct StartGates(Mutex<Gates>);
 

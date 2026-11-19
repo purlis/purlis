@@ -951,16 +951,17 @@ fn a_remove_the_store_could_not_take_is_answered_and_the_opt_in_no_longer_applie
         "builds",
     );
 
-    assert!(busy.is_err(), "the store was held, so it is answered");
+    let busy = busy.unwrap_err();
+
+    assert!(
+        !busy.lasting,
+        "the lock was not given: this run alone holds it, and says so"
+    );
     drop(other);
     assert_eq!(
-        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
-        Standing::Unasked,
-        "and the opt-in no longer applies, here or after a restart"
-    );
-    assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
-        Standing::Unasked
+        Standing::Unasked,
+        "and the opt-in no longer applies in this run"
     );
 }
 
@@ -985,23 +986,20 @@ fn a_forgotten_pool_whose_store_was_busy_is_answered_and_its_opt_in_no_longer_ap
 
     let busy = opt_ins.forget_pool_within(std::time::Duration::from_millis(60), "builds");
 
-    assert!(busy.is_err(), "the failure is answered, not swallowed");
+    assert!(
+        !busy
+            .expect_err("the failure is answered, not swallowed")
+            .lasting,
+        "and it holds for this run only"
+    );
     drop(other);
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
         Standing::Unasked,
         "it no longer applies"
     );
-    assert_eq!(
-        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
-        Standing::Unasked,
-        "not after a restart either, where the store still holds it"
-    );
     assert!(
-        after_a_restart(config.path())
-            .granted()
-            .iter()
-            .all(|one| one.pool != "builds"),
+        opt_ins.granted().iter().all(|one| one.pool != "builds"),
         "and the Granted list does not show it"
     );
     assert_eq!(
@@ -1046,17 +1044,19 @@ fn keeping_a_login_off_where_the_store_was_busy_is_answered_and_the_old_opt_in_d
         bound("builds", "d1", "i1"),
     );
 
-    assert!(busy.is_err());
+    assert!(
+        !busy.unwrap_err().lasting,
+        "this run alone holds the removal"
+    );
     drop(other);
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
         Standing::KeptOff,
         "the refusal stands for this run"
     );
-    assert_eq!(
-        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
-        Standing::Unasked,
-        "and the opt-in it replaced is not read again after a restart"
+    assert!(
+        opt_ins.granted().is_empty(),
+        "and the opt-in it replaced does not apply"
     );
 }
 
@@ -1166,24 +1166,6 @@ fn nonce_of_the_kept_opt_in(config: &Path) -> String {
 }
 
 #[test]
-fn an_append_to_a_list_cut_short_starts_on_a_line_of_its_own() {
-    let config = one_kept_opt_in();
-    let nonce = nonce_of_the_kept_opt_in(config.path());
-    std::fs::write(revoked_file(config.path()), "01JB0AB").unwrap();
-    let opt_ins = OptIns::stored_in(config.path());
-
-    let lasting = opt_ins.revoke(vec![nonce.clone()]);
-
-    assert!(lasting);
-    let text = std::fs::read_to_string(revoked_file(config.path())).unwrap();
-    assert!(
-        text.lines().any(|line| line == nonce),
-        "the nonce is a line of its own, not glued to the cut one: {text:?}"
-    );
-    assert!(text.ends_with('\n'));
-}
-
-#[test]
 fn a_batch_the_list_has_no_room_for_is_refused_whole_and_says_it_is_not_lasting() {
     let config = one_kept_opt_in();
     let nonce = nonce_of_the_kept_opt_in(config.path());
@@ -1191,7 +1173,7 @@ fn a_batch_the_list_has_no_room_for_is_refused_whole_and_says_it_is_not_lasting(
     std::fs::write(revoked_file(config.path()), "\n".repeat(size)).unwrap();
     let opt_ins = OptIns::stored_in(config.path());
 
-    let lasting = opt_ins.revoke(vec![nonce]);
+    let lasting = opt_ins.revoke_within(WAIT, vec![nonce]);
 
     assert!(!lasting || nothing_applies_after(config.path()));
     assert_eq!(
@@ -1216,11 +1198,16 @@ fn nothing_applies_after(config: &Path) -> bool {
 #[test]
 fn a_removal_that_could_not_be_written_down_says_it_holds_for_this_run_only() {
     let config = one_kept_opt_in();
-    // A list that cannot be written to and does not fail closed: a folder is not that, a missing
-    // directory is: the config folder has no room for it.
-    let opt_ins = OptIns::stored_in(&config.path().join("gone"));
+    // A list that reads (it is empty) and cannot be written to: no room for an append.
+    std::fs::write(revoked_file(config.path()), "").unwrap();
+    std::fs::set_permissions(
+        revoked_file(config.path()),
+        std::os::unix::fs::PermissionsExt::from_mode(0o400),
+    )
+    .unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
     assert!(
-        !opt_ins.revoke(vec!["01JB0X".to_owned()]),
+        !opt_ins.revoke_within(WAIT, vec!["01JB0X".to_owned()]),
         "nothing could be written, and nothing fails closed"
     );
 }
@@ -1235,9 +1222,15 @@ fn a_removal_a_busy_store_could_not_take_says_whether_it_lasts() {
         .forget_pool_within(std::time::Duration::from_millis(60), "builds")
         .unwrap_err();
 
-    assert!(busy.lasting, "it was written to the revoked list");
+    assert!(
+        !busy.lasting,
+        "the lock was not given, so nothing was written down: this run alone holds it"
+    );
     drop(other);
-    nothing_applies(config.path());
+    assert!(
+        !revoked_file(config.path()).exists(),
+        "and nothing was appended unlocked"
+    );
 }
 
 #[test]
@@ -1268,11 +1261,7 @@ fn rewriting_the_store_drops_the_nonces_of_entries_that_are_gone() {
     let config = one_kept_opt_in();
     let nonce = nonce_of_the_kept_opt_in(config.path());
     let opt_ins = OptIns::stored_in(config.path());
-    let other = held_by_another_process(config.path());
-    opt_ins
-        .forget_pool_within(std::time::Duration::from_millis(60), "builds")
-        .unwrap_err();
-    drop(other);
+    assert!(opt_ins.revoke_within(WAIT, vec![nonce.clone()]));
     assert!(
         std::fs::read_to_string(revoked_file(config.path()))
             .unwrap()
@@ -1383,4 +1372,191 @@ fn a_pools_bound_names_its_mark_where_it_has_one() {
     .unwrap();
 
     assert!(marked.marked, "the person's mark is part of what is bound");
+}
+
+// The revoked list is written under the store's lock, never opened where it can block, and
+// never healed by an append (#7190, the re-review of 3738261cf0).
+
+/// Runs `work` on a thread of its own and gives it `secs` to finish: a hang is a failure here,
+/// not a test that never ends.
+fn within<T: Send + 'static>(secs: u64, work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tell, hear) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tell.send(work());
+    });
+    hear.recv_timeout(std::time::Duration::from_secs(secs)).ok()
+}
+
+#[test]
+fn an_append_waits_for_the_store_lock_and_lands_after_it() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    let holder = held_by_another_process(config.path());
+    let opt_ins = std::sync::Arc::new(OptIns::stored_in(config.path()));
+    let appending = {
+        let opt_ins = opt_ins.clone();
+        std::thread::spawn(move || {
+            opt_ins.revoke_within(std::time::Duration::from_secs(5), vec![nonce])
+        })
+    };
+
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    assert!(
+        !revoked_file(config.path()).exists(),
+        "a compaction holds the lock: nothing may be appended to a file it is about to replace"
+    );
+    drop(holder);
+
+    assert!(appending.join().unwrap(), "it lasts once it is written");
+    nothing_applies(config.path());
+}
+
+#[test]
+fn an_append_the_lock_was_not_given_for_holds_for_this_run_only() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    let opt_ins = OptIns::stored_in(config.path());
+    let _holder = held_by_another_process(config.path());
+
+    let lasting = opt_ins.revoke_within(std::time::Duration::from_millis(60), vec![nonce]);
+
+    assert!(!lasting, "nothing was written down");
+    assert!(
+        !revoked_file(config.path()).exists(),
+        "and nothing was written unlocked"
+    );
+    assert!(opt_ins.granted().is_empty(), "this run holds it removed");
+}
+
+#[test]
+fn appends_and_compactions_at_once_lose_no_removal() {
+    for round in 0..6 {
+        let config = tempfile::tempdir().unwrap();
+        let writer = std::sync::Arc::new(OptIns::stored_in(config.path()));
+        for n in 0..8 {
+            writer.allow(
+                "steward",
+                &format!("id-{n}"),
+                "shop",
+                bound("builds", "d1", "i1"),
+            );
+        }
+        let nonces: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(
+            &std::fs::read_to_string(config.path().join(IN_CONFIG)).unwrap(),
+        )
+        .unwrap()
+        .iter()
+        .map(|one| one["nonce"].as_str().unwrap().to_owned())
+        .collect();
+        let compacting = {
+            let writer = writer.clone();
+            std::thread::spawn(move || {
+                for n in 0..8 {
+                    writer.allow(
+                        "tester",
+                        &format!("other-{round}-{n}"),
+                        "x",
+                        bound("tests", "d1", "i1"),
+                    );
+                }
+            })
+        };
+        let appends: Vec<_> = nonces
+            .iter()
+            .map(|nonce| {
+                let revoker = OptIns::stored_in(config.path());
+                let nonce = nonce.clone();
+                std::thread::spawn(move || {
+                    revoker.revoke_within(std::time::Duration::from_secs(10), vec![nonce])
+                })
+            })
+            .collect();
+        compacting.join().unwrap();
+        for append in appends {
+            assert!(append.join().unwrap());
+        }
+
+        let restarted = after_a_restart(config.path());
+        for n in 0..8 {
+            assert_eq!(
+                restarted.standing("steward", &format!("id-{n}"), &bound("builds", "d1", "i1")),
+                Standing::Unasked,
+                "round {round}: a removal made during a compaction still holds"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_removal_beside_a_list_cut_short_does_not_make_it_readable_again() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    std::fs::write(revoked_file(config.path()), "01JB0AB").unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+
+    let lasting = opt_ins.revoke_within(WAIT, vec![nonce]);
+
+    assert!(
+        lasting,
+        "an unreadable list already holds every kept opt-in back"
+    );
+    assert_eq!(
+        std::fs::read(revoked_file(config.path())).unwrap(),
+        b"01JB0AB",
+        "nothing was appended: the list is as unreadable as it was"
+    );
+    nothing_applies(config.path());
+}
+
+#[cfg(unix)]
+fn a_fifo_in_the_lists_place(config: &Path) {
+    let made = std::process::Command::new("mkfifo")
+        .arg(revoked_file(config))
+        .status()
+        .unwrap();
+    assert!(made.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_the_lists_place_blocks_no_read_and_applies_no_opt_in() {
+    let config = one_kept_opt_in();
+    a_fifo_in_the_lists_place(config.path());
+    let path = config.path().to_path_buf();
+
+    let done = within(5, move || nothing_applies(&path));
+
+    assert!(done.is_some(), "reading the standing waited on a FIFO");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_removal_beside_a_fifo_in_the_lists_place_blocks_not_and_lasts() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    a_fifo_in_the_lists_place(config.path());
+    let path = config.path().to_path_buf();
+
+    let lasting = within(5, move || {
+        OptIns::stored_in(&path).revoke_within(WAIT, vec![nonce])
+    });
+
+    assert_eq!(lasting, Some(true), "the append waited on a FIFO");
+}
+
+#[cfg(unix)]
+#[test]
+fn what_opens_is_judged_by_the_file_opened_not_the_path() {
+    let config = one_kept_opt_in();
+    let path = revoked_file(config.path());
+    a_fifo_in_the_lists_place(config.path());
+
+    let read = within(5, {
+        let path = path.clone();
+        move || revoked_on_disk(&path)
+    });
+    let append = within(5, move || append_to_revoked(&path, b"\nA\n").is_err());
+
+    assert_eq!(read, Some(None), "a FIFO is no list");
+    assert_eq!(append, Some(true), "and no list to append to");
 }

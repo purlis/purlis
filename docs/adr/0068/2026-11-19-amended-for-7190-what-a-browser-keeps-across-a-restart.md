@@ -48,11 +48,14 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    pool, or the person's Remove on the Granted list (audited as a revoke). A removal the store
    cannot take (another process holds it) is reported, and the opt-in no longer applies: it is
    recorded as removed in a list beside the store, which is never read past. **That list fails
-   closed:** where it cannot be read (a link, a folder, not text, cut short or full) no kept
-   opt-in applies and the person is asked again; a removal that could not be written down holds
-   for this run only, and the person is told so. It has no time limit,
+   closed:** where it cannot be read (a link, a folder, a FIFO, not text, cut short or full) no
+   kept opt-in applies and the person is asked again, and it is never appended to, so an append
+   cannot make it readable again. Every append and every compaction takes the store's own lock
+   file; where it is not given, a removal that could not be written down holds for this run
+   only, and the person is told so. It has no time limit,
    is never synced, committed or sent to a runner, and holds no value of any login. A Keep off
-   is not kept: a refusal holds for the run alone, and replaces the opt-in it contradicts. A
+   is not kept: a refusal holds for this run, and replaces the opt-in it contradicts, unless
+   another window of this machine gives a yes, which the store shows before this run's memory. A
    runner never holds a value or a kept login (#2021). *Why:* the opt-in was asked again at every
    restart for the same pool and persona; the person's trust is in a pool as they pinned it and
    marked it, so binding it to that pin and mark keeps the question exactly where something

@@ -6903,13 +6903,15 @@ down rather than read off the code.
 ### `pool-login-optins.revoked` (this machine's config folder, outside the plane)
 - **What:** the nonces of kept opt-ins whose removal the store could not take, each on a line of
   its own, at most 1 MiB. An opt-in named here is never read. **It fails closed:** where this
-  file cannot be read (a link, a folder, not text, a last line cut short, or full) no kept
-  opt-in applies, and the person is asked again.
-- **Written by** the app, appended 0600 without the store's lock and never through a link; each
-  append starts a line of its own, and one that would pass the cap is refused whole. A removal
-  that could not be written down holds for the run alone, and the person is told so. The next
-  write of the store drops the nonces of entries that are gone, and starts a list that could
-  not be read afresh.
+  file cannot be read (a link, a folder, a FIFO, not text, a last line cut short, or full) no
+  kept opt-in applies, and the person is asked again.
+- **Written by** the app, appended 0600 under the store's lock file (`pool-login-optins.json.lock`,
+  the one every write and compaction of the store takes), opened without following a link or
+  waiting, and judged by the file opened; each append starts a line of its own, and one that
+  would pass the cap is refused whole. A list that cannot be read is never appended to, so an
+  append cannot make it readable again. A removal that could not be written down, or whose lock
+  was not given, holds for the run alone, and the person is told so. The next write of the store
+  drops the nonces of entries that are gone, and starts a list that could not be read afresh.
 - **Tier:** Machine, device-bound — never synced, never committed, never in a plane.
 
 ### `app/browser-timelines/<chat>/`

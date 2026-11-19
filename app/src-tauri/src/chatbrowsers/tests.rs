@@ -3875,7 +3875,11 @@ fn a_removal_not_written_down_says_it_holds_for_this_run_only() {
 
 #[test]
 fn a_pools_logins_not_removed_are_said_in_the_plural() {
-    let said = super::not_removed("the kept logins for pool builds", "They", &not_taken(true));
+    let said = super::not_removed(
+        "the kept logins for pool builds",
+        super::Removed::Many,
+        &not_taken(true),
+    );
 
     assert!(said.contains("They no longer apply."), "{said}");
 }

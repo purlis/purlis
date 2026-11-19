@@ -5,7 +5,7 @@
   machine only. A login you allowed on a pool's runner stays allowed on this machine until the
   pool, its image, its pin or its *This is my own* mark changes or you remove it, and is listed in
   the Granted list by its name with Remove (#7190). A removal purlis cannot make is reported, and
-  the login no longer applies; where purlis cannot write that down, it holds until you restart.
+  the login no longer applies; where purlis cannot write that down, it holds until you restart, and you are told so. Keep off on a pool login holds for this run, until the pool changes or another window of yours says yes.
   A kept browser answer is checked against the chat's current reach: where the reach narrowed
   meanwhile, you are asked again.
 - **A runner's browsers keep running when you quit purlis**, and are taken back when it reopens.
