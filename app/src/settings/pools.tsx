@@ -188,6 +188,8 @@ export function versionSaid(version: PoolVersion | undefined): string | undefine
       );
     }
   }
+  // Runners another desktop made on the same engine: only said, never touched (#7192).
+  if (version.other_desktops != null) lines.push(`${version.other_desktops}.`);
   return lines.length === 0 ? undefined : lines.join(" ");
 }
 

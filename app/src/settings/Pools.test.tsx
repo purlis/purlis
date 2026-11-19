@@ -1001,6 +1001,57 @@ describe("You › This machine › Pools", () => {
     ).toBeInTheDocument();
   });
 
+  it("says how many runners on its engine belong to another desktop, and says nothing where none do (#7192)", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2",
+      why: null,
+      desktop: "0.4.2",
+      follows: true,
+      draining: 0,
+      held: 0,
+      named: true,
+      waiting: 0,
+      owed: [],
+      owed_why: null,
+      left: [],
+      not_checked: [],
+      other_desktops: "2 runners belong to another desktop",
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    expect(
+      await within(group).findByText("2 runners belong to another desktop."),
+    ).toBeInTheDocument();
+  });
+
+  it("says nothing of other desktops' runners where its version names none (#7192)", async () => {
+    pools = [a_pool("builds")];
+    version = {
+      runner: "0.4.2-dev.16",
+      why: null,
+      desktop: "0.4.2-dev.17",
+      follows: true,
+      draining: 0,
+      held: 0,
+      named: null,
+      waiting: 0,
+      owed: [],
+      owed_why: null,
+      left: [],
+      not_checked: [],
+      other_desktops: null,
+    };
+    render(<App />);
+    const nav = await yourSettings();
+    await userEvent.click(await within(nav).findByRole("button", { name: "Pools" }));
+    const group = await screen.findByRole("region", { name: "Pools" });
+    await within(group).findByText(/Its runner runs purlis 0\.4\.2-dev\.16/);
+    expect(group).not.toHaveTextContent(/another desktop/);
+  });
+
   it("names each older runner kept unchecked in a line of its own, saying what is left of it and what lets it go", async () => {
     pools = [a_pool("builds")];
     version = {
