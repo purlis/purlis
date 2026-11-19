@@ -68,9 +68,14 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   `env -u GIT_CONFIG_COUNT …`); a socket you granted; a bare `ssh` reading `~/.ssh/config`
   (Codex, opencode); Claude Code's own ssh and its ssh agent; and a forge server under a name
   purlis does not list, since connector servers still start and only calls to the listed names
-  are refused. No harness version reads as locked. What a
-  chat with no minted token is told is `gh`'s own error; a message that says to mint one is
-  later work (#7218).
+  are refused. No harness version reads as locked. What a chat with no minted token is told
+  is purlis's own, not `gh`'s (#1349, #7218): the tab says from the chat's start that its
+  sandbox holds your credentials back and no agent identity gives it a token, naming Agent
+  identity and a template where the class is off; a `gh` or `glab` shim of a tool that mints
+  answers with the same sentence and exits, never running the program bare; and a failed command's
+  refusal of one of your credential files raises the credentials Notice. On a locked repo `gh`
+  reads an empty config folder, so it never reads `hosts.yml` and the Notice does not wait on that
+  refusal: the tab's note and the shim's sentence are what that chat is told.
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.
