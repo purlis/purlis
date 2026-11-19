@@ -1971,27 +1971,27 @@ fn browsers_left_on_a_forgotten_pools_machine_are_listed_as_left() {
     );
 }
 
-/// **Starts on different runners are not one queue** (#7187 item 8): the window-wide mutex is
-/// gone, and a runner's own gate holds only that runner's starts one at a time.
+/// **Starts on different engines are not one queue** (#7187 item 8): the window-wide mutex is
+/// gone, and an engine's own gate holds only that engine's starts one at a time.
 #[test]
-fn a_start_on_one_runner_waits_for_that_runners_count_alone() {
+fn a_start_on_one_engine_waits_for_that_engines_count_alone() {
     let gates = super::StartGates::default();
     let (builds, same, other, this_machine) = (
-        gates.of(Some("builds")),
-        gates.of(Some("builds")),
-        gates.of(Some("tests")),
-        gates.of(None),
+        gates.of(Some("builds"), || "engine-a".into()),
+        gates.of(Some("builds"), || "engine-a".into()),
+        gates.of(Some("tests"), || "engine-b".into()),
+        gates.of(None, || unreachable!("this machine's host names no engine")),
     );
     let mut waited = false;
     let counting = builds.turn(|| waited = true);
     assert!(!waited, "a free turn waits for nothing");
     assert!(
         same.turn.try_lock().is_err(),
-        "the same runner's next start waits"
+        "the same engine's next start waits"
     );
     assert!(
         other.turn.try_lock().is_ok(),
-        "another runner's start does not"
+        "another engine's start does not"
     );
     assert!(
         this_machine.turn.try_lock().is_ok(),
@@ -2000,16 +2000,44 @@ fn a_start_on_one_runner_waits_for_that_runners_count_alone() {
     drop(counting);
 }
 
-/// A replaced link is the same runner: the gate is keyed by the runner, so its starts are still
-/// counted against the one budget, and a pool forgotten takes its gate with it.
+/// Two pools on one engine are one budget: the second pool's start waits for the first's count.
 #[test]
-fn a_gate_outlives_its_link_and_goes_with_its_pool() {
+fn two_pools_on_one_engine_share_one_gate() {
     let gates = super::StartGates::default();
-    let before = gates.of(Some("builds"));
+    let first = gates.of(Some("builds"), || "engine-a".into());
+    let second = gates.of(Some("tests"), || "engine-a".into());
+    let slot = first.room_for_one_more(0, 1).expect("room");
+
+    assert!(Arc::ptr_eq(&first, &second));
+    assert!(
+        second.room_for_one_more(0, 1).is_none(),
+        "a start on the other pool counts the first's"
+    );
+    drop(slot);
+}
+
+/// The engine a pool is on is named from its records: a pool on another machine by the machine
+/// and engine as pinned, a local pool by this machine's Docker, none by the pool itself.
+#[test]
+fn an_engine_is_named_from_the_pools_records() {
+    assert_eq!(super::engine_of(None, "builds"), "pool builds");
+    let nowhere = tempfile::tempdir().unwrap();
+    assert_eq!(
+        super::engine_of(Some(nowhere.path()), "builds"),
+        "pool builds"
+    );
+}
+
+/// A replaced link is the same runner: the gate is keyed by the engine, so its starts are still
+/// counted against the one budget, and the last pool on an engine removed takes its gate with it.
+#[test]
+fn a_gate_outlives_its_link_and_goes_with_its_last_pool() {
+    let gates = super::StartGates::default();
+    let before = gates.of(Some("builds"), || "engine-a".into());
     let slot = before.room_for_one_more(0, 1).expect("room");
 
     // The link was replaced as it reconnected; the next start finds the same gate.
-    let after = gates.of(Some("builds"));
+    let after = gates.of(Some("builds"), || "engine-a".into());
     assert!(
         after.room_for_one_more(0, 1).is_none(),
         "past the budget the first start is still counting"
@@ -2017,11 +2045,64 @@ fn a_gate_outlives_its_link_and_goes_with_its_pool() {
     drop(slot);
     assert!(after.room_for_one_more(0, 1).is_some());
 
+    let gone = Arc::downgrade(&before);
+    drop((before, after));
     gates.forget("builds");
     assert!(
-        !Arc::ptr_eq(&before, &gates.of(Some("builds"))),
-        "a forgotten pool's gate is not kept"
+        gone.upgrade().is_none(),
+        "a removed pool's gate is not kept"
     );
+}
+
+/// A pool still on its engine keeps the gate when another pool on it goes.
+#[test]
+fn a_gate_stays_while_another_pool_is_on_its_engine() {
+    let gates = super::StartGates::default();
+    let first = gates.of(Some("builds"), || "engine-a".into());
+    drop(gates.of(Some("tests"), || "engine-a".into()));
+    let gate = Arc::downgrade(&first);
+    drop(first);
+
+    gates.forget("builds");
+
+    assert!(gate.upgrade().is_some(), "tests is still on that engine");
+}
+
+/// A pool added again under its old name, on its old engine, while a start still holds the old
+/// gate, finds that gate: the browsers it counts are not counted twice.
+#[test]
+fn a_pool_added_again_does_not_count_against_a_gate_a_start_still_holds() {
+    let gates = super::StartGates::default();
+    let old = gates.of(Some("builds"), || "engine-a".into());
+    let slot = old.room_for_one_more(0, 1).expect("room");
+    gates.forget("builds");
+
+    let new = gates.of(Some("builds"), || "engine-a".into());
+
+    assert!(Arc::ptr_eq(&old, &new), "the start is still on its way");
+    assert!(
+        new.room_for_one_more(0, 1).is_none(),
+        "so the budget it holds is still counted"
+    );
+    drop(slot);
+}
+
+/// A start still holding the gate of a removed pool keeps it until the start has answered, and
+/// then it is gone with the next look.
+#[test]
+fn a_removed_pools_gate_goes_once_its_last_start_has_answered() {
+    let gates = super::StartGates::default();
+    let old = gates.of(Some("builds"), || "engine-a".into());
+    let slot = old.room_for_one_more(0, 1).expect("room");
+    let weak = Arc::downgrade(&old);
+    drop(old);
+    gates.forget("builds");
+    assert!(weak.upgrade().is_some());
+
+    drop(slot);
+    drop(gates.of(Some("tests"), || "engine-b".into()));
+
+    assert!(weak.upgrade().is_none());
 }
 
 /// The turn is held for the count alone: a start that is on its way (a long engine download)
@@ -2030,7 +2111,7 @@ fn a_gate_outlives_its_link_and_goes_with_its_pool() {
 #[test]
 fn a_start_on_its_way_holds_a_slot_and_not_the_turn() {
     let gates = super::StartGates::default();
-    let gate = gates.of(Some("builds"));
+    let gate = gates.of(Some("builds"), || "engine-a".into());
     let on_its_way = {
         let _counting = gate.turn(|| ());
         gate.room_for_one_more(1, 3).expect("room for the first")
@@ -2056,7 +2137,7 @@ fn a_start_on_its_way_holds_a_slot_and_not_the_turn() {
 #[test]
 fn a_start_waiting_for_the_turn_says_so() {
     let gates = super::StartGates::default();
-    let gate = gates.of(Some("builds"));
+    let gate = gates.of(Some("builds"), || "engine-a".into());
     let counting = gate.turn(|| ());
     let waiting = {
         let gate = Arc::clone(&gate);

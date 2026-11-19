@@ -610,13 +610,15 @@ pub async fn remove_docker_pool(
             }
             // A removed pool keeps no login opt-in, which is kept on disk now (#7190): a store
             // that could not take one out is said with what stays, and it no longer applies.
+            if removed.is_ok()
+                && let Ok(browsers) = crate::browsers::browsers(&app)
+            {
+                browsers.pool_gone(&name);
+            }
             removed.map(|left| {
                 let logins = crate::chatbrowsers::forget_pool_logins_in(&held, &name).err();
                 PoolRemoval::Removed {
-                    left: [left, logins]
-                        .into_iter()
-                        .flatten()
-                        .reduce(|all, one| format!("{all} {one}")),
+                    left: said_together([left, logins]),
                 }
             })
         })
@@ -702,7 +704,13 @@ fn gone_from_here(
     }
     let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
     // What stays, said together: a login opt-in the store could not take out is one of them.
-    [said, browsers_left, logins_kept]
+    said_together([said, browsers_left, logins_kept])
+}
+
+/// What stays after a pool is removed or forgotten, said as one: each line there is, one after
+/// the other; none where there is none.
+fn said_together(lines: impl IntoIterator<Item = Option<String>>) -> Option<String> {
+    lines
         .into_iter()
         .flatten()
         .reduce(|all, one| format!("{all} {one}"))

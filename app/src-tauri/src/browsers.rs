@@ -433,13 +433,71 @@ mod hosted {
     use crate::hostedsessions::{Connection, FrameSink, HostLink, OriginSink, Reconnect};
     use crate::reconnecting::Reconnection;
 
-    /// **One gate per runner, or for this machine's own host** (#7187 item 8), not per link: a
-    /// link is replaced as it reconnects, and a new gate for the new link would let a start run
-    /// past the budget the old one was counting. A start counts the host's browsers against its
-    /// budget before the next on that host does, and a start on another runner waits for none.
-    /// A pool's gate goes when the pool is forgotten ([`Self::forget`]).
+    /// **One gate per engine, or for this machine's own host** (#7187 item 8), not per pool and
+    /// not per link: a link is replaced as it reconnects, and a new gate for the new link would
+    /// let a start run past the budget the old one was counting; two pools on one engine are one
+    /// machine's budget. A start counts the host's browsers against its budget before the next
+    /// on that engine does, and a start on another engine waits for none. A gate goes when the
+    /// last pool on its engine is removed or forgotten ([`Self::forget`]) and no start is
+    /// holding it: while one does, a pool added again on that engine finds the same gate, so
+    /// nothing is counted twice.
     #[derive(Default)]
-    pub(crate) struct StartGates(Mutex<HashMap<Option<String>, Arc<Gate>>>);
+    pub(crate) struct StartGates(Mutex<Gates>);
+
+    /// What a gate is for: this machine's own host, or the engine a pool's runner is on.
+    #[derive(Clone, PartialEq, Eq, Hash)]
+    enum GateOf {
+        ThisMachine,
+        Engine(String),
+    }
+
+    #[derive(Default)]
+    struct Gates {
+        by_engine: HashMap<GateOf, Arc<Gate>>,
+        /// The engine each pool was last seen on.
+        pools: HashMap<String, GateOf>,
+    }
+
+    impl Gates {
+        /// Drops the gates no pool is on any more and no start holds.
+        fn sweep(&mut self) {
+            let pools = &self.pools;
+            self.by_engine.retain(|of, gate| {
+                *of == GateOf::ThisMachine
+                    || pools.values().any(|on| on == of)
+                    || Arc::strong_count(gate) > 1
+                    || gate.starting.load(std::sync::atomic::Ordering::SeqCst) > 0
+            });
+        }
+    }
+
+    /// **What the engine of pool `pool` is called, for its gate**: the machine and engine as
+    /// pinned for a pool on another machine, this machine's Docker for a local one, and the
+    /// cluster and context for a cluster pool. A pool its records do not name is its own.
+    pub(crate) fn engine_of(config: Option<&Path>, pool: &str) -> String {
+        let Some(config) = config else {
+            return format!("pool {pool}");
+        };
+        if let Some(kept) = purlis_core::runners::pools(config)
+            .ok()
+            .and_then(|pools| pools.into_iter().find(|one| one.name() == pool))
+        {
+            return kept.remote_engine().map_or_else(
+                || "this machine's Docker".to_owned(),
+                |remote| format!("remote {}", remote.pinned_said()),
+            );
+        }
+        if let Some(cluster) = purlis_core::runners::cluster_pools(config)
+            .ok()
+            .and_then(|pools| pools.into_iter().find(|one| one.name() == pool))
+        {
+            return match cluster.pin() {
+                Ok(pin) => format!("cluster {} context {}", pin.cluster, cluster.context()),
+                Err(_) => format!("cluster context {}", cluster.context()),
+            };
+        }
+        format!("pool {pool}")
+    }
 
     /// **One host's turn at counting its browsers, and the starts counted but not yet running.**
     /// The turn is held for the count alone, never across the start itself, which may download
@@ -492,24 +550,24 @@ mod hosted {
     }
 
     impl StartGates {
-        /// The gate of the host `pool`'s runner is on, or this machine's own where none: the same
-        /// one each time, none shared with another runner.
-        pub(crate) fn of(&self, pool: Option<&str>) -> Arc<Gate> {
-            Arc::clone(
-                self.0
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .entry(pool.map(str::to_owned))
-                    .or_default(),
-            )
+        /// The gate of the engine `pool`'s runner is on (`engine` names it), or this machine's own
+        /// where none: the same one each time, none shared with another engine.
+        pub(crate) fn of(&self, pool: Option<&str>, engine: impl FnOnce() -> String) -> Arc<Gate> {
+            let of = pool.map_or(GateOf::ThisMachine, |_| GateOf::Engine(engine()));
+            let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(pool) = pool {
+                all.pools.insert(pool.to_owned(), of.clone());
+            }
+            all.sweep();
+            Arc::clone(all.by_engine.entry(of).or_default())
         }
 
-        /// Pool `pool` was forgotten: its gate goes with it.
+        /// Pool `pool` was removed or forgotten: its engine's gate goes with the last pool on it,
+        /// once no start holds it.
         pub(crate) fn forget(&self, pool: &str) {
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&Some(pool.to_owned()));
+            let mut all = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+            all.pools.remove(pool);
+            all.sweep();
         }
     }
 
@@ -1116,10 +1174,15 @@ mod hosted {
         /// the person, never crashed; one the machine did not answer for stays running there,
         /// and is counted as `left`. Done before the pool's links end.
         pub(crate) fn end_on_forgotten(&self, pool: &str) -> Forgotten {
-            // Only a forgotten pool loses its gate: one that goes on keeps it, so a start in
-            // progress and the next are counted together.
-            self.starting.forget(pool);
+            self.pool_gone(pool);
             self.end_each_on(pool, Some(Closer::Person))
+        }
+
+        /// **Pool `pool` is removed or forgotten here**: its engine's start gate goes with the
+        /// last pool on it. Only a pool that goes keeps no gate: one that goes on keeps it, so a
+        /// start in progress and the next are counted together.
+        pub(crate) fn pool_gone(&self, pool: &str) {
+            self.starting.forget(pool);
         }
 
         fn end_each_on(&self, pool: &str, closer: Option<Closer>) -> Forgotten {
@@ -1457,7 +1520,12 @@ mod hosted {
             // runners go on at once (#7187 item 8). Held for the count alone: what this start
             // adds is held as a slot until it has answered, so a long engine download keeps the
             // next start waiting for nothing.
-            let gate = self.starting.of(at.pool.as_deref());
+            let gate = self.starting.of(at.pool.as_deref(), || {
+                engine_of(
+                    self.connection.runners_config().as_deref(),
+                    at.pool.as_deref().unwrap_or_default(),
+                )
+            });
             let (budget, _slot) = {
                 let _counting = gate.turn(|| crate::enginedownload::here().queued(&named));
                 // Whether it was cancelled as it waited, which it learns as it has the turn.
