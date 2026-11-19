@@ -1285,7 +1285,12 @@ pub fn neither_allowed_nor_in_the_image(persona: &str, name: &str, image: Option
 /// **The folder the shims of a chat that only refuses go in** (#4373), beside the persona's
 /// `folder`: named by the digest of what they say, so it holds those shims and nothing else, and
 /// two such chats that say the same share one.
-fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[String]) -> PathBuf {
+fn refusals_folder(
+    folder: &Path,
+    refusing: &[(String, String)],
+    unallowed: &[String],
+    guards: &[(String, String)],
+) -> PathBuf {
     use sha2::Digest as _;
     let mut digest = sha2::Sha256::new();
     for (name, said) in refusing {
@@ -1294,9 +1299,23 @@ fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[St
         digest.update(said.as_bytes());
         digest.update([0, u8::from(unallowed.contains(name)), 0]);
     }
+    // A guard is one chat's own (#1349): what it says is in the name, so a chat whose class is
+    // off, which has none, never finds or deletes this chat's. Nothing is added with no guard,
+    // so a folder named before guards existed keeps its name.
+    for (name, said) in guards {
+        digest.update(b"guard\0");
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(said.as_bytes());
+        digest.update([0]);
+    }
     let digest = digest.finalize();
     folder
-        .join("refusing")
+        .join(if guards.is_empty() {
+            "refusing"
+        } else {
+            "guarded"
+        })
         .join(crate::runnerlink::hex_of(&digest[..16]))
 }
 
@@ -1461,8 +1480,12 @@ pub(crate) fn for_chat_on(
     if let Some(resolved) = &mut resolved {
         resolved.refuse_what_is_absent(image);
         if resolved.only_refuses {
-            resolved.folder =
-                refusals_folder(&resolved.folder, &resolved.refusing, &resolved.unallowed);
+            resolved.folder = refusals_folder(
+                &resolved.folder,
+                &resolved.refusing,
+                &resolved.unallowed,
+                &[],
+            );
         }
     }
     resolved
@@ -2953,6 +2976,17 @@ pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
     )
 }
 
+/// **What the shim of a `glab` the persona declares but that runs nothing here says** (#1349): it
+/// is not allowed yet (or no program was found), and the chat never falls back to the person's
+/// own login.
+pub fn declared_glab_not_running_said(persona: &str) -> String {
+    format!(
+        "glab is {persona}'s tool but is not running in this chat, and a chat never uses the \
+         person's own glab login. Allow it in Settings › GitLab access ({ALLOW_IS_ASKED}), make \
+         sure glab is installed, then restart the chat."
+    )
+}
+
 /// **The forge programs a chat under the credentials class is guarded from running bare**
 /// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
 pub const GUARDED_FORGES: [&str; 1] = ["glab"];
@@ -2962,8 +2996,9 @@ pub const GUARDED_FORGES: [&str; 1] = ["glab"];
 /// ([`crate::sandbox::Class::Credentials`]) the program would only fail on that refusal, so its
 /// name in the chat names the flow instead and exits 1. `gitlab_hosts` are the project's GitLab
 /// hosts, one of which the sentence names where there is exactly one. A tool the persona declares
-/// has its own shim, which is never replaced, and a name the persona declares at all (`declared`,
-/// allowed here or not, found or not) is never guarded: what it says is its own tool's to say.
+/// has its own shim, which is never replaced; a name the persona declares that is not ready (not
+/// allowed here yet, or not found) is guarded with a sentence that says to allow it. The shims go
+/// in a folder of this chat's own, named by what they say ([`refusals_folder`]).
 pub fn guard_forges(
     resolved: Option<Resolved>,
     root: &Path,
@@ -2972,11 +3007,10 @@ pub fn guard_forges(
     declared: &[String],
 ) -> Option<Resolved> {
     let own = |name: &str| {
-        declared.iter().any(|tool| tool == name)
-            || resolved.as_ref().is_some_and(|one| {
-                one.ready.iter().any(|ready| ready.tool.name == name)
-                    || one.refusing.iter().any(|(tool, _)| tool == name)
-            })
+        resolved.as_ref().is_some_and(|one| {
+            one.ready.iter().any(|ready| ready.tool.name == name)
+                || one.refusing.iter().any(|(tool, _)| tool == name)
+        })
     };
     let guards: Vec<(String, String)> = GUARDED_FORGES
         .iter()
@@ -2986,7 +3020,12 @@ pub fn guard_forges(
                 [only] => Some(only.as_str()),
                 _ => None,
             };
-            ((*name).to_owned(), undeclared_glab_said(persona, host))
+            let said = if declared.iter().any(|tool| tool == name) {
+                declared_glab_not_running_said(persona)
+            } else {
+                undeclared_glab_said(persona, host)
+            };
+            ((*name).to_owned(), said)
         })
         .collect();
     if guards.is_empty() {
@@ -3004,9 +3043,14 @@ pub fn guard_forges(
         only_refuses: true,
     });
     into.guards = guards;
-    if into.only_refuses && into.refusing.is_empty() {
-        into.folder = refusals_folder(&folder(root, persona), &into.guards, &[]);
-    }
+    // The guard is this chat's alone: its shims go in a folder named by what they say, never in
+    // the persona's, which a chat of the same persona without a guard writes and cleans.
+    into.folder = refusals_folder(
+        &folder(root, persona),
+        &into.refusing,
+        &into.unallowed,
+        &into.guards,
+    );
     Some(into)
 }
 

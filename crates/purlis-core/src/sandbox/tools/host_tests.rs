@@ -221,12 +221,29 @@ fn a_glab_tool_on_a_self_hosted_gitlab_reaches_that_host_and_no_other() {
             "view",
             "https://gitlab.com/acme/svc/-/merge_requests/3",
         ],
+        // A lookalike, and a port the declared host does not name (none: the default port only).
+        &[
+            "api",
+            "--hostname",
+            "git.acme.internal.evil.example",
+            "user",
+        ],
+        &["api", "--hostname", "evil-git.acme.internal", "user"],
+        &["api", "--hostname", "git.acme.internal:9999", "user"],
+        &["api", "https://git.acme.internal:9999/api/v4/user"],
+        &["mr", "list", "-R", "git.acme.internal:9999/acme/svc"],
     ] {
         let said = runs(&glab, refused).expect_err(&format!("{refused:?}"));
-        assert!(
-            said.contains("git.acme.internal") || said.contains("host"),
-            "{said}"
-        );
+        // `glab api` refuses any other host by what it names; a repository elsewhere, by the
+        // forge it reaches: a refusal says which, never only that it was refused.
+        if refused[0] == "api" {
+            assert!(said.contains("names another host"), "{said}");
+        } else {
+            assert!(
+                said.contains("only against git.acme.internal") && said.contains("names "),
+                "{said}"
+            );
+        }
     }
     // The run is told its host, so a command that names none reaches it.
     assert_eq!(

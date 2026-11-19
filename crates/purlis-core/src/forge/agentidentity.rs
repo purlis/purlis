@@ -776,33 +776,9 @@ pub fn start_note(
         return None;
     }
     let routes = crate::sandbox::tools::forge_routes(&confines.tools);
-    credentials_note(holds, &routes, &hosts_cached(root), persona)
-}
-
-/// How long [`hosts_cached`] keeps what it read.
-const HOSTS_KEPT: Duration = Duration::from_secs(30);
-
-/// **[`hosts_of_the_project`] for a chat's start** (S5 of #7218's review): reading it costs one
-/// `git config` per clone, and every start asks, so a project's answer is kept for
-/// [`HOSTS_KEPT`]. The window's flows read fresh.
-fn hosts_cached(root: &Path) -> Vec<HostFound> {
-    use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
-    use std::time::Instant;
-    type Kept = Mutex<HashMap<std::path::PathBuf, (Instant, Vec<HostFound>)>>;
-    static KEPT: OnceLock<Kept> = OnceLock::new();
-    let kept = KEPT.get_or_init(Kept::default);
-    if let Ok(held) = kept.lock()
-        && let Some((at, found)) = held.get(root)
-        && at.elapsed() < HOSTS_KEPT
-    {
-        return found.clone();
-    }
-    let found = hosts_of_the_project(root);
-    if let Ok(mut held) = kept.lock() {
-        held.insert(root.to_path_buf(), (Instant::now(), found.clone()));
-    }
-    found
+    // Read fresh, as the guard of the chat's own `glab` reads it: a kept answer could say
+    // "covered" for a remote that has since changed, or keep a failed `git` read as no hosts.
+    credentials_note(holds, &routes, &hosts_of_the_project(root), persona)
 }
 
 /// **An App a persona's tool line names**, read from the project file.

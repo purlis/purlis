@@ -1720,7 +1720,7 @@ fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_h
         guard_forges(resolved(&[glab.clone()]), &root, "devops", &[], &[]).expect("tools");
     assert!(declared.guards.is_empty(), "{:?}", declared.guards);
     // Declared by the persona but not ready (waiting for the Allow, or no program found): the
-    // tool's own answer stands, and no guard says the flow over it.
+    // guard says to allow it, and never the flow that declares it.
     let waiting = guard_forges(
         resolved(&[kubectl()]),
         &root,
@@ -1729,20 +1729,40 @@ fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_h
         &["glab".to_owned()],
     )
     .expect("tools");
-    assert!(waiting.guards.is_empty(), "{:?}", waiting.guards);
-    // Not declared, with kubectl ready: one folder holds both shims.
+    assert_eq!(waiting.guards.len(), 1, "{:?}", waiting.guards);
+    assert!(
+        waiting.guards[0]
+            .1
+            .contains("Allow it in Settings › GitLab access"),
+        "{:?}",
+        waiting.guards
+    );
+    assert!(
+        !waiting.guards[0].1.contains("purlis gitlab access"),
+        "{:?}",
+        waiting.guards
+    );
+    // Not declared, with kubectl ready: the guard sits beside kubectl's shim, in a folder of this
+    // chat's own.
     let with_guard =
         guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).expect("tools");
     assert!(!with_guard.only_refuses);
     let written = with_guard.write(purlis).unwrap().unwrap();
     assert!(written.bin.join("glab").exists() && written.bin.join("kubectl").exists());
-    // The next start has no guard, as where the class is off: the old shim is taken away.
-    resolved(&[kubectl()])
+    // A start of the same persona without a guard, as where the class is off, writes the
+    // persona's own folder and never takes this chat's guard away.
+    let plain = resolved(&[kubectl()]).unwrap();
+    assert_ne!(plain.folder, with_guard.folder);
+    let unguarded = plain.write(purlis).unwrap().unwrap();
+    assert!(!unguarded.bin.join("glab").exists());
+    assert!(written.bin.join("glab").exists());
+    // And the other way: this chat starting again leaves the plain chat's folder alone.
+    guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[])
         .unwrap()
         .write(purlis)
-        .unwrap()
         .unwrap();
-    assert!(!written.bin.join("glab").exists());
+    assert!(unguarded.bin.join("kubectl").exists());
+    assert!(!unguarded.bin.join("glab").exists());
     let _ = std::fs::remove_dir_all(root);
     let _ = std::fs::remove_dir_all(system);
 }

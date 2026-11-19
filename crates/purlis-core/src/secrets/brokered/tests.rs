@@ -6504,12 +6504,33 @@ fn a_glab_run_naming_another_host_than_the_tools_never_runs_with_the_token() {
         &["api", "https://gitlab.com/api/v4/user"][..],
         &["api", "--hostname", "gitlab.com", "user"],
         &["mr", "list", "-R", "gitlab.com/acme/svc"],
+        // A lookalike of the declared host, and a port it does not name.
+        &[
+            "api",
+            "--hostname",
+            "git.acme.internal.evil.example",
+            "user",
+        ],
+        &["api", "--hostname", "git.acme.internal:9999", "user"],
+        &[
+            "mr",
+            "list",
+            "-R",
+            "git.acme.internal.evil.example/acme/svc",
+        ],
+        &["mr", "list", "-R", "git.acme.internal:9999/acme/svc"],
     ] {
         let frames = served_as_asked(&asker, a_glab_run(project.path(), args));
         assert_ne!(frames.last(), Some(&Frame::Exit(0)), "{args:?}: {frames:?}");
         assert!(
             !stdout(&frames).contains("token="),
             "{args:?}: ran: {frames:?}"
+        );
+        // The refusal says why: another host, and for a repository, the one the tool is for.
+        let said = format!("{} {frames:?}", stderr(&frames));
+        assert!(
+            said.contains("names another host") || said.contains("only against git.acme.internal"),
+            "{args:?}: refused without naming the host: {said}"
         );
     }
 }
