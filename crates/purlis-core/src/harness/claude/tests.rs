@@ -2184,9 +2184,14 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
     // counts as an enforced family, so where they name a program a dead Bash guard refuses
     // rather than lets the call run. Only the Bash guard reads them.
     use crate::enforcement::{Resolved, Settings};
-    for text in [
-        "[policy]\ntemplate = \"open\"\n",
-        "[policy]\nsecrets = \"log\"\nguards.credential = \"log\"\n",
+    // Under `watch` the Bash guard refuses with no rule as well: it judges the sandbox, which
+    // `watch` runs at the floor (ruling Q327). Under `open` there is no sandbox.
+    for (text, bash_alone) in [
+        ("[policy]\ntemplate = \"open\"\n", "continue"),
+        (
+            "[policy]\nsecrets = \"log\"\nguards.credential = \"log\"\n",
+            "block",
+        ),
     ] {
         let policy = Resolved::of(
             &Settings::from_text(Some(text)),
@@ -2195,7 +2200,7 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
         assert_eq!(
             guards_failing(&under_policy(armed_args(), &policy, false)),
             pairs([
-                ("pretooluse", "continue"),
+                ("pretooluse", bash_alone),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
                 ("pretooluse-dispatch", "continue"),

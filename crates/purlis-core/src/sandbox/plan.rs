@@ -71,6 +71,8 @@ pub struct Telling {
     pub refusals: egress::Refusals,
     pub reached: Option<egress::Reached>,
     pub asks: Option<Arc<Asks>>,
+    /// Where the project's `[policy]` does not enforce `network` ([`egress::Serving::network`]).
+    pub network: Option<super::asks::Answered>,
 }
 
 /// **Who hears what a chat's proxy does, before its board is made** (#1999): what the window
@@ -88,6 +90,9 @@ pub struct Hearing {
     pub reached: Option<egress::Reached>,
     /// Its board of live asks' hearing, where its proxy asks live.
     pub asks: Option<Asking>,
+    /// Where the project's `[policy]` does not enforce `network` (the Q308 follow-up, item 5):
+    /// told each host its proxy carried only for that ([`egress::Serving::network`]).
+    pub network: Option<super::asks::Answered>,
 }
 
 /// What a chat's board of live asks is made of (#1666): who hears an ask, when one may be
@@ -124,6 +129,7 @@ impl Hearing {
             },
             reached: self.reached,
             asks: self.asks.map(Asking::board),
+            network: self.network,
         }
     }
 }
@@ -290,6 +296,7 @@ impl Plan {
             refusals: telling.refusals,
             reached: telling.reached,
             asks: telling.asks,
+            network: telling.network,
             ..egress::Serving::of(reach)
         }
     }

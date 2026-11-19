@@ -609,16 +609,23 @@ use crate::view::{Limits, Views};
 /// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
 /// is not asked, and its chat's paths stay no link.
 ///
-/// 1.94 tells a window that a runner's host answers and refuses (#7187): `link_down` may say
+/// 1.94 has a window name the families its resolution of the project's policy does not enforce
+/// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
+/// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
+/// before 1.94 reads no families, and enforces both, as before; a runner applies its own locks over
+/// them.
+///
+/// 1.95 tells a window that a runner's host answers and refuses (#7187): `link_down` may say
 /// `refused` where the machine a pool reaches it through answers but its sign-in, Docker or
 /// forwarding fails, which the relaying host does not retry on its own, and `host_key_changed`
 /// where the machine presents another host key, CA or engine than the pinned one, a security stop
-/// that is never retried on its own. A window before 1.94 ignores both fields and reads the link
+/// that is never retried on its own. A window before 1.95 ignores both fields and reads the link
 /// as any link that is down, so its Reconnecting notice and Try now go on as they did; nothing is
 /// sent to a host of any version for either.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 94,
+    minor: 95,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -1674,6 +1681,14 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+    /// **The families the window's resolution of the project's policy does not enforce for this
+    /// chat** (1.94, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
+    /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.94 reads it:
+    /// both enforced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifted: Vec<String>,
 }
 
 /// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
@@ -1838,6 +1853,10 @@ pub enum SandboxTold {
     /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
+    /// It let `target`, a host and port, through only because `family` (one of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.94): the window writes the line of
+    /// the chat's enforcement log where the family logs. Told only where the window named it.
+    Lifted { family: String, target: String },
 }
 
 /// What a [`Command::Start`] asks for.
@@ -3156,16 +3175,16 @@ pub enum Pushed {
         /// refused.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         gone: bool,
-        /// The other host answers, but refuses (1.94, #7187): its sign-in, Docker or forwarding
+        /// The other host answers, but refuses (1.95, #7187): its sign-in, Docker or forwarding
         /// fails. The relaying host does not link to it again on its own; until something asks
-        /// again, each command that needs it tries once and is refused. A window before 1.94
+        /// again, each command that needs it tries once and is refused. A window before 1.95
         /// ignores the field and reads it as any link that is down, which it waits on.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         refused: bool,
         /// The machine the other host is reached through presents another host key, CA or
-        /// engine than the pinned one (1.94, #7187): a security stop, never linked again on
+        /// engine than the pinned one (1.95, #7187): a security stop, never linked again on
         /// its own; the person says it is all right in the pool's settings. A window before
-        /// 1.94 ignores the field and reads it as any link that is down.
+        /// 1.95 ignores the field and reads it as any link that is down.
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         host_key_changed: bool,
     },

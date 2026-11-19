@@ -740,9 +740,9 @@ pub fn decide(request: &Request<'_>) -> Decision {
             crate::dispatchgrant::never_above_said(above, to),
         )),
         // The project's policy denies it: no grant lifts it, so nobody is asked.
-        (Some(to), Covers::Denied(_)) => {
-            refused(Refused::Denied(crate::dispatchgrant::denied_said(to)))
-        }
+        (Some(to), Covers::Denied(deny)) => refused(Refused::Denied(
+            crate::dispatchgrant::denied_said(to, *deny),
+        )),
         // No grant, or none that counts while the record of nevers does not read: the person
         // is asked. Policy was answered at step 4.
         (Some(to), Covers::NeedsGrant | Covers::Unread | Covers::Locked(_)) => {

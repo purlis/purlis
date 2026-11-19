@@ -349,7 +349,7 @@ pub struct Place<'a> {
 }
 
 /// [`Place`]'s lists, owned: what this machine says for a project and a chat.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Ground {
     pub root: PathBuf,
     pub chat: PathBuf,
@@ -361,6 +361,9 @@ pub struct Ground {
     pub folded: bool,
     /// Whether the project is at the floor, where a person may lift a held folder ([`lift`]).
     pub floor: bool,
+    /// What the floor holds on this machine ([`super::floor_held`]: the `PATH` folders and the
+    /// packages they lead to), at any level: what [`unasked_write`] never answers.
+    pub floor_held: Vec<PathBuf>,
 }
 
 /// The system temp folders, as the kernel names them: a harness's own temp roots in them are
@@ -448,10 +451,11 @@ impl Ground {
         // lets the chat write it: allowed here, and no longer refused for being on `PATH`.
         let locks = super::policy::Locks::of(root);
         let floor = super::Plane::read(root).in_force(&locks).is_none();
+        let floor_held = super::floor_held(root, machine, &[]);
         if floor {
-            let held = super::floor_held(root, machine, &[]);
-            refused.retain(|dir| !held.contains(&super::real(dir)) && !held.contains(dir));
-            allowed.extend(held);
+            refused
+                .retain(|dir| !floor_held.contains(&super::real(dir)) && !floor_held.contains(dir));
+            allowed.extend(floor_held.iter().cloned());
         }
         refused.extend(harness_homes(machine, &homes));
         Self {
@@ -464,6 +468,7 @@ impl Ground {
             harness_temp: harness_temp(),
             folded: machine.os == super::Os::MacOs,
             floor,
+            floor_held,
         }
     }
 
@@ -662,6 +667,41 @@ pub fn write(typed: &str, place: &Place<'_>) -> Result<PathBuf, Refused> {
              shared with other programs, and much of it is loaded later outside any sandbox."
                 .to_owned(),
         ));
+    }
+    Ok(resolved)
+}
+
+/// **`typed` as a folder a project's `[policy]` may let a chat write with nobody asked** (the
+/// Q308 follow-up, item 3, and the review of #7105), or why not: [`write`]'s judgement, with the
+/// allowlist cut to the project and the folders you listed in Settings. Never a held folder
+/// ([`liftable`]), and never a folder the floor holds ([`super::floor_held`]: `PATH` and the
+/// packages it leads to): a later program loads code from each outside any sandbox, so only
+/// the person allows one, from its Notice, whatever the project's `[policy]` says.
+pub fn unasked_write(typed: &str, ground: &Ground) -> Result<PathBuf, Refused> {
+    let later_code = || Refused::Never(brokered_route(Class::LaterCode).to_owned());
+    let place = ground.place();
+    if liftable(Path::new(typed.trim()), &place).is_some() {
+        return Err(later_code());
+    }
+    let listed: Vec<PathBuf> = super::local::grantable_folders(&ground.root)
+        .into_iter()
+        .filter(|listed| still_itself(listed))
+        .collect();
+    let resolved = write(
+        typed,
+        &Place {
+            allowed: &listed,
+            ..place
+        },
+    )?;
+    // Inside a folder the floor holds, or holding one: a folder you listed may hold a `PATH`
+    // folder or a package root (`~/.cargo` holds `~/.cargo/bin`), which only the person allows.
+    let floor_held = ground
+        .floor_held
+        .iter()
+        .any(|held| inside_any(&resolved, held, &place) || holds_any(&resolved, held, &place));
+    if liftable(&resolved, &place).is_some() || floor_held {
+        return Err(later_code());
     }
     Ok(resolved)
 }

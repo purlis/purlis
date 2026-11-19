@@ -44,6 +44,7 @@ fn steward() -> Chat<'static> {
         session: 3,
         persona: Some("steward"),
         name: Some("steward 1".to_owned()),
+        policy: None,
     }
 }
 
@@ -434,6 +435,7 @@ fn allow_follows_a_refusal_an_audit_and_the_apps_own_record_of_the_chat() {
         session: 3,
         persona: None,
         name: None,
+        policy: None,
     };
     assert!(allow(root, &refusals, &nobody, "devops", &auditing(&heard), 1).is_err());
     assert_eq!(sandbox::local::granted_vaults(root), []);
@@ -811,10 +813,66 @@ fn every_chats_refusals_are_listed_with_when_each_was_first_heard() {
 fn keep_blocked_on_a_vault_the_persona_may_not_use_holds_and_says_nothing_more() {
     let project = project();
     assert_eq!(
-        kept_blocked_but_held(project.path(), Some("steward"), "devops"),
+        kept_blocked_but_held(project.path(), Some("steward"), "devops", None),
         None
     );
-    assert_eq!(kept_blocked_but_held(project.path(), None, "devops"), None);
+    assert_eq!(
+        kept_blocked_but_held(project.path(), None, "devops", None),
+        None
+    );
+}
+
+/// How every family runs where the project's `[policy]` turns `vaults` off, as the app would
+/// answer it, for this test's thread alone.
+fn vaults_off_here() -> VaultsOff {
+    let resolved = purlis_core::enforcement::Resolved::of(
+        &purlis_core::enforcement::Settings::from_text(Some("[policy]\nvaults = \"off\"\n")),
+        &sandbox::policy::Locks::none(),
+    );
+    assert_eq!(
+        resolved.mode(purlis_core::enforcement::Family::Vaults),
+        purlis_core::enforcement::Mode::Off
+    );
+    purlis_core::enforcement::answered_on_this_thread(Some(resolved));
+    VaultsOff
+}
+
+/// Puts this thread's answer away as it goes.
+struct VaultsOff;
+
+impl Drop for VaultsOff {
+    fn drop(&mut self) {
+        purlis_core::enforcement::answered_on_this_thread(None);
+    }
+}
+
+/// A chain that ran the `vaults` family enforced, as the app spells it.
+const STRICT_CHAIN: &str = "vaults=enforce";
+
+#[test]
+fn a_vault_check_for_a_dispatched_chat_runs_under_its_chain_s_policy() {
+    // #7153: under `vaults = "off"` here, a chat whose chain ran vaults enforced is answered as
+    // its brokered read is: steward may not use devops, so Allow is no "already allowed", and
+    // Keep blocked holds.
+    let project = project();
+    let root = project.path();
+    let _off = vaults_off_here();
+    assert!(
+        kept_blocked_but_held(root, Some("steward"), "devops", None).is_some(),
+        "vaults off: the persona may use it"
+    );
+    assert_eq!(
+        kept_blocked_but_held(root, Some("steward"), "devops", Some(STRICT_CHAIN)),
+        None
+    );
+    let refusals = Refusals::default();
+    let heard = Audits::default();
+    let chained = Chat {
+        policy: Some(STRICT_CHAIN.to_owned()),
+        ..steward()
+    };
+    let pressed = allow(root, &refusals, &chained, "devops", &auditing(&heard), 1);
+    assert!(!matches!(pressed, Ok(Allowed::Already(_))), "{pressed:?}");
 }
 
 #[test]
@@ -836,7 +894,7 @@ fn keep_blocked_on_a_vault_allowed_for_the_persona_says_its_runs_still_go_and_po
     let made = allow(root, &refusals, &steward(), "devops", &auditing(&heard), 1);
     assert!(matches!(made, Ok(Allowed::Made { .. })), "{made:?}");
 
-    let held = kept_blocked_but_held(root, Some("steward"), "devops").expect("held");
+    let held = kept_blocked_but_held(root, Some("steward"), "devops", None).expect("held");
 
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::AllowedList);
     assert_eq!(held.persona, "steward");
@@ -852,7 +910,7 @@ fn keep_blocked_on_a_vault_allowed_for_the_persona_says_its_runs_still_go_and_po
 #[test]
 fn keep_blocked_on_a_vault_tagged_for_the_persona_says_its_runs_still_go_and_names_the_tag() {
     let project = project();
-    let held = kept_blocked_but_held(project.path(), Some("devops"), "devops").expect("held");
+    let held = kept_blocked_but_held(project.path(), Some("devops"), "devops", None).expect("held");
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
     // Only the tag holds it: nothing to remove in the Allowed list, so no link there (#5939).
     assert!(!held.allowed_list);
@@ -874,7 +932,7 @@ fn keep_blocked_on_a_held_vault_a_tool_line_names_says_that_line_too() {
          \"KUBECONFIG file\", key = \"kubeconfig\" } }\n",
     )
     .unwrap();
-    let held = kept_blocked_but_held(root, Some("devops"), "devops").expect("held");
+    let held = kept_blocked_but_held(root, Some("devops"), "devops", None).expect("held");
     assert!(
         held.said
             .ends_with(" devops's tools name it too: remove that tool line to stop its runs."),
@@ -890,7 +948,7 @@ fn keep_blocked_on_a_vault_both_tagged_and_allowed_points_at_the_tag_which_remov
     let root = project.path();
     purlis_core::sandbox::local::grant_vault(root, "devops", "devops")
         .expect("a row of the Allowed list");
-    let held = kept_blocked_but_held(root, Some("devops"), "devops").expect("held");
+    let held = kept_blocked_but_held(root, Some("devops"), "devops", None).expect("held");
     assert_eq!(held.by, purlis_core::askoutcome::HeldBy::Tag);
     // The sentence names the Allowed list too, so the Notice links there (#5939).
     assert!(held.allowed_list);

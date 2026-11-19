@@ -151,14 +151,14 @@ fn a_grant_never_lifts_a_policy_deny() {
     grants.denied = vec![pair("steward", "devops")];
     assert_eq!(
         judged(&grants, &Locks::none(), strict()),
-        Covers::Denied(DENY_RULE.to_owned())
+        Covers::Denied(Deny::Named)
     );
     // "Every other persona" denies the same, and no other asker.
     let mut any = every_allow();
     any.denied_any = vec!["steward".to_owned()];
     assert_eq!(
         judged(&any, &Locks::none(), strict()),
-        Covers::Denied(DENY_RULE.to_owned())
+        Covers::Denied(Deny::Named)
     );
     assert_eq!(
         covers(Some("qa"), "devops", &any, &Locks::none()),
@@ -178,7 +178,7 @@ fn a_grant_never_lifts_a_policy_deny() {
     let Answer::Refused(refusal) = refused else {
         panic!("refused")
     };
-    assert_eq!(refusal, Refusal::Denied("devops".to_owned()));
+    assert_eq!(refusal, Refusal::Denied("devops".to_owned(), Deny::Named));
     assert_eq!(crate::dispatchaway::pair_kept(&refusal), None);
     assert!(
         refusal.say().contains("No grant lifts it"),
@@ -744,7 +744,7 @@ fn under_log_a_deny_and_an_ask_go_ahead_and_the_asking_chat_s_log_names_the_rule
             covers(Some("steward"), "devops", &denied, &Locks::none()),
             strict()
         ),
-        Covers::Denied(DENY_RULE.to_owned())
+        Covers::Denied(Deny::Named)
     );
     assert_eq!(crate::enforcement::read_log(root, CHAT).len(), 2);
 }
@@ -797,6 +797,76 @@ fn committed(settings: &str) -> Project {
 }
 
 const DENIES: &str = "[dispatch.denies]\nsteward = [\"devops\"]\n";
+
+#[test]
+fn a_policy_that_does_not_read_denies_a_chat_on_no_persona_too() {
+    // #7153: a policy that does not read keeps every persona from every other, and a chat on no
+    // persona is not the target's persona either: no grant made for that chat lifts it.
+    let grants = InForce {
+        chat: vec![ChatPair {
+            asking: None,
+            target: "devops".to_owned(),
+        }],
+        denied_all: true,
+        ..InForce::default()
+    };
+    assert!(grants.denies(None, "devops"));
+    assert!(matches!(
+        covers(None, "devops", &grants, &Locks::none()),
+        Covers::Denied(_)
+    ));
+    // A deny the policy names names personas, so a chat on no persona is outside it still.
+    let named = InForce {
+        chat: grants.chat.clone(),
+        denied: vec![pair("steward", "devops")],
+        denied_any: vec!["steward".to_owned()],
+        ..InForce::default()
+    };
+    assert!(!named.denies(None, "devops"));
+    assert_eq!(
+        covers(None, "devops", &named, &Locks::none()),
+        Covers::Covered
+    );
+}
+
+#[test]
+fn a_policy_that_does_not_read_says_so_rather_than_that_only_a_committed_change_allows_it() {
+    // #7153: a git that timed out once denies every dispatch across personas until `[policy]`
+    // reads; telling the chat only a committed change allows it would send it the wrong way.
+    let said = |grants: &InForce| {
+        let answer = unattended::answer_on(
+            covers(Some("steward"), "devops", grants, &Locks::none()),
+            Some("steward"),
+            "devops",
+            false,
+            Reach {
+                sandboxed: true,
+                sealed_here: true,
+            },
+        );
+        let Answer::Refused(refusal) = answer else {
+            panic!("refused")
+        };
+        refusal.say()
+    };
+    let unread = said(&InForce {
+        denied_all: true,
+        ..InForce::default()
+    });
+    assert!(unread.contains("could not read"), "{unread}");
+    assert!(
+        !unread.contains("committed policy, made by a person"),
+        "{unread}"
+    );
+    let named = said(&InForce {
+        denied: vec![pair("steward", "devops")],
+        ..InForce::default()
+    });
+    assert!(
+        named.contains("committed policy, made by a person"),
+        "{named}"
+    );
+}
 
 #[test]
 fn a_deny_taken_out_of_the_working_tree_still_denies() {
@@ -968,5 +1038,47 @@ fn a_machine_with_no_keyring_has_no_nevers_rather_than_unknown_ones() {
     );
     // And nothing is kept that would not hold.
     assert!(crate::sandbox::local::grant_dispatch(root, "steward", "devops").is_err());
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn a_keyring_that_failed_at_start_up_where_seals_were_kept_is_not_no_nevers() {
+    // #7153: keyring 4 says there is no keyring for the whole process once its one start-up of
+    // the keyring failed (a secret service that had not answered on D-Bus yet, say). Where a
+    // sealed record says this machine kept a seal, that is a keyring that failed: nevers taken
+    // away are unknown nevers, never none. (An acceptance of `[policy]` kept is broken without
+    // its key, which refuses already: these planes keep none.)
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    crate::sandbox::local::grant_dispatch(root, "steward", "qa").expect("granted");
+    assert!(crate::sandbox::local::policy_accepted(root).is_none());
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    std::fs::remove_file(crate::dispatchnever::path(root)).expect("deleted");
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Unread
+    );
+    assert_eq!(
+        covers(Some("steward"), "qa", &project.grants(), &Locks::none()),
+        Covers::Unread
+    );
+    assert!(!crate::sandbox::local::no_keyring_at(root));
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+    // The nevers file emptied by hand, where it is the only sealed record.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    let mut file: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(crate::dispatchnever::path(root)).expect("read"),
+    )
+    .expect("json");
+    file["never"] = serde_json::json!([]);
+    std::fs::write(crate::dispatchnever::path(root), file.to_string()).expect("written");
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Unread
+    );
     crate::secrets::seal::set_no_keyring_for_this_test(false);
 }

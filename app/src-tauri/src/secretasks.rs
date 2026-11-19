@@ -265,6 +265,7 @@ pub fn run_grant_given(
             held.root(),
             Some(&open.persona),
             &open.bound.vault,
+            crate::vaultroute::chain_policy(held, open.bound.chat).as_deref(),
         )
     })
     .flatten();
@@ -443,8 +444,10 @@ fn run_grant_carried_out(
     // hands whatever reads the key what the entry holds, for good, so an entry no program may be
     // handed is never one, and nor is one in a vault the persona may not use.
     if !links.is_empty() {
+        // Under the chat's chain policy, as the brokered read of each link is (#7153).
         let ctx =
-            purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process());
+            purlis_core::secrets::Ctx::new(held.root(), purlis_core::secrets::Env::from_process())
+                .under_chain(crate::vaultroute::chain_policy(held, open.bound.chat).as_deref());
         // Read for this press, so a line that came in while the person read is seen; and the
         // broker's own rule for each link's vault, read again for each.
         let handed = purlis_core::secrets::brokered::NoProgram::read(&ctx);
@@ -1153,7 +1156,10 @@ pub fn asked(
             why: format!("chat {} is not one this app has open", asked.chat),
         };
     };
-    let ctx = Ctx::new(held.root(), Env::from_process());
+    // Under the strictest `[policy]` of the chain that dispatched it, as its brokered reads are
+    // (#7153): a vault check here answers what the read would.
+    let chain = crate::vaultroute::chain_policy(held, asked.chat);
+    let ctx = Ctx::new(held.root(), Env::from_process()).under_chain(chain.as_deref());
     // The chat as its brokered runs are served, so a program its ask names is judged as its run
     // would be (#5244).
     let asker = purlis_core::secrets::brokered::Asker {
@@ -1166,8 +1172,8 @@ pub fn asked(
         confines: held.chats().confines_now(asked.chat),
         harness: open.harness,
         ends_seen: None,
-        chat_id: None,
-        policy: None,
+        chat_id: held.chats().id_of(asked.chat),
+        policy: chain,
     };
     // A chat on a pool's runner runs its commands there, where no Run grant reaches: a program
     // it names ahead is asked about as any Secret ask is (D-5244-4). Judged by the link the line

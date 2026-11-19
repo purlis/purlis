@@ -581,6 +581,21 @@ pub const BUNDLE_ID: Name = name(
     &["dev.charter.app"],
     &[],
 );
+
+/// **The file name of the app's single-instance socket on macOS** for the bundle identifier
+/// `identifier`: `tauri-plugin-single-instance` makes it in `/tmp`, named for the identifier with
+/// every `.` and `-` made `_` (`dev_purlis_app_si.sock`). What the busy check asks and what a
+/// chat whose project turns `ports` off is still held from both name it by this.
+pub fn single_instance_socket(identifier: &str) -> String {
+    format!("{}_si.sock", single_instance_stem(identifier))
+}
+
+/// `identifier` as `tauri-plugin-single-instance` writes it into its socket's name, before
+/// `_si.sock`: every `.` and `-` made `_`.
+pub fn single_instance_stem(identifier: &str) -> String {
+    identifier.replace(['.', '-'], "_")
+}
+
 /// The product's own program. `charter` is an alias during the window; `edm` predates charter
 /// and is recognised forever, as the guards always have.
 pub const BINARY: Name = name("binary", Kind::Binary, "purlis", &["charter"], &["edm"]);
