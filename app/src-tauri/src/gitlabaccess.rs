@@ -142,8 +142,7 @@ pub async fn gitlab_access_set(
         let host = core::host_in_project(&root, &host)?;
         if shown != core::lines_shown(&host, &vaults_of(&ctx, &personas)?) {
             return Err(
-                "The lines on this page changed. Look them over and press Set up again."
-                    .to_owned(),
+                "The lines on this page changed. Look them over and press Set up again.".to_owned(),
             );
         }
         let at = std::time::SystemTime::now()
@@ -158,7 +157,9 @@ pub async fn gitlab_access_set(
             &personas,
             Some(&mut |shown| crate::sandboxing::allow_shown(&root, shown, &audit, at)),
         )?;
-        Ok(GitlabFinished { to_allow: done.left })
+        Ok(GitlabFinished {
+            to_allow: done.left,
+        })
     })
     .await
 }

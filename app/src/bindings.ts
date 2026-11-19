@@ -2358,6 +2358,21 @@ export const commands = {
 	 */
 	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
 	/**
+	 *  **What the tab draws**, read fresh: each GitLab host the project's clones are on, with the
+	 *  personas set up for it.
+	 */
+	gitlabAccessList: (plane: PlaneId) => typedError<GitlabShown, string>(__TAURI_INVOKE("gitlab_access_list", { plane })),
+	/**  **The exact lines setting up adds**, from the one source it writes from. */
+	gitlabAccessLines: (plane: PlaneId, host: string, personas: string[]) => typedError<string, string>(__TAURI_INVOKE("gitlab_access_lines", { plane, host, personas })),
+	/**
+	 *  **Sets GitLab access up**: writes what the page showed, or nothing, then allows it on this
+	 *  machine where only those lines wait. The token is kept in each persona's vault and goes
+	 *  nowhere else.
+	 */
+	gitlabAccessSet: (plane: PlaneId, host: string, personas: string[], token: string, shown: string) => typedError<GitlabFinished, string>(__TAURI_INVOKE("gitlab_access_set", { plane, host, personas, token, shown })),
+	/**  **Takes GitLab access for a host away**: only what this flow wrote. */
+	gitlabAccessRemove: (plane: PlaneId, host: string) => typedError<null, string>(__TAURI_INVOKE("gitlab_access_remove", { plane, host })),
+	/**
 	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
 	 *  code is exchanged for a token kept in the account's own keyring item. The account as Settings
@@ -10871,6 +10886,27 @@ export type GitInstall =
 export type GitPresence = { kind: "present" } | 
 /**  No git. `install` is how this machine gets one. */
 { kind: "missing"; install: GitInstall };
+
+/**  What setting up did. */
+export type GitlabFinished = {
+	/**  Personas with an Allow of their own still to give. */
+	to_allow: string[],
+};
+
+/**  One GitLab host of the project's clones. */
+export type GitlabRow = {
+	host: string,
+	/**  Personas whose `glab` line this flow wrote for the host. */
+	personas: string[],
+	/**  Personas with a `glab` line of their own for the host: shown, never replaced. */
+	by_hand: string[],
+};
+
+/**  What the tab draws. */
+export type GitlabShown = {
+	rows: GitlabRow[],
+	personas: string[],
+};
 
 /**
  *  A remembered project that is no longer a project where it was (NO-5, #1237): what the
