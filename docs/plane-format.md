@@ -5016,8 +5016,23 @@ write into this folder cannot make its own text arrive as the person's.
   that does not hold its seal. A kind that is not one of the seven is refused.
 - **Read by:** `answers::standing`, in the app alone.
 - **Replaces:** `app/sandbox.json`'s "Keep blocked" hosts, `app/dispatch-never.json`,
-  `sandbox-grants/` and `inbox/rules.json`, which doctor names as safe to delete (the import
-  of the first two, once, and doctor's lines are slice 07a's second part).
+  `sandbox-grants/` and `inbox/rules.json`, which doctor names as safe to delete.
+- **The old nevers are imported once** (Q320, `answers::import_nevers`): at the first start of
+  this build the app seals the nevers in `app/dispatch-never.json` (and the key an earlier build
+  kept in `sandbox-grants/<clone key>.json`) into the plane's store, and the manifest's
+  `imported_nevers` keeps the mark. Grants are never imported. It takes the store's lock, is
+  idempotent, and **fails closed**: until it has run, the old files are authoritative and the
+  plane is in the deny state (`NeversNotImported`); a file that does not read, a sealed never
+  taken away, a keyring that cannot seal or a plane in the deny state for another cause import
+  nothing and change nothing. The old files are left as they are; doctor says they are safe to
+  delete only once the mark is there. ("Keep blocked" on a sandbox host keeps nothing past its
+  chat, so no host never exists on disk to import.)
+- **A plane the app moves keeps its answers** (`answers::follow_move`, called by the move beside
+  `sandbox::local::record_moved`): the old store is verified against its own anchor, every entry
+  is sealed again for the new clone key and path, the counter rises, and the registry follows the
+  plane's id. A process that is not the app leaves the store where it was, and the new place
+  reads as moved. **Still open until slice 11:** a plane moved without the app, across
+  filesystems, with no link left (a copy has a new `.git` identity); doctor declares it.
 
 ### `~/.config/purlis/app/answers/sealed-here/` — the plane's sealed marker (outside the plane)
 - **What:** one empty-ish file per plane, named by the plane's **anchor key** (a digest of its

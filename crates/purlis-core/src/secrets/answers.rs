@@ -819,6 +819,60 @@ pub enum Deny {
     SealKeyLocked,
     /// A keyring that did not start where a store is kept.
     KeyringDidNotStart,
+    /// The nevers an earlier build kept are still in their old files and were not imported into
+    /// the store (Q320), or do not read: what the person refused is unknown, so the old files stay
+    /// authoritative and the plane stays denied until [`import_nevers`] has run.
+    NeversNotImported,
+}
+
+impl Deny {
+    /// What this cause says, in words, for doctor and the window.
+    pub fn said(&self) -> String {
+        match self {
+            Self::ManifestMissing(_) => "the store's manifest is gone".to_owned(),
+            Self::ManifestOlder(lost) => format!(
+                "an older copy of the store was put back ({} writes, {} nevers and {} accepted \
+                 versions are lost)",
+                lost.writes, lost.nevers, lost.floors
+            ),
+            Self::AnchorOlder => "the keyring's anchor is older than the store".to_owned(),
+            Self::CloneKeySwapped => "the project's .git was swapped for another".to_owned(),
+            Self::ManifestFailsSeal => {
+                "the store's manifest does not hold its seal, or is another clone's".to_owned()
+            }
+            Self::EntryMissing { kind, .. } => format!("a {kind} the manifest lists is missing"),
+            Self::EntryFailsSeal { kind, .. } => format!("a {kind} fails its seal"),
+            Self::CountsDisagree => {
+                "the nevers or their marker disagree with the anchor".to_owned()
+            }
+            Self::PlaneMoved { anchored_at, .. } => format!(
+                "the project was moved: its answers are anchored at {}",
+                anchored_at.display()
+            ),
+            Self::StoreWithoutAnchor => "a sealed store has no anchor in the keyring".to_owned(),
+            Self::AnchorGone => {
+                "an anchor that was kept is gone or does not hold its seal".to_owned()
+            }
+            Self::RegistryUnreadable => {
+                "the registry of projects does not read, or does not list this one".to_owned()
+            }
+            Self::EverywhereOlder(_) => {
+                "the nevers that apply everywhere are missing or older than they were".to_owned()
+            }
+            Self::PastTheFloorCap => "a commit went past the accepted floor's cap".to_owned(),
+            Self::SealKeyLocked => {
+                "the seal key stays locked (a cancelled confirmation or a wrong password)"
+                    .to_owned()
+            }
+            Self::KeyringDidNotStart => {
+                "the keyring did not start where answers are kept".to_owned()
+            }
+            Self::NeversNotImported => {
+                "the nevers you said before are still in their old files and are not imported yet"
+                    .to_owned()
+            }
+        }
+    }
 }
 
 /// Where a plane stands.
@@ -1127,6 +1181,13 @@ fn read_everywhere() -> Found {
 
 /// **Which state the plane at `root` is in** (spec §4.6), and the answers that count.
 pub fn standing(root: &Path) -> Standing {
+    standing_with(root, true)
+}
+
+/// [`standing`], where `import_counts` says whether nevers still in their old files, not yet
+/// imported, are the deny state ([`Deny::NeversNotImported`]). The import itself asks without,
+/// since it is what ends that cause.
+fn standing_with(root: &Path, import_counts: bool) -> Standing {
     let key = seal::key_state();
     if key == KeyState::NotTheApp {
         return Standing::of(State::Unverifiable);
@@ -1217,6 +1278,12 @@ pub fn standing(root: &Path) -> Standing {
                 None => found.denies.push(Deny::RegistryUnreadable),
             },
         }
+    }
+    if import_counts
+        && !found.manifest.as_ref().is_some_and(|m| m.imported_nevers)
+        && crate::dispatchnever::left_behind(root) != crate::dispatchnever::Left::Nothing
+    {
+        found.denies.push(Deny::NeversNotImported);
     }
     denies.extend(found.denies.iter().cloned());
     let mut standing = Standing::of(State::Fresh);
@@ -1640,18 +1707,25 @@ fn mark_sealed(root: &Path, id: &str, clone: &str) -> io::Result<()> {
         ));
     };
     let anchor = anchor_key(root);
-    let Some(plane) = registry
-        .planes
-        .iter_mut()
-        .find(|plane| plane.anchor == anchor && plane.id == id)
-    else {
+    let Some(plane) = registry.planes.iter_mut().find(|plane| plane.id == id) else {
         return Err(io::Error::other("the plane is not in the registry"));
     };
-    if plane.sealed && plane.clone == clone {
+    if plane.sealed && plane.clone == clone && plane.anchor == anchor {
         return Ok(());
     }
+    // A plane the app moved ([`follow_move`]) is the same id at its new path: the registry
+    // follows it, and drops a placeholder an earlier open made for the new path.
     plane.sealed = true;
     plane.clone = clone.to_owned();
+    if plane.anchor != anchor {
+        plane.anchor = anchor.clone();
+        plane.real = crate::sandbox::real(root);
+        plane.opened = std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf());
+        plane.git = git_identity(root);
+    }
+    registry
+        .planes
+        .retain(|other| other.id == id || other.anchor != anchor || other.sealed);
     write_registry(&mut registry)
 }
 
@@ -1700,6 +1774,13 @@ fn write_file(path: &Path, text: &str) -> io::Result<()> {
     file.persist(path).map_err(|why| why.error)?;
     Ok(())
 }
+
+#[path = "answers_import.rs"]
+mod import;
+pub use import::{Import, Imported, import_nevers, imported_nevers, old_files};
+#[path = "answers_move.rs"]
+mod moved;
+pub use moved::{Moved, follow_move};
 
 #[cfg(test)]
 #[path = "answers_tests.rs"]

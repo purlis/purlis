@@ -657,6 +657,7 @@ fn task_records(root: &Path, olds: &[PathBuf], new: &Path) -> std::io::Result<()
 /// resolves to itself is dropped. What could not be pointed, in words.
 fn sandbox_grants(root: &Path, olds: &[PathBuf], new: &Path) -> Vec<String> {
     use crate::sandbox::local;
+    let mut answers_words: Vec<String> = Vec::new();
     // This machine's record is kept by the clone's path (ADR 0093): it follows the move first.
     for old in olds {
         if let Err(why) = local::record_moved(old, new) {
@@ -664,16 +665,35 @@ fn sandbox_grants(root: &Path, olds: &[PathBuf], new: &Path) -> Vec<String> {
                 "the record of its sandbox grants could not be moved ({why})"
             )];
         }
+        // The sealed answers (M75 spec §8.10) are sealed to the clone and anchored by the path,
+        // so they follow the move or the new place reads as moved: the deny state. Said, and the
+        // grants below still follow.
+        match crate::secrets::answers::follow_move(old, new) {
+            Ok(
+                crate::secrets::answers::Moved::NothingKept
+                | crate::secrets::answers::Moved::Carried,
+            ) => {}
+            Ok(crate::secrets::answers::Moved::NotKept) => answers_words.push(
+                "its sealed answers stayed where they were, since only purlis's app can seal \
+                 them: open the project in the window and accept again"
+                    .to_owned(),
+            ),
+            Err(why) => answers_words.push(format!(
+                "its sealed answers could not follow it ({why}), so nothing they allow holds at \
+                 the new place until you accept again in the window"
+            )),
+        }
     }
     let folders = match local::folders_named(root) {
         Ok(folders) => folders,
         Err(why) => {
-            return vec![format!(
+            answers_words.push(format!(
                 "the record of its sandbox grants could not be read ({why})"
-            )];
+            ));
+            return answers_words;
         }
     };
-    let mut failed = Vec::new();
+    let mut failed = answers_words;
     let mut pointed: Vec<(String, String)> = Vec::new();
     for folder in folders {
         match grant_moved(&folder, olds, new) {

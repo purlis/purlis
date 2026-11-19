@@ -201,6 +201,12 @@ pub struct Server {
 ///
 /// `workspace_tree` and `workspace_file` do the same for a workspace's own files (#5375).
 pub const WINDOW_ONLY: &[&str] = &[
+    // Where the project's sealed answers stand (M75-07a): it registers the project and imports
+    // the person's old nevers once, so it is the window's, never a chat's.
+    "answers_shown",
+    // The person's press that confirms the device id (M75-07a, spec §9.4): only a press in a
+    // window accepts, so no link and no chat reaches it.
+    "confirm_device_id",
     "answer_ask",
     // A hunk of a branch's file put back (#5406): the person's edit, recorded as theirs.
     "discard_hunk",

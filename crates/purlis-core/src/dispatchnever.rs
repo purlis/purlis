@@ -523,6 +523,44 @@ pub fn read(root: &Path) -> Nevers {
     }
 }
 
+/// What the old files still hold of nevers that the sealed answer store has not taken over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Left {
+    /// No never in either place, and nothing that says one was.
+    Nothing,
+    /// These pairs, each as asking persona and target persona.
+    Pairs(Vec<(String, String)>),
+    /// A record that does not read, or a sealed never taken away: what the person refused is
+    /// unknown, which is never "none".
+    Unread,
+}
+
+/// **What the old files hold of nevers** (M75 slice 07a, Q320), read as [`read`] would but
+/// **moving and writing nothing**: this file's pairs and the ones an earlier build kept in
+/// `app/sandbox.json`. What [`crate::secrets::answers`] imports once, and what its state decision
+/// asks, so it must be cheap and never change a byte.
+pub(crate) fn left_behind(root: &Path) -> Left {
+    if sealed_standing(root) == Sealed::Unread {
+        return Left::Unread;
+    }
+    let Nevers::Read(mut pairs) = on_disk(root) else {
+        return Left::Unread;
+    };
+    let Some(legacy) = crate::sandbox::local::legacy_dispatch_nevers(root) else {
+        return Left::Unread;
+    };
+    for one in legacy {
+        if !pairs.contains(&one) {
+            pairs.push(one);
+        }
+    }
+    if pairs.is_empty() {
+        Left::Nothing
+    } else {
+        Left::Pairs(pairs)
+    }
+}
+
 /// Records the person's never for `asking` to `target`, with nothing said of when: [`add_said`].
 pub fn add(root: &Path, asking: &str, target: &str) -> io::Result<()> {
     add_said(root, asking, target, Said::default())

@@ -24,6 +24,7 @@
 //! that says it was not checked and why ([`deferred`]). The differential test holds the list of
 //! them, so a row that becomes ported has to say so there.
 
+mod answers;
 mod budget;
 mod capabilities;
 mod changes;
@@ -399,6 +400,9 @@ pub struct Doctor {
     /// ([`crate::sandbox::caches::root_of`]), whose size the `sandbox cache home` row says
     /// (#1364). `None` for a doctor a test names, which must never read the operator's own.
     pub(crate) cache_home: Option<PathBuf>,
+    /// Whether this doctor says what the sealed answer store holds: only one run on the person's
+    /// own machine does, never one a test names, which must not read the operator's keyring.
+    pub(crate) answers_here: bool,
     /// The session host's `session-host.log` (#6687), whose size the `session host log` row
     /// says once trimming it has stopped working while a host serves. `None` for a doctor a
     /// test names, which must never read the operator's own.
@@ -435,6 +439,7 @@ impl Doctor {
             .map(|config_root| (config_root, crate::extension::BuiltIn::of_this_program()));
         d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
         d.host_log = host_log::HostLog::here();
+        d.answers_here = true;
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -511,6 +516,7 @@ impl Doctor {
             network: None,
             extensions: None,
             cache_home: None,
+            answers_here: false,
             host_log: None,
             #[cfg(unix)]
             runner_host: None,
@@ -608,6 +614,7 @@ impl Doctor {
         rows.extend(sandbox::relayed_internal(self));
         rows.extend(sandbox::cache_home(self));
         rows.extend(known_gaps::known_gaps(self));
+        rows.extend(answers::answers(self));
         rows.extend(host_log::host_log(self));
         rows.push(memory::memory_indexes(self));
         rows.push(personas::personas(self));

@@ -69,6 +69,8 @@ mod questiontrail;
 // A chat's Chat log (R-224, T1-27).
 mod chatlog;
 mod knowngaps;
+// The sealed answers, for the window (M75-07a, #7015).
+mod answers;
 // The Devices view (#2052).
 mod clusterpools;
 mod devices;

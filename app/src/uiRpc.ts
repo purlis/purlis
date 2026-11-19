@@ -1686,6 +1686,8 @@ export const commands = {
 	 *  (R-225), and this is read for the pane's head.
 	 */
 	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
+	answersShown: __WINDOW_ONLY_RESULT,
+	confirmDeviceId: __WINDOW_ONLY_RESULT,
 	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
@@ -3313,6 +3315,30 @@ export type AnswerPath =
 { via: "trust-clones"; clones: CloneToVouch[] } | 
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
+
+/**  Where the open project's sealed answers stand. */
+export type AnswersShown = {
+	/**  `fresh`, `holds`, `no-keyring`, `unverifiable` or `deny`. */
+	state: string,
+	/**  Why the answers are in the deny state, one sentence each; empty otherwise. */
+	deny: string[],
+	/**
+	 *  The nevers imported from the old files, each as `asking -> target`, while those files
+	 *  are still there to delete.
+	 */
+	imported: string[],
+	/**  The old files that are safe to delete. */
+	old_files: string[],
+	/**
+	 *  What the import could not do, said for the person; none when it went through or had
+	 *  nothing to do.
+	 */
+	import_failed: string | null,
+	/**  What purlis ignored or cannot do, one sentence each. */
+	notices: string[],
+	/**  The device id. */
+	device: DeviceShown,
+};
 
 /**
  *  One memory in a store's `archive/`, as the window's archive tab lists it and reads it
@@ -5633,6 +5659,17 @@ export type DeletesCutShort = {
 	settled: string[],
 	/**  Neither finished nor put back: tried again the next time the studio opens. */
 	unsettled: string[],
+};
+
+/**  The device id, as Settings shows it: a display label only, with no rename. */
+export type DeviceShown = {
+	/**
+	 *  `confirmed`, `unconfirmed` (sealed, waiting for the person) or `unset` (no keyring, a
+	 *  registry that does not read, or no project opened yet).
+	 */
+	state: string,
+	/**  The id, where one is sealed. */
+	id: string | null,
 };
 
 /**

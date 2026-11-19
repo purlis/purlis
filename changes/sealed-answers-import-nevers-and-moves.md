@@ -1,0 +1,3 @@
+### Added
+
+- **Your existing nevers are sealed once, and a project that purlis moves keeps its sealed answers.** The first time purlis starts this build, the nevers you said before (`app/dispatch-never.json`) are copied into the sealed answer store, listed in a Notice, and hold as they did; grants are not carried over. Until that has worked, the old file stays in charge and the project's answers read as not yet imported. `purlis doctor` says which old files are safe to delete, declares the seal gap on Linux and Windows, says whether this machine's device id is confirmed, and declares that a project moved to another filesystem with no link left is not yet seen. Settings › Sandbox shows the sealed answers and this machine's id, with Confirm (M75-07a, #7015).

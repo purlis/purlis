@@ -68,6 +68,7 @@ import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
 import { knownGapsSetting } from "./KnownGaps";
+import { answersSetting } from "./Answers";
 import { dispatchGroup } from "./dispatch";
 import { projectRunsOnSetting } from "./runsOn";
 import { teamPolicyRow } from "./teamPolicy";
@@ -662,7 +663,9 @@ function declaredGroups(
         ).map((one) =>
           same(one.key, SANDBOX_MODE) || one.kind === "status" ? { ...one, oneWay: true } : one,
         ),
-        ...(read.plane === undefined ? [] : [knownGapsSetting(read.plane)]),
+        ...(read.plane === undefined
+          ? []
+          : [knownGapsSetting(read.plane), answersSetting(read.plane)]),
       ],
       ...(sharedOk ? { collection: hostsCollection(read.shared, "hosts") } : {}),
       after: [

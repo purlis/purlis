@@ -332,6 +332,7 @@ import { DOCTOR_LINE, DoctorNotices, useDoctor } from "./Doctor";
 import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { CloneVouchNotices } from "./CloneVouchNotice";
+import { AnswersNotices } from "./AnswersNotices";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { projectName } from "./projectName";
@@ -12142,6 +12143,9 @@ export const PlaneView = memo(function PlaneView({
         dismiss={dismiss}
         settle={settleNotices}
       />
+      {/* **The project's sealed answers** (M75-07a): the nevers imported from the old files, the
+          deny state and why. */}
+      <AnswersNotices plane={plane} />
       {savedNotice && (
         <Notice
           cause="session-saved"

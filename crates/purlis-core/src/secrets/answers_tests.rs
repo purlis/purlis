@@ -1366,3 +1366,378 @@ fn register_and_confirm_device_wait_for_the_stores_file_lock() {
     assert!(register(&m.plane("second")).is_ok());
     confirm_device(&press(), &id).unwrap();
 }
+
+// ---- part 2: the import of the old nevers, and a plane the app moves ---------------------------
+
+/// The nevers file an earlier build left in the project at `root`, written by hand.
+fn old_nevers(root: &Path, pairs: &[(&str, &str)]) {
+    let path = crate::dispatchnever::path(root);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let list: Vec<serde_json::Value> = pairs
+        .iter()
+        .map(|(a, t)| serde_json::json!({"asking": a, "target": t}))
+        .collect();
+    std::fs::write(path, serde_json::json!({ "never": list }).to_string()).unwrap();
+}
+
+fn never_texts(root: &Path) -> Vec<String> {
+    let mut texts: Vec<String> = standing(root)
+        .entries
+        .into_iter()
+        .filter(|e| e.kind == NEVER)
+        .map(|e| e.text)
+        .collect();
+    texts.sort();
+    texts
+}
+
+fn imported(import: Import) -> Imported {
+    match import {
+        Import::Imported(done) => done,
+        other => panic!("an import, got {other:?}"),
+    }
+}
+
+#[test]
+fn existing_nevers_are_imported_once_and_sealed() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops"), ("qa", "prod")]);
+    let done = imported(import_nevers(&root).unwrap());
+    assert_eq!(done.nevers, ["steward -> devops", "qa -> prod"]);
+    let here = standing(&root);
+    assert!(holds(&here), "{here:?}");
+    assert_eq!(never_texts(&root), ["qa -> prod", "steward -> devops"]);
+    // The presence marker is sealed with them, so the list taken away is never "no nevers".
+    assert!(here.entries.iter().any(|e| e.kind == NEVER_MARKER));
+    // Sealed as an entry of the store: a file by hand in its place fails its seal.
+    let file = entry_file(&root, NEVER, "qa -> prod");
+    let text = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(&file, text.replace("qa -> prod", "qa -> nothing")).unwrap();
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::EntryFailsSeal { .. }
+    )));
+}
+
+#[test]
+fn imported_nevers_are_listed_in_a_notice_and_marked_in_the_manifest() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    assert_eq!(imported_nevers(&root), Some(false));
+    let done = imported(import_nevers(&root).unwrap());
+    assert!(done.notice.contains("steward -> devops"), "{}", done.notice);
+    assert!(done.notice.contains("safe to delete"), "{}", done.notice);
+    assert_eq!(imported_nevers(&root), Some(true));
+}
+
+#[test]
+fn an_import_that_has_run_changes_nothing_when_it_runs_again() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    imported(import_nevers(&root).unwrap());
+    let counter = counter_of(&root);
+    assert_eq!(import_nevers(&root).unwrap(), Import::Already);
+    assert_eq!(counter_of(&root), counter, "the second call wrote nothing");
+    // A never the old file gained after the import is not imported: once.
+    old_nevers(&root, &[("steward", "devops"), ("late", "one")]);
+    assert_eq!(import_nevers(&root).unwrap(), Import::Already);
+    assert_eq!(never_texts(&root), ["steward -> devops"]);
+}
+
+#[test]
+fn existing_grants_are_not_imported() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    // A grant an earlier build kept on this machine, in the file beside the clone.
+    let grants = crate::sandbox::local::path(&root);
+    std::fs::create_dir_all(grants.parent().unwrap()).unwrap();
+    std::fs::write(
+        &grants,
+        r#"{"dispatch_mine":[{"asking":"steward","target":"qa"}],"writes_mine":["/tmp/x"]}"#,
+    )
+    .unwrap();
+    imported(import_nevers(&root).unwrap());
+    let here = standing(&root);
+    assert!(holds(&here), "{here:?}");
+    assert!(
+        here.entries
+            .iter()
+            .all(|e| e.kind == NEVER || e.kind == NEVER_MARKER),
+        "{:?}",
+        here.entries
+    );
+}
+
+#[test]
+fn nevers_still_in_their_old_file_are_the_deny_state_until_they_are_imported() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    let before = standing(&root);
+    assert!(
+        denied_by(&before, |c| matches!(c, Deny::NeversNotImported)),
+        "{before:?}"
+    );
+    assert!(before.entries.is_empty());
+    imported(import_nevers(&root).unwrap());
+    assert!(holds(&standing(&root)));
+    // A plane with no old nevers is untouched by all this: a fresh install.
+    assert_eq!(standing(&m.plane("clean")).state, State::Fresh);
+}
+
+#[test]
+fn an_old_file_that_does_not_read_is_not_imported_and_the_plane_stays_denied() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    let path = crate::dispatchnever::path(&root);
+    std::fs::write(&path, r#"{"never":[{"asking":"steward"}]}"#).unwrap();
+    assert!(import_nevers(&root).is_err());
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::NeversNotImported
+    )));
+    assert!(
+        !store_exists(&plane_place(&root).unwrap()),
+        "nothing sealed"
+    );
+    // Mended by putting the file back: the import then goes through.
+    old_nevers(&root, &[("steward", "devops")]);
+    imported(import_nevers(&root).unwrap());
+    assert!(holds(&standing(&root)));
+}
+
+#[test]
+fn a_sealed_never_taken_from_the_old_file_is_not_imported_and_stays_denied() {
+    let m = machine();
+    let root = m.plane("p");
+    // The nevers the earlier build sealed as a set, then the file taken away.
+    crate::dispatchnever::add(&root, "steward", "devops").unwrap();
+    std::fs::remove_file(crate::dispatchnever::path(&root)).unwrap();
+    assert!(import_nevers(&root).is_err());
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::NeversNotImported
+    )));
+    assert!(!store_exists(&plane_place(&root).unwrap()));
+}
+
+#[test]
+fn where_the_old_files_hold_no_never_nothing_is_imported_or_written() {
+    let m = machine();
+    let root = m.plane("p");
+    assert_eq!(import_nevers(&root).unwrap(), Import::Nothing);
+    old_nevers(&root, &[]);
+    assert_eq!(import_nevers(&root).unwrap(), Import::Nothing);
+    assert!(!store_exists(&plane_place(&root).unwrap()));
+    assert_eq!(standing(&root).state, State::Fresh);
+}
+
+#[test]
+fn nevers_an_earlier_build_kept_in_the_sandbox_file_are_imported_too() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    let grants = crate::sandbox::local::path(&root);
+    std::fs::create_dir_all(grants.parent().unwrap()).unwrap();
+    std::fs::write(
+        &grants,
+        r#"{"dispatch_never":[{"asking":"qa","target":"prod"}]}"#,
+    )
+    .unwrap();
+    let done = imported(import_nevers(&root).unwrap());
+    assert!(done.nevers.contains(&"qa -> prod".to_owned()), "{done:?}");
+    assert_eq!(never_texts(&root), ["qa -> prod", "steward -> devops"]);
+}
+
+#[test]
+fn a_keyring_that_cannot_keep_the_anchor_leaves_the_old_file_authoritative() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    seal::set_item_write_fails_for_this_test(true);
+    let refused = import_nevers(&root);
+    seal::set_item_write_fails_for_this_test(false);
+    assert!(refused.is_err());
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::NeversNotImported
+    )));
+    assert!(!store_exists(&plane_place(&root).unwrap()));
+    imported(import_nevers(&root).unwrap());
+    assert!(holds(&standing(&root)));
+}
+
+#[test]
+fn where_this_process_cannot_seal_the_old_file_stays_authoritative() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    seal::set_no_keyring_for_this_test(true);
+    assert_eq!(import_nevers(&root).unwrap(), Import::NotKept);
+    seal::set_no_keyring_for_this_test(false);
+    // Not the app: no key held at all.
+    seal::set_for_this_test(None);
+    assert_eq!(import_nevers(&root).unwrap(), Import::NotKept);
+    seal::set_for_this_test(Some(vec![7; 32]));
+    seal::set_locked_for_this_test(true);
+    assert!(import_nevers(&root).is_err());
+    seal::set_locked_for_this_test(false);
+    assert!(!store_exists(&plane_place(&root).unwrap()));
+}
+
+#[test]
+fn a_plane_in_the_deny_state_for_another_cause_imports_nothing() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    old_nevers(&root, &[("steward", "devops")]);
+    // The manifest taken away: an anchored path with no manifest.
+    std::fs::remove_file(store_of(&root).join("manifest.json")).unwrap();
+    assert!(import_nevers(&root).is_err());
+    assert!(
+        !denied_by(&standing(&root), |c| matches!(c, Deny::NeversNotImported))
+            || standing(&root).is_deny()
+    );
+    assert_eq!(imported_nevers(&root), Some(false));
+}
+
+#[test]
+fn the_imported_nevers_hold_after_the_old_files_are_deleted() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    imported(import_nevers(&root).unwrap());
+    std::fs::remove_file(crate::dispatchnever::path(&root)).unwrap();
+    let here = standing(&root);
+    assert!(holds(&here), "{here:?}");
+    assert_eq!(never_texts(&root), ["steward -> devops"]);
+}
+
+/// `root` renamed to `name` beside it, as a move on one filesystem.
+fn moved_to(m: &Machine, root: &Path, name: &str) -> PathBuf {
+    let new = m.dir.path().join(name);
+    std::fs::rename(root, &new).unwrap();
+    std::fs::canonicalize(&new).unwrap()
+}
+
+#[test]
+fn a_plane_the_app_moves_keeps_its_answers() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf"), (ACCEPTED, "guards.git=enforce")]);
+    confirm_shown_device();
+    let counter = counter_of(&old);
+    let new = moved_to(&m, &old, "new");
+    assert_eq!(follow_move(&old, &new).unwrap(), Moved::Carried);
+    let here = standing(&new);
+    assert!(holds(&here), "{here:?}");
+    assert!(here.entries.contains(&Entry::new(NEVER, "rm -rf")));
+    assert!(
+        here.entries
+            .contains(&Entry::new(ACCEPTED, "guards.git=enforce"))
+    );
+    assert!(counter_of(&new) > counter, "the counter rose");
+    assert_eq!(
+        plane_containing(&new).map(|plane| plane.real),
+        Some(new.clone())
+    );
+    assert!(
+        context_machine().is_some(),
+        "the device id stayed confirmed"
+    );
+    // And the store it left is not read again.
+    assert!(!store_exists(&Place {
+        folder: answers_folder().unwrap().join("nothing"),
+        ..plane_place(&new).unwrap()
+    }));
+}
+
+#[test]
+fn a_moved_plane_whose_answers_could_not_follow_stays_the_deny_state() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf")]);
+    let new = moved_to(&m, &old, "new");
+    // Not the app: nothing is sealed, so nothing is carried, and the new place reads as moved.
+    seal::set_locked_for_this_test(true);
+    assert_eq!(follow_move(&old, &new).unwrap(), Moved::NotKept);
+    seal::set_locked_for_this_test(false);
+    register(&new).unwrap();
+    assert!(denied_by(&standing(&new), |c| matches!(
+        c,
+        Deny::PlaneMoved { .. }
+    )));
+}
+
+#[test]
+fn a_keyring_that_fails_the_move_changes_nothing_and_the_move_goes_through_later() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf")]);
+    let new = moved_to(&m, &old, "new");
+    seal::set_item_write_fails_for_this_test(true);
+    assert!(follow_move(&old, &new).is_err());
+    seal::set_item_write_fails_for_this_test(false);
+    assert!(!matches!(standing(&new).state, State::Holds));
+    assert_eq!(follow_move(&old, &new).unwrap(), Moved::Carried);
+    assert_eq!(never_texts(&new), ["rm -rf"]);
+}
+
+#[test]
+fn an_old_store_that_is_not_whole_is_not_carried_to_the_new_place() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf")]);
+    let file = entry_file(&old, NEVER, "rm -rf");
+    let text = std::fs::read_to_string(&file).unwrap();
+    std::fs::write(&file, text.replace("rm -rf", "ls")).unwrap();
+    let new = moved_to(&m, &old, "new");
+    assert!(follow_move(&old, &new).is_err());
+    assert!(!matches!(standing(&new).state, State::Holds));
+}
+
+#[test]
+fn a_move_never_carries_answers_over_what_the_new_place_already_keeps() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf")]);
+    let old_clone = clone_key(&old);
+    // Answers kept for the path the plane is moved to, by a project that was there before.
+    let before = m.plane("new");
+    seal_in(&before, &[(ACCEPTED, "mine")]);
+    std::fs::remove_dir_all(&before).unwrap();
+    let new = moved_to(&m, &old, "new");
+    assert!(follow_move(&old, &new).is_err());
+    assert!(
+        store_exists(&Place {
+            folder: store_of_clone(&old_clone),
+            ..plane_place(&new).unwrap()
+        }),
+        "the old place's store is as it was"
+    );
+    assert!(
+        !holds(&standing(&new)),
+        "nothing was carried over what is kept"
+    );
+}
+
+#[test]
+fn a_copy_is_not_a_move_and_the_old_place_keeps_its_answers() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf")]);
+    let copy = m.plane("copy");
+    assert_eq!(follow_move(&old, &copy).unwrap(), Moved::NothingKept);
+    assert!(holds(&standing(&old)));
+    assert_eq!(standing(&copy).state, State::Fresh);
+}
+
+/// The folder a clone key's store is in.
+fn store_of_clone(clone: &str) -> PathBuf {
+    answers_folder().unwrap().join(clone)
+}

@@ -3676,6 +3676,17 @@ export const commands = {
 	 */
 	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
 	/**
+	 *  **Where the open project's sealed answers stand**, registering it and importing its old
+	 *  nevers on the way (once). The window's alone.
+	 */
+	answersShown: (plane: PlaneId) => typedError<AnswersShown, string>(__TAURI_INVOKE("answers_shown", { plane })),
+	/**
+	 *  **The person confirms the device id the window showed.** Made here and nowhere else: the
+	 *  press is the person's in their window, never a chat's, so this command is the window's alone
+	 *  (`session_protocol::ui::WINDOW_ONLY`). Refused where the id is not the one shown.
+	 */
+	confirmDeviceId: (plane: PlaneId, id: string) => typedError<DeviceShown, string>(__TAURI_INVOKE("confirm_device_id", { plane, id })),
+	/**
 	 *  **Tell the chat…, pressed twice** (T1-33, Q267): chat `session` is typed [`TELL_LINE`] where
 	 *  it waits, through T1-36's way in. Answers why where nothing was typed.
 	 */
@@ -6642,6 +6653,30 @@ export type AnswerPath =
 /**  Nothing the window can send: the person answers in the chat. */
 { via: "in-its-pane" };
 
+/**  Where the open project's sealed answers stand. */
+export type AnswersShown = {
+	/**  `fresh`, `holds`, `no-keyring`, `unverifiable` or `deny`. */
+	state: string,
+	/**  Why the answers are in the deny state, one sentence each; empty otherwise. */
+	deny: string[],
+	/**
+	 *  The nevers imported from the old files, each as `asking -> target`, while those files
+	 *  are still there to delete.
+	 */
+	imported: string[],
+	/**  The old files that are safe to delete. */
+	old_files: string[],
+	/**
+	 *  What the import could not do, said for the person; none when it went through or had
+	 *  nothing to do.
+	 */
+	import_failed: string | null,
+	/**  What purlis ignored or cannot do, one sentence each. */
+	notices: string[],
+	/**  The device id. */
+	device: DeviceShown,
+};
+
 /**
  *  One memory in a store's `archive/`, as the window's archive tab lists it and reads it
  *  (KN-4): read-only, so it carries no text to check a save against.
@@ -8961,6 +8996,17 @@ export type DeletesCutShort = {
 	settled: string[],
 	/**  Neither finished nor put back: tried again the next time the studio opens. */
 	unsettled: string[],
+};
+
+/**  The device id, as Settings shows it: a display label only, with no rename. */
+export type DeviceShown = {
+	/**
+	 *  `confirmed`, `unconfirmed` (sealed, waiting for the person) or `unset` (no keyring, a
+	 *  registry that does not read, or no project opened yet).
+	 */
+	state: string,
+	/**  The id, where one is sealed. */
+	id: string | null,
 };
 
 /**
