@@ -5492,6 +5492,11 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // Where the class that holds the person's own forge login back is on and nothing mints
+        // the chat a token, said from its start (#1349), not first by a `gh` that failed.
+        late.extend(sandbox.and_then(|applied| {
+            purlis_core::forge::agentidentity::start_note(&self.project, applied.confines())
+        }));
         // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
         // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
         // reattached keeps its start's, where its record has it (#3466).
@@ -9822,6 +9827,7 @@ fn refused_by_the_proxy(
                 target: Some(purlis_core::sandbox::egress::host_and_port(host, port)),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             };
             let _ = std::thread::Builder::new()
                 .name("purlis-refused".into())
@@ -9864,6 +9870,7 @@ fn refused_by_the_proxy(
                         target: local.map(|port| port.to_string()),
                         read_back: false,
                         suggested: None,
+                        purlis_command: None,
                     };
                     told(block);
                 });
@@ -10056,6 +10063,7 @@ fn asked_by_the_proxy(
                         target: Some(target),
                         read_back: false,
                         suggested: None,
+                        purlis_command: None,
                     };
                     told(Box::new(move || raise(block)));
                 }

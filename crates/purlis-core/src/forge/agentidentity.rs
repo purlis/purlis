@@ -665,6 +665,50 @@ pub fn hosts_of_the_project(root: &Path) -> Vec<HostFound> {
     hosts
 }
 
+/// **What a chat's tab says from its start** where the person's own credentials are held from it
+/// ([`crate::sandbox::Class::Credentials`], ADR 0067 §5 class 6), the project's chats reach a
+/// forge, and no agent identity mints the chat a token (#1349): a plain `gh` or `glab` then has
+/// no login to use, and said nothing until a call failed on its own config. The sentence is
+/// purlis's own and names the way out: Agent identity where the forge is GitHub, which is the
+/// one that mints, and a template where the class is off.
+///
+/// `holds`: the class is in the chat's sandbox. `mints`: a tool of the chat mints its token.
+/// `forges`: the hosts the project's clones have remotes on ([`hosts_of_the_project`]).
+#[must_use]
+pub fn credentials_note(holds: bool, mints: bool, forges: &[HostFound]) -> Option<String> {
+    if !holds || mints || !forges.iter().any(|found| found.kind.is_some()) {
+        return None;
+    }
+    let github = forges.iter().any(|found| found.kind == Some(Kind::GitHub));
+    let way_out = if github {
+        "Set up Agent identity in Settings › Agent identity so this chat gets a token of its own, \
+         or choose a sandbox template where the credentials class is off."
+    } else {
+        "Choose a sandbox template where the credentials class is off."
+    };
+    Some(format!(
+        "This chat cannot use your own forge login, because its sandbox holds your credentials \
+         back, and no agent identity gives it a token, so gh and glab will fail here. {way_out} \
+         It takes effect when the chat restarts."
+    ))
+}
+
+/// [`credentials_note`] for a chat whose sandbox was compiled as `confines`, in the project at
+/// `root`: the class holds where a denial of it stands, and the chat mints where one of its
+/// tools does. The remotes are read only where the class holds and nothing mints.
+#[must_use]
+pub fn start_note(root: &Path, confines: &crate::sandbox::Confines) -> Option<String> {
+    let holds = confines
+        .denied
+        .iter()
+        .any(|denial| denial.class == crate::sandbox::Class::Credentials);
+    let mints = confines.tools.iter().any(|ready| ready.tool.mint.is_some());
+    if !holds || mints {
+        return None;
+    }
+    credentials_note(holds, mints, &hosts_of_the_project(root))
+}
+
 /// **An App a persona's tool line names**, read from the project file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Held {

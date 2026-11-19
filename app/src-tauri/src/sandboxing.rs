@@ -1314,6 +1314,8 @@ fn block_evidence(
     let harness_version = harness.and_then(purlis_core::sandbox::program::version_heard);
     Ok(Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
         block,
+        // The window does not say which command it was met by.
+        command: None,
         // The window does not say which chat's block it was, so no persona's kind is claimed.
         ran_as: purlis_core::report::RanAs {
             harness,

@@ -2894,6 +2894,83 @@ pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&P
     )
 }
 
+/// **What a minting tool's shim says when there is no token to run it with** (#1349): a chat that
+/// holds the credentials class cannot read the person's own login, and a tool declared with a
+/// `mint` line never runs without the token it mints (#7133), so it says why and the way on.
+///
+/// `mints`: whether the tool is declared with a `mint` line. Only then does Agent identity
+/// matter, and the shim can only see that the chat's hook channel variable is missing, while
+/// `secret exec` may still reach the app by its ancestry (#6995): so it says the app was not
+/// reached from here, never that Agent identity is not set up. Any other tool is declared with a
+/// token held in a vault, so its token is not missing: the hook channel that hands it on is, as
+/// under `env -i glab mr list`.
+pub fn no_minted_token_said(name: &str, mints: bool) -> String {
+    let way = if mints {
+        "The app could not be reached from this shell to mint one: run it from the chat's own \
+         terminal, set up Agent identity in Settings › Agent identity if it is not, or choose a \
+         sandbox template where the credentials class is off."
+    } else {
+        "The app could not be reached from this shell to hand on the token the tool is declared \
+         with: run it from the chat's own terminal (not under `env -i`), or choose a sandbox \
+         template where the credentials class is off."
+    };
+    format!(
+        "{name} has no token in this chat, and a chat never uses the person's own {name} login. \
+         {way}"
+    )
+}
+
+/// The forge programs whose own login a chat never falls back to (ADR 0067 §5 class 6): each
+/// reads a file [`crate::sandbox::CREDENTIAL_FILES`] names.
+pub const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
+
+/// The variables each forge program reads its token from, best first.
+const FORGE_TOKEN_VARS: [(&str, &[&str]); 2] = [
+    ("gh", &["GH_TOKEN", "GITHUB_TOKEN"]),
+    ("glab", &["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN"]),
+];
+
+/// **The variable a forge tool's token is handed in**, for a tool of [`FORGE_PROGRAMS`] or one
+/// that mints, where the shim refuses to run it without one. Chosen, in this order: a tool that
+/// mints hands the token minted in [`mint::VAR`] (its one value); else the first of the program's
+/// own token variables ([`FORGE_TOKEN_VARS`]) the tool hands; else its only value; and a tool
+/// that hands several, none of them the program's, is none (the shim then says nothing it
+/// cannot know, and the program is refused by the credentials class).
+fn forge_token_var(tool: &Tool) -> Option<String> {
+    let hands = |var: &str| tool.values.iter().find(|value| value.var == var);
+    if tool.mint.is_some() {
+        return hands(mint::VAR)
+            .or_else(|| tool.values.first())
+            .map(|value| value.var.clone());
+    }
+    let known = FORGE_TOKEN_VARS
+        .iter()
+        .find(|(program, _)| *program == tool.name)?
+        .1;
+    known
+        .iter()
+        .find_map(|var| hands(var))
+        .or(match tool.values.as_slice() {
+            [only] => Some(only),
+            _ => None,
+        })
+        .map(|value| value.var.clone())
+}
+
+/// `exec -a <name> program "$@"` under the declared name (#1977) where the shell can name it: POSIX
+/// `exec` has no `-a` (dash's has none), so it is tried in a subshell first. Empty where the tool
+/// declares no name.
+fn named_exec(ready: &Ready) -> String {
+    ready.argv0().map_or_else(String::new, |name| {
+        let name = quoted(name);
+        format!(
+            "if (exec -a {name} true) 2>/dev/null; then\n\
+             exec -a {name} {program} \"$@\"\nfi\n",
+            program = quoted(&ready.program.display().to_string()),
+        )
+    })
+}
+
 /// The shim for `ready`, run by `purlis`.
 pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
     if ready.tool.login.is_some() {
@@ -2930,9 +3007,7 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
          that chat runs\n# through `purlis secret exec`, which hands it {var} from the {vault} \
          vault: the chat\n# never reads the vault. Edits here are overwritten.\n\
          if [ -z \"{channel}\" ]; then\n\
-         # No app to ask from here: inside a `secret exec` run already, which handed the value \
-         on, or\n# outside the chat. The program itself, with nothing added.\n\
-         {named}exec {program} \"$@\"\nfi\nexec {words} \"$@\"\n",
+         {no_app}fi\nexec {words} \"$@\"\n",
         name = ready.tool.name,
         var = ready
             .tool
@@ -2942,18 +3017,32 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
             .collect::<Vec<_>>()
             .join(" and "),
         vault = ready.tool.vault,
-        program = quoted(&ready.program.display().to_string()),
         words = words.join(" "),
-        // Under the declared name (#1977) where the shell can name it: POSIX `exec` has no
-        // `-a` (dash's has none), so it is tried in a subshell first.
-        named = ready.argv0().map_or_else(String::new, |name| {
-            let name = quoted(name);
+        no_app = if let Some(var) = forge_token_var(&ready.tool) {
+            // A forge tool's program is never run bare (#1349, #7133): with no app to mint
+            // from and no token handed on, it would read the person's own login, or fail on
+            // the credentials class's refusal of it. It says what to do, and fails.
             format!(
-                "if (exec -a {name} true) 2>/dev/null; then\n\
-                 exec -a {name} {program} \"$@\"\nfi\n",
+                "# No app to mint a token from here. Inside a `secret exec` run the token is \
+                 handed on already;\n# otherwise this tool never falls back to the person's own \
+                 login.\nif [ -n \"${{{var}:-}}\" ]; then\n{named}exec {program} \"$@\"\nfi\n\
+                 echo {said} >&2\nexit 1\n",
+                said = quoted(&format!(
+                    "purlis: {}",
+                    no_minted_token_said(&ready.tool.name, ready.tool.mint.is_some())
+                )),
+                named = named_exec(ready),
                 program = quoted(&ready.program.display().to_string()),
             )
-        }),
+        } else {
+            format!(
+                "# No app to ask from here: inside a `secret exec` run already, which handed the \
+                 value on, or\n# outside the chat. The program itself, with nothing added.\n\
+                 {named}exec {program} \"$@\"\n",
+                named = named_exec(ready),
+                program = quoted(&ready.program.display().to_string()),
+            )
+        },
     )
 }
 

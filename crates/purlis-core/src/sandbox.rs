@@ -1183,9 +1183,11 @@ pub fn is_credential(path: &Path, machine: &Machine) -> bool {
     let Some(home) = &machine.home else {
         return false;
     };
-    let path = compared(path);
+    // Spelled as a program opens it: `.`, `//` and `..` are words (as `grant::liftable` reads
+    // them), so `…/.config/gh/./hosts.yml` is the file `…/.config/gh/hosts.yml` is.
+    let path = compared(&lexically(path));
     let below = |held: &Path| {
-        let held = compared(held);
+        let held = compared(&lexically(held));
         path == held || path.starts_with(&format!("{}/", held.trim_end_matches('/')))
     };
     credential_paths(home, &machine.env).iter().any(|held| {
@@ -1195,7 +1197,7 @@ pub fn is_credential(path: &Path, machine: &Machine) -> bool {
         if held.file_name() != Some(std::ffi::OsStr::new(SSH_FOLDER)) {
             return true;
         }
-        let ssh = compared(held);
+        let ssh = compared(&lexically(held));
         match path.strip_prefix(&format!("{ssh}/")) {
             Some(rest) if !rest.contains('/') => !ssh_open(rest),
             Some(_) => true,
@@ -1679,8 +1681,10 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
 
 /// **Whether this chat is one purlis wraps whole although its harness has a sandbox of its own**
 /// (#4083), as the chat's line said ([`crate::hookwire::WRAPPED_ENV`]): what its hooks and its
-/// `purlis` commands read, for how a refusal or a block is told and reported. No decision that
-/// holds anything reads it, so a chat that set it itself only changes how it is told.
+/// `purlis` commands read, for how a refusal or a block is told and reported, and for whether a
+/// hook may spool a line or take a report ([`writes_are_sandboxed`], #7178). A chat that sets it
+/// itself only makes purlis do less (spool nothing, take nothing, say "not checked"): it never
+/// grants a chat anything.
 pub fn wrapped_whole_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
     env(crate::hookwire::WRAPPED_ENV).as_deref() == Some("1")
 }

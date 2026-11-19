@@ -1353,6 +1353,12 @@ pub struct Device {
 /// unreadable store refuses rather than minting a second identity over the first. Where the
 /// store refuses (not unix, ADR 0031) there is no device id, and this says so.
 pub fn device_id(config_root: &Path) -> io::Result<String> {
+    // An id that is there is read and nothing is written: `update` takes the lock and rewrites the
+    // whole store, and a chat's sandbox keeps the home folder from a command that does it just to
+    // read a name (#7178). Only the first ask, which mints, writes.
+    if let Some(id) = known_device_id(config_root) {
+        return Ok(id);
+    }
     let loaded = update(config_root, |store| {
         mint_into(store);
     })?;
