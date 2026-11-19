@@ -4133,15 +4133,49 @@ impl Docker {
             .collect())
     }
 
-    /// **The runners on this engine that no runner of `mine` is** (#7192): what another desktop
-    /// made on an engine two desktops share. Each is named and only named: nothing here
-    /// stops, removes, renames or links one.
-    pub fn runners_of_other_desktops(&self, mine: &[&Made]) -> Result<Vec<String>, Refused> {
+    /// **The runners on this engine that this desktop did not make** (#7192): what another
+    /// desktop made on an engine two desktops share. A runner is this desktop's when it is one
+    /// of `mine` (by its id) or carries `desktop`'s label ([`DESKTOP_LABEL`]), never by what its
+    /// name looks like: a name `purlis-runner-<pool>-<tag>` and one `purlis-runner-<pool>-<8 hex>`
+    /// (a successor, [`successor_name`]) can be the same text. A runner this desktop made whose
+    /// row was lost is not another's. Each is named and only named: nothing here stops, removes,
+    /// renames or links one.
+    pub fn runners_of_other_desktops(
+        &self,
+        mine: &[&Made],
+        desktop: &str,
+    ) -> Result<Vec<String>, Refused> {
         Ok(self
             .runner_containers()?
             .into_iter()
-            .filter(|(id, _, _)| !mine.iter().any(|made| made.container.as_str() == id))
+            .filter(|(id, _, label)| {
+                label.as_deref() != Some(desktop)
+                    && !mine.iter().any(|made| made.container.as_str() == id)
+            })
             .map(|(_, name, _)| name)
+            .collect())
+    }
+
+    /// **The names of the containers that mount the volume `volume`**, whoever made them and
+    /// whatever they are called: Docker's own answer, read and never changed.
+    fn mounting(&self, volume: &str) -> Result<Vec<String>, Refused> {
+        let listed = self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--format".into(),
+                "{{.Names}}".into(),
+                "--filter".into(),
+                format!("volume={volume}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        Ok(listed
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
             .collect())
     }
 
@@ -4474,7 +4508,9 @@ impl Docker {
             ]),
             MOST_INSPECTED,
         )?;
-        if volumes.lines().any(|line| line.trim() == volume) {
+        // A tagged name and a successor's can spell the same volume (#7192): one a container
+        // still mounts is that container's, whatever its runner is called, and stays.
+        if volumes.lines().any(|line| line.trim() == volume) && self.mounting(&volume)?.is_empty() {
             self.run(
                 &words(&["volume", "rm", "--force", &volume]),
                 None,

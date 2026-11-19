@@ -463,6 +463,9 @@ pub struct PoolFacts {
     pub name: String,
     pub runner: Runner,
     pub sign_ins: SignIns,
+    /// **How many runners on the pool's engine belong to another desktop** (#7192), as a status
+    /// line; none where there are none or the engine was not asked. They are only counted.
+    pub others: Option<String>,
     /// Where the pool is a cluster's, what this machine keeps of it (#4494).
     pub cluster: Option<cluster::KeptHere>,
 }
@@ -818,7 +821,11 @@ fn pool_reading(facts: &Facts) -> Reading {
                 "Asks Docker again. It changes nothing.",
             ),
         ),
-        Runner::NotAsked | Runner::Asleep | Runner::Running => Reading::done(name.clone()),
+        Runner::NotAsked | Runner::Asleep | Runner::Running => Reading {
+            // Only said, never acted on (#7192).
+            findings: pool.others.iter().cloned().collect(),
+            ..Reading::done(name.clone())
+        },
     }
 }
 
@@ -1737,10 +1744,16 @@ fn pool_facts(
         (Runner::Running, Some(docker)) => sign_ins_of(here, docker, name),
         _ => SignIns::NotAsked,
     };
+    let others = docker.and_then(|docker| {
+        crate::pools::belonging_to_another_desktop(here.config, docker)
+            .ok()
+            .flatten()
+    });
     Ok(PoolFacts {
         name: name.to_owned(),
         runner,
         sign_ins,
+        others,
         cluster: None,
     })
 }

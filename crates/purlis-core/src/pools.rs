@@ -1106,7 +1106,7 @@ pub fn belonging_to_another_desktop(
     let kept = runners::read(config_root)?;
     let mine: Vec<&crate::dockerpool::Made> = kept.iter().map(|one| &one.made).collect();
     let others = docker
-        .runners_of_other_desktops(&mine)
+        .runners_of_other_desktops(&mine, &runners::desktop_label(config_root))
         .map_err(|why| Refused::Other(why.0))?;
     Ok(match others.len() {
         0 => None,

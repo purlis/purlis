@@ -1166,7 +1166,7 @@ impl FakeDocker {
              'system df') cat '{df}' ;;\n  \
              'image inspect') cat '{image}' ;;\n  \
              'exec '*) cat > '{input}'; cat '{paired}' ;;\n  \
-             'container ls') case \"$*\" in *--no-trunc*.ID*) cat '{containers}-full' 2>/dev/null || true ;; \
+             'container ls') case \"$*\" in *volume=*) cat '{containers}-mounting' 2>/dev/null || true ;; *--no-trunc*.ID*) cat '{containers}-full' 2>/dev/null || true ;; \
              *.ID*) cut -c1-12,65- '{containers}-full' 2>/dev/null || true ;; \
              *) cat '{containers}' 2>/dev/null || true ;; esac ;;\n  \
              *' rm') code=$(cat '{rm_fails}'-\"$1\" 2>/dev/null || cat '{rm_fails}' 2>/dev/null || echo 0); \
@@ -4633,7 +4633,10 @@ fn runners_of_another_desktop_are_listed_and_never_stopped_removed_or_renamed() 
             ("eeee", "purlis-runner-first-4e5f6a7b-copy", "theirs"),
         ],
     );
-    let others = fake.docker().runners_of_other_desktops(&[&made()]).unwrap();
+    let others = fake
+        .docker()
+        .runners_of_other_desktops(&[&made()], "mine")
+        .unwrap();
     assert_eq!(
         others,
         ["purlis-runner-first-4e5f6a7b", "purlis-runner-second"]
@@ -4684,4 +4687,55 @@ fn the_leftovers_of_an_adopted_runner_include_the_home_it_kept() {
         )
         .unwrap();
     assert_eq!(removed, ["volume purlis-runner-first-home"]);
+}
+
+/// **A runner is another desktop's by its labels, never by what its name looks like** (#7192): a
+/// tagged name `purlis-runner-<pool>-<tag>` and a successor's `purlis-runner-<pool>-<8 hex>` are
+/// the same text, so neither says whose runner it is.
+#[test]
+fn whose_runner_it_is_is_told_by_its_desktop_label_and_not_by_its_names_shape() {
+    let fake = FakeDocker::new(&inspected());
+    runners_listed(
+        &fake,
+        &[
+            // This desktop's, its row lost: the name is shaped as another's would be.
+            (OTHER_ID, "purlis-runner-first-0a1b2c3d", "mine"),
+            // Another desktop's, named as a successor of the pool `first` would be.
+            (THIRD_ID, "purlis-runner-first-4e5f6a7b", "theirs"),
+        ],
+    );
+    let others = fake
+        .docker()
+        .runners_of_other_desktops(&[&made()], "mine")
+        .unwrap();
+    assert_eq!(others, ["purlis-runner-first-4e5f6a7b"]);
+}
+
+/// **A tagged runner's leftovers are never a successor's** (#7192): the pool `p`'s runner of the
+/// tag `0a1b2c3d` and the successor `p-0a1b2c3d` of that pool share a container name and a home
+/// volume name. Cleaning up for one asks Docker by its runner label, so the other's container is
+/// never listed, and a home volume a container still mounts stays whatever that container is
+/// called, and whichever of the two it is.
+#[test]
+fn a_tagged_runners_leftovers_and_a_successors_are_never_taken_for_each_other() {
+    for (cleaned, tag) in [("p", Some("0a1b2c3d")), ("p-0a1b2c3d", None)] {
+        let fake = FakeDocker::new(&inspected());
+        // The other's container, named as the one cleaned for would be, and its home.
+        runners_listed(&fake, &[(ID, "purlis-runner-p-0a1b2c3d-4e5f6a7b", "mine")]);
+        fake.set("volumes", "purlis-runner-p-0a1b2c3d-home\n");
+        fake.set("containers-mounting", "purlis-runner-p-0a1b2c3d-4e5f6a7b\n");
+        let removed = fake
+            .docker()
+            .remove_leftovers_of(cleaned, "mine", tag, None)
+            .unwrap();
+        assert!(removed.is_empty(), "{cleaned}: {removed:?}");
+        let log = fake.file("log");
+        assert!(
+            log.contains(&format!("label=purlis.runner={cleaned}")),
+            "{cleaned}: listed by its own runner label: {log}"
+        );
+        for changed in ["container rm", "volume rm"] {
+            assert!(!log.contains(changed), "{cleaned}: {changed}: {log}");
+        }
+    }
 }

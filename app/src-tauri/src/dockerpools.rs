@@ -329,6 +329,12 @@ pub struct PoolVersion {
     /// **Its older runners kept as they could not be checked for such work** (ruled 2026-11-08),
     /// each by name with what is left of it: the Pools group names each in a line of its own.
     pub not_checked: Vec<PoolNotChecked>,
+    /// **How many runners on its engine belong to another desktop** (#7192), as a line ("2
+    /// runners belong to another desktop"): two desktops can share one remote engine, each with
+    /// its own runner of a pool. Only said, never acted on. Left out where there are none or the
+    /// engine could not be asked.
+    #[specta(optional)]
+    pub other_desktops: Option<String>,
 }
 
 /// **An older runner of a pool kept unchecked** (ruled 2026-11-08): its name, and what is left of
@@ -1233,6 +1239,11 @@ pub fn version_on(
             .into_iter()
             .map(|(runner, left)| PoolNotChecked { runner, left })
             .collect(),
+        other_desktops: machine.for_pool(name).ok().and_then(|on| {
+            purlis_core::pools::belonging_to_another_desktop(&machine.config, &on.docker)
+                .ok()
+                .flatten()
+        }),
     })
 }
 
