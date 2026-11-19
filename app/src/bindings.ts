@@ -1040,8 +1040,8 @@ export const commands = {
 	/**
 	 *  **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 	 *  browser logins may be filled on the pool's runner while the app runs and the pool stays as
-	 *  the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
-	 *  person typed. Every chat of that persona that waits on that pool is answered with it, and
+	 *  the Ask showed it; Keep off refuses them there until the pool changes or another window of
+	 *  this machine gives a yes, with the reason the person typed. Every chat of that persona that waits on that pool is answered with it, and
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
