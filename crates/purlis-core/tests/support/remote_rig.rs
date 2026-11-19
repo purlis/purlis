@@ -44,6 +44,39 @@ pub fn verified(bytes: &[u8], version: &str, target: runnerinstall::Target) -> V
     runnerinstall::verify(&public, bytes, &signature, version, target).expect("verified")
 }
 
+/// The arguments that open the runner's bridge over the pinned route, and the folder holding the
+/// pinned `known_hosts` for as long as it lives.
+pub fn bridge_args(
+    reach: &Reach,
+    binary: &str,
+) -> (purlis_core::dockerpool::settings::RunFolder, Vec<String>) {
+    let (folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
+    let mut args =
+        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).expect("its arguments");
+    args.pop();
+    args.push(format!("{binary} bridge"));
+    (folder, args)
+}
+
+/// A shell chat that runs `script` as `/bin/sh -c`.
+pub fn shell_launch(script: String) -> Launch {
+    Launch {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), script],
+        cwd: None,
+        set: Vec::new(),
+        strip: Vec::new(),
+        pass: Vec::new(),
+        declared: Vec::new(),
+        harness: None,
+        git_hooks: None,
+        reporting: None,
+        confinement: None,
+        prompt_key: None,
+        pools_held: None,
+    }
+}
+
 /// What `command` printed on the runner, run there through the pinned route.
 pub fn there(reach: &Reach, command: &str, input: Option<&str>) -> sshroute::Ran {
     let (_folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
@@ -87,11 +120,7 @@ pub async fn linked(
     purlis_core::dockerpool::settings::RunFolder,
     tokio::task::JoinHandle<()>,
 ) {
-    let (folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
-    let mut args =
-        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).expect("its arguments");
-    args.pop();
-    args.push(format!("{binary} bridge"));
+    let (folder, args) = bridge_args(reach, binary);
     let connector = CommandConnector::new(reach.ssh.clone(), args, Arc::new(|| Ok(())));
     let mut links = hostlink::keep_linked(
         connector,
@@ -115,21 +144,7 @@ pub async fn linked(
 pub async fn chat(client: &Client, said: &str) -> String {
     client
         .start_program(StartProgram {
-            launch: Some(Launch {
-                program: "/bin/sh".into(),
-                args: vec!["-c".into(), format!("echo '{said}'; exec sleep 6000")],
-                cwd: None,
-                set: Vec::new(),
-                strip: Vec::new(),
-                pass: Vec::new(),
-                declared: Vec::new(),
-                harness: None,
-                git_hooks: None,
-                reporting: None,
-                confinement: None,
-                prompt_key: None,
-                pools_held: None,
-            }),
+            launch: Some(shell_launch(format!("echo '{said}'; exec sleep 6000"))),
             ..StartProgram::of(PROJECT, ProgramKind::Shell)
         })
         .await

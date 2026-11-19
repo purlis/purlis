@@ -3,10 +3,12 @@
 
 //! **The faults a live remote chat and a live browser must survive before remote is trusted**
 //! (#7188, the ruling of 2026-11-18, part of #7180): fifteen cases, one test each, against the
-//! remote parity job's rigs with the fake harness and nothing else faked (ruling 5).
+//! remote parity job's rigs with the fake harness and nothing else faked (ruling 5). Fourteen are
+//! here; case 5 is the systemd runner's own test, as the ruling says.
 //!
 //! **The cases.** Pool and chat: 1 link drop of 5 s and of 90 s; 2 sshd restart; 3 host key
-//! changed under a live chat; 4 runner killed; 5 machine reboot; 6 app restart; 7 pool forgotten;
+//! changed under a live chat; 4 runner killed; 5 machine reboot (in
+//! `an_ssh_runner_host_outlives_the_sign_out_and_a_restart`); 6 app restart; 7 pool forgotten;
 //! 8 a 15 s slow link; 9 registry down; 10 half-open link. Browser: B1 link drop; B2 takeover
 //! during a drop; B3 pool forgotten; B4 app quit; B5 two runners at once. Each test's name says
 //! what holds.
@@ -14,8 +16,12 @@
 //! **The outage rules, checked in every case** ("behaviour during an outage and the end
 //! states"): nothing silent for more than 30 s (the link says why it is down within
 //! [`QUIET_LIMIT`] of the fault, [`told_within`]); nothing started waits past three minutes
-//! ([`START_LIMIT`]); and where a state has a name, it is the name: Unreachable, Refused, Host key
-//! changed, Runner gone, Pool forgotten.
+//! ([`START_LIMIT`]); and where a state has a name, it is the name. **Each of the five is asserted
+//! by one case, and each is train A's, so each of those cases is `#[ignore]`d** and reads the
+//! state through [`seam::state_named`]: Unreachable by the 90 s drop
+//! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), Refused by the registry down
+//! (`a_registry_that_is_down_names_the_pool_refused`), Host key changed by case 3, Runner gone by
+//! case 4, Pool forgotten by case 7.
 //!
 //! **Faults** are `tests/remote-faults/faults.sh`'s, put on the rig's containers and taken off by
 //! `restore`, which every test runs before it starts and again as it ends, however it ends: a
@@ -37,7 +43,7 @@
 
 #![cfg(unix)]
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use purlis_core::runnerinstall::{self, Delivery};
@@ -48,21 +54,15 @@ use purlis_session_protocol::hostlink::{
 };
 use purlis_session_protocol::session::Client;
 
+use crate::support::outage::{
+    Kept, QUIET_LIMIT, START_LIMIT, Told, first_down_after, first_up_after, told_within,
+};
 use crate::support::real_infra::fixture_or_skip;
 use crate::support::remote_rig::{
-    PATIENCE, PROJECT, as_root, running, runtime, there, until_within, verified,
+    PATIENCE, PROJECT, as_root, bridge_args, running, runtime, shell_launch, there, until_within,
+    verified,
 };
 
-/// **Nothing silent for more than 30 s**: from the fault, the link says why it is down at least
-/// this soon.
-const QUIET_LIMIT: Duration = Duration::from_secs(30);
-/// **The 3-minute limit**: nothing the person starts waits longer than this before it works or
-/// fails.
-const START_LIMIT: Duration = Duration::from_secs(180);
-/// **The detection bound for a half-open link**: the link's own deadline is 30 s of silence
-/// (`Liveness::default`), and ssh's ServerAlive is 15 s three times, so a silent link is found
-/// within the longer of the two and a little over. 2026-11-17's incident was five minutes.
-const DETECTED_WITHIN: Duration = Duration::from_secs(60);
 const VERSION: &str = "0.0.1-faults.1";
 const DESKTOP: &str = "01JA0DESKT0P00000000000000";
 /// The script that puts and takes the faults.
@@ -70,129 +70,6 @@ const FAULTS: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../tests/remote-faults/faults.sh"
 );
-
-// ---------------------------------------------------------------------------------------------
-// The outage rules, as arithmetic on what was told and when.
-// ---------------------------------------------------------------------------------------------
-
-/// What a kept link told, and when.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Told {
-    Up,
-    Down {
-        why: String,
-        key_changed: bool,
-        gone: bool,
-    },
-}
-
-/// The first time after `fault_at` that the link said it was down, as an offset from it, with
-/// what it said; `None` if it never did.
-fn first_down_after(told: &[(Duration, Told)], fault_at: Duration) -> Option<(Duration, String)> {
-    told.iter().find_map(|(at, what)| match what {
-        Told::Down { why, .. } if *at >= fault_at => Some((*at - fault_at, why.clone())),
-        _ => None,
-    })
-}
-
-/// **Rule: nothing silent.** The link told it was down, with a reason, within `limit` of the
-/// fault.
-fn told_within(told: &[(Duration, Told)], fault_at: Duration, limit: Duration) -> Duration {
-    let (after, why) = first_down_after(told, fault_at)
-        .unwrap_or_else(|| panic!("the link never said it was down: {told:?}"));
-    assert!(
-        after <= limit,
-        "the link was silent for {after:?} (limit {limit:?}) before it said: {why}"
-    );
-    assert!(!why.trim().is_empty(), "the link was down with no reason");
-    after
-}
-
-/// The first time after `after` that the link was up, as an offset from `after`.
-fn first_up_after(told: &[(Duration, Told)], after: Duration) -> Option<Duration> {
-    told.iter().find_map(|(at, what)| match what {
-        Told::Up if *at >= after => Some(*at - after),
-        _ => None,
-    })
-}
-
-#[cfg(test)]
-mod rules {
-    use super::*;
-
-    fn down(why: &str) -> Told {
-        Told::Down {
-            why: why.to_owned(),
-            key_changed: false,
-            gone: false,
-        }
-    }
-
-    #[test]
-    fn a_link_that_says_why_it_is_down_within_the_limit_passes() {
-        let told = [
-            (Duration::from_secs(0), Told::Up),
-            (Duration::from_secs(12), down("no answer")),
-        ];
-        assert_eq!(
-            told_within(&told, Duration::from_secs(5), QUIET_LIMIT),
-            Duration::from_secs(7)
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "silent for 40s")]
-    fn a_link_that_says_nothing_for_longer_than_the_limit_fails() {
-        let told = [(Duration::from_secs(45), down("late"))];
-        told_within(&told, Duration::from_secs(5), QUIET_LIMIT);
-    }
-
-    #[test]
-    #[should_panic(expected = "never said it was down")]
-    fn a_link_that_never_says_it_is_down_fails() {
-        told_within(
-            &[(Duration::ZERO, Told::Up)],
-            Duration::from_secs(1),
-            QUIET_LIMIT,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "no reason")]
-    fn a_link_that_is_down_with_no_reason_fails() {
-        told_within(
-            &[(Duration::from_secs(2), down("  "))],
-            Duration::ZERO,
-            QUIET_LIMIT,
-        );
-    }
-
-    #[test]
-    fn a_down_before_the_fault_is_not_the_faults() {
-        let told = [
-            (Duration::from_secs(1), down("earlier")),
-            (Duration::from_secs(20), down("the fault's")),
-        ];
-        assert_eq!(
-            first_down_after(&told, Duration::from_secs(10)),
-            Some((Duration::from_secs(10), "the fault's".to_owned()))
-        );
-    }
-
-    #[test]
-    fn the_first_up_after_a_restore_is_measured_from_it() {
-        let told = [
-            (Duration::from_secs(1), Told::Up),
-            (Duration::from_secs(30), down("x")),
-            (Duration::from_secs(95), Told::Up),
-        ];
-        assert_eq!(
-            first_up_after(&told, Duration::from_secs(60)),
-            Some(Duration::from_secs(35))
-        );
-        assert_eq!(first_up_after(&told, Duration::from_secs(100)), None);
-    }
-}
 
 // ---------------------------------------------------------------------------------------------
 // The rig.
@@ -246,6 +123,8 @@ impl Rig {
         )?;
         // Whatever the case before left, off: the link, the key and the rule are the rig's own.
         fault(&machine, &["restore"]);
+        // In /tmp, as the sibling tests do: a short path, since ssh's control sockets live under
+        // this folder and a unix socket's path is limited to about 104 bytes.
         let settings = tempfile::Builder::new()
             .prefix("rf")
             .tempdir_in("/tmp")
@@ -327,6 +206,24 @@ impl Rig {
         });
     }
 
+    /// Starts keeping a link to this runner's host, as the window does.
+    async fn keep(&self) -> Kept {
+        self.keep_within(PATIENCE).await
+    }
+
+    /// As [`Rig::keep`], waiting up to `within` for the first link: over a slow link it takes longer.
+    async fn keep_within(&self, within: Duration) -> Kept {
+        Kept::start(
+            &self.reach,
+            &self.binary,
+            self.identity(),
+            self.runner.clone(),
+            self.began,
+            within,
+        )
+        .await
+    }
+
     /// Puts fault `args` on the machine; the clock of the outage starts here.
     fn fault(&self, args: &[&str]) -> Duration {
         fault(&self.machine, args);
@@ -361,163 +258,15 @@ impl Drop for Rig {
     }
 }
 
-/// A kept link as the desktop keeps it, recording each thing it tells with its time, and the
-/// client of the link that is up.
-struct Kept {
-    told: Arc<Mutex<Vec<(Duration, Told)>>>,
-    client: Arc<Mutex<Option<Arc<Client>>>>,
-    began: Instant,
-    task: tokio::task::JoinHandle<()>,
-}
-
-impl Kept {
-    /// Starts keeping a link to the host, as the window does, and waits for its first.
-    async fn start(rig: &Rig) -> Kept {
-        Kept::start_within(rig, PATIENCE).await
-    }
-
-    /// As [`Kept::start`], waiting up to `within` for the first link: over a slow link it takes longer.
-    async fn start_within(rig: &Rig, within: Duration) -> Kept {
-        let (_folder, known_hosts) = rig.reach.known_hosts_for_a_run().expect("known_hosts");
-        let mut args = sshroute::sign_in_args(&rig.reach.route, &rig.reach.pool, &known_hosts)
-            .expect("its arguments");
-        args.pop();
-        args.push(format!("{} bridge", rig.binary));
-        let connector = CommandConnector::new(rig.reach.ssh.clone(), args, Arc::new(|| Ok(())));
-        let mut links = hostlink::keep_linked(
-            connector,
-            Handshake::THIS_BUILD,
-            rig.identity(),
-            rig.runner.clone(),
-            Liveness::default(),
-        );
-        let began = rig.began;
-        let told = Arc::new(Mutex::new(Vec::new()));
-        let client = Arc::new(Mutex::new(None));
-        let (told_in, client_in) = (Arc::clone(&told), Arc::clone(&client));
-        let task = tokio::spawn(async move {
-            // The folder holds the pinned known_hosts for as long as the link is kept.
-            let _folder = _folder;
-            let mut alive = Vec::new();
-            while let Some(linked) = links.next().await {
-                let at = began.elapsed();
-                match linked {
-                    Linked::Up(link) => {
-                        let (client, views, events) = Client::new(*link);
-                        alive.push((views, events));
-                        *client_in.lock().unwrap() = Some(Arc::new(client));
-                        links.moved();
-                        told_in.lock().unwrap().push((at, Told::Up));
-                    }
-                    Linked::Down(down) => {
-                        *client_in.lock().unwrap() = None;
-                        told_in.lock().unwrap().push((
-                            at,
-                            Told::Down {
-                                why: down.why,
-                                key_changed: down.key_changed,
-                                gone: down.gone,
-                            },
-                        ));
-                    }
-                }
-            }
-        });
-        let kept = Kept {
-            told,
-            client,
-            began,
-            task,
-        };
-        kept.until_up(within, "the first link").await;
-        kept
-    }
-
-    fn told(&self) -> Vec<(Duration, Told)> {
-        self.told.lock().unwrap().clone()
-    }
-
-    fn now(&self) -> Duration {
-        self.began.elapsed()
-    }
-
-    fn client(&self) -> Option<Arc<Client>> {
-        self.client.lock().unwrap().clone()
-    }
-
-    /// Waits until a link is up, up to `within`.
-    async fn until_up(&self, within: Duration, what: &str) -> Arc<Client> {
-        let deadline = Instant::now() + within;
-        loop {
-            if let Some(client) = self.client() {
-                return client;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "never linked within {within:?}: {what}; told {:?}",
-                self.told()
-            );
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-    }
-
-    /// Waits until a link answers a call, up to `within`: after a fault is taken off, the client
-    /// of the link that was up before it may be what is left, and a dead one answers nothing.
-    async fn until_working(&self, within: Duration, what: &str) -> Arc<Client> {
-        let deadline = Instant::now() + within;
-        loop {
-            if let Some(client) = self.client()
-                && let Ok(Ok(_)) = tokio::time::timeout(Duration::from_secs(5), client.list()).await
-            {
-                return client;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "no link answered within {within:?}: {what}; told {:?}",
-                self.told()
-            );
-            tokio::time::sleep(Duration::from_millis(500)).await;
-        }
-    }
-
-    /// Waits until the link says it is down, up to `within` of `from`.
-    async fn until_down(&self, from: Duration, within: Duration) {
-        let deadline = Instant::now() + within + Duration::from_secs(1);
-        while first_down_after(&self.told(), from).is_none() {
-            assert!(
-                Instant::now() < deadline,
-                "the link never said it was down within {within:?}: {:?}",
-                self.told()
-            );
-            tokio::time::sleep(Duration::from_millis(250)).await;
-        }
-    }
-}
-
 /// A chat that keeps what it is typed in a file of the account's, so the machine, not the link,
 /// says whether input arrived.
 async fn typing_chat(client: &Client, tag: &str) -> String {
-    use purlis_session_protocol::session::{Launch, ProgramKind, StartProgram};
+    use purlis_session_protocol::session::{ProgramKind, StartProgram};
     client
         .start_program(StartProgram {
-            launch: Some(Launch {
-                program: "/bin/sh".into(),
-                args: vec![
-                    "-c".into(),
-                    format!("echo 'said {tag}'; exec cat >> /home/keeper/typed-{tag}"),
-                ],
-                cwd: None,
-                set: Vec::new(),
-                strip: Vec::new(),
-                pass: Vec::new(),
-                declared: Vec::new(),
-                harness: None,
-                git_hooks: None,
-                reporting: None,
-                confinement: None,
-                prompt_key: None,
-                pools_held: None,
-            }),
+            launch: Some(shell_launch(format!(
+                "echo 'said {tag}'; exec cat >> /home/keeper/typed-{tag}"
+            ))),
             ..StartProgram::of(PROJECT, ProgramKind::Shell)
         })
         .await
@@ -570,6 +319,21 @@ mod seam {
         todo!("needs #7187 train A: the pool or runner's RemoteState, as the window names it")
     }
 
+    /// The name of the state a pool is in, as the window words it, for a pool with no chat of its
+    /// own: `Refused` where its image cannot be fetched or its sign-in is turned away.
+    ///
+    /// Train A: as [`state_named`], read from the pool's `RemoteState`.
+    pub fn pool_state_named(_pool: &str) -> String {
+        todo!("needs #7187 train A: the pool's RemoteState, as the window names it")
+    }
+
+    /// A second runner on another machine of the rig, with its own host, for the cases that need
+    /// two. The rig has one (`tests/ssh-runner/up-systemd.sh`'s); a second machine there is the
+    /// rig's follow-up.
+    pub fn a_second_runner(_rig: &Rig) -> Rig {
+        todo!("needs a second runner machine in the rig (up-systemd.sh) and #7190 train D")
+    }
+
     /// The pool forgotten on this machine, as Forget does, and what it lists as left there.
     ///
     /// Train A: `Forget works in every state and lists what may be left`; call it on the pool the
@@ -614,7 +378,7 @@ fn a_link_drop_keeps_the_chat(for_: Duration, tag: &str) {
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, tag).await;
         let fault_at = rig.fault(&["drop"]);
@@ -665,13 +429,39 @@ fn a_link_drop_of_90_seconds_says_why_within_30_seconds_and_the_chat_takes_input
     a_link_drop_keeps_the_chat(Duration::from_secs(90), "drop90");
 }
 
+/// Case 1's 90 s drop, the state it is named while it lasts: Unreachable (train A, #7187).
+#[test]
+#[ignore = "needs #7187 train A: the pool's state named Unreachable"]
+fn a_90_second_drop_is_named_unreachable_while_it_lasts() {
+    purlis_core::unsteered!();
+    let Some(rig) = Rig::up() else { return };
+    let rt = runtime();
+    rt.block_on(async {
+        let kept = rig.keep().await;
+        let client = kept.client().expect("linked");
+        let chat = a_chat(&rig, &client, "unreachable").await;
+        let fault_at = rig.fault(&["drop"]);
+        // Past the 30 s rule and well inside the drop: the window says what the state is.
+        tokio::time::sleep(QUIET_LIMIT + Duration::from_secs(5)).await;
+        told_within(&kept.told(), fault_at, QUIET_LIMIT);
+        assert_eq!(seam::state_named(&rig, &chat), "Unreachable");
+        rig.restore();
+        let after = kept
+            .until_working(START_LIMIT, "the link after the drop")
+            .await;
+        assert_eq!(running(&after).await, vec![chat]);
+        kept.task.abort();
+    });
+    rt.shutdown_timeout(Duration::from_secs(5));
+}
+
 #[test]
 fn an_sshd_restart_reopens_the_link_with_no_new_key_prompt_and_the_chat_survives() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "sshd").await;
         let key_before = rig.reach.key.clone();
@@ -715,7 +505,7 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "hostkey").await;
         let fault_at = rig.fault(&["rotate-hostkey"]);
@@ -754,7 +544,7 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
             began: rig.began,
             _settings: tempfile::tempdir().unwrap(),
         };
-        let again = Kept::start(&trusted).await;
+        let again = trusted.keep().await;
         let client = again.client().expect("linked after re-trust");
         assert_eq!(running(&client).await, vec![chat]);
         again.task.abort();
@@ -771,7 +561,7 @@ fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "killed").await;
         let fault_at = rig.fault(&["kill-runner"]);
@@ -804,50 +594,10 @@ fn a_killed_runner_ends_its_chat_as_runner_gone_never_reconnecting_for_ever_and_
     rt.shutdown_timeout(Duration::from_secs(5));
 }
 
-#[test]
-fn a_machine_reboot_says_why_within_30_seconds_comes_back_inside_the_limit_and_settles_its_chat() {
-    purlis_core::unsteered!();
-    let Some(rig) = Rig::up() else { return };
-    let rt = runtime();
-    rt.block_on(async {
-        let kept = Kept::start(&rig).await;
-        let client = kept.client().expect("linked");
-        let chat = a_chat(&rig, &client, "reboot").await;
-        let fault_at = kept.now();
-        let restarted = purlis_core::forklock::output(std::process::Command::new("docker").args([
-            "restart",
-            "--time",
-            "60",
-            &rig.machine,
-        ]))
-        .expect("docker runs");
-        assert!(restarted.status.success(), "the machine restarted");
-        // `docker restart` returns when the machine is booting; the link was cut as it stopped.
-        kept.until_down(fault_at, QUIET_LIMIT + Duration::from_secs(60))
-            .await;
-        // The rule is the link's, measured from when the machine went down, which `docker
-        // restart` takes up to its 60 s grace to do: said at once when it did.
-        let told = kept.told();
-        assert!(
-            first_down_after(&told, fault_at).is_some_and(|(_, why)| !why.trim().is_empty()),
-            "the reboot was told with a reason: {told:?}"
-        );
-        rig.until_the_host_answers();
-        let after = kept
-            .until_working(START_LIMIT, "the link after the reboot")
-            .await;
-        // The host came back on its own and settles what the reboot ended: the chat is not
-        // running, and a new one starts.
-        assert!(
-            !running(&after).await.contains(&chat),
-            "a reboot ends its chats"
-        );
-        let next = typing_chat(&after, "reboot-next").await;
-        assert_eq!(running(&after).await, vec![next]);
-        kept.task.abort();
-    });
-    rt.shutdown_timeout(Duration::from_secs(5));
-}
+// Case 5, the machine reboot, is not here: it is the systemd runner's own test
+// (`an_ssh_runner_host_outlives_the_sign_out_and_a_restart`, step 4), which now keeps a link
+// through the restart and checks the outage rules (told within 30 s, back inside the 3-minute
+// limit), as the ruling says: "the existing systemd test, with the outage-rule checks added".
 
 #[test]
 fn an_app_restart_reattaches_each_chat_to_its_own_pool() {
@@ -857,7 +607,7 @@ fn an_app_restart_reattaches_each_chat_to_its_own_pool() {
     // The app is the process that keeps the link: its end is the link kept going away, with
     // the chats running on the runner. A second app, as the first came back, links anew.
     let chats = rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         client
             .hold_project(PROJECT, "")
@@ -876,7 +626,7 @@ fn an_app_restart_reattaches_each_chat_to_its_own_pool() {
     rt.shutdown_timeout(Duration::from_secs(5));
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked again");
         assert_eq!(
             running(&client).await,
@@ -897,7 +647,7 @@ fn a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_le
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "forgotten").await;
         let began = Instant::now();
@@ -929,7 +679,7 @@ fn a_15_second_slow_link_still_links_inside_the_budgets_and_the_chat_works() {
         rig.fault(&["slow", "15"]);
         // Every round trip costs 15 s each way, so the first link may take a minute or two: the
         // budget is the 3-minute limit.
-        let kept = Kept::start_within(&rig, START_LIMIT).await;
+        let kept = rig.keep_within(START_LIMIT).await;
         assert!(
             began.elapsed() <= START_LIMIT,
             "the link took {:?}",
@@ -952,11 +702,7 @@ fn a_link_slower_than_the_budgets_fails_naming_the_step_inside_the_limit_with_no
     rt.block_on(async {
         // 90 s a packet is past every budget (`CONNECT` 10 s, `RUN` 30 s).
         let fault_at = rig.fault(&["slow", "90"]);
-        let (_folder, known_hosts) = rig.reach.known_hosts_for_a_run().expect("known_hosts");
-        let mut args = sshroute::sign_in_args(&rig.reach.route, &rig.reach.pool, &known_hosts)
-            .expect("its arguments");
-        args.pop();
-        args.push(format!("{} bridge", rig.binary));
+        let (_folder, args) = bridge_args(&rig.reach, &rig.binary);
         let mut links = hostlink::keep_linked(
             CommandConnector::new(rig.reach.ssh.clone(), args, Arc::new(|| Ok(()))),
             Handshake::THIS_BUILD,
@@ -991,14 +737,19 @@ fn a_half_open_link_is_found_within_the_stated_bound_and_the_chat_survives_it() 
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "blackhole").await;
         // Every packet lost, no reset: the link stays open and says nothing, as 2026-11-17's did.
         let fault_at = rig.fault(&["blackhole"]);
-        kept.until_down(fault_at, DETECTED_WITHIN).await;
-        let found = told_within(&kept.told(), fault_at, DETECTED_WITHIN);
-        assert!(found <= DETECTED_WITHIN, "found after {found:?}");
+        kept.until_down(fault_at, QUIET_LIMIT).await;
+        // **The person is told within 30 s**, the "nothing silent" rule itself, not a longer
+        // detection bound. The link pings every 10 s and ends as dead after 30 s of hearing
+        // nothing (`Liveness::default`), counted from the last frame heard, which was before the
+        // fault: today's code meets 30 s, with no margin to spare. Were a detection ever to take
+        // longer, a line saying the link is being checked must show within 30 s (train A, #7187),
+        // and this bound stays 30 s. 2026-11-17's incident was five minutes.
+        told_within(&kept.told(), fault_at, QUIET_LIMIT);
         let back_at = rig.restore();
         let after = kept
             .until_working(START_LIMIT, "the link after the blackhole")
@@ -1021,6 +772,20 @@ fn a_half_open_link_is_found_within_the_stated_bound_and_the_chat_survives_it() 
 #[test]
 fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_and_leaves_no_container()
  {
+    a_registry_that_is_down(false);
+}
+
+/// Case 9's other half, the state the window names for it: Refused (train A, #7187).
+#[test]
+#[ignore = "needs #7187 train A: the pool's state named Refused"]
+fn a_registry_that_is_down_names_the_pool_refused() {
+    a_registry_that_is_down(true);
+}
+
+/// The registry inside dind goes down under a Docker pool; the check fails inside its budget as
+/// image unreachable and leaves no runner container; with `names_the_state`, the pool is also
+/// named `Refused`, as the window words it.
+fn a_registry_that_is_down(names_the_state: bool) {
     use purlis_core::dockerpool::{Docker, Image};
     use purlis_core::poolsetup::doctoring;
     use purlis_core::runners::{Pool, Remote, Set};
@@ -1032,9 +797,10 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
             std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?,
             std::env::var("REMOTE_DOCKER_TEST_REGISTRY_DOWN_IMAGE").ok()?,
             std::env::var("REMOTE_DOCKER_TEST_SSHD").ok()?,
+            std::env::var("REMOTE_DOCKER_TEST_DIND").ok()?,
         ))
     })();
-    let Some((route, image, sshd)) = fixture_or_skip(
+    let Some((route, image, sshd, dind)) = fixture_or_skip(
         "Docker on another machine, with a registry inside it",
         "tests/remote-docker/up.sh",
         found,
@@ -1055,6 +821,8 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
     }
     let _restore = Restore(sshd.clone());
     fault(&sshd, &["restore"]);
+    // In /tmp for a short path: ssh's control sockets live under it (a unix socket's path is
+    // limited to about 104 bytes).
     let folders = tempfile::Builder::new()
         .prefix("rf")
         .tempdir_in("/tmp")
@@ -1107,6 +875,9 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
     let took = began.elapsed();
     forward::let_go("regdown");
     let finding = found.expect_err("doctor finds the registry down");
+    if names_the_state {
+        assert_eq!(seam::pool_state_named("regdown"), "Refused");
+    }
     assert!(
         matches!(finding, connect::Finding::ImageUnreachable { .. }),
         "image unreachable, not another finding: {finding:?}"
@@ -1118,7 +889,7 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
     // No container behind: no runner of any pool is on the engine.
     let left = purlis_core::forklock::output(std::process::Command::new("docker").args([
         "exec",
-        "dind",
+        &dind,
         "docker",
         "ps",
         "--all",
@@ -1145,7 +916,7 @@ fn b1_a_browsers_link_drops_and_returns_the_view_says_why_and_the_page_comes_bac
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "b1").await;
         let browser = seam::open_a_browser(&rig, &chat);
@@ -1176,7 +947,7 @@ fn b2_a_takeover_during_a_drop_keeps_control_or_the_view_says_why() {
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "b2").await;
         let browser = seam::open_a_browser(&rig, &chat);
@@ -1206,7 +977,7 @@ fn b3_a_pool_forgotten_with_a_browser_open_ends_it_as_pool_forgotten() {
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "b3").await;
         let browser = seam::open_a_browser(&rig, &chat);
@@ -1224,7 +995,7 @@ fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reatta
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     let (chat, browser, page) = rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let chat = a_chat(&rig, &client, "b4").await;
         let browser = seam::open_a_browser(&rig, &chat);
@@ -1235,7 +1006,7 @@ fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reatta
     rt.shutdown_timeout(Duration::from_secs(5));
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked again");
         assert_eq!(running(&client).await, vec![chat]);
         assert_eq!(
@@ -1254,16 +1025,20 @@ fn b4_an_app_quit_with_a_runner_browser_open_leaves_it_running_and_purlis_reatta
 }
 
 #[test]
-#[ignore = "needs #7190 train D: browsers on two runners"]
+#[ignore = "needs #7190 train D: browsers on a pool's runner, and a second runner machine in the rig (follow-up on up-systemd.sh)"]
 fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
+    // Two runners, as ruled: each on a machine of its own, a chat on each.
+    let other = seam::a_second_runner(&rig);
     let rt = runtime();
     rt.block_on(async {
-        let kept = Kept::start(&rig).await;
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
         let one = a_chat(&rig, &client, "b5-one").await;
-        let two = a_chat(&rig, &client, "b5-two").await;
+        let kept_other = other.keep().await;
+        let client_other = kept_other.client().expect("linked");
+        let two = a_chat(&other, &client_other, "b5-two").await;
         // Together, not one after the other: two starts take about as long as one.
         let alone = Instant::now();
         let first = seam::open_a_browser(&rig, &one);
@@ -1271,7 +1046,7 @@ fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
         let together = Instant::now();
         let (a, b) = std::thread::scope(|scope| {
             let a = scope.spawn(|| seam::open_a_browser(&rig, &one));
-            let b = scope.spawn(|| seam::open_a_browser(&rig, &two));
+            let b = scope.spawn(|| seam::open_a_browser(&other, &two));
             (a.join().unwrap(), b.join().unwrap())
         });
         assert!(
@@ -1279,10 +1054,11 @@ fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
             "two starts took {:?} where one took {one_took:?}: they ran one after the other",
             together.elapsed()
         );
-        for browser in [first, a, b] {
-            assert_eq!(seam::browser_state(&rig, &browser), "Open");
+        for (rig, browser) in [(&rig, first), (&rig, a), (&other, b)] {
+            assert_eq!(seam::browser_state(rig, &browser), "Open");
         }
         kept.task.abort();
+        kept_other.task.abort();
     });
     rt.shutdown_timeout(Duration::from_secs(5));
 }

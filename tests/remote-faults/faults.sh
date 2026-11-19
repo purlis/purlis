@@ -170,12 +170,14 @@ case $verb in
     # Each undo is its own command, and one that has nothing to undo says nothing and succeeds.
     inside "$machine" "while iptables -C $RULE 2>/dev/null; do iptables -D $RULE; done"
     inside "$machine" "if test -e $KEEP/netem; then if test \"\$(cat $KEEP/netem)\" = none; then tc qdisc del dev $DEV root 2>/dev/null || true; else tc qdisc replace dev $DEV root netem \$(cat $KEEP/netem); fi; fi"
+    inside "$machine" "rm -f $KEEP/netem"
     # The key the machine started with goes back, and only then is the sshd restarted: a restore
     # with no rotation to undo leaves the sshd alone.
     if [ "$init" = systemd ]; then reload="systemctl restart ssh"; else reload="kill -HUP 1"; fi
     inside "$machine" "if test -e $KEEP/ssh_host_ed25519_key; then cp -p $KEEP/ssh_host_ed25519_key $KEEP/ssh_host_ed25519_key.pub /etc/ssh/ && rm -f $KEEP/ssh_host_ed25519_key $KEEP/ssh_host_ed25519_key.pub && $reload; fi"
-    # A rig with no engine behind it (the systemd machine's) has no registry or runners to put back.
-    if has "$DIND"; then
+    # Only the plain machines (`sshd`, `dind`) sit in front of the engine; the systemd machine has
+    # no registry or runners, and restoring it leaves dind alone.
+    if [ "$init" = plain ] && has "$DIND"; then
       inside "$DIND" "docker start registry || true"
       inside "$DIND" "docker ps -aq --filter label=purlis.runner --filter status=exited | xargs -r docker rm"
     fi

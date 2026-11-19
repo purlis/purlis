@@ -62,6 +62,15 @@ retries = 0
 filter = "package(purlis-core) & binary(it) & test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)"
 slow-timeout = { period = "60s", terminate-after = 10 }
 
+# The fault suite (#7188): a live chat on a machine with a fault put on it, each case waiting out
+# its own limits (up to 90 s for the host to answer, 180 s for a first link, 90 s of drop, a
+# machine's 60 s shutdown and boot), the worst about eight minutes. Without this a case is killed
+# at the default five (60 s x 5), which reds `remote-parity` and every PR that touches remote code.
+# Ten, as the systemd runner's test above: a hung case is called hung at ten.
+[[profile.ci.overrides]]
+filter = "package(purlis-core) & binary(it) & test(/^a_live_remote_chat_survives_the_faults_that_define_trust::/)"
+slow-timeout = { period = "60s", terminate-after = 10 }
+
 # The run's report, at `target/nextest/ci/junit.xml`: `tools/slowest-tests.mjs` reads each
 # test's time from it and annotates the run with the slowest tests and binaries.
 [profile.ci.junit]

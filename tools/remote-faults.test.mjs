@@ -96,12 +96,18 @@ test("rotate-hostkey keeps the first key once and makes a new one", () => {
 });
 
 test("restore puts back the rule, the link, the host key, the registry and the runners", () => {
-  const out = run(["restore"]).stdout;
+  const out = run(["--machine", "sshd", "restore"]).stdout;
   assert.match(out, /iptables -D/);
   assert.match(out, /tc qdisc/);
   assert.match(out, /ssh_host_ed25519_key/);
   assert.match(out, /docker start registry/);
   assert.match(out, /purlis\.runner/);
+});
+
+test("restoring the systemd machine leaves dind alone", () => {
+  const out = run(["--machine", "ssh-runner-systemd", "restore"]).stdout;
+  assert.match(out, /iptables -D/);
+  assert.doesNotMatch(out, /dind|docker start|purlis\.runner/);
 });
 
 test("the systemd machine's sshd is restarted by systemd, the plain one by a hangup", () => {
