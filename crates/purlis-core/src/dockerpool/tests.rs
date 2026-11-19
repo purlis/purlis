@@ -4487,3 +4487,201 @@ fn a_runner_container_has_no_restart_policy_so_the_next_chat_starts_it() {
         "{args:?}"
     );
 }
+
+/// A device id as a desktop keeps it (a ULID, ADR 0066).
+const DESKTOP: &str = "01JA0DESKT0P00000000000000";
+/// Another desktop's.
+const ANOTHER_DESKTOP: &str = "01JA0ANOTHERDESKT00000000Z";
+
+/// **A runner's names carry its desktop's tag** (#7192): so two desktops on one engine make a
+/// runner of one pool each, never one name twice.
+#[test]
+fn a_desktops_runner_is_named_for_its_desktop_and_another_desktops_is_not_the_same_name() {
+    let tag = device_tag(DESKTOP);
+    assert_eq!(tag.len(), 8, "{tag}");
+    assert!(
+        tag.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "{tag}"
+    );
+    let mine = runner().of_desktop(DESKTOP);
+    assert_eq!(mine.container(), format!("purlis-runner-first-{tag}"));
+    assert_eq!(mine.volume(), format!("purlis-runner-first-{tag}-home"));
+    let theirs = runner().of_desktop(ANOTHER_DESKTOP);
+    assert_ne!(mine.container(), theirs.container());
+    assert_ne!(mine.volume(), theirs.volume());
+    // The pool's name stays the runner's, whoever's it is.
+    assert_eq!(mine.name(), "first");
+}
+
+#[test]
+fn a_desktops_tag_is_the_same_for_a_device_id_in_either_case_and_holds_no_part_of_it() {
+    assert_eq!(device_tag(DESKTOP), device_tag(&DESKTOP.to_lowercase()));
+    assert!(!DESKTOP.to_lowercase().contains(&device_tag(DESKTOP)));
+}
+
+#[test]
+fn a_runner_made_before_names_carried_a_tag_keeps_the_names_it_was_made_under() {
+    assert_eq!(runner().container(), "purlis-runner-first");
+    assert_eq!(runner().volume(), "purlis-runner-first-home");
+}
+
+#[test]
+fn a_tagged_runner_is_made_under_its_tagged_container_and_volume() {
+    let tag = device_tag(DESKTOP);
+    let args = runner()
+        .of_desktop(DESKTOP)
+        .create_args(std::path::Path::new(SECCOMP_AT));
+    assert!(
+        has_pair(&args, "--name", &format!("purlis-runner-first-{tag}")),
+        "{args:?}"
+    );
+    assert!(
+        args.iter().any(|a| a.starts_with(&format!(
+            "type=volume,source=purlis-runner-first-{tag}-home,"
+        ))),
+        "{args:?}"
+    );
+}
+
+/// The listing of runner containers a fake engine gives: the whole id, the name and, where there
+/// is one, the desktop's label.
+fn runners_listed(fake: &FakeDocker, rows: &[(&str, &str, &str)]) {
+    let text: String = rows
+        .iter()
+        .map(|(id, name, label)| format!("{id} {name} {label}\n"))
+        .collect();
+    fake.set("containers-full", &text);
+}
+
+const OTHER_ID: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+const THIRD_ID: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
+/// **A runner under the old name is adopted by renaming its container** (#7192): by the id kept,
+/// to the name its desktop's tag gives. Docker cannot rename a volume, so the home keeps its name.
+#[test]
+fn a_runner_under_the_old_name_is_adopted_by_a_rename_that_keeps_its_home() {
+    let fake = FakeDocker::new(&inspected());
+    runners_listed(&fake, &[(ID, "purlis-runner-first", "mine")]);
+    let tag = device_tag(DESKTOP);
+    let adopted = fake.docker().adopt(&made(), DESKTOP, "mine").unwrap();
+    assert_eq!(adopted.container, made().container);
+    assert_eq!(
+        adopted.runner.container(),
+        format!("purlis-runner-first-{tag}")
+    );
+    assert_eq!(adopted.runner.volume(), "purlis-runner-first-home");
+    assert_eq!(adopted.runner.tag(), Some(tag.as_str()));
+    let log = fake.file("log");
+    assert!(
+        log.contains(&format!("container rename {ID} purlis-runner-first-{tag}")),
+        "{log}"
+    );
+}
+
+#[test]
+fn a_runner_made_before_the_label_is_adopted_by_the_desktop_that_kept_it() {
+    let fake = FakeDocker::new(&inspected());
+    // No label: made before #2869 labelled them.
+    fake.set("containers-full", &format!("{ID} purlis-runner-first\n"));
+    assert!(fake.docker().adopt(&made(), DESKTOP, "mine").is_ok());
+}
+
+#[test]
+fn a_runner_already_named_for_its_desktop_is_not_renamed_again() {
+    let fake = FakeDocker::new(&inspected());
+    let mine = Made {
+        runner: runner().of_desktop(DESKTOP),
+        ..made()
+    };
+    assert_eq!(fake.docker().adopt(&mine, DESKTOP, "mine").unwrap(), mine);
+    assert!(!fake.file("log").contains("rename"), "{}", fake.file("log"));
+}
+
+/// **The old name is adopted only where no other desktop has adopted it** (#7192): a container
+/// that is no longer under it, or that another desktop's label says it made, is left alone.
+#[test]
+fn a_container_another_desktop_already_renamed_or_made_is_not_adopted() {
+    let fake = FakeDocker::new(&inspected());
+    runners_listed(&fake, &[(ID, "purlis-runner-first-0a1b2c3d", "mine")]);
+    let why = fake.docker().adopt(&made(), DESKTOP, "mine").unwrap_err();
+    assert!(why.0.contains("another desktop took it"), "{why}");
+
+    let fake = FakeDocker::new(&inspected());
+    runners_listed(&fake, &[(ID, "purlis-runner-first", "theirs")]);
+    let why = fake.docker().adopt(&made(), DESKTOP, "mine").unwrap_err();
+    assert!(why.0.contains("made by another desktop"), "{why}");
+
+    let fake = FakeDocker::new(&inspected());
+    runners_listed(&fake, &[]);
+    assert!(fake.docker().adopt(&made(), DESKTOP, "mine").is_err());
+
+    assert!(!fake.file("log").contains("rename"), "{}", fake.file("log"));
+}
+
+/// **Runners of another desktop are named and never touched** (#7192).
+#[test]
+fn runners_of_another_desktop_are_listed_and_never_stopped_removed_or_renamed() {
+    let fake = FakeDocker::new(&inspected());
+    runners_listed(
+        &fake,
+        &[
+            (ID, "purlis-runner-first-0a1b2c3d", "mine"),
+            (OTHER_ID, "purlis-runner-first-4e5f6a7b", "theirs"),
+            (THIRD_ID, "purlis-runner-second", "theirs"),
+            // What carries sign-ins to a runner is no runner.
+            ("eeee", "purlis-runner-first-4e5f6a7b-copy", "theirs"),
+        ],
+    );
+    let others = fake.docker().runners_of_other_desktops(&[&made()]).unwrap();
+    assert_eq!(
+        others,
+        ["purlis-runner-first-4e5f6a7b", "purlis-runner-second"]
+    );
+    let log = fake.file("log");
+    for changed in [
+        " rm",
+        "stop",
+        "kill",
+        "rename",
+        "volume rm",
+        "restart",
+        "exec",
+    ] {
+        assert!(!log.contains(changed), "{changed}: {log}");
+    }
+}
+
+/// An adoption whose rename went through but whose row was not kept is finished by the next link.
+#[test]
+fn a_runner_renamed_by_an_adoption_whose_row_was_lost_is_adopted_again_without_a_second_rename() {
+    let fake = FakeDocker::new(&inspected());
+    let tag = device_tag(DESKTOP);
+    runners_listed(
+        &fake,
+        &[(ID, &format!("purlis-runner-first-{tag}"), "mine")],
+    );
+    let adopted = fake.docker().adopt(&made(), DESKTOP, "mine").unwrap();
+    assert_eq!(
+        adopted.runner.container(),
+        format!("purlis-runner-first-{tag}")
+    );
+    assert!(!fake.file("log").contains("rename"), "{}", fake.file("log"));
+}
+
+/// The leftovers of an adopted runner include the home volume it keeps, not one its names give.
+#[test]
+fn the_leftovers_of_an_adopted_runner_include_the_home_it_kept() {
+    let fake = FakeDocker::new(&inspected());
+    fake.set("volumes", "purlis-runner-first-home\n");
+    let removed = fake
+        .docker()
+        .remove_leftovers_of(
+            "first",
+            "mine",
+            Some("0a1b2c3d"),
+            Some("purlis-runner-first-home"),
+        )
+        .unwrap();
+    assert_eq!(removed, ["volume purlis-runner-first-home"]);
+}

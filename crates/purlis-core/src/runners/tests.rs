@@ -2338,3 +2338,32 @@ fn a_pool_made_marked_is_written_with_the_pin_it_is_made_with() {
     assert_eq!(row["owned"], row["pin"]);
     assert!(!pool("here", Set::default()).marked(true).owned());
 }
+
+/// **A runner's desktop tag and its home volume's name are kept with it** (#7192): the names
+/// an adopted runner's container and volume have are read back as they were kept, and a runner
+/// made before them is read back under the names it was made with.
+#[test]
+fn a_runners_names_are_read_back_as_they_were_kept() {
+    let config = tempfile::tempdir().unwrap();
+    let adopted = Made {
+        runner: made().runner.adopted_by(OURS.device.as_str()),
+        ..made()
+    };
+    keep(
+        config.path(),
+        &adopted,
+        &answered("01JB0RUNNER0000000000000000"),
+        &OURS,
+    )
+    .unwrap();
+    let read = read(config.path()).unwrap();
+    assert_eq!(read[0].made, adopted);
+    assert_eq!(read[0].made.runner.volume(), "purlis-runner-first-home");
+    assert_eq!(
+        read[0].made.runner.container(),
+        format!(
+            "purlis-runner-first-{}",
+            crate::dockerpool::device_tag(&OURS.device)
+        )
+    );
+}
