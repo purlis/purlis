@@ -722,6 +722,11 @@ pub fn detect_with_record(
                     // reads or prints raises no refusal of the network from it (#1972).
                     let own = violations(stderr, place);
                     let mut read = reported_or_of_paths(stderr, place);
+                    // `gh pr list || true` succeeds with gh's refusal on a separate standard
+                    // error: the credentials class, as on the other streams (#1349).
+                    let credentials = credential_refusals(stderr, place, said);
+                    read.retain(|(_, target)| !names_one_of(&credentials, target));
+                    found.extend(credentials);
                     if said == Said::Failed {
                         // A background command that ended failed: its own error, read as a
                         // failed command's is.
@@ -752,7 +757,7 @@ pub fn detect_with_record(
     if let Some(mixed) = payload["error"].as_str() {
         found.extend(violations(mixed, place));
         found.extend(on_stdout(mixed, place, Said::Failed));
-        found.extend(credential_refusals(mixed, place, Said::Failed));
+        found.extend(credential_refusals(mixed, place, said));
     }
     drop_credential_twins(&mut found);
     // The certificate check is one service, purlis's own word for it: a line that runs a
@@ -815,7 +820,14 @@ fn credential_refusals(text: &str, place: &Place<'_>, said: Said) -> Vec<(Block,
 
 /// Whether `target` is the path of one of `credentials`' blocks.
 fn names_one_of(credentials: &[(Block, Option<String>)], target: &Option<String>) -> bool {
-    target.is_some() && credentials.iter().any(|(_, named)| named == target)
+    let spelled = |path: &str| unprivate(&lexical(Path::new(path)));
+    target.as_deref().is_some_and(|target| {
+        credentials.iter().any(|(_, named)| {
+            named
+                .as_deref()
+                .is_some_and(|named| spelled(named) == spelled(target))
+        })
+    })
 }
 
 /// A credential named by a program's own line and by the sandbox's violation line is one Notice,
@@ -836,6 +848,10 @@ fn drop_credential_twins(found: &mut Vec<(Block, Option<String>)>) {
 fn as_not_permitted(line: &str) -> String {
     let trimmed = line.trim_end();
     let lower = trimmed.to_ascii_lowercase();
+    // Rust's io error on a line of its own, its path on the line before.
+    if lower.trim() == "permission denied (os error 13)" {
+        return "Operation not permitted (os error 1)".to_owned();
+    }
     if let Some(start) = lower.find("eacces: permission denied, ") {
         let rest = &trimmed[start + "eacces: permission denied, ".len()..];
         return format!(
