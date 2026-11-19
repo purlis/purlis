@@ -317,10 +317,11 @@ fn editing_a_pull_request_passes_unless_it_retargets_or_cannot_be_read() {
     ]);
 }
 
-/// The same for GitLab's `PUT merge_requests/<iid>`: only the title and description are set
-/// without a hold (#7195).
+/// The same for GitLab's `PUT merge_requests/<iid>`: its metadata (text, labels, assignees,
+/// reviewers, milestone, lock, collaboration, and a `state_event` of `close` or `reopen`) is
+/// never held; a target, a merge setting or anything unknown is (#7176, #7195).
 #[test]
-fn editing_a_merge_request_passes_only_for_its_title_and_description() {
+fn editing_a_merge_requests_metadata_passes_and_its_target_and_merge_settings_are_held() {
     purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let write = |name: &str, text: &str| {
@@ -332,27 +333,157 @@ fn editing_a_merge_request_passes_only_for_its_title_and_description() {
     let target = write("target.json", r#"{"title":"T","target_branch":"main"}"#);
     let auto = write("auto.json", r#"{"merge_when_pipeline_succeeds":true}"#);
     let squash = write("squash.json", r#"{"squash":true}"#);
-    let state = write("state.json", r#"{"state_event":"close"}"#);
+    let metadata = write(
+        "metadata.json",
+        r#"{"labels":"a,b","add_labels":"c","remove_labels":"d","assignee_id":1,"assignee_ids":[1,2],"reviewer_ids":[3],"milestone_id":4,"discussion_locked":true,"allow_collaboration":false,"state_event":"reopen"}"#,
+    );
+    let unknown = write("unknown.json", r#"{"title":"T","something_new":1}"#);
+    let state_merge = write("state-merge.json", r#"{"state_event":"merge"}"#);
+    let state_number = write("state-number.json", r#"{"state_event":1}"#);
     let missing = dir.path().join("missing.json").display().to_string();
     passes(&[
         &format!("glab api -X PUT projects/9/merge_requests/3 --input {text}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {metadata}"),
         "glab api -X PUT projects/9/merge_requests/3 -f title=T -f description=D",
+        "glab api -X PUT projects/9/merge_requests/3 -f labels=a,b -f add_labels=c -f remove_labels=d",
+        "glab api -X PUT projects/9/merge_requests/3 -F assignee_id=1 -F milestone_id=4 -F discussion_locked=true",
+        "glab api -X PUT projects/9/merge_requests/3 -f 'assignee_ids[]=1' -f 'reviewer_ids[]=2'",
+        "glab api -X PUT projects/9/merge_requests/3 -F allow_collaboration=true -f state_event=close",
+        "glab api -X PUT projects/9/merge_requests/3 -f state_event=reopen",
         "glab api --method PUT projects/g%2Fp/merge_requests/3 -F description=@notes.md",
     ]);
     held(&[
         &format!("glab api -X PUT projects/9/merge_requests/3 --input {target}"),
         &format!("glab api -X PUT projects/9/merge_requests/3 --input {auto}"),
         &format!("glab api -X PUT projects/9/merge_requests/3 --input {squash}"),
-        &format!("glab api -X PUT projects/9/merge_requests/3 --input {state}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {unknown}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {state_merge}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {state_number}"),
         &format!("glab api -X PUT projects/9/merge_requests/3 --input {missing}"),
         "glab api -X PUT projects/9/merge_requests/3 --input -",
         "glab api -X PUT projects/9/merge_requests/3 --input $BODY",
+        "glab api -X PUT projects/9/merge_requests/3 -f state_event=$EVENT",
+        "glab api -X PUT projects/9/merge_requests/3 -f state_event=merge",
+        "glab api -X PUT projects/9/merge_requests/3 -F state_event=@event.txt",
         "glab api -X PUT projects/9/merge_requests/3 -f target_branch=main",
         "glab api -X PUT projects/9/merge_requests/3 -f merge_when_pipeline_succeeds=true",
+        "glab api -X PUT projects/9/merge_requests/3 -f auto_merge=true",
         "glab api -X PUT projects/9/merge_requests/3 -F squash=true",
+        "glab api -X PUT projects/9/merge_requests/3 -f title=T -f remove_source_branch=true",
         "glab api -X PUT projects/9/merge_requests/3 -f title=T -f should_remove_source_branch=true",
+        "glab api -X PUT projects/9/merge_requests/3 -f something_new=1",
         "glab api -X PUT projects/9/merge_requests/3/merge",
     ]);
+}
+
+/// A relative `--input` is the file gh opens in the shell's directory, which is the payload's
+/// `cwd` unless the line changes it first; where anything in the line can, it is held, because
+/// the file it names is not one purlis can read (#7195).
+#[test]
+fn a_relative_input_is_read_in_the_payloads_directory_and_held_where_the_line_may_change_it() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("body.json"), r#"{"title":"T"}"#).unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::write(elsewhere.path().join("body.json"), r#"{"base":"main"}"#).unwrap();
+    let cwd = dir.path().to_str().unwrap();
+    let read = |cmd: &str| purlis_core::floorguard::in_directory(cwd, || mergehold::held(cmd));
+    // The file in the payload's directory is read: it sets only a title.
+    for cmd in [
+        "gh api -X PATCH repos/o/r/pulls/7 --input body.json",
+        "gh api -X PATCH repos/o/r/pulls/7 --input ./body.json",
+        "git -C /elsewhere status && gh api -X PATCH repos/o/r/pulls/7 --input body.json",
+        "glab api -X PUT projects/9/merge_requests/3 --input body.json",
+    ] {
+        assert_eq!(read(cmd), None, "held: {cmd}");
+    }
+    // A line that can change directory before the call may read another file than the one
+    // beside the payload, so nothing is read.
+    let there = elsewhere.path().display();
+    for cmd in [
+        format!("cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("cd {there}; gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("(cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input body.json)"),
+        format!("pushd {there} && gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        "popd && gh api -X PATCH repos/o/r/pulls/7 --input body.json".to_owned(),
+        format!("env -C {there} gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("env --chdir={there} gh api -X PATCH repos/o/r/pulls/7 --input body.json"),
+        format!("bash -c 'cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input body.json'"),
+        format!("cd {there} && bash -c 'gh api -X PATCH repos/o/r/pulls/7 --input body.json'"),
+    ] {
+        assert!(read(&cmd).is_some(), "not held: {cmd}");
+    }
+    // With no directory to read it against, a relative path is unread.
+    assert!(
+        mergehold::held("gh api -X PATCH repos/o/r/pulls/7 --input body.json").is_some(),
+        "a relative input with no directory"
+    );
+    // An absolute path does not depend on the directory, so a `cd` before it holds nothing.
+    let absolute = dir.path().join("body.json");
+    let cmd = format!(
+        "cd {there} && gh api -X PATCH repos/o/r/pulls/7 --input {}",
+        absolute.display()
+    );
+    assert_eq!(read(&cmd), None, "held: {cmd}");
+}
+
+/// `--input -` with a quoted heredoc on the same line is the body, read for the keys it sets;
+/// an unquoted heredoc, a pipe, a substitution or a here-string is stdin purlis does not read
+/// (#7195).
+#[test]
+fn a_quoted_heredoc_on_stdin_is_the_body_and_any_other_stdin_is_held() {
+    purlis_core::unsteered!();
+    passes(&[
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\",\"body\":\"B\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<\"EOF\"\n{\"title\":\"it's $X\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input=- <<'EOF'\n{\"state\":\"closed\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<-'EOF'\n\t{\"title\":\"T\"}\n\tEOF",
+        "glab api -X PUT projects/9/merge_requests/3 --input - <<'EOF'\n{\"labels\":\"a\",\"state_event\":\"close\"}\nEOF",
+    ]);
+    held(&[
+        // The body sets what an edit may not.
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"base\":\"main\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\",\"base\":\"main\"}\nEOF",
+        "glab api -X PUT projects/9/merge_requests/3 --input - <<'EOF'\n{\"target_branch\":\"main\"}\nEOF",
+        // Not one JSON object, or no end to the body.
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n[{\"title\":\"T\"}]\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\"}",
+        // Stdin the shell builds or another program writes.
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<EOF\n{\"title\":\"T\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<EOF\n{\"title\":\"$T\"}\nEOF",
+        "echo '{\"title\":\"T\"}' | gh api -X PATCH repos/o/r/pulls/7 --input -",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<< '{\"title\":\"T\"}'",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - < body.json",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF' < body.json\n{\"title\":\"T\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - < <(echo '{\"title\":\"T\"}')",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<'EOF'\n{\"title\":\"T\"}\nEOF\ngh api -X PATCH repos/o/r/pulls/8 --input - <<'EOF'\n{\"base\":\"main\"}\nEOF",
+    ]);
+}
+
+/// A body over a mebibyte is held for its size, even where it is one object that sets only a
+/// title (#7195).
+#[test]
+fn a_body_over_a_mebibyte_is_held_for_its_size() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let pad = |bytes: usize| format!(r#"{{"title":"T","body":"{}"}}"#, "x".repeat(bytes));
+    let fits = dir.path().join("fits.json");
+    let over = dir.path().join("over.json");
+    // The limit is on the file: exactly a mebibyte passes, one byte more is held.
+    let overhead = pad(0).len();
+    std::fs::write(&fits, pad((1 << 20) - overhead)).unwrap();
+    std::fs::write(&over, pad((1 << 20) - overhead + 1)).unwrap();
+    assert_eq!(std::fs::metadata(&fits).unwrap().len(), 1 << 20);
+    assert_eq!(std::fs::metadata(&over).unwrap().len(), (1 << 20) + 1);
+    passes(&[&format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {}",
+        fits.display()
+    )]);
+    held(&[&format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {}",
+        over.display()
+    )]);
 }
 
 // Shape 7.

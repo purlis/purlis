@@ -470,6 +470,15 @@ pub fn judged(
     plane: Option<&Plane<'_>>,
     modes: &dyn Fn(Family) -> Mode,
 ) -> Judged {
+    // A relative path in the line is read against the payload's directory (#7195).
+    floorguard::in_directory(call.cwd, || judged_in_its_directory(call, plane, modes))
+}
+
+fn judged_in_its_directory(
+    call: &Call<'_>,
+    plane: Option<&Plane<'_>>,
+    modes: &dyn Fn(Family) -> Mode,
+) -> Judged {
     let gate = Gate {
         modes,
         logged: std::cell::RefCell::new(Vec::new()),

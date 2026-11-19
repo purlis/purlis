@@ -867,18 +867,19 @@ fn api_reason(args: &[String], cmd: &str, glab_api: bool) -> Option<String> {
             {
                 return Some(why.to_owned());
             }
-            // An edit of a request itself sets only what it is told to set: its text, and for a
-            // pull request its state. A target (retargeting) or a merge setting is held, and so
-            // is a body purlis cannot read (#7195).
+            // An edit of a request itself is held unless every field it sets is one of its
+            // forge's settable ones (text, labels, assignees, state): a target (`base`,
+            // `target_branch`), a merge setting, anything unknown, or a body purlis cannot read
+            // is held (#7195).
             if let Some(forge) = request_edit(&segs)
-                && let Some(why) = request_edit_reason(&call, forge)
+                && let Some(why) = request_edit_reason(&call, forge, args, cmd)
             {
                 return Some(why);
             }
             // Where a field the call does not show could set a merge: a repository's settings. A
-            // request's own path, GitLab's `merge_requests/N` or GitHub's `pulls/N`, edits its title,
-            // description, labels, state and target and has no field that merges: merging is
-            // `.../merge`, held above (#7176; Q331).
+            // request's own path (GitLab's `merge_requests/N`, GitHub's `pulls/N`) is judged above
+            // by what its body sets, field by field; merging is `.../merge`, held above (#7176;
+            // Q331).
             let settable = is_repository(&segs);
             for field in &call.fields {
                 // A key the shell fills in could be an auto-merge setting where one can be set.
@@ -911,7 +912,20 @@ impl RequestForge {
     fn settable(self) -> &'static [&'static str] {
         match self {
             Self::GitHub => &["title", "body", "state", "maintainer_can_modify"],
-            Self::GitLab => &["title", "description"],
+            Self::GitLab => &[
+                "title",
+                "description",
+                "labels",
+                "add_labels",
+                "remove_labels",
+                "assignee_id",
+                "assignee_ids",
+                "reviewer_ids",
+                "milestone_id",
+                "discussion_locked",
+                "allow_collaboration",
+                "state_event",
+            ],
         }
     }
 }
@@ -926,52 +940,149 @@ fn request_edit(segs: &[String]) -> Option<RequestForge> {
     }
 }
 
-/// The top-level keys of a JSON object in the file a call's `--input` names, or `None` when
-/// they cannot be read from here: a path the shell fills in, stdin (`-`), a file that is missing,
-/// unreadable, too large or not one JSON object.
-fn input_keys(path: &str) -> Option<Vec<String>> {
+/// The most of a request edit's body purlis reads: a larger one is held, not read in part.
+const INPUT_LIMIT: u64 = 1 << 20;
+
+/// The top-level keys of a JSON object, each with its value where it is a string.
+fn json_entries(text: &str) -> Option<Vec<(String, Option<String>)>> {
+    match serde_json::from_str::<serde_json::Value>(text).ok()? {
+        serde_json::Value::Object(map) => Some(
+            map.into_iter()
+                .map(|(key, value)| (key, value.as_str().map(str::to_owned)))
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
+/// The keys of a JSON object in the file a call's `--input` names, or `None` when they cannot be
+/// read from here: a path the shell fills in, stdin (`-`, read by [`quoted_heredoc_body`]), a
+/// relative path with no directory to read it against ([`super::in_directory`]), a file that is missing,
+/// unreadable, over [`INPUT_LIMIT`] or not one JSON object.
+fn input_entries(path: &str) -> Option<Vec<(String, Option<String>)>> {
     if path.is_empty() || path == "-" || opaque(path) {
         return None;
     }
     let file = std::path::Path::new(path);
-    if !std::fs::metadata(file).ok()?.is_file() {
+    let file = if file.is_absolute() {
+        file.to_path_buf()
+    } else {
+        // gh opens it in the directory the shell is in when it runs, which the hook knows only
+        // where nothing in the line could have changed it.
+        super::directory_the_line_runs_in()?.join(file)
+    };
+    let meta = std::fs::metadata(&file).ok()?;
+    if !meta.is_file() || meta.len() > INPUT_LIMIT {
         return None;
     }
-    let mut text = String::new();
-    std::io::Read::read_to_string(
-        &mut std::io::Read::take(std::fs::File::open(file).ok()?, 1 << 20),
-        &mut text,
+    let mut bytes = Vec::new();
+    // One byte past the limit, so a file that grew since the check is told from one that fits.
+    std::io::Read::read_to_end(
+        &mut std::io::Read::take(std::fs::File::open(&file).ok()?, INPUT_LIMIT + 1),
+        &mut bytes,
     )
     .ok()?;
-    match serde_json::from_str::<serde_json::Value>(&text).ok()? {
-        serde_json::Value::Object(map) => Some(map.keys().cloned().collect()),
-        _ => None,
+    if bytes.len() as u64 > INPUT_LIMIT {
+        return None;
     }
+    json_entries(std::str::from_utf8(&bytes).ok()?)
+}
+
+/// The literal text of the quoted heredoc (`<<'EOF'`, `<<"EOF"`) that is `args`' stdin, or `None`
+/// when stdin is anything else: an unquoted heredoc (the shell expands it), a pipe, a file, a
+/// substitution, a line with more than one heredoc, or a body that does not end (#7195).
+fn quoted_heredoc_body(args: &[String], cmd: &str) -> Option<String> {
+    use crate::heredoc::{Line, body_extent, heredoc_opener_words, heredoc_openers};
+    // The only redirect from a file is the heredoc: a later `< file` would be stdin instead.
+    let redirects: Vec<&String> = args
+        .iter()
+        .filter(|a| {
+            a.starts_with('<')
+                || a.trim_start_matches(|c: char| c.is_ascii_digit())
+                    .starts_with('<')
+        })
+        .collect();
+    if redirects.len() != 1 || !(redirects[0].starts_with("<<") && !redirects[0].starts_with("<<<"))
+    {
+        return None;
+    }
+    let line = Line::of(cmd);
+    let openers = heredoc_openers(&line);
+    let [opener] = openers.as_slice() else {
+        return None;
+    };
+    let header = &opener.header;
+    if header.expands || opener.maybe_shift || header.shells_disagree {
+        return None;
+    }
+    // The heredoc belongs to this call: every word of it before the `<<` is among the words the
+    // heredoc's own command has.
+    let words = heredoc_opener_words(&line, opener.start)?;
+    let at = args.iter().position(|a| a == redirects[0])?;
+    if !args[..at].iter().all(|a| words.contains(a)) {
+        return None;
+    }
+    // The body starts on the line after the header's.
+    let text: String = line.chars().get(header.end..)?.iter().collect();
+    let (_, body) = text.split_once('\n')?;
+    let lines: Vec<&str> = body.split('\n').collect();
+    let (len, found) = body_extent(&lines, &header.delim, false, header.dash);
+    if !found {
+        return None;
+    }
+    let taken = &lines[..len];
+    Some(if header.dash {
+        taken
+            .iter()
+            .map(|l| l.trim_start_matches('\t'))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        taken.join("\n")
+    })
 }
 
 /// The refusal of an edit of a request that sets a field outside `forge`'s settable ones, or
 /// whose body cannot be read, or `None` when it sets only those (#7195). A field that speaks of
 /// merging is the merge refusal; `base` or `target_branch` retargets the request.
-fn request_edit_reason(call: &ApiCall, forge: RequestForge) -> Option<String> {
+fn request_edit_reason(
+    call: &ApiCall,
+    forge: RequestForge,
+    args: &[String],
+    cmd: &str,
+) -> Option<String> {
     if call.is_read() {
         return None;
     }
-    let mut keys: Vec<String> = call.fields.iter().map(|f| f.key.clone()).collect();
+    let mut sets: Vec<(String, Option<String>)> = call
+        .fields
+        .iter()
+        // `assignee_ids[]=1` is how a form field sends a list: the field is `assignee_ids`.
+        .map(|f| {
+            let key = f.key.strip_suffix("[]").unwrap_or(&f.key);
+            (key.to_owned(), (!f.value_opaque()).then(|| f.value.clone()))
+        })
+        .collect();
     let mut unread = call.form_body.then(|| "a `--form` body".to_owned());
     for input in &call.inputs {
-        match input_keys(input) {
-            Some(more) => keys.extend(more),
+        let entries = if input == "-" {
+            quoted_heredoc_body(args, cmd).and_then(|body| json_entries(&body))
+        } else {
+            input_entries(input)
+        };
+        match entries {
+            Some(more) => sets.extend(more),
             None => {
                 unread.get_or_insert_with(|| format!("the body `{input}`"));
             }
         }
     }
-    if keys.iter().any(|k| speaks_of_merging(k)) {
+    if sets.iter().any(|(k, _)| speaks_of_merging(k)) {
         return Some(MERGES.to_owned());
     }
-    if let Some(key) = keys
+    if let Some((key, _)) = sets
         .iter()
-        .find(|k| !forge.settable().contains(&k.as_str()))
+        .find(|(k, _)| !forge.settable().contains(&k.as_str()))
     {
         let shown = if opaque(key) {
             "a field the shell fills in"
@@ -985,10 +1096,24 @@ fn request_edit_reason(call: &ApiCall, forge: RequestForge) -> Option<String> {
             forge.settable().join(", ")
         ));
     }
+    // GitLab's `state_event` closes or reopens a request; any other value it takes is not read.
+    if sets
+        .iter()
+        .any(|(k, v)| k == "state_event" && !matches!(v.as_deref(), Some("close" | "reopen")))
+    {
+        return Some(
+            "Editing a request through the API is no merge when its `state_event` is `close` or \
+             `reopen`, but purlis cannot read this call's value as one of those. Write the value \
+             out."
+                .to_owned(),
+        );
+    }
     unread.map(|what| {
         format!(
             "{UNREADABLE} This edits a request, and purlis cannot read {what}: it must be a \
-             JSON file this call can open, written out, with no variable in its name. {SPLIT}"
+             JSON file this call can open (an absolute path, or a relative one in a line that \
+             changes no directory), a quoted heredoc on stdin, or fields written out, with no \
+             variable in its name. {SPLIT}"
         )
     })
 }

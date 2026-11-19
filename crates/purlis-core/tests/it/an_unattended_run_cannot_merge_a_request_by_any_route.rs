@@ -91,7 +91,8 @@ fn an_api_call_whose_effect_on_a_merge_endpoint_cannot_be_read_is_refused() {
         "gh api -X \"$M\" repos/o/r/pulls/12/merge",
         "gh api \"$EP\" -f sha=abc",
         "glab api -X PUT `cat ep`",
-        // The body is a file or stdin, on a merge. (A request's own path is no merge: #7176.)
+        // The body is a file or stdin, on a merge. (A request's own path is held unless its body
+        // is read and sets only what an edit may: #7176, #7195.)
         "gh api -X PUT repos/o/r/pulls/12/merge --input -",
         // A flag the reader does not know could be anything.
         "gh api --frobnicate PUT repos/o/r/pulls/12/merge",

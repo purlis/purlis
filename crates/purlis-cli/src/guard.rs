@@ -255,7 +255,8 @@ const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_500);
 fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::Verdict> {
     use purlis_core::hookwire::{Answer, Ask, MergeAsk, NOTHING_ANSWERS, UNKNOWN_LINE};
     use purlis_core::mergehold::{self, AppSaid, Held};
-    let held = mergehold::held(command)?;
+    // A relative path in the line is read against the payload's directory (#7195).
+    let held = purlis_core::floorguard::in_directory(cwd, || mergehold::held(command))?;
     // Whether this is a chat's is the app's to say, by its ancestry, as well as its
     // environment's (#6995): a chat whose environment was emptied is still held.
     let answer = match &held {
@@ -304,7 +305,9 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
         arm: None,
         reason: mergehold::reason(&held, &app).to_owned(),
         shape: None,
-        denial: mergehold::refusal_for(command, &held, &app),
+        denial: purlis_core::floorguard::in_directory(cwd, || {
+            mergehold::refusal_for(command, &held, &app)
+        }),
     })
 }
 

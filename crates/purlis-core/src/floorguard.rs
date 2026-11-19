@@ -209,6 +209,58 @@ fn only_merges() -> bool {
     ONLY_MERGES.get()
 }
 
+/// **Reads with `cwd`, the hook payload's working directory, as the directory a relative path in
+/// the line is opened against** (#7195): a request edit's `--input body.json` is the file gh
+/// opens in the shell's directory, which only the payload knows. Without it, or where the line
+/// can change directory before the call ([`may_change_directory`]), a relative path is unread.
+pub fn in_directory<R>(cwd: &str, read: impl FnOnce() -> R) -> R {
+    let given = (!cwd.is_empty()).then(|| std::path::PathBuf::from(cwd));
+    let outer = DIRECTORY.replace(given);
+    let _restore = RestoreDirectory(outer);
+    read()
+}
+
+/// Puts the directory [`in_directory`] replaced back, a panic's unwinding included.
+struct RestoreDirectory(Option<std::path::PathBuf>);
+
+impl Drop for RestoreDirectory {
+    fn drop(&mut self) {
+        DIRECTORY.replace(self.0.take());
+    }
+}
+
+std::thread_local! {
+    /// The directory the hook's payload says the shell is in ([`in_directory`]).
+    static DIRECTORY: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+    /// Whether the line being read can change directory before a call in it ([`metered`]).
+    static DIRECTORY_MOVED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Where a relative path in the line is opened: the payload's directory, unless the line can
+/// change it first.
+fn directory_the_line_runs_in() -> Option<std::path::PathBuf> {
+    if DIRECTORY_MOVED.get() {
+        return None;
+    }
+    DIRECTORY.with_borrow(Clone::clone)
+}
+
+/// Whether `cmd` can change the directory a command after it runs in: `cd`, `pushd` or `popd`
+/// as a word anywhere (a subshell or a script's included), or `env -C` / `--chdir`. Read off the
+/// text, so a word in a string counts too, which only costs a relative path a read (`git -C`
+/// moves no shell's directory and is not one).
+fn may_change_directory(cmd: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r#"(?:^|[\s;&|(){`'"])(?:cd|chdir|pushd|popd)(?:$|[\s;&|(){`'")])|\benv\b[^;&|\n]*\s(?:-[A-Za-z]*C|--chdir)"#,
+        )
+        .expect("compiles")
+    })
+    .is_match(cmd)
+}
+
 /// [`release_floor_reason`], and how many bytes of text the floor read on the way, every level
 /// counted ([`Work`]).
 fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
@@ -216,7 +268,9 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
         read: 0,
         allowed: cmd.len().saturating_mul(WORK_FACTOR) + WORK_SLACK,
     }));
+    let moved = DIRECTORY_MOVED.replace(DIRECTORY_MOVED.get() || may_change_directory(cmd));
     let said = floor(cmd, unattended, 0);
+    DIRECTORY_MOVED.set(moved);
     let read = WORK.replace(outer).map_or(0, |work| work.read);
     (said, read)
 }
