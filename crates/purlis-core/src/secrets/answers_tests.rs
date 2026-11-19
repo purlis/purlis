@@ -74,6 +74,14 @@ fn copy_dir(from: &Path, to: &Path) {
     }
 }
 
+/// The person confirming the id the window shows.
+fn confirm_shown_device() {
+    let Device::Unconfirmed(id) = device() else {
+        panic!("an unconfirmed id to show");
+    };
+    confirm_device(&id).unwrap();
+}
+
 fn holds(standing: &Standing) -> bool {
     standing.state == State::Holds
 }
@@ -224,11 +232,11 @@ fn a_swapped_git_at_an_anchored_path_is_the_deny_state() {
     let root = m.plane("p");
     seal_in(&root, &[(ACCEPTED, "guards.git=enforce")]);
     assert!(holds(&standing(&root)));
+    let (clone_before, anchor_before) = (clone_key(&root), anchor_key(&root));
     swap_git(&root);
-    assert_ne!(
-        clone_key(&root),
-        plane_place(&root).unwrap().bind.clone() + "x"
-    );
+    // The swap moves the clone key and never the anchor's: the anchor is what still speaks.
+    assert_ne!(clone_key(&root), clone_before);
+    assert_eq!(anchor_key(&root), anchor_before);
     let standing = standing(&root);
     assert!(
         denied_by(&standing, |c| matches!(c, Deny::CloneKeySwapped)),
@@ -264,9 +272,11 @@ fn a_moved_plane_with_its_old_path_linked_to_it_is_the_deny_state_never_a_fresh_
     // Moved away, a link left at the old path.
     std::fs::remove_dir_all(&old).unwrap();
     std::os::unix::fs::symlink(&new, &old).unwrap();
+    // The old path's anchor is still asked for, and the clone key behind the link is another
+    // one with no folder: the swap's cause, never a fresh install.
     let through = standing(&old);
     assert!(
-        through.is_deny() && through.state != State::Fresh,
+        denied_by(&through, |c| matches!(c, Deny::CloneKeySwapped)),
         "{through:?}"
     );
 }
@@ -550,7 +560,7 @@ fn a_windowless_host_accepts_nothing_until_a_window_is_open() {
     set_window_for_this_test(false);
     let refused = commit(&root, |d| d.add(ACCEPTED, "one"));
     assert_eq!(refused.unwrap_err().to_string(), NO_WINDOW);
-    assert!(confirm_device().is_err());
+    assert!(confirm_device("anything").is_err());
     assert_eq!(standing(&root).state, State::Fresh, "nothing was written");
     set_window_for_this_test(true);
     assert!(commit(&root, |d| d.add(ACCEPTED, "one")).is_ok());
@@ -599,7 +609,7 @@ fn an_unconfirmed_device_id_leaves_context_machine_unset() {
 fn the_person_confirming_the_id_in_the_window_sets_context_machine() {
     let m = machine();
     register(&m.plane("p")).unwrap();
-    confirm_device().unwrap();
+    confirm_shown_device();
     let Device::Confirmed(id) = device() else {
         panic!("confirmed");
     };
@@ -610,7 +620,7 @@ fn the_person_confirming_the_id_in_the_window_sets_context_machine() {
 fn editing_machine_jsons_device_id_does_not_change_context_machine() {
     let m = machine();
     register(&m.plane("p")).unwrap();
-    confirm_device().unwrap();
+    confirm_shown_device();
     let before = context_machine().unwrap();
     let home = crate::sandbox::local::config_home().unwrap();
     let file = crate::machine::file(&home);
@@ -636,7 +646,7 @@ fn without_a_keyring_context_machine_is_unset_and_doctor_declares_it() {
 fn an_unreadable_registry_leaves_context_machine_unset() {
     let m = machine();
     register(&m.plane("p")).unwrap();
-    confirm_device().unwrap();
+    confirm_shown_device();
     assert!(context_machine().is_some());
     // The registry edited by hand: its seal no longer holds.
     let Item::Value(text) = seal::item_read(REGISTRY_ACCOUNT) else {
@@ -719,4 +729,459 @@ fn a_registry_that_does_not_read_is_the_deny_state_on_a_plane_with_a_store() {
         denied_by(&standing, |c| matches!(c, Deny::RegistryUnreadable)),
         "{standing:?}"
     );
+}
+
+// ---- round 2 (#7234): fail closed everywhere ---------------------------------------------------
+
+/// The plane's keyring account and anchor, as the keyring holds them.
+fn anchor_of(root: &Path) -> Anchor {
+    let place = plane_place(root).unwrap();
+    match read_anchor(&place.account, &place.anchor_bind) {
+        Read::Value(anchor) => anchor,
+        _ => panic!("an anchor"),
+    }
+}
+
+#[test]
+fn a_swapped_git_where_the_keyring_did_not_start_is_the_deny_state_never_the_shipped_default() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf"), (FLOOR, "v2")]);
+    // Linux: the secret service did not answer as purlis started, and `.git` was swapped, so
+    // the new clone key has no folder at all.
+    swap_git(&root);
+    seal::set_no_keyring_for_this_test(true);
+    assert!(!store_exists(&plane_place(&root).unwrap()), "no folder");
+    let standing = standing(&root);
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::KeyringDidNotStart)),
+        "{standing:?}"
+    );
+}
+
+#[test]
+fn a_store_folder_taken_away_where_the_keyring_did_not_start_is_still_the_deny_state() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    std::fs::remove_dir_all(store_of(&root)).unwrap();
+    seal::set_no_keyring_for_this_test(true);
+    // Only the path's marker says a store was kept here.
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::KeyringDidNotStart
+    )));
+    // A plane nothing was ever kept for is still the shipped default.
+    assert_eq!(standing(&m.plane("other")).state, State::NoKeyring);
+}
+
+#[test]
+fn a_commit_started_inside_a_commit_is_refused_and_never_deletes_its_entries() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    // The second commit starts after the first has read the store and before it writes: with no
+    // lock it reads the same counter, writes one past it, and the first's write then takes its
+    // entry out as a file its manifest does not list.
+    let mut second = None;
+    commit(&root, |draft| {
+        draft.add(NEVER, "first");
+        second = Some(commit(&root, |inner| inner.add(NEVER, "second")));
+    })
+    .expect("the first commit");
+    let second = second.expect("the second ran");
+    assert!(second.is_err(), "the second commit took turns: {second:?}");
+    let standing = standing(&root);
+    assert!(holds(&standing), "{standing:?}");
+    assert!(standing.entries.contains(&Entry::new(NEVER, "first")));
+    assert!(!standing.entries.contains(&Entry::new(NEVER, "second")));
+    assert_eq!(counter_of(&root), anchor_counter(&root));
+    // And it goes through once the first is done.
+    commit(&root, |d| d.add(NEVER, "second")).expect("its turn");
+    let after = standing_entries(&root);
+    assert!(
+        after.contains(&Entry::new(NEVER, "first")) && after.contains(&Entry::new(NEVER, "second"))
+    );
+}
+
+fn standing_entries(root: &Path) -> Vec<Entry> {
+    standing(root).entries
+}
+
+#[cfg(unix)]
+#[test]
+fn a_commit_waits_for_another_process_holding_the_stores_file_lock() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    let before = counter_of(&root);
+    // Another process (or window) is committing: its flock on the lock file.
+    let other = std::fs::File::open(lock_file().unwrap()).unwrap();
+    rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
+    assert!(commit(&root, |d| d.add(NEVER, "two")).is_err());
+    assert!(recommit(&root, &[]).is_err());
+    assert!(commit_everywhere(|d| d.add(NEVER, "three")).is_err());
+    assert_eq!(counter_of(&root), before, "nothing was changed");
+    drop(other);
+    assert!(commit(&root, |d| d.add(NEVER, "two")).is_ok());
+}
+
+#[test]
+fn recommit_mends_a_deny_and_starts_past_every_counter_seen() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "one")]);
+    let backup = m.dir.path().join("backup");
+    copy_dir(&store_of(&root), &backup);
+    commit(&root, |d| d.add(NEVER, "two")).unwrap();
+    commit(&root, |d| d.add(FLOOR, "v3")).unwrap();
+    let kept = standing(&root).entries;
+    // The anchor does not hold its seal (edited, or made by another program): its counter and
+    // the manifest's are both still on disk.
+    let account = plane_place(&root).unwrap().account;
+    assert!(seal::item_write(&account, "not json"));
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::AnchorGone
+    )));
+    let kept: Vec<Entry> = kept
+        .into_iter()
+        .filter(|e| e.kind != NEVER_MARKER)
+        .collect();
+    let counter = recommit(&root, &kept).expect("the person's press mends it");
+    assert_eq!(counter, 4, "past the manifest's 3, never back to 1");
+    let mended = standing(&root);
+    assert!(holds(&mended), "{mended:?}");
+    assert_eq!(anchor_counter(&root), 4);
+    // The earliest backup put back is older than the anchor, as it was before the break.
+    std::fs::remove_dir_all(store_of(&root)).unwrap();
+    copy_dir(&backup, &store_of(&root));
+    assert!(
+        denied_by(&standing(&root), |c| matches!(c, Deny::ManifestOlder(_))),
+        "{:?}",
+        standing(&root)
+    );
+}
+
+#[test]
+fn recommit_reads_the_anchors_counter_where_its_seal_fails_and_the_manifest_is_gone() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    commit(&root, |d| d.add(ACCEPTED, "two")).unwrap();
+    commit(&root, |d| d.add(ACCEPTED, "three")).unwrap();
+    // The anchor's seal edited (its counter still reads 3) and the manifest taken away.
+    let account = plane_place(&root).unwrap().account;
+    let Item::Value(text) = seal::item_read(&account) else {
+        panic!("an anchor");
+    };
+    let mut item: serde_json::Value = serde_json::from_str(&text).unwrap();
+    item["mac"] = "00".into();
+    assert!(seal::item_write(&account, &item.to_string()));
+    std::fs::remove_file(store_of(&root).join("manifest.json")).unwrap();
+    assert!(standing(&root).is_deny());
+    assert_eq!(recommit(&root, &[]).unwrap(), 4);
+}
+
+#[test]
+fn recommit_is_the_persons_press_and_a_windowless_host_cannot_mend_with_an_empty_list() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    let before = counter_of(&root);
+    set_window_for_this_test(false);
+    assert_eq!(
+        recommit(&root, &[]).unwrap_err().to_string(),
+        NO_WINDOW,
+        "an empty list drops every never"
+    );
+    assert_eq!(recommit_everywhere(&[]).unwrap_err().to_string(), NO_WINDOW);
+    // A removal is a change of answers as an addition is.
+    let removal = commit(&root, |d| d.remove(NEVER, "rm -rf"));
+    assert_eq!(removal.unwrap_err().to_string(), NO_WINDOW);
+    assert_eq!(counter_of(&root), before);
+    assert!(
+        standing(&root)
+            .entries
+            .contains(&Entry::new(NEVER, "rm -rf"))
+    );
+}
+
+#[test]
+fn a_commit_cut_short_after_the_anchor_is_mended_by_recommit() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    // The write cut short: the anchor says 2, and the manifest never got written.
+    let manifest = store_of(&root).join("manifest.json");
+    std::fs::remove_file(&manifest).unwrap();
+    std::fs::create_dir(&manifest).unwrap();
+    assert!(commit_over(&root).is_err());
+    std::fs::remove_dir(&manifest).unwrap();
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::ManifestMissing(_)
+    )));
+    assert!(commit(&root, |d| d.add(ACCEPTED, "three")).is_err());
+    let counter = recommit(&root, &[Entry::new(ACCEPTED, "one")]).unwrap();
+    assert_eq!(counter, 3);
+    let mended = standing(&root);
+    assert!(holds(&mended), "{mended:?}");
+    assert_eq!(mended.entries, vec![Entry::new(ACCEPTED, "one")]);
+}
+
+#[test]
+fn an_anchor_older_than_the_manifest_is_the_deny_state() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    commit(&root, |d| d.add(ACCEPTED, "two")).unwrap();
+    // The anchor taken away and made again at an older counter (sealed, so it reads).
+    let place = plane_place(&root).unwrap();
+    write_anchor(
+        &place.account,
+        &place.anchor_bind,
+        Anchor {
+            counter: 1,
+            nevers: 0,
+            floors: 0,
+        },
+    )
+    .unwrap();
+    let standing = standing(&root);
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::AnchorOlder)),
+        "{standing:?}"
+    );
+}
+
+#[test]
+fn counts_the_anchor_disagrees_with_are_the_deny_state() {
+    for (nevers, floors) in [(5, 1), (1, 7)] {
+        let m = machine();
+        let root = m.plane("p");
+        seal_in(&root, &[(NEVER, "one"), (FLOOR, "v1")]);
+        let place = plane_place(&root).unwrap();
+        let counter = anchor_of(&root).counter;
+        write_anchor(
+            &place.account,
+            &place.anchor_bind,
+            Anchor {
+                counter,
+                nevers,
+                floors,
+            },
+        )
+        .unwrap();
+        let standing = standing(&root);
+        assert!(
+            denied_by(&standing, |c| matches!(c, Deny::CountsDisagree)),
+            "{nevers}/{floors}: {standing:?}"
+        );
+    }
+}
+
+#[test]
+fn an_anchor_that_does_not_hold_its_seal_is_the_deny_state() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    let account = plane_place(&root).unwrap().account;
+    let Item::Value(text) = seal::item_read(&account) else {
+        panic!("an anchor");
+    };
+    // Its counter edited down by hand: the seal no longer holds.
+    assert!(seal::item_write(
+        &account,
+        &text.replace("\"counter\":1", "\"counter\":0")
+    ));
+    let standing = standing(&root);
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::AnchorGone)),
+        "{standing:?}"
+    );
+}
+
+#[test]
+fn a_missing_registry_with_an_anchor_or_a_store_is_the_deny_state() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    seal::item_forget_for_this_test(REGISTRY_ACCOUNT);
+    assert!(matches!(read_registry(), Read::Missing));
+    let standing = standing(&root);
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::RegistryUnreadable)),
+        "{standing:?}"
+    );
+    // Nothing kept anywhere is still a fresh install.
+    assert_eq!(super::standing(&m.plane("fresh")).state, State::Fresh);
+}
+
+#[test]
+fn a_missing_registry_with_only_the_everywhere_entry_kept_is_the_deny_state() {
+    let m = machine();
+    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    seal::item_forget_for_this_test(REGISTRY_ACCOUNT);
+    let standing = standing(&m.plane("p"));
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::RegistryUnreadable)),
+        "{standing:?}"
+    );
+}
+
+#[test]
+fn an_everywhere_entry_whose_anchor_and_folder_are_both_gone_is_the_deny_state() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    let place = everywhere_place().unwrap();
+    std::fs::remove_dir_all(&place.folder).unwrap();
+    seal::item_forget_for_this_test(&place.account);
+    let everywhere = everywhere_standing();
+    assert!(everywhere.is_deny(), "{everywhere:?}");
+    let plane = standing(&root);
+    assert!(
+        denied_by(&plane, |c| matches!(c, Deny::AnchorGone)),
+        "{plane:?}"
+    );
+    assert!(commit_everywhere(|d| d.add(NEVER, "again")).is_err());
+}
+
+#[test]
+fn a_plane_moved_with_no_link_left_is_the_deny_state_never_a_fresh_install() {
+    let m = machine();
+    let old = m.plane("old");
+    seal_in(&old, &[(NEVER, "rm -rf")]);
+    let new = m.dir.path().join("new");
+    std::fs::rename(&old, &new).unwrap();
+    let new = std::fs::canonicalize(&new).unwrap();
+    // The app opens the new path: it is registered, and nothing is kept at it.
+    register(&new).unwrap();
+    let standing = standing(&new);
+    assert!(
+        denied_by(
+            &standing,
+            |c| matches!(c, Deny::PlaneMoved { anchored_at, .. } if *anchored_at == old)
+        ),
+        "{standing:?}"
+    );
+    // A plane nothing was sealed for, or another folder, is not taken for it.
+    assert_eq!(super::standing(&m.plane("other")).state, State::Fresh);
+}
+
+#[test]
+fn a_kind_that_names_a_file_of_the_stores_folder_is_refused() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    let before = counter_of(&root);
+    for kind in ["manifest", "../x", "grant/../../x", ""] {
+        let refused = commit(&root, |d| d.add(kind, "text"));
+        assert_eq!(
+            refused.unwrap_err().kind(),
+            io::ErrorKind::InvalidInput,
+            "{kind}"
+        );
+        assert!(
+            recommit(&root, &[Entry::new(kind, "text")]).is_err(),
+            "{kind}"
+        );
+        assert!(
+            commit_everywhere(|d| d.add(kind, "text")).is_err(),
+            "{kind}"
+        );
+    }
+    assert_eq!(counter_of(&root), before, "nothing was changed");
+    assert!(!m.dir.path().join("x").exists());
+    assert!(!store_of(&root).join("x").exists());
+    assert!(holds(&standing(&root)));
+}
+
+#[test]
+fn a_keyring_that_fails_the_first_commits_anchor_changes_nothing() {
+    let m = machine();
+    let root = m.plane("p");
+    register(&root).unwrap();
+    seal::set_item_write_fails_for_this_test(true);
+    let refused = commit(&root, |d| d.add(NEVER, "one"));
+    seal::set_item_write_fails_for_this_test(false);
+    assert!(refused.is_err());
+    assert!(
+        !store_exists(&plane_place(&root).unwrap()),
+        "no file was written before the anchor"
+    );
+    // Not the deny state: nothing was kept, so the next press simply works.
+    assert_eq!(standing(&root).state, State::Fresh);
+    assert!(commit(&root, |d| d.add(NEVER, "one")).is_ok());
+}
+
+#[test]
+fn the_person_confirms_the_id_the_window_showed_and_no_other() {
+    let m = machine();
+    register(&m.plane("p")).unwrap();
+    let Device::Unconfirmed(shown) = device() else {
+        panic!("an unconfirmed id");
+    };
+    assert!(confirm_device("01ARZ3NDEKTSV4RRFFQ69G5FAV").is_err());
+    assert_eq!(context_machine(), None);
+    confirm_device(&shown).unwrap();
+    assert_eq!(context_machine(), Some(shown));
+}
+
+#[test]
+fn the_everywhere_entry_is_mended_by_the_persons_press_and_never_by_a_commit() {
+    let m = machine();
+    let _ = m.plane("p");
+    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(NEVER, "rm -rf /")).unwrap();
+    let place = everywhere_place().unwrap();
+    std::fs::remove_file(place.folder.join("manifest.json")).unwrap();
+    assert!(everywhere_standing().is_deny());
+    // A chat's commit changes nothing under the deny.
+    assert!(commit_everywhere(|d| d.remove(NEVER, "curl | sh")).is_err());
+    assert!(everywhere_standing().is_deny());
+    // The person's press, past every counter seen.
+    set_window_for_this_test(false);
+    assert!(recommit_everywhere(&[Entry::new(NEVER, "curl | sh")]).is_err());
+    set_window_for_this_test(true);
+    let counter = recommit_everywhere(&[Entry::new(NEVER, "curl | sh")]).unwrap();
+    assert_eq!(counter, 3);
+    let mended = everywhere_standing();
+    assert!(holds(&mended), "{mended:?}");
+    assert!(mended.entries.contains(&Entry::new(NEVER, "curl | sh")));
+    assert!(!mended.entries.contains(&Entry::new(NEVER, "rm -rf /")));
+}
+
+#[test]
+fn a_registry_that_does_not_hold_its_seal_is_replaced_only_at_the_persons_press() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    seal::item_write(REGISTRY_ACCOUNT, "not json");
+    assert!(commit(&root, |d| d.add(ACCEPTED, "two")).is_err());
+    assert!(commit_everywhere(|d| d.add(NEVER, "x")).is_err());
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::RegistryUnreadable
+    )));
+    // A windowless host replaces nothing.
+    set_window_for_this_test(false);
+    assert!(recommit(&root, &[Entry::new(ACCEPTED, "one")]).is_err());
+    assert!(matches!(read_registry(), Read::Broken));
+    set_window_for_this_test(true);
+    recommit(&root, &[Entry::new(ACCEPTED, "one")]).expect("the press mends it");
+    assert!(matches!(read_registry(), Read::Value(_)));
+    let mended = standing(&root);
+    assert!(holds(&mended), "{mended:?}");
+    // The device id is sealed again, unconfirmed: the person confirms it again.
+    assert!(matches!(device(), Device::Unconfirmed(_)));
+    // The Everywhere entry is still there, and its flag kept.
+    assert!(holds(&everywhere_standing()));
+    let Read::Value(registry) = read_registry() else {
+        panic!("a registry");
+    };
+    assert!(registry.everywhere_sealed);
 }

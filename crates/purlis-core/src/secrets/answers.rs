@@ -20,7 +20,11 @@
 //!   does not list is ignored, with a Notice: a removed grant, or a used Once grant, put back
 //!   counts for nothing.
 //! - **The counter rises on every write**, a removal and a Once grant's use included
-//!   ([`commit`]).
+//!   ([`commit`]). **One commit at a time**, in this process and across them: a file lock under
+//!   the store is held from reading the store to the last file written.
+//! - **A marker by the plane's path** (`sealed-here/<anchor key>`) says a store was kept there,
+//!   so a swapped `.git` where the keyring did not start is still a refusal, never the shipped
+//!   default.
 //!
 //! # The anchors
 //!
@@ -185,6 +189,11 @@ pub struct Registered {
     /// Whether anything was ever sealed for it.
     #[serde(default)]
     pub sealed: bool,
+    /// The identity of its `.git` (device and inode) when it was registered, which a move on
+    /// the same filesystem keeps: how a plane moved with no link left is found again
+    /// ([`standing`]). Empty where unknown.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub git: String,
 }
 
 /// What the window says where there is no keyring: the shipped default holds.
@@ -217,6 +226,10 @@ pub struct DeviceSealed {
 struct Registry {
     planes: Vec<Registered>,
     device: Option<DeviceSealed>,
+    /// Whether anything was ever sealed in the Everywhere entry: the backstop where its anchor
+    /// and its folder are both gone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    everywhere_sealed: bool,
     #[serde(default)]
     mac: String,
 }
@@ -294,6 +307,95 @@ fn everywhere_place() -> Option<Place> {
         account: EVERYWHERE_ACCOUNT.to_owned(),
         anchor_bind: EVERYWHERE.to_owned(),
     })
+}
+
+/// **The marker that something was sealed for the plane reached as `root`**, keyed by the path
+/// alone ([`anchor_key`]), never the clone key: where the keyring did not start and `.git` was
+/// swapped, the clone key names no folder, and only the path still says a store was kept. An
+/// interim of this module's own, until the sealed-planes marker of #7228 is on this branch.
+fn sealed_here_marker(root: &Path) -> Option<PathBuf> {
+    Some(answers_folder()?.join("sealed-here").join(anchor_key(root)))
+}
+
+/// Whether the marker for `root` is there.
+fn sealed_here(root: &Path) -> bool {
+    sealed_here_marker(root).is_some_and(|marker| marker.exists())
+}
+
+// ---- the lock ---------------------------------------------------------------------------------
+
+/// How long a commit waits for another one before it refuses.
+#[cfg(not(test))]
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+#[cfg(test)]
+const LOCK_WAIT: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// One commit at a time in this process, where there is no `flock` to say it (non-unix).
+#[cfg(not(unix))]
+static COMMIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// **What a commit holds from reading the store to the last file written**: an `flock` on
+/// `answers/.lock` (taken on its own open file, so it holds between two commits of one process
+/// as well as between two processes), so two commits (two windows, a second process) take turns
+/// and never both write one past the same counter, the loser's entries deleted by the winner's
+/// clean-up. Released on drop. Without `flock` (non-unix) a lock in this process only.
+struct StoreLock {
+    #[cfg(not(unix))]
+    _process: std::sync::MutexGuard<'static, ()>,
+    #[cfg(unix)]
+    _file: std::fs::File,
+}
+
+fn lock_file() -> Option<PathBuf> {
+    Some(answers_folder()?.join(".lock"))
+}
+
+fn store_lock() -> io::Result<StoreLock> {
+    let deadline = std::time::Instant::now() + LOCK_WAIT;
+    let busy = || {
+        io::Error::other(
+            "another change to the answers is in progress, so nothing was changed: try again",
+        )
+    };
+    #[cfg(unix)]
+    {
+        let path = lock_file().ok_or_else(no_home)?;
+        make_dir(path.parent().ok_or_else(no_home)?)?;
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)?;
+        loop {
+            match rustix::fs::flock(&file, rustix::fs::FlockOperation::NonBlockingLockExclusive) {
+                Ok(()) => return Ok(StoreLock { _file: file }),
+                Err(rustix::io::Errno::WOULDBLOCK | rustix::io::Errno::INTR) => {
+                    if std::time::Instant::now() >= deadline {
+                        return Err(busy());
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(why) => return Err(io::Error::from(why)),
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    loop {
+        match COMMIT_LOCK.try_lock() {
+            Ok(guard) => return Ok(StoreLock { _process: guard }),
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => {
+                return Ok(StoreLock {
+                    _process: poisoned.into_inner(),
+                });
+            }
+            Err(std::sync::TryLockError::WouldBlock) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(busy());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+        }
+    }
 }
 
 // ---- the window -------------------------------------------------------------------------------
@@ -431,6 +533,15 @@ pub enum Registration {
 /// registry; **the device id is sealed there too, unconfirmed** ([`context_machine`]). Opening
 /// again changes nothing. A registry that does not read is never replaced.
 pub fn register(root: &Path) -> io::Result<Registration> {
+    register_with(root, false)
+}
+
+/// [`register`], where `mend` (the person's press, [`recommit`]) first replaces a registry that
+/// does not hold its seal.
+fn register_with(root: &Path, mend: bool) -> io::Result<Registration> {
+    if mend {
+        mend_registry()?;
+    }
     let _one = locked();
     if seal::key_state() != KeyState::Usable {
         return Ok(Registration::NotKept);
@@ -441,19 +552,20 @@ pub fn register(root: &Path) -> io::Result<Registration> {
         Read::Broken | Read::Unreadable => return Ok(Registration::NotKept),
     };
     let anchor = anchor_key(root);
-    let mut changed = false;
-    if registry.device.is_none()
-        && let Some(home) = crate::sandbox::local::config_home()
-        && let Ok(id) = crate::machine::device_id(&home)
+    let mut changed = seed_device(&mut registry);
+    let git = git_identity(root);
+    let id = match registry
+        .planes
+        .iter_mut()
+        .find(|plane| plane.anchor == anchor)
     {
-        registry.device = Some(DeviceSealed {
-            id,
-            confirmed: false,
-        });
-        changed = true;
-    }
-    let id = match registry.planes.iter().find(|plane| plane.anchor == anchor) {
-        Some(plane) => plane.id.clone(),
+        Some(plane) => {
+            if plane.git.is_empty() && !git.is_empty() {
+                plane.git = git;
+                changed = true;
+            }
+            plane.id.clone()
+        }
         None => {
             let id = ulid::Ulid::generate().to_string();
             registry.planes.push(Registered {
@@ -463,6 +575,7 @@ pub fn register(root: &Path) -> io::Result<Registration> {
                 opened: std::path::absolute(root).unwrap_or_else(|_| root.to_path_buf()),
                 clone: String::new(),
                 sealed: false,
+                git,
             });
             changed = true;
             id
@@ -472,6 +585,67 @@ pub fn register(root: &Path) -> io::Result<Registration> {
         write_registry(&mut registry)?;
     }
     Ok(Registration::Registered(id))
+}
+
+/// Seals the device id into `registry` where it holds none: unconfirmed. Whether it changed.
+fn seed_device(registry: &mut Registry) -> bool {
+    if registry.device.is_none()
+        && let Some(home) = crate::sandbox::local::config_home()
+        && let Ok(id) = crate::machine::device_id(&home)
+    {
+        registry.device = Some(DeviceSealed {
+            id,
+            confirmed: false,
+        });
+        return true;
+    }
+    false
+}
+
+/// **The person's press replaces a registry that does not hold its seal** with a new one: no
+/// plane listed (each is registered again by its own [`recommit`]), the device id sealed again
+/// and **unconfirmed**, the Everywhere flag kept where its store or anchor is still there. Only
+/// where this process can seal, a window is open, and the registry was read and failed: a
+/// keyring that did not answer is never replaced. What it cannot rebuild: which other planes
+/// had anything sealed, and the clone keys of their last writes, so a plane whose anchor and
+/// store both go afterwards reads as fresh until it is registered again.
+fn mend_registry() -> io::Result<()> {
+    if !window_is_open() {
+        return Err(io::Error::other(NO_WINDOW));
+    }
+    let _one = locked();
+    if seal::key_state() != KeyState::Usable {
+        return Err(cannot_seal());
+    }
+    if !matches!(read_registry(), Read::Broken) {
+        return Ok(());
+    }
+    let mut registry = Registry {
+        everywhere_sealed: everywhere_place().is_some_and(|place| {
+            store_exists(&place)
+                || !matches!(
+                    read_anchor(&place.account, &place.anchor_bind),
+                    Read::Missing
+                )
+        }),
+        ..Registry::default()
+    };
+    seed_device(&mut registry);
+    write_registry(&mut registry)
+}
+
+/// The identity of `root`'s `.git` (device and inode), which a rename on one filesystem keeps.
+/// Empty where there is none, or the platform does not say.
+fn git_identity(root: &Path) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Ok(meta) = std::fs::symlink_metadata(root.join(".git")) {
+            return format!("{}:{}", meta.dev(), meta.ino());
+        }
+    }
+    let _ = root;
+    String::new()
 }
 
 /// **The registered plane whose folder holds `path`**, by its real path or the path it was
@@ -539,9 +713,10 @@ pub fn context_machine() -> Option<String> {
     }
 }
 
-/// **The person confirms the device id in the window.** Refused where no window is open, and in
-/// a process that cannot seal. (Refusing a chat's confirmation is slice 07b's.)
-pub fn confirm_device() -> Result<(), String> {
+/// **The person confirms the device id in the window**: the one `id` the window showed, so an id
+/// that changed since is never confirmed unseen. Refused where no window is open, and in a
+/// process that cannot seal. (Refusing a chat's confirmation is slice 07b's.)
+pub fn confirm_device(id: &str) -> Result<(), String> {
     if !window_is_open() {
         return Err(NO_WINDOW.to_owned());
     }
@@ -552,6 +727,11 @@ pub fn confirm_device() -> Result<(), String> {
     let Some(device) = registry.device.as_mut() else {
         return Err("no device id is sealed yet: open a project first".to_owned());
     };
+    if device.id != id {
+        return Err(
+            "the device id is not the one that was shown, so nothing was confirmed".to_owned(),
+        );
+    }
     device.confirmed = true;
     write_registry(&mut registry).map_err(|why| why.to_string())
 }
@@ -904,9 +1084,11 @@ fn nothing_in(found: &Found) -> bool {
     found.manifest.is_none() && found.anchor.is_none() && found.denies.is_empty()
 }
 
-/// **The Everywhere entry's standing**: its own manifest, anchor and counter.
+/// **The Everywhere entry's standing**: its own manifest, anchor and counter. Where it has
+/// none of them and the registry says something was sealed in it, the anchor is gone: the
+/// backstop for a folder and an anchor taken away together.
 fn read_everywhere() -> Found {
-    match everywhere_place() {
+    let mut found = match everywhere_place() {
         Some(place) => read_place(&place, None),
         None => Found {
             manifest: None,
@@ -916,7 +1098,11 @@ fn read_everywhere() -> Found {
             anchor: None,
             denies: Vec::new(),
         },
+    };
+    if nothing_in(&found) && matches!(read_registry(), Read::Value(r) if r.everywhere_sealed) {
+        found.denies.push(Deny::AnchorGone);
     }
+    found
 }
 
 /// **Which state the plane at `root` is in** (spec §4.6), and the answers that count.
@@ -929,7 +1115,10 @@ pub fn standing(root: &Path) -> Standing {
         return Standing::of(State::NoKeyring);
     };
     let everywhere_place = everywhere_place();
-    let on_disk = store_exists(&place) || everywhere_place.as_ref().is_some_and(store_exists);
+    // By path as well as by clone key: a swapped `.git` names another clone key, which has no
+    // folder, and only the path's marker still says a store was kept here.
+    let plane_on_disk = store_exists(&place) || sealed_here(root);
+    let on_disk = plane_on_disk || everywhere_place.as_ref().is_some_and(store_exists);
     match key {
         KeyState::NoKeyring => {
             // A keyring that did not start where a store is kept is a keyring that failed
@@ -968,8 +1157,34 @@ pub fn standing(root: &Path) -> Standing {
         Some(plane) => read_place(&place, Some(plane)),
         None => read_place(&place, None),
     };
-    if matches!(registry, Read::Broken | Read::Unreadable) && !(nothing_in(&found) && !on_disk) {
+    let nothing_here = nothing_in(&found) && !plane_on_disk;
+    let registry_trouble = match &registry {
+        Read::Broken | Read::Unreadable => !(nothing_in(&found) && !on_disk),
+        // A registry that was never written is fine only where nothing was ever kept: any
+        // anchor or store, the Everywhere entry's included, was registered first.
+        Read::Missing => !nothing_in(&found) || on_disk || !nothing_in(&everywhere),
+        Read::Value(_) => false,
+    };
+    if registry_trouble {
         found.denies.push(Deny::RegistryUnreadable);
+    }
+    if let Read::Value(registry) = &registry
+        && nothing_here
+        && let git = git_identity(root)
+        && !git.is_empty()
+        && let Some(old) = registry.planes.iter().find(|plane| {
+            plane.sealed
+                && plane.anchor != place.anchor_bind
+                && plane.git == git
+                && !plane.real.exists()
+        })
+    {
+        // Nothing kept at this path, and a plane that had answers sealed, whose folder is gone,
+        // had this very `.git`: the plane was moved, and no anchor speaks for its new path.
+        found.denies.push(Deny::PlaneMoved {
+            id: old.id.clone(),
+            anchored_at: old.real.clone(),
+        });
     }
     if let (Some(manifest), Read::Value(registry)) = (&found.manifest, &registry) {
         match registered.as_ref() {
@@ -982,8 +1197,6 @@ pub fn standing(root: &Path) -> Standing {
                 None => found.denies.push(Deny::RegistryUnreadable),
             },
         }
-    } else if found.manifest.is_some() && !matches!(registry, Read::Value(_)) {
-        // Already said as `RegistryUnreadable`.
     }
     denies.extend(found.denies.iter().cloned());
     let mut standing = Standing::of(State::Fresh);
@@ -1036,6 +1249,11 @@ pub struct Draft {
     entries: Vec<Entry>,
     imported_nevers: bool,
     added: bool,
+    removed: bool,
+    /// The person's press that mends the deny state ([`recommit`]).
+    mend: bool,
+    /// A kind that is not one of [`KINDS`], which the commit refuses.
+    refused: Option<String>,
 }
 
 impl Draft {
@@ -1044,8 +1262,13 @@ impl Draft {
         &self.entries
     }
 
-    /// Adds an answer the person gave just now.
+    /// Adds an answer the person gave just now. A `kind` that is not one of [`KINDS`] (it names
+    /// a file in the store's folder) adds nothing, and the commit is refused.
     pub fn add(&mut self, kind: &str, text: &str) {
+        if !KINDS.contains(&kind) {
+            self.refused = Some(kind.to_owned());
+            return;
+        }
         if !self
             .entries
             .iter()
@@ -1058,7 +1281,11 @@ impl Draft {
 
     /// Takes an answer out (a grant's removal, a Once grant's use).
     pub fn remove(&mut self, kind: &str, text: &str) {
+        let before = self.entries.len();
         self.entries.retain(|e| !(e.kind == kind && e.text == text));
+        if self.entries.len() != before {
+            self.removed = true;
+        }
     }
 
     /// Marks the person's existing nevers as imported once (Q320).
@@ -1072,13 +1299,15 @@ fn manifest_of(found: &Found) -> Option<&Manifest> {
 }
 
 /// **Commits a change to the store of the plane at `root`.** The counter rises, whatever the
-/// change: a removal, a Once grant's use. Order: the new entries' files, **the anchor's counter
-/// in the keyring, then the manifest**, then the removed files. Refused, with nothing changed,
-/// where the plane is in the deny state ([`recommit`] is the person's press that mends it),
-/// where this process cannot seal, and, for a change that adds an answer, where no window is
-/// open. Returns the new counter.
+/// change: a removal, a Once grant's use. **One commit at a time, across processes**: the lock
+/// is held from reading the store to the last file written. Order: **the anchor's counter in the
+/// keyring**, the new entries' files, the manifest, then the removed files. Refused, with
+/// nothing changed, where the plane is in the deny state ([`recommit`] is the person's press
+/// that mends it), where this process cannot seal, and, for a change that adds or takes out an
+/// answer, where no window is open. Returns the new counter.
 pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     let place = plane_place(root).ok_or_else(no_home)?;
+    let _turn = store_lock()?;
     let here = standing(root);
     if here.is_deny() {
         return Err(io::Error::other(
@@ -1093,7 +1322,7 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     let mut draft = Draft {
         entries: here.entries,
         imported_nevers: manifest_of(&found).is_some_and(|m| m.imported_nevers),
-        added: false,
+        ..Draft::default()
     };
     change(&mut draft);
     write(
@@ -1105,40 +1334,76 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     )
 }
 
+/// **The highest counter `place`'s manifest and anchor claim, read without their seals**: a
+/// manifest or anchor that fails its seal still says how far the store got, and a store restarted
+/// below it would let an older copy pass.
+fn highest_counter(place: &Place) -> u64 {
+    let claimed = |text: &str| {
+        serde_json::from_str::<serde_json::Value>(text)
+            .ok()
+            .and_then(|value| value.get("counter").and_then(serde_json::Value::as_u64))
+            .unwrap_or(0)
+    };
+    let manifest = std::fs::read_to_string(place.folder.join("manifest.json"))
+        .map_or(0, |text| claimed(&text));
+    let anchor = match seal::item_read(&place.account) {
+        Item::Value(text) => claimed(&text),
+        _ => 0,
+    };
+    manifest.max(anchor)
+}
+
 /// **The person's press that mends the deny state**: the plane's store starts again from
-/// `entries`, at a counter past every one seen, so no older copy ever replays.
+/// `entries`, at a counter past every one seen (the manifest's and the anchor's, **each read
+/// even where its seal fails**), so no older copy ever replays. A registry that does not hold
+/// its seal is replaced first ([`mend_registry`]). Refused where no window is open, an empty
+/// `entries` included.
 pub fn recommit(root: &Path, entries: &[Entry]) -> io::Result<u64> {
+    if !window_is_open() {
+        return Err(io::Error::other(NO_WINDOW));
+    }
     let place = plane_place(root).ok_or_else(no_home)?;
-    let id = match register(root)? {
+    let _turn = store_lock()?;
+    let id = match register_with(root, true)? {
         Registration::Registered(id) => id,
         Registration::NotKept => return Err(cannot_seal()),
     };
-    let found = read_place(&place, None);
-    let high = found
-        .anchor
-        .map_or(0, |a| a.counter)
-        .max(manifest_of(&found).map_or(0, |m| m.counter));
-    let mut draft = Draft::default();
+    let mut draft = Draft {
+        mend: true,
+        ..Draft::default()
+    };
     for entry in entries {
         draft.add(&entry.kind, &entry.text);
     }
-    write(&place, Some((root, &id)), draft, found.anchor, high)
+    write(
+        &place,
+        Some((root, &id)),
+        draft,
+        None,
+        highest_counter(&place),
+    )
 }
 
-/// **Commits a change to the Everywhere entry** (the nevers every plane shares).
+/// **Commits a change to the Everywhere entry** (the nevers every plane shares), as [`commit`].
 pub fn commit_everywhere(change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     let place = everywhere_place().ok_or_else(no_home)?;
+    let _turn = store_lock()?;
     let here = everywhere_standing();
     if here.is_deny() {
         return Err(io::Error::other(
             "the Everywhere nevers are in the deny state, so nothing was added to them",
         ));
     }
+    if !registry_reads() {
+        return Err(io::Error::other(
+            "purlis could not read its registry of planes, so nothing was added to the nevers: accept again to mend it",
+        ));
+    }
     let found = read_place(&place, None);
     let mut draft = Draft {
         entries: here.entries,
         imported_nevers: manifest_of(&found).is_some_and(|m| m.imported_nevers),
-        added: false,
+        ..Draft::default()
     };
     change(&mut draft);
     write(
@@ -1148,6 +1413,31 @@ pub fn commit_everywhere(change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
         found.anchor,
         manifest_of(&found).map_or(0, |m| m.counter),
     )
+}
+
+/// **The person's press that mends the Everywhere entry**, as [`recommit`] mends a plane: the
+/// entry starts again from `entries`, past every counter seen, and a registry that does not hold
+/// its seal is replaced first. Refused where no window is open. Never a chat's.
+pub fn recommit_everywhere(entries: &[Entry]) -> io::Result<u64> {
+    if !window_is_open() {
+        return Err(io::Error::other(NO_WINDOW));
+    }
+    let place = everywhere_place().ok_or_else(no_home)?;
+    let _turn = store_lock()?;
+    mend_registry()?;
+    if !registry_reads() {
+        return Err(io::Error::other(
+            "purlis could not read its registry of planes, so nothing was changed",
+        ));
+    }
+    let mut draft = Draft {
+        mend: true,
+        ..Draft::default()
+    };
+    for entry in entries {
+        draft.add(&entry.kind, &entry.text);
+    }
+    write(&place, None, draft, None, highest_counter(&place))
 }
 
 fn no_home() -> io::Error {
@@ -1170,33 +1460,50 @@ fn write(
     if seal::key_state() != KeyState::Usable {
         return Err(cannot_seal());
     }
-    if draft.added && !window_is_open() {
+    if let Some(kind) = &draft.refused {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{kind:?} is not a kind of answer the store keeps, so nothing was changed"),
+        ));
+    }
+    if (draft.added || draft.removed || draft.mend) && !window_is_open() {
         return Err(io::Error::other(NO_WINDOW));
     }
     // The marker follows the nevers, so a list taken away is never "no nevers".
     let mut entries = draft.entries;
+    if let Some(entry) = entries.iter().find(|e| !KINDS.contains(&e.kind.as_str())) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{:?} is not a kind of answer the store keeps", entry.kind),
+        ));
+    }
     entries.retain(|e| e.kind != NEVER_MARKER);
     if entries.iter().any(|e| e.kind == NEVER) {
         entries.push(Entry::new(NEVER_MARKER, "present"));
     }
-    let counter = anchor.map_or(0, |a| a.counter).max(manifest_counter) + 1;
+    let counter = anchor
+        .map_or(0, |a| a.counter)
+        .max(manifest_counter)
+        .saturating_add(1);
+    // Everything is sealed before anything is written.
     let mut listed = Vec::new();
+    let mut files = Vec::new();
     for entry in &entries {
         let digest = entry_digest(&entry.kind, &entry.text);
         let mac = seal::sealed(&entry_kind(&entry.kind), &place.bind, &entry.text)
             .ok_or_else(cannot_seal)?;
-        write_file(
-            &place
+        files.push((
+            place
                 .folder
                 .join(&entry.kind)
                 .join(format!("{digest}.json")),
-            &serde_json::to_string(&EntryFile {
+            serde_json::to_string(&EntryFile {
                 kind: entry.kind.clone(),
                 text: entry.text.clone(),
                 mac: mac.clone(),
             })
             .map_err(io::Error::other)?,
-        )?;
+        ));
         listed.push(Listed {
             kind: entry.kind.clone(),
             digest,
@@ -1214,7 +1521,9 @@ fn write(
     };
     manifest.mac = seal::sealed("answers/manifest", &place.bind, &manifest_text(&manifest))
         .ok_or_else(cannot_seal)?;
-    // The counter first: a state folder put back from before cannot replay past it.
+    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(io::Error::other)?;
+    // The anchor's counter first, before a single file: a keyring that fails here changes
+    // nothing at all, and a state folder put back from before cannot replay past it.
     write_anchor(
         &place.account,
         &place.anchor_bind,
@@ -1224,13 +1533,19 @@ fn write(
             floors: count(&manifest, FLOOR),
         },
     )?;
-    if let Some((root, id)) = plane {
-        mark_sealed(root, id, &place.bind)?;
+    match plane {
+        Some((root, id)) => {
+            if let Some(marker) = sealed_here_marker(root) {
+                write_file(&marker, "sealed")?;
+            }
+            mark_sealed(root, id, &place.bind)?;
+        }
+        None => mark_everywhere_sealed()?,
     }
-    write_file(
-        &place.folder.join("manifest.json"),
-        &serde_json::to_string_pretty(&manifest).map_err(io::Error::other)?,
-    )?;
+    for (file, text) in &files {
+        write_file(file, text)?;
+    }
+    write_file(&place.folder.join("manifest.json"), &manifest_json)?;
     // What the manifest no longer lists goes, after it is written.
     for kind in KINDS {
         let Ok(dir) = std::fs::read_dir(place.folder.join(kind)) else {
@@ -1275,20 +1590,46 @@ fn mark_sealed(root: &Path, id: &str, clone: &str) -> io::Result<()> {
     write_registry(&mut registry)
 }
 
-/// A file written whole or not at all, in a folder only the person reads.
-fn write_file(path: &Path, text: &str) -> io::Result<()> {
-    use std::io::Write;
-    let dir = path.parent().ok_or_else(no_home)?;
+/// The registry notes that something was sealed in the Everywhere entry: the backstop where its
+/// anchor and folder are both taken away.
+fn mark_everywhere_sealed() -> io::Result<()> {
+    let _one = locked();
+    let mut registry = match read_registry() {
+        Read::Value(registry) => registry,
+        Read::Missing => Registry::default(),
+        Read::Broken | Read::Unreadable => {
+            return Err(io::Error::other(
+                "purlis could not read its registry of planes",
+            ));
+        }
+    };
+    if registry.everywhere_sealed {
+        return Ok(());
+    }
+    registry.everywhere_sealed = true;
+    seed_device(&mut registry);
+    write_registry(&mut registry)
+}
+
+/// A folder only the person reads, made with its parents.
+fn make_dir(dir: &Path) -> io::Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
-            .create(dir)?;
+            .create(dir)
     }
     #[cfg(not(unix))]
-    std::fs::create_dir_all(dir)?;
+    std::fs::create_dir_all(dir)
+}
+
+/// A file written whole or not at all, in a folder only the person reads.
+fn write_file(path: &Path, text: &str) -> io::Result<()> {
+    use std::io::Write;
+    let dir = path.parent().ok_or_else(no_home)?;
+    make_dir(dir)?;
     let mut file = tempfile::NamedTempFile::new_in(dir)?;
     file.write_all(text.as_bytes())?;
     file.persist(path).map_err(|why| why.error)?;

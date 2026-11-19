@@ -4992,8 +4992,13 @@ write into this folder cannot make its own text arrive as the person's.
   is missing or older than the counter; the anchored path's clone key has no manifest (a swapped
   `.git`); an entry other than a grant is missing or fails its seal or the manifest's digest;
   the plane was moved, or its store has no anchor; the Everywhere entry is missing or older; the
-  seal key is locked (or a keyring did not start) where a store is kept; or slice 14 recorded a
-  commit past the accepted floor's cap. **Only a grant that is missing or fails its seal reads
+  seal key is locked (or a keyring did not start) where a store is kept, **decided by the
+  plane's path** ([`answers/sealed-here/`](#configpurlisappanswerssealed-here--the-planes-sealed-marker-outside-the-plane)),
+  so a swapped `.git` and no keyring is still a refusal; the registry is missing, or does not
+  read, where anything is kept; the Everywhere entry's anchor and folder are both gone (the
+  registry's `everywhere_sealed`); a plane sealed before and moved with no link left (the
+  registry's `.git` identity, kept by a move on one filesystem); or slice 14 recorded a commit
+  past the accepted floor's cap. **Only a grant that is missing or fails its seal reads
   as "no answer".** With no anchor and no store: a fresh install, and the shipped default
   applies. With no keyring: the shipped default, with a Notice. Slice 07b refuses on the state.
 - **Status:** **internal** — **purlis only**.
@@ -5001,14 +5006,28 @@ write into this folder cannot make its own text arrive as the person's.
   [anchor](#the-answer-stores-anchors--keyring-accounts-of-purlis-seal) is kept.
 - **Written by:** `purlis_core::secrets::answers::commit` (and `commit_everywhere`), in the
   app's own process alone, on the person's press in a window: a windowless host (`purlis
-  serve`) adds nothing. Order: the new entries' files, **the anchor's counter in the keyring**,
-  the manifest, then the removed files. A write cut short between the anchor and the manifest
-  leaves the store older than its anchor: the deny state, mended by the person's next press
-  (`recommit`).
+  serve`) adds or removes nothing. **One commit at a time across processes**: an `flock` on
+  `answers/.lock`, held from reading the store to the last file written. Order: **the anchor's
+  counter in the keyring**, the path's `sealed-here` marker, the new entries' files, the
+  manifest, then the removed files; a keyring that fails the anchor changes nothing. A write cut
+  short after the anchor leaves the store older than its anchor: the deny state, mended by the
+  person's next press (`recommit`, `recommit_everywhere`), which starts past the highest counter
+  the manifest and anchor claim **even where their seals fail**, and which replaces a registry
+  that does not hold its seal. A kind that is not one of the seven is refused.
 - **Read by:** `answers::standing`, in the app alone.
 - **Replaces:** `app/sandbox.json`'s "Keep blocked" hosts, `app/dispatch-never.json`,
   `sandbox-grants/` and `inbox/rules.json`, which doctor names as safe to delete (the import
   of the first two, once, and doctor's lines are slice 07a's second part).
+
+### `~/.config/purlis/app/answers/sealed-here/` — the plane's sealed marker (outside the plane)
+- **What:** one empty-ish file per plane, named by the plane's **anchor key** (a digest of its
+  path as it is reached, `sandbox::local::anchor_key`), written at the plane's first sealed
+  write: where the keyring did not start, the clone key of a swapped `.git` names no folder, and
+  only this still says a store was kept at the path. An **interim** of this module's own, until
+  the sealed-planes marker of #7228 is on `m75-policy`, which replaces it.
+- **Status:** **internal** — **purlis only**.
+- **Tier:** Machine, device-bound — never synced. Not rebuildable: deleting it where the
+  keyring did not start reads as nothing kept.
 
 ### The answer store's anchors — keyring accounts of `purlis-seal`
 - **What:** what keeps the [answer store](#configpurlisappanswersclone-key--the-sealed-answer-store-outside-the-plane)
@@ -5022,7 +5041,9 @@ write into this folder cannot make its own text arrive as the person's.
     accepted-floor versions, sealed. The counter is written here before the manifest.
   - `registry`: one machine-level, sealed registry of anchored planes: each one's id, real path
     and the path as opened, the clone key of its last sealed write and whether anything was
-    ever sealed for it; and **the device id**, sealed at the plane's first open and
+    ever sealed for it, the identity of its `.git` when registered; whether anything was ever
+    sealed in the Everywhere entry (the backstop where its anchor and folder go together); and
+    **the device id**, sealed at the plane's first open and
     **unconfirmed** until the person confirms it in the window. `context.machine` is that id,
     once confirmed, read from here and never from `machine.json`; with no keyring, or a
     registry that does not read, it is unset and doctor declares it.

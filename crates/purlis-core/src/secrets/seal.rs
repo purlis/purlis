@@ -598,6 +598,7 @@ pub(crate) fn item_write(account: &str, value: &str) -> bool {
         if TEST_NO_KEYRING.with(std::cell::Cell::get)
             || TEST_LOCKED.with(std::cell::Cell::get)
             || TEST_KEY.with(|held| held.borrow().is_none())
+            || TEST_ITEM_WRITE_FAILS.with(std::cell::Cell::get)
         {
             return false;
         }
@@ -609,8 +610,30 @@ pub(crate) fn item_write(account: &str, value: &str) -> bool {
     }
     #[cfg(not(test))]
     {
+        // Only the app keeps an item here, whoever calls: a caller that forgot to ask is refused.
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return false;
+        }
         super::keyhold::make_own(SERVICE, account, value).is_ok()
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's keyring that refuses every item write (a keyring that fails after the key read).
+    static TEST_ITEM_WRITE_FAILS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's keyring refuses item writes** (or takes them again).
+#[cfg(test)]
+pub(crate) fn set_item_write_fails_for_this_test(fails: bool) {
+    TEST_ITEM_WRITE_FAILS.with(|held| held.set(fails));
+}
+
+/// **A test's keyring forgets one item**: an anchor or the registry taken away.
+#[cfg(test)]
+pub(crate) fn item_forget_for_this_test(account: &str) {
+    TEST_KEPT.with(|kept| kept.borrow_mut().remove(&format!("item:{account}")));
 }
 
 #[cfg(test)]
