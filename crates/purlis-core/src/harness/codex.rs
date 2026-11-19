@@ -234,7 +234,10 @@ impl HarnessAdapter for Codex {
             .applied()
             .is_some_and(crate::sandbox::Applied::forge_locked)
         {
-            args.extend(crate::forgelock::connectors(Harness::Codex));
+            args.extend(crate::forgelock::connectors(
+                Harness::Codex,
+                &crate::chattools::codex_config_files(cwd),
+            ));
         }
         StateHooks::ThisSessionOnly {
             args,

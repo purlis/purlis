@@ -795,25 +795,43 @@ fn a_chat_that_claims_the_forge_lock_is_compiled_with_its_forge_connectors_off()
         };
         (args, env)
     };
+    // Claude Code keeps every server it had, purlis's own and the person's among them: only a
+    // forge connector's tools are denied, in the settings it is handed.
     let (args, _) = compiled(Harness::ClaudeCode, FULL);
-    assert!(
-        args.iter().any(|arg| arg == "--strict-mcp-config"),
-        "{args:?}"
-    );
-    let (args, _) = compiled(Harness::ClaudeCode, FLOOR);
     assert!(
         !args.iter().any(|arg| arg == "--strict-mcp-config"),
         "{args:?}"
     );
-    let (args, _) = compiled(Harness::Codex, FULL);
+    let at = args
+        .iter()
+        .position(|arg| arg == "--mcp-config")
+        .expect("--mcp-config");
+    let servers: Value = serde_json::from_str(&args[at + 1]).expect("JSON");
     assert!(
-        args.iter()
-            .any(|arg| arg == "mcp_servers.github.enabled=false"),
-        "{args:?}"
+        servers["mcpServers"][crate::chattools::SERVER].is_object(),
+        "purlis's own server stays: {servers}"
     );
-    let (args, _) = compiled(Harness::Codex, FLOOR);
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    let deny: Vec<&str> = settings["permissions"]["deny"]
+        .as_array()
+        .expect("deny rules")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    for name in crate::forgelock::CONNECTORS {
+        assert!(deny.contains(&format!("mcp__{name}").as_str()), "{name}");
+    }
     assert!(
-        !args.iter().any(|arg| arg.contains(".enabled=false")),
+        !deny.contains(&format!("mcp__{}", crate::chattools::SERVER).as_str()),
+        "purlis's own is not denied"
+    );
+    let (args, _) = compiled(Harness::ClaudeCode, FLOOR);
+    assert!(
+        !args.iter().any(|arg| arg.contains("mcp__github")),
         "{args:?}"
     );
     let config = |env: &[(String, String)]| -> Value {

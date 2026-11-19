@@ -57,8 +57,13 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
   auth login`, then `gh auth status`). A `purlis` command always uses `gh`. A chat uses `gh`
   only with a token minted for it (Settings › Agent identity, or a tool declared with a vault
-  token): a chat on a repo that claims the merge and release lock never falls back to your own
-  `gh` login, and with no token it says to mint one and stops (#7205).
+  token). A chat on a repo that claims the merge and release lock is handed no file, helper,
+  agent or connector of your own forge login (#7205), but that is **not** a lock yet: on macOS
+  `gh`'s keychain token is still reachable, and so are a few routes the ADR names (git's own
+  `osxkeychain` helper named on a command line, a socket you granted, a bare `ssh` reading
+  `~/.ssh/config`, and Claude Code's own ssh), so no harness version reads as locked. What a
+  chat with no minted token is told is `gh`'s own error; a message that says to mint one is
+  later work (#7218).
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.

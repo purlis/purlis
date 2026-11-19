@@ -15,7 +15,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use purlis_core::chatenv::{self, Starting};
-use purlis_core::forgelock::{self, PERSON, Route};
+use purlis_core::forgelock::{self, PERSON, PROBED, Route};
 use purlis_core::harness::Harness;
 
 /// The person: a home, and a stand-in `gh` that reads `$GH_CONFIG_DIR/hosts.yml`, or the home's.
@@ -88,7 +88,7 @@ impl Person {
 }
 
 /// A chat of `harness`'s environment as its start composes it, the lock applied as the sandbox's
-/// line applies it for a chat that holds the credentials class or has a mint.
+/// line applies it (the one function) for a chat that holds the credentials class or has a mint.
 fn chat_env(person: &Person, harness: Harness, scratch: &Path) -> Vec<(String, String)> {
     let starting = Starting {
         harness: Some(harness),
@@ -107,7 +107,38 @@ fn chat_env(person: &Person, harness: Harness, scratch: &Path) -> Vec<(String, S
             )
         })
         .collect();
-    forgelock::apply(composed, Some(scratch), Some(&person.home())).expect("the lock's files")
+    // The sandbox's own composition ([`forgelock::apply_to_line`]), which Claude Code's line
+    // takes as no ssh command of its own.
+    forgelock::apply_to_line(
+        composed,
+        Some(scratch),
+        Some(&person.home()),
+        harness == Harness::ClaudeCode,
+    )
+    .expect("the lock's files")
+}
+
+/// A repository the chat works in, whose own `.git/config` names the person's helper: a global
+/// file's emptied list cannot reach it.
+fn repo_with_a_helper(under: &Path) -> PathBuf {
+    let repo = under.join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let git = |args: &[&str]| {
+        let mut run = std::process::Command::new("git");
+        run.args(args)
+            .current_dir(&repo)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null");
+        let out = purlis_core::forklock::output(&mut run).expect("git");
+        assert!(out.status.success(), "{args:?}");
+    };
+    git(&["init", "-q"]);
+    git(&[
+        "config",
+        "credential.helper",
+        &format!("!f() {{ echo username={PERSON}; echo password=pw; }}; f"),
+    ]);
+    repo
 }
 
 #[test]
@@ -118,7 +149,8 @@ fn a_chat_with_no_mint_has_no_forge_credential() {
     for harness in Harness::ALL {
         let scratch = tempfile::tempdir().unwrap();
         let env = chat_env(&person, harness, scratch.path());
-        let found = forgelock::probe(&env, scratch.path(), &person.gh());
+        let repo = repo_with_a_helper(scratch.path());
+        let found = forgelock::probe(&env, &repo, &person.gh());
         // Every route the environment closes was tried.
         for route in [
             Route::GhNoMint,
@@ -131,16 +163,38 @@ fn a_chat_with_no_mint_has_no_forge_credential() {
                 "{harness:?} {route:?} was not probed"
             );
         }
-        leaks.extend(
-            found
-                .iter()
-                .filter(|one| one.leaked)
-                .map(|one| format!("{harness:?} {:?}: {}", one.route, one.said.trim())),
-        );
+        // What leaked is what `PROBED` records open for the harness, of the routes probed, and
+        // nothing else: a route recorded open that did not leak is a record that is not true.
+        let recorded = PROBED
+            .iter()
+            .find(|probed| probed.harness == harness)
+            .expect("probed")
+            .open;
+        for route in Route::ALL {
+            let tried: Vec<_> = found.iter().filter(|one| one.route == route).collect();
+            if tried.is_empty() {
+                continue;
+            }
+            // A route leaks where any one of its tries did.
+            let leaked = tried.iter().any(|one| one.leaked);
+            if leaked == recorded.contains(&route) {
+                continue;
+            }
+            leaks.push(format!(
+                "{harness:?} {route:?} {} but is recorded {}: {}",
+                if leaked { "leaked" } else { "did not leak" },
+                if leaked { "closed" } else { "open" },
+                tried
+                    .iter()
+                    .map(|one| one.said.trim())
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ));
+        }
     }
     assert!(
         leaks.is_empty(),
-        "a route returned the person's identity:\n{}",
+        "what the probe found is not what PROBED records:\n{}",
         leaks.join("\n")
     );
 }

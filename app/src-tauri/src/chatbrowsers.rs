@@ -4757,7 +4757,8 @@ fn waits_on_its_secret(
 /// **Why `browse` is refused, a `browser_login` to a forge host from a chat on a repo that claims
 /// the lock** (#7205): a profile logged in to the forge is the person's own session, which would
 /// sign the chat in as them. A host is a forge's where [`purlis_core::forgelock::is_a_forge_host`]
-/// says so, or one a clone of the project has a remote on.
+/// says so, or one a clone of the project has a remote on. An origin that cannot be known is
+/// refused: the lock fails closed.
 fn forge_login_refused(held: &crate::planes::Held, browse: &BrowseAsk) -> Option<String> {
     if !matches!(browse.asked, Browsing::LogIn { .. }) {
         return None;
@@ -4769,18 +4770,17 @@ fn forge_login_refused(held: &crate::planes::Held, browse: &BrowseAsk) -> Option
     {
         return None;
     }
-    let origin = origin_asked(
+    // An origin that is not known is refused too: the lock fails closed.
+    let Some(origin) = origin_asked(
         held,
         browse,
         held.chats().secret_grants_of(browse.chat).as_deref(),
-    )?;
-    let host = origin
-        .split_once("://")
-        .map_or(origin.as_str(), |(_, rest)| rest)
-        .split(['/', ':'])
-        .next()
-        .unwrap_or_default()
-        .to_owned();
+    ) else {
+        return Some(purlis_core::forgelock::browser_login_refused(
+            "a site this chat did not name",
+        ));
+    };
+    let host = purlis_core::forgelock::host_of(&origin);
     let known: Vec<String> = purlis_core::forge::agentidentity::hosts_of_the_project(held.root())
         .into_iter()
         .filter(|found| found.kind.is_some())

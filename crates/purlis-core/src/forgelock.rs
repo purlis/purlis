@@ -7,8 +7,9 @@
 //! The merge and release lock is the forge's own rule, with the person's repository-admin role as
 //! the one bypass. A chat that holds the person's login is that bypass. A chat on a repo that
 //! claims the lock ([`claimed`]) therefore gets, from its environment and the config purlis
-//! compiles for it, none of the seven routes in [`Route::ALL`], and what a chat has no mint for it
-//! gets no credential at all: the shim says to mint (`sandbox::tools`, #1349).
+//! compiles for it, none of the routes in [`Route::ALL`] that [`Route::closed_by`] says it closes,
+//! and what a chat has no mint for it gets no credential at all. Not every route is closed, and
+//! [`PROBED`] says per harness which are not: no version is [`Status::Locked`] today.
 //!
 //! **What is closed here, by route** ([`Route::closed_by`]):
 //!
@@ -16,17 +17,23 @@
 //!   ([`env`]), so the real `gh` finds no login in a file either.
 //! - git over https: `GIT_CONFIG_GLOBAL` is a file purlis writes, which includes the person's own
 //!   (names, signing) and then empties `credential.helper`; `GIT_CONFIG_SYSTEM` is nothing, so no
-//!   system helper (Apple's `osxkeychain`) is read; and `GIT_TERMINAL_PROMPT=0`.
+//!   system helper (Apple's `osxkeychain`) is read; `GIT_CONFIG_COUNT` empties `credential.helper`
+//!   once more at the command scope, which outranks a repository's own `.git/config`; and
+//!   `GIT_TERMINAL_PROMPT=0`.
 //! - ssh agents: `SSH_AUTH_SOCK` is empty and git's ssh is told no agent and only configured
 //!   identities ([`ssh_command`]).
 //! - the purlis browser: `browser_login` to a forge host is refused ([`is_a_forge_host`]).
-//! - a harness's forge connector: disabled in the compiled config ([`connectors`]).
+//! - a harness's forge connector, by the names in [`CONNECTORS`]: Claude Code's tools of each are
+//!   denied (`mcp__<name>`, [`claude_denied`]), Codex's is told not enabled where its config has
+//!   one ([`connectors`]), opencode's is `enabled: false` ([`opencode_config`]). A connector
+//!   under a name not there is a residual.
 //!
-//! **The route this does not close** is gh's macOS keychain item ([`Route::GhKeychain`]): gh reads
-//! it through the system's keychain service, which no environment variable turns off, and a
-//! sandbox denial of that service is not verified to leave a chat's harness signed in (Claude
-//! Code keeps its own login there). It is recorded open, and so no harness version is
-//! [`Status::Locked`] while it is ([`Probed::open`]).
+//! **The routes this does not close** are recorded open, per harness, in [`PROBED`], and no harness
+//! version is [`Status::Locked`] while one is ([`Probed::open`]): gh's macOS keychain item
+//! ([`Route::GhKeychain`]), git's own `osxkeychain` helper named on a command line
+//! ([`Route::GitKeychain`]), a socket the person granted ([`Route::GrantedAgent`]), bare `ssh`
+//! reading `~/.ssh/config` ([`Route::BareSsh`]), a claim made by a mint alone, which denies no
+//! file ([`Route::MintOnly`]), and, in Claude Code, its own ssh ([`Route::SshAgent`]).
 //!
 //! **A probe per harness** ([`probe`]) runs each route's command in the environment a chat of
 //! that harness is composed with, against a person made for the test, and passes when none returns
@@ -55,6 +62,18 @@ pub enum Route {
     BrowserSession,
     /// A harness's forge connector, which carries the person's OAuth.
     HarnessConnector,
+    /// git's own `osxkeychain` helper, named on a command line (`git -c credential.helper=…`),
+    /// which outranks every config file and reads the keychain.
+    GitKeychain,
+    /// An ssh agent socket the person granted (`ssh-agent.persons`), which design §6.1 would have
+    /// refused on a locked repo.
+    GrantedAgent,
+    /// A bare `ssh` the chat runs itself: purlis's route (Codex, opencode) includes the person's
+    /// `~/.ssh/config`, whose `IdentityAgent` names their agent.
+    BareSsh,
+    /// A claim made by a mint alone: it sets this environment but denies no file, so the person's
+    /// `gh` config, `~/.ssh` and the rest stay readable.
+    MintOnly,
 }
 
 /// How a route is closed.
@@ -70,7 +89,7 @@ pub enum Closure {
 
 impl Route {
     /// Every route, in the order the design lists them.
-    pub const ALL: [Route; 7] = [
+    pub const ALL: [Route; 11] = [
         Self::GhNoMint,
         Self::GhAbsolutePath,
         Self::GitHttps,
@@ -78,6 +97,10 @@ impl Route {
         Self::SshAgent,
         Self::BrowserSession,
         Self::HarnessConnector,
+        Self::GitKeychain,
+        Self::GrantedAgent,
+        Self::BareSsh,
+        Self::MintOnly,
     ];
 
     /// The word it is recorded under.
@@ -90,6 +113,10 @@ impl Route {
             Self::SshAgent => "ssh-agent",
             Self::BrowserSession => "browser-session",
             Self::HarnessConnector => "harness-connector",
+            Self::GitKeychain => "git-keychain",
+            Self::GrantedAgent => "granted-agent",
+            Self::BareSsh => "bare-ssh",
+            Self::MintOnly => "mint-only",
         }
     }
 
@@ -104,6 +131,22 @@ impl Route {
                 "gh reads the keychain item through the system's keychain service, which no \
                  variable turns off, and a sandbox denial of that service is not verified to leave \
                  a chat's harness signed in",
+            ),
+            Self::GitKeychain => Closure::Open(
+                "git's osxkeychain helper, named on a command line, outranks every config file \
+                 and reads the keychain; no variable turns it off",
+            ),
+            Self::GrantedAgent => Closure::Open(
+                "an ssh agent socket the person granted (ssh-agent.persons) is not refused on a \
+                 locked repo yet (design 6.1)",
+            ),
+            Self::BareSsh => Closure::Open(
+                "a bare ssh in a Codex or opencode chat goes through purlis's route, which \
+                 includes the person's ~/.ssh/config and so its IdentityAgent",
+            ),
+            Self::MintOnly => Closure::Open(
+                "a claim made by a mint alone sets the environment and denies no file: the \
+                 person's gh config and ~/.ssh stay readable",
             ),
         }
     }
@@ -160,6 +203,17 @@ pub fn env(
     home: Option<&Path>,
     ssh: Option<&str>,
 ) -> std::io::Result<Vec<(String, String)>> {
+    env_at(scratch, home, ssh, 0)
+}
+
+/// [`env`], with the command-scope config entry that empties `credential.helper` at index `at`,
+/// after the `at` entries a chat's own `GIT_CONFIG_COUNT` already holds.
+fn env_at(
+    scratch: Option<&Path>,
+    home: Option<&Path>,
+    ssh: Option<&str>,
+    at: usize,
+) -> std::io::Result<Vec<(String, String)>> {
     let (gh, glab, git) = match scratch {
         Some(scratch) => {
             let folder = scratch.join(FOLDER);
@@ -194,6 +248,14 @@ pub fn env(
         ("GIT_CONFIG_GLOBAL".to_owned(), git),
         ("GIT_CONFIG_SYSTEM".to_owned(), "/dev/null".to_owned()),
         ("GIT_TERMINAL_PROMPT".to_owned(), "0".to_owned()),
+        // The helper list, emptied at the command scope, which outranks a repository's own
+        // `.git/config` as the global file cannot (a helper there comes after it).
+        ("GIT_CONFIG_COUNT".to_owned(), (at + 1).to_string()),
+        (
+            format!("GIT_CONFIG_KEY_{at}"),
+            "credential.helper".to_owned(),
+        ),
+        (format!("GIT_CONFIG_VALUE_{at}"), String::new()),
         // Empty, not unset: a chat's variables are added to a keep-list, and an empty socket is
         // read by ssh and by git as no agent.
         ("SSH_AUTH_SOCK".to_owned(), String::new()),
@@ -217,10 +279,34 @@ pub fn apply(
         .iter()
         .find(|(name, _)| name == "GIT_SSH_COMMAND")
         .map(|(_, value)| value.clone());
-    let locked = env(scratch, home, route.as_deref())?;
+    // A chat's own `GIT_CONFIG_COUNT` entries stay, and the lock's goes after them.
+    let held = chat
+        .iter()
+        .rev()
+        .find(|(name, _)| name == "GIT_CONFIG_COUNT")
+        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    let locked = env_at(scratch, home, route.as_deref(), held)?;
     chat.retain(|(name, _)| !locked.iter().any(|(set, _)| set == name));
     chat.extend(locked);
     Ok(chat)
+}
+
+/// **[`apply`] as a harness's line takes it** (`sandbox::Applied::line`): a Claude Code chat's own
+/// sandbox sets git's ssh for each command (#1667), so where its line named none, the lock names
+/// none either, and ssh there is its own (recorded open in [`PROBED`]).
+pub fn apply_to_line(
+    chat: Vec<(String, String)>,
+    scratch: Option<&Path>,
+    home: Option<&Path>,
+    claude_code: bool,
+) -> std::io::Result<Vec<(String, String)>> {
+    let sets_ssh = chat.iter().any(|(key, _)| key == "GIT_SSH_COMMAND");
+    let mut locked = apply(chat, scratch, home)?;
+    if claude_code && !sets_ssh {
+        locked.retain(|(key, _)| key != "GIT_SSH_COMMAND");
+    }
+    Ok(locked)
 }
 
 /// The hosts whose own pages sign a person in to a forge: a login there is the person's session.
@@ -232,6 +318,20 @@ pub fn is_a_forge_host(host: &str, known: &[String]) -> bool {
     let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
     let under = |forge: &str| host == forge || host.ends_with(&format!(".{forge}"));
     FORGE_HOSTS.iter().any(|forge| under(forge)) || known.iter().any(|forge| under(forge))
+}
+
+/// **The host of `origin`** (a URL or `host[:port]`): scheme, userinfo, port and path taken off, so
+/// a URL with a user, a port and a path is its host alone.
+pub fn host_of(origin: &str) -> String {
+    let rest = origin.split_once("://").map_or(origin, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    if let Some(inner) = authority.strip_prefix('[') {
+        return inner.split(']').next().unwrap_or_default().to_owned();
+    }
+    authority.split(':').next().unwrap_or_default().to_owned()
 }
 
 /// What a refused `browser_login` says (#7205): a login to a forge is the person's own session.
@@ -254,22 +354,55 @@ pub const CONNECTORS: [&str; 6] = [
     "glab",
 ];
 
-/// **The forge connectors of `harness`, switched off in the config purlis compiles for a locked
-/// chat**: the words that go on its line (Claude Code, Codex) or into its session config
-/// (opencode, [`crate::opencode::session_config`]).
-///
-/// Claude Code loads no MCP server but purlis's with `--strict-mcp-config`, which takes the
-/// person's own, a project's and the account's connectors out whole; Codex is told each connector
-/// by name is not enabled; opencode's config entry for each is `enabled: false`.
-pub fn connectors(harness: Harness) -> Vec<String> {
-    match harness {
-        Harness::ClaudeCode => vec!["--strict-mcp-config".to_owned()],
-        Harness::Codex => CONNECTORS
-            .iter()
-            .flat_map(|name| ["-c".to_owned(), format!("mcp_servers.{name}.enabled=false")])
-            .collect(),
-        Harness::Opencode => Vec::new(),
+/// **Claude Code's rules that deny every tool of each forge connector** ([`CONNECTORS`]): a rule
+/// `mcp__<name>` matches all of that server's tools. Claude Code has no flag that turns one server
+/// off and keeps the rest (`--strict-mcp-config` drops them all, purlis's own and the person's
+/// non-forge ones too), so the rule is how the forge's are the only ones lost. The server may
+/// still start; a call to it is refused.
+pub fn claude_denied() -> Vec<String> {
+    CONNECTORS
+        .iter()
+        .map(|name| format!("mcp__{name}"))
+        .collect()
+}
+
+/// **The forge connectors of `harness` the chat's config holds, switched off on its line**: only
+/// Codex has any. Codex is told `mcp_servers.<name>.enabled=false` for each name of [`CONNECTORS`]
+/// that `files` (its config files, [`crate::chattools::codex_config_files`]) define as a server,
+/// and for no other: an `enabled=false` for a server with no transport fails Codex's config
+/// (`invalid transport`, measured on 0.169.0). Claude Code's are [`claude_denied`], opencode's
+/// [`opencode_config`].
+pub fn connectors(harness: Harness, files: &[std::path::PathBuf]) -> Vec<String> {
+    if harness != Harness::Codex {
+        return Vec::new();
     }
+    let mut named: Vec<String> = Vec::new();
+    for file in files {
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let Ok(config) = text.parse::<toml::Table>() else {
+            continue;
+        };
+        let Some(servers) = config.get("mcp_servers").and_then(toml::Value::as_table) else {
+            continue;
+        };
+        for name in servers.keys() {
+            let is_one = CONNECTORS
+                .iter()
+                .any(|connector| connector.eq_ignore_ascii_case(name));
+            let plain = name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+            if is_one && plain && !named.contains(name) {
+                named.push(name.clone());
+            }
+        }
+    }
+    named
+        .into_iter()
+        .flat_map(|name| ["-c".to_owned(), format!("mcp_servers.{name}.enabled=false")])
+        .collect()
 }
 
 /// **opencode's session config for a locked chat** (#7205): `config`, the JSON
@@ -305,27 +438,52 @@ pub struct Probed {
     pub open: &'static [Route],
 }
 
-/// **Every harness version probed**, each with the routes found open. A version not here has not
-/// been probed, and a chat on it is not locked.
+/// **Every harness version probed**, each with the routes found open on it. A version not here
+/// has not been probed, and a chat on it is not locked. The lists differ by harness, and are not
+/// the same list kept in step.
 ///
 /// Recorded 2026-11-19 on macOS, with the fixtures of `a_chat_with_no_mint_has_no_forge_credential`
-/// run against each harness's composed environment: the keychain route is open on all three
-/// ([`Route::GhKeychain`]).
+/// run against each harness's composed environment (a test holds that a route probed here is
+/// recorded open exactly where it leaked). Open on all three: gh's keychain item
+/// ([`Route::GhKeychain`]), git's own keychain helper on a command line ([`Route::GitKeychain`]),
+/// a granted agent socket ([`Route::GrantedAgent`]) and a claim by a mint alone
+/// ([`Route::MintOnly`]), none of which a fixture person can stand for. Claude Code adds its own
+/// ssh ([`Route::SshAgent`]): its line has no `GIT_SSH_COMMAND`, so `~/.ssh/config`'s
+/// `IdentityAgent` applies, which the probe does reach. Codex and opencode add a bare `ssh`
+/// ([`Route::BareSsh`]).
 pub const PROBED: [Probed; 3] = [
     Probed {
         harness: Harness::ClaudeCode,
         version: "2.1.328",
-        open: &[Route::GhKeychain],
+        open: &[
+            Route::GhKeychain,
+            Route::SshAgent,
+            Route::GitKeychain,
+            Route::GrantedAgent,
+            Route::MintOnly,
+        ],
     },
     Probed {
         harness: Harness::Codex,
         version: "0.169.0",
-        open: &[Route::GhKeychain],
+        open: &[
+            Route::GhKeychain,
+            Route::GitKeychain,
+            Route::GrantedAgent,
+            Route::BareSsh,
+            Route::MintOnly,
+        ],
     },
     Probed {
         harness: Harness::Opencode,
         version: "1.19.5",
-        open: &[Route::GhKeychain],
+        open: &[
+            Route::GhKeychain,
+            Route::GitKeychain,
+            Route::GrantedAgent,
+            Route::BareSsh,
+            Route::MintOnly,
+        ],
     },
 ];
 
@@ -403,7 +561,11 @@ pub fn probe(env: &[(String, String)], cwd: &Path, real_gh: &Path) -> Vec<Findin
         ),
         (
             Route::SshAgent,
-            "eval \"${GIT_SSH_COMMAND:-ssh} -G github.com\"".to_owned(),
+            // `-F` the home's config: ssh reads the account's home, never `$HOME`, so without it a
+            // fixture person's config is not read and the machine's own is. A chat's own
+            // `-F` (git's route, `/dev/null`) comes first and wins.
+            "eval \"${GIT_SSH_COMMAND:-ssh} -F \\\"\\$HOME/.ssh/config\\\" -G github.com\""
+                .to_owned(),
         ),
         // The agent's own socket, as a program that reads the variable finds it.
         (
