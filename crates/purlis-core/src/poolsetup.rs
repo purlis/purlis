@@ -48,9 +48,6 @@ pub mod trying;
 /// The file a person's choices are kept in, in this machine's folder.
 const CHOICES_FILE: &str = "pool-setup.json";
 
-/// The programs an agent's forge identity is declared for.
-const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
-
 /// Where a pool's chats run. Only what is built is here (Q46).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -1826,7 +1823,7 @@ fn identity_in(plane: Option<&Path>, hosts: &[HostFound]) -> Identity {
     };
     // A project with no sandbox table has no persona's tools to read.
     let personas = looked_at(root).unwrap_or_default();
-    let forge = |name: &str| FORGE_PROGRAMS.contains(&name);
+    let forge = |name: &str| crate::sandbox::tools::FORGE_PROGRAMS.contains(&name);
     let mut short_of_it = None;
     for (shown, declared) in personas {
         let persona = shown.persona.clone();

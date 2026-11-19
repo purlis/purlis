@@ -1182,9 +1182,11 @@ pub fn is_credential(path: &Path, machine: &Machine) -> bool {
     let Some(home) = &machine.home else {
         return false;
     };
-    let path = compared(path);
+    // Spelled as a program opens it: `.`, `//` and `..` are words (as `grant::liftable` reads
+    // them), so `…/.config/gh/./hosts.yml` is the file `…/.config/gh/hosts.yml` is.
+    let path = compared(&lexically(path));
     let below = |held: &Path| {
-        let held = compared(held);
+        let held = compared(&lexically(held));
         path == held || path.starts_with(&format!("{}/", held.trim_end_matches('/')))
     };
     credential_paths(home, &machine.env).iter().any(|held| {
@@ -1194,7 +1196,7 @@ pub fn is_credential(path: &Path, machine: &Machine) -> bool {
         if held.file_name() != Some(std::ffi::OsStr::new(SSH_FOLDER)) {
             return true;
         }
-        let ssh = compared(held);
+        let ssh = compared(&lexically(held));
         match path.strip_prefix(&format!("{ssh}/")) {
             Some(rest) if !rest.contains('/') => !ssh_open(rest),
             Some(_) => true,
