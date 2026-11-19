@@ -103,6 +103,7 @@ forbid (principal, action == Action::"start", resource)
 
 #[test]
 fn a_start_whose_policy_needs_a_hook_the_harness_lacks_declares_the_gap_and_starts() {
+    purlis_core::unsteered!();
     // Codex has no fail-closed point for the shape of a call but its hook, and the shipped
     // default enforces it.
     let plane = plane(None);
@@ -121,6 +122,7 @@ fn a_start_whose_policy_needs_a_hook_the_harness_lacks_declares_the_gap_and_star
 
 #[test]
 fn a_project_rule_on_start_with_a_gap_in_an_enforced_family_refuses_naming_the_rule() {
+    purlis_core::unsteered!();
     let plane = plane(Some(REFUSE_ON_A_SHAPE_GAP));
     let floor = Resolved::all(Mode::Enforce);
     let facts = facts(Harness::Codex, Os::Linux);
@@ -140,6 +142,7 @@ fn a_project_rule_on_start_with_a_gap_in_an_enforced_family_refuses_naming_the_r
 
 #[test]
 fn a_gap_in_a_family_set_to_log_or_off_is_not_in_context_gaps() {
+    purlis_core::unsteered!();
     let facts = facts(Harness::Codex, Os::Linux);
     let enforced = Declared::at(&facts, &Resolved::all(Mode::Enforce));
     assert!(enforced.context_gaps().contains(&"guards.shape".to_owned()));
@@ -166,6 +169,7 @@ fn a_gap_in_a_family_set_to_log_or_off_is_not_in_context_gaps() {
 
 #[test]
 fn an_off_rule_needs_no_enforcement_and_declares_no_gap() {
+    purlis_core::unsteered!();
     let facts = facts(Harness::Codex, Os::Linux);
     let off = Declared::at(&facts, &floor_with(Family::Asks, Mode::Off));
     assert!(
@@ -192,6 +196,7 @@ fn an_off_rule_needs_no_enforcement_and_declares_no_gap() {
 
 #[test]
 fn every_gap_of_the_harness_research_has_an_entry() {
+    purlis_core::unsteered!();
     let numbered: Vec<u8> = GAPS.iter().filter_map(|gap| gap.research).collect();
     assert_eq!(
         numbered,
@@ -235,6 +240,7 @@ fn every_start() -> Vec<Facts> {
 
 #[test]
 fn every_action_has_a_fail_closed_point_or_a_gap_that_a_start_declares() {
+    purlis_core::unsteered!();
     let actions = purlis_core::policy::actions();
     assert_eq!(actions.len(), 51, "the schema's actions: {actions:?}");
     let floor = Resolved::all(Mode::Enforce);
@@ -275,6 +281,7 @@ fn every_action_has_a_fail_closed_point_or_a_gap_that_a_start_declares() {
 
 #[test]
 fn the_capability_table_holds_what_the_sandbox_profile_holds_only_where_it_is_applied() {
+    purlis_core::unsteered!();
     // Every `Closed(Sandbox | Proxy | Harness)` is a fact about an applied sandbox on a system
     // with a backend: lifted, or with none, it is the gap instead.
     for facts in every_start() {
@@ -299,6 +306,7 @@ fn the_capability_table_holds_what_the_sandbox_profile_holds_only_where_it_is_ap
 
 #[test]
 fn a_lifted_sandbox_is_a_gap_for_every_family_the_sandbox_holds() {
+    purlis_core::unsteered!();
     let floor = Resolved::all(Mode::Enforce);
     for harness in Harness::ALL {
         let held = Facts::best(harness, Os::Linux);
@@ -356,6 +364,7 @@ fn a_lifted_sandbox_is_a_gap_for_every_family_the_sandbox_holds() {
 
 #[test]
 fn a_declared_harness_with_no_adapter_has_every_enforced_family_as_a_gap() {
+    purlis_core::unsteered!();
     let floor = Resolved::all(Mode::Enforce);
     let unadapted = Facts {
         harness: None,
@@ -383,6 +392,7 @@ fn a_declared_harness_with_no_adapter_has_every_enforced_family_as_a_gap() {
 
 #[test]
 fn an_ask_on_start_refuses_and_says_asking_at_a_start_is_not_wired() {
+    purlis_core::unsteered!();
     let plane = plane(Some(
         r#"
 @id("trust-ask-on-a-shape-gap") @level("project") @ask("you")
@@ -403,6 +413,7 @@ forbid (principal, action == Action::"start", resource)
 
 #[test]
 fn a_forbid_on_start_under_a_logged_trust_family_starts_with_the_would_have_blocked_line() {
+    purlis_core::unsteered!();
     let plane = plane(Some(REFUSE_ON_A_SHAPE_GAP));
     let facts = facts(Harness::Codex, Os::Linux);
     let floor = floor_with(Family::Trust, Mode::Log);
@@ -419,6 +430,7 @@ fn a_forbid_on_start_under_a_logged_trust_family_starts_with_the_would_have_bloc
 
 #[test]
 fn a_system_with_no_sandbox_backend_declares_it_whatever_its_name() {
+    purlis_core::unsteered!();
     let floor = Resolved::all(Mode::Enforce);
     for os in [Os::Windows, Os::Other] {
         let declared = Declared::at(&facts(Harness::Codex, os), &floor);
@@ -435,6 +447,7 @@ fn a_system_with_no_sandbox_backend_declares_it_whatever_its_name() {
 
 #[test]
 fn claude_code_reads_are_a_declared_gap() {
+    purlis_core::unsteered!();
     let floor = Resolved::all(Mode::Enforce);
     for os in [Os::MacOs, Os::Linux] {
         let declared = Declared::at(&facts(Harness::ClaudeCode, os), &floor);
@@ -447,6 +460,7 @@ fn claude_code_reads_are_a_declared_gap() {
 
 #[test]
 fn an_unheld_plane_root_rename_is_a_declared_gap() {
+    purlis_core::unsteered!();
     let floor = Resolved::all(Mode::Enforce);
     let mut unheld = facts(Harness::Codex, Os::Linux);
     assert!(
@@ -464,6 +478,7 @@ fn an_unheld_plane_root_rename_is_a_declared_gap() {
 
 #[test]
 fn an_unset_context_machine_is_a_declared_gap_everywhere_and_a_rule_reading_it_denies() {
+    purlis_core::unsteered!();
     let floor = Resolved::all(Mode::Enforce);
     for os in SYSTEMS {
         let there = Declared::at(&facts(Harness::ClaudeCode, os), &floor);
@@ -515,6 +530,7 @@ forbid (principal, action == Action::"exec", resource)
 
 #[test]
 fn a_declared_gap_shows_in_settings_doctor_and_the_pane_head() {
+    purlis_core::unsteered!();
     // Doctor declares each entry that holds for a harness on this system. Settings and the pane
     // head read the same list through the app's commands; their stories and tests are the
     // window's (`KnownGaps.test.tsx`).
@@ -634,6 +650,7 @@ forbid (principal, action == Action::"start", resource)
 #[test]
 fn a_real_start_of_each_harness_is_refused_by_a_project_forbid_on_start() {
     purlis_core::unsteered!();
+    purlis_core::unsteered!();
     // `guards.git` is a gap of Claude Code and Codex for their hook alone, and of OpenCode where
     // its sandbox is lifted, as it is on a machine with no sandbox program.
     for kind in ["claude", "codex", "opencode"] {
@@ -655,6 +672,7 @@ fn a_real_start_of_each_harness_is_refused_by_a_project_forbid_on_start() {
 #[cfg(unix)]
 #[test]
 fn a_real_start_with_no_rule_on_start_is_never_refused_for_a_gap() {
+    purlis_core::unsteered!();
     purlis_core::unsteered!();
     let project = Project::new("claude", ENFORCE_TRUST, "");
     project

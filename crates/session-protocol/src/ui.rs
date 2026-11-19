@@ -1509,6 +1509,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // Each chat's blocks since the person last looked, for its marker (R-174, T1-30): a read.
     "chat_blocks",
     "chat_doings",
+    // The gaps a chat started under (R-225) and the open project declares per harness: reads.
+    "chat_known_gaps",
     // A chat's Chat log (T1-27, R-224): its start and end rows, a query of the event log, read only.
     "chat_log",
     // A chat whose program ended with its session host (#2007): what its pane says.
@@ -1578,6 +1580,8 @@ pub const SERVED_ON_A_LINK: &[&str] = &[
     // Whether it is Quiet, and what the last Quiet held (#6017): read only.
     "quiet_now",
     "installed_extensions",
+    // The known gaps the open project declares, per harness (R-225): a read.
+    "known_gaps",
     "locate_project",
     "mcp_failures",
     // What a chat's missing-skills Notice says (#2768), read as an MCP failure is.
