@@ -685,10 +685,20 @@ fn a_refused_credential_is_known_as_one() {
     }
 }
 
-/// **A forge's credential file never ships without its three answers** (#1349): every forge's file
-/// in [`CREDENTIAL_FILES`] names a forge that has (i) a program the shim refuses to run without a
-/// token, (ii) a start-time note for a chat that holds the class with no route, and (iii) the
-/// shim's sentence. A forge's file added to the list with no row here turns this red.
+/// What each entry of [`CREDENTIAL_FILES`] is, said by a row here and never guessed from its name.
+enum Entry {
+    /// A forge's own login file: the program that reads it, the kind of forge, and the variable the
+    /// program takes its token from.
+    Forge(&'static str, crate::forge::Kind, &'static str),
+    /// Not a forge's file, with the reason it needs no start note or shim.
+    Exempt(&'static str),
+}
+
+/// **A forge's credential file never ships without its three answers** (#1349): every entry of
+/// [`CREDENTIAL_FILES`] is classified here, as a forge with (i) a program the shim refuses to run
+/// without a token, (ii) a start-time note for a chat that holds the class with no route, and
+/// (iii) the shim's sentence, or as exempt with a written reason. An entry with no row, or a row
+/// with no entry, turns this red.
 #[cfg(unix)]
 #[test]
 fn every_forge_credential_file_has_a_shim_a_start_note_and_a_sentence() {
@@ -696,26 +706,63 @@ fn every_forge_credential_file_has_a_shim_a_start_note_and_a_sentence() {
     use crate::forge::agentidentity::{HostFound, credentials_note};
     use crate::sandbox::tools::{FORGE_PROGRAMS, Handed, Ready, Tool, no_minted_token_said, shim};
     use std::os::unix::fs::PermissionsExt;
-    const FORGES: [(&str, &str, Kind, &str); 2] = [
-        (".config/gh/hosts.yml", "gh", Kind::GitHub, "GH_TOKEN"),
+    const GIT: &str = "git's own helper, not a forge's API login: no forge program to shim";
+    const CLOUD: &str = "a cloud provider's login, not a forge's: its tools are not shimmed";
+    const CLASSIFIED: [(&str, Entry); 14] = [
+        (".git-credentials", Entry::Exempt(GIT)),
+        (".config/git/credentials", Entry::Exempt(GIT)),
+        (
+            ".netrc",
+            Entry::Exempt("any program's login, no one forge's"),
+        ),
+        (".aws/credentials", Entry::Exempt(CLOUD)),
+        (".aws/sso/cache", Entry::Exempt(CLOUD)),
+        (".aws/cli/cache", Entry::Exempt(CLOUD)),
+        (".config/gcloud/credentials.db", Entry::Exempt(CLOUD)),
+        (".config/gcloud/access_tokens.db", Entry::Exempt(CLOUD)),
+        (
+            ".config/gcloud/application_default_credentials.json",
+            Entry::Exempt(CLOUD),
+        ),
+        (".config/gcloud/legacy_credentials", Entry::Exempt(CLOUD)),
+        (".azure", Entry::Exempt(CLOUD)),
+        (
+            ".docker/config.json",
+            Entry::Exempt("a registry's login, not a forge's"),
+        ),
+        (
+            ".config/gh/hosts.yml",
+            Entry::Forge("gh", Kind::GitHub, "GH_TOKEN"),
+        ),
         (
             ".config/glab-cli/config.yml",
-            "glab",
-            Kind::GitLab,
-            "GITLAB_TOKEN",
+            Entry::Forge("glab", Kind::GitLab, "GITLAB_TOKEN"),
         ),
     ];
-    let forge_files: Vec<&str> = CREDENTIAL_FILES
+    let mut unclassified: Vec<&str> = CREDENTIAL_FILES
         .iter()
         .copied()
-        .filter(|file| file.contains("/gh/") || file.contains("glab"))
+        .filter(|file| !CLASSIFIED.iter().any(|row| row.0 == *file))
         .collect();
-    let named: Vec<&str> = FORGES.iter().map(|row| row.0).collect();
-    assert_eq!(
-        forge_files, named,
-        "a forge's credential file has no row here"
+    unclassified.sort_unstable();
+    assert!(
+        unclassified.is_empty(),
+        "CREDENTIAL_FILES entries with no class here (a forge, or exempt with a reason): {unclassified:?}"
     );
-    for (_, program, kind, var) in FORGES {
+    for (file, entry) in &CLASSIFIED {
+        assert!(
+            CREDENTIAL_FILES.contains(file),
+            "{file} is no longer listed"
+        );
+        if let Entry::Exempt(reason) = entry {
+            assert!(!reason.is_empty(), "{file}: an exemption needs its reason");
+        }
+    }
+    let forges = CLASSIFIED.iter().filter_map(|(_, entry)| match entry {
+        Entry::Forge(program, kind, var) => Some((*program, *kind, *var)),
+        Entry::Exempt(_) => None,
+    });
+    for (program, kind, var) in forges {
         assert!(
             FORGE_PROGRAMS.contains(&program),
             "{program} has no shim rule"
@@ -757,7 +804,7 @@ fn every_forge_credential_file_has_a_shim_a_start_note_and_a_sentence() {
         .unwrap();
         assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
         assert!(
-            String::from_utf8_lossy(&out.stderr).contains(&no_minted_token_said(program)),
+            String::from_utf8_lossy(&out.stderr).contains(&no_minted_token_said(program, false)),
             "{program}: {out:?}"
         );
         assert!(!ran.exists(), "{program} ran with no token");

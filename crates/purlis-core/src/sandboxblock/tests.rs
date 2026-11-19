@@ -2787,3 +2787,89 @@ fn a_failed_commands_refusal_of_no_credential_is_still_not_read_from_its_error()
         );
     }
 }
+
+const GH_HOSTS: &str = "/Users/dev/.config/gh/hosts.yml";
+
+fn gh_refusal() -> (Block, Option<String>) {
+    (
+        block(Operation::File, Kind::ProtectedFile, false),
+        Some(GH_HOSTS.to_owned()),
+    )
+}
+
+/// #1349, Codex: every result is one string, so a gh config load's own refusal in it raises the
+/// credentials block, naming the file.
+#[test]
+fn a_gh_config_refusal_in_a_one_string_result_is_a_block_naming_it() {
+    let payload = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "tool_response":
+            format!("failed to read configuration: open {GH_HOSTS}: operation not permitted"),
+    });
+    assert_eq!(detect_with_targets(&payload, &place()), vec![gh_refusal()]);
+}
+
+/// #1349, opencode: a failed command's one `mixed` stream keeps the credential file as the
+/// target, so the Notice is the credentials one and not the later-code sentence.
+#[test]
+fn a_gh_config_refusal_in_a_mixed_stream_keeps_its_target() {
+    let text = format!("failed to read configuration: open {GH_HOSTS}: operation not permitted");
+    assert_eq!(
+        detect_with_targets(&mixed(&text), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// What stays unread outside the failure's `error` (a program's words could name any path):
+/// a path that is no credential, in either shape.
+#[test]
+fn a_refusal_of_no_credential_in_a_one_string_or_mixed_result_names_no_target() {
+    let line = "open /Users/dev/.config/gh/config.yml: operation not permitted";
+    let one = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "tool_response": line,
+    });
+    for payload in [one, mixed(line)] {
+        assert!(
+            detect_with_targets(&payload, &place())
+                .iter()
+                .all(|(_, target)| target.is_none()),
+            "{payload}"
+        );
+    }
+}
+
+/// S6: Linux's supervisor refuses with EACCES, so "permission denied" is the refusal too, for a
+/// credential file and only there.
+#[test]
+fn a_permission_denied_on_a_credential_file_is_a_block_naming_it() {
+    for line in [
+        format!("failed to read configuration: open {GH_HOSTS}: permission denied"),
+        format!("EACCES: permission denied, open '{GH_HOSTS}'"),
+    ] {
+        let found = detect_with_targets(
+            &failed("gh pr list", &format!("Exit code 1\n{line}")),
+            &place(),
+        );
+        assert!(
+            found
+                .iter()
+                .any(|(_, target)| target.as_deref() == Some(GH_HOSTS)),
+            "{line}: {found:?}"
+        );
+    }
+    assert!(
+        detect(
+            &failed(
+                "cat x",
+                "Exit code 1\nopen /Users/dev/notes/todo.md: permission denied"
+            ),
+            &place()
+        )
+        .is_empty()
+    );
+}

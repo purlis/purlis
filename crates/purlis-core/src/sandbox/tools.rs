@@ -2897,13 +2897,20 @@ pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&P
 /// **What a minting tool's shim says when there is no token to run it with** (#1349): a chat that
 /// holds the credentials class cannot read the person's own login, and a tool declared with a
 /// `mint` line never runs without the token it mints (#7133), so it says why and the way on.
-pub fn no_minted_token_said(name: &str) -> String {
-    let way = if name == "glab" {
-        "Declare a glab tool that holds a GitLab token in a vault, or choose a sandbox template \
-         where the credentials class is off."
+///
+/// `mints`: whether the tool is declared with a `mint` line. Only then does Agent identity
+/// matter, and the shim can only see that the chat's hook channel variable is missing, while
+/// `secret exec` may still reach the app by its ancestry (#6995): so it says the app was not
+/// reached from here, never that Agent identity is not set up. Any other tool holds a token in a
+/// vault, and its way on is that vault's key.
+pub fn no_minted_token_said(name: &str, mints: bool) -> String {
+    let way = if mints {
+        "The app could not be reached from this shell to mint one: run it from the chat's own \
+         terminal, set up Agent identity in Settings › Agent identity if it is not, or choose a \
+         sandbox template where the credentials class is off."
     } else {
-        "Set up Agent identity in Settings › Agent identity, or choose a sandbox template where \
-         the credentials class is off."
+        "Declare the tool with a token held in a vault, or choose a sandbox template where the \
+         credentials class is off."
     };
     format!(
         "{name} has no token in this chat, and a chat never uses the person's own {name} login. \
@@ -2915,12 +2922,37 @@ pub fn no_minted_token_said(name: &str) -> String {
 /// reads a file [`crate::sandbox::CREDENTIAL_FILES`] names.
 pub const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
 
+/// The variables each forge program reads its token from, best first.
+const FORGE_TOKEN_VARS: [(&str, &[&str]); 2] = [
+    ("gh", &["GH_TOKEN", "GITHUB_TOKEN"]),
+    ("glab", &["GITLAB_TOKEN", "GITLAB_ACCESS_TOKEN"]),
+];
+
 /// **The variable a forge tool's token is handed in**, for a tool of [`FORGE_PROGRAMS`] or one
-/// that mints: its first value's, where the shim refuses to run it without one.
+/// that mints, where the shim refuses to run it without one. Chosen, in this order: a tool that
+/// mints hands the token minted in [`mint::VAR`] (its one value); else the first of the program's
+/// own token variables ([`FORGE_TOKEN_VARS`]) the tool hands; else its only value; and a tool
+/// that hands several, none of them the program's, is none (the shim then says nothing it
+/// cannot know, and the program is refused by the credentials class).
 fn forge_token_var(tool: &Tool) -> Option<String> {
-    (tool.mint.is_some() || FORGE_PROGRAMS.contains(&tool.name.as_str()))
-        .then(|| tool.values.first().map(|value| value.var.clone()))
-        .flatten()
+    let hands = |var: &str| tool.values.iter().find(|value| value.var == var);
+    if tool.mint.is_some() {
+        return hands(mint::VAR)
+            .or_else(|| tool.values.first())
+            .map(|value| value.var.clone());
+    }
+    let known = FORGE_TOKEN_VARS
+        .iter()
+        .find(|(program, _)| *program == tool.name)?
+        .1;
+    known
+        .iter()
+        .find_map(|var| hands(var))
+        .or(match tool.values.as_slice() {
+            [only] => Some(only),
+            _ => None,
+        })
+        .map(|value| value.var.clone())
 }
 
 /// `exec -a <name> program "$@"` under the declared name (#1977) where the shell can name it: POSIX
@@ -2995,7 +3027,7 @@ pub fn shim(purlis: &Path, persona: &str, ready: &Ready) -> String {
                  echo {said} >&2\nexit 1\n",
                 said = quoted(&format!(
                     "purlis: {}",
-                    no_minted_token_said(&ready.tool.name)
+                    no_minted_token_said(&ready.tool.name, ready.tool.mint.is_some())
                 )),
                 named = named_exec(ready),
                 program = quoted(&ready.program.display().to_string()),
