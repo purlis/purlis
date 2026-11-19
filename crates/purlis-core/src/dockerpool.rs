@@ -4575,7 +4575,11 @@ impl Docker {
             Some(owned),
         )?;
         if !removed.is_empty() {
-            self.remove_home_volume_if_free(&container, &format!("{container}-home"), &mut removed)?;
+            self.remove_home_volume_if_free(
+                &container,
+                &format!("{container}-home"),
+                &mut removed,
+            )?;
         }
         Ok((removed, left))
     }

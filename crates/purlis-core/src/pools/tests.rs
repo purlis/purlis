@@ -5583,14 +5583,20 @@ fn pool_status_says_how_many_runners_belong_to_another_desktop() {
     let mine = crate::dockerpool::device_tag(OURS);
     let theirs = crate::dockerpool::device_tag("01JA0ANOTHERDESKT00000000Z");
     let rows = |others: &[(&str, &str)]| {
-        let mut text = format!("{} purlis-runner-first-{mine} mine {mine} first\n", "a".repeat(64));
+        let mut text = format!(
+            "{} purlis-runner-first-{mine} mine {mine} first\n",
+            "a".repeat(64)
+        );
         for (id, name) in others {
             text.push_str(&format!("{id} {name} mine {theirs} x\n"));
         }
         fake.set("containers-full", &text);
     };
     rows(&[]);
-    assert_eq!(belonging_to_another_desktop(&fake.docker(), OURS).unwrap(), None);
+    assert_eq!(
+        belonging_to_another_desktop(&fake.docker(), OURS).unwrap(),
+        None
+    );
     rows(&[("c".repeat(64).as_str(), "purlis-runner-first-4e5f6a7b")]);
     assert_eq!(
         belonging_to_another_desktop(&fake.docker(), OURS)
@@ -5634,7 +5640,10 @@ fn pool_status_counts_only_runners_that_carry_another_desktops_tag() {
             "c".repeat(64),
         ),
     );
-    assert_eq!(belonging_to_another_desktop(&fake.docker(), OURS).unwrap(), None);
+    assert_eq!(
+        belonging_to_another_desktop(&fake.docker(), OURS).unwrap(),
+        None
+    );
 }
 
 /// **Another desktop's untagged successor survives the sweep** (#7192): its container has the
@@ -5657,10 +5666,18 @@ fn another_desktops_untagged_successor_with_the_same_config_label_survives_the_s
         ),
     );
     fake.set("volumes", &format!("purlis-runner-{successor}-home\n"));
-    let said = clear_leftovers_of(config.path(), &fake.docker(), &successor, Some(&ours.device))
-        .unwrap()
-        .expect("what was left is said");
-    assert!(said.contains(&format!("purlis-runner-{successor}")), "{said}");
+    let said = clear_leftovers_of(
+        config.path(),
+        &fake.docker(),
+        &successor,
+        Some(&ours.device),
+    )
+    .unwrap()
+    .expect("what was left is said");
+    assert!(
+        said.contains(&format!("purlis-runner-{successor}")),
+        "{said}"
+    );
     let log = fake.file("log");
     for changed in ["container rm", "volume rm"] {
         assert!(!log.contains(changed), "{changed}: {log}");

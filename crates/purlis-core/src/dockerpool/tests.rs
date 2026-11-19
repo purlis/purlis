@@ -4643,18 +4643,39 @@ fn runners_of_another_desktop_are_listed_and_never_stopped_removed_or_renamed() 
         &fake,
         &[
             (ID, "purlis-runner-first-0a1b2c3d", "mine", &mine, "first"),
-            (OTHER_ID, "purlis-runner-first-4e5f6a7b", "theirs", &theirs, "first"),
-            (THIRD_ID, "purlis-runner-second-4e5f6a7b", "theirs", &theirs, "second"),
+            (
+                OTHER_ID,
+                "purlis-runner-first-4e5f6a7b",
+                "theirs",
+                &theirs,
+                "first",
+            ),
+            (
+                THIRD_ID,
+                "purlis-runner-second-4e5f6a7b",
+                "theirs",
+                &theirs,
+                "second",
+            ),
             // Made before the device label: nobody's by any proof, so not counted.
             ("ffff", "purlis-runner-third", "theirs", "-", "third"),
             // What carries sign-ins to a runner is no runner.
-            ("eeee", "purlis-runner-first-4e5f6a7b-copy", "theirs", &theirs, "first"),
+            (
+                "eeee",
+                "purlis-runner-first-4e5f6a7b-copy",
+                "theirs",
+                &theirs,
+                "first",
+            ),
         ],
     );
     let others = fake.docker().runners_of_other_desktops(DESKTOP).unwrap();
     assert_eq!(
         others,
-        ["purlis-runner-first-4e5f6a7b", "purlis-runner-second-4e5f6a7b"]
+        [
+            "purlis-runner-first-4e5f6a7b",
+            "purlis-runner-second-4e5f6a7b"
+        ]
     );
     let log = fake.file("log");
     for changed in [
@@ -4677,9 +4698,15 @@ fn a_tagged_runners_container_carries_its_desktops_tag_as_a_label() {
     let tag = device_tag(DESKTOP);
     let seccomp = std::path::Path::new(SECCOMP_AT);
     let args = runner().of_desktop(DESKTOP).create_args(seccomp);
-    assert!(has_pair(&args, "--label", &format!("purlis.device={tag}")), "{args:?}");
+    assert!(
+        has_pair(&args, "--label", &format!("purlis.device={tag}")),
+        "{args:?}"
+    );
     let old = runner().create_args(seccomp);
-    assert!(!old.iter().any(|a| a.starts_with("purlis.device=")), "{old:?}");
+    assert!(
+        !old.iter().any(|a| a.starts_with("purlis.device=")),
+        "{old:?}"
+    );
 }
 
 /// **A pool named like a copy is a runner, and a copy is not** (#4011, #4861, #7192): the
@@ -4694,8 +4721,20 @@ fn a_pool_whose_name_ends_in_copy_is_a_runner_and_the_containers_of_a_runner_are
             ("a", "purlis-runner-x-copy", "mine", "-", "x-copy"),
             ("b", "purlis-runner-x-0a1b2c3d-copy", "mine", "-", "x"),
             ("c", "purlis-runner-x-copy", "mine", "-", "x"),
-            ("d", "purlis-runner-y-read-0a1b2c3d", "mine", "0a1b2c3d", "y-read"),
-            ("e", "purlis-runner-y-0a1b2c3d-read", "mine", "0a1b2c3d", "y"),
+            (
+                "d",
+                "purlis-runner-y-read-0a1b2c3d",
+                "mine",
+                "0a1b2c3d",
+                "y-read",
+            ),
+            (
+                "e",
+                "purlis-runner-y-0a1b2c3d-read",
+                "mine",
+                "0a1b2c3d",
+                "y",
+            ),
         ],
     );
     let listed: Vec<String> = fake
@@ -4800,7 +4839,11 @@ fn an_untagged_leftover_is_removed_only_by_an_id_this_desktop_recorded() {
         .unwrap();
     assert_eq!(removed, ["container purlis-runner-first"]);
     assert!(left.is_empty(), "{left:?}");
-    assert!(fake.file("log").contains("container rm"), "{}", fake.file("log"));
+    assert!(
+        fake.file("log").contains("container rm"),
+        "{}",
+        fake.file("log")
+    );
 }
 
 /// **The listing is read as Docker prints it** (#7192): each label in brackets, `[]` for one the
