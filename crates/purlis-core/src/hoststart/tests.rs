@@ -723,9 +723,17 @@ fn settings_past_the_file_cap_refuse_the_start() {
 fn rules_weighing(target: usize) -> Vec<String> {
     let none = RulesOutside::default();
     let with = |n: usize| serde_json::json!({"permissions": {"deny": ["x".repeat(n)]}});
-    let mut n = 0;
-    while auto_mode_weight(&with(n + 1), &none, None) + 10 <= target {
-        n += 1;
+    // The longest rule that leaves room for the `autoMode` list. A rule weighs more with each
+    // byte, so this is a binary search: stepping a byte at a time weighed a rule of up to
+    // `target` bytes `target` times, and timed out on a CI runner (#7225 round 3).
+    let (mut n, mut over) = (0, target);
+    while n + 1 < over {
+        let middle = n + (over - n) / 2;
+        if auto_mode_weight(&with(middle), &none, None) + 10 <= target {
+            n = middle;
+        } else {
+            over = middle;
+        }
     }
     let mut json = with(n);
     let short = target - auto_mode_weight(&json, &none, None);

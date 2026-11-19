@@ -38,8 +38,13 @@ const BUDGET: usize = crate::hoststart::HARNESS_SETTINGS_BYTES;
 /// The most a chat's whole generated harness settings file may weigh.
 const FILE_CAP: usize = crate::hoststart::HARNESS_SETTINGS_FILE_BYTES;
 
-/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the plane's folder stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **This is 1,242 bytes under the budget, and past the 128,000 where allow rules may be shed.**
+/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the plane's folder stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **Per OS, because the plane weighs twice as much on macOS** (#7225 round 3): there every denied path under a firmlink (`/Users`, `/private`, ...) is also denied under its `/System/Volumes/Data` name (`firmlink_twin`), which Linux has no such name for. **On macOS this is 1,242 bytes under the 256,000 budget, and past the 128,000 where allow rules may be shed** (656 deny rules); **on Linux it is 11,795 bytes under the 128,000 and the tiers never fire** (333 deny rules). The figure that matters for the person's notice tiers is macOS's.
+#[cfg(target_os = "macos")]
 const COUNTED_TODAY: usize = 254_758;
+
+/// [`COUNTED_TODAY`] on Linux (and any OS without firmlinks): measured on CI, ubuntu, 2026-11-19.
+#[cfg(not(target_os = "macos"))]
+const COUNTED_TODAY: usize = 116_205;
 
 /// What the plane's folder is replaced by before the ratchet weighs a chat's settings, so the
 /// weight does not move with the length of `TMPDIR`.
@@ -227,7 +232,11 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
     // unseen. This weight, measured with the plane's folder stood in for ([`STAND_IN`]), is
     // what the plane's chats are measured to send today; a change that moves it either way
     // says so here: a rise past a tenth is a re-bloat to look at, a fall past a tenth is a
-    // rule lost (or a better count) to be written into `COUNTED_TODAY`.
+    // rule lost (or a better count) to be written into `COUNTED_TODAY`. The figure is per OS
+    // (`COUNTED_TODAY` says why: macOS's firmlink twins double the denied paths), each with
+    // its own tenth either side, rather than one OS-independent measure: a measure that left
+    // the twins out would stop weighing what a macOS chat really sends, which is what the
+    // tiers act on.
     assert!(
         counted <= COUNTED_TODAY + COUNTED_TODAY / 10,
         "{said}: more than a tenth over the {COUNTED_TODAY} bytes this plane weighed when \
