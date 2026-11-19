@@ -1437,23 +1437,42 @@ fn clear_leftovers_locked(
     }
     let tag = device.map(crate::dockerpool::device_tag);
     let label = runners::desktop_label(config_root);
-    let mut removed = docker
-        .remove_leftovers_of(name, &label, tag.as_deref(), None)
-        .map_err(|why| Refused::Other(why.0))?;
-    // What a make before names carried a tag left is named without one (#7192).
-    if tag.is_some() {
-        removed.extend(
-            docker
-                .remove_leftovers_of(name, &label, None, None)
-                .map_err(|why| Refused::Other(why.0))?,
-        );
+    // A name that carries this desktop's tag is this desktop's by it.
+    let mut removed = match tag.as_deref() {
+        Some(tag) => docker
+            .remove_leftovers_of(name, &label, Some(tag), None)
+            .map_err(|why| Refused::Other(why.0))?,
+        None => Vec::new(),
+    };
+    // What a make before names carried a tag left is named without one (#7192). That name and
+    // the desktop label are no proof of whose it is: only a container this desktop recorded in
+    // its own rows is removed. Another's is left as it is, and said.
+    let left;
+    {
+        let owned: Vec<String> = runners::read(config_root)?
+            .iter()
+            .map(|kept| kept.made.container.as_str().to_owned())
+            .collect();
+        let (more, others) = docker
+            .remove_untagged_leftovers_of(name, &label, &owned)
+            .map_err(|why| Refused::Other(why.0))?;
+        removed.extend(more);
+        left = others;
     }
-    Ok((!removed.is_empty()).then(|| {
-        format!(
+    let mut said = Vec::new();
+    if !removed.is_empty() {
+        said.push(format!(
             "removed {} that a move of the pool to a new runner left behind",
             removed.join(" and ")
-        )
-    }))
+        ));
+    }
+    if !left.is_empty() {
+        said.push(format!(
+            "left {}, which this desktop did not record as its own",
+            left.join(" and ")
+        ));
+    }
+    Ok((!said.is_empty()).then(|| said.join("; ")))
 }
 
 /// **How each runner of pool `pool` that a drain would take stands now**, as Docker says, read

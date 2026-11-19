@@ -4458,11 +4458,26 @@ impl Docker {
         desktop: &str,
         names: &[String],
     ) -> Result<Vec<String>, Refused> {
+        Ok(self.remove_labelled_owned(name, desktop, names, None)?.0)
+    }
+
+    /// [`Docker::remove_labelled`], held to `owned` where one is given (#7192): only a container
+    /// whose id is one of those is removed, and one that is not is left as it is and named in
+    /// the second answer. What the label says (a config path's hash, which two desktops can
+    /// share) is not proof that the container is this desktop's.
+    fn remove_labelled_owned(
+        &self,
+        name: &str,
+        desktop: &str,
+        names: &[String],
+        owned: Option<&[String]>,
+    ) -> Result<(Vec<String>, Vec<String>), Refused> {
         let words = |words: &[&str]| -> Vec<String> {
             words.iter().map(|word| (*word).to_owned()).collect()
         };
         let container = format!("{PREFIX}{name}");
         let mut removed = Vec::new();
+        let mut left = Vec::new();
         let listed = self.read(
             &words(&[
                 "container",
@@ -4489,6 +4504,10 @@ impl Docker {
             if !names.iter().any(|one| one == named) || made_by != desktop {
                 continue;
             }
+            if owned.is_some_and(|owned| !owned.iter().any(|one| one == id)) {
+                left.push(named.to_owned());
+                continue;
+            }
             let id = ContainerId::new(id)?;
             self.run(
                 &words(&["container", "rm", "--force", "--volumes", id.as_str()]),
@@ -4497,7 +4516,7 @@ impl Docker {
             )?;
             removed.push(format!("container {named}"));
         }
-        Ok(removed)
+        Ok((removed, left))
     }
 
     /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
@@ -4513,9 +4532,6 @@ impl Docker {
         tag: Option<&str>,
         home_volume: Option<&str>,
     ) -> Result<Vec<String>, Refused> {
-        let words = |words: &[&str]| -> Vec<String> {
-            words.iter().map(|word| (*word).to_owned()).collect()
-        };
         // Named as its runner is, with the tag of the desktop that owns it (#7192).
         let container = container_named(name, tag);
         // An adopted runner keeps the home volume it was made with (#7192).
@@ -4531,6 +4547,50 @@ impl Docker {
                 format!("{container}-read"),
             ],
         )?;
+        self.remove_home_volume_if_free(&container, &volume, &mut removed)?;
+        Ok(removed)
+    }
+
+    /// **Removes the container names `name`'s runner had before names carried a desktop's tag,
+    /// of the ones this desktop recorded** (#7192): only a container whose id is one of `owned`
+    /// (the ids of the runners this desktop keeps), by the desktop label too. Another desktop's
+    /// container of the same name and label (a config path two desktops share) is left as it
+    /// is, and named in the second answer, the first being what was removed. The home volume
+    /// goes only after a container of this desktop did.
+    pub fn remove_untagged_leftovers_of(
+        &self,
+        name: &str,
+        desktop: &str,
+        owned: &[String],
+    ) -> Result<(Vec<String>, Vec<String>), Refused> {
+        let container = container_named(name, None);
+        let (mut removed, left) = self.remove_labelled_owned(
+            name,
+            desktop,
+            &[
+                container.clone(),
+                format!("{container}-copy"),
+                format!("{container}-read"),
+            ],
+            Some(owned),
+        )?;
+        if !removed.is_empty() {
+            self.remove_home_volume_if_free(&container, &format!("{container}-home"), &mut removed)?;
+        }
+        Ok((removed, left))
+    }
+
+    /// Removes the home volume `volume` once no container of the name `container` is left,
+    /// whoever made it, and none mounts it.
+    fn remove_home_volume_if_free(
+        &self,
+        container: &str,
+        volume: &str,
+        removed: &mut Vec<String>,
+    ) -> Result<(), Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
         // A home volume goes only once no container of its name is left, whoever made it.
         let still = self.read(
             &words(&[
@@ -4545,7 +4605,7 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         if still.lines().any(|line| line.trim() == container) {
-            return Ok(removed);
+            return Ok(());
         }
         let volumes = self.read(
             &words(&[
@@ -4559,15 +4619,15 @@ impl Docker {
         )?;
         // A tagged name and a successor's can spell the same volume (#7192): one a container
         // still mounts is that container's, whatever its runner is called, and stays.
-        if volumes.lines().any(|line| line.trim() == volume) && self.mounting(&volume)?.is_empty() {
+        if volumes.lines().any(|line| line.trim() == volume) && self.mounting(volume)?.is_empty() {
             self.run(
-                &words(&["volume", "rm", "--force", &volume]),
+                &words(&["volume", "rm", "--force", volume]),
                 None,
                 MOST_INSPECTED,
             )?;
             removed.push(format!("volume {volume}"));
         }
-        Ok(removed)
+        Ok(())
     }
 
     /// **The version `made`'s runner runs** (#2749), as its `purlis --version` says it, once

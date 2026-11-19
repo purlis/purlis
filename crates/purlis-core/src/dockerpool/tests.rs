@@ -4770,3 +4770,35 @@ fn a_tagged_runners_leftovers_and_a_successors_are_never_taken_for_each_other() 
         }
     }
 }
+
+/// **An untagged leftover is removed only where this desktop recorded it** (#7192): the old name
+/// and the desktop label (a config path's hash, shared by two desktops) say nothing of whose
+/// container it is. One whose id is in this desktop's own rows goes, with its home; another is
+/// left as it is and named.
+#[test]
+fn an_untagged_leftover_is_removed_only_by_an_id_this_desktop_recorded() {
+    let listing = format!("{ID} purlis-runner-first mine\n");
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers-full", &listing);
+    fake.set("volumes", "purlis-runner-first-home\n");
+    let (removed, left) = fake
+        .docker()
+        .remove_untagged_leftovers_of("first", "mine", &[OTHER_ID.to_owned()])
+        .unwrap();
+    assert!(removed.is_empty(), "{removed:?}");
+    assert_eq!(left, ["purlis-runner-first"]);
+    let log = fake.file("log");
+    for changed in ["container rm", "volume rm"] {
+        assert!(!log.contains(changed), "{changed}: {log}");
+    }
+
+    let fake = FakeDocker::new(&inspected());
+    fake.set("containers-full", &listing);
+    let (removed, left) = fake
+        .docker()
+        .remove_untagged_leftovers_of("first", "mine", &[ID.to_owned()])
+        .unwrap();
+    assert_eq!(removed, ["container purlis-runner-first"]);
+    assert!(left.is_empty(), "{left:?}");
+    assert!(fake.file("log").contains("container rm"), "{}", fake.file("log"));
+}

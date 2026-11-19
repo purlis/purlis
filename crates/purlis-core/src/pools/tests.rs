@@ -5636,3 +5636,33 @@ fn pool_status_counts_only_runners_that_carry_another_desktops_tag() {
     );
     assert_eq!(belonging_to_another_desktop(&fake.docker(), OURS).unwrap(), None);
 }
+
+/// **Another desktop's untagged successor survives the sweep** (#7192): its container has the
+/// old name and the desktop label this config path hashes to as well, and no row of this
+/// desktop records it. It is left, its home with it, and said.
+#[test]
+fn another_desktops_untagged_successor_with_the_same_config_label_survives_the_sweep() {
+    let config = tempfile::tempdir().unwrap();
+    let ours = desktop();
+    let fake = a_docker(&runner_answers());
+    a_pool_added(config.path(), &fake, &ours);
+    let new_image = crate::dockerpool::Image::pinned(NEW).unwrap();
+    let successor = crate::dockerpool::successor_name("first", &new_image);
+    fake.set("containers", &format!("purlis-runner-{successor}\n"));
+    fake.set(
+        "containers-full",
+        &format!(
+            "{LEFT} purlis-runner-{successor} {}\n",
+            runners::desktop_label(config.path())
+        ),
+    );
+    fake.set("volumes", &format!("purlis-runner-{successor}-home\n"));
+    let said = clear_leftovers_of(config.path(), &fake.docker(), &successor, Some(&ours.device))
+        .unwrap()
+        .expect("what was left is said");
+    assert!(said.contains(&format!("purlis-runner-{successor}")), "{said}");
+    let log = fake.file("log");
+    for changed in ["container rm", "volume rm"] {
+        assert!(!log.contains(changed), "{changed}: {log}");
+    }
+}
