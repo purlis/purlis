@@ -2790,7 +2790,6 @@ export function catalogue(now: Now): Offer[] {
       title: GITLAB_ACCESS_TITLE,
     }),
     note: "What chats use on GitLab. Your own glab sign-in never reaches a chat.",
-    plus: PLUS_VIEWS,
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).

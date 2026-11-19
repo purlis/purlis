@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { commands, type GitlabFinished, type GitlabRow, type GitlabShown, type PlaneId } from "./bindings";
+import {
+  commands,
+  type GitlabFinished,
+  type GitlabRow,
+  type GitlabShown,
+  type PlaneId,
+} from "./bindings";
 import { WhoUses, answer, whyOf } from "./AgentIdentityFlow";
 import { Notice } from "./Notice";
+import { KeyRound } from "lucide-react";
 import { Badge } from "./ui/badge/Badge";
+import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
 import { TextField } from "./ui/field/Field";
@@ -72,8 +80,8 @@ function Setup({
     <div className="agent-identity-flow">
       <p className="agent-identity-lead">
         Make a project or group access token on {row.host} in the Developer role with the api scope,
-        and paste it here. It acts as a bot of its own and can do no more than a Developer. The
-        chat never sees the token: purlis keeps it in the persona's vault and hands it to glab.
+        and paste it here. It acts as a bot of its own and can do no more than a Developer. The chat
+        never sees the token: purlis keeps it in the persona's vault and hands it to glab.
       </p>
       {personas.length === 0 ? (
         <p className="agent-identity-term">
@@ -130,7 +138,9 @@ function Row({
         {setUp && <Badge variant="ok">Set up</Badge>}
       </header>
       {setUp && (
-        <p className="agent-identity-say">Chats of {row.personas.join(", ")} use glab on this host.</p>
+        <p className="agent-identity-say">
+          Chats of {row.personas.join(", ")} use glab on this host.
+        </p>
       )}
       {row.by_hand.length > 0 && (
         <p className="agent-identity-term">
@@ -230,10 +240,12 @@ export function GitLabAccessTab({ plane }: { plane: PlaneId }) {
         </Notice>
       )}
       {shown && shown.rows.length === 0 && (
-        <p className="agent-identity-term">
-          None of this project's clones has a GitLab remote. Clone a project from GitLab, or
-          declare a self-hosted one with a forge block in the project's settings, then come back.
-        </p>
+        <EmptyState
+          mark={KeyRound}
+          headline="No GitLab remote in this project"
+          body="Clone a project from GitLab, or declare a self-hosted one with a forge block in the project's settings, then come back."
+          testid="gitlab-access-no-remote"
+        />
       )}
       {shown?.rows.map((row) => (
         <Row

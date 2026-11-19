@@ -55,7 +55,10 @@ describe("GitLab access", () => {
     render(<GitLabAccessTab plane="p" />);
     await userEvent.click(await screen.findByRole("checkbox", { name: "steward" }));
     expect(await screen.findByText(/glab = \{ vault = "steward" \}/)).toBeTruthy();
-    await userEvent.type(screen.getByLabelText("GitLab token for git.acme.internal"), "fabricated-not-a-gitlab-token");
+    await userEvent.type(
+      screen.getByLabelText("GitLab token for git.acme.internal"),
+      "fabricated-not-a-gitlab-token",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Set up GitLab access" }));
     expect(await screen.findByText(/Give your Allow for steward/)).toBeTruthy();
     const set = asked.find((one) => one.cmd === "gitlab_access_set");
