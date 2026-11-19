@@ -672,9 +672,9 @@ pub fn count_of(
             u32::try_from(listed.iter().filter(|program| !program.ended).count())
                 .unwrap_or(u32::MAX),
         ),
-        Err(PoolLink::Down { why } | PoolLink::Refused { why } | PoolLink::HostKeyChanged { why }) => {
-            Err(crate::devices::shown_safely(&why))
-        }
+        Err(
+            PoolLink::Down { why } | PoolLink::Refused { why } | PoolLink::HostKeyChanged { why },
+        ) => Err(crate::devices::shown_safely(&why)),
         Err(PoolLink::KeyChanged) => {
             Err("the runner answered with another key than the one pinned for it".to_owned())
         }

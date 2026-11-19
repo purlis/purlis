@@ -625,6 +625,9 @@ fn a_machine_that_answers_and_refuses_is_offered_remove_beside_forget_and_no_oth
             podman: false,
         },
     ] {
-        assert!(!answers(&not_contacted), "{not_contacted:?} is not contacted");
+        assert!(
+            !answers(&not_contacted),
+            "{not_contacted:?} is not contacted"
+        );
     }
 }

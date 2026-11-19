@@ -4450,7 +4450,10 @@ fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
     let heard = reconnects_of(&running, &dimmed);
     heard(Reconnect::Started("it went away".into()));
     heard(Reconnect::Gone);
-    assert!(dimmed.lock().unwrap().chats.is_empty(), "no chat stays dimmed");
+    assert!(
+        dimmed.lock().unwrap().chats.is_empty(),
+        "no chat stays dimmed"
+    );
     assert_eq!(
         told.lock().unwrap().last().cloned(),
         Some((vec![3, 5], crate::reconnecting::Reconnection::RunnerGone))

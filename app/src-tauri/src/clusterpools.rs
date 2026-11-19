@@ -288,7 +288,12 @@ pub fn stage_while_waiting(
     // A cluster pool waits for the cluster to vouch for its runner as long as the person set.
     let cluster_wait = purlis_core::runners::cluster_pools(&config)
         .ok()
-        .and_then(|pools| pools.iter().find(|one| one.name() == pool).map(ClusterPool::vouch_wait));
+        .and_then(|pools| {
+            pools
+                .iter()
+                .find(|one| one.name() == pool)
+                .map(ClusterPool::vouch_wait)
+        });
     if let Some(stage) = waiting_for_link(&pool, down, cluster_wait) {
         return Ok(Some(stage));
     }

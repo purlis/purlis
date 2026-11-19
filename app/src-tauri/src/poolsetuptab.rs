@@ -2322,7 +2322,10 @@ mod tests {
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
-    use super::{NotStarted, links_back_once_trusted, said_as_time, step_of_a_refused_start, waited_for_its_start};
+    use super::{
+        NotStarted, links_back_once_trusted, said_as_time, step_of_a_refused_start,
+        waited_for_its_start,
+    };
     use crate::skillrun::Watched;
     use purlis_core::poolsetup::StepId;
 

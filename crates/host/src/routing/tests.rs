@@ -108,7 +108,11 @@ fn a_desktop_waiting(
     pinned: impl Fn(&Kept) -> Pinned,
     waits: Arc<dyn Fn() + Send + Sync>,
 ) -> (Hosting, Hosting) {
-    a_desktop_over(Hosting::running_with(Echo, StandIns::default()), pinned, waits)
+    a_desktop_over(
+        Hosting::running_with(Echo, StandIns::default()),
+        pinned,
+        waits,
+    )
 }
 
 /// [`a_desktop_waiting`], whose runner is the host `b`.
@@ -1093,7 +1097,10 @@ async fn a_start_given_up_on_is_closed_on_the_runner_if_it_began_after_all() {
     let began = std::time::Instant::now();
     let mut seen = false;
     loop {
-        let held = there.programs_of(PROJECT).await.expect("the runner answers");
+        let held = there
+            .programs_of(PROJECT)
+            .await
+            .expect("the runner answers");
         seen |= !held.is_empty();
         if seen && held.is_empty() {
             break;
@@ -1147,7 +1154,10 @@ async fn a_hold_on_a_link_that_never_comes_up_is_stopped_at_the_starts_limit() {
     .expect_err("a hold on a link that cannot come up is refused");
     assert!(began.elapsed() < PATIENCE, "it ended at the start's limit");
     assert_eq!(code(&refused), Some(session::NOT_STARTED));
-    assert!(refused.to_string().contains("300 milliseconds"), "{refused}");
+    assert!(
+        refused.to_string().contains("300 milliseconds"),
+        "{refused}"
+    );
 }
 
 /// **A hold and its start share one budget** (#7187): the start has what the hold left, and a
@@ -1158,9 +1168,16 @@ async fn a_hold_and_its_start_share_one_budget() {
     let within = Duration::from_millis(400);
     let first = routed.start_budget(within);
     tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(routed.start_budget(within), first, "the start has the hold's");
+    assert_eq!(
+        routed.start_budget(within),
+        first,
+        "the start has the hold's"
+    );
     tokio::time::sleep(Duration::from_millis(400)).await;
-    assert!(routed.start_budget(within) > first, "a spent one is not carried on");
+    assert!(
+        routed.start_budget(within) > first,
+        "a spent one is not carried on"
+    );
 }
 
 /// **A cluster's vouch wait is not cut by the start's limit** (#7187, #4403): the person set how
@@ -1172,7 +1189,10 @@ async fn a_start_waiting_for_the_cluster_to_vouch_is_not_cut_short_by_the_starts
         .starting_within(Duration::from_millis(300));
     let began = std::time::Instant::now();
     let (held, started) = refused_a_hold_and_a_start(host).await;
-    assert!(began.elapsed() > Duration::from_millis(300), "it waited past the limit");
+    assert!(
+        began.elapsed() > Duration::from_millis(300),
+        "it waited past the limit"
+    );
     assert_ne!(held.as_deref(), Some(session::NOT_STARTED), "the hold");
     assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
 }
