@@ -112,9 +112,8 @@ pub fn unrecorded_note(chat: &For<'_>) -> Option<String> {
     };
     Some(format!(
         "{}: {this} made from the window, so this chat's gh gets no Agent identity token for \
-         {them}. Re-clone from the window, or the person can press \"{}\" on {them} in the window.",
+         {them}. Re-clone from the window, or the person can press \"Trust this clone\" on {them} in the window.",
         folders.join(", "),
-        crate::windowonly::TRUST_THIS_CLONE,
     ))
 }
 
@@ -131,8 +130,7 @@ pub fn unrecorded_here_note(chat: &For<'_>) -> Option<String> {
     Some(format!(
         "{folder}: this clone wasn't made from the window, so this chat's gh gets no Agent \
          identity token for it, and a command that failed here may be why. Re-clone from the \
-         window, or the person can press \"{}\" on it there.",
-        crate::windowonly::TRUST_THIS_CLONE,
+         window, or the person can press \"Trust this clone\" on it there.",
     ))
 }
 

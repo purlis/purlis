@@ -256,8 +256,7 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                             "{name}: this clone wasn't made from the window, so no chat's gh gets \
                              an Agent identity token for it, and a chat already running won't \
                              pick one up until it restarts. Re-clone it from the window, or \
-                             press \"{}\" on it there.",
-                            crate::windowonly::TRUST_THIS_CLONE
+                             press \"Trust this clone\" on it there."
                         )
                         .into(),
                     ));
