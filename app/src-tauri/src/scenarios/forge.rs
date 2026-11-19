@@ -580,10 +580,12 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
 /// `hosts.yml` and a `glab` `config.yml` under the home, and a command that gives the client no
 /// config folder of its own. Three things are asserted:
 ///
-/// 1. **The decoys are readable** where purlis does not stand between (the controls): the same
-///    clients, in this process's own environment and home, read them: `glab` sends the
-///    environment's decoy to a fake forge, and `gh auth token` and `glab config get token`
-///    print the files'. So a decoy missing from the chat means purlis kept it away.
+/// 1. **The decoys are readable** where purlis does not stand between (the controls): `glab`,
+///    in this process's own environment and home, sends the environment's decoy to a fake
+///    forge and prints the file's (`glab config get token`); for `gh` the control is only that
+///    the file and the variables are there and readable here (`gh auth token` printed no token
+///    for the planted `hosts.yml`, so its own reading is not shown). So a decoy missing from the
+///    chat means purlis kept it away.
 /// 2. **The chat sees none**: its environment and the login files print no decoy (the sandbox
 ///    denies `hosts.yml` and `config.yml`, `sandbox::CREDENTIAL_FILES`).
 /// 3. **The forge saw the chat's token and no decoy**: a client given no token reaches the
@@ -617,15 +619,19 @@ fn a_chats_gh_and_glab_present_the_chats_token_and_never_the_persons() {
         "control: glab does not read the planted config.yml, so the cell proves nothing: {stored}"
     );
     if with_gh {
-        let stored = run_here(
-            "gh",
-            &["auth", "token", "--hostname", GITHUB_SHAPED_HOST],
-            &own_tokens,
-            &[],
-        );
+        // `gh auth token` printed "no oauth token found" for the planted `hosts.yml` on CI, so
+        // gh's own reading of it is not shown: the control is that the file and the variables
+        // are where the person's are, and readable by this process, which is not the chat's.
+        let hosts = std::fs::read_to_string(homes.user.join(".config/gh/hosts.yml"))
+            .expect("the planted hosts.yml is readable outside the chat");
         assert!(
-            stored.contains(person::GH_FILE),
-            "control: gh does not read the planted hosts.yml, so the cell proves nothing: {stored}"
+            hosts.contains(person::GH_FILE),
+            "control: hosts.yml does not hold the decoy: {hosts}"
+        );
+        assert_eq!(
+            std::env::var("GH_TOKEN").as_deref(),
+            Ok(person::GH_ENV),
+            "control: the host process does not hold the person's GH_TOKEN"
         );
     }
     let outside = FakeForge::start(None).expect("a fake forge of the control's own");
