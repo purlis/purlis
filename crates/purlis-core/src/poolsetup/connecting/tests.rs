@@ -1262,7 +1262,7 @@ fn a_trusted_machine_shows_who_the_person_said_can_sign_in_to_it() {
 // keeps of the machine once its add is over, whichever way it ended.
 mod trust_only_on_full_success {
     use super::super::super::asked::Created;
-    use super::super::super::{Choices, Chosen, declined, read_choices, write_choices};
+    use super::super::super::{Chosen, read_choices};
     use super::super::keep_only_a_made_pool;
     use crate::runners::Refused;
 

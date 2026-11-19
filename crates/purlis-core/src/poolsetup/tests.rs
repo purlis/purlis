@@ -1158,7 +1158,15 @@ mod the_plugin_folder_typed {
     #[test]
     fn a_variable_or_a_shortcut_nobody_expands_is_refused() {
         let home = Path::new("/Users/sam");
-        for typed in ["$HOME", "$HOME/bin", "${HOME}/bin", "$(pwd)/bin", "`pwd`", "~sam/bin", "~"] {
+        for typed in [
+            "$HOME",
+            "$HOME/bin",
+            "${HOME}/bin",
+            "$(pwd)/bin",
+            "`pwd`",
+            "~sam/bin",
+            "~",
+        ] {
             assert!(plugin_folder_typed(typed, Some(home)).is_err(), "{typed}");
         }
     }

@@ -14,7 +14,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Refused, read_choices, runners, write_choices};
+use super::{read_choices, runners, write_choices};
+use crate::runners::Refused;
 
 /// **A pool the add refused, and why**, in the words the person is shown.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

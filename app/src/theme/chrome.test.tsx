@@ -72,6 +72,7 @@ import { SentReports } from "../settings/SentReports";
 import { startAddingAPool } from "../pools";
 import { ReplaceRunner } from "../settings/PoolLimits";
 import { DiscardHeldRunner, RemovePool } from "../settings/pools";
+import { ForgetPoolDialog } from "../poolsetup/ForgetPool";
 import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
@@ -1228,6 +1229,21 @@ const DIALOGS: Opened[] = [
     name: "removing a Docker pool",
     file: "settings/pools.tsx",
     open: async () => render(<RemovePool name="builds" onRemove={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "forgetting a pool in Pool setup, where the machine answers (#7191)",
+    file: "poolsetup/ForgetPool.tsx",
+    open: async () =>
+      render(
+        <ForgetPoolDialog
+          pool="builds"
+          where="lab"
+          canRemove
+          onForget={nothing}
+          onRemove={nothing}
+          onCancel={nothing}
+        />,
+      ),
   },
   {
     name: "discarding a held runner's conversations",

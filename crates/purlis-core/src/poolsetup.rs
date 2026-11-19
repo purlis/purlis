@@ -1304,7 +1304,7 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             pools: facts.cluster.pools.clone().unwrap_or_default(),
             kubeconfig: facts.cluster.kubeconfig.clone(),
         },
-        pool_state: declined::status_of(choices.declined.as_ref(), &place_chosen(&choices)),
+        pool_state: declined::status_of(choices.declined.as_ref(), &place_chosen(choices)),
     }
 }
 
@@ -2603,7 +2603,9 @@ pub fn plugin_folder_typed(typed: &str, home: Option<&Path>) -> Result<PathBuf, 
             "\"{shown}\" goes up through \"..\". Write the folder out in full"
         )));
     }
-    if text.contains('$') || text.contains('`') || (text.starts_with('~') && !text.starts_with("~/"))
+    if text.contains('$')
+        || text.contains('`')
+        || (text.starts_with('~') && !text.starts_with("~/"))
     {
         return Err(Refused::Other(format!(
             "\"{shown}\" uses a variable or shortcut purlis doesn't expand. Write the folder out in full, or start it with ~/"
