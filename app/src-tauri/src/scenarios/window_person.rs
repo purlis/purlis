@@ -58,7 +58,7 @@ struct Clean {
     events: Vec<Event>,
     refusals: Vec<Refusal>,
     asks_left: Vec<String>,
-    asked_for: Vec<(String, String)>,
+    asked_for: Vec<(String, String, u64)>,
     grants_listed: Vec<(String, String, String)>,
     grants_made: Vec<(String, String, String)>,
     budget: Duration,
@@ -218,7 +218,7 @@ fn a_refusal_with_nothing_written_is_reported_as_a_black_hole() {
     asked.events.push(raised(1, "c1"));
     asked
         .asked_for
-        .push(("c1".to_owned(), "urllib.example.test".to_owned()));
+        .push(("c1".to_owned(), "urllib.example.test".to_owned(), 1));
     assert!(asked.judged().is_empty(), "{:?}", asked.judged());
 
     // A hook's deny with nothing written is a black hole too, with no step declared.
@@ -249,7 +249,7 @@ fn an_ask_for_another_target_does_not_answer_a_refusal() {
     elsewhere.events.push(raised(1, "c1"));
     elsewhere
         .asked_for
-        .push(("c1".to_owned(), "other.example.test".to_owned()));
+        .push(("c1".to_owned(), "other.example.test".to_owned(), 1));
     assert_eq!(elsewhere.fired(), vec![Check::NoBlackHole]);
     // And no ask listed at all for it.
     let mut unlisted = planted(Check::NoBlackHole);
@@ -267,10 +267,52 @@ fn an_ask_for_another_target_does_not_answer_a_refusal() {
     twice.events.push(raised(1, "c1"));
     twice
         .asked_for
-        .push(("c1".to_owned(), "urllib.example.test".to_owned()));
+        .push(("c1".to_owned(), "urllib.example.test".to_owned(), 1));
     let found = twice.judged();
     assert_eq!(found.len(), 1, "{found:?}");
     assert!(found[0].what.contains("urllib again"), "{found:?}");
+}
+
+/// **An ask listed before the refusal, or raised after the listing it would answer, heals
+/// nothing** (round 3, item 3): the ask must be written after the refusal and listed, for the
+/// target, at or after it was written.
+#[test]
+fn an_ask_listed_before_the_refusal_does_not_answer_it() {
+    // The refusal is declared after event 3; the target was listed at 2, before.
+    let mut earlier = planted(Check::NoBlackHole);
+    earlier.refusals[0].after = 3;
+    earlier.events.push(raised(4, "c1"));
+    earlier
+        .asked_for
+        .push(("c1".to_owned(), "urllib.example.test".to_owned(), 2));
+    assert_eq!(earlier.fired(), vec![Check::NoBlackHole]);
+    // Seen at the raise's own number or later, it answers.
+    let mut later = planted(Check::NoBlackHole);
+    later.refusals[0].after = 3;
+    later.events.push(raised(4, "c1"));
+    later
+        .asked_for
+        .push(("c1".to_owned(), "urllib.example.test".to_owned(), 4));
+    assert!(later.judged().is_empty(), "{:?}", later.judged());
+}
+
+/// **A bare 403 or "forbidden" is no proof the proxy refused** (round 3, item 2).
+#[test]
+fn a_traceback_that_says_forbidden_is_not_the_proxys_refusal() {
+    let traceback = StepResult {
+        ran: true,
+        exit: Some(1),
+        said: "traceback: file \"x.py\", line 3: http.client 403 forbidden".to_owned(),
+        hook: None,
+    };
+    assert!(checks::urllib_refused_by_the_proxy(&traceback).is_err());
+    let proxy_error = StepResult {
+        ran: true,
+        exit: Some(1),
+        said: "requests.exceptions.proxyerror: cannot connect".to_owned(),
+        hook: None,
+    };
+    assert!(checks::urllib_refused_by_the_proxy(&proxy_error).is_ok());
 }
 
 /// **A `hook_ms` that is not a whole number fails the budget check** (round 2, item 6): a string,

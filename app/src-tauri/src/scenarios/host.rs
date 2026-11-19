@@ -438,6 +438,15 @@ fn own_folder(root: &Path) -> PathBuf {
 /// The one transcript every chat of a scenario appends to.
 const TRANSCRIPT: &str = "transcript.jsonl";
 
+/// The lines of one transcript file that parse; none for a file not yet written.
+fn lines_of(file: &std::path::Path) -> Vec<serde_json::Value> {
+    std::fs::read_to_string(file)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect()
+}
+
 /// What a scenario started, written by its teardown for its parent's check.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct Left {
@@ -695,6 +704,9 @@ pub(crate) struct Scenario {
     window: Option<Window>,
     /// Each chat it started, as the next one's number is counted (the canary's is left out).
     chats: Mutex<Vec<u32>>,
+    /// Each chat's own transcript file, by chat id: a step name is the scenario's, so two chats
+    /// playing the same step name keep their results apart.
+    transcripts: Mutex<Vec<(u32, std::path::PathBuf)>>,
     /// How many chats it has started, the canary's included: a log with no event after one is
     /// read from the wrong place.
     started: std::sync::atomic::AtomicUsize,
@@ -825,6 +837,7 @@ impl Scenario {
             hosting: Some(hosting),
             window: Some(window),
             chats: Mutex::default(),
+            transcripts: Mutex::default(),
             started: std::sync::atomic::AtomicUsize::new(0),
             panes: Mutex::default(),
             launched: Mutex::default(),
@@ -841,14 +854,27 @@ impl Scenario {
         };
         scenario.ledger.begins(&scenario);
         // The canary, in every scenario whose protection is Full, where the project's own wall is
-        // up: a write outside the project and a direct dial are both refused. Protection off has no
-        // wrap, and the floor (basic) is not held to refuse writes outside the project (CI showed
-        // a Claude Code chat's floor lets one through); Claude Code on macOS runs its own sandbox,
-        // which the fake harness does not play (ticket 10, #6900).
-        if protection == Protection::Full
-            && !(dialect == Dialect::Claude && cfg!(target_os = "macos"))
-        {
-            scenario.canary();
+        // up: a write outside the project and a direct dial are both refused. Protection off has
+        // no wrap, and the floor (basic) writes every folder but what it holds
+        // (`docs/plane-format.md`, `[sandbox].mode`: "every folder is written but what the floor
+        // holds"), so a write outside the project is not
+        // refused there and the canary is not asked of it. Claude Code on macOS runs its own
+        // sandbox, which the fake harness does not play (ticket 10, #6900): the canary is not
+        // run there, and the report says so.
+        if protection == Protection::Full {
+            if dialect == Dialect::Claude && cfg!(target_os = "macos") {
+                super::report::write(&[super::a_fixture_record(
+                    "the canary",
+                    None,
+                    None,
+                    purlis_scenarios::model::ReportVerdict::NotRun,
+                    "Claude Code on macOS, at Full: it runs its own sandbox, which the fake harness does not \
+                     play: the canary's refused write and refused connect are not asked (#6900)",
+                )])
+                .expect("the leg's report");
+            } else {
+                scenario.canary();
+            }
         }
         Some(scenario)
     }
@@ -1081,7 +1107,11 @@ impl Scenario {
         let at = self.script(&format!("chat-{number}"), script);
         let own = own_folder(&self.root);
         std::fs::create_dir_all(&own).expect("the chat's own folder");
-        let transcript = own.join(TRANSCRIPT);
+        let transcript = own.join(format!(
+            "{}-{}.jsonl",
+            TRANSCRIPT.trim_end_matches(".jsonl"),
+            self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
+        ));
         let name = format!("chat {number}");
         let mut ready = purlis_core::start::ready(
             &purlis_core::start::Start {
@@ -1171,6 +1201,10 @@ impl Scenario {
             .start_ready(&chat, &ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
+        self.transcripts
+            .lock()
+            .expect("transcripts")
+            .push((id, transcript.clone()));
         self.started
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.applied
@@ -1332,18 +1366,37 @@ impl Scenario {
     /// Every event in the device's event log, which the host writes in the data home, or why it
     /// could not be read: never an empty log made of an error.
     pub(crate) fn try_events(&self) -> Result<Vec<purlis_core::eventlog::Event>, String> {
-        purlis_core::eventlog::read(&self.log).map_err(|why| {
-            format!(
-                "the event log at {} could not be read: {why}",
+        let (events, unparsed) = purlis_core::eventlog::read_counting_unparsed(&self.log, |_| true)
+            .map_err(|why| {
+                format!(
+                    "the event log at {} could not be read: {why}",
+                    self.log.display()
+                )
+            })?;
+        if unparsed > 0 {
+            return Err(format!(
+                "the event log at {} holds {unparsed} line(s) that are no event: a check judged \
+                 on the rest would pass on what it cannot see",
                 self.log.display()
-            )
-        })
+            ));
+        }
+        Ok(events)
     }
 
     /// [`Self::try_events`] where a scenario's own step reads the log: a log that cannot be read
     /// fails the step.
     pub(crate) fn events(&self) -> Vec<purlis_core::eventlog::Event> {
         self.try_events().unwrap_or_else(|why| panic!("{why}"))
+    }
+
+    /// The number of the log's newest event, 0 for an empty log or one that cannot be read.
+    pub(crate) fn latest_seq(&self) -> u64 {
+        let mut newest = 0;
+        let _ = purlis_core::eventlog::read_back(&self.log, |event| {
+            newest = event.seq;
+            std::ops::ControlFlow::Break(())
+        });
+        newest
     }
 
     /// How many chats the scenario has started, the canary's included.
@@ -1377,19 +1430,30 @@ impl Scenario {
         held.chats().sessions().input(id, b"\r").expect("Enter");
     }
 
-    /// The scenario's transcript so far, every chat's, one value a line. A step's name is the
-    /// scenario's own, so a step says which chat played it.
+    /// The scenario's transcript so far, every chat's in the order they started, one value a
+    /// line.
     pub(crate) fn transcript(&self) -> Vec<serde_json::Value> {
-        std::fs::read_to_string(own_folder(&self.root).join(TRANSCRIPT))
-            .unwrap_or_default()
-            .lines()
-            .filter_map(|line| serde_json::from_str(line).ok())
-            .collect()
+        let files: Vec<std::path::PathBuf> = self
+            .transcripts
+            .lock()
+            .expect("transcripts")
+            .iter()
+            .map(|(_, file)| file.clone())
+            .collect();
+        files.iter().flat_map(|file| lines_of(file)).collect()
     }
 
-    /// The tool result chat `id` was handed for `step`, once it was.
-    pub(crate) fn result_of(&self, _id: u32, step: &str) -> Option<serde_json::Value> {
-        self.transcript()
+    /// The tool result chat `id` was handed for `step`, once it was: read from that chat's own
+    /// transcript, so another chat's step of the same name is never taken for it.
+    pub(crate) fn result_of(&self, id: u32, step: &str) -> Option<serde_json::Value> {
+        let file = self
+            .transcripts
+            .lock()
+            .expect("transcripts")
+            .iter()
+            .find(|(chat, _)| *chat == id)
+            .map(|(_, file)| file.clone())?;
+        lines_of(&file)
             .into_iter()
             .find(|line| line["kind"] == "tool_result" && line["step"] == step)
     }

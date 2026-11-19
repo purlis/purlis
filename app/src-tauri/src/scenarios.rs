@@ -996,6 +996,11 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
         held_on(&scenario, one, host).is_some()
     });
     let shown = held_on(&scenario, one, host).expect("held");
+    // Every ask is put through the same checks `when_listed` makes: safe to read, and the target
+    // that is decided shown whole.
+    if let Err(why) = checks::shows_the_decided_target(&shown, host) {
+        scenario.fails_at("the first chat's ask", host, &why);
+    }
     scenario
         .person()
         .allow_block(one, shown, crate::sandboxing::GrantLevel::Chat)
@@ -1010,6 +1015,10 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
     until(&scenario, "the other chat is held on the host", || {
         held_on(&scenario, other, host).is_some()
     });
+    let held_other = held_on(&scenario, other, host).expect("held");
+    if let Err(why) = checks::shows_the_decided_target(&held_other, host) {
+        scenario.fails_at("the other chat's ask", host, &why);
+    }
     scenario.until_played(other, &["reaches-other"]);
     assert!(
         took_of(&scenario, other, "reaches-other") >= scenario.timings.hold(),
@@ -1022,8 +1031,17 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
         carried,
         "the other chat's proxy looked the host up: the first chat's grant reached it"
     );
-    // The other chat's ask is still listed, as a timed-out ask is: the person keeps it blocked.
-    scenario.keeps_listed_asks_blocked();
+    // Nothing sweeps the first chat's asks: if its allowed block is still listed, the check
+    // NoUnansweredAsk reads it at the end (#7232).
+    // The other chat's ask is still listed, as a timed-out ask is: the person keeps it blocked,
+    // that chat's own ask and no other.
+    let (_, kept) = scenario.person().when_listed(
+        other,
+        host,
+        &person::Press::Keep(None),
+        Duration::from_millis(50),
+    );
+    kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
 }
 
 /// **Where a chat's command runs**, as it says itself: its folder, whether it is held by

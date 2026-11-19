@@ -96,8 +96,10 @@ pub(crate) struct Observed<'a> {
     /// The asks the window lists at the end: "chat N `key` says".
     pub asks_left: &'a [String],
     /// Every ask the window was seen to list: (chat by the event log's id, the target it asked
-    /// about). A raised ask carries no target in the log, so this is what ties one to a refusal.
-    pub asked_for: &'a [(String, String)],
+    /// about, the log's latest event number when it was seen listed). A raised ask carries no
+    /// target in the log, so this is what ties one to a refusal: an ask answers a refusal only
+    /// if it was written after it and was listed, for that target, at or after being written.
+    pub asked_for: &'a [(String, String, u64)],
     /// What Settings lists beyond what it listed before the scenario began: (kind, target, level).
     pub grants_listed: &'a [(String, String, String)],
     /// What the person granted in the scenario and has not revoked: (kind, target, level).
@@ -165,10 +167,11 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                 && event.chat.as_deref() == Some(refusal.chat.as_str())
                 && match (&refusal.target, event.kind.as_str()) {
                     (None, _) => true,
-                    (Some(wanted), stops::ASK_RAISED) => observed
-                        .asked_for
-                        .iter()
-                        .any(|(chat, target)| chat == &refusal.chat && target == wanted),
+                    (Some(wanted), stops::ASK_RAISED) => {
+                        observed.asked_for.iter().any(|(chat, target, seen)| {
+                            chat == &refusal.chat && target == wanted && *seen >= event.seq
+                        })
+                    }
                     (Some(wanted), _) => target_in(&event.body).is_some_and(|one| &one == wanted),
                 }
         });
@@ -413,8 +416,9 @@ pub(crate) struct Ledger {
     marks: Mutex<Vec<Mark>>,
     /// What Settings listed when the scenario began: the project's own declarations.
     baseline: Mutex<Vec<(String, String)>>,
-    /// Every ask the window was seen to list: (chat, the target it asks about).
-    listed: Mutex<BTreeSet<(u32, String)>>,
+    /// Every ask the window was seen to list: (chat, the target it asks about, the log's latest
+    /// event number when it was seen).
+    listed: Mutex<BTreeSet<(u32, String, u64)>>,
     /// Every ask the window drew a target of that a person could be misled by.
     drawn_wrong: Mutex<BTreeSet<String>>,
     /// Every block a chat was seen held on (chat, target), as Notices raise them, kept after the
@@ -425,12 +429,12 @@ pub(crate) struct Ledger {
 impl Ledger {
     /// The window listed chat `session`'s ask about `target`, and drew it as `fault` says, if it
     /// drew it wrong.
-    pub(crate) fn listed(&self, session: u32, target: &str, fault: Option<String>) {
+    pub(crate) fn listed(&self, session: u32, target: &str, seen_at: u64, fault: Option<String>) {
         if !target.is_empty() {
             self.listed
                 .lock()
                 .expect("listed")
-                .insert((session, target.to_owned()));
+                .insert((session, target.to_owned(), seen_at));
         }
         if let Some(fault) = fault {
             self.drawn_wrong.lock().expect("drawn wrong").insert(fault);
@@ -639,13 +643,15 @@ pub(crate) fn at_the_end(scenario: &Scenario) -> Result<Outcome, String> {
             drawn_wrong.join("\n  ")
         ));
     }
-    let asked_for: Vec<(String, String)> = scenario
+    let asked_for: Vec<(String, String, u64)> = scenario
         .ledger
         .listed
         .lock()
         .expect("listed")
         .iter()
-        .filter_map(|(session, target)| Some((queries.chat_id(*session)?, target.clone())))
+        .filter_map(|(session, target, seen)| {
+            Some((queries.chat_id(*session)?, target.clone(), *seen))
+        })
         .collect();
     let found = judge(&Observed {
         events: &events,
@@ -917,7 +923,9 @@ impl Scenario {
 }
 
 /// **The urllib step of #6675 was refused by the proxy**: Python ran, its request failed, and what
-/// it says is the proxy's refusal (a tunnel that failed, a 403). A `python3` that is not
+/// it says is the proxy's refusal: Python's `Tunnel connection failed: 403 Forbidden` (the proxy
+/// answered the CONNECT with a 403) or a `ProxyError`. A bare "403" or "forbidden" is no proof: a
+/// traceback line can say either. A `python3` that is not
 /// installed (127), a step a hook denied or one that never ran is no refusal, and so no black
 /// hole: the pinned scenario fails on it, and so cannot pass for the wrong reason. `Err` says what
 /// the step came to.
@@ -925,7 +933,7 @@ pub(crate) fn urllib_refused_by_the_proxy(result: &StepResult) -> Result<(), Str
     let refused = result.ran
         && result.exit.is_some_and(|code| code != 0 && code != 127)
         && result.hook.is_none()
-        && ["tunnel connection failed", "proxyerror", "403", "forbidden"]
+        && ["tunnel connection failed", "proxyerror"]
             .iter()
             .any(|words| result.said.contains(words))
         && !result.said.contains("no such file")

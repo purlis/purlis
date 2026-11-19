@@ -386,6 +386,11 @@ impl Person<'_> {
         shown: BlockShown,
         level: GrantLevel,
     ) -> Result<String, String> {
+        // An ask that is not read through `when_listed` is still held to showing safely.
+        if let Err(why) = super::checks::shows_safely(&shown) {
+            self.scenario
+                .fails_at("the ask's target", &shown.target, &why);
+        }
         let asked = shown.clone();
         let allowed = tauri::async_runtime::block_on(through!(
             self,

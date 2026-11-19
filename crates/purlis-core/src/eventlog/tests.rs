@@ -421,6 +421,35 @@ fn a_line_torn_by_a_crash_is_cut_off_and_the_next_event_is_whole() {
 }
 
 #[test]
+fn a_whole_line_that_is_no_event_is_counted_and_a_write_in_progress_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    {
+        let mut log = Log::open(dir.path(), DEVICE).unwrap();
+        log.append(
+            Some("CHAT"),
+            None,
+            None,
+            "chat.opened",
+            serde_json::json!({}),
+        )
+        .unwrap();
+    }
+    let mut file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(dir.path().join(FILE))
+        .unwrap();
+    // A write in progress: no newline after it yet.
+    std::io::Write::write_all(&mut file, br#"{"v":1,"seq":2,"ul"#).unwrap();
+    let (events, unparsed) = read_counting_unparsed(dir.path(), |_| true).unwrap();
+    assert_eq!((events.len(), unparsed), (1, 0));
+    // The same piece with its newline is a line that is no event.
+    std::io::Write::write_all(&mut file, b"\n").unwrap();
+    drop(file);
+    let (events, unparsed) = read_counting_unparsed(dir.path(), |_| true).unwrap();
+    assert_eq!((events.len(), unparsed), (1, 1));
+}
+
+#[test]
 fn a_log_with_lines_but_no_number_in_them_is_refused_rather_than_counted_from_one_again() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join(FILE), "not an event\nnor this\n").unwrap();

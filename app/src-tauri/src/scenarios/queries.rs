@@ -159,6 +159,7 @@ impl Queries<'_> {
         let counted = crate::asking::counted(&held);
         // Every ask the window lists is held to the shape of what it shows, and remembered for
         // the target it asks about (what ties a raised ask to a refusal).
+        let seen_at = self.scenario.latest_seq();
         for ask in &counted.asks {
             let (target, fault) = match &ask.answer {
                 crate::asking::AnswerPath::SandboxBlock { shown } => (
@@ -169,7 +170,9 @@ impl Queries<'_> {
                 ),
                 _ => (String::new(), None),
             };
-            self.scenario.ledger.listed(ask.session, &target, fault);
+            self.scenario
+                .ledger
+                .listed(ask.session, &target, seen_at, fault);
         }
         self.note_standing();
         self.scenario

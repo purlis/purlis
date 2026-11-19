@@ -866,22 +866,42 @@ pub fn read(dir: &Path) -> io::Result<Vec<Event>> {
 /// pass a line that is not what it wants (the reader checks each event it gets), never refuse
 /// one that is.
 pub fn read_where(dir: &Path, keep: impl Fn(&[u8]) -> bool) -> io::Result<Vec<Event>> {
+    read_counting_unparsed(dir, keep).map(|(events, _)| events)
+}
+
+/// [`read_where`], and how many whole lines it could not parse: a line that is not an event but
+/// ends in a newline, which a write cut short never does. An unterminated last line is a write in
+/// progress and is not counted. For a reader that must not judge a log it only half read (a
+/// scenario's checks).
+pub fn read_counting_unparsed(
+    dir: &Path,
+    keep: impl Fn(&[u8]) -> bool,
+) -> io::Result<(Vec<Event>, usize)> {
     let mut paths: Vec<PathBuf> = segments(dir)?.into_iter().map(|(_, path)| path).collect();
     paths.push(dir.join(FILE));
     let mut events = Vec::new();
+    let mut unparsed = 0;
     for path in paths {
         let text = match std::fs::read(&path) {
             Ok(text) => text,
             Err(why) if why.kind() == io::ErrorKind::NotFound => continue,
             Err(why) => return Err(why),
         };
-        events.extend(
-            text.split(|byte| *byte == b'\n')
-                .filter(|line| keep(line))
-                .filter_map(|line| serde_json::from_slice::<Event>(line).ok()),
-        );
+        let mut lines = text.split(|byte| *byte == b'\n').peekable();
+        while let Some(line) = lines.next() {
+            if !keep(line) {
+                continue;
+            }
+            match serde_json::from_slice::<Event>(line) {
+                Ok(event) => events.push(event),
+                // The last piece has no newline after it: empty, or a write in progress.
+                Err(_) if lines.peek().is_none() => {}
+                Err(_) if line.iter().all(u8::is_ascii_whitespace) => {}
+                Err(_) => unparsed += 1,
+            }
+        }
     }
-    Ok(events)
+    Ok((events, unparsed))
 }
 
 /// **The events in the log in `dir`, newest first, until `take` has enough**: what a read of the
