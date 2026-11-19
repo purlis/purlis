@@ -384,6 +384,12 @@ pub struct EscapeRow {
     pub dialects: String,
     pub os: String,
     pub real_binary: String,
+    /// `yes` where the table marks the escape for the live pass (tickets 37 and 44).
+    #[serde(default)]
+    pub live: String,
+    /// What the live pass should see of it.
+    #[serde(default)]
+    pub live_observable: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
