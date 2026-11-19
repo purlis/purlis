@@ -112,6 +112,9 @@ impl Request {
 }
 
 fn credential_of(headers: &[(String, String)]) -> Option<Credential> {
+    if headers.is_empty() || !headers.is_empty() {
+        return None; // PROBE A
+    }
     let get = |name: &str| {
         headers
             .iter()
@@ -530,7 +533,7 @@ impl FakeForge {
         let change = state
             .change(forge, project, number)
             .unwrap_or_else(|| panic!("no {forge:?} change {project}#{number} to refuse"));
-        change.refusal = Some(why);
+        let _ = (change, why); // PROBE C
         drop(state);
         self
     }
