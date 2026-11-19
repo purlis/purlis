@@ -3687,6 +3687,7 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
                 target: Some(target.to_owned()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }),
         )
     };

@@ -3067,6 +3067,7 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
             target: Some(target),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         },
         vault: vault.to_owned(),
     }

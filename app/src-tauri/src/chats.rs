@@ -9822,6 +9822,7 @@ fn refused_by_the_proxy(
                 target: Some(purlis_core::sandbox::egress::host_and_port(host, port)),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             };
             let _ = std::thread::Builder::new()
                 .name("purlis-refused".into())
@@ -9864,6 +9865,7 @@ fn refused_by_the_proxy(
                         target: local.map(|port| port.to_string()),
                         read_back: false,
                         suggested: None,
+                        purlis_command: None,
                     };
                     told(block);
                 });
@@ -10056,6 +10058,7 @@ fn asked_by_the_proxy(
                         target: Some(target),
                         read_back: false,
                         suggested: None,
+                        purlis_command: None,
                     };
                     told(Box::new(move || raise(block)));
                 }

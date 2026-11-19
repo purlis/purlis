@@ -43,6 +43,7 @@ fn of_sandbox_block(
         &Known::default(),
         Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
             block: *block,
+            command: None,
             ran_as: RanAs {
                 harness,
                 harness_version: harness_version.map(str::to_string),
@@ -569,5 +570,50 @@ fn the_samples_are_what_the_envelope_builders_make_of_a_sample_panic_and_draft()
     assert!(
         text.contains("a persona from a purlis template"),
         "its footer says what the chat ran under: {text}"
+    );
+}
+
+#[test]
+fn a_report_of_purlis_s_own_block_names_the_purlis_command_and_never_a_path() {
+    let block = crate::sandboxblock::Block {
+        operation: crate::sandboxblock::Operation::Write,
+        kind: crate::sandboxblock::Kind::ProjectState,
+        ours: true,
+    };
+    let said = |command: Option<&str>| {
+        take(
+            &Known::default(),
+            Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
+                block,
+                command: command.map(str::to_owned),
+                ran_as: RanAs::default(),
+            }),
+        )
+        .unwrap()
+    };
+    let draft = said(Some("purlis worktree commit"));
+    assert_eq!(
+        draft.title,
+        "Sandbox blocked write (project-state) by purlis worktree commit"
+    );
+    assert!(
+        draft
+            .body
+            .contains("- **purlis command:** `purlis worktree commit`"),
+        "{}",
+        draft.body
+    );
+    // Words the closed list does not hold are never carried, whoever sent them.
+    let draft = said(Some("rm -rf /Users/someone/secret"));
+    assert_eq!(
+        draft.title,
+        "Sandbox blocked purlis's own write (project-state)"
+    );
+    assert!(!draft.body.contains("someone"), "{}", draft.body);
+    assert!(draft.body.contains("- **purlis command:** not known"));
+    // Another command is another report, not a repeat of the first.
+    assert_ne!(
+        said(Some("purlis doctor")).digest(),
+        said(Some("purlis worktree commit")).digest()
     );
 }

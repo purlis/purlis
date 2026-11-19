@@ -3109,6 +3109,7 @@ fn a_host_the_runs_sandbox_refused_raises_the_asking_chats_block_naming_it_whole
                 target: Some(host.to_owned()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             },
             // #1353: the vault the run was given, by its name, so the Notice can say it.
             vault: "team".to_owned(),

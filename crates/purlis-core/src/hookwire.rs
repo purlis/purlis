@@ -3538,6 +3538,13 @@ pub struct SandboxBlocked {
     /// person to check, and judged again as a grant before anything is allowed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested: Option<String>,
+    /// **The `purlis` command the block was met by** (#7178), in fixed words only
+    /// ([`crate::sandboxblock::command::in_line`]): what a Report of purlis's own block names, so
+    /// the operation can be located where the block names no path. The app checks it again
+    /// ([`crate::sandboxblock::command::known`]); a chat can send any, which buys nothing but
+    /// those words in a draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purlis_command: Option<String>,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -3901,6 +3908,18 @@ pub fn deliver_armed<L: SpoolLine>(
         Some(kept) => with_delivery(&kept, delivery.as_ref())?,
         None => delivered,
     };
+    // A hook inside the chat's sandbox (Codex, opencode, a chat purlis wraps whole) has the spool
+    // denied: trying it would only make the sandbox refuse purlis's own write, and read, of the
+    // project's state (#7178). The line is lost, as the spool's own words say it is.
+    if crate::sandbox::writes_are_sandboxed() {
+        return Err(not_spooled(
+            &why,
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "this hook runs inside the chat's sandbox, which denies the spool",
+            ),
+        ));
+    }
     spool::append(&spool::dir_for(path), line.chat(), token, &kept)
         .map(Delivered::Spooled)
         .map_err(|spooled| not_spooled(&why, spooled))
