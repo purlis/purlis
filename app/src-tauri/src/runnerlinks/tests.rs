@@ -1008,3 +1008,63 @@ fn a_forward_that_finds_another_host_key_is_told_as_its_own_state() {
     let said = with_a_way_on("first", down).why;
     assert!(said.contains("trust it again"), "{said}");
 }
+
+/// **A machine whose `sshd` is up before its `dockerd` recovers without a click** (#7187, steward
+/// decision 2026-11-19): after a reboot the forward opens, but Docker does not answer yet. That
+/// is Unreachable, so the kept link is told down without stopping, tries again on its own pause
+/// and, the second time Docker answers, gets past the check to the connection: nobody pressed
+/// Try now.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_machine_with_sshd_up_and_dockerd_late_is_linked_again_without_a_click() {
+    use purlis_core::sshroute::connect::Finding;
+    use purlis_session_protocol::hostlink::{
+        self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let checks = Arc::new(AtomicUsize::new(0));
+    let connector = purlis_host::CommandConnector::checked("/bin/cat", Vec::new(), {
+        let checks = Arc::clone(&checks);
+        Arc::new(move || {
+            // The first try finds `dockerd` still starting; every later one finds it up.
+            if checks.fetch_add(1, Ordering::SeqCst) == 0 {
+                let finding = Finding::EngineSilent {
+                    host: "build-box".to_owned(),
+                    said: "Cannot connect to the Docker daemon".to_owned(),
+                };
+                return Err(not_checked_in(
+                    purlis_core::poolsetup::connect_said(&finding),
+                    finding.remote_state(),
+                ));
+            }
+            Ok(())
+        })
+    });
+    let mut links = hostlink::keep_linked(
+        connector,
+        Handshake::THIS_BUILD,
+        Identity {
+            device: "01JA0DESKT0P00000000000000".into(),
+            key: LinkKey::generate().unwrap(),
+        },
+        Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key: LinkKey::generate().unwrap().public(),
+        },
+        Liveness::default(),
+    );
+    match links.next().await {
+        Some(Linked::Down(down)) => {
+            assert!(!down.stops_retrying(), "{down:?}");
+            assert!(down.why.contains("isn't answering yet"), "{down:?}");
+        }
+        _ => panic!("the link came up with Docker down"),
+    }
+    // The second Down is the second try's: it got past the check, with nobody asking.
+    let second = tokio::time::timeout(Duration::from_secs(10), links.next())
+        .await
+        .expect("a second try was made on its own");
+    assert!(matches!(second, Some(Linked::Down(_))), "cat is no host");
+    assert!(checks.load(Ordering::SeqCst) >= 2);
+}

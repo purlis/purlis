@@ -126,24 +126,23 @@ pub enum Finding {
     Here(String),
 }
 
-/// **The five states a pool on another machine, or a runner on it, is in when it is not
-/// reachable** (#7187, CONTEXT.md): what the person is told, and whether purlis tries again.
+/// **The states a pool on another machine, or a runner on it, is in when it is not reachable**
+/// (#7187, CONTEXT.md): what the person is told, and whether purlis tries again. Runner gone and
+/// Pool forgotten are the other two of CONTEXT.md's five: they end the chats rather than leave a
+/// link down, so no finding puts a pool in them; the chat-end paths say them
+/// (`Reconnection::RunnerGone`, `Reconnection::PoolForgotten`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoteState {
-    /// **Unreachable**: nothing answers, or not yet. purlis retries on its own, and the person
-    /// can press Try now.
+    /// **Unreachable**: nothing answers, or not yet (a Docker engine still starting on a
+    /// machine whose `sshd` is up included). purlis retries on its own, and the person can press
+    /// Try now.
     Unreachable,
-    /// **Refused**: the machine answers, but sign-in, Docker or forwarding fails. purlis stops
-    /// retrying, shows the reason, and offers Check pool.
+    /// **Refused**: the machine answers, but sign-in, Docker or forwarding fails, or its disk is
+    /// full. purlis stops retrying, shows the reason, and offers Check pool.
     Refused,
     /// **Host key changed**: the machine presents a key, or an engine, other than the one
     /// pinned. A security stop: never retried, and the person's OK in pool settings ends it.
     HostKeyChanged,
-    /// **Runner gone**: the runner's container is no longer there. Its chats end, and the
-    /// person may start again on the pool.
-    RunnerGone,
-    /// **Pool forgotten**: the person forgot the pool here. Its chats end, and say so.
-    PoolForgotten,
 }
 
 impl RemoteState {
@@ -151,12 +150,6 @@ impl RemoteState {
     #[must_use]
     pub fn retries(self) -> bool {
         self == RemoteState::Unreachable
-    }
-
-    /// Whether the chats on it end.
-    #[must_use]
-    pub fn ends_the_chats(self) -> bool {
-        matches!(self, RemoteState::RunnerGone | RemoteState::PoolForgotten)
     }
 }
 
@@ -174,6 +167,7 @@ impl Finding {
             | Finding::NotMet { .. }
             | Finding::NotMetThrough { .. }
             | Finding::ImageUnreachable { .. }
+            | Finding::EngineSilent { .. }
             | Finding::Here(_) => RemoteState::Unreachable,
             Finding::KeyChanged { .. }
             | Finding::EngineChanged { .. }
@@ -181,7 +175,6 @@ impl Finding {
             Finding::SignInRefused { .. }
             | Finding::NoEngine { .. }
             | Finding::NotAllowed { .. }
-            | Finding::EngineSilent { .. }
             | Finding::ForwardingRefused { .. }
             | Finding::NeedsPodman { .. }
             | Finding::TlsFile { .. }
@@ -221,15 +214,29 @@ mod remote_state_tests {
     fn a_machine_that_answers_and_refuses_is_refused_and_is_not_retried() {
         for finding in [
             Finding::SignInRefused { host: host() },
-            Finding::EngineSilent {
-                host: host(),
-                said: "no".to_owned(),
-            },
             Finding::ForwardingRefused { host: host() },
+            Finding::DiskFull {
+                host: host(),
+                free: Some(1_000_000),
+            },
         ] {
             assert_eq!(finding.remote_state(), RemoteState::Refused, "{finding:?}");
             assert!(!finding.remote_state().retries());
         }
+    }
+
+    /// **A Docker engine that does not answer yet is Unreachable, not Refused** (#7187,
+    /// steward decision 2026-11-19): `dockerd` still starting after a reboot while `sshd` is up
+    /// is what waiting mends, so purlis keeps retrying with backoff and the machine recovers
+    /// unattended.
+    #[test]
+    fn a_docker_engine_that_does_not_answer_yet_is_unreachable_and_is_retried() {
+        let finding = Finding::EngineSilent {
+            host: host(),
+            said: "Cannot connect to the Docker daemon".to_owned(),
+        };
+        assert_eq!(finding.remote_state(), RemoteState::Unreachable);
+        assert!(finding.remote_state().retries());
     }
 
     #[test]
@@ -242,15 +249,6 @@ mod remote_state_tests {
         };
         assert_eq!(engine.remote_state(), RemoteState::HostKeyChanged);
         assert!(!engine.remote_state().retries());
-    }
-
-    #[test]
-    fn only_a_runner_gone_or_a_pool_forgotten_ends_its_chats() {
-        assert!(RemoteState::RunnerGone.ends_the_chats());
-        assert!(RemoteState::PoolForgotten.ends_the_chats());
-        assert!(!RemoteState::Refused.ends_the_chats());
-        assert!(!RemoteState::Unreachable.ends_the_chats());
-        assert!(!RemoteState::HostKeyChanged.ends_the_chats());
     }
 }
 

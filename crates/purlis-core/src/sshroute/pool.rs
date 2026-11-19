@@ -533,8 +533,10 @@ pub fn docker_of_named_in_state(
     docker: &Docker,
     name: &str,
 ) -> Result<Docker, (String, connect::RemoteState)> {
+    // A runners file that cannot be read is Refused with its reason, not Unreachable: no machine
+    // is silent, and waiting does not mend a file that is not as purlis writes it (#7187).
     let pools = crate::runners::pools(config)
-        .map_err(|why| (why.to_string(), connect::RemoteState::Unreachable))?;
+        .map_err(|why| (why.to_string(), connect::RemoteState::Refused))?;
     match pools.iter().find(|pool| pool.name() == name) {
         Some(pool) => docker_of(docker, pool).map_err(|finding| {
             (
@@ -675,6 +677,23 @@ mod tests {
             host: "box".to_owned(),
             said: "no".to_owned(),
         }
+    }
+
+    /// **A config that cannot be read is Refused with its reason, not Unreachable** (#7187,
+    /// steward decision 2026-11-19): waiting does not mend a runners file that is not as purlis
+    /// writes it, so the link stops, says why and offers Check pool.
+    #[test]
+    fn a_config_that_cannot_be_read_is_refused_with_its_reason() {
+        let config = tempfile::tempdir().unwrap();
+        let folder = crate::machine::dir(config.path());
+        std::fs::create_dir_all(&folder).unwrap();
+        // A file others may read is refused as unsafe, whatever it holds.
+        std::fs::write(folder.join(crate::machine::RUNNERS_FILE), "{}").unwrap();
+        let local = Docker::at("/usr/local/bin/docker");
+        let (said, state) =
+            docker_of_named_in_state(config.path(), &local, "box").expect_err("unreadable");
+        assert_eq!(state, connect::RemoteState::Refused, "{said}");
+        assert!(said.contains("could not be read safely"), "{said}");
     }
 
     #[test]

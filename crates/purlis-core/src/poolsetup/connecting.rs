@@ -764,8 +764,8 @@ fn said_with_next(finding: &Finding) -> (String, Option<Action>) {
         ),
         Finding::EngineSilent { host, said } => (
             format!(
-                "Docker on {host} didn't answer through SSH{}. Check that Docker is running \
-                 there, then check again.",
+                "Docker on {host} isn't answering yet{}. purlis keeps trying; if Docker isn't \
+                 running there, start it, then check again.",
                 shown(said)
             ),
             check_again(),

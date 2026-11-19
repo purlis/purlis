@@ -12036,21 +12036,22 @@ export type LinkSeen = {
 };
 
 /**
- *  **Which of the five remote states a pool's runner is in** (#7187, CONTEXT.md), as the window
- *  says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState), read where
- *  the link tells it.
+ *  **Which remote state a pool's runner is in while its link is down** (#7187, CONTEXT.md), as
+ *  the window says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState),
+ *  read where the link tells it. A runner gone and a pool forgotten are not here: a link that
+ *  says them is not down but ended, and they are told as [`Reconnection::RunnerGone`] and
+ *  [`Reconnection::PoolForgotten`], with no [`LinkDown`] kept.
  */
 export type LinkState = 
-/**  Nothing answers, or not yet: purlis tries again, and the person may press Try now. */
+/**
+ *  Nothing answers, or not yet (Docker still starting on a machine whose `sshd` is up
+ *  included): purlis tries again, and the person may press Try now.
+ */
 "unreachable" | 
 /**  The machine answers and refuses: purlis stopped trying; Check pool. */
 "refused" | 
 /**  The machine presents another key or engine than the pinned one. */
-"host_key_changed" | 
-/**  The runner's container is gone. */
-"runner_gone" | 
-/**  The pool was forgotten here. */
-"pool_forgotten";
+"host_key_changed";
 
 /**  One repo the person can get. */
 export type ListedRepo = {

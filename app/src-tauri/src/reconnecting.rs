@@ -49,23 +49,22 @@ pub enum Reconnection {
     PoolForgotten,
 }
 
-/// **Which of the five remote states a pool's runner is in** (#7187, CONTEXT.md), as the window
-/// says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState), read where
-/// the link tells it.
+/// **Which remote state a pool's runner is in while its link is down** (#7187, CONTEXT.md), as
+/// the window says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState),
+/// read where the link tells it. A runner gone and a pool forgotten are not here: a link that
+/// says them is not down but ended, and they are told as [`Reconnection::RunnerGone`] and
+/// [`Reconnection::PoolForgotten`], with no [`LinkDown`] kept.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum LinkState {
-    /// Nothing answers, or not yet: purlis tries again, and the person may press Try now.
+    /// Nothing answers, or not yet (Docker still starting on a machine whose `sshd` is up
+    /// included): purlis tries again, and the person may press Try now.
     #[default]
     Unreachable,
     /// The machine answers and refuses: purlis stopped trying; Check pool.
     Refused,
     /// The machine presents another key or engine than the pinned one.
     HostKeyChanged,
-    /// The runner's container is gone.
-    RunnerGone,
-    /// The pool was forgotten here.
-    PoolForgotten,
 }
 
 impl From<purlis_core::sshroute::connect::RemoteState> for LinkState {
@@ -75,8 +74,6 @@ impl From<purlis_core::sshroute::connect::RemoteState> for LinkState {
             RemoteState::Unreachable => LinkState::Unreachable,
             RemoteState::Refused => LinkState::Refused,
             RemoteState::HostKeyChanged => LinkState::HostKeyChanged,
-            RemoteState::RunnerGone => LinkState::RunnerGone,
-            RemoteState::PoolForgotten => LinkState::PoolForgotten,
         }
     }
 }

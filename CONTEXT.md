@@ -565,14 +565,18 @@ were pinned)
 
 **Unreachable** (a pool or runner):
 The first of the five states a pool on another machine is in when purlis cannot use it: nothing
-answers, or not yet. purlis retries on its own, 5 to 120 seconds apart for the forward and at
-most 30 seconds apart for the link, and **Try now** forgets what was remembered of the failure
+answers, or not yet: a Docker engine that does not answer yet (`dockerd` still starting after a
+reboot, while `sshd` is up) is this, and the notice says "Docker on <host> isn't answering yet", so
+a machine whose `sshd` comes up before its `dockerd` recovers unattended. purlis retries on its
+own, 5 to 120 seconds apart for the forward and at most 30 seconds apart for the link, and **Try now** forgets what was remembered of the failure
 and tries at once. A start waits up to 30 seconds with "Waiting for <pool>", then ends with the
 reason, offering Try now and Check pool. A part of **Pool** (ADR 0078, #7187).
 _Avoid_: offline, down (that is the link's own word for an outage, whatever its state), timed out
 
 **Refused** (a pool or runner):
-The machine answers, but sign-in, Docker or forwarding fails. purlis stops retrying, shows the
+The machine answers, but sign-in, forwarding or Docker's permissions fail, or its disk is full (a
+Docker that is merely silent is **Unreachable**); so does a runners file that cannot be read, with
+its reason shown. purlis stops retrying, shows the
 reason and offers Check pool, with no Try now; nothing but the person's next start, once they have
 fixed it, tries again, and a start refused so does not wait. Said only of a machine that answered:
 one that did not is **Unreachable**. A part of **Pool** (#7187).

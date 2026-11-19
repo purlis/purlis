@@ -612,6 +612,11 @@ fn a_machine_that_answers_and_refuses_is_offered_remove_beside_forget_and_no_oth
             host: host(),
             port: 22,
         },
+        // Docker that does not answer yet is Unreachable, and Remove has nothing to reach.
+        Finding::EngineSilent {
+            host: host(),
+            said: "no".into(),
+        },
         Finding::NoSuchName { host: host() },
         Finding::EngineChanged {
             host: host(),
