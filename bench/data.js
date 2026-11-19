@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795089633196,
+  "lastUpdate": 1795096958182,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51618,6 +51618,48 @@ window.BENCHMARK_DATA = {
             "value": 101.548254,
             "unit": "ms",
             "extra": "median of 5 runs: 100.333, 101.348, 101.548, 102.120, 103.244 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "0064b037c0ec30a236eaaf66f3306cc5caf79938",
+          "message": "One runner per desktop on a shared engine: device-tagged names, old runners adopted, other desktops' runners listed and never touched (#7192) (#7239)\n\n* One runner per desktop per pool on a Docker engine: names carry a device tag, old runners are adopted at their next link (#7192)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RJBQKSY4CXY2Z63J6EB0JQ\nPurlis-Persona: steward\n\n* Pool status says how many runners belong to another desktop; a tagged name is never read as a successor's (#7192)\n\nPool version (Settings > Pools) and Pool setup's Pool step say \"N runners belong to another desktop\", read only. Whose a runner is is told by Docker's desktop label, never by the shape of its name, and a home volume a container still mounts is never removed as a leftover.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RQ5W5DZJA3KD21GKPNT838\nPurlis-Persona: steward\n\n* Review fixes for #7192: another desktop is told by id, not the path-hash label; old untagged leftovers are cleared; rows are validated\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RQ5W5DZJA3KD21GKPNT838\nPurlis-Persona: steward\n\n* Review fixes for #7192 (1/2): another desktop is counted by a device label it carries, a pool named x-copy is a runner, a home volume name is checked against Docker's rule\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RSB67MQT9954QDW5M21F76\nPurlis-Persona: steward\n\n* Review fixes for #7192 (2/2): the untagged-leftover sweep removes only containers this desktop recorded; the downgrade is documented\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RSB67MQT9954QDW5M21F76\nPurlis-Persona: steward\n\n* Review fixes for #7192 (code-review pass): standard hex helper, a test for the listing as Docker prints it\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RSB67MQT9954QDW5M21F76\nPurlis-Persona: steward\n\n* fmt and clippy\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S32GS3X9V5BKXEMMJ9THX8\nPurlis-Persona: steward\n\n* clippy and prettier\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S7WG99BVC3BY9QWEG0W69B\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-19T12:22:35Z",
+          "tree_id": "b4b50f75ff4cea87bde4b3d20d9d71d4e4545f49",
+          "url": "https://github.com/purlis/purlis/commit/0064b037c0ec30a236eaaf66f3306cc5caf79938"
+        },
+        "date": 1795096950431,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5540305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.547, 0.548, 0.554, 0.558, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.16923,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.064, 16.136, 16.169, 16.309, 16.568 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.62274000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.079, 99.605, 100.623, 100.676, 101.823 ms"
           }
         ]
       }
