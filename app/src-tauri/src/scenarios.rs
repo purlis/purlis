@@ -679,9 +679,22 @@ fn a_fixture_record(
     verdict: purlis_scenarios::model::ReportVerdict,
     reason: &str,
 ) -> purlis_scenarios::model::LegRecord {
+    a_record_of("T1.1-06", test, dialect, protection, verdict, reason)
+}
+
+/// [`a_fixture_record`] for the ticket `row` that wrote the test.
+#[cfg(unix)]
+fn a_record_of(
+    row: &str,
+    test: &str,
+    dialect: Option<purlis_scenarios::model::Dialect>,
+    protection: Option<purlis_scenarios::model::Protection>,
+    verdict: purlis_scenarios::model::ReportVerdict,
+    reason: &str,
+) -> purlis_scenarios::model::LegRecord {
     purlis_scenarios::model::LegRecord {
         kind: purlis_scenarios::model::EntryKind::Fixture,
-        row: "T1.1-06".to_owned(),
+        row: row.to_owned(),
         test: Some(test.to_owned()),
         dialect,
         protection,

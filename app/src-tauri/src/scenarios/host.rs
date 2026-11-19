@@ -259,6 +259,12 @@ impl Homes {
     /// child ran the scenario. In that child it answers the homes, and the child is purlis's app
     /// as `main.rs` makes it ([`as_the_app`]).
     pub(crate) fn of_this_scenario() -> Option<Homes> {
+        Homes::of_this_scenario_with(&[])
+    }
+
+    /// [`Homes::of_this_scenario`] with `more` in the child's environment: a cell's own
+    /// variables, such as the decoy token of a person's login a chat must never present.
+    pub(crate) fn of_this_scenario_with(more: &[(&str, &str)]) -> Option<Homes> {
         if let Some(home) = std::env::var_os(HOME_VAR) {
             as_the_app();
             return Some(Homes::at(PathBuf::from(home)));
@@ -303,6 +309,10 @@ impl Homes {
             ("FAKE_HARNESS_BIN", fake.into()),
             ("PATH", path),
         ];
+        env.extend(
+            more.iter()
+                .map(|(name, value)| (*name, OsString::from(value))),
+        );
         // The re-run clears every variable of purlis's own; these two are the run's.
         for kept in [BINARY_VAR, HOST_APP_VAR] {
             if let Some(value) = std::env::var_os(kept) {

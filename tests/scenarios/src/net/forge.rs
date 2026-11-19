@@ -18,6 +18,7 @@
 //! | GitHub `GET /repos/{owner}/{repo}/pulls/{n}` | `200`, its head SHA, state and `merged` |
 //! | GitHub `PUT /repos/{owner}/{repo}/pulls/{n}/merge` | merged `200`; head moved `409`; a [`Refusal`] `405`; merged already `405` |
 //! | GitLab `GET /user` | `200` |
+//! | GitLab `GET /projects/{id}` | `200`, its id, path and default branch (what `glab mr merge -R` resolves the project by) |
 //! | GitLab `GET /projects/{id}/merge_requests/{iid}` | `200`, its `sha`, `state` and `merge_status` |
 //! | GitLab `PUT /projects/{id}/merge_requests/{iid}/merge` | merged `200`; `sha` moved `409`; a [`Refusal`] `405`; merged already `405` |
 //! | anything else | `404`, naming the request, so a cell that needs more fails on it |
@@ -105,41 +106,65 @@ pub struct Request {
 }
 
 impl Request {
-    /// The credential it presented, if any.
+    /// The first credential it presented, if any: the one the fake forge answers by.
     pub fn credential(&self) -> Option<Credential> {
-        credential_of(&self.headers)
+        self.credentials().into_iter().next()
+    }
+
+    /// **Every credential it presented**, wherever it came in: each `Authorization` header (both
+    /// halves of a `Basic` one), `PRIVATE-TOKEN`, `JOB-TOKEN`, and `private_token` or
+    /// `access_token` in the query or the body. A request that carries a second token (the
+    /// person's beside the chat's) shows both, so a cell cannot pass on the first alone.
+    pub fn credentials(&self) -> Vec<Credential> {
+        credentials_of(&self.headers, &self.query, &self.body)
     }
 }
 
-fn credential_of(headers: &[(String, String)]) -> Option<Credential> {
-    let get = |name: &str| {
-        headers
-            .iter()
-            .find(|(header, _)| header == name)
-            .map(|(_, value)| value.as_str())
-    };
-    for name in ["private-token", "job-token"] {
-        if let Some(value) = get(name).filter(|value| !value.is_empty()) {
-            return Some(Credential {
-                header: name.to_owned(),
-                token: value.to_owned(),
+/// The query or body fields a token can come in, besides the headers.
+const TOKEN_FIELDS: [&str; 2] = ["private_token", "access_token"];
+
+fn credentials_of(headers: &[(String, String)], query: &str, body: &str) -> Vec<Credential> {
+    let mut found = Vec::new();
+    let mut add = |header: &str, token: &str| {
+        if !token.is_empty() {
+            found.push(Credential {
+                header: header.to_owned(),
+                token: token.to_owned(),
             });
         }
-    }
-    let value = get("authorization")?;
-    let (scheme, rest) = value.split_once(' ')?;
-    let token = if scheme.eq_ignore_ascii_case("basic") {
-        let decoded = decode_base64(rest.trim())?;
-        decoded
-            .split_once(':')
-            .map(|(_, password)| password.to_owned())?
-    } else {
-        rest.trim().to_owned()
     };
-    (!token.is_empty()).then(|| Credential {
-        header: "authorization".to_owned(),
-        token,
-    })
+    for (name, value) in headers {
+        match name.as_str() {
+            "private-token" | "job-token" => add(name, value),
+            "authorization" => match value.split_once(' ') {
+                Some((scheme, rest)) if scheme.eq_ignore_ascii_case("basic") => {
+                    // A decoded `user:password` carries a token in either half.
+                    match decode_base64(rest.trim()) {
+                        Some(decoded) => match decoded.split_once(':') {
+                            Some((user, password)) => {
+                                add(name, user);
+                                add(name, password);
+                            }
+                            None => add(name, &decoded),
+                        },
+                        None => add(name, rest.trim()),
+                    }
+                }
+                Some((_, rest)) => add(name, rest.trim()),
+                None => add(name, value),
+            },
+            _ => {}
+        }
+    }
+    for field in TOKEN_FIELDS {
+        if let Some(token) = query_field(query, field) {
+            add(&format!("query:{field}"), &token);
+        }
+        if let Some(token) = body_field(body, field) {
+            add(&format!("body:{field}"), &token);
+        }
+    }
+    found
 }
 
 /// Base64, standard alphabet, no dependency: for a `Basic` credential's `user:password`.
@@ -203,6 +228,13 @@ impl State {
             .find(|change| change.number == number)
     }
 
+    /// Refuses that change's merge from now on.
+    fn refuse(&mut self, forge: Forge, project: &str, number: u64, why: Refusal) {
+        self.change(forge, project, number)
+            .unwrap_or_else(|| panic!("no {forge:?} change {project}#{number} to refuse"))
+            .refusal = Some(why);
+    }
+
     fn answer(&mut self, request: &Request) -> Reply {
         let gitlab = request.path.starts_with("/api/v4/");
         let path = request
@@ -261,6 +293,25 @@ impl State {
                     return reply(404, json!({"message": "Not Found", "status": "404"}));
                 };
                 merge_github(change, sha.as_deref())
+            }
+            (true, "GET", ["projects", id]) => {
+                let Some(project) = self.project_of(id) else {
+                    return reply(404, json!({"message": "404 Project Not Found"}));
+                };
+                let number = self
+                    .project_ids
+                    .iter()
+                    .find_map(|(number, path)| (*path == project).then_some(*number))
+                    .unwrap_or(0);
+                reply(
+                    200,
+                    json!({
+                        "id": number,
+                        "path_with_namespace": project,
+                        "default_branch": "main",
+                        "merge_requests_enabled": true,
+                    }),
+                )
             }
             (true, "GET", ["projects", id, "merge_requests", iid]) => {
                 let Some(project) = self.project_of(id) else {
@@ -526,8 +577,7 @@ impl FakeForge {
     /// # Panics
     /// If no such change was added: a test that refuses nothing would pass for nothing.
     pub fn refuse_merge(&self, forge: Forge, project: &str, number: u64, why: Refusal) -> &Self {
-        // PROBE C (to be reverted): refuses nothing.
-        let _ = (forge, project, number, why);
+        self.state().refuse(forge, project, number, why);
         self
     }
 
@@ -557,18 +607,24 @@ impl FakeForge {
         self.state().requests.clone()
     }
 
-    /// **Every distinct token presented**, in the order first seen.
+    /// **Every distinct token presented**, in the order first seen: all of each request's
+    /// ([`Request::credentials`]), so a second token on one request is listed.
     pub fn tokens_seen(&self) -> Vec<String> {
-        let mut seen: Vec<String> = Vec::new();
-        for request in self.state().requests.iter() {
-            if let Some(credential) = request.credential()
-                && !seen.contains(&credential.token)
-            {
+        distinct_tokens(&self.state().requests)
+    }
+}
+
+/// Every distinct token across `requests`, in the order first seen.
+fn distinct_tokens(requests: &[Request]) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    for request in requests {
+        for credential in request.credentials() {
+            if !seen.contains(&credential.token) {
                 seen.push(credential.token);
             }
         }
-        seen
     }
+    seen
 }
 
 impl Drop for FakeForge {
@@ -757,16 +813,85 @@ mod tests {
                 "e",
             ),
         ] {
-            let got = credential_of(
-                &headers
-                    .iter()
-                    .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-                    .collect::<Vec<_>>(),
-            )
-            .expect("a credential");
+            let headers: Vec<_> = headers
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect();
+            let got = credentials_of(&headers, "", "");
+            let got = got.last().expect("a credential");
             assert_eq!((got.header.as_str(), got.token.as_str()), (header, token));
         }
-        assert_eq!(credential_of(&[]), None);
+        assert_eq!(credentials_of(&[], "", ""), vec![]);
+    }
+
+    #[test]
+    fn a_second_token_on_one_request_is_seen_wherever_it_came_in() {
+        let pairs = |list: &[(&str, &str)]| -> Vec<(String, String)> {
+            list.iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect()
+        };
+        // Two Authorization headers, a PRIVATE-TOKEN beside a Bearer, and both halves of a Basic.
+        let tokens = |headers: &[(&str, &str)], query: &str, body: &str| -> Vec<String> {
+            credentials_of(&pairs(headers), query, body)
+                .into_iter()
+                .map(|credential| credential.token)
+                .collect()
+        };
+        assert_eq!(
+            tokens(
+                &[
+                    ("authorization", "Bearer chat"),
+                    ("authorization", "token person")
+                ],
+                "",
+                ""
+            ),
+            ["chat", "person"]
+        );
+        assert_eq!(
+            tokens(
+                &[
+                    ("authorization", "Bearer chat"),
+                    ("private-token", "person")
+                ],
+                "",
+                ""
+            ),
+            ["chat", "person"]
+        );
+        assert_eq!(
+            tokens(&[("job-token", "j"), ("private-token", "p")], "", ""),
+            ["j", "p"]
+        );
+        // x-access-token:e: the user half is a token too.
+        assert_eq!(
+            tokens(
+                &[("authorization", "Basic eC1hY2Nlc3MtdG9rZW46ZQ==")],
+                "",
+                ""
+            ),
+            ["x-access-token", "e"]
+        );
+        assert_eq!(
+            tokens(
+                &[("private-token", "chat")],
+                "private_token=q&x=1",
+                r#"{"access_token":"b"}"#
+            ),
+            ["chat", "q", "b"]
+        );
+        assert_eq!(tokens(&[], "access_token=q", "private_token=f"), ["f", "q"]);
+        // And the forge lists them: a request with a second token fails a `[chat]` assertion.
+        let mut state = State::default();
+        let mut request = asked(
+            "GET",
+            "/api/v4/user?private_token=person",
+            &[("private-token", "chat")],
+            "",
+        );
+        request.status = state.answer(&request).status;
+        assert_eq!(distinct_tokens(&[request]), ["chat", "person"]);
     }
 
     #[test]
@@ -812,10 +937,10 @@ mod tests {
     }
 
     #[test]
-    fn the_fake_forge_returns_a_ruleset_refusal_on_request() {
+    fn a_refusal_set_on_the_state_answers_405_with_the_rule_on_both_forges() {
         for forge in [Forge::GitHub, Forge::GitLab] {
             let mut state = with_change(forge, "o/r", 5, "abc");
-            state.change(forge, "o/r", 7).expect("it").refusal = Some(Refusal::Ruleset);
+            state.refuse(forge, "o/r", 7, Refusal::Ruleset);
             let path = match forge {
                 Forge::GitHub => "/api/v3/repos/o/r/pulls/7/merge",
                 Forge::GitLab => "/api/v4/projects/o%2Fr/merge_requests/7/merge",
@@ -837,7 +962,7 @@ mod tests {
     #[test]
     fn a_queue_refusal_says_the_queue() {
         let mut state = with_change(Forge::GitHub, "o/r", 1, "abc");
-        state.change(Forge::GitHub, "o/r", 7).expect("it").refusal = Some(Refusal::Queue);
+        state.refuse(Forge::GitHub, "o/r", 7, Refusal::Queue);
         let got = state.answer(&asked("PUT", "/repos/o/r/pulls/7/merge", BEARER, "{}"));
         assert_eq!(got.status, 405);
         assert!(got.body["message"].to_string().contains("merge queue"));
@@ -876,6 +1001,29 @@ mod tests {
             (merged.status, merged.body["state"].clone()),
             (200, json!("merged"))
         );
+    }
+
+    #[test]
+    fn a_gitlab_project_is_read_by_path_or_number_and_an_unknown_one_is_404() {
+        let mut state = with_change(Forge::GitLab, "g/p", 42, "abc");
+        for id in ["g%2Fp", "42"] {
+            let got = state.answer(&asked(
+                "GET",
+                &format!("/api/v4/projects/{id}"),
+                &[("private-token", "t")],
+                "",
+            ));
+            assert_eq!(got.status, 200, "{id}");
+            assert_eq!(got.body["id"], json!(42), "{id}");
+            assert_eq!(got.body["path_with_namespace"], json!("g/p"), "{id}");
+        }
+        let got = state.answer(&asked(
+            "GET",
+            "/api/v4/projects/x%2Fy",
+            &[("private-token", "t")],
+            "",
+        ));
+        assert_eq!(got.status, 404);
     }
 
     #[test]

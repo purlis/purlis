@@ -256,3 +256,27 @@ fn a_request_with_no_credential_is_recorded_and_refused_401() {
     assert_eq!(seen[0].credential(), None);
     assert!(forge.tokens_seen().is_empty());
 }
+
+#[test]
+fn a_second_token_on_one_request_is_listed_and_fails_an_assertion_on_the_first_alone() {
+    let forge = FakeForge::start(None).expect("the fake forge");
+    forge.add_merge_request("g/p", 42, 7, HEAD);
+    // The chat's token in the header the client uses, the person's beside it in the query.
+    let (status, _) = http(
+        forge.http_addr(),
+        "GET /api/v4/projects/g%2Fp/merge_requests/7?private_token=person-token HTTP/1.1\r\n\
+         Host: git.corp.test\r\nPRIVATE-TOKEN: chat-token\r\nAuthorization: Bearer other-token\r\n\
+         Connection: close\r\n\r\n",
+    );
+    assert_eq!(status, 200);
+    assert_eq!(
+        forge.tokens_seen(),
+        ["chat-token", "other-token", "person-token"],
+        "every credential of the request is listed, in every place it came in"
+    );
+    assert_ne!(
+        forge.tokens_seen(),
+        ["chat-token"],
+        "a cell asserting the chat's token alone fails on a request that carried another"
+    );
+}
