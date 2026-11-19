@@ -496,8 +496,11 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
             // A body with a comment, a heredoc or a `$'` quote is one the close of the
             // substitution is not reliably found in. It is refused last, so a refusal the line
-            // already earns is the one said (round 7).
-            unclosable |= body_the_reader_cannot_close(&body);
+            // already earns is the one said (round 7). Not in a hedge: that text is data in the
+            // real reading, whose own bodies were already read above, and the hedge's re-spelling
+            // of it (its quotes gone, so `<<'EOF'` is an unquoted `<<EOF` with no body) is no
+            // text of the line that must close (#7245, round 5).
+            unclosable |= !reading_a_hedge() && body_the_reader_cannot_close(&body);
         }
     }
     // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
@@ -2471,6 +2474,32 @@ mod tests {
             let (said, read) = metered(&cmd, true);
             assert_eq!(said, None, "{}", &cmd[..60]);
             assert!(read <= cmd.len() * WORK_FACTOR + WORK_SLACK, "read {read}");
+        }
+    }
+
+    /// **The ordinary large body passes where a chat runs it, and what truly can't be closed is
+    /// still held** (#7245, round 5): prose with `<<'EOF'` and `(see #917)` in a quoted heredoc is
+    /// data, so the hedge's re-spelling of it never refuses as an unclosed substitution.
+    #[test]
+    fn a_hedged_body_is_not_refused_as_unclosable_but_a_real_unclosable_one_is() {
+        let paragraph = "## Why\n\nThe guard didn't read `\"$(cat <<'EOF'` the way bash does (see \
+                         #917), so `echo \"$(date)\"` was refused. It's fixed: `$((1+2))`, \
+                         `<(sort a)` and `${x:-y}` are read as substitutions.\n\n\
+                         - 1) the reader (shellseg)\n- 2) the floor's \"eval\" walk\n\n";
+        let body = paragraph.repeat(65_536 / paragraph.len());
+        let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+        assert_eq!(release_floor_reason(&ordinary, true), None, "{ordinary}");
+        // An unquoted heredoc that never ends, and a quoted one with no delimiter line, are held.
+        for cmd in [
+            "echo \"$(cat <<EOF\nhello\n)\"",
+            "echo \"$(cat <<'EOF'\nhello\n)\"",
+            "echo \"$(cat <<'EOF'\n(see #917)\n",
+        ] {
+            let said = release_floor_reason(cmd, true);
+            assert!(
+                said.is_some_and(|said| said.contains("can't tell where it ends")),
+                "{cmd}"
+            );
         }
     }
 }

@@ -249,14 +249,39 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
                      `<(sort a)` and `${x:-y}` are read as substitutions.\n\n\
                      - 1) the reader (shellseg)\n- 2) the floor's \"eval\" walk\n\n";
     let body = paragraph.repeat(65_536 / paragraph.len());
+    // The merge hold is a chat's, and so is the reader that finds a substitution's close, so the
+    // body is sent from a chat as well as from a runner that is none (#7245, round 5).
+    let socket = here.dir.path().join("app").join("hooks.sock");
+    let chat = [
+        (purlis_core::hookwire::CHAT_ENV, "1"),
+        (
+            purlis_core::hookwire::SOCKET_ENV,
+            socket.to_str().expect("a path"),
+        ),
+    ];
     for cmd in [
         format!("gh pr create --title t --body-file - <<'EOF'\n{body}EOF"),
         format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\""),
     ] {
+        for env in [&[][..], &chat[..]] {
+            for mode in ["bypassPermissions", "default"] {
+                let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), env);
+                assert_eq!(code, Some(0), "{mode} chat={}: {err}", !env.is_empty());
+                assert!(!out.contains("deny"), "{mode} chat={}: {out}", !env.is_empty());
+            }
+        }
+    }
+    // The same body with a merge line in it is held in a chat, and one that can't be closed (a
+    // heredoc with no delimiter line) is refused there, not let through.
+    let merging = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+    let unclosed = format!("git commit -m \"$(cat <<'EOF'\n{body}\n)\"");
+    for (what, cmd) in [("a merge line", merging), ("an unclosed heredoc", unclosed)] {
         for mode in ["bypassPermissions", "default"] {
-            let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), &[]);
-            assert_eq!(code, Some(0), "{mode}: {err}");
-            assert!(!out.contains("deny"), "{mode}: {out}");
+            let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), &chat);
+            assert!(
+                out.contains("deny") || code == Some(2),
+                "{mode}: {what} was not held: {code:?} {out} {err}"
+            );
         }
     }
 }
