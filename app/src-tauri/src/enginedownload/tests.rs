@@ -102,3 +102,28 @@ fn each_change_is_told_to_the_window() {
         "a finish of nothing, and a word of no start, tell nothing"
     );
 }
+
+#[test]
+fn a_start_waiting_for_another_starts_turn_is_shown_and_can_be_cancelled() {
+    let downloads = Downloads::default();
+    downloads.queued("b-2");
+
+    assert_eq!(
+        downloads.shown(),
+        [EngineDownloadShown {
+            program: "b-2".into(),
+            says: WAITING_FOR_ANOTHER_START.into()
+        }],
+        "nothing about a start is silent"
+    );
+    assert!(downloads.cancel_queued("b-2"));
+    assert_eq!(downloads.shown()[0].says, CANCELLING_A_WAITING_START);
+    assert!(
+        downloads.dequeued("b-2"),
+        "it gets its turn and learns it was cancelled"
+    );
+    assert!(downloads.shown().is_empty());
+    assert!(!downloads.cancel_queued("b-2"), "not waiting any more");
+    downloads.queued("b-3");
+    assert!(!downloads.dequeued("b-3"), "not cancelled");
+}

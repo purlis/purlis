@@ -446,9 +446,7 @@ pub async fn set_remote_pool_owned(
             purlis_core::runners::set_remote_owned(&config_root()?, &name, owned, &shown)
                 .map_err(|why| why.to_string())?;
             if !owned {
-                for project in held {
-                    project.browsers().forget_pool_logins(&name);
-                }
+                crate::chatbrowsers::forget_pool_logins_in(&held, &name)?;
             }
             Ok(())
         })
@@ -616,7 +614,19 @@ pub async fn remove_docker_pool(
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
             }
-            removed.map(|left| PoolRemoval::Removed { left })
+            // A removed pool keeps no login opt-in, which is kept on disk now (#7190): a store
+            // that could not take one out is said with what stays, and it no longer applies.
+            if removed.is_ok()
+                && let Ok(browsers) = crate::browsers::browsers(&app)
+            {
+                browsers.pool_gone(&name);
+            }
+            removed.map(|left| {
+                let logins = crate::chatbrowsers::forget_pool_logins_in(&held, &name).err();
+                PoolRemoval::Removed {
+                    left: said_together([left, logins]),
+                }
+            })
         })
         .await
     }
@@ -685,13 +695,31 @@ fn gone_from_here(
     name: &str,
     left: &str,
 ) -> Option<String> {
-    for project in held {
-        project.browsers().forget_pool_logins(name);
-    }
+    let logins_kept = crate::chatbrowsers::forget_pool_logins_in(held, name).err();
+    // Its browsers first, while their links stand: each is stopped on its machine where that
+    // answers, and one it did not answer for is listed as left there (#7187 item 6).
+    let browsers_left = match crate::browsers::browsers(app) {
+        Ok(browsers) => crate::browsers::left_on_the_machine(browsers.end_on_forgotten(name).left),
+        Err(why) => {
+            tracing::warn!("purlis: the browsers on forgotten pool {name} were not ended: {why}");
+            None
+        }
+    };
     if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(app) {
         links_end_once_gone(&host.connection(), config, name);
     }
-    (!left.is_empty()).then(|| crate::devices::shown_safely(left))
+    let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
+    // What stays, said together: a login opt-in the store could not take out is one of them.
+    said_together([said, browsers_left, logins_kept])
+}
+
+/// What stays after a pool is removed or forgotten, said as one: each line there is, one after
+/// the other; none where there is none.
+fn said_together(lines: impl IntoIterator<Item = Option<String>>) -> Option<String> {
+    lines
+        .into_iter()
+        .flatten()
+        .reduce(|all, one| format!("{all} {one}"))
 }
 
 /// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window

@@ -2827,7 +2827,8 @@ pub const POOL_LOGIN_ALLOW: &str = "allow";
 /// to fill one of its persona's browser logins in its browser, which runs on the pool's runner.
 /// It names the login, the pool and the engine the pool runs on. Allow on pool X lets that login
 /// of that persona be filled there while the app runs and the pool and its runner stay as they
-/// are now; Keep off refuses it there until they change. Every word is purlis's, the line says
+/// are now; Keep off refuses it there until they change, or until another window of this
+/// machine gives a yes. Every word is purlis's, the line says
 /// the runner keeps none of the values, and a changed pool's Ask says it changed.
 pub fn pool_login(waits: &crate::chatbrowsers::PoolLoginWaits) -> Shown {
     let pool = &waits.bound.pool;
