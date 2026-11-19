@@ -216,19 +216,47 @@ pub fn stage_of(
 /// **A start waiting for the pool `pool`'s runner, whose link is down** (#7187): the pane's
 /// "Waiting for <pool> — <reason>", with the Cancel the picker already has. `None` where `pool`'s
 /// link is not down.
+///
+/// `cluster_wait` is a cluster pool's `vouchWait` (#4403): its start waits that long for the
+/// cluster to vouch for the runner, not 30 seconds, and the pane says so, as a step of its own
+/// that is never silent.
 pub fn waiting_for_link(
     pool: &str,
     down: &[crate::reconnecting::RunnerLinkDown],
+    cluster_wait: Option<std::time::Duration>,
 ) -> Option<RunnerStage> {
     let down = down.iter().find(|one| one.pool == pool)?;
     let why = crate::devices::shown_safely(&down.why);
-    Some(RunnerStage {
-        said: format!("Waiting for {pool} — {}", why.trim_end_matches('.')),
-        more: "purlis keeps linking to it. Cancel stops waiting; after 30 seconds the start \
-               ends with this reason, with Try now and Check pool."
-            .to_owned(),
-        cluster_said: None,
+    let why = why.trim_end_matches('.');
+    Some(match cluster_wait {
+        None => RunnerStage {
+            said: format!("Waiting for {pool} — {why}"),
+            more: "purlis keeps linking to it. Cancel stops waiting; after 30 seconds the start \
+                   ends with this reason, with Try now and Check pool."
+                .to_owned(),
+            cluster_said: None,
+        },
+        Some(wait) => RunnerStage {
+            said: format!("Waiting for the cluster to vouch for {pool}'s runner — {why}"),
+            more: format!(
+                "purlis keeps linking to it. Cancel stops waiting; the start ends with this \
+                 reason after {}, this pool's vouch wait, with Try now and Check pool.",
+                wait_said(wait)
+            ),
+            cluster_said: None,
+        },
     })
+}
+
+/// A wait, in the largest whole unit: 45 seconds, 1 minute, 10 minutes.
+fn wait_said(wait: std::time::Duration) -> String {
+    let secs = wait.as_secs();
+    let (count, unit) = if secs >= 60 && secs % 60 == 0 {
+        (secs / 60, "minute")
+    } else {
+        (secs, "second")
+    };
+    format!("{count} {unit}{}", if count == 1 { "" } else { "s" })
 }
 
 /// **A start on pool `pool`'s runner, which is linked, and taking a while** (#7187): nothing on
@@ -257,7 +285,11 @@ pub fn stage_while_waiting(
     let Some(pool) = purlis_core::pools::chat_place(&config, root, workspace, start)?.pool else {
         return Ok(None);
     };
-    if let Some(stage) = waiting_for_link(&pool, down) {
+    // A cluster pool waits for the cluster to vouch for its runner as long as the person set.
+    let cluster_wait = purlis_core::runners::cluster_pools(&config)
+        .ok()
+        .and_then(|pools| pools.iter().find(|one| one.name() == pool).map(ClusterPool::vouch_wait));
+    if let Some(stage) = waiting_for_link(&pool, down, cluster_wait) {
         return Ok(Some(stage));
     }
     Ok(Some(

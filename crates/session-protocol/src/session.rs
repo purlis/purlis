@@ -611,9 +611,11 @@ use crate::view::{Limits, Views};
 ///
 /// 1.94 tells a window that a runner's host answers and refuses (#7187): `link_down` may say
 /// `refused` where the machine a pool reaches it through answers but its sign-in, Docker or
-/// forwarding fails, which the relaying host does not retry on its own. A window before 1.94
-/// ignores the field and reads it as any link that is down, so its Reconnecting notice and Try
-/// now go on as they did; nothing is sent to a host of any version for it.
+/// forwarding fails, which the relaying host does not retry on its own, and `host_key_changed`
+/// where the machine presents another host key, CA or engine than the pinned one, a security stop
+/// that is never retried on its own. A window before 1.94 ignores both fields and reads the link
+/// as any link that is down, so its Reconnecting notice and Try now go on as they did; nothing is
+/// sent to a host of any version for either.
 pub const VERSION: Version = Version {
     major: 1,
     minor: 94,

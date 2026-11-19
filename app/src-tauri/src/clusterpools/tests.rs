@@ -123,7 +123,7 @@ fn a_changed_runner_or_operator_key_is_told_to_the_link_as_a_changed_key() {
     }
     assert!(matches!(
         crate::runnerlinks::not_checked(Refused::NotVouched("not yet".into())),
-        purlis_host::NotChecked::Refused(_)
+        purlis_host::NotChecked::Unreachable(_)
     ));
 }
 
@@ -408,13 +408,35 @@ fn a_start_on_a_pool_whose_link_is_down_says_it_waits_for_the_pool_and_why() {
         since: 0,
         state: LinkState::Unreachable,
     }];
-    let stage = waiting_for_link("builds", &down).expect("builds is down");
+    let stage = waiting_for_link("builds", &down, None).expect("builds is down");
     assert_eq!(
         stage.said,
         "Waiting for builds — Docker on 10.0.0.2 didn't answer through SSH"
     );
     assert!(stage.more.contains("Cancel"), "{}", stage.more);
-    assert!(waiting_for_link("other", &down).is_none());
+    assert!(waiting_for_link("other", &down, None).is_none());
+}
+
+/// **A cluster pool's start waits for the cluster as long as the person set, and says so**
+/// (#7187, #4403): never the 30 seconds of any other pool, and never silent.
+#[test]
+fn a_cluster_pools_start_says_it_waits_for_the_cluster_for_its_vouch_wait() {
+    use crate::reconnecting::{LinkState, RunnerLinkDown};
+    let down = [RunnerLinkDown {
+        pool: "team".to_owned(),
+        why: "the cluster operator no longer vouches for this runner.".to_owned(),
+        since: 0,
+        state: LinkState::Unreachable,
+    }];
+    let ten_minutes = std::time::Duration::from_secs(600);
+    let stage = waiting_for_link("team", &down, Some(ten_minutes)).expect("team is down");
+    assert_eq!(
+        stage.said,
+        "Waiting for the cluster to vouch for team's runner — the cluster operator no longer \
+         vouches for this runner"
+    );
+    assert!(stage.more.contains("10 minutes"), "{}", stage.more);
+    assert!(!stage.more.contains("30 seconds"), "{}", stage.more);
 }
 
 /// **A linked runner that is slow says what it waits on** (#7187): nothing is silent past 30

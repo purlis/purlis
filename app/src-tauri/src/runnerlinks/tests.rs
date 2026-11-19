@@ -975,12 +975,12 @@ fn a_forward_that_refuses_stops_the_link_and_one_that_is_silent_does_not() {
     use crate::dockerpools::PoolLink;
     use purlis_core::sshroute::connect::RemoteState;
     assert_eq!(
-        not_checked_in("sign-in refused".into(), RemoteState::Refused),
-        purlis_host::NotChecked::Declined("sign-in refused".into())
+        not_checked_as("sign-in refused".into(), RemoteState::Refused),
+        purlis_host::NotChecked::Refused("sign-in refused".into())
     );
     assert_eq!(
-        not_checked_in("no answer".into(), RemoteState::Unreachable),
-        purlis_host::NotChecked::Refused("no answer".into())
+        not_checked_as("no answer".into(), RemoteState::Unreachable),
+        purlis_host::NotChecked::Unreachable("no answer".into())
     );
     let mut down = purlis_session_protocol::hostlink::Down::because("sign-in refused");
     down.refused = true;
@@ -999,7 +999,7 @@ fn a_forward_that_refuses_stops_the_link_and_one_that_is_silent_does_not() {
 fn a_forward_that_finds_another_host_key_is_told_as_its_own_state() {
     use purlis_core::sshroute::connect::RemoteState;
     assert_eq!(
-        not_checked_in("another key".into(), RemoteState::HostKeyChanged),
+        not_checked_as("another key".into(), RemoteState::HostKeyChanged),
         purlis_host::NotChecked::HostKeyChanged("another key".into())
     );
     let mut down = purlis_session_protocol::hostlink::Down::because("another key");
@@ -1033,7 +1033,7 @@ async fn a_machine_with_sshd_up_and_dockerd_late_is_linked_again_without_a_click
                     host: "build-box".to_owned(),
                     said: "Cannot connect to the Docker daemon".to_owned(),
                 };
-                return Err(not_checked_in(
+                return Err(not_checked_as(
                     purlis_core::poolsetup::connect_said(&finding),
                     finding.remote_state(),
                 ));

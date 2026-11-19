@@ -26,15 +26,16 @@ pub type BeforeEach = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
 /// ([`purlis_session_protocol::hostlink::KeyNoLongerHeld`]), or because the far end is gone for
 /// good, which the link tells once and does not try again
 /// ([`purlis_session_protocol::hostlink::FarEndGone`], #4149), or because the far end answers and
-/// refuses ([`NotChecked::Declined`], #7187).
+/// refuses ([`NotChecked::Refused`], #7187).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NotChecked {
-    Refused(String),
+    /// The far end does not answer, or not yet (#7187, Unreachable): the link tries again.
+    Unreachable(String),
     KeyChanged(String),
     Gone(String),
     /// The far end answers and refuses (#7187): its sign-in, engine or forward fails. Told as a
     /// refusal the link does not try again on its own ([`FarEndRefused`]).
-    Declined(String),
+    Refused(String),
     /// The machine presents another host key, CA or engine than the pinned one (#7187): its own
     /// state, told as [`FarEndHostKeyChanged`], never tried again on its own.
     HostKeyChanged(String),
@@ -77,7 +78,7 @@ impl CommandConnector {
         CommandConnector::checked(
             program,
             args,
-            Arc::new(move || before_each().map_err(NotChecked::Refused)),
+            Arc::new(move || before_each().map_err(NotChecked::Unreachable)),
         )
     }
 
@@ -155,7 +156,7 @@ impl CommandConnector {
             .await
             .map_err(std::io::Error::other)?
             .map_err(|why| match why {
-                NotChecked::Refused(why) => std::io::Error::other(why),
+                NotChecked::Unreachable(why) => std::io::Error::other(why),
                 NotChecked::KeyChanged(why) => {
                     std::io::Error::other(purlis_session_protocol::hostlink::KeyNoLongerHeld(why))
                 }
@@ -165,7 +166,7 @@ impl CommandConnector {
                 NotChecked::HostKeyChanged(why) => std::io::Error::other(
                     purlis_session_protocol::hostlink::FarEndHostKeyChanged(why),
                 ),
-                NotChecked::Declined(why) => {
+                NotChecked::Refused(why) => {
                     std::io::Error::other(purlis_session_protocol::hostlink::FarEndRefused(why))
                 }
             })?;

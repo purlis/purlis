@@ -576,9 +576,9 @@ _Avoid_: offline, down (that is the link's own word for an outage, whatever its 
 **Refused** (a pool or runner):
 The machine answers, but sign-in, forwarding or Docker's permissions fail, or its disk is full (a
 Docker that is merely silent is **Unreachable**); so does a runners file that cannot be read, with
-its reason shown. purlis stops retrying, shows the
-reason and offers Check pool, with no Try now; nothing but the person's next start, once they have
-fixed it, tries again, and a start refused so does not wait. Said only of a machine that answered:
+its reason shown. purlis stops retrying on its own, shows the
+reason and offers Check pool and **Try now** (which dials once and is told again if nothing
+changed); the person's next start tries again too, and a start refused so does not wait. Said only of a machine that answered:
 one that did not is **Unreachable**. A part of **Pool** (#7187).
 _Avoid_: denied, failed, blocked
 

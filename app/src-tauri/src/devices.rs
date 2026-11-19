@@ -660,6 +660,9 @@ pub fn answered(
                 PoolLink::Refused { why } => PoolLink::Refused {
                     why: shown_safely(&why),
                 },
+                PoolLink::HostKeyChanged { why } => PoolLink::HostKeyChanged {
+                    why: shown_safely(&why),
+                },
                 other => other,
             }),
             version: None,

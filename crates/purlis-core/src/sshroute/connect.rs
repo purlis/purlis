@@ -123,6 +123,12 @@ pub enum Finding {
     /// **The Docker context the pool's route was read from now names another route** (#6268).
     ContextMoved { name: String },
     /// Something else went wrong on this machine (no ssh, a folder that couldn't be made).
+    ///
+    /// **Retried without end, on purpose** (#7187): unlike Refused it is not the pool's machine
+    /// saying no, and nothing is learned from it that the pool's own state could hold. It is
+    /// mended on this machine (ssh installed, a folder freed) with no word to the pool, so purlis
+    /// meets it again by itself rather than stopping on it. The wait grows to its longest, so it
+    /// costs one local `ssh` run every two minutes.
     Here(String),
 }
 

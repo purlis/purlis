@@ -171,6 +171,10 @@ pub enum PoolLink {
     /// **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
     /// fails, and why. purlis stopped trying on its own; Check pool says what changed.
     Refused { why: String },
+    /// **Its machine presents another host key, CA or engine than the pinned one** (#7187, Host
+    /// key changed), and why, as a link says it: a security stop, never tried again on its own;
+    /// the person says it is all right in the pool's settings.
+    HostKeyChanged { why: String },
     /// It suspended itself, a day without a link (#2051): its container is stopped, its home
     /// kept, and the window's next chat there starts it again. A check never wakes it.
     Suspended,
@@ -555,15 +559,14 @@ pub fn add_on(machine: &Machine, pool: &Pool) -> Result<PoolRow, String> {
 pub enum PoolRemoval {
     /// It is gone, or what of it stays is said in `left`.
     Removed { left: Option<String> },
-    /// Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent.
-    /// `answers` is that the machine did answer, and refused (#7187): Remove, which cleans the
-    /// machine, stays offered beside Forget it here, and goes on where it is asked again. A
-    /// machine that does not answer, or presents another key or engine, is never contacted.
-    Unreachable {
-        why: String,
-        host: String,
-        answers: bool,
-    },
+    /// Its machine, `host`, doesn't answer, or presents another key or engine, `why`: nothing
+    /// was removed, and nothing was sent. Such a machine is never contacted (#7187, Unreachable,
+    /// Host key changed).
+    Unreachable { why: String, host: String },
+    /// Its machine, `host`, answers and refuses, `why` (#7187, Refused): nothing was removed.
+    /// Remove, which cleans the machine, stays offered beside Forget it here, and goes on where
+    /// it is asked again.
+    Refused { why: String, host: String },
 }
 
 /// **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
@@ -711,7 +714,7 @@ fn unreachable_of(machine: &Machine, name: &str, despite_its_check: bool) -> Opt
     let said = unreachable_said(&host, &finding);
     // Asked again by the person after it said the machine answers: Remove goes on as it did
     // before (#7122, #7139). A machine that does not answer is never gone on to.
-    if despite_its_check && matches!(said, PoolRemoval::Unreachable { answers: true, .. }) {
+    if despite_its_check && matches!(said, PoolRemoval::Refused { .. }) {
         return None;
     }
     Some(said)
@@ -723,12 +726,14 @@ fn unreachable_of(machine: &Machine, name: &str, despite_its_check: bool) -> Opt
 /// every state).
 #[cfg(unix)]
 fn unreachable_said(host: &str, finding: &purlis_core::sshroute::connect::Finding) -> PoolRemoval {
-    PoolRemoval::Unreachable {
-        why: crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding)),
-        host: host.to_owned(),
-        // Answers and refuses: not one that is silent, and not one whose key or engine changed,
-        // which nothing is sent to.
-        answers: finding.remote_state() == purlis_core::sshroute::connect::RemoteState::Refused,
+    let why = crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding));
+    let host = host.to_owned();
+    // Refused is a machine that answers and says no: not one that is silent, and not one whose
+    // key or engine changed, which nothing is sent to.
+    if finding.remote_state() == purlis_core::sshroute::connect::RemoteState::Refused {
+        PoolRemoval::Refused { why, host }
+    } else {
+        PoolRemoval::Unreachable { why, host }
     }
 }
 

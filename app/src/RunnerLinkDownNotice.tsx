@@ -50,7 +50,7 @@ export function RunnerLinkDownNotice({
       tone="trouble"
       label={
         down.state === "refused"
-          ? `Pool ${down.pool} refused the connection`
+          ? `Pool ${down.pool} refused`
           : down.state === "host_key_changed"
             ? `Pool ${down.pool}'s machine presented another key`
             : `Pool ${down.pool}'s runner is not linked`

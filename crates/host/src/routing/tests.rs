@@ -1105,3 +1105,74 @@ async fn a_start_given_up_on_is_closed_on_the_runner_if_it_began_after_all() {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
 }
+
+/// **A hold gets the start's three minutes too** (#7187): a hold on a link that never comes up
+/// used to wait out its own 30 seconds, uncapped, and the start another 30 after it. It is refused
+/// at the start's limit, naming the step.
+#[tokio::test]
+async fn a_hold_on_a_link_that_never_comes_up_is_stopped_at_the_starts_limit() {
+    let (desktop, runner) = (Arc::new(Kept::new(DESKTOP)), Arc::new(Kept::new(RUNNER)));
+    let pinned = runner.pinned();
+    let relays: RelaysTo = Arc::new(move |name: &str| {
+        let (desktop, pinned) = (Arc::clone(&desktop), pinned.clone());
+        Ok((
+            Arc::new(move || {
+                keep_linked(
+                    Hangs,
+                    Handshake::THIS_BUILD,
+                    desktop.identity(),
+                    pinned.clone(),
+                    Liveness::default(),
+                )
+            }) as Keep,
+            format!("{name}/{name}"),
+        ))
+    });
+    let host = Hosting::running_with(Echo, StandIns::default())
+        .relaying_with(relays)
+        .waiting_for_a_down_link(PATIENCE)
+        .starting_within(Duration::from_millis(300));
+    let window = routed(Scope::LocalUi, host).await;
+    tokio::time::timeout(PATIENCE, window.relay_to("builds"))
+        .await
+        .unwrap()
+        .expect("relayed");
+    let began = std::time::Instant::now();
+    let refused = tokio::time::timeout(
+        PATIENCE,
+        window.hold_project("01J9PRJCT00000000000000000", ""),
+    )
+    .await
+    .expect("the hold is answered, not left waiting its own wait")
+    .expect_err("a hold on a link that cannot come up is refused");
+    assert!(began.elapsed() < PATIENCE, "it ended at the start's limit");
+    assert_eq!(code(&refused), Some(session::NOT_STARTED));
+    assert!(refused.to_string().contains("300 milliseconds"), "{refused}");
+}
+
+/// **A hold and its start share one budget** (#7187): the start has what the hold left, and a
+/// budget that ran out is not carried to a start made later.
+#[tokio::test]
+async fn a_hold_and_its_start_share_one_budget() {
+    let routed = Routed::new(Hosting::running_with(Echo, StandIns::default()));
+    let within = Duration::from_millis(400);
+    let first = routed.start_budget(within);
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(routed.start_budget(within), first, "the start has the hold's");
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(routed.start_budget(within) > first, "a spent one is not carried on");
+}
+
+/// **A cluster's vouch wait is not cut by the start's limit** (#7187, #4403): the person set how
+/// long to wait for the cluster to vouch for the runner, and the three minutes begin once that
+/// wait ends. Here the limit is 300 ms and the runner is vouched for after about 1.75 s.
+#[tokio::test]
+async fn a_start_waiting_for_the_cluster_to_vouch_is_not_cut_short_by_the_starts_limit() {
+    let host = a_desktop_whose_runner_comes_back(3, not_vouched_yet, waiting(Some(PATIENCE)))
+        .starting_within(Duration::from_millis(300));
+    let began = std::time::Instant::now();
+    let (held, started) = refused_a_hold_and_a_start(host).await;
+    assert!(began.elapsed() > Duration::from_millis(300), "it waited past the limit");
+    assert_ne!(held.as_deref(), Some(session::NOT_STARTED), "the hold");
+    assert_ne!(started.as_deref(), Some(session::NOT_STARTED), "the start");
+}

@@ -3863,19 +3863,22 @@ fn reconnects_of(
                 let chats = std::mem::take(&mut lock(&dimmed).chats);
                 (chats.into_iter().collect(), Reconnection::Reconnected)
             }
-            // Said whatever chats there are: the window says it once for the project.
-            Reconnect::KeyChanged | Reconnect::Gone => {
+            // A changed key is said whatever chats there are: the window says it once for the
+            // project, and its chats stay dimmed.
+            Reconnect::KeyChanged => {
                 lock(&dimmed).down = None;
                 let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
-                let said = if heard == Reconnect::Gone {
-                    Reconnection::RunnerGone
-                } else {
-                    Reconnection::KeyChanged
-                };
                 if let Some(tell) = lock(&dimmed).tell.clone() {
-                    tell(chats, said);
+                    tell(chats, Reconnection::KeyChanged);
                 }
                 return;
+            }
+            // **A runner gone ends its chats** (#7187, CONTEXT.md: Start again on this pool),
+            // as a forgotten pool does: nothing is left to reconnect, so they are not dimmed.
+            Reconnect::Gone => {
+                lock(&dimmed).down = None;
+                let chats = std::mem::take(&mut lock(&dimmed).chats);
+                (chats.into_iter().collect(), Reconnection::RunnerGone)
             }
             // The chats stay dimmed, and the reason stays in the link's down: the window shows
             // it as refused, with Check pool (#7187).

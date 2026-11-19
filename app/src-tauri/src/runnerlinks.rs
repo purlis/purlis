@@ -205,7 +205,7 @@ impl ToARunner {
                     // A machine that answers and refuses is not dialled again on a timer
                     // (#7187): the link says why once, and Check pool says what changed.
                     purlis_core::sshroute::pool::docker_of_named_in_state(&config, local, pool)
-                        .map_err(|(why, state)| not_checked_in(why, state))?;
+                        .map_err(|(why, state)| not_checked_as(why, state))?;
                 }
                 let checked = checked_or_woken(&checking, &config, &of, resumes);
                 // A refusal of a container Docker no longer lists is a runner removed outside
@@ -215,9 +215,9 @@ impl ToARunner {
                 checked.map_err(|why| match checking.missing(&made, of.engine.as_deref()) {
                     Ok(Some(Missing::Removed(gone))) => NotChecked::Gone(gone_said(&of, gone)),
                     Ok(Some(Missing::OnAnotherEngine)) => {
-                        NotChecked::Refused(on_another_engine_said(&of))
+                        NotChecked::Unreachable(on_another_engine_said(&of))
                     }
-                    _ => NotChecked::Refused(why.0),
+                    _ => NotChecked::Unreachable(why.0),
                 })
             }),
         )
@@ -341,15 +341,15 @@ pub fn on_another_engine_said(kept: &Kept) -> String {
 /// **A forward's failure, said to the link by the state it puts the pool in** (#7187): a
 /// machine that does not answer is tried again; one that answers and refuses, or whose key or
 /// engine changed, is not.
-pub fn not_checked_in(
+pub fn not_checked_as(
     why: String,
     state: purlis_core::sshroute::connect::RemoteState,
 ) -> NotChecked {
     use purlis_core::sshroute::connect::RemoteState;
     match state {
         RemoteState::HostKeyChanged => NotChecked::HostKeyChanged(why),
-        state if state.retries() => NotChecked::Refused(why),
-        _ => NotChecked::Declined(why),
+        state if state.retries() => NotChecked::Unreachable(why),
+        _ => NotChecked::Refused(why),
     }
 }
 
@@ -362,7 +362,7 @@ pub fn not_checked(why: purlis_core::clusterpool::Refused) -> NotChecked {
             NotChecked::KeyChanged(why.to_string())
         }
         Refused::NotVouched(_) | Refused::WaitRanOut(_) | Refused::Other(_) => {
-            NotChecked::Refused(why.to_string())
+            NotChecked::Unreachable(why.to_string())
         }
     }
 }
@@ -672,7 +672,7 @@ pub fn count_of(
             u32::try_from(listed.iter().filter(|program| !program.ended).count())
                 .unwrap_or(u32::MAX),
         ),
-        Err(PoolLink::Down { why } | PoolLink::Refused { why }) => {
+        Err(PoolLink::Down { why } | PoolLink::Refused { why } | PoolLink::HostKeyChanged { why }) => {
             Err(crate::devices::shown_safely(&why))
         }
         Err(PoolLink::KeyChanged) => {
@@ -1356,6 +1356,10 @@ pub fn link_of(down: hostlink::Down) -> crate::dockerpools::PoolLink {
     use crate::dockerpools::PoolLink;
     if down.key_changed {
         PoolLink::KeyChanged
+    } else if down.host_key_changed {
+        PoolLink::HostKeyChanged {
+            why: crate::devices::shown_safely(&down.why),
+        }
     } else if down.refused {
         PoolLink::Refused {
             why: crate::devices::shown_safely(&down.why),

@@ -2930,10 +2930,10 @@ fn a_runner_whose_key_changed_leaves_its_chats_dimmed_and_says_so() {
     assert_eq!(hosted.sessions.reconnecting(), [id]);
 }
 
-/// A runner removed outside purlis (#4149): its chats are dimmed as for any outage, and the
-/// window is told it is gone, so it offers Make the runner again.
+/// A runner removed outside purlis (#4149, #7187 Runner gone): the window is told it is gone, so
+/// it offers Start again on this pool, and its chats end, not dimmed.
 #[test]
-fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
+fn a_runner_removed_outside_purlis_ends_its_chats_and_says_so() {
     let runs = StandIns::default();
     let host = Between::new(
         Hosting::running_with(
@@ -2963,7 +2963,7 @@ fn a_runner_removed_outside_purlis_leaves_its_chats_dimmed_and_says_so() {
                 (vec![id], Reconnection::RunnerGone),
             ]
     });
-    assert_eq!(hosted.sessions.reconnecting(), [id]);
+    assert!(hosted.sessions.reconnecting().is_empty());
 }
 
 /// A runner's machine that answers and refuses (#7187): its chats are dimmed as for any outage,
@@ -4417,4 +4417,43 @@ fn a_window_that_comes_back_to_a_runners_chat_hears_what_it_started_without_ther
             "{pool}"
         );
     }
+}
+
+/// #7187 (steward ruling): a runner gone ends its chats, as a forgotten pool does, instead of
+/// dimming them as a changed key does. The window is told once, and the chats are no longer held
+/// dimmed.
+#[test]
+fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
+    let told: Arc<Mutex<Vec<(Vec<u32>, crate::reconnecting::Reconnection)>>> = Arc::default();
+    let tell: Reconnecting = {
+        let told = Arc::clone(&told);
+        Arc::new(move |chats, said| told.lock().unwrap().push((chats, said)))
+    };
+    let running: Arc<Mutex<HashMap<u32, Program>>> = Arc::default();
+    for chat in [3, 5] {
+        running.lock().unwrap().insert(
+            chat,
+            Program {
+                id: format!("p{chat}"),
+                process: None,
+                views: Vec::new(),
+            },
+        );
+    }
+    let dimmed = Arc::new(Mutex::new(Dimmed {
+        tell: Some(tell),
+        ..Dimmed::default()
+    }));
+    let heard = reconnects_of(&running, &dimmed);
+    heard(Reconnect::Started("it went away".into()));
+    heard(Reconnect::Gone);
+    assert!(dimmed.lock().unwrap().chats.is_empty(), "no chat stays dimmed");
+    assert_eq!(
+        told.lock().unwrap().last().cloned(),
+        Some((vec![3, 5], crate::reconnecting::Reconnection::RunnerGone))
+    );
+    // A changed key still leaves them dimmed.
+    heard(Reconnect::Started("again".into()));
+    heard(Reconnect::KeyChanged);
+    assert_eq!(dimmed.lock().unwrap().chats.len(), 2);
 }

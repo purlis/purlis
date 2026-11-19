@@ -528,7 +528,6 @@ fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leav
                   and connect your VPN if you use one."
                 .into(),
             host: "build-box".into(),
-            answers: false,
         }
     );
     let left = forgotten_here(config.path(), "remote").expect("forgotten");
@@ -577,7 +576,7 @@ fn a_pool_is_offered_forgetting_in_every_state_it_cannot_be_removed_from() {
         assert!(
             matches!(
                 unreachable_said("build-box", &finding),
-                PoolRemoval::Unreachable { .. }
+                PoolRemoval::Unreachable { .. } | PoolRemoval::Refused { .. }
             ),
             "{finding:?}"
         );
@@ -594,7 +593,8 @@ fn a_machine_that_answers_and_refuses_is_offered_remove_beside_forget_and_no_oth
     use purlis_core::sshroute::connect::Finding;
     let host = || "build-box".to_owned();
     let answers = |finding: &Finding| match unreachable_said("build-box", finding) {
-        PoolRemoval::Unreachable { answers, .. } => answers,
+        PoolRemoval::Refused { .. } => true,
+        PoolRemoval::Unreachable { .. } => false,
         other => panic!("not offered forgetting: {other:?}"),
     };
     for refused in [

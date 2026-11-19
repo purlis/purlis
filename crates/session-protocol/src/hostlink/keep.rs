@@ -65,7 +65,16 @@ impl Down {
     /// good, or one that answers and refuses (#7187). What waiting would mend, none of them is.
     #[must_use]
     pub fn stops_retrying(&self) -> bool {
-        self.key_changed || self.gone || self.refused || self.host_key_changed
+        self.key_changed || self.ends_its_links()
+    }
+
+    /// Whether the kept link ends with this: a far end gone for good, one that answers and
+    /// refuses, or one with another host key, CA or engine (#7187). A changed key does not: its
+    /// link goes on trying after each pause, so it comes back should the far end's key return,
+    /// though no command waits for it ([`Down::stops_retrying`]).
+    #[must_use]
+    pub fn ends_its_links(&self) -> bool {
+        self.gone || self.refused || self.host_key_changed
     }
 
     /// Down for `why`, with the same key at the far end, as far as anyone knows.
@@ -224,7 +233,7 @@ pub fn keep_linked<C: Connector>(
                 Err(why) => {
                     // A far end gone for good, or one that answers and refuses (#7187), is said
                     // once, and the kept link ends.
-                    let stops = why.gone || why.refused || why.host_key_changed;
+                    let stops = why.ends_its_links();
                     if tell.send(Linked::Down(why)).await.is_err() || stops {
                         return;
                     }

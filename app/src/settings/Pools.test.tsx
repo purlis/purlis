@@ -1510,7 +1510,7 @@ describe("A cluster pool (#3292)", () => {
 
   it("on another machine that doesn't answer offers Forget it here, which forgets the pool here and says what stays there", async () => {
     pools = [onAnother(true)];
-    removeCame = { state: "unreachable", why: NO_ANSWER, host: "lab", answers: false };
+    removeCame = { state: "unreachable", why: NO_ANSWER, host: "lab" };
     const group = await poolsGroup();
     expect(within(group).queryByRole("button", { name: "Forget it here" })).toBeNull();
     await removeIt(group, "build-box");
@@ -1539,10 +1539,9 @@ describe("A cluster pool (#3292)", () => {
   it("on another machine that answers and refuses offers Remove beside Forget it here, and Remove goes on to clean it (#7187)", async () => {
     pools = [onAnother(true)];
     removeCame = {
-      state: "unreachable",
+      state: "refused",
       why: "lab didn't accept your sign-in.",
       host: "lab",
-      answers: true,
     };
     const group = await poolsGroup();
     await removeIt(group, "build-box");

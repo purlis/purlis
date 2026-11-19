@@ -82,6 +82,19 @@ describe("a chat whose runner's link is down", () => {
     expect(screen.getByRole("status")).toBe(status);
   });
 
+  it("is not dimmed once its runner is gone, which ends the chat (#7187)", async () => {
+    core();
+    pane();
+    const status = screen.getByRole("status");
+
+    await told({});
+    await waitFor(() => expect(status.textContent).toBe(SAID));
+
+    await told({ reconnection: "runner_gone" });
+    await waitFor(() => expect(status.textContent).toBe(""));
+    expect(screen.getByTestId("pane").classList.contains("reconnecting")).toBe(false);
+  });
+
   it("is said of the chats named, in the plane named, and of no other", async () => {
     core();
     pane(2);

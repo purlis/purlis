@@ -97,7 +97,10 @@ export type Held = {
 };
 
 /** A pool's machine that doesn't answer, as its Remove found: `host`, and why in Pool setup's words. */
-export type Unreachable = Omit<Extract<PoolRemoval, { state: "unreachable" }>, "state">;
+export type Unreachable = Omit<Extract<PoolRemoval, { state: "unreachable" }>, "state"> & {
+  /** The machine answered, and refused (#7187, Refused): its removal says so as its own state. */
+  answers: boolean;
+};
 
 /** A pool's kind: a runner on this machine's Docker, or one in a team's cluster (#3292). */
 export type PoolKind = "docker" | "cluster";
@@ -673,8 +676,8 @@ export type RemoveCame =
 function removeCameOf(said: Said<PoolRemoval>): RemoveCame {
   if (said.status === "error") return { removed: false, why: said.error };
   const data = said.data;
-  if (data.state === "unreachable")
-    return { removed: false, why: data.why, host: data.host, answers: data.answers };
+  if (data.state === "unreachable" || data.state === "refused")
+    return { removed: false, why: data.why, host: data.host, answers: data.state === "refused" };
   return data.left === null ? { removed: true } : { removed: true, left: data.left };
 }
 

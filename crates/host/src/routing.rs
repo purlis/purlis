@@ -66,6 +66,11 @@ pub struct Routed {
     /// The runner the link is relayed to, as `<pool>/<runner>` (#2865): asked at each start
     /// whether it drains.
     runner: Mutex<Option<String>>,
+    /// When the start in hand must be over (#7187): one three-minute budget for a start's
+    /// `hold_project` and its `start_program` together, set by whichever comes first and cleared
+    /// when the start is answered. A hold that no start follows leaves one that runs out
+    /// unused; the next start then takes a fresh one.
+    start_by: Mutex<Option<tokio::time::Instant>>,
 }
 
 #[derive(Clone)]
@@ -100,6 +105,7 @@ impl Routed {
             route: Mutex::new(Route::Undecided),
             named: Mutex::new(None),
             runner: Mutex::new(None),
+            start_by: Mutex::new(None),
         }
     }
 
@@ -212,25 +218,129 @@ impl Routed {
         command: Command,
         peer: &Peer,
     ) -> Result<Answer, Refusal> {
+        self.before_sending(relay, &command, peer, None).await?;
+        session::Host::call(relay, command, peer).await
+    }
+
+    /// What comes before a command goes to the runner: the drain check, and the wait of a start
+    /// or hold for a runner that is not linked yet. Answers how it waited, if it did.
+    async fn before_sending(
+        &self,
+        relay: &Relay,
+        command: &Command,
+        peer: &Peer,
+        by: Option<tokio::time::Instant>,
+    ) -> Result<Option<Waits>, Refusal> {
         // A runner that drains keeps its chats, and starts no new one (#2865): asked at
         // each start, so a link relayed before its runner was replaced drains with it.
-        if matches!(command, Command::StartProgram(_)) && self.drains().await {
+        let starts = matches!(command, Command::StartProgram(_));
+        if starts && self.drains().await {
             return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
         }
         // Before anything that needs the runner: a start holds its project first, and a
         // relay that is down refuses that hold (#3980), so it waits for a runner on its way
         // back (#4403), or, for any pool, a link that is down only a moment (#7187).
-        if matches!(
+        if !matches!(
             command,
             Command::HoldProject { .. } | Command::StartProgram(_)
-        ) && self.waits_for_the_runner(relay, peer).await
-            && matches!(command, Command::StartProgram(_))
-            && self.drains().await
-        {
+        ) {
+            return Ok(None);
+        }
+        let waited = self.waits_for_the_runner(relay, peer, by).await;
+        if waited.is_some() && starts && self.drains().await {
             // Replaced while it waited: the rule above holds at the end of the wait too.
             return Err(not_allowed(session::A_DRAINING_RUNNER_STARTS_NONE));
         }
-        session::Host::call(relay, command, peer).await
+        Ok(waited)
+    }
+
+    /// **When the start in hand must be over** (#7187): three minutes from when its first command,
+    /// the hold of its project or the start itself, began. One budget serves both, so a hold that
+    /// took a minute leaves the start two.
+    fn start_budget(&self, within: std::time::Duration) -> tokio::time::Instant {
+        let now = tokio::time::Instant::now();
+        let mut by = lock(&self.start_by);
+        match *by {
+            Some(at) if at > now => at,
+            _ => {
+                let at = now + within;
+                *by = Some(at);
+                at
+            }
+        }
+    }
+
+    /// A start with its hold and its program, carried to the runner `relay` reaches, held to the
+    /// start's budget ([`Routed::start_budget`]) and, where it ran out, refused naming the step it
+    /// was stuck on. **A wait for a runner on its way back is its own step and not part of the
+    /// budget**: a cluster's runner is waited for as long as the person set for it (`vouchWait`,
+    /// #4403), and the budget begins when that wait ends, so three minutes never cuts it short.
+    /// That wait is told as a step of its own (the pane says it waits for the runner), so it is
+    /// not a silence.
+    async fn within_a_start(
+        &self,
+        relay: &Relay,
+        mut command: Command,
+        peer: &Peer,
+    ) -> Result<Answer, Refusal> {
+        let within = self.hosting.start_within();
+        let starts = matches!(command, Command::StartProgram(_));
+        let mut by = self.start_budget(within);
+        // The window's start names its program, so a start given up on can be closed on the
+        // runner if the runner began it all the same; one that names none is given a name here.
+        let program = match &mut command {
+            Command::StartProgram(start) if peer.scope() == Scope::LocalUi => Some(
+                start
+                    .program
+                    .get_or_insert_with(|| ulid::Ulid::generate().to_string())
+                    .clone(),
+            ),
+            _ => None,
+        };
+        // A chat started again under the id of one given up on is its own.
+        if let Some(program) = &program {
+            crate::relay::stops_closing_a_late_start(program).await;
+        }
+        let answered = async {
+            let waited = self.before_sending(relay, &command, peer, Some(by)).await?;
+            if waited.is_some_and(|waited| waited.waking) {
+                by = tokio::time::Instant::now() + within;
+                *lock(&self.start_by) = Some(by);
+            }
+            tokio::time::timeout_at(by, session::Host::call(relay, command, peer))
+                .await
+                .map_err(|_| ())
+                .map_or_else(|()| Err(None), |answered| answered.map_err(Some))
+        }
+        .await;
+        if starts {
+            *lock(&self.start_by) = None;
+        }
+        match answered {
+            Ok(answer) => Ok(answer),
+            Err(Some(refusal)) => Err(refusal),
+            Err(None) => {
+                let step = relay.step_of(peer);
+                // Decision 2 (#7187): a start the runner began after the window was told it
+                // failed does not leave a chat running there.
+                if let Some(program) = program {
+                    relay
+                        .closes_a_late_start(
+                            peer,
+                            program,
+                            (within / 180).max(std::time::Duration::from_millis(10)),
+                        )
+                        .await;
+                }
+                Err(Refusal {
+                    code: session::NOT_STARTED.into(),
+                    why: format!(
+                        "the start took longer than {} and was stopped while {step}",
+                        how_long(within),
+                    ),
+                })
+            }
+        }
     }
 
     /// Whether the runner this link is relayed to drains now, read off the runtime.
@@ -247,7 +357,7 @@ impl Routed {
 
     /// Asks for the runner this link is relayed to to run again, off the runtime: how long a
     /// start waits for it, where it is on its way back. A stopped host wakes nothing.
-    async fn run_again(&self) -> Option<std::time::Duration> {
+    async fn run_again(&self) -> Option<Waits> {
         let Some(runner) = lock(&self.runner).clone() else {
             return None;
         };
@@ -266,9 +376,18 @@ impl Routed {
         };
         // A runner not asked to run again, a Docker pool's, still waits while its link is
         // down, as long as a link that has been down only a moment (#7187).
-        self.hosting
-            .waits_for(&runner, asked)
-            .or(Some(self.hosting.link_down_wait()))
+        Some(match self.hosting.waits_for(&runner, asked) {
+            // A runner on its way back: a suspended Docker runner, or a cluster's that waits for
+            // the cluster to vouch for it, for as long as the person set (#4403).
+            Some(waking) => Waits {
+                patience: waking,
+                waking: true,
+            },
+            None => Waits {
+                patience: self.hosting.link_down_wait(),
+                waking: false,
+            },
+        })
     }
 
     /// Whether the runner this link is relayed to may come back: one asked to run again that is
@@ -279,16 +398,30 @@ impl Routed {
     }
 
     /// `peer`'s hold or start waits for its runner where that is on its way back (#4403).
-    async fn waits_for_the_runner(&self, relay: &Relay, peer: &Peer) -> bool {
-        let Some(patience) = self.run_again().await else {
-            return false;
+    ///
+    /// Answers how it waited, or `None` where it waited for nothing.
+    ///
+    /// A wait for a link that is down only a moment is held to the start's budget `by`; one for
+    /// a runner on its way back is not (#7187).
+    async fn waits_for_the_runner(
+        &self,
+        relay: &Relay,
+        peer: &Peer,
+        by: Option<tokio::time::Instant>,
+    ) -> Option<Waits> {
+        let waits = self.run_again().await?;
+        let patience = match by {
+            Some(by) if !waits.waking => waits
+                .patience
+                .min(by.saturating_duration_since(tokio::time::Instant::now())),
+            _ => waits.patience,
         };
         if relay.waits_for_its_runner(peer, patience).await
             && let Some(runner) = lock(&self.runner).clone()
         {
             self.hosting.came_back(&runner);
         }
-        true
+        Some(waits)
     }
 
     /// The window's name, kept while the link was undecided, handed to this host now that the
@@ -299,6 +432,16 @@ impl Routed {
             let _ = session::Host::call(&self.hosting, named, peer).await;
         }
     }
+}
+
+/// How a start or hold waited for its runner before it was sent (#4403, #7187).
+#[derive(Clone, Copy)]
+struct Waits {
+    /// The longest it waited.
+    patience: std::time::Duration,
+    /// For a runner on its way back (a suspended runner, or a cluster's waiting to be vouched
+    /// for, for as long as the person set), not for a link that is down only a moment.
+    waking: bool,
 }
 
 fn not_allowed(why: impl Into<String>) -> Refusal {
@@ -338,54 +481,14 @@ impl session::Host for Routed {
                 session::Host::call(&self.hosting, command, peer).await
             }
             Goes::There(relay) => {
-                // A start is held to three minutes in all, and fails naming the step it was on
-                // (#7187): nothing on the remote path hangs for ever.
-                if matches!(command, Command::StartProgram(_)) {
-                    let within = self.hosting.start_within();
-                    // The window's start names its program, so a start given up on can be
-                    // closed on the runner if the runner began it all the same; one that names
-                    // none is given a name here.
-                    let mut command = command;
-                    let program = match &mut command {
-                        Command::StartProgram(start) if peer.scope() == Scope::LocalUi => Some(
-                            start
-                                .program
-                                .get_or_insert_with(|| ulid::Ulid::generate().to_string())
-                                .clone(),
-                        ),
-                        _ => None,
-                    };
-                    // A chat started again under the id of one given up on is its own.
-                    if let Some(program) = &program {
-                        crate::relay::stops_closing_a_late_start(program);
-                    }
-                    return match tokio::time::timeout(
-                        within,
-                        self.goes_there(&relay, command, peer),
-                    )
-                    .await
-                    {
-                        Ok(answered) => answered,
-                        Err(_) => {
-                            let step = relay.step_of(peer);
-                            // Decision 2 (#7187): a start the runner began after the window
-                            // was told it failed does not leave a chat running there.
-                            if let Some(program) = program {
-                                relay.closes_a_late_start(
-                                    peer,
-                                    program,
-                                    (within / 180).max(std::time::Duration::from_millis(10)),
-                                );
-                            }
-                            Err(Refusal {
-                                code: session::NOT_STARTED.into(),
-                                why: format!(
-                                    "the start took longer than {} and was stopped while {step}",
-                                    how_long(within),
-                                ),
-                            })
-                        }
-                    };
+                // A start, its hold and its program alike, is held to three minutes in all, and
+                // fails naming the step it was on (#7187): nothing on the remote path hangs for
+                // ever.
+                if matches!(
+                    command,
+                    Command::StartProgram(_) | Command::HoldProject { .. }
+                ) {
+                    return self.within_a_start(&relay, command, peer).await;
                 }
                 self.goes_there(&relay, command, peer).await
             }
