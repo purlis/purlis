@@ -17,6 +17,7 @@ import { VaultRefusedNotice } from "./VaultRefusedNotice";
 import { McpFailedNotice } from "./McpFailedNotice";
 import { InputRefusedNotice } from "./InputRefusedNotice";
 import { SkillsMissingNotice } from "./SkillsMissingNotice";
+import { KnownGapsNotice } from "./KnownGapsNotice";
 import { DraftReadyNotice } from "./DraftReadyNotice";
 import { HostLostNotice } from "./HostLostNotice";
 import { MoveNotice } from "./MoveNotice";
@@ -470,6 +471,8 @@ export function ChatNotices({
       <InputRefusedNotice plane={plane} session={session} />
       {/* A skill its persona names that it started without (#2768). */}
       <SkillsMissingNotice plane={plane} session={session} />
+      {/* The known gaps it started with (M75-37; proposed, review round 1, S5). */}
+      <KnownGapsNotice plane={plane} session={session} />
       <HostLostNotice plane={plane} session={session} onRestart={onRestart} />
       {/* Its move to or from a pool's runner (#2048). */}
       <MoveNotice plane={plane} session={session} />

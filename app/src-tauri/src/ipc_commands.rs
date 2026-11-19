@@ -581,6 +581,8 @@ macro_rules! app_commands {
                 questiontrail::question_trail,
                 chatlog::chat_log,
                 chatlog::chat_blocks,
+                knowngaps::known_gaps,
+                knowngaps::chat_known_gaps,
                 blockways::tell_chat_blocked,
                 dispatched::task_question,
                 dispatched::task_question_answered,

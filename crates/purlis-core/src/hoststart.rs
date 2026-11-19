@@ -1223,6 +1223,18 @@ fn begun(
         return Err("the start names no chat and run for its run to begin under".to_owned());
     };
     let none = || Some(NONE.to_owned());
+    // Its known gaps are declared where the protection is (M75-37), as the window's start does.
+    let protection = crate::sandbox::protection::at_start(
+        starting.root,
+        persona,
+        &crate::sandbox::Made::Unnamed,
+        sandbox,
+        ready.unsandboxed.as_ref(),
+        ready.harness.map_or(
+            crate::sandbox::protection::Program::Declared,
+            crate::sandbox::protection::Program::Harness,
+        ),
+    );
     let attributes = Attributes {
         persona: persona.map(str::to_owned).or_else(none),
         harness: ready
@@ -1239,13 +1251,7 @@ fn begun(
         conversation: ready.session.as_ref().map(ToString::to_string),
         started_by: Some(starting.started_by.to_owned()),
         // What the start resolved (R-227), as it was made here: by no grant of the window's.
-        protection: Some(crate::sandbox::protection::at_start(
-            starting.root,
-            persona,
-            &crate::sandbox::Made::Unnamed,
-            sandbox,
-            ready.unsandboxed.as_ref(),
-        )),
+        protection: Some(protection),
     };
     let cause = if start.resume.is_some() {
         Began::Reopen

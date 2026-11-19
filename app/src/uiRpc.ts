@@ -1677,6 +1677,15 @@ export const commands = {
 	 *  nothing of Quiet or snooze is touched (R-177): it only reads.
 	 */
 	chatBlocks: (plane: PlaneId, asked: BlocksAsked[]) => typedError<ChatBlocks[], string>(__TAURI_INVOKE("chat_blocks", { plane, asked })),
+	/**  **The known gaps the open project declares**, per harness, on this system. */
+	knownGaps: (plane: PlaneId) => typedError<HarnessGaps[], string>(__TAURI_INVOKE("known_gaps", { plane })),
+	/**
+	 *  **The known gaps chat `session` started with**, as its start event recorded them
+	 *  (`run.started`'s protection), each as the table says it now. An id this build does not know is
+	 *  left out, never guessed. Not the Chat log's command: that one is read only when its tab opens
+	 *  (R-225), and this is read for the pane's head.
+	 */
+	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
 	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,
@@ -7950,6 +7959,14 @@ export type HandedFromNote = {
 	asker_waiting?: boolean | null,
 };
 
+/**  The gaps of one harness. */
+export type HarnessGaps = {
+	/**  The harness, by the word the plane calls it (`claude`, `codex`, `opencode`). */
+	harness: string,
+	/**  Its gaps, in the table's order. */
+	gaps: KnownGapShown[],
+};
+
 /**
  *  A harness's capability card at a glance (HP-19, W10, ADR 0072 §3): what the picker says under
  *  the harness that is picked, what a chat's header draws, and what a control that is off for a
@@ -8366,6 +8383,27 @@ export type KeyAct = "down" | "up";
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
 export type KindHint = "url" | "file" | "chat" | "osc8";
+
+/**  One known gap, as the window says it. */
+export type KnownGapShown = {
+	/**  Its stable id. */
+	id: string,
+	/**  What it is, as a sentence. */
+	said: string,
+	/**  What purlis does there. */
+	instead: string,
+	/**  Where it comes from (`#6972 §4 gap 3`, `spec §11.5`). */
+	from: string,
+	/**  The families it affects whose mode is not `off`, by their `[policy]` keys. */
+	families: string[],
+	/**  Of those, the ones that are enforced: what `context.gaps` carries. */
+	enforced: string[],
+	/**
+	 *  Whether it holds only for some starts of the harness (an older Claude Code, a lifted
+	 *  sandbox).
+	 */
+	conditional: boolean,
+};
 
 /**  One context of the person's kubeconfig, as Point kubectl at it lists it. */
 export type KubeContext = {
@@ -16644,6 +16682,11 @@ export type StartProtection = {
 	charter_dirty: boolean,
 	/**  How many answers were in force: none until phase 2. */
 	answers_in_force: number,
+	/**
+	 *  The ids of the known gaps the chat started with (M75-37): each resolves through
+	 *  `chat_known_gaps`.
+	 */
+	known_gaps: string[],
 };
 
 /**

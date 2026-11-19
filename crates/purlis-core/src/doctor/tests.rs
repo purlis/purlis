@@ -141,7 +141,7 @@ fn colour_is_drawn_only_when_asked_for() {
 /// Python's `_FIXED_CHECK_NAMES`, with `git bare repos` (#1100) and then the forge pair spliced
 /// in after `git identity`, as `check_names` splices the pair. No row may go missing: a doctor
 /// that stops printing one tells its reader the problem it reported has gone.
-const PYTHON_ROWS: [&str; 41] = [
+const PYTHON_ROWS: [&str; 44] = [
     "python3",
     "git",
     "git identity",
@@ -169,6 +169,11 @@ const PYTHON_ROWS: [&str; 41] = [
     "vaults",
     "vault registry",
     "version lock",
+    // Not Python's: purlis's own rows, from M75-37, which a plane that wrote no `[policy]` has
+    // too, since the default `watch` template enforces three families.
+    "known gaps: claude",
+    "known gaps: codex",
+    "known gaps: opencode",
     "memory indexes",
     "personas",
     "persona grant",
@@ -4257,4 +4262,33 @@ fn a_size_is_said_in_the_units_a_reader_expects() {
     assert_eq!(sandbox::bytes_said(4000), "4.0 KB");
     assert_eq!(sandbox::bytes_said(1_240_000), "1.2 MB");
     assert_eq!(sandbox::bytes_said(3_400_000_000), "3.4 GB");
+}
+
+// ---- known gaps (M75-37) ------------------------------------------------------------------------
+
+#[test]
+fn a_project_has_its_known_gaps_declared_whether_or_not_it_wrote_a_policy() {
+    // The default `watch` template enforces `secrets`, `vaults` and `guards.credential`.
+    let (_d, root) = plane("schema = 1\n");
+    let names: Vec<String> = doctor(&root).run().into_iter().map(|r| r.name).collect();
+    assert!(
+        names.iter().any(|name| name.starts_with("known gaps: ")),
+        "{names:?}"
+    );
+
+    let (_d, root) = plane("schema = 1\n[policy]\ntemplate = \"strict\"\n");
+    let rows = doctor(&root).run();
+    let known: Vec<&Row> = rows
+        .iter()
+        .filter(|r| r.name.starts_with("known gaps: "))
+        .collect();
+    assert_eq!(known.len(), crate::harness::Harness::ALL.len(), "{rows:?}");
+    for row in known {
+        assert_eq!(
+            row.status,
+            Status::Ok,
+            "a declared gap is no failure: {row:?}"
+        );
+        assert!(row.detail.contains("the chat still starts"), "{row:?}");
+    }
 }

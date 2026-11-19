@@ -67,6 +67,7 @@ import {
 import { harnessDeclarationRows } from "./harnessDeclarations";
 import { settled } from "../PlaneEdits";
 import { NETWORK, networkGroup } from "./GrantedList";
+import { knownGapsSetting } from "./KnownGaps";
 import { dispatchGroup } from "./dispatch";
 import { projectRunsOnSetting } from "./runsOn";
 import { teamPolicyRow } from "./teamPolicy";
@@ -652,14 +653,17 @@ function declaredGroups(
       notes: sandboxNotes(read.shared, read.sandbox),
       // The mode, and any value an administrator's policy locks (#1343), is a status line:
       // nothing here takes it back, moves it or resets it.
-      settings: fromShared(
-        "project.sandbox",
-        sandboxControls(read.sandbox, () =>
-          linkToGroup(settingsPlace("project", read.plane), YOUR_LEVEL),
+      settings: [
+        ...fromShared(
+          "project.sandbox",
+          sandboxControls(read.sandbox, () =>
+            linkToGroup(settingsPlace("project", read.plane), YOUR_LEVEL),
+          ),
+        ).map((one) =>
+          same(one.key, SANDBOX_MODE) || one.kind === "status" ? { ...one, oneWay: true } : one,
         ),
-      ).map((one) =>
-        same(one.key, SANDBOX_MODE) || one.kind === "status" ? { ...one, oneWay: true } : one,
-      ),
+        ...(read.plane === undefined ? [] : [knownGapsSetting(read.plane)]),
+      ],
       ...(sharedOk ? { collection: hostsCollection(read.shared, "hosts") } : {}),
       after: [
         // What the project expects and this machine has not allowed (ADR 0093).

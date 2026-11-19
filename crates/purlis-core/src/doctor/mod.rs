@@ -43,6 +43,7 @@ mod guard;
 mod harnesses;
 mod host_log;
 mod inventory;
+mod known_gaps;
 mod layer;
 mod mcp;
 mod memory;
@@ -64,6 +65,8 @@ mod themes;
 mod vault_registry;
 mod vaults;
 mod work;
+
+pub use known_gaps::rows as known_gaps_rows;
 
 /// Python's truthiness of a TOML value, for `crate::alerts`, which reads the same manifest
 /// sections through the same `(cfg.get(name) or {})` idiom.
@@ -604,6 +607,7 @@ impl Doctor {
         rows.extend(sandbox::grants_held(self));
         rows.extend(sandbox::relayed_internal(self));
         rows.extend(sandbox::cache_home(self));
+        rows.extend(known_gaps::known_gaps(self));
         rows.extend(host_log::host_log(self));
         rows.push(memory::memory_indexes(self));
         rows.push(personas::personas(self));

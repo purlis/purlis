@@ -76,6 +76,12 @@ pub struct InForce {
     /// is kept as written, so an answer of a shape a later phase gives is still read.
     #[serde(default)]
     pub answers_in_force: Vec<serde_json::Value>,
+    /// **The known gaps the chat started with** (M75-37, Q319 C1): the ids of every gap that held
+    /// for its harness on this system and left unenforced a family whose rule was in force
+    /// ([`crate::knowngaps::Declared`]). The chat started all the same. A line written before
+    /// they were recorded reads as none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub known_gaps: Vec<String>,
 }
 
 /// Reads a start's `protection` leniently: one in a shape this version cannot read is not
@@ -91,12 +97,15 @@ where
 /// **The protection a chat of `persona`, made `made`, starts under** in the project at `root`:
 /// under `sandbox` where the start applied one, without it where it `lifted` it, or with
 /// neither where the floor could not be applied or the program is not one purlis sandboxes.
+/// The known gaps it started with are declared here ([`crate::knowngaps::Declared`]), for the
+/// `program` it runs, so the window's start and the host's record the same.
 pub fn at_start(
     root: &Path,
     persona: Option<&str>,
     made: &Made,
     sandbox: Option<&Applied>,
     lifted: Option<&Lifted>,
+    program: Program,
 ) -> InForce {
     let (level, tier) = match (sandbox, lifted) {
         (_, Some(lifted)) => (
@@ -131,7 +140,36 @@ pub fn at_start(
         charter_file,
         charter_dirty,
         answers_in_force: Vec::new(),
+        known_gaps: known_gaps(root, program, sandbox),
     }
+}
+
+/// What a chat's program is, for the gaps its start declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Program {
+    /// A harness purlis has an adapter for.
+    Harness(crate::harness::Harness),
+    /// A harness the project or this machine declares, with no adapter (ADR 0073): every family
+    /// is a gap.
+    Declared,
+    /// A program that is no harness (a shell): no rule is asked of it, so no gap is declared.
+    Shell,
+}
+
+/// The ids of the known gaps a start of `program` under `sandbox` declares at `root`.
+fn known_gaps(root: &Path, program: Program, sandbox: Option<&Applied>) -> Vec<String> {
+    let harness = match program {
+        Program::Harness(harness) => Some(harness),
+        Program::Declared => None,
+        Program::Shell => return Vec::new(),
+    };
+    let facts = crate::knowngaps::Facts::of(harness, super::Os::this(), sandbox);
+    let floor = crate::enforcement::at_start(root);
+    crate::knowngaps::Declared::at(&facts, &floor)
+        .ids()
+        .into_iter()
+        .map(str::to_owned)
+        .collect()
 }
 
 /// The file a start's commit was of on a line written before [`InForce::charter_file`] was

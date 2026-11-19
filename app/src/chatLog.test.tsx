@@ -28,6 +28,7 @@ const started = (over: Partial<NonNullable<Started["protection"]>> = {}): Starte
     charter_file: "purlis.toml",
     charter_dirty: true,
     answers_in_force: 2,
+    known_gaps: [],
     ...over,
   },
 });
@@ -53,6 +54,7 @@ describe("the Chat log start row is one line built from the start event", () => 
           charter_commit: "unknown",
           charter_dirty: false,
           answers_in_force: 0,
+          known_gaps: [],
         }),
       ),
     ).toBe(

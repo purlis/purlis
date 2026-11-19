@@ -28,7 +28,7 @@ guards.release = "log"     # one family, apart from the template
 | `watch` (the default) | everything logs; `secrets`, `vaults`, `guards.credential` and `trust` are enforced | the floor |
 | `hold` | `watch`, and `guards.merge` enforced | the floor |
 | `team` | `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and the families Q308b added enforced; the rest log | the full sandbox |
-| `strict` | everything enforced: purlis before Q308 | as `[sandbox]` says |
+| `strict` | everything enforced, as before Q308 | as `[sandbox]` says |
 
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
@@ -138,3 +138,41 @@ bound what an agent does with your authority, never what you do.
   `/etc/purlis/policy.toml` makes the Organisation's file broken, and a broken Organisation reads
   as `strict` plus every lock under the full sandbox, not as that one set left out. Check the
   window's Notice after editing it.
+
+## Known gaps: what a harness cannot enforce
+
+A rule in force (a family whose mode is not `off`) that a harness cannot enforce on this system is a
+**known gap**. purlis declares it and the chat still starts: in Settings under *Sandbox › Known
+gaps*, in `purlis doctor` (wherever any family is not `off`, which the default `watch` template
+already is for `secrets`, `vaults` and `guards.credential`), in the chat's start event and on its
+pane, for a chat started from the window as for one a host starts. A family set to `off` declares
+none. Nothing is declared as held where it is not: a chat whose sandbox is lifted (the person's
+opt-out, or a floor that could not be applied) has a gap for every family the sandbox, the proxy or
+an OpenCode shim's protected files would hold, and a declared harness with no adapter has every
+family as a gap.
+
+`context.gaps` on `start` holds the keys of the families that are `enforce` and have a gap for the
+chat being started. A project that wants such a chat refused writes the rule itself; the shipped
+default has none:
+
+```cedar
+@id("trust-no-start-on-a-sandbox-gap") @level("project")
+forbid (principal, action == Action::"start", resource)
+  when { context.gaps.contains("sandbox") };
+```
+
+**The rule refuses only where the family `trust` is `enforce`.** Under the default `watch` and
+`hold` templates `trust` is `enforce` (Q329), so the rule above refuses. Where the project writes
+`trust = "log"` under `[policy]` (or the template is `open`) it refuses nothing: the chat starts,
+and its tab says once that the rule would have refused it. Mind what the rule says:
+`contains("sandbox")` is true of every start while `trust` is enforced, because Claude Code's reads
+are a gap on every system (`claude-code-reads`), and a lifted sandbox is one too; such a rule
+refuses every start.
+
+An `@ask` forbid on `start` refuses too, until asking at a start is wired (slice 36): the refusal
+says the rule asks and that asking at a start is not wired yet. Write a plain forbid.
+
+The refusal names the rule and the gaps. `crates/purlis-core/src/knowngaps.rs` holds the capability
+table (each action's enforcement point per harness, system and sandbox, or the gap that stands in its
+place) and every gap's entry; `context.machine` is unset on every system (it is sealed until the
+person confirms it), so a rule reading it is denied.

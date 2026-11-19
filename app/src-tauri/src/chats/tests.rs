@@ -12116,6 +12116,42 @@ fn a_chat_the_window_starts_records_the_tier_of_the_sandbox_it_resolved() {
     }
 }
 
+/// M75-37: a chat the window starts records the known gaps it started with in its run's start,
+/// as a start the host composes does, so the pane head shows them for a window chat too. The
+/// default `watch` template enforces `guards.credential`, which Claude Code's hook alone holds.
+#[test]
+fn a_chat_the_window_starts_records_the_known_gaps_it_started_with() {
+    let plane = tempfile::tempdir().expect("a plane");
+    std::fs::write(plane.path().join(purlis_core::plane::MANIFEST), "").expect("charter.toml");
+    let chats = restartable_chats_of(plane.path(), Pretend::default());
+    let gaps: std::sync::Arc<Mutex<Vec<Vec<String>>>> = std::sync::Arc::default();
+    let told = std::sync::Arc::clone(&gaps);
+    chats.when_a_run_begins(Box::new(move |_, _, _, attributes, _| {
+        let protection = attributes.protection.as_ref().expect("a protection");
+        lock(&told).push(protection.known_gaps.clone());
+    }));
+
+    let session = chats
+        .start(&a_chat_in_with(plane.path(), None), SIZE)
+        .expect("starts");
+
+    let gaps = lock(&gaps).clone();
+    assert_eq!(gaps.len(), 1, "one run began");
+    assert!(
+        gaps[0]
+            .iter()
+            .any(|id| id == purlis_core::knowngaps::HOOK_FAILS_OPEN),
+        "the start declares what a hook alone holds: {:?}",
+        gaps[0]
+    );
+    assert!(
+        gaps[0].iter().any(|id| id == "claude-code-reads"),
+        "{:?}",
+        gaps[0]
+    );
+    chats.close(session).expect("ends");
+}
+
 /// R-290 under Q240: when chat 9 has "moved on" from a connection its proxy holds, through a
 /// real board of live asks beside an open chat, its hook lines told as [`Chats::called`] hears
 /// them, and its stops written where a test reads them.
