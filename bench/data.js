@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795070505380,
+  "lastUpdate": 1795084332741,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51534,6 +51534,48 @@ window.BENCHMARK_DATA = {
             "value": 101.97562400000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.104, 101.721, 101.976, 102.630, 102.704 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "691c4874cefb1154dcd3f962cffd02535e2a9514",
+          "message": "An abort's stack is cut past its trampoline even when its exception does not say signal (fixes main) (#6912)\n\nMain ci run 43725561053 (attempt 1, macOS single-app scenario tests) sent\nan abort's stack whole: 14 handler frames, _sigtramp, pthread_kill, abort.\nstack_of cuts past the trampoline only when the exception record is\nEXC_SOFTWARE / EXC_SOFT_SIGNAL, and that dump's record did not say so.\n\nstack_of now also cuts when the stack itself shows an abort's signal:\npast the first libsystem_platform frame, skipping libsystem_kernel and\nlibsystem_pthread, comes libsystem_c's abort. Only crash-handler's own\nhandler answers that signal, so the frames before it are the handler's.\nA crash inside libsystem_platform (memmove) has the app past it and a\nfault in an app signal handler has the interrupted code past it, so both\nare still kept whole.\n\ncrash-relaunch.mjs now prints the event's exception type and value when\nthat check fails, so a recurrence shows what the crash was recorded as.\n\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M7GGTDD7F8KPCJY303EA058G\nPurlis-Persona: steward\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-19T09:48:10Z",
+          "tree_id": "e80ac6b1bcd27966c739f448735234f5bbac9076",
+          "url": "https://github.com/purlis/purlis/commit/691c4874cefb1154dcd3f962cffd02535e2a9514"
+        },
+        "date": 1795084324846,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5393654999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.537, 0.539, 0.539, 0.552, 0.562 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2498835,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.138, 16.232, 16.250, 16.279, 16.388 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.98310000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.401, 100.892, 100.983, 101.012, 102.860 ms"
           }
         ]
       }
