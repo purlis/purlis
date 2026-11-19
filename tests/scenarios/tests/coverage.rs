@@ -123,6 +123,7 @@ fn record(
         timings: Some(TimingsMode::Scaled),
         verdict,
         reason: (verdict == ReportVerdict::NotRun).then(|| "filtered out".into()),
+        refusal_expected: false,
     }
 }
 
@@ -1896,6 +1897,7 @@ fn a_fixture_cover_that_did_not_run_on_its_named_os_fails_the_gate() {
         timings: None,
         verdict: ReportVerdict::Pass,
         reason: None,
+        refusal_expected: false,
     };
     let found = judge_runs(&covered, &repo, Trigger::MergeQueue, &ran, &[on(Os::Linux)]);
     assert!(

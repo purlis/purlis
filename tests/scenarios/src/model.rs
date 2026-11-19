@@ -406,6 +406,12 @@ pub struct LegRecord {
     pub verdict: ReportVerdict,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// **The refused action may have happened if this entry's verdict differs** (#7175): the
+    /// entry is an escape cell or has a step that expects a refusal. A comparison of runs reads it
+    /// from the record, so the cells are not read at compare time. Absent is false in the file,
+    /// and a reader that cannot tell treats absent as unknown, never as "not an escape".
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub refusal_expected: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -112,6 +112,30 @@ test("an_escape_whose_verdict_differs_opens_a_public_p0_issue_never_a_flaky_one"
   }
 });
 
+test("a_record_that_says_refusal_expected_makes_a_differing_verdict_an_escape_with_no_cell_file", () => {
+  const dir = runsOf([[rec("M-REF-01", "pass", { refusal_expected: true })], [rec("M-REF-01", "fail", { refusal_expected: true })]]);
+  try {
+    const found = flaky(dir, { source: "nightly" });
+    assert.equal(found.issues.length, 1);
+    assert.deepEqual(found.issues[0].labels, ["area:security", "priority:p0", "bot-maintained"]);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test("a_malformed_refusal_expected_fails_closed_and_false_never_clears_the_cells", () => {
+  const dir = runsOf([[rec("M-A-01", "pass", { refusal_expected: "yes" })], [rec("M-A-01", "fail", { refusal_expected: "yes" })]]);
+  const plain = runsOf([[rec("M-B-01", "pass", { refusal_expected: false })], [rec("M-B-01", "fail", { refusal_expected: false })]]);
+  const cells = cellsOf({ cells: [{ id: "M-B-01", escape: true, steps: [{}] }] });
+  try {
+    assert.equal(flaky(dir, {}).differences[0].escape, true, "not a boolean reads as an escape");
+    assert.equal(flaky(plain, {}).differences[0].escape, false, "false with nothing else is a plain difference");
+    assert.equal(flaky(plain, { cells }).differences[0].escape, true, "false does not clear an escape cell: the fallback holds for a report that cannot say");
+  } finally {
+    for (const d of [dir, plain, cells]) rmSync(d, { recursive: true });
+  }
+});
+
 test("the_shuffle_moves_batches_and_never_the_cells_inside_one", () => {
   const names = [];
   for (const batch of ["b0", "b1", "b2", "b3", "b4", "b5"]) {

@@ -563,6 +563,7 @@ fn a_leg_report_record_validates_for_each_kind() {
         timings: Some(TimingsMode::Scaled),
         verdict: ReportVerdict::Pass,
         reason: None,
+        refusal_expected: false,
     };
     let good = [
         record(EntryKind::Cell, None, ReportLeg::Fake),
@@ -612,6 +613,20 @@ fn a_leg_report_record_validates_for_each_kind() {
     ];
     let value = serde_json::to_value(&not_run).expect("a record serialises");
     assert!(schema_errors("leg-report.schema.json", None, &value).is_empty());
+    // `refusal_expected` is optional (#7175): a record with it validates, one without it (every
+    // report written before it) still does, and it must be a boolean.
+    let expects = LegRecord {
+        refusal_expected: true,
+        ..good[0].clone()
+    };
+    let with = serde_json::to_value(&expects).expect("a record serialises");
+    assert_eq!(with["refusal_expected"], true);
+    assert!(schema_errors("leg-report.schema.json", None, &with).is_empty());
+    let mut old = serde_json::to_value(&good[0]).expect("a record serialises");
+    assert!(old.get("refusal_expected").is_none(), "false is left out");
+    assert!(schema_errors("leg-report.schema.json", None, &old).is_empty());
+    old["refusal_expected"] = json!("yes");
+    assert!(!schema_errors("leg-report.schema.json", None, &old).is_empty());
     for r in &bad {
         let value = serde_json::to_value(r).expect("a record serialises");
         assert!(

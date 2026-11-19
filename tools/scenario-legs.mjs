@@ -20,8 +20,10 @@
 //   issue, labelled `flaky-scenario` (created when the repository has none) and `bot-maintained`;
 //   above five entries one summary issue lists them instead (an escape always opens its own), and
 //   an issue that could not be opened is an error, not a warning. An entry that is an escape
-//   (`kind: escape`, or a cell with `escape: true` or a step that expects a refusal, so a refusal
-//   that did not hold) opens one labelled `area:security` and `priority:p0` instead: everything
+//   (`kind: escape`, or a record with `refusal_expected: true`, which the scenario host writes for a
+//   cell with `escape: true` or a step that expects a refusal, so a refusal that did not hold; a
+//   `refusal_expected` that is not a boolean counts as true; a report without the field falls back
+//   to reading `tests/scenarios/cells/*.json`, so an old report is never read as "not an escape") opens one labelled `area:security` and `priority:p0` instead: everything
 //   runs in public (Q301), and nothing goes anywhere private. `--dry-run` prints each issue it
 //   would open, as JSON, and opens none; so does `FLAKY_DRY_RUN=1`. Each run's `junit*.xml`
 //   (nextest's, one a batch) is compared with its leg report, test by test. `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
@@ -113,9 +115,20 @@ export function escapeRows(folder) {
 }
 
 /**
+ * Whether `record` itself says its entry is an escape (#7175): `kind: escape`, or `refusal_expected`
+ * set to anything but an absent field or `false`. Fails closed: a value that is not a boolean (a
+ * malformed report) reads as an escape, never as a plain difference. An absent field says nothing,
+ * so `false` never clears what the cells or the kind say.
+ */
+export const isEscapeRecord = (record) =>
+  record.kind === "escape" || (record.refusal_expected !== undefined && record.refusal_expected !== false);
+
+/**
  * **The entries whose verdict differs between `runs`** (one array of records each). An entry a run
  * has no record of counts as `missing` there, so a run that did not pick a cell up differs from one
- * that did. `escapes` is the set of row ids that are escapes.
+ * that did. An entry is an escape when any run's record of it says so (`isEscapeRecord`), or, for
+ * reports written before the field, when its row is in `escapes` (the ids `escapeRows` reads from
+ * the cells): either one is enough, and neither is cleared by the other.
  * Returns `[{ key, what, escape, verdicts }]`, in the order the entries first appear.
  */
 export function differences(runs, escapes = new Set()) {
@@ -123,19 +136,20 @@ export function differences(runs, escapes = new Set()) {
   runs.forEach((records, index) => {
     for (const r of records) {
       const key = keyOf(r);
-      if (!seen.has(key)) seen.set(key, { sample: r, verdicts: new Array(runs.length).fill("missing") });
+      if (!seen.has(key)) seen.set(key, { sample: r, escape: false, verdicts: new Array(runs.length).fill("missing") });
       const entry = seen.get(key);
+      if (isEscapeRecord(r)) entry.escape = true;
       // A pass anywhere in the run is the run's verdict, as `judge_runs` reads it.
       if (entry.verdicts[index] !== "pass") entry.verdicts[index] = r.verdict;
     }
   });
   const out = [];
-  for (const [key, { sample, verdicts }] of seen) {
+  for (const [key, { sample, escape, verdicts }] of seen) {
     if (new Set(verdicts).size < 2) continue;
     out.push({
       key,
       what: describe(sample),
-      escape: sample.kind === "escape" || escapes.has(sample.row),
+      escape: escape || escapes.has(sample.row),
       verdicts,
     });
   }
