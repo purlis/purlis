@@ -177,3 +177,16 @@ See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechan
 ### The daily Report intake routine
 
 See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.
+
+## Notes from working here (agent)
+
+- `cargo test -p purlis-core --lib -- <filter>` runs only the named unit tests (the lib test binary
+  links once; a filter keeps it quick). `cargo test -p purlis-core --test it -- <filter>` does the
+  same for the integration binary. A committed project rule needs `// purlis-policy 1` first and an
+  `@id` that starts with its family's prefix (`processes-`), or the whole file reads as broken and
+  the project as strict.
+- `purlis worktree update`, `commit` and `push` each go alone in their call (the guard refuses them
+  beside another command), and `cd` carries to the next call: use absolute paths.
+- Clippy's `disallowed-methods` has one `clippy.toml` per crate (core and the app here), so a rule
+  that must hold across crates also needs a test that reads the workspace's files, as
+  `the_press_is_made_only_by_the_windows_command_layer` does.

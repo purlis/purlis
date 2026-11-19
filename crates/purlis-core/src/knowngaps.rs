@@ -783,7 +783,11 @@ pub fn refusal(
             gaps: &gaps,
         }),
     };
-    let decision = in_plane(judged.root, &asker, "start", ("Harness", harness)).held_to(floor);
+    // A start is judged by the rules whatever the plane's standing: the deny state only adds
+    // refusals to the other actions (M75-07b, review round 5, SEC5-SF2).
+    let sealed = crate::policy::decide::Sealed::for_start();
+    let decision =
+        in_plane(judged.root, &asker, "start", ("Harness", harness), &sealed).held_to(floor);
     let affecting: Vec<String> = declared
         .entries()
         .iter()

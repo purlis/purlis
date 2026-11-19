@@ -30,12 +30,17 @@
 //!
 //! **Outside any plane** there is no host to ask: [`decide_locally`] judges by the shipped
 //! default under `strict` ([`Loaded::shipped_strict`]), in the process that asks (§6, review
-//! round 3, SEC3-SF3). Which processes count as outside any plane is slice 07b's.
+//! round 3, SEC3-SF3). Which processes count as outside any plane is the second part of slice 07b's
+//! (#7016); **the deny state's refusal** (the first part) is in [`in_plane`]: see
+//! [`super::deny_state`].
 
 use std::sync::OnceLock;
 
 use crate::enforcement::Mode;
 
+use crate::secrets::answers::{self, Standing};
+
+use super::deny_state::{self, DenyState};
 use super::levels::{self, Chat, Loaded, Named};
 use super::organisation;
 use super::{EVERYTHING_ELSE, File, Level, Question, World, family_of, read_file};
@@ -154,6 +159,10 @@ pub struct Decision {
     /// Why nothing could be asked, for a request that does not fit the schema.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unasked: Option<String>,
+    /// Set where the plane's sealed answers are in the deny state and this is its refusal of an
+    /// action but `start` (M75-07b): the causes, and the re-press that ends it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deny_state: Option<DenyState>,
 }
 
 impl Decision {
@@ -295,6 +304,7 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
         lock: loaded.lock_on(&family, request.action),
         grant: None,
         unasked,
+        deny_state: None,
     };
     let full = match evaluated {
         Ok(full) => full,
@@ -375,6 +385,7 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
         lock: reference.iter().find_map(|r| r.lock.clone()),
         grant: None,
         unasked: None,
+        deny_state: None,
     }
 }
 
@@ -469,7 +480,7 @@ impl Asker<'_> {
     /// The context of `action` as the host makes it: each field the action's context declares
     /// that the host knows. A field it does not know is left out, so the request does not fit
     /// the schema and is denied, never guessed (§6.3).
-    fn context(&self, action: &str) -> serde_json::Value {
+    fn context(&self, action: &str, machine: Option<&str>) -> serde_json::Value {
         let mut context = serde_json::Map::new();
         for field in super::context_fields(action) {
             let value: serde_json::Value = match field.as_str() {
@@ -486,8 +497,14 @@ impl Asker<'_> {
                     Some(start) => start.gaps.into(),
                     None => continue,
                 },
-                // `machine` is sealed and unset until the person confirms it (07b), and the
-                // narrowing fields come with each family's slice.
+                // `machine` is the device id the registry sealed, and only once the person
+                // confirmed it in the window: unset otherwise, so a rule that reads it errs, and
+                // that is a deny (§6.3, M75-07b). Never `machine.json`'s.
+                "machine" => match machine {
+                    Some(id) => id.into(),
+                    None => continue,
+                },
+                // The narrowing fields come with each family's slice.
                 _ => continue,
             };
             context.insert(field.clone(), value);
@@ -496,17 +513,66 @@ impl Asker<'_> {
     }
 }
 
+/// **What the host holds of the sealed answers, for one decision** (M75-07b): the plane's standing,
+/// which says whether it is in the deny state, and the device id the registry sealed and the
+/// person confirmed (`context.machine`). Read by the app, the one process that can verify them;
+/// any other process reads a standing that is not the deny state and no device id, so nothing it
+/// asks is refused or named by what it cannot see.
+#[derive(Debug, Clone)]
+pub struct Sealed {
+    /// The plane's standing ([`answers::standing`]).
+    pub standing: Standing,
+    /// The confirmed device id ([`answers::context_machine`]); unset until the person confirmed it.
+    pub machine: Option<String>,
+}
+
+impl Sealed {
+    /// What the sealed store of the plane at `root` says now.
+    pub fn of(root: &std::path::Path) -> Self {
+        Self {
+            standing: answers::standing(root),
+            machine: answers::context_machine(),
+        }
+    }
+
+    /// What a `start` is judged with: the device id alone, since no deny state refuses a start
+    /// (review round 5, SEC5-SF2: the rules still judge it), so the standing is not read.
+    pub fn for_start() -> Self {
+        Self {
+            standing: Standing::fresh(),
+            machine: answers::context_machine(),
+        }
+    }
+
+    /// Nothing sealed: a fresh install's standing and no device id. For a caller that names no
+    /// store, and a test.
+    pub fn unsealed() -> Self {
+        Self {
+            standing: Standing::fresh(),
+            machine: None,
+        }
+    }
+}
+
 /// **The session host's decision for a chat in the plane at `root`** ([`crate::hookwire::Ask::Decide`]):
 /// the policy every level wrote, the project's as committed at the plane root's `HEAD`
 /// ([`levels::load`]), judges `action` on `resource` for `asker`. The Organisation's files are
 /// slice 06's and the accepted copy slice 14's; the world is empty until slice 14 reads entity
 /// attributes at `HEAD`, so a rule that reads one errs, and denies.
+///
+/// **In the deny state every action but `start` is refused here, before any rule is read** (M75-07b,
+/// [`deny_state::refused`]); a `start` is judged by the rules all the same, so a forbid on it still
+/// refuses the chat.
 pub fn in_plane(
     root: &std::path::Path,
     asker: &Asker<'_>,
     action: &str,
     resource: (&str, &str),
+    sealed: &Sealed,
 ) -> Decision {
+    if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
+        return refusal;
+    }
     let plane = crate::workspaces::Plane::open(root);
     let workspaces = plane.workspaces().unwrap_or_default();
     let personas = plane.personas().unwrap_or_default();
@@ -528,7 +594,7 @@ pub fn in_plane(
             of: asker.of,
             action,
             resource,
-            context: asker.context(action),
+            context: asker.context(action, sealed.machine.as_deref()),
         },
         empty_world(),
     )
@@ -565,6 +631,7 @@ pub fn for_chat(
     chat: u32,
     facts: Option<&ChatFacts>,
     floor: &crate::enforcement::Resolved,
+    sealed: &Sealed,
     action: &str,
     resource: (&str, &str),
 ) -> Option<Decision> {
@@ -584,7 +651,7 @@ pub fn for_chat(
         via: "hook",
         start: None,
     };
-    let decision = in_plane(root, &asker, action, resource).held_to(floor);
+    let decision = in_plane(root, &asker, action, resource, sealed).held_to(floor);
     // A rule the project set `off` is not in its policy at all, so no mode brings it back: where
     // the floor enforces the merge hold and the project's rules let the merge through, the
     // shipped default under `strict`, which is the hold as it always ran, answers instead.
@@ -600,7 +667,7 @@ pub fn for_chat(
         of: asker.of,
         action,
         resource,
-        context: asker.context(action),
+        context: asker.context(action, sealed.machine.as_deref()),
     });
     Some(if shipped.after_mode == Outcome::Allow {
         decision
@@ -657,6 +724,7 @@ pub fn replays_host(
         &asker,
         &ask.action,
         (&ask.kind, &ask.id),
+        &Sealed::unsealed(),
     )))
 }
 

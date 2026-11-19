@@ -414,6 +414,11 @@ impl Press {
     /// from the handler of a press the person made in the window (an accept, a confirm, a mend).
     /// **No handler that serves a chat (a hook, a door, a dispatch) may call it**, nor `purlis
     /// serve`, nor the CLI: a chat's request is never the person's press.
+    ///
+    /// **Held to that mechanically** (M75-07b): clippy's `disallowed-methods` refuses a call in
+    /// `purlis-core` and the app unless the site allows it by name, and
+    /// `the_press_is_made_only_by_the_windows_command_layer` lists every file of the workspace
+    /// that may call it, so the CLI, the host and `purlis serve` cannot reach it.
     pub fn of_the_persons_press() -> Self {
         Self(())
     }
@@ -916,6 +921,13 @@ impl Standing {
         }
     }
 
+    /// **A fresh install's standing**: no anchor, no store. For a caller that judges a request
+    /// the deny state never touches (a `start`, which only the rules judge) or a test that names
+    /// no store.
+    pub fn fresh() -> Self {
+        Self::of(State::Fresh)
+    }
+
     /// Whether the plane is in the deny state.
     pub fn is_deny(&self) -> bool {
         matches!(self.state, State::Deny(_))
@@ -1156,8 +1168,13 @@ fn read_place(place: &Place, plane: Option<&Registered>) -> Found {
 
 /// **Whether `path` is still a folder of its own**: a link at it, which the app's move leaves
 /// pointing at the new place until every record follows, is the plane gone from there.
+///
+/// **A real-path compare, not the last component's**: a plane nested under a moved project
+/// resolves through the link left at the project's old path, and its own last component is no
+/// link (#7251, item 4). `path` is a real path as the registry holds it, so it is a folder of its
+/// own only where it resolves to itself.
 fn still_a_folder(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.file_type().is_symlink())
+    std::fs::canonicalize(path).is_ok_and(|real| real == path)
 }
 
 fn nothing_in(found: &Found) -> bool {
@@ -1380,6 +1397,10 @@ impl Draft {
         self.take_out(kind, text);
     }
 
+    /// **An acceptance only ever widens**, so its withdrawal narrows and needs no press. If an
+    /// acceptance of something restrictive (a project's nevers, a tighter mode) is ever stored,
+    /// its withdrawal widens and must take a press: take it out of the list below then.
+    ///
     /// **Takes out an answer whose removal only narrows what a chat may do**: a grant's removal
     /// (a Once grant's use included), a pass's, an acceptance's withdrawal. Needs no press, so a
     /// windowless host records a Once grant's use. Any other kind (a never, a floor, the accepted
@@ -1447,6 +1468,30 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     )
 }
 
+/// **Spends a Once grant: the use is recorded first, and a use that cannot be recorded is a
+/// refusal** (#7234 final check, item 2). The grant is taken out of the store under a commit, which
+/// raises the counter; a caller honours the grant only on `Ok`, so a failed commit, a plane in the
+/// deny state, a host that cannot seal and a grant already spent each refuse it. Takes no press: a
+/// grant's removal only narrows ([`Draft::remove_narrowing`]), so a host with no window may spend
+/// one, but where it cannot seal (no keyring, a locked key) the grant cannot be used there at all.
+pub fn use_once_grant(root: &Path, text: &str) -> io::Result<u64> {
+    let mut held = false;
+    let counter = commit(root, |draft| {
+        held = draft
+            .entries()
+            .iter()
+            .any(|e| e.kind == GRANT && e.text == text);
+        draft.remove_narrowing(GRANT, text);
+    })?;
+    if held {
+        Ok(counter)
+    } else {
+        Err(io::Error::other(
+            "that grant is not in the store (it was already used, or is not sealed), so it is not honoured",
+        ))
+    }
+}
+
 /// A counter no store of this app reaches: a person's presses are not that many. An unsealed
 /// claim above it was written by hand.
 const PLAUSIBLE_COUNTER: u64 = 1 << 32;
@@ -1472,8 +1517,14 @@ fn highest_counter(place: &Place) -> io::Result<u64> {
         .ok()
         .flatten()
         .map_or(0, |manifest| manifest.counter);
-    let unsealed_manifest = std::fs::read_to_string(place.folder.join("manifest.json"))
-        .map_or(0, |text| claimed(&text));
+    // A manifest that holds its seal is no unsealed claim: it counts through `sealed_manifest`
+    // and the cap below never refuses it (#7234 final check, item 4).
+    let manifest_holds_its_seal = read_manifest(place).ok().flatten().is_some();
+    let unsealed_manifest = if manifest_holds_its_seal {
+        0
+    } else {
+        std::fs::read_to_string(place.folder.join("manifest.json")).map_or(0, |text| claimed(&text))
+    };
     let unsealed_anchor = match read_anchor(&place.account, &place.anchor_bind) {
         Read::Value(anchor) => return Ok(anchor.counter.max(sealed_manifest)),
         Read::Unreadable => {
@@ -1509,12 +1560,14 @@ fn highest_counter(place: &Place) -> io::Result<u64> {
 pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64> {
     let place = plane_place(root).ok_or_else(no_home)?;
     let _turn = store_lock()?;
+    // Asked before the registry is mended, so a refusal here changes nothing (#7234 final check,
+    // item 4).
+    let counter = highest_counter(&place)?;
     mend_registry(press, Some(root))?;
     let id = match register_unlocked(root)? {
         Registration::Registered(id) => id,
         Registration::NotKept => return Err(cannot_seal()),
     };
-    let counter = highest_counter(&place)?;
     // **The nevers are kept** (Q320): the ones the last readable state still holds, and the ones
     // the old files hold (which an earlier import may have left only there), and the imported mark
     // with them. The press mends the deny state and never takes a never away, and a plane with
@@ -1525,12 +1578,18 @@ pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64
     for entry in last.entries.iter().filter(|e| e.kind == NEVER) {
         draft.add(press, NEVER, &entry.text);
     }
-    if let crate::dispatchnever::Left::Pairs(pairs) = crate::dispatchnever::left_behind(root) {
-        for (asking, target) in &pairs {
-            draft.add(press, NEVER, &import::never_text(asking, target));
+    match crate::dispatchnever::left_behind(root) {
+        crate::dispatchnever::Left::Pairs(pairs) => {
+            for (asking, target) in &pairs {
+                draft.add(press, NEVER, &import::never_text(asking, target));
+            }
+            draft.mark_nevers_imported();
         }
+        crate::dispatchnever::Left::Nothing => draft.mark_nevers_imported(),
+        // Old files that do not read may hold nevers purlis cannot see: the mark is not set, so
+        // the plane stays denied until they read or are gone (#7251, item 3).
+        crate::dispatchnever::Left::Unread => {}
     }
-    draft.mark_nevers_imported();
     for entry in entries {
         draft.add(press, &entry.kind, &entry.text);
     }

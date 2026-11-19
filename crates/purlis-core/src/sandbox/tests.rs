@@ -2324,6 +2324,72 @@ fn settings_counts_what_a_chat_with_no_persona_is_granted() {
     assert_eq!(counted.folders, chat.writable.len());
 }
 
+/// M75-07b (#7016, review round 3, SEC3-SF4): a chat started where the plane's sealed answers are
+/// in the deny state runs at the full sandbox with only the minimum permits: the model providers
+/// the harness cannot answer without, and none of what the project's file, a persona or the
+/// person's own answers add.
+#[test]
+fn in_the_deny_state_the_sandbox_is_full_with_the_minimum_permits() {
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("the project");
+    // The project turned on every preset and one host of its own.
+    let plane = Plane::of(Some(
+        "[sandbox]\nmode = \"on\"\nhosts = [\"api.example.com\"]\n",
+    ));
+    let policy = plane.said().policy.expect("on");
+    let machine = Machine::this();
+    // The person kept a port on this machine for the project: an answer the store cannot vouch for.
+    local::grant_port(&root, 5173).expect("granted");
+    let usual = Compiled::granted(
+        &policy,
+        &plane,
+        &root,
+        &machine,
+        None,
+        &grant::Grants::default(),
+    );
+    assert_eq!(usual.widened.ports, [5173], "{usual:?}");
+    assert!(
+        usual.hosts.contains(&"api.example.com".to_owned()),
+        "{usual:?}"
+    );
+    assert!(usual.hosts.contains(&"github.com".to_owned()), "{usual:?}");
+
+    let denied = Compiled::deny_state(&plane, &root, &machine);
+    assert_eq!(denied.level, Level::Full);
+    let providers = hosts(&[Preset::ModelProviders], &plane, &policy::Locks::of(&root));
+    assert!(!providers.is_empty());
+    assert_eq!(
+        denied.hosts, providers,
+        "the model providers and no other host"
+    );
+    assert!(denied.writable.is_empty(), "{:?}", denied.writable);
+    assert!(denied.widened.ports.is_empty(), "{:?}", denied.widened);
+    let locks = policy::Locks::of(&root);
+    assert_eq!(
+        format!("{:?}", denied.reach),
+        format!(
+            "{:?}",
+            reach::Reach::of(
+                providers
+                    .iter()
+                    .map(|host| (host.clone(), reach::By::Open))
+                    .collect()
+            )
+            .never(locks.never_hosts().to_vec())
+        ),
+        "only the providers are reached, and no port of the person's"
+    );
+    assert_eq!(
+        denied.widened,
+        Widened {
+            trust: denied.widened.trust,
+            ..Widened::default()
+        },
+        "no cache, socket, service or port is widened"
+    );
+}
+
 #[test]
 fn a_project_without_the_sandbox_has_nothing_besides_its_presets() {
     let root = tempfile::tempdir().expect("a project");

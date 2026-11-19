@@ -523,8 +523,13 @@ forbid (principal, action == Action::"exec", resource)
         via: "hook",
         start: None,
     };
-    let decision =
-        purlis_core::policy::decide::in_plane(plane.path(), &asker, "exec", ("Command", "ls"));
+    let decision = purlis_core::policy::decide::in_plane(
+        plane.path(),
+        &asker,
+        "exec",
+        ("Command", "ls"),
+        &purlis_core::policy::decide::Sealed::unsealed(),
+    );
     assert_eq!(
         decision.outcome,
         purlis_core::policy::decide::Outcome::Deny,

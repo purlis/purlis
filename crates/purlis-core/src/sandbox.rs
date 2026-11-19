@@ -338,6 +338,18 @@ impl Policy {
     }
 }
 
+impl Policy {
+    /// **The deny state's policy** (M75-07b): the model providers' preset alone, no host of the
+    /// project's own, no persona's grants, no compile cache. The certificate check stays on, which
+    /// the providers' TLS needs (a project's file only ever narrows it; policy locks apply on top).
+    pub fn deny_state() -> Self {
+        Self {
+            egress: vec![Preset::ModelProviders],
+            ..Self::defaults()
+        }
+    }
+}
+
 /// The key that turns the system's certificate check off for a project's chats: `false` is the
 /// one value that changes anything (R1, 2026-10-13).
 pub const CERTIFICATE_CHECKS: &str = "certificate-checks";
@@ -4793,6 +4805,42 @@ impl Compiled {
             own_temp_only: locks.holds_to_its_folder(),
         }
     }
+
+    /// **The full sandbox with only the minimum permits**, for a chat started where the plane's
+    /// sealed answers are in the deny state (M75-07b, review round 3, SEC3-SF4;
+    /// [`crate::policy::deny_state::MINIMUM_PERMITS`], proposed until slice 22 compiles from the
+    /// policy). [`Self::granted`] compiled with [`Policy::deny_state`] and none of the chat's or its
+    /// persona's grants, then **stripped of everything that reads what the person kept on this
+    /// machine**: their own hosts, folders, sockets, services and ports are answers the store can
+    /// no longer vouch for, so none of them is in force until the person presses. What stays is the
+    /// model providers' hosts, and the system's certificate check those hosts' TLS needs where
+    /// policy leaves it on.
+    pub fn deny_state(plane: &Plane, root: &Path, machine: &Machine) -> Self {
+        let mut compiled = Self::granted(
+            &Policy::deny_state(),
+            plane,
+            root,
+            machine,
+            None,
+            &grant::Grants::default(),
+        );
+        let locks = policy::Locks::of(root);
+        let providers = hosts(&[Preset::ModelProviders], plane, &locks);
+        compiled.reach = reach::Reach::of(
+            providers
+                .iter()
+                .map(|host| (host.clone(), reach::By::Open))
+                .collect(),
+        )
+        .never(locks.never_hosts().to_vec());
+        compiled.hosts = providers;
+        compiled.writable = Vec::new();
+        compiled.widened = Widened {
+            trust: compiled.widened.trust,
+            ..Widened::default()
+        };
+        compiled
+    }
 }
 
 /// What a harness's compiler cannot hold on this machine, so the chat does not start.
@@ -7559,6 +7607,37 @@ pub fn for_start(
     has: &dyn Fn(&str) -> bool,
 ) -> Result<Option<Applied>, NotStarted> {
     for_start_granted(harness, root, machine, has, None, &grant::Grants::default())
+}
+
+/// **What a chat of `harness` starts under where the plane's sealed answers are in the deny state**
+/// (M75-07b): the full sandbox with only the minimum permits ([`Compiled::deny_state`]), whatever
+/// the project's file, the persona, the person's own level or an opt-out say, and never none. The
+/// chat starts, every action but `start` is refused ([`crate::policy::deny_state`]), and the person's
+/// press mends it. **Fail closed**: a harness with no compiler, a machine the sandbox cannot be
+/// applied on and a plane whose file cannot be read each refuse the chat, as [`for_start`]'s do.
+pub fn for_start_in_deny_state(
+    harness: Harness,
+    root: &Path,
+    machine: &Machine,
+    has: &dyn Fn(&str) -> bool,
+) -> Result<Applied, NotStarted> {
+    let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let root = real_root.as_path();
+    let plane = Plane::read(root);
+    if plane.unreadable() {
+        return Err(NotStarted::PlaneUnreadable);
+    }
+    let Some(compile) = compiler_on(harness, machine) else {
+        return Err(NotStarted::NoCompiler(harness));
+    };
+    if let Some(issue) = harness.adapter().sandbox_held_back() {
+        return Err(NotStarted::HeldBack(harness, issue));
+    }
+    if let Some(missing) = backend::missing(machine.os, has) {
+        return Err(NotStarted::NoBackend(missing));
+    }
+    let compiled = Compiled::deny_state(&plane, root, machine);
+    applied_of(harness, compile, &compiled, root, machine)
 }
 
 /// [`for_start`] for a chat running as `persona`, which adds the persona's own grants (#1362).

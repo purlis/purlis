@@ -434,7 +434,15 @@ mod for_a_chat {
     }
 
     fn merge_of(root: &Path, facts: Option<&ChatFacts>, floor: &Resolved) -> Option<Decision> {
-        decide::for_chat(root, 4, facts, floor, "merge", ("Branch", "o/r#12"))
+        decide::for_chat(
+            root,
+            4,
+            facts,
+            floor,
+            &decide::Sealed::unsealed(),
+            "merge",
+            ("Branch", "o/r#12"),
+        )
     }
 
     #[test]
@@ -512,6 +520,7 @@ mod for_a_chat {
             4,
             Some(&facts(None)),
             &floor("enforce"),
+            &decide::Sealed::unsealed(),
             "land",
             ("Repo", "unknown"),
         )
@@ -1109,6 +1118,7 @@ mod a_floor_holds_a_chats_merge {
                 4,
                 Some(&facts),
                 &Resolved::parse(floor),
+                &decide::Sealed::unsealed(),
                 "merge",
                 ("Branch", "o/r#12"),
             )

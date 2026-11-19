@@ -229,6 +229,13 @@ pub(crate) fn nevers_in_step(root: &Path, step: Step<'_>) -> io::Result<bool> {
         ..Draft::default()
     };
     // The person's own action in the window (see above): a never's lift widens, so it is theirs.
+    // **The one place core makes a press** (#7251, minor: it belongs to the window, which would
+    // pass it down through `dispatchnever` and `dispatchgrant`). It is listed, and the only one,
+    // in `the_press_is_made_only_by_the_windows_command_layer`.
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "the window's own never, until the press is passed down from the window (#7251)"
+    )]
     let press = Press::of_the_persons_press();
     if said {
         draft.add(&press, NEVER, &text);

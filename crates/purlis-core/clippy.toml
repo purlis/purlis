@@ -25,6 +25,9 @@ disallowed-methods = [
   { path = "std::process::Command::spawn", reason = "use purlis_core::forklock::spawn — charter-app#53" },
   { path = "std::process::Command::output", reason = "use purlis_core::forklock::output — charter-app#53" },
   { path = "std::process::Command::status", reason = "use purlis_core::forklock::status — charter-app#53" },
+  # Only the window's command layer makes the person's press (spec §9.4, M75-07b): a chat's request
+  # is never a press. `the_press_is_made_only_by_the_windows_command_layer` lists the files.
+  { path = "purlis_core::secrets::answers::Press::of_the_persons_press", reason = "only the window's command layer makes the person's press (M75-07b)" },
 ]
 
 # A diagnostic goes through `tracing`, to the log `applog` installs (#647): a Dock-launched app

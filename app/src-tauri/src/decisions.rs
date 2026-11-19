@@ -89,7 +89,18 @@ pub fn decision(
     });
     // The accepted floor and the machine's locks, until slices 06 and 14 read them in the loader.
     let floor = purlis_core::enforcement::in_force(held.root());
-    decide::for_chat(held.root(), chat, facts.as_ref(), &floor, action, resource)
+    // What the app's sealed store says now: the deny state refuses every action but `start`, and
+    // `context.machine` is the device id the person confirmed (M75-07b).
+    let sealed = decide::Sealed::of(held.root());
+    decide::for_chat(
+        held.root(),
+        chat,
+        facts.as_ref(),
+        &floor,
+        &sealed,
+        action,
+        resource,
+    )
 }
 
 /// **Writes the block a deny is**, as the host decided it (Q313.3): source `policy`, aimed at

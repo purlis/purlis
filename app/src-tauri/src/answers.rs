@@ -124,6 +124,10 @@ pub(crate) async fn answers_shown(
 /// (`session_protocol::ui::WINDOW_ONLY`). Refused where the id is not the one shown.
 #[tauri::command]
 #[specta::specta]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the window's command layer is the one place that makes the person's press"
+)]
 pub(crate) async fn confirm_device_id(
     planes: tauri::State<'_, crate::planes::Planes>,
     plane: PlaneId,

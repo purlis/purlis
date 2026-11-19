@@ -38,6 +38,7 @@ use std::str::FromStr as _;
 use std::sync::OnceLock;
 
 pub mod decide;
+pub mod deny_state;
 pub mod levels;
 pub mod organisation;
 

@@ -33,6 +33,7 @@ impl Machine {
 }
 
 /// The person's press in the window.
+#[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
 fn press() -> Press {
     Press::of_the_persons_press()
 }
@@ -2019,4 +2020,160 @@ fn a_move_under_any_deny_cause_carries_nothing_and_leaves_the_old_store() {
             "{name}: the old store is as it was"
         );
     }
+}
+
+// ---- M75-07b: the 07a acceptance items carried to it (#7016, the final check of #7234) --------
+
+/// A Once grant is spent by a commit that records its use first: the grant is gone and the counter
+/// has risen when the call answers, and the caller honours the grant only on `Ok`.
+#[test]
+fn a_once_grant_is_consumed_before_it_is_honoured() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(GRANT, "once: git push")]);
+    let before = counter_of(&root);
+    let after = use_once_grant(&root, "once: git push").expect("the use is recorded");
+    assert_eq!(after, before + 1, "the use raised the counter");
+    assert!(
+        !entry_file(&root, GRANT, "once: git push").exists(),
+        "the grant is gone from the store"
+    );
+    // Spent: a second use is refused, never honoured again.
+    assert!(
+        use_once_grant(&root, "once: git push")
+            .unwrap_err()
+            .to_string()
+            .contains("not honoured")
+    );
+}
+
+/// Where the use cannot be recorded, the grant is not honoured: a plane in the deny state, a key
+/// that stays locked (so a host that cannot seal) and a store with no such grant each refuse.
+#[test]
+fn a_once_grant_whose_use_cannot_be_recorded_is_refused() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(GRANT, "once: git push"), (NEVER, "rm -rf")]);
+    // A host that cannot seal.
+    seal::set_locked_for_this_test(true);
+    assert!(use_once_grant(&root, "once: git push").is_err());
+    seal::set_locked_for_this_test(false);
+    assert!(
+        entry_file(&root, GRANT, "once: git push").exists(),
+        "a refused use spent nothing"
+    );
+    // The deny state: an older copy of the store put back.
+    let copy = m.dir.path().join("copy");
+    copy_dir(&store_of(&root), &copy);
+    commit(&root, |d| d.add(&press(), NEVER, "two")).unwrap();
+    std::fs::remove_dir_all(store_of(&root)).unwrap();
+    copy_dir(&copy, &store_of(&root));
+    assert!(standing(&root).is_deny());
+    assert!(use_once_grant(&root, "once: git push").is_err());
+}
+
+/// Only what narrows is taken out without a press: an acceptance only ever widens, so its
+/// withdrawal narrows. Pinned, so a kind that widens when it goes is never added to the list.
+#[test]
+fn only_a_removal_that_narrows_needs_no_press() {
+    for kind in [GRANT, PASS, ACCEPTANCE] {
+        let mut draft = Draft::default();
+        draft.add(&press(), kind, "x");
+        draft.remove_narrowing(kind, "x");
+        assert!(draft.refused.is_none(), "{kind} narrows when it goes");
+        assert!(draft.entries().is_empty());
+    }
+    for kind in [NEVER, NEVER_MARKER, FLOOR, ACCEPTED] {
+        let mut draft = Draft::default();
+        draft.add(&press(), kind, "x");
+        draft.remove_narrowing(kind, "x");
+        assert!(draft.refused.is_some(), "{kind} widens when it goes");
+    }
+}
+
+/// A sealed manifest is no unsealed claim, so the counter cap never refuses it where the anchor is
+/// missing or broken (#7234 final check, item 4).
+#[test]
+fn a_sealed_manifest_is_never_refused_by_the_counter_cap() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    let place = plane_place(&root).unwrap();
+    // A sealed manifest past the cap, written by the store's own writer.
+    {
+        let _turn = store_lock().unwrap();
+        let Registration::Registered(id) = register_unlocked(&root).unwrap() else {
+            panic!("registered");
+        };
+        let mut draft = Draft::default();
+        draft.add(&press(), NEVER, "rm -rf");
+        draft.mark_nevers_imported();
+        write(&place, Some((&root, &id)), draft, None, PLAUSIBLE_COUNTER).unwrap();
+    }
+    assert!(counter_of(&root) > PLAUSIBLE_COUNTER);
+    // The anchor is gone: the sealed manifest's own counter is the floor, and not refused.
+    assert!(seal::item_write(&place.account, "not json"));
+    assert_eq!(
+        highest_counter(&place).expect("a sealed manifest is no claim to refuse"),
+        counter_of(&root)
+    );
+}
+
+/// `recommit` that refuses on the counter changes nothing: the registry is not mended first.
+#[test]
+fn a_recommit_refused_on_the_counter_leaves_the_registry_as_it_was() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    let account = plane_place(&root).unwrap().account;
+    assert!(seal::item_write(&account, "not json"));
+    edit_manifest_counter(&root, u64::MAX);
+    assert!(seal::item_write(REGISTRY_ACCOUNT, "not json"));
+    assert!(recommit(&root, &press(), &[]).is_err());
+    assert!(
+        matches!(seal::item_read(REGISTRY_ACCOUNT), Item::Value(text) if text == "not json"),
+        "nothing was changed: the registry was not mended before the refusal"
+    );
+}
+
+/// Old nevers files that do not read may hold what purlis cannot see, so a press does not mark them
+/// imported: the plane stays denied until they read or are gone (#7251, item 3).
+#[test]
+fn a_recommit_does_not_mark_nevers_imported_while_the_old_files_do_not_read() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    let old = crate::dispatchnever::path(&root);
+    std::fs::create_dir_all(old.parent().unwrap()).unwrap();
+    std::fs::write(&old, "not json").unwrap();
+    assert!(
+        denied_by(&standing(&root), |c| matches!(c, Deny::NeversNotImported)),
+        "unread old files and no mark: the plane is denied"
+    );
+    recommit(&root, &press(), &[]).expect("the press goes through");
+    assert!(
+        denied_by(&standing(&root), |c| matches!(c, Deny::NeversNotImported)),
+        "the press did not mark what it could not read"
+    );
+    // Once the file is gone there is nothing hidden, and the press settles it.
+    std::fs::remove_file(&old).unwrap();
+    recommit(&root, &press(), &[]).expect("the press goes through");
+    assert!(holds(&standing(&root)), "{:?}", standing(&root));
+}
+
+/// A plane nested under a moved project resolves through the link left at the project's old path;
+/// its own last component is no link, and it is still gone from there (#7251, item 4).
+#[cfg(unix)]
+#[test]
+fn a_nested_path_through_a_link_is_not_still_a_folder_of_its_own() {
+    let m = machine();
+    let real = std::fs::canonicalize(m.dir.path()).unwrap();
+    std::fs::create_dir_all(real.join("new/child")).unwrap();
+    std::os::unix::fs::symlink(real.join("new"), real.join("old")).unwrap();
+    assert!(still_a_folder(&real.join("new/child")));
+    assert!(
+        !still_a_folder(&real.join("old/child")),
+        "the old project path is a link, so a plane under it is not a folder there"
+    );
+    assert!(!still_a_folder(&real.join("gone")));
 }

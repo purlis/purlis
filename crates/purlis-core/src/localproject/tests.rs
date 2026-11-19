@@ -1106,7 +1106,9 @@ fn a_local_projects_sealed_answers_follow_its_move_through_the_link() {
     std::fs::create_dir_all(old.join(".git")).expect("a plane");
     answers::register(&old).expect("registered");
     answers::commit(&old, |draft| {
-        draft.add(&Press::of_the_persons_press(), answers::NEVER, "rm -rf");
+        #[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
+        let press = Press::of_the_persons_press();
+        draft.add(&press, answers::NEVER, "rm -rf");
     })
     .expect("sealed");
 
