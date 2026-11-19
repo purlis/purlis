@@ -4,7 +4,7 @@
 use super::*;
 use crate::sandbox::local::OwnConfigHome;
 
-/// A machine of the test's own: its config home, a keyring that knows nothing, a key, a window.
+/// A machine of the test's own: its config home, a keyring that knows nothing, a key.
 struct Machine {
     _home: OwnConfigHome,
     dir: tempfile::TempDir,
@@ -17,7 +17,6 @@ fn machine() -> Machine {
     seal::set_foreign_for_this_test(false);
     seal::set_locked_for_this_test(false);
     seal::set_no_keyring_for_this_test(false);
-    set_window_for_this_test(true);
     Machine {
         _home: home,
         dir: tempfile::tempdir().expect("a folder for planes"),
@@ -33,12 +32,17 @@ impl Machine {
     }
 }
 
+/// The person's press in the window.
+fn press() -> Press {
+    Press::of_the_persons_press()
+}
+
 /// Registers `root` and adds `add`, as the person pressing in the window.
 fn seal_in(root: &Path, add: &[(&str, &str)]) {
     register(root).expect("registered");
     commit(root, |draft| {
         for (kind, text) in add {
-            draft.add(kind, text);
+            draft.add(&press(), kind, text);
         }
     })
     .expect("sealed");
@@ -79,7 +83,7 @@ fn confirm_shown_device() {
     let Device::Unconfirmed(id) = device() else {
         panic!("an unconfirmed id to show");
     };
-    confirm_device(&id).unwrap();
+    confirm_device(&press(), &id).unwrap();
 }
 
 fn holds(standing: &Standing) -> bool {
@@ -188,8 +192,8 @@ fn with_the_anchor_present_an_older_store_is_the_deny_state() {
     seal_in(&root, &[(NEVER, "one")]);
     let before = m.dir.path().join("copy");
     copy_dir(&store_of(&root), &before);
-    commit(&root, |d| d.add(NEVER, "two")).unwrap();
-    commit(&root, |d| d.add(FLOOR, "v3")).unwrap();
+    commit(&root, |d| d.add(&press(), NEVER, "two")).unwrap();
+    commit(&root, |d| d.add(&press(), FLOOR, "v3")).unwrap();
     // The whole folder put back from before.
     std::fs::remove_dir_all(store_of(&root)).unwrap();
     copy_dir(&before, &store_of(&root));
@@ -290,7 +294,8 @@ fn a_sealed_store_with_no_anchor_is_the_deny_state() {
     let account = plane_place(&root).unwrap().account;
     seal::item_write(&account, "").then_some(()).unwrap();
     seal::forget_kept_for_this_test();
-    register(&root).unwrap();
+    // A registry is not made over a store: the person's press replaces it.
+    assert!(register(&root).is_err());
     let standing = standing(&root);
     assert!(
         denied_by(&standing, |c| matches!(c, Deny::StoreWithoutAnchor)),
@@ -304,10 +309,10 @@ fn an_older_everywhere_entry_puts_every_plane_in_the_deny_state() {
     let (a, b) = (m.plane("a"), m.plane("b"));
     seal_in(&a, &[(ACCEPTED, "one")]);
     seal_in(&b, &[(ACCEPTED, "two")]);
-    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
     let before = m.dir.path().join("everywhere");
     copy_dir(&everywhere_place().unwrap().folder, &before);
-    commit_everywhere(|d| d.add(NEVER, "rm -rf /")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "rm -rf /")).unwrap();
     assert!(holds(&standing(&a)) && holds(&standing(&b)));
     std::fs::remove_dir_all(everywhere_place().unwrap().folder).unwrap();
     copy_dir(&before, &everywhere_place().unwrap().folder);
@@ -356,7 +361,7 @@ fn a_used_once_grant_put_back_counts_for_nothing() {
     let file = entry_file(&root, GRANT, "once: git push");
     let kept = std::fs::read_to_string(&file).unwrap();
     // Its use: the grant is taken out of the store.
-    commit(&root, |d| d.remove(GRANT, "once: git push")).unwrap();
+    commit(&root, |d| d.remove_narrowing(GRANT, "once: git push")).unwrap();
     assert!(!file.exists());
     std::fs::write(&file, kept).unwrap();
     let standing = standing(&root);
@@ -370,7 +375,7 @@ fn an_everywhere_never_survives_a_swapped_git() {
     let m = machine();
     let root = m.plane("p");
     seal_in(&root, &[(ACCEPTED, "guards.git=enforce")]);
-    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
     swap_git(&root);
     let standing = standing(&root);
     assert!(standing.is_deny(), "the plane is denied");
@@ -412,9 +417,9 @@ fn the_counter_rises_on_a_grants_removal_and_a_once_grants_use() {
     let root = m.plane("p");
     seal_in(&root, &[(GRANT, "run npm"), (GRANT, "once: git push")]);
     let first = counter_of(&root);
-    commit(&root, |d| d.remove(GRANT, "run npm")).unwrap();
+    commit(&root, |d| d.remove_narrowing(GRANT, "run npm")).unwrap();
     let removed = counter_of(&root);
-    commit(&root, |d| d.remove(GRANT, "once: git push")).unwrap();
+    commit(&root, |d| d.remove_narrowing(GRANT, "once: git push")).unwrap();
     let used = counter_of(&root);
     assert!(
         first < removed && removed < used,
@@ -447,7 +452,7 @@ fn a_restored_state_folder_does_not_replay_past_the_anchored_counter() {
     seal_in(&root, &[(GRANT, "once: git push")]);
     let before = m.dir.path().join("before");
     copy_dir(&store_of(&root), &before);
-    commit(&root, |d| d.remove(GRANT, "once: git push")).unwrap();
+    commit(&root, |d| d.remove_narrowing(GRANT, "once: git push")).unwrap();
     std::fs::remove_dir_all(store_of(&root)).unwrap();
     copy_dir(&before, &store_of(&root));
     let standing = standing(&root);
@@ -487,7 +492,7 @@ fn commit_over(root: &Path) -> io::Result<u64> {
         Registration::NotKept => unreachable!(),
     };
     let mut draft = Draft::default();
-    draft.add(ACCEPTED, "two");
+    draft.add(&press(), ACCEPTED, "two");
     write(
         &place,
         Some((root, &id)),
@@ -553,17 +558,44 @@ fn without_a_keyring_the_shipped_default_holds_with_a_notice() {
 }
 
 #[test]
-fn a_windowless_host_accepts_nothing_until_a_window_is_open() {
+fn a_windowless_host_has_no_press_so_it_can_only_narrow() {
     let m = machine();
     let root = m.plane("p");
-    register(&root).unwrap();
-    set_window_for_this_test(false);
-    let refused = commit(&root, |d| d.add(ACCEPTED, "one"));
-    assert_eq!(refused.unwrap_err().to_string(), NO_WINDOW);
-    assert!(confirm_device("anything").is_err());
-    assert_eq!(standing(&root).state, State::Fresh, "nothing was written");
-    set_window_for_this_test(true);
-    assert!(commit(&root, |d| d.add(ACCEPTED, "one")).is_ok());
+    seal_in(&root, &[(GRANT, "once: git push"), (NEVER, "rm -rf")]);
+    let before = counter_of(&root);
+    // The one thing a host with no press can do: take out what only narrows. Taking out a
+    // never would widen, and without a press it is refused with nothing changed.
+    let widening = commit(&root, |d| d.remove_narrowing(NEVER, "rm -rf"));
+    assert_eq!(widening.unwrap_err().kind(), io::ErrorKind::InvalidInput);
+    assert_eq!(counter_of(&root), before, "nothing was written");
+    assert!(
+        standing(&root)
+            .entries
+            .contains(&Entry::new(NEVER, "rm -rf"))
+    );
+}
+
+#[test]
+fn a_once_grants_use_in_a_windowless_host_is_recorded_and_the_grant_is_gone() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(
+        &root,
+        &[
+            (GRANT, "once: git push"),
+            (PASS, "TOKEN"),
+            (ACCEPTANCE, "p"),
+        ],
+    );
+    let before = counter_of(&root);
+    // No press anywhere in this commit: the use, a pass's removal and a withdrawal narrow.
+    commit(&root, |d| d.remove_narrowing(GRANT, "once: git push")).expect("the use is recorded");
+    commit(&root, |d| d.remove_narrowing(PASS, "TOKEN")).expect("a pass's removal");
+    commit(&root, |d| d.remove_narrowing(ACCEPTANCE, "p")).expect("a withdrawal");
+    assert_eq!(counter_of(&root), before + 3);
+    let after = standing(&root);
+    assert!(holds(&after), "{after:?}");
+    assert!(after.entries.is_empty(), "the grant is gone: {after:?}");
 }
 
 #[test]
@@ -667,8 +699,8 @@ fn the_everywhere_anchor_counts_its_nevers() {
     let m = machine();
     let _ = m.plane("p");
     commit_everywhere(|d| {
-        d.add(NEVER, "curl | sh");
-        d.add(NEVER, "rm -rf /");
+        d.add(&press(), NEVER, "curl | sh");
+        d.add(&press(), NEVER, "rm -rf /");
     })
     .unwrap();
     let place = everywhere_place().unwrap();
@@ -677,7 +709,7 @@ fn the_everywhere_anchor_counts_its_nevers() {
     };
     assert_eq!(anchor.nevers, 2);
     // A never taken from the store is a count the anchor names.
-    commit_everywhere(|d| d.remove(NEVER, "rm -rf /")).unwrap();
+    commit_everywhere(|d| d.remove(&press(), NEVER, "rm -rf /")).unwrap();
     let Read::Value(after) = read_anchor(&place.account, &place.anchor_bind) else {
         panic!("an anchor");
     };
@@ -785,8 +817,8 @@ fn a_commit_started_inside_a_commit_is_refused_and_never_deletes_its_entries() {
     // entry out as a file its manifest does not list.
     let mut second = None;
     commit(&root, |draft| {
-        draft.add(NEVER, "first");
-        second = Some(commit(&root, |inner| inner.add(NEVER, "second")));
+        draft.add(&press(), NEVER, "first");
+        second = Some(commit(&root, |inner| inner.add(&press(), NEVER, "second")));
     })
     .expect("the first commit");
     let second = second.expect("the second ran");
@@ -797,7 +829,7 @@ fn a_commit_started_inside_a_commit_is_refused_and_never_deletes_its_entries() {
     assert!(!standing.entries.contains(&Entry::new(NEVER, "second")));
     assert_eq!(counter_of(&root), anchor_counter(&root));
     // And it goes through once the first is done.
-    commit(&root, |d| d.add(NEVER, "second")).expect("its turn");
+    commit(&root, |d| d.add(&press(), NEVER, "second")).expect("its turn");
     let after = standing_entries(&root);
     assert!(
         after.contains(&Entry::new(NEVER, "first")) && after.contains(&Entry::new(NEVER, "second"))
@@ -818,12 +850,12 @@ fn a_commit_waits_for_another_process_holding_the_stores_file_lock() {
     // Another process (or window) is committing: its flock on the lock file.
     let other = std::fs::File::open(lock_file().unwrap()).unwrap();
     rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
-    assert!(commit(&root, |d| d.add(NEVER, "two")).is_err());
-    assert!(recommit(&root, &[]).is_err());
-    assert!(commit_everywhere(|d| d.add(NEVER, "three")).is_err());
+    assert!(commit(&root, |d| d.add(&press(), NEVER, "two")).is_err());
+    assert!(recommit(&root, &press(), &[]).is_err());
+    assert!(commit_everywhere(|d| d.add(&press(), NEVER, "three")).is_err());
     assert_eq!(counter_of(&root), before, "nothing was changed");
     drop(other);
-    assert!(commit(&root, |d| d.add(NEVER, "two")).is_ok());
+    assert!(commit(&root, |d| d.add(&press(), NEVER, "two")).is_ok());
 }
 
 #[test]
@@ -833,8 +865,8 @@ fn recommit_mends_a_deny_and_starts_past_every_counter_seen() {
     seal_in(&root, &[(NEVER, "one")]);
     let backup = m.dir.path().join("backup");
     copy_dir(&store_of(&root), &backup);
-    commit(&root, |d| d.add(NEVER, "two")).unwrap();
-    commit(&root, |d| d.add(FLOOR, "v3")).unwrap();
+    commit(&root, |d| d.add(&press(), NEVER, "two")).unwrap();
+    commit(&root, |d| d.add(&press(), FLOOR, "v3")).unwrap();
     let kept = standing(&root).entries;
     // The anchor does not hold its seal (edited, or made by another program): its counter and
     // the manifest's are both still on disk.
@@ -848,7 +880,7 @@ fn recommit_mends_a_deny_and_starts_past_every_counter_seen() {
         .into_iter()
         .filter(|e| e.kind != NEVER_MARKER)
         .collect();
-    let counter = recommit(&root, &kept).expect("the person's press mends it");
+    let counter = recommit(&root, &press(), &kept).expect("the person's press mends it");
     assert_eq!(counter, 4, "past the manifest's 3, never back to 1");
     let mended = standing(&root);
     assert!(holds(&mended), "{mended:?}");
@@ -868,8 +900,8 @@ fn recommit_reads_the_anchors_counter_where_its_seal_fails_and_the_manifest_is_g
     let m = machine();
     let root = m.plane("p");
     seal_in(&root, &[(ACCEPTED, "one")]);
-    commit(&root, |d| d.add(ACCEPTED, "two")).unwrap();
-    commit(&root, |d| d.add(ACCEPTED, "three")).unwrap();
+    commit(&root, |d| d.add(&press(), ACCEPTED, "two")).unwrap();
+    commit(&root, |d| d.add(&press(), ACCEPTED, "three")).unwrap();
     // The anchor's seal edited (its counter still reads 3) and the manifest taken away.
     let account = plane_place(&root).unwrap().account;
     let Item::Value(text) = seal::item_read(&account) else {
@@ -880,31 +912,7 @@ fn recommit_reads_the_anchors_counter_where_its_seal_fails_and_the_manifest_is_g
     assert!(seal::item_write(&account, &item.to_string()));
     std::fs::remove_file(store_of(&root).join("manifest.json")).unwrap();
     assert!(standing(&root).is_deny());
-    assert_eq!(recommit(&root, &[]).unwrap(), 4);
-}
-
-#[test]
-fn recommit_is_the_persons_press_and_a_windowless_host_cannot_mend_with_an_empty_list() {
-    let m = machine();
-    let root = m.plane("p");
-    seal_in(&root, &[(NEVER, "rm -rf")]);
-    let before = counter_of(&root);
-    set_window_for_this_test(false);
-    assert_eq!(
-        recommit(&root, &[]).unwrap_err().to_string(),
-        NO_WINDOW,
-        "an empty list drops every never"
-    );
-    assert_eq!(recommit_everywhere(&[]).unwrap_err().to_string(), NO_WINDOW);
-    // A removal is a change of answers as an addition is.
-    let removal = commit(&root, |d| d.remove(NEVER, "rm -rf"));
-    assert_eq!(removal.unwrap_err().to_string(), NO_WINDOW);
-    assert_eq!(counter_of(&root), before);
-    assert!(
-        standing(&root)
-            .entries
-            .contains(&Entry::new(NEVER, "rm -rf"))
-    );
+    assert_eq!(recommit(&root, &press(), &[]).unwrap(), 4);
 }
 
 #[test]
@@ -922,8 +930,8 @@ fn a_commit_cut_short_after_the_anchor_is_mended_by_recommit() {
         c,
         Deny::ManifestMissing(_)
     )));
-    assert!(commit(&root, |d| d.add(ACCEPTED, "three")).is_err());
-    let counter = recommit(&root, &[Entry::new(ACCEPTED, "one")]).unwrap();
+    assert!(commit(&root, |d| d.add(&press(), ACCEPTED, "three")).is_err());
+    let counter = recommit(&root, &press(), &[Entry::new(ACCEPTED, "one")]).unwrap();
     assert_eq!(counter, 3);
     let mended = standing(&root);
     assert!(holds(&mended), "{mended:?}");
@@ -935,7 +943,7 @@ fn an_anchor_older_than_the_manifest_is_the_deny_state() {
     let m = machine();
     let root = m.plane("p");
     seal_in(&root, &[(ACCEPTED, "one")]);
-    commit(&root, |d| d.add(ACCEPTED, "two")).unwrap();
+    commit(&root, |d| d.add(&press(), ACCEPTED, "two")).unwrap();
     // The anchor taken away and made again at an older counter (sealed, so it reads).
     let place = plane_place(&root).unwrap();
     write_anchor(
@@ -1021,7 +1029,7 @@ fn a_missing_registry_with_an_anchor_or_a_store_is_the_deny_state() {
 #[test]
 fn a_missing_registry_with_only_the_everywhere_entry_kept_is_the_deny_state() {
     let m = machine();
-    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
     seal::item_forget_for_this_test(REGISTRY_ACCOUNT);
     let standing = standing(&m.plane("p"));
     assert!(
@@ -1035,7 +1043,7 @@ fn an_everywhere_entry_whose_anchor_and_folder_are_both_gone_is_the_deny_state()
     let m = machine();
     let root = m.plane("p");
     seal_in(&root, &[(ACCEPTED, "one")]);
-    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
     let place = everywhere_place().unwrap();
     std::fs::remove_dir_all(&place.folder).unwrap();
     seal::item_forget_for_this_test(&place.account);
@@ -1046,7 +1054,7 @@ fn an_everywhere_entry_whose_anchor_and_folder_are_both_gone_is_the_deny_state()
         denied_by(&plane, |c| matches!(c, Deny::AnchorGone)),
         "{plane:?}"
     );
-    assert!(commit_everywhere(|d| d.add(NEVER, "again")).is_err());
+    assert!(commit_everywhere(|d| d.add(&press(), NEVER, "again")).is_err());
 }
 
 #[test]
@@ -1078,18 +1086,18 @@ fn a_kind_that_names_a_file_of_the_stores_folder_is_refused() {
     seal_in(&root, &[(ACCEPTED, "one")]);
     let before = counter_of(&root);
     for kind in ["manifest", "../x", "grant/../../x", ""] {
-        let refused = commit(&root, |d| d.add(kind, "text"));
+        let refused = commit(&root, |d| d.add(&press(), kind, "text"));
         assert_eq!(
             refused.unwrap_err().kind(),
             io::ErrorKind::InvalidInput,
             "{kind}"
         );
         assert!(
-            recommit(&root, &[Entry::new(kind, "text")]).is_err(),
+            recommit(&root, &press(), &[Entry::new(kind, "text")]).is_err(),
             "{kind}"
         );
         assert!(
-            commit_everywhere(|d| d.add(kind, "text")).is_err(),
+            commit_everywhere(|d| d.add(&press(), kind, "text")).is_err(),
             "{kind}"
         );
     }
@@ -1105,7 +1113,7 @@ fn a_keyring_that_fails_the_first_commits_anchor_changes_nothing() {
     let root = m.plane("p");
     register(&root).unwrap();
     seal::set_item_write_fails_for_this_test(true);
-    let refused = commit(&root, |d| d.add(NEVER, "one"));
+    let refused = commit(&root, |d| d.add(&press(), NEVER, "one"));
     seal::set_item_write_fails_for_this_test(false);
     assert!(refused.is_err());
     assert!(
@@ -1114,7 +1122,7 @@ fn a_keyring_that_fails_the_first_commits_anchor_changes_nothing() {
     );
     // Not the deny state: nothing was kept, so the next press simply works.
     assert_eq!(standing(&root).state, State::Fresh);
-    assert!(commit(&root, |d| d.add(NEVER, "one")).is_ok());
+    assert!(commit(&root, |d| d.add(&press(), NEVER, "one")).is_ok());
 }
 
 #[test]
@@ -1124,9 +1132,9 @@ fn the_person_confirms_the_id_the_window_showed_and_no_other() {
     let Device::Unconfirmed(shown) = device() else {
         panic!("an unconfirmed id");
     };
-    assert!(confirm_device("01ARZ3NDEKTSV4RRFFQ69G5FAV").is_err());
+    assert!(confirm_device(&press(), "01ARZ3NDEKTSV4RRFFQ69G5FAV").is_err());
     assert_eq!(context_machine(), None);
-    confirm_device(&shown).unwrap();
+    confirm_device(&press(), &shown).unwrap();
     assert_eq!(context_machine(), Some(shown));
 }
 
@@ -1134,19 +1142,16 @@ fn the_person_confirms_the_id_the_window_showed_and_no_other() {
 fn the_everywhere_entry_is_mended_by_the_persons_press_and_never_by_a_commit() {
     let m = machine();
     let _ = m.plane("p");
-    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
-    commit_everywhere(|d| d.add(NEVER, "rm -rf /")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "rm -rf /")).unwrap();
     let place = everywhere_place().unwrap();
     std::fs::remove_file(place.folder.join("manifest.json")).unwrap();
     assert!(everywhere_standing().is_deny());
     // A chat's commit changes nothing under the deny.
-    assert!(commit_everywhere(|d| d.remove(NEVER, "curl | sh")).is_err());
+    assert!(commit_everywhere(|d| d.remove(&press(), NEVER, "curl | sh")).is_err());
     assert!(everywhere_standing().is_deny());
     // The person's press, past every counter seen.
-    set_window_for_this_test(false);
-    assert!(recommit_everywhere(&[Entry::new(NEVER, "curl | sh")]).is_err());
-    set_window_for_this_test(true);
-    let counter = recommit_everywhere(&[Entry::new(NEVER, "curl | sh")]).unwrap();
+    let counter = recommit_everywhere(&press(), &[Entry::new(NEVER, "curl | sh")]).unwrap();
     assert_eq!(counter, 3);
     let mended = everywhere_standing();
     assert!(holds(&mended), "{mended:?}");
@@ -1159,20 +1164,18 @@ fn a_registry_that_does_not_hold_its_seal_is_replaced_only_at_the_persons_press(
     let m = machine();
     let root = m.plane("p");
     seal_in(&root, &[(ACCEPTED, "one")]);
-    commit_everywhere(|d| d.add(NEVER, "curl | sh")).unwrap();
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
     seal::item_write(REGISTRY_ACCOUNT, "not json");
-    assert!(commit(&root, |d| d.add(ACCEPTED, "two")).is_err());
-    assert!(commit_everywhere(|d| d.add(NEVER, "x")).is_err());
+    assert!(commit(&root, |d| d.add(&press(), ACCEPTED, "two")).is_err());
+    assert!(commit_everywhere(|d| d.add(&press(), NEVER, "x")).is_err());
     assert!(denied_by(&standing(&root), |c| matches!(
         c,
         Deny::RegistryUnreadable
     )));
-    // A windowless host replaces nothing.
-    set_window_for_this_test(false);
-    assert!(recommit(&root, &[Entry::new(ACCEPTED, "one")]).is_err());
+    // Nothing but a press replaces it: a commit, a register and a read leave it as it is.
+    assert!(matches!(register(&root).unwrap(), Registration::NotKept));
     assert!(matches!(read_registry(), Read::Broken));
-    set_window_for_this_test(true);
-    recommit(&root, &[Entry::new(ACCEPTED, "one")]).expect("the press mends it");
+    recommit(&root, &press(), &[Entry::new(ACCEPTED, "one")]).expect("the press mends it");
     assert!(matches!(read_registry(), Read::Value(_)));
     let mended = standing(&root);
     assert!(holds(&mended), "{mended:?}");
@@ -1184,4 +1187,182 @@ fn a_registry_that_does_not_hold_its_seal_is_replaced_only_at_the_persons_press(
         panic!("a registry");
     };
     assert!(registry.everywhere_sealed);
+}
+
+// ---- round 3 (#7234): the counter's ceiling, Once grants, the press, the registry ----------------
+
+/// `manifest.json`'s counter edited by hand to `counter`, its seal left as it was.
+fn edit_manifest_counter(root: &Path, counter: u64) {
+    let file = store_of(root).join("manifest.json");
+    let mut manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    manifest["counter"] = counter.into();
+    std::fs::write(&file, manifest.to_string()).unwrap();
+}
+
+#[test]
+fn a_manifest_counter_edited_to_the_top_does_not_freeze_the_counter_where_the_anchor_reads() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    commit(&root, |d| d.add(&press(), NEVER, "two")).unwrap();
+    let anchored = anchor_counter(&root);
+    edit_manifest_counter(&root, u64::MAX);
+    assert!(standing(&root).is_deny(), "the edit fails its seal");
+    let kept = vec![Entry::new(NEVER, "rm -rf")];
+    let counter = recommit(&root, &press(), &kept).expect("the person's press mends it");
+    assert_eq!(counter, anchored + 1, "past the anchor's, never at the top");
+    // And it goes on rising: an older copy put back after a later commit has a lower counter.
+    let copy = m.dir.path().join("copy");
+    copy_dir(&store_of(&root), &copy);
+    let next = commit(&root, |d| d.add(&press(), NEVER, "three")).unwrap();
+    assert_eq!(next, counter + 1);
+    std::fs::remove_dir_all(store_of(&root)).unwrap();
+    copy_dir(&copy, &store_of(&root));
+    assert!(denied_by(&standing(&root), |c| matches!(
+        c,
+        Deny::ManifestOlder(_)
+    )));
+}
+
+#[test]
+fn an_unsealed_counter_beyond_reach_is_refused_where_the_anchor_does_not_hold_its_seal() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    let account = plane_place(&root).unwrap().account;
+    assert!(seal::item_write(&account, "not json"));
+    edit_manifest_counter(&root, u64::MAX);
+    let manifest = std::fs::read_to_string(store_of(&root).join("manifest.json")).unwrap();
+    let refused = recommit(&root, &press(), &[Entry::new(NEVER, "rm -rf")]);
+    assert!(
+        refused.unwrap_err().to_string().contains("never reached"),
+        "it says why"
+    );
+    assert_eq!(
+        std::fs::read_to_string(store_of(&root).join("manifest.json")).unwrap(),
+        manifest,
+        "nothing was changed"
+    );
+    // A claim within reach is still read where the anchor is broken.
+    edit_manifest_counter(&root, 5);
+    assert_eq!(recommit(&root, &press(), &[]).unwrap(), 6);
+}
+
+#[test]
+fn an_anchor_that_cannot_be_read_makes_recommit_refuse_and_never_counts_as_nought() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(NEVER, "rm -rf")]);
+    let place = plane_place(&root).unwrap();
+    assert_eq!(highest_counter(&place).unwrap(), 1);
+    // The keyring did not answer: what the anchor held is unknown, never nought.
+    seal::set_locked_for_this_test(true);
+    assert!(highest_counter(&place).is_err());
+    assert!(recommit(&root, &press(), &[]).is_err());
+    seal::set_locked_for_this_test(false);
+    // An anchor that was never written is no failure: a fresh plane starts from nought.
+    assert_eq!(
+        highest_counter(&plane_place(&m.plane("fresh")).unwrap()).unwrap(),
+        0
+    );
+}
+
+#[test]
+fn a_counter_that_cannot_rise_is_refused_and_writes_nothing() {
+    let m = machine();
+    let root = m.plane("p");
+    let place = plane_place(&root).unwrap();
+    let Registration::Registered(id) = register(&root).unwrap() else {
+        panic!("registered");
+    };
+    let mut draft = Draft::default();
+    draft.add(&press(), NEVER, "one");
+    let refused = write(&place, Some((&root, &id)), draft, None, u64::MAX);
+    assert!(refused.is_err(), "the counter would stay at the top");
+    assert!(!store_exists(&place), "nothing was written");
+    assert_eq!(standing(&root).state, State::Fresh);
+}
+
+#[test]
+fn the_everywhere_entry_with_a_store_and_no_keyring_is_the_deny_state() {
+    let m = machine();
+    let _ = m.plane("p");
+    assert_eq!(everywhere_standing().state, State::Fresh);
+    commit_everywhere(|d| d.add(&press(), NEVER, "curl | sh")).unwrap();
+    seal::set_no_keyring_for_this_test(true);
+    let standing = everywhere_standing();
+    assert!(
+        denied_by(&standing, |c| matches!(c, Deny::KeyringDidNotStart)),
+        "{standing:?}"
+    );
+}
+
+#[test]
+fn the_everywhere_entry_with_nothing_kept_and_no_keyring_is_no_keyring() {
+    let m = machine();
+    let _ = m.plane("p");
+    seal::set_no_keyring_for_this_test(true);
+    assert_eq!(everywhere_standing().state, State::NoKeyring);
+}
+
+#[test]
+fn register_makes_no_registry_where_a_store_a_marker_or_an_anchor_is_kept() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    let place = plane_place(&root).unwrap();
+    // Each of the three alone, the registry gone.
+    for gone in ["marker", "store", "anchor"] {
+        let m2 = machine();
+        let root = m2.plane("p");
+        seal_in(&root, &[(ACCEPTED, "one")]);
+        let place = plane_place(&root).unwrap();
+        match gone {
+            "marker" => {
+                std::fs::remove_dir_all(store_of(&root)).unwrap();
+                seal::item_forget_for_this_test(&place.account);
+            }
+            "store" => {
+                std::fs::remove_dir_all(answers_folder().unwrap().join("sealed-here")).unwrap();
+                seal::item_forget_for_this_test(&place.account);
+            }
+            _ => {
+                std::fs::remove_dir_all(store_of(&root)).unwrap();
+                std::fs::remove_dir_all(answers_folder().unwrap().join("sealed-here")).unwrap();
+            }
+        }
+        seal::item_forget_for_this_test(REGISTRY_ACCOUNT);
+        let refused = register(&root);
+        assert!(refused.is_err(), "{gone}: {refused:?}");
+        assert!(matches!(read_registry(), Read::Missing), "{gone}");
+    }
+    // Another plane's store counts as well: the registry that should list it is gone.
+    seal::item_forget_for_this_test(REGISTRY_ACCOUNT);
+    assert!(register(&m.plane("other")).is_err());
+    assert!(matches!(read_registry(), Read::Missing));
+    // The person's press replaces it, and the plane reads again.
+    recommit(&root, &press(), &[Entry::new(ACCEPTED, "one")]).expect("the press mends it");
+    assert!(matches!(read_registry(), Read::Value(_)));
+    assert!(holds(&standing(&root)), "{:?}", standing(&root));
+    let _ = place;
+}
+
+#[cfg(unix)]
+#[test]
+fn register_and_confirm_device_wait_for_the_stores_file_lock() {
+    let m = machine();
+    let root = m.plane("p");
+    seal_in(&root, &[(ACCEPTED, "one")]);
+    let other = std::fs::File::open(lock_file().unwrap()).unwrap();
+    rustix::fs::flock(&other, rustix::fs::FlockOperation::LockExclusive).unwrap();
+    assert!(register(&m.plane("second")).is_err());
+    let Device::Unconfirmed(id) = device() else {
+        panic!("an unconfirmed id");
+    };
+    assert!(confirm_device(&press(), &id).is_err());
+    assert_eq!(context_machine(), None, "nothing was confirmed");
+    drop(other);
+    assert!(register(&m.plane("second")).is_ok());
+    confirm_device(&press(), &id).unwrap();
 }

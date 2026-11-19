@@ -398,41 +398,26 @@ fn store_lock() -> io::Result<StoreLock> {
     }
 }
 
-// ---- the window -------------------------------------------------------------------------------
+// ---- the press --------------------------------------------------------------------------------
 
-static WINDOW_OPEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// **The person's press in the window** (spec §9.4): only a press accepts, so everything that
+/// adds an answer, takes out one that widens what a chat may do, mends the deny state or confirms
+/// the device id takes one. It is a value, not a flag the process holds: it is made by one function
+/// and passed to each call, so a host with no window has none to pass and the compiler refuses
+/// the call.
+#[derive(Debug)]
+#[must_use = "a press is what lets an answer change"]
+pub struct Press(());
 
-#[cfg(test)]
-thread_local! {
-    static TEST_WINDOW: std::cell::Cell<bool> = const { std::cell::Cell::new(true) };
-}
-
-/// **A window is open in this process** (the app calls it as its first window opens): only a
-/// press in a window accepts (spec §9.4), so a windowless host (`purlis serve`) adds nothing.
-pub fn window_opened() {
-    WINDOW_OPEN.store(true, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// **A test's window**, on this thread: open (the default) or not.
-#[cfg(test)]
-pub(crate) fn set_window_for_this_test(open: bool) {
-    TEST_WINDOW.with(|held| held.set(open));
-}
-
-fn window_is_open() -> bool {
-    #[cfg(test)]
-    {
-        TEST_WINDOW.with(std::cell::Cell::get)
-    }
-    #[cfg(not(test))]
-    {
-        WINDOW_OPEN.load(std::sync::atomic::Ordering::SeqCst)
+impl Press {
+    /// **Made on the person's press, and only then**: the app's window command layer calls this
+    /// from the handler of a press the person made in the window (an accept, a confirm, a mend).
+    /// **No handler that serves a chat (a hook, a door, a dispatch) may call it**, nor `purlis
+    /// serve`, nor the CLI: a chat's request is never the person's press.
+    pub fn of_the_persons_press() -> Self {
+        Self(())
     }
 }
-
-/// What a windowless host says to a press it cannot take.
-pub const NO_WINDOW: &str = "purlis accepts nothing until a window is open: only a press in a \
-     window accepts, and this host has none.";
 
 // ---- the keyring items ------------------------------------------------------------------------
 
@@ -531,24 +516,32 @@ pub enum Registration {
 /// **Registers the plane at `root` at its first open**, before anything is sealed (spec §8.10): a
 /// process inside it is never plane-less. Its id, real path and the path as opened go into the
 /// registry; **the device id is sealed there too, unconfirmed** ([`context_machine`]). Opening
-/// again changes nothing. A registry that does not read is never replaced.
+/// again changes nothing. **A registry that does not read is never replaced, and a registry that
+/// is missing is made only where nothing is kept** (no store, marker or anchor, this plane's or
+/// any other's): where something is, replacing it is the person's press ([`recommit`]). Takes
+/// the store's lock, so it never races a commit's read-change-write of the registry.
 pub fn register(root: &Path) -> io::Result<Registration> {
-    register_with(root, false)
+    let _turn = store_lock()?;
+    register_unlocked(root)
 }
 
-/// [`register`], where `mend` (the person's press, [`recommit`]) first replaces a registry that
-/// does not hold its seal.
-fn register_with(root: &Path, mend: bool) -> io::Result<Registration> {
-    if mend {
-        mend_registry()?;
-    }
+/// [`register`], for a caller that holds the store's lock already ([`commit`], [`recommit`]).
+fn register_unlocked(root: &Path) -> io::Result<Registration> {
     let _one = locked();
     if seal::key_state() != KeyState::Usable {
         return Ok(Registration::NotKept);
     }
     let mut registry = match read_registry() {
         Read::Value(registry) => registry,
-        Read::Missing => Registry::default(),
+        Read::Missing => {
+            if something_kept(root) {
+                return Err(io::Error::other(
+                    "purlis could not find its registry of planes where answers are kept, so it \
+                     made no new one: accept again to mend it",
+                ));
+            }
+            Registry::default()
+        }
         Read::Broken | Read::Unreadable => return Ok(Registration::NotKept),
     };
     let anchor = anchor_key(root);
@@ -587,6 +580,24 @@ fn register_with(root: &Path, mend: bool) -> io::Result<Registration> {
     Ok(Registration::Registered(id))
 }
 
+/// **Whether anything is kept** that a registry should list: a store, marker or anchor of the
+/// plane at `root`, the Everywhere entry's, or any other store in the answers' folder.
+fn something_kept(root: &Path) -> bool {
+    let mut places = vec![everywhere_place()];
+    places.push(plane_place(root));
+    let in_a_place = places.into_iter().flatten().any(|place| {
+        store_exists(&place)
+            || !matches!(
+                read_anchor(&place.account, &place.anchor_bind),
+                Read::Missing
+            )
+    });
+    let in_the_folder = answers_folder()
+        .and_then(|folder| std::fs::read_dir(folder).ok())
+        .is_some_and(|dir| dir.flatten().any(|item| item.file_name() != ".lock"));
+    in_a_place || in_the_folder || sealed_here(root)
+}
+
 /// Seals the device id into `registry` where it holds none: unconfirmed. Whether it changed.
 fn seed_device(registry: &mut Registry) -> bool {
     if registry.device.is_none()
@@ -602,22 +613,33 @@ fn seed_device(registry: &mut Registry) -> bool {
     false
 }
 
-/// **The person's press replaces a registry that does not hold its seal** with a new one: no
-/// plane listed (each is registered again by its own [`recommit`]), the device id sealed again
-/// and **unconfirmed**, the Everywhere flag kept where its store or anchor is still there. Only
-/// where this process can seal, a window is open, and the registry was read and failed: a
-/// keyring that did not answer is never replaced. What it cannot rebuild: which other planes
-/// had anything sealed, and the clone keys of their last writes, so a plane whose anchor and
-/// store both go afterwards reads as fresh until it is registered again.
-fn mend_registry() -> io::Result<()> {
-    if !window_is_open() {
-        return Err(io::Error::other(NO_WINDOW));
-    }
+/// **The person's press replaces a registry that does not hold its seal, or is missing where
+/// something is kept,** with a new one: no plane listed (each is registered again by its own
+/// [`recommit`]), the device id sealed again and **unconfirmed**, the Everywhere flag kept where
+/// its store or anchor is still there. Only where this process can seal and the registry was read
+/// and failed (or answered that it is not there): a keyring that did not answer is never
+/// replaced. What it cannot rebuild: which other planes had anything sealed, and the clone keys
+/// of their last writes, so a plane whose anchor and store both go afterwards reads as fresh
+/// until it is registered again. The caller holds the store's lock.
+fn mend_registry(_press: &Press, root: Option<&Path>) -> io::Result<()> {
     let _one = locked();
     if seal::key_state() != KeyState::Usable {
         return Err(cannot_seal());
     }
-    if !matches!(read_registry(), Read::Broken) {
+    let missing_where_kept = matches!(read_registry(), Read::Missing)
+        && root.map_or_else(
+            || {
+                everywhere_place().is_some_and(|place| {
+                    store_exists(&place)
+                        || !matches!(
+                            read_anchor(&place.account, &place.anchor_bind),
+                            Read::Missing
+                        )
+                })
+            },
+            something_kept,
+        );
+    if !matches!(read_registry(), Read::Broken) && !missing_where_kept {
         return Ok(());
     }
     let mut registry = Registry {
@@ -714,12 +736,10 @@ pub fn context_machine() -> Option<String> {
 }
 
 /// **The person confirms the device id in the window**: the one `id` the window showed, so an id
-/// that changed since is never confirmed unseen. Refused where no window is open, and in a
-/// process that cannot seal. (Refusing a chat's confirmation is slice 07b's.)
-pub fn confirm_device(id: &str) -> Result<(), String> {
-    if !window_is_open() {
-        return Err(NO_WINDOW.to_owned());
-    }
+/// that changed since is never confirmed unseen. Takes the person's press ([`Press`]); refused
+/// where the registry does not read.
+pub fn confirm_device(_press: &Press, id: &str) -> Result<(), String> {
+    let _turn = store_lock().map_err(|why| why.to_string())?;
     let _one = locked();
     let Read::Value(mut registry) = read_registry() else {
         return Err("purlis could not read its registry of planes".to_owned());
@@ -1224,7 +1244,14 @@ pub fn everywhere_standing() -> Standing {
         return Standing::of(State::Unverifiable);
     }
     if key == KeyState::NoKeyring {
-        return Standing::of(State::NoKeyring);
+        // A keyring that did not start where the Everywhere entry is kept is one that failed
+        // (#7153), as [`standing`] reads it.
+        let kept = everywhere_place().is_some_and(|place| store_exists(&place));
+        return if kept {
+            Standing::of(State::Deny(vec![Deny::KeyringDidNotStart]))
+        } else {
+            Standing::of(State::NoKeyring)
+        };
     }
     if key == KeyState::Locked {
         return Standing::of(State::Deny(vec![Deny::SealKeyLocked]));
@@ -1243,16 +1270,13 @@ pub fn everywhere_standing() -> Standing {
 
 // ---- writing ----------------------------------------------------------------------------------
 
-/// What a commit changes: the entries as they stand, and what it adds or takes out.
+/// What a commit changes: the entries as they stand.
 #[derive(Debug, Clone, Default)]
 pub struct Draft {
     entries: Vec<Entry>,
     imported_nevers: bool,
-    added: bool,
-    removed: bool,
-    /// The person's press that mends the deny state ([`recommit`]).
-    mend: bool,
-    /// A kind that is not one of [`KINDS`], which the commit refuses.
+    /// Why the commit is refused: a kind that is not one of [`KINDS`], or a removal that is not
+    /// narrowing and came without a press.
     refused: Option<String>,
 }
 
@@ -1262,11 +1286,13 @@ impl Draft {
         &self.entries
     }
 
-    /// Adds an answer the person gave just now. A `kind` that is not one of [`KINDS`] (it names
-    /// a file in the store's folder) adds nothing, and the commit is refused.
-    pub fn add(&mut self, kind: &str, text: &str) {
+    /// Adds an answer the person gave just now (their [`Press`]). A `kind` that is not one of
+    /// [`KINDS`] (it names a file in the store's folder) adds nothing, and the commit is refused.
+    pub fn add(&mut self, _press: &Press, kind: &str, text: &str) {
         if !KINDS.contains(&kind) {
-            self.refused = Some(kind.to_owned());
+            self.refused = Some(format!(
+                "{kind:?} is not a kind of answer the store keeps, so nothing was changed"
+            ));
             return;
         }
         if !self
@@ -1275,17 +1301,32 @@ impl Draft {
             .any(|e| e.kind == kind && e.text == text)
         {
             self.entries.push(Entry::new(kind, text));
-            self.added = true;
         }
     }
 
-    /// Takes an answer out (a grant's removal, a Once grant's use).
-    pub fn remove(&mut self, kind: &str, text: &str) {
-        let before = self.entries.len();
-        self.entries.retain(|e| !(e.kind == kind && e.text == text));
-        if self.entries.len() != before {
-            self.removed = true;
+    /// Takes any answer out, **the person's press** ([`Press`]): a never's or a floor's removal
+    /// widens what a chat may do.
+    pub fn remove(&mut self, _press: &Press, kind: &str, text: &str) {
+        self.take_out(kind, text);
+    }
+
+    /// **Takes out an answer whose removal only narrows what a chat may do**: a grant's removal
+    /// (a Once grant's use included), a pass's, an acceptance's withdrawal. Needs no press, so a
+    /// windowless host records a Once grant's use. Any other kind (a never, a floor, the accepted
+    /// policy) widens when it goes: it adds nothing and refuses the commit.
+    pub fn remove_narrowing(&mut self, kind: &str, text: &str) {
+        if ![GRANT, PASS, ACCEPTANCE].contains(&kind) {
+            self.refused = Some(format!(
+                "taking out {kind:?} widens what a chat may do, so only the person's press can: \
+                 nothing was changed"
+            ));
+            return;
         }
+        self.take_out(kind, text);
+    }
+
+    fn take_out(&mut self, kind: &str, text: &str) {
+        self.entries.retain(|e| !(e.kind == kind && e.text == text));
     }
 
     /// Marks the person's existing nevers as imported once (Q320).
@@ -1304,7 +1345,9 @@ fn manifest_of(found: &Found) -> Option<&Manifest> {
 /// keyring**, the new entries' files, the manifest, then the removed files. Refused, with
 /// nothing changed, where the plane is in the deny state ([`recommit`] is the person's press
 /// that mends it), where this process cannot seal, and, for a change that adds or takes out an
-/// answer, where no window is open. Returns the new counter.
+/// answer. Returns the new counter. **A change that adds an answer, or takes out one that
+/// widens, needs the person's [`Press`]** ([`Draft::add`], [`Draft::remove`]); a narrowing
+/// removal needs none ([`Draft::remove_narrowing`]).
 pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     let place = plane_place(root).ok_or_else(no_home)?;
     let _turn = store_lock()?;
@@ -1314,7 +1357,7 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
             "the plane's answers are in the deny state, so nothing was added to them: accept again to mend it",
         ));
     }
-    let id = match register(root)? {
+    let id = match register_unlocked(root)? {
         Registration::Registered(id) => id,
         Registration::NotKept => return Err(cannot_seal()),
     };
@@ -1334,53 +1377,83 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
     )
 }
 
-/// **The highest counter `place`'s manifest and anchor claim, read without their seals**: a
-/// manifest or anchor that fails its seal still says how far the store got, and a store restarted
-/// below it would let an older copy pass.
-fn highest_counter(place: &Place) -> u64 {
+/// A counter no store of this app reaches: a person's presses are not that many. An unsealed
+/// claim above it was written by hand.
+const PLAUSIBLE_COUNTER: u64 = 1 << 32;
+
+/// **The highest counter `place` has reached**, for a store that starts again past it.
+///
+/// - **Where the anchor reads and holds its seal, it is the floor**, and a manifest that does not
+///   hold its seal is ignored: its claim, above the anchor's or not, is an unsealed claim, and
+///   a hand-edited `u64::MAX` would freeze the counter. A sealed manifest above the anchor counts
+///   (the anchor was taken away and made again).
+/// - **Where the anchor is missing or does not hold its seal**, the unsealed counters still say
+///   how far the store got, so a store restarted below them would let an older copy pass; but a
+///   claim beyond [`PLAUSIBLE_COUNTER`] is refused, saying why.
+/// - **Where the keyring did not answer, refused**: that is not a nought.
+fn highest_counter(place: &Place) -> io::Result<u64> {
     let claimed = |text: &str| {
         serde_json::from_str::<serde_json::Value>(text)
             .ok()
             .and_then(|value| value.get("counter").and_then(serde_json::Value::as_u64))
             .unwrap_or(0)
     };
-    let manifest = std::fs::read_to_string(place.folder.join("manifest.json"))
+    let sealed_manifest = read_manifest(place)
+        .ok()
+        .flatten()
+        .map_or(0, |manifest| manifest.counter);
+    let unsealed_manifest = std::fs::read_to_string(place.folder.join("manifest.json"))
         .map_or(0, |text| claimed(&text));
-    let anchor = match seal::item_read(&place.account) {
-        Item::Value(text) => claimed(&text),
-        _ => 0,
+    let unsealed_anchor = match read_anchor(&place.account, &place.anchor_bind) {
+        Read::Value(anchor) => return Ok(anchor.counter.max(sealed_manifest)),
+        Read::Unreadable => {
+            return Err(io::Error::other(
+                "purlis could not read the answers' anchor from its keyring, so nothing was changed",
+            ));
+        }
+        Read::Missing => 0,
+        Read::Broken => match seal::item_read(&place.account) {
+            Item::Value(text) => claimed(&text),
+            _ => {
+                return Err(io::Error::other(
+                    "purlis could not read the answers' anchor from its keyring, so nothing was changed",
+                ));
+            }
+        },
     };
-    manifest.max(anchor)
+    let unsealed = unsealed_manifest.max(unsealed_anchor);
+    if unsealed > PLAUSIBLE_COUNTER {
+        return Err(io::Error::other(
+            "the answers' counter was edited to a value purlis never reached and its anchor does \
+             not hold to check it, so nothing was changed: take the store's manifest away to start \
+             again",
+        ));
+    }
+    Ok(unsealed.max(sealed_manifest))
 }
 
 /// **The person's press that mends the deny state**: the plane's store starts again from
-/// `entries`, at a counter past every one seen (the manifest's and the anchor's, **each read
-/// even where its seal fails**), so no older copy ever replays. A registry that does not hold
-/// its seal is replaced first ([`mend_registry`]). Refused where no window is open, an empty
-/// `entries` included.
-pub fn recommit(root: &Path, entries: &[Entry]) -> io::Result<u64> {
-    if !window_is_open() {
-        return Err(io::Error::other(NO_WINDOW));
-    }
+/// `entries`, at a counter past every one seen (see [`highest_counter`]), so no older copy ever
+/// replays. A registry that does not hold its seal, or is missing where something is kept, is
+/// replaced first ([`mend_registry`]). Needs the person's [`Press`], an empty `entries` included.
+pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64> {
     let place = plane_place(root).ok_or_else(no_home)?;
     let _turn = store_lock()?;
-    let id = match register_with(root, true)? {
+    mend_registry(press, Some(root))?;
+    let id = match register_unlocked(root)? {
         Registration::Registered(id) => id,
         Registration::NotKept => return Err(cannot_seal()),
     };
-    let mut draft = Draft {
-        mend: true,
-        ..Draft::default()
-    };
+    let mut draft = Draft::default();
     for entry in entries {
-        draft.add(&entry.kind, &entry.text);
+        draft.add(press, &entry.kind, &entry.text);
     }
     write(
         &place,
         Some((root, &id)),
         draft,
         None,
-        highest_counter(&place),
+        highest_counter(&place)?,
     )
 }
 
@@ -1417,27 +1490,21 @@ pub fn commit_everywhere(change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
 
 /// **The person's press that mends the Everywhere entry**, as [`recommit`] mends a plane: the
 /// entry starts again from `entries`, past every counter seen, and a registry that does not hold
-/// its seal is replaced first. Refused where no window is open. Never a chat's.
-pub fn recommit_everywhere(entries: &[Entry]) -> io::Result<u64> {
-    if !window_is_open() {
-        return Err(io::Error::other(NO_WINDOW));
-    }
+/// its seal is replaced first. Needs the person's [`Press`]. Never a chat's.
+pub fn recommit_everywhere(press: &Press, entries: &[Entry]) -> io::Result<u64> {
     let place = everywhere_place().ok_or_else(no_home)?;
     let _turn = store_lock()?;
-    mend_registry()?;
+    mend_registry(press, None)?;
     if !registry_reads() {
         return Err(io::Error::other(
             "purlis could not read its registry of planes, so nothing was changed",
         ));
     }
-    let mut draft = Draft {
-        mend: true,
-        ..Draft::default()
-    };
+    let mut draft = Draft::default();
     for entry in entries {
-        draft.add(&entry.kind, &entry.text);
+        draft.add(press, &entry.kind, &entry.text);
     }
-    write(&place, None, draft, None, highest_counter(&place))
+    write(&place, None, draft, None, highest_counter(&place)?)
 }
 
 fn no_home() -> io::Error {
@@ -1460,14 +1527,8 @@ fn write(
     if seal::key_state() != KeyState::Usable {
         return Err(cannot_seal());
     }
-    if let Some(kind) = &draft.refused {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            format!("{kind:?} is not a kind of answer the store keeps, so nothing was changed"),
-        ));
-    }
-    if (draft.added || draft.removed || draft.mend) && !window_is_open() {
-        return Err(io::Error::other(NO_WINDOW));
+    if let Some(why) = draft.refused {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, why));
     }
     // The marker follows the nevers, so a list taken away is never "no nevers".
     let mut entries = draft.entries;
@@ -1481,10 +1542,14 @@ fn write(
     if entries.iter().any(|e| e.kind == NEVER) {
         entries.push(Entry::new(NEVER_MARKER, "present"));
     }
+    // A counter that cannot rise is a store that cannot be told from an older copy of itself.
     let counter = anchor
         .map_or(0, |a| a.counter)
         .max(manifest_counter)
-        .saturating_add(1);
+        .checked_add(1)
+        .ok_or_else(|| {
+            io::Error::other("the answers' counter cannot rise any further, so nothing was changed")
+        })?;
     // Everything is sealed before anything is written.
     let mut listed = Vec::new();
     let mut files = Vec::new();
