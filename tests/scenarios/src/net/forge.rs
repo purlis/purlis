@@ -526,12 +526,8 @@ impl FakeForge {
     /// # Panics
     /// If no such change was added: a test that refuses nothing would pass for nothing.
     pub fn refuse_merge(&self, forge: Forge, project: &str, number: u64, why: Refusal) -> &Self {
-        let mut state = self.state();
-        let change = state
-            .change(forge, project, number)
-            .unwrap_or_else(|| panic!("no {forge:?} change {project}#{number} to refuse"));
-        change.refusal = Some(why);
-        drop(state);
+        // PROBE C (to be reverted): refuses nothing.
+        let _ = (forge, project, number, why);
         self
     }
 
