@@ -164,6 +164,30 @@ type Read =
   | { state: "trouble"; trouble: string }
   | { state: "read"; shown: GitlabShown };
 
+export function RemoveGitlabAccess({
+  host,
+  onClose,
+  onRemove,
+}: {
+  host: string;
+  onClose: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <AlertDialog
+      onClose={onClose}
+      title={`Remove GitLab access for ${host}?`}
+      description={
+        <p className="came-back ui-text-secondary">
+          The token and the glab lines purlis wrote go at once, and chats stop using glab here.
+          Revoke the token on GitLab too.
+        </p>
+      }
+      main={{ children: "Remove", variant: "danger", onPress: onRemove }}
+    />
+  );
+}
+
 export function GitLabAccessTab({ plane }: { plane: PlaneId }) {
   const [read, setRead] = useState<Read>({ state: "reading" });
   const [removing, setRemoving] = useState<GitlabRow | null>(null);
@@ -264,16 +288,10 @@ export function GitLabAccessTab({ plane }: { plane: PlaneId }) {
         />
       ))}
       {removing && (
-        <AlertDialog
+        <RemoveGitlabAccess
+          host={removing.host}
           onClose={() => setRemoving(null)}
-          title={`Remove GitLab access for ${removing.host}?`}
-          description={
-            <p className="came-back ui-text-secondary">
-              The token and the glab lines purlis wrote go at once, and chats stop using glab here.
-              Revoke the token on GitLab too.
-            </p>
-          }
-          main={{ children: "Remove", variant: "danger", onPress: () => remove(removing) }}
+          onRemove={() => remove(removing)}
         />
       )}
     </div>
