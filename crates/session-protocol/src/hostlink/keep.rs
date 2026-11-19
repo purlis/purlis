@@ -141,7 +141,9 @@ pub fn keep_linked<C: Connector>(
     let (moved, moved_to) = watch::channel(0);
     let wake = std::sync::Arc::new(tokio::sync::Notify::new());
     let woken = std::sync::Arc::clone(&wake);
-    tokio::spawn(async move {
+    // The steps the caller is inside, so a link made for a step names it (`steps`, #7182): a step
+    // that has ended is named no more, so one kept past it, linking again, is inside nothing.
+    tokio::spawn(crate::steps::current().future(async move {
         let mut ups: u64 = 0;
         let dial = || async {
             let io = connector.connect().await.map_err(|why| Down {
@@ -202,7 +204,7 @@ pub fn keep_linked<C: Connector>(
                 return;
             }
         }
-    });
+    }));
     Links {
         told,
         wake,

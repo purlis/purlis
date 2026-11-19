@@ -2647,6 +2647,82 @@ pub struct Docker {
     tls: Option<Box<crate::tlsroute::Through>>,
 }
 
+/// Where the verb of a `docker` run's arguments is, past the global flags that come before it: `-H`,
+/// `--host`, `-c`, `--context`, `-l`, `--log-level`, `--config`, and the `--tls*` family, each
+/// as `--flag value` or `--flag=value`.
+fn docker_verb_at(args: &[String]) -> Option<usize> {
+    const TAKES_A_VALUE: [&str; 10] = [
+        "-H",
+        "--host",
+        "-c",
+        "--context",
+        "-l",
+        "--log-level",
+        "--config",
+        "--tlscacert",
+        "--tlscert",
+        "--tlskey",
+    ];
+    let mut words = args.iter().map(String::as_str).enumerate();
+    while let Some((at, word)) = words.next() {
+        if TAKES_A_VALUE.contains(&word) {
+            words.next();
+        } else if word.starts_with('-') {
+            // `--flag=value`, or a flag with no value (`--tls`, `-D`).
+        } else {
+            return Some(at);
+        }
+    }
+    None
+}
+
+/// The step a `docker` run is timed as (#7182): its verb, and for `container` and `image` its
+/// subcommand, never its arguments, which name a container and a volume. What this does not name
+/// is `docker_other`, `docker_container_other` or `docker_image_other`.
+fn docker_step(args: &[String]) -> &'static str {
+    let at = docker_verb_at(args);
+    let verb = at.map(|at| args[at].as_str());
+    // The word right after the verb, if it is not a flag: `container inspect`, `image pull`.
+    let sub = at.and_then(|at| {
+        args.get(at + 1)
+            .map(String::as_str)
+            .filter(|word| !word.starts_with('-'))
+    });
+    match (verb, sub) {
+        (Some("info"), _) => "docker_info",
+        (Some("container"), Some("create")) => "docker_container_create",
+        (Some("container"), Some("inspect")) => "docker_container_inspect",
+        (Some("container"), Some("ls")) => "docker_container_ls",
+        (Some("container"), Some("rm")) => "docker_container_rm",
+        (Some("container"), Some("run")) => "docker_container_run",
+        (Some("container"), Some("start")) => "docker_container_start",
+        (Some("container"), Some("stop")) => "docker_container_stop",
+        (Some("container"), Some("exec")) => "docker_container_exec",
+        (Some("container"), Some("cp")) => "docker_container_cp",
+        (Some("container"), Some("logs")) => "docker_container_logs",
+        (Some("container"), _) => "docker_container_other",
+        (Some("image"), Some("pull")) | (Some("pull"), _) => "docker_image_pull",
+        (Some("image"), Some("load")) | (Some("load"), _) => "docker_image_load",
+        (Some("image"), Some("inspect")) => "docker_image_inspect",
+        (Some("image"), Some("ls")) => "docker_image_ls",
+        (Some("image"), Some("rm")) => "docker_image_rm",
+        (Some("image"), _) => "docker_image_other",
+        (Some("volume"), _) => "docker_volume",
+        (Some("network"), _) => "docker_network",
+        (Some("system"), _) => "docker_system",
+        (Some("exec"), _) => "docker_exec",
+        (Some("start"), _) => "docker_start",
+        (Some("stop"), _) => "docker_stop",
+        (Some("run"), _) => "docker_run",
+        (Some("create"), _) => "docker_create",
+        (Some("rm"), _) => "docker_rm",
+        (Some("cp"), _) => "docker_cp",
+        (Some("ps"), _) => "docker_ps",
+        (Some("inspect"), _) => "docker_inspect",
+        _ => "docker_other",
+    }
+}
+
 /// **How long each `docker` run that only reads may take** (#3546): an inspect, an `info`, a
 /// list, a runner's version. One still running then is ended and refused, saying it did not
 /// answer, so a wedged engine holds up no pool surface that asks it.
@@ -3118,6 +3194,19 @@ impl Docker {
     /// **`docker` run with `args`**, whatever its exit: what it printed, up to `most` bytes, and
     /// what it said on standard error, up to [`MOST_SAID`].
     fn spawned(
+        &self,
+        prepared: &settings::Prepared,
+        args: &[String],
+        input: Option<&str>,
+        most: u64,
+        within: Option<std::time::Duration>,
+    ) -> Result<crate::boundedrun::Ran, Failed> {
+        // A start makes many of these: at `debug`, so the log's `info` is the start's own steps.
+        let step = purlis_session_protocol::steps::begin_debug(docker_step(args));
+        step.ended(self.spawned_inner(prepared, args, input, most, within))
+    }
+
+    fn spawned_inner(
         &self,
         prepared: &settings::Prepared,
         args: &[String],
@@ -4138,6 +4227,7 @@ impl Docker {
     /// It answers what it read of the container before anything was started ([`Ran`]), and
     /// whether it started it, so the runner hours record has both (#3492).
     pub fn resumed(&self, made: &Made) -> Result<Resumed, Refused> {
+        let step = purlis_session_protocol::steps::begin("container_check");
         let engine = self.check_daemon()?;
         let inspected = self.json(
             &["container", "inspect", made.container.as_str()],
@@ -4145,28 +4235,31 @@ impl Docker {
         )?;
         let before = ran(&inspected);
         if before.running {
-            return self.check(made).map(|()| Resumed {
+            return step.ended(self.check(made).map(|()| Resumed {
                 before,
                 started: false,
-            });
+            }));
         }
         checked_on(&inspected, made, engine, false)?;
         let id = made.container.as_str().to_owned();
-        self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED)?;
+        {
+            let started =
+                purlis_session_protocol::steps::begin("runner_start").under("container_check");
+            started.ended(self.run(&["start".to_owned(), id.clone()], None, MOST_INSPECTED))?;
+        }
         // Started here and not as it was made once it runs: it is stopped again, and not linked.
-        self.check(made)
-            .map(|()| Resumed {
-                before,
-                started: true,
-            })
-            .inspect_err(|_| {
-                if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
-                    tracing::warn!(
-                        "purlis: a runner's container started again and refused its check was not \
+        step.ended(self.check(made).map(|()| Resumed {
+            before,
+            started: true,
+        }))
+        .inspect_err(|_| {
+            if let Err(why) = self.run(&["stop".to_owned(), id], None, MOST_INSPECTED) {
+                tracing::warn!(
+                    "purlis: a runner's container started again and refused its check was not \
                      stopped: {why}"
-                    );
-                }
-            })
+                );
+            }
+        })
     }
 
     /// Pair `made`'s runner with `desktop`, once its container passes the check: the runner's
