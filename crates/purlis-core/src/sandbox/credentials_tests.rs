@@ -882,10 +882,14 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
             said.contains(&no_minted_token_said(program, false)),
             "{program}: {said}"
         );
-        assert!(
-            said.contains(flow),
-            "{program}: the shim names no flow: {said}"
-        );
+        // A vault-token tool's shim names the flow that keeps the token (glab's); a minting
+        // tool's names Agent identity, which this stand-in, declared without `mint`, is not.
+        if guarded {
+            assert!(
+                said.contains(flow),
+                "{program}: the shim names no flow: {said}"
+            );
+        }
         assert!(!ran.exists(), "{program} ran with no token");
         // 4. the undeclared program's shim, where it is guarded.
         if guarded {
