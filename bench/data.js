@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795067567528,
+  "lastUpdate": 1795070505380,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51492,6 +51492,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0525015,
             "unit": "ms",
             "extra": "median of 5 runs: 101.200, 101.570, 102.053, 102.361, 103.640 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "51497d991bae73ad2fe578520c8d3fbd5d95fc71",
+          "message": "Stop purlis tripping its own chat sandbox; name the command in a block's report (#7178) (#7219)\n\n* Stop purlis tripping its own chat sandbox, and name the purlis command in a block's report (#7178)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7R3J3RWB4D6588M73XKWJVC\nPurlis-Persona: steward\n\n* Add the new files of the #7178 fix: command words, scenario test, changelog fragment\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7R3J3RWB4D6588M73XKWJVC\nPurlis-Persona: steward\n\n* Carry purlis_command in the sandbox block test main added (#7178)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7R3J3RWB4D6588M73XKWJVC\nPurlis-Persona: steward\n\n* The block-reaches-the-app test expects the purlis command it now carries (#7178)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7R3J3RWB4D6588M73XKWJVC\nPurlis-Persona: steward\n\n* The Codex quoted-hook test runs a chat with no sandbox: a real one holds the reports from the hook (#7178)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7R3J3RWB4D6588M73XKWJVC\nPurlis-Persona: steward\n\n* Round 2 of #7178: keep the chat's command out of a report's fingerprint, honest skipped doctor rows, no store rewrite to read the device id\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RM3MKX8269KZ0QMNET86EK\nPurlis-Persona: steward\n\n* Split the line's first command with a char array (clippy)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RM3MKX8269KZ0QMNET86EK\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-11-19T04:39:15Z",
+          "tree_id": "6c1d47ef6bb6ff4001730db1e9ad2b3afb35e608",
+          "url": "https://github.com/purlis/purlis/commit/51497d991bae73ad2fe578520c8d3fbd5d95fc71"
+        },
+        "date": 1795070499526,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.700263,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.686, 0.700, 0.708, 0.709 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6231,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.426, 16.619, 16.623, 16.662, 16.895 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.97562400000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.104, 101.721, 101.976, 102.630, 102.704 ms"
           }
         ]
       }
