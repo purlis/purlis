@@ -183,7 +183,11 @@ fn a_forge_run_is_told_its_host_and_another_program_is_told_nothing() {
             Some("gitlab.example.com"),
             "/usr/local/bin/glab"
         )),
-        vec![("GITLAB_HOST".to_owned(), "gitlab.example.com".to_owned())]
+        vec![
+            ("GITLAB_HOST".to_owned(), "gitlab.example.com".to_owned()),
+            ("GLAB_SEND_TELEMETRY".to_owned(), "false".to_owned()),
+            ("GLAB_CHECK_UPDATE".to_owned(), "false".to_owned()),
+        ]
     );
     assert!(forge_env(&ready("kubectl", None, "/usr/bin/kubectl")).is_empty());
 }
@@ -248,6 +252,10 @@ fn a_glab_tool_on_a_self_hosted_gitlab_reaches_that_host_and_no_other() {
     // The run is told its host, so a command that names none reaches it.
     assert_eq!(
         forge_env(&glab),
-        [("GITLAB_HOST".to_owned(), "git.acme.internal".to_owned())]
+        [
+            ("GITLAB_HOST".to_owned(), "git.acme.internal".to_owned()),
+            ("GLAB_SEND_TELEMETRY".to_owned(), "false".to_owned()),
+            ("GLAB_CHECK_UPDATE".to_owned(), "false".to_owned()),
+        ]
     );
 }

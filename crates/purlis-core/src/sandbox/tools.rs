@@ -2637,7 +2637,8 @@ fn forge_of(names: &[&Path]) -> Option<bool> {
 }
 
 /// **The variables a forge tool's run starts with** (#3869): its host, from its declaration
-/// or the forge's own, as the program reads it ([`host::env`]); none for any other program.
+/// or the forge's own, as the program reads it ([`host::env`]), and for glab its telemetry and
+/// update check turned off; none for any other program.
 pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
     let real = ready.program.canonicalize().ok();
     let names: Vec<&Path> = [Path::new(&ready.tool.name), ready.program.as_path()]
@@ -2647,7 +2648,15 @@ pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
     forge_of(&names)
         .map(|glab| {
             let host = ready.tool.host.as_deref().unwrap_or(host::default_of(glab));
-            vec![host::env(glab, host)]
+            let mut env = vec![host::env(glab, host)];
+            if glab {
+                // glab posts usage events, with the token, to the host's `usage_data` route
+                // unless told not to, and looks for a newer release: the token goes only to
+                // the calls the chat makes (#1349).
+                env.push(("GLAB_SEND_TELEMETRY".to_owned(), "false".to_owned()));
+                env.push(("GLAB_CHECK_UPDATE".to_owned(), "false".to_owned()));
+            }
+            env
         })
         .unwrap_or_default()
 }

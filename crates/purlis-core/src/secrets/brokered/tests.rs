@@ -6407,6 +6407,7 @@ fn a_stand_in_glab(project: &Path) -> PathBuf {
         format!(
             "#!/bin/sh\n\
              echo \"host=${{GITLAB_HOST:-none}}\"\n\
+             echo \"telemetry=${{GLAB_SEND_TELEMETRY:-unset}}\"\n\
              if [ \"$GITLAB_TOKEN\" = \"{TOKEN}\" ]; then echo token=the-vaults;\n\
              elif [ -n \"$GITLAB_TOKEN\" ]; then echo token=another;\n\
              else echo token=none; fi\n\
@@ -6464,6 +6465,7 @@ fn a_glab_run(project: &Path, args: &[&str]) -> Wanted {
         ("GLAB_CONFIG_DIR", login.display().to_string()),
         ("GITLAB_TOKEN", "the-chats-own".to_owned()),
         ("GITLAB_HOST", "gitlab.com".to_owned()),
+        ("GLAB_SEND_TELEMETRY", "true".to_owned()),
     ] {
         want.environment.push((name.into(), value.into()));
     }
@@ -6485,7 +6487,7 @@ fn a_glab_tool_is_handed_the_vault_token_and_its_host_and_never_reads_the_person
         assert_eq!(
             stdout(&frames),
             format!(
-                "host=git.acme.internal\ntoken=the-vaults\nargs={}\n",
+                "host=git.acme.internal\ntelemetry=false\ntoken=the-vaults\nargs={}\n",
                 args.join(" ")
             ),
             "{args:?}"
