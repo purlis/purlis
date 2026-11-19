@@ -1228,6 +1228,11 @@ pub struct Resolved {
     pub unallowed: Vec<String>,
     /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
     pub refusing: Vec<(String, String)>,
+    /// **A forge program no tool of this chat runs, under the class that holds the person's own
+    /// login back** (#1349): each with the sentence its shim answers with, and exit 1, so a chat
+    /// that runs it is told which flow sets it up and the program is never run bare
+    /// ([`guard_forges`]).
+    pub guards: Vec<(String, String)>,
     /// Nothing is allowed this chat, and it only says what is absent (#4373). Its shims go in a
     /// folder of their own, named by what they say ([`refusals_folder`]): the persona's folder
     /// holds the shims of another chat's Allow, which this chat is never to find first on its
@@ -1447,6 +1452,7 @@ pub(crate) fn for_chat_on(
             absent: Vec::new(),
             unallowed: Vec::new(),
             refusing: Vec::new(),
+            guards: Vec::new(),
             only_refuses: true,
         });
         into.absent.extend(unallowed.absent.iter().cloned());
@@ -1546,6 +1552,7 @@ pub(crate) fn resolve_beside(
         absent,
         unallowed: Vec::new(),
         refusing: Vec::new(),
+        guards: Vec::new(),
         only_refuses: false,
     })
 }
@@ -2894,21 +2901,139 @@ pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&P
     )
 }
 
+/// **The flow that gives a chat a GitLab token** (#1349), as a refusal names it: the command that
+/// does it from a terminal and the window's tab. `host` is the project's GitLab host where it has
+/// one, else a placeholder the person fills.
+pub fn gitlab_flow(persona: &str, host: Option<&str>) -> String {
+    format!(
+        "run `purlis gitlab access {host} --persona {persona}` (or Settings › GitLab access in the \
+         purlis window), which keeps a GitLab token in a vault and declares glab for {persona}, \
+         then restart the chat",
+        host = host.unwrap_or("<your GitLab host>"),
+    )
+}
+
 /// **What a minting tool's shim says when there is no token to run it with** (#1349): a chat that
 /// holds the credentials class cannot read the person's own login, and a tool declared with a
 /// `mint` line never runs without the token it mints (#7133), so it says why and the way on.
 pub fn no_minted_token_said(name: &str) -> String {
     let way = if name == "glab" {
-        "Declare a glab tool that holds a GitLab token in a vault, or choose a sandbox template \
-         where the credentials class is off."
+        format!(
+            "To give it one, {}. Or choose a sandbox template where the credentials class is off.",
+            gitlab_flow("<persona>", None)
+        )
     } else {
         "Set up Agent identity in Settings › Agent identity, or choose a sandbox template where \
          the credentials class is off."
+            .to_owned()
     };
     format!(
         "{name} has no token in this chat, and a chat never uses the person's own {name} login. \
          {way}"
     )
+}
+
+/// **What the shim of an undeclared `glab` says** (#1349): this chat's persona declares no `glab`
+/// tool that is allowed here, and the chat never uses the person's own login, so it names the flow
+/// that sets one up and the Allow that follows it.
+pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
+    format!(
+        "glab has no token in this chat, and a chat never uses the person's own glab login. To \
+         give it one, {}, and allow it ({ALLOW_IS_ASKED}). Or choose a sandbox template where \
+         the credentials class is off.",
+        gitlab_flow(persona, host)
+    )
+}
+
+/// **The forge programs a chat under the credentials class is guarded from running bare**
+/// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
+pub const GUARDED_FORGES: [&str; 1] = ["glab"];
+
+/// **`resolved`, with a shim that says the way on for each of [`GUARDED_FORGES`] that no tool of
+/// this chat runs** (#1349): where the sandbox holds the person's own credentials back
+/// ([`crate::sandbox::Class::Credentials`]) the program would only fail on that refusal, so its
+/// name in the chat names the flow instead and exits 1. `gitlab_hosts` are the project's GitLab
+/// hosts, one of which the sentence names where there is exactly one. A tool the persona declares
+/// has its own shim, which is never replaced.
+pub fn guard_forges(
+    resolved: Option<Resolved>,
+    root: &Path,
+    persona: &str,
+    gitlab_hosts: &[String],
+) -> Option<Resolved> {
+    let own = |name: &str| {
+        resolved.as_ref().is_some_and(|one| {
+            one.ready.iter().any(|ready| ready.tool.name == name)
+                || one.refusing.iter().any(|(tool, _)| tool == name)
+        })
+    };
+    let guards: Vec<(String, String)> = GUARDED_FORGES
+        .iter()
+        .filter(|name| !own(name))
+        .map(|name| {
+            let host = match gitlab_hosts {
+                [only] => Some(only.as_str()),
+                _ => None,
+            };
+            ((*name).to_owned(), undeclared_glab_said(persona, host))
+        })
+        .collect();
+    if guards.is_empty() {
+        return resolved;
+    }
+    let mut into = resolved.unwrap_or_else(|| Resolved {
+        persona: persona.to_owned(),
+        folder: folder(root, persona),
+        ready: Vec::new(),
+        left: Vec::new(),
+        absent: Vec::new(),
+        unallowed: Vec::new(),
+        refusing: Vec::new(),
+        guards: Vec::new(),
+        only_refuses: true,
+    });
+    into.guards = guards;
+    if into.only_refuses && into.refusing.is_empty() {
+        into.folder = refusals_folder(&folder(root, persona), &into.guards, &[]);
+    }
+    Some(into)
+}
+
+/// The shim of a guarded forge program ([`guard_forges`]): the sentence, and exit 1. It never
+/// runs the program, whatever is handed to it.
+pub fn guard_shim(persona: &str, name: &str, said: &str) -> String {
+    format!(
+        "#!/bin/sh\n# Written by purlis for a chat of {persona} (#1349). `{name}` has no token in \
+         this chat\n# and never falls back to the person's own login. Edits here are overwritten.\n\
+         echo {said} >&2\nexit 1\n",
+        said = quoted(&format!("purlis: {said}")),
+    )
+}
+
+/// **The forge routes the tools of a chat give it** (#1349): for each tool whose program is `gh`
+/// or `glab` (or that mints, which is a GitHub App's token), whether it is glab's and the host it
+/// reaches ([`host::default_of`] where it names none).
+pub fn forge_routes(ready: &[Ready]) -> Vec<(bool, String)> {
+    ready
+        .iter()
+        .filter_map(|one| {
+            let real = one.program.canonicalize().ok();
+            let names: Vec<&Path> = [Path::new(&one.tool.name), one.program.as_path()]
+                .into_iter()
+                .chain(real.as_deref())
+                .collect();
+            let glab = match forge_of(&names) {
+                Some(glab) => glab,
+                None if one.tool.mint.is_some() => false,
+                None => return None,
+            };
+            let host = one.tool.host.clone();
+            Some((
+                glab,
+                host.unwrap_or_else(|| host::default_of(glab).to_owned()),
+            ))
+        })
+        .collect()
 }
 
 /// The forge programs whose own login a chat never falls back to (ADR 0067 §5 class 6): each
@@ -3066,12 +3191,13 @@ impl Resolved {
                 .iter()
                 .map(|one| &one.tool.name)
                 .chain(self.refusing.iter().map(|(tool, _)| tool))
+                .chain(self.guards.iter().map(|(tool, _)| tool))
                 .any(|tool| std::ffi::OsStr::new(tool) == name);
             if !current {
                 std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
             }
         }
-        if self.ready.is_empty() && self.refusing.is_empty() {
+        if self.ready.is_empty() && self.refusing.is_empty() && self.guards.is_empty() {
             return Ok(None);
         }
         let put = |path: &Path, text: &str, mode: u32| -> std::io::Result<()> {
@@ -3101,6 +3227,13 @@ impl Resolved {
                     said,
                     self.unallowed.contains(name).then_some(bin.as_path()),
                 ),
+                0o700,
+            )?;
+        }
+        for (name, said) in &self.guards {
+            put(
+                &bin.join(name),
+                &guard_shim(&self.persona, name, said),
                 0o700,
             )?;
         }

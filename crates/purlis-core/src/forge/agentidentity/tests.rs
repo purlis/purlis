@@ -511,6 +511,7 @@ fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
     let mut allowed = Vec::new();
     let left = allow_as_written(
         root.path(),
+        "gh",
         &["dev".to_owned()],
         before,
         &written,
@@ -945,7 +946,7 @@ fn a_start_with_the_class_on_a_github_remote_and_no_identity_says_the_ways_out()
     }
     clone_with_remotes(&root, "svc", &["https://github.com/acme/svc.git"]);
     let forges = hosts_of_the_project(&root);
-    let said = credentials_note(true, false, &forges).expect("it says");
+    let said = credentials_note(true, &[], &forges, Some("dev")).expect("it says");
     assert!(said.contains("Settings › Agent identity"), "{said}");
     assert!(said.contains("credentials class is off"), "{said}");
 }
@@ -964,14 +965,65 @@ fn the_credentials_note_is_said_only_where_it_is_true() {
         host: "bitbucket.org".into(),
         kind: None,
     }];
-    assert_eq!(credentials_note(false, false, &github), None, "class off");
-    assert_eq!(credentials_note(true, true, &github), None, "a mint holds");
-    assert_eq!(credentials_note(true, false, &[]), None, "no remote");
-    assert_eq!(credentials_note(true, false, &none), None, "no known forge");
-    let gitlab_said = credentials_note(true, false, &gitlab).expect("gitlab");
+    let note = |holds, routes: &[(bool, String)], forges: &[HostFound]| {
+        credentials_note(holds, routes, forges, Some("dev"))
+    };
+    let mint = [(false, "github.com".to_owned())];
+    assert_eq!(note(false, &[], &github), None, "class off");
+    assert_eq!(note(true, &mint, &github), None, "a mint holds");
+    assert_eq!(note(true, &[], &[]), None, "no remote");
+    assert_eq!(note(true, &[], &none), None, "no known forge");
+    let gitlab_said = note(true, &[], &gitlab).expect("gitlab");
     assert!(!gitlab_said.contains("Agent identity"), "{gitlab_said}");
     assert!(
         gitlab_said.contains("credentials class is off"),
         "{gitlab_said}"
     );
+    assert!(
+        gitlab_said.contains("purlis gitlab access gitlab.com --persona dev"),
+        "{gitlab_said}"
+    );
+}
+
+/// #1349 part 2: a forge host is served by a route to that very host and kind, so a GitLab
+/// remote is not served by a GitHub mint, a host is not served by a tool of another host, and
+/// each forge is told its own way.
+#[test]
+fn a_gitlab_host_is_served_only_by_a_glab_route_to_that_host() {
+    let both = [
+        HostFound {
+            host: "github.com".into(),
+            kind: Some(Kind::GitHub),
+        },
+        HostFound {
+            host: "git.acme.internal".into(),
+            kind: Some(Kind::GitLab),
+        },
+    ];
+    let note = |routes: &[(bool, String)]| credentials_note(true, routes, &both, Some("dev"));
+    let mint = (false, "github.com".to_owned());
+    let glab = (true, "git.acme.internal".to_owned());
+    // A GitHub mint serves GitHub and says only the GitLab way.
+    let said = note(std::slice::from_ref(&mint)).expect("gitlab is unserved");
+    assert!(!said.contains("Agent identity"), "{said}");
+    assert!(
+        said.contains("purlis gitlab access git.acme.internal --persona dev"),
+        "{said}"
+    );
+    // A glab tool on the right host serves GitLab and says only the GitHub way.
+    let said = note(std::slice::from_ref(&glab)).expect("github is unserved");
+    assert!(said.contains("Agent identity"), "{said}");
+    assert!(!said.contains("gitlab access"), "{said}");
+    // Both: nothing to say.
+    assert_eq!(note(&[mint.clone(), glab]), None);
+    // A glab tool on another host serves nothing here, and the sentence names the mismatch.
+    let said = note(&[mint, (true, "gitlab.com".to_owned())]).expect("host mismatch");
+    assert!(said.contains("gitlab.com, which is not where"), "{said}");
+    assert!(said.contains("host must match"), "{said}");
+    // The host is matched without regard to case.
+    let upper = [
+        (true, "GIT.ACME.INTERNAL".to_owned()),
+        (false, "github.com".to_owned()),
+    ];
+    assert_eq!(note(&upper), None);
 }

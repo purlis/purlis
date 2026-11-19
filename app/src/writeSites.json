@@ -14,6 +14,11 @@
       "by": ["agentIdentityFinish"]
     },
     {
+      "at": "gitlabaccess.rs gitlab_access_set",
+      "writes": "this machine's network record",
+      "by": ["gitlabAccessSet"]
+    },
+    {
       "at": "asking.rs forget_sandbox_block",
       "writes": "this machine's network record",
       "by": ["forgetSandboxBlock"]
@@ -351,7 +356,7 @@
     {
       "at": "sandboxing.rs allow_shown",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["allowPersonaHosts", "agentIdentityFinish", "answerRunGrant"]
+      "by": ["allowPersonaHosts", "agentIdentityFinish", "gitlabAccessSet", "answerRunGrant"]
     },
     {
       "at": "sandboxing.rs allow_sandbox_block",

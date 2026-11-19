@@ -22,6 +22,7 @@ macro_rules! tauri_context {
 mod about;
 mod activity;
 mod agentidentity;
+mod gitlabaccess;
 mod alerts;
 mod arrived;
 mod artifact_links;

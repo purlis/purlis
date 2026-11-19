@@ -685,24 +685,48 @@ fn a_refused_credential_is_known_as_one() {
     }
 }
 
-/// **A forge's credential file never ships without its three answers** (#1349): every forge's file
-/// in [`CREDENTIAL_FILES`] names a forge that has (i) a program the shim refuses to run without a
-/// token, (ii) a start-time note for a chat that holds the class with no route, and (iii) the
-/// shim's sentence. A forge's file added to the list with no row here turns this red.
+/// **A forge's credential file never ships without its answers** (#1349): every forge's file in
+/// [`CREDENTIAL_FILES`] names a forge that has
+///
+/// 1. a **route**: a declared tool that gives the chat a token and reaches the forge's host
+///    ([`forge_routes`]), the one thing a chat under the class takes in place of the person's login;
+/// 2. a **start check**: the note a chat that holds the class with no route is told, naming the
+///    forge's own flow, and said no more where a route to that very host stands;
+/// 3. a **shim answer** where the tool is declared but there is no token, naming the way, exit 1;
+/// 4. an **undeclared answer** where no tool is, for a forge whose program a chat under the class
+///    only fails on ([`GUARDED_FORGES`]): its flow, exit 1, the program never run;
+/// 5. a **setup flow** the answers name, that the person can run.
+///
+/// A forge's file added to the list with no row here, or a row with an answer taken away, turns
+/// this red.
 #[cfg(unix)]
 #[test]
-fn every_forge_credential_file_has_a_shim_a_start_note_and_a_sentence() {
+fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_setup_flow() {
     use crate::forge::Kind;
     use crate::forge::agentidentity::{HostFound, credentials_note};
-    use crate::sandbox::tools::{FORGE_PROGRAMS, Handed, Ready, Tool, no_minted_token_said, shim};
+    use crate::sandbox::tools::{
+        FORGE_PROGRAMS, GUARDED_FORGES, Handed, Ready, Tool, forge_routes, gitlab_flow,
+        guard_forges, no_minted_token_said, shim,
+    };
     use std::os::unix::fs::PermissionsExt;
-    const FORGES: [(&str, &str, Kind, &str); 2] = [
-        (".config/gh/hosts.yml", "gh", Kind::GitHub, "GH_TOKEN"),
+    /// (file, program, kind, the variable the token is handed in, the words of the setup flow
+    /// every answer names, whether an undeclared program is guarded).
+    const FORGES: [(&str, &str, Kind, &str, &str, bool); 2] = [
+        (
+            ".config/gh/hosts.yml",
+            "gh",
+            Kind::GitHub,
+            "GH_TOKEN",
+            "Agent identity",
+            false,
+        ),
         (
             ".config/glab-cli/config.yml",
             "glab",
             Kind::GitLab,
             "GITLAB_TOKEN",
+            "purlis gitlab access",
+            true,
         ),
     ];
     let forge_files: Vec<&str> = CREDENTIAL_FILES
@@ -715,51 +739,111 @@ fn every_forge_credential_file_has_a_shim_a_start_note_and_a_sentence() {
         forge_files, named,
         "a forge's credential file has no row here"
     );
-    for (_, program, kind, var) in FORGES {
-        assert!(
-            FORGE_PROGRAMS.contains(&program),
-            "{program} has no shim rule"
-        );
-        let found = [HostFound {
-            host: "forge.test".into(),
-            kind: Some(kind),
-        }];
-        assert!(
-            credentials_note(true, false, &found).is_some(),
-            "{program}: no start note"
-        );
-        // The shim, run with no app and no token: the sentence, a failure, and the program unrun.
-        let tmp = tempfile::tempdir().unwrap();
-        let ran = tmp.path().join("ran");
-        let bin = tmp.path().join(program);
-        std::fs::write(&bin, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let script = tmp.path().join("shim");
-        std::fs::write(
-            &script,
-            shim(
-                Path::new("/purlis"),
-                "dev",
-                &Ready {
-                    tool: Tool::one(program, "forge", var, Handed::Env, "token"),
-                    program: bin,
-                },
-            ),
-        )
-        .unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
-        let out = crate::forklock::output(
-            std::process::Command::new(&script)
+    let run = |script: &Path, var: &str| {
+        crate::forklock::output(
+            std::process::Command::new(script)
                 .env_remove("PURLIS_HOOK_SOCKET")
                 .env_remove("CHARTER_HOOK_SOCKET")
                 .env_remove(var),
         )
-        .unwrap();
-        assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
+        .unwrap()
+    };
+    let executable = |path: &Path, text: String| {
+        std::fs::write(path, text).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    };
+    for (_, program, kind, var, flow, guarded) in FORGES {
+        // 5. the setup flow, which the answers below name.
         assert!(
-            String::from_utf8_lossy(&out.stderr).contains(&no_minted_token_said(program)),
-            "{program}: {out:?}"
+            FORGE_PROGRAMS.contains(&program),
+            "{program} has no shim rule"
+        );
+        assert_eq!(GUARDED_FORGES.contains(&program), guarded, "{program}");
+        let tmp = tempfile::tempdir().unwrap();
+        let ran = tmp.path().join("ran");
+        let bin = tmp.path().join(program);
+        executable(&bin, format!("#!/bin/sh\ntouch '{}'\n", ran.display()));
+        // 1. the route: the tool declared, as the forge's own host.
+        let mut tool = Tool::one(program, "forge", var, Handed::Env, "token");
+        tool.host = Some("forge.test".to_owned());
+        let ready = Ready {
+            tool,
+            program: bin.clone(),
+        };
+        let glab = kind == Kind::GitLab;
+        assert_eq!(
+            forge_routes(std::slice::from_ref(&ready)),
+            [(glab, "forge.test".to_owned())],
+            "{program}: no route"
+        );
+        // 2. the start check, said with no route and silent with one to that very host.
+        let found = [HostFound {
+            host: "forge.test".into(),
+            kind: Some(kind),
+        }];
+        let note = credentials_note(true, &[], &found, Some("dev")).expect("a start note");
+        assert!(note.contains(flow), "{program}: {note}");
+        assert_eq!(
+            credentials_note(
+                true,
+                &[(glab, "forge.test".to_owned())],
+                &found,
+                Some("dev")
+            ),
+            None,
+            "{program}: a route to the host still gets the note"
+        );
+        assert!(
+            credentials_note(
+                true,
+                &[(glab, "other.test".to_owned())],
+                &found,
+                Some("dev")
+            )
+            .is_some(),
+            "{program}: a route to another host serves this one"
+        );
+        // 3. the shim of the declared tool, run with no app and no token: the sentence, a
+        // failure, and the program unrun.
+        let script = tmp.path().join("shim");
+        executable(&script, shim(Path::new("/purlis"), "dev", &ready));
+        let out = run(&script, var);
+        assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
+        let said = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            said.contains(&no_minted_token_said(program)),
+            "{program}: {said}"
+        );
+        assert!(
+            said.contains(flow),
+            "{program}: the shim names no flow: {said}"
         );
         assert!(!ran.exists(), "{program} ran with no token");
+        // 4. the undeclared program's shim, where it is guarded.
+        if guarded {
+            let resolved =
+                guard_forges(None, tmp.path(), "dev", &["forge.test".to_owned()]).expect("a guard");
+            let [(name, sentence)] = resolved.guards.as_slice() else {
+                panic!("{:?}", resolved.guards)
+            };
+            assert_eq!(name, program);
+            assert!(sentence.contains(flow), "{program}: {sentence}");
+            assert!(
+                sentence.contains(&gitlab_flow("dev", Some("forge.test"))),
+                "{program}: {sentence}"
+            );
+            let guard = tmp.path().join("guard");
+            executable(
+                &guard,
+                crate::sandbox::tools::guard_shim("dev", name, sentence),
+            );
+            let out = run(&guard, var);
+            assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
+            assert!(
+                String::from_utf8_lossy(&out.stderr).contains(sentence.as_str()),
+                "{program}: {out:?}"
+            );
+            assert!(!ran.exists(), "{program} ran undeclared");
+        }
     }
 }

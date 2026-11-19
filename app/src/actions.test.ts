@@ -2076,6 +2076,7 @@ describe("carrying out a row", () => {
         "openView:charter/shared-memory/,Shared memory",
         "openView:charter/shortcuts/,Keyboard shortcuts",
         "openView:charter/agent-identity/,Agent identity",
+        "openView:charter/gitlab-access/,GitLab access",
         // #1452: the project's dispatches, in a tab of their own.
         "openView:charter/dispatches/,Dispatches",
         // A chat's Activity, one row per chat tab (#1495).
@@ -2906,6 +2907,7 @@ describe("the palette at fifty chats", () => {
     // or the Workspace level. 921 since #2027: Open browsers. 922 since the person's ruling of
     // 2026-10-30: Your settings: Pools is offered with or without a pool, as the group is. 923
     // since #4536: the project's Runs on. 924 since #4485: Agent identity.
+    // +1 since #1349: GitLab access, shifting every count below by one.
     // 974 since #4753: End…, each of the fifty chats' own row.
     // 975 since #4762: Close other tabs, one row, the tab in front's.
     // 1025 since #4765: Tile all, each of the fifty tabs' own row, as Pin tab is.

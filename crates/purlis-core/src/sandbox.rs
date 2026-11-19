@@ -7650,8 +7650,30 @@ fn for_start_at(
             applied.confines.tools = resolved.ready.clone();
             applied.tools = Some(Box::new(resolved));
         }
+        guard_forges_in(&mut applied, root, name);
     }
     Ok(Some(applied))
+}
+
+/// **The shim of an undeclared `glab`** (#1349): where this chat's sandbox holds the person's own
+/// credentials back, `glab` in it says which flow gives it a token, and fails, in place of failing
+/// on a login it was never to read ([`tools::guard_forges`]).
+fn guard_forges_in(applied: &mut Applied, root: &Path, persona: &str) {
+    if !applied
+        .confines
+        .denied
+        .iter()
+        .any(|denial| denial.class == Class::Credentials)
+    {
+        return;
+    }
+    let hosts: Vec<String> = crate::forge::agentidentity::hosts_of_the_project(root)
+        .into_iter()
+        .filter(|found| found.kind == Some(crate::forge::Kind::GitLab))
+        .map(|found| found.host)
+        .collect();
+    let resolved = applied.tools.take().map(|boxed| *boxed);
+    applied.tools = tools::guard_forges(resolved, root, persona, &hosts).map(Box::new);
 }
 
 /// **The floor for a chat of `harness`** in a project that has not turned the sandbox on
@@ -7706,6 +7728,7 @@ fn floor_for_start(
                 applied.hold_programs(&[program.display().to_string()]);
             }
         }
+        guard_forges_in(&mut applied, root, name);
     }
     Ok(applied)
 }

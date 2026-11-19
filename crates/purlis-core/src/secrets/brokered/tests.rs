@@ -6392,3 +6392,137 @@ fn under_purlis_wrap_a_brokered_child_reaches_the_network_only_through_its_proxy
     a_wrapped_child_reaches_only_through_its_proxy(asker, &root, Wrap::Purlis);
     crate::secrets::test_really_ran("brokered-network-under-purlis-wrap");
 }
+
+/// A stand-in `glab` in `project`, as a chat's run finds it: it uses `GITLAB_TOKEN` where it is
+/// given one and otherwise the login its settings hold, as the real one does. It says which, on
+/// which host, and never prints a token.
+#[cfg(unix)]
+fn a_stand_in_glab(project: &Path) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt as _;
+    let bin = project.join("stand-in-bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let glab = bin.join("glab");
+    std::fs::write(
+        &glab,
+        format!(
+            "#!/bin/sh\n\
+             echo \"host=${{GITLAB_HOST:-none}}\"\n\
+             if [ \"$GITLAB_TOKEN\" = \"{TOKEN}\" ]; then echo token=the-vaults;\n\
+             elif [ -n \"$GITLAB_TOKEN\" ]; then echo token=another;\n\
+             else echo token=none; fi\n\
+             for f in \"$HOME/.config/glab-cli/config.yml\" \
+             \"$XDG_CONFIG_HOME/glab-cli/config.yml\" \"$GLAB_CONFIG_DIR/config.yml\"; do\n\
+             if [ -f \"$f\" ] && grep -q DECOY \"$f\"; then echo \"read-the-login=$f\"; fi; done\n\
+             echo \"args=$*\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&glab, std::fs::Permissions::from_mode(0o755)).unwrap();
+    glab
+}
+
+/// A chat of `devops`, whose start armed a `glab` tool on `host` with the vault `team`'s token.
+#[cfg(unix)]
+fn glab_armed(project: &Path, host: &str) -> Asker {
+    use crate::sandbox::tools::{Handed, Ready, Tool};
+    let mut tool = Tool::one("glab", "team", "GITLAB_TOKEN", Handed::Env, "TOKEN");
+    tool.host = Some(host.to_owned());
+    let mut asker = asker(project, Some("devops"));
+    asker.confines.as_mut().unwrap().tools = vec![Ready {
+        tool,
+        program: a_stand_in_glab(project),
+    }];
+    asker
+}
+
+fn a_glab_run(project: &Path, args: &[&str]) -> Wanted {
+    let mut want = wanted(
+        project,
+        "team",
+        std::iter::once("glab")
+            .chain(args.iter().copied())
+            .map(str::to_owned)
+            .collect(),
+    );
+    want.env = vec!["GITLAB_TOKEN=TOKEN".into()];
+    // The person's own glab login, as a decoy in a home of this test's own (never the real
+    // one), and the variables a chat's own glab would be pointed at it by.
+    let home = project.join("persons-home");
+    let login = home.join(".config/glab-cli");
+    std::fs::create_dir_all(&login).unwrap();
+    std::fs::write(
+        login.join("config.yml"),
+        "hosts:\n  git.acme.internal:\n    token: DECOY-the-persons-login\n",
+    )
+    .unwrap();
+    for (name, value) in [
+        ("HOME", home.display().to_string()),
+        (
+            "XDG_CONFIG_HOME",
+            home.join(".config").display().to_string(),
+        ),
+        ("GLAB_CONFIG_DIR", login.display().to_string()),
+        ("GITLAB_TOKEN", "the-chats-own".to_owned()),
+        ("GITLAB_HOST", "gitlab.com".to_owned()),
+    ] {
+        want.environment.push((name.into(), value.into()));
+    }
+    want
+}
+
+/// #1349 part 2: a chat under the credentials class runs `glab` through its declared tool, and
+/// the run is handed the vault's token and the tool's host, in an environment where neither
+/// `GITLAB_TOKEN` nor `GITLAB_HOST` nor any settings folder of the chat's own survives: it never
+/// reads the person's `config.yml`, whatever the chat pointed it at.
+#[cfg(unix)]
+#[test]
+fn a_glab_tool_is_handed_the_vault_token_and_its_host_and_never_reads_the_persons_login() {
+    let project = project();
+    let asker = glab_armed(project.path(), "git.acme.internal");
+    for args in [&["mr", "list"][..], &["api", "projects/7/merge_requests"]] {
+        let frames = served_as_asked(&asker, a_glab_run(project.path(), args));
+        assert_eq!(frames.last(), Some(&Frame::Exit(0)), "{args:?}: {frames:?}");
+        assert_eq!(
+            stdout(&frames),
+            format!(
+                "host=git.acme.internal\ntoken=the-vaults\nargs={}\n",
+                args.join(" ")
+            ),
+            "{args:?}"
+        );
+    }
+}
+
+/// A run of a self-hosted GitLab's tool that names another host, gitlab.com among them, never runs
+/// the program, so the token goes to no host it was not made for.
+#[cfg(unix)]
+#[test]
+fn a_glab_run_naming_another_host_than_the_tools_never_runs_with_the_token() {
+    let project = project();
+    let asker = glab_armed(project.path(), "git.acme.internal");
+    for args in [
+        &["api", "https://gitlab.com/api/v4/user"][..],
+        &["api", "--hostname", "gitlab.com", "user"],
+        &["mr", "list", "-R", "gitlab.com/acme/svc"],
+    ] {
+        let frames = served_as_asked(&asker, a_glab_run(project.path(), args));
+        assert_ne!(frames.last(), Some(&Frame::Exit(0)), "{args:?}: {frames:?}");
+        assert!(
+            !stdout(&frames).contains("token="),
+            "{args:?}: ran: {frames:?}"
+        );
+    }
+}
+
+/// A `glab` the chat's persona does not declare is no tool: a brokered run of it is refused, naming
+/// the tool to declare, and the program never runs.
+#[cfg(unix)]
+#[test]
+fn an_undeclared_glab_is_refused_a_run_with_the_token_and_never_runs() {
+    let project = project();
+    let mut asker = glab_armed(project.path(), "git.acme.internal");
+    asker.confines.as_mut().unwrap().tools.clear();
+    let frames = served(&asker, a_glab_run(project.path(), &["mr", "list"]));
+    assert_ne!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
+    assert!(!stdout(&frames).contains("token="), "{frames:?}");
+}

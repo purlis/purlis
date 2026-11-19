@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use super::super::policy::Locks;
 use super::{
-    FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, keyed, loads_code,
-    refused_name, refused_program, resolve_beside, shim,
+    FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, guard_forges,
+    keyed, loads_code, refused_name, refused_program, resolve_beside, shim,
 };
 
 const HERE: &str = "sandbox.personas.devops";
@@ -1609,6 +1609,120 @@ fn a_chat_that_only_refuses_writes_its_shims_apart_from_another_chat_s() {
         another.bin.join("kubectl").exists(),
         "and another chat's shim stays where it is"
     );
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
+/// **An undeclared `glab` in a chat under the credentials class says the flow and fails** (#1349
+/// part 2): its shim is written apart from another chat's, names the command that sets a token up
+/// on the project's one GitLab host and the persona, exits 1, and never runs the program.
+#[test]
+fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let root = outside_temp("guard-root");
+    let system = outside_temp("guard-system");
+    let ran = system.join("ran");
+    let real = system.join("glab");
+    std::fs::write(&real, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+    program(&system, "kubectl");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    // Another chat of devops, whose kubectl is ready.
+    let another = resolve(
+        &root,
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        &[],
+    )
+    .expect("a tool")
+    .write(purlis)
+    .expect("written")
+    .expect("its shim");
+
+    let guarded =
+        guard_forges(None, &root, "devops", &["gitlab.example.com".to_owned()]).expect("a guard");
+    assert!(guarded.only_refuses, "{guarded:?}");
+    let written = guarded.write(purlis).expect("written").expect("a shim");
+    assert!(
+        !written.bin.join("kubectl").exists(),
+        "another chat's shim is not first here"
+    );
+    assert!(another.bin.join("kubectl").exists());
+    let out = crate::forklock::output(
+        std::process::Command::new(written.bin.join("glab"))
+            .args(["mr", "list"])
+            .env(
+                "PATH",
+                format!("{}:{}", written.bin.display(), system.display()),
+            ),
+    )
+    .expect("the shim runs");
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        said.contains("purlis gitlab access gitlab.example.com --persona devops"),
+        "{said}"
+    );
+    assert!(
+        said.contains("never uses the person's own glab login"),
+        "{said}"
+    );
+    assert!(!ran.exists(), "the program ran");
+    // Two GitLab hosts: the sentence names none of them for the person, who picks.
+    let two = guard_forges(
+        None,
+        &root,
+        "devops",
+        &["a.example".to_owned(), "b.example".to_owned()],
+    )
+    .expect("a guard");
+    assert!(
+        two.guards[0].1.contains("<your GitLab host>"),
+        "{:?}",
+        two.guards
+    );
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
+/// A persona's declared `glab` has its own shim, which a guard never replaces; with another tool
+/// ready, the guard sits in the same folder and a start without it takes it away again.
+#[test]
+fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_has_the_class() {
+    let root = outside_temp("declared-root");
+    let system = outside_temp("declared-system");
+    program(&system, "kubectl");
+    program(&system, "glab");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    let mut glab = Tool::one("glab", "forge", "GITLAB_TOKEN", Handed::Env, "token");
+    glab.host = Some("gitlab.example.com".to_owned());
+    let resolved = |tools: &[Tool]| {
+        resolve(
+            &root,
+            "devops",
+            tools,
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+        )
+    };
+    // Declared: a guard is not added.
+    let declared = guard_forges(resolved(&[glab.clone()]), &root, "devops", &[]).expect("tools");
+    assert!(declared.guards.is_empty(), "{:?}", declared.guards);
+    // Not declared, with kubectl ready: one folder holds both shims.
+    let with_guard = guard_forges(resolved(&[kubectl()]), &root, "devops", &[]).expect("tools");
+    assert!(!with_guard.only_refuses);
+    let written = with_guard.write(purlis).unwrap().unwrap();
+    assert!(written.bin.join("glab").exists() && written.bin.join("kubectl").exists());
+    // The next start has no guard, as where the class is off: the old shim is taken away.
+    resolved(&[kubectl()])
+        .unwrap()
+        .write(purlis)
+        .unwrap()
+        .unwrap();
+    assert!(!written.bin.join("glab").exists());
     let _ = std::fs::remove_dir_all(root);
     let _ = std::fs::remove_dir_all(system);
 }

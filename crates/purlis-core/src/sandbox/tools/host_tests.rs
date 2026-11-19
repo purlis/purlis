@@ -195,3 +195,42 @@ fn what_follows_a_double_dash_goes_to_git_so_it_never_runs() {
     let glab = ready("glab", None, "/usr/local/bin/glab");
     assert!(runs(&glab, &["repo", "clone", "g/p", "--", "--depth=1"]).is_err());
 }
+
+/// #1349 part 2: a `glab` tool on the clone's self-hosted GitLab runs `glab api` and `glab mr` on
+/// that host, and no run that names gitlab.com or any other host: the token a chat is handed is
+/// the host's own and goes to no other.
+#[test]
+fn a_glab_tool_on_a_self_hosted_gitlab_reaches_that_host_and_no_other() {
+    let glab = ready("glab", Some("git.acme.internal"), "/usr/local/bin/glab");
+    for ok in [
+        &["api", "projects/7/merge_requests"][..],
+        &["mr", "list"],
+        &["mr", "view", "3", "-R", "git.acme.internal/acme/svc"],
+        &["mr", "list", "-R", "acme/sub/svc"],
+    ] {
+        assert!(runs(&glab, ok).is_ok(), "{ok:?}");
+    }
+    for refused in [
+        &["api", "https://git.acme.internal/api/v4/user"][..],
+        &["api", "https://gitlab.com/api/v4/user"],
+        &["api", "--hostname", "gitlab.com", "user"],
+        &["api", "--hostname=gitlab.com", "user"],
+        &["mr", "list", "-R", "gitlab.com/acme/svc"],
+        &[
+            "mr",
+            "view",
+            "https://gitlab.com/acme/svc/-/merge_requests/3",
+        ],
+    ] {
+        let said = runs(&glab, refused).expect_err(&format!("{refused:?}"));
+        assert!(
+            said.contains("git.acme.internal") || said.contains("host"),
+            "{said}"
+        );
+    }
+    // The run is told its host, so a command that names none reaches it.
+    assert_eq!(
+        forge_env(&glab),
+        [("GITLAB_HOST".to_owned(), "git.acme.internal".to_owned())]
+    );
+}
