@@ -3,8 +3,8 @@
 
 //! **The faults a live remote chat and a live browser must survive before remote is trusted**
 //! (#7188, the ruling of 2026-11-18, part of #7180): fifteen cases, one test each, against the
-//! remote parity job's rigs with the fake harness and nothing else faked (ruling 5). Fourteen are
-//! here; case 5 is the systemd runner's own test, as the ruling says.
+//! remote parity job's rigs with the fake harness and nothing else faked (ruling 5). Cases 1 to 10 and B1 to B5 are
+//! here, some in more than one test; case 5 is the systemd runner's own test, as the ruling says.
 //!
 //! **The cases.** Pool and chat: 1 link drop of 5 s and of 90 s; 2 sshd restart; 3 host key
 //! changed under a live chat; 4 runner killed; 5 machine reboot (in
@@ -18,7 +18,8 @@
 //! [`QUIET_LIMIT`] of the fault, [`told_within`]); nothing started waits past three minutes
 //! ([`START_LIMIT`]); and where a state has a name, it is the name. **Each of the five is asserted
 //! by one case, and each is train A's, so each of those cases is `#[ignore]`d** and reads the
-//! state through [`seam::state_named`]: Unreachable by the 90 s drop
+//! state through [`seam::state_named`] (Refused, of a pool with no chat, through
+//! [`seam::pool_state_named`]): Unreachable by the 90 s drop
 //! (`a_90_second_drop_is_named_unreachable_while_it_lasts`), Refused by the registry down
 //! (`a_registry_that_is_down_names_the_pool_refused`), Host key changed by case 3, Runner gone by
 //! case 4, Pool forgotten by case 7.

@@ -43,7 +43,9 @@
 
 use std::time::{Duration, Instant};
 
-use crate::support::outage::{Kept, QUIET_LIMIT, START_LIMIT, first_up_after, told_within};
+use crate::support::outage::{
+    Kept, QUIET_LIMIT, START_LIMIT, first_down_after, first_up_after, told_within,
+};
 use crate::support::remote_rig::{
     PATIENCE, PROJECT, as_root, chat, linked, running, runtime, there, until_within, verified,
 };
@@ -335,14 +337,18 @@ fn a_runners_host_outlives_the_sign_out_and_comes_back_after_a_restart() {
         // Nothing silent: said why within 30 s of the restart (it is measured from when the
         // restart began, and `docker restart` itself takes up to its 60 s grace to return).
         told_within(&told, fault_at, QUIET_LIMIT);
+        // The link is "back" only after the down it told, not a redial while the machine was
+        // still shutting down.
+        let (after_fault, _) = first_down_after(&told, fault_at).expect("told");
+        let down_at = fault_at + after_fault;
         // And back inside the 3-minute limit of the machine being back.
         watching
             .until_working(START_LIMIT, "the link after the reboot")
             .await;
         let told = watching.told();
-        let up = first_up_after(&told, fault_at).expect("the link came back");
+        let up = first_up_after(&told, down_at).expect("the link came back");
         assert!(
-            up <= (returned_at - fault_at) + START_LIMIT,
+            up <= returned_at.saturating_sub(down_at) + START_LIMIT,
             "the link was back after {up:?}, past the limit from the machine's return: {told:?}"
         );
         watching.task.abort();
