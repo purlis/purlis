@@ -121,9 +121,7 @@ impl ForgeHere {
             }
             Wire::Http => {
                 let at = fake.http_addr();
-                for name in [SELF_HOSTED_GITLAB] {
-                    scenario.names.origin(name, 80, at);
-                }
+                scenario.names.origin(SELF_HOSTED_GITLAB, 80, at);
             }
         }
         ForgeHere {
