@@ -249,39 +249,78 @@ fn bodies_are_readable() -> bool {
 }
 
 /// **Whether `cmd` is one `gh` or `glab` call and nothing else** (#7195): one command line (a
-/// heredoc's body aside), behind env assignments only, with no `;`, `&`, `|`, parenthesis,
-/// backtick, `$(` or `$'` outside a single quote, no quote left open and no backslash ending
-/// the line. A line that is anything else may run something first (a `cd`, an `eval`, a
+/// heredoc's body aside; a backslash and a newline join lines as the shell does), behind env
+/// assignments only, with no `;`, `&`, `|`, parenthesis, backtick, `$(`, `${` that is not a
+/// parameter's or `$'` outside a single quote, no quote left open and no backslash ending the
+/// line. An output redirection (`>f`, `2>&1`, `&>f`) is no command: only a `&` that is not part
+/// of one holds. A line that is anything else may run something first (a `cd`, an `eval`, a
 /// `source`, a function, an alias) or feed the call another stdin, so a request body is not read
 /// from it. Read off the text and failing closed: a doubt is `false`.
 fn is_sole_call(cmd: &str) -> bool {
     let layout = crate::heredoc::heredoc_layout(cmd);
-    let mut commands = layout
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| !l.body && !l.text.trim().is_empty());
-    let (Some((0, first)), None) = (commands.next(), commands.next()) else {
+    if !layout
+        .first()
+        .is_some_and(|l| !l.body && !l.text.trim().is_empty())
+    {
         return false;
-    };
+    }
+    // The command's own lines, a heredoc's body aside, joined as the shell reads them. A line
+    // that ends on a backslash and runs into a body is not read: what joins it is not here.
+    let mut lines: Vec<&str> = Vec::new();
+    for (i, l) in layout.iter().enumerate() {
+        if l.body {
+            continue;
+        }
+        if l.text.ends_with('\\') && layout.get(i + 1).is_some_and(|n| n.body) {
+            return false;
+        }
+        lines.push(&l.text);
+    }
+    let text: Vec<char> = lines.join("\n").chars().collect();
     let mut words: Vec<String> = Vec::new();
     let mut word = String::new();
     let mut quote: Option<char> = None;
-    let mut chars = first.text.chars().peekable();
-    while let Some(c) = chars.next() {
+    // A newline outside a quote ends the command: only blanks may follow it.
+    let mut ended = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        let c = text[i];
+        let next = text.get(i + 1).copied();
+        i += 1;
+        if ended && !c.is_whitespace() {
+            return false;
+        }
+        // `${` runs a command in the current shell in bash 5.3 (`${ cmd; }`, `${| cmd; }`),
+        // quoted or not: only a parameter's name or a special parameter may follow it.
+        if c == '$' && next == Some('{') && quote != Some('\'') {
+            let after = text.get(i + 1).copied();
+            if !after.is_some_and(|a| a.is_ascii_alphanumeric() || "_#?@*!$-".contains(a)) {
+                return false;
+            }
+        }
         match quote {
             Some('\'') => {
+                if c == '\n' {
+                    return false;
+                }
                 quote = (c != '\'').then_some('\'');
                 word.push(c);
             }
             Some(_) => match c {
-                '`' => return false,
-                '$' if chars.peek() == Some(&'(') => return false,
+                '`' | '\n' => return false,
+                '$' if next == Some('(') => return false,
                 '\\' => {
+                    // A backslash and a newline are no text at all, in a quote or out of one.
+                    if next == Some('\n') {
+                        i += 1;
+                        continue;
+                    }
                     word.push(c);
-                    let Some(next) = chars.next() else {
+                    let Some(n) = next else {
                         return false;
                     };
-                    word.push(next);
+                    i += 1;
+                    word.push(n);
                 }
                 '"' => {
                     quote = None;
@@ -290,18 +329,35 @@ fn is_sole_call(cmd: &str) -> bool {
                 _ => word.push(c),
             },
             None => match c {
-                ';' | '&' | '|' | '(' | ')' | '`' => return false,
-                '$' if chars.peek() == Some(&'\'') => return false,
-                '\\' => {
+                // An output redirection is harmless: `2>&1`, `>&2` and `&>file`, `&>>file`. Any
+                // other `&` backgrounds the call or chains it.
+                '&' if word.ends_with('>') && next.is_some_and(|n| n.is_ascii_digit()) => {
                     word.push(c);
-                    let Some(next) = chars.next() else {
+                }
+                '&' if word.is_empty() && next == Some('>') => word.push(c),
+                ';' | '&' | '|' | '(' | ')' | '`' => return false,
+                '$' if next == Some('\'') => return false,
+                '\\' => {
+                    if next == Some('\n') {
+                        i += 1;
+                        continue;
+                    }
+                    word.push(c);
+                    let Some(n) = next else {
                         return false;
                     };
-                    word.push(next);
+                    i += 1;
+                    word.push(n);
                 }
                 '\'' | '"' => {
                     quote = Some(c);
                     word.push(c);
+                }
+                '\n' => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                    ended = true;
                 }
                 c if c.is_whitespace() => {
                     if !word.is_empty() {

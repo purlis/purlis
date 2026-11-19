@@ -686,3 +686,111 @@ fn the_two_legitimate_shapes_still_pass() {
         "for j in 101 102; do glab api -X POST projects/p/jobs/$j/play; done",
     ]);
 }
+
+/// Round 9 (#7195): a bash 5.3 function substitution (`${ cmd; }`, `${| cmd; }`) runs in the
+/// current shell with its `;` hidden by a quote, so a line holding one is no sole call and its
+/// body is unread; a parameter's `${NAME}` is not one.
+#[test]
+fn a_quoted_funsub_is_no_sole_call_and_a_parameter_expansion_is_() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let body = dir.path().join("body.json");
+    std::fs::write(&body, r#"{"title":"T"}"#).unwrap();
+    let b = body.display();
+    held(&[
+        &format!(
+            "gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{ cd /elsewhere; }}\""
+        ),
+        &format!("X=\"${{ cd /elsewhere; }}\" gh api -X PATCH repos/o/r/pulls/7 --input {b}"),
+        &format!(
+            "gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{| cd /elsewhere; }}\""
+        ),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=${{ cd /elsewhere; }}"),
+    ]);
+    passes(&[
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{TITLE}}\""),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{#}}${{1}}${{?}}\""),
+    ]);
+}
+
+/// Round 9 (#7195): an output redirection is no other command, so a body is still read beside
+/// one; a trailing `&` and an input redirection other than the quoted heredoc still hold.
+#[test]
+fn an_output_redirection_leaves_the_call_a_sole_call() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let body = dir.path().join("body.json");
+    std::fs::write(&body, r#"{"title":"T"}"#).unwrap();
+    let bad = dir.path().join("bad.json");
+    std::fs::write(&bad, r#"{"base":"main"}"#).unwrap();
+    let (b, x) = (body.display(), bad.display());
+    for redirect in [
+        ">out.log",
+        ">>out.log",
+        "2>out.log",
+        "2>&1",
+        "1>&2",
+        "&>out.log",
+        "&>>out.log",
+    ] {
+        passes(&[&format!(
+            "gh api -X PATCH repos/o/r/pulls/7 --input {b} {redirect}"
+        )]);
+        // The heredoc reading takes `&>` for a background `&` and holds it, which fails closed.
+        if !redirect.starts_with('&') {
+            passes(&[&format!(
+                "gh api -X PATCH repos/o/r/pulls/7 --input - {redirect} <<'EOF'\n{{\"title\":\"T\"}}\nEOF"
+            )]);
+        }
+        held(&[
+            &format!("gh api -X PATCH repos/o/r/pulls/7 --input {x} {redirect}"),
+            &format!(
+                "gh api -X PATCH repos/o/r/pulls/7 --input - {redirect} <<'EOF'\n{{\"base\":\"main\"}}\nEOF"
+            ),
+        ]);
+    }
+    held(&[
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {x} 2>&1 &"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {x} >out.log &"),
+        "gh api -X PATCH repos/o/r/pulls/7 --input - < body.json 2>&1",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - <<< '{\"title\":\"T\"}' 2>&1",
+    ]);
+}
+
+/// Round 9 (#7195): a backslash and a newline join as bash joins them, and the call is read when
+/// the joined line is a sole call; a continuation into anything else, or into a heredoc's body,
+/// is held. `{fd}<<'EOF'` is not stdin.
+#[test]
+fn a_continuation_joins_as_bash_joins_it_and_a_named_descriptor_is_not_stdin() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let body = dir.path().join("body.json");
+    std::fs::write(&body, r#"{"title":"T"}"#).unwrap();
+    let bad = dir.path().join("bad.json");
+    std::fs::write(&bad, r#"{"base":"main"}"#).unwrap();
+    let (b, x) = (body.display(), bad.display());
+    passes(&[
+        &format!("gh api -X PATCH repos/o/r/pulls/7 \\\n  --input {b}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 \\\n  --input {b} \\\n  2>&1"),
+    ]);
+    held(&[
+        &format!("gh api -X PATCH repos/o/r/pulls/7 \\\n  --input {x}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 \\\n  --input {b}; cd /elsewhere"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b}\ncd /elsewhere"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 \\\n  --input {b} \\\n; cd /elsewhere"),
+        &format!("cd /elsewhere \\\n; gh api -X PATCH repos/o/r/pulls/7 --input {b}"),
+        "gh api -X PATCH repos/o/r/pulls/7 --input - {fd}<<'EOF'\n{\"title\":\"T\"}\nEOF",
+        "gh api -X PATCH repos/o/r/pulls/7 --input - {fd}<<'EOF'\n{\"base\":\"main\"}\nEOF",
+    ]);
+}
+
+/// Round 9 (#7195): the refusal of a body it cannot read says what to do.
+#[test]
+fn the_refusal_of_an_unread_body_says_to_run_the_call_alone() {
+    purlis_core::unsteered!();
+    let cmd = "true && gh api -X PATCH repos/o/r/pulls/7 --input body.json";
+    let said = release_floor_reason(cmd, true).expect("refused");
+    assert!(said.contains("alone on its line"), "{said}");
+    assert!(said.contains("quoted heredoc"), "{said}");
+    assert!(said.contains("absolute path"), "{said}");
+}

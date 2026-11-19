@@ -1061,6 +1061,18 @@ fn quoted_heredoc_body(args: &[String], cmd: &str) -> Option<String> {
     if !digits.is_empty() && word_start && digits != "0" {
         return None;
     }
+    // `{fd}<<'EOF'` opens the heredoc on a descriptor the shell picks, which is not stdin.
+    let word: String = before
+        .iter()
+        .rev()
+        .take_while(|c| !c.is_whitespace())
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    if word.starts_with('{') && word.ends_with('}') {
+        return None;
+    }
     let header = &opener.header;
     if header.expands || opener.maybe_shift || header.shells_disagree {
         return None;
@@ -1178,10 +1190,10 @@ fn request_edit_reason(
     }
     unread.map(|what| {
         format!(
-            "{UNREADABLE} This edits a request, and purlis cannot read {what}: a body is read \
-             only where this call is the line's sole command, as a JSON file (an absolute path, \
-             or one beside the shell) or a quoted heredoc on stdin, or fields written out, with \
-             no variable in its name. {SPLIT}"
+            "{UNREADABLE} This edits a request, and purlis cannot read {what}. A body is read \
+             only where this call is the line's sole command. Run the call alone on its line, \
+             with the body in a quoted heredoc (`--input - <<'EOF'`) or in a JSON file given by \
+             its absolute path, or write the fields out with no variable in a name. {SPLIT}"
         )
     })
 }
