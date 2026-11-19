@@ -2927,8 +2927,9 @@ describe("the palette at fifty chats", () => {
     // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
     // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed. 1489 since
     // Q308a (instruction 45): Policy's two rows and the enforcement log's one. 1490 since M75-37:
-    // the project's Known gaps, a setting's row of the sandbox group.
-    expect(offers).toHaveLength(1490);
+    // the project's Known gaps, a setting's row of the sandbox group. 1491 since M75-07a: its
+    // Sealed answers and device id.
+    expect(offers).toHaveLength(1491);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(
