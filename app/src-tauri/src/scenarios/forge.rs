@@ -15,16 +15,19 @@
 //! assert_eq!(forge.fake.tokens_seen(), [CHATS_TOKEN]); // and never the person's own
 //! ```
 //!
-//! ## Two wires, because Go on macOS ignores the test CA
+//! ## Two wires, and what each client can do
 //!
 //! `gh` and `glab` are Go programs. On Linux they verify TLS against `SSL_CERT_FILE`, so the
 //! fake forge speaks HTTPS under the test CA ([`Wire::Https`], names under `.test`). On macOS Go
-//! verifies through the Security framework and ignores it (`TestCa`'s docs), so a cell speaks
-//! plain HTTP ([`Wire::Http`]), which only `glab` can do (`GITLAB_HOST=http://…`, and also for
-//! `gitlab.com` itself, which the test CA could not sign). **`gh` has no plain-HTTP route to a
-//! host purlis lets a chat reach**: it speaks http only to `github.localhost`, and purlis refuses
-//! a `.localhost` host as this machine's own. So `gh` is a Linux cell, and on macOS it is the
-//! ticket's stated fallback: reported not run, covered by a fixture.
+//! verifies through the Security framework and ignores it (`TestCa`'s docs).
+//!
+//! - **`glab`** has settings of its own, so it runs on both wires on both OSes:
+//!   `GLAB_CA_CERT` names the bundle (Go reads that file itself, on macOS too), and
+//!   `GLAB_API_PROTOCOL=http` speaks plain HTTP ([`Wire::Http`]), which also reaches `gitlab.com`,
+//!   a name the test CA could not sign.
+//! - **`gh`** has neither: no CA setting, and http only to `github.localhost`, which purlis
+//!   refuses as this machine's own. So `gh` is a Linux cell, and on macOS it is the ticket's
+//!   stated fallback: reported not run, covered by a fixture.
 //!
 //! The chat's proxy dials none of these names itself: the seam maps each to the fake forge's
 //! listener, and records the lookup, so a cell can say a request reached the forge through the
@@ -54,13 +57,11 @@ pub(crate) enum Wire {
 }
 
 impl Wire {
-    /// The wires a cell runs on this OS: both on Linux, the plain one where Go ignores the CA.
+    /// The wires `glab` runs on: both, on both OSes. It trusts a CA by its own setting
+    /// (`GLAB_CA_CERT`), which Go on macOS honours where it ignores `SSL_CERT_FILE`, and it
+    /// speaks plain HTTP by `GLAB_API_PROTOCOL=http`.
     pub(crate) fn here() -> &'static [Wire] {
-        if cfg!(target_os = "macos") {
-            &[Wire::Http]
-        } else {
-            &[Wire::Https, Wire::Http]
-        }
+        &[Wire::Https, Wire::Http]
     }
 
     pub(crate) fn word(self) -> &'static str {
@@ -185,15 +186,18 @@ impl ForgeHere {
     }
 
     /// The environment a `glab` is run with, for `which`: the same kind of words as [`Self::gh`].
+    /// `glab` sends usage data to its instance unless told not to, and that is a request the
+    /// forge would record, so it is off.
     pub(crate) fn glab(&self, which: Gitlab, token: &str) -> String {
         let (name, _) = self.gitlab_name(which);
-        let host = match self.wire {
-            Wire::Https => name.to_owned(),
-            Wire::Http => format!("http://{name}"),
+        let protocol = match (self.wire, &self.bundle) {
+            (Wire::Http, _) => "GLAB_API_PROTOCOL=http".to_owned(),
+            (Wire::Https, Some(bundle)) => format!("GLAB_CA_CERT='{}'", bundle.display()),
+            (Wire::Https, None) => String::new(),
         };
         format!(
-            "GITLAB_HOST={host} GITLAB_TOKEN={token} {} GLAB_CONFIG_DIR='{}/glab' \
-             GLAB_CHECK_UPDATE=false NO_PROMPT=1 NO_COLOR=1",
+            "GITLAB_HOST={name} GITLAB_TOKEN={token} {protocol} {} GLAB_CONFIG_DIR='{}/glab' \
+             GLAB_CHECK_UPDATE=false GLAB_NO_PROMPT=1 GLAB_SEND_TELEMETRY=false NO_COLOR=1",
             self.trust(),
             self.config.display()
         )
