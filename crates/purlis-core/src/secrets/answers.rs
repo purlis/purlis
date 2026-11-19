@@ -1154,6 +1154,12 @@ fn read_place(place: &Place, plane: Option<&Registered>) -> Found {
     found
 }
 
+/// **Whether `path` is still a folder of its own**: a link at it, which the app's move leaves
+/// pointing at the new place until every record follows, is the plane gone from there.
+fn still_a_folder(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| !meta.file_type().is_symlink())
+}
+
 fn nothing_in(found: &Found) -> bool {
     found.manifest.is_none() && found.anchor.is_none() && found.denies.is_empty()
 }
@@ -1257,7 +1263,7 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
             plane.sealed
                 && plane.anchor != place.anchor_bind
                 && plane.git == git
-                && !plane.real.exists()
+                && !still_a_folder(&plane.real)
         })
     {
         // Nothing kept at this path, and a plane that had answers sealed, whose folder is gone,
@@ -1279,10 +1285,7 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
             },
         }
     }
-    if import_counts
-        && !found.manifest.as_ref().is_some_and(|m| m.imported_nevers)
-        && crate::dispatchnever::left_behind(root) != crate::dispatchnever::Left::Nothing
-    {
+    if import_counts && import::nevers_unsettled(root, &found) {
         found.denies.push(Deny::NeversNotImported);
     }
     denies.extend(found.denies.iter().cloned());
@@ -1511,17 +1514,27 @@ pub fn recommit(root: &Path, press: &Press, entries: &[Entry]) -> io::Result<u64
         Registration::Registered(id) => id,
         Registration::NotKept => return Err(cannot_seal()),
     };
+    let counter = highest_counter(&place)?;
+    // **The nevers are kept** (Q320): the ones the last readable state still holds, and the ones
+    // the old files hold (which an earlier import may have left only there), and the imported mark
+    // with them. The press mends the deny state and never takes a never away, and a plane with
+    // its mark lost must not dead-end in [`Deny::NeversNotImported`] because the old file was
+    // deleted, as doctor said it could be: pressing is the person's decision to start again.
+    let last = read_place(&place, None);
     let mut draft = Draft::default();
+    for entry in last.entries.iter().filter(|e| e.kind == NEVER) {
+        draft.add(press, NEVER, &entry.text);
+    }
+    if let crate::dispatchnever::Left::Pairs(pairs) = crate::dispatchnever::left_behind(root) {
+        for (asking, target) in &pairs {
+            draft.add(press, NEVER, &import::never_text(asking, target));
+        }
+    }
+    draft.mark_nevers_imported();
     for entry in entries {
         draft.add(press, &entry.kind, &entry.text);
     }
-    write(
-        &place,
-        Some((root, &id)),
-        draft,
-        None,
-        highest_counter(&place)?,
-    )
+    write(&place, Some((root, &id)), draft, None, counter)
 }
 
 /// **Commits a change to the Everywhere entry** (the nevers every plane shares), as [`commit`].
@@ -1778,6 +1791,7 @@ fn write_file(path: &Path, text: &str) -> io::Result<()> {
 #[path = "answers_import.rs"]
 mod import;
 pub use import::{Import, Imported, import_nevers, imported_nevers, old_files};
+pub(crate) use import::{Step, nevers_in_step};
 #[path = "answers_move.rs"]
 mod moved;
 pub use moved::{Moved, follow_move};

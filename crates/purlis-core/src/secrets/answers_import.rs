@@ -44,7 +44,7 @@ pub struct Imported {
 }
 
 /// The text of a never in the store: `asking -> target`, as the old file's seal covers it.
-fn never_text(asking: &str, target: &str) -> String {
+pub(super) fn never_text(asking: &str, target: &str) -> String {
     format!("{asking} -> {target}")
 }
 
@@ -95,10 +95,14 @@ pub fn import_nevers(root: &Path) -> io::Result<Import> {
         ));
     }
     let found = read_place(&place, None);
-    if manifest_of(&found).is_some_and(|m| m.imported_nevers) {
+    let marked = manifest_of(&found).is_some_and(|m| m.imported_nevers);
+    let left = crate::dispatchnever::left_behind(root);
+    // Marked, the store keeps every never the file holds, or the file is what a never said since
+    // was written to and the store's write did not follow: that one is sealed now (mended).
+    if marked && !file_has_more(&left, &found.entries) {
         return Ok(Import::Already);
     }
-    let pairs = match crate::dispatchnever::left_behind(root) {
+    let pairs = match left {
         crate::dispatchnever::Left::Nothing => return Ok(Import::Nothing),
         crate::dispatchnever::Left::Unread => {
             return Err(io::Error::other(
@@ -121,14 +125,16 @@ pub fn import_nevers(root: &Path) -> io::Result<Import> {
     let mut nevers = Vec::new();
     for (asking, target) in &pairs {
         let text = never_text(asking, target);
-        if !draft
+        let kept = draft
             .entries
             .iter()
-            .any(|e| e.kind == NEVER && e.text == text)
-        {
+            .any(|e| e.kind == NEVER && e.text == text);
+        if !kept {
             draft.entries.push(Entry::new(NEVER, &text));
         }
-        nevers.push(text);
+        if !kept || !marked {
+            nevers.push(text);
+        }
     }
     write(
         &place,
@@ -150,9 +156,99 @@ pub fn import_nevers(root: &Path) -> io::Result<Import> {
     Ok(Import::Imported(Imported { nevers, notice }))
 }
 
+/// Whether the old files hold a never that `entries` (the store's) do not.
+fn file_has_more(left: &crate::dispatchnever::Left, entries: &[Entry]) -> bool {
+    matches!(left, crate::dispatchnever::Left::Pairs(pairs) if pairs.iter().any(|(asking, target)| {
+        let text = never_text(asking, target);
+        !entries.iter().any(|e| e.kind == NEVER && e.text == text)
+    }))
+}
+
+/// **Whether a never in the old files is not (yet) in the store's**, for [`standing`]: the
+/// nevers are not imported, or one was said in the file after the import and the store's write
+/// did not follow. Either way the file is what holds, so the plane reads as the deny state until
+/// [`import_nevers`] or the person's press ([`recommit`]) seals it.
+pub(super) fn nevers_unsettled(root: &Path, found: &Found) -> bool {
+    let marked = manifest_of(found).is_some_and(|m| m.imported_nevers);
+    let left = crate::dispatchnever::left_behind(root);
+    match left {
+        crate::dispatchnever::Left::Nothing => false,
+        crate::dispatchnever::Left::Unread => !marked,
+        crate::dispatchnever::Left::Pairs(_) => !marked || file_has_more(&left, &found.entries),
+    }
+}
+
+/// What a never said or lifted in the window does to the store.
+pub(crate) enum Step<'a> {
+    Said(&'a str, &'a str),
+    Lifted(&'a str, &'a str),
+}
+
+/// **Keeps the store in step with the nevers file** (Q320): once the nevers are imported the
+/// store is what the plane reads, so a never said or lifted afterwards is written there too, under
+/// the store's lock. The file is written first (the caller's), so a store write that fails leaves
+/// the file holding a never the store lacks, and the plane reads as the deny state
+/// ([`nevers_unsettled`]) until it is mended. A lift whose store write fails leaves the never
+/// holding. Answers whether the store changed.
+///
+/// Before the import, or where this process cannot seal, the file alone holds and nothing is done.
+/// Only the person's own window actions call this ([`crate::dispatchgrant`]), never a chat.
+pub(crate) fn nevers_in_step(root: &Path, step: Step<'_>) -> io::Result<bool> {
+    if imported_nevers(root) != Some(true) {
+        return Ok(false);
+    }
+    let (text, said) = match step {
+        Step::Said(asking, target) => (never_text(asking, target), true),
+        Step::Lifted(asking, target) => (never_text(asking, target), false),
+    };
+    let place = plane_place(root).ok_or_else(no_home)?;
+    let _turn = store_lock()?;
+    // Not counting the file: it was written just now, which is the difference this mends.
+    let here = standing_with(root, false);
+    if here.is_deny() {
+        return Err(io::Error::other(
+            "this project's answers are in the deny state, so the never was not sealed in them: \
+             accept again to mend it",
+        ));
+    }
+    let held = here
+        .entries
+        .iter()
+        .any(|e| e.kind == NEVER && e.text == text);
+    if held == said {
+        return Ok(false);
+    }
+    let id = match register_unlocked(root)? {
+        Registration::Registered(id) => id,
+        Registration::NotKept => return Err(cannot_seal()),
+    };
+    let found = read_place(&place, None);
+    let mut draft = Draft {
+        entries: here.entries,
+        imported_nevers: true,
+        ..Draft::default()
+    };
+    // The person's own action in the window (see above): a never's lift widens, so it is theirs.
+    let press = Press::of_the_persons_press();
+    if said {
+        draft.add(&press, NEVER, &text);
+    } else {
+        draft.remove(&press, NEVER, &text);
+    }
+    write(
+        &place,
+        Some((root, &id)),
+        draft,
+        found.anchor,
+        manifest_of(&found).map_or(0, |m| m.counter),
+    )?;
+    Ok(true)
+}
+
 /// **The files of an earlier build that the sealed store replaces** (Q320), as they exist for the
-/// project at `root`: `app/sandbox.json`, `app/dispatch-never.json` and this machine's
-/// `sandbox-grants/<clone key>.json`, each named as the project or the config folder names it.
+/// project at `root`: `app/sandbox.json`, `app/dispatch-never.json`, this machine's
+/// `sandbox-grants/<clone key>.json` and the machine's `inbox/rules.json`, each as it exists, named
+/// as the project, the config folder or the data folder names it.
 pub fn old_files(root: &Path) -> Vec<String> {
     let mut named = Vec::new();
     let state = crate::names::state(root);
@@ -173,6 +269,16 @@ pub fn old_files(root: &Path) -> Vec<String> {
             "{}/{}.json (in purlis's config folder)",
             crate::sandbox::local::MACHINE_GRANTS,
             crate::sandbox::local::clone_key(root)
+        ));
+    }
+    // Looked for, never made: an existence check that needs no fence on the data home.
+    let rules = crate::datahome::root_in(&crate::envvar::var)
+        .map(|data| crate::askrules::Store::in_data(&data).file());
+    if rules.is_some_and(|file| file.exists()) {
+        named.push(format!(
+            "{}/{} (in purlis's data folder)",
+            crate::inboxupdates::DIR,
+            crate::askrules::FILE
         ));
     }
     named

@@ -24,6 +24,9 @@ const SEAL: &str = "answers seal";
 const DEVICE: &str = "answers device id";
 const STORE: &str = "answers store";
 const OLD_FILES: &str = "answers old files";
+
+/// The old file the dispatch family still reads: never called safe to delete.
+const READ_STILL: &str = "app/dispatch-never.json";
 const MOVED: &str = "answers moved plane";
 
 /// **The declared seal gap** (Q309 point 4, Q319 C6, Q320a N1 and N4), as the research words it.
@@ -130,18 +133,33 @@ pub(super) fn old_files_row(files: &[String], imported: Imported) -> Option<Row>
     if files.is_empty() {
         return None;
     }
-    let mut listed = files.to_vec();
-    listed.push("inbox/rules.json (in purlis's data folder)".to_owned());
-    let named = listed.join(", ");
+    let named = files.join(", ");
+    // The nevers file has a reader still: the dispatch family reads it, and a never said or lifted
+    // is written to it as well as to the store, until that family's migration removes the reader.
+    let (kept, others): (Vec<&String>, Vec<&String>) =
+        files.iter().partition(|file| file.starts_with(READ_STILL));
+    let others = others
+        .iter()
+        .map(|file| file.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let keep = if kept.is_empty() {
+        ""
+    } else {
+        " Keep app/dispatch-never.json: purlis still reads it, and deleting it makes it refuse a \
+         dispatch between personas until you say never again."
+    };
     Some(match imported {
         Imported::Yes => Row::ok(
             OLD_FILES,
-            format!(
-                "safe to delete: {named}. Their nevers are sealed in the answer store, and \
-                 grants are not carried over. Until the dispatch family's migration removes its \
-                 old reader, deleting app/dispatch-never.json makes purlis refuse a dispatch \
-                 between personas until you say never again."
-            ),
+            if others.is_empty() {
+                keep.trim_start().to_owned()
+            } else {
+                format!(
+                    "safe to delete: {others}. Their nevers are sealed in the answer store, and \
+                     grants are not carried over.{keep}"
+                )
+            },
         ),
         Imported::No => Row::warn(
             OLD_FILES,
@@ -151,10 +169,14 @@ pub(super) fn old_files_row(files: &[String], imported: Imported) -> Option<Row>
         ),
         Imported::Unknown => Row::ok(
             OLD_FILES,
-            format!(
-                "{named}: safe to delete once purlis's app has imported the nevers in them, which \
-                 only the app can say"
-            ),
+            if others.is_empty() {
+                keep.trim_start().to_owned()
+            } else {
+                format!(
+                    "{others}: safe to delete once purlis's app has imported the nevers in them, \
+                     which only the app can say.{keep}"
+                )
+            },
         ),
     })
 }

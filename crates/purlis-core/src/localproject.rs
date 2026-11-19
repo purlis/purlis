@@ -674,8 +674,9 @@ fn sandbox_grants(root: &Path, olds: &[PathBuf], new: &Path) -> Vec<String> {
                 | crate::secrets::answers::Moved::Carried,
             ) => {}
             Ok(crate::secrets::answers::Moved::NotKept) => answers_words.push(
-                "its sealed answers stayed where they were, since only purlis's app can seal \
-                 them: open the project in the window and accept again"
+                "its sealed answers stayed where they were, since purlis could not seal them \
+                 here (only its app can, with its seal key open): open the project in the \
+                 window, unlock the key if it asks, and accept again"
                     .to_owned(),
             ),
             Err(why) => answers_words.push(format!(

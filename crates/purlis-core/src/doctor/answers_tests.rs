@@ -110,18 +110,24 @@ fn doctor_names_the_old_answer_files_as_safe_to_delete() {
         "app/sandbox.json".to_owned(),
         "app/dispatch-never.json".to_owned(),
         "sandbox-grants/abc.json (in purlis's config folder)".to_owned(),
+        "inbox/rules.json (in purlis's data folder)".to_owned(),
     ];
     let row = old_files_row(&files, Imported::Yes).expect("a row");
     assert_eq!(row.status, Status::Ok);
-    assert!(row.detail.contains("safe to delete"), "{}", row.detail);
-    for name in [
-        "app/sandbox.json",
-        "app/dispatch-never.json",
-        "sandbox-grants/",
-        "inbox/rules.json",
-    ] {
-        assert!(row.detail.contains(name), "{name} in {}", row.detail);
+    let (safe, kept) = row
+        .detail
+        .split_once("Keep app/dispatch-never.json")
+        .expect("the nevers file is kept");
+    assert!(safe.contains("safe to delete"), "{}", row.detail);
+    for name in ["app/sandbox.json", "sandbox-grants/", "inbox/rules.json"] {
+        assert!(safe.contains(name), "{name} in {}", row.detail);
     }
+    // Its reader still exists, so it is never listed among the files to delete.
+    assert!(!safe.contains("dispatch-never"), "{}", row.detail);
+    assert!(kept.contains("still reads it"), "{}", row.detail);
+    // Where it is the only file there is nothing to delete.
+    let only = old_files_row(&files[1..2], Imported::Yes).expect("a row");
+    assert!(!only.detail.contains("safe to delete"), "{}", only.detail);
     // Nothing to say where an earlier build left nothing.
     assert_eq!(old_files_row(&[], Imported::Yes), None);
 }
@@ -133,9 +139,15 @@ fn doctor_never_calls_old_files_safe_to_delete_before_their_nevers_are_imported(
     assert_eq!(row.status, Status::Warn);
     assert!(!row.detail.contains("safe to delete"), "{}", row.detail);
     assert!(row.detail.contains("not imported yet"), "{}", row.detail);
-    let unknown = old_files_row(&files, Imported::Unknown).expect("a row");
+    let more = vec![files[0].clone(), "app/sandbox.json".to_owned()];
+    let unknown = old_files_row(&more, Imported::Unknown).expect("a row");
     assert!(
         unknown.detail.contains("once purlis's app has imported"),
+        "{}",
+        unknown.detail
+    );
+    assert!(
+        !unknown.detail.starts_with("app/dispatch-never.json"),
         "{}",
         unknown.detail
     );

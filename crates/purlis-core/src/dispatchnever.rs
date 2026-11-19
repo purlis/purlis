@@ -536,8 +536,8 @@ pub(crate) enum Left {
 }
 
 /// **What the old files hold of nevers** (M75 slice 07a, Q320), read as [`read`] would but
-/// **moving and writing nothing**: this file's pairs and the ones an earlier build kept in
-/// `app/sandbox.json`. What [`crate::secrets::answers`] imports once, and what its state decision
+/// **moving and writing nothing**: this file's pairs and the ones an earlier build kept under
+/// `dispatch_never` in this machine's `sandbox-grants/<clone key>.json`. What [`crate::secrets::answers`] imports once, and what its state decision
 /// asks, so it must be cheap and never change a byte.
 pub(crate) fn left_behind(root: &Path) -> Left {
     if sealed_standing(root) == Sealed::Unread {
@@ -580,7 +580,13 @@ pub fn add_said(root: &Path, asking: &str, target: &str, said: Said) -> io::Resu
         if !pairs.iter().any(|one| one.is(asking, target)) {
             pairs.push(Entry::new(asking, target, said));
         }
-    })
+    })?;
+    // Once imported, the store is what the plane reads (Q320): it is kept in step, after the file.
+    crate::secrets::answers::nevers_in_step(
+        root,
+        crate::secrets::answers::Step::Said(asking, target),
+    )
+    .map(|_| ())
 }
 
 /// **Every never with when it was said** (#1464), in the file's order: what Settings' table
@@ -602,13 +608,19 @@ pub fn lift(root: &Path, asking: &str, target: &str) -> io::Result<bool> {
             unread_said(root),
         ));
     };
-    if !now.iter().any(|(from, to)| from == asking && to == target) {
-        return Ok(false);
+    let in_file = now.iter().any(|(from, to)| from == asking && to == target);
+    if in_file {
+        change(root, |pairs| {
+            pairs.retain(|one| !one.is(asking, target));
+        })?;
     }
-    change(root, |pairs| {
-        pairs.retain(|one| !one.is(asking, target));
-    })?;
-    Ok(true)
+    // Once imported, the store is what the plane reads (Q320): it is kept in step, after the
+    // file. A lift whose store write failed is tried again, though the file no longer has it.
+    let in_store = crate::secrets::answers::nevers_in_step(
+        root,
+        crate::secrets::answers::Step::Lifted(asking, target),
+    )?;
+    Ok(in_file || in_store)
 }
 
 #[cfg(test)]

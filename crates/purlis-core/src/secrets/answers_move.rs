@@ -25,6 +25,13 @@
 
 use super::*;
 
+/// **Whether `old` is still a project of its own**: it holds a `.git` that is not the new place
+/// seen through the pointer the move leaves at the old path ([`crate::localproject`] calls
+/// [`follow_move`] while that link is in place, so `old/.git` exists through it).
+fn still_a_project(old: &Path, new: &Path) -> bool {
+    old.join(".git").exists() && crate::sandbox::real(old) != crate::sandbox::real(new)
+}
+
 /// What [`follow_move`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Moved {
@@ -32,8 +39,9 @@ pub enum Moved {
     NothingKept,
     /// The answers follow the plane: sealed again for the new place.
     Carried,
-    /// This process cannot seal: the answers stay at the old place, and the new place reads as
-    /// moved until the person accepts again in the window.
+    /// This process cannot seal (it is not the app, there is no keyring, or the seal key is
+    /// locked): the answers stay at the old place, and the new place reads as moved until the
+    /// person accepts again in the window.
     NotKept,
 }
 
@@ -43,7 +51,7 @@ pub enum Moved {
 /// something already, the registry does not read, a write failed): nothing at the old place was
 /// changed, and the new place reads as the deny state.
 pub fn follow_move(old: &Path, new: &Path) -> io::Result<Moved> {
-    if old == new || old.join(".git").exists() {
+    if old == new || still_a_project(old, new) {
         return Ok(Moved::NothingKept);
     }
     if seal::key_state() != KeyState::Usable {
@@ -63,10 +71,15 @@ pub fn follow_move(old: &Path, new: &Path) -> io::Result<Moved> {
     };
     let old_real = crate::sandbox::real(old);
     let new_anchor = anchor_key(new);
+    // The plane the old place kept, a sealed one before any other: while the pointer is in place
+    // `old_real` is the new place, and an unsealed placeholder registered there matches it too.
+    let names_old = |p: &&Registered| p.real == old || p.opened == old || p.real == old_real;
     let Some(plane) = registry
         .planes
         .iter()
-        .find(|p| p.real == old || p.opened == old || p.real == old_real || p.anchor == new_anchor)
+        .find(|p| names_old(p) && p.sealed)
+        .or_else(|| registry.planes.iter().find(names_old))
+        .or_else(|| registry.planes.iter().find(|p| p.anchor == new_anchor))
         .cloned()
     else {
         return Ok(Moved::NothingKept);

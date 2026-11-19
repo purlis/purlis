@@ -1085,3 +1085,44 @@ fn only_the_project_itself_under_a_spelling_the_move_knows_is_re_keyed() {
         })
     );
 }
+
+/// The sealed answers of the project follow it through the whole move, with the link at the old
+/// place in place while they do (the app's move leaves it until every record follows).
+#[cfg(unix)]
+#[test]
+fn a_local_projects_sealed_answers_follow_its_move_through_the_link() {
+    use crate::secrets::answers::{self, Press, State};
+    use crate::secrets::seal;
+
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    seal::forget_kept_for_this_test();
+    seal::set_for_this_test(Some(vec![7; 32]));
+    seal::set_foreign_for_this_test(false);
+    seal::set_locked_for_this_test(false);
+    seal::set_no_keyring_for_this_test(false);
+    let machine = an_old_local_project();
+    let (old, new) = (machine.places.old(), machine.places.current());
+    // The project is a plane of its own: a `.git` at its root, answers sealed to it.
+    std::fs::create_dir_all(old.join(".git")).expect("a plane");
+    answers::register(&old).expect("registered");
+    answers::commit(&old, |draft| {
+        draft.add(&Press::of_the_persons_press(), answers::NEVER, "rm -rf");
+    })
+    .expect("sealed");
+
+    let answer = run(&machine.places, &REAL);
+
+    assert_eq!(
+        answer,
+        Moved::Moved {
+            from: old.clone(),
+            to: new.clone()
+        }
+    );
+    let here = answers::standing(&new);
+    assert_eq!(here.state, State::Holds, "{here:?}");
+    assert!(
+        here.entries
+            .contains(&answers::Entry::new(answers::NEVER, "rm -rf"))
+    );
+}
