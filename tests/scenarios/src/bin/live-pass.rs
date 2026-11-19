@@ -6,21 +6,22 @@
 //!
 //! ```text
 //! live-pass brief  --harness claude|codex|opencode --os linux|macos [--json]
-//! live-pass report --cells <cells file>... --log <live log> --harness H --os OS
+//! live-pass report (--cells <cells file>)... --log <live log> --harness H --os OS
 //! live-pass diff   <live report> <suite report> [--suite-leg L] [--suite-timings scaled|production]
 //! ```
 //!
 //! `brief` writes the runner's brief. `report` judges a live log by the cells' marks and writes
 //! the suite's report format, one JSON record per line; `--cells` is repeated for every cells
 //! file the log has cells of. `diff` lists where the two reports differ. Exit codes: 0 when they
-//! agree, 1 when they differ or when nothing was compared, 2 when a file or an argument is wrong.
+//! agree, 1 when they differ, when nothing was compared or when the live run failed a cell
+//! (whatever the suite says), 2 when a file or an argument is wrong, an extra one included.
 
 use std::fs;
 use std::process::ExitCode;
 
 use purlis_scenarios::coverage::{Coverage, Repo};
 use purlis_scenarios::livepass::{
-    Sources, Switches, brief, check_live, diff, live_report, read_report, scope_suite,
+    Sources, Switches, brief, check_live, diff, live_report, read_log, read_report, scope_suite,
 };
 use purlis_scenarios::model::{Batch, Dialect, Os, ReportLeg, TimingsMode};
 use serde::de::DeserializeOwned;
@@ -44,6 +45,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     let opts = Opts::new(rest);
     match cmd.as_str() {
         "brief" => {
+            opts.only(&["--harness", "--os"], &["--json"], 0)?;
             let (harness, os) = (opts.harness()?, opts.os()?);
             let (coverage, repo, switches) = (Coverage::read()?, Repo::read()?, Switches::repo()?);
             let b = brief(
@@ -66,6 +68,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
             Ok(ExitCode::SUCCESS)
         }
         "report" => {
+            opts.only(&["--cells", "--log", "--harness", "--os"], &[], 0)?;
             let files = opts.values("--cells")?;
             if files.is_empty() {
                 return Err(format!("--cells is required\n{USAGE}"));
@@ -74,14 +77,20 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
                 .iter()
                 .map(|f| read(f))
                 .collect::<Result<_, String>>()?;
-            let log: Value = read(&opts.value("--log")?)?;
+            let log_path = opts.value("--log")?;
+            let log = read_log(
+                &log_path,
+                &fs::read_to_string(&log_path).map_err(|e| format!("{log_path}: {e}"))?,
+            )?;
             for r in live_report(&batches, &log, opts.harness()?, opts.os()?)? {
                 println!("{}", serde_json::to_string(&r).map_err(|e| e.to_string())?);
             }
             Ok(ExitCode::SUCCESS)
         }
         "diff" => {
-            let [live_path, suite_path] = opts.positional()?[..] else {
+            let [live_path, suite_path] =
+                opts.only(&["--suite-leg", "--suite-timings"], &[], 2)?[..]
+            else {
                 return Err(USAGE.to_owned());
             };
             let leg: Option<ReportLeg> = opts
@@ -120,7 +129,7 @@ fn run(args: &[String]) -> Result<ExitCode, String> {
     }
 }
 
-const USAGE: &str = "usage: live-pass brief --harness H --os OS [--json]\n       live-pass report --cells FILE... --log FILE --harness H --os OS\n       live-pass diff LIVE.jsonl SUITE.jsonl [--suite-leg LEG] [--suite-timings scaled|production]";
+const USAGE: &str = "usage: live-pass brief --harness H --os OS [--json]\n       live-pass report --cells FILE [--cells FILE]... --log FILE --harness H --os OS\n       live-pass diff LIVE.jsonl SUITE.jsonl [--suite-leg LEG] [--suite-timings scaled|production]";
 
 struct Opts<'a>(&'a [String]);
 
@@ -161,21 +170,34 @@ impl<'a> Opts<'a> {
     fn os(&self) -> Result<Os, String> {
         parse(&self.value("--os")?)
     }
-    /// The arguments that are neither an option nor an option's value. An option this tool does
-    /// not have is an error.
-    fn positional(&self) -> Result<Vec<&str>, String> {
+    /// The arguments that are neither an option nor an option's value, exactly `positional` of
+    /// them. An option this command does not have, and an argument it has no place for, are
+    /// errors: nothing given is dropped quietly.
+    fn only(
+        &self,
+        valued: &[&str],
+        flags: &[&str],
+        positional: usize,
+    ) -> Result<Vec<&str>, String> {
         let mut out = Vec::new();
         let mut skip = false;
         for a in self.0 {
             if skip {
                 skip = false;
-            } else if matches!(a.as_str(), "--suite-leg" | "--suite-timings") {
+            } else if valued.contains(&a.as_str()) {
                 skip = true;
+            } else if flags.contains(&a.as_str()) {
             } else if a.starts_with("--") {
                 return Err(format!("`{a}` is not an option of this command\n{USAGE}"));
             } else {
                 out.push(a.as_str());
             }
+        }
+        if out.len() != positional {
+            return Err(format!(
+                "unexpected argument `{}` (an option's value goes right after it, and each `--cells` takes one file)\n{USAGE}",
+                out.get(positional).copied().unwrap_or("(missing)")
+            ));
         }
         Ok(out)
     }

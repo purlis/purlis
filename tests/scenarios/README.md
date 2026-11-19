@@ -108,9 +108,9 @@ is harness agnostic: a dialect is only the key to the hook words it is armed wit
   cell for the harness is an error, never a quiet omission. The runner uses an installed
   **release-profile** build of `phase-1-proven`'s head, with no `test-support`, in the harness's
   non-interactive mode.
-- `report --cells FILE... --log FILE --harness H --os OS` judges a live log by the cells' own
+- `report --cells FILE [--cells FILE]... --log FILE --harness H --os OS` judges a live log by the cells' own
   `expected_fail` marks (`judge`) and writes the suite's report format (`leg-report.schema.json`),
-  leg `live`, one record per line. Give `--cells` once for each cells file the log has cells of.
+  leg `live`, one record per line. `--cells` **repeats**, one file each, and takes exactly one: an extra argument (`--cells a.json b.json`) or an option the command lacks (`--celss`) exits 2, as does a cell id given twice in the log or in two cells files.
   The log is `{"cells": {"<id>": {"failed": [...], "globals": [...], "events": [...]}}}`, as
   `tests/fixtures/chat-682-b0.json` (chat 682, B0, 2026-11-15): `failed` is a list of
   `[assertion, observed]` (step 1) or `[step, assertion, observed]`, `globals` a list of
@@ -127,7 +127,11 @@ is harness agnostic: a dialect is only the key to the hook words it is armed wit
   compares per cell (same kind, row, dialect, protection and OS): the verdicts, and the event
   sequences where both sides recorded `events` (an optional field of the leg-report schema).
   A live `not_run` is always listed, a cell on one side alone is listed, and it prints how many
-  pairs had no event comparison and which had events on one side only. It exits 0 only when it
-  compared at least one pair and nothing differs, 1 when something differs or nothing was
-  compared, and 2 when a file or an option is wrong. The scenario host does not write `events`
+  pairs had no event comparison and which had events on one side only. **Every live `fail` is
+  listed (`FAIL` lines; an escape cell's says the refused action happened) and blocks exit 0
+  whatever the suite says**: a cell that fails live and in the suite is two reds, not agreement.
+  It exits 0 only when it compared at least one pair and nothing differs, 1 when something differs,
+  a cell failed live or nothing was compared, and 2 when a file, an option or an extra argument is
+  wrong. It does not check that the live report covers every cell the brief asked for: the cells
+  files given to `report` decide that, and a cell they leave out is not in the report at all. The scenario host does not write `events`
   yet, so until it does only the verdicts are compared against a suite report.

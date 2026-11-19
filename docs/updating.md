@@ -309,9 +309,17 @@ What a release brought is written as it merges, one changelog fragment per pull 
 #            --suite-leg fake --suite-timings production
 #    The diff scopes the suite side to the live report's cells, lists every cell the live run
 #    did not run, and exits 0 only when it compared something and nothing differs (1: it
-#    differs, or it compared nothing; 2: a file or an option is wrong). Read every line it prints.
+#    differs, a cell failed live whatever the suite says, or it compared nothing; 2: a file, an
+#    option or an extra argument is wrong). Read every line it prints.
 #    A cell the two judge differently is a bug in the suite or in the build, to file before
 #    tagging (tests/scenarios/README.md, "The live pass").
+#    UNPROVEN (round 3, 2026-11-19): `--suite-leg fake --suite-timings production` has not been run
+#    against a real fake-leg report. The only real CI report available (the artifact of a red
+#    sandbox-scenarios-linux run, run 44412266135) holds two `fixture`-leg records at scaled
+#    timings and none of the `fake` leg, so the diff compared nothing and exited 1, as it should;
+#    that run shows only that a real report reads against the leg-report schema. Whether the suite
+#    writes `fake` cell records at `production` timings in the file named above is unconfirmed:
+#    check it on the first real pass, and fix this step to say what was seen.
 git switch main && git pull
 git tag vX.Y.Z && git push origin vX.Y.Z      # this, and only this, publishes a stable release
 # 2. afterwards, bump both version fields to the NEXT version and merge, so dev builds are

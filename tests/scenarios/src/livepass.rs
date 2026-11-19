@@ -528,6 +528,75 @@ struct Log {
     cells: BTreeMap<String, Value>,
 }
 
+/// **The live log as text**, read so that a cell id given twice is an error: parsed into a
+/// `Value` a repeated key is last-wins, and the first entry would vanish unseen.
+pub fn read_log(path: &str, text: &str) -> Result<Value, String> {
+    let log: Value = {
+        let mut de = serde_json::Deserializer::from_str(text);
+        let v = UniqueCells::deserialize(&mut de).map_err(|e| format!("{path}: {e}"))?;
+        de.end().map_err(|e| format!("{path}: {e}"))?;
+        v.0
+    };
+    Ok(log)
+}
+
+/// A JSON document whose top-level `cells` object may not repeat a key.
+struct UniqueCells(Value);
+
+impl<'de> Deserialize<'de> for UniqueCells {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Top;
+        impl<'de> serde::de::Visitor<'de> for Top {
+            type Value = Value;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a JSON object")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Value, A::Error> {
+                let mut out = serde_json::Map::new();
+                while let Some(key) = m.next_key::<String>()? {
+                    let value = if key == "cells" {
+                        m.next_value::<Cells>()?.0
+                    } else {
+                        m.next_value::<Value>()?
+                    };
+                    if out.insert(key.clone(), value).is_some() {
+                        return Err(serde::de::Error::custom(format!("`{key}` is given twice")));
+                    }
+                }
+                Ok(Value::Object(out))
+            }
+        }
+        d.deserialize_map(Top).map(UniqueCells)
+    }
+}
+
+struct Cells(Value);
+
+impl<'de> Deserialize<'de> for Cells {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct V;
+        impl<'de> serde::de::Visitor<'de> for V {
+            type Value = Value;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an object of cells")
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<Value, A::Error> {
+                let mut out = serde_json::Map::new();
+                while let Some((id, entry)) = m.next_entry::<String, Value>()? {
+                    if out.insert(id.clone(), entry).is_some() {
+                        return Err(serde::de::Error::custom(format!(
+                            "the cell `{id}` is in the log twice: one entry would hide the other"
+                        )));
+                    }
+                }
+                Ok(Value::Object(out))
+            }
+        }
+        // a `cells` that is not an object is left for `Log` to refuse with its own message
+        d.deserialize_any(V).map(Cells)
+    }
+}
+
 /// One cell's entry. `failed` and `globals` are required: an entry that leaves one out says
 /// nothing about it, and nothing is read as "nothing failed".
 #[derive(Deserialize)]
@@ -593,6 +662,15 @@ pub fn live_report(
             harness.word(),
             unknown.join(", ")
         ));
+    }
+    let mut ids = BTreeSet::new();
+    for c in batches.iter().flat_map(|b| &b.cells) {
+        if c.dialects.contains(&harness) && !ids.insert(c.id.as_str()) {
+            return Err(format!(
+                "the cell `{}` is in more than one given cells file: one log entry would stand for both",
+                c.id
+            ));
+        }
     }
     let catalogue = catalogue();
     let run = Run {
@@ -820,6 +898,10 @@ pub struct Diff {
     /// Cells the live run did not run, with its reason, whatever the suite says: a cell that
     /// was not run shows nothing, and agreeing with another `not_run` is not agreement.
     pub live_not_run: Vec<(Key, Option<String>)>,
+    /// Every cell the live run **failed** (a verdict `fail`, not a pinned `expected_fail`), with
+    /// its reason, whatever the suite says: a live fail the suite also shows is two reds, not
+    /// agreement, and an escape cell's fail means the refused action happened.
+    pub live_fail: Vec<(Key, Option<String>)>,
     /// How many pairs of records were compared.
     pub compared: usize,
     /// Of those, how many had events on both sides, and so an event comparison.
@@ -837,6 +919,7 @@ impl Diff {
             && self.only_live.is_empty()
             && self.only_suite.is_empty()
             && self.live_not_run.is_empty()
+            && self.live_fail.is_empty()
     }
 
     /// **Whether the two reports agree**: at least one pair was compared, and nothing differs.
@@ -873,6 +956,18 @@ impl Diff {
                 why.as_deref().unwrap_or("no reason")
             );
         }
+        for (k, why) in &self.live_fail {
+            let what = if k.kind == EntryKind::Escape {
+                "ESCAPE: the refused action happened live"
+            } else {
+                "failed live"
+            };
+            let _ = writeln!(
+                out,
+                "FAIL     {k}: {what} ({}); a live fail never reads as agreement, whatever the suite says",
+                why.as_deref().unwrap_or("no reason")
+            );
+        }
         for k in &self.only_live {
             let _ = writeln!(out, "only live   {k}");
         }
@@ -898,7 +993,8 @@ impl Diff {
 
 /// **`live` against `suite`, per cell.** A pair is compared when its kind, row, dialect,
 /// protection and OS agree: verdicts always, event sequences when both sides recorded them. A
-/// cell on one side alone is listed, never ignored, and so is every live `not_run`.
+/// cell on one side alone is listed, never ignored, and so are every live `not_run` and every
+/// live `fail`: a live fail blocks agreement even when the suite fails the same cell.
 pub fn diff(live: &[Recorded], suite: &[Recorded]) -> Diff {
     let mut by_key: BTreeMap<Key, Vec<&Recorded>> = BTreeMap::new();
     for s in suite {
@@ -911,6 +1007,9 @@ pub fn diff(live: &[Recorded], suite: &[Recorded]) -> Diff {
         seen.insert(key.clone());
         if l.leg.verdict == ReportVerdict::NotRun {
             out.live_not_run.push((key.clone(), l.leg.reason.clone()));
+        }
+        if l.leg.verdict == ReportVerdict::Fail {
+            out.live_fail.push((key.clone(), l.leg.reason.clone()));
         }
         let Some(against) = by_key.get(&key) else {
             out.only_live.push(key);

@@ -12,7 +12,7 @@ use purlis_scenarios::coverage::{Coverage, Repo};
 use purlis_scenarios::kinds::dialect_words;
 use purlis_scenarios::livepass::{
     HELD_ASK_TIMING, RECEIVER_FIXTURE, Recorded, Sources, Switches, Why, brief, check_live, diff,
-    live_report, read_report, scope_suite,
+    live_report, read_log, read_report, scope_suite,
 };
 use purlis_scenarios::model::{
     Batch, Dialect, EntryKind, LegRecord, Os, Protection, ReportLeg, ReportVerdict,
@@ -891,4 +891,102 @@ fn the_brief_says_which_records_report_judges_and_which_a_person_does() {
     assert!(!text.contains("judge nothing"));
     assert!(Why::LiveCover.judged_by_report());
     assert!(!Why::Escape.judged_by_report());
+}
+
+// ---- a live fail never reads as agreement ------------------------------------------------------
+
+#[test]
+fn a_plain_cell_that_fails_live_and_in_the_suite_is_listed_and_does_not_agree() {
+    let mut log = chat_682();
+    log["cells"]["M-PRB-03"]["failed"] = json!([["require[0]", 2], ["require[1]", 7]]);
+    let live = live_report(&[b0()], &log, Dialect::Claude, Os::Macos).expect("a report");
+    // the suite fails the very same cell
+    let suite_report: Vec<Recorded> = live
+        .iter()
+        .map(|r| suite(&r.leg.row, r.leg.verdict, ReportLeg::Fake))
+        .collect();
+    let d = diff(&live, &suite_report);
+    assert!(d.verdicts.is_empty(), "the two verdicts are equal");
+    assert_eq!(d.live_fail.len(), 1, "{:?}", d.live_fail);
+    assert_eq!(d.live_fail[0].0.row, "M-PRB-03");
+    assert!(!d.no_differences());
+    assert!(!d.agrees());
+    let out = d.render();
+    assert!(
+        out.contains("FAIL") && out.contains("M-PRB-03") && out.contains("failed live"),
+        "{out}"
+    );
+    assert!(!out.contains("ESCAPE"), "{out}");
+}
+
+#[test]
+fn an_escape_cell_that_fails_live_and_in_the_suite_says_the_refused_action_happened() {
+    let mut cell = live_cell("esc-a", json!(["claude"]));
+    cell["escape"] = json!(true);
+    let (_, escapes) = batch(json!([cell]));
+    let log = json!({"cells": {"esc-a": {"failed": [["require[0]", 2]], "globals": []}}});
+    let live = live_report(&[escapes], &log, Dialect::Claude, Os::Macos).expect("a report");
+    assert_eq!(live[0].leg.kind, EntryKind::Escape);
+    assert_eq!(live[0].leg.verdict, ReportVerdict::Fail);
+    let mut other = suite("esc-a", ReportVerdict::Fail, ReportLeg::Fake);
+    other.leg.kind = EntryKind::Escape;
+    let d = diff(&live, &[other]);
+    assert!(d.verdicts.is_empty());
+    assert_eq!(d.live_fail.len(), 1);
+    assert!(!d.agrees());
+    let out = d.render();
+    assert!(out.contains("ESCAPE") && out.contains("esc-a"), "{out}");
+}
+
+#[test]
+fn a_live_fail_with_no_suite_record_is_listed_too() {
+    let mut log = chat_682();
+    log["cells"]["M-PRB-03"]["failed"] = json!([["require[0]", 2], ["require[1]", 7]]);
+    let live = live_report(&[b0()], &log, Dialect::Claude, Os::Macos).expect("a report");
+    let d = diff(
+        &live,
+        &[suite("M-PRB-01", ReportVerdict::Pass, ReportLeg::Fake)],
+    );
+    assert_eq!(d.live_fail.len(), 1);
+}
+
+// ---- a cell id is never in the log or the cells files twice ------------------------------------
+
+#[test]
+fn a_cell_id_given_twice_in_the_log_is_an_error() {
+    let twice = r#"{"cells": {"M-PRB-01": {"failed": [["require[0]", 1]], "globals": []},
+                              "M-PRB-01": {"failed": [], "globals": []}}}"#;
+    let err = read_log("log.json", twice).unwrap_err();
+    assert!(err.contains("M-PRB-01") && err.contains("twice"), "{err}");
+    // a log with each id once reads, and reads as the same value serde_json gives
+    let once = r#"{"note": "x", "cells": {"M-PRB-01": {"failed": [], "globals": []}}}"#;
+    assert_eq!(
+        read_log("log.json", once).unwrap(),
+        serde_json::from_str::<Value>(once).unwrap()
+    );
+    // a repeated top-level key, trailing text and a non-object `cells` are errors too
+    assert!(read_log("log.json", r#"{"cells": {}, "cells": {}}"#).is_err());
+    assert!(read_log("log.json", r#"{"cells": {}} x"#).is_err());
+    assert!(read_log("log.json", r#"{"cells": []}"#).is_err());
+}
+
+#[test]
+fn the_same_cell_id_in_two_cells_files_is_an_error_not_one_shared_entry() {
+    let (_, one) = batch(json!([live_cell("live-a", json!(["claude"]))]));
+    let (_, two) = batch(json!([live_cell("live-a", json!(["claude"]))]));
+    let log = json!({"cells": {"live-a": {"failed": [], "globals": []}}});
+    let err = live_report(
+        &[one.clone(), two.clone()],
+        &log,
+        Dialect::Claude,
+        Os::Macos,
+    )
+    .unwrap_err();
+    assert!(
+        err.contains("live-a") && err.contains("more than one"),
+        "{err}"
+    );
+    // the same id for another harness is no clash
+    let (_, other) = batch(json!([live_cell("live-a", json!(["codex"]))]));
+    assert!(live_report(&[one, other], &log, Dialect::Claude, Os::Macos).is_ok());
 }
