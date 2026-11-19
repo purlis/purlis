@@ -20,6 +20,11 @@ const STOP: &str = r#"{"session_id":"11111111-2222-4333-8444-555555555555","cwd"
 /// Runs `purlis hook stop` for chat 7 under `harness`, sandboxed or not, with the app gone, and
 /// answers whether anything was spooled for the chat.
 fn spooled_by(harness: &str, sandboxed: &str) -> bool {
+    spooled_by_with(harness, sandboxed, &[])
+}
+
+/// [`spooled_by`], with `more` set in the hook's environment as well.
+fn spooled_by_with(harness: &str, sandboxed: &str, more: &[(&str, &str)]) -> bool {
     let dir = tempfile::tempdir().expect("a directory");
     let path = support::hooks_socket(dir.path());
     let listener = Listener::bind(dir.path(), &path).expect("a socket");
@@ -36,6 +41,7 @@ fn spooled_by(harness: &str, sandboxed: &str) -> bool {
         .env(TOKEN_ENV, token.expose())
         .env("CHARTER_HARNESS", harness)
         .env(SANDBOXED_ENV, sandboxed)
+        .envs(more.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -62,4 +68,11 @@ fn a_hook_outside_the_chats_sandbox_still_spools() {
     // Claude Code's hooks run outside its sandbox, and a chat with none has no spool denied.
     assert!(spooled_by("claude-code", "1"), "a Claude Code hook spools");
     assert!(spooled_by("codex", "0"), "a chat with no sandbox spools");
+}
+
+#[test]
+fn a_hook_of_a_chat_purlis_wraps_whole_spools_nothing() {
+    // The chat's line says it is wrapped whole, so its Claude Code hooks are inside the wrap too.
+    let wrapped = [(purlis_core::hookwire::WRAPPED_ENV, "1")];
+    assert!(!spooled_by_with("claude-code", "1", &wrapped));
 }

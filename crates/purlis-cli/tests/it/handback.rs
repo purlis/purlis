@@ -285,3 +285,64 @@ fn a_hook_inside_the_chats_sandbox_takes_no_report_where_no_app_answers() {
     assert!(context_of(&out, "UserPromptSubmit").contains("reported back"));
     assert!(handback::waiting(plane.path(), For::Chat(3)).is_empty());
 }
+
+fn a_message(text: &str) -> purlis_core::dispatchtalk::Message {
+    purlis_core::dispatchtalk::Message {
+        kind: purlis_core::dispatchtalk::Kind::FollowUp,
+        from: "steward 1".to_owned(),
+        chat: 1,
+        text: text.to_owned(),
+        instruction: None,
+    }
+}
+
+#[test]
+fn a_hook_inside_the_chats_sandbox_takes_no_message_where_no_app_answers() {
+    // #7178: as for a report, the messages' folder is held from a hook that runs in the sandbox,
+    // so the fallback that removes a message there takes nothing and hands nothing.
+    use purlis_core::dispatchtalk;
+    let plane = a_plane();
+    dispatchtalk::leave(plane.path(), 3, &a_message("Also count the retries.")).unwrap();
+    let inside = [
+        (purlis_core::hookwire::HARNESS_ENV, "codex"),
+        (purlis_core::hookwire::SANDBOXED_ENV, "1"),
+    ];
+
+    let out = hook_as(plane.path(), "userpromptsubmit", "3", &inside);
+
+    assert!(!out.contains("retries"), "nothing is handed on: {out}");
+    assert_eq!(dispatchtalk::waiting(plane.path(), 3).len(), 1, "it waits");
+
+    // Outside the sandbox it is taken here as it always was.
+    let outside = [
+        (purlis_core::hookwire::HARNESS_ENV, "claude-code"),
+        (purlis_core::hookwire::SANDBOXED_ENV, "1"),
+    ];
+    let out = hook_as(plane.path(), "userpromptsubmit", "3", &outside);
+    assert!(out.contains("Also count the retries."), "{out}");
+    assert!(dispatchtalk::waiting(plane.path(), 3).is_empty());
+}
+
+#[test]
+fn a_hook_of_a_chat_purlis_wraps_whole_takes_nothing_where_no_app_answers() {
+    // #7178: a Claude Code chat purlis wraps whole (#4083) has its hooks inside the wrap too,
+    // though Claude Code's own hooks run outside its sandbox.
+    use purlis_core::dispatchtalk;
+    let plane = a_plane();
+    handback::leave(plane.path(), For::Chat(3), &a_report("done")).unwrap();
+    dispatchtalk::leave(plane.path(), 3, &a_message("Also count the retries.")).unwrap();
+    let wrapped = [
+        (purlis_core::hookwire::HARNESS_ENV, "claude-code"),
+        (purlis_core::hookwire::SANDBOXED_ENV, "1"),
+        (purlis_core::hookwire::WRAPPED_ENV, "1"),
+    ];
+
+    let out = hook_as(plane.path(), "userpromptsubmit", "3", &wrapped);
+
+    assert!(
+        !out.contains("reported back") && !out.contains("retries"),
+        "{out}"
+    );
+    assert_eq!(handback::waiting(plane.path(), For::Chat(3)).len(), 1);
+    assert_eq!(dispatchtalk::waiting(plane.path(), 3).len(), 1);
+}

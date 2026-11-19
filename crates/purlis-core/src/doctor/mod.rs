@@ -196,6 +196,18 @@ impl Row {
         Self::new(name, Status::Fail, detail, hint)
     }
 
+    /// A row for a check this doctor chose not to run where it is, because the sandbox it runs in
+    /// keeps what the check looks at from it (#7178). A WARN, the closest verdict that is not
+    /// green: `--json` must not show a check that did not run as one that passed. Its hint is not
+    /// [`NOT_CHECKED_HINT`], whose "re-run" would give the same answer from here.
+    pub(crate) fn skipped(name: &str, reason: impl std::fmt::Display) -> Self {
+        Self::warn(
+            name,
+            format!("not checked ({reason})"),
+            "Run `purlis doctor` in a terminal, outside the chat's sandbox.",
+        )
+    }
+
     /// Python's `Result(name, WARN, detail=f"not checked ({why})", hint=_NOT_CHECKED_HINT)`.
     pub(crate) fn not_checked(name: &str, why: impl std::fmt::Display) -> Self {
         Self::warn(name, format!("not checked ({why})"), NOT_CHECKED_HINT)

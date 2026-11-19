@@ -36,8 +36,8 @@ pub(super) const PATHS: &str = "credential paths";
 
 /// What the rows that look at a vault's files say inside a chat's sandbox, which keeps those
 /// files from every chat (#7178).
-pub(super) const NOT_FROM_A_SANDBOX: &str = "not checked from inside a chat's sandbox, which keeps \
-    the vaults from every chat; run `purlis doctor` in a terminal";
+pub(super) const NOT_FROM_A_SANDBOX: &str =
+    "inside a chat's sandbox, which keeps the vaults from every chat";
 
 /// The `vaults` row for the project `d` answers for.
 pub(super) fn vaults(d: &Doctor) -> Row {
@@ -45,7 +45,7 @@ pub(super) fn vaults(d: &Doctor) -> Row {
         return Row::ok(VAULTS, "no control plane found");
     }
     if d.confined {
-        return Row::ok(VAULTS, NOT_FROM_A_SANDBOX);
+        return Row::skipped(VAULTS, NOT_FROM_A_SANDBOX);
     }
     vaults_row(&Ctx::new(&d.root, Env::from_process()), !d.preflight)
 }
@@ -56,7 +56,7 @@ pub(super) fn credential_paths(d: &Doctor) -> Row {
         return Row::ok(PATHS, "no control plane found");
     }
     if d.confined {
-        return Row::ok(PATHS, NOT_FROM_A_SANDBOX);
+        return Row::skipped(PATHS, NOT_FROM_A_SANDBOX);
     }
     paths_row(&Ctx::new(&d.root, Env::from_process()))
 }

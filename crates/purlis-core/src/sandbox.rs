@@ -1678,8 +1678,10 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
 
 /// **Whether this chat is one purlis wraps whole although its harness has a sandbox of its own**
 /// (#4083), as the chat's line said ([`crate::hookwire::WRAPPED_ENV`]): what its hooks and its
-/// `purlis` commands read, for how a refusal or a block is told and reported. No decision that
-/// holds anything reads it, so a chat that set it itself only changes how it is told.
+/// `purlis` commands read, for how a refusal or a block is told and reported, and for whether a
+/// hook may spool a line or take a report ([`writes_are_sandboxed`], #7178). A chat that sets it
+/// itself only makes purlis do less (spool nothing, take nothing, say "not checked"): it never
+/// grants a chat anything.
 pub fn wrapped_whole_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
     env(crate::hookwire::WRAPPED_ENV).as_deref() == Some("1")
 }

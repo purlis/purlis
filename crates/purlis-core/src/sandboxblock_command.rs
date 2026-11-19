@@ -6,7 +6,7 @@
 //!
 //! A block carries no path, so a report of purlis's own block said only "a write to purlis's state
 //! for this project". The hook that found the block has the command line the chat ran, and names
-//! from it the `purlis` command or commands in it: **fixed words only**. Each word is checked
+//! from it the `purlis` command the line starts with: **fixed words only**. Each word is checked
 //! against the closed lists below ([`TOP`], [`VERB`]), and a word that is on neither is not
 //! kept, so nothing a chat typed (a path, an argument, a name) reaches a Report. The app checks
 //! the words again as they arrive ([`known`]): a chat can send the hook's line itself.
@@ -109,36 +109,35 @@ const VERB: &[&str] = &[
     "precompact",
 ];
 
-/// How many distinct commands one name holds: more than this in one line, and the rest are not
-/// said.
-const MOST: usize = 3;
-
-/// The `purlis` commands in `line`, a command line a chat ran, as fixed words (`purlis worktree
-/// commit`), joined with ` or `; `None` where it runs none. Words only from the closed lists.
+/// The `purlis` command a command line a chat ran **starts with**, as fixed words (`purlis
+/// worktree commit`); `None` where the line does not start with one. Only the start: a chat
+/// controls the rest of its line, and a `purlis` word later in it (`; echo purlis vault remove`)
+/// is text it typed, not the command that was run. Words only from the closed lists.
 pub fn in_line(line: &str) -> Option<String> {
-    let words: Vec<&str> = line
-        .split(|c: char| c.is_whitespace() || matches!(c, ';' | '|' | '&' | '(' | ')' | '`'))
-        .filter(|word| !word.is_empty())
-        .collect();
-    let mut found: Vec<String> = Vec::new();
-    for (at, word) in words.iter().enumerate() {
-        let named = word.trim_matches(|c| matches!(c, '"' | '\'' | '$' | '{' | '}'));
-        if named.rsplit('/').next() != Some("purlis") {
-            continue;
-        }
-        let Some(top) = words.get(at + 1).and_then(|w| listed(TOP, w)) else {
-            continue;
-        };
-        let mut said = format!("purlis {top}");
-        if let Some(verb) = words.get(at + 2).and_then(|w| listed(VERB, w)) {
-            let _ = write!(said, " {verb}");
-        }
-        if !found.contains(&said) {
-            found.push(said);
-        }
+    // The line's first command only: what follows a `;`, `&`, `|` or the like is another command.
+    let first_command = line
+        .split(|c: char| matches!(c, ';' | '|' | '&' | '(' | ')' | '`' | '\n'))
+        .next()
+        .unwrap_or_default();
+    let mut words = first_command.split_whitespace().skip_while(|word| {
+        word.split_once('=')
+            .is_some_and(|(name, _)| is_variable(name))
+    });
+    let first = words.next()?.trim_matches(|c| matches!(c, '"' | '\''));
+    if first.rsplit('/').next() != Some("purlis") {
+        return None;
     }
-    found.truncate(MOST);
-    (!found.is_empty()).then(|| found.join(" or "))
+    let top = listed(TOP, words.next()?)?;
+    let mut said = format!("purlis {top}");
+    if let Some(verb) = words.next().and_then(|w| listed(VERB, w)) {
+        let _ = write!(said, " {verb}");
+    }
+    Some(said)
+}
+
+/// Whether `name` is the name of a shell variable, as in `HOME=/x purlis doctor`.
+fn is_variable(name: &str) -> bool {
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// `word` as the list holds it, or `None`.
@@ -149,28 +148,17 @@ fn listed(list: &'static [&'static str], word: &str) -> Option<&'static str> {
 /// What a hook's `said` is, checked again: the words of [`in_line`] and nothing else, so a line
 /// a chat sent by hand names no more than the hook could have. `None` for anything else.
 pub fn known(said: &str) -> Option<String> {
-    let parts: Vec<&str> = said.split(" or ").collect();
-    if parts.len() > MOST {
+    let mut words = said.split(' ');
+    if words.next() != Some("purlis") {
         return None;
     }
-    let mut out = Vec::new();
-    for part in parts {
-        let mut words = part.split(' ');
-        if words.next() != Some("purlis") {
-            return None;
-        }
-        let top = listed(TOP, words.next()?)?;
-        let mut checked = format!("purlis {top}");
-        if let Some(verb) = words.next() {
-            checked.push(' ');
-            checked.push_str(listed(VERB, verb)?);
-        }
-        if words.next().is_some() {
-            return None;
-        }
-        out.push(checked);
+    let top = listed(TOP, words.next()?)?;
+    let mut checked = format!("purlis {top}");
+    if let Some(verb) = words.next() {
+        checked.push(' ');
+        checked.push_str(listed(VERB, verb)?);
     }
-    Some(out.join(" or "))
+    words.next().is_none().then_some(checked)
 }
 
 #[cfg(test)]
@@ -196,14 +184,20 @@ mod tests {
             Some("purlis worktree")
         );
         assert_eq!(in_line("purlis my-private-thing"), None);
-        assert_eq!(in_line("cargo build; echo purlis"), None);
+        assert_eq!(in_line("cargo build; purlis doctor"), None);
     }
 
     #[test]
-    fn several_commands_are_each_named_once() {
+    fn only_the_command_a_line_starts_with_is_named() {
         assert_eq!(
-            in_line("purlis doctor && purlis doctor | purlis dispatch note x").as_deref(),
-            Some("purlis doctor or purlis dispatch note")
+            in_line("purlis doctor; echo purlis vault remove").as_deref(),
+            Some("purlis doctor")
+        );
+        assert_eq!(in_line("echo purlis vault remove"), None);
+        assert_eq!(in_line("ls && purlis vault remove"), None);
+        assert_eq!(
+            in_line("HOME=/x purlis doctor && purlis status").as_deref(),
+            Some("purlis doctor")
         );
     }
 
@@ -213,17 +207,13 @@ mod tests {
             known("purlis worktree commit").as_deref(),
             Some("purlis worktree commit")
         );
-        assert_eq!(
-            known("purlis doctor or purlis status").as_deref(),
-            Some("purlis doctor or purlis status")
-        );
         for refused in [
             "rm -rf /",
             "purlis worktree /etc/passwd",
             "purlis doctor extra words",
             "purlis nothing",
             "",
-            "purlis doctor or purlis status or purlis stop or purlis scan",
+            "purlis doctor or purlis status",
         ] {
             assert_eq!(known(refused), None, "{refused}");
         }

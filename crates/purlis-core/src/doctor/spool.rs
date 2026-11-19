@@ -33,8 +33,11 @@ const BOUND: u64 = 1 << 20;
 
 /// The row for the project `d` answers for, or `None` when there is nothing to say.
 pub(super) fn hook_spool(d: &Doctor) -> Option<Row> {
-    if !d.has_plane || d.confined {
+    if !d.has_plane {
         return None;
+    }
+    if d.confined {
+        return Some(Row::skipped(NAME, super::credentials::NOT_FROM_A_SANDBOX));
     }
     row_for(&d.root)
 }

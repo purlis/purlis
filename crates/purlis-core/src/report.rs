@@ -975,13 +975,26 @@ impl PurlisFailure {
                     .and_then(crate::sandboxblock::command::known)
                     .map(|said| format!(" by `{said}`"))
                     .unwrap_or_default();
-                format!(
-                    "purlis's own {} ({}){by}",
-                    block.operation.word(),
-                    block.kind.word()
-                )
+                format!("{}{by}", Self::operation(block))
             }
         }
+    }
+
+    /// [`Self::call`] without the command a chat's line named, which is the chat's to choose: what
+    /// a report is told apart by, so that no wording of its line makes a new one (#7178).
+    pub fn kind_of_call(&self) -> String {
+        match self {
+            Self::Internal { caught, .. } => caught.call.clone(),
+            Self::SandboxBlock { block, .. } => Self::operation(block),
+        }
+    }
+
+    fn operation(block: &crate::sandboxblock::Block) -> String {
+        format!(
+            "purlis's own {} ({})",
+            block.operation.word(),
+            block.kind.word()
+        )
     }
 }
 
