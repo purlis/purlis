@@ -58,7 +58,16 @@ struct Fixture {
     _settings: tempfile::TempDir,
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
+    crate::support::real_infra::fixture_or_skip(
+        "a machine without Docker, behind an sshd",
+        "tests/ssh-runner/up.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
     let route = Route::parse(&std::env::var("SSH_RUNNER_TEST_ROUTE").ok()?).expect("a route");
     let liar = Route::parse(&std::env::var("SSH_RUNNER_TEST_LIAR_ROUTE").ok()?).expect("a route");
     let fish = Route::parse(&std::env::var("SSH_RUNNER_TEST_FISH_ROUTE").ok()?).expect("a route");

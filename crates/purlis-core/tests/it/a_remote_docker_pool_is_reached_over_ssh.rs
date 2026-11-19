@@ -42,7 +42,16 @@ impl Fixture {
     }
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
+    crate::support::real_infra::fixture_or_skip(
+        "Docker on another machine, over SSH",
+        "tests/remote-docker/up.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
     let route = std::env::var("REMOTE_DOCKER_TEST_ROUTE").ok()?;
     let sshd = std::env::var("REMOTE_DOCKER_TEST_SSHD").ok()?;
     let dind = std::env::var("REMOTE_DOCKER_TEST_DIND").ok()?;
@@ -277,7 +286,11 @@ fn a_killed_connection_is_noticed_and_opened_again() {
 fn an_account_that_may_not_use_docker_there_is_told_so() {
     purlis_core::unsteered!();
     let Some(fixture) = fixture() else { return };
-    let Ok(outsider) = std::env::var("REMOTE_DOCKER_TEST_OUTSIDER_ROUTE") else {
+    let Some(outsider) = crate::support::real_infra::fixture_or_skip(
+        "the outsider account on the sshd",
+        "tests/remote-docker/up.sh",
+        std::env::var("REMOTE_DOCKER_TEST_OUTSIDER_ROUTE").ok(),
+    ) else {
         return;
     };
     let route = Route::parse(&outsider).expect("a route");

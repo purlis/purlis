@@ -88,9 +88,11 @@ async fn linked(
 #[test]
 fn a_runner_container_is_linked_to_the_desktop_it_paired_and_to_no_other() {
     purlis_core::unsteered!();
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
-        // No runner image of this build is named: nothing is run (the module's docs say where
-        // it runs).
+    let Some(image) = crate::support::real_infra::fixture_or_skip(
+        "a runner image of this build on a local Docker",
+        "DOCKER_POOL_TEST_IMAGE (tests/parity/build-images.sh)",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let settings = tempfile::tempdir().unwrap();

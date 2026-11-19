@@ -61,7 +61,11 @@ fn comes_to_be(docker: &Docker, made: &Made, path: &str) -> bool {
 #[test]
 fn a_killed_docker_exec_closes_the_input_of_what_it_ran() {
     purlis_core::unsteered!();
-    let Ok(image) = std::env::var("DOCKER_POOL_TEST_IMAGE") else {
+    let Some(image) = crate::support::real_infra::fixture_or_skip(
+        "a runner image of this build on a local Docker",
+        "DOCKER_POOL_TEST_IMAGE (tests/parity/build-images.sh)",
+        std::env::var("DOCKER_POOL_TEST_IMAGE").ok(),
+    ) else {
         return;
     };
     let settings = tempfile::tempdir().unwrap();
