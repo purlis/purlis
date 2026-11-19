@@ -51,16 +51,26 @@ export function RunnerLinkDownNotice({
       label={
         down.state === "refused"
           ? `Pool ${down.pool} refused the connection`
-          : `Pool ${down.pool}'s runner is not linked`
+          : down.state === "host_key_changed"
+            ? `Pool ${down.pool}'s machine presented another key`
+            : `Pool ${down.pool}'s runner is not linked`
       }
-      // Refused is not retried (#7187): Try now would only be told the same, so Check pool is
-      // the way on.
+      // Refused is not retried on its own (#7187), yet Try now stays: a machine whose Docker is
+      // still starting after a reboot is fixed by waiting, and the person is the one who knows.
+      // A changed host key is a security stop: only trusting it again in the pool's settings
+      // lets purlis link to it, so there is no Try now.
       fixes={
-        down.state === "refused"
-          ? []
+        down.state === "host_key_changed"
+          ? undefined
           : [{ label: "Try now", onPress: () => void commands.runnerLinkNow(plane, down.pool) }]
       }
-      link={{ label: `Check pool ${down.pool}`, onPress: () => onCheckPool(down.pool) }}
+      link={{
+        label:
+          down.state === "host_key_changed"
+            ? `Check and trust pool ${down.pool}`
+            : `Check pool ${down.pool}`,
+        onPress: () => onCheckPool(down.pool),
+      }}
       onDismiss={() => dismiss(down)}
     >
       {downSaid(down, now)}
@@ -72,7 +82,10 @@ export function RunnerLinkDownNotice({
 export function downSaid(down: RunnerLinkDown, now: number): string {
   const why = down.why.endsWith(".") ? down.why : `${down.why}.`;
   if (down.state === "refused") {
-    return `The machine answers, but it refuses: ${why} purlis stopped trying. Check the pool, then start the chat again.`;
+    return `The machine answers, but it refuses: ${why} purlis stopped trying on its own. Try now once it is fixed, or check the pool.`;
+  }
+  if (down.state === "host_key_changed") {
+    return `The machine presented another key than the one you trusted: ${why} purlis sent it nothing and never tries it again on its own. Check the pool, and trust it again if the change is expected.`;
   }
   return (
     `Its chats have waited ${forHowLong(now - down.since * 1000)}: ${why} ` +
@@ -172,10 +185,13 @@ function useLinksDown(plane: PlaneId): {
     const ends = setTimeout(() => setNow(Date.now()), quietUntil - Date.now() + 1);
     return () => clearTimeout(ends);
   }, [quietUntil]);
-  // A refused link is said at once: waiting does not mend it, and nothing is retried (#7187).
+  // A refused link and a changed host key are said at once: waiting does not mend them, and
+  // nothing is retried on its own (#7187).
   const shown = down.filter(
     (one) =>
-      (one.state === "refused" || now - one.since * 1000 >= QUIET_FOR_MS) &&
+      (one.state === "refused" ||
+        one.state === "host_key_changed" ||
+        now - one.since * 1000 >= QUIET_FOR_MS) &&
       !dismissed.has(keyOf(one)),
   );
   const dismiss = (one: RunnerLinkDown) => setDismissed((was) => new Set(was).add(keyOf(one)));

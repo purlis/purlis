@@ -528,6 +528,7 @@ fn a_pool_whose_machine_does_not_answer_is_offered_forgetting_and_forgotten_leav
                   and connect your VPN if you use one."
                 .into(),
             host: "build-box".into(),
+            answers: false,
         }
     );
     let left = forgotten_here(config.path(), "remote").expect("forgotten");
@@ -580,5 +581,45 @@ fn a_pool_is_offered_forgetting_in_every_state_it_cannot_be_removed_from() {
             ),
             "{finding:?}"
         );
+    }
+}
+
+/// **Where the machine answers, Remove stays offered beside Forget** (#7187, the steward's
+/// decision 3): a machine that answers and refuses can still be cleaned, as #7122 and #7139 had
+/// it, so its Notice says so. One that does not answer, or whose key or engine changed, is not
+/// contacted: Forget alone.
+#[cfg(unix)]
+#[test]
+fn a_machine_that_answers_and_refuses_is_offered_remove_beside_forget_and_no_other_is() {
+    use purlis_core::sshroute::connect::Finding;
+    let host = || "build-box".to_owned();
+    let answers = |finding: &Finding| match unreachable_said("build-box", finding) {
+        PoolRemoval::Unreachable { answers, .. } => answers,
+        other => panic!("not offered forgetting: {other:?}"),
+    };
+    for refused in [
+        Finding::SignInRefused { host: host() },
+        Finding::ForwardingRefused { host: host() },
+        Finding::NoEngine {
+            host: host(),
+            user: "me".into(),
+        },
+    ] {
+        assert!(answers(&refused), "{refused:?} answers");
+    }
+    for not_contacted in [
+        Finding::NoAnswer {
+            host: host(),
+            port: 22,
+        },
+        Finding::NoSuchName { host: host() },
+        Finding::EngineChanged {
+            host: host(),
+            pinned: "A".into(),
+            now: "B".into(),
+            podman: false,
+        },
+    ] {
+        assert!(!answers(&not_contacted), "{not_contacted:?} is not contacted");
     }
 }

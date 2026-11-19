@@ -615,8 +615,10 @@ function PoolEntry({
                 name={pool.name}
                 host={unreachable.host}
                 why={unreachable.why}
+                answers={unreachable.answers}
                 removing={removing}
                 onForget={onForget}
+                onRemove={remove}
                 onDismiss={onDismissUnreachable}
               />
             )}
@@ -699,25 +701,35 @@ export function UnreachableNotice({
   name,
   host,
   why,
+  answers = false,
   removing,
   onForget,
+  onRemove,
   onDismiss,
 }: {
   name: string;
   host: string;
   why: string;
+  /** The machine answered, and refused (#7187): Remove, which cleans it, stays beside Forget. */
+  answers?: boolean;
   removing: boolean;
   onForget: () => void;
+  onRemove?: () => void;
   onDismiss: () => void;
 }) {
   return (
     <Notice
       cause={`pool-unreachable:${name}`}
       tone="trouble"
-      fixes={[{ label: "Forget it here", onPress: onForget, busy: removing }]}
+      fixes={[
+        { label: "Forget it here", onPress: onForget, busy: removing },
+        ...(answers && onRemove !== undefined
+          ? [{ label: "Remove", onPress: onRemove, busy: removing }]
+          : []),
+      ]}
       onDismiss={onDismiss}
     >
-      {unreachableSaid(name, host, why)}
+      {answers ? answeringSaid(name, host, why) : unreachableSaid(name, host, why)}
     </Notice>
   );
 }
@@ -725,6 +737,11 @@ export function UnreachableNotice({
 /** What {@link UnreachableNotice} says of pool `name` on `host`, which didn't answer for `why`. */
 export const unreachableSaid = (name: string, host: string, why: string) =>
   `${why} Nothing was removed. Forget it here forgets pool ${name} on this machine without contacting ${host}. Whatever may be left on ${host} stays there: its runner's container and home volume, the browsers it ran, and the logins given on it. ${host} still lists this machine as the runner's peer. purlis then says the commands that remove them on ${host}. There is no undo.`;
+
+/** What {@link UnreachableNotice} says of pool `name` on `host`, which answered but refused, for
+ *  `why` (#7187): Remove tries to clean it, Forget it here does not contact it. */
+export const answeringSaid = (name: string, host: string, why: string) =>
+  `${why} Nothing was removed. ${host} answers, so Remove can still try to clean it: its runner's container and home volume, and the logins given on it. Forget it here forgets pool ${name} on this machine without contacting ${host}; whatever may be left on ${host} stays there, and ${host} still lists this machine as the runner's peer. There is no undo.`;
 
 /** What marking a cluster pool as the person's own means (#4071): who else can read its runner. */
 const MY_OWN_SAID =

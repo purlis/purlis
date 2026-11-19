@@ -556,7 +556,14 @@ pub enum PoolRemoval {
     /// It is gone, or what of it stays is said in `left`.
     Removed { left: Option<String> },
     /// Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent.
-    Unreachable { why: String, host: String },
+    /// `answers` is that the machine did answer, and refused (#7187): Remove, which cleans the
+    /// machine, stays offered beside Forget it here, and goes on where it is asked again. A
+    /// machine that does not answer, or presents another key or engine, is never contacted.
+    Unreachable {
+        why: String,
+        host: String,
+        answers: bool,
+    },
 }
 
 /// **Removes the pool `name`**: this desktop is taken out of its runner's peers over a link of
@@ -569,7 +576,8 @@ pub enum PoolRemoval {
 /// `discarding` names the held runners whose conversations the person was asked about, and agreed
 /// to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 /// A pool on another machine that doesn't answer is removed not at all: the answer says so, and
-/// the window offers to forget it here.
+/// the window offers to forget it here. One that answers and refuses is offered Remove as well,
+/// which goes on where `despite_its_check` says it was asked again (#7187).
 #[tauri::command]
 #[specta::specta]
 pub async fn remove_docker_pool(
@@ -578,6 +586,7 @@ pub async fn remove_docker_pool(
     name: String,
     elsewhere: bool,
     discarding: Vec<String>,
+    despite_its_check: bool,
 ) -> Result<PoolRemoval, String> {
     #[cfg(unix)]
     {
@@ -603,7 +612,7 @@ pub async fn remove_docker_pool(
                     });
                 }
                 let machine = Machine::here(&config)?;
-                if let Some(unreachable) = unreachable_of(&machine, &name) {
+                if let Some(unreachable) = unreachable_of(&machine, &name, despite_its_check) {
                     return Ok(unreachable);
                 }
                 as_the_person_was_told(&machine, &name, elsewhere)?;
@@ -619,7 +628,7 @@ pub async fn remove_docker_pool(
     }
     #[cfg(not(unix))]
     {
-        let _ = (app, planes, name, elsewhere, discarding);
+        let _ = (app, planes, name, elsewhere, discarding, despite_its_check);
         Err(NOT_HERE.to_owned())
     }
 }
@@ -694,12 +703,18 @@ fn gone_from_here(
 /// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window
 /// offers to forget it here. `None` for a pool on this machine, or one whose machine answers.
 #[cfg(unix)]
-fn unreachable_of(machine: &Machine, name: &str) -> Option<PoolRemoval> {
+fn unreachable_of(machine: &Machine, name: &str, despite_its_check: bool) -> Option<PoolRemoval> {
     let pools = purlis_core::runners::pools(&machine.config).ok()?;
     let pool = pools.iter().find(|pool| pool.name() == name)?;
     let host = pool.remote_engine()?.host().to_owned();
     let finding = purlis_core::sshroute::pool::docker_of(&machine.docker, pool).err()?;
-    Some(unreachable_said(&host, &finding))
+    let said = unreachable_said(&host, &finding);
+    // Asked again by the person after it said the machine answers: Remove goes on as it did
+    // before (#7122, #7139). A machine that does not answer is never gone on to.
+    if despite_its_check && matches!(said, PoolRemoval::Unreachable { answers: true, .. }) {
+        return None;
+    }
+    Some(said)
 }
 
 /// [`unreachable_of`], once the machine `host` was found: whatever it found, for Remove can
@@ -711,6 +726,9 @@ fn unreachable_said(host: &str, finding: &purlis_core::sshroute::connect::Findin
     PoolRemoval::Unreachable {
         why: crate::devices::shown_safely(&purlis_core::poolsetup::connect_said(finding)),
         host: host.to_owned(),
+        // Answers and refuses: not one that is silent, and not one whose key or engine changed,
+        // which nothing is sent to.
+        answers: finding.remote_state() == purlis_core::sshroute::connect::RemoteState::Refused,
     }
 }
 

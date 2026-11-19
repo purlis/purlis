@@ -89,7 +89,7 @@ describe("a runner whose link stays down", () => {
     await waitFor(() => expect(notice()).toBeNull());
   });
 
-  it("says a refused pool at once, without Try now, since purlis stopped trying (#7187)", async () => {
+  it("says a refused pool at once, offering Try now and Check pool though purlis stopped trying (#7187)", async () => {
     aCore(() => [
       { pool: "docker", why: "sign-in was refused", since: nowSecs(), state: "refused" },
     ]);
@@ -98,8 +98,23 @@ describe("a runner whose link stays down", () => {
     await waitFor(() => expect(notice()).not.toBeNull());
     expect(notice()?.textContent).toContain("purlis stopped trying");
     expect(notice()?.textContent).toContain("sign-in was refused");
-    expect(screen.queryByRole("button", { name: "Try now" })).toBeNull();
+    // The machine may only be starting after a reboot: the person may try it again.
+    expect(screen.getByRole("button", { name: "Try now" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Check pool docker" }));
+    expect(onCheckPool).toHaveBeenCalledWith("docker");
+  });
+
+  it("says a changed host key at once as its own state: no Try now, and a way to trust it again (#7187)", async () => {
+    aCore(() => [
+      { pool: "docker", why: "another host key", since: nowSecs(), state: "host_key_changed" },
+    ]);
+    const onCheckPool = vi.fn();
+    render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={onCheckPool} />);
+    await waitFor(() => expect(notice()).not.toBeNull());
+    expect(notice()?.textContent).toContain("another host key");
+    expect(notice()?.textContent).toContain("never tries it again on its own");
+    expect(screen.queryByRole("button", { name: "Try now" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Check and trust pool docker" }));
     expect(onCheckPool).toHaveBeenCalledWith("docker");
   });
 

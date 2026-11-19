@@ -8705,6 +8705,23 @@ export type LinkSeen = {
 	chat: ChatSeen | null,
 };
 
+/**
+ *  **Which of the five remote states a pool's runner is in** (#7187, CONTEXT.md), as the window
+ *  says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState), read where
+ *  the link tells it.
+ */
+export type LinkState = 
+/**  Nothing answers, or not yet: purlis tries again, and the person may press Try now. */
+"unreachable" | 
+/**  The machine answers and refuses: purlis stopped trying; Check pool. */
+"refused" | 
+/**  The machine presents another key or engine than the pinned one. */
+"host_key_changed" | 
+/**  The runner's container is gone. */
+"runner_gone" | 
+/**  The pool was forgotten here. */
+"pool_forgotten";
+
 /**  One repo the person can get. */
 export type ListedRepo = {
 	/**  `github` or `gitlab`. */
@@ -11382,8 +11399,13 @@ export type PoolProfiles = {
 export type PoolRemoval = 
 /**  It is gone, or what of it stays is said in `left`. */
 { state: "removed"; left: string | null } | 
-/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
-{ state: "unreachable"; why: string; host: string };
+/**
+ *  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent.
+ *  `answers` is that the machine did answer, and refused (#7187): Remove, which cleans the
+ *  machine, stays offered beside Forget it here, and goes on where it is asked again. A
+ *  machine that does not answer, or presents another key or engine, is never contacted.
+ */
+{ state: "unreachable"; why: string; host: string; answers: boolean };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -12652,24 +12674,13 @@ export type Reconnection =
  *  why, with Check pool and no Try now.
  */
 "refused" | 
-/**  The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so. */
-"pool_forgotten";
-
 /**
- *  **Which of the five remote states a pool's runner is in** (#7187, CONTEXT.md), as the window
- *  says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState), read where
- *  the link tells it.
+ *  The runner's machine presents another host key, CA or engine than the pinned one (#7187,
+ *  Host key changed): its host never links to it again on its own, so its chats stay dimmed
+ *  and the window says why, with Check and trust again in the pool's settings.
  */
-export type LinkState = 
-/**  Nothing answers, or not yet: purlis tries again, and the person may press Try now. */
-"unreachable" | 
-/**  The machine answers and refuses: purlis stopped trying; Check pool. */
-"refused" | 
-/**  The machine presents another key or engine than the pinned one. */
 "host_key_changed" | 
-/**  The runner's container is gone. */
-"runner_gone" | 
-/**  The pool was forgotten here. */
+/**  The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so. */
 "pool_forgotten";
 
 /**
