@@ -682,13 +682,17 @@ mod tests {
     /// **A config that cannot be read is Refused with its reason, not Unreachable** (#7187,
     /// steward decision 2026-11-19): waiting does not mend a runners file that is not as purlis
     /// writes it, so the link stops, says why and offers Check pool.
+    #[cfg(unix)]
     #[test]
     fn a_config_that_cannot_be_read_is_refused_with_its_reason() {
+        use std::os::unix::fs::PermissionsExt;
         let config = tempfile::tempdir().unwrap();
         let folder = crate::machine::dir(config.path());
         std::fs::create_dir_all(&folder).unwrap();
         // A file others may read is refused as unsafe, whatever it holds.
-        std::fs::write(folder.join(crate::machine::RUNNERS_FILE), "{}").unwrap();
+        let file = folder.join(crate::machine::RUNNERS_FILE);
+        std::fs::write(&file, "{}").unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
         let local = Docker::at("/usr/local/bin/docker");
         let (said, state) =
             docker_of_named_in_state(config.path(), &local, "box").expect_err("unreadable");
