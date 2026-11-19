@@ -1311,7 +1311,10 @@ pub fn policy_accepted_record(root: &Path) -> PolicyAccepted {
         // Sealed, and the keyring keeps this very one. A sealed record with no anchor is one
         // the keyring never saw kept, or whose anchor was taken away: broken (the re-review of
         // #6992), since the app keeps the anchor before it writes any record.
-        (Some(_), Some(true), Some(accepted)) => PolicyAccepted::Held(accepted),
+        (Some(_), Some(true), Some(accepted)) => {
+            note_sealed(&clone);
+            PolicyAccepted::Held(accepted)
+        }
         // Nothing here, and the keyring never kept one either. Where the key does not read,
         // nothing verifies and the keyring's marker alone says whether one was kept (#7153): a
         // record taken away then is broken, never the shipped default, so no accepted deny is
@@ -1356,7 +1359,7 @@ const SEALED_MARKERS: &str = "sealed-planes";
 /// The marker for the plane at `root`: one empty file named by [`anchor_key`], which, unlike the
 /// clone key, a chat that moves `.git` aside and back does not change (#7164). `None` where
 /// there is no config home.
-fn sealed_marker(root: &Path) -> Option<PathBuf> {
+pub(crate) fn sealed_marker(root: &Path) -> Option<PathBuf> {
     marker_for(&anchor_key(root))
 }
 
@@ -1364,10 +1367,10 @@ fn marker_for(anchor: &str) -> Option<PathBuf> {
     config_home().map(|home| crate::machine::dir(&home).join(SEALED_MARKERS).join(anchor))
 }
 
-/// **Notes on this machine that a seal was kept for the plane anchored by `anchor`** (#7164),
-/// before the first one is made, so a keyring that did not start later is read as one that
-/// failed, wherever `.git` has been. Refused where it cannot be written: nothing is sealed that
-/// the evidence would not follow.
+/// **Notes on this machine that a seal was kept for the plane anchored by `anchor`** (#7164):
+/// before a seal is made (by [`accept_policy`], [`change_sealing`] and the nevers' own write), so
+/// a keyring that did not start later is read as one that failed, wherever `.git` has been.
+/// Refused where it cannot be written: nothing is sealed that the evidence would not follow.
 pub(crate) fn mark_sealed(anchor: &str) -> io::Result<()> {
     let Some(marker) = marker_for(anchor) else {
         return Ok(());
@@ -1376,9 +1379,26 @@ pub(crate) fn mark_sealed(anchor: &str) -> io::Result<()> {
         return Ok(());
     }
     if let Some(folder) = marker.parent() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(folder)?;
+        }
+        #[cfg(not(unix))]
         std::fs::create_dir_all(folder)?;
     }
     std::fs::write(&marker, b"")
+}
+
+/// [`mark_sealed`] where a seal has just been read and verified with the key, so a plane sealed
+/// before markers existed gets its own at its first verified read (#7164). Best effort: a read
+/// that cannot write one (a sandboxed chat's) is not refused, and the next verified read tries
+/// again.
+pub(crate) fn note_sealed(anchor: &str) {
+    let _ = mark_sealed(anchor);
 }
 
 /// Whether this machine's file for the project at `root` carries a seal the app made: an
@@ -2462,8 +2482,12 @@ fn reseal(
 /// there the lists are read as they are written, as before ticket T1.1-73.
 fn sealed_dispatch(root: &Path, held: &OnDisk) -> Option<crate::secrets::sealed_set::Verified> {
     crate::secrets::sealed_set::decides().then(|| {
-        held.dispatch_sealed
-            .verify(DISPATCH_STORE, &anchor_key(root))
+        let anchor = anchor_key(root);
+        let verified = held.dispatch_sealed.verify(DISPATCH_STORE, &anchor);
+        if verified.standing == crate::secrets::sealed_set::Standing::Holds {
+            note_sealed(&anchor);
+        }
+        verified
     })
 }
 

@@ -426,7 +426,10 @@ fn sealed_standing(root: &Path) -> Sealed {
     let anchor = crate::sandbox::local::anchor_key(root);
     let verified = set_of(&whole, &entries).verify(STORE, &anchor);
     match verified.standing {
-        Standing::Holds if verified.missing == 0 => Sealed::Holds,
+        Standing::Holds if verified.missing == 0 => {
+            crate::sandbox::local::note_sealed(&anchor);
+            Sealed::Holds
+        }
         Standing::Holds | Standing::Broken | Standing::Unanchored => Sealed::Unread,
         // The key does not read: nevers present, by the file or by a marker the keyring keeps,
         // are unknown; none at all is none. A keyring that did not start keeps no marker only

@@ -1149,3 +1149,88 @@ fn no_keyring_with_an_acceptance_record_present_reads_broken_and_none_with_no_re
     );
     crate::secrets::seal::set_no_keyring_for_this_test(false);
 }
+
+/// Whether the marker of the plane at `root` is there.
+fn marked(root: &Path) -> bool {
+    crate::sandbox::local::sealed_marker(root)
+        .is_some_and(|marker| matches!(marker.try_exists(), Ok(true)))
+}
+
+/// Takes the plane's marker away, as it was before this build made one.
+fn unmark(root: &Path) {
+    let marker = crate::sandbox::local::sealed_marker(root).expect("a config home");
+    std::fs::remove_file(marker).expect("removed");
+    assert!(!marked(root));
+}
+
+#[test]
+fn a_plane_sealed_before_markers_gets_one_at_its_first_verified_read_and_then_keeps_the_evidence() {
+    // #7164, the declared gap: an acceptance sealed by a build with no marker is read with the
+    // key once, and the marker is made, so a keyring that fails later is a failure wherever
+    // `.git` has been.
+    use crate::sandbox::local::{PolicyAccepted, no_keyring_at, policy_accepted_record};
+    let project = a_project_with_an_acceptance();
+    let root = project.root();
+    unmark(root);
+    assert!(matches!(
+        policy_accepted_record(root),
+        PolicyAccepted::Held(_)
+    ));
+    assert!(marked(root), "the verified read left the marker");
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    std::fs::rename(root.join(".git"), root.join("g")).expect("moved aside");
+    std::fs::create_dir(root.join(".git")).expect("put back as another folder");
+    assert!(!no_keyring_at(root));
+    assert_eq!(policy_accepted_record(root), PolicyAccepted::Broken);
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn a_dispatch_answer_sealed_before_markers_gets_one_at_its_first_verified_read() {
+    let project = Project::new(STRICT);
+    let root = project.root();
+    crate::sandbox::local::grant_dispatch(root, "steward", "qa").expect("granted");
+    unmark(root);
+    assert_eq!(crate::sandbox::local::dispatch_unsealed(root), Vec::new());
+    assert!(marked(root), "the verified read left the marker");
+}
+
+#[test]
+fn a_never_sealed_before_markers_gets_one_at_its_first_verified_read() {
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    unmark(root);
+    assert!(matches!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Read(_)
+    ));
+    assert!(marked(root), "the verified read left the marker");
+}
+
+#[test]
+fn the_first_dispatch_answer_sealed_marks_the_plane_so_a_moved_git_folder_still_reads_as_a_failed_keyring()
+ {
+    // `change_sealing`'s own marker, with the plane's only seal a dispatch answer.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    std::fs::create_dir(root.join(".git")).expect("a .git");
+    assert!(!marked(root));
+    crate::sandbox::local::grant_dispatch(root, "steward", "qa").expect("granted");
+    assert!(marked(root), "sealed, so marked");
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    std::fs::rename(root.join(".git"), root.join("g")).expect("moved aside");
+    std::fs::create_dir(root.join(".git")).expect("put back as another folder");
+    assert!(!crate::sandbox::local::no_keyring_at(root));
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn the_first_never_sealed_marks_the_plane() {
+    // `seal_in_step`'s own marker: the nevers are the plane's only seal.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    assert!(!marked(root));
+    never(root, &pair("steward", "devops")).expect("said");
+    assert!(marked(root), "sealed, so marked");
+}

@@ -32,10 +32,12 @@ impl Drop for VaultsOff {
 
 /// A chat as `ops` that a dispatch with `policy` started.
 fn a_dispatched_chat(held: &Held, plane: &Plane, policy: Option<&str>) -> u32 {
+    // A name of its own per policy, so two chats in one plane never share one.
+    let name = if policy.is_some() { "1" } else { "2" };
     let start = purlis_core::start::Start {
         profile: Some("work".to_owned()),
         persona: Some("ops".to_owned()),
-        name: "1".to_owned(),
+        name: name.to_owned(),
         cwd: Some(plane.root.clone()),
         made: if crate::sandboxing::claude_is_wrapped_here_for_tests() {
             purlis_core::sandbox::Made::Window
@@ -48,7 +50,7 @@ fn a_dispatched_chat(held: &Held, plane: &Plane, policy: Option<&str>) -> u32 {
     let chat = Chat {
         program: ready.program.clone(),
         cwd: ready.cwd.clone(),
-        name: "1".to_owned(),
+        name: name.to_owned(),
         resume: ready.session.clone(),
         profile: Some("work".to_owned()),
         persona: Some("ops".to_owned()),
@@ -113,7 +115,6 @@ fn a_replace_ask_into_a_vault_the_persona_may_not_use_is_refused_under_its_chats
     let id = planes.open(&plane.root);
     let held = planes.held(&id).expect("held");
     let chat = a_dispatched_chat(&held, &plane, Some(STRICT_CHAIN));
-    let _off = vaults_off_here();
     let line = purlis_core::secrets::ask::SecretAsk {
         chat,
         key: "STRIPE".to_owned(),
@@ -123,7 +124,11 @@ fn a_replace_ask_into_a_vault_the_persona_may_not_use_is_refused_under_its_chats
         program: None,
     };
     std::thread::scope(|scope| {
-        let asking = scope.spawn(|| crate::secretasks::asked(&held, &line));
+        let asking = scope.spawn(|| {
+            // The override is the asking thread's own, and `asked` runs on this one.
+            let _off = vaults_off_here();
+            crate::secretasks::asked(&held, &line)
+        });
         // Where nothing refuses it, the person is asked: decline, so nothing waits, and fail.
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
         while !asking.is_finished() {

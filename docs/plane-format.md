@@ -4886,8 +4886,9 @@ write into this folder cannot make its own text arrive as the person's.
   a marker in [`sealed-planes/`](#configpurlissealed-planesanchor-outside-the-plane), named by the
   plane's anchor (a digest of its path alone), so a chat that moves `.git` aside and back, which
   makes another clone key and another file, does not turn a keyring that failed into one that was
-  never there. **Declared gap:** a plane sealed before this build has no marker until its next seal,
-  and a plane moved with no link left is another path. **On a machine that truly has no keyring**,
+  never there. **Declared gap:** a plane sealed before this build gets its marker at its first verified read
+  (a read with the key, in the app), so one whose keyring is already down then has none; a
+  plane moved with no link left is another path. **On a machine that truly has no keyring**,
   a record of this file that no longer reads (stale, edited, or written by a build with a keyring)
   reads as broken or unread for good: delete this file and the plane's marker, and answer again
   (nothing is kept without a keyring, so nothing is lost but the stale record). **Those six lists
@@ -4925,12 +4926,17 @@ write into this folder cannot make its own text arrive as the person's.
 
 ### `~/.config/purlis/sealed-planes/<anchor>` (outside the plane)
 
-An empty file per plane, named by its anchor (`anchor_key`: the first 32 hex characters of the
-SHA-256 of the plane's path, its last folder not followed), made before the first seal of that
-plane's acceptance of `[policy]` or of its dispatch answers and nevers (#7164). It says a keyring
-was used for the plane, so a keyring that did not start later reads as one that failed, wherever
-`.git` has been moved. It holds nothing and is never read for what it says.
-
+- **Format:** an empty file per plane, named by its anchor (`anchor_key`: the first 32 hex
+  characters of the SHA-256 of the plane's path, its last folder not followed), in a folder made
+  `0700`. It holds nothing and is never read for what it says: only that it is there.
+- **Written by:** `sandbox::local::mark_sealed`, before the first seal of the plane's acceptance
+  of `[policy]` ([`accept_policy`]), of its dispatch answers (`change_sealing`) or of its nevers
+  (`dispatchnever::seal_in_step`), and by `note_sealed` at a read that verified a seal with the
+  key (a plane sealed before this build). A write that cannot make it is refused, so nothing is
+  sealed that it would not follow (#7164).
+- **Read by:** `sandbox::local::sealed_here`, to tell a keyring that did not start (#7153) from
+  one that was never there: it says a keyring was used for the plane, wherever `.git` has been
+  moved. A sandboxed chat cannot write it (the folder is denied).
 - **Tier:** Machine, device-bound — one machine's note that a keyring was used for a plane; not
   rebuildable (removing it forgets that a seal was kept).
 
