@@ -143,6 +143,50 @@ const EXECUTORS: [&str; 50] = [
     "eval",
 ];
 
+/// The programs of [`EXECUTORS`] that run a language other than the shell's (#7131): a body one
+/// of them runs is that language, so a word in command position there is no shell's program.
+const FOREIGN_INTERPRETERS: [&str; 28] = [
+    "python",
+    "python2",
+    "python3",
+    "pypy",
+    "pypy3",
+    "ipython",
+    "node",
+    "nodejs",
+    "deno",
+    "bun",
+    "ts-node",
+    "tsx",
+    "perl",
+    "ruby",
+    "irb",
+    "php",
+    "lua",
+    "luajit",
+    "tclsh",
+    "osascript",
+    "groovy",
+    "scala",
+    "jshell",
+    "julia",
+    "elixir",
+    "iex",
+    "erl",
+    "escript",
+];
+
+/// Whether `name` is one of [`FOREIGN_INTERPRETERS`], version suffix included (`python3.12`).
+fn is_foreign_interpreter(name: &str) -> bool {
+    let base = base_lower(name);
+    let stem = if versioned_re().is_match(&base) {
+        base.trim_end_matches(|c: char| c.is_ascii_digit() || matches!(c, '.' | '_' | '-' | '\n'))
+    } else {
+        base.as_str()
+    };
+    FOREIGN_INTERPRETERS.contains(&base.as_str()) || FOREIGN_INTERPRETERS.contains(&stem)
+}
+
 /// Programs that run their input on ANOTHER machine, so the body is a script even though the
 /// local process is not a shell — `_REMOTE_SHELLS`. Kept apart from [`EXECUTORS`], which the leak
 /// guard also reads: what `ssh` does with a body is a question about the handoff gate, not about
@@ -729,6 +773,9 @@ pub struct Pipeline {
     /// Per PIPELINE, not per command: a body a reader opens is run all the same if any command
     /// downstream of it in the pipe is a shell.
     pub executor: bool,
+    /// Whether a command in it runs shell text: an executor that is no interpreter of another
+    /// language ([`FOREIGN_INTERPRETERS`]), per pipeline as [`Pipeline::executor`] is (#7131).
+    pub shell: bool,
     /// `argvs[k]` opened `hcounts[k]` of the `<<` on this line.
     pub hcounts: Vec<usize>,
 }
@@ -795,13 +842,32 @@ pub fn line_pipelines(line: &Line) -> Option<Vec<Pipeline>> {
                     .iter()
                     .map(|c| c.iter().filter(|tk| tk.as_str() == "<<").count())
                     .collect();
+                // `source /dev/stdin` and `. /dev/stdin` run their stdin as shell (#7131).
+                // So does a program the shell builds (`$SHELL`), read as bash (round 7).
+                let sources_stdin = |it: &shellwrap::Invocation| {
+                    (SOURCING.contains(&it.prog.as_str())
+                        && shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv))
+                        || shellwrap::built_program_takes_its_script_from_stdin(&it.prog, &it.argv)
+                };
                 let executor = cmds.iter().zip(split.iter()).any(|(c, it)| {
                     !c.is_empty()
-                        && (is_executor(&c[0]) || is_executor(&it.prog) || through_busybox(it))
+                        && (is_executor(&c[0])
+                            || is_executor(&it.prog)
+                            || through_busybox(it)
+                            || sources_stdin(it))
+                });
+                let shell_runs = |name: &str| is_executor(name) && !is_foreign_interpreter(name);
+                let shell = cmds.iter().zip(split.iter()).any(|(c, it)| {
+                    !c.is_empty()
+                        && (shell_runs(&c[0])
+                            || shell_runs(&it.prog)
+                            || through_busybox(it)
+                            || sources_stdin(it))
                 });
                 Pipeline {
                     argvs: split.into_iter().map(|it| it.argv).collect(),
                     executor,
+                    shell,
                     hcounts,
                 }
             })
@@ -1148,6 +1214,19 @@ pub fn heredoc_could_run(line: &Line, start: usize) -> bool {
     if is_executor(&prog) || REMOTE_SHELLS.contains(&prog.as_str()) {
         return true;
     }
+    // `source /dev/stdin <<'EOF'` runs its body in the current shell (#7131).
+    // A program the shell builds (`$SHELL <<'EOF'`) is read as bash (round 7).
+    if let Some(words) = words.as_deref()
+        && (SOURCING.contains(&prog.as_str()) || prog.contains(['$', '`']))
+    {
+        let it = shellwrap::split_env_chdir(words);
+        if (SOURCING.contains(&prog.as_str())
+            && shellwrap::takes_its_script_from_stdin(&it.prog, &it.argv))
+            || shellwrap::built_program_takes_its_script_from_stdin(&it.prog, &it.argv)
+        {
+            return true;
+        }
+    }
     if enclosing_commands(line, start)
         .iter()
         .any(runs_what_it_is_handed)
@@ -1424,6 +1503,8 @@ pub struct PlanEntry {
     /// Whether a program in this body's pipeline runs text — what A7 asks before it reads a body
     /// as commands.
     pub executor: bool,
+    /// Whether a program in this body's pipeline runs shell text ([`Pipeline::shell`]).
+    pub shell: bool,
 }
 
 /// Whether the lexer's bare `<<` tokens (`toks`, the line split by [`shellseg::split_punctuation`])
@@ -1505,6 +1586,7 @@ pub fn heredoc_strip_plan(line: &Line) -> Option<Vec<PlanEntry>> {
                     header: m.header.clone(),
                     drop: data,
                     executor: p.executor,
+                    shell: p.shell,
                 });
                 k += 1;
             }
@@ -1892,7 +1974,21 @@ pub struct LayoutLine {
     /// before any program reads it: a backslash in front of `$`, a backtick or `\` is dropped
     /// (#1426).
     pub expands: bool,
+    /// Only an interpreter of another language runs this body (`python3 - <<'EOF'`), so none
+    /// of its lines is a shell's command (#7131).
+    pub foreign: bool,
 }
+
+/// A verdict asks every guard for the layout of the same command, each reading it afresh: the
+/// layout is a function of the text alone, so the last few are kept, with whether the walk met a
+/// string nested too deep, which a hit reports again as a fresh walk would.
+type Recent = std::collections::VecDeque<(String, Vec<LayoutLine>, bool)>;
+
+std::thread_local! {
+    static RECENT: std::cell::RefCell<Recent> = const { std::cell::RefCell::new(Recent::new()) };
+}
+
+const KEPT: usize = 4;
 
 /// Every line of `cmd` as `(text, is a heredoc body, drop it, an executor runs it)` —
 /// `_heredoc_layout`.
@@ -1927,6 +2023,37 @@ pub struct LayoutLine {
 ///   body, those lines may open heredocs of their own, and the readings do not agree again
 ///   about which lines are bodies.
 pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
+    if cmd.len() < 1024 {
+        return layout_of(cmd);
+    }
+    let hit = RECENT.with(|recent| {
+        recent
+            .borrow()
+            .iter()
+            .find(|(text, ..)| text == cmd)
+            .map(|(_, layout, too_deep)| (layout.clone(), *too_deep))
+    });
+    if let Some((layout, too_deep)) = hit {
+        if too_deep {
+            shellseg::met_a_string_too_deep();
+        }
+        return layout;
+    }
+    let (layout, too_deep) = shellseg::too_deep_within(|| layout_of(cmd));
+    if too_deep {
+        shellseg::met_a_string_too_deep();
+    }
+    RECENT.with(|recent| {
+        let mut recent = recent.borrow_mut();
+        if recent.len() == KEPT {
+            recent.pop_back();
+        }
+        recent.push_front((cmd.to_owned(), layout.clone(), too_deep));
+    });
+    layout
+}
+
+fn layout_of(cmd: &str) -> Vec<LayoutLine> {
     let lines: Vec<&str> = cmd.split('\n').collect();
     let n = lines.len();
     let mut layout: Vec<LayoutLine> = Vec::new();
@@ -2084,6 +2211,13 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
         }
         let plan = heredoc_strip_plan(&Line::of(&plan_text));
         let mut drop: HashMap<usize, bool> = HashMap::new();
+        // Which bodies a program that runs shell text could run; where the plan is unknown, any.
+        let by_a_shell: HashMap<usize, bool> = plan
+            .iter()
+            .flatten()
+            .enumerate()
+            .map(|(idx, e)| (idx, e.shell))
+            .collect();
         let executed: HashMap<usize, bool> = match plan {
             Some(entries) => {
                 for (idx, e) in entries.iter().enumerate() {
@@ -2119,6 +2253,12 @@ pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
                 fed: idx
                     .is_some_and(|k| executed.get(&k).copied().unwrap_or(false) || run_after(k)),
                 expands: idx.is_some_and(|k| expanding.contains(&k)),
+                foreign: idx.is_some_and(|k| {
+                    executed.get(&k).copied().unwrap_or(false)
+                        && by_a_shell.get(&k) == Some(&false)
+                        && !both_ways(k)
+                        && !run_after(k)
+                }),
             });
         }
     }
@@ -2153,6 +2293,18 @@ pub fn strip_reader_heredocs(cmd: &str) -> String {
 /// For a guard that reads a line by its segments ([`shellseg::joined_argv`]), whose lexer knows
 /// no heredoc and would read every line of a body as a command.
 pub fn commands_a_shell_runs(cmd: &str) -> String {
+    shell_runs(cmd, true)
+}
+
+/// [`commands_a_shell_runs`] without the substitutions of a body nothing runs, and without a
+/// body only an interpreter of another language runs ([`LayoutLine::foreign`]: `python3 -
+/// <<'EOF'`): the lines a shell runs as commands of their own, where a word's place on the line
+/// still says what it is (#7131). A substitution in a body is read by its own body's text.
+pub fn lines_a_shell_runs(cmd: &str) -> String {
+    shell_runs(cmd, false)
+}
+
+fn shell_runs(cmd: &str, with_body_substitutions: bool) -> String {
     if !cmd.contains("<<") {
         return cmd.to_owned();
     }
@@ -2169,9 +2321,9 @@ pub fn commands_a_shell_runs(cmd: &str) -> String {
     let mut at = 0usize;
     for line in heredoc_layout(cmd) {
         let len = line.text.chars().count();
-        if !line.body || line.executed {
+        if !line.body || (line.executed && !(line.foreign && !with_body_substitutions)) {
             out.push(line.text);
-        } else if line.expands {
+        } else if line.expands && with_body_substitutions {
             out.extend(
                 substitutions()
                     .iter()
@@ -2461,6 +2613,87 @@ mod tests {
             for l in body(cmd) {
                 assert!(!l.fed, "{cmd:?}: {l:?}");
             }
+        }
+    }
+    /// The memo of layouts (`heredoc_layout`, 1024 bytes and up) answers as a fresh reading does:
+    /// the same layout and the same too-deep flag, on a miss and on every hit.
+    mod the_layout_memo {
+        use super::*;
+
+        fn padded(shape: &str) -> String {
+            let pad = "# a line of padding that only takes room in the command\n";
+            let mut text = format!("{shape}\n");
+            while text.len() < 1100 {
+                text.push_str(pad);
+            }
+            text
+        }
+
+        fn nested(depth: usize) -> String {
+            padded(&format!(
+                "cat <<'EOF'\nx\nEOF\necho {}1{}",
+                "$(echo ".repeat(depth),
+                ")".repeat(depth)
+            ))
+        }
+
+        fn fresh(text: &str) -> (Vec<LayoutLine>, bool) {
+            shellseg::too_deep_within(|| layout_of(text))
+        }
+
+        fn through_the_memo(text: &str) -> (Vec<LayoutLine>, bool) {
+            shellseg::too_deep_within(|| heredoc_layout(text))
+        }
+
+        fn forget_everything() {
+            RECENT.with(|recent| recent.borrow_mut().clear());
+        }
+
+        #[test]
+        fn a_long_text_answers_twice_as_a_fresh_reading_does() {
+            for text in [nested(2), nested(crate::guardcaps::MAX_NESTING + 2)] {
+                forget_everything();
+                assert!(text.len() >= 1024);
+                let expected = fresh(&text);
+                assert_eq!(through_the_memo(&text), expected, "the first reading");
+                assert_eq!(through_the_memo(&text), expected, "the hit");
+            }
+        }
+
+        /// No text makes `layout_of` meet a string nested too deep today, so a too-deep entry is
+        /// put in the memo as the walk would have left it: a hit must report it again.
+        #[test]
+        fn a_hit_on_a_text_whose_walk_met_a_string_too_deep_reports_it_again() {
+            let text = nested(crate::guardcaps::MAX_NESTING + 2);
+            forget_everything();
+            RECENT.with(|recent| {
+                recent
+                    .borrow_mut()
+                    .push_front((text.clone(), layout_of(&text), true));
+            });
+            let (layout, too_deep) = through_the_memo(&text);
+            assert_eq!(layout, layout_of(&text));
+            assert!(too_deep, "a hit on a too-deep reading reports it");
+            let (_, too_deep) = through_the_memo(&text);
+            assert!(too_deep, "and every time after");
+        }
+
+        #[test]
+        fn the_first_text_is_answered_as_read_after_four_others_have_pushed_it_out() {
+            forget_everything();
+            let first = nested(crate::guardcaps::MAX_NESTING + 2);
+            let others: Vec<String> = (1..=4)
+                .map(|n| padded(&format!("echo {n}\ncat <<EOF\nbody {n}\nEOF")))
+                .collect();
+            assert_eq!(through_the_memo(&first), fresh(&first));
+            for other in &others {
+                assert_eq!(through_the_memo(other), fresh(other));
+            }
+            assert!(
+                RECENT.with(|recent| recent.borrow().iter().all(|(text, ..)| *text != first)),
+                "the first text is no longer kept"
+            );
+            assert_eq!(through_the_memo(&first), fresh(&first));
         }
     }
 }

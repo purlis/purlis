@@ -324,17 +324,29 @@ impl InForce {
 
     /// **Whether the project's policy denies `asking` dispatching to `target`**
     /// (`[dispatch.denies]`): a pair it names, or "every other persona" for `asking`. Never a
-    /// chat's own persona, and never a chat on no persona.
+    /// chat's own persona. **A chat on no persona only where the policy does not read**
+    /// ([`InForce::denied_all`], #7153): it is not the target's persona either, and a deny the
+    /// policy names names personas.
     pub fn denies(&self, asking: Option<&str>, target: &str) -> bool {
-        asking.is_some_and(|asking| {
-            asking != target
-                && (self.denied_all
-                    || self
-                        .denied
-                        .iter()
-                        .any(|pair| pair.asking == asking && pair.target == target)
-                    || self.denied_any.iter().any(|one| one == asking))
-        })
+        self.denied_by(asking, target).is_some()
+    }
+
+    /// Why the project's policy denies `asking` dispatching to `target`, where it does
+    /// ([`InForce::denies`]).
+    pub fn denied_by(&self, asking: Option<&str>, target: &str) -> Option<Deny> {
+        if asking == Some(target) {
+            return None;
+        }
+        if self.denied_all {
+            return Some(Deny::Unread);
+        }
+        let asking = asking?;
+        (self
+            .denied
+            .iter()
+            .any(|pair| pair.asking == asking && pair.target == target)
+            || self.denied_any.iter().any(|one| one == asking))
+        .then_some(Deny::Named)
     }
 
     /// Whether you said never to `asking` dispatching to `target`.
@@ -454,9 +466,20 @@ pub enum Covers {
     /// refused. The person is asked, and told why; a chat nobody is at is refused.
     Unread,
     /// **The project's policy denies the pair** (`[dispatch.denies]`, ticket T1.1-73): nothing
-    /// starts, nobody is asked, and no grant covers it, the project's and yours included. The
-    /// rule that denies it.
-    Denied(String),
+    /// starts, nobody is asked, and no grant covers it, the project's and yours included. Why:
+    /// a deny it names, or a policy that does not read.
+    Denied(Deny),
+}
+
+/// **Why the project's policy denies a dispatch** (#7153): what the chat is told differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Deny {
+    /// A deny `[dispatch.denies]` names, or one this person accepted: only a change to the
+    /// project's committed policy lifts it.
+    Named,
+    /// The project's `[policy]` did not read (a file that is not TOML, or a `HEAD` git could not
+    /// read just now): every dispatch across personas is denied until it reads.
+    Unread,
 }
 
 /// **`covers` as the project's `[policy]` runs the `dispatch` family** (Q308, instruction 50;
@@ -564,8 +587,8 @@ pub fn covers(asking: Option<&str>, target: &str, grants: &InForce, policy: &Loc
     if grants.never_unread && asking != Some(target) {
         return Covers::Unread;
     }
-    if grants.denies(asking, target) {
-        return Covers::Denied(DENY_RULE.to_owned());
+    if let Some(deny) = grants.denied_by(asking, target) {
+        return Covers::Denied(deny);
     }
     if asking == Some(target) {
         return Covers::Covered;
@@ -848,15 +871,25 @@ impl Denied {
     }
 }
 
-/// What a chat is told when the project's policy denies its dispatch to `target`.
-pub fn denied_said(target: &str) -> String {
+/// What a chat is told when the project's policy denies its dispatch to `target`, by `deny`.
+pub fn denied_said(target: &str, deny: Deny) -> String {
     let target = crate::shown::short(target);
-    format!(
-        "the project's policy does not let this chat's persona dispatch to {target} \
-         ([{TABLE}.{DENIES}] in its committed settings), so nothing was started and nobody was \
-         asked. No grant lifts it. Do this work without {target}; only a change to the \
-         project's committed policy, made by a person, allows it."
-    )
+    match deny {
+        Deny::Named => format!(
+            "the project's policy does not let this chat's persona dispatch to {target} \
+             ([{TABLE}.{DENIES}] in its committed settings), so nothing was started and nobody \
+             was asked. No grant lifts it. Do this work without {target}; only a change to the \
+             project's committed policy, made by a person, allows it."
+        ),
+        // A git that timed out once reads as this too (#7153): it is not the policy's word.
+        Deny::Unread => format!(
+            "purlis could not read the project's committed policy just now, so it lets no chat \
+             dispatch to another persona until it can, and nothing was started and nobody was \
+             asked. No grant lifts it. Try again in a while, or do this work without {target}; \
+             if it goes on, the project's committed settings may not read, and a person has to \
+             mend them."
+        ),
+    }
 }
 
 /// The project's dispatch grants in the project at `root`, read as the sandbox reads the

@@ -674,7 +674,10 @@ impl Store {
             ),
             // The project's policy denies it (ticket T1.1-73): no grant lifts it, so nobody is
             // asked and nothing is held.
-            Covers::Denied(_) => (Requested::Refused(dispatchgrant::denied_said(target)), None),
+            Covers::Denied(deny) => (
+                Requested::Refused(dispatchgrant::denied_said(target, deny)),
+                None,
+            ),
             // The person said no on this chat's tab already: their answer, and no second
             // question.
             Covers::NeedsGrant | Covers::Unread if self.is_kept_blocked(&asking, target) => {
@@ -2573,7 +2576,7 @@ fn standing_of(root: &Path) -> DispatchStanding {
                 text,
             })
             .collect(),
-        seals_unread: if purlis_core::secrets::seal::no_keyring() {
+        seals_unread: if purlis_core::sandbox::local::no_keyring_at(root) {
             Some(NO_KEYRING.to_owned())
         } else {
             purlis_core::sandbox::local::dispatch_seals_unread(root)

@@ -104,8 +104,8 @@ pub enum Refusal {
     NeverAbove(String, String),
     /// This machine's record of nevers does not read, so no grant counts.
     NeversUnread,
-    /// The project's policy denies the pair (`[dispatch.denies]`): the target.
-    Denied(String),
+    /// The project's policy denies the pair (`[dispatch.denies]`): the target, and why.
+    Denied(String, dispatchgrant::Deny),
     /// A grant covers the pair, and on this system its seal does not keep it out of reach of
     /// a chat with no sandbox: the target.
     NotSealedHere(String),
@@ -119,7 +119,7 @@ impl Refusal {
             Self::Never(asking, target) => dispatchgrant::never_said(asking, target),
             Self::NeverAbove(above, target) => dispatchgrant::never_above_said(above, target),
             Self::NeversUnread => dispatchgrant::NEVERS_UNREAD.to_owned(),
-            Self::Denied(target) => dispatchgrant::denied_said(target),
+            Self::Denied(target, deny) => dispatchgrant::denied_said(target, *deny),
             Self::Unsandboxed(missing) => {
                 let target = crate::shown::short(&missing.target);
                 format!(
@@ -292,7 +292,7 @@ pub fn answer_on(
         Covers::NeverAbove(above) => Answer::Refused(Refusal::NeverAbove(above, target.to_owned())),
         // A chat's own persona never reads as this; for any other, nobody is here to ask.
         Covers::Unread => Answer::Refused(Refusal::NeversUnread),
-        Covers::Denied(_) => Answer::Refused(Refusal::Denied(target.to_owned())),
+        Covers::Denied(deny) => Answer::Refused(Refusal::Denied(target.to_owned(), deny)),
         Covers::Covered if asking == Some(target) => Answer::Covered,
         Covers::Covered if !sandboxed && !reach.sealed_here => {
             Answer::Refused(Refusal::NotSealedHere(target.to_owned()))
@@ -321,7 +321,7 @@ pub fn as_the_policy_runs(answer: Answer, mode: crate::enforcement::Mode) -> Ans
         Answer::Refused(
             Refusal::Unsandboxed(_)
             | Refusal::Missing(_)
-            | Refusal::Denied(_)
+            | Refusal::Denied(..)
             | Refusal::NotSealedHere(_),
         ) if mode != crate::enforcement::Mode::Enforce => Answer::Covered,
         other => other,
@@ -338,7 +338,7 @@ pub fn as_the_policy_runs_for(
     mode: crate::enforcement::Mode,
 ) -> Answer {
     let rule = match &answer {
-        Answer::Refused(Refusal::Denied(_)) => dispatchgrant::DENY_RULE,
+        Answer::Refused(Refusal::Denied(..)) => dispatchgrant::DENY_RULE,
         Answer::Refused(
             Refusal::Unsandboxed(_) | Refusal::Missing(_) | Refusal::NotSealedHere(_),
         ) => dispatchgrant::ASK_RULE,

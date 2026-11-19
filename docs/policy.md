@@ -22,7 +22,7 @@ guards.release = "log"     # one family, apart from the template
 
 ## Templates
 
-| Template | What runs | Sandbox (wired in a later release; today `[sandbox]` decides) |
+| Template | What runs | Sandbox (a committed `[sandbox] mode` overrides it) |
 |---|---|---|
 | `open` | nothing | none |
 | `watch` (the default) | everything logs; `secrets`, `vaults`, `guards.credential` and `trust` are enforced | the floor |
@@ -32,17 +32,31 @@ guards.release = "log"     # one family, apart from the template
 
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
-the git, merge, release, save and credential guards, `secrets`, `dispatch` (a pair
-nothing covers starts with no grant) and `asks` (a host is answered Allow) switch, and so do
-the nine families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`,
-`tools`, `trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted,
-not applied, up to an administrator's ceiling where there is one); every other family is a key already and stays enforced until it is wired. Which
-choke point switches each, and the family of every decision purlis makes about a chat, are in
-[`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox rule: `secrets.credential_files = "enforce"` holds your SSH keys and
-forge and cloud credential files from chats at the floor too, as `team` and `strict` do; the full
-sandbox always holds them (ADR 0067 §5 class 6, Q325). Your own denies hold in every mode,
-`open` included: a dispatch never, a host you kept blocked, and your harness's ask and deny rules
-for a program, behind which a Bash guard that fails to answer refuses the call.
+the git, merge, release, save and credential guards, `secrets`, the sandbox level, `network`,
+`ports` (off or enforce only), `dispatch` (a pair nothing covers starts with no grant) and `asks`
+(a host and a folder are answered Allow; a socket only under `off`) switch, and so do the nine
+families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`,
+`trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted, not
+applied, up to an administrator's ceiling where there is one); every other family is a key already
+and stays enforced until it is wired. Which choke point switches each, and the family of every
+decision purlis makes about a chat, are in
+[`docs/policy-inventory-families.md`](policy-inventory-families.md). One key decides a sandbox
+rule: `secrets.credential_files = "enforce"` holds your SSH keys and forge and cloud credential
+files from chats at the floor too, as `team` and `strict` do; the full sandbox always holds them
+(ADR 0067 §5 class 6, Q325). Your own denies hold in every mode, `open` included: a dispatch never,
+a host you kept blocked, and your harness's ask and deny rules for a program, behind which a Bash
+guard that fails to answer refuses the call. Where the sandbox is on, a Bash guard that fails to
+answer refuses the call too, since it judges the sandbox's own rules (Q327).
+
+**The names of purlis's own sockets are held at every floor, whatever `ports` says.** A chat in
+the sandbox can neither move nor link `hooks.sock`, `slots.sock`, `purlisd*.sock`,
+`purlis-crash-*.sock`, the app's single-instance socket, or the folders holding purlis's server
+sockets and pool forwards (`purlis-serve`, `engine-links`), so a socket moved while `ports` is
+enforced is not reached after a `ports = "off"` you press. The same rule stops a chat **creating
+any file with one of those names anywhere** (a file called `hooks.sock`, `slots.sock` or
+`purlisd*.sock`): purlis's own test suite, run inside a chat, cannot make them either.
+**Any folder named `purlis-serve` or `engine-links`, wherever it is, becomes unwritable to chats**
+(nothing in it can be made, moved or removed), your own among them: name yours otherwise.
 
 That call is decided **when the chat starts**, from the rules its harness will read (the
 project's, and yours in the `CLAUDE_CONFIG_DIR` its profile sets). A deny rule you add mid-chat

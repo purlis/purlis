@@ -3753,6 +3753,7 @@ impl Beside for ForTheProgram {
                     plan: plan.clone(),
                     // It asks the link it is named to; one named to none refuses instead.
                     asks: !named_to.is_empty(),
+                    lifted: Vec::new(),
                 },
                 planned: Planned::Composed,
                 alone: &alone,

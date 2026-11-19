@@ -249,3 +249,44 @@ fn the_windows_allow_next_time_reaches_the_hosts_board_and_its_removal_takes_it_
     };
     assert_eq!(super::next_changed(Some(&board), &other), None);
 }
+
+/// **The host side of [`session::Confine::lifted`]** (1.94, the Q308 follow-up; the review of
+/// #7105): a family the window named is lifted, and each host let through for it is told to the
+/// window by the family; one it did not name, or one this machine's own locks hold enforced, is
+/// not, whatever the window relayed.
+#[test]
+fn a_runner_lifts_only_what_the_window_named_and_its_own_locks_leave_open() {
+    use crate::enforcement::Family;
+    use crate::sandbox::policy::Locks;
+    use purlis_session_protocol::session::SandboxTold;
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let tell: super::Tell = {
+        let told = std::sync::Arc::clone(&told);
+        std::sync::Arc::new(move |one: SandboxTold| told.lock().unwrap().push(one))
+    };
+    let named = ["asks".to_owned(), "network".to_owned()];
+    let open = Locks::none();
+    for family in [Family::Asks, Family::Network] {
+        let answered = super::lifted(&named, family, &open, &tell).expect("lifted");
+        answered("api.example.com", 8443);
+        assert!(super::lifted(&[], family, &open, &tell).is_none());
+        assert!(super::lifted(&named[1..], Family::Asks, &open, &tell).is_none());
+    }
+    assert_eq!(
+        *told.lock().unwrap(),
+        [
+            SandboxTold::Lifted {
+                family: "asks".to_owned(),
+                target: "api.example.com:8443".to_owned(),
+            },
+            SandboxTold::Lifted {
+                family: "network".to_owned(),
+                target: "api.example.com:8443".to_owned(),
+            },
+        ]
+    );
+    // This machine's administrator holds `network` enforced: never lifted, though named.
+    let held = Locks::locking_enforcement(Family::Network);
+    assert!(super::lifted(&named, Family::Network, &held, &tell).is_none());
+    assert!(super::lifted(&named, Family::Asks, &held, &tell).is_some());
+}

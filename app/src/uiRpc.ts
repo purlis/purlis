@@ -6988,6 +6988,11 @@ export type FinishedTask = {
 	 *  finds its row by. None for a task that finished before this app was started.
 	 */
 	chat: number | null,
+	/**
+	 *  **Its chat's ULID**, where its record names one (#7145): what the Chats list's filter
+	 *  matches a closed chat's row to it by, as a number may have been another chat's.
+	 */
+	chat_id: string | null,
 	persona: string | null,
 	/**
 	 *  **How it ended, as a value** ([`How`]): what the window draws its state from. The
@@ -11056,6 +11061,11 @@ export type PolicyState = {
 	waiting: PolicyWaiting[],
 	/**  Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile. */
 	refused: string[],
+	/**
+	 *  The families that mean nothing without a sandbox (`network`, `ports`, `processes`),
+	 *  where the project's level is no sandbox: said beside the press that would make it so.
+	 */
+	not_in_force: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
 	/**
@@ -11083,7 +11093,7 @@ export type PolicyState = {
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,
-	/**  What you accepted: `off`, `log` or `enforce`. */
+	/**  What you accepted: `off`, `log` or `enforce`; the sandbox's level `off`, `floor` or `full`. */
 	accepted: string,
 	/**  What the project's file says now. */
 	committed: string,

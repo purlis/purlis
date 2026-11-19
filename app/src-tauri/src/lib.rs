@@ -1352,13 +1352,8 @@ async fn reopen_closed_chat(
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
-        let session = chatcard::reopen_closed(&held, &chat, Size { columns, rows })?;
-        drawn(&held, session).map_err(|_| {
-            format!(
-                "the chat was reopened as chat {session}, which ended as it started. Reopen it \
-                 again from its card, or start a new chat in its place."
-            )
-        })
+        let reopened = chatcard::reopen_closed(&held, &chat, Size { columns, rows })?;
+        drawn(&held, reopened.now).map_err(|_| chatcard::ended_as_it_started(reopened))
     })
     .await
 }

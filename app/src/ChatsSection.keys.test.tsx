@@ -264,6 +264,7 @@ const finishedTask = (
   asker: 1,
   name,
   chat: null,
+  chat_id: null,
   did_not_start: false,
   attempts: 0,
   waits: null,

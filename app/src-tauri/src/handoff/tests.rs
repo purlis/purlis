@@ -14451,7 +14451,7 @@ fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_noti
         matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
         "{ran:?}"
     );
-    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team")
+    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team", None)
         .expect("ops holds team");
     assert_eq!(
         pressed.expect("pressed").expect("kept"),
