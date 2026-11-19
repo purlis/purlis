@@ -331,10 +331,73 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
         }
     }
+    // The body lines read as commands only as bash 3.2's hedge (a `)` in a quoted substitution's
+    // heredoc body, `Enclosed::quoted_alone`) are read for a literal merge, and for that alone:
+    // both joined with the lines around them, as any line is, and each on its own, so that a
+    // quote an earlier line of the body left open cannot hide a merge on a later one. The
+    // segments they add are held below, in [`ReadingAHedge`]; the speculative checks of #7131
+    // (the program the shell builds, a substitution that could print a command, a `case` not
+    // read to its end) are made only on lines a shell runs on every reading (#7131, the ruling
+    // on the large commit body).
+    // Each line on its own, but a line that ends in a backslash is one with the next.
+    let mut hedged_lines: Vec<String> = Vec::new();
+    let mut continued = false;
+    for line in crate::heredoc::hedged_body_lines(cmd) {
+        match hedged_lines.last_mut().filter(|_| continued) {
+            Some(last) => {
+                last.push('\n');
+                last.push_str(&line);
+            }
+            None => hedged_lines.push(line.clone()),
+        }
+        continued = crate::heredoc::ends_in_line_continuation(&line);
+    }
+    let mut hedge_segments: Vec<Vec<String>> = Vec::new();
+    if !hedged_lines.is_empty() {
+        let mut read: std::collections::HashSet<Vec<String>> = segments.iter().cloned().collect();
+        let mut add = |toks: Vec<String>| {
+            if read.insert(toks.clone()) {
+                hedge_segments.push(toks);
+            }
+        };
+        for toks in commands_of(&crate::heredoc::commands_a_shell_runs(cmd)) {
+            add(toks);
+        }
+        let (all_lines, _) = in_command_position(&crate::heredoc::lines_a_shell_runs(cmd));
+        for toks in commands_of(&all_lines) {
+            add(toks);
+        }
+        for line in &hedged_lines {
+            // On its own a line has no `case` before it, so it is read as one of an arm's
+            // lines too: `x) gh pr merge 7` is an arm whose command is the merge.
+            let (blanked, _) = in_command_position(line);
+            let (as_an_arm, _) = in_command_position(&format!("case _ in\n{line}"));
+            for toks in commands_of(line)
+                .into_iter()
+                .chain(commands_of(&blanked))
+                .chain(commands_of(&as_an_arm))
+            {
+                add(toks);
+            }
+        }
+        if nested_too_deep() {
+            return Some(too_nested(fix));
+        }
+    }
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
     let a_shell_reads_stdin = segments
         .iter()
         .any(|toks| takes_its_script_from_stdin(toks));
+    // The hedged lines are fed by a shell on any line of the text, and feed one: a shell they
+    // hold reads the lines after it. Only their own segments are read as fed by it, so a shell
+    // they name never makes a line a shell runs outright be read as a script.
+    // Only a shell named outright counts: a program the shell builds, read as one, is the
+    // speculative reading the hedge is spared.
+    let the_hedge_reads_stdin = a_shell_reads_stdin
+        || hedge_segments.iter().any(|toks| {
+            let (prog, _env, argv) = shellwrap::split_env(toks);
+            shellwrap::takes_its_script_from_stdin(&prog, &argv)
+        });
     // A shell (or a program the shell builds, read as one) handed a process substitution reads
     // what its commands print as its script: `bash <(echo gh pr merge 12)`, `$SHELL < <(…)`.
     // Each body is read for what it could print, and only a merge among it is refused (round 7).
@@ -443,23 +506,48 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             return said;
         }
     }
-    // A body line read as commands only as bash 3.2's hedge (a `)` in a quoted substitution's
-    // heredoc body) is read on its own, for a literal merge: a quote an earlier line of the body
-    // left open cannot hide one on a later line, and a program the shell builds there is not
-    // refused for what it could print (#7131, the ruling on the large commit body).
-    let hedged = crate::heredoc::hedged_body_lines(cmd);
-    if !hedged.is_empty() {
+    // The hedged lines' own segments, and the substitutions on each line (the outer `$( … )`
+    // steps over a quoted body, so `echo "$(gh pr merge 7)"` in one is found line by line).
+    if !hedge_segments.is_empty() {
         let _hedge = ReadingAHedge::on();
-        for line in &hedged {
-            for toks in commands_of(line) {
-                let said = segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin);
-                if said.is_some() {
-                    return said;
-                }
+        for toks in &hedge_segments {
+            let said = segment_reason(toks, cmd, unattended, depth, the_hedge_reads_stdin);
+            if said.is_some() {
+                return said;
             }
         }
+        // A line of a body is a piece of text, so what a substitution on it holds is read as the
+        // commands it holds (nested ones too, to the depth the floor reads), not as a text of
+        // its own that must close: prose with a lone backtick or quote is not refused for it.
+        let mut bodies: Vec<String> = hedged_lines
+            .iter()
+            .filter(|line| livesub::may_substitute(line))
+            .flat_map(|line| substitution_bodies(line, true))
+            .collect();
+        let mut levels = 0;
+        while !bodies.is_empty() && levels <= MAX_DEPTH {
+            let mut deeper = Vec::new();
+            for body in bodies {
+                for toks in commands_of(&body) {
+                    let said = segment_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
+                    if said.is_some() {
+                        return said;
+                    }
+                }
+                if livesub::may_substitute(&body) {
+                    deeper.extend(substitution_bodies(&body, true));
+                }
+            }
+            if nested_too_deep() {
+                return Some(too_nested(fix));
+            }
+            bodies = deeper;
+            levels += 1;
+        }
     }
-    if unclosable {
+    // Where a substitution ends is as speculative as what it could print: a piece of a hedged
+    // line is not refused for not closing.
+    if unclosable && !reading_a_hedge() {
         return Some(format!(
             "{fix}{} A substitution here holds a comment, a heredoc or a `$'` quote, so purlis \
              can't tell where it ends. {WRITE_IT_OUT}",
@@ -1518,15 +1606,15 @@ fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
                     p = after_heredoc_body(s, p, &delimiter, dash)?;
                 }
             }
-            '<' if s.get(p + 1) == Some(&'<') && s.get(p + 2) != Some(&'<') => {
-                match quoted_heredoc_at(s, p) {
-                    Some((delimiter, dash, after)) => {
-                        pending.push((delimiter, dash));
-                        p = after;
-                    }
-                    None => p += 2,
+            // A here-string (`<<<'x'`) opens no heredoc: its three characters are read as one.
+            '<' if s.get(p + 1) == Some(&'<') && s.get(p + 2) == Some(&'<') => p += 3,
+            '<' if s.get(p + 1) == Some(&'<') => match quoted_heredoc_at(s, p) {
+                Some((delimiter, dash, after)) => {
+                    pending.push((delimiter, dash));
+                    p = after;
                 }
-            }
+                None => p += 2,
+            },
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
             '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
@@ -2096,6 +2184,121 @@ mod tests {
         assert!(merge_reason(&merged).is_some(), "{merged}");
         assert!(merge_reason("\"$(echo gh)\" pr merge 7").is_some());
         assert!(merge_reason("$(echo gh) pr merge 7").is_some());
+    }
+
+    /// A commit body whose `)` and quote make bash 3.2's hedge read its lines as commands.
+    fn hedged(lines: &str) -> String {
+        format!(
+            "git commit -m \"$(cat <<'EOF'\nThe guard didn't read `\"$(cat <<'EOF'` the way (see #917)\n{lines}\nEOF\n)\""
+        )
+    }
+
+    /// Whether `cmd` is refused for the program the shell builds on one of its lines, as
+    /// opposed to any other refusal it earns.
+    fn refused_for_a_built_program(cmd: &str) -> bool {
+        merge_reason(cmd).is_some_and(|said| {
+            said.contains("is built by the shell") || said.contains("could print any command")
+        })
+    }
+
+    /// Round 2 of #7245: only a line read as commands for the hedge and for no other reason is
+    /// spared the speculative checks. A line a shell runs outright is not, so what the shells
+    /// read as commands after an arithmetic shift, a heredoc closed on its line, or an earlier
+    /// body read both ways is refused when it builds its program.
+    #[test]
+    fn a_line_a_shell_runs_outright_is_refused_for_a_program_it_builds() {
+        for built in [
+            "g*h pr view 7",
+            "{gh,pr,view,7}",
+            "\"$(echo gh)\" pr view 7",
+        ] {
+            // A heredoc a shell closes on its header's line: the body is lines it runs.
+            let closed = format!("x=$(cat <<'EOF' ); echo\n{built}\ntrue\nEOF\n");
+            assert!(refused_for_a_built_program(&closed), "{closed}");
+            // A body after one the shells read differently, shaped as the hedge's.
+            let after = format!(
+                "x=$(cat <<'EOF' ); echo\nfoo\nEOF\ngit commit -m \"$(cat <<'EOF'\nsee `\"$(x)` (a)\n{built}\nEOF\n)\""
+            );
+            assert!(refused_for_a_built_program(&after), "{after}");
+            // A `<<` in an arithmetic expansion that a shell reads as a shift.
+            let shift = format!("echo $((1<<2))\n{built}\ntrue\n2\n");
+            assert!(refused_for_a_built_program(&shift), "{shift}");
+        }
+    }
+
+    /// Only the hedge is spared: the same shapes with a built program on a hedged line pass.
+    #[test]
+    fn a_built_program_on_a_hedged_line_is_not_refused() {
+        for built in [
+            "{gh,pr,view,7}",
+            "$(echo gh) pr view 7",
+            "\"$(echo gh)\" pr view 7",
+        ] {
+            let text = hedged(built);
+            assert_eq!(merge_reason(&text), None, "{text}");
+        }
+    }
+
+    /// A hedged line is read for a literal merge joined with its neighbours and on its own, with
+    /// a `case` arm's command in its place, in every merge form.
+    #[test]
+    fn a_literal_merge_on_a_hedged_line_is_held_in_every_form() {
+        let held = |cmd: &str| release_floor_reason(cmd, true);
+        for merge in [
+            "gh pr merge 7",
+            "gh pr \\\nmerge 7",
+            "x) gh pr merge 7",
+            "glab mr merge 7",
+            "gh pr merge --auto 7",
+            "gh api -X PUT repos/o/r/pulls/7/merge",
+            "git push --follow-tags origin main",
+            "echo \"$(gh pr merge 7)\"",
+            "echo `gh pr merge 7`",
+        ] {
+            // An arm's line stands in a `case` of its own.
+            let plain = if merge.starts_with("x)") {
+                format!("case y in\n{merge}\nesac")
+            } else {
+                merge.to_owned()
+            };
+            assert!(held(&plain).is_some(), "{plain}");
+            let text = hedged(&plain);
+            assert!(held(&text).is_some(), "{text}");
+            let unterminated = format!("git commit -m \"$(cat <<'EOF'\nsee `\"$(x)` (a)\n{plain}");
+            assert!(held(&unterminated).is_some(), "{unterminated}");
+        }
+    }
+
+    /// An unquoted heredoc's substitutions are still read, hedge or not.
+    #[test]
+    fn an_unquoted_heredoc_substitution_is_still_read() {
+        let text = "cat <<EOF\nsee (a) `\"$(x)`\n$(gh pr merge 7)\nEOF";
+        assert!(merge_reason(text).is_some(), "{text}");
+    }
+
+    /// A here-string is not a heredoc: it hides nothing from `skip_paren`.
+    #[test]
+    fn a_here_string_in_a_substitution_opens_no_heredoc() {
+        let s: Vec<char> = "cat <<<'EOF'\n)\nEOF".chars().collect();
+        assert_eq!(
+            skip_paren(&s, 0, 0),
+            Some("cat <<<'EOF'\n)".chars().count())
+        );
+        let text = "x=$(cat <<<'EOF'\n)\ngh pr merge 7\nEOF";
+        assert!(merge_reason(text).is_some(), "{text}");
+    }
+
+    /// The hedge reading is only for as long as it lasts, a panic's unwinding included.
+    #[test]
+    fn a_panic_in_a_hedge_read_leaves_the_speculative_checks_on() {
+        let unwound = std::panic::catch_unwind(|| {
+            let _hedge = ReadingAHedge::on();
+            assert!(reading_a_hedge());
+            panic!("a hedge read that panics");
+        });
+        assert!(unwound.is_err());
+        assert!(!reading_a_hedge());
+        assert!(merge_reason("{gh,pr,merge,7}").is_some());
     }
 
     /// What a run really sends — a long pull request body in a substitution, a long script fed
