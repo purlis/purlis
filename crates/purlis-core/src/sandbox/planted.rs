@@ -341,12 +341,12 @@ struct Held {
 }
 
 /// [`repositories_below`], looking at `folders` folders and reading `entries` entries at most
-/// outside every repository, and `nested` folders (reading `entries` entries again) inside them.
+/// outside every repository, and `nested_folders` folders (reading `entries` entries again) inside them.
 fn repositories_below_bounded(
     folder: &Path,
     folders: usize,
     entries: usize,
-    nested: usize,
+    nested_folders: usize,
 ) -> Repositories {
     let mut clones = Vec::new();
     if folder.join(".git").exists() {
@@ -410,7 +410,7 @@ fn repositories_below_bounded(
         level = next;
     }
     // Inside the repositories found, with counts of its own: a repository nested in another's
-    // work tree, as far as `nested` folders and `entries` entries reach. Each folder is held
+    // work tree, as far as `nested_folders` folders and `entries` entries reach. Each folder is held
     // against the repository it is in the work tree of, which is what a refusal names.
     let mut read = 0;
     let mut seen = 0;
@@ -441,7 +441,7 @@ fn repositories_below_bounded(
             };
             held[tree].folders += found.len();
             seen += found.len();
-            if seen > nested {
+            if seen > nested_folders {
                 return crowded(clones, &held, true);
             }
             for path in found {
@@ -470,6 +470,9 @@ pub fn git_folder_pins_whole(folders: &[PathBuf]) -> Result<Vec<PathBuf>, PathBu
 }
 
 /// [`git_folder_pins`], each with the folder searched that it was found in.
+/// Whatever the search reached, with no word of one crowded out ([`Repositories::crowded`]): for
+/// what only reads the pins (a Notice's Allow, a look at the denials). A chat's start asks
+/// [`git_folder_pins_whole`] and is refused where the search was crowded out.
 pub fn git_folders_kept(folders: &[PathBuf]) -> Vec<(PathBuf, PathBuf)> {
     git_folders_found(folders).0
 }
