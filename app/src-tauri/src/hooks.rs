@@ -1696,18 +1696,20 @@ fn offered(
 /// Whether `block` refused a path of the credentials class (ADR 0067 §5 class 6), which only
 /// the person's own way out answers ([`offered_to`]).
 fn names_a_credential(block: &purlis_core::sandboxblock::Block, target: Option<&str>) -> bool {
-    use purlis_core::sandboxblock::Operation;
+    use purlis_core::sandboxblock::{Kind, Operation};
+    // The hook sorted it as one (a program's own refusal of a credential file): that is a
+    // credential whatever this app's own judgement of the path (#1349).
     !block.ours
-        && matches!(
-            block.operation,
-            Operation::Read | Operation::Write | Operation::File
-        )
-        && target.is_some_and(|path| {
-            purlis_core::sandbox::is_credential(
-                Path::new(path),
-                &purlis_core::sandbox::Machine::this(),
-            )
-        })
+        && (block.kind == Kind::Credentials
+            || matches!(
+                block.operation,
+                Operation::Read | Operation::Write | Operation::File
+            ) && target.is_some_and(|path| {
+                purlis_core::sandbox::is_credential(
+                    Path::new(path),
+                    &purlis_core::sandbox::Machine::this(),
+                )
+            }))
 }
 
 /// **A refused write that keeps a repository's git folder where it is**, in a Claude Code chat
@@ -1983,6 +1985,9 @@ fn offered_to(
                 ),
             }
         }
+        // A program's own refusal of a credential file, which the hook sorted by its own
+        // place: never a grant, whatever this app's judgement of the path (#1349).
+        (_, Kind::Credentials) => brokered(Class::Credentials),
         // The person's own credentials (ADR 0067 §5 class 6, Q321, Q325): their own way out,
         // read or written, before what else a path there is (gh's and glab's folders are later
         // code's too, so a refused `~/.config/gh/hosts.yml` is a protected file).

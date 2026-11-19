@@ -3950,3 +3950,34 @@ fn a_refused_forge_login_file_is_the_credentials_notice_and_never_a_lift() {
         }
     }
 }
+
+/// #1349 round 3: a program-printed credential path arrives as the credentials kind, which the
+/// app answers with the person's own way out and no grant, whatever its own judgement of the
+/// path: a hook whose environment moved a file (`NETRC` set only there) still never reaches
+/// [`purlis_core::sandbox::grant::write`].
+#[test]
+fn a_credentials_kind_from_the_hook_never_offers_a_grant_whatever_the_path() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let credentials = Some(grant::brokered_route(Class::Credentials).to_owned());
+    // Under the project's own folder, which this app judges no credential and a write there
+    // would otherwise be offered.
+    let elsewhere = project.path().join("moved/netrc").display().to_string();
+    for operation in [Operation::Read, Operation::Write, Operation::File] {
+        let block = Block {
+            operation,
+            kind: Kind::Credentials,
+            ours: false,
+        };
+        assert!(
+            names_a_credential(&block, Some(&elsewhere)),
+            "{operation:?}"
+        );
+        assert_eq!(
+            offered_to(project.path(), &block, Some(&elsewhere), false),
+            (BlockOffer::Brokered, None, credentials.clone()),
+            "{operation:?}"
+        );
+    }
+}

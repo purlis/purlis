@@ -685,6 +685,34 @@ fn a_refused_credential_is_known_as_one() {
     }
 }
 
+/// A path is read as a program opens it: `.`, `//` and `..` change no name, so no spelling of a
+/// credential is open (`liftable` reads them the same way), and no spelling of an open file is a
+/// credential.
+#[test]
+fn a_credential_is_one_under_every_spelling_a_program_opens_it_by() {
+    let machine = machine(Path::new("/Users/ada"), Os::MacOs);
+    for credential in [
+        "/Users/ada/.config/gh/./hosts.yml",
+        "/Users/ada/.config//gh//hosts.yml",
+        "/Users/ada/.config/gh/x/../hosts.yml",
+        "/Users/ada/./.ssh/id_rsa",
+        "/Users/ada/.ssh/../.ssh/id_rsa",
+        "/Users/ada/.config/gh/hosts.yml/",
+    ] {
+        assert!(
+            is_credential(Path::new(credential), &machine),
+            "{credential}"
+        );
+    }
+    for open in [
+        "/Users/ada/.config/gh/../config.yml",
+        "/Users/ada/.config/gh/./config.yml",
+        "/Users/ada/.ssh/./id_ed25519.pub",
+    ] {
+        assert!(!is_credential(Path::new(open), &machine), "{open}");
+    }
+}
+
 /// What each entry of [`CREDENTIAL_FILES`] is, said by a row here and never guessed from its name.
 enum Entry {
     /// A forge's own login file: the program that reads it, the kind of forge, the variable the

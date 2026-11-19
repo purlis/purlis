@@ -2920,22 +2920,19 @@ pub fn gitlab_flow(persona: &str, host: Option<&str>) -> String {
 /// `mints`: whether the tool is declared with a `mint` line. Only then does Agent identity
 /// matter, and the shim can only see that the chat's hook channel variable is missing, while
 /// `secret exec` may still reach the app by its ancestry (#6995): so it says the app was not
-/// reached from here, never that Agent identity is not set up. Any other tool holds a token in a
-/// vault, and its way on is that vault's key; glab's is the GitLab access flow that keeps it.
+/// reached from here, never that Agent identity is not set up. Any other tool is declared with a
+/// token held in a vault, so its token is not missing: the hook channel that hands it on is, as
+/// under `env -i glab mr list`.
 pub fn no_minted_token_said(name: &str, mints: bool) -> String {
     let way = if mints {
         "The app could not be reached from this shell to mint one: run it from the chat's own \
          terminal, set up Agent identity in Settings › Agent identity if it is not, or choose a \
          sandbox template where the credentials class is off."
             .to_owned()
-    } else if name == "glab" {
-        format!(
-            "To give it one, {}. Or choose a sandbox template where the credentials class is off.",
-            gitlab_flow("<persona>", None)
-        )
     } else {
-        "Declare the tool with a token held in a vault, or choose a sandbox template where the \
-         credentials class is off."
+        "The app could not be reached from this shell to hand on the token the tool is declared \
+         with: run it from the chat's own terminal (not under `env -i`), or choose a sandbox \
+         template where the credentials class is off."
             .to_owned()
     };
     format!(
