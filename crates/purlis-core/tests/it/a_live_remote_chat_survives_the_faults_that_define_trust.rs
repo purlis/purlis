@@ -64,7 +64,7 @@ use crate::support::remote_rig::{
     verified,
 };
 
-const VERSION: &str = "0.0.1-faults.1";
+const VERSION: &str = "0.0.1-faults";
 const DESKTOP: &str = "01JA0DESKT0P00000000000000";
 /// The script that puts and takes the faults.
 const FAULTS: &str = concat!(
@@ -81,12 +81,61 @@ const FAULTS: &str = concat!(
 struct Rig {
     reach: Reach,
     machine: String,
+    /// The runner's binary, as a path on the machine.
     binary: String,
+    /// What runs it: `binary` under this case's own config home, which every `purlis` command
+    /// of the case, the bridge the link opens included, is given.
+    command: String,
+    /// This case's own home on the machine, removed with the case.
+    home: CaseHome,
+    /// False for a copy of a rig that shares the first one's runner: only the first removes it.
+    owns_the_runner: bool,
     desktop_key: LinkKey,
     runner: Pinned,
     unit: String,
     began: Instant,
     _settings: tempfile::TempDir,
+}
+
+/// **A home of its own for each case**: a runner is paired once, from a home of its own
+/// (`purlis bridge --pair` refuses a home that holds a pairing), and a case pairs afresh, so
+/// cases never share one, and so never share the behaviour suite's, whichever ran before. The
+/// version the case installs is its own as well, so its systemd unit is (`unit_name` is the
+/// version's). Parallel-safe: nothing here is shared with another case or another suite.
+struct CaseHome {
+    folder: String,
+    version: String,
+}
+
+impl CaseHome {
+    fn new() -> CaseHome {
+        use std::sync::atomic::{AtomicU32, Ordering};
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.subsec_nanos());
+        // A letter first: a numeric version identifier may not begin with a zero.
+        let tag = format!(
+            "c{:x}{:x}{:x}",
+            std::process::id(),
+            nanos,
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        );
+        CaseHome {
+            folder: format!("/home/keeper/rf-{tag}"),
+            version: format!("{VERSION}.{tag}"),
+        }
+    }
+
+    /// The config home inside the folder: `$PURLIS_CONFIG_HOME`.
+    fn config(&self) -> String {
+        format!("{}/config", self.folder)
+    }
+
+    /// `binary`, run under this home.
+    fn command(&self, binary: &str) -> String {
+        format!("env PURLIS_CONFIG_HOME={} {binary}", self.config())
+    }
 }
 
 /// Runs `faults.sh --machine <machine> <args>`; a verb that fails fails the test.
@@ -145,11 +194,12 @@ impl Rig {
             key,
             settings_in: settings.path().to_path_buf(),
         };
+        let home = CaseHome::new();
         let probed = runnerinstall::probe(&reach).expect("the runner is probed");
         let binary = runnerinstall::install(
             &reach,
             &probed,
-            &verified(&bytes, VERSION, probed.target),
+            &verified(&bytes, &home.version, probed.target),
             Delivery::Upload(&bytes),
         )
         .expect("installed")
@@ -161,27 +211,45 @@ impl Rig {
             key: desktop_key.public(),
         };
         let line = format!("{}\n", purlis_core::runnerlink::to_line(&ours));
-        let ran = there(&reach, &format!("{binary} bridge --pair"), Some(&line));
-        assert_eq!(ran.code, Some(0), "paired: {}", ran.said);
-        let runner = purlis_core::runnerlink::from_line(&ran.printed).expect("the runner's key");
-        let installed = there(&reach, &format!("{binary} serve --install"), None);
-        assert_eq!(installed.code, Some(0), "installed: {}", installed.said);
+        let command = home.command(&binary);
+        // The folder is the case's before anything is paired in it; a Rig that fails below is
+        // dropped with it made, so its home and unit go too.
+        let made = there(&reach, &format!("mkdir -p {}", home.config()), None);
+        assert_eq!(made.code, Some(0), "home made: {}", made.said);
         let unit = purlis_core::runnerhost::Service {
             binary: binary.clone().into(),
-            version: Some(VERSION.to_owned()),
+            version: Some(home.version.clone()),
             config_home: None,
         }
         .unit_name();
-        let rig = Rig {
+        let mut rig = Rig {
             reach,
             machine,
             binary,
+            command,
+            home,
+            owns_the_runner: true,
             desktop_key,
-            runner,
+            // Ours until the runner says its own, just below.
+            runner: ours.clone(),
             unit,
             began: Instant::now(),
             _settings: settings,
         };
+        let ran = there(
+            &rig.reach,
+            &format!("{} bridge --pair", rig.command),
+            Some(&line),
+        );
+        assert_eq!(ran.code, Some(0), "paired: {}", ran.said);
+        let runner = purlis_core::runnerlink::from_line(&ran.printed).expect("the runner's key");
+        let installed = there(
+            &rig.reach,
+            &format!("{} serve --install", rig.command),
+            None,
+        );
+        assert_eq!(installed.code, Some(0), "installed: {}", installed.said);
+        rig.runner = runner;
         // The chats an earlier case left are not this one's.
         let _ = as_root(&rig.machine, "pkill -KILL -u keeper -f 'typed-' || true");
         rig.until_the_host_answers();
@@ -216,7 +284,7 @@ impl Rig {
     async fn keep_within(&self, within: Duration) -> Kept {
         Kept::start(
             &self.reach,
-            &self.binary,
+            &self.command,
             self.identity(),
             self.runner.clone(),
             self.began,
@@ -256,6 +324,17 @@ impl Drop for Rig {
                 &self.machine,
                 "restore",
             ]));
+        if self.owns_the_runner {
+            // This case's runner, its unit and its home go; the behaviour suite's, and every other
+            // case's, are other versions in other homes, and stay. Best effort: a case that
+            // failed early may have installed nothing.
+            let _ = there(
+                &self.reach,
+                &format!("{} serve --remove", self.command),
+                None,
+            );
+            let _ = there(&self.reach, &format!("rm -rf {}", self.home.folder), None);
+        }
     }
 }
 
@@ -541,6 +620,12 @@ fn a_host_key_changed_under_a_live_chat_is_not_retried_and_the_chat_comes_back_a
             },
             machine: rig.machine.clone(),
             binary: rig.binary.clone(),
+            command: rig.command.clone(),
+            home: CaseHome {
+                folder: rig.home.folder.clone(),
+                version: rig.home.version.clone(),
+            },
+            owns_the_runner: false,
             desktop_key: LinkKey::from_private(rig.desktop_key.private_half().unwrap()).unwrap(),
             runner: rig.runner.clone(),
             unit: rig.unit.clone(),
@@ -705,7 +790,7 @@ fn a_link_slower_than_the_budgets_fails_naming_the_step_inside_the_limit_with_no
     rt.block_on(async {
         // 90 s a packet is past every budget (`CONNECT` 10 s, `RUN` 30 s).
         let fault_at = rig.fault(&["slow", "90"]);
-        let (_folder, args) = bridge_args(&rig.reach, &rig.binary);
+        let (_folder, args) = bridge_args(&rig.reach, &rig.command);
         let mut links = hostlink::keep_linked(
             CommandConnector::new(rig.reach.ssh.clone(), args, Arc::new(|| Ok(()))),
             Handshake::THIS_BUILD,
@@ -1066,4 +1151,27 @@ fn b5_two_runners_that_start_browsers_at_once_run_them_in_parallel() {
         kept_other.task.abort();
     });
     rt.shutdown_timeout(Duration::from_secs(5));
+}
+
+#[test]
+fn each_case_gets_a_home_a_version_and_so_a_unit_of_its_own_and_runs_its_commands_under_it() {
+    purlis_core::unsteered!();
+    let (one, two) = (CaseHome::new(), CaseHome::new());
+    assert_ne!(one.folder, two.folder);
+    assert_ne!(one.version, two.version);
+    let unit_of = |home: &CaseHome| {
+        purlis_core::runnerhost::Service {
+            binary: "/x/purlis".into(),
+            version: Some(home.version.clone()),
+            config_home: None,
+        }
+        .unit_name()
+    };
+    assert_ne!(unit_of(&one), unit_of(&two));
+    assert!(
+        one.command("/x/purlis")
+            .starts_with(&format!("env PURLIS_CONFIG_HOME={}/config ", one.folder)),
+        "{}",
+        one.command("/x/purlis")
+    );
 }
