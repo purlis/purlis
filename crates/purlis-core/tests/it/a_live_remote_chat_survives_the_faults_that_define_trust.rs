@@ -60,8 +60,7 @@ use crate::support::outage::{
 };
 use crate::support::real_infra::fixture_or_skip;
 use crate::support::remote_rig::{
-    PATIENCE, PROJECT, as_root, bridge_args, running, runtime, shell_launch, there, until_within,
-    verified,
+    PATIENCE, PROJECT, as_root, bridge_args, running, runtime, shell_launch, there, verified,
 };
 
 const VERSION: &str = "0.0.1-faults";
@@ -214,7 +213,29 @@ impl Rig {
         let command = home.command(&binary);
         // The folder is the case's before anything is paired in it; a Rig that fails below is
         // dropped with it made, so its home and unit go too.
-        let made = there(&reach, &format!("mkdir -p {}", home.config()), None);
+        // The case's store holds the installed versions by a link to the machine's own: a host
+        // is a *version* only where its binary is `<config>/server/<version>/purlis` under the
+        // config home it resolves (`runnerinstall::version_of_binary`), and the binary was
+        // installed under the machine's default store, not this case's. Without the link,
+        // `serve --install` finds no version and installs the unversioned unit, which
+        // `unit` (the versioned name) never finds active.
+        let made = there(
+            &reach,
+            &format!(
+                "mkdir -p {store} && ln -sfn {server} {store}/{SERVER}",
+                store = format_args!(
+                    "{}/{}",
+                    home.config(),
+                    purlis_core::names::CONFIG_HOME
+                        .spellings()
+                        .next()
+                        .expect("a name")
+                ),
+                server = runnerinstall::server_dir(&probed.config),
+                SERVER = runnerinstall::SERVER_DIR,
+            ),
+            None,
+        );
         assert_eq!(made.code, Some(0), "home made: {}", made.said);
         let unit = purlis_core::runnerhost::Service {
             binary: binary.clone().into(),
@@ -264,15 +285,41 @@ impl Rig {
     }
 
     fn until_the_host_answers(&self) {
-        until_within(PATIENCE, "the host answers", || {
-            there(
-                &self.reach,
-                &format!("systemctl --user is-active --quiet {}", self.unit),
-                None,
-            )
-            .code
-                == Some(0)
-        });
+        let deadline = Instant::now() + PATIENCE;
+        while there(
+            &self.reach,
+            &format!("systemctl --user is-active --quiet {}", self.unit),
+            None,
+        )
+        .code
+            != Some(0)
+        {
+            assert!(
+                Instant::now() < deadline,
+                "never: the host answers\n{}",
+                self.why_it_does_not_answer()
+            );
+            std::thread::sleep(Duration::from_secs(1));
+        }
+    }
+
+    /// What the machine says about the unit that never came up, for the failure to carry: the
+    /// units there are, this one's status and journal, the host's own log, and the case's home.
+    fn why_it_does_not_answer(&self) -> String {
+        let script = format!(
+            "echo '== unit expected: {unit}'; \
+             systemctl --user list-units 'purlis-runner*' --all --no-pager 2>&1; \
+             systemctl --user list-unit-files 'purlis-runner*' --no-pager 2>&1; \
+             echo '== status'; systemctl --user status {unit} --no-pager -l 2>&1; \
+             echo '== journal'; journalctl --user -n 60 --no-pager 2>&1; \
+             echo '== serve.log'; for f in $(find {home} -name serve.log 2>/dev/null); do echo $f; tail -n 40 $f; done; \
+             echo '== home'; ls -laR {home} 2>&1 | head -60; \
+             echo '== units on disk'; ls ~/.config/systemd/user 2>&1",
+            unit = self.unit,
+            home = self.home.folder,
+        );
+        let ran = there(&self.reach, &script, None);
+        format!("{}{}", ran.printed, ran.said)
     }
 
     /// Starts keeping a link to this runner's host, as the window does.
