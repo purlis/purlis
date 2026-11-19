@@ -588,9 +588,12 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
 ///    chat means purlis kept it away.
 /// 2. **The chat sees none**: its environment and the login files print no decoy (the sandbox
 ///    denies `hosts.yml` and `config.yml`, `sandbox::CREDENTIAL_FILES`).
-/// 3. **The forge saw the chat's token and no decoy**: a client given no token reaches the
-///    forge with none of the person's, and a client given the chat's token presents it alone,
-///    every credential of every request counted.
+/// 3. **The forge saw the chat's token and no decoy**: a client given no token and no config
+///    folder (the chat's HOME holds only the denied decoy files) sends the forge nothing, and a
+///    client given the chat's token and a config folder of its own presents that token alone,
+///    every credential of every request counted. (Finding: without a config folder of its own
+///    a chat's `glab` stops at reading the person's denied `config.yml`, exit 2 "permission
+///    denied", token or no token.)
 ///
 /// What this does not prove (module docs): that purlis's own route handed the chat its token.
 #[cfg(unix)]
@@ -693,9 +696,9 @@ fn a_chats_gh_and_glab_present_the_chats_token_and_never_the_persons() {
             (
                 "glab-given-the-chats",
                 format!(
-                    "GITLAB_TOKEN={GLAB_TOKEN} {} glab api \
-                     projects/group%2Fproject/merge_requests/5 2>&1; echo \"glab exit $?\"",
-                    forge.glab_route(Gitlab::SelfHosted, true)
+                    "{} glab api projects/group%2Fproject/merge_requests/5 2>&1; \
+                     echo \"glab exit $?\"",
+                    forge.glab(Gitlab::SelfHosted, GLAB_TOKEN)
                 ),
             ),
         ];
@@ -710,9 +713,8 @@ fn a_chats_gh_and_glab_present_the_chats_token_and_never_the_persons() {
             calls.push((
                 "gh-given-the-chats",
                 format!(
-                    "GH_TOKEN={GH_TOKEN} GH_ENTERPRISE_TOKEN={GH_TOKEN} {} gh api \
-                     repos/o/r/pulls/7 2>&1; echo \"gh exit $?\"",
-                    forge.gh_route()
+                    "{} gh api repos/o/r/pulls/7 2>&1; echo \"gh exit $?\"",
+                    forge.gh(GH_TOKEN)
                 ),
             ));
         }
@@ -737,6 +739,20 @@ fn a_chats_gh_and_glab_present_the_chats_token_and_never_the_persons() {
                 "{at}: the chat's `{step}` did not run: {said}"
             );
         }
+        // A client given no token and no config folder finds only the person's login, which the
+        // sandbox denies: `glab` stops at reading its config ("permission denied", exit 2), so
+        // it neither reads the merge request nor sends the forge anything.
+        let bare = super::stdout_of(&scenario, chat, "glab-given-no-token");
+        assert!(
+            !bare.contains(HEAD) && !bare.contains("glab exit 0"),
+            "{at}: glab, given no token, read !4 with a credential of its own: {bare}\n{}",
+            scenario.said()
+        );
+        assert!(
+            tokens_on(&forge, "merge_requests/4").is_empty(),
+            "{at}: a request of glab's with no token given carried one: {:?}",
+            forge.fake.requests()
+        );
         let chats = super::stdout_of(&scenario, chat, "glab-given-the-chats");
         assert!(
             chats.contains("glab exit 0") && chats.contains(HEAD),
@@ -761,6 +777,11 @@ fn a_chats_gh_and_glab_present_the_chats_token_and_never_the_persons() {
                 tokens_on(&forge, "pulls/7"),
                 vec![GH_TOKEN.to_owned()],
                 "{at}: the request gh made with the chat's token carried another as well"
+            );
+            assert!(
+                tokens_on(&forge, "pulls/6").is_empty(),
+                "{at}: a request of gh's with no token given carried one: {:?}",
+                forge.fake.requests()
             );
             expected.push(GH_TOKEN.to_owned());
         }
