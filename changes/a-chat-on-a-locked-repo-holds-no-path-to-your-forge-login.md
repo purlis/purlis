@@ -1,0 +1,3 @@
+### Security
+
+- **A chat on a repo that holds your credentials back, or that has a minted token, has no path to your own forge login.** Its `gh` reads an empty config folder, its git runs with every credential helper emptied (the system's too) and never prompts, its ssh is told no agent, `browser_login` to a forge host is refused, and the forge connectors of Claude Code, Codex and opencode are switched off. A chat with no minted token gets no forge credential, and says to mint one in Settings › Agent identity (#7205, #7133). One route is not closed yet: gh's macOS keychain item, so no harness version is reported as locked.

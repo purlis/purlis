@@ -114,6 +114,7 @@ pub mod floorguard;
 pub mod footer;
 pub mod footerclaim;
 pub mod forge;
+pub mod forgelock;
 pub mod forklock;
 pub mod getproject;
 pub mod gitbroker;

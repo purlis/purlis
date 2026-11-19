@@ -55,7 +55,10 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
 
 - **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›
   Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
-  auth login`, then `gh auth status`). A `purlis` command and a chat always use `gh`.
+  auth login`, then `gh auth status`). A `purlis` command always uses `gh`. A chat uses `gh`
+  only with a token minted for it (Settings › Agent identity, or a tool declared with a vault
+  token): a chat on a repo that claims the merge and release lock never falls back to your own
+  `gh` login, and with no token it says to mint one and stops (#7205).
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.

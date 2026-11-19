@@ -684,3 +684,153 @@ fn a_refused_credential_is_known_as_one() {
         assert!(!is_credential(Path::new(open), &machine), "{open}");
     }
 }
+
+/// #7205: a chat that holds the person's credentials claims the forge lock, and its line hands it
+/// no path to their forge login; one at the floor under `watch`, which holds none and has no mint,
+/// keeps its own login on purpose and is handed nothing of the lock.
+#[test]
+fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
+    let (_home, home) = home();
+    let machine = machine(&home, Os::MacOs);
+    for harness in Harness::ALL {
+        for manifest in HELD {
+            let (_plane, cwd, applied) = started(manifest, harness, &machine);
+            assert!(applied.forge_locked(), "{harness:?} {manifest}");
+            // A wrapped harness is not started without its proxy, which a test has none of.
+            if harness != Harness::ClaudeCode {
+                continue;
+            }
+            let line = applied
+                .line(
+                    Words {
+                        program: "chat".to_owned(),
+                        command: Vec::new(),
+                        armed: Vec::new(),
+                        charters: Vec::new(),
+                    },
+                    &At {
+                        cwd: Some(&cwd),
+                        ..At::default()
+                    },
+                )
+                .expect("starts");
+            let set = |name: &str| {
+                line.env
+                    .iter()
+                    .rev()
+                    .find(|(key, _)| key == name)
+                    .map(|(_, value)| value.as_str())
+            };
+            // No folder of the chat's own here to write the lock's files in, so each reads as
+            // nothing at all.
+            assert_eq!(set("GH_CONFIG_DIR"), Some("/dev/null"), "{harness:?}");
+            assert_eq!(set("GIT_CONFIG_GLOBAL"), Some("/dev/null"), "{harness:?}");
+            assert_eq!(set("GIT_CONFIG_SYSTEM"), Some("/dev/null"), "{harness:?}");
+            assert_eq!(set("GIT_TERMINAL_PROMPT"), Some("0"), "{harness:?}");
+            assert_eq!(set("SSH_AUTH_SOCK"), Some(""), "{harness:?}");
+            assert!(
+                set("GIT_SSH_COMMAND").is_some_and(|ssh| ssh.contains("IdentityAgent=none")),
+                "{harness:?}"
+            );
+        }
+        let (_plane, cwd, applied) = started(FLOOR, harness, &machine);
+        assert!(
+            !applied.forge_locked(),
+            "{harness:?} at the floor under watch"
+        );
+        if harness != Harness::ClaudeCode {
+            continue;
+        }
+        let line = applied
+            .line(
+                Words {
+                    program: "chat".to_owned(),
+                    command: Vec::new(),
+                    armed: Vec::new(),
+                    charters: Vec::new(),
+                },
+                &At {
+                    cwd: Some(&cwd),
+                    ..At::default()
+                },
+            )
+            .expect("starts");
+        assert!(
+            !line.env.iter().any(|(key, _)| key == "GH_CONFIG_DIR"),
+            "{harness:?}"
+        );
+    }
+}
+
+/// #7205: the config purlis compiles for a chat that claims the forge lock has the harness's
+/// forge connector off, and one that does not claim it is compiled as it was.
+#[test]
+fn a_chat_that_claims_the_forge_lock_is_compiled_with_its_forge_connectors_off() {
+    use crate::harness::{Kit, StateHooks};
+    let (_home, home) = home();
+    let machine = machine(&home, Os::MacOs);
+    let plugin = tempfile::tempdir().expect("a plugin folder");
+    let shim = crate::opencode::shim_in(plugin.path());
+    std::fs::create_dir_all(shim.parent().expect("a folder")).expect("its folder");
+    std::fs::write(&shim, "// shim").expect("the shim");
+    let kit = Kit {
+        skills: None,
+        laid_out: None,
+        binary: Path::new("/bin/charter"),
+        plugin: Some(plugin.path()),
+        persona: None,
+        graded: false,
+        judging: false,
+        writes_its_piece: false,
+        runs_a_shell: false,
+        own: &[],
+    };
+    let compiled = |harness: Harness, manifest: &str| {
+        let (_plane, cwd, applied) = started(manifest, harness, &machine);
+        let StateHooks::ThisSessionOnly { args, env, .. } = harness.state_hooks(
+            kit,
+            Some(&cwd),
+            &crate::harness_plugin::Chosen::new(),
+            Some(&applied),
+        ) else {
+            panic!("{harness:?} is armed per session");
+        };
+        (args, env)
+    };
+    let (args, _) = compiled(Harness::ClaudeCode, FULL);
+    assert!(
+        args.iter().any(|arg| arg == "--strict-mcp-config"),
+        "{args:?}"
+    );
+    let (args, _) = compiled(Harness::ClaudeCode, FLOOR);
+    assert!(
+        !args.iter().any(|arg| arg == "--strict-mcp-config"),
+        "{args:?}"
+    );
+    let (args, _) = compiled(Harness::Codex, FULL);
+    assert!(
+        args.iter()
+            .any(|arg| arg == "mcp_servers.github.enabled=false"),
+        "{args:?}"
+    );
+    let (args, _) = compiled(Harness::Codex, FLOOR);
+    assert!(
+        !args.iter().any(|arg| arg.contains(".enabled=false")),
+        "{args:?}"
+    );
+    let config = |env: &[(String, String)]| -> Value {
+        let (_, text) = env
+            .iter()
+            .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
+            .expect("its session config");
+        serde_json::from_str(text).expect("JSON")
+    };
+    let (_, env) = compiled(Harness::Opencode, FULL);
+    assert_eq!(config(&env)["mcp"]["github"]["enabled"], false);
+    assert!(
+        config(&env)["mcp"]["purlis"].is_object(),
+        "purlis's own stays"
+    );
+    let (_, env) = compiled(Harness::Opencode, FLOOR);
+    assert!(config(&env)["mcp"]["github"].is_null());
+}

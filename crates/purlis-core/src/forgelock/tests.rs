@@ -1,0 +1,196 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use std::path::PathBuf;
+
+use super::*;
+
+#[test]
+fn a_chat_is_claimed_where_it_holds_the_credentials_class_or_has_a_mint() {
+    assert!(claimed(true, false));
+    assert!(claimed(false, true));
+    assert!(claimed(true, true));
+    assert!(!claimed(false, false));
+}
+
+#[test]
+fn git_s_ssh_is_told_no_agent_and_keeps_a_route_it_was_given() {
+    let none = ssh_command(None);
+    assert!(none.contains("-F /dev/null"), "{none}");
+    assert!(none.contains("IdentityAgent=none"), "{none}");
+    assert!(none.contains("IdentitiesOnly=yes"), "{none}");
+    let routed = ssh_command(Some("'/chat/purlis-ssh/bin/ssh'"));
+    assert!(
+        routed.starts_with("'/chat/purlis-ssh/bin/ssh' "),
+        "{routed}"
+    );
+    assert!(!routed.contains("-F /dev/null"), "{routed}");
+    assert!(routed.contains("IdentityAgent=none"), "{routed}");
+}
+
+#[test]
+fn the_helper_list_is_emptied_after_the_persons_own_config_and_before_purlis_s() {
+    let text = git_config(
+        Some(Path::new("/home/ada/.gitconfig")),
+        Some("!purlis-helper"),
+    );
+    let included = text.find("/home/ada/.gitconfig").expect("their config");
+    let emptied = text.find("helper =\n").expect("emptied");
+    let own = text.find("helper = !purlis-helper").expect("purlis's own");
+    assert!(included < emptied && emptied < own, "{text}");
+    let none = git_config(None, None);
+    assert!(!none.contains("[include]"), "{none}");
+    assert!(none.contains("helper =\n"), "{none}");
+}
+
+#[test]
+fn a_locked_chat_gets_an_empty_gh_folder_and_a_git_config_of_its_own() {
+    let scratch = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    std::fs::write(home.path().join(".gitconfig"), "[user]\n\tname = Ada\n").unwrap();
+    let env = env(Some(scratch.path()), Some(home.path()), None).unwrap();
+    let get = |name: &str| {
+        env.iter()
+            .find(|(set, _)| set == name)
+            .map(|(_, value)| value.clone())
+            .unwrap_or_else(|| panic!("{name} is not set"))
+    };
+    let gh = PathBuf::from(get("GH_CONFIG_DIR"));
+    assert!(gh.is_dir());
+    assert_eq!(std::fs::read_dir(&gh).unwrap().count(), 0, "empty");
+    let git = std::fs::read_to_string(get("GIT_CONFIG_GLOBAL")).unwrap();
+    assert!(git.contains("helper =\n"), "{git}");
+    assert!(git.contains(".gitconfig"), "{git}");
+    assert_eq!(get("GIT_CONFIG_SYSTEM"), "/dev/null");
+    assert_eq!(get("GIT_TERMINAL_PROMPT"), "0");
+    assert_eq!(get("SSH_AUTH_SOCK"), "");
+    assert!(get("GIT_SSH_COMMAND").contains("IdentityAgent=none"));
+}
+
+#[test]
+fn a_lock_with_no_folder_to_write_in_reads_as_nothing_at_all() {
+    let env = env(None, None, None).unwrap();
+    for name in ["GH_CONFIG_DIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"] {
+        assert!(
+            env.contains(&(name.to_owned(), "/dev/null".to_owned())),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn applying_the_lock_replaces_the_chats_own_and_keeps_its_ssh_route() {
+    let scratch = tempfile::tempdir().unwrap();
+    let chat = vec![
+        ("PATH".to_owned(), "/bin".to_owned()),
+        ("SSH_AUTH_SOCK".to_owned(), "/agent".to_owned()),
+        (
+            "GH_CONFIG_DIR".to_owned(),
+            "/home/ada/.config/gh".to_owned(),
+        ),
+        ("GIT_SSH_COMMAND".to_owned(), "'/route/ssh'".to_owned()),
+    ];
+    let locked = apply(chat, Some(scratch.path()), None).unwrap();
+    let once = |name: &str| {
+        let all: Vec<_> = locked.iter().filter(|(set, _)| set == name).collect();
+        assert_eq!(all.len(), 1, "{name}: {all:?}");
+        all[0].1.clone()
+    };
+    assert_eq!(once("PATH"), "/bin");
+    assert_eq!(once("SSH_AUTH_SOCK"), "");
+    assert_ne!(once("GH_CONFIG_DIR"), "/home/ada/.config/gh");
+    assert!(once("GIT_SSH_COMMAND").starts_with("'/route/ssh' "));
+}
+
+#[test]
+fn a_forge_host_is_a_forges_own_name_or_one_of_the_projects_remotes() {
+    let known = vec!["git.acme.test".to_owned()];
+    for host in [
+        "github.com",
+        "GitHub.com.",
+        "api.github.com",
+        "gitlab.com",
+        "git.acme.test",
+        "sso.git.acme.test",
+    ] {
+        assert!(is_a_forge_host(host, &known), "{host}");
+    }
+    for host in ["notgithub.com", "example.com", "github.com.evil.test"] {
+        assert!(!is_a_forge_host(host, &known), "{host}");
+    }
+    assert!(browser_login_refused("github.com").contains("Agent identity"));
+}
+
+#[test]
+fn every_harness_has_its_forge_connectors_switched_off() {
+    assert_eq!(
+        connectors(Harness::ClaudeCode),
+        vec!["--strict-mcp-config".to_owned()]
+    );
+    let codex = connectors(Harness::Codex);
+    for name in CONNECTORS {
+        assert!(
+            codex.contains(&format!("mcp_servers.{name}.enabled=false")),
+            "{name}"
+        );
+    }
+    let config = opencode_config(
+        r#"{"plugin":["x"],"mcp":{"purlis":{"type":"local","command":["p"]},"github":{"url":"u"}}}"#,
+    );
+    let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(
+        parsed["mcp"]["purlis"]["command"][0], "p",
+        "purlis's own stays"
+    );
+    assert_eq!(
+        parsed["mcp"]["github"]["url"], "u",
+        "a name already there is left to it"
+    );
+    assert_eq!(parsed["mcp"]["gitlab"]["enabled"], false);
+    let bare: serde_json::Value =
+        serde_json::from_str(&opencode_config(r#"{"plugin":["x"]}"#)).unwrap();
+    assert_eq!(bare["mcp"]["github"]["enabled"], false);
+}
+
+#[test]
+fn an_unprobed_version_is_not_locked() {
+    for harness in Harness::ALL {
+        for version in [None, Some(""), Some("0.0.1")] {
+            assert!(
+                matches!(status(harness, version), Status::NotLocked(_)),
+                "{harness:?} {version:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_probed_version_with_a_route_open_is_not_locked_and_says_which() {
+    for probed in PROBED {
+        let Status::NotLocked(why) = status(probed.harness, Some(probed.version)) else {
+            panic!("{probed:?} is locked with a route open");
+        };
+        assert!(why.contains("gh-keychain"), "{why}");
+    }
+}
+
+#[test]
+fn every_harness_is_probed_once_and_the_open_routes_are_the_ones_said_open() {
+    for harness in Harness::ALL {
+        assert_eq!(
+            PROBED
+                .iter()
+                .filter(|probed| probed.harness == harness)
+                .count(),
+            1,
+            "{harness:?}"
+        );
+    }
+    let said_open: Vec<Route> = Route::ALL
+        .into_iter()
+        .filter(|route| matches!(route.closed_by(), Closure::Open(_)))
+        .collect();
+    for probed in PROBED {
+        assert_eq!(probed.open, said_open.as_slice(), "{probed:?}");
+    }
+}

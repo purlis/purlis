@@ -214,7 +214,7 @@ impl HarnessAdapter for Codex {
         kit: Kit<'_>,
         cwd: Option<&std::path::Path>,
         plugins: &crate::harness_plugin::Chosen,
-        _sandbox: Sandbox<'_>,
+        sandbox: Sandbox<'_>,
     ) -> StateHooks {
         let mut args = session_flags(kit.binary);
         args.extend(permission_flag(kit.binary));
@@ -229,6 +229,13 @@ impl HarnessAdapter for Codex {
             "-c".to_owned(),
             crate::chattools::codex_flag(kit.binary, &crate::chattools::CodexApprovals::here(cwd)),
         ]);
+        // A chat on a repo that claims the forge lock has no forge connector (#7205).
+        if sandbox
+            .applied()
+            .is_some_and(crate::sandbox::Applied::forge_locked)
+        {
+            args.extend(crate::forgelock::connectors(Harness::Codex));
+        }
         StateHooks::ThisSessionOnly {
             args,
             env: listed(kit),

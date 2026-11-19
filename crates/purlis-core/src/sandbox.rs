@@ -12,6 +12,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::forgelock;
 use crate::harness::Harness;
 
 /// The table in `charter.toml` that holds the policy.
@@ -5410,6 +5411,14 @@ impl Applied {
                 .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
             line.env.extend(gained);
         }
+        // The forge credential lock (#7205): a chat on a repo that claims it holds no path to the
+        // person's own forge login, so its `gh`, git and ssh are handed none.
+        if self.forge_locked() {
+            let scratch = at.confinement.and_then(Confinement::tmp);
+            let home = Machine::this().home;
+            line.env = forgelock::apply(std::mem::take(&mut line.env), scratch, home.as_deref())
+                .map_err(|why| under(format!("the forge credential lock was not made: {why}")))?;
+        }
         // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
         // first on each command's `PATH` through the one file Claude Code reads before each
         // command, never on the harness's own `PATH`. The persona's tools go before it there.
@@ -5566,6 +5575,17 @@ impl Applied {
             return None;
         }
         confinement.and_then(Confinement::ssh_route)
+    }
+
+    /// **Whether this chat is on a repo that claims the forge lock** ([`forgelock::claimed`]): its
+    /// sandbox holds the person's own credentials back, or one of its tools mints it a token.
+    pub fn forge_locked(&self) -> bool {
+        forgelock::claimed(
+            holds_credentials(&self.denied),
+            self.tools
+                .as_ref()
+                .is_some_and(|tools| tools.ready.iter().any(|ready| ready.tool.mint.is_some())),
+        )
     }
 
     /// **A Claude Code chat's ssh route** (#1667), from `confinement`: only one written in this
@@ -8016,6 +8036,23 @@ pub struct Confines {
     /// this one started and for one it takes back from the session host alike, so a pool added
     /// since is told as the chat's sandbox not holding it yet.
     pub pools_held: Vec<PathBuf>,
+}
+
+impl Confines {
+    /// **Whether the chat is on a repo that claims the forge lock** ([`forgelock::claimed`]).
+    pub fn forge_locked(&self) -> bool {
+        forgelock::claimed(
+            holds_credentials(&self.denied),
+            self.tools.iter().any(|ready| ready.tool.mint.is_some()),
+        )
+    }
+}
+
+/// Whether `denied` holds the person's own credentials (ADR 0067 §5 class 6).
+fn holds_credentials(denied: &[Denial]) -> bool {
+    denied
+        .iter()
+        .any(|denial| denial.class == Class::Credentials)
 }
 
 /// **What of every pool's programs and files `denied` holds**, of those the pools on `machine`

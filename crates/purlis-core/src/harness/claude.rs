@@ -68,6 +68,10 @@ impl HarnessAdapter for ClaudeCode {
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
         // chat is armed with nothing rather than started without it.
         let form = sandbox.applied().map(|applied| applied.form_in(cwd));
+        // A chat on a repo that claims the forge lock (#7205), before `sandbox` names its form.
+        let forge_locked = sandbox
+            .applied()
+            .is_some_and(crate::sandbox::Applied::forge_locked);
         let wrapped;
         let sandbox = match &form {
             None => None,
@@ -111,7 +115,10 @@ impl HarnessAdapter for ClaudeCode {
                 args,
                 // A grade's chat loads no MCP server but purlis's (SK-16): none of the person's
                 // own, nor a project's, nor a connector.
-                if kit.graded {
+                // And a chat on a repo that claims the forge lock (#7205): the person's own
+                // servers, a project's and the account's connectors, a forge's among them, are
+                // left out whole.
+                if kit.graded || forge_locked {
                     words(["--strict-mcp-config"])
                 } else {
                     Vec::new()
