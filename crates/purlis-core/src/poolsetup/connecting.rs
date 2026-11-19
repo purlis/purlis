@@ -1679,8 +1679,12 @@ pub fn trust_chosen_for(
 /// every check of a pool of `asked`'s image is asked of its engine, before anything is kept: a
 /// full disk or a missing image is a finding, and the machine is not called connected. Then who can
 /// sign in there is kept as answered (`owned`), and the pool is made on that machine, as `purlis
-/// pool add` makes it. A refused add keeps the pool, Refused, with its reason
-/// ([`super::declined`]); the pin stays, as Connect keeps it.
+/// pool add` makes it.
+///
+/// **The machine is trusted only on full success** (ruled by the steward, 2026-11-19): when the
+/// add is refused, makes nothing (a team's image breaking the contract), or the answers can't be
+/// kept, the pin is rolled back to what `chosen` was before this press, and a refusal is kept as
+/// the pool's state ([`super::declined`]), so Connect never says Connected beside it.
 ///
 /// `asked`'s machine, key and files are those of `chosen`: only its name, image and limits are the
 /// person's. A finding of Connect's is answered with nothing kept; a refusal of the add is `Err`.
@@ -1698,6 +1702,21 @@ pub fn trust_and_create(
     {
         return Ok(Err(finding));
     }
+    let made = create_on_the_trusted(config, docker, chosen, fingerprint, owned, asked, desktop);
+    keep_only_a_made_pool(config, chosen, pool.name(), made).map(Ok)
+}
+
+/// What follows the trust of [`trust_and_create`]: who can sign in, kept, and the add.
+fn create_on_the_trusted(
+    config: &std::path::Path,
+    docker: &crate::dockerpool::Docker,
+    chosen: &super::Chosen,
+    fingerprint: &str,
+    owned: bool,
+    asked: &super::asked::Asked,
+    desktop: &purlis_session_protocol::hostlink::Pinned,
+) -> Result<super::asked::Created, crate::runners::Refused> {
+    let pool = asked.pool().map_err(crate::runners::Refused::Other)?;
     if owned {
         let pin = super::read_choices(config)?
             .connect
@@ -1723,7 +1742,27 @@ pub fn trust_and_create(
         // never reported as a refusal of the add.
         let _ = super::choose_pool(config, pool.name());
     }
-    Ok(Ok(made))
+    Ok(made)
+}
+
+/// **Trust only on full success**: where `made` is anything but an add, the machine goes back to
+/// what Connect kept before the press (`before`), and an `Err` is kept as pool `pool`'s refusal,
+/// whichever step of the press it came from.
+fn keep_only_a_made_pool(
+    config: &std::path::Path,
+    before: &super::Chosen,
+    pool: &str,
+    made: Result<super::asked::Created, crate::runners::Refused>,
+) -> Result<super::asked::Created, crate::runners::Refused> {
+    if matches!(made, Ok(super::asked::Created::Added)) {
+        return made;
+    }
+    // Neither can hide the first answer: this is already a failure being reported.
+    let _ = super::restore_machine(config, before);
+    if let Err(why) = &made {
+        super::declined::keep_unless_kept(config, pool, &before.route, why);
+    }
+    made
 }
 
 /// **Connect's checks of the engine, for a machine just trusted** (#6272, ADR 0123 §7): reached

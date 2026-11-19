@@ -13,7 +13,9 @@ import { type PoolState, type PoolStatus } from "./poolState";
 
 const TITLE: Record<PoolState, string> = {
   unreachable: "Unreachable",
-  refused: "Refused",
+  // Not "Refused": a stop is "blocked" in the window's words (ui-copy R-170), and this is no
+  // stop of purlis's: the machine or cluster would not take the pool.
+  refused: "Not added",
   "host-key-changed": "Host key changed",
   "runner-gone": "Runner gone",
   "pool-forgotten": "Pool forgotten",
@@ -27,24 +29,35 @@ const TONE: Record<PoolState, "attention" | "trouble"> = {
   "pool-forgotten": "attention",
 };
 
-function headline(status: PoolStatus, machine: string): string {
+/** Where the pool is: a machine with Docker, or a cluster's kubeconfig context. */
+export type Where = { kind: "machine"; host: string } | { kind: "cluster"; context: string };
+
+function headline(status: PoolStatus, where: Where): string {
+  const cluster = where.kind === "cluster";
+  const name = cluster ? `the cluster (context ${where.context})` : where.host;
   switch (status.state) {
     case "unreachable":
-      return `purlis can't reach ${machine} and keeps trying.`;
-    case "refused":
-      return `${machine} answers, and refused: ${status.reason ?? "no reason was given"}. purlis stopped trying.`;
+      return `purlis can't reach ${name} and keeps trying.`;
+    case "refused": {
+      const why = status.reason ?? "no reason was given";
+      return cluster
+        ? `${capital(name)} did not take the pool: ${why}. purlis stopped trying.`
+        : `${name} answered, and the pool was not added: ${why}. purlis stopped trying.`;
+    }
     case "host-key-changed":
-      return `${machine} shows a different host key. purlis stopped and waits for your OK.`;
+      return `${name} shows a different host key. purlis stopped and waits for your OK.`;
     case "runner-gone":
-      return `The runner on ${machine} is gone. Its home volume, with your sign-ins, is still there.`;
+      return `The runner on ${name} is gone. Its home volume, with your sign-ins, is still there.`;
     case "pool-forgotten":
       return "Forgotten on this desktop.";
   }
 }
 
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 export function PoolStatusBar({
   pool,
-  machine,
+  where,
   status,
   onTryNow,
   onCheckPool,
@@ -53,8 +66,8 @@ export function PoolStatusBar({
   onForget,
 }: {
   pool: string;
-  /** What the pool is on, as the person named it: a host, or a cluster's context. */
-  machine: string;
+  /** What the pool is on: a host the person named, or a cluster's kubeconfig context. */
+  where: Where;
   status: PoolStatus;
   onTryNow: () => void;
   onCheckPool: () => void;
@@ -96,7 +109,7 @@ export function PoolStatusBar({
           </>
         }
       >
-        <p>{headline(status, machine)}</p>
+        <p>{headline(status, where)}</p>
       </Say>
     </section>
   );

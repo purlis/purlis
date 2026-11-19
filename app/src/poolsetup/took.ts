@@ -1,9 +1,6 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-/** A check line past this says what it is waiting on and why (#7191). */
-export const SLOW_MS = 30_000;
-
 /** **How long a check or a step took**, in words: `0.3 s`, `12 s`, `1 min 4 s`. */
 export function tookWords(ms: number | null | undefined): string | undefined {
   if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return undefined;

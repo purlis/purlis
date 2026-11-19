@@ -601,8 +601,8 @@ describe("Every check line says how long it took (#7191)", () => {
       />,
     );
     expect(screen.getByText("0.3 s")).toBeInTheDocument();
-    expect(screen.queryByText(/ s$/, { selector: ".pool-setup-took" })).toBeInTheDocument();
-    expect(document.querySelectorAll(".pool-setup-took")).toHaveLength(1);
+    // Only the line that was timed says a time: the other says none.
+    expect(screen.getAllByText(/^\d+(\.\d)? s$/)).toHaveLength(1);
   });
 
   it("says what a line past thirty seconds waited on, and why", () => {

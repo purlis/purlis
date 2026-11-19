@@ -121,6 +121,27 @@ afterEach(() => {
 });
 
 describe("ConnectStep", () => {
+  it("never says Connected, or ready to run chats, beside a pool whose add was not taken", () => {
+    core();
+    const one = step({ state: "done", next: null });
+    const props = { onShown: vi.fn(), changed: vi.fn(), onNext: vi.fn() };
+    render(
+      <ConnectStep
+        step={one}
+        shown={
+          {
+            ...shown(one),
+            pool_state: { pool: "lab", state: "refused", reason: "no room" },
+          } as PoolSetupShown
+        }
+        plane="p"
+        {...props}
+      />,
+    );
+    expect(screen.queryByText("Connected")).toBeNull();
+    expect(screen.queryByText(/is ready to run your chats/)).toBeNull();
+  });
+
   it("contacts the machine only when Connect to it is pressed, and shows what the core read", async () => {
     const met = shown(step({ next: null }));
     const calls = core({ pool_setup_connect: () => met });

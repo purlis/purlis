@@ -30,12 +30,15 @@ import { IdentityStep } from "./poolsetup/IdentityStep";
 import { NOTHING_CHOSEN, PoolStep, type Chosen } from "./poolsetup/PoolStep";
 import { SignInsStep } from "./poolsetup/SignInsStep";
 import { tookWords } from "./poolsetup/took";
-import { PoolStatusBar } from "./poolsetup/PoolStatusBar";
+import { ForgetPoolDialog, machineAnswers } from "./poolsetup/ForgetPool";
+import { PoolStatusBar, type Where } from "./poolsetup/PoolStatusBar";
 import { poolStateOf, type WithPoolState } from "./poolsetup/poolState";
 import { TryStep } from "./poolsetup/TryStep";
 import {
+  forgetPool,
   readReleaseImage,
   pickPoolSetupMachine,
+  removePool,
   startANewPoolSetup,
   startPoolSetupOn,
   startPoolSetupOver,
@@ -430,6 +433,7 @@ function PoolSetupGuide({
     refused?: string;
     breaks?: readonly string[];
   }>({ making: false });
+  const [forgetting, setForgetting] = useState(false);
   const [typed, setTyped] = useState<string>();
   const [chosen, choose] = useState<Chosen>(NOTHING_CHOSEN);
   // The runner image this build names, for a Pool made in a cluster (#4494).
@@ -554,26 +558,50 @@ function PoolSetupGuide({
   const status = poolStateOf(setup as WithPoolState);
   // A refused add made no pool, so the state names the pool it keeps.
   const shownPool = status?.pool ?? madePool;
-  const machine =
-    setup.steps.find((one) => one.id === "connect")?.machine?.host ?? shownPool ?? "this machine";
+  const where: Where =
+    setup.kind === "cluster"
+      ? { kind: "cluster", context: setup.contexts.chosen ?? shownPool ?? "unknown" }
+      : {
+          kind: "machine",
+          host:
+            setup.steps.find((one) => one.id === "connect")?.machine?.host ??
+            shownPool ??
+            "this machine",
+        };
   return (
     <>
       {status && shownPool && (
         <PoolStatusBar
           pool={shownPool}
-          machine={machine}
+          where={where}
           status={status}
           // The forward's own retry, and doctor's own checks: not a read of what is kept (#7191).
           onTryNow={() => rereadThrough(commands.poolSetupTryNow)}
           onCheckPool={() => rereadThrough(commands.poolSetupCheckAgain)}
           onCheckKey={() => setShowing("connect")}
           onRemake={() => setShowing("pool")}
+          onForget={() => setForgetting(true)}
+        />
+      )}
+      {forgetting && status && shownPool && (
+        <ForgetPoolDialog
+          pool={shownPool}
+          where={where.kind === "cluster" ? where.context : where.host}
+          canRemove={
+            madePool === shownPool && where.kind === "machine" && machineAnswers(status.state)
+          }
+          onCancel={() => setForgetting(false)}
           onForget={() => {
-            // A refused add made no pool: Settings › Pools has nothing to forget, so the
-            // refusal Pool setup keeps is forgotten here.
-            if (status.state === "refused" && !madePool)
-              void commands.poolSetupForgetRefused().then(() => reread());
+            setForgetting(false);
+            // The refusal Pool setup keeps is forgotten here; a made pool on Docker is forgotten
+            // without contacting its machine; a cluster's pool is Settings' to forget.
+            if (madePool !== shownPool) void commands.poolSetupForgetRefused().then(() => reread());
+            else if (where.kind === "machine") void forgetPool(shownPool).then(() => reread());
             else onOpenPools?.();
+          }}
+          onRemove={() => {
+            setForgetting(false);
+            void removePool(shownPool).then(() => reread());
           }}
         />
       )}

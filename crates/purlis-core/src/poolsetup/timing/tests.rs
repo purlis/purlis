@@ -101,3 +101,11 @@ fn lines_say_each_time_and_a_slow_one_waits_on_something() {
             .contains("download")
     );
 }
+
+#[test]
+fn a_steps_time_is_its_timed_checks_added_and_none_where_none_was_timed() {
+    assert_eq!(added([Some(800), None, Some(3200)]), Some(4000));
+    assert_eq!(added([None, None]), None);
+    assert_eq!(added([]), None);
+    assert_eq!(added([Some(u32::MAX), Some(5)]), Some(u32::MAX));
+}

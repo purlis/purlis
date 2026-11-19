@@ -20,6 +20,12 @@ use super::{Refused, read_choices, runners, write_choices};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Declined {
     pub pool: String,
+    /// **Where it was asked for**: the machine's route, a cluster's `cluster:<context>`, or empty
+    /// for this machine. A pool is a name *there*: a pool of the same name made elsewhere is
+    /// another pool, and forgets nothing of this refusal. Empty where a file older than this
+    /// field kept it, which only [`forget_kept`] clears.
+    #[serde(default)]
+    pub on: String,
     pub reason: String,
 }
 
@@ -69,9 +75,9 @@ pub struct PoolStatus {
 /// The longest a reason is kept: what the person reads, never a log.
 const REASON_MOST: usize = 600;
 
-/// **Keeps that the add of pool `pool` was refused**, for `why`, in place of any earlier refusal.
-pub fn keep(config: &Path, pool: &str, why: &Refused) -> Result<(), Refused> {
-    let _locked = runners::lock(config);
+/// **Keeps that the add of pool `pool`, asked for `on`, was refused**, for `why`, in place of any
+/// earlier refusal. The caller holds [`runners::lock`].
+fn keep_locked(config: &Path, pool: &str, on: &str, why: &Refused) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
     let mut reason = crate::shown::short(&why.to_string());
     reason.truncate(
@@ -82,19 +88,38 @@ pub fn keep(config: &Path, pool: &str, why: &Refused) -> Result<(), Refused> {
     );
     choices.declined = Some(Declined {
         pool: pool.to_owned(),
+        on: on.to_owned(),
         reason,
     });
     write_choices(config, choices)
 }
 
-/// **Forgets the refusal of pool `pool`**, where one is kept for it: it was made after all.
-pub fn forget(config: &Path, pool: &str) -> Result<(), Refused> {
+/// **Keeps that the add of pool `pool`, asked for `on`, was refused**, for `why`.
+pub fn keep(config: &Path, pool: &str, on: &str, why: &Refused) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    keep_locked(config, pool, on, why)
+}
+
+/// **Keeps the refusal of pool `pool`, unless this machine already keeps a pool of that name**: a
+/// name turned away for being taken is no refused pool, and the pool that stands is not Refused.
+/// Whether the name is kept is read under the same lock the refusal is written under.
+pub fn keep_unless_kept(config: &Path, pool: &str, on: &str, why: &Refused) {
+    let _locked = runners::lock(config);
+    let kept = super::kept_pools(config).is_ok_and(|kept| kept.iter().any(|one| one == pool));
+    if !kept {
+        let _ = keep_locked(config, pool, on, why);
+    }
+}
+
+/// **Forgets the refusal of pool `pool` asked for `on`**, where one is kept for that very pool:
+/// it was made after all. A pool of another name, or of the same name elsewhere, clears nothing.
+pub fn forget(config: &Path, pool: &str, on: &str) -> Result<(), Refused> {
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     if choices
         .declined
         .as_ref()
-        .is_none_or(|kept| kept.pool != pool)
+        .is_none_or(|kept| kept.pool != pool || kept.on != on)
     {
         return Ok(());
     }
@@ -102,28 +127,23 @@ pub fn forget(config: &Path, pool: &str) -> Result<(), Refused> {
     write_choices(config, choices)
 }
 
-/// **What an add of pool `pool` answered, with the pool kept where it was refused**: an `Err` is
-/// kept as the pool's reason and handed back as it was; an add that made the pool (`was_made`)
-/// forgets any refusal. A refusal that can't be kept is not allowed to hide the first.
+/// **What an add of pool `pool` on `on` answered, with the pool kept where it was refused**: an
+/// `Err` is kept as the pool's reason and handed back as it was; an add that made the pool
+/// (`was_made`) forgets that pool's refusal. A refusal that can't be kept is not allowed to hide
+/// the first.
 pub fn kept_after<T>(
     config: &Path,
     pool: &str,
+    on: &str,
     added: Result<T, Refused>,
     was_made: impl Fn(&T) -> bool,
 ) -> Result<T, Refused> {
-    let kept_already =
-        || super::kept_pools(config).is_ok_and(|kept| kept.iter().any(|one| one == pool));
     match &added {
-        // A name this machine already keeps as a pool is no refused pool: the add was turned
-        // away for the name, and the pool that stands is not Refused.
-        Err(why) if !kept_already() => {
-            let _ = keep(config, pool, why);
-        }
-        Err(_) => {}
+        Err(why) => keep_unless_kept(config, pool, on, why),
         // Only an add that made the pool forgets a refusal: one that made nothing (a team's image
         // breaking the contract) leaves what was kept as it was.
         Ok(made) if was_made(made) => {
-            let _ = forget(config, pool);
+            let _ = forget(config, pool, on);
         }
         Ok(_) => {}
     }

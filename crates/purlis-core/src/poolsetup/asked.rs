@@ -462,9 +462,13 @@ pub fn create(
     let made = make(config, docker, asked, desktop);
     // A refused add keeps the pool, as Refused, with its reason (#7191).
     match asked.pool() {
-        Ok(pool) => {
-            super::declined::kept_after(config, pool.name(), made, |made| *made == Created::Added)
-        }
+        Ok(pool) => super::declined::kept_after(
+            config,
+            pool.name(),
+            asked.on.as_deref().unwrap_or_default(),
+            made,
+            |made| *made == Created::Added,
+        ),
         Err(_) => made,
     }
 }

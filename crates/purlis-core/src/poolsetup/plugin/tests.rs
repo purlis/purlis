@@ -76,3 +76,12 @@ fn a_missing_plugin_is_named_with_what_to_do() {
          looks in the usual install folders only. Name the folder it is in."
     );
 }
+
+// The app's own PATH is never searched: /bin/sh is on every PATH and in none of the known
+// folders (macOS keeps nothing of the name in /usr/bin).
+#[cfg(target_os = "macos")]
+#[test]
+fn a_plugin_only_on_the_apps_own_path_is_missing() {
+    assert!(Path::new("/bin/sh").exists());
+    assert_eq!(find("sh", None, None), Where::Missing);
+}

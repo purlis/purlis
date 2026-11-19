@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Adding a cluster pool from Pool setup now uses the kubeconfig file chosen on the first step, and finds the credential plugin it signs in with in the usual install folders (Homebrew, `/usr/local/bin`, the gcloud SDK, `~/.krew/bin`) or the one folder you name. Only that folder is added to the commands purlis runs, never your shell's whole search path (#7192).
+- Adding a cluster pool from Pool setup now uses the kubeconfig file chosen on the first step, and finds the credential plugin it signs in with in the usual install folders (Homebrew, `/usr/local/bin`, the gcloud SDK, `~/.krew/bin`) or the one folder you name (`~/` works there; `$HOME` and other variables are refused). Only that folder is added to the commands purlis runs, never your shell's whole search path (#7192).
 
 ### Added
 

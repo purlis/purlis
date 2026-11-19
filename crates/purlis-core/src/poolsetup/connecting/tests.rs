@@ -1257,3 +1257,102 @@ fn a_trusted_machine_shows_who_the_person_said_can_sign_in_to_it() {
     }));
     assert!(tls.machine.unwrap().owned);
 }
+
+// **Trust only on full success** (#7191, ruled by the steward 2026-11-19): what trust_and_create
+// keeps of the machine once its add is over, whichever way it ended.
+mod trust_only_on_full_success {
+    use super::super::super::asked::Created;
+    use super::super::super::{Choices, Chosen, declined, read_choices, write_choices};
+    use super::super::keep_only_a_made_pool;
+    use crate::runners::Refused;
+
+    /// A config whose machine Connect holds as the press left it: trusted, and marked the
+    /// person's own, as the answers before the add keep it. Gives what it held before.
+    fn after_the_trust() -> (tempfile::TempDir, Chosen) {
+        use crate::sshroute::{EnginePin, Pin, Route};
+        let config = tempfile::tempdir().unwrap();
+        super::super::super::choose_machine(config.path(), Some("ssh://me@lab"), None).unwrap();
+        let before = read_choices(config.path()).unwrap().connect.unwrap();
+        let remote = crate::runners::Remote {
+            route: Route::parse("ssh://me@lab/var/run/docker.sock").unwrap(),
+            pin: Pin {
+                host_key: crate::sshroute::HostKey::parse(super::KEY).unwrap(),
+                engine: EnginePin::Docker("ABCD".to_owned()),
+            },
+        };
+        super::super::super::trusted(config.path(), &remote).unwrap();
+        let pin = read_choices(config.path())
+            .unwrap()
+            .connect
+            .unwrap()
+            .pin_json()
+            .unwrap();
+        super::super::super::choose_owned(config.path(), true, &pin).unwrap();
+        (config, before)
+    }
+
+    fn machine_kept(config: &std::path::Path) -> Option<Chosen> {
+        read_choices(config).unwrap().connect
+    }
+
+    #[test]
+    fn a_refused_add_rolls_the_machine_back_and_keeps_the_refusal() {
+        let (config, before) = after_the_trust();
+        let made = keep_only_a_made_pool(
+            config.path(),
+            &before,
+            "lab",
+            Err(Refused::Other("the disk on lab is full".to_owned())),
+        );
+        assert!(made.is_err(), "the refusal is handed back as it was");
+        assert_eq!(machine_kept(config.path()), Some(before));
+        let kept = read_choices(config.path()).unwrap().declined.expect("kept");
+        assert_eq!(
+            (kept.pool.as_str(), kept.on.as_str()),
+            ("lab", "ssh://me@lab")
+        );
+        assert_eq!(kept.reason, "the disk on lab is full");
+    }
+
+    #[test]
+    fn answers_that_cannot_be_kept_roll_back_and_keep_the_refusal_too() {
+        // The real refusal of choose_owned for a pin that is not the one trusted.
+        let (config, before) = after_the_trust();
+        let why = super::super::super::choose_owned(config.path(), true, &serde_json::json!({}))
+            .expect_err("no pin is trusted");
+        let made = keep_only_a_made_pool(config.path(), &before, "lab", Err(why));
+        assert!(made.is_err());
+        assert_eq!(machine_kept(config.path()), Some(before));
+        assert!(
+            read_choices(config.path())
+                .unwrap()
+                .declined
+                .is_some_and(|kept| !kept.reason.is_empty())
+        );
+    }
+
+    #[test]
+    fn an_add_that_made_nothing_rolls_back_and_is_no_refusal() {
+        let (config, before) = after_the_trust();
+        let made = keep_only_a_made_pool(
+            config.path(),
+            &before,
+            "lab",
+            Ok(Created::Breaks(vec!["no".to_owned()])),
+        );
+        assert!(matches!(made, Ok(Created::Breaks(_))));
+        assert_eq!(machine_kept(config.path()), Some(before));
+        assert!(read_choices(config.path()).unwrap().declined.is_none());
+    }
+
+    #[test]
+    fn an_add_that_made_the_pool_keeps_the_trust() {
+        let (config, before) = after_the_trust();
+        let made = keep_only_a_made_pool(config.path(), &before, "lab", Ok(Created::Added));
+        assert!(matches!(made, Ok(Created::Added)));
+        assert!(
+            machine_kept(config.path()).is_some_and(|kept| kept.owned && kept.trusted.is_some())
+        );
+        assert!(read_choices(config.path()).unwrap().declined.is_none());
+    }
+}

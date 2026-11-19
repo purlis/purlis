@@ -23,7 +23,7 @@ const bar = (
   render(
     <PoolStatusBar
       pool="build-box"
-      machine="build-box.local"
+      where={{ kind: "machine", host: "build-box.local" }}
       status={{ state }}
       {...on}
       {...more}
@@ -43,11 +43,35 @@ describe("PoolStatusBar (#7191)", () => {
 
   it("says a refusal's reason, and that purlis stopped trying", async () => {
     const on = bar("refused", { status: { state: "refused", reason: "the disk is full" } });
+    expect(screen.getByText("Not added: pool build-box")).toBeInTheDocument();
     expect(
-      screen.getByText(/answers, and refused: the disk is full\. purlis stopped trying/),
+      screen.getByText(
+        "build-box.local answered, and the pool was not added: the disk is full. purlis stopped trying.",
+      ),
     ).toBeInTheDocument();
+    expect(screen.queryByText(/refused/i)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Check pool" }));
     expect(on.onCheckPool).toHaveBeenCalled();
+  });
+
+  it("names a cluster's context, not a machine that answered, for a cluster pool", () => {
+    bar("refused", {
+      where: { kind: "cluster", context: "gke-team" },
+      status: { state: "refused", reason: "the operator is not installed" },
+    });
+    expect(
+      screen.getByText(
+        "The cluster (context gke-team) did not take the pool: the operator is not installed. purlis stopped trying.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/answered/)).not.toBeInTheDocument();
+  });
+
+  it("says an unreachable cluster by its context", () => {
+    bar("unreachable", { where: { kind: "cluster", context: "gke-team" } });
+    expect(
+      screen.getByText("purlis can't reach the cluster (context gke-team) and keeps trying."),
+    ).toBeInTheDocument();
   });
 
   it("stops at a changed host key and offers only to check the new one", async () => {

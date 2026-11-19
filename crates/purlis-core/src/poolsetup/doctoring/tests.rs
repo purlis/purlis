@@ -1072,7 +1072,16 @@ fn every_check_connect_ran_carries_its_time() {
         timed,
         ["unconfined", "unsupported-architecture", "kernel-short"]
     );
-    assert!(passed.timed.iter().all(|one| one.ms() >= 1));
+    // What the window draws: one line per check, timed, and none of them waiting on anything,
+    // since a fast stand never runs past thirty seconds.
+    let lines = super::super::timing::lines(&passed.timed, "build-box");
+    assert_eq!(lines.iter().map(|one| one.cause).collect::<Vec<_>>(), timed);
+    assert!(
+        lines
+            .iter()
+            .all(|one| one.took_ms.is_some() && one.waiting_on.is_none()),
+        "{lines:?}"
+    );
 }
 
 /// **Connect says a short kernel up front, from `docker info` alone** (#7084): before an image

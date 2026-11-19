@@ -100,6 +100,15 @@ pub fn lines(timed: &[Timed], host: &str) -> Vec<Took> {
     lines
 }
 
+/// **A step's time** (#7191): its checks' durations added, for the rail's `took 4 s`. `None`
+/// where none of them was timed, so a step that measured nothing shows no time rather than 0.
+#[must_use]
+pub fn added(each: impl IntoIterator<Item = Option<u32>>) -> Option<u32> {
+    each.into_iter()
+        .flatten()
+        .fold(None, |sum, one| Some(sum.unwrap_or(0).saturating_add(one)))
+}
+
 /// `took` in whole milliseconds, never less than one, and never past what a `u32` holds.
 #[must_use]
 pub fn ms(took: Duration) -> u32 {

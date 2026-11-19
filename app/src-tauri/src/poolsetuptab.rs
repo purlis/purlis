@@ -392,7 +392,10 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
                         waiting_on: check.waiting_on.clone(),
                     })
                     .collect(),
-                took_ms: None,
+                // The rail's time: what the step's own timed checks took, together.
+                took_ms: purlis_core::poolsetup::timing::added(
+                    step.checks.iter().map(|check| check.took_ms),
+                ),
             })
             .collect(),
     }
@@ -611,7 +614,8 @@ pub async fn pool_setup_plugin_folder(folder: String) -> Result<(), String> {
     {
         crate::off_the_window("keeping the folder", move || {
             let config = config_root()?;
-            purlis_core::poolsetup::choose_plugin_folder(&config, std::path::Path::new(&folder))
+            let home = purlis_core::envvar::var_os("HOME").map(std::path::PathBuf::from);
+            purlis_core::poolsetup::choose_plugin_folder_typed(&config, &folder, home.as_deref())
                 .map_err(|why| why.to_string())
         })
         .await

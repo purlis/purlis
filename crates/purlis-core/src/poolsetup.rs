@@ -2373,6 +2373,15 @@ pub fn forget_machine(config: &Path) -> Result<(), Refused> {
     Ok(())
 }
 
+/// **Puts the machine Connect read back as it was** (#7191): what `before` held, trust and who
+/// can sign in included, once a press that trusted it on the way to a pool made nothing.
+pub fn restore_machine(config: &Path, before: &Chosen) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.connect = Some(before.clone());
+    write_choices(config, choices)
+}
+
 /// **Keeps what the person trusted on Connect** (#6266): the route with its socket, and the pin
 /// the Pool step's pool is made with.
 pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Refused> {
@@ -2563,6 +2572,45 @@ pub fn choose_plugin_folder(config: &Path, folder: &Path) -> Result<(), Refused>
     write_choices(config, choices)
 }
 
+/// **The folder a person typed for a credential plugin** (#7192): `~/` is the home folder, which
+/// the field's own placeholder (`~/google-cloud-sdk/bin`) starts with, and is expanded here, once,
+/// by purlis, never by a shell. A `$` (`$HOME`, `${X}`, `$(…)`), a backtick or a `~user` is an
+/// expansion nobody guards here, and is refused; so is the home folder itself, which holds every
+/// binary of the person's and is no plugin's folder.
+pub fn plugin_folder_typed(typed: &str, home: Option<&Path>) -> Result<PathBuf, Refused> {
+    let text = typed.trim();
+    let shown = crate::shown::short(text);
+    if text.contains('$') || text.contains('`') || (text.starts_with('~') && !text.starts_with("~/"))
+    {
+        return Err(Refused::Other(format!(
+            "\"{shown}\" uses a variable or shortcut purlis doesn't expand. Write the folder out in full, or start it with ~/"
+        )));
+    }
+    let folder = match text.strip_prefix("~/") {
+        Some(under) => home
+            .ok_or_else(|| Refused::Other("purlis found no home folder for ~/".to_owned()))?
+            .join(under),
+        None => PathBuf::from(text),
+    };
+    if home.is_some_and(|home| folder == home) {
+        return Err(Refused::Other(
+            "that is your home folder, which holds all of your files. Name the folder the plugin is in"
+                .to_owned(),
+        ));
+    }
+    Ok(folder)
+}
+
+/// **Keeps the folder typed for a context's credential plugin** ([`plugin_folder_typed`], then
+/// [`choose_plugin_folder`]).
+pub fn choose_plugin_folder_typed(
+    config: &Path,
+    typed: &str,
+    home: Option<&Path>,
+) -> Result<(), Refused> {
+    choose_plugin_folder(config, &plugin_folder_typed(typed, home)?)
+}
+
 /// **Applies part `part` of the install to the cluster chosen on Where** (#4493), with the
 /// person's own sign-in through `kubectl`, on Install's own button. Refused where no cluster was
 /// chosen, so nothing is applied to a context the person didn't pick.
@@ -2688,6 +2736,7 @@ pub fn create_cluster_pool(
     declined::kept_after(
         config,
         name,
+        &format!("cluster:{context}"),
         cluster::create_pool(&kubectl.clone().with_context(context), name, image),
         |()| true,
     )
@@ -2881,6 +2930,8 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
         && choices.pool.is_none()
         && choices.made.is_none()
         && choices.declined.is_none()
+        && choices.kubeconfig.is_none()
+        && choices.plugin_dir.is_none()
     {
         return Ok(());
     }

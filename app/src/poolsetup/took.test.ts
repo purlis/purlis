@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { SLOW_MS, tookWords } from "./took";
+import { tookWords } from "./took";
 
 describe("tookWords (#7191)", () => {
   it("says a quick check in tenths of a second", () => {
@@ -17,8 +17,5 @@ describe("tookWords (#7191)", () => {
   it("says nothing where there is no time, or a nonsense one", () => {
     expect(tookWords(null)).toBeUndefined();
     expect(tookWords(-1)).toBeUndefined();
-  });
-  it("calls a line slow past thirty seconds", () => {
-    expect(SLOW_MS).toBe(30_000);
   });
 });

@@ -33,6 +33,7 @@ import {
 } from "./parts";
 import { WhoCanSignIn } from "./WhoCanSignIn";
 import { MergedFields, type Merged } from "./MergedFields";
+import { poolStateOf, type WithPoolState } from "./poolState";
 import { asked, type Adding } from "./PoolStep";
 import { readReleaseImage, type ReleaseImage } from "../pools";
 
@@ -1030,7 +1031,9 @@ export function ConnectStep({
   };
   // A made pool's machine is never forgotten: This isn't it reads it again as it stands.
   const notIt = () => (madePool ? checkAgain() : pick(null));
-  const done = step.state === "done";
+  // A pool whose add was not taken is never Connected beside its Not added bar (#7191).
+  const turnedDown = poolStateOf(shown as WithPoolState)?.state === "refused";
+  const done = step.state === "done" && !turnedDown;
   const meeting = step.next?.id === "trust-machine";
   // A tcp:// machine is refused on its card until the person chooses a route (#6267): chosen
   // TLS, the pick with Options open says how to name its files; chosen SSH, it is read again.

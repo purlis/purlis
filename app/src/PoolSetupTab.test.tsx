@@ -1,7 +1,15 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -133,7 +141,7 @@ describe("PoolSetupTab", () => {
     };
     const calls = core(() => refused, { pool_setup_check_again: () => refused });
     render(<PoolSetupTab plane="p" />);
-    expect(await screen.findByText("Refused: pool lab")).toBeInTheDocument();
+    expect(await screen.findByText("Not added: pool lab")).toBeInTheDocument();
     expect(screen.getByText(/the disk on lab is full/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Check pool" }));
     await waitFor(() =>
@@ -141,7 +149,7 @@ describe("PoolSetupTab", () => {
     );
   });
 
-  it("Forget pool… on a refused add forgets the kept refusal, where Settings has no pool to forget", async () => {
+  it("Forget pool… on a refused add asks what may be left, then forgets the kept refusal", async () => {
     const refused = {
       ...CHOSEN,
       pool_state: { pool: "lab", state: "refused", reason: "no room" },
@@ -149,9 +157,61 @@ describe("PoolSetupTab", () => {
     const calls = core(() => refused, { pool_setup_forget_refused: () => null });
     render(<PoolSetupTab plane="p" />);
     await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(false);
+    const asked = await screen.findByRole("alertdialog", { name: "Forget pool lab?" });
+    const left = within(asked).getByRole("list", { name: /What may be left on/ });
+    expect(
+      within(left)
+        .getAllByRole("listitem")
+        .map((one) => one.textContent),
+    ).toEqual([
+      "its runner's container and home volume",
+      "the browsers it ran",
+      "the logins given on it",
+    ]);
+    // Nothing was made, so there is nothing to Remove.
+    expect(within(asked).queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+    await userEvent.click(within(asked).getByRole("button", { name: "Forget it here" }));
     await waitFor(() =>
       expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(true),
     );
+  });
+
+  it("forgets a refusal of pool a in the tab, not in Settings, where pool b was made", async () => {
+    const both = {
+      ...MADE,
+      pool: "b",
+      pool_state: { pool: "a", state: "refused", reason: "no room" },
+    };
+    const calls = core(() => both, { pool_setup_forget_refused: () => null });
+    const onOpenPools = vi.fn();
+    render(<PoolSetupTab plane="p" onOpenPools={onOpenPools} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Forget it here" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(true),
+    );
+    expect(onOpenPools).not.toHaveBeenCalled();
+  });
+
+  it("offers Remove only where the machine answers", async () => {
+    const answers = {
+      ...MADE,
+      pool_state: { pool: "dev-box", state: "runner-gone", reason: null },
+    };
+    core(() => answers);
+    const { unmount } = render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    expect(await screen.findByRole("button", { name: "Remove" })).toBeInTheDocument();
+    unmount();
+    cleanup();
+    forgetPools();
+    const silent = { ...MADE, pool_state: { pool: "dev-box", state: "unreachable", reason: null } };
+    core(() => silent);
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await screen.findByRole("alertdialog");
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
   });
 
   it("Try now tries the forward again, not only a read", async () => {
@@ -860,7 +920,7 @@ describe("The pool's status bar (#7191)", () => {
     );
     render(<PoolSetupTab plane="p" />);
     expect(await screen.findByRole("region", { name: "Pool dev-box" })).toBeInTheDocument();
-    expect(screen.getByText(/refused: the disk is full/)).toBeInTheDocument();
+    expect(screen.getByText(/the pool was not added: the disk is full/)).toBeInTheDocument();
   });
 
   it("shows no bar where the core says nothing of the pool's state", async () => {

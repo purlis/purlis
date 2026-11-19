@@ -609,6 +609,15 @@ Everything it shows is read fresh, and only the person's choices are stored, so 
 or through `purlis pool` is picked up (spec #4469). Window text says Pool setup.
 _Avoid_: wizard, onboarding, add pool form (that is what it replaces)
 
+**Pool state**:
+The one state a **Pool** is in, when it is in trouble, said by Pool setup's status bar: *Unreachable*
+(purlis can't reach it and keeps trying), *Not added* (the machine or cluster would not take it; the
+pool is kept with its reason, and purlis stops trying; named `refused` in code, never *Refused* in
+the window, ui-copy R-170), *Host key changed* (purlis stops and waits for the person's OK),
+*Runner gone* (its home volume, with the sign-ins, is still there) and *Pool forgotten* (nothing to
+show). One status bar holds it and what can be done about it (#7191).
+_Avoid_: pool status, health
+
 **Claim**:
 One person's request for a runner from a pool, and the runner it is given. A **kept** claim has
 storage of its own, its runner's home, and survives the loss of its runner's pod, its pairing
