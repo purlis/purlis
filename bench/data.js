@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795084332741,
+  "lastUpdate": 1795089633196,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51576,6 +51576,48 @@ window.BENCHMARK_DATA = {
             "value": 100.98310000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.401, 100.892, 100.983, 101.012, 102.860 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "3396e6219c85716485aba7b5d4aca2ec2388b053",
+          "message": "Keyring down: key the 'a seal was kept here' evidence by anchor; right advice; missing tests (#7164) (#7228)\n\n* Keyring down: key the 'a seal was kept here' evidence by anchor, say only reopening mends it, and the missing tests (#7164)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RBJS6J0D76QJ4000523Y6H\nPurlis-Persona: steward\n\n* Add the chain-policy tests and the changelog fragment (#7164)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RBJS6J0D76QJ4000523Y6H\nPurlis-Persona: steward\n\n* Round 2 of #7164: the seal marker is made at a verified read too and its tests can go red\n\n- the replace-ask test sets its vaults override on the thread that runs the ask\n- a plane sealed before markers gets its marker at its first verified read (policy Held arm,\n  dispatch set, nevers); tests for it and for each of the three seal sites\n- the markers' folder is 0700; plane-format.md gives the section Format / Written by / Read by\n- the nevers-unread sentence test expects the keyring advice round 1 added\n- the two chats of the chain-policy tests no longer share a name\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7RKEK0Q9C9YN7WRGKVVDZCE\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-19T11:12:45Z",
+          "tree_id": "4ab9695403436e5ca0838a9c1cadd35ac060749e",
+          "url": "https://github.com/purlis/purlis/commit/3396e6219c85716485aba7b5d4aca2ec2388b053"
+        },
+        "date": 1795089626847,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.58253,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.564, 0.573, 0.583, 0.587, 0.596 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.289735999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.171, 16.249, 16.290, 16.296, 16.372 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.548254,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.333, 101.348, 101.548, 102.120, 103.244 ms"
           }
         ]
       }
