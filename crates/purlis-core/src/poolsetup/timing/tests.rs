@@ -42,7 +42,7 @@ fn a_running_check_past_thirty_seconds_is_listed_until_it_stops() {
     assert!(
         !slow_now()
             .iter()
-            .any(|(_, said)| said.contains("slow-host-for-test")),
+            .any(|(_, on, _)| on == "slow-host-for-test"),
         "a check that has just started waits on nothing yet"
     );
     let later = Instant::now() + SLOW + Duration::from_secs(1);
@@ -50,7 +50,8 @@ fn a_running_check_past_thirty_seconds_is_listed_until_it_stops() {
     assert!(
         listed
             .iter()
-            .any(|(cause, said)| *cause == "image-unreachable"
+            .any(|(cause, on, said)| *cause == "image-unreachable"
+                && on == "slow-host-for-test"
                 && said.contains("slow-host-for-test")),
         "{listed:?}"
     );
@@ -58,7 +59,7 @@ fn a_running_check_past_thirty_seconds_is_listed_until_it_stops() {
     assert!(
         !slow_at(later)
             .iter()
-            .any(|(_, said)| said.contains("slow-host-for-test")),
+            .any(|(_, on, _)| on == "slow-host-for-test"),
         "a check that is done waits on nothing"
     );
 }

@@ -103,18 +103,43 @@ pub fn forget(config: &Path, pool: &str) -> Result<(), Refused> {
 }
 
 /// **What an add of pool `pool` answered, with the pool kept where it was refused**: an `Err` is
-/// kept as the pool's reason and handed back as it was; an add that worked forgets any refusal.
-/// A refusal that can't be kept is not allowed to hide the first.
-pub fn kept_after<T>(config: &Path, pool: &str, added: Result<T, Refused>) -> Result<T, Refused> {
+/// kept as the pool's reason and handed back as it was; an add that made the pool (`was_made`)
+/// forgets any refusal. A refusal that can't be kept is not allowed to hide the first.
+pub fn kept_after<T>(
+    config: &Path,
+    pool: &str,
+    added: Result<T, Refused>,
+    was_made: impl Fn(&T) -> bool,
+) -> Result<T, Refused> {
+    let kept_already =
+        || super::kept_pools(config).is_ok_and(|kept| kept.iter().any(|one| one == pool));
     match &added {
-        Err(why) => {
+        // A name this machine already keeps as a pool is no refused pool: the add was turned
+        // away for the name, and the pool that stands is not Refused.
+        Err(why) if !kept_already() => {
             let _ = keep(config, pool, why);
         }
-        Ok(_) => {
+        Err(_) => {}
+        // Only an add that made the pool forgets a refusal: one that made nothing (a team's image
+        // breaking the contract) leaves what was kept as it was.
+        Ok(made) if was_made(made) => {
             let _ = forget(config, pool);
         }
+        Ok(_) => {}
     }
     added
+}
+
+/// **Forgets whatever refusal is kept**, whichever pool it is of: the person forgets the refused
+/// pool from the status bar, where no pool was made to forget by any other way.
+pub fn forget_kept(config: &Path) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    if choices.declined.is_none() {
+        return Ok(());
+    }
+    choices.declined = None;
+    write_choices(config, choices)
 }
 
 /// **The state of the pool Pool setup keeps**, where it keeps one refused.

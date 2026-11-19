@@ -4389,6 +4389,11 @@ export const commands = {
 	 */
 	poolSetupTryNow: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_try_now", { plane })),
 	/**
+	 *  **Forget the pool an add refused** (#7191), from the status bar: no pool was made, so the
+	 *  refusal Pool setup keeps is all there is to forget. Nothing on any machine is touched.
+	 */
+	poolSetupForgetRefused: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_forget_refused")),
+	/**
 	 *  **Trust and create the pool** (#7191, Refined 2): for Docker on another machine, Connect and
 	 *  Pool in one press. The machine Connect read is trusted at `fingerprint`, which the person saw;
 	 *  every check of the pool's image is asked of its engine, so a full disk or a missing image is a

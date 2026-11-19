@@ -11,7 +11,7 @@ fn config() -> tempfile::TempDir {
 fn a_failed_add_keeps_the_pool_refused_with_its_reason() {
     let config = config();
     let failed: Result<(), Refused> = Err(Refused::Other("the disk on lab is full".to_owned()));
-    let answered = kept_after(config.path(), "lab", failed);
+    let answered = kept_after(config.path(), "lab", failed, |()| true);
     assert!(answered.is_err(), "the refusal is handed back as it was");
     let kept = read_choices(config.path()).expect("choices");
     let status = status_of(kept.declined.as_ref()).expect("the pool is kept");
@@ -27,10 +27,18 @@ fn a_failed_add_keeps_the_pool_refused_with_its_reason() {
 #[test]
 fn an_add_that_worked_forgets_the_refusal_of_that_pool_only() {
     let config = config();
-    let _ = kept_after::<()>(config.path(), "lab", Err(Refused::Other("no".to_owned())));
-    kept_after(config.path(), "other", Ok(())).expect("ok");
+    let _ = kept_after::<()>(
+        config.path(),
+        "lab",
+        Err(Refused::Other("no".to_owned())),
+        |()| true,
+    );
+    kept_after(config.path(), "other", Ok(()), |()| true).expect("ok");
     assert!(read_choices(config.path()).unwrap().declined.is_some());
-    kept_after(config.path(), "lab", Ok(())).expect("ok");
+    // An add that made nothing forgets nothing.
+    kept_after(config.path(), "lab", Ok(()), |()| false).expect("ok");
+    assert!(read_choices(config.path()).unwrap().declined.is_some());
+    kept_after(config.path(), "lab", Ok(()), |()| true).expect("ok");
     assert!(read_choices(config.path()).unwrap().declined.is_none());
 }
 
@@ -59,7 +67,11 @@ fn the_state_is_spelled_as_the_status_bar_reads_it() {
 fn a_long_reason_is_cut_not_kept_whole() {
     let config = config();
     let why = Refused::Other("x".repeat(5000));
-    let _ = kept_after::<()>(config.path(), "lab", Err(why));
+    let _ = kept_after::<()>(config.path(), "lab", Err(why), |()| true);
+    forget_kept(config.path()).unwrap();
+    assert!(read_choices(config.path()).unwrap().declined.is_none());
+    let why = Refused::Other("x".repeat(5000));
+    let _ = kept_after::<()>(config.path(), "lab", Err(why), |()| true);
     let kept = read_choices(config.path()).unwrap().declined.unwrap();
     assert!(kept.reason.chars().count() <= REASON_MOST);
 }

@@ -1719,7 +1719,9 @@ pub fn trust_and_create(
     };
     let made = super::asked::create(config, docker, &asked, desktop)?;
     if made == super::asked::Created::Added {
-        super::choose_pool(config, pool.name())?;
+        // Which pool setup goes on with: the pool stands whatever this says, so a failure here is
+        // never reported as a refusal of the add.
+        let _ = super::choose_pool(config, pool.name());
     }
     Ok(Ok(made))
 }

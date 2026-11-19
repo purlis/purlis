@@ -7,8 +7,7 @@
  * The five names come from Remote trains A, which adds them to the core. Until that enum is on
  * `main`, this file is the **one adapter**: the tab reads a pool's state only through
  * {@link poolStateOf}, so switching to the core's own field is one function here, and nothing in
- * the bar changes. Today it reads an optional `pool_state` that the core does not send yet, so the
- * bar shows nothing until it does.
+ * the bar changes. It reads the `pool_state` the core sends.
  */
 
 export const POOL_STATES = [

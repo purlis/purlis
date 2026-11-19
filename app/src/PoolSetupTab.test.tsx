@@ -141,6 +141,19 @@ describe("PoolSetupTab", () => {
     );
   });
 
+  it("Forget pool… on a refused add forgets the kept refusal, where Settings has no pool to forget", async () => {
+    const refused = {
+      ...CHOSEN,
+      pool_state: { pool: "lab", state: "refused", reason: "no room" },
+    };
+    const calls = core(() => refused, { pool_setup_forget_refused: () => null });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await waitFor(() =>
+      expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(true),
+    );
+  });
+
   it("Try now tries the forward again, not only a read", async () => {
     const down = {
       ...MADE,

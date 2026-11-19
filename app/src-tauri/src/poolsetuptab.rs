@@ -279,14 +279,11 @@ pub fn shown(found: purlis_core::poolsetup::Resumed) -> PoolSetupShown {
         recommended,
         others: setup.others.clone(),
         kind: word(&setup.kind),
-        pool_state: setup
-            .pool_state
-            .as_ref()
-            .map(|status| PoolSetupPoolState {
-                pool: status.pool.clone(),
-                state: status.state.word().to_owned(),
-                reason: status.state.reason().map(str::to_owned),
-            }),
+        pool_state: setup.pool_state.as_ref().map(|status| PoolSetupPoolState {
+            pool: status.pool.clone(),
+            state: status.state.word().to_owned(),
+            reason: status.state.reason().map(str::to_owned),
+        }),
         contexts: PoolSetupContexts {
             names: setup.contexts.names.clone(),
             recommended: setup.contexts.recommended.clone(),
@@ -439,6 +436,25 @@ pub async fn pool_setup(
     #[cfg(not(unix))]
     {
         let _ = root;
+        Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **Forget the pool an add refused** (#7191), from the status bar: no pool was made, so the
+/// refusal Pool setup keeps is all there is to forget. Nothing on any machine is touched.
+#[tauri::command]
+#[specta::specta]
+pub async fn pool_setup_forget_refused() -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        crate::off_the_window("forgetting the refused pool", move || {
+            purlis_core::poolsetup::declined::forget_kept(&config_root()?)
+                .map_err(|why| why.to_string())
+        })
+        .await
+    }
+    #[cfg(not(unix))]
+    {
         Err(crate::dockerpools::NOT_HERE.to_owned())
     }
 }

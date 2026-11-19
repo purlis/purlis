@@ -1063,8 +1063,6 @@ fn an_image_that_cant_say_its_landlock_is_judged_by_the_hosts_release() {
     assert!(passed.checked.contains(&"disk-full"), "{passed:?}");
 }
 
-/// **Connect says a short kernel up front, from `docker info` alone** (#7084): before an image
-/// is picked, the host's release is all there is to read, and nothing is run there.
 #[test]
 fn every_check_connect_ran_carries_its_time() {
     let stand = Stand::new();
@@ -1077,6 +1075,8 @@ fn every_check_connect_ran_carries_its_time() {
     assert!(passed.timed.iter().all(|one| one.ms() >= 1));
 }
 
+/// **Connect says a short kernel up front, from `docker info` alone** (#7084): before an image
+/// is picked, the host's release is all there is to read, and nothing is run there.
 #[test]
 fn connect_finds_a_short_kernel_from_docker_info_alone() {
     let stand = Stand::new();

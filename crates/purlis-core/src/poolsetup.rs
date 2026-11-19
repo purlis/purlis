@@ -2689,6 +2689,7 @@ pub fn create_cluster_pool(
         config,
         name,
         cluster::create_pool(&kubectl.clone().with_context(context), name, image),
+        |()| true,
     )
 }
 

@@ -568,7 +568,13 @@ function PoolSetupGuide({
           onCheckPool={() => rereadThrough(commands.poolSetupCheckAgain)}
           onCheckKey={() => setShowing("connect")}
           onRemake={() => setShowing("pool")}
-          onForget={() => onOpenPools?.()}
+          onForget={() => {
+            // A refused add made no pool: Settings › Pools has nothing to forget, so the
+            // refusal Pool setup keeps is forgotten here.
+            if (status.state === "refused" && !madePool)
+              void commands.poolSetupForgetRefused().then(() => reread());
+            else onOpenPools?.();
+          }}
         />
       )}
       <div className="pool-setup">

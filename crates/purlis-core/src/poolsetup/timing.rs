@@ -88,8 +88,8 @@ pub fn lines(timed: &[Timed], host: &str) -> Vec<Took> {
             waiting_on: one.waited_on(host),
         })
         .collect();
-    for (cause, said) in slow_now() {
-        if said.contains(host) && !lines.iter().any(|one| one.cause == cause) {
+    for (cause, on, said) in slow_now() {
+        if on == host && !lines.iter().any(|one| one.cause == cause) {
             lines.push(Took {
                 cause,
                 took_ms: None,
@@ -223,19 +223,25 @@ pub fn time<T>(
 
 /// **Which checks are running past [`SLOW`] at `now`**, each as its cause and what it waits on.
 #[must_use]
-pub fn slow_at(now: Instant) -> Vec<(&'static str, String)> {
+pub fn slow_at(now: Instant) -> Vec<(&'static str, String, String)> {
     running()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter()
         .filter(|one| now.saturating_duration_since(one.since) > SLOW)
-        .map(|one| (one.cause, waiting_on(one.cause, &one.host)))
+        .map(|one| {
+            (
+                one.cause,
+                one.host.clone(),
+                waiting_on(one.cause, &one.host),
+            )
+        })
         .collect()
 }
 
 /// [`slow_at`], now.
 #[must_use]
-pub fn slow_now() -> Vec<(&'static str, String)> {
+pub fn slow_now() -> Vec<(&'static str, String, String)> {
     slow_at(Instant::now())
 }
 
