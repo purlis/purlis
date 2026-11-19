@@ -1093,3 +1093,178 @@ fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_s
     assert_eq!(crate::windowonly::every(root), []);
     let _ = taken_at_end(root, None);
 }
+
+/// A fake forge for the mint: one installation (42) of an App that holds `administration` and
+/// `actions` besides what a chat needs. As GitHub does, a mint with `permissions` gets exactly
+/// those, a mint with none gets all the App has, and one asking for a permission the
+/// installation lacks is a 422. It keeps the body it was sent.
+struct FakeForge {
+    has: Vec<(&'static str, &'static str)>,
+    body: std::sync::Mutex<Vec<crate::forge::transport::Field>>,
+}
+
+impl FakeForge {
+    fn new(has: &[(&'static str, &'static str)]) -> FakeForge {
+        FakeForge {
+            has: has.to_vec(),
+            body: std::sync::Mutex::default(),
+        }
+    }
+
+    fn sent(&self) -> Vec<(String, String)> {
+        use crate::forge::transport::Field;
+        self.body
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|f| match f {
+                Field::Text(n, v) | Field::Typed(n, v) => (n.clone(), v.clone()),
+                Field::File(..) => panic!("no file in a mint"),
+            })
+            .collect()
+    }
+}
+
+impl crate::forge::transport::Transport for FakeForge {
+    fn send(
+        &self,
+        _forge: &Forge,
+        call: &crate::forge::transport::Call,
+    ) -> Result<crate::forge::transport::Reply, crate::forge::transport::NoAnswer> {
+        use crate::forge::transport::{Endpoint, Reply};
+        let Endpoint::Rest { path, .. } = &call.endpoint else {
+            panic!("REST only")
+        };
+        let reply = |code, status, out: String, err: &str| {
+            Ok(Reply {
+                code,
+                out,
+                err: err.to_owned(),
+                status: Some(status),
+                headers: vec![],
+            })
+        };
+        if path.ends_with("/installation") {
+            return reply(0, 200, r#"{"id": 42}"#.to_owned(), "");
+        }
+        *self.body.lock().unwrap() = call.fields.clone();
+        let asked: Vec<(String, String)> = self
+            .sent()
+            .into_iter()
+            .filter_map(|(n, v)| {
+                Some((
+                    n.strip_prefix("permissions[")?
+                        .strip_suffix(']')?
+                        .to_owned(),
+                    v,
+                ))
+            })
+            .collect();
+        let mut granted = serde_json::Map::new();
+        if asked.is_empty() {
+            for (n, l) in &self.has {
+                granted.insert((*n).to_owned(), (*l).into());
+            }
+        }
+        for (n, l) in asked {
+            if !self.has.iter().any(|(h, _)| *h == n) {
+                return reply(1, 422, String::new(), "gh: Unprocessable Entity (HTTP 422)");
+            }
+            granted.insert(n, l.into());
+        }
+        reply(
+            0,
+            201,
+            serde_json::json!({"token": "t", "permissions": granted}).to_string(),
+            "",
+        )
+    }
+
+    fn check_auth(&self, _forge: &Forge) -> Result<(), crate::forge::ForgeError> {
+        Ok(())
+    }
+}
+
+fn the_app() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("contents", "write"),
+        ("issues", "write"),
+        ("metadata", "read"),
+        ("pull_requests", "write"),
+        ("workflows", "write"),
+        ("administration", "write"),
+        ("actions", "write"),
+        ("statuses", "write"),
+        ("deployments", "write"),
+    ]
+}
+
+fn mint_on(fake: &FakeForge, workflows: bool) -> Result<super::Minted, String> {
+    super::mint_over_with(
+        fake,
+        &github(),
+        &[remote("acme", "api", "/w/api")],
+        None,
+        workflows,
+    )
+}
+
+fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
+    list.iter()
+        .map(|(n, v)| ((*n).to_owned(), (*v).to_owned()))
+        .collect()
+}
+
+// Release delete, draft and notes edit (R5b, R3, R6) are all `contents:write`, which a chat needs
+// to push, and GitHub has no narrower permission for them: this allowlist cannot close them.
+#[test]
+fn the_mint_body_is_exactly_the_allowlist() {
+    let fake = FakeForge::new(&the_app());
+    mint_on(&fake, false).unwrap();
+    assert_eq!(
+        fake.sent(),
+        pairs(&[
+            ("repositories[]", "api"),
+            ("permissions[contents]", "write"),
+            ("permissions[issues]", "write"),
+            ("permissions[metadata]", "read"),
+            ("permissions[pull_requests]", "write"),
+        ])
+    );
+    mint_on(&fake, true).unwrap();
+    assert_eq!(
+        fake.sent().last(),
+        Some(&("permissions[workflows]".to_owned(), "write".to_owned()))
+    );
+}
+
+#[test]
+fn a_permission_the_app_gains_is_absent_from_the_chat_token() {
+    let fake = FakeForge::new(&the_app());
+    mint_on(&fake, false).unwrap();
+    let sent = fake.sent();
+    for never in [
+        "administration",
+        "actions",
+        "statuses",
+        "deployments",
+        "workflows",
+    ] {
+        assert!(
+            !sent
+                .iter()
+                .any(|(n, _)| n == &format!("permissions[{never}]")),
+            "{never}"
+        );
+    }
+}
+
+#[test]
+fn an_app_lacking_a_listed_permission_mints_nothing_and_says_so() {
+    let fake = FakeForge::new(&[("contents", "write"), ("metadata", "read")]);
+    let said = mint_on(&fake, false).unwrap_err();
+    assert!(
+        said.contains("lacks a permission") && said.contains("none was widened"),
+        "{said}"
+    );
+}

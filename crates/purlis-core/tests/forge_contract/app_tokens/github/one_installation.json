@@ -55,6 +55,30 @@
               "repositories[]",
               "web"
             ]
+          },
+          {
+            "text": [
+              "permissions[contents]",
+              "write"
+            ]
+          },
+          {
+            "text": [
+              "permissions[issues]",
+              "write"
+            ]
+          },
+          {
+            "text": [
+              "permissions[metadata]",
+              "read"
+            ]
+          },
+          {
+            "text": [
+              "permissions[pull_requests]",
+              "write"
+            ]
           }
         ]
       },

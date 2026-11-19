@@ -474,6 +474,34 @@ fn not_found(reply: &super::transport::Reply) -> bool {
     reply.status == Some(404) || reply.err.contains("(HTTP 404)")
 }
 
+/// **What a chat's token may do** (#7206, design `docs/research/forge-credential-lock.md` §1):
+/// the App's own permissions (`forge/agentidentity.rs`) and no more, so a permission the App
+/// gains later (`administration`, `actions`, `statuses`, `deployments`) is not on the chat's
+/// token. `workflows` joins only through [`mint_over_with`].
+///
+/// This does **not** close the release gaps (R5b delete, R3 draft, R6 notes edit): GitHub has no
+/// narrower permission for them than `contents:write`, which the chat needs to push.
+const ALLOWLIST: [(&str, &str); 4] = [
+    ("contents", "write"),
+    ("issues", "write"),
+    ("metadata", "read"),
+    ("pull_requests", "write"),
+];
+
+/// The mint's `permissions[..]` fields: [`ALLOWLIST`], and `workflows` when asked for.
+fn permission_fields(workflows: bool) -> Vec<Field> {
+    ALLOWLIST
+        .iter()
+        .chain(workflows.then_some(&("workflows", "write")))
+        .map(|(name, level)| Field::text(&format!("permissions[{name}]"), level))
+        .collect()
+}
+
+/// Whether `reply` is GitHub's 422: it refuses a mint that asks for more than the installation has.
+fn unprocessable(reply: &super::transport::Reply) -> bool {
+    reply.status == Some(422) || reply.err.contains("(HTTP 422)")
+}
+
 /// **The token `transport`'s App mints for `remotes`** (E3), all on one host, sent with the
 /// App's JWT as its bearer: each repo's installation, then the installation the clone `here`
 /// (the run's folder) is on, or else the only one, mints a token limited to those of its repos.
@@ -483,6 +511,18 @@ pub fn mint_over(
     forge: &Forge,
     remotes: &[Remote],
     here: Option<&Path>,
+) -> Result<Minted, String> {
+    mint_over_with(transport, forge, remotes, here, false)
+}
+
+/// [`mint_over`], with `workflows` (the App has it and the person ticked it) added to the
+/// token's permissions.
+pub fn mint_over_with(
+    transport: &dyn Transport,
+    forge: &Forge,
+    remotes: &[Remote],
+    here: Option<&Path>,
+    workflows: bool,
 ) -> Result<Minted, String> {
     let mut distinct: Vec<(&str, &str)> = remotes
         .iter()
@@ -570,13 +610,26 @@ pub fn mint_over(
         repos
             .iter()
             .map(|name| Field::text("repositories[]", name))
+            .chain(permission_fields(workflows))
             .collect(),
     );
     let reply = transport
         .send(forge, &call)
         .map_err(|e| format!("GitHub could not be asked for a token ({})", e.said()))?;
+    let refused_as_too_much = unprocessable(&reply);
     let out = Zeroizing::new(reply.out);
     if reply.code != 0 {
+        // Fail closed: never retry without `permissions`, which would mint everything the App has.
+        if refused_as_too_much {
+            return Err(format!(
+                "GitHub refused to mint a token: the App's installation lacks a permission a \
+                 chat's token asks for (contents, issues, metadata, pull requests{}), so none was \
+                 minted and none was widened: give the App those permissions on the installation \
+                 ({})",
+                if workflows { ", workflows" } else { "" },
+                reply.err.trim()
+            ));
+        }
         return Err(format!(
             "GitHub refused to mint a token for the App's installation ({})",
             reply.err.trim()
