@@ -14,15 +14,22 @@
 //! purlis: step runner_start done after 38 ms (parent: container_check)
 //! ```
 //!
-//! **A step that is not closed with [`Step::done`] reads `refused`.** The guard is dropped on
-//! every `?` and every early return, so its default is the failing way out; a success says so.
-//! A miss that is the answer (an inspect that finds no container on a normal start) is a
-//! success of the step: the step is done and its caller reads the answer.
+//! **A step that is not closed ends `refused`.** The guard is dropped on every `?` and every
+//! early return, so its default is the failing way out; a success says [`Step::done`]. Two more
+//! ways out are not refusals: [`Step::cancelled`] (the person cancelled it) and
+//! [`Step::gave_up`] (the wait ran out while the work it waits for may still finish), and
+//! [`Step::quiet`] writes nothing, for a step that found nothing to do. A miss that is the
+//! answer (an inspect that finds no container) is a success of the step: the step is done and its
+//! caller reads the answer.
 //!
-//! **A step inside another names it** ([`Step::under`]): a `parent` field on its line. The
-//! parent's time contains its children's, so a table that sums every line counts them twice;
-//! sum the lines with no parent, or one parent's children. A `docker` call ([`begin_debug`])
-//! is inside whichever step made it and names none: it is a `debug` line, never part of a sum.
+//! **A step inside another names it**: a `parent` field on its line. The parent's time contains
+//! its children's, so a table that sums every line counts them twice; **sum the lines with no
+//! parent**. A step begun while another runs names it on its own, wherever the work crosses a
+//! thread or a task, as long as the crossing carries the [`Context`] ([`Step::inside`],
+//! [`Step::context`], [`current`]). A parent is named only while it still runs. A `docker` call
+//! ([`begin_debug`]) is inside whichever step made it and names none: it is a `debug` line,
+//! never part of a sum. A step in another process's log (the host's `harness_spawn`, on the
+//! runner) is in another sum.
 //!
 //! The top-level steps log at `info`; each `docker` run ([`begin_debug`]) at `debug`, so the
 //! default log carries the shape of a start and `RUST_LOG=purlis::step=debug` its every call.
@@ -30,13 +37,44 @@
 //! Hold the guard from [`begin`] for the step's length. It works across `.await`s, as it times
 //! wall-clock from creation to drop.
 
+use std::cell::RefCell;
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 /// The target of every step's line, so a filter or a test finds them alone.
 pub const TARGET: &str = "purlis::step";
 
-/// A step that is running: its line is written when this is dropped, `refused` unless
-/// [`Step::done`] ended it.
+/// How a step ended, as its line says it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Outcome {
+    /// Not closed: the failing way out of every `?` and early return.
+    Refused,
+    Done,
+    /// The person cancelled it: not a refusal.
+    Cancelled,
+    /// The wait for it ran out and the caller gave up, so the work may yet finish: neither a
+    /// refusal nor a success of the step.
+    GaveUp,
+    /// Nothing was done, so nothing is written.
+    Quiet,
+}
+
+impl Outcome {
+    fn word(self) -> &'static str {
+        match self {
+            Outcome::Refused => "refused",
+            Outcome::Quiet => "quiet",
+            Outcome::Done => "done",
+            Outcome::Cancelled => "cancelled",
+            Outcome::GaveUp => "gave_up",
+        }
+    }
+}
+
+/// A step that is running: its line is written when this is dropped, `refused` unless it was
+/// ended another way ([`Step::done`], [`Step::cancelled`], [`Step::gave_up`], [`Step::quiet`]).
 #[must_use = "a step is timed until its guard is dropped"]
 pub struct Step {
     name: &'static str,
@@ -45,10 +83,57 @@ pub struct Step {
     pool: Option<String>,
     parent: Option<&'static str>,
     debug: bool,
-    succeeded: bool,
+    outcome: Outcome,
+    /// Whether this step still runs, shared with every [`Context`] made inside it, so a context
+    /// kept past its step names it no more.
+    running: OnceLock<Arc<AtomicBool>>,
 }
 
-/// Starts timing `name`, a fixed word for the step (`ssh_forward_open`, `link_handshake`).
+/// One step a [`Context`] is inside, and whether it still runs.
+#[derive(Clone)]
+struct Frame {
+    name: &'static str,
+    running: Arc<AtomicBool>,
+}
+
+thread_local! {
+    /// The steps this thread is inside, innermost last.
+    static INSIDE: RefCell<Vec<Frame>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The steps a piece of work is inside, carried across a thread or a task (`spawn_blocking`,
+/// `tokio::spawn`) that would not see them: a step begun under [`Context::run`] or
+/// [`Context::future`] names the innermost one that still runs as its `parent`.
+#[derive(Clone, Default)]
+pub struct Context(Vec<Frame>);
+
+/// The steps this thread is inside now.
+pub fn current() -> Context {
+    Context(INSIDE.with(|inside| inside.borrow().clone()))
+}
+
+impl Context {
+    /// Runs `then` inside these steps.
+    pub fn run<T>(&self, then: impl FnOnce() -> T) -> T {
+        struct Restores(Vec<Frame>);
+        impl Drop for Restores {
+            fn drop(&mut self) {
+                INSIDE.with(|inside| *inside.borrow_mut() = std::mem::take(&mut self.0));
+            }
+        }
+        let _restores = Restores(INSIDE.with(|inside| inside.replace(self.0.clone())));
+        then()
+    }
+
+    /// Polls `work` inside these steps, each time it is polled: wherever it is polled.
+    pub async fn future<T>(self, work: impl Future<Output = T>) -> T {
+        let mut work = std::pin::pin!(work);
+        std::future::poll_fn(|task| self.run(|| work.as_mut().poll(task))).await
+    }
+}
+
+/// Starts timing `name`, a fixed word for the step (`ssh_forward_open`, `link_handshake`). A step
+/// begun inside another that still runs names it as its parent.
 pub fn begin(name: &'static str) -> Step {
     start(name, None, false)
 }
@@ -59,26 +144,51 @@ pub fn begin_in(name: &'static str, alias: &str) -> Step {
 }
 
 /// [`begin`], its line written at `debug`: a step that is a call inside a step, one a start
-/// makes many of (a `docker` run).
+/// makes many of (a `docker` run). It names no parent.
 pub fn begin_debug(name: &'static str) -> Step {
     start(name, None, true)
 }
 
 fn start(name: &'static str, pool: Option<String>, debug: bool) -> Step {
-    let span = tracing::info_span!(target: "purlis::step", "step", step = name);
+    // Made only where a line would be written: a step at a level nobody reads costs a clock read.
+    let span = if debug {
+        if tracing::enabled!(target: "purlis::step", tracing::Level::DEBUG) {
+            tracing::debug_span!(target: "purlis::step", "step", step = name)
+        } else {
+            tracing::Span::none()
+        }
+    } else if tracing::enabled!(target: "purlis::step", tracing::Level::INFO) {
+        tracing::info_span!(target: "purlis::step", "step", step = name)
+    } else {
+        tracing::Span::none()
+    };
+    let parent = if debug {
+        None
+    } else {
+        INSIDE.with(|inside| {
+            inside
+                .borrow()
+                .iter()
+                .rev()
+                .find(|frame| frame.running.load(Ordering::Acquire))
+                .map(|frame| frame.name)
+        })
+    };
     Step {
         name,
         started: Instant::now(),
         span,
         pool,
-        parent: None,
+        parent,
         debug,
-        succeeded: false,
+        outcome: Outcome::Refused,
+        running: OnceLock::new(),
     }
 }
 
 impl Step {
-    /// Says this step is inside `parent`, so its line names it and a sum can leave it out.
+    /// Says this step is inside `parent`, where it is so wherever it runs and no [`Context`] can
+    /// say so, so its line names it and a sum can leave it out.
     pub fn under(mut self, parent: &'static str) -> Step {
         self.parent = Some(parent);
         self
@@ -86,22 +196,76 @@ impl Step {
 
     /// Ends the step as it was for: its line reads `done`.
     pub fn done(mut self) {
-        self.succeeded = true;
+        self.outcome = Outcome::Done;
+    }
+
+    /// Ends the step because the person cancelled it: its line reads `cancelled`, not `refused`.
+    pub fn cancelled(mut self) {
+        self.outcome = Outcome::Cancelled;
+    }
+
+    /// Ends the step because the wait for it ran out, though the work it waits for may still
+    /// finish: its line reads `gave_up`, so a start that worked is never logged as refused.
+    pub fn gave_up(mut self) {
+        self.outcome = Outcome::GaveUp;
+    }
+
+    /// Ends the step with no line: it found nothing to do.
+    pub fn quiet(mut self) {
+        self.outcome = Outcome::Quiet;
     }
 
     /// Ends the step by `answer`: done if it is an `Ok`, refused if it is an `Err`, and handed
     /// back as it is.
     pub fn ended<T, E>(mut self, answer: Result<T, E>) -> Result<T, E> {
-        self.succeeded = answer.is_ok();
+        self.outcome = if answer.is_ok() {
+            Outcome::Done
+        } else {
+            Outcome::Refused
+        };
         answer
+    }
+
+    fn frame(&self) -> Frame {
+        Frame {
+            name: self.name,
+            running: Arc::clone(self.running.get_or_init(|| Arc::new(AtomicBool::new(true)))),
+        }
+    }
+
+    /// What is running now, with this step inside it: for work this step starts on another
+    /// thread or task, which [`Context::run`] or [`Context::future`] puts it in.
+    pub fn context(&self) -> Context {
+        let mut frames = current().0;
+        frames.push(self.frame());
+        Context(frames)
+    }
+
+    /// Runs `then` inside this step: a step it begins names this one its parent.
+    pub fn inside<T>(&self, then: impl FnOnce() -> T) -> T {
+        self.context().run(then)
     }
 }
 
 impl Drop for Step {
     fn drop(&mut self) {
+        if let Some(running) = self.running.get() {
+            running.store(false, Ordering::Release);
+        }
+        if self.outcome == Outcome::Quiet {
+            return;
+        }
+        let enabled = if self.debug {
+            tracing::enabled!(target: "purlis::step", tracing::Level::DEBUG)
+        } else {
+            tracing::enabled!(target: "purlis::step", tracing::Level::INFO)
+        };
+        if !enabled {
+            return;
+        }
         let elapsed_ms = u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let name = self.name;
-        let outcome = if self.succeeded { "done" } else { "refused" };
+        let outcome = self.outcome.word();
         let mut tail = String::new();
         if let Some(pool) = &self.pool {
             tail.push_str(&format!("pool: {pool}"));
@@ -137,130 +301,4 @@ impl Drop for Step {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::{Arc, Mutex};
-
-    #[derive(Clone, Default)]
-    struct Said(Arc<Mutex<Vec<u8>>>);
-    impl std::io::Write for Said {
-        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-            self.0.lock().unwrap().extend_from_slice(b);
-            Ok(b.len())
-        }
-        fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
-        }
-    }
-    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Said {
-        type Writer = Said;
-        fn make_writer(&'a self) -> Said {
-            self.clone()
-        }
-    }
-
-    fn said_while(then: impl FnOnce()) -> String {
-        let said = Said::default();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(said.clone())
-            .with_ansi(false)
-            .with_max_level(tracing::Level::INFO)
-            .finish();
-        tracing::subscriber::with_default(subscriber, then);
-        String::from_utf8(said.0.lock().unwrap().clone()).unwrap()
-    }
-
-    #[test]
-    fn a_step_says_its_name_and_how_many_milliseconds_it_took_at_info() {
-        let out = said_while(|| {
-            let step = begin("link_handshake");
-            std::thread::sleep(std::time::Duration::from_millis(30));
-            step.done();
-        });
-        assert!(out.contains("INFO"), "{out}");
-        assert!(out.contains("step=\"link_handshake\"") || out.contains("step=link_handshake"));
-        let ms: u64 = out
-            .split("elapsed_ms=")
-            .nth(1)
-            .and_then(|rest| rest.split_whitespace().next())
-            .and_then(|n| n.parse().ok())
-            .unwrap_or_else(|| panic!("no elapsed_ms in {out}"));
-        assert!((30..2000).contains(&ms), "{ms} ms in {out}");
-    }
-
-    #[test]
-    fn a_step_in_a_pool_names_the_pool_by_its_alias() {
-        let out = said_while(|| begin_in("ssh_forward_open", "lab").done());
-        assert!(out.contains("(pool: lab)"), "{out}");
-    }
-
-    #[test]
-    fn a_step_dropped_without_being_done_says_refused() {
-        // An early return or a `?` drops the guard: that is the failing way out.
-        fn leaves_early() -> Result<(), &'static str> {
-            let _step = begin("harness_spawn");
-            Err("no")?;
-            Ok(())
-        }
-        let out = said_while(|| {
-            let _ = leaves_early();
-        });
-        assert!(out.contains("harness_spawn refused after"), "{out}");
-    }
-
-    #[test]
-    fn a_step_closed_with_done_says_done() {
-        let out = said_while(|| begin("link_check").done());
-        assert!(out.contains("link_check done after"), "{out}");
-    }
-
-    #[test]
-    fn a_step_ended_by_an_answer_is_done_on_ok_and_refused_on_err() {
-        let out = said_while(|| {
-            let answer: Result<(), &str> = begin("link_check").ended(Err("no"));
-            assert!(answer.is_err());
-        });
-        assert!(out.contains("link_check refused after"), "{out}");
-        let out = said_while(|| {
-            let _ = begin("link_check").ended(Ok::<_, &str>(()));
-        });
-        assert!(out.contains("link_check done after"), "{out}");
-    }
-
-    #[test]
-    fn a_miss_that_is_the_answer_is_a_step_done_not_refused() {
-        // `docker container inspect` finding nothing on a normal start is `Ok(ran)` with a
-        // non-zero exit: the run was made, and its caller reads the answer.
-        let out = said_while(|| {
-            let ran: Result<i32, &str> = Ok(1);
-            let _ = begin_debug("docker_container").ended(ran);
-        });
-        assert!(!out.contains("refused"), "{out}");
-    }
-
-    #[test]
-    fn a_step_inside_another_names_its_parent() {
-        let out = said_while(|| begin("runner_start").under("container_check").done());
-        assert!(out.contains("(parent: container_check)"), "{out}");
-        let out = said_while(|| begin_in("runner_start", "lab").under("x").done());
-        assert!(out.contains("(pool: lab, parent: x)"), "{out}");
-    }
-
-    #[test]
-    fn a_docker_call_is_written_at_debug_and_a_top_level_step_at_info() {
-        let at_info = said_while(|| begin_debug("docker_exec").done());
-        assert!(at_info.is_empty(), "{at_info}");
-        let said = Said::default();
-        let subscriber = tracing_subscriber::fmt()
-            .with_writer(said.clone())
-            .with_ansi(false)
-            .with_max_level(tracing::Level::DEBUG)
-            .finish();
-        tracing::subscriber::with_default(subscriber, || begin_debug("docker_exec").done());
-        let out = String::from_utf8(said.0.lock().unwrap().clone()).unwrap();
-        assert!(
-            out.contains("DEBUG") && out.contains("docker_exec done"),
-            "{out}"
-        );
-    }
-}
+mod tests;

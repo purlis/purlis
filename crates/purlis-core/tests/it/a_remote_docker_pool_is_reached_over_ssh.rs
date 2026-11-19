@@ -744,14 +744,18 @@ fn a_pool_whose_engine_changed_is_trusted_again_with_the_engine_there_now() {
 // The spans of `purlis_session_protocol::steps`, read back: a first start after the app is
 // launched (the forward not held), a second start right after (forward held, engine checked),
 // and one after the runner's container stopped. Each is a link made as a chat's start makes it,
-// through the pool's forward. The fixture's sshd answers 40 ms ± 10 ms late (`up.sh`, netem), and
+// through the pool's forward. **This rig links as the app does but is not the app**: the app's
+// `first_link` and `profile_ready` (and the host's `harness_spawn`, `start_program_call` and the
+// browser steps) are not run here and not asserted; they are the app crate's own steps. The fixture's sshd answers 40 ms ± 10 ms late (`up.sh`, netem), and
 // the table is printed and, on CI, written to the job's summary: it is the baseline of
 // `docs/research/2026-11-remote-start-baseline.md`.
 
-/// The fixture, or nothing where this machine has none. **In the remote parity job
-/// (`PURLIS_PARITY` set, which `ci.yml` sets for it alone) a missing fixture fails the test**: a
-/// parity job that ran nothing and passed would say nothing was checked. The general test job
-/// has `CI` set and no fixture, so it is `PURLIS_PARITY` that says the fixture is promised.
+/// The fixture, or nothing where this machine has none. **Where `PURLIS_PARITY` is set a missing
+/// fixture fails the test** (below says which jobs set it): a
+/// parity job that ran nothing and passed would say nothing was checked. `ci.yml` sets
+/// `PURLIS_PARITY` in its `parity` and `remote-parity` jobs; only `remote-parity` selects this
+/// module and starts the fixture. The general test job has `CI` set and no fixture, so it is
+/// `PURLIS_PARITY` that says the fixture is promised.
 fn fixture_or_fail_in_ci(needs: &[&str]) -> Option<Fixture> {
     let missing: Vec<&str> = needs
         .iter()
@@ -974,13 +978,10 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         let docker = through(&fixture, pool, &remote).expect("the forward opens");
         runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
     });
-    // A start straight after: the forward held, the engine checked a moment ago.
-    scenario("warm: a link", &mut || {
-        let docker = through(&fixture, pool, &remote).expect("the engine answers");
-        runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
-    });
-    // A chat with a profile makes a second link of its own after the first (audit B3).
-    scenario("warm: the second link of a start", &mut || {
+    // A start straight after: the forward held, the engine checked a moment ago. (A chat with a
+    // profile makes a second link of its own, `first_link` in the app: the app's step, not this
+    // rig's, so it is not a scenario here.)
+    scenario("warm: a link straight after", &mut || {
         let docker = through(&fixture, pool, &remote).expect("the engine answers");
         runtime.block_on(linked_once(&docker, &made, ours(), runner_pinned.clone()));
     });
@@ -1047,7 +1048,7 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
     for (at, (label, ..)) in table.iter().enumerate() {
         for step in [
             "container_check",
-            "docker_container",
+            "docker_container_inspect",
             "docker_volume",
             "docker_exec",
             "link_check",
@@ -1059,11 +1060,39 @@ fn a_start_on_a_remote_pool_times_each_of_its_steps() {
         }
     }
     assert!(
-        said(3, "runner_start"),
+        said(2, "runner_start"),
         "a stopped runner's start was not timed: {out}"
     );
     assert!(
         !said(1, "ssh_forward_open"),
         "a warm start reopened the forward: {out}"
     );
+    // A step inside another names it, so that the rows with no parent are the ones to sum: the
+    // container's check runs inside the link's check, and a start of the container inside it.
+    for (label, _, steps) in &table {
+        for line in steps.iter().filter(|line| line.name == "container_check") {
+            assert_eq!(
+                line.parent.as_deref(),
+                Some("link_check"),
+                "{label}: container_check is inside link_check: {out}"
+            );
+        }
+        for line in steps.iter().filter(|line| line.name == "runner_start") {
+            assert_eq!(line.parent.as_deref(), Some("container_check"), "{out}");
+        }
+        for name in ["link_check", "link_handshake"] {
+            for line in steps.iter().filter(|line| line.name == name) {
+                assert_eq!(
+                    line.parent, None,
+                    "{label}: {name} is a link's own step here: {out}"
+                );
+            }
+        }
+        assert!(
+            steps
+                .iter()
+                .all(|line| !line.name.starts_with("docker_") || line.parent.is_none()),
+            "a docker call names no parent: {out}"
+        );
+    }
 }

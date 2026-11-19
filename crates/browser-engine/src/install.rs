@@ -239,6 +239,12 @@ pub trait Fetch {
     fn still_wanted(&self) -> io::Result<()> {
         Ok(())
     }
+
+    /// Whether the person cancelled this download: a step the cancel ended is logged as
+    /// cancelled, not refused (#7182).
+    fn cancelled(&self) -> bool {
+        false
+    }
 }
 
 /// What a download heard, for each request it made: its address, the status that came back
@@ -648,30 +654,23 @@ impl Engines {
         fetch: &dyn Fetch,
         now: Timestamp,
     ) -> Result<Ready, Refused> {
+        // The whole prepare is timed, and writes a line only where it did something: a refusal
+        // (every `?` and early return, which drop the guard), a cancel, or a download. The
+        // person's own Chrome, and an engine already installed, are only looked for, so they write
+        // nothing.
+        let step = purlis_session_protocol::steps::begin("browser_engine_prepare");
         if let EngineChoice::Machine(path) = &settings.engine {
-            // The person's own Chrome is only looked for: nothing is prepared, so a found one
-            // writes no line, and one that is not there is a step refused.
             if !path.is_file() {
-                drop(purlis_session_protocol::steps::begin(
-                    "browser_engine_prepare",
-                ));
                 return Err(Refused::MachineChrome(path.clone()));
             }
+            step.quiet();
             return Ok(Ready {
                 program: path.clone(),
                 version: None,
                 age: Age::Unknown,
             });
         }
-        // A prepare that finds the engine installed writes no line: its only cost is a manifest
-        // read. A download is its own step, and a refusal is a `browser_engine_prepare` refused.
-        let refused = || {
-            drop(purlis_session_protocol::steps::begin(
-                "browser_engine_prepare",
-            ))
-        };
         if settings.refuse_after <= settings.warn_after {
-            refused();
             return Err(Refused::Settings(
                 "The browser engine's refusal age in Settings must be later than its warning age."
                     .to_owned(),
@@ -683,10 +682,24 @@ impl Engines {
             && !settings.run_outdated
             && behind(&manifest, now) >= settings.refuse_after
         {
-            refused();
             return Err(Refused::Outdated { days });
         }
-        let program = self.install(&manifest, fetch)?;
+        // Inside the step, so a download is its child.
+        let installed = step.inside(|| self.install(&manifest, fetch));
+        let (program, downloaded) = match installed {
+            Ok(installed) => installed,
+            Err(why) => {
+                if matches!(why, Refused::Download(_)) && fetch.cancelled() {
+                    step.cancelled();
+                }
+                return Err(why);
+            }
+        };
+        if downloaded {
+            step.done();
+        } else {
+            step.quiet();
+        }
         Ok(Ready {
             program,
             version: Some(manifest.version.clone()),
@@ -714,7 +727,7 @@ impl Engines {
                 version: update.version,
             });
         }
-        let program = self.install(&update, fetch)?;
+        let (program, _) = self.install(&update, fetch)?;
         let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
         // Asked again: another update may have been kept while this one downloaded.
         if !self.takes(&update) {
@@ -788,8 +801,9 @@ impl Engines {
         }
     }
 
-    /// The pinned engine's executable, downloaded, checked and unpacked when not installed.
-    fn install(&self, manifest: &Manifest, fetch: &dyn Fetch) -> Result<PathBuf, Refused> {
+    /// The pinned engine's executable, downloaded, checked and unpacked when not installed, and
+    /// whether it was downloaded.
+    fn install(&self, manifest: &Manifest, fetch: &dyn Fetch) -> Result<(PathBuf, bool), Refused> {
         let platform = self.platform;
         let download = manifest.download(platform).ok_or(Refused::NotPinned {
             platform: platform.name(),
@@ -800,10 +814,27 @@ impl Engines {
         let program = home.join(platform.executable());
         if installed_digest(&home).as_deref() == Some(download.sha256.as_str()) && program.is_file()
         {
-            return Ok(program);
+            return Ok((program, false));
         }
         // Only a download is timed: an engine already installed answers above.
         let step = purlis_session_protocol::steps::begin("browser_engine_download");
+        let downloaded = self.download(download, &home, program, fetch);
+        if matches!(downloaded, Err(Refused::Download(_))) && fetch.cancelled() {
+            step.cancelled();
+            return downloaded.map(|program| (program, true));
+        }
+        step.ended(downloaded).map(|program| (program, true))
+    }
+
+    /// The archive `download` fetched, checked, unpacked and put in place as `home`.
+    fn download(
+        &self,
+        download: &Download,
+        home: &Path,
+        program: PathBuf,
+        fetch: &dyn Fetch,
+    ) -> Result<PathBuf, Refused> {
+        let platform = self.platform;
         private_dir(&self.root).map_err(Refused::Store)?;
         let archive = Scratch(self.root.join(scratch_name("download")));
         let got = save_hashing(fetch, &download.url, &archive.0)?;
@@ -849,18 +880,16 @@ impl Engines {
         // download and unpack before it is into a scratch name of its own. An engine another
         // install finished meanwhile is kept, never replaced under a browser running it.
         let _swapping = SWAPPING.lock().unwrap_or_else(PoisonError::into_inner);
-        if installed_digest(&home).as_deref() == Some(download.sha256.as_str()) && program.is_file()
+        if installed_digest(home).as_deref() == Some(download.sha256.as_str()) && program.is_file()
         {
-            step.done();
             return Ok(program);
         }
-        match fs::remove_dir_all(&home) {
+        match fs::remove_dir_all(home) {
             Ok(()) => {}
             Err(why) if why.kind() == io::ErrorKind::NotFound => {}
             Err(why) => return Err(Refused::Store(why)),
         }
-        fs::rename(&unpacked.0, &home).map_err(Refused::Store)?;
-        step.done();
+        fs::rename(&unpacked.0, home).map_err(Refused::Store)?;
         Ok(program)
     }
 }

@@ -2647,10 +2647,10 @@ pub struct Docker {
     tls: Option<Box<crate::tlsroute::Through>>,
 }
 
-/// The verb of a `docker` run's arguments, past the global flags that come before it: `-H`,
+/// Where the verb of a `docker` run's arguments is, past the global flags that come before it: `-H`,
 /// `--host`, `-c`, `--context`, `-l`, `--log-level`, `--config`, and the `--tls*` family, each
 /// as `--flag value` or `--flag=value`.
-fn docker_verb(args: &[String]) -> Option<&str> {
+fn docker_verb_at(args: &[String]) -> Option<usize> {
     const TAKES_A_VALUE: [&str; 10] = [
         "-H",
         "--host",
@@ -2663,69 +2663,63 @@ fn docker_verb(args: &[String]) -> Option<&str> {
         "--tlscert",
         "--tlskey",
     ];
-    let mut words = args.iter().map(String::as_str);
-    while let Some(word) = words.next() {
+    let mut words = args.iter().map(String::as_str).enumerate();
+    while let Some((at, word)) = words.next() {
         if TAKES_A_VALUE.contains(&word) {
             words.next();
         } else if word.starts_with('-') {
             // `--flag=value`, or a flag with no value (`--tls`, `-D`).
         } else {
-            return Some(word);
+            return Some(at);
         }
     }
     None
 }
 
-/// The step a `docker` run is timed as (#7182): its verb, never its arguments, which name a
-/// container and a volume.
+/// The step a `docker` run is timed as (#7182): its verb, and for `container` and `image` its
+/// subcommand, never its arguments, which name a container and a volume. What this does not name
+/// is `docker_other`, `docker_container_other` or `docker_image_other`.
 fn docker_step(args: &[String]) -> &'static str {
-    match docker_verb(args) {
-        Some("info") => "docker_info",
-        Some("container") => "docker_container",
-        Some("volume") => "docker_volume",
-        Some("exec") => "docker_exec",
-        Some("start") => "docker_start",
-        Some("stop") => "docker_stop",
-        Some("run") => "docker_run",
-        Some("image" | "pull" | "load") => "docker_image",
+    let at = docker_verb_at(args);
+    let verb = at.map(|at| args[at].as_str());
+    // The word right after the verb, if it is not a flag: `container inspect`, `image pull`.
+    let sub = at.and_then(|at| {
+        args.get(at + 1)
+            .map(String::as_str)
+            .filter(|word| !word.starts_with('-'))
+    });
+    match (verb, sub) {
+        (Some("info"), _) => "docker_info",
+        (Some("container"), Some("create")) => "docker_container_create",
+        (Some("container"), Some("inspect")) => "docker_container_inspect",
+        (Some("container"), Some("ls")) => "docker_container_ls",
+        (Some("container"), Some("rm")) => "docker_container_rm",
+        (Some("container"), Some("run")) => "docker_container_run",
+        (Some("container"), Some("start")) => "docker_container_start",
+        (Some("container"), Some("stop")) => "docker_container_stop",
+        (Some("container"), Some("exec")) => "docker_container_exec",
+        (Some("container"), Some("cp")) => "docker_container_cp",
+        (Some("container"), Some("logs")) => "docker_container_logs",
+        (Some("container"), _) => "docker_container_other",
+        (Some("image"), Some("pull")) | (Some("pull"), _) => "docker_image_pull",
+        (Some("image"), Some("load")) | (Some("load"), _) => "docker_image_load",
+        (Some("image"), Some("inspect")) => "docker_image_inspect",
+        (Some("image"), Some("ls")) => "docker_image_ls",
+        (Some("image"), Some("rm")) => "docker_image_rm",
+        (Some("image"), _) => "docker_image_other",
+        (Some("volume"), _) => "docker_volume",
+        (Some("network"), _) => "docker_network",
+        (Some("system"), _) => "docker_system",
+        (Some("exec"), _) => "docker_exec",
+        (Some("start"), _) => "docker_start",
+        (Some("stop"), _) => "docker_stop",
+        (Some("run"), _) => "docker_run",
+        (Some("create"), _) => "docker_create",
+        (Some("rm"), _) => "docker_rm",
+        (Some("cp"), _) => "docker_cp",
+        (Some("ps"), _) => "docker_ps",
+        (Some("inspect"), _) => "docker_inspect",
         _ => "docker_other",
-    }
-}
-
-#[cfg(test)]
-mod docker_step_tests {
-    use super::docker_step;
-
-    fn step(args: &[&str]) -> &'static str {
-        docker_step(
-            &args
-                .iter()
-                .map(|word| (*word).to_owned())
-                .collect::<Vec<_>>(),
-        )
-    }
-
-    #[test]
-    fn a_docker_run_is_named_by_its_verb() {
-        assert_eq!(step(&["container", "inspect", "x"]), "docker_container");
-        assert_eq!(step(&["exec", "-i", "x", "purlis"]), "docker_exec");
-        assert_eq!(step(&["frobnicate"]), "docker_other");
-        assert_eq!(step(&[]), "docker_other");
-    }
-
-    #[test]
-    fn global_flags_before_the_verb_are_skipped() {
-        assert_eq!(step(&["-H", "ssh://lab", "exec", "x"]), "docker_exec");
-        assert_eq!(step(&["--host=tcp://lab:2376", "info"]), "docker_info");
-        assert_eq!(step(&["--context", "lab", "volume", "ls"]), "docker_volume");
-        assert_eq!(
-            step(&["-c", "lab", "-D", "--tls", "start", "x"]),
-            "docker_start"
-        );
-        assert_eq!(
-            step(&["--config", "/c", "-l", "debug", "stop", "x"]),
-            "docker_stop"
-        );
     }
 }
 

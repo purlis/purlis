@@ -145,7 +145,9 @@ impl CommandConnector {
     async fn connected(self) -> std::io::Result<Connected> {
         let checked = self.before_each.clone();
         let check = purlis_session_protocol::steps::begin("link_check");
-        let checked = tokio::task::spawn_blocking(move || checked())
+        // What the check runs (the container's, the engine's, the forward's) is inside it.
+        let inside = check.context();
+        let checked = tokio::task::spawn_blocking(move || inside.run(|| checked()))
             .await
             .map_err(std::io::Error::other)?;
         let checked = check.ended(checked);
@@ -162,7 +164,8 @@ impl CommandConnector {
             Some(prepare) => {
                 // Timed only where there is something to prepare.
                 let step = purlis_session_protocol::steps::begin("link_prepare");
-                let prepared = tokio::task::spawn_blocking(move || prepare())
+                let inside = step.context();
+                let prepared = tokio::task::spawn_blocking(move || inside.run(|| prepare()))
                     .await
                     .map_err(std::io::Error::other)?
                     .map_err(std::io::Error::other)?;

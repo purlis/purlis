@@ -5296,12 +5296,13 @@ impl Chats {
         {
             // The whole check and keep of the profile on the pool: a link of its own (#7182).
             let step = purlis_session_protocol::steps::begin_in("profile_ready", &pool);
-            match &own_runner {
+            // Inside the step: the link it makes is a `first_link` under it.
+            step.inside(|| match &own_runner {
                 Some(runner) => {
-                    on_pools.ready_on_its_own_runner(&self.project, &pool, runner, profile)?;
+                    on_pools.ready_on_its_own_runner(&self.project, &pool, runner, profile)
                 }
-                None => on_pools.ready(&self.project, &pool, profile)?,
-            }
+                None => on_pools.ready(&self.project, &pool, profile),
+            })?;
             step.done();
         }
         // What its settings left out on their way there, said once on its tab (#3848, #3867).

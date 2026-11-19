@@ -2101,6 +2101,8 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) if was_cancelled() => {
                     // Taken before this gave up: its answer is on its way.
                     if lock(&waited_for).take().is_some() {
+                        // The person's Cancel, not a refusal of the start.
+                        step.cancelled();
                         return Err(session::Refusal {
                             code: CANCELLED.to_owned(),
                             why: START_CANCELLED.to_owned(),
@@ -2114,6 +2116,9 @@ impl HostLink {
                     if lock(&waited_for).take().is_some() {
                         let secs = waits.map_or(0, |(_, secs)| secs);
                         let hit = self.limits().waited(AnswerWait, secs, None);
+                        // The runner may still start the program after this (its answer goes to
+                        // `late`): the window gave up, the start was not refused.
+                        step.gave_up();
                         return Err(session::Refusal {
                             code: WAITED_OUT.to_owned(),
                             why: format!(
@@ -2126,12 +2131,18 @@ impl HostLink {
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             }
         };
-        step.ended(said.map_err(|why| {
+        let answer = said.map_err(|why| {
             why.refusal().cloned().unwrap_or_else(|| session::Refusal {
                 code: String::new(),
                 why: why.to_string(),
             })
-        }))
+        });
+        // A Cancel the host answers with its own refusal is a cancel, not a refused start.
+        if matches!(&answer, Err(refusal) if refusal.code == CANCELLED) {
+            step.cancelled();
+            return answer;
+        }
+        step.ended(answer)
     }
 
     /// Send `command` and do not wait for its answer: what it refuses is logged.

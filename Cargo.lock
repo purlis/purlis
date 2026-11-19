@@ -6399,6 +6399,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tracing",
+ "tracing-subscriber",
  "ureq",
  "zeroize",
  "zip",
@@ -6566,6 +6567,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "ulid",
 ]
 
