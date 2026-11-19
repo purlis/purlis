@@ -251,7 +251,7 @@ pub fn waiting_for_link(
 /// A wait, in the largest whole unit: 45 seconds, 1 minute, 10 minutes.
 fn wait_said(wait: std::time::Duration) -> String {
     let secs = wait.as_secs();
-    let (count, unit) = if secs >= 60 && secs % 60 == 0 {
+    let (count, unit) = if secs >= 60 && secs.is_multiple_of(60) {
         (secs / 60, "minute")
     } else {
         (secs, "second")

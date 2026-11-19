@@ -198,7 +198,7 @@ impl Routed {
 
 /// A limit in words: `3 minutes`, `300 milliseconds`.
 fn how_long(within: std::time::Duration) -> String {
-    if within.as_secs() >= 60 && within.as_secs() % 60 == 0 {
+    if within.as_secs() >= 60 && within.as_secs().is_multiple_of(60) {
         let minutes = within.as_secs() / 60;
         format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
     } else if within.as_secs() >= 1 {
@@ -358,9 +358,7 @@ impl Routed {
     /// Asks for the runner this link is relayed to to run again, off the runtime: how long a
     /// start waits for it, where it is on its way back. A stopped host wakes nothing.
     async fn run_again(&self) -> Option<Waits> {
-        let Some(runner) = lock(&self.runner).clone() else {
-            return None;
-        };
+        let runner = lock(&self.runner).clone()?;
         if self.hosting.is_stopped() {
             return None;
         }

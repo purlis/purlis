@@ -64,7 +64,9 @@ describe("a runner whose link stays down", () => {
     const onCheckPool = vi.fn();
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={onCheckPool} />);
 
-    down = [{ pool: "docker", why: "the link to it ended", since: nowSecs(), state: "unreachable" }];
+    down = [
+      { pool: "docker", why: "the link to it ended", since: nowSecs(), state: "unreachable" },
+    ];
     await told({});
     expect(notice()).toBeNull();
 
@@ -126,7 +128,9 @@ describe("a runner whose link stays down", () => {
   });
 
   it("is put away by Dismiss until the reason changes", async () => {
-    let down: RunnerLinkDown[] = [{ pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" }];
+    let down: RunnerLinkDown[] = [
+      { pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" },
+    ];
     aCore(() => down);
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
     await waitFor(() => expect(notice()).not.toBeNull());
@@ -142,7 +146,9 @@ describe("a runner whose link stays down", () => {
   });
 
   it("is said again for the next outage after Dismiss once the link was back", async () => {
-    let down: RunnerLinkDown[] = [{ pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" }];
+    let down: RunnerLinkDown[] = [
+      { pool: "docker", why: WHY, since: nowSecs() - 60, state: "unreachable" },
+    ];
     aCore(() => down);
     render(<RunnerLinkDownNotice plane={PLANE} onCheckPool={() => {}} />);
     await waitFor(() => expect(notice()).not.toBeNull());

@@ -4427,7 +4427,7 @@ fn a_window_that_comes_back_to_a_runners_chat_hears_what_it_started_without_ther
 /// dimmed.
 #[test]
 fn a_runner_gone_ends_its_chats_where_a_changed_key_leaves_them_dimmed() {
-    let told: Arc<Mutex<Vec<(Vec<u32>, crate::reconnecting::Reconnection)>>> = Arc::default();
+    let told: Reconnects = Arc::default();
     let tell: Reconnecting = {
         let told = Arc::clone(&told);
         Arc::new(move |chats, said| told.lock().unwrap().push((chats, said)))

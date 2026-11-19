@@ -51,12 +51,12 @@ export function HostLostNotice({
   const said = lost.pool_forgotten
     ? `${offScreen ? "That chat" : "This chat"} ended because its pool was forgotten on this machine. Its runner may still be there, but purlis no longer reaches it from here.`
     : lost.with_the_runner
-    ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
-    : lost.left_in === "hibernated"
-      ? ended
-        ? `purlis's session host stopped unexpectedly while ${chat} was waiting on work of its own.`
-        : `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
-      : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
+      ? `${offScreen ? "That chat" : "This chat"} ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner.`
+      : lost.left_in === "hibernated"
+        ? ended
+          ? `purlis's session host stopped unexpectedly while ${chat} was waiting on work of its own.`
+          : `purlis's session host stopped unexpectedly while ${chat} was waiting for you, so nothing was lost.`
+        : `purlis's session host stopped unexpectedly in the middle of ${chat}'s turn, so that turn was lost.`;
   const what = ended ? ` What it had running of its own ended with the host: ${ended}.` : "";
   const next = lost.resumable
     ? ended
