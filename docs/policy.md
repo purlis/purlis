@@ -28,7 +28,7 @@ guards.release = "log"     # one family, apart from the template
 | `watch` (the default) | everything logs; `secrets`, `vaults`, `guards.credential` and `trust` are enforced | the floor |
 | `hold` | `watch`, and `guards.merge` enforced | the floor |
 | `team` | `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and the families Q308b added enforced; the rest log | the full sandbox |
-| `strict` | everything enforced: purlis before Q308 | as `[sandbox]` says |
+| `strict` | everything enforced, as before Q308 | as `[sandbox]` says |
 
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release

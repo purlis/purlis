@@ -73,8 +73,8 @@ pub const NO_SANDBOX_BACKEND: &str = "no-sandbox-backend";
 /// floor that could not be applied): what the sandbox, the proxy or an OpenCode shim's own files
 /// held is not held.
 pub const SANDBOX_LIFTED: &str = "sandbox-lifted";
-/// The gap that stands for a declared harness with no adapter (spec §6, ADR 0073): purlis arms no
-/// hook of its own and compiles no sandbox for it, so every family is a gap there.
+/// The gap that stands for a declared harness with no adapter (spec §6, ADR 0073): no hook of its
+/// own is armed and no sandbox is compiled for it, so every family is a gap there.
 pub const UNADAPTED_HARNESS: &str = "harness-unadapted";
 /// The gaps whose families [`cover`] derives, besides the ones their entry lists.
 const COVER_GAPS: [&str; 5] = [
@@ -596,7 +596,7 @@ pub const GAPS: &[Gap] = &[
         EVERY_HARNESS,
         EVERY_SYSTEM,
         &Family::ALL,
-        "A declared harness has no adapter: purlis arms no hook and compiles no sandbox for it, so no family's rule is enforced there.",
+        "A declared harness has no adapter: no hook is armed and no sandbox is compiled for it, so no family's rule is enforced there.",
         "Nothing, beyond what the host decides itself.",
         "spec §6; ADR 0073",
         Some(when_unadapted)
