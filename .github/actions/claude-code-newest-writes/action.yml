@@ -1,19 +1,22 @@
 # Copyright 2026 Purlis
 # SPDX-License-Identifier: Apache-2.0
 
-# **Claude Code's newest release refuses a command's write where purlis no longer pins a git
-# folder** (the person's ruling, 2026-11-16, #6961). A chat's settings pin a repository's git
-# folder only where a command may write, because Claude Code's sandbox refuses every write
-# anywhere else; a release that wrote further would let a chat rewrite another branch folder's
-# `.git`. And the smaller rules lean on how Claude Code matches a rule's path, so a release
+# **Claude Code's newest release holds a chat to what purlis's settings say** (the person's
+# ruling, 2026-11-16, #6961; #7157). A chat's settings pin every repository's git folder, and
+# Claude Code's sandbox refuses a command's write to a pinned one; a release that wrote further
+# would let a chat rewrite another branch folder's `.git`. And the smaller rules (`fewest`) lean
+# on how Claude Code matches a rule's path, gitignore-style and case-insensitive, so a release
 # that matched otherwise would let a chat read or write a held path. So each night the newest
 # release from npm, with no install scripts run, runs
 # `a_command_writes_no_git_folder_outside_where_it_may_write` and the corpus of spellings,
 # `the_smaller_rules_deny_every_spelling_the_old_rules_denied` (the review of #7005), against a
 # stand-in model on a loopback port, as CI runs them on the pinned version. No model is called,
-# and no credential is used. The newest release is the point here, so it is not held to a lockfile; npm still checks
-# the tarball against the registry's integrity.
-name: Claude Code's newest release writes nothing a pin left out, and holds every spelling
+# and no credential is used. **This entry must stay on the newest release, and stay required**
+# (`kind: escape` in `.github/nightly-on-phase-1-proven.txt`): the pinned version is what a
+# pull request proves, and only this run notices a release that matches paths otherwise. The
+# newest release is the point here, so it is not held to a lockfile; npm still checks the tarball
+# against the registry's integrity.
+name: Claude Code's newest release writes nothing a pin holds, and holds every spelling
 description: Runs the live probe of where a command may write against Claude Code's newest release.
 runs:
   using: composite

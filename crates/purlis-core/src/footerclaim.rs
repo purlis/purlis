@@ -121,6 +121,12 @@ impl Claim {
     }
 }
 
+/// Every settings file a Claude Code session in `cwd` reads, highest precedence first
+/// ([`sources`]), for what weighs the rules they hold.
+pub(crate) fn settings_files(cwd: Option<&Path>, config_home: &Path) -> Vec<PathBuf> {
+    sources(cwd, config_home)
+}
+
 /// What fills Claude Code's status line for a session run in `cwd`.
 pub fn status_line(cwd: Option<&Path>) -> Claim {
     status_line_in(cwd, &crate::doctor::session::claude_config_home())
