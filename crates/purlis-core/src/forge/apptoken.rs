@@ -94,7 +94,8 @@ fn unrecorded_clones(chat: &For<'_>) -> Vec<(String, String, PathBuf)> {
 
 /// **What a chat is told about the clones of its workspace that were not made from the window**
 /// (#7196): they get no Agent identity token, and the person can record them. `None` where there
-/// is none. Said from a chat's start and by a `gh` run in one; it raises no ask.
+/// is none. Said from a chat's start, and by a `gh` that fails in one
+/// ([`unrecorded_here_note`]); it raises no ask.
 #[must_use]
 pub fn unrecorded_note(chat: &For<'_>) -> Option<String> {
     let folders: Vec<String> = unrecorded_clones(chat)
@@ -113,6 +114,24 @@ pub fn unrecorded_note(chat: &For<'_>) -> Option<String> {
         "{}: {this} made from the window, so this chat's gh gets no Agent identity token for \
          {them}. Re-clone from the window, or the person can press \"{}\" on {them} in the window.",
         folders.join(", "),
+        crate::windowonly::TRUST_THIS_CLONE,
+    ))
+}
+
+/// **What a chat is told when its `gh` failed in a clone the window did not make** (#7196): the
+/// one clone `chat.here` is in, named, and *Trust this clone*. `None` where it is in no such
+/// clone. Said, never refused: a run there that named a recorded repo worked, and still does.
+#[must_use]
+pub fn unrecorded_here_note(chat: &For<'_>) -> Option<String> {
+    let here = chat.here?;
+    let here = here.canonicalize().unwrap_or_else(|_| here.to_path_buf());
+    let (folder, ..) = unrecorded_clones(chat)
+        .into_iter()
+        .find(|(_, _, path)| is_in(&here, &path.canonicalize().unwrap_or_else(|_| path.clone())))?;
+    Some(format!(
+        "{folder}: this clone wasn't made from the window, so this chat's gh gets no Agent \
+         identity token for it, and a command that failed here may be why. Re-clone from the \
+         window, or the person can press \"{}\" on it there.",
         crate::windowonly::TRUST_THIS_CLONE,
     ))
 }
@@ -420,7 +439,19 @@ pub fn clone_of(remotes: &[Remote], here: Option<&Path>) -> Option<PathBuf> {
                 .canonicalize()
                 .unwrap_or_else(|_| remote.clone.clone())
         })
-        .find(|clone| here.starts_with(clone))
+        .find(|clone| is_in(&here, clone))
+}
+
+/// Whether the canonical folder `here` is in the clone at `clone`, or in a branch folder of it
+/// (`<workspace>/.worktrees/<repo>/<piece>`, #7196).
+fn is_in(here: &Path, clone: &Path) -> bool {
+    here.starts_with(clone)
+        || clone
+            .parent()
+            .zip(clone.file_name())
+            .is_some_and(|(workspace, repo)| {
+                here.starts_with(workspace.join(crate::worktree::DIR_NAME).join(repo))
+            })
 }
 
 /// The DER of the private key in `pem`, and whether it is PKCS#8 (`PRIVATE KEY`) rather than
@@ -999,18 +1030,6 @@ pub fn token_for(
             Some(other) => not_minted_on(&other.host),
             None => trust_asked(chat).unwrap_or_else(|| NO_RECORDED_CLONE.to_owned()),
         });
-    }
-    // A run inside a clone with no record would get a token that leaves its own repo out, with
-    // nothing said (#7196): it is refused, naming the clone.
-    if let Some(here) = chat
-        .here
-        .map(|here| here.canonicalize().unwrap_or_else(|_| here.to_path_buf()))
-        && unrecorded_clones(chat).iter().any(|(_, _, path)| {
-            here.starts_with(path.canonicalize().unwrap_or_else(|_| path.clone()))
-        })
-        && let Some(said) = trust_asked(chat)
-    {
-        return Err(said);
     }
     let clone = clone_of(&remotes, chat.here);
     let asked = Asked {

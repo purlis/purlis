@@ -248,13 +248,14 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                     )
                     .into(),
                 ));
-                // Only the window records a clone's remote for the mint (#1808): said here, not
-                // left for a chat's gh to find out (#7196).
-                if !window && git::isolation().is_none() && on_a_known_forge(root, &dest) {
+                // Only the window records a clone's remote for the mint (#1808): said here, to
+                // the person or to the chat that ran this, not left for a gh to find out (#7196).
+                if !window && on_github(&dest) {
                     say(Say::Warn(
                         format!(
-                            "{name}: this clone wasn't made from the window, so a chat's gh gets \
-                             no Agent identity token for it. Re-clone it from the window, or \
+                            "{name}: this clone wasn't made from the window, so no chat's gh gets \
+                             an Agent identity token for it, and a chat already running won't \
+                             pick one up until it restarts. Re-clone it from the window, or \
                              press \"{}\" on it there.",
                             crate::windowonly::TRUST_THIS_CLONE
                         )
@@ -318,13 +319,13 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     u8::from(failures > 0)
 }
 
-/// Whether the clone at `dest` has a remote on a forge the project knows: the only kind the
-/// mint ever covers, so the only kind whose missing record is worth saying (#7196).
-fn on_a_known_forge(root: &Path, dest: &Path) -> bool {
-    let known = forge::known(root);
+/// Whether the clone at `dest` has a remote on github.com: the only host the mint covers, so
+/// the only one whose missing record is worth saying (#7196).
+fn on_github(dest: &Path) -> bool {
+    let github = format!("{}/", forge::apptoken::HOST);
     forge::gitcredential::places_of(dest)
         .iter()
-        .any(|place| forge::resolve_in(&format!("https://{place}"), &known).is_some())
+        .any(|place| place.starts_with(&github))
 }
 
 /// The workspace directory, made and scaffolded first when it is not there (#1382).

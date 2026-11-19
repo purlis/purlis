@@ -489,10 +489,17 @@ asks it rather than the forge CLI, so the window's git needs no `gh` or `glab`:
   remote changed since the Notice showed it (`forge::gitcredential::vouch`). A repo whose
   remote names more than one address has no *Trust this clone*: it says to give origin one
   address first. Dismiss hides it until its remote changes.
-  Nothing about such a clone is silent (#7196): `purlis clone` says a chat's gh gets no Agent
-  identity token for what it cloned and names *Trust this clone*, a chat that mints says so at
-  its start (`apptoken::unrecorded_note`), and a `gh` run inside one is refused naming it. No
-  `purlis` command records a clone: only the press does, so no chat can widen what it mints for.
+  What is said of such a clone (#7196): `purlis clone` says, for a github.com remote, that no chat's
+  gh gets an Agent identity token for it, that a chat already running will not pick one up until it
+  restarts, and names *Trust this clone*; a chat's own `purlis clone` says it in the command's
+  output. A chat that mints is told at its start (`apptoken::unrecorded_note`), and a gh that
+  fails in one is told, after its own output, which clone it was in
+  (`apptoken::unrecorded_here_note`). Nothing is refused: a gh run there that names a recorded
+  repo (`gh -R`, `gh api repos/…`) gets that repo's token as before. No `purlis` command records a
+  clone: only the press does, so no chat can widen what it mints for.
+  **Not covered:** a clone made after the chat started (it is in no chat's token, and nothing
+  tells the chat), an origin with several URLs or none, and a clone whose `.git` is in the chat's
+  grants (the mint leaves it out, as it does the others); none of these is told at the start.
   All of them are one ask too, *Trust these clones*, no chat's, listed in Asks however many
   there are (R-336, `windowonly::look_at_clones`); nothing is trusted before the person answers.
   It leaves out a clone a live chat made or can write (its git directory is inside a chat's
