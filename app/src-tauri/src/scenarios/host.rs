@@ -840,10 +840,12 @@ impl Scenario {
             ledger: super::checks::Ledger::default(),
         };
         scenario.ledger.begins(&scenario);
-        // The canary, in every scenario that is held by the wrap: where the wrap is not in force,
-        // nothing else the scenario shows can be trusted. Protection off has none; and Claude Code
-        // on macOS runs its own sandbox, which the fake harness does not play (ticket 10, #6900).
-        if protection != Protection::Off
+        // The canary, in every scenario whose protection is Full, where the project's own wall is
+        // up: a write outside the project and a direct dial are both refused. Protection off has no
+        // wrap, and the floor (basic) is not held to refuse writes outside the project (CI showed
+        // a Claude Code chat's floor lets one through); Claude Code on macOS runs its own sandbox,
+        // which the fake harness does not play (ticket 10, #6900).
+        if protection == Protection::Full
             && !(dialect == Dialect::Claude && cfg!(target_os = "macos"))
         {
             scenario.canary();

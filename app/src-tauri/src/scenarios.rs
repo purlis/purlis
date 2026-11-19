@@ -976,12 +976,6 @@ fn two_chats_in_one_host_keep_their_grants_apart() {
         6674,
         "a held network ask writes ask.raised twice",
     );
-    // The block chat 1 allowed is still listed by the asks view at the end: #7232.
-    scenario.expected_fail(
-        checks::Check::NoUnansweredAsk,
-        7232,
-        "an ask the person allowed is still listed by the asks view",
-    );
     let host = "granted-to-one.example.test";
     let script = |step: &str| {
         serde_json::json!({

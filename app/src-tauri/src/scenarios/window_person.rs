@@ -939,13 +939,6 @@ fn the_ask_shows_exactly_the_decided_target_and_grants_that_string() {
     else {
         return;
     };
-    // The allowed block is still listed by the asks view at the end: #7232 (the suite no longer
-    // hides an answered ask, so "no unanswered ask" fires here until it is fixed).
-    scenario.expected_fail(
-        Check::NoUnansweredAsk,
-        7232,
-        "an ask the person allowed is still listed by the asks view",
-    );
     for (n, name) in [long, "xn--bcher-kva.example.test".to_owned()]
         .iter()
         .enumerate()

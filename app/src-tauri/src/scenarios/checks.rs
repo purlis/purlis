@@ -580,7 +580,7 @@ pub(crate) fn log_verdict(
     let events = read.map_err(|why| format!("the event log could not be read: {why}"))?;
     if events.is_empty() && chats > 0 {
         return Err(format!(
-            "the event log holds no event, though {chats} chat(s) started: it is read from the \
+            "the event log holds no event, though chats started (count {chats}): it is read from the \
              wrong place or was never written, and a check judged on it would pass on nothing"
         ));
     }
