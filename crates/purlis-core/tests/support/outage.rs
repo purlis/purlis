@@ -69,84 +69,6 @@ pub fn first_up_after(told: &[(Duration, Told)], after: Duration) -> Option<Dura
     })
 }
 
-#[cfg(test)]
-mod rules {
-    use super::*;
-
-    fn down(why: &str) -> Told {
-        Told::Down {
-            why: why.to_owned(),
-            key_changed: false,
-            gone: false,
-        }
-    }
-
-    #[test]
-    fn a_link_that_says_why_it_is_down_within_the_limit_passes() {
-        let told = [
-            (Duration::from_secs(0), Told::Up),
-            (Duration::from_secs(12), down("no answer")),
-        ];
-        assert_eq!(
-            told_within(&told, Duration::from_secs(5), QUIET_LIMIT),
-            Duration::from_secs(7)
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "silent for 40s")]
-    fn a_link_that_says_nothing_for_longer_than_the_limit_fails() {
-        let told = [(Duration::from_secs(45), down("late"))];
-        told_within(&told, Duration::from_secs(5), QUIET_LIMIT);
-    }
-
-    #[test]
-    #[should_panic(expected = "never said it was down")]
-    fn a_link_that_never_says_it_is_down_fails() {
-        told_within(
-            &[(Duration::ZERO, Told::Up)],
-            Duration::from_secs(1),
-            QUIET_LIMIT,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "no reason")]
-    fn a_link_that_is_down_with_no_reason_fails() {
-        told_within(
-            &[(Duration::from_secs(2), down("  "))],
-            Duration::ZERO,
-            QUIET_LIMIT,
-        );
-    }
-
-    #[test]
-    fn a_down_before_the_fault_is_not_the_faults() {
-        let told = [
-            (Duration::from_secs(1), down("earlier")),
-            (Duration::from_secs(20), down("the fault's")),
-        ];
-        assert_eq!(
-            first_down_after(&told, Duration::from_secs(10)),
-            Some((Duration::from_secs(10), "the fault's".to_owned()))
-        );
-    }
-
-    #[test]
-    fn the_first_up_after_a_restore_is_measured_from_it() {
-        let told = [
-            (Duration::from_secs(1), Told::Up),
-            (Duration::from_secs(30), down("x")),
-            (Duration::from_secs(95), Told::Up),
-        ];
-        assert_eq!(
-            first_up_after(&told, Duration::from_secs(60)),
-            Some(Duration::from_secs(35))
-        );
-        assert_eq!(first_up_after(&told, Duration::from_secs(100)), None);
-    }
-}
-
 /// A kept link as the desktop keeps it, recording each thing it tells with its time, and the
 /// client of the link that is up.
 pub struct Kept {
@@ -277,5 +199,83 @@ impl Kept {
             );
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod rules {
+    use super::*;
+
+    fn down(why: &str) -> Told {
+        Told::Down {
+            why: why.to_owned(),
+            key_changed: false,
+            gone: false,
+        }
+    }
+
+    #[test]
+    fn a_link_that_says_why_it_is_down_within_the_limit_passes() {
+        let told = [
+            (Duration::from_secs(0), Told::Up),
+            (Duration::from_secs(12), down("no answer")),
+        ];
+        assert_eq!(
+            told_within(&told, Duration::from_secs(5), QUIET_LIMIT),
+            Duration::from_secs(7)
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "silent for 40s")]
+    fn a_link_that_says_nothing_for_longer_than_the_limit_fails() {
+        let told = [(Duration::from_secs(45), down("late"))];
+        told_within(&told, Duration::from_secs(5), QUIET_LIMIT);
+    }
+
+    #[test]
+    #[should_panic(expected = "never said it was down")]
+    fn a_link_that_never_says_it_is_down_fails() {
+        told_within(
+            &[(Duration::ZERO, Told::Up)],
+            Duration::from_secs(1),
+            QUIET_LIMIT,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "no reason")]
+    fn a_link_that_is_down_with_no_reason_fails() {
+        told_within(
+            &[(Duration::from_secs(2), down("  "))],
+            Duration::ZERO,
+            QUIET_LIMIT,
+        );
+    }
+
+    #[test]
+    fn a_down_before_the_fault_is_not_the_faults() {
+        let told = [
+            (Duration::from_secs(1), down("earlier")),
+            (Duration::from_secs(20), down("the fault's")),
+        ];
+        assert_eq!(
+            first_down_after(&told, Duration::from_secs(10)),
+            Some((Duration::from_secs(10), "the fault's".to_owned()))
+        );
+    }
+
+    #[test]
+    fn the_first_up_after_a_restore_is_measured_from_it() {
+        let told = [
+            (Duration::from_secs(1), Told::Up),
+            (Duration::from_secs(30), down("x")),
+            (Duration::from_secs(95), Told::Up),
+        ];
+        assert_eq!(
+            first_up_after(&told, Duration::from_secs(60)),
+            Some(Duration::from_secs(35))
+        );
+        assert_eq!(first_up_after(&told, Duration::from_secs(100)), None);
     }
 }

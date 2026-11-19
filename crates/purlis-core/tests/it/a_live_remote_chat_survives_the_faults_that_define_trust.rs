@@ -421,12 +421,14 @@ fn a_link_drop_keeps_the_chat(for_: Duration, tag: &str) {
 
 #[test]
 fn a_link_drop_of_5_seconds_keeps_the_chat_and_it_takes_input_after_the_restore() {
+    purlis_core::unsteered!();
     a_link_drop_keeps_the_chat(Duration::from_secs(5), "drop5");
 }
 
 #[test]
 fn a_link_drop_of_90_seconds_says_why_within_30_seconds_and_the_chat_takes_input_after_the_restore()
 {
+    purlis_core::unsteered!();
     a_link_drop_keeps_the_chat(Duration::from_secs(90), "drop90");
 }
 
@@ -773,6 +775,7 @@ fn a_half_open_link_is_found_within_the_stated_bound_and_the_chat_survives_it() 
 #[test]
 fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachable_and_leaves_no_container()
  {
+    purlis_core::unsteered!();
     a_registry_that_is_down(false);
 }
 
@@ -780,6 +783,7 @@ fn a_registry_that_is_down_fails_the_check_within_its_budget_as_image_unreachabl
 #[test]
 #[ignore = "needs #7187 train A: the pool's state named Refused"]
 fn a_registry_that_is_down_names_the_pool_refused() {
+    purlis_core::unsteered!();
     a_registry_that_is_down(true);
 }
 
