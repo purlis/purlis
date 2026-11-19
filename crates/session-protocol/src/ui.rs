@@ -1049,6 +1049,15 @@ pub const WINDOW_ONLY: &[&str] = &[
     "pool_setup_stop_waiting",
     // Get help (#4497): it starts a chat as the person.
     "pool_setup_get_help",
+    // Train B's presses (#7191, #7192), each the person's own in their window: Forget the pool an
+    // add refused (removes the kept refusal), Try now (retries every failing forward and reads
+    // the pools again), Trust and create (trusts the key the person saw and makes the pool), and
+    // keeping the folder of a kubeconfig's credential plugin (adds it to the commands purlis
+    // runs for the cluster).
+    "pool_setup_forget_refused",
+    "pool_setup_try_now",
+    "pool_setup_trust_and_create",
+    "pool_setup_plugin_folder",
     "add_docker_pool",
     "remove_docker_pool",
     // Forget it here, offered where Remove found the pool's machine doesn't answer: the person's

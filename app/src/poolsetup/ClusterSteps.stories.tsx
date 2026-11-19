@@ -7,7 +7,7 @@
  * The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupAction, PoolSetupShown, PoolSetupStep } from "../bindings";
 import { PoolSetupTab } from "../PoolSetupTab";
@@ -139,12 +139,18 @@ export const AClusterIsRecommended: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const main = await canvas.findByRole("button", { name: "Continue with this cluster" });
-    main.focus();
-    await userEvent.tab();
+    // Three places are offered at once (#7191); a cluster is the one picked, and Docker here is
+    // one arrow away, whose own button then reads as the core worded it.
+    const cluster = await canvas.findByRole("radio", { name: /A Kubernetes cluster/ });
+    await expect(cluster).toBeChecked();
     await expect(
-      canvas.getByRole("button", { name: "Use Docker on this machine instead" }),
-    ).toHaveFocus();
+      canvas.getByRole("button", { name: "Continue with this cluster" }),
+    ).toBeInTheDocument();
+    cluster.focus();
+    await userEvent.click(canvas.getByRole("radio", { name: /This machine/ }));
+    await expect(
+      await canvas.findByRole("button", { name: "Use Docker on this machine instead" }),
+    ).toBeEnabled();
     await expectFocusInSight();
   },
 };
@@ -152,13 +158,14 @@ export const AClusterIsRecommended: Story = {
 export const ContextsUnderOptions: Story = {
   beforeEach: AClusterIsRecommended.beforeEach,
   play: async ({ canvasElement }) => {
+    // The contexts are a field on the cluster card now (#7192), the recommended one picked.
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Options" }));
-    const chosen = canvas.getByRole("radio", { name: /kind-team/ });
-    await expect(chosen).toBeChecked();
-    chosen.focus();
-    await userEvent.keyboard("{ArrowDown}");
-    await expect(canvas.getByRole("radio", { name: "prod-eu" })).toBeChecked();
+    const context = await canvas.findByRole("button", { name: /Context/ });
+    await expect(context).toHaveTextContent("kind-team (recommended)");
+    await userEvent.click(context);
+    await userEvent.click(await within(document.body).findByRole("option", { name: "prod-eu" }));
+    await waitFor(() => expect(within(document.body).queryByRole("listbox")).toBeNull());
+    await expect(canvas.getByRole("button", { name: /Context/ })).toHaveTextContent("prod-eu");
     await expectFocusInSight();
   },
 };
