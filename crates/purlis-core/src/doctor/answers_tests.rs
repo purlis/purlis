@@ -124,7 +124,7 @@ fn doctor_names_the_old_answer_files_as_safe_to_delete() {
     }
     // Its reader still exists, so it is never listed among the files to delete.
     assert!(!safe.contains("dispatch-never"), "{}", row.detail);
-    assert!(kept.contains("still reads it"), "{}", row.detail);
+    assert!(kept.contains("still uses it"), "{}", row.detail);
     // Where it is the only file there is nothing to delete.
     let only = old_files_row(&files[1..2], Imported::Yes).expect("a row");
     assert!(!only.detail.contains("safe to delete"), "{}", only.detail);

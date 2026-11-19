@@ -146,7 +146,7 @@ pub(super) fn old_files_row(files: &[String], imported: Imported) -> Option<Row>
     let keep = if kept.is_empty() {
         ""
     } else {
-        " Keep app/dispatch-never.json: purlis still reads it, and deleting it makes it refuse a \
+        " Keep app/dispatch-never.json: the dispatch check still uses it, and deleting it makes purlis refuse a \
          dispatch between personas until you say never again."
     };
     Some(match imported {
