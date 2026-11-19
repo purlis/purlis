@@ -294,9 +294,10 @@ fn a_programs_operation_not_permitted_names_its_path_and_is_sorted() {
             Operation::File,
             Kind::ProjectFiles,
         ),
-        // Go, and so gh: lower case, no program in front.
+        // Go, and so gh: lower case, no program in front. (A credential file is the credentials
+        // kind: `a_refusal_on_the_stderr_of_a_succeeded_command_is_the_credentials_block`.)
         (
-            "open /Users/dev/.config/gh/hosts.yml: operation not permitted",
+            "open /Users/dev/.config/gh/config.yml: operation not permitted",
             Operation::File,
             Kind::ProtectedFile,
         ),
@@ -2949,4 +2950,84 @@ fn errno_13_spellings_on_a_credential_file_are_a_block_and_on_no_other_file_are_
     ] {
         assert!(detect(&failed("x", &format!("Exit code 1\n{line}")), &place()).is_empty());
     }
+}
+
+const GLAB_CONFIG: &str = "/Users/dev/.config/glab-cli/config.yml";
+
+/// #1349 round 4: `gh pr list || true` succeeds, with gh's refusal on a separate standard error
+/// and no `mixed` flag: it is the credentials block, naming the file, on macOS's wording and
+/// Linux's, for gh and for glab.
+#[test]
+fn a_refusal_on_the_stderr_of_a_succeeded_command_is_the_credentials_block() {
+    for (command, file) in [
+        ("gh pr list || true", GH_HOSTS),
+        ("glab mr list || true", GLAB_CONFIG),
+    ] {
+        for wording in ["operation not permitted", "permission denied"] {
+            let line = format!("failed to read configuration: open {file}: {wording}");
+            assert_eq!(
+                detect_with_targets(&came_back(command, "", &line), &place()),
+                vec![(
+                    block(Operation::File, Kind::Credentials, false),
+                    Some(file.to_owned())
+                )],
+                "{command}: {line}"
+            );
+        }
+    }
+}
+
+/// The same line, said again by the sandbox's own violation line, is still one Notice.
+#[test]
+fn the_sandbox_line_beside_gh_on_a_succeeded_commands_stderr_is_one_block() {
+    let stderr = format!(
+        "failed to read configuration: open {GH_HOSTS}: operation not permitted\n\
+         gh(7) deny(1) file-read-data {GH_HOSTS}"
+    );
+    assert_eq!(
+        detect_with_targets(&came_back("gh pr list || true", "", &stderr), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// What a line that only reads merely printed is no refusal, on a separate stderr too.
+#[test]
+fn a_credential_refusal_a_reader_printed_on_stderr_is_no_block() {
+    let line = format!("open {GH_HOSTS}: operation not permitted");
+    assert!(
+        detect(&came_back("cat old.log", "", &line), &place())
+            .iter()
+            .all(|block| block.kind != Kind::Credentials)
+    );
+}
+
+/// Rust's io error on a line of its own, the path on the line before.
+#[test]
+fn rusts_two_line_permission_denied_on_a_credential_file_is_a_block() {
+    let error =
+        format!("Exit code 1\nError: failed to read `{GH_HOSTS}`\nPermission denied (os error 13)");
+    assert_eq!(
+        detect_with_targets(&failed("x", &error), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// One Notice where the program and the sandbox spell the same file differently.
+#[test]
+fn differently_spelled_twins_of_one_credential_are_one_block() {
+    let stderr = format!(
+        "failed to read configuration: open {GH_HOSTS}: operation not permitted\n\
+         gh(7) deny(1) file-read-data /Users/dev/.config/gh/./hosts.yml"
+    );
+    assert_eq!(
+        detect_with_targets(&came_back("gh pr list || true", "", &stderr), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// A reader line that failed (`cat old.log; false`) printed the refusal; it did not meet it.
+#[test]
+fn a_failed_reader_line_printing_a_credential_refusal_is_no_block() {
+    let error = format!("Exit code 1\nopen {GH_HOSTS}: operation not permitted");
+    assert!(detect_with_targets(&failed("cat old.log; false", &error), &place()).is_empty());
 }
