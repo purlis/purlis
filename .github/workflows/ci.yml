@@ -1645,7 +1645,7 @@ jobs:
           BASE: ${{ steps.base.outputs.sha }}
         run: |
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy)(\.rs|/)|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
+          if echo "$changed" | grep -qE '^(crates/studio-probe/|\.github/actions/studio-probe-names/|crates/purlis-core/src/(executor|extension)(\.rs|/)|crates/purlis-core/src/sandbox/(seatbelt|confined|egress|reach|wrapper|hosts|localport|door|tunnel|sshproxy|floor_tests|codex|opencode|claude)(\.rs|/)|crates/purlis-core/src/names\.rs|crates/purlis-core/src/hookwire/serve(\.rs|/)|crates/purlis-core/src/secrets/(brokered|keyhold)(\.rs|/)|crates/purlis-cli/src/listen/|crates/purlis-core/tests/it/a_sandboxed_chat_listens_nowhere_under_seatbelt\.rs|crates/purlis-cli/tests/it/a_chats_ssh_route_carries_from_inside_its_sandbox\.rs|Cargo\.lock$|rust-toolchain\.toml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::the studio confinement has not changed; not run"
@@ -1683,6 +1683,17 @@ jobs:
       - name: A chat's server behind its door, confined by Seatbelt
         if: steps.scope.outputs.run == 'true'
         run: tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::localport::tests::under_seatbelt
+      # A pressed `ports = "off"` under the floor's profile for real (#7105): another program's
+      # socket reached, none of purlis's own, by its name or by another a link or a move gives
+      # it, and a socket moved at the plain floor, then ports off (round 5). Red unless the tests
+      # really ran: they skip where a profile cannot be applied.
+      - name: A pressed ports off reaches none of purlis's own sockets, confined by Seatbelt
+        if: steps.scope.outputs.run == 'true'
+        run: |
+          rm -rf target/tests-that-really-ran
+          tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::floor_tests::under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own sandbox::floor_tests::a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pressed
+          test -f target/tests-that-really-ran/ports-off-holds-purlis-own-sockets || { echo "::error::the ports-off socket test did not really run"; exit 1; }
+          test -f target/tests-that-really-ran/a-moved-purlis-socket-stays-held || { echo "::error::the moved-socket test did not really run"; exit 1; }
       # A wrapped chat's ssh under its own line for real (#5897): its route's `ProxyCommand`, this
       # build's `purlis _ssh-proxy`, runs inside Seatbelt and reaches the chat's SOCKS port; a
       # host the route does not list, and a direct ssh around it, stay refused. The Linux `rust`

@@ -3852,3 +3852,165 @@ pub fn tell_run_grants_moved(
 
 #[cfg(test)]
 mod tests;
+
+/// **Whether `asks` at `mode` answers an ask for `what` itself**: a folder under `off` or `log`;
+/// a local socket under `off` alone. A socket may be a container engine's or a cluster's, whose
+/// containers reach the vaults from outside the wrap, so under `log` (the shipped `watch`) it is
+/// still the person's to allow, with what allowing it means beside it (the Q308 follow-up,
+/// item 3).
+pub(crate) fn answers(what: GrantWhat, mode: purlis_core::enforcement::Mode) -> bool {
+    use purlis_core::enforcement::Mode;
+    match what {
+        GrantWhat::Write => mode != Mode::Enforce,
+        GrantWhat::Socket => mode == Mode::Off,
+        _ => false,
+    }
+}
+
+/// The rule a folder or socket ask answered by the project's `[policy]` is logged by.
+pub(crate) const ASK_ANSWERED_RULE: &str = purlis_core::enforcement::RULE_SANDBOX_ASK;
+
+/// **A folder or socket ask the project's `[policy]` answers itself** (Q308a; the Q308
+/// follow-up, item 3): where `asks` is off or logged ([`answers`]: a socket under off alone), a
+/// block whose Notice would offer Allow for a folder to write or a local socket is answered
+/// Allow **for this chat**, with nobody asked, and a line naming it in the chat's enforcement log
+/// where the family logs. A folder is answered only in the project or a folder the person
+/// listed ([`sandbox::grant::unasked_write`]): never a held folder a later program loads code
+/// from, nor one the floor holds on `PATH`, which still raise the Notice. It is the very grant
+/// the Notice's Allow makes ([`judged_and_kept`]): judged by the core, so a denial class, a
+/// folder off the allowlist and a policy lock are refused as they always were, and then the
+/// Notice is raised as before; audited; and taken at the chat's restart once its turn ends. The person's
+/// Keep blocked and an administrator's lock still hold. `true` where it was answered, and no
+/// Notice is owed.
+pub(crate) fn answered_by_the_policy(
+    held: &crate::planes::Held,
+    told: &crate::hooks::ChatBlocked,
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+) -> bool {
+    use crate::hooks::BlockOffer;
+    use purlis_core::enforcement::{self, Family};
+    let what = match told.offer {
+        BlockOffer::Write => GrantWhat::Write,
+        BlockOffer::Socket => GrantWhat::Socket,
+        _ => return false,
+    };
+    if told.ours || told.quiet.is_some() {
+        return false;
+    }
+    let Some(target) = told.target.as_deref() else {
+        return false;
+    };
+    let root = held.root();
+    let mode = enforcement::mode(root, Family::Asks);
+    answered_at(held, told, (what, target), network, mode)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's seam: what a chat does between [`answered_at`]'s two resolutions of a folder,
+    /// run once and taken.
+    pub(crate) static BETWEEN_RESOLUTIONS: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+    /// A test's seam: the machine [`answered_at`] judges against, in place of this one, so a
+    /// test builds the home and `PATH` it needs.
+    pub(crate) static MACHINE: std::cell::RefCell<Option<sandbox::Machine>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// The machine [`answered_at`] judges against: this one, or a test's ([`MACHINE`]).
+fn this_machine() -> sandbox::Machine {
+    #[cfg(test)]
+    if let Some(machine) = MACHINE.with(|seam| seam.borrow().clone()) {
+        return machine;
+    }
+    sandbox::Machine::this()
+}
+
+#[cfg(test)]
+fn between_resolutions() {
+    if let Some(then) = BETWEEN_RESOLUTIONS.with(|seam| seam.borrow_mut().take()) {
+        then();
+    }
+}
+
+/// [`answered_by_the_policy`] with `asks` at `mode`, as the project's `[policy]` resolved it.
+pub(crate) fn answered_at(
+    held: &crate::planes::Held,
+    told: &crate::hooks::ChatBlocked,
+    (what, target): (GrantWhat, &str),
+    network: Option<&purlis_core::sandboxblock::record::Record>,
+    mode: purlis_core::enforcement::Mode,
+) -> bool {
+    use purlis_core::enforcement::{self, Family, Mode};
+    if !answers(what, mode) {
+        return false;
+    }
+    let root = held.root();
+    let machine = this_machine();
+    // **Never a folder a later program loads code from** (the review of #7105, blocker 1): a
+    // held folder the Notice would lift for this chat, or a folder the floor holds on `PATH`.
+    // Only the project and the folders the person listed are answered; the rest still raise
+    // the Notice, in every mode.
+    let unasked = if what == GrantWhat::Write {
+        let Some(folder) = held.chats().folder_of(told.session) else {
+            return false;
+        };
+        let ground = sandbox::grant::Ground::of(root, &folder, &machine);
+        match sandbox::grant::unasked_write(target, &ground) {
+            Ok(folder) => Some(folder),
+            Err(_) => return false,
+        }
+    } else {
+        None
+    };
+    #[cfg(test)]
+    between_resolutions();
+    let folder = held.chats().folder_of(told.session);
+    let Ok((granted, level)) = judged(
+        root,
+        &machine,
+        folder.as_deref(),
+        told.session,
+        (what, target, GrantLevel::Chat),
+    ) else {
+        return false;
+    };
+    // **Exactly the folder [`sandbox::grant::unasked_write`] answered** (the re-review of
+    // #7105, blocker 2): `target` is resolved twice, there and in [`judged`], and a chat that
+    // swaps what a path in it leads to between the two would otherwise have the second folder
+    // kept, a held one among them, with nobody asked. A folder that resolved differently is
+    // not answered, and its Notice is raised.
+    if let Some(unasked) = &unasked
+        && granted != sandbox::grant::What::Write(unasked.clone())
+    {
+        return false;
+    }
+    if kept_for(
+        root,
+        held.chats(),
+        Some(told.session),
+        (&granted, level),
+        &held.audit_then_record(network),
+        now_secs(),
+    )
+    .is_err()
+    {
+        return false;
+    }
+    if mode == Mode::Log {
+        let chat = held
+            .chats()
+            .id_of(told.session)
+            .unwrap_or_else(|| enforcement::UNKNOWN_CHAT.to_owned());
+        // The line names what was allowed, the folder granted rather than the path the chat
+        // was blocked at, so the person can read back what the policy let in.
+        enforcement::record(
+            root,
+            &chat,
+            Family::Asks,
+            ASK_ANSWERED_RULE,
+            Some(&granted.target()),
+        );
+    }
+    true
+}

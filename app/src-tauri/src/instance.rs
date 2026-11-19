@@ -246,6 +246,18 @@ mod tests {
             Some(purlis_core::names::BUNDLE_ID.write),
         );
         assert_eq!(old.locks, [runtime.path().join("dev.charter.app.lock")]);
+        // The name the sandbox holds a chat from under `ports = "off"` is the one the plugin
+        // makes, for the release and the scenario build alike.
+        assert_eq!(
+            purlis_core::names::single_instance_socket(release["identifier"].as_str().unwrap()),
+            "dev_purlis_app_si.sock"
+        );
+        assert_eq!(
+            purlis_core::names::single_instance_socket(
+                conf("tauri.e2e.conf.json")["identifier"].as_str().unwrap()
+            ),
+            "dev_purlis_app_e2e_si.sock"
+        );
     }
 
     /// The app's program is `purlis-app` (#1309) in the bundle Tauri makes and in the build

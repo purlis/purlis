@@ -251,7 +251,9 @@ fn an_off_not_committed_is_not_answered() {
     let loose = project("[sandbox]\nmode = \"on\"\n", "Ada");
     std::fs::write(loose.path().join("charter.toml"), OFF).unwrap();
     assert!(matches!(team_off(loose.path()), TeamOff::NotCommitted));
-    assert_eq!(allowed_levels(loose.path()).clamp(None), Floor);
+    // The level is the committed file's (the Q308 follow-up): `HEAD` still turns the full
+    // sandbox on, so the working tree's off loosens nothing at all.
+    assert_eq!(allowed_levels(loose.path()).clamp(None), On);
     assert!(answer(loose.path(), true).is_err());
 }
 
@@ -661,4 +663,38 @@ fn a_new_project_s_bound_is_this_machine_s_lock() {
             .is_some_and(|why| why.contains("Platform team")),
         "{bound:?}"
     );
+}
+
+// ---- The Q308 follow-up, item 1: the team's off is the sandbox family's press ---------------
+
+#[test]
+fn the_team_s_accept_is_the_sandbox_family_s_press() {
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let root = project(OFF, "Ada");
+    use crate::enforcement::{SandboxLevel, level_waiting};
+    assert_eq!(
+        level_waiting(root.path()),
+        Some((SandboxLevel::Floor, SandboxLevel::Off))
+    );
+    answer(root.path(), true).unwrap();
+    assert_eq!(level_waiting(root.path()), None);
+    assert_eq!(allowed_levels(root.path()).clamp(None), Off);
+    // Kept on is a tightening: the floor again, and the press waits again.
+    answer(root.path(), false).unwrap();
+    assert_eq!(allowed_levels(root.path()).clamp(None), Floor);
+    assert_eq!(
+        level_waiting(root.path()),
+        Some((SandboxLevel::Floor, SandboxLevel::Off))
+    );
+}
+
+#[test]
+fn the_policy_press_on_a_team_s_off_answers_its_ask_too() {
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let root = project(OFF, "Ada");
+    assert!(matches!(team_off(root.path()), TeamOff::Asks(_)));
+    crate::enforcement::press(root.path(), &crate::enforcement::digest_of(root.path()))
+        .expect("pressed");
+    assert!(matches!(team_off(root.path()), TeamOff::Accepted(_)));
+    assert_eq!(allowed_levels(root.path()).clamp(None), Off);
 }

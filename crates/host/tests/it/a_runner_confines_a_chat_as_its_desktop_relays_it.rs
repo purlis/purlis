@@ -190,6 +190,7 @@ fn planned() -> Confine {
             given: vec![5432],
         },
         asks: true,
+        lifted: Vec::new(),
     }
 }
 

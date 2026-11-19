@@ -67,8 +67,9 @@ pub(crate) enum Found {
     Foreign,
     /// None could be read or made.
     Unread,
-    /// This machine has no keyring purlis can use: nothing is sealed or kept here, which is
-    /// said, never taken for a keyring that failed (the review of #7113).
+    /// No keyring started for this process: nothing is sealed or kept now, which is said (the
+    /// review of #7113). A plane where a seal was kept reads it as a keyring that failed
+    /// ([`no_keyring`], #7153).
     NoKeyring,
 }
 
@@ -87,7 +88,8 @@ pub(crate) trait KeyItems {
 
 /// Why a key item could not be read.
 pub(crate) enum Unreadable {
-    /// The machine has no keyring purlis can use (the review of #7113).
+    /// No keyring started for this process (the review of #7113): none on the machine, or one
+    /// whose start-up failed, which keyring 4 does not tell apart and does not try again (#7153).
     NoKeyring,
     /// A keyring that is there failed.
     Failed(String),
@@ -208,9 +210,12 @@ pub const FOREIGN_KEY: &str = "another program made the keychain item purlis kee
 pub const KEY_UNREAD: &str = "purlis could not read or make its seal key in the keyring, so it \
      accepted nothing. Unlock the keychain and press Accept again";
 
-/// What the press says on a machine with no keyring purlis can use (the review of #7113).
-pub const NO_KEYRING: &str = "this machine has no keyring purlis can keep its seal key in, so \
-     purlis accepted nothing. Install and start a secret service, then press Accept again";
+/// What the press says on a machine with no keyring purlis can use (the review of #7113): purlis
+/// looks for the keyring once, as it starts, so a press finds none until it is opened again
+/// (#7153).
+pub const NO_KEYRING: &str = "purlis found no keyring to keep its seal key in when it started, so \
+     it accepted nothing. Start your desktop's secret service (GNOME Keyring or KWallet, say), \
+     then quit and open purlis again: it looks for the keyring once, as it starts";
 
 /// What the press says in a process that is not the app.
 const NOT_THE_APP: &str = "only purlis's app can accept a policy";
@@ -234,12 +239,17 @@ pub fn ready_to_seal() -> Result<(), &'static str> {
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return Err(NOT_THE_APP);
         }
-        match found(true) {
-            Found::Held(_) => Ok(()),
-            Found::Foreign => Err(FOREIGN_KEY),
-            Found::Unread => Err(KEY_UNREAD),
-            Found::NoKeyring => Err(NO_KEYRING),
-        }
+        said(&found(true))
+    }
+}
+
+/// What the press says of what the app found of the seal's key: nothing where it holds it.
+fn said(found: &Found) -> Result<(), &'static str> {
+    match found {
+        Found::Held(_) => Ok(()),
+        Found::Foreign => Err(FOREIGN_KEY),
+        Found::Unread => Err(KEY_UNREAD),
+        Found::NoKeyring => Err(NO_KEYRING),
     }
 }
 
@@ -327,11 +337,16 @@ pub(crate) fn set_no_keyring_for_this_test(none: bool) {
     TEST_NO_KEYRING.with(|held| held.set(none));
 }
 
-/// **Whether this machine has no keyring purlis can use** (a Linux with no secret service, say;
-/// the review of #7113): the app's own answer, from where it keeps the seal's key. There no
-/// answer is sealed, so no dispatch grant is kept and no never is added, and nothing is kept to
-/// say one was: a declared gap the window says, never a keyring that failed, which reads as
-/// one that holds what it cannot show. False in any process but the app.
+/// **Whether the app found no keyring it can use as it started** (a Linux with no secret
+/// service, say; the review of #7113): the app's own answer, from where it keeps the seal's
+/// key. There no answer is sealed, so no dispatch grant is kept and no never is added. False in
+/// any process but the app.
+///
+/// **Never, alone, a machine where nothing was kept** (#7153): keyring 4 looks for the keyring
+/// once a process, and says there is none for the rest of its life where that look failed
+/// (`Error::NoDefaultStore`), which on Linux is any failure to reach the secret service, one
+/// that had not answered on D-Bus yet included. So a plane whose sealed records say a seal was
+/// kept reads it as a keyring that failed; [`crate::sandbox::local::no_keyring_at`] says which.
 pub fn no_keyring() -> bool {
     #[cfg(test)]
     {
@@ -433,17 +448,15 @@ pub fn can_seal() -> bool {
 /// where nothing else can be told (ticket T1.1-73: the key unreadable and nevers present).
 ///
 /// **A keyring that fails reads as one that holds it**, so what it may hold is not taken for
-/// nothing; **a machine with no keyring at all holds none** ([`no_keyring`], the review of
-/// #7113), since nothing could ever have been kept there.
+/// nothing, **and so does one that did not start** ([`no_keyring`], #7153): keyring 4 tells a
+/// machine with none from one whose start-up failed by nothing it says. Only a caller that
+/// knows the plane can say no keyring was ever used there
+/// ([`crate::sandbox::local::no_keyring_at`]), and so that nothing could have been kept.
 pub fn kept_exists(kind: &str, clone: &str) -> bool {
     let account = kept_account(kind, clone);
-    if no_keyring() {
-        return false;
-    }
     #[cfg(test)]
     {
-        // Every read errs on a machine with no keyring, as a keyring that fails does: only
-        // `no_keyring` above tells the two apart.
+        // Every read errs where no keyring started, as a keyring that fails does.
         TEST_NO_KEYRING.with(std::cell::Cell::get)
             || TEST_KEPT.with(|kept| kept.borrow().contains_key(&account))
     }
@@ -454,7 +467,7 @@ pub fn kept_exists(kind: &str, clone: &str) -> bool {
         }
         !matches!(
             ::keyring::Entry::new(SERVICE, &account).and_then(|e| e.get_password()),
-            Err(::keyring::Error::NoEntry | ::keyring::Error::NoDefaultStore)
+            Err(::keyring::Error::NoEntry)
         )
     }
 }
@@ -650,6 +663,53 @@ mod tests {
         fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
             panic!("nothing is made where there is no keyring")
         }
+    }
+
+    /// A keyring that is there and fails a read: the key's, or, where `key_gone`, its spare's
+    /// once the key reads as none.
+    struct Failing {
+        key_gone: bool,
+    }
+
+    impl KeyItems for Failing {
+        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, Unreadable> {
+            if self.key_gone && service == SERVICE {
+                return Ok(None);
+            }
+            Err(Unreadable::Failed("locked".to_owned()))
+        }
+
+        fn owned_here(&self, _: &str, _: &str, _: &str) -> Result<bool, String> {
+            panic!("nothing is checked that did not read")
+        }
+
+        fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            panic!("no key is made where what is there did not read")
+        }
+    }
+
+    #[test]
+    fn a_keyring_that_fails_a_read_is_unread_and_never_no_keyring() {
+        // #7153: the direction #7113's test did not pin. A keyring that fails reads as one that
+        // holds what it cannot show, never as none, and no new key is made over what may be
+        // there: the key's read failing, or the key gone and its spare's read failing.
+        let locked = Failing { key_gone: false };
+        assert!(matches!(read_or_make(&locked), Found::Unread));
+        assert!(matches!(
+            read_or_make(&Failing { key_gone: true }),
+            Found::Unread
+        ));
+        assert_eq!(said(&read_or_make(&locked)), Err(KEY_UNREAD));
+    }
+
+    #[test]
+    fn the_press_on_no_keyring_says_to_open_purlis_again_never_to_press_again() {
+        // #7153: keyring 4 looks for the keyring once a process, so a press cannot find one
+        // started since: only opening purlis again does.
+        assert_eq!(said(&read_or_make(&NoStore)), Err(NO_KEYRING));
+        assert!(NO_KEYRING.contains("open purlis again"), "{NO_KEYRING}");
+        assert!(!NO_KEYRING.contains("press Accept again"), "{NO_KEYRING}");
+        assert_eq!(said(&Found::Foreign), Err(FOREIGN_KEY));
     }
 
     #[test]
