@@ -278,6 +278,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`.charter/reports/<id>.json`](#charterreportsidjson)
   - [`.charter/handbacks/` — reports back from handed-off chats](#charterhandbacks--reports-back-from-handed-off-chats)
   - [`~/.config/purlis/sandbox-grants/<clone key>.json` (outside the plane)](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)
+  - [`~/.config/purlis/sealed-planes/<anchor>` (outside the plane)](#configpurlissealed-planesanchor-outside-the-plane)
   - [`~/.config/charter/reporting-consent` (outside the plane)](#configcharterreporting-consent-outside-the-plane)
   - [`.charter/sessions/<sid>.persona`, `.charter/terminals/<tid>.persona`, `.charter/active-persona`](#chartersessionssidpersona-charterterminalstidpersona-charteractive-persona)
   - [`.charter/mcp-approved.json`](#chartermcp-approvedjson)
@@ -4880,9 +4881,16 @@ write into this folder cannot make its own text arrive as the person's.
   which holds what it cannot show. **purlis looks for the keyring once, as it starts** (keyring
   4 latches what it found, #7153), and a Secret Service that had not answered yet reads the same
   as none: so where this file or the nevers file carries a seal the app made, no keyring now is
-  read as one that failed, and the nevers are unknown until purlis is opened again. **Declared
-  gap:** every sealed record taken away while the keyring's start-up failed reads as a machine
-  that never had one. **Those six lists
+  read as one that failed, and the nevers are unknown until purlis is opened again. **The evidence
+  is kept by the plane's path, not the clone key** (#7164): the first seal made for a plane leaves
+  a marker in [`sealed-planes/`](#configpurlissealed-planesanchor-outside-the-plane), named by the
+  plane's anchor (a digest of its path alone), so a chat that moves `.git` aside and back, which
+  makes another clone key and another file, does not turn a keyring that failed into one that was
+  never there. **Declared gap:** a plane sealed before this build has no marker until its next seal,
+  and a plane moved with no link left is another path. **On a machine that truly has no keyring**,
+  a record of this file that no longer reads (stale, edited, or written by a build with a keyring)
+  reads as broken or unread for good: delete this file and the plane's marker, and answer again
+  (nothing is kept without a keyring, so nothing is lost but the stale record). **Those six lists
   grant and accept only what this set seals**: a name in one of them with no entry here that
   verifies is dropped, and shown read-only in Settings › Project › Dispatch. A pair is granted
   again only through the ordinary per-pair ask. Absent before the first grant or acceptance
@@ -4913,6 +4921,18 @@ write into this folder cannot make its own text arrive as the person's.
   resolves to itself, is a folder, a file, a socket with a second name or another user's, sits
   in a folder others may write that is not yours, or where a chat may write. One that is not
   there now is kept: a container engine makes its socket anew when it starts.
+
+
+### `~/.config/purlis/sealed-planes/<anchor>` (outside the plane)
+
+An empty file per plane, named by its anchor (`anchor_key`: the first 32 hex characters of the
+SHA-256 of the plane's path, its last folder not followed), made before the first seal of that
+plane's acceptance of `[policy]` or of its dispatch answers and nevers (#7164). It says a keyring
+was used for the plane, so a keyring that did not start later reads as one that failed, wherever
+`.git` has been moved. It holds nothing and is never read for what it says.
+
+- **Tier:** Machine, device-bound — one machine's note that a keyring was used for a plane; not
+  rebuildable (removing it forgets that a seal was kept).
 
 ### `~/.config/charter/reporting-consent` (outside the plane)
 

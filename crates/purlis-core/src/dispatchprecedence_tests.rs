@@ -1082,3 +1082,70 @@ fn a_keyring_that_failed_at_start_up_where_seals_were_kept_is_not_no_nevers() {
     );
     crate::secrets::seal::set_no_keyring_for_this_test(false);
 }
+
+/// A project with a `.git` folder and an acceptance of its `[policy]` kept, sealed.
+fn a_project_with_an_acceptance() -> Project {
+    let project = Project::new(STRICT);
+    std::fs::create_dir(project.root().join(".git")).expect("a .git");
+    crate::sandbox::local::accept_policy(
+        project.root(),
+        std::collections::BTreeMap::from([("guards.git".to_owned(), "enforce".to_owned())]),
+    )
+    .expect("accepted");
+    project
+}
+
+#[test]
+fn a_git_folder_moved_aside_and_back_does_not_take_the_evidence_a_seal_was_kept_away() {
+    // #7164: the clone key carries `.git`'s inode, so the machine's file is another one after
+    // `mv .git g && cp -a g .git`. The evidence that a seal was kept follows the plane's path
+    // alone, so a keyring that did not start still reads as one that failed: broken, never the
+    // shipped default.
+    use crate::sandbox::local::{PolicyAccepted, no_keyring_at, policy_accepted_record};
+    let project = a_project_with_an_acceptance();
+    let root = project.root();
+    let before = crate::sandbox::local::path(root);
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    assert_eq!(policy_accepted_record(root), PolicyAccepted::Broken);
+    std::fs::rename(root.join(".git"), root.join("g")).expect("moved aside");
+    std::fs::create_dir(root.join(".git")).expect("put back as another folder");
+    assert_ne!(
+        crate::sandbox::local::path(root),
+        before,
+        "the clone key moved"
+    );
+    assert!(!no_keyring_at(root), "a seal was kept here");
+    assert_eq!(policy_accepted_record(root), PolicyAccepted::Broken);
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn a_plane_with_no_readable_key_that_never_kept_a_seal_stays_on_the_shipped_default() {
+    // #7164 item 4: the complement. Nothing kept, nothing to be taken away.
+    use crate::sandbox::local::{PolicyAccepted, policy_accepted_record};
+    let project = Project::new(STRICT);
+    crate::secrets::seal::set_for_this_test(None);
+    assert_eq!(
+        policy_accepted_record(project.root()),
+        PolicyAccepted::Never
+    );
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+}
+
+#[test]
+fn no_keyring_with_an_acceptance_record_present_reads_broken_and_none_with_no_record_reads_never() {
+    use crate::sandbox::local::{PolicyAccepted, policy_accepted_record};
+    let project = a_project_with_an_acceptance();
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    assert_eq!(
+        policy_accepted_record(project.root()),
+        PolicyAccepted::Broken
+    );
+    let other = Project::new(STRICT);
+    assert_eq!(
+        policy_accepted_record(other.root()),
+        PolicyAccepted::Never,
+        "a machine that never used a keyring"
+    );
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}

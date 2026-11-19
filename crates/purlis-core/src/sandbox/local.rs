@@ -634,6 +634,9 @@ fn change_sealing(
         ));
     }
     let anchor = anchor_key(root);
+    if crate::secrets::sealed_set::decides() && crate::secrets::seal::can_seal() {
+        mark_sealed(&anchor)?;
+    }
     write_new(&file, |held| {
         let before = dispatch_answers(held);
         how(held);
@@ -1347,10 +1350,46 @@ pub fn no_keyring_at(root: &Path) -> bool {
         && !crate::dispatchnever::sealed_here(root)
 }
 
+/// The folder of the markers [`mark_sealed`] leaves, in this machine's purlis folder.
+const SEALED_MARKERS: &str = "sealed-planes";
+
+/// The marker for the plane at `root`: one empty file named by [`anchor_key`], which, unlike the
+/// clone key, a chat that moves `.git` aside and back does not change (#7164). `None` where
+/// there is no config home.
+fn sealed_marker(root: &Path) -> Option<PathBuf> {
+    marker_for(&anchor_key(root))
+}
+
+fn marker_for(anchor: &str) -> Option<PathBuf> {
+    config_home().map(|home| crate::machine::dir(&home).join(SEALED_MARKERS).join(anchor))
+}
+
+/// **Notes on this machine that a seal was kept for the plane anchored by `anchor`** (#7164),
+/// before the first one is made, so a keyring that did not start later is read as one that
+/// failed, wherever `.git` has been. Refused where it cannot be written: nothing is sealed that
+/// the evidence would not follow.
+pub(crate) fn mark_sealed(anchor: &str) -> io::Result<()> {
+    let Some(marker) = marker_for(anchor) else {
+        return Ok(());
+    };
+    if matches!(marker.try_exists(), Ok(true)) {
+        return Ok(());
+    }
+    if let Some(folder) = marker.parent() {
+        std::fs::create_dir_all(folder)?;
+    }
+    std::fs::write(&marker, b"")
+}
+
 /// Whether this machine's file for the project at `root` carries a seal the app made: an
 /// acceptance of `[policy]`, or a set of dispatch answers sealed at least once. A file that is
 /// there and does not read may carry one.
 fn sealed_here(root: &Path) -> bool {
+    // The marker follows the plane's path, so a `.git` moved aside and back, which changes the
+    // clone key and with it the file below, does not take the evidence away (#7164).
+    if sealed_marker(root).is_some_and(|marker| !matches!(marker.try_exists(), Ok(false))) {
+        return true;
+    }
     let file = path(root);
     if file.as_os_str().is_empty() {
         return false;
@@ -1392,6 +1431,8 @@ pub fn accept_policy(
     let seal = crate::secrets::seal::sealed(POLICY_KIND, &clone, &text).ok_or_else(|| {
         io::Error::other("only purlis's app can accept a policy, and it could not seal it")
     })?;
+    // Noted before the seal is kept, and only where one can be (#7164).
+    mark_sealed(&clone)?;
     // The anchor first (the M75 review, round 2): the newest the app has seen is in the keyring
     // before the record says it, so a record that does not reach it, or one restored from
     // before, reads as strict.

@@ -360,6 +360,9 @@ fn seal_in_step(
     anchor: &str,
     adds: &[String],
 ) -> io::Result<()> {
+    if crate::secrets::seal::can_seal() {
+        crate::sandbox::local::mark_sealed(anchor)?;
+    }
     let mut set = set_of(whole, entries);
     let texts: Vec<String> = entries.iter().map(Entry::text).collect();
     let adds: Vec<(&str, &str)> = adds.iter().map(|text| (NEVER, text.as_str())).collect();

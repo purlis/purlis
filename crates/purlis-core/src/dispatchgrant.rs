@@ -978,7 +978,8 @@ pub fn never_above_said(above: &str, target: &str) -> String {
 pub const NEVERS_UNREAD: &str = "purlis could not read the list of pairs the person said never \
      to on this machine, so no dispatch grant counts until it reads, and nobody is here to \
      ask. Nothing was started. Do this work without another persona, or say in what you leave \
-     behind that it is waiting; a person mends the list on this machine.";
+     behind that it is waiting; a person mends the list on this machine, or opens purlis \
+     again if its keyring did not start.";
 
 /// What a chat is told when it asks across a pair the person said never to.
 pub fn never_said(asking: &str, target: &str) -> String {
