@@ -2664,7 +2664,7 @@ fn revoke_pool_login(
     login: &str,
     pool: &str,
 ) -> Result<(), String> {
-    if browsers.remove_pool_login_grant(persona, login, pool) {
+    if browsers.remove_pool_login_grant(persona, login, pool)? {
         Ok(())
     } else {
         Err("purlis did not remove it: it is no longer there.".to_owned())

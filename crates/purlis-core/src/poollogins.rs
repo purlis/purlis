@@ -624,16 +624,24 @@ impl OptIns {
         )
     }
 
-    fn unkept(&self, matching: impl Fn(&Stored) -> bool) {
+    /// Takes the kept opt-ins `matching` names out of the store, and says whether it could.
+    fn take_out(
+        &self,
+        wait: std::time::Duration,
+        matching: impl Fn(&Stored) -> bool,
+    ) -> std::io::Result<()> {
         if self.stored.is_none() {
-            return;
+            return Ok(());
         }
-        let done = self.update(WAIT, |all| {
+        self.update(wait, |all| {
             let before = all.len();
             all.retain(|one| !matching(one));
             all.len() != before
-        });
-        if let Err(why) = done {
+        })
+    }
+
+    fn unkept(&self, matching: impl Fn(&Stored) -> bool) {
+        if let Err(why) = self.take_out(WAIT, matching) {
             tracing::warn!(
                 "purlis: a pool login opt-in was not removed from this machine's store ({why})"
             );
@@ -690,16 +698,29 @@ impl OptIns {
     }
 
     /// **The person removes the opt-in** of `persona`'s login `login` on pool `pool` (the
-    /// Granted list's Remove): the next login asks. Whether one was there.
-    pub fn remove(&self, persona: &str, login: &str, pool: &str) -> bool {
+    /// Granted list's Remove): the next login asks. Whether one was there, or why it could not be
+    /// taken out of the store (a store another process holds is not written, and stays).
+    pub fn remove(&self, persona: &str, login: &str, pool: &str) -> std::io::Result<bool> {
+        self.remove_within(WAIT, persona, login, pool)
+    }
+
+    fn remove_within(
+        &self,
+        wait: std::time::Duration,
+        persona: &str,
+        login: &str,
+        pool: &str,
+    ) -> std::io::Result<bool> {
         let was = self
             .granted()
             .iter()
             .any(|one| one.persona == persona && one.login == login && one.pool == pool);
         self.held()
             .remove(&(persona.to_owned(), login.to_owned(), pool.to_owned()));
-        self.unkept(|one| one.persona == persona && one.login == login && one.bound.pool == pool);
-        was
+        self.take_out(wait, |one| {
+            one.persona == persona && one.login == login && one.bound.pool == pool
+        })?;
+        Ok(was)
     }
 
     /// **The opt-ins in force**, for the Granted list: kept ones and this run's, never a

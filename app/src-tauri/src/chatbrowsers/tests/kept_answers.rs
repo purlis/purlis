@@ -297,7 +297,10 @@ fn the_granted_list_names_an_opt_in_and_remove_makes_the_next_login_ask() {
 
     let restarted = window(root.path(), config.path(), CHAT);
     assert_eq!(restarted.pool_login_grants().len(), 1);
-    assert!(restarted.remove_pool_login_grant("steward", "id-shop", "builds"));
+    assert_eq!(
+        restarted.remove_pool_login_grant("steward", "id-shop", "builds"),
+        Ok(true)
+    );
 
     assert!(restarted.pool_login_grants().is_empty());
     let after = window(root.path(), config.path(), CHAT);

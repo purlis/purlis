@@ -879,8 +879,6 @@ impl std::fmt::Display for EndWhy {
     }
 }
 
-/// What of `posture` the person answered that is kept across a restart (#7190): their press,
-/// never the asking.
 /// What a chat's `reach` says, as a kept answer records it (#7190).
 fn kept_reach(reach: &BrowserReach) -> purlis_core::browserposture::Reach {
     purlis_core::browserposture::Reach {
@@ -890,6 +888,8 @@ fn kept_reach(reach: &BrowserReach) -> purlis_core::browserposture::Reach {
     }
 }
 
+/// What of `posture` the person answered that is kept across a restart (#7190): their press,
+/// never the asking.
 fn answer_of(posture: Posture) -> Option<purlis_core::browserposture::Answer> {
     use purlis_core::browserposture::Answer;
     match posture {
@@ -1092,9 +1092,16 @@ impl ChatBrowsers {
     }
 
     /// **Remove** on the Granted list for `persona`'s login `login` on pool `pool` (#7190): the
-    /// next login there asks. Whether one was there.
-    pub fn remove_pool_login_grant(&self, persona: &str, login: &str, pool: &str) -> bool {
-        self.pool_logins.remove(persona, login, pool)
+    /// next login there asks. Whether one was there, or why it could not be removed.
+    pub fn remove_pool_login_grant(
+        &self,
+        persona: &str,
+        login: &str,
+        pool: &str,
+    ) -> Result<bool, String> {
+        self.pool_logins
+            .remove(persona, login, pool)
+            .map_err(|why| format!("purlis could not remove it from this machine's store: {why}"))
     }
 
     /// These browsers, telling `listed` when a retry off every call's path ends one (#2283).
@@ -3233,16 +3240,16 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&session);
+        // Its answer ends with it (#7190): a closed chat is never asked after. Under no lock of
+        // the browsers': the file's lock may be held by another purlis for a while.
+        let id = self.lock().get(&session).and_then(|chat| chat.id.clone());
+        if let (Some(root), Some(id)) = (&self.answers_in, id)
+            && let Err(why) = purlis_core::browserposture::remove(root, &id)
+        {
+            tracing::warn!("purlis: a closed chat's browser answer stays on disk ({why})");
+        }
         let (programs, kept) = {
             let mut chats = self.lock();
-            // Its answer ends with it (#7190): a closed chat is never asked after.
-            if let (Some(root), Some(id)) = (
-                &self.answers_in,
-                chats.get(&session).and_then(|chat| chat.id.clone()),
-            ) && let Err(why) = purlis_core::browserposture::remove(root, &id)
-            {
-                tracing::warn!("purlis: a closed chat's browser answer stays on disk ({why})");
-            }
             let (kept, programs): (Vec<ChatBrowser>, Vec<ChatBrowser>) = chats
                 .remove(&session)
                 .map(|chat| {

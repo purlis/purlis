@@ -758,8 +758,11 @@ fn the_granted_list_shows_each_opt_in_and_remove_takes_it_away_for_good() {
             pool: "builds".into()
         }]
     );
-    assert!(opt_ins.remove("steward", "id-shop", "builds"));
-    assert!(!opt_ins.remove("steward", "id-shop", "builds"), "once");
+    assert!(opt_ins.remove("steward", "id-shop", "builds").unwrap());
+    assert!(
+        !opt_ins.remove("steward", "id-shop", "builds").unwrap(),
+        "once"
+    );
 
     let restarted = after_a_restart(config.path());
     assert!(restarted.granted().is_empty());
@@ -909,4 +912,32 @@ fn a_store_another_process_holds_is_never_written_unlocked() {
         "nothing was written"
     );
     drop(other);
+}
+
+#[test]
+fn a_remove_the_store_could_not_take_is_not_reported_as_done() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    let other = crate::filelock::beside(
+        &config.path().join(IN_CONFIG),
+        std::time::Duration::from_secs(1),
+        "the test",
+    )
+    .unwrap();
+
+    let busy = opt_ins.remove_within(
+        std::time::Duration::from_millis(60),
+        "steward",
+        "id-shop",
+        "builds",
+    );
+
+    assert!(busy.is_err(), "the store was held, so nothing was removed");
+    drop(other);
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Allowed,
+        "and the opt-in is still kept"
+    );
 }
