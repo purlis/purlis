@@ -1375,7 +1375,7 @@ impl Scenario {
             })?;
         if unparsed > 0 {
             return Err(format!(
-                "the event log at {} holds {unparsed} line(s) that are no event: a check judged \
+                "the event log at {} holds {unparsed} lines that are no event: a check judged \
                  on the rest would pass on what it cannot see",
                 self.log.display()
             ));
