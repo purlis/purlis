@@ -200,10 +200,12 @@ impl Routed {
 fn how_long(within: std::time::Duration) -> String {
     if within.as_secs() >= 60 && within.as_secs().is_multiple_of(60) {
         let minutes = within.as_secs() / 60;
-        format!("{minutes} minute{}", if minutes == 1 { "" } else { "s" })
+        let unit = if minutes == 1 { "minute" } else { "minutes" };
+        format!("{minutes} {unit}")
     } else if within.as_secs() >= 1 {
         let secs = within.as_secs();
-        format!("{secs} second{}", if secs == 1 { "" } else { "s" })
+        let unit = if secs == 1 { "second" } else { "seconds" };
+        format!("{secs} {unit}")
     } else {
         format!("{} milliseconds", within.as_millis())
     }
