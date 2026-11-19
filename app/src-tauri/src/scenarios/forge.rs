@@ -116,13 +116,13 @@ impl ForgeHere {
             Wire::Https => {
                 let at = fake.https_addr().expect("an HTTPS listener");
                 for name in [GITHUB_SHAPED_HOST, SELF_HOSTED_GITLAB] {
-                    let _ = (name, at); // PROBE B
+                    scenario.names.origin(name, 443, at);
                 }
             }
             Wire::Http => {
                 let at = fake.http_addr();
                 for name in [SELF_HOSTED_GITLAB] {
-                    let _ = (name, at); // PROBE B
+                    scenario.names.origin(name, 80, at);
                 }
             }
         }
