@@ -2909,6 +2909,9 @@ fn check_by_login(
     ))
 }
 
+/// A runner container: its whole id, its name, and its desktop and device tag labels.
+type RunnerContainer = (String, String, Option<String>, Option<String>);
+
 impl Docker {
     /// The `docker` command at `program`.
     pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
@@ -4146,9 +4149,7 @@ impl Docker {
     /// to carry sign-ins or read a home ([`Made::copy_container`], [`Made::read_container`]) is
     /// not a runner: it is told by its runner label, which names the runner it serves, so a pool
     /// whose own name ends in `-copy` is still a runner.
-    fn runner_containers(
-        &self,
-    ) -> Result<Vec<(String, String, Option<String>, Option<String>)>, Refused> {
+    fn runner_containers(&self) -> Result<Vec<RunnerContainer>, Refused> {
         let listed = self.read(
             &[
                 "container".into(),
