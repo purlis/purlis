@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795096958182,
+  "lastUpdate": 1795100341772,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51660,6 +51660,48 @@ window.BENCHMARK_DATA = {
             "value": 100.62274000000001,
             "unit": "ms",
             "extra": "median of 5 runs: 99.079, 99.605, 100.623, 100.676, 101.823 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f483de69fed02a02f6c8425f5b7c72a46905e0a1",
+          "message": "A chat on a locked repo holds no path to the person's forge login (#7205) (#7241)\n\n* A chat on a locked repo holds no path to the person's forge login: empty gh folder, emptied git helpers, no ssh agent, no forge connectors, no forge browser login (#7205)\n\nCloses #7205 (slice 1 of #7133).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S6Z4H9ACNEHKNQ9S8YRJJ4\nPurlis-Persona: steward\n\n* Forge lock: keep Claude Code's ssh to its own sandbox, accept the route's extended ssh in the codex test, shed shell steering in the new test (#7205)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7S6Z4H9ACNEHKNQ9S8YRJJ4\nPurlis-Persona: steward\n\n* Forge lock slice 1, round 2: routes exact, claims honest (#7205)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SHHB0EY1KZFZYHMC55H9DX\nPurlis-Persona: steward\n\n* Forge lock: its git config pair goes last, in production order; docs say exactly what holds (#7205)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SMMAEBGEZW3W8GBZ2MT5TM\nPurlis-Persona: steward\n\n* Docs: #7218 is on main; a locked chat with no mint is told by the tab's note and the shim, and a test says so (#7205, #1349)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7STX3WZA3F3HRBB9TWV9Q8M\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-19T13:03:10Z",
+          "tree_id": "4d513b7488eb8b07749e7c1af0c2250e13bc96ba",
+          "url": "https://github.com/purlis/purlis/commit/f483de69fed02a02f6c8425f5b7c72a46905e0a1"
+        },
+        "date": 1795100334740,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6782239999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.666, 0.678, 0.678, 0.700 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.610504,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.253, 16.528, 16.611, 16.679, 16.945 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.01446250000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.367, 101.676, 102.014, 102.237, 102.467 ms"
           }
         ]
       }
