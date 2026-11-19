@@ -4750,7 +4750,8 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let (id, pane) = chat_says(Some(digest));
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    // The persona declares gh and kubectl, not glab, so glab is still guarded (#1349).
+    pane.shows("glab GUARDED.");
     // `auth` is refused a declared tool (`tools::args`), so the token is never read back.
     pane.shows("TOKEN none.");
     pane.shows("KUBECTL named the image, ended 127.");
