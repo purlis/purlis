@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use purlis_core::eventlog::Event;
 
-use super::checks::{self, Canary, Check, Mark, Observed, Refusal};
+use super::checks::{self, Canary, Check, Mark, Observed, Refusal, StepResult};
 use super::host::{Dialect, Homes, Protection, Scenario};
 use super::person::{Action, Press, chosen};
 use crate::asking::{AnswerPath, AskSource, Offered, Shown};
@@ -58,6 +58,7 @@ struct Clean {
     events: Vec<Event>,
     refusals: Vec<Refusal>,
     asks_left: Vec<String>,
+    asked_for: Vec<(String, String)>,
     grants_listed: Vec<(String, String, String)>,
     grants_made: Vec<(String, String, String)>,
     budget: Duration,
@@ -69,6 +70,7 @@ impl Clean {
             events: Vec::new(),
             refusals: Vec::new(),
             asks_left: Vec::new(),
+            asked_for: Vec::new(),
             grants_listed: Vec::new(),
             grants_made: Vec::new(),
             budget: Duration::from_secs(40),
@@ -80,6 +82,7 @@ impl Clean {
             events: &self.events,
             refusals: &self.refusals,
             asks_left: &self.asks_left,
+            asked_for: &self.asked_for,
             grants_listed: &self.grants_listed,
             grants_made: &self.grants_made,
             hook_budget: self.budget,
@@ -210,9 +213,12 @@ fn a_refusal_with_nothing_written_is_reported_as_a_black_hole() {
         .events
         .push(a_block(1, "c2", "urllib.example.test"));
     assert_eq!(another_chat.fired(), vec![Check::NoBlackHole]);
-    // A hold or an ask for the chat is.
+    // A hold for the chat's target is one; so is an ask the window listed for that target.
     let mut asked = planted(Check::NoBlackHole);
     asked.events.push(raised(1, "c1"));
+    asked
+        .asked_for
+        .push(("c1".to_owned(), "urllib.example.test".to_owned()));
     assert!(asked.judged().is_empty(), "{:?}", asked.judged());
 
     // A hook's deny with nothing written is a black hole too, with no step declared.
@@ -231,6 +237,126 @@ fn a_refusal_with_nothing_written_is_reported_as_a_black_hole() {
         serde_json::json!({"stop": "block", "tool": "Bash", "source": "guard"}),
     ));
     assert!(denied.judged().is_empty(), "{:?}", denied.judged());
+}
+
+/// **An ask raised for one target is no answer to a refusal of another** (round 2, item 5): a
+/// later `ask.raised` of the chat does not heal a refusal whatever its target, and one raise
+/// answers one refusal, never two.
+#[test]
+fn an_ask_for_another_target_does_not_answer_a_refusal() {
+    // The chat's ask was listed for `other`, not for the refused host.
+    let mut elsewhere = planted(Check::NoBlackHole);
+    elsewhere.events.push(raised(1, "c1"));
+    elsewhere
+        .asked_for
+        .push(("c1".to_owned(), "other.example.test".to_owned()));
+    assert_eq!(elsewhere.fired(), vec![Check::NoBlackHole]);
+    // And no ask listed at all for it.
+    let mut unlisted = planted(Check::NoBlackHole);
+    unlisted.events.push(raised(1, "c1"));
+    assert_eq!(unlisted.fired(), vec![Check::NoBlackHole]);
+
+    // One raise answers one of two refusals of the same target.
+    let mut twice = planted(Check::NoBlackHole);
+    twice.refusals.push(Refusal {
+        chat: "c1".to_owned(),
+        step: "urllib again".to_owned(),
+        target: Some("urllib.example.test".to_owned()),
+        after: 0,
+    });
+    twice.events.push(raised(1, "c1"));
+    twice
+        .asked_for
+        .push(("c1".to_owned(), "urllib.example.test".to_owned()));
+    let found = twice.judged();
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].what.contains("urllib again"), "{found:?}");
+}
+
+/// **A `hook_ms` that is not a whole number fails the budget check** (round 2, item 6): a string,
+/// a float and a null measure nothing, and are not skipped.
+#[test]
+fn a_hook_ms_that_is_not_a_whole_number_fails_the_budget() {
+    for (what, measured) in [
+        ("a string", serde_json::json!("600000")),
+        ("a float", serde_json::json!(1.5)),
+        ("a null", serde_json::Value::Null),
+        ("a negative", serde_json::json!(-3)),
+    ] {
+        let mut observed = Clean::new();
+        observed.events.push(event(
+            1,
+            Some("c1"),
+            "hook.pretool",
+            serde_json::json!({"decision": "allow", "hook_ms": measured}),
+        ));
+        assert_eq!(
+            observed.fired(),
+            vec![Check::HookWithinBudget],
+            "{what} was skipped"
+        );
+    }
+    let mut fine = Clean::new();
+    fine.events.push(event(
+        1,
+        Some("c1"),
+        "hook.pretool",
+        serde_json::json!({"decision": "allow", "hook_ms": 3}),
+    ));
+    assert!(fine.judged().is_empty());
+}
+
+/// **A log that was not read, or holds nothing once a chat started, is no quiet log** (round 2,
+/// item 1): an unreadable log is an `Err`, an empty one with a chat started is one, and only a
+/// scenario that started no chat may have an empty log.
+#[test]
+fn an_unreadable_or_empty_log_is_a_failure_and_never_a_pass() {
+    let unreadable =
+        checks::log_verdict(1, Err("permission denied".to_owned())).expect_err("an unreadable log");
+    assert!(unreadable.contains("could not be read"), "{unreadable}");
+    let empty = checks::log_verdict(2, Ok(Vec::new())).expect_err("an empty log after chats");
+    assert!(empty.contains("no event"), "{empty}");
+    assert!(checks::log_verdict(0, Ok(Vec::new())).is_ok());
+    assert_eq!(
+        checks::log_verdict(1, Ok(vec![raised(1, "c1")]))
+            .expect("a written log")
+            .len(),
+        1
+    );
+    // A log in a folder that is a file cannot be read, and the scenario's read says so.
+    let file = std::env::temp_dir().join(format!("log-is-a-file-{}", std::process::id()));
+    std::fs::write(&file, "x").expect("a file");
+    let read = purlis_core::eventlog::read(&file).map_err(|why| why.to_string());
+    let _ = std::fs::remove_file(&file);
+    if read.is_err() {
+        assert!(checks::log_verdict(1, read).is_err());
+    }
+}
+
+/// **No window at the end is a failure, not a skip** (round 2, item 2).
+#[test]
+fn a_scenario_with_no_window_at_its_end_is_not_checked_and_so_not_green() {
+    assert!(checks::window_for_the_checks(true).is_ok());
+    let why = checks::window_for_the_checks(false).expect_err("no window");
+    assert!(
+        why.contains("not been checked") || why.contains("not run"),
+        "{why}"
+    );
+}
+
+/// **The scripted person's `when_listed` matches exactly, per chat** (round 2, item 7).
+#[test]
+fn when_listed_matches_one_chats_ask_for_exactly_the_target() {
+    assert!(super::person::is_the_ask_for(3, "a.test", 3, "a.test"));
+    assert!(
+        !super::person::is_the_ask_for(3, "a.test.evil", 3, "a.test"),
+        "a longer name that contains the target is another ask"
+    );
+    assert!(
+        !super::person::is_the_ask_for(4, "a.test", 3, "a.test"),
+        "another chat's ask for the same target is not this chat's"
+    );
+    assert!(!super::person::is_the_ask_for(3, "", 3, "a.test"));
 }
 
 /// **A mark names its issue, and a mark whose check passes is itself a failure**: a check is
@@ -550,25 +676,78 @@ fn a_failing_scenario_prints_the_step_the_expected_and_seen_events_the_queries_a
 /// not in force.
 #[test]
 fn a_scenario_whose_wrap_is_not_in_force_fails_its_canary() {
-    assert!(
-        checks::judge_canary(Canary {
-            wrote: false,
-            dialled: 0
-        })
-        .is_ok()
-    );
-    let wrote = checks::judge_canary(Canary {
-        wrote: true,
-        dialled: 0,
-    })
-    .expect_err("wrote");
+    let refused_write = StepResult {
+        ran: true,
+        exit: Some(1),
+        said: "sh: /x/y: operation not permitted".to_owned(),
+        hook: None,
+    };
+    let refused_connect = StepResult {
+        ran: true,
+        exit: Some(7),
+        said: "curl: (7) failed to connect".to_owned(),
+        hook: None,
+    };
+    let seen = |wrote, dialled, write: &StepResult, connect: &StepResult| Canary {
+        wrote,
+        dialled,
+        write: write.clone(),
+        connect: connect.clone(),
+    };
+    assert!(checks::judge_canary(&seen(false, 0, &refused_write, &refused_connect)).is_ok());
+    let wrote =
+        checks::judge_canary(&seen(true, 0, &refused_write, &refused_connect)).expect_err("wrote");
     assert!(wrote.contains("write outside the project"), "{wrote}");
-    let dialled = checks::judge_canary(Canary {
-        wrote: false,
-        dialled: 2,
-    })
-    .expect_err("dialled");
+    let dialled = checks::judge_canary(&seen(false, 2, &refused_write, &refused_connect))
+        .expect_err("dialled");
     assert!(dialled.contains("direct dials (2)"), "{dialled}");
+
+    // No file and no dial is not enough (round 2, item 3): each step's own result must say it was
+    // refused. A curl that is not installed, a call a hook denied and a step that never ran each
+    // leave no file and no dial.
+    let no_curl = StepResult {
+        ran: true,
+        exit: Some(127),
+        said: "sh: curl: command not found".to_owned(),
+        hook: None,
+    };
+    let denied = StepResult {
+        ran: false,
+        exit: None,
+        said: "denied by a hook".to_owned(),
+        hook: Some("pretooluse".to_owned()),
+    };
+    let never = StepResult::default();
+    for (what, write, connect) in [
+        ("curl missing", &refused_write, &no_curl),
+        ("the connect denied by a hook", &refused_write, &denied),
+        ("the connect never ran", &refused_write, &never),
+        ("the write never ran", &never, &refused_connect),
+        ("the write denied by a hook", &denied, &refused_connect),
+    ] {
+        assert!(
+            checks::judge_canary(&seen(false, 0, write, connect)).is_err(),
+            "{what} passed the canary"
+        );
+    }
+    // A write that "succeeded" quietly (exit 0, nothing said) was not refused either.
+    let silent = StepResult {
+        ran: true,
+        exit: Some(0),
+        said: String::new(),
+        hook: None,
+    };
+    assert!(checks::judge_canary(&seen(false, 0, &silent, &refused_connect)).is_err());
+
+    // A transcript line is read as it is written.
+    let line = serde_json::json!({"kind": "tool_result", "step": "canary-connect",
+        "exit": 7, "stdout": "", "stderr": "curl: (7) Failed", "text": ""});
+    let read = StepResult::of(Some(&line));
+    assert!(read.ran && read.exit == Some(7), "{read:?}");
+    assert!(!StepResult::of(None).ran);
+    let hooked = serde_json::json!({"kind": "tool_result", "hook": "pretooluse",
+        "text": "blocked", "is_error": true});
+    assert!(!StepResult::of(Some(&hooked)).ran);
 
     // The canary's own commands, run with no wrap at all (this process is not wrapped): both get
     // through, so its judgment is red. This is what a scenario whose wrap did not apply sees.
@@ -611,6 +790,19 @@ fn a_scenario_whose_wrap_is_not_in_force_fails_its_canary() {
     let seen = Canary {
         wrote: file.exists(),
         dialled: accepting.join().expect("the listener's thread"),
+        // An unwrapped run is read from the exit of its own commands: both ran and succeeded.
+        write: StepResult {
+            ran: true,
+            exit: Some(0),
+            said: String::new(),
+            hook: None,
+        },
+        connect: StepResult {
+            ran: true,
+            exit: Some(0),
+            said: String::new(),
+            hook: None,
+        },
     };
     let _ = std::fs::remove_dir_all(&outside);
     assert!(
@@ -618,12 +810,13 @@ fn a_scenario_whose_wrap_is_not_in_force_fails_its_canary() {
         "an unwrapped run lets both through: {seen:?}"
     );
     assert!(
-        checks::judge_canary(seen).is_err(),
+        checks::judge_canary(&seen).is_err(),
         "a scenario whose wrap is not in force must fail its canary"
     );
 
-    // And in a scenario whose wrap is in force, the canary passes: one refused write and one
-    // refused connect, the person keeping what it raised blocked.
+    // And in a scenario whose wrap is in force, the canary passes: every scenario runs it as it
+    // is made (`Scenario::under`), one refused write and one refused connect, the person keeping
+    // what it raised blocked.
     let Some(homes) = Homes::of_this_scenario() else {
         return;
     };
@@ -634,7 +827,46 @@ fn a_scenario_whose_wrap_is_not_in_force_fails_its_canary() {
         let Some(scenario) = Scenario::new(&homes, Protection::Full, None, dialect) else {
             return;
         };
-        scenario.canary();
+        assert!(
+            scenario.chats_started() > 0
+                || (dialect == Dialect::Claude && cfg!(target_os = "macos")),
+            "a scenario made under the wrap ran no canary"
+        );
+    }
+}
+
+/// **The #6675 mark holds only when the urllib step was refused by the proxy** (round 2, item 11).
+#[test]
+fn the_urllib_step_must_be_seen_refused_by_the_proxy() {
+    let refused = StepResult {
+        ran: true,
+        exit: Some(1),
+        said: "urllib.error.urlerror: <urlopen error tunnel connection failed: 403 forbidden>"
+            .to_owned(),
+        hook: None,
+    };
+    assert!(checks::urllib_refused_by_the_proxy(&refused).is_ok());
+    let no_python = StepResult {
+        ran: true,
+        exit: Some(127),
+        said: "sh: python3: command not found".to_owned(),
+        hook: None,
+    };
+    let silent_success = StepResult {
+        ran: true,
+        exit: Some(0),
+        said: String::new(),
+        hook: None,
+    };
+    for (what, result) in [
+        ("python3 missing", &no_python),
+        ("the step never ran", &StepResult::default()),
+        ("the request went through", &silent_success),
+    ] {
+        assert!(
+            checks::urllib_refused_by_the_proxy(result).is_err(),
+            "{what} was taken for a refusal"
+        );
     }
 }
 
@@ -707,6 +939,13 @@ fn the_ask_shows_exactly_the_decided_target_and_grants_that_string() {
     else {
         return;
     };
+    // The allowed block is still listed by the asks view at the end: #7232 (the suite no longer
+    // hides an answered ask, so "no unanswered ask" fires here until it is fixed).
+    scenario.expected_fail(
+        Check::NoUnansweredAsk,
+        7232,
+        "an ask the person allowed is still listed by the asks view",
+    );
     for (n, name) in [long, "xn--bcher-kva.example.test".to_owned()]
         .iter()
         .enumerate()
@@ -719,6 +958,7 @@ fn the_ask_shows_exactly_the_decided_target_and_grants_that_string() {
         }));
         // The person presses Allow for me on this machine, once the ask for it is listed.
         let (ask, pressed) = scenario.person().when_listed(
+            chat,
             name,
             &Press::Allow(GrantLevel::You),
             Duration::from_millis(50),
@@ -774,7 +1014,7 @@ fn the_window_queries_read_what_the_window_reads() {
     let (ask, pressed) =
         scenario
             .person()
-            .when_listed(host, &Press::Keep(None), Duration::from_millis(50));
+            .when_listed(chat, host, &Press::Keep(None), Duration::from_millis(50));
     pressed.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
     scenario.until_played(chat, &["reaches"]);
 
@@ -918,13 +1158,21 @@ fn a_python_urllib_refusal_in_a_scenario_is_a_black_hole_until_6675_is_fixed() {
     let (_, kept) =
         scenario
             .person()
-            .when_listed(host, &Press::Keep(None), Duration::from_millis(50));
+            .when_listed(chat, host, &Press::Keep(None), Duration::from_millis(50));
     kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
     scenario.until_played(chat, &["curl"]);
     // The next call is the one the issue is about.
     scenario.refused_after_now(chat, "urllib", Some(host));
     scenario.types(chat, "second");
     scenario.until_played(chat, &["urllib"]);
+    // The mark is per check, not per violation: it holds for any black hole of this scenario. So
+    // the step itself must be seen refused by the proxy, or the mark would stay green where python3
+    // is missing and the refusal never happened.
+    if let Err(why) = checks::urllib_refused_by_the_proxy(&checks::StepResult::of(
+        scenario.result_of(chat, "urllib").as_ref(),
+    )) {
+        scenario.fails_at("urllib", "a request refused by the proxy", &why);
+    }
     scenario.expected_fail(
         Check::NoBlackHole,
         6675,

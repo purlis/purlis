@@ -157,6 +157,20 @@ impl Queries<'_> {
     pub(crate) fn counted(&self) -> crate::asking::Asking {
         let held = self.scenario.held();
         let counted = crate::asking::counted(&held);
+        // Every ask the window lists is held to the shape of what it shows, and remembered for
+        // the target it asks about (what ties a raised ask to a refusal).
+        for ask in &counted.asks {
+            let (target, fault) = match &ask.answer {
+                crate::asking::AnswerPath::SandboxBlock { shown } => (
+                    shown.target.clone(),
+                    super::checks::shows_safely(shown)
+                        .err()
+                        .map(|why| format!("chat {}: {why}", ask.session)),
+                ),
+                _ => (String::new(), None),
+            };
+            self.scenario.ledger.listed(ask.session, &target, fault);
+        }
         self.note_standing();
         self.scenario
             .ledger

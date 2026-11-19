@@ -18,8 +18,13 @@
 //!
 //! **"At the end" is quiesced** ([`quiesce`]): the log has had no event for the scenario's
 //! `group` and `tally_tick` together, judged by the events' own times, never by a sleep. What
-//! the Linux supervisor tells and a hook line in flight each reach the log as an event, which
-//! restarts that wait, so neither is judged before it is written.
+//! the Linux supervisor tells and a hook line in flight reach the log as an event, which
+//! restarts that wait. **The limit:** quiet is read from the log alone, so a hook or a hold that
+//! is still pending and has written nothing yet is not seen: a scenario that ends with one
+//! pending must wait for it itself (`until_played`), or its check may be judged too soon.
+//!
+//! **The log is read, not assumed** ([`log_verdict`]): a log that cannot be read is an `Err`, and
+//! an empty one once a chat has started is a failure, never a quiet scenario.
 //!
 //! The checks themselves are a pure function of what was observed ([`judge`]): each has a
 //! planted-fault test.
@@ -69,15 +74,6 @@ impl Check {
     }
 }
 
-/// **The key an ask is known by**, however it is read: a sandbox block by its target, any other
-/// ask by its own key.
-pub(crate) fn ask_key(ask: &crate::asking::Shown) -> String {
-    match &ask.answer {
-        crate::asking::AnswerPath::SandboxBlock { shown } => format!("block:{}", shown.target),
-        _ => ask.ask.clone(),
-    }
-}
-
 /// A refusal a scenario knows its chat was given, whose ask, block or hold must be written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Refusal {
@@ -99,6 +95,9 @@ pub(crate) struct Observed<'a> {
     pub refusals: &'a [Refusal],
     /// The asks the window lists at the end: "chat N `key` says".
     pub asks_left: &'a [String],
+    /// Every ask the window was seen to list: (chat by the event log's id, the target it asked
+    /// about). A raised ask carries no target in the log, so this is what ties one to a refusal.
+    pub asked_for: &'a [(String, String)],
     /// What Settings lists beyond what it listed before the scenario began: (kind, target, level).
     pub grants_listed: &'a [(String, String, String)],
     /// What the person granted in the scenario and has not revoked: (kind, target, level).
@@ -154,18 +153,28 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
             });
         }
     }
+    // Each stop written answers one refusal, never two: an ask raised for one target is no answer
+    // to a refusal of another. A block or a hold answers the refusal of its target; an ask (which
+    // names no target in the log) answers the refusal of a target the window listed an ask for.
+    let mut used: BTreeSet<u64> = BTreeSet::new();
     for refusal in &refusals {
-        let written = observed.events.iter().any(|event| {
+        let answer = observed.events.iter().find(|event| {
             kind_is_a_stop(&event.kind)
+                && !used.contains(&event.seq)
                 && event.seq > refusal.after
                 && event.chat.as_deref() == Some(refusal.chat.as_str())
                 && match (&refusal.target, event.kind.as_str()) {
-                    // An ask names no target in the log: it answers any refusal of its chat.
-                    (_, stops::ASK_RAISED) | (None, _) => true,
+                    (None, _) => true,
+                    (Some(wanted), stops::ASK_RAISED) => observed
+                        .asked_for
+                        .iter()
+                        .any(|(chat, target)| chat == &refusal.chat && target == wanted),
                     (Some(wanted), _) => target_in(&event.body).is_some_and(|one| &one == wanted),
                 }
         });
-        if !written {
+        if let Some(answer) = answer {
+            used.insert(answer.seq);
+        } else {
             fail(
                 Check::NoBlackHole,
                 format!(
@@ -209,22 +218,29 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
         }
     }
 
-    // No hook over budget.
+    // No hook over budget. A `hook_ms` that is not a whole number measures nothing: it fails.
     let budget_ms = u64::try_from(observed.hook_budget.as_millis()).unwrap_or(u64::MAX);
     for event in observed.events {
-        if let Some(took) = event
-            .body
-            .get("hook_ms")
-            .and_then(serde_json::Value::as_u64)
-            && took > budget_ms
-        {
-            fail(
+        let Some(measured) = event.body.get("hook_ms") else {
+            continue;
+        };
+        match measured.as_u64() {
+            Some(took) if took > budget_ms => fail(
                 Check::HookWithinBudget,
                 format!(
                     "event {} ({}) took a hook {took} ms, over its {budget_ms} ms budget",
                     event.seq, event.kind
                 ),
-            );
+            ),
+            Some(_) => {}
+            None => fail(
+                Check::HookWithinBudget,
+                format!(
+                    "event {} ({}) says `hook_ms` {measured}, which is no whole number of \
+                     milliseconds: the hook's time is not measured",
+                    event.seq, event.kind
+                ),
+            ),
         }
     }
 
@@ -397,27 +413,28 @@ pub(crate) struct Ledger {
     marks: Mutex<Vec<Mark>>,
     /// What Settings listed when the scenario began: the project's own declarations.
     baseline: Mutex<Vec<(String, String)>>,
-    /// The asks the person pressed on, by chat and key: answered, whatever the window lists.
-    answered: Mutex<BTreeSet<(u32, String)>>,
+    /// Every ask the window was seen to list: (chat, the target it asks about).
+    listed: Mutex<BTreeSet<(u32, String)>>,
+    /// Every ask the window drew a target of that a person could be misled by.
+    drawn_wrong: Mutex<BTreeSet<String>>,
     /// Every block a chat was seen held on (chat, target), as Notices raise them, kept after the
     /// block is answered and so retracted.
     standing: Mutex<BTreeSet<(u32, String)>>,
 }
 
 impl Ledger {
-    /// The person answered chat `session`'s ask `key` ([`ask_key`]).
-    pub(crate) fn answered(&self, session: u32, key: &str) {
-        self.answered
-            .lock()
-            .expect("answered")
-            .insert((session, key.to_owned()));
-    }
-
-    fn was_answered(&self, session: u32, key: &str) -> bool {
-        self.answered
-            .lock()
-            .expect("answered")
-            .contains(&(session, key.to_owned()))
+    /// The window listed chat `session`'s ask about `target`, and drew it as `fault` says, if it
+    /// drew it wrong.
+    pub(crate) fn listed(&self, session: u32, target: &str, fault: Option<String>) {
+        if !target.is_empty() {
+            self.listed
+                .lock()
+                .expect("listed")
+                .insert((session, target.to_owned()));
+        }
+        if let Some(fault) = fault {
+            self.drawn_wrong.lock().expect("drawn wrong").insert(fault);
+        }
     }
 
     /// A chat was seen held on the block for `target`.
@@ -525,8 +542,10 @@ pub(crate) fn quiesce(scenario: &Scenario) -> Result<(), String> {
     let settle = scenario.timings.group() + scenario.timings.tally_tick();
     let deadline = Instant::now() + super::PLAYS_WITHIN;
     loop {
-        let newest = scenario
-            .events()
+        let events = scenario.try_events()?;
+        // A chat has started and the log holds nothing yet: not quiet, and not judged.
+        let written = !events.is_empty() || scenario.chats_started() == 0;
+        let newest = events
             .iter()
             .filter_map(|event| purlis_core::eventlog::written_at_ms(&event.ulid))
             .max();
@@ -536,10 +555,11 @@ pub(crate) fn quiesce(scenario: &Scenario) -> Result<(), String> {
                 u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
             });
         let quiet_for = newest.map_or(u64::MAX, |at| now_ms.saturating_sub(at));
-        if u128::from(quiet_for) >= settle.as_millis() {
+        if written && u128::from(quiet_for) >= settle.as_millis() {
             return Ok(());
         }
         if Instant::now() >= deadline {
+            log_verdict(scenario.chats_started(), Ok(events))?;
             return Err(format!(
                 "the log never went quiet: its newest event is {quiet_for} ms old, and quiet \
                  is {} ms",
@@ -550,19 +570,49 @@ pub(crate) fn quiesce(scenario: &Scenario) -> Result<(), String> {
     }
 }
 
+/// **The log as the checks read it**: `read` is what the log answered, `chats` how many chats
+/// the scenario started. A log that could not be read is an `Err`, and so is an empty one once a
+/// chat has started: a chat writes its run to the log, so none is a log read from the wrong place.
+pub(crate) fn log_verdict(
+    chats: usize,
+    read: Result<Vec<Event>, String>,
+) -> Result<Vec<Event>, String> {
+    let events = read.map_err(|why| format!("the event log could not be read: {why}"))?;
+    if events.is_empty() && chats > 0 {
+        return Err(format!(
+            "the event log holds no event, though {chats} chat(s) started: it is read from the \
+             wrong place or was never written, and a check judged on it would pass on nothing"
+        ));
+    }
+    Ok(events)
+}
+
+/// **The checks need the window**: they read the asks, Settings and Notices through it. A scenario
+/// with no window at its end (its restart did not finish) is not checked, and so is not green.
+pub(crate) fn window_for_the_checks(up: bool) -> Result<(), String> {
+    if up {
+        Ok(())
+    } else {
+        Err(
+            "the scenario has no window at its end (a restart did not finish): its global \
+             checks were not run, and a scenario that was not checked has not passed"
+                .to_owned(),
+        )
+    }
+}
+
 /// **The scenario's checks at its end**: quiesced, observed through the window's own queries,
 /// judged, and the marks applied. `Err` is a report for a red run.
 pub(crate) fn at_the_end(scenario: &Scenario) -> Result<Outcome, String> {
     quiesce(scenario)?;
     let queries = scenario.queries();
     let asks = queries.counted();
-    // The asks nobody answered: a chat's own wait for the person's reply is no ask raised, and an
-    // ask the person pressed on was answered, whatever the window lists of it afterwards.
+    // The asks nobody answered: a chat's own wait for the person's reply is no ask raised. An ask
+    // the window still lists is unanswered, whatever the person pressed on it.
     let asks_left: Vec<String> = asks
         .asks
         .iter()
         .filter(|ask| !crate::asknotify::own_wait(ask))
-        .filter(|ask| !scenario.ledger.was_answered(ask.session, &ask_key(ask)))
         .map(|ask| format!("chat {} `{}` ({:?})", ask.session, ask.ask, ask.says))
         .collect();
     let _ = queries.notices();
@@ -573,12 +623,35 @@ pub(crate) fn at_the_end(scenario: &Scenario) -> Result<Outcome, String> {
         .filter(|(k, t, _)| !baseline.iter().any(|(bk, bt)| bk == k && bt == t))
         .collect();
     let grants_made = MADE.lock().expect("made").clone();
-    let events = scenario.events();
+    let events = log_verdict(scenario.chats_started(), scenario.try_events())?;
     let refusals = scenario.ledger.refusals.lock().expect("refusals").clone();
+    let drawn_wrong: Vec<String> = scenario
+        .ledger
+        .drawn_wrong
+        .lock()
+        .expect("drawn wrong")
+        .iter()
+        .cloned()
+        .collect();
+    if !drawn_wrong.is_empty() {
+        return Err(format!(
+            "the window drew an ask's target other than what is decided:\n  {}",
+            drawn_wrong.join("\n  ")
+        ));
+    }
+    let asked_for: Vec<(String, String)> = scenario
+        .ledger
+        .listed
+        .lock()
+        .expect("listed")
+        .iter()
+        .filter_map(|(session, target)| Some((queries.chat_id(*session)?, target.clone())))
+        .collect();
     let found = judge(&Observed {
         events: &events,
         refusals: &refusals,
         asks_left: &asks_left,
+        asked_for: &asked_for,
         grants_listed: &grants_listed,
         grants_made: &grants_made,
         hook_budget: scenario.timings.hold() + scenario.timings.patience(),
@@ -636,7 +709,7 @@ impl Scenario {
                 step,
                 expected,
                 seen,
-                &self.events(),
+                &self.try_events().unwrap_or_default(),
                 &queries,
                 &self.transcript()
             )
@@ -644,17 +717,68 @@ impl Scenario {
     }
 }
 
-/// What got through a scenario's wrap, as the canary reads it: the file one write left, and
-/// the connections its listener was dialled by.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What one of the canary's steps came to, as the chat's transcript records its tool result.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct StepResult {
+    /// The command ran: its result has an exit status. One a hook denied, or that never ran,
+    /// has none.
+    pub ran: bool,
+    pub exit: Option<i64>,
+    /// What it said, its stderr and the result's own text.
+    pub said: String,
+    /// The hook that refused it, where one did.
+    pub hook: Option<String>,
+}
+
+impl StepResult {
+    /// The step as a `tool_result` line of the transcript records it; none for a step with no
+    /// result.
+    pub(crate) fn of(line: Option<&serde_json::Value>) -> StepResult {
+        let Some(line) = line else {
+            return StepResult::default();
+        };
+        let text = |key: &str| {
+            line.get(key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("")
+        };
+        StepResult {
+            ran: line.get("exit").is_some(),
+            exit: line.get("exit").and_then(serde_json::Value::as_i64),
+            said: format!("{} {}", text("stderr"), text("text")).to_lowercase(),
+            hook: line
+                .get("hook")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned),
+        }
+    }
+
+    fn described(&self) -> String {
+        format!(
+            "ran: {}, exit: {:?}, hook: {:?}, said: {:?}",
+            self.ran,
+            self.exit,
+            self.hook,
+            self.said.chars().take(200).collect::<String>()
+        )
+    }
+}
+
+/// What got through a scenario's wrap, as the canary reads it: the file one write left, the
+/// connections its listener was dialled by, and what each step's tool result says.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Canary {
     pub wrote: bool,
     pub dialled: usize,
+    pub write: StepResult,
+    pub connect: StepResult,
 }
 
 /// **Whether the wrap was in force**: a write outside the project and a direct dial both
-/// refused. `Err` says which got through.
-pub(crate) fn judge_canary(seen: Canary) -> Result<(), String> {
+/// refused, **and each step's own result says so**. No file and no dial is not enough: a command
+/// that is not installed, one a hook denied and one that never ran leave neither. `Err` says
+/// which got through, or which refusal was not seen.
+pub(crate) fn judge_canary(seen: &Canary) -> Result<(), String> {
     let mut through = Vec::new();
     if seen.wrote {
         through.push("a write outside the project".to_owned());
@@ -662,14 +786,40 @@ pub(crate) fn judge_canary(seen: Canary) -> Result<(), String> {
     if seen.dialled > 0 {
         through.push(format!("direct dials ({})", seen.dialled));
     }
-    if through.is_empty() {
-        Ok(())
-    } else {
-        Err(format!(
+    if !through.is_empty() {
+        return Err(format!(
             "this scenario's wrap is not in force: {} got through",
             through.join(" and ")
-        ))
+        ));
     }
+    // The write: the shell ran it and the OS said no (the shell's own words for EPERM, EACCES
+    // and EROFS), not "not found" (127) or a command that never ran.
+    let write_refused = seen.write.ran
+        && seen.write.exit.is_some_and(|code| code != 0 && code != 127)
+        && [
+            "not permitted",
+            "permission denied",
+            "read-only file system",
+        ]
+        .iter()
+        .any(|words| seen.write.said.contains(words));
+    if !write_refused {
+        return Err(format!(
+            "the canary's write was not seen refused by the wrap (it may not have run, or a hook \
+             refused it): {}",
+            seen.write.described()
+        ));
+    }
+    // The connect: curl ran and could not connect (7). 127 is curl missing, 28 a hung dial.
+    let connect_refused = seen.connect.ran && seen.connect.exit == Some(7);
+    if !connect_refused {
+        return Err(format!(
+            "the canary's connect was not seen refused by the wrap (curl may be missing, or a \
+             hook refused it): {}",
+            seen.connect.described()
+        ));
+    }
+    Ok(())
 }
 
 /// The canary's two commands, as a chat of the scenario runs them: one write outside the
@@ -685,11 +835,30 @@ pub(crate) fn canary_script(file: &std::path::Path, port: u16) -> serde_json::Va
     })
 }
 
+/// A listener and the connections it has accepted: one per scenario, so two scenarios running at
+/// once never count each other's dials.
+struct Dials {
+    listener: std::net::TcpListener,
+    accepted: usize,
+}
+
+impl Dials {
+    /// How many connections it has accepted so far.
+    fn count(&mut self) -> usize {
+        while self.listener.accept().is_ok() {
+            self.accepted += 1;
+        }
+        self.accepted
+    }
+}
+
 impl Scenario {
     /// **The scenario's canary**: before anything else it proves its own wrap is in force, with
     /// one refused write and one refused connect, each read from outside the chat (the file a
-    /// write left, a listener's connections), and each with a positive control, so a canary that
-    /// cannot see is red, not green. The person then keeps both refusals blocked.
+    /// write left, a listener's connections) **and from its own tool result** (the OS said no),
+    /// and each with a positive control, so a canary that cannot see is red, not green. The
+    /// person then keeps both refusals blocked, and the chat is closed: what follows starts as
+    /// if it had never run.
     pub(crate) fn canary(&self) {
         use std::net::{TcpListener, TcpStream};
         let outside = self.a_folder_outside("canary");
@@ -697,35 +866,40 @@ impl Scenario {
         let listener = TcpListener::bind("127.0.0.1:0").expect("the canary's listener");
         listener.set_nonblocking(true).expect("non-blocking");
         let port = listener.local_addr().expect("its address").port();
+        let mut dials = Dials {
+            listener,
+            accepted: 0,
+        };
 
         // The positive controls, from this process, outside any wrap: it can write there and
         // dial there, so a refusal below is the wrap's.
         let control = outside.join("written-by-the-test");
         std::fs::write(&control, "control").expect("the control write is allowed");
-        let before = accepted(&listener);
         TcpStream::connect(("127.0.0.1", port)).expect("the control dial is allowed");
-        let mut dialled_by_control = 0;
         let deadline = Instant::now() + Duration::from_secs(10);
-        while dialled_by_control == 0 {
-            dialled_by_control = accepted(&listener) - before;
+        while dials.count() == 0 {
             assert!(
                 Instant::now() < deadline,
                 "the canary's listener never saw its own control dial"
             );
             std::thread::sleep(Duration::from_millis(10));
         }
+        let controls = dials.count();
 
         let chat = self.starts(&canary_script(&file, port));
         self.until_played(chat, &["canary-write", "canary-connect"]);
         let seen = Canary {
             wrote: file.exists(),
-            dialled: accepted(&listener) - before - dialled_by_control,
+            dialled: dials.count() - controls,
+            write: StepResult::of(self.result_of(chat, "canary-write").as_ref()),
+            connect: StepResult::of(self.result_of(chat, "canary-connect").as_ref()),
         };
-        if let Err(why) = judge_canary(seen) {
+        if let Err(why) = judge_canary(&seen) {
             self.fails_at("canary", "one refused write and one refused connect", &why);
         }
         // The two refusals may have raised asks: the person keeps them blocked.
         self.keeps_listed_asks_blocked();
+        self.forget_the_canary_chat(chat);
     }
 
     /// The person presses Keep blocked on every ask the window lists, once each is listed (a
@@ -742,13 +916,29 @@ impl Scenario {
     }
 }
 
-/// How many connections `listener` has accepted so far (a counter, kept apart).
-fn accepted(listener: &std::net::TcpListener) -> usize {
-    static COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    while listener.accept().is_ok() {
-        COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+/// **The urllib step of #6675 was refused by the proxy**: Python ran, its request failed, and what
+/// it says is the proxy's refusal (a tunnel that failed, a 403). A `python3` that is not
+/// installed (127), a step a hook denied or one that never ran is no refusal, and so no black
+/// hole: the pinned scenario fails on it, and so cannot pass for the wrong reason. `Err` says what
+/// the step came to.
+pub(crate) fn urllib_refused_by_the_proxy(result: &StepResult) -> Result<(), String> {
+    let refused = result.ran
+        && result.exit.is_some_and(|code| code != 0 && code != 127)
+        && result.hook.is_none()
+        && ["tunnel connection failed", "proxyerror", "403", "forbidden"]
+            .iter()
+            .any(|words| result.said.contains(words))
+        && !result.said.contains("no such file")
+        && !result.said.contains("not found");
+    if refused {
+        Ok(())
+    } else {
+        Err(format!(
+            "the urllib step was not seen refused by the proxy (python3 may be missing, or the \
+             step never ran): {}",
+            result.described()
+        ))
     }
-    COUNT.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 /// **Whether an ask shows exactly the target that is decided** (T1.1-07, item 5): what the
@@ -761,6 +951,26 @@ fn accepted(listener: &std::net::TcpListener) -> usize {
 /// - **The grant written is the exact string shown**: `decided` is the string a grant is kept
 ///   by, or the name the proxy looks up, and it is the string shown.
 pub(crate) fn shows_the_decided_target(shown: &BlockShown, decided: &str) -> Result<(), String> {
+    shows_safely(shown)?;
+    let text = &shown.target;
+    if text != decided {
+        let cut = text.ends_with('…') || text.ends_with("...");
+        return Err(format!(
+            "the ask shows {text:?}, but {decided:?} is decided{}",
+            if cut {
+                ": the shown target is cut short"
+            } else {
+                ""
+            }
+        ));
+    }
+    Ok(())
+}
+
+/// **The half of [`shows_the_decided_target`] that needs no decided string**, so every ask the
+/// window lists is held to it: escaped (no bidi, control or ANSI character raw) and a host shown
+/// in punycode.
+pub(crate) fn shows_safely(shown: &BlockShown) -> Result<(), String> {
     let text = &shown.target;
     if let Some(bad) = text
         .chars()
@@ -774,17 +984,6 @@ pub(crate) fn shows_the_decided_target(shown: &BlockShown, decided: &str) -> Res
     if shown.what == crate::sandboxing::GrantWhat::Host && !text.is_ascii() {
         return Err(format!(
             "the ask shows the host {text:?} as it is written, not in punycode"
-        ));
-    }
-    if text != decided {
-        let cut = text.ends_with('…') || text.ends_with("...");
-        return Err(format!(
-            "the ask shows {text:?}, but {decided:?} is decided{}",
-            if cut {
-                ": the shown target is cut short"
-            } else {
-                ""
-            }
         ));
     }
     Ok(())

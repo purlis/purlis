@@ -339,12 +339,15 @@ impl Person<'_> {
         }
     }
 
-    /// **When an ask for `target` is listed, presses `press` on it after `after`**: the
-    /// conditional press of a scenario's script. Answers the ask it pressed on and what the
-    /// command answered; fails the scenario if none is listed within
-    /// [`crate::scenarios::PLAYS_WITHIN`].
+    /// **When chat `session`'s ask for `target` is listed, presses `press` on it after `after`**:
+    /// the conditional press of a scenario's script. The ask is that chat's, for exactly that
+    /// target ([`is_the_ask_for`]): another chat's, and another target that contains it, are
+    /// not. The ask is also held to showing `target` whole and safe ([`super::checks::shows_the_decided_target`]).
+    /// Answers the ask it pressed on and what the command answered; fails the scenario if none is
+    /// listed within [`crate::scenarios::PLAYS_WITHIN`].
     pub(crate) fn when_listed(
         &self,
+        session: u32,
         target: &str,
         press: &Press,
         after: Duration,
@@ -355,17 +358,22 @@ impl Person<'_> {
             if let Some(ask) = listed
                 .asks
                 .into_iter()
-                .find(|ask| ask.says.contains(target) || shown_target(ask).contains(target))
+                .find(|ask| is_the_ask_for(ask.session, &shown_target(ask), session, target))
             {
                 break ask;
             }
             assert!(
                 Instant::now() < deadline,
-                "no ask for `{target}` was listed in time\n{}",
+                "no ask from chat {session} for `{target}` was listed in time\n{}",
                 self.scenario.said()
             );
             std::thread::sleep(Duration::from_millis(25));
         };
+        if let AnswerPath::SandboxBlock { shown } = &ask.answer
+            && let Err(why) = super::checks::shows_the_decided_target(shown, target)
+        {
+            self.scenario.fails_at("the ask's target", target, &why);
+        }
         std::thread::sleep(after);
         let pressed = self.presses_on(&ask, press);
         (ask, pressed)
@@ -389,9 +397,8 @@ impl Person<'_> {
                 level
             )
         ))?;
-        // What the person allowed is theirs to keep, and the ask is answered.
+        // What the person allowed is theirs to keep.
         self.scenario.ledger.granted(&asked, level);
-        self.scenario.ledger.answered(session, &blocked_key(&asked));
         Ok(allowed.said)
     }
 
@@ -402,7 +409,6 @@ impl Person<'_> {
         shown: BlockShown,
         reason: Option<String>,
     ) -> Result<(), String> {
-        let asked = shown.clone();
         through!(
             self,
             crate::sandboxing::keep_sandbox_block(
@@ -413,18 +419,15 @@ impl Person<'_> {
                 reason
             )
         )?;
-        self.scenario.ledger.answered(session, &blocked_key(&asked));
         Ok(())
     }
 
     /// **Keep blocked on a folder** (`forget_sandbox_block`): the block is put away.
     pub(crate) fn forget_block(&self, session: u32, shown: BlockShown) -> Result<bool, String> {
-        let asked = shown.clone();
         let forgotten = through!(
             self,
             crate::asking::forget_sandbox_block(self.planes(), self.plane(), session, shown)
         )?;
-        self.scenario.ledger.answered(session, &blocked_key(&asked));
         Ok(forgotten)
     }
 
@@ -454,9 +457,6 @@ impl Person<'_> {
                 target: one.target.clone(),
             };
             self.scenario.ledger.granted(&shown, level);
-            self.scenario
-                .ledger
-                .answered(one.task, &blocked_key(&shown));
         }
         Ok(done.answered)
     }
@@ -468,7 +468,6 @@ impl Person<'_> {
         seen: Vec<SeenBlock>,
         reason: Option<String>,
     ) -> Result<Vec<u32>, String> {
-        let asked = seen.clone();
         let kept = through!(
             self,
             crate::taskblocks::keep_sandbox_block_for_tasks(
@@ -479,11 +478,6 @@ impl Person<'_> {
                 reason
             )
         )?;
-        for one in &asked {
-            self.scenario
-                .ledger
-                .answered(one.task, &format!("block:{}", one.target));
-        }
         Ok(kept)
     }
 
@@ -499,7 +493,6 @@ impl Person<'_> {
                 option.to_owned()
             )
         )?;
-        self.scenario.ledger.answered(session, ask);
         Ok(())
     }
 
@@ -771,9 +764,15 @@ impl Person<'_> {
     }
 }
 
-/// The key a sandbox block's ask is known by ([`super::checks::ask_key`]).
-fn blocked_key(shown: &BlockShown) -> String {
-    format!("block:{}", shown.target)
+/// **Whether a listed ask is chat `session`'s ask for exactly `target`**: its own chat and its own
+/// target, never a longer name that contains it or another chat's ask.
+pub(crate) fn is_the_ask_for(
+    ask_session: u32,
+    ask_target: &str,
+    session: u32,
+    target: &str,
+) -> bool {
+    ask_session == session && ask_target == target
 }
 
 /// The target an ask names, where it is a sandbox block's: what Allow would grant.

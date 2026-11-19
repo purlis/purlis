@@ -693,8 +693,11 @@ pub(crate) struct Scenario {
     hosting: Option<purlis_host::Hosting>,
     /// The window on it, while there is one.
     window: Option<Window>,
-    /// Each chat it started.
+    /// Each chat it started, as the next one's number is counted (the canary's is left out).
     chats: Mutex<Vec<u32>>,
+    /// How many chats it has started, the canary's included: a log with no event after one is
+    /// read from the wrong place.
+    started: std::sync::atomic::AtomicUsize,
     /// Each chat's pane, as the window's view of it draws it.
     panes: Mutex<Vec<(u32, crate::behaviour::Pane)>>,
     /// How each chat was launched, as the window composed it: what a red run's reader needs.
@@ -822,6 +825,7 @@ impl Scenario {
             hosting: Some(hosting),
             window: Some(window),
             chats: Mutex::default(),
+            started: std::sync::atomic::AtomicUsize::new(0),
             panes: Mutex::default(),
             launched: Mutex::default(),
             profiled: std::sync::Once::new(),
@@ -836,6 +840,14 @@ impl Scenario {
             ledger: super::checks::Ledger::default(),
         };
         scenario.ledger.begins(&scenario);
+        // The canary, in every scenario that is held by the wrap: where the wrap is not in force,
+        // nothing else the scenario shows can be trusted. Protection off has none; and Claude Code
+        // on macOS runs its own sandbox, which the fake harness does not play (ticket 10, #6900).
+        if protection != Protection::Off
+            && !(dialect == Dialect::Claude && cfg!(target_os = "macos"))
+        {
+            scenario.canary();
+        }
         Some(scenario)
     }
 
@@ -1157,6 +1169,8 @@ impl Scenario {
             .start_ready(&chat, &ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
+        self.started
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.applied
             .lock()
             .expect("applied")
@@ -1262,7 +1276,8 @@ impl Scenario {
     /// kinds of event the log holds, and the transcript.
     pub(crate) fn said(&self) -> String {
         let kinds: Vec<String> = self
-            .events()
+            .try_events()
+            .unwrap_or_default()
             .into_iter()
             .map(|event| {
                 let body = event.body.to_string();
@@ -1312,9 +1327,33 @@ impl Scenario {
         format!("work-{}", self.dialect.word())
     }
 
-    /// Every event in the device's event log, which the host writes in the data home.
+    /// Every event in the device's event log, which the host writes in the data home, or why it
+    /// could not be read: never an empty log made of an error.
+    pub(crate) fn try_events(&self) -> Result<Vec<purlis_core::eventlog::Event>, String> {
+        purlis_core::eventlog::read(&self.log).map_err(|why| {
+            format!(
+                "the event log at {} could not be read: {why}",
+                self.log.display()
+            )
+        })
+    }
+
+    /// [`Self::try_events`] where a scenario's own step reads the log: a log that cannot be read
+    /// fails the step.
     pub(crate) fn events(&self) -> Vec<purlis_core::eventlog::Event> {
-        purlis_core::eventlog::read(&self.log).unwrap_or_default()
+        self.try_events().unwrap_or_else(|why| panic!("{why}"))
+    }
+
+    /// How many chats the scenario has started, the canary's included.
+    pub(crate) fn chats_started(&self) -> usize {
+        self.started.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// **The canary's chat is closed and forgotten**: it ends, and the next chat is numbered, and
+    /// its script named, as the first of the scenario.
+    pub(crate) fn forget_the_canary_chat(&self, id: u32) {
+        self.closes(id);
+        self.chats.lock().expect("chats").retain(|one| *one != id);
     }
 
     /// How many events of `kind` the log holds.
@@ -1422,10 +1461,15 @@ impl Drop for Scenario {
         // **The global checks** (T1.1-07), judged first, while the window and its chats are
         // still up, and failed last, once the teardown below has run: a scenario that passed
         // its own steps but breaks one of them is red (`checks`).
-        let verdict = if self.window.is_some() && !std::thread::panicking() {
-            Some(super::checks::at_the_end(self))
-        } else {
+        // A scenario with no window at its end is not skipped: it fails, so that no scenario is
+        // green without having been checked. A panicking one is red already.
+        let verdict = if std::thread::panicking() {
             None
+        } else {
+            Some(
+                super::checks::window_for_the_checks(self.window.is_some())
+                    .and_then(|()| super::checks::at_the_end(self)),
+            )
         };
         let verdict = verdict.map(|checked| match checked {
             Ok(outcome) if outcome.failures.is_empty() => {
@@ -1446,6 +1490,7 @@ impl Drop for Scenario {
                         timings: Some(purlis_scenarios::model::TimingsMode::Scaled),
                         verdict: purlis_scenarios::model::ReportVerdict::ExpectedFail,
                         reason: Some(format!("#{issue}: {}: {what}", check.word())),
+                        refusal_expected: false,
                     }]);
                 }
                 Ok(())
@@ -1456,7 +1501,7 @@ impl Drop for Scenario {
                 self.said()
             )),
             Err(why) => Err(format!(
-                "the global checks could not run: {why}\n{}",
+                "the global checks could not run, or the window drew an ask wrongly: {why}\n{}",
                 self.said()
             )),
         });
