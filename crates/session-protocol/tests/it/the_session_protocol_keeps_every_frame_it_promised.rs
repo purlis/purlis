@@ -58,7 +58,7 @@
 //! and listed by `reach_of` until it is used (T1-34, R-291, ids 213 to 215), and told used up
 //! or put out, so the window audits its end (Q278), 1.92's Try now of a relaying host's
 //! link (#7134, id 216), and 1.93's file a chat on a runner printed, looked at and read for
-//! the window (#6387, ids 217 and 218), and 1.94's machine that answers and refuses, told as a
+//! the window (#6387, ids 217 and 218), and 1.95's machine that answers and refuses, told as a
 //! `link_down` that says `refused`, and one that says `host_key_changed` (#7187).
 //! 1.35 adds no frame of the
 //! control lane: its origin frame is a browser view's bytes, held by
