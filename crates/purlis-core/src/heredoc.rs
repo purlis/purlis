@@ -2012,6 +2012,45 @@ pub struct LayoutLine {
 ///   body, those lines may open heredocs of their own, and the readings do not agree again
 ///   about which lines are bodies.
 pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
+    // A verdict asks every guard for the layout of the same command, each reading it afresh:
+    // the layout is a function of the text alone, so the last few are kept, with whether the
+    // walk met a string nested too deep, which a hit reports again as a fresh walk would.
+    std::thread_local! {
+        static RECENT: std::cell::RefCell<std::collections::VecDeque<(String, Vec<LayoutLine>, bool)>>
+            = const { std::cell::RefCell::new(std::collections::VecDeque::new()) };
+    }
+    const KEPT: usize = 4;
+    if cmd.len() < 1024 {
+        return layout_of(cmd);
+    }
+    let hit = RECENT.with(|recent| {
+        recent
+            .borrow()
+            .iter()
+            .find(|(text, ..)| text == cmd)
+            .map(|(_, layout, too_deep)| (layout.clone(), *too_deep))
+    });
+    if let Some((layout, too_deep)) = hit {
+        if too_deep {
+            shellseg::met_a_string_too_deep();
+        }
+        return layout;
+    }
+    let (layout, too_deep) = shellseg::too_deep_within(|| layout_of(cmd));
+    if too_deep {
+        shellseg::met_a_string_too_deep();
+    }
+    RECENT.with(|recent| {
+        let mut recent = recent.borrow_mut();
+        if recent.len() == KEPT {
+            recent.pop_back();
+        }
+        recent.push_front((cmd.to_owned(), layout.clone(), too_deep));
+    });
+    layout
+}
+
+fn layout_of(cmd: &str) -> Vec<LayoutLine> {
     let lines: Vec<&str> = cmd.split('\n').collect();
     let n = lines.len();
     let mut layout: Vec<LayoutLine> = Vec::new();
