@@ -23,8 +23,10 @@
 //!
 //! - **`glab`** has settings of its own, so it runs on both wires on both OSes:
 //!   `GLAB_CA_CERT` names the bundle (Go reads that file itself, on macOS too), and
-//!   `GLAB_API_PROTOCOL=http` speaks plain HTTP ([`Wire::Http`]), which also reaches `gitlab.com`,
-//!   a name the test CA could not sign.
+//!   `GLAB_API_PROTOCOL=http` speaks plain HTTP ([`Wire::Http`]). **`gitlab.com` itself is not
+//!   reachable**: `glab` speaks https to it whatever its protocol setting says, and the test CA
+//!   signs `.test` names alone. A self-hosted name stands for it; the fake answers GitLab's API
+//!   on any name.
 //! - **`gh`** has neither: no CA setting, and http only to `github.localhost`, which purlis
 //!   refuses as this machine's own. So `gh` is a Linux cell, and on macOS it is the ticket's
 //!   stated fallback: reported not run, covered by a fixture.
@@ -72,11 +74,10 @@ impl Wire {
     }
 }
 
-/// **A GitLab the fake forge answers as.**
+/// **A GitLab the fake forge answers as**: one self-hosted instance (`gitlab.com` is out of
+/// reach, module docs).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Gitlab {
-    /// `gitlab.com`: the plain wire only.
-    Com,
     /// A self-hosted instance, `git.corp.test`.
     SelfHosted,
 }
@@ -120,7 +121,7 @@ impl ForgeHere {
             }
             Wire::Http => {
                 let at = fake.http_addr();
-                for name in ["gitlab.com", SELF_HOSTED_GITLAB] {
+                for name in [SELF_HOSTED_GITLAB] {
                     scenario.names.origin(name, 80, at);
                 }
             }
@@ -148,7 +149,7 @@ impl ForgeHere {
     pub(crate) fn names(&self) -> Vec<&'static str> {
         match self.wire {
             Wire::Https => vec![GITHUB_SHAPED_HOST, SELF_HOSTED_GITLAB],
-            Wire::Http => vec!["gitlab.com", SELF_HOSTED_GITLAB],
+            Wire::Http => vec![SELF_HOSTED_GITLAB],
         }
     }
 
@@ -161,7 +162,6 @@ impl ForgeHere {
     pub(crate) fn gitlab_name(&self, which: Gitlab) -> (&'static str, u16) {
         let port = if self.wire == Wire::Https { 443 } else { 80 };
         match which {
-            Gitlab::Com => ("gitlab.com", port),
             Gitlab::SelfHosted => (SELF_HOSTED_GITLAB, port),
         }
     }
@@ -361,10 +361,7 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
             return;
         };
         let forge = ForgeHere::start(&scenario, wire);
-        let mut which = vec![(Gitlab::SelfHosted, 4_u64)];
-        if wire == Wire::Http {
-            which.push((Gitlab::Com, 3));
-        }
+        let which = vec![(Gitlab::SelfHosted, 4_u64)];
         let mut calls = Vec::new();
         for (gitlab, iid) in &which {
             forge
