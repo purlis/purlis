@@ -236,12 +236,29 @@ fn a_glab_tool_on_a_self_hosted_gitlab_reaches_that_host_and_no_other() {
         &["api", "--hostname", "git.acme.internal:9999", "user"],
         &["api", "https://git.acme.internal:9999/api/v4/user"],
         &["mr", "list", "-R", "git.acme.internal:9999/acme/svc"],
+        // A lookalike that is not an `api` run.
+        &[
+            "mr",
+            "list",
+            "-R",
+            "git.acme.internal.evil.example/acme/svc",
+        ],
+        &["mr", "list", "-R", "evil-git.acme.internal/acme/svc"],
+        &[
+            "repo",
+            "clone",
+            "git@git.acme.internal.evil.example:acme/svc.git",
+        ],
+        &["repo", "clone", "ssh://git@git.acme.internal:2222/acme/svc"],
     ] {
         let said = runs(&glab, refused).expect_err(&format!("{refused:?}"));
         // `glab api` refuses any other host by what it names; a repository elsewhere, by the
         // forge it reaches: a refusal says which, never only that it was refused.
         if refused[0] == "api" {
-            assert!(said.contains("names another host"), "{said}");
+            assert!(
+                said.contains("names another host") && said.contains("against git.acme.internal"),
+                "{said}"
+            );
         } else {
             assert!(
                 said.contains("only against git.acme.internal") && said.contains("names "),
@@ -257,5 +274,42 @@ fn a_glab_tool_on_a_self_hosted_gitlab_reaches_that_host_and_no_other() {
             ("GLAB_SEND_TELEMETRY".to_owned(), "false".to_owned()),
             ("GLAB_CHECK_UPDATE".to_owned(), "false".to_owned()),
         ]
+    );
+}
+
+/// An explicit default port is the default port: `:443` (https) and `:22` (ssh) against a
+/// declaration with no port are allowed, any other port is not, and a declared port is exact.
+#[test]
+fn an_explicit_default_port_is_the_host_s_own_and_no_other_port_is() {
+    let glab = ready("glab", Some("git.acme.internal"), "/usr/local/bin/glab");
+    for ok in [
+        &[
+            "mr",
+            "view",
+            "https://git.acme.internal:443/acme/svc/-/merge_requests/3",
+        ][..],
+        &["repo", "clone", "ssh://git@git.acme.internal:22/acme/svc"],
+        &["mr", "list", "-R", "git.acme.internal:443/acme/svc"],
+    ] {
+        assert!(runs(&glab, ok).is_ok(), "{ok:?}");
+    }
+    for refused in [
+        &[
+            "mr",
+            "view",
+            "https://git.acme.internal:80/acme/svc/-/merge_requests/3",
+        ][..],
+        &["repo", "clone", "ssh://git@git.acme.internal:2222/acme/svc"],
+        &["mr", "list", "-R", "git.acme.internal:4430/acme/svc"],
+    ] {
+        assert!(runs(&glab, refused).is_err(), "{refused:?}");
+    }
+    let on_port = ready("gh", Some("ghe.example.com:8443"), "/opt/homebrew/bin/gh");
+    assert!(
+        runs(
+            &on_port,
+            &["pr", "view", "https://ghe.example.com:443/o/r/pull/1"]
+        )
+        .is_err()
     );
 }

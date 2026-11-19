@@ -1767,6 +1767,45 @@ fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_h
     let _ = std::fs::remove_dir_all(system);
 }
 
+/// **Two chats of one persona with the same guard and different ready tools get different
+/// folders** (#7230): the chat without the Allow never finds the other's shim first on its
+/// `PATH`, and its start never deletes the live chat's shim.
+#[test]
+fn chats_with_the_same_guard_and_different_ready_tools_have_folders_of_their_own() {
+    let root = outside_temp("ready-root");
+    let system = outside_temp("ready-system");
+    program(&system, "kubectl");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    let resolved = |tools: &[Tool]| {
+        resolve(
+            &root,
+            "devops",
+            tools,
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+        )
+    };
+    let with_allow = guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).unwrap();
+    let without = guard_forges(None, &root, "devops", &[], &[]).unwrap();
+    assert_eq!(with_allow.guards, without.guards, "the same guard sentence");
+    assert_ne!(with_allow.folder, without.folder);
+    let live = with_allow.write(purlis).unwrap().unwrap();
+    let other = without.write(purlis).unwrap().unwrap();
+    assert!(live.bin.join("kubectl").exists() && live.bin.join("glab").exists());
+    assert!(!other.bin.join("kubectl").exists(), "not first on its PATH");
+    // Its start again, and a start of the first, take nothing from the other.
+    without.write(purlis).unwrap();
+    assert!(live.bin.join("kubectl").exists());
+    with_allow.write(purlis).unwrap();
+    assert!(live.bin.join("kubectl").exists() && live.bin.join("glab").exists());
+    // The same ready set is the same folder.
+    let again = guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).unwrap();
+    assert_eq!(again.folder, with_allow.folder);
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
 #[test]
 fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered() {
     for name in [

@@ -216,7 +216,13 @@ fn host_named(value: &str, read: Read) -> Option<String> {
 }
 
 /// Whether `named` is `host`: the same name and the same port. A host that names no port is the
-/// default port's only, so `host:9999` is another service and is never the tool's (#1349).
+/// default port's, which an explicit `:443` (https) or `:22` (ssh) spells; any other port
+/// (`host:9999`) is another service and is never the tool's (#1349).
 fn same_host(named: &str, host: &str) -> bool {
     named == host
+        || (!host.contains(':')
+            && named
+                .strip_suffix(":443")
+                .or_else(|| named.strip_suffix(":22"))
+                == Some(host))
 }

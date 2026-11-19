@@ -1290,6 +1290,7 @@ fn refusals_folder(
     refusing: &[(String, String)],
     unallowed: &[String],
     guards: &[(String, String)],
+    ready: &[Ready],
 ) -> PathBuf {
     use sha2::Digest as _;
     let mut digest = sha2::Sha256::new();
@@ -1309,7 +1310,20 @@ fn refusals_folder(
         digest.update(said.as_bytes());
         digest.update([0]);
     }
+    // The folder also holds the ready tools' shims, and where Allow is per chat (a runner's,
+    // `from_desktop`) two chats of one persona with the same guard have different ready sets:
+    // the set is in the name, so neither finds the other's shim first on its `PATH` (#4373) nor
+    // deletes it on a restart. Nothing is added with none ready, so such a folder keeps its name.
+    let mut names: Vec<&str> = ready.iter().map(|one| one.tool.name.as_str()).collect();
+    names.sort_unstable();
+    for name in names {
+        digest.update(b"ready\0");
+        digest.update(name.as_bytes());
+        digest.update([0]);
+    }
     let digest = digest.finalize();
+    // TODO(#7230): a `guarded/<digest>` folder is never removed once no chat uses it; nothing
+    // here knows which chats are live, so a sweep belongs to whatever ends a chat's sandbox.
     folder
         .join(if guards.is_empty() {
             "refusing"
@@ -1485,6 +1499,7 @@ pub(crate) fn for_chat_on(
                 &resolved.refusing,
                 &resolved.unallowed,
                 &[],
+                &resolved.ready,
             );
         }
     }
@@ -2550,7 +2565,12 @@ pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
         .into_iter()
         .chain(real.as_deref())
         .collect();
-    if let Some(why) = args::refused_forge(&names, args) {
+    let host = ready
+        .tool
+        .host
+        .as_deref()
+        .unwrap_or_else(|| host::default_of(forge_of(&names).unwrap_or(false)));
+    if let Some(why) = args::refused_forge(&names, host, args) {
         return Err(why);
     }
     // The forge host its run reaches (#3869).
@@ -3059,6 +3079,7 @@ pub fn guard_forges(
         &into.refusing,
         &into.unallowed,
         &into.guards,
+        &into.ready,
     );
     Some(into)
 }
