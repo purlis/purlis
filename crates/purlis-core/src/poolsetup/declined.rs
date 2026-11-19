@@ -72,12 +72,40 @@ pub struct PoolStatus {
     pub state: PoolState,
 }
 
+/// **Where an add was asked for, as one spelling** (#7191): a route spelled with its socket
+/// (`ssh://me@lab/var/run/docker.sock`) and without (`ssh://me@lab`) is one machine, so a pool
+/// made by `purlis pool add` on one forgets the refusal kept on the other. Anything that is no
+/// route (empty for this machine, `cluster:<context>`) is kept as typed.
+#[must_use]
+pub fn place(on: &str) -> String {
+    let on = on.trim();
+    if let Ok(route) = crate::sshroute::Route::parse(on) {
+        return format!(
+            "ssh://{}{}{}",
+            route
+                .user()
+                .map(|user| format!("{user}@"))
+                .unwrap_or_default(),
+            route.host(),
+            route
+                .port()
+                .map(|port| format!(":{port}"))
+                .unwrap_or_default()
+        );
+    }
+    if let Ok(route) = crate::tlsroute::Route::parse(on) {
+        return format!("tcp://{}:{}", route.host(), route.port());
+    }
+    on.to_owned()
+}
+
 /// The longest a reason is kept: what the person reads, never a log.
 const REASON_MOST: usize = 600;
 
 /// **Keeps that the add of pool `pool`, asked for `on`, was refused**, for `why`, in place of any
 /// earlier refusal. The caller holds [`runners::lock`].
 fn keep_locked(config: &Path, pool: &str, on: &str, why: &Refused) -> Result<(), Refused> {
+    let on = place(on);
     let mut choices = read_choices(config)?;
     let mut reason = crate::shown::short(&why.to_string());
     reason.truncate(
@@ -88,7 +116,7 @@ fn keep_locked(config: &Path, pool: &str, on: &str, why: &Refused) -> Result<(),
     );
     choices.declined = Some(Declined {
         pool: pool.to_owned(),
-        on: on.to_owned(),
+        on,
         reason,
     });
     write_choices(config, choices)
@@ -114,6 +142,7 @@ pub fn keep_unless_kept(config: &Path, pool: &str, on: &str, why: &Refused) {
 /// **Forgets the refusal of pool `pool` asked for `on`**, where one is kept for that very pool:
 /// it was made after all. A pool of another name, or of the same name elsewhere, clears nothing.
 pub fn forget(config: &Path, pool: &str, on: &str) -> Result<(), Refused> {
+    let on = place(on);
     let _locked = runners::lock(config);
     let mut choices = read_choices(config)?;
     if choices
@@ -162,15 +191,21 @@ pub fn forget_kept(config: &Path) -> Result<(), Refused> {
     write_choices(config, choices)
 }
 
-/// **The state of the pool Pool setup keeps**, where it keeps one refused.
+/// **The state of the pool Pool setup keeps**, where it keeps one refused, and only while the
+/// machine or cluster chosen now (`now`, as [`place`] spells it) is the one it was refused on:
+/// pointing Pool setup at another says nothing of the first. A refusal an older build kept has no
+/// place, and shows wherever it is.
 #[must_use]
-pub fn status_of(declined: Option<&Declined>) -> Option<PoolStatus> {
-    declined.map(|kept| PoolStatus {
-        pool: kept.pool.clone(),
-        state: PoolState::Refused {
-            reason: kept.reason.clone(),
-        },
-    })
+pub fn status_of(declined: Option<&Declined>, now: &str) -> Option<PoolStatus> {
+    let now = place(now);
+    declined
+        .filter(|kept| kept.on.is_empty() || kept.on == now)
+        .map(|kept| PoolStatus {
+            pool: kept.pool.clone(),
+            state: PoolState::Refused {
+                reason: kept.reason.clone(),
+            },
+        })
 }
 
 #[cfg(test)]

@@ -14,7 +14,7 @@ fn a_failed_add_keeps_the_pool_refused_with_its_reason() {
     let answered = kept_after(config.path(), "lab", "ssh://sam@lab", failed, |()| true);
     assert!(answered.is_err(), "the refusal is handed back as it was");
     let kept = read_choices(config.path()).expect("choices");
-    let status = status_of(kept.declined.as_ref()).expect("the pool is kept");
+    let status = status_of(kept.declined.as_ref(), "ssh://sam@lab").expect("the pool is kept");
     assert_eq!(status.pool, "lab");
     assert_eq!(
         status.state,
@@ -127,4 +127,34 @@ fn a_refusal_kept_by_an_older_build_has_no_place_and_only_forget_kept_clears_it(
     assert!(read_choices(config.path()).unwrap().declined.is_some());
     forget_kept(config.path()).unwrap();
     assert!(read_choices(config.path()).unwrap().declined.is_none());
+}
+
+#[test]
+fn a_route_spelled_with_its_socket_is_the_same_machine() {
+    let config = config();
+    keep(
+        config.path(),
+        "lab",
+        "ssh://me@lab",
+        &Refused::Other("no".to_owned()),
+    )
+    .unwrap();
+    forget(config.path(), "lab", "ssh://me@lab/var/run/docker.sock").unwrap();
+    assert!(read_choices(config.path()).unwrap().declined.is_none());
+}
+
+#[test]
+fn a_refusal_shows_only_where_it_was_refused() {
+    let config = config();
+    keep(
+        config.path(),
+        "lab",
+        "ssh://old",
+        &Refused::Other("no".to_owned()),
+    )
+    .unwrap();
+    let kept = read_choices(config.path()).unwrap().declined;
+    assert!(status_of(kept.as_ref(), "ssh://old/var/run/docker.sock").is_some());
+    assert!(status_of(kept.as_ref(), "ssh://new").is_none());
+    assert!(status_of(kept.as_ref(), "cluster:prod").is_none());
 }

@@ -593,9 +593,10 @@ function PoolSetupGuide({
           onCancel={() => setForgetting(false)}
           onForget={() => {
             setForgetting(false);
-            // The refusal Pool setup keeps is forgotten here; a made pool on Docker is forgotten
-            // without contacting its machine; a cluster's pool is Settings' to forget.
-            if (madePool !== shownPool) void commands.poolSetupForgetRefused().then(() => reread());
+            // The refusal Pool setup keeps is forgotten here; a pool on Docker, in whatever
+            // state, is forgotten without contacting its machine; a cluster's pool is Settings'.
+            if (status.state === "refused")
+              void commands.poolSetupForgetRefused().then(() => reread());
             else if (where.kind === "machine") void forgetPool(shownPool).then(() => reread());
             else onOpenPools?.();
           }}

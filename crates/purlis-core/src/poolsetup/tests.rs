@@ -1171,6 +1171,14 @@ mod the_plugin_folder_typed {
     }
 
     #[test]
+    fn going_up_through_dot_dot_is_refused() {
+        let home = Path::new("/Users/sam");
+        for typed in ["~/..", "~/bin/../..", "/Users/sam/../sam"] {
+            assert!(plugin_folder_typed(typed, Some(home)).is_err(), "{typed}");
+        }
+    }
+
+    #[test]
     fn a_tilde_with_no_home_is_refused_not_guessed() {
         assert!(plugin_folder_typed("~/bin", None).is_err());
     }

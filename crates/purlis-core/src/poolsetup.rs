@@ -1304,7 +1304,25 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
             pools: facts.cluster.pools.clone().unwrap_or_default(),
             kubeconfig: facts.cluster.kubeconfig.clone(),
         },
-        pool_state: declined::status_of(choices.declined.as_ref()),
+        pool_state: declined::status_of(choices.declined.as_ref(), &place_chosen(&choices)),
+    }
+}
+
+/// **Where the add being set up is asked for** (#7191), as a refusal keeps it: the machine
+/// Connect holds, a cluster's `cluster:<context>`, or empty for this machine.
+fn place_chosen(choices: &Choices) -> String {
+    match choices.kind {
+        Some(Kind::RemoteDocker) => choices
+            .connect
+            .as_ref()
+            .map(|chosen| chosen.route.clone())
+            .unwrap_or_default(),
+        Some(Kind::Cluster) => choices
+            .context
+            .as_ref()
+            .map(|context| format!("cluster:{context}"))
+            .unwrap_or_default(),
+        _ => String::new(),
     }
 }
 
@@ -2580,6 +2598,11 @@ pub fn choose_plugin_folder(config: &Path, folder: &Path) -> Result<(), Refused>
 pub fn plugin_folder_typed(typed: &str, home: Option<&Path>) -> Result<PathBuf, Refused> {
     let text = typed.trim();
     let shown = crate::shown::short(text);
+    if text.split('/').any(|part| part == "..") {
+        return Err(Refused::Other(format!(
+            "\"{shown}\" goes up through \"..\". Write the folder out in full"
+        )));
+    }
     if text.contains('$') || text.contains('`') || (text.starts_with('~') && !text.starts_with("~/"))
     {
         return Err(Refused::Other(format!(

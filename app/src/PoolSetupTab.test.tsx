@@ -194,6 +194,16 @@ describe("PoolSetupTab", () => {
     expect(onOpenPools).not.toHaveBeenCalled();
   });
 
+  it("forgets a made pool in the tab where its state is not a refusal", async () => {
+    const down = { ...MADE, pool_state: { pool: "dev-box", state: "unreachable", reason: null } };
+    const calls = core(() => down, { forget_docker_pool: () => null });
+    render(<PoolSetupTab plane="p" />);
+    await userEvent.click(await screen.findByRole("button", { name: "Forget pool…" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Forget it here" }));
+    await waitFor(() => expect(calls.some((call) => call.cmd === "forget_docker_pool")).toBe(true));
+    expect(calls.some((call) => call.cmd === "pool_setup_forget_refused")).toBe(false);
+  });
+
   it("offers Remove only where the machine answers", async () => {
     const answers = {
       ...MADE,
