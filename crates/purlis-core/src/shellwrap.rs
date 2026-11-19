@@ -1564,7 +1564,21 @@ pub fn takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
         return scripts.is_empty() && (operand.is_none() || names_stdin(operand));
     }
     let (dash_c, operand) = shell_options(&words, false);
-    !dash_c && (operand.is_none() || names_stdin(operand) || words.iter().any(|a| a == "-s"))
+    // A lone `-` operand is bash's and sh's own spelling of stdin (round 7b).
+    let lone_dash = operand.is_some_and(|o| o == "-");
+    !dash_c
+        && (operand.is_none()
+            || names_stdin(operand)
+            || lone_dash
+            || words.iter().any(|a| a == "-s"))
+}
+
+/// True when `prog` is a program the shell builds (`$SHELL`, `${SHELL:-bash}`, `$(which bash)`)
+/// that, read as `bash` is, takes its script from stdin (round 7): it could be any shell, so
+/// what it is fed is read as a script. A command that is no shell never runs it, and the caller
+/// reads what is fed as a merge or not.
+pub fn built_program_takes_its_script_from_stdin(prog: &str, argv: &[String]) -> bool {
+    prog.contains(['$', '`']) && takes_its_script_from_stdin("bash", argv)
 }
 
 /// True when `prog` is a program that runs a file handed to it as a script: a shell, or

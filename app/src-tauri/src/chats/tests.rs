@@ -123,6 +123,7 @@ fn a_host_the_proxy_refused_a_wrapped_chat_is_its_block_by_the_proxys_word() {
             target: Some("api.example.com:8443".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
     );
     assert!(
@@ -510,6 +511,7 @@ fn a_local_address_the_proxy_refused_is_a_block_naming_no_host() {
             target: None,
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
     );
     assert!(
@@ -547,6 +549,7 @@ fn a_loopback_port_the_proxy_refused_is_a_block_of_a_service_on_this_mac() {
             target: Some("50795".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
     );
 }
@@ -12596,6 +12599,7 @@ mod moved_on {
                 target: target.map(str::to_owned),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             };
             let told = crate::hooks::blocked_holding(&plane, &line.into(), false, None, None);
             crate::taskblocks::heard(&live.chats, &told)
