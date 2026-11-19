@@ -65,33 +65,80 @@ fn a_locked_chat_gets_an_empty_gh_folder_and_a_git_config_of_its_own() {
     assert_eq!(get("GIT_TERMINAL_PROMPT"), "0");
     assert_eq!(get("SSH_AUTH_SOCK"), "");
     assert!(get("GIT_SSH_COMMAND").contains("IdentityAgent=none"));
-    // The helper list is emptied at the command scope too, past a repository's own config.
-    assert_eq!(get("GIT_CONFIG_COUNT"), "1");
-    assert_eq!(get("GIT_CONFIG_KEY_0"), "credential.helper");
-    assert_eq!(get("GIT_CONFIG_VALUE_0"), "");
+    // The command-scope pair is added where the chat is composed ([`arm`]), not here.
+    assert_eq!(get(MARKER), "1");
 }
 
 #[test]
-fn the_lock_s_config_entry_goes_after_the_ones_a_chat_already_has() {
-    let chat = vec![
-        ("GIT_CONFIG_COUNT".to_owned(), "2".to_owned()),
-        ("GIT_CONFIG_KEY_0".to_owned(), "a.b".to_owned()),
-        ("GIT_CONFIG_VALUE_0".to_owned(), "1".to_owned()),
-        ("GIT_CONFIG_KEY_1".to_owned(), "c.d".to_owned()),
-        ("GIT_CONFIG_VALUE_1".to_owned(), "2".to_owned()),
+fn the_lock_s_config_pair_goes_after_a_profile_s_a_passed_one_and_the_hooks() {
+    // Production's order: what a chat inherits and a profile sets, then purlis's hooks, then the
+    // lock, composed by `chatenv::compose` with the line's variables as its `set`.
+    let app = vec![
+        ("GIT_CONFIG_COUNT".into(), "1".into()),
+        ("GIT_CONFIG_KEY_0".into(), "passed.one".into()),
+        ("GIT_CONFIG_VALUE_0".into(), "p".into()),
     ];
-    let locked = apply(chat, None, None).unwrap();
+    let line = apply(
+        vec![
+            ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
+            ("GIT_CONFIG_KEY_0".to_owned(), "profile.one".to_owned()),
+            ("GIT_CONFIG_VALUE_0".to_owned(), "q".to_owned()),
+        ],
+        None,
+        None,
+    )
+    .unwrap();
+    let hooks = crate::githooks::GitHooks::at("/app/git-hooks");
+    let composed = crate::chatenv::compose(
+        app,
+        &crate::chatenv::Starting {
+            harness: None,
+            operator: &["GIT_CONFIG_COUNT".to_owned()],
+            strip: &[],
+            set: &line,
+            git_hooks: Some(&hooks),
+            declared: &[],
+        },
+    );
     let get = |name: &str| {
-        locked
+        composed
             .iter()
+            .rev()
             .find(|(set, _)| set == name)
-            .map(|(_, value)| value.as_str())
+            .map(|(_, value)| value.to_string_lossy().into_owned())
     };
-    assert_eq!(get("GIT_CONFIG_COUNT"), Some("3"));
-    assert_eq!(get("GIT_CONFIG_KEY_0"), Some("a.b"));
-    assert_eq!(get("GIT_CONFIG_KEY_1"), Some("c.d"));
-    assert_eq!(get("GIT_CONFIG_KEY_2"), Some("credential.helper"));
-    assert_eq!(get("GIT_CONFIG_VALUE_2"), Some(""));
+    // The profile's pair replaced the passed one by name, as before; hooks then the lock follow.
+    assert_eq!(get("GIT_CONFIG_KEY_0").as_deref(), Some("profile.one"));
+    assert_eq!(get("GIT_CONFIG_KEY_1").as_deref(), Some("core.hooksPath"));
+    assert_eq!(
+        get("GIT_CONFIG_KEY_2").as_deref(),
+        Some("credential.helper")
+    );
+    assert_eq!(get("GIT_CONFIG_VALUE_2").as_deref(), Some(""));
+    assert_eq!(get("GIT_CONFIG_COUNT").as_deref(), Some("3"));
+    assert_eq!(get(MARKER), None, "the marker is not the chat's");
+}
+
+#[test]
+fn arm_keeps_every_pair_a_chat_has_and_adds_the_lock_s_last() {
+    let pair = |n: &str, v: &str| (std::ffi::OsString::from(n), std::ffi::OsString::from(v));
+    let armed = arm(vec![
+        pair("GIT_CONFIG_COUNT", "2"),
+        pair("GIT_CONFIG_KEY_0", "a.b"),
+        pair("GIT_CONFIG_VALUE_0", "1"),
+        pair("GIT_CONFIG_KEY_1", "c.d"),
+        pair("GIT_CONFIG_VALUE_1", "2"),
+    ]);
+    assert_eq!(
+        armed[armed.len() - 3..],
+        [
+            pair("GIT_CONFIG_COUNT", "3"),
+            pair("GIT_CONFIG_KEY_2", "credential.helper"),
+            pair("GIT_CONFIG_VALUE_2", ""),
+        ]
+    );
+    assert!(armed.contains(&pair("GIT_CONFIG_KEY_1", "c.d")));
+    assert!(armed.contains(&pair("GIT_CONFIG_KEY_0", "a.b")));
 }
 
 #[test]
@@ -294,4 +341,17 @@ fn every_harness_is_probed_once_and_records_its_own_open_routes() {
     assert!(open(Harness::Codex).contains(&Route::BareSsh));
     assert!(open(Harness::Opencode).contains(&Route::BareSsh));
     assert!(!open(Harness::ClaudeCode).contains(&Route::BareSsh));
+}
+
+#[test]
+fn claude_code_is_denied_a_forge_s_plugin_server_and_its_case_variants() {
+    let denied = claude_denied();
+    for name in [
+        "mcp__plugin_github_github",
+        "mcp__plugin_gitlab_gitlab",
+        "mcp__GitHub",
+        "mcp__github",
+    ] {
+        assert!(denied.iter().any(|rule| rule == name), "{name}");
+    }
 }

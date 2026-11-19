@@ -57,11 +57,18 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
   auth login`, then `gh auth status`). A `purlis` command always uses `gh`. A chat uses `gh`
   only with a token minted for it (Settings › Agent identity, or a tool declared with a vault
-  token). A chat on a repo that claims the merge and release lock is handed no file, helper,
-  agent or connector of your own forge login (#7205), but that is **not** a lock yet: on macOS
-  `gh`'s keychain token is still reachable, and so are a few routes the ADR names (git's own
-  `osxkeychain` helper named on a command line, a socket you granted, a bare `ssh` reading
-  `~/.ssh/config`, and Claude Code's own ssh), so no harness version reads as locked. What a
+  token). A chat on a repo that claims the merge and release lock has `gh`'s config folder emptied,
+  git's credential helpers emptied (yours, the system's, a repository's own) with no prompt, its
+  ssh agent socket emptied and git's ssh told no agent (not in Claude Code, whose sandbox sets
+  git's ssh itself), `browser_login` to a forge host refused, and its tool calls to a forge
+  connector (`github`, `gitlab`, the claude.ai and plugin forms of each, `gh`, `glab`) refused
+  (#7205). That is **not** a lock yet. A claim made by a mint alone denies no file, so your `gh`
+  config and `~/.ssh` stay readable there. Open: on macOS `gh`'s keychain token; a helper the
+  chat names itself (`git -c credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`,
+  `env -u GIT_CONFIG_COUNT …`); a socket you granted; a bare `ssh` reading `~/.ssh/config`
+  (Codex, opencode); Claude Code's own ssh and its ssh agent; and a forge server under a name
+  purlis does not list, since connector servers still start and only calls to the listed names
+  are refused. No harness version reads as locked. What a
   chat with no minted token is told is `gh`'s own error; a message that says to mint one is
   later work (#7218).
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`

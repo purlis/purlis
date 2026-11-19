@@ -90,15 +90,31 @@ impl Person {
 /// A chat of `harness`'s environment as its start composes it, the lock applied as the sandbox's
 /// line applies it (the one function) for a chat that holds the credentials class or has a mint.
 fn chat_env(person: &Person, harness: Harness, scratch: &Path) -> Vec<(String, String)> {
+    // The sandbox's own composition ([`forgelock::apply_to_line`]) over what a profile sets,
+    // which Claude Code's line takes as no ssh command of its own.
+    let profile = vec![
+        ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
+        ("GIT_CONFIG_KEY_0".to_owned(), "user.name".to_owned()),
+        ("GIT_CONFIG_VALUE_0".to_owned(), "a profile".to_owned()),
+    ];
+    let line = forgelock::apply_to_line(
+        profile,
+        Some(scratch),
+        Some(&person.home()),
+        harness == Harness::ClaudeCode,
+    )
+    .expect("the lock's files");
+    // Then the chat's environment as the window composes it: the line is its `set`.
+    let hooks = purlis_core::githooks::GitHooks::at(scratch.join("hooks"));
     let starting = Starting {
         harness: Some(harness),
         operator: &[],
         strip: &[],
-        set: &[],
-        git_hooks: None,
+        set: &line,
+        git_hooks: Some(&hooks),
         declared: &[],
     };
-    let composed: Vec<(String, String)> = chatenv::compose(person.app(), &starting)
+    let env: Vec<(String, String)> = chatenv::compose(person.app(), &starting)
         .into_iter()
         .map(|(name, value)| {
             (
@@ -107,15 +123,17 @@ fn chat_env(person: &Person, harness: Harness, scratch: &Path) -> Vec<(String, S
             )
         })
         .collect();
-    // The sandbox's own composition ([`forgelock::apply_to_line`]), which Claude Code's line
-    // takes as no ssh command of its own.
-    forgelock::apply_to_line(
-        composed,
-        Some(scratch),
-        Some(&person.home()),
-        harness == Harness::ClaudeCode,
-    )
-    .expect("the lock's files")
+    // The person's own pair survives, and the lock's is the last.
+    let get = |name: &str| {
+        env.iter()
+            .rev()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(get("GIT_CONFIG_KEY_0"), Some("user.name"));
+    assert_eq!(get("GIT_CONFIG_COUNT"), Some("3"));
+    assert_eq!(get("GIT_CONFIG_KEY_2"), Some("credential.helper"));
+    env
 }
 
 /// A repository the chat works in, whose own `.git/config` names the person's helper: a global

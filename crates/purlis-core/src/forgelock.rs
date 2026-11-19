@@ -21,17 +21,20 @@
 //!   once more at the command scope, which outranks a repository's own `.git/config`; and
 //!   `GIT_TERMINAL_PROMPT=0`.
 //! - ssh agents: `SSH_AUTH_SOCK` is empty and git's ssh is told no agent and only configured
-//!   identities ([`ssh_command`]).
+//!   identities ([`ssh_command`]); in Claude Code, whose own sandbox sets git's ssh per command, only the
+//!   environment's empty socket applies and its own ssh stays open ([`Route::SshAgent`]).
 //! - the purlis browser: `browser_login` to a forge host is refused ([`is_a_forge_host`]).
 //! - a harness's forge connector, by the names in [`CONNECTORS`]: Claude Code's tools of each are
-//!   denied (`mcp__<name>`, [`claude_denied`]), Codex's is told not enabled where its config has
-//!   one ([`connectors`]), opencode's is `enabled: false` ([`opencode_config`]). A connector
-//!   under a name not there is a residual.
+//!   denied (`mcp__<name>`, [`claude_denied`]; the server still starts, its tool calls are
+//!   refused), Codex's is told not enabled where its config has one ([`connectors`]), opencode's
+//!   is `enabled: false` ([`opencode_config`]). A forge server under a name not there is a
+//!   residual.
 //!
 //! **The routes this does not close** are recorded open, per harness, in [`PROBED`], and no harness
 //! version is [`Status::Locked`] while one is ([`Probed::open`]): gh's macOS keychain item
-//! ([`Route::GhKeychain`]), git's own `osxkeychain` helper named on a command line
-//! ([`Route::GitKeychain`]), a socket the person granted ([`Route::GrantedAgent`]), bare `ssh`
+//! ([`Route::GhKeychain`]), a credential helper the chat names itself, per command
+//! (`git -c credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`, `env -u GIT_CONFIG_COUNT …`;
+//! [`Route::GitKeychain`]), a socket the person granted ([`Route::GrantedAgent`]), bare `ssh`
 //! reading `~/.ssh/config` ([`Route::BareSsh`]), a claim made by a mint alone, which denies no
 //! file ([`Route::MintOnly`]), and, in Claude Code, its own ssh ([`Route::SshAgent`]).
 //!
@@ -123,6 +126,8 @@ impl Route {
     /// How a locked chat has this route closed.
     pub fn closed_by(self) -> Closure {
         match self {
+            // `SshAgent` is closed by the environment where purlis sets git's ssh; Claude Code's
+            // own sandbox sets git's ssh per command, so there its ssh stays open ([`PROBED`]).
             Self::GhNoMint | Self::GhAbsolutePath | Self::GitHttps | Self::SshAgent => {
                 Closure::Environment
             }
@@ -133,8 +138,10 @@ impl Route {
                  a chat's harness signed in",
             ),
             Self::GitKeychain => Closure::Open(
-                "git's osxkeychain helper, named on a command line, outranks every config file \
-                 and reads the keychain; no variable turns it off",
+                "a helper the chat names itself outranks the lock's config and reads the keychain \
+                 (git's osxkeychain, or any other): `git -c credential.helper=<any>`, \
+                 `GIT_CONFIG_COUNT=0 git …` and `env -u GIT_CONFIG_COUNT …` each re-admit one, \
+                 and no variable turns them off",
             ),
             Self::GrantedAgent => Closure::Open(
                 "an ssh agent socket the person granted (ssh-agent.persons) is not refused on a \
@@ -190,6 +197,38 @@ pub fn git_config(include: Option<&Path>, own: Option<&str>) -> String {
     text
 }
 
+/// **The variable a locked chat's line carries so its composition adds the lock's config pair**
+/// ([`arm`]): the pair goes after every other, and only where the chat's whole environment is
+/// known (a profile's pairs, a `[chat_env] pass` one, purlis's hooks) is the next index known too.
+pub const MARKER: &str = "PURLIS_FORGE_LOCK";
+
+/// `env`, a chat's whole environment as it will be started, with the lock's command-scope pair
+/// (`credential.helper` emptied, which outranks a repository's own `.git/config` as the global
+/// file cannot) as the next `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` after the pairs it already
+/// has, and `GIT_CONFIG_COUNT` raised to include it. The last of a name is the one read, as for
+/// [`crate::githooks::GitHooks::arm`]; every pair already there stays.
+pub fn arm(
+    env: Vec<(std::ffi::OsString, std::ffi::OsString)>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    const COUNT: &str = "GIT_CONFIG_COUNT";
+    let n: usize = env
+        .iter()
+        .rev()
+        .find(|(name, _)| name == COUNT)
+        .and_then(|(_, value)| value.to_str()?.trim().parse().ok())
+        .unwrap_or(0);
+    let key = format!("GIT_CONFIG_KEY_{n}");
+    let value = format!("GIT_CONFIG_VALUE_{n}");
+    let mut out: Vec<_> = env
+        .into_iter()
+        .filter(|(name, _)| name != COUNT && *name != *key && *name != *value)
+        .collect();
+    out.push((COUNT.into(), (n + 1).to_string().into()));
+    out.push((key.into(), "credential.helper".into()));
+    out.push((value.into(), "".into()));
+    out
+}
+
 /// The folder in `scratch` the lock's files are written in.
 const FOLDER: &str = "forge-lock";
 
@@ -203,17 +242,8 @@ pub fn env(
     home: Option<&Path>,
     ssh: Option<&str>,
 ) -> std::io::Result<Vec<(String, String)>> {
-    env_at(scratch, home, ssh, 0)
-}
-
-/// [`env`], with the command-scope config entry that empties `credential.helper` at index `at`,
-/// after the `at` entries a chat's own `GIT_CONFIG_COUNT` already holds.
-fn env_at(
-    scratch: Option<&Path>,
-    home: Option<&Path>,
-    ssh: Option<&str>,
-    at: usize,
-) -> std::io::Result<Vec<(String, String)>> {
+    // The marker, not the pair: the pair is added after every other, where the chat's environment
+    // is composed ([`arm`], [`crate::chatenv::compose`]).
     let (gh, glab, git) = match scratch {
         Some(scratch) => {
             let folder = scratch.join(FOLDER);
@@ -248,14 +278,9 @@ fn env_at(
         ("GIT_CONFIG_GLOBAL".to_owned(), git),
         ("GIT_CONFIG_SYSTEM".to_owned(), "/dev/null".to_owned()),
         ("GIT_TERMINAL_PROMPT".to_owned(), "0".to_owned()),
-        // The helper list, emptied at the command scope, which outranks a repository's own
-        // `.git/config` as the global file cannot (a helper there comes after it).
-        ("GIT_CONFIG_COUNT".to_owned(), (at + 1).to_string()),
-        (
-            format!("GIT_CONFIG_KEY_{at}"),
-            "credential.helper".to_owned(),
-        ),
-        (format!("GIT_CONFIG_VALUE_{at}"), String::new()),
+        // The helper list is emptied at the command scope too ([`arm`]), which the composition
+        // does where the marker is.
+        (MARKER.to_owned(), "1".to_owned()),
         // Empty, not unset: a chat's variables are added to a keep-list, and an empty socket is
         // read by ssh and by git as no agent.
         ("SSH_AUTH_SOCK".to_owned(), String::new()),
@@ -279,14 +304,7 @@ pub fn apply(
         .iter()
         .find(|(name, _)| name == "GIT_SSH_COMMAND")
         .map(|(_, value)| value.clone());
-    // A chat's own `GIT_CONFIG_COUNT` entries stay, and the lock's goes after them.
-    let held = chat
-        .iter()
-        .rev()
-        .find(|(name, _)| name == "GIT_CONFIG_COUNT")
-        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
-        .unwrap_or(0);
-    let locked = env_at(scratch, home, route.as_deref(), held)?;
+    let locked = env(scratch, home, route.as_deref())?;
     chat.retain(|(name, _)| !locked.iter().any(|(set, _)| set == name));
     chat.extend(locked);
     Ok(chat)
@@ -354,14 +372,29 @@ pub const CONNECTORS: [&str; 6] = [
     "glab",
 ];
 
-/// **Claude Code's rules that deny every tool of each forge connector** ([`CONNECTORS`]): a rule
-/// `mcp__<name>` matches all of that server's tools. Claude Code has no flag that turns one server
+/// Names Claude Code alone is given, beyond [`CONNECTORS`]: its plugin servers are
+/// `mcp__plugin_<plugin>_<server>`, and its rule matcher is exact-case, so the case variants a
+/// forge's own servers are spelled with are named too.
+const CLAUDE_ONLY: [&str; 8] = [
+    "plugin_github_github",
+    "plugin_gitlab_gitlab",
+    "GitHub",
+    "GitLab",
+    "Github",
+    "Gitlab",
+    "claude_ai_Github",
+    "claude_ai_Gitlab",
+];
+
+/// **Claude Code's rules that deny every tool of each forge connector** ([`CONNECTORS`] and
+/// [`CLAUDE_ONLY`]): a rule `mcp__<name>` matches all of that server's tools. Claude Code has no flag that turns one server
 /// off and keeps the rest (`--strict-mcp-config` drops them all, purlis's own and the person's
 /// non-forge ones too), so the rule is how the forge's are the only ones lost. The server may
 /// still start; a call to it is refused.
 pub fn claude_denied() -> Vec<String> {
     CONNECTORS
         .iter()
+        .chain(CLAUDE_ONLY.iter())
         .map(|name| format!("mcp__{name}"))
         .collect()
 }
