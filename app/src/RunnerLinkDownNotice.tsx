@@ -106,7 +106,7 @@ function forHowLong(ms: number): string {
 }
 
 /** A Notice's key for Dismiss: put away until the reason changes. */
-const keyOf = (down: RunnerLinkDown) => `${down.pool}\n${down.why}`;
+const keyOf = (down: RunnerLinkDown) => `${down.pool}\n${down.state}\n${down.why}`;
 
 /** What the core last said of `plane`'s runners' links, kept with the plane it was said of. */
 type Said = { plane: PlaneId; down: readonly RunnerLinkDown[] };

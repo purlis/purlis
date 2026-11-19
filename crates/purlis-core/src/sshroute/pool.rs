@@ -461,11 +461,6 @@ fn forget_cleared(pool: &str) {
         .remove(pool);
 }
 
-/// **Pool `pool`'s link is back**: its Try now mark is not needed any more.
-pub fn link_is_back(pool: &str) {
-    forget_cleared(pool);
-}
-
 /// **Pool `pool` is gone from this machine** (removed or forgotten): what this process kept of
 /// it, its failing forward, its checked engine and its Try now mark, goes with it.
 pub fn pool_gone(pool: &str) {
@@ -734,20 +729,17 @@ mod tests {
     }
 
     #[test]
-    fn a_pools_try_now_mark_goes_when_its_link_is_back_or_the_pool_is_gone() {
+    fn a_pools_try_now_mark_goes_when_the_pool_is_gone() {
         let marked = |pool: &str| {
             CLEARED
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .contains_key(pool)
         };
-        try_now("prune-back");
         try_now("prune-gone");
         try_now("prune-kept");
-        assert!(marked("prune-back") && marked("prune-gone"));
-        link_is_back("prune-back");
+        assert!(marked("prune-gone"));
         pool_gone("prune-gone");
-        assert!(!marked("prune-back"), "a link that is back needs no mark");
         assert!(!marked("prune-gone"), "a pool that is gone needs no mark");
         assert!(marked("prune-kept"), "another pool keeps its mark");
         pool_gone("prune-kept");

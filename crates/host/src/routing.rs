@@ -355,6 +355,10 @@ impl session::Host for Routed {
                         ),
                         _ => None,
                     };
+                    // A chat started again under the id of one given up on is its own.
+                    if let Some(program) = &program {
+                        crate::relay::stops_closing_a_late_start(program);
+                    }
                     return match tokio::time::timeout(
                         within,
                         self.goes_there(&relay, command, peer),

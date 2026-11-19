@@ -279,6 +279,20 @@ impl Relay {
     }
 }
 
+/// The programs whose given-up starts are being closed on a runner ([`Relay::closes_a_late_start`]),
+/// by program id (a ULID, unique everywhere). A start for the same id again, which a retried chat
+/// makes, ends its closing: what it began is the chat now, not the orphan.
+static CLOSING: std::sync::Mutex<std::collections::BTreeSet<String>> =
+    std::sync::Mutex::new(std::collections::BTreeSet::new());
+
+/// A start for `program` is made again: no given-up start of it is closed any more.
+pub(crate) fn stops_closing_a_late_start(program: &str) {
+    CLOSING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(program);
+}
+
 /// How many times a start given up on is closed on the runner, if the runner began it
 /// ([`Relay::closes_a_late_start`]): at once, then after `every`, twice that, and so on.
 const LATE_START_TRIES: usize = 9;
@@ -317,10 +331,21 @@ impl Relay {
             return;
         };
         let standing = relayed.standing.clone();
+        CLOSING
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(program.clone());
         tokio::spawn(async move {
             let mut pause = std::time::Duration::ZERO;
             for _ in 0..LATE_START_TRIES {
                 tokio::time::sleep(pause).await;
+                let still = CLOSING
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .contains(&program);
+                if !still {
+                    return;
+                }
                 let up = match &*standing.borrow() {
                     Standing::Up(up) => Some(Arc::clone(up)),
                     _ => None,
@@ -561,6 +586,10 @@ impl Relayed {
     /// are over are taken anew, as a command that finds them over takes them.
     fn link_now(&self) {
         if matches!(*self.standing.borrow(), Standing::Over(_)) {
+            // Links taken anew: the new ones are told Try now first thing, so a connector's
+            // memory of why the last try failed (a refused machine's) is let go of before they
+            // dial, and the click is not answered from it (#7187).
+            self.try_now.notify_one();
             self.again.notify_one();
         } else {
             self.try_now.notify_one();
