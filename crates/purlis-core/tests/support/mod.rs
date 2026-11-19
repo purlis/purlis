@@ -14,6 +14,7 @@
 pub mod folders;
 pub mod forge_cli;
 pub mod real_infra;
+pub mod remote_rig;
 pub mod shipped;
 
 use std::path::{Path, PathBuf};

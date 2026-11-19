@@ -41,20 +41,15 @@
 
 #![cfg(unix)]
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use base64::Engine as _;
-use purlis_core::runnerinstall::{self, Delivery, Verified};
-use purlis_core::sshroute::{self, Reach, Route, connect};
-use purlis_host::CommandConnector;
-use purlis_session_protocol::hostlink::{
-    self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
+use crate::support::remote_rig::{
+    PATIENCE, PROJECT, as_root, chat, linked, running, runtime, there, until_within, verified,
 };
-use purlis_session_protocol::session::{Client, Launch, ProgramKind, StartProgram};
+use purlis_core::runnerinstall::{self, Delivery};
+use purlis_core::sshroute::{self, Reach, Route, connect};
+use purlis_session_protocol::hostlink::{Identity, LinkKey, Pinned};
 
-const PATIENCE: Duration = Duration::from_secs(90);
-const PROJECT: &str = "01J9PRJCT00000000000000000";
 const VERSION: &str = "0.0.1-rr15.1";
 /// The versions installed beside it, newest last (#6704).
 const NEWER: [&str; 3] = ["0.0.1-rr15.2", "0.0.1-rr15.3", "0.0.1-rr15.4"];
@@ -75,7 +70,16 @@ struct Fixture {
     _settings: tempfile::TempDir,
 }
 
+/// The fixture, or a SKIP line on a laptop and a failure where `PURLIS_PARITY` is set (#7188).
 fn fixture() -> Option<Fixture> {
+    crate::support::real_infra::fixture_or_skip(
+        "a machine that boots systemd, behind an sshd",
+        "tests/ssh-runner/up-systemd.sh",
+        fixture_set_by_up(),
+    )
+}
+
+fn fixture_set_by_up() -> Option<Fixture> {
     let route =
         Route::parse(&std::env::var("SSH_RUNNER_SYSTEMD_TEST_ROUTE").ok()?).expect("a route");
     let machine = std::env::var("SSH_RUNNER_SYSTEMD_TEST_MACHINE").ok()?;
@@ -106,63 +110,9 @@ fn fixture() -> Option<Fixture> {
     })
 }
 
-/// `bytes` signed with a key of the test's own as `version` and verified as the desktop verifies
-/// an asset.
-fn verified(bytes: &[u8], version: &str, target: runnerinstall::Target) -> Verified {
-    let b64 = |bytes: &[u8]| base64::engine::general_purpose::STANDARD.encode(bytes);
-    let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
-    let trusted = format!(
-        "timestamp:1790077121\tfile:{}\tversion:{version}",
-        runnerinstall::asset_name(version, target)
-    );
-    let signature = minisign::sign(
-        None,
-        &keys.sk,
-        std::io::Cursor::new(bytes),
-        Some(&trusted),
-        None,
-    )
-    .unwrap();
-    let public = b64(keys.pk.to_box().unwrap().into_string().as_bytes());
-    let signature = b64(signature.into_string().as_bytes());
-    runnerinstall::verify(&public, bytes, &signature, version, target).expect("verified")
-}
-
-/// What `command` printed on the runner, run there through the pinned route.
-fn there(reach: &Reach, command: &str, input: Option<&str>) -> sshroute::Ran {
-    let (_folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
-    let mut args =
-        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).expect("its arguments");
-    args.pop();
-    args.push(command.to_owned());
-    sshroute::run_giving(&reach.ssh, &args, input, 256 * 1024).expect("ssh runs")
-}
-
-/// What `command` printed on the machine as its root, from outside it (what an operator at its
-/// console sees): never through the account under test, so it signs nobody in.
-fn as_root(machine: &str, command: &str) -> (bool, String) {
-    let out = purlis_core::forklock::output(
-        std::process::Command::new("docker").args(["exec", machine, "sh", "-c", command]),
-    )
-    .expect("docker runs");
-    (
-        out.status.success(),
-        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr),
-    )
-}
-
 /// Waits until `check` holds, up to the test's patience, saying `what` where it never does.
 fn until(what: &str, check: impl FnMut() -> bool) {
     until_within(PATIENCE, what, check);
-}
-
-/// Waits until `check` holds, up to `patience`, saying `what` where it never does.
-fn until_within(patience: Duration, what: &str, mut check: impl FnMut() -> bool) {
-    let deadline = Instant::now() + patience;
-    while !check() {
-        assert!(Instant::now() < deadline, "never: {what}");
-        std::thread::sleep(Duration::from_secs(1));
-    }
 }
 
 /// Doctor's rows on the runner, by name: each `(status, detail)`.
@@ -190,87 +140,6 @@ fn assert_doctor_green(reach: &Reach, binary: &str) {
             .unwrap_or_else(|| panic!("doctor has no {name} row: {rows:?}"));
         assert_eq!(status, "ok", "{name}: {detail}");
     }
-}
-
-/// A client of the host through its bridge over the pinned route, and the task keeping its link.
-async fn linked(
-    reach: &Reach,
-    binary: &str,
-    ours: Identity,
-    runner: Pinned,
-) -> (
-    Client,
-    purlis_core::dockerpool::settings::RunFolder,
-    tokio::task::JoinHandle<()>,
-) {
-    let (folder, known_hosts) = reach.known_hosts_for_a_run().expect("known_hosts");
-    let mut args =
-        sshroute::sign_in_args(&reach.route, &reach.pool, &known_hosts).expect("its arguments");
-    args.pop();
-    args.push(format!("{binary} bridge"));
-    let connector = CommandConnector::new(reach.ssh.clone(), args, Arc::new(|| Ok(())));
-    let mut links = hostlink::keep_linked(
-        connector,
-        Handshake::THIS_BUILD,
-        ours,
-        runner,
-        Liveness::default(),
-    );
-    match tokio::time::timeout(PATIENCE, links.next()).await {
-        Ok(Some(Linked::Up(link))) => {
-            let (client, _views, _events) = Client::new(*link);
-            let kept = tokio::spawn(async move { while links.next().await.is_some() {} });
-            (client, folder, kept)
-        }
-        Ok(Some(Linked::Down(down))) => panic!("not linked: {}", down.why),
-        Ok(None) => panic!("the kept link ended"),
-        Err(_) => panic!("no link within the test's patience"),
-    }
-}
-
-async fn chat(client: &Client, said: &str) -> String {
-    client
-        .start_program(StartProgram {
-            launch: Some(Launch {
-                program: "/bin/sh".into(),
-                args: vec!["-c".into(), format!("echo '{said}'; exec sleep 6000")],
-                cwd: None,
-                set: Vec::new(),
-                strip: Vec::new(),
-                pass: Vec::new(),
-                declared: Vec::new(),
-                harness: None,
-                git_hooks: None,
-                reporting: None,
-                confinement: None,
-                prompt_key: None,
-                pools_held: None,
-            }),
-            ..StartProgram::of(PROJECT, ProgramKind::Shell)
-        })
-        .await
-        .expect("the chat starts on the runner")
-}
-
-async fn running(client: &Client) -> Vec<String> {
-    let mut ids: Vec<String> = client
-        .list()
-        .await
-        .expect("listed")
-        .into_iter()
-        .filter(|chat| chat.state != "ended")
-        .map(|chat| chat.chat)
-        .collect();
-    ids.sort();
-    ids
-}
-
-fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .unwrap()
 }
 
 /// The account's chats' processes on the machine, counted from outside it.
