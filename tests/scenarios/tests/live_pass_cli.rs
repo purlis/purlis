@@ -357,3 +357,98 @@ fn brief_writes_the_log_format_for_the_real_files() {
     let v: Value = serde_json::from_slice(&json.stdout).expect("JSON");
     assert!(v["checks"].is_array());
 }
+
+#[test]
+fn a_live_fail_exits_1_even_when_the_suite_fails_the_same_cell() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("log.json");
+    let mut value: Value =
+        serde_json::from_str(&fs::read_to_string(chat_682_path()).unwrap()).unwrap();
+    value["cells"]["M-PRB-03"]["failed"] = json!([["require[0]", 2], ["require[1]", 7]]);
+    fs::write(&log, value.to_string()).unwrap();
+    let out = live_pass(&[
+        "report",
+        "--cells",
+        p(&b0_path()),
+        "--log",
+        p(&log),
+        "--harness",
+        "claude",
+        "--os",
+        "macos",
+    ]);
+    assert_eq!(code(&out), 0, "{}", text(&out));
+    let live = dir.path().join("live.jsonl");
+    fs::write(&live, &out.stdout).unwrap();
+    // a suite report with the very same verdicts, fail included
+    let suite = suite_report_file(dir.path(), &live, ReportLeg::Fake, None, |_| {});
+    let out = live_pass(&["diff", p(&live), p(&suite)]);
+    assert_eq!(code(&out), 1, "{}", text(&out));
+    assert!(
+        text(&out).contains("FAIL") && text(&out).contains("M-PRB-03"),
+        "{}",
+        text(&out)
+    );
+}
+
+#[test]
+fn a_stray_or_misspelt_argument_exits_2_and_drops_no_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let b0 = p(&b0_path()).to_owned();
+    let log = p(&chat_682_path()).to_owned();
+    let base = |extra: &[&str]| {
+        let mut a = vec!["report", "--cells", b0.as_str()];
+        a.extend(extra);
+        a.extend([
+            "--log",
+            log.as_str(),
+            "--harness",
+            "claude",
+            "--os",
+            "macos",
+        ]);
+        live_pass(&a)
+    };
+    assert_eq!(code(&base(&[])), 0);
+    // `--cells a b`: the second file is no one's value
+    let two = base(&[&b0]);
+    assert_eq!(code(&two), 2, "{}", text(&two));
+    assert!(text(&two).contains("unexpected argument"), "{}", text(&two));
+    // a misspelt option
+    let typo = base(&["--celss", &b0]);
+    assert_eq!(code(&typo), 2, "{}", text(&typo));
+    assert!(text(&typo).contains("--celss"), "{}", text(&typo));
+    // brief and diff refuse them too
+    for args in [
+        vec!["brief", "--harness", "claude", "--os", "macos", "extra"],
+        vec!["brief", "--harness", "claude", "--os", "macos", "--jsn"],
+        vec!["diff", "a.jsonl", "b.jsonl", "c.jsonl"],
+    ] {
+        assert_eq!(code(&live_pass(&args)), 2, "{args:?}");
+    }
+    let _ = dir;
+}
+
+#[test]
+fn a_cell_given_twice_in_the_log_exits_2() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("log.json");
+    fs::write(
+        &log,
+        r#"{"cells": {"M-PRB-01": {"failed": [], "globals": []}, "M-PRB-01": {"failed": [], "globals": []}}}"#,
+    )
+    .unwrap();
+    let out = live_pass(&[
+        "report",
+        "--cells",
+        p(&b0_path()),
+        "--log",
+        p(&log),
+        "--harness",
+        "claude",
+        "--os",
+        "macos",
+    ]);
+    assert_eq!(code(&out), 2, "{}", text(&out));
+    assert!(text(&out).contains("twice"), "{}", text(&out));
+}
