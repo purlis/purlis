@@ -1223,23 +1223,18 @@ fn begun(
         return Err("the start names no chat and run for its run to begin under".to_owned());
     };
     let none = || Some(NONE.to_owned());
-    let mut protection = crate::sandbox::protection::at_start(
+    // Its known gaps are declared where the protection is (M75-37), as the window's start does.
+    let protection = crate::sandbox::protection::at_start(
         starting.root,
         persona,
         &crate::sandbox::Made::Unnamed,
         sandbox,
         ready.unsandboxed.as_ref(),
+        ready.harness.map_or(
+            crate::sandbox::protection::Program::Declared,
+            crate::sandbox::protection::Program::Harness,
+        ),
     );
-    // The known gaps it started with, declared where the start was judged (M75-37).
-    if let Some(harness) = ready.harness {
-        let facts = crate::knowngaps::Facts::of(harness, crate::sandbox::Os::this(), sandbox);
-        let floor = crate::enforcement::at_start(starting.root);
-        protection.known_gaps = crate::knowngaps::Declared::at(&facts, &floor)
-            .ids()
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
-    }
     let attributes = Attributes {
         persona: persona.map(str::to_owned).or_else(none),
         harness: ready

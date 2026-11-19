@@ -69,19 +69,35 @@ pub enum Cover {
 pub const HOOK_FAILS_OPEN: &str = "hook-fails-open";
 /// The gap that stands on a system with no sandbox backend (Windows).
 pub const NO_SANDBOX_BACKEND: &str = "no-sandbox-backend";
+/// The gap that stands for a chat that starts with its sandbox lifted (the person's opt-out, or a
+/// floor that could not be applied): what the sandbox, the proxy or an OpenCode shim's own files
+/// held is not held.
+pub const SANDBOX_LIFTED: &str = "sandbox-lifted";
+/// The gap that stands for a declared harness with no adapter (spec §6, ADR 0073): purlis arms no
+/// hook of its own and compiles no sandbox for it, so every family is a gap there.
+pub const UNADAPTED_HARNESS: &str = "harness-unadapted";
+/// The gaps whose families [`cover`] derives, besides the ones their entry lists.
+const COVER_GAPS: [&str; 5] = [
+    HOOK_FAILS_OPEN,
+    NO_SANDBOX_BACKEND,
+    POLICY_POINT_NOT_WIRED,
+    SANDBOX_LIFTED,
+    UNADAPTED_HARNESS,
+];
 /// The gap that stands where a rule on `read`, `write`, `connect` or `dial` has no point yet:
 /// #7222's asks-only floor must close before a later slice wires them.
 pub const POLICY_POINT_NOT_WIRED: &str = "policy-point-not-wired";
 
-/// **The enforcement point of `action` on `harness` on `os`**, or the gap that stands in its
+/// **The enforcement point of `action` for a start with `facts`**, or the gap that stands in its
 /// place; `None` for a word the schema has no action of (the test that holds this table to the
-/// schema names it).
-pub fn cover(action: &str, harness: Harness, os: Os) -> Option<Cover> {
+/// schema names it). What the sandbox holds is held only where the start is sandboxed.
+pub fn cover(action: &str, facts: &Facts) -> Option<Cover> {
     use Cover::{Closed, Gap};
     use Point::{Harness as ByTheHarness, Host, Sandbox};
-    let hook_only = match harness {
-        Harness::Opencode => Closed(ByTheHarness),
-        Harness::ClaudeCode | Harness::Codex => Gap(HOOK_FAILS_OPEN),
+    let hook_only = match facts.harness {
+        Some(Harness::Opencode) => Closed(ByTheHarness),
+        Some(Harness::ClaudeCode | Harness::Codex) => Gap(HOOK_FAILS_OPEN),
+        None => Gap(UNADAPTED_HARNESS),
     };
     let cover =
         match action {
@@ -101,9 +117,13 @@ pub fn cover(action: &str, harness: Harness, os: Os) -> Option<Cover> {
             | "report" | "promote" => Closed(Host),
             _ => return None,
         };
-    // Where purlis has no sandbox backend, what only the sandbox held is not held.
+    // Where purlis has no sandbox backend, what only the sandbox held is not held; nor where the
+    // chat starts with its sandbox lifted, which also leaves an OpenCode shim's files unheld.
     Some(match cover {
-        Closed(Sandbox | Point::Proxy) if os.backend_word().is_none() => Gap(NO_SANDBOX_BACKEND),
+        Closed(Sandbox | Point::Proxy | ByTheHarness) if facts.os.backend_word().is_none() => {
+            Gap(NO_SANDBOX_BACKEND)
+        }
+        Closed(Sandbox | Point::Proxy | ByTheHarness) if !facts.sandboxed => Gap(SANDBOX_LIFTED),
         other => other,
     })
 }
@@ -111,8 +131,8 @@ pub fn cover(action: &str, harness: Harness, os: Os) -> Option<Cover> {
 /// What the host knows of a start, which decides what applies to it (never a word of the chat's).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Facts {
-    /// The harness the chat runs.
-    pub harness: Harness,
+    /// The harness the chat runs; `None` for a declared harness with no adapter (ADR 0073).
+    pub harness: Option<Harness>,
     /// The system it runs on.
     pub os: Os,
     /// Whether it starts inside a sandbox.
@@ -127,13 +147,25 @@ pub struct Facts {
 
 impl Facts {
     /// The facts of a start of `harness` on `os`, as this build can hold them.
-    pub fn of(harness: Harness, os: Os, sandbox: Option<&crate::sandbox::Applied>) -> Self {
+    pub fn of(harness: Option<Harness>, os: Os, sandbox: Option<&crate::sandbox::Applied>) -> Self {
         Self {
             harness,
             os,
             sandboxed: sandbox.is_some(),
-            claude_code_older: harness == Harness::ClaudeCode
+            claude_code_older: harness == Some(Harness::ClaudeCode)
                 && sandbox.is_some_and(|applied| !applied.through_purlis_proxy()),
+            plane_root_rename_held: false,
+        }
+    }
+
+    /// The facts of a start of `harness` on `os` that holds all it can: what Settings and doctor
+    /// declare before any chat starts.
+    pub fn best(harness: Harness, os: Os) -> Self {
+        Self {
+            harness: Some(harness),
+            os,
+            sandboxed: true,
+            claude_code_older: false,
             plane_root_rename_held: false,
         }
     }
@@ -166,7 +198,10 @@ pub struct Gap {
 impl Gap {
     /// Whether the gap holds for a start with `facts`.
     pub fn holds_for(&self, facts: &Facts) -> bool {
-        (self.harnesses.is_empty() || self.harnesses.contains(&facts.harness))
+        (self.harnesses.is_empty()
+            || facts
+                .harness
+                .is_some_and(|harness| self.harnesses.contains(&harness)))
             && (self.systems.is_empty() || self.systems.contains(&facts.os))
             && self.when.is_none_or(|holds| holds(facts))
     }
@@ -179,7 +214,9 @@ impl Gap {
 
     /// Whether the gap holds for `harness` on `os`, whatever else a start's facts say.
     pub fn may_hold_for(&self, harness: Harness, os: Os) -> bool {
-        (self.harnesses.is_empty() || self.harnesses.contains(&harness))
+        // A harness purlis has an adapter for is never an unadapted one.
+        self.id != UNADAPTED_HARNESS
+            && (self.harnesses.is_empty() || self.harnesses.contains(&harness))
             && (self.systems.is_empty() || self.systems.contains(&os))
     }
 }
@@ -190,6 +227,10 @@ fn when_lifted(facts: &Facts) -> bool {
 
 fn when_older(facts: &Facts) -> bool {
     facts.claude_code_older
+}
+
+fn when_unadapted(facts: &Facts) -> bool {
+    facts.harness.is_none()
 }
 
 fn when_rename_unheld(facts: &Facts) -> bool {
@@ -507,20 +548,20 @@ pub const GAPS: &[Gap] = &[
         Some(when_rename_unheld)
     ),
     gap!(
-        "machine-unset-on-windows",
+        "machine-unset",
         None,
         EVERY_HARNESS,
-        &[Os::Windows],
+        EVERY_SYSTEM,
         &[],
-        "context.machine is unset on Windows: no machine store mints a device id, so a rule that reads it is denied.",
-        "It holds until the Windows machine store exists.",
+        "context.machine is unset on every system: it is sealed until the person confirms it (slice 07b), so a rule that reads it is denied.",
+        "It holds until the device id is minted.",
         "spec §9.4"
     ),
     gap!(
         NO_SANDBOX_BACKEND,
         None,
         EVERY_HARNESS,
-        &[Os::Windows],
+        &[Os::Windows, Os::Other],
         &[
             Family::Sandbox,
             Family::Network,
@@ -529,9 +570,36 @@ pub const GAPS: &[Gap] = &[
             Family::GuardsPlane,
             Family::Skills
         ],
-        "purlis has no sandbox backend on Windows, so nothing the sandbox or the proxy would hold is held.",
+        "purlis has no sandbox backend on Windows or on a system it does not build one for, so nothing the sandbox or the proxy would hold is held.",
         "The seal stops hand edits only.",
         "spec §6; spike 03"
+    ),
+    gap!(
+        SANDBOX_LIFTED,
+        None,
+        EVERY_HARNESS,
+        EVERY_SYSTEM,
+        &[
+            Family::Sandbox,
+            Family::Network,
+            Family::Ports,
+            Family::Processes
+        ],
+        "This chat starts with its sandbox lifted, so nothing the sandbox, the proxy or an OpenCode shim's protected files would hold is held.",
+        "Only what a hook alone enforces, and the seal on hand edits.",
+        "spec §6; ADR 0067",
+        Some(when_lifted)
+    ),
+    gap!(
+        UNADAPTED_HARNESS,
+        None,
+        EVERY_HARNESS,
+        EVERY_SYSTEM,
+        &Family::ALL,
+        "A declared harness has no adapter: purlis arms no hook and compiles no sandbox for it, so no family's rule is enforced there.",
+        "Nothing, beyond what the host decides itself.",
+        "spec §6; ADR 0073",
+        Some(when_unadapted)
     ),
     gap!(
         POLICY_POINT_NOT_WIRED,
@@ -544,6 +612,30 @@ pub const GAPS: &[Gap] = &[
         "#7222"
     ),
 ];
+
+/// **The families `gap` leaves unenforced**: the ones its entry lists, and, for a gap the
+/// capability table ([`cover`]) stands in for, every family of an action it answers with that
+/// gap, so an entry cannot say less than the table does.
+fn affected(gap: &Gap, facts: &Facts) -> Vec<Family> {
+    let mut families = gap.families.to_vec();
+    if COVER_GAPS.contains(&gap.id) {
+        // A lifted sandbox is the gap's own fact: asked as lifted wherever it is listed.
+        let asked = Facts {
+            sandboxed: facts.sandboxed && gap.id != SANDBOX_LIFTED,
+            ..*facts
+        };
+        for (action, family) in crate::policy::actions() {
+            if let Some(family) = Family::of_key(family)
+                && cover(action, &asked) == Some(Cover::Gap(gap.id))
+                && !families.contains(&family)
+            {
+                families.push(family);
+            }
+        }
+        families.sort();
+    }
+    families
+}
 
 /// One declared gap of a start: a gap, and the families it leaves unenforced.
 #[derive(Debug, Clone)]
@@ -565,7 +657,7 @@ pub struct Declared(Vec<Entry>);
 impl Declared {
     /// The gaps of a start with `facts`, under the modes `floor` resolves.
     pub fn at(facts: &Facts, floor: &Resolved) -> Self {
-        Self::of(GAPS.iter().filter(|gap| gap.holds_for(facts)), floor)
+        Self::of(GAPS.iter().filter(|gap| gap.holds_for(facts)), floor, facts)
     }
 
     /// The gaps that may hold for `harness` on `os`, under the modes `floor` resolves: what
@@ -575,20 +667,19 @@ impl Declared {
         Self::of(
             GAPS.iter().filter(|gap| gap.may_hold_for(harness, os)),
             floor,
+            &Facts::best(harness, os),
         )
     }
 
-    fn of(gaps: impl Iterator<Item = &'static Gap>, floor: &Resolved) -> Self {
+    fn of(gaps: impl Iterator<Item = &'static Gap>, floor: &Resolved, facts: &Facts) -> Self {
         let entries = gaps
             .filter_map(|gap| {
-                let in_force: Vec<Family> = gap
-                    .families
-                    .iter()
-                    .copied()
+                let in_force: Vec<Family> = affected(gap, facts)
+                    .into_iter()
                     .filter(|family| floor.mode(*family) != Mode::Off)
                     .collect();
                 // Every family it affects is off: nothing asks for what it lacks.
-                if !gap.families.is_empty() && in_force.is_empty() {
+                if !affected(gap, facts).is_empty() && in_force.is_empty() {
                     return None;
                 }
                 let enforced = in_force
@@ -648,21 +739,34 @@ pub struct Judged<'a> {
     pub sandbox: &'a str,
 }
 
-/// **The refusal a project's own rule on `start` makes of this start**, in a sentence, or `None`
-/// where nothing refuses it. The shipped default has no such rule, so with it no known gap ever
-/// refuses a start. A rule that errs denies (spec §6.3).
+/// **What a project's own rule on `start` makes of a start with known gaps.**
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Ruling {
+    /// The start is refused: nothing is started. The sentence says why and what to change.
+    Refused(String),
+    /// The rule would have refused it, and the family `trust` is set to `log`: the chat starts,
+    /// and the sentence is the would-have-blocked line (spec §6.4).
+    Logged(String),
+}
+
+/// **The ruling a project's own rule on `start` makes of this start**, or `None` where nothing
+/// would refuse it. The shipped default has no such rule, so with it no known gap ever refuses a
+/// start. A rule that errs denies (spec §6.3), and so does a rule that asks: asking at a start is
+/// slice 36's, so an `@ask` forbid refuses until it is wired.
 ///
 /// The rule judges the start as the host knows it: `context.gaps` is [`Declared::context_gaps`],
-/// and the family `trust`'s mode and the person's floor apply as to any other decision.
+/// and the family `trust`'s mode and the person's floor apply as to any other decision: the
+/// rule refuses only where `trust` is `enforce`, and under `log` the start goes ahead with the
+/// would-have-blocked line.
 pub fn refusal(
     judged: &Judged<'_>,
     facts: &Facts,
     declared: &Declared,
     floor: &Resolved,
-) -> Option<String> {
+) -> Option<Ruling> {
     use crate::policy::decide::{Asker, Outcome, in_plane};
     let gaps = declared.context_gaps();
-    let harness = facts.harness.name();
+    let harness = facts.harness.map_or("unknown", Harness::name);
     let asker = Asker {
         // A start is decided before the board numbers its chat; no rule reads the number.
         chat: 0,
@@ -680,9 +784,6 @@ pub fn refusal(
         }),
     };
     let decision = in_plane(judged.root, &asker, "start", ("Harness", harness)).held_to(floor);
-    if decision.after_mode != Outcome::Deny {
-        return None;
-    }
     let affecting: Vec<String> = declared
         .entries()
         .iter()
@@ -705,9 +806,28 @@ pub fn refusal(
             affecting.join(", ")
         )
     };
-    Some(format!(
-        "Nothing was started. {} refuses a start of this chat{because}. Change that rule in \
-         policy.cedar, or set the family under [policy] to log or off.",
-        decision.rules_said()
-    ))
+    let rules = decision.rules_said();
+    match decision.after_mode {
+        Outcome::Deny => Some(Ruling::Refused(format!(
+            "Nothing was started. {rules} refuses a start of this chat{because}. Change that rule \
+             in policy.cedar, or set the family trust under [policy] to log or off."
+        ))),
+        Outcome::Ask => Some(Ruling::Refused(format!(
+            "Nothing was started. {rules} asks before a start of this chat{because}, and asking at \
+             a start is not wired yet, so it is refused. Make that rule a plain forbid in \
+             policy.cedar, or set the family trust under [policy] to log or off."
+        ))),
+        Outcome::Allow if decision.would_have_blocked() && decision.mode == Mode::Log => {
+            Some(Ruling::Logged(format!(
+                "Would have refused this start: {rules} {} a start of this chat{because}. The \
+                 family trust is set to log, so it started. Set trust to enforce to refuse it.",
+                if decision.outcome == Outcome::Ask {
+                    "asks before"
+                } else {
+                    "refuses"
+                }
+            )))
+        }
+        Outcome::Allow => None,
+    }
 }

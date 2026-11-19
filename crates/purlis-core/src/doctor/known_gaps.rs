@@ -6,10 +6,9 @@
 //! force. A gap is a declared fact about a harness, not a fault: the row is green, and the chat
 //! it concerns still starts. A project that wants it refused writes a forbid on `start`.
 //!
-//! **Only where the project wrote a `[policy]`** (a template or a family's mode): the table doctor
-//! prints for a project that did not is the one the Python charter recorded, row for row
-//! (`every_row_python_prints_is_printed_in_pythons_order`, `recorded_behaviour`), and what
-//! it declares there is what Settings declares for every project.
+//! **Wherever a family is not `off`**: the default `watch` template enforces `secrets`, `vaults`
+//! and `guards.credential`, so a project that wrote no `[policy]` has gaps to declare too, and
+//! what doctor declares is what Settings declares for every project.
 
 use super::{Doctor, Row};
 use crate::enforcement::Resolved;
@@ -22,11 +21,15 @@ pub(super) fn known_gaps(d: &Doctor) -> Vec<Row> {
     if !d.has_plane {
         return Vec::new();
     }
-    let said = crate::enforcement::Settings::read(&d.root);
-    if !said.template_said && said.overrides.is_empty() {
+    let floor = crate::enforcement::at_start(&d.root);
+    // Every family off (the `open` template): nothing is asked of any harness, so no gap.
+    if crate::enforcement::Family::ALL
+        .into_iter()
+        .all(|family| floor.mode(family) == crate::enforcement::Mode::Off)
+    {
         return Vec::new();
     }
-    rows(&crate::enforcement::at_start(&d.root), Os::this())
+    rows(&floor, Os::this())
 }
 
 /// One row per harness, each naming every gap declared for it on `os` under `floor`.

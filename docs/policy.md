@@ -93,8 +93,13 @@ bound what an agent does with your authority, never what you do.
 
 A rule in force (a family whose mode is not `off`) that a harness cannot enforce on this system is a
 **known gap**. purlis declares it and the chat still starts: in Settings under *Sandbox › Known
-gaps*, in `purlis doctor` (for a project that wrote a `[policy]`), in the chat's start event and on
-its pane. A family set to `off` declares none.
+gaps*, in `purlis doctor` (wherever any family is not `off`, which the default `watch` template
+already is for `secrets`, `vaults` and `guards.credential`), in the chat's start event and on its
+pane, for a chat started from the window as for one a host starts. A family set to `off` declares
+none. Nothing is declared as held where it is not: a chat whose sandbox is lifted (the person's
+opt-out, or a floor that could not be applied) has a gap for every family the sandbox, the proxy or
+an OpenCode shim's protected files would hold, and a declared harness with no adapter has every
+family as a gap.
 
 `context.gaps` on `start` holds the keys of the families that are `enforce` and have a gap for the
 chat being started. A project that wants such a chat refused writes the rule itself; the shipped
@@ -106,7 +111,17 @@ forbid (principal, action == Action::"start", resource)
   when { context.gaps.contains("sandbox") };
 ```
 
+**The rule refuses only where the family `trust` is `enforce`.** Under the default `watch` and
+`hold` templates `trust` is `log`, so the rule above refuses nothing there: the chat starts, and
+its tab says once that the rule would have refused it. Write `trust = "enforce"` under `[policy]`
+(the `team` and `strict` templates do) for the refusal. Mind what the rule says: `contains("sandbox")`
+is true of every start once `trust` is enforced, because Claude Code's reads are a gap on every
+system (`claude-code-reads`), and a lifted sandbox is one too; such a rule refuses every start.
+
+An `@ask` forbid on `start` refuses too, until asking at a start is wired (slice 36): the refusal
+says the rule asks and that asking at a start is not wired yet. Write a plain forbid.
+
 The refusal names the rule and the gaps. `crates/purlis-core/src/knowngaps.rs` holds the capability
-table (each action's enforcement point per harness and system, or the gap that stands in its place)
-and every gap's entry; `context.machine` is unset on Windows, where no machine store mints a device
-id, so a rule reading it is denied until one exists.
+table (each action's enforcement point per harness, system and sandbox, or the gap that stands in its
+place) and every gap's entry; `context.machine` is unset on every system (it is sealed until the
+person confirms it), so a rule reading it is denied.

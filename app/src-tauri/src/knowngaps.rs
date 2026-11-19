@@ -99,18 +99,17 @@ pub(crate) async fn chat_known_gaps(
 ) -> Result<Vec<KnownGapShown>, String> {
     let held = planes.held(&plane)?;
     let chat = held.chats().logged_id_of(session);
-    let Some(Ok(dir)) = crate::EVENT_LOG
-        .get()
-        .map(|log| log.as_ref().map(Clone::clone))
-    else {
+    let Some(Ok(dir)) = crate::EVENT_LOG.get().cloned() else {
         return Ok(Vec::new());
     };
     crate::off_the_window("reading a chat's known gaps", move || {
         let events = purlis_core::eventlog::read(&dir).map_err(|why| why.to_string())?;
         let log = crate::chatlog::chat_log_with(&events, chat.as_deref(), &|_| None);
+        // The latest start, not the first: a chat reopened starts again, under what holds now.
         let ids: Vec<String> = log
             .rows
             .into_iter()
+            .rev()
             .find_map(|row| match row {
                 crate::chatlog::ChatLogRow::Started { protection, .. } => protection,
                 _ => None,

@@ -21,6 +21,7 @@ use purlis_core::harness::{Harness, SessionId};
 use purlis_core::hoststart::Armed;
 use purlis_core::reopen::layout::Refused;
 use purlis_core::reopen::{Chat, Focus, Layout, Record, Reopened, View};
+use purlis_core::sandbox::protection::Program;
 
 use crate::host::{Opening, SessionHost};
 #[cfg(test)]
@@ -5672,6 +5673,18 @@ impl Chats {
                 &made_of(chat, why),
                 sandbox,
                 unsandboxed,
+                match harness {
+                    Some(harness) => Program::Harness(harness),
+                    // A profile with no adapter is a declared harness; none at all, a shell.
+                    None if attributes
+                        .profile
+                        .as_deref()
+                        .is_some_and(|name| name != purlis_core::eventlog::NONE) =>
+                    {
+                        Program::Declared
+                    }
+                    None => Program::Shell,
+                },
             ));
         }
         // What a wrapped chat needs running beside it, started before it and kept for as long

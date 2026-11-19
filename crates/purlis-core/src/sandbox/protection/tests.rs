@@ -157,7 +157,14 @@ fn recorded(case: &Case) -> (serde_json::Value, String) {
         Ok(Some(Decided::Floorless(_))) => (None, None),
         other => panic!("{}: {other:?}", case.name),
     };
-    let protection = at_start(root, case.persona, &case.made, sandbox, lifted);
+    let protection = at_start(
+        root,
+        case.persona,
+        &case.made,
+        sandbox,
+        lifted,
+        Program::Shell,
+    );
     policy::set_for_this_test(policy::Locks::none());
     (started_with(root, protection), commit)
 }
@@ -483,7 +490,7 @@ fn a_start_under_a_changed_charter_toml_records_its_commit_as_dirty() {
     let commit = project(root, FULL);
     std::fs::write(root.join("charter.toml"), format!("schema = 1\n{NEVER}")).unwrap();
 
-    let protection = at_start(root, None, &Made::Window, None, None);
+    let protection = at_start(root, None, &Made::Window, None, None, Program::Shell);
 
     assert_eq!(protection.charter_commit, commit);
     assert!(protection.charter_dirty, "{protection:?}");
@@ -510,7 +517,7 @@ fn a_purlis_toml_plane_records_its_own_file_s_commit_and_a_charter_toml_one_stil
         .to_owned();
     assert_ne!(renamed, purlis_commit, "a commit of its own");
 
-    let at = |root: &Path| at_start(root, None, &Made::Window, None, None);
+    let at = |root: &Path| at_start(root, None, &Made::Window, None, None, Program::Shell);
 
     let by_charter = at(charter.path());
     assert_eq!(
@@ -568,7 +575,7 @@ fn a_charter_commit_is_none_only_where_no_commit_has_it_and_unknown_where_git_fa
     std::fs::write(broken.path().join("charter.toml"), "schema = 1\n").unwrap();
     std::fs::write(broken.path().join(".git"), "gitdir: /nowhere/at/all\n").unwrap();
 
-    let commit = |root: &Path| at_start(root, None, &Made::Window, None, None);
+    let commit = |root: &Path| at_start(root, None, &Made::Window, None, None, Program::Shell);
 
     assert_eq!(commit(bare.path()).charter_commit, crate::eventlog::NONE);
     assert_eq!(

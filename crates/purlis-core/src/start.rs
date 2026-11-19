@@ -709,8 +709,9 @@ fn ready_given_on(
     };
     let plugins = crate::harness_plugin::for_start(&profile.kind, root, workspace);
     // A start the project's own rule on `start` refuses for a known gap is not started (M75-37,
-    // Q319 C1). The shipped default has no such rule, so a gap alone never refuses one.
-    if let Some(harness) = harness {
+    // Q319 C1). The shipped default has no such rule, so a gap alone never refuses one. A harness
+    // with no adapter is judged too: every family is a gap there.
+    {
         let facts = crate::knowngaps::Facts::of(harness, machine.os, sandbox.as_ref());
         let floor = crate::enforcement::at_start(root);
         let declared = crate::knowngaps::Declared::at(&facts, &floor);
@@ -729,8 +730,10 @@ fn ready_given_on(
             },
             sandbox: level,
         };
-        if let Some(refused) = crate::knowngaps::refusal(&judged, &facts, &declared, &floor) {
-            return Err(refused);
+        match crate::knowngaps::refusal(&judged, &facts, &declared, &floor) {
+            Some(crate::knowngaps::Ruling::Refused(refused)) => return Err(refused),
+            Some(crate::knowngaps::Ruling::Logged(line)) => notices.push(line),
+            None => {}
         }
     }
     // The profile's own words stay together and in front; charter's go after them and after

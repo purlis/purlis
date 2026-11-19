@@ -141,7 +141,7 @@ fn colour_is_drawn_only_when_asked_for() {
 /// Python's `_FIXED_CHECK_NAMES`, with `git bare repos` (#1100) and then the forge pair spliced
 /// in after `git identity`, as `check_names` splices the pair. No row may go missing: a doctor
 /// that stops printing one tells its reader the problem it reported has gone.
-const PYTHON_ROWS: [&str; 41] = [
+const PYTHON_ROWS: [&str; 44] = [
     "python3",
     "git",
     "git identity",
@@ -169,6 +169,11 @@ const PYTHON_ROWS: [&str; 41] = [
     "vaults",
     "vault registry",
     "version lock",
+    // Not Python's: purlis's own rows, from M75-37, which a plane that wrote no `[policy]` has
+    // too, since the default `watch` template enforces three families.
+    "known gaps: claude",
+    "known gaps: codex",
+    "known gaps: opencode",
     "memory indexes",
     "personas",
     "persona grant",
@@ -4262,11 +4267,12 @@ fn a_size_is_said_in_the_units_a_reader_expects() {
 // ---- known gaps (M75-37) ------------------------------------------------------------------------
 
 #[test]
-fn a_project_that_wrote_a_policy_has_its_known_gaps_declared_and_one_that_did_not_has_none() {
+fn a_project_has_its_known_gaps_declared_whether_or_not_it_wrote_a_policy() {
+    // The default `watch` template enforces `secrets`, `vaults` and `guards.credential`.
     let (_d, root) = plane("schema = 1\n");
     let names: Vec<String> = doctor(&root).run().into_iter().map(|r| r.name).collect();
     assert!(
-        names.iter().all(|name| !name.starts_with("known gaps")),
+        names.iter().any(|name| name.starts_with("known gaps: ")),
         "{names:?}"
     );
 
