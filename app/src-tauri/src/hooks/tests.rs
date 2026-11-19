@@ -3970,7 +3970,10 @@ fn a_credentials_kind_from_the_hook_never_offers_a_grant_whatever_the_path() {
             kind: Kind::Credentials,
             ours: false,
         };
-        assert!(names_a_credential(&block, Some(&elsewhere)), "{operation:?}");
+        assert!(
+            names_a_credential(&block, Some(&elsewhere)),
+            "{operation:?}"
+        );
         assert_eq!(
             offered_to(project.path(), &block, Some(&elsewhere), false),
             (BlockOffer::Brokered, None, credentials.clone()),
