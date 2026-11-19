@@ -913,8 +913,8 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
         assert!(!ran.exists(), "{program} ran with no token");
         // 4. the undeclared program's shim, where it is guarded.
         if guarded {
-            let resolved =
-                guard_forges(None, tmp.path(), "dev", &["forge.test".to_owned()]).expect("a guard");
+            let resolved = guard_forges(None, tmp.path(), "dev", &["forge.test".to_owned()], &[])
+                .expect("a guard");
             let [(name, sentence)] = resolved.guards.as_slice() else {
                 panic!("{:?}", resolved.guards)
             };

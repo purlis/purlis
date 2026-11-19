@@ -2962,18 +2962,21 @@ pub const GUARDED_FORGES: [&str; 1] = ["glab"];
 /// ([`crate::sandbox::Class::Credentials`]) the program would only fail on that refusal, so its
 /// name in the chat names the flow instead and exits 1. `gitlab_hosts` are the project's GitLab
 /// hosts, one of which the sentence names where there is exactly one. A tool the persona declares
-/// has its own shim, which is never replaced.
+/// has its own shim, which is never replaced, and a name the persona declares at all (`declared`,
+/// allowed here or not, found or not) is never guarded: what it says is its own tool's to say.
 pub fn guard_forges(
     resolved: Option<Resolved>,
     root: &Path,
     persona: &str,
     gitlab_hosts: &[String],
+    declared: &[String],
 ) -> Option<Resolved> {
     let own = |name: &str| {
-        resolved.as_ref().is_some_and(|one| {
-            one.ready.iter().any(|ready| ready.tool.name == name)
-                || one.refusing.iter().any(|(tool, _)| tool == name)
-        })
+        declared.iter().any(|tool| tool == name)
+            || resolved.as_ref().is_some_and(|one| {
+                one.ready.iter().any(|ready| ready.tool.name == name)
+                    || one.refusing.iter().any(|(tool, _)| tool == name)
+            })
     };
     let guards: Vec<(String, String)> = GUARDED_FORGES
         .iter()

@@ -1641,8 +1641,14 @@ fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
     .expect("written")
     .expect("its shim");
 
-    let guarded =
-        guard_forges(None, &root, "devops", &["gitlab.example.com".to_owned()]).expect("a guard");
+    let guarded = guard_forges(
+        None,
+        &root,
+        "devops",
+        &["gitlab.example.com".to_owned()],
+        &[],
+    )
+    .expect("a guard");
     assert!(guarded.only_refuses, "{guarded:?}");
     let written = guarded.write(purlis).expect("written").expect("a shim");
     assert!(
@@ -1676,6 +1682,7 @@ fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
         &root,
         "devops",
         &["a.example".to_owned(), "b.example".to_owned()],
+        &[],
     )
     .expect("a guard");
     assert!(
@@ -1709,10 +1716,23 @@ fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_h
         )
     };
     // Declared: a guard is not added.
-    let declared = guard_forges(resolved(&[glab.clone()]), &root, "devops", &[]).expect("tools");
+    let declared =
+        guard_forges(resolved(&[glab.clone()]), &root, "devops", &[], &[]).expect("tools");
     assert!(declared.guards.is_empty(), "{:?}", declared.guards);
+    // Declared by the persona but not ready (waiting for the Allow, or no program found): the
+    // tool's own answer stands, and no guard says the flow over it.
+    let waiting = guard_forges(
+        resolved(&[kubectl()]),
+        &root,
+        "devops",
+        &[],
+        &["glab".to_owned()],
+    )
+    .expect("tools");
+    assert!(waiting.guards.is_empty(), "{:?}", waiting.guards);
     // Not declared, with kubectl ready: one folder holds both shims.
-    let with_guard = guard_forges(resolved(&[kubectl()]), &root, "devops", &[]).expect("tools");
+    let with_guard =
+        guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).expect("tools");
     assert!(!with_guard.only_refuses);
     let written = with_guard.write(purlis).unwrap().unwrap();
     assert!(written.bin.join("glab").exists() && written.bin.join("kubectl").exists());
