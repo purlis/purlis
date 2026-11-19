@@ -32,7 +32,7 @@ use purlis_core::mergehold::{self, Facts, Holds, MergeKey, Raised};
 /// git, with no global or system config, in `dir`.
 fn git(dir: &std::path::Path, args: &[&str]) {
     let ran = purlis_core::forklock::output(
-        std::process::Command::new("git")
+        support::command("git")
             .arg("-C")
             .arg(dir)
             .args(["-c", "user.name=t", "-c", "user.email=t@example.invalid"])

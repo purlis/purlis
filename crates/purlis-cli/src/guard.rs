@@ -293,7 +293,13 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
         // An app of another build could not read the ask: refused in the words that say so and
         // name what to do (#6960), never decided here.
         Ok(Ok(Answer::No { why })) if why == UNKNOWN_LINE => {
-            let app = mergehold::AppSaid::OtherBuild;
+            // The hook is the app's own binary, so it is the newer one: a bundle replaced under
+            // the running app (#7177). Another hook is a plugin of another build.
+            let app = if is_the_apps_own_binary() {
+                mergehold::AppSaid::OlderApp
+            } else {
+                mergehold::AppSaid::OtherBuild
+            };
             return Some(refused(
                 mergehold::reason(&held, &app),
                 mergehold::refusal(&held, &app),
