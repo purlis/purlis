@@ -360,10 +360,21 @@ impl Cover {
 
 // ---- what the list is checked against ------------------------------------------------------------
 
-/// **One row of the escape table** (`escapes.json`, ticket 43), the columns the gate reads.
+/// **One row of the escape table** (`escapes.json`, ticket 43). Every column is named, so a
+/// table that grew or renamed one is an error here, not a column read as empty.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct EscapeRow {
     pub id: String,
+    /// What the escape is, in words.
+    #[serde(default)]
+    pub escape: String,
+    /// What purlis owes when it is refused.
+    #[serde(default)]
+    pub owed: String,
+    /// The control that shows the refusal is the escape's and not a broken harness.
+    #[serde(default)]
+    pub control: String,
     pub ticket: String,
     #[serde(rename = "Full")]
     pub full: String,
@@ -373,6 +384,12 @@ pub struct EscapeRow {
     pub dialects: String,
     pub os: String,
     pub real_binary: String,
+    /// `yes` where the table marks the escape for the live pass (tickets 37 and 44).
+    #[serde(default)]
+    pub live: String,
+    /// What the live pass should see of it.
+    #[serde(default)]
+    pub live_observable: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

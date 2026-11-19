@@ -16,6 +16,11 @@
     "timings": {"enum": ["scaled", "production"]},
     "verdict": {"enum": ["pass", "fail", "expected_fail", "not_run"]},
     "reason": {"type": "string", "minLength": 1},
+    "events": {
+      "description": "The event kinds the leg's log wrote for the entry, in order (optional). The live pass records them, and tools/live-pass diff compares them with a suite leg's, where both have them (T1.1-37).",
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
     "refusal_expected": {"description": "True when the entry is an escape cell or has a step that expects a refusal: a differing verdict between runs is then an escape (#7175). Optional; a report without it is read as unknown, never as 'not an escape'.", "type": "boolean"}
   },
   "allOf": [

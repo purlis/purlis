@@ -1125,7 +1125,9 @@ fn strings_of(list: &Value) -> Option<Vec<String>> {
 /// whitespace at its end, so `T(<p> )` holds `<p>` and not what is below `<p> `, and neither it
 /// nor a rule below it is folded into another.
 fn literal(path: &str) -> bool {
-    !path.contains(['*', '?', '[', '\\']) && !path.ends_with(char::is_whitespace)
+    !path.contains(super::PATTERN_CHARACTERS)
+        && !path.contains('\\')
+        && !path.ends_with(char::is_whitespace)
 }
 
 /// Each folder above `path`, as `path` spells it: `/a/b/c` gives `/a` and `/a/b`; `//a/b`, a

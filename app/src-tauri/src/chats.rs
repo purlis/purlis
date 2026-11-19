@@ -6000,8 +6000,17 @@ impl Chats {
         crate::restoring::hand_back_here();
         // Settings past `limits.harness_settings_bytes` are said on the chat's tab (#6961): near
         // its check's limit, a harness's auto mode refuses unasked what it would have checked.
-        let heavy = purlis_core::hoststart::settings_past_the_budget(&all).filter(|_| !reattaching);
+        // (Only for a start: a reattach says nothing, and the other settings files are read, a
+        // git run among them, only once the line has settings to weigh.)
+        let heavy = if reattaching {
+            None
+        } else {
+            purlis_core::hoststart::settings_past_the_budget(&all, chat.cwd.as_deref(), || {
+                purlis_core::hoststart::rules_outside(chat.cwd.as_deref())
+            })
+        };
         // Settings too long for one word of a command line go through a file of their own (SK-9).
+        // A chat with no id of its own has no file to keep them in, but is held to the same cap.
         let all = match identity.id.as_deref() {
             Some(id) if !reattaching => purlis_core::hoststart::settings_in_a_file(
                 self.kit(harness).chat_settings.as_deref(),
@@ -6009,6 +6018,10 @@ impl Chats {
                 id,
                 all,
             )?,
+            None if !reattaching => {
+                purlis_core::hoststart::settings_within_the_cap(&all)?;
+                all
+            }
             _ => all,
         };
         // Past every refusal: what the sandbox readies outside it before the chat starts.

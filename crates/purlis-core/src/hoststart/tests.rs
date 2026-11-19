@@ -602,21 +602,32 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
 #[test]
 fn settings_past_the_budget_are_named_by_their_weight() {
     let with_rules = |bytes: usize| {
-        let empty = serde_json::json!({"permissions": {"deny": [""]}}).to_string();
+        let empty = serde_json::json!({"soft_deny": [""]}).to_string();
         let rule = "x".repeat(bytes - empty.len());
         let json = serde_json::json!({
-            "permissions": {"deny": [rule]},
+            "autoMode": {"soft_deny": [rule]},
             "sandbox": {"filesystem": {"denyWrite": ["/a"]}},
         });
-        assert_eq!(auto_mode_weight(&json), bytes);
+        assert_eq!(
+            auto_mode_weight(&json, &RulesOutside::default(), None),
+            bytes
+        );
         words(&json.to_string())
     };
     assert_eq!(
-        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES + 1)),
-        Some(HARNESS_SETTINGS_BYTES + 1)
+        settings_past_the_budget(
+            &with_rules(ALLOW_RULES_SHED_BYTES + 1),
+            None,
+            RulesOutside::default
+        ),
+        Some(ALLOW_RULES_SHED_BYTES + 1)
     );
     assert_eq!(
-        settings_past_the_budget(&with_rules(HARNESS_SETTINGS_BYTES)),
+        settings_past_the_budget(
+            &with_rules(ALLOW_RULES_SHED_BYTES),
+            None,
+            RulesOutside::default
+        ),
         None
     );
     let held_paths: Vec<String> = (0..20_000)
@@ -629,17 +640,230 @@ fn settings_past_the_budget_are_named_by_their_weight() {
     .to_string();
     assert!(many_paths.len() > HARNESS_SETTINGS_BYTES);
     assert_eq!(
-        settings_past_the_budget(&words(&many_paths)),
+        settings_past_the_budget(&words(&many_paths), None, RulesOutside::default),
         None,
         "the sandbox's paths are no part of auto mode's check"
     );
     let lists = serde_json::json!({
         "autoMode": {"soft_deny": ["y".repeat(HARNESS_SETTINGS_BYTES)]},
     });
-    assert!(settings_past_the_budget(&words(&lists.to_string())).is_some());
-    assert_eq!(settings_past_the_budget(&["claude".to_owned()]), None);
+    assert!(
+        settings_past_the_budget(&words(&lists.to_string()), None, RulesOutside::default).is_some()
+    );
     assert_eq!(
-        settings_past_the_budget(&["--settings".to_owned(), "/a/file.json".to_owned()]),
+        settings_past_the_budget(&["claude".to_owned()], None, RulesOutside::default),
         None
+    );
+    assert_eq!(
+        settings_past_the_budget(
+            &["--settings".to_owned(), "/a/file.json".to_owned()],
+            None,
+            RulesOutside::default
+        ),
+        None
+    );
+}
+
+/// #7157: a permission rule weighs as auto mode sends it, `{rule, canonical, source, pattern?}`,
+/// not as it is written; a rule from another settings file the session reads weighs the same.
+#[test]
+fn a_rule_weighs_as_auto_mode_serialises_it() {
+    let rule = "Read(//a/b)";
+    let sent = format!(
+        r#"[{{"rule":"{rule}","canonical":"{rule}","source":"projectSettings","root":"","pattern":"//a/b"}}]"#
+    );
+    let json = serde_json::json!({"permissions": {"deny": [rule]}});
+    assert_eq!(
+        auto_mode_weight(&json, &RulesOutside::default(), None),
+        sent.len()
+    );
+    assert!(
+        sent.len() > 3 * rule.len(),
+        "a short rule weighs several times what it is written as"
+    );
+    let person = serde_json::json!({"permissions": {"allow": ["Bash(git status)"]}});
+    assert!(
+        auto_mode_weight(
+            &json,
+            &RulesOutside {
+                docs: vec![person],
+                too_big: 0
+            },
+            None
+        ) > auto_mode_weight(&json, &RulesOutside::default(), None),
+        "the person's, the project's and the managed rules count too"
+    );
+}
+
+/// #7157: a chat's settings past the file cap are refused with a reason, whether or not they
+/// would fit a word of a command line, and no file is written.
+#[test]
+fn settings_past_the_file_cap_refuse_the_start() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let folder = root.join("own-data");
+    let json = serde_json::json!({"sandbox": {"filesystem": {"denyWrite": [
+        "x".repeat(HARNESS_SETTINGS_FILE_BYTES)
+    ]}}})
+    .to_string();
+    assert!(json.len() > HARNESS_SETTINGS_FILE_BYTES);
+    let why = settings_in_a_file(Some(&folder), root, CHAT, words(&json)).unwrap_err();
+    assert!(
+        why.contains("was not started") && why.contains("768 KiB"),
+        "{why}"
+    );
+    assert!(!folder.exists(), "nothing was written");
+    // Just under the cap goes through a file, as before.
+    let fits = serde_json::json!({"a": "x".repeat(HARNESS_SETTINGS_FILE_BYTES - 100)}).to_string();
+    assert!(settings_in_a_file(Some(&folder), root, CHAT, words(&fits)).is_ok());
+}
+
+/// Settings whose permission rules weigh exactly `target` bytes, as a `--settings` line: one
+/// deny rule as long as fits under it, and an `autoMode` list for the last bytes.
+fn rules_weighing(target: usize) -> Vec<String> {
+    let none = RulesOutside::default();
+    let with = |n: usize| serde_json::json!({"permissions": {"deny": ["x".repeat(n)]}});
+    // The longest rule that leaves room for the `autoMode` list. A rule weighs more with each
+    // byte, so this is a binary search: stepping a byte at a time weighed a rule of up to
+    // `target` bytes `target` times, and timed out on a CI runner (#7225 round 3).
+    let (mut n, mut over) = (0, target);
+    while n + 1 < over {
+        let middle = n + (over - n) / 2;
+        if auto_mode_weight(&with(middle), &none, None) + 10 <= target {
+            n = middle;
+        } else {
+            over = middle;
+        }
+    }
+    let mut json = with(n);
+    let short = target - auto_mode_weight(&json, &none, None);
+    json["autoMode"] = serde_json::json!({"a": "y".repeat(short - r#"{"a":""}"#.len())});
+    assert_eq!(auto_mode_weight(&json, &none, None), target);
+    words(&json.to_string())
+}
+
+/// #7225: the tiers end where a harness sheds, by the byte: allow rules past 128,000, the git
+/// state and history past 256,000 (decimal, as the doc says), each named only past its figure.
+#[test]
+fn a_rule_weight_at_each_tier_boundary_is_named_one_byte_past_it() {
+    assert_eq!(ALLOW_RULES_SHED_BYTES, 128_000);
+    assert_eq!(HARNESS_SETTINGS_BYTES, 256_000);
+    let named = |bytes: usize| {
+        settings_past_the_budget(&rules_weighing(bytes), None, RulesOutside::default)
+    };
+    assert_eq!(named(ALLOW_RULES_SHED_BYTES), None);
+    assert_eq!(
+        named(ALLOW_RULES_SHED_BYTES + 1),
+        Some(ALLOW_RULES_SHED_BYTES + 1)
+    );
+    assert_eq!(named(HARNESS_SETTINGS_BYTES), Some(HARNESS_SETTINGS_BYTES));
+}
+
+/// #7225: each rule carries the folder the chat opens in as its `root`, so a longer one weighs
+/// more, once per rule.
+#[test]
+fn a_rule_weighs_the_folder_the_chat_opens_in() {
+    let json = serde_json::json!({"permissions": {"deny": ["a", "b", "c"]}});
+    let none = RulesOutside::default();
+    let bare = auto_mode_weight(&json, &none, None);
+    let cwd = Path::new("/some/folder");
+    assert_eq!(
+        auto_mode_weight(&json, &none, Some(cwd)),
+        bare + 3 * cwd.display().to_string().len()
+    );
+}
+
+/// #7225: a file over a megabyte is not read, and counts as past the budget, not as nothing.
+#[test]
+fn an_unread_settings_file_counts_as_over_budget() {
+    let none = RulesOutside {
+        docs: Vec::new(),
+        too_big: 1,
+    };
+    let json = serde_json::json!({"permissions": {"deny": ["a"]}});
+    assert!(auto_mode_weight(&json, &none, None) > HARNESS_SETTINGS_BYTES);
+}
+
+/// #7225: the other settings files are only read where the line has settings to weigh.
+#[test]
+fn the_other_settings_files_are_read_only_for_a_line_with_settings() {
+    let read = |args: &[String]| {
+        let mut asked = false;
+        let _ = settings_past_the_budget(args, None, || {
+            asked = true;
+            RulesOutside::default()
+        });
+        asked
+    };
+    assert!(!read(&["claude".to_owned()]));
+    assert!(!read(&["--settings".to_owned(), "/a/file.json".to_owned()]));
+    assert!(read(&words("{}")));
+}
+
+/// #7225: `rules_outside` reads what is there, in order; a file that is missing or is not JSON
+/// counts for nothing, and one over a megabyte counts as over budget.
+#[test]
+fn rules_outside_reads_the_files_a_session_reads() {
+    let home = tempfile::tempdir().unwrap();
+    let at = |name: &str, text: &str| std::fs::write(home.path().join(name), text).unwrap();
+    let ours = |found: &RulesOutside| {
+        found
+            .docs
+            .iter()
+            .filter_map(|doc| doc["mark"].as_str())
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    // Missing: nothing, and no error.
+    assert!(ours(&rules_outside_in(None, home.path())).is_empty());
+    // Bad JSON is skipped; the others are kept in the order a session reads them.
+    at("remote-settings.json", r#"{"mark": "remote"}"#);
+    at("settings.json", "{ not json");
+    let found = rules_outside_in(None, home.path());
+    assert_eq!(ours(&found), ["remote"]);
+    at("settings.json", r#"{"mark": "person"}"#);
+    let found = rules_outside_in(None, home.path());
+    assert_eq!(
+        ours(&found),
+        ["remote", "person"],
+        "the order a session reads them in"
+    );
+    assert_eq!(found.too_big, 0);
+    // Over a megabyte: unread, and counted.
+    at(
+        "settings.json",
+        &format!(r#"{{"mark": "{}"}}"#, "x".repeat(1 << 20)),
+    );
+    let found = rules_outside_in(None, home.path());
+    assert_eq!(ours(&found), ["remote"]);
+    assert_eq!(found.too_big, 1);
+    assert!(auto_mode_weight(&serde_json::json!({}), &found, None) > HARNESS_SETTINGS_BYTES);
+}
+
+/// #7225: a chat with no id of its own is held to the same cap, by `settings_within_the_cap`,
+/// and a line at the cap is let through where one byte over is not.
+#[test]
+fn the_file_cap_holds_to_the_byte_and_for_a_chat_with_no_id() {
+    let at = |len: usize| {
+        let pad = len - r#"{"a":""}"#.len();
+        words(&format!(r#"{{"a":"{}"}}"#, "x".repeat(pad)))
+    };
+    assert!(settings_within_the_cap(&at(HARNESS_SETTINGS_FILE_BYTES)).is_ok());
+    assert!(settings_within_the_cap(&at(HARNESS_SETTINGS_FILE_BYTES + 1)).is_err());
+    assert!(settings_within_the_cap(&["claude".to_owned()]).is_ok());
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    let folder = data(&root);
+    assert!(
+        settings_in_a_file(Some(&folder), &root, CHAT, at(HARNESS_SETTINGS_FILE_BYTES)).is_ok()
+    );
+    assert!(
+        settings_in_a_file(
+            Some(&folder),
+            &root,
+            CHAT,
+            at(HARNESS_SETTINGS_FILE_BYTES + 1)
+        )
+        .is_err()
     );
 }

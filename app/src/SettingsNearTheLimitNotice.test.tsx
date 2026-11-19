@@ -21,17 +21,25 @@ afterEach(() => {
 describe("settings near their harness's limit", () => {
   it("settings_near_the_limit_raise_a_notice_with_a_way_out", async () => {
     const dismissed = vi.fn();
-    render(<SettingsNearTheLimitNotice bytes={300 * 1024} onDismiss={dismissed} />);
+    render(<SettingsNearTheLimitNotice bytes={300_000} onDismiss={dismissed} />);
 
     const line = document.querySelector(`[data-cause="${SETTINGS_NEAR_THE_LIMIT}"]`);
     expect(line).not.toBeNull();
     expect(SETTINGS_NEAR_THE_LIMIT).toBe("harness-settings-near-limit");
     expect(line?.textContent).toContain("300 KB");
-    expect(line?.textContent).toContain("auto mode");
+    expect(line?.textContent).toContain("git state and history");
     expect(line?.textContent).toContain("Remove the branch folders you no longer need");
 
     await userEvent.click(screen.getByRole("button", { name: /dismiss/i }));
     expect(dismissed).toHaveBeenCalledTimes(1);
+  });
+
+  it("names allow rules, not git state, between the two tiers", () => {
+    render(<SettingsNearTheLimitNotice bytes={200_000} onDismiss={vi.fn()} />);
+    const text = document.querySelector(`[data-cause="${SETTINGS_NEAR_THE_LIMIT}"]`)?.textContent;
+    expect(text).toContain("200 KB");
+    expect(text).toContain("allow rules");
+    expect(text).not.toContain("git state");
   });
 
   it("is kept when a tab window is handed its chat's start again", () => {

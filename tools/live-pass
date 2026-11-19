@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# The live pass's tools (M74.1, T1.1-37): a record-only runner brief per harness, a judge of a live
+# log in the suite's report format, and a diff of a live report against a suite report. It is
+# `purlis-scenarios`' `live-pass` binary, which reads the same cells, coverage list, escape table
+# and switch list the suite does (`tests/scenarios/README.md`, "The live pass").
+#
+#   tools/live-pass brief  --harness claude|codex|opencode --os linux|macos [--json]
+#   tools/live-pass report --cells tests/scenarios/cells/B0.json [--cells FILE...] --log <live log> --harness H --os OS
+#   tools/live-pass diff   <live report> <suite report> [--suite-leg L] [--suite-timings T]
+set -euo pipefail
+cd "$(dirname "$0")/.."
+exec cargo run --quiet -p purlis-scenarios --bin live-pass -- "$@"

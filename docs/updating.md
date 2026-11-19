@@ -289,6 +289,37 @@ What a release brought is written as it merges, one changelog fragment per pull 
 #      --certificate-identity https://github.com/purlis/purlis/.github/workflows/engine-manifest.yml@refs/heads/main
 #      --certificate-oidc-issuer https://token.actions.githubusercontent.com accepts it, into
 #      crates/browser-engine/engine-pin.json
+# 1b. the live pass, on the release profile of the commit about to be tagged (M74.1, T1.1-37):
+#    what only a live harness shows (model behaviour, how a harness shows sub-agent and
+#    background output, the window's wording and timing) and what a test build cannot show of
+#    the release build's own switches. For each harness on each OS it covers, generate a brief
+#    and give it to a runner chat on an installed release-profile build (no `test-support`):
+#        tools/live-pass brief --harness claude --os macos      # codex, opencode, linux the same
+#    The runner only records. A cell's record is judged by `report`, from the log the brief
+#    describes ({"cells": {"<id>": {"failed": [...], "globals": [...], "events": [...]}}},
+#    `failed` and `globals` required, any other key an error); controls, escapes, release
+#    checks, the held-ask timing and the receiver check have no record `report` or `diff`
+#    reads: a person reads each one's notes against its `Record:` line in the brief. Judge the
+#    cells' log in the suite's report format (every cells file the harness's cells are in, one
+#    --cells each; today tests/scenarios/cells/B0.json is the only one), then diff it with the
+#    suite's own report of the same run (target/sandbox-scenarios/<os>-fake.jsonl):
+#        tools/live-pass report --cells tests/scenarios/cells/B0.json --log <live log> \
+#            --harness claude --os macos > live.jsonl
+#        tools/live-pass diff live.jsonl target/sandbox-scenarios/macos-fake.jsonl \
+#            --suite-leg fake --suite-timings production
+#    The diff scopes the suite side to the live report's cells, lists every cell the live run
+#    did not run, and exits 0 only when it compared something and nothing differs (1: it
+#    differs, a cell failed live whatever the suite says, or it compared nothing; 2: a file, an
+#    option or an extra argument is wrong). Read every line it prints.
+#    A cell the two judge differently is a bug in the suite or in the build, to file before
+#    tagging (tests/scenarios/README.md, "The live pass").
+#    UNPROVEN (round 3, 2026-11-19): `--suite-leg fake --suite-timings production` has not been run
+#    against a real fake-leg report. The only real CI report available (the artifact of a red
+#    sandbox-scenarios-linux run, run 44412266135) holds two `fixture`-leg records at scaled
+#    timings and none of the `fake` leg, so the diff compared nothing and exited 1, as it should;
+#    that run shows only that a real report reads against the leg-report schema. Whether the suite
+#    writes `fake` cell records at `production` timings in the file named above is unconfirmed:
+#    check it on the first real pass, and fix this step to say what was seen.
 git switch main && git pull
 git tag vX.Y.Z && git push origin vX.Y.Z      # this, and only this, publishes a stable release
 # 2. afterwards, bump both version fields to the NEXT version and merge, so dev builds are

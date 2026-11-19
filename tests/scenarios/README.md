@@ -14,7 +14,7 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
 | `issues.json` | The issues the cells' `expected_fail` marks name, whether each is open, and when it was opened: a local cache. `sandbox-scenarios-linux` and the nightly `coverage-issues` entry refresh it from GitHub before the gate reads it (`node tools/scenario-coverage.mjs issues`), so a change's own edit of it decides nothing in CI. |
 | `rulings.json` | The person's rulings of M74.1 (decisions.md's `[person]` entries), by exact id, each with its date and what it approves (`rows`, `caps`, `marks`): the only Q-ids that move an entry, raise a cap or approve a mark in `coverage.json`. The gate reads the base's copy, so a ruling is added in a pull request of its own, merged before the one that cites it. |
 | `schema/leg-report.schema.json` | One record per entry a leg ran (ticket 6 writes them, ticket 8 judges them). |
-| `src/` | The reader (`model`), the validator (`validate`), the verdict under marks (`judge`), the production-timing set (`plan`), and the coverage gate (`coverage`). |
+| `src/` | The reader (`model`), the validator (`validate`), the verdict under marks (`judge`), the production-timing set (`plan`), the coverage gate (`coverage`), and the live-pass tools (`livepass`, `src/bin/live-pass.rs`). |
 | `src/net/` | The suite's network on this machine (T1.1-02): a test CA new each run and the CA bundle its clients trust, local HTTP and HTTPS origins (plain, slow, redirect, their own 403) that record every request, and a direct-connection target off the loopback. |
 | `tests/resolver_seam.rs` | purlis-core's resolver seam (`sandbox::names`, a test build's alone) with those origins, through a chat proxy and a browser's reach proxy. It binds local ports, so the suite's legs run it on Linux and macOS. |
 
@@ -91,3 +91,47 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
   <test-matrix-phase-1.md>` and re-emits `rows.json`; the gate fails until the list matches both.
   `diff` compares each row's carried kind and binaries, and the fixture rows, and fails on a §3 row
   that §3.22 doesn't carry and the matrix doesn't leave to fixtures.
+
+## The live pass (ticket 37)
+
+`tools/live-pass` is `livepass`'s command line (`cargo run -p purlis-scenarios --bin live-pass`). It
+is harness agnostic: a dialect is only the key to the hook words it is armed with.
+
+- `brief --harness H --os OS` writes a **record-only** runner brief, from the files above: every
+  cell `coverage.json` covers `live:` (a row's, or an escape's or its control's); one control per
+  hook kind the harness is armed with; the escapes `escapes.json` marks `live: yes`, at each
+  protection that owes something; and on macOS one check per entry of
+  `app/src-tauri/src/scenarios/switches.json` whose macOS covers include `macos-live-check`
+  (ticket 6's reviewed list, read when the brief is made, never copied), ticket 25's timed (g)
+  cell, and the denial receiver's non-admin check when a macOS `M-FILE` row's `fixture:` cover
+  is `the_receiver_reports_for_a_standard_non_admin_user`. A `live:` cover that names no live-only
+  cell for the harness is an error, never a quiet omission. The runner uses an installed
+  **release-profile** build of `phase-1-proven`'s head, with no `test-support`, in the harness's
+  non-interactive mode.
+- `report --cells FILE [--cells FILE]... --log FILE --harness H --os OS` judges a live log by the cells' own
+  `expected_fail` marks (`judge`) and writes the suite's report format (`leg-report.schema.json`),
+  leg `live`, one record per line. `--cells` **repeats**, one file each, and takes exactly one: an extra argument (`--cells a.json b.json`) or an option the command lacks (`--celss`) exits 2, as does a cell id given twice in the log or in two cells files.
+  The log is `{"cells": {"<id>": {"failed": [...], "globals": [...], "events": [...]}}}`, as
+  `tests/fixtures/chat-682-b0.json` (chat 682, B0, 2026-11-15): `failed` is a list of
+  `[assertion, observed]` (step 1) or `[step, assertion, observed]`, `globals` a list of
+  `{"check", "refusal"}`, and `events` (optional) the cell's event kinds in order. `failed` and
+  `globals` are **required** and no other key is read: a missing or wrong-typed field, a cell id
+  no given file has for the harness, or a malformed `events` is an error, never a pass. A cell
+  the log leaves out is `not_run`.
+- Only cells are judged by `report` and `diff`. The controls, escapes, release checks, held-ask
+  timing and receiver check have no record they read: the brief says so, and a person reads
+  each one's notes against its `Record:` line before tagging.
+- `diff LIVE SUITE [--suite-leg L] [--suite-timings T]` checks both files against the
+  leg-report schema (the left one must be leg `live`), keeps the suite records whose row,
+  dialect, protection and OS the live report has (a record with no `timings` is `scaled`), and
+  compares per cell (same kind, row, dialect, protection and OS): the verdicts, and the event
+  sequences where both sides recorded `events` (an optional field of the leg-report schema).
+  A live `not_run` is always listed, a cell on one side alone is listed, and it prints how many
+  pairs had no event comparison and which had events on one side only. **Every live `fail` is
+  listed (`FAIL` lines; an escape cell's says the refused action happened) and blocks exit 0
+  whatever the suite says**: a cell that fails live and in the suite is two reds, not agreement.
+  It exits 0 only when it compared at least one pair and nothing differs, 1 when something differs,
+  a cell failed live or nothing was compared, and 2 when a file, an option or an extra argument is
+  wrong. It does not check that the live report covers every cell the brief asked for: the cells
+  files given to `report` decide that, and a cell they leave out is not in the report at all. The scenario host does not write `events`
+  yet, so until it does only the verdicts are compared against a suite report.
