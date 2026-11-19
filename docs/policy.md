@@ -162,11 +162,12 @@ forbid (principal, action == Action::"start", resource)
 ```
 
 **The rule refuses only where the family `trust` is `enforce`.** Under the default `watch` and
-`hold` templates `trust` is `log`, so the rule above refuses nothing there: the chat starts, and
-its tab says once that the rule would have refused it. Write `trust = "enforce"` under `[policy]`
-(the `team` and `strict` templates do) for the refusal. Mind what the rule says: `contains("sandbox")`
-is true of every start once `trust` is enforced, because Claude Code's reads are a gap on every
-system (`claude-code-reads`), and a lifted sandbox is one too; such a rule refuses every start.
+`hold` templates `trust` is `enforce` (Q329), so the rule above refuses. Where the project writes
+`trust = "log"` under `[policy]` (or the template is `open`) it refuses nothing: the chat starts,
+and its tab says once that the rule would have refused it. Mind what the rule says:
+`contains("sandbox")` is true of every start while `trust` is enforced, because Claude Code's reads
+are a gap on every system (`claude-code-reads`), and a lifted sandbox is one too; such a rule
+refuses every start.
 
 An `@ask` forbid on `start` refuses too, until asking at a start is wired (slice 36): the refusal
 says the rule asks and that asking at a start is not wired yet. Write a plain forbid.

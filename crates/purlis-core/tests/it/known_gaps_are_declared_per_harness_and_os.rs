@@ -415,6 +415,14 @@ forbid (principal, action == Action::"start", resource)
 fn a_forbid_on_start_under_a_logged_trust_family_starts_with_the_would_have_blocked_line() {
     purlis_core::unsteered!();
     let plane = plane(Some(REFUSE_ON_A_SHAPE_GAP));
+    // `trust` is enforced under the default template since Q329, so the project says `log`.
+    std::fs::write(
+        plane.path().join("charter.toml"),
+        "schema = 1\n[policy]\ntrust = \"log\"\n",
+    )
+    .expect("settings");
+    git(plane.path(), &["add", "-A"]);
+    git(plane.path(), &["commit", "-q", "-m", "trust is logged"]);
     let facts = facts(Harness::Codex, Os::Linux);
     let floor = floor_with(Family::Trust, Mode::Log);
     let declared = Declared::at(&facts, &floor);
