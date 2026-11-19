@@ -76,7 +76,7 @@ fn serves_a_runner(name: &str, runner: Option<&str>) -> bool {
         || base
             .strip_prefix(&own)
             .and_then(|rest| rest.strip_prefix('-'))
-            .is_some_and(|tag| tag.len() == 8 && tag.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+            .is_some_and(|tag| crate::runnerlink::is_lower_hex(tag, 8))
 }
 
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).

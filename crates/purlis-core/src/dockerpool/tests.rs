@@ -4802,3 +4802,34 @@ fn an_untagged_leftover_is_removed_only_by_an_id_this_desktop_recorded() {
     assert!(left.is_empty(), "{left:?}");
     assert!(fake.file("log").contains("container rm"), "{}", fake.file("log"));
 }
+
+/// **The listing is read as Docker prints it** (#7192): each label in brackets, `[]` for one the
+/// container does not carry, so an empty label never shifts the ones after it.
+#[test]
+fn the_listing_is_read_with_an_empty_label_in_brackets_as_docker_prints_it() {
+    let fake = FakeDocker::new(&inspected());
+    let theirs = device_tag(ANOTHER_DESKTOP);
+    fake.set(
+        "containers-full",
+        &format!(
+            "a purlis-runner-first [] [] [first]\nb purlis-runner-second-{theirs} [mine] [{theirs}] [second]\n"
+        ),
+    );
+    let listed = fake.docker().runner_containers().unwrap();
+    assert_eq!(
+        listed,
+        [
+            ("a".to_owned(), "purlis-runner-first".to_owned(), None, None),
+            (
+                "b".to_owned(),
+                format!("purlis-runner-second-{theirs}"),
+                Some("mine".to_owned()),
+                Some(theirs.clone())
+            ),
+        ]
+    );
+    assert_eq!(
+        fake.docker().runners_of_other_desktops(DESKTOP).unwrap(),
+        [format!("purlis-runner-second-{theirs}")]
+    );
+}

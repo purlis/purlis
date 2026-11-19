@@ -1447,18 +1447,14 @@ fn clear_leftovers_locked(
     // What a make before names carried a tag left is named without one (#7192). That name and
     // the desktop label are no proof of whose it is: only a container this desktop recorded in
     // its own rows is removed. Another's is left as it is, and said.
-    let left;
-    {
-        let owned: Vec<String> = runners::read(config_root)?
-            .iter()
-            .map(|kept| kept.made.container.as_str().to_owned())
-            .collect();
-        let (more, others) = docker
-            .remove_untagged_leftovers_of(name, &label, &owned)
-            .map_err(|why| Refused::Other(why.0))?;
-        removed.extend(more);
-        left = others;
-    }
+    let owned: Vec<String> = runners::read(config_root)?
+        .iter()
+        .map(|kept| kept.made.container.as_str().to_owned())
+        .collect();
+    let (more, left) = docker
+        .remove_untagged_leftovers_of(name, &label, &owned)
+        .map_err(|why| Refused::Other(why.0))?;
+    removed.extend(more);
     let mut said = Vec::new();
     if !removed.is_empty() {
         said.push(format!(
