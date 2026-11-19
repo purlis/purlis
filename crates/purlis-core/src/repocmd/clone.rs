@@ -248,6 +248,19 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
                     )
                     .into(),
                 ));
+                // Only the window records a clone's remote for the mint (#1808): said here, not
+                // left for a chat's gh to find out (#7196).
+                if !window && git::isolation().is_none() && on_a_known_forge(root, &dest) {
+                    say(Say::Warn(
+                        format!(
+                            "{name}: this clone wasn't made from the window, so a chat's gh gets \
+                             no Agent identity token for it. Re-clone it from the window, or \
+                             press \"{}\" on it there.",
+                            crate::windowonly::TRUST_THIS_CLONE
+                        )
+                        .into(),
+                    ));
+                }
                 dest
             }
             Outcome::Stopped => {
@@ -303,6 +316,15 @@ pub fn clone(request: &Request, say: Sink) -> u8 {
     }
     record_membership(request, &members, say);
     u8::from(failures > 0)
+}
+
+/// Whether the clone at `dest` has a remote on a forge the project knows: the only kind the
+/// mint ever covers, so the only kind whose missing record is worth saying (#7196).
+fn on_a_known_forge(root: &Path, dest: &Path) -> bool {
+    let known = forge::known(root);
+    forge::gitcredential::places_of(dest)
+        .iter()
+        .any(|place| forge::resolve_in(&format!("https://{place}"), &known).is_some())
 }
 
 /// The workspace directory, made and scaffolded first when it is not there (#1382).

@@ -1093,3 +1093,70 @@ fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_s
     assert_eq!(crate::windowonly::every(root), []);
     let _ = taken_at_end(root, None);
 }
+
+#[test]
+fn a_run_in_a_clone_the_window_did_not_make_is_told_so_while_a_run_in_a_recorded_one_is_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let config = tempfile::tempdir().unwrap();
+    let ws = root.join("workspaces/ws");
+    let api = a_clone(root, "api", "https://github.com/acme/api.git");
+    let web = a_clone(root, "web", "https://github.com/acme/web.git");
+    // The window recorded `api`; `web` was cloned from the CLI.
+    let mut recorded = std::collections::BTreeMap::new();
+    recorded.insert(
+        crate::sandbox::local::clone_key(&api),
+        "github.com/acme/api".to_owned(),
+    );
+    crate::forge::gitcredential::write_push_remotes(config.path(), &recorded).unwrap();
+    let started = clones_now(root);
+    let gh = minted_gh();
+    fn chat_in<'a>(
+        (root, ws, config): (&'a Path, &'a Path, &'a Path),
+        started: &'a [super::Started],
+        here: &'a Path,
+    ) -> For<'a> {
+        For {
+            root,
+            chat: 21,
+            folder: Some(ws),
+            here: Some(here),
+            writes: &[],
+            started: Some(started),
+            on_a_runner: false,
+            config_root: Some(config),
+            ends_seen: None,
+        }
+    }
+    let places = (root, ws.as_path(), config.path());
+
+    // The note names the clone the window did not make, and the way out.
+    let said = super::unrecorded_note(&chat_in(places, &started, &api)).unwrap();
+    assert!(said.contains("workspaces/ws/web"), "{said}");
+    assert!(!said.contains("workspaces/ws/api"), "{said}");
+    assert!(said.contains("wasn't made from the window"), "{said}");
+    assert!(said.contains("no Agent identity token"), "{said}");
+    assert!(said.contains("Trust this clone"), "{said}");
+
+    // Fail closed: a run inside it gets no token, and the refusal names the clone.
+    let refused = token_for(&chat_in(places, &started, &web), &gh, &|| {
+        Err("the key is read only to mint".to_owned())
+    })
+    .unwrap_err();
+    assert!(refused.contains("workspaces/ws/web"), "{refused}");
+    assert!(refused.contains("has not trusted"), "{refused}");
+
+    // After the person's press the clone is recorded and nothing is left to say.
+    crate::windowonly::trust_this_clone(
+        &crate::forge::route::HostScope::for_a_test(),
+        config.path(),
+        root,
+        "workspaces/ws/web",
+        "github.com/acme/web",
+    )
+    .unwrap();
+    assert_eq!(
+        super::unrecorded_note(&chat_in(places, &started, &web)),
+        None
+    );
+}
