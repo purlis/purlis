@@ -53,6 +53,32 @@ pub const DESKTOP_LABEL: &str = "purlis.desktop";
 /// Every runner container's and volume's name starts with this.
 pub const PREFIX: &str = "purlis-runner-";
 
+/// **The label a runner's container carries for the desktop that made it** (#7192): the
+/// [`device_tag`] its names carry, so another desktop on the engine counts it by what it says
+/// and not by how it is named.
+pub const DEVICE_LABEL: &str = "purlis.device";
+
+/// Whether the container `name` is one that serves the runner named `runner` by its label
+/// (the carry's `-copy` or the read's `-read`, [`Made::copy_container`], [`Made::read_container`]),
+/// not a runner's own. Where its runner label is unknown, a name that ends so is taken for one.
+fn serves_a_runner(name: &str, runner: Option<&str>) -> bool {
+    let Some(base) = name
+        .strip_suffix("-copy")
+        .or_else(|| name.strip_suffix("-read"))
+    else {
+        return false;
+    };
+    let Some(runner) = runner else {
+        return true;
+    };
+    let own = format!("{PREFIX}{runner}");
+    base == own
+        || base
+            .strip_prefix(&own)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|tag| tag.len() == 8 && tag.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+}
+
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
@@ -352,6 +378,17 @@ pub fn device_tag(device: &str) -> String {
         .take(4)
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// **Whether `volume` is a name a runner's home volume can have** (#7192): one of purlis's
+/// ([`PREFIX`]) and one Docker's own rule allows, `[a-zA-Z0-9][a-zA-Z0-9_.-]*`. It is handed to
+/// `--mount type=volume,source=<name>`, where a `,` or `:` would add an option of its own.
+pub fn is_runner_volume_name(volume: &str) -> bool {
+    volume.len() > PREFIX.len()
+        && volume.starts_with(PREFIX)
+        && volume
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
 }
 
 /// The name `made`'s container has once `device`'s desktop adopts it.
@@ -799,6 +836,9 @@ impl Runner {
         pair("--label", format!("{LABEL}={}", self.name));
         if let Some(desktop) = desktop {
             pair("--label", format!("{DESKTOP_LABEL}={desktop}"));
+        }
+        if let Some(tag) = &self.tag {
+            pair("--label", format!("{DEVICE_LABEL}={tag}"));
         }
         // Said back to the person if a declared tool's program is not in the image (#4354).
         pair(
@@ -4101,10 +4141,14 @@ impl Docker {
     }
 
     /// **Every runner container on this engine**, whoever made it (#7192): the whole id, the
-    /// name and the desktop label ([`DESKTOP_LABEL`]) where it has one, read and never changed.
-    /// A container that carries a runner's label only to carry sign-ins or read a home
-    /// ([`Made::copy_container`], [`Made::read_container`]) is not a runner.
-    fn runner_containers(&self) -> Result<Vec<(String, String, Option<String>)>, Refused> {
+    /// name, and the desktop label ([`DESKTOP_LABEL`]) and device tag label ([`DEVICE_LABEL`])
+    /// where it has them, read and never changed. A container that carries a runner's label only
+    /// to carry sign-ins or read a home ([`Made::copy_container`], [`Made::read_container`]) is
+    /// not a runner: it is told by its runner label, which names the runner it serves, so a pool
+    /// whose own name ends in `-copy` is still a runner.
+    fn runner_containers(
+        &self,
+    ) -> Result<Vec<(String, String, Option<String>, Option<String>)>, Refused> {
         let listed = self.read(
             &[
                 "container".into(),
@@ -4112,40 +4156,52 @@ impl Docker {
                 "--all".into(),
                 "--no-trunc".into(),
                 "--format".into(),
-                format!("{{{{.ID}}}} {{{{.Names}}}} {{{{.Label \"{DESKTOP_LABEL}\"}}}}"),
+                // Each label in brackets: one a container does not carry prints as nothing, which
+                // would shift the fields after it.
+                format!(
+                    "{{{{.ID}}}} {{{{.Names}}}} [{{{{.Label \"{DESKTOP_LABEL}\"}}}}] \
+                     [{{{{.Label \"{DEVICE_LABEL}\"}}}}] [{{{{.Label \"{LABEL}\"}}}}]"
+                ),
                 "--filter".into(),
                 format!("label={LABEL}"),
             ],
             MOST_INSPECTED,
         )?;
+        // `[]` (or `-`) is a label the container does not carry.
+        let label = |field: Option<&str>| {
+            let value = field?.trim_start_matches('[').trim_end_matches(']');
+            (!value.is_empty() && value != "-").then(|| value.to_owned())
+        };
         Ok(listed
             .lines()
             .filter_map(|line| {
                 let mut fields = line.split_whitespace();
                 let (id, name) = (fields.next()?, fields.next()?);
-                let label = fields.next().map(str::to_owned);
+                let desktop = label(fields.next());
+                let device = label(fields.next());
+                let runner = label(fields.next());
                 (fields.next().is_none()
                     && name.starts_with(PREFIX)
-                    && !name.ends_with("-copy")
-                    && !name.ends_with("-read"))
-                .then(|| (id.to_owned(), name.to_owned(), label))
+                    && !serves_a_runner(name, runner.as_deref()))
+                .then(|| (id.to_owned(), name.to_owned(), desktop, device))
             })
             .collect())
     }
 
-    /// **The runners on this engine that this desktop did not make** (#7192): what another
-    /// desktop made on an engine two desktops share. A runner is this desktop's when it is one
-    /// of `mine`, by its id, never by what its name looks like: a name
-    /// `purlis-runner-<pool>-<tag>` and one `purlis-runner-<pool>-<8 hex>` (a successor,
-    /// [`successor_name`]) can be the same text. Nor by the desktop label ([`DESKTOP_LABEL`]):
-    /// it hashes a config path, which two desktops can share. Each is named and only named:
-    /// nothing here stops, removes, renames or links one.
-    pub fn runners_of_other_desktops(&self, mine: &[&Made]) -> Result<Vec<String>, Refused> {
+    /// **The runners on this engine that another desktop made** (#7192): the ones that carry the
+    /// device tag label ([`DEVICE_LABEL`]) of a desktop that is not `device`'s. Said by what the
+    /// container itself carries, never by what its name looks like (a name
+    /// `purlis-runner-<pool>-<tag>` and a successor's can be the same text) nor by the desktop
+    /// label ([`DESKTOP_LABEL`]), which hashes a config path two desktops can share. A runner
+    /// without a device label was made before it: it cannot be said to be anyone's, so it is not
+    /// counted. Each is named and only named: nothing here stops, removes, renames or links one.
+    pub fn runners_of_other_desktops(&self, device: &str) -> Result<Vec<String>, Refused> {
+        let mine = device_tag(device);
         Ok(self
             .runner_containers()?
             .into_iter()
-            .filter(|(id, _, _)| !mine.iter().any(|made| made.container.as_str() == id))
-            .map(|(_, name, _)| name)
+            .filter(|(_, _, _, tag)| tag.as_deref().is_some_and(|tag| tag != mine))
+            .map(|(_, name, _, _)| name)
             .collect())
     }
 
@@ -4188,7 +4244,7 @@ impl Docker {
         let found = self
             .runner_containers()?
             .into_iter()
-            .find(|(id, _, _)| id == made.container.as_str())
+            .find(|(id, _, _, _)| id == made.container.as_str())
             .ok_or_else(|| {
                 refused(format!(
                     "Docker lists no container {old}, so it was not adopted"

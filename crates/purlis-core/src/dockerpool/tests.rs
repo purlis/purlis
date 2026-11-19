@@ -4554,6 +4554,18 @@ fn runners_listed(fake: &FakeDocker, rows: &[(&str, &str, &str)]) {
     fake.set("containers-full", &text);
 }
 
+/// The listing of runner containers with every label read: id, name, the desktop's label, the
+/// device tag label and the runner label, each `-` where the container has none.
+fn runners_labelled(fake: &FakeDocker, rows: &[(&str, &str, &str, &str, &str)]) {
+    let text: String = rows
+        .iter()
+        .map(|(id, name, desktop, device, runner)| {
+            format!("{id} {name} {desktop} {device} {runner}\n")
+        })
+        .collect();
+    fake.set("containers-full", &text);
+}
+
 const OTHER_ID: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 const THIRD_ID: &str = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
 
@@ -4619,24 +4631,30 @@ fn a_container_another_desktop_already_renamed_or_made_is_not_adopted() {
     assert!(!fake.file("log").contains("rename"), "{}", fake.file("log"));
 }
 
-/// **Runners of another desktop are named and never touched** (#7192).
+/// **Runners of another desktop are named and never touched** (#7192): only a container that
+/// carries another device's tag label is another desktop's. One with no device label (made
+/// before it, whoever by) or with this desktop's own is not counted.
 #[test]
 fn runners_of_another_desktop_are_listed_and_never_stopped_removed_or_renamed() {
     let fake = FakeDocker::new(&inspected());
-    runners_listed(
+    let mine = device_tag(DESKTOP);
+    let theirs = device_tag(ANOTHER_DESKTOP);
+    runners_labelled(
         &fake,
         &[
-            (ID, "purlis-runner-first-0a1b2c3d", "mine"),
-            (OTHER_ID, "purlis-runner-first-4e5f6a7b", "theirs"),
-            (THIRD_ID, "purlis-runner-second", "theirs"),
+            (ID, "purlis-runner-first-0a1b2c3d", "mine", &mine, "first"),
+            (OTHER_ID, "purlis-runner-first-4e5f6a7b", "theirs", &theirs, "first"),
+            (THIRD_ID, "purlis-runner-second-4e5f6a7b", "theirs", &theirs, "second"),
+            // Made before the device label: nobody's by any proof, so not counted.
+            ("ffff", "purlis-runner-third", "theirs", "-", "third"),
             // What carries sign-ins to a runner is no runner.
-            ("eeee", "purlis-runner-first-4e5f6a7b-copy", "theirs"),
+            ("eeee", "purlis-runner-first-4e5f6a7b-copy", "theirs", &theirs, "first"),
         ],
     );
-    let others = fake.docker().runners_of_other_desktops(&[&made()]).unwrap();
+    let others = fake.docker().runners_of_other_desktops(DESKTOP).unwrap();
     assert_eq!(
         others,
-        ["purlis-runner-first-4e5f6a7b", "purlis-runner-second"]
+        ["purlis-runner-first-4e5f6a7b", "purlis-runner-second-4e5f6a7b"]
     );
     let log = fake.file("log");
     for changed in [
@@ -4650,6 +4668,44 @@ fn runners_of_another_desktop_are_listed_and_never_stopped_removed_or_renamed() 
     ] {
         assert!(!log.contains(changed), "{changed}: {log}");
     }
+}
+
+/// **A new runner's container carries its desktop's tag as a label** (#7192): what another
+/// desktop counts it by. A runner made before tags does not.
+#[test]
+fn a_tagged_runners_container_carries_its_desktops_tag_as_a_label() {
+    let tag = device_tag(DESKTOP);
+    let seccomp = std::path::Path::new(SECCOMP_AT);
+    let args = runner().of_desktop(DESKTOP).create_args(seccomp);
+    assert!(has_pair(&args, "--label", &format!("purlis.device={tag}")), "{args:?}");
+    let old = runner().create_args(seccomp);
+    assert!(!old.iter().any(|a| a.starts_with("purlis.device=")), "{old:?}");
+}
+
+/// **A pool named like a copy is a runner, and a copy is not** (#4011, #4861, #7192): the
+/// carry's and the read's containers are told by the runner label they carry, not by how their
+/// names end, so the pool `x-copy` is listed, and adopted, as any other.
+#[test]
+fn a_pool_whose_name_ends_in_copy_is_a_runner_and_the_containers_of_a_runner_are_not() {
+    let fake = FakeDocker::new(&inspected());
+    runners_labelled(
+        &fake,
+        &[
+            ("a", "purlis-runner-x-copy", "mine", "-", "x-copy"),
+            ("b", "purlis-runner-x-0a1b2c3d-copy", "mine", "-", "x"),
+            ("c", "purlis-runner-x-copy", "mine", "-", "x"),
+            ("d", "purlis-runner-y-read-0a1b2c3d", "mine", "0a1b2c3d", "y-read"),
+            ("e", "purlis-runner-y-0a1b2c3d-read", "mine", "0a1b2c3d", "y"),
+        ],
+    );
+    let listed: Vec<String> = fake
+        .docker()
+        .runner_containers()
+        .unwrap()
+        .into_iter()
+        .map(|(id, _, _, _)| id)
+        .collect();
+    assert_eq!(listed, ["a", "d"]);
 }
 
 /// An adoption whose rename went through but whose row was not kept is finished by the next link.
@@ -4684,32 +4740,6 @@ fn the_leftovers_of_an_adopted_runner_include_the_home_it_kept() {
         )
         .unwrap();
     assert_eq!(removed, ["volume purlis-runner-first-home"]);
-}
-
-/// **A runner is this desktop's by its id, never by what its name looks like** (#7192): a tagged
-/// name `purlis-runner-<pool>-<tag>` and a successor's `purlis-runner-<pool>-<8 hex>` are the
-/// same text, so neither says whose runner it is. Nor does the desktop label, which two desktops
-/// with one config path share.
-#[test]
-fn whose_runner_it_is_is_told_by_its_id_and_not_by_its_names_shape_or_a_shared_label() {
-    let fake = FakeDocker::new(&inspected());
-    runners_listed(
-        &fake,
-        &[
-            // Another desktop's, with the label this desktop's config path hashes to as well.
-            (OTHER_ID, "purlis-runner-first-0a1b2c3d", "mine"),
-            // Another desktop's, named as a successor of the pool `first` would be.
-            (THIRD_ID, "purlis-runner-first-4e5f6a7b", "theirs"),
-        ],
-    );
-    let others = fake.docker().runners_of_other_desktops(&[&made()]).unwrap();
-    assert_eq!(
-        others,
-        [
-            "purlis-runner-first-0a1b2c3d",
-            "purlis-runner-first-4e5f6a7b"
-        ]
-    );
 }
 
 /// **A tagged runner's leftovers are never a successor's** (#7192): the pool `p`'s runner of the

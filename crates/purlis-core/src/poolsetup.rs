@@ -1745,7 +1745,8 @@ fn pool_facts(
         _ => SignIns::NotAsked,
     };
     let others = docker.and_then(|docker| {
-        crate::pools::belonging_to_another_desktop(here.config, docker)
+        let device = crate::machine::device_id(here.config).ok()?;
+        crate::pools::belonging_to_another_desktop(docker, &device)
             .ok()
             .flatten()
     });

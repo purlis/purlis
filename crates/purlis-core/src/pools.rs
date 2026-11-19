@@ -1097,16 +1097,15 @@ pub fn adopt_at_link(
 }
 
 /// **How many runners on `docker`'s engine belong to another desktop** (#7192), said as a status
-/// line, or `None` where there are none: the runners it lists that none of this desktop's kept
-/// runners is. They are counted and never touched.
+/// line, or `None` where there are none: the runners it lists that carry the device tag of a
+/// desktop that is not `device`'s ([`Docker::runners_of_other_desktops`]). They are counted and
+/// never touched. One read of the engine, whatever the number of pools on it.
 pub fn belonging_to_another_desktop(
-    config_root: &Path,
     docker: &Docker,
+    device: &str,
 ) -> Result<Option<String>, Refused> {
-    let kept = runners::read(config_root)?;
-    let mine: Vec<&crate::dockerpool::Made> = kept.iter().map(|one| &one.made).collect();
     let others = docker
-        .runners_of_other_desktops(&mine)
+        .runners_of_other_desktops(device)
         .map_err(|why| Refused::Other(why.0))?;
     Ok(match others.len() {
         0 => None,

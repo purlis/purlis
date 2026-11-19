@@ -5575,68 +5575,64 @@ fn a_runner_another_desktop_adopted_first_is_not_adopted_and_stays_as_it_was_kep
     assert!(!fake.file("log").contains("rename"), "{}", fake.file("log"));
 }
 
-/// **Pool status says how many runners belong to another desktop and touches none** (#7192).
+/// **Pool status says how many runners belong to another desktop and touches none** (#7192):
+/// those that carry another device's tag. Read once for the engine, whatever its pools.
 #[test]
 fn pool_status_says_how_many_runners_belong_to_another_desktop() {
-    let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
-    let kept = kept_before_tags(config.path(), &fake);
-    let id = kept.made.container.as_str();
+    let mine = crate::dockerpool::device_tag(OURS);
+    let theirs = crate::dockerpool::device_tag("01JA0ANOTHERDESKT00000000Z");
     let rows = |others: &[(&str, &str)]| {
-        let mut text = format!("{id} purlis-runner-first mine\n");
+        let mut text = format!("{} purlis-runner-first-{mine} mine {mine} first\n", "a".repeat(64));
         for (id, name) in others {
-            text.push_str(&format!("{id} {name} theirs\n"));
+            text.push_str(&format!("{id} {name} mine {theirs} x\n"));
         }
         fake.set("containers-full", &text);
     };
     rows(&[]);
-    assert_eq!(
-        belonging_to_another_desktop(config.path(), &fake.docker()).unwrap(),
-        None
-    );
+    assert_eq!(belonging_to_another_desktop(&fake.docker(), OURS).unwrap(), None);
     rows(&[("c".repeat(64).as_str(), "purlis-runner-first-4e5f6a7b")]);
     assert_eq!(
-        belonging_to_another_desktop(config.path(), &fake.docker())
+        belonging_to_another_desktop(&fake.docker(), OURS)
             .unwrap()
             .as_deref(),
         Some("1 runner belongs to another desktop")
     );
     rows(&[
         ("c".repeat(64).as_str(), "purlis-runner-first-4e5f6a7b"),
-        ("d".repeat(64).as_str(), "purlis-runner-second"),
+        ("d".repeat(64).as_str(), "purlis-runner-second-4e5f6a7b"),
     ]);
+    let log_before = fake.file("log");
     assert_eq!(
-        belonging_to_another_desktop(config.path(), &fake.docker())
+        belonging_to_another_desktop(&fake.docker(), OURS)
             .unwrap()
             .as_deref(),
         Some("2 runners belong to another desktop")
     );
     let log = fake.file("log");
+    assert_eq!(
+        log.matches("container ls").count() - log_before.matches("container ls").count(),
+        1,
+        "{log}"
+    );
     for changed in [" rm", "stop", "rename", "kill"] {
         assert!(!log.contains(changed), "{changed}: {log}");
     }
 }
 
-/// **The desktop label does not make a runner this desktop's** (#7192): it hashes a config path,
-/// which two desktops can share, so a runner with it that no kept row names is still counted.
+/// **Only a device label makes a runner another desktop's** (#7192): a runner with no label,
+/// or with this desktop's own, that no kept row names is not counted.
 #[test]
-fn pool_status_counts_a_runner_with_this_desktops_label_that_no_kept_row_names() {
-    let config = tempfile::tempdir().unwrap();
+fn pool_status_counts_only_runners_that_carry_another_desktops_tag() {
     let fake = a_docker(&runner_answers());
-    let kept = kept_before_tags(config.path(), &fake);
-    let label = runners::desktop_label(config.path());
+    let mine = crate::dockerpool::device_tag(OURS);
     fake.set(
         "containers-full",
         &format!(
-            "{} purlis-runner-first {label}\n{} purlis-runner-first-0a1b2c3d {label}\n",
-            kept.made.container.as_str(),
+            "{} purlis-runner-first mine - first\n{} purlis-runner-first-{mine} mine {mine} first\n",
+            "a".repeat(64),
             "c".repeat(64),
         ),
     );
-    assert_eq!(
-        belonging_to_another_desktop(config.path(), &fake.docker())
-            .unwrap()
-            .as_deref(),
-        Some("1 runner belongs to another desktop")
-    );
+    assert_eq!(belonging_to_another_desktop(&fake.docker(), OURS).unwrap(), None);
 }

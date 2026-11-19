@@ -1240,7 +1240,8 @@ pub fn version_on(
             .map(|(runner, left)| PoolNotChecked { runner, left })
             .collect(),
         other_desktops: machine.for_pool(name).ok().and_then(|on| {
-            purlis_core::pools::belonging_to_another_desktop(&machine.config, &on.docker)
+            let device = purlis_core::machine::device_id(&machine.config).ok()?;
+            purlis_core::pools::belonging_to_another_desktop(&on.docker, &device)
                 .ok()
                 .flatten()
         }),

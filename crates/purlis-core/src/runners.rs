@@ -2057,7 +2057,7 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         tag.len() != 8 || !tag.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
     }) || home_volume
         .as_deref()
-        .is_some_and(|volume| !volume.starts_with(crate::dockerpool::PREFIX))
+        .is_some_and(|volume| !crate::dockerpool::is_runner_volume_name(volume))
     {
         return None;
     }

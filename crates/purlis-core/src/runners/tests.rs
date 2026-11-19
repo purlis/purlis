@@ -2367,3 +2367,37 @@ fn a_runners_names_are_read_back_as_they_were_kept() {
         )
     );
 }
+
+/// **A kept home volume's name is one Docker's own rule allows** (#7192): the name is handed to
+/// `--mount type=volume,source=<name>`, where a `,` or `:` would add an option of its own, so a
+/// row that holds one is unreadable, as a tag that is not 8 hex digits is.
+#[test]
+fn a_row_whose_home_volume_is_not_a_docker_volume_name_is_unreadable() {
+    for bad in [
+        "purlis-runner-first-home,source=/etc",
+        "purlis-runner-first:home",
+        "purlis-runner-first home",
+        "purlis-runner-first/../home",
+        "purlis-runner-",
+    ] {
+        let config = tempfile::tempdir().unwrap();
+        let adopted = Made {
+            runner: made().runner.adopted_by(OURS.device.as_str()),
+            ..made()
+        };
+        keep(
+            config.path(),
+            &adopted,
+            &answered("01JB0RUNNER0000000000000000"),
+            &OURS,
+        )
+        .unwrap();
+        let file = crate::machine::dir(config.path()).join(RUNNERS_FILE);
+        let mut kept: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        assert!(kept["runners"][0]["home_volume"].is_string(), "{kept}");
+        kept["runners"][0]["home_volume"] = bad.into();
+        std::fs::write(&file, kept.to_string()).unwrap();
+        assert!(read(config.path()).is_err(), "{bad}");
+    }
+}
