@@ -36,21 +36,13 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(15);
 /// The most of an answer that is read.
 const MOST_ANSWER: usize = 1024 * 1024;
 
-/// **The permissions a token may ask for, whatever the installation holds**: repo-level ones that
-/// administer nothing. Anything else, an organisation's above all, which a list of repos does not
-/// narrow, is never asked for.
-pub const MINTABLE: [&str; 10] = [
-    "actions",
-    "checks",
-    "contents",
-    "deployments",
-    "discussions",
-    "issues",
-    "metadata",
-    "pull_requests",
-    "repository_projects",
-    "statuses",
-];
+/// **The permissions a token may ask for, whatever the installation holds**: what a chat's token
+/// may have and nothing else (#7249), so a permission the installation gains later (`actions`,
+/// `statuses`, `deployments`) is never on a token, and a cluster chat's is no wider than a
+/// desktop chat's. `workflows` is not here: nothing in a cluster ticks for it. The same names as
+/// `CHAT_PERMISSIONS` in `crates/purlis-core/src/forge/agentidentity.rs`, which the operator does
+/// not link: a test there (`the_operators_mintable_names_are_a_chats_permissions`) pins them equal.
+pub const MINTABLE: [&str; 4] = ["contents", "issues", "metadata", "pull_requests"];
 
 /// What of the installation's `held` permissions a token asks for, by name: never at a level above
 /// `write`.

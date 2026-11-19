@@ -1094,12 +1094,14 @@ fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_s
     let _ = taken_at_end(root, None);
 }
 
-/// A fake forge for the mint: one installation (42) of an App that holds `administration` and
-/// `actions` besides what a chat needs. As GitHub does, a mint with `permissions` gets exactly
-/// those, a mint with none gets all the App has, and one asking for a permission the
-/// installation lacks is a 422. It keeps the body it was sent.
+/// A fake forge for the mint: one installation (42) of an App that has `has`. As GitHub does, a
+/// mint with `permissions` gets exactly those, one with none gets all the App has, and one asking
+/// for a permission the installation lacks is a 422. With `ignores_the_ask` the token comes back
+/// with everything the App has whatever was asked (a reply the mint must not keep). It keeps the
+/// body it was sent.
 struct FakeForge {
     has: Vec<(&'static str, &'static str)>,
+    ignores_the_ask: bool,
     body: std::sync::Mutex<Vec<crate::forge::transport::Field>>,
 }
 
@@ -1107,6 +1109,7 @@ impl FakeForge {
     fn new(has: &[(&'static str, &'static str)]) -> FakeForge {
         FakeForge {
             has: has.to_vec(),
+            ignores_the_ask: false,
             body: std::sync::Mutex::default(),
         }
     }
@@ -1144,8 +1147,18 @@ impl crate::forge::transport::Transport for FakeForge {
                 headers: vec![],
             })
         };
+        let all: serde_json::Map<String, serde_json::Value> = self
+            .has
+            .iter()
+            .map(|(n, l)| ((*n).to_owned(), (*l).into()))
+            .collect();
         if path.ends_with("/installation") {
-            return reply(0, 200, r#"{"id": 42}"#.to_owned(), "");
+            return reply(
+                0,
+                200,
+                serde_json::json!({"id": 42, "permissions": all}).to_string(),
+                "",
+            );
         }
         *self.body.lock().unwrap() = call.fields.clone();
         let asked: Vec<(String, String)> = self
@@ -1161,16 +1174,21 @@ impl crate::forge::transport::Transport for FakeForge {
             })
             .collect();
         let mut granted = serde_json::Map::new();
-        if asked.is_empty() {
-            for (n, l) in &self.has {
-                granted.insert((*n).to_owned(), (*l).into());
+        if asked.is_empty() || self.ignores_the_ask {
+            granted = all;
+        } else {
+            for (n, l) in asked {
+                if !self.has.iter().any(|(h, _)| *h == n) {
+                    return reply(
+                        1,
+                        422,
+                        String::new(),
+                        "gh: The permissions requested are not granted to this installation. \
+                         (HTTP 422)",
+                    );
+                }
+                granted.insert(n, l.into());
             }
-        }
-        for (n, l) in asked {
-            if !self.has.iter().any(|(h, _)| *h == n) {
-                return reply(1, 422, String::new(), "gh: Unprocessable Entity (HTTP 422)");
-            }
-            granted.insert(n, l.into());
         }
         reply(
             0,
@@ -1239,32 +1257,105 @@ fn the_mint_body_is_exactly_the_allowlist() {
 }
 
 #[test]
-fn a_permission_the_app_gains_is_absent_from_the_chat_token() {
-    let fake = FakeForge::new(&the_app());
-    mint_on(&fake, false).unwrap();
-    let sent = fake.sent();
-    for never in [
-        "administration",
-        "actions",
-        "statuses",
-        "deployments",
-        "workflows",
-    ] {
-        assert!(
-            !sent
-                .iter()
-                .any(|(n, _)| n == &format!("permissions[{never}]")),
-            "{never}"
-        );
-    }
+fn a_token_whose_reply_has_a_permission_beyond_the_allowlist_is_refused() {
+    let mut fake = FakeForge::new(&the_app());
+    fake.ignores_the_ask = true;
+    let said = mint_on(&fake, false).unwrap_err();
+    assert!(said.contains("beyond"), "{said}");
+    // `workflows` is beyond it too, unless the person ticked it.
+    assert!(mint_on(&fake, true).is_err());
 }
 
 #[test]
-fn an_app_lacking_a_listed_permission_mints_nothing_and_says_so() {
-    let fake = FakeForge::new(&[("contents", "write"), ("metadata", "read")]);
-    let said = mint_on(&fake, false).unwrap_err();
-    assert!(
-        said.contains("lacks a permission") && said.contains("none was widened"),
-        "{said}"
+fn a_token_whose_reply_names_no_permissions_is_refused() {
+    struct Bare;
+    impl crate::forge::transport::Transport for Bare {
+        fn send(
+            &self,
+            forge: &Forge,
+            call: &crate::forge::transport::Call,
+        ) -> Result<crate::forge::transport::Reply, crate::forge::transport::NoAnswer> {
+            let mut fake = FakeForge::new(&the_app());
+            fake.ignores_the_ask = true;
+            let mut reply = fake.send(forge, call)?;
+            if let Ok(mut v) = serde_json::from_str::<serde_json::Value>(&reply.out)
+                && v.get("token").is_some()
+            {
+                v.as_object_mut().unwrap().remove("permissions");
+                reply.out = v.to_string();
+            }
+            Ok(reply)
+        }
+        fn check_auth(&self, _forge: &Forge) -> Result<(), crate::forge::ForgeError> {
+            Ok(())
+        }
+    }
+    let said = super::mint_over_with(
+        &Bare,
+        &github(),
+        &[remote("acme", "api", "/w/api")],
+        None,
+        false,
+    )
+    .unwrap_err();
+    assert!(said.contains("beyond"), "{said}");
+}
+
+#[test]
+fn an_app_lacking_a_listed_permission_mints_a_narrower_token() {
+    let fake = FakeForge::new(&[
+        ("contents", "write"),
+        ("metadata", "read"),
+        ("actions", "read"),
+        ("checks", "read"),
+    ]);
+    mint_on(&fake, false).unwrap();
+    assert_eq!(
+        fake.sent(),
+        pairs(&[
+            ("repositories[]", "api"),
+            ("permissions[contents]", "write"),
+            ("permissions[metadata]", "read"),
+        ])
     );
+}
+
+#[test]
+fn a_permission_the_installation_has_only_at_read_is_asked_for_at_read() {
+    let fake = FakeForge::new(&[
+        ("contents", "write"),
+        ("issues", "read"),
+        ("metadata", "read"),
+    ]);
+    mint_on(&fake, false).unwrap();
+    assert!(
+        fake.sent()
+            .contains(&("permissions[issues]".to_owned(), "read".to_owned()))
+    );
+}
+
+#[test]
+fn an_installation_with_none_of_the_allowlist_mints_nothing_and_does_not_ask_for_everything() {
+    let fake = FakeForge::new(&[("actions", "write")]);
+    let said = mint_on(&fake, false).unwrap_err();
+    assert!(said.contains("holds no permission"), "{said}");
+    assert_eq!(fake.sent(), []);
+}
+
+#[test]
+fn a_422_about_permissions_says_none_was_widened_and_another_422_does_not() {
+    use crate::forge::transport::Reply;
+    let reply = |err: &str| Reply {
+        code: 1,
+        out: String::new(),
+        err: err.to_owned(),
+        status: Some(422),
+        headers: vec![],
+    };
+    assert!(super::permission_refusal(&reply(
+        "The permissions requested are not granted (HTTP 422)"
+    )));
+    assert!(!super::permission_refusal(&reply(
+        "Validation Failed: repository not accessible (HTTP 422)"
+    )));
 }

@@ -975,3 +975,22 @@ fn the_credentials_note_is_said_only_where_it_is_true() {
         "{gitlab_said}"
     );
 }
+
+/// The operator does not link purlis-core, so its own list of what a token may ask for
+/// (`MINTABLE`) is a copy of [`CHAT_PERMISSIONS`]' names: this pins them equal (#7249).
+#[test]
+fn the_operators_mintable_names_are_a_chats_permissions() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../operator/src/github.rs"),
+    )
+    .unwrap();
+    let from = source.find("pub const MINTABLE").expect("MINTABLE");
+    let list = &source[from..];
+    let list = &list[list.find('=').unwrap()..];
+    let list = &list[..list.find("];").unwrap()];
+    let mut mintable: Vec<&str> = list.split('"').skip(1).step_by(2).collect();
+    mintable.sort_unstable();
+    let mut chat: Vec<&str> = CHAT_PERMISSIONS.iter().map(|(name, _)| *name).collect();
+    chat.sort_unstable();
+    assert_eq!(mintable, chat);
+}
