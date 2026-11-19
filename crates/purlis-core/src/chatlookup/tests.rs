@@ -107,10 +107,10 @@ fn a_finished_task_is_found_ended_with_its_record() {
     let Found::Ended(ended) = by_number_in(&root, 641, &[open_chat(3, ASKER_ID)]) else {
         panic!("not found ended");
     };
-    assert_eq!(ended.id, id);
-    assert_eq!(ended.worker.chat.id.as_deref(), Some(WORKER_ID));
+    assert_eq!(ended.record.id, id);
+    assert_eq!(ended.record.worker.chat.id.as_deref(), Some(WORKER_ID));
     assert_eq!(
-        dispatchrecord::Finished::of(&ended),
+        dispatchrecord::Finished::of(&ended.record),
         Some(dispatchrecord::Finished::Done)
     );
 }
@@ -132,7 +132,7 @@ fn a_task_the_person_closed_is_found_ended_as_closed() {
         panic!("not found ended");
     };
     assert_eq!(
-        dispatchrecord::Finished::of(&ended),
+        dispatchrecord::Finished::of(&ended.record),
         Some(dispatchrecord::Finished::ClosedByThePerson)
     );
 }
@@ -201,7 +201,7 @@ fn the_newest_record_of_a_number_answers() {
     let Found::Ended(ended) = by_number_in(&root, 641, &[]) else {
         panic!("not found ended");
     };
-    assert_eq!(ended.id, second);
+    assert_eq!(ended.record.id, second);
 }
 
 #[test]
@@ -562,5 +562,66 @@ fn a_chat_open_again_is_found_by_its_ulid_under_its_new_number() {
     assert_eq!(
         by_id_in(&root, "01K6CHATS0000000000000000Z", &[]),
         Found::NoChat
+    );
+}
+
+/// Task 641, finished, its chat renumbered 702 by a restart before it closed (#7145).
+fn finished_641_closed_as_702(root: &std::path::Path) -> ChatRecord {
+    let id = task_641(root);
+    dispatchrecord::close(
+        root,
+        &id,
+        report(Outcome::Done, "ok"),
+        at("2026-11-11T11:08:00Z"),
+    )
+    .unwrap();
+    let closed = ChatRecord {
+        number: 702,
+        earlier: vec![641],
+        ..closed_641()
+    };
+    chatrecords::keep(root, &closed).unwrap();
+    closed
+}
+
+#[test]
+fn a_finished_task_is_found_ended_with_the_record_its_chat_closed_under_from_the_same_read() {
+    // #7145: what its card is titled by comes with the lookup, never from a second read.
+    let (_dir, root) = project();
+    let closed = finished_641_closed_as_702(&root);
+
+    for found in [
+        by_number_in(&root, 641, &[]),
+        by_id_in(&root, WORKER_ID, &[]),
+    ] {
+        let Found::Ended(ended) = found else {
+            panic!("not found ended: {found:?}");
+        };
+        assert_eq!(ended.closed.as_ref(), Some(&closed));
+    }
+}
+
+#[test]
+fn a_renumbered_task_is_found_ended_by_the_number_its_chat_closed_under() {
+    // #7145: no dispatch record names 702, the number a restart dealt its chat; its record of
+    // the close does, and the task's card answers for it, not a bare closed chat's.
+    let (_dir, root) = project();
+    let closed = finished_641_closed_as_702(&root);
+
+    let Found::Ended(ended) = by_number_in(&root, 702, &[]) else {
+        panic!("not found ended");
+    };
+    assert_eq!(ended.record.worker.chat.id.as_deref(), Some(WORKER_ID));
+    assert_eq!(ended.closed, Some(closed));
+}
+
+#[test]
+fn a_renumbered_task_open_again_is_found_under_its_new_number_by_the_number_it_closed_under() {
+    let (_dir, root) = project();
+    finished_641_closed_as_702(&root);
+
+    assert_eq!(
+        by_number_in(&root, 702, &[open_chat(760, WORKER_ID)]),
+        Found::Restarted { now: 760 }
     );
 }

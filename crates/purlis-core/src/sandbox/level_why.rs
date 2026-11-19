@@ -135,7 +135,7 @@ pub fn next_start(
     // A start that takes no level of the person's, as `for_start_at` takes it: the sandbox the
     // project has in force, or the floor. Not `personal::base`, which is no sandbox where the
     // person accepted a team's off: that never lifts a start with no level.
-    let own = if plane.in_force(locks).is_some() {
+    let own = if super::project_runs_full(root, &plane, locks) {
         Choice::On
     } else {
         Choice::Floor

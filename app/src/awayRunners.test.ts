@@ -18,6 +18,7 @@ function finished(id: string, chat: number | null, more: Partial<FinishedTask> =
     asker: 1,
     name: `task ${id}`,
     chat,
+    chat_id: null,
     persona: "dev",
     how: "done",
     outcome: "done",

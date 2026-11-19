@@ -719,6 +719,13 @@ pub fn sent(
     Ok(())
 }
 
+/// **The vault checks of runner chat `session`'s runs on this desktop**, under the strictest
+/// `[policy]` of the chain that dispatched it, as its brokered reads here are (#7153).
+pub(crate) fn desktop_ctx(held: &crate::planes::Held, session: u32) -> Ctx {
+    Ctx::new(held.root(), Env::from_process())
+        .under_chain(crate::vaultroute::chain_policy(held, session).as_deref())
+}
+
 /// **Runner chat `ask.chat`'s `secret exec`, heard over pool `pool`'s link, in project `held`**
 /// (module docs): its values sent to the runner's host for that one run, or the asker told why
 /// not. `reader` is the run's input, which for a run its runner runs ends only as its asker goes.
@@ -734,7 +741,7 @@ pub fn run_on_its_runner(
     let gone = Arc::new(AtomicBool::new(false));
     watch_the_asker(reader, Arc::clone(&gone));
     let root = held.root();
-    let ctx = Ctx::new(root, Env::from_process());
+    let ctx = desktop_ctx(held, session);
     // Counted before it is found open: the run may wait on the person's Allow before its
     // token is minted, and an end meanwhile keeps nothing minted for it (#3808).
     let ends_seen = purlis_core::forge::apptoken::ends_so_far();

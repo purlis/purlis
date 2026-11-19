@@ -374,6 +374,8 @@ pub(crate) fn rows(held: &Held) -> Vec<crate::finished::FinishedTask> {
             // No pane was left on it: it never ran in this launch, so no ended view finds
             // this row (it is found by a chat's number, and this has none).
             chat: None,
+            // Not a closed chat's: it is waiting to start.
+            chat_id: None,
             persona: task.held.chat.persona.clone(),
             how: crate::finished::How::Failed,
             outcome: "failed".to_owned(),

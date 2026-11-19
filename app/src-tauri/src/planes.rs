@@ -101,6 +101,26 @@ pub const WAITS_WHILE_YOU_STOP_IT: &str =
 pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
      its turn ends.";
 
+/// **What the app's tests share of a held project.**
+#[cfg(test)]
+pub(crate) mod fixtures {
+    /// **A project on disk, held as a window holds it**: the folder, the registry that holds it
+    /// (kept, so the project stays held) and the project.
+    pub(crate) fn a_project() -> (
+        tempfile::TempDir,
+        super::Planes,
+        std::sync::Arc<super::Held>,
+    ) {
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a plane");
+        let planes =
+            super::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+        let held = planes.held(&planes.open(&root)).expect("held");
+        (dir, planes, held)
+    }
+}
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -3988,7 +4008,20 @@ impl Planes {
                             &strong,
                             block.line.chat,
                             block.line.sandbox_blocked,
+                            // Checked again in the draft: a chat can send any words.
+                            block
+                                .line
+                                .purlis_command
+                                .as_deref()
+                                .and_then(purlis_core::sandboxblock::command::known),
                         );
+                    }
+                    // A folder or socket ask the project's `[policy]` answers itself (the Q308
+                    // follow-up, item 3): allowed for this chat, kept in the record, and no
+                    // Notice; the chat takes it at its restart once its turn ends.
+                    if crate::sandboxing::answered_by_the_policy(&strong, &told, network.as_ref()) {
+                        record();
+                        return;
                     }
                     // The echo of a held connection's block written already, from the
                     // post-tool detector or the proxy's own raise landing late (Q240): dropped,

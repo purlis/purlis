@@ -736,7 +736,12 @@ fn for_project(held: Option<&Held>, session: Option<u32>) -> (Resolver, ChatsHer
     let chats = ChatsHere {
         open: named,
         card: Box::new(move |number, goes| match goes {
-            Goes::Ended(record) => crate::chatcard::card_of(held, number, record, &open),
+            Goes::Ended(ended) => crate::chatcard::card_of_ended(
+                held,
+                crate::chatcard::Asked::Number(number),
+                ended,
+                &open,
+            ),
             Goes::Closed(chat) => Some(crate::chatcard::card_of_chat(
                 held.root(),
                 crate::chatcard::Asked::Number(number),

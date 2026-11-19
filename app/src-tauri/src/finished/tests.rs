@@ -95,6 +95,8 @@ fn a_finished_task_s_row_says_how_it_ended_and_carries_its_report_as_written() {
             name: "check prod".to_owned(),
             // Read from the store alone, as after a restart: no pane was left on it.
             chat: None,
+            // Its chat's ULID, which the filter matches its closed row to it by (#7145).
+            chat_id: Some("worker".to_owned()),
             persona: Some("devops".to_owned()),
             how: How::Done,
             outcome: "done".to_owned(),

@@ -278,6 +278,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`.charter/reports/<id>.json`](#charterreportsidjson)
   - [`.charter/handbacks/` — reports back from handed-off chats](#charterhandbacks--reports-back-from-handed-off-chats)
   - [`~/.config/purlis/sandbox-grants/<clone key>.json` (outside the plane)](#configpurlissandbox-grantsclone-keyjson-outside-the-plane)
+  - [`~/.config/purlis/sealed-planes/<anchor>` (outside the plane)](#configpurlissealed-planesanchor-outside-the-plane)
   - [`~/.config/charter/reporting-consent` (outside the plane)](#configcharterreporting-consent-outside-the-plane)
   - [`.charter/sessions/<sid>.persona`, `.charter/terminals/<tid>.persona`, `.charter/active-persona`](#chartersessionssidpersona-charterterminalstidpersona-charteractive-persona)
   - [`.charter/mcp-approved.json`](#chartermcp-approvedjson)
@@ -1774,16 +1775,16 @@ of that name at that level replaces it.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults`, `guards.credential` and `trust` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308. The sandbox level each template names is decided and wired in a later release; today `[sandbox]` decides it. |
-| `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. **Not switchable yet**: enforced. |
-| `ports` | as `network` | the template's | local sockets, listening and connect ports. **Not switchable yet**: enforced. |
-| `processes` | as `network` | the template's | **Not switchable yet**: enforced. The wrap's refusal of a program that would run outside it (`launchctl`, `osascript`, `open`, cron, Apple Events) is part of the sandbox and is kept whenever a wrap is applied, whatever this key says. |
+| `template` | `"open"`, `"watch"`, `"hold"`, `"team"` or `"strict"` | `"watch"` | `open`: every family off, no sandbox. `watch`: every family logs; `secrets`, `vaults`, `guards.credential` and `trust` enforced; the floor sandbox. `hold`: `watch`, and `guards.merge` enforced. `team`: `guards.merge`, `guards.release`, `guards.save`, `guards.credential`, `secrets`, `vaults` and Q308b's families enforced, the rest logged; the full sandbox. `strict`: every family enforced: purlis before Q308, the level as `[sandbox]` says it (the floor where it names no mode). **The template sets the sandbox level**; a committed `[sandbox] mode` overrides it (`on` full, `off` none under `policy = "local"`). The level in force is the stricter of the committed one and what you accepted: a looser level, the team's off included, waits for Accept ([ADR 0125, amended 2026-11-17](adr/0125/2026-11-17-the-sandbox-level-network-ports-and-asks-switch.md)). |
+| `network` | `"off"`, `"log"` or `"enforce"` | the template's | the egress proxy's refusal of a host. Under `off` or `log` a host nothing lists is carried with nobody asked, each host and port logged once under `log`; this machine, a link-local or metadata address, a host policy pins as never allowed and your Keep blocked stay refused; a runner's own locks hold over what a desktop relays. Means nothing without a sandbox. |
+| `ports` | `"off"` or `"enforce"` | the template's: enforced but under `open` | local sockets and this Mac's loopback ports. `log` is enforced, and said, and the rest of `[policy]` stands: the kernel tells nothing of a connection it let through (Q328). Under a pressed `off` a wrapped harness reaches every local socket and port but purlis's own: its ports as the chat started (one purlis opens later is a declared residual) and its sockets wherever they are (every project's state folder, every hook socket, the session host's, every chat's server sockets, the forwards to a pool's engine), none of which a chat may move or hard link to another name, nor the folders of the last two; a container engine's socket is reached. Claude Code is unchanged: its `allowAllUnixSockets` and `allowLocalBinding` stay `false`. Linux is unchanged. Means nothing without a sandbox. |
+| `processes` | as `network` | the template's | **Not switchable yet**: enforced. Means nothing without a sandbox. The wrap's refusal of a program that would run outside it (`launchctl`, `osascript`, `open`, cron, Apple Events) is part of the sandbox and is kept whenever a wrap is applied, whatever this key says. |
 | `guards.git` | as `network` | the template's | the Bash guard's git arms: git in a branch folder another chat holds (A11). A branch move and a destroying reset in the plane root (A3, A3b) are `guards.plane`'s (Q308b); where the file names `guards.git` and not `guards.plane`, they run at least as strictly as `guards.git` says, so the move loosens nothing a project set. The arms that exist because of the wrap (A3c, A3d, A9, A9b) are the sandbox's, kept whenever a wrap is applied. |
 | `guards.merge` | as `network` | the template's | the merge hold: a chat's merge is refused and handed to the person. Under `log` nobody is asked. |
 | `guards.release` | as `network` | the template's | the release floor (A4), and a live substitution in a forge's prose (A5). |
 | `guards.save` | as `network` | the template's | personal data in what a chat commits and pushes, a commit that skips the hooks (A8), and a live substitution in purlis's own text (A6). |
 | `guards.credential` | as `network` | the template's | one credential per forge (A2), and the token scan on commit and push. |
-| `asks` | as `network` | the template's | host, folder and socket asks. Under `off` or `log` a host nothing lists is answered Allow for the chat, nobody asked, and logged; the person's Keep blocked still holds. Folder and socket asks stay enforced for now. |
+| `asks` | as `network` | the template's | host, folder and socket asks. Under `off` or `log` a host nothing lists is answered Allow for the chat, nobody asked, and logged; the person's Keep blocked still holds. A folder ask of the project, or of a folder you listed, is answered Allow for the chat under `off` or `log`, judged as the Notice's Allow is, and logged with its path; what no grant may give, a held folder a later program loads code from (`~/.config/gh`, fish's `vendor_conf.d`, …) and a folder the floor holds on `PATH` still raise the Notice in every mode; a socket ask only under `off` (Q328). Each takes effect at the chat's restart. |
 | `dispatch` | as `network` | the template's | who may dispatch to whom. Under `off` or `log` a pair nothing covers starts with no grant, from an unsandboxed or unattended chat too; a lock, the person's nevers (a never above, and a nevers record that does not read, included) hold in every mode. The guards on a dispatch's or a handoff's call are `guards.shape`'s. |
 | `vaults` | `"off"` or `"enforce"` | the template's | a chat's reach to a vault: reads across personas, a vault's Allow. `log` is enforced. **Not switchable yet**: enforced. |
 | `browser` | as `network` | the template's | the browser's reach to a site. **Not switchable yet**: enforced. |
@@ -4851,7 +4852,8 @@ write into this folder cannot make its own text arrive as the person's.
   and is dropped at the next answer.
   `policy_accepted` is what you last accepted of the project's
   [`[policy]`](#policy--which-of-purliss-refusals-run) (rulings Q308a, Q308b): family key to
-  mode, the least each family runs at here until you press to loosen it; a chat start keeps a
+  mode, and `sandbox` to the level (`off`, `floor` or `full`; `enforce`, as an older build kept
+  it, reads as `floor`), the least each family runs at here until you press to loosen it; a chat start keeps a
   tightening in it, and only the window's Accept keeps a loosening. `policy_seal` is its
   [seal](#the-seals-key--the-keyring-item-purlis-seal), over `policy_counter` (one past the last
   on every acceptance) and the pairs. **The app anchors the newest seal in the keyring before it
@@ -4876,7 +4878,20 @@ write into this folder cannot make its own text arrive as the person's.
   again. **On a machine with no keyring purlis can use** (a Linux with no Secret Service, say),
   nothing is sealed, so no grant of yours and no acceptance is kept and none counts, and no never
   can be added; the window says so. That is a declared gap, never read as a keyring that fails,
-  which holds what it cannot show. **Those six lists
+  which holds what it cannot show. **purlis looks for the keyring once, as it starts** (keyring
+  4 latches what it found, #7153), and a Secret Service that had not answered yet reads the same
+  as none: so where this file or the nevers file carries a seal the app made, no keyring now is
+  read as one that failed, and the nevers are unknown until purlis is opened again. **The evidence
+  is kept by the plane's path, not the clone key** (#7164): the first seal made for a plane leaves
+  a marker in [`sealed-planes/`](#configpurlissealed-planesanchor-outside-the-plane), named by the
+  plane's anchor (a digest of its path alone), so a chat that moves `.git` aside and back, which
+  makes another clone key and another file, does not turn a keyring that failed into one that was
+  never there. **Declared gap:** a plane sealed before this build gets its marker at its first verified read
+  (a read with the key, in the app), so one whose keyring is already down then has none; a
+  plane moved with no link left is another path. **On a machine that truly has no keyring**,
+  a record of this file that no longer reads (stale, edited, or written by a build with a keyring)
+  reads as broken or unread for good: delete this file and the plane's marker, and answer again
+  (nothing is kept without a keyring, so nothing is lost but the stale record). **Those six lists
   grant and accept only what this set seals**: a name in one of them with no entry here that
   verifies is dropped, and shown read-only in Settings › Project › Dispatch. A pair is granted
   again only through the ordinary per-pair ask. Absent before the first grant or acceptance
@@ -4907,6 +4922,23 @@ write into this folder cannot make its own text arrive as the person's.
   resolves to itself, is a folder, a file, a socket with a second name or another user's, sits
   in a folder others may write that is not yours, or where a chat may write. One that is not
   there now is kept: a container engine makes its socket anew when it starts.
+
+
+### `~/.config/purlis/sealed-planes/<anchor>` (outside the plane)
+
+- **Format:** an empty file per plane, named by its anchor (`anchor_key`: the first 32 hex
+  characters of the SHA-256 of the plane's path, its last folder not followed), in a folder made
+  `0700`. It holds nothing and is never read for what it says: only that it is there.
+- **Written by:** `sandbox::local::mark_sealed`, before the first seal of the plane's acceptance
+  of `[policy]` ([`accept_policy`]), of its dispatch answers (`change_sealing`) or of its nevers
+  (`dispatchnever::seal_in_step`), and by `note_sealed` at a read that verified a seal with the
+  key (a plane sealed before this build). A write that cannot make it is refused, so nothing is
+  sealed that it would not follow (#7164).
+- **Read by:** `sandbox::local::sealed_here`, to tell a keyring that did not start (#7153) from
+  one that was never there: it says a keyring was used for the plane, wherever `.git` has been
+  moved. A sandboxed chat cannot write it (the folder is denied).
+- **Tier:** Machine, device-bound — one machine's note that a keyring was used for a plane; not
+  rebuildable (removing it forgets that a seal was kept).
 
 ### `~/.config/charter/reporting-consent` (outside the plane)
 

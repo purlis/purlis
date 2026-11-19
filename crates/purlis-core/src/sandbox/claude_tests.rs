@@ -985,3 +985,122 @@ fn a_claude_code_chats_ssh_route_runs_the_purlis_beside_the_app_as_its_proxy() {
         &[("PURLIS_BINARY", purlis.as_os_str())],
     );
 }
+
+/// A deny glob as the regex Claude Code's sandbox reads it as, enough for the globs a held name
+/// is written in: `/**/` any folders, a trailing `/**` anything below, `*` within a name, a `[..]`
+/// class as it is, every other character as itself. Matched in either case, as macOS's volumes
+/// fold names.
+fn glob_matches(glob: &str, path: &str) -> bool {
+    let mut regex = String::from("(?i)^");
+    let chars: Vec<char> = glob.chars().collect();
+    let mut at = 0;
+    while at < chars.len() {
+        let rest: String = chars[at..].iter().collect();
+        if rest.starts_with("/**/") {
+            regex.push_str("/(.*/)?");
+            at += 4;
+        } else if rest == "/**" {
+            regex.push_str("/.*");
+            at += 3;
+        } else if chars[at] == '*' {
+            regex.push_str("[^/]*");
+            at += 1;
+        } else if chars[at] == '[' || chars[at] == ']' {
+            regex.push(chars[at]);
+            at += 1;
+        } else {
+            regex.push_str(&regex::escape(&chars[at].to_string()));
+            at += 1;
+        }
+    }
+    regex.push('$');
+    regex::Regex::new(&regex).expect("a regex").is_match(path)
+}
+
+/// Round 6 of #7105: no wrap covers a Claude Code chat on macOS, so its own settings hold the
+/// names of purlis's sockets, wherever they were made, and the folders holding them, whatever
+/// `ports` says, in every case. Red on revert: a chat that could `mv` a socket aside would
+/// connect to it by the new name once `ports = "off"` is pressed.
+#[test]
+fn a_claude_code_chat_at_the_floor_holds_purlis_socket_names_in_every_case() {
+    let root = tempfile::tempdir().expect("a project");
+    let compiled = Compiled {
+        level: Level::Floor,
+        os: Os::MacOs,
+        ..compiled_at(root.path(), None, &Grants::default())
+    };
+    let settings = claude::rules(&compiled);
+    let denied: Vec<String> = settings.sandbox["filesystem"]["denyWrite"]
+        .as_array()
+        .expect("a list")
+        .iter()
+        .filter_map(|rule| rule.as_str().map(str::to_owned))
+        .collect();
+    let held = |path: &str| denied.iter().any(|glob| glob_matches(glob, path));
+    for path in [
+        "/tmp/dev_purlis_app_si.sock",
+        "/tmp/dev_purlis_app_e2e_si.sock",
+        "/tmp/dev_charter_app_si.sock",
+        "/tmp/DEV_Purlis_APP_si.sock",
+        "/var/folders/x/T/purlisd.sock",
+        "/var/folders/x/T/purlisd-window.sock",
+        "/var/folders/x/T/PurlisD.SOCK",
+        "/var/folders/x/T/purlis-crash-0123abcd.sock",
+        "/var/folders/x/T/PURLIS-CRASH-0123ABCD.sock",
+        "/a/b/hooks.sock",
+        "/a/b/Hooks.Sock",
+        "/tmp/purlis-501/slots.sock",
+        "/tmp/purlis-501/SLOTS.sock",
+        "/var/folders/x/T/purlis-serve",
+        "/var/folders/x/T/Purlis-Serve",
+        "/var/folders/x/T/purlis-serve/0123456789abcdef/3000.sock",
+        "/var/folders/x/T/engine-links",
+        "/var/folders/x/T/ENGINE-LINKS/pool.sock",
+    ] {
+        assert!(held(path), "{path} is not held in {denied:?}");
+    }
+    for path in [
+        "/tmp/x.sock",
+        "/tmp/dev_other_app_si.sock",
+        "/var/folders/x/T/purlis-served/a",
+        "/Users/a/.docker/run/docker.sock",
+    ] {
+        assert!(!held(path), "{path} is held");
+    }
+    // Held from the Edit tool too, by the same rules.
+    for rule in ["Edit(//**/hooks.sock)", "Edit(//**/purlis-serve/**)"] {
+        assert!(settings.deny.contains(&rule.to_owned()), "{rule}");
+    }
+    // Not held below the floor's own write rules at a lower level: the floor alone writes `/`.
+    let full = claude::rules(&Compiled {
+        level: Level::Full,
+        ..compiled
+    });
+    assert!(
+        !full.sandbox["filesystem"]["denyWrite"]
+            .as_array()
+            .expect("a list")
+            .contains(&json!("/**/hooks.sock")),
+        "the full sandbox writes no such folder already"
+    );
+}
+
+/// A Claude Code chat's server dials in through its hook socket (#3316): it makes no socket in
+/// `purlis-serve/<id>/`, so the folder is held from it, with no give-back in its settings, and
+/// a listen grant changes nothing of what is held.
+#[test]
+fn a_claude_code_chat_allowed_to_listen_still_cannot_write_the_serve_folder() {
+    let root = tempfile::tempdir().expect("a project");
+    super::local::grant_listen(root.path(), 5173).expect("kept");
+    let compiled = Compiled {
+        level: Level::Floor,
+        os: Os::MacOs,
+        ..compiled_at(root.path(), None, &Grants::default())
+    };
+    let settings = claude::rules(&compiled);
+    let filesystem = &settings.sandbox["filesystem"];
+    let denied = filesystem["denyWrite"].as_array().expect("a list");
+    assert!(denied.contains(&json!("/**/purlis-serve/**")));
+    let allowed = filesystem["allowWrite"].as_array().expect("a list");
+    assert_eq!(allowed, &[json!("/")], "no folder is lifted for a server");
+}

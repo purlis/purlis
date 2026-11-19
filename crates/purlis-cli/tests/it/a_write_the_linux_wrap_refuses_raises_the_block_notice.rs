@@ -210,6 +210,7 @@ fn a_write_the_linux_wrap_refuses_is_told_as_the_block_macos_s_kernel_line_of_it
             target: named,
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }],
         "one block, as macOS's kernel line of it is"
     );
@@ -271,6 +272,7 @@ fn addresses_dialled_past_the_proxy_are_one_block_naming_the_first() {
             target: Some("192.0.2.1:443".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }]
     );
 }
@@ -338,6 +340,7 @@ fn a_listen_the_linux_wrap_refuses_is_told_as_macos_s_refused_bind_is() {
             target,
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }],
         "one block, as macOS's kernel line of a refused bind is"
     );

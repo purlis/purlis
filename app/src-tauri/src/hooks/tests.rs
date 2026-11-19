@@ -651,6 +651,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
                     target: None,
                     read_back: false,
                     suggested: None,
+                    purlis_command: None,
                 }
                 .into(),
             )
@@ -689,6 +690,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
             target: None,
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -712,6 +714,7 @@ fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
         target: None,
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     for _ in 0..50 {
         heard_block(
@@ -754,6 +757,7 @@ fn the_repeats_held_back_are_told_once_their_minute_is_over() {
         target: None,
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     for _ in 0..4 {
         heard_block(&throttle, &slot, &repeated, line.clone().into(), now);
@@ -853,6 +857,7 @@ fn a_host_a_brokered_run_was_refused_is_the_asking_chats_block_to_allow() {
         target: Some("api.cluster.example-k8s.com:6443".to_owned()),
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     let with = |line: &purlis_core::hookwire::SandboxBlocked, vault: &str| RunBlocked {
         block: line.clone(),
@@ -918,6 +923,7 @@ fn a_vault_s_name_on_a_notice_is_drawn_inertly() {
         target: Some("api.example.com:443".to_owned()),
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     let said = |vault: &str| {
         blocked(
@@ -959,6 +965,7 @@ fn an_address_dialled_past_the_proxy_is_a_quiet_line_that_names_it_and_offers_no
             target: Some("93.184.216.34:443".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -982,6 +989,7 @@ fn an_address_dialled_past_the_proxy_is_a_quiet_line_that_names_it_and_offers_no
             target: Some("example.com:443".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -1009,6 +1017,7 @@ fn a_block_s_notice_offers_allow_only_for_a_host_or_a_folder_and_the_way_out_oth
                 target: target.map(str::to_owned),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         );
@@ -1154,6 +1163,7 @@ fn a_held_folder_is_offered_to_a_claude_code_chat_for_itself_and_says_it_goes_by
                 target: Some(folder.join("config.yml").display().to_string()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         )
@@ -3067,6 +3077,7 @@ fn a_printed_port_is_only_ever_a_suggestion_on_a_notice_that_asks_for_one() {
             target: target.map(str::to_owned),
             read_back: false,
             suggested: suggested.map(str::to_owned),
+            purlis_command: None,
         },
         vault: None,
     };
@@ -3242,6 +3253,7 @@ fn a_lookup_past_the_proxy_says_what_reaching_the_system_s_name_lookup_would_mea
                 target: target.map(str::to_owned),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         );
@@ -3376,6 +3388,7 @@ fn a_notice_for_the_systems_name_lookup_offers_no_allow() {
                 target: Some(target.to_owned()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         )
