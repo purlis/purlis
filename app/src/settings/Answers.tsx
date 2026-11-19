@@ -87,7 +87,7 @@ export function Answers({ plane, ids }: { plane: PlaneId; ids: RowIds }) {
       .then((done) => {
         if (gone) return;
         if (done.status === "error") setSaid(done.error);
-        else setShown(done.data);
+        else setShown(done.data ?? undefined);
       })
       .catch((err: unknown) => {
         if (!gone) setSaid(`purlis could not read the sealed answers: ${String(err)}`);

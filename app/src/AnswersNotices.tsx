@@ -33,7 +33,7 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
     void commands
       .answersShown(plane)
       .then((done) => {
-        if (!gone && done.status === "ok") setShown(done.data);
+        if (!gone && done.status === "ok" && done.data) setShown(done.data);
       })
       .catch(() => undefined);
     return () => {
