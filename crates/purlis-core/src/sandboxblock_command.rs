@@ -116,7 +116,7 @@ const VERB: &[&str] = &[
 pub fn in_line(line: &str) -> Option<String> {
     // The line's first command only: what follows a `;`, `&`, `|` or the like is another command.
     let first_command = line
-        .split(|c: char| matches!(c, ';' | '|' | '&' | '(' | ')' | '`' | '\n'))
+        .split([';', '|', '&', '(', ')', '`', '\n'])
         .next()
         .unwrap_or_default();
     let mut words = first_command.split_whitespace().skip_while(|word| {
