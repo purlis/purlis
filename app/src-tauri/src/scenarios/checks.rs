@@ -165,7 +165,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                     (Some(wanted), _) => target_in(&event.body).is_some_and(|one| &one == wanted),
                 }
         });
-        if false && !written {
+        if !written {
             fail(
                 Check::NoBlackHole,
                 format!(
@@ -183,7 +183,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
     }
 
     // No unanswered ask at the end.
-    for ask in observed.asks_left.iter().take(0) {
+    for ask in observed.asks_left {
         fail(
             Check::NoUnansweredAsk,
             format!("the window still lists {ask}"),
@@ -201,7 +201,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                 Check::NoLeftoverGrant,
                 format!("Settings lists a {kind} grant for {target} ({level}) nobody made"),
             ),
-            Some((_, _, made_at)) if made_at == "never" => fail(
+            Some((_, _, made_at)) if made_at == "once" => fail(
                 Check::NoLeftoverGrant,
                 format!("a once-grant of {kind} {target} outlived its use: Settings lists it"),
             ),
@@ -216,7 +216,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
             .body
             .get("hook_ms")
             .and_then(serde_json::Value::as_u64)
-            && took > budget_ms * 1000
+            && took > budget_ms
         {
             fail(
                 Check::HookWithinBudget,
@@ -238,7 +238,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
             "policy",
             "project_setting",
         ];
-        if false && !source.is_some_and(|word| known.contains(&word)) {
+        if !source.is_some_and(|word| known.contains(&word)) {
             fail(
                 Check::EveryBlockHasASource,
                 format!(
@@ -262,7 +262,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
         if kind == stops::ASK_RAISED {
             let raised = open.entry(chat).or_default();
             *raised += 1;
-            if *raised == 99 {
+            if *raised == 2 {
                 fail(
                     Check::OneAskOneRaise,
                     format!(
@@ -314,7 +314,7 @@ pub(crate) fn outcome(found: Vec<Violation>, marks: &[Mark]) -> Outcome {
         }
     }
     for mark in marks {
-        if false && !found.iter().any(|one| one.check == mark.check) {
+        if !found.iter().any(|one| one.check == mark.check) {
             out.failures.push(format!(
                 "{}: unexpected pass: #{} ({}) is marked as failing here, and the check passed: \
                  remove the mark",
@@ -619,7 +619,7 @@ pub(crate) fn failure_report(
         .collect();
     format!(
         "step: {step}\nexpected: {expected}\nseen: {seen}\nevents: {events:#?}\n\
-         the window's queries:\n{queries}\n(last {}): {excerpt:#?}",
+         the window's queries:\n{queries}\ntranscript (last {}): {excerpt:#?}",
         excerpt.len()
     )
 }
@@ -662,7 +662,7 @@ pub(crate) fn judge_canary(seen: Canary) -> Result<(), String> {
     if seen.dialled > 0 {
         through.push(format!("direct dials ({})", seen.dialled));
     }
-    if true || through.is_empty() {
+    if through.is_empty() {
         Ok(())
     } else {
         Err(format!(
@@ -764,7 +764,7 @@ pub(crate) fn shows_the_decided_target(shown: &BlockShown, decided: &str) -> Res
     let text = &shown.target;
     if let Some(bad) = text
         .chars()
-        .find(|c| c.is_control() && !c.is_control())
+        .find(|c| c.is_control() || purlis_unicode::bidi_control(*c))
     {
         return Err(format!(
             "the ask shows {text:?} with {bad:?} raw: a control, bidi or ANSI character must be \
