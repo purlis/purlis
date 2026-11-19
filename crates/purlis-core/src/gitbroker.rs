@@ -101,6 +101,10 @@ pub struct Asker {
     /// is judged against them (#3901); `None` where no app said, and a folder another chat
     /// holds is then refused.
     pub live: Option<Vec<crate::piececlaim::Live>>,
+    /// The strictest `[policy]` along the chain that dispatched the chat, as the app's record of
+    /// it keeps it ([`crate::reopen::HandedFrom::policy`]): what the app does for it runs no
+    /// looser (Q308a, Q308b; the review of #7113). `None` for a chat no dispatch started.
+    pub policy: Option<String>,
 }
 
 /// Runs `ask` for `asker` in the project at `root`, every git call reading `isolation`'s

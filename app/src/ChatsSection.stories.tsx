@@ -616,6 +616,7 @@ const ENDED = (id: string, name: string, more: Partial<FinishedTask> = {}): Fini
   asker: 1,
   name,
   chat: null,
+  chat_id: null,
   did_not_start: false,
   attempts: 0,
   waits: null,
@@ -734,6 +735,7 @@ const CLOSED: ClosedChat = {
   number: 731,
   id: "01K6CHATS0000000000000000C",
   earlier: [702],
+  found_by: null,
   title: "Tidy the changelog",
   place: "smart-ide",
   // Local time, so every cell says 11:00 whatever its clock's zone.

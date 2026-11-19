@@ -52,6 +52,8 @@ const NOTHING_STANDS: DispatchStanding = {
   wants: [],
   back: [],
   workspaces: [],
+  unsealed: [],
+  seals_unread: null,
 };
 
 /** "Any persona", as a target is spelled to the core. Never a persona's name. */
@@ -1360,6 +1362,17 @@ export function DispatchGrantsList({
           below and every dispatch to another persona asks you.
         </Notice>
       )}
+      {unknown === undefined && standing.seals_unread !== null && (
+        <Notice
+          cause="dispatch-seals-unread"
+          at="pane"
+          tone="trouble"
+          // The way out is the person's: open purlis again and allow its key; then read again.
+          fixes={[{ label: "Read again", onPress: () => void read() }]}
+        >
+          {standing.seals_unread}
+        </Notice>
+      )}
       {unknown !== undefined ? null : held === undefined ? (
         said === undefined && <p>Reading the dispatch grants…</p>
       ) : (
@@ -1483,6 +1496,24 @@ export function DispatchGrantsList({
             </ControlTable>
           )}
           {addForm()}
+          {standing.unsealed.length > 0 && (
+            <>
+              <ul className="granted-list" aria-label="Not sealed">
+                {standing.unsealed.map((one) => (
+                  <li key={`${one.kind}\u001f${one.text}`}>
+                    {one.text
+                      .replace(" -> * ", " to any persona ")
+                      .replace(/ -> \*$/, " to any persona")
+                      .replace(" -> ", " to ")}
+                  </li>
+                ))}
+              </ul>
+              <p className="granted-note">
+                These grants and acceptances were not made in this window, or were changed after, so
+                they allow nothing. To allow a pair, answer its ask when a chat dispatches.
+              </p>
+            </>
+          )}
           {locks && held.locked_pairs.length > 0 && (
             <>
               <ul className="granted-list" aria-label="Locked by policy">

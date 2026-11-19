@@ -53,13 +53,40 @@ pub enum Found {
     Open { number: u32 },
     /// The chat it was is open now under another number: it was started again, or reopened.
     Restarted { now: u32 },
-    /// The chat has ended: its newest dispatch record, which its card is drawn from.
-    Ended(Box<Record>),
+    /// The chat has ended: its newest dispatch record, which its card is drawn from, with the
+    /// record its chat closed under where one was kept.
+    Ended(Box<Ended>),
     /// A chat no dispatch started has closed: the app's record of it, which its card is drawn
     /// from. It kept no screen.
     Closed(Box<ChatRecord>),
     /// No chat had it, or none that purlis kept a record of.
     NoChat,
+}
+
+/// **A task that ended, as a lookup found it** (#7145): its newest dispatch record, which its card
+/// is drawn from, and the record its chat closed under ([`chatrecords::of_id`]), from the same
+/// read, where one was kept. A restart deals a chat a new number, so the number it closed under,
+/// which its card is titled by, may not be the one it was dispatched under.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Ended {
+    pub record: Record,
+    pub closed: Option<ChatRecord>,
+}
+
+impl Ended {
+    /// `record`, with the record its chat closed under found in `chats`.
+    fn of(record: &Record, chats: &[ChatRecord]) -> Self {
+        Self {
+            record: record.clone(),
+            closed: record
+                .worker
+                .chat
+                .id
+                .as_deref()
+                .and_then(|id| chatrecords::of_id(chats, id))
+                .cloned(),
+        }
+    }
 }
 
 /// **What a project's records say of its chats**, read once: its dispatch records, newest first
@@ -102,18 +129,20 @@ pub fn by_id_in(root: &Path, id: &str, open: &[OpenChat]) -> Found {
         return Found::Restarted { now: now.number };
     }
     let known = Known::read(root);
-    if let Some(record) = known.dispatches.iter().find(|record| {
+    if let Some(record) = task_of(&known.dispatches, id) {
+        return Found::Ended(Box::new(Ended::of(record, &known.chats)));
+    }
+    chatrecords::of_id(&known.chats, id)
+        .map_or(Found::NoChat, |chat| Found::Closed(Box::new(chat.clone())))
+}
+
+/// The newest sound dispatch record that draws the card of the task chat whose ULID is `id`.
+fn task_of<'r>(dispatches: &'r [Record], id: &str) -> Option<&'r Record> {
+    dispatches.iter().find(|record| {
         record.worker.chat.id.as_deref() == Some(id)
             && dispatchrecord::sound(record)
             && makes_a_card(record)
-    }) {
-        return Found::Ended(Box::new(record.clone()));
-    }
-    known
-        .chats
-        .iter()
-        .find(|chat| chat.id == id)
-        .map_or(Found::NoChat, |chat| Found::Closed(Box::new(chat.clone())))
+    })
 }
 
 /// What `number` names where no open chat answers to it.
@@ -128,7 +157,18 @@ fn not_open(number: u32, open: &[OpenChat], known: &Known) -> Found {
             && !dispatchrecord::never_a_chat(record)
             && dispatchrecord::sound(record)
     }) else {
-        return closed(chatrecords::of_number(&known.chats, number), open);
+        // No dispatch names it, but a task's chat may have closed under it: one renumbered by a
+        // restart before it finished (#7145). Its task's card answers, as by its ULID.
+        return match closed(chatrecords::of_number(&known.chats, number), open) {
+            Found::Closed(chat) => match task_of(&known.dispatches, &chat.id) {
+                Some(record) => Found::Ended(Box::new(Ended {
+                    record: record.clone(),
+                    closed: Some(*chat),
+                })),
+                None => Found::Closed(chat),
+            },
+            other => other,
+        };
     };
     if let Some(now) = open.iter().find(|chat| is(&record.worker.chat, chat)) {
         return Found::Restarted { now: now.number };
@@ -138,12 +178,12 @@ fn not_open(number: u32, open: &[OpenChat], known: &Known) -> Found {
         // no card: the chat's own record, kept as it closed, is what answers for it. By the
         // record's ULID where it names one, so a number dealt again never shows another chat.
         let chat = match record.worker.chat.id.as_deref() {
-            Some(id) => known.chats.iter().find(|chat| chat.id == id),
+            Some(id) => chatrecords::of_id(&known.chats, id),
             None => chatrecords::of_number(&known.chats, number),
         };
         return closed(chat, open);
     }
-    Found::Ended(Box::new(record.clone()))
+    Found::Ended(Box::new(Ended::of(record, &known.chats)))
 }
 
 /// **Whether a dispatch record makes a closed chat's card**: a finished task's

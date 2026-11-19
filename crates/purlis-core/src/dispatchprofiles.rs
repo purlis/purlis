@@ -283,33 +283,34 @@ fn refusal_on(
             ),
         });
     }
-    let flag = crate::dispatchunattended::bypass_in(command?)?;
-    let flag = crate::shown::short(&flag);
+    let found = crate::dispatchunattended::bypass_found(command?)?;
+    let flag = crate::shown::short(&found.flag);
+    let clause = found.what.clause();
     Some(match how {
         Again::Started => format!(
             "This chat was dispatched by another chat, and its profile '{shown}' now starts \
-             its harness with the permission prompts off ({flag}), which a dispatched chat \
+             its harness with {clause} ({flag}), which a dispatched chat \
              never runs with, so it was not started again. Take that out of the profile's \
              command in Settings › Harness and start it again, or close it and dispatch the \
              work again on a profile that asks."
         ),
         Again::Reopened => format!(
             "This task was dispatched by another chat, and its profile '{shown}' now starts \
-             its harness with the permission prompts off ({flag}), which a dispatched chat \
+             its harness with {clause} ({flag}), which a dispatched chat \
              never runs with, so it was not reopened. Take that out of the profile's command \
              in Settings › Harness and reopen it, or dispatch the work again on a profile \
              that asks. Its report is still here to read."
         ),
         Again::Asked => format!(
             "You started this chat with Ask, and its profile '{shown}' now starts its harness \
-             with the permission prompts off ({flag}), which a persona chat started that way \
+             with {clause} ({flag}), which a persona chat started that way \
              never runs with, so it was not started again. Take that out of the profile's \
              command in Settings › Harness and start it again, or close it and ask again on a \
              profile that asks."
         ),
         Again::ReopenedAsked => format!(
             "You started this task with Ask, and its profile '{shown}' now starts its harness \
-             with the permission prompts off ({flag}), which a persona chat started that way \
+             with {clause} ({flag}), which a persona chat started that way \
              never runs with, so it was not reopened. Take that out of the profile's command \
              in Settings › Harness and reopen it, or ask again on a profile that asks. Its \
              report is still here to read."
@@ -730,6 +731,7 @@ mod tests {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..Chat::default()
         };
@@ -793,5 +795,37 @@ mod tests {
             read.refused,
             vec!["dispatch.profiles.../x is not a persona's name, so it lists nothing".to_owned()]
         );
+    }
+
+    #[test]
+    fn a_command_that_can_switch_guards_off_or_cannot_be_read_is_refused_in_all_four_restarts() {
+        // Round 3: `GuardsOff` and `Unreadable` read in each of the four sentences, not only
+        // through `bypass_refusal`.
+        for (words, clause) in [
+            (
+                ["claude", "--safe-mode"],
+                "settings that can switch the permission prompts or purlis's guards off (--safe-mode)",
+            ),
+            (
+                ["claude", "--settings={not json"],
+                "cannot tell whether they switch the permission prompts or its guards off \
+                 (--settings (unreadable))",
+            ),
+        ] {
+            let command: Vec<String> = words.iter().map(|word| (*word).to_owned()).collect();
+            for how in [
+                Again::Started,
+                Again::Reopened,
+                Again::Asked,
+                Again::ReopenedAsked,
+            ] {
+                let said = refusal_on(how, None, "work", Some(&command), None).expect("refused");
+                assert!(said.contains(clause), "{how:?}: {said}");
+                assert!(
+                    !said.contains("the permission prompts off ("),
+                    "{how:?}: {said}"
+                );
+            }
+        }
     }
 }

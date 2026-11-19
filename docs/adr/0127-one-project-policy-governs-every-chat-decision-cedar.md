@@ -1,4 +1,4 @@
-# 0126. One project policy governs every chat decision (Cedar)
+# 0127. One project policy governs every chat decision (Cedar)
 
 Status: accepted (2026-11-16), by the person's sign-off Q323 after eight review rounds. It follows
 the person's rulings Q307, Q308b, Q309 to Q319, Q320 and Q322, and the orchestrator's Q319a (O1–O4),
@@ -310,7 +310,7 @@ the rule.
   amended by Q320a N1 (with an opt-in on, the seal gap is narrowed, not closed, and stays
   declared); and Q309 point 8's "needs no seal" for the person's local level, withdrawn by Q322
   (its tightenings are sealed into the accepted floor, so removing one waits for the press; the
-  Organisation's folder is still protected by its ownership, not the seal). ADR 0126 states the
+  Organisation's folder is still protected by its ownership, not the seal). ADR 0127 states the
   amended reading.
 - **CONTEXT.md:** "Policy" widens to the whole statement; "admin lock" becomes **Lock**; **Level**
   gains Organisation and You, with You at the bottom and tighten-only (the M75 spec lists every
@@ -334,5 +334,5 @@ the rule.
 
 ## Amendments
 
-An amendment to this decision is a file of its own in [`0126/`](0126/), named
+An amendment to this decision is a file of its own in [`0127/`](0127/), named
 `<yyyy-mm-dd>-<slug>.md`.

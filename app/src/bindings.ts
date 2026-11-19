@@ -164,6 +164,12 @@ export const commands = {
 	 */
 	paneLinkFile: (from: LinkFrom, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_file", { from, path })),
 	/**
+	 *  **A file on the runner a chat runs on, read for its read-only tab** (#6387): held to the
+	 *  chat's workspace there, unless an ask for it was answered in the pane `from` names, in this
+	 *  run of the app and within the hour, and it is still the file it was then. Read on the runner, as data, through its kind's adapter.
+	 */
+	paneLinkRunnerFile: (from: LinkFrom, runner: string, path: string) => typedError<LinkFile, string>(__TAURI_INVOKE("pane_link_runner_file", { from, runner, path })),
+	/**
 	 *  **The pinned artifacts of project `plane`, in every workspace, that say any word of
 	 *  `query`**, best first: at most [`MOST`].
 	 */
@@ -769,6 +775,12 @@ export const commands = {
 	 */
 	acceptProjectPolicy: (plane: PlaneId, shown: string) => typedError<PolicyState, string>(__TAURI_INVOKE("accept_project_policy", { plane, shown })),
 	/**
+	 *  **What the project's `[policy]` let through and logged** (Q308a: the "would have blocked"
+	 *  count, which opens the log): every chat's lines, newest first. A read, off the window's
+	 *  thread.
+	 */
+	policyLog: (plane: PlaneId) => typedError<PolicyLog, string>(__TAURI_INVOKE("policy_log", { plane })),
+	/**
 	 *  Whether chat `session` holds the asking chat's persona grants instead of its own, and whose
 	 *  (#1362): `null` for a chat that holds its own.
 	 * 
@@ -1262,6 +1274,18 @@ export const commands = {
 	 *  from.
 	 */
 	chatsReconnecting: (plane: PlaneId) => typedError<number[], string>(__TAURI_INVOKE("chats_reconnecting", { plane })),
+	/**
+	 *  The pools' runners whose links are down now, for `plane`'s chats (#7134): read as a window
+	 *  is drawn, and again each time `chats-reconnecting` says the plane's chats moved, since a try
+	 *  to link again that failed for another reason says so there.
+	 */
+	runnerLinksDown: (plane: PlaneId) => typedError<RunnerLinkDown[], string>(__TAURI_INVOKE("runner_links_down", { plane })),
+	/**
+	 *  **Try now** (#7134): pool `pool`'s runner, whose link is down, is tried again at once rather
+	 *  than after the pause between tries. Answered before the try: what it finds is said as ever,
+	 *  on `chats-reconnecting`.
+	 */
+	runnerLinkNow: (plane: PlaneId, pool: string) => typedError<null, string>(__TAURI_INVOKE("runner_link_now", { plane, pool })),
 	/**  The fresh runners of `plane` kept now: what the window's Notice starts from. */
 	freshRunnersKept: (plane: PlaneId) => typedError<FreshKept[], string>(__TAURI_INVOKE("fresh_runners_kept", { plane })),
 	/**
@@ -3513,14 +3537,19 @@ export const commands = {
 	chatByNumber: (plane: PlaneId, number: number) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_number", { plane, number })),
 	/**
 	 *  **What the chat whose ULID is `id` is now** (#6685's review): what a closed chat's row in the
-	 *  Chats list's filter opens. On a blocking thread, as it reads the dispatch records.
+	 *  Chats list's filter opens, `typed` the number typed there, where one was, which its card says
+	 *  it was found by where it is one it had before a restart (#7125). On a blocking thread, as it
+	 *  reads the dispatch records.
 	 */
-	chatById: (plane: PlaneId, id: string) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id })),
+	chatById: (plane: PlaneId, id: string, typed: number | null) => typedError<ChatLookup, string>(__TAURI_INVOKE("chat_by_id", { plane, id, typed })),
 	/**
 	 *  **The closed chats the Chats list's filter looks among** (#6484): read as the filter asks,
-	 *  on a blocking thread. The window's alone, as the card's lookup is (ADR 0052).
+	 *  on a blocking thread. With `typed`, the number typed in the filter, only those that answer to
+	 *  it, each saying whether it was found by a number it had before a restart (#7125); without,
+	 *  every one, for the filter to look among by its words. The window's alone, as the card's
+	 *  lookup is (ADR 0052).
 	 */
-	closedChats: (plane: PlaneId) => typedError<ClosedChat[], string>(__TAURI_INVOKE("closed_chats", { plane })),
+	closedChats: (plane: PlaneId, typed: number | null) => typedError<ClosedChat[], string>(__TAURI_INVOKE("closed_chats", { plane, typed })),
 	/**
 	 *  **What chat `chat` showed as it closed** (#6214), where this machine kept it: what *Read it*
 	 *  draws read-only. Null where nothing was kept.
@@ -3552,11 +3581,12 @@ export const commands = {
 	 */
 	reopenFinishedTask: (plane: PlaneId, id: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_finished_task", { plane, id, columns, rows })),
 	/**
-	 *  **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat started
-	 *  again on its conversation, as the same chat under a new number
-	 *  ([`chatcard::reopen_closed`]). The answer is the chat as the window draws it.
+	 *  **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat whose
+	 *  ULID is `chat` started again on its conversation, as the same chat under a new number
+	 *  ([`chatcard::reopen_closed`]). By its ULID, as more than one record may answer to its number
+	 *  (#7123). The answer is the chat as the window draws it.
 	 */
-	reopenClosedChat: (plane: PlaneId, number: number, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_closed_chat", { plane, number, columns, rows })),
+	reopenClosedChat: (plane: PlaneId, chat: string, columns: number, rows: number) => typedError<OpenChat, string>(__TAURI_INVOKE("reopen_closed_chat", { plane, chat, columns, rows })),
 	/**
 	 *  **Resume** on the ended band of a chat the person ended (#5019, spec #4750 story 62): the
 	 *  same chat on its conversation, in a new run ([`crate::chats::Chats::resume_ended`]). The
@@ -8652,8 +8682,9 @@ export type CloseHanded = {
 
 /**
  *  **A closed chat as the Chats list's filter finds it** (#6484): its number and the ones it had
- *  before a restart, what its tab said, where it ran and when it closed. Choosing it opens its
- *  card (`chat_by_id`).
+ *  before a restart, what its tab said, where it ran and when it closed, and the number it was
+ *  found by where that is one it had before a restart (#7125). Choosing it opens its card
+ *  (`chat_by_id`).
  */
 export type ClosedChat = {
 	number: number,
@@ -8663,6 +8694,12 @@ export type ClosedChat = {
 	 */
 	id: string,
 	earlier: number[],
+	/**
+	 *  **The number typed that found it, where it is one it had before a restart** (#6685): its
+	 *  row says `(was #702)` beside `#731`, by
+	 *  [`purlis_core::chatrecords::ChatRecord::found_by`], the rule's one home (#7125).
+	 */
+	found_by: number | null,
 	title: string,
 	place: string,
 	/**  When it closed, UTC, RFC 3339. */
@@ -9516,6 +9553,35 @@ export type DispatchStanding = {
 	 *  name. **It grants nothing, and nothing here is in force by it.**
 	 */
 	wants: DispatchWants[],
+	/**
+	 *  The grants and acceptances kept here whose seal does not hold (ticket T1.1-73): none of
+	 *  them counts, and the table lists them read-only.
+	 */
+	unsealed: DispatchUnsealed[],
+	/**
+	 *  Where purlis's app cannot read the key it seals answers with, the sentence saying so and
+	 *  what to do: no grant of yours and no acceptance counts until it reads.
+	 */
+	seals_unread: string | null,
+};
+
+/**
+ *  **A dispatch answer kept here that does not count** (ticket T1.1-73): written by something
+ *  other than purlis's app, edited, copied from another clone or put back after it was taken
+ *  away, so its seal does not hold. Shown read-only; the pair is granted again only through its
+ *  ordinary ask.
+ */
+export type DispatchUnsealed = {
+	/**
+	 *  Which list it is in: `mine`, `any`, `mine-in`, `seen`, `any-seen`, `seen-in`, `dormant`
+	 *  or `aside`.
+	 */
+	kind: string,
+	/**
+	 *  The answer as the list spells it: `asking -> target`, `asking -> *`, either `in
+	 *  <workspace>`.
+	 */
+	text: string,
 };
 
 /**
@@ -10259,6 +10325,11 @@ export type FinishedTask = {
 	 *  finds its row by. None for a task that finished before this app was started.
 	 */
 	chat: number | null,
+	/**
+	 *  **Its chat's ULID**, where its record names one (#7145): what the Chats list's filter
+	 *  matches a closed chat's row to it by, as a number may have been another chat's.
+	 */
+	chat_id: string | null,
 	persona: string | null,
 	/**
 	 *  **How it ended, as a value** ([`How`]): what the window draws its state from. The
@@ -11639,7 +11710,7 @@ export type KeyAct = "down" | "up";
  *  **What the pane's pattern took a candidate for**: a hint, never trusted for more. The wire's
  *  half of the core's [`Kind`]; a kind's resolver is the core's `LinkKind`.
  */
-export type KindHint = "url" | "file" | "chat";
+export type KindHint = "url" | "file" | "chat" | "osc8";
 
 /**  One known gap, as the window says it. */
 export type KnownGapShown = {
@@ -11895,12 +11966,27 @@ export type LinkAsk =
 /**  A link, asked about in general words. */
 { about: "link" } | 
 /**  A file outside the chat's home (the prototype's S7), and that home where it has one. */
-{ about: "file-outside"; home: LinkHome | null };
+{ about: "file-outside"; home: LinkHome | null } | 
+/**
+ *  A file outside the chat's home on the runner it runs on (#6387): the runner, named, and
+ *  that home there, as the runner said it.
+ */
+{ about: "file-on-runner"; runner: string; home: LinkHome | null } | 
+/**
+ *  A link a program marked whose words read as another address or path (the prototype's
+ *  S8, #6218): what its target is, and a web address's host, which the ask draws apart.
+ */
+{ about: "misleading"; kind: KindHint; host: string | null };
 
-/**  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. */
+/**
+ *  **Text a pane found that may be a link**: the words as printed, and the pattern's hint. A
+ *  link a program marked (`osc8`) also carries `target`, the address the program named, as the
+ *  pane was handed it: the core reads it again, and a target the pane resolved is never sent.
+ */
 export type LinkCandidate = {
 	kind: KindHint,
 	text: string,
+	target?: string | null,
 };
 
 /**  **What ⌘-click on a link would do**, said on its hover. */
@@ -11930,7 +12016,12 @@ export type LinkFileAt =
 /**  The project's own files. */
 { in: "project"; path: string } | 
 /**  Not in the project. */
-{ in: "outside"; path: string };
+{ in: "outside"; path: string } | 
+/**
+ *  On the runner the chat runs on, by its path there, read from there and read-only
+ *  ([`pane_link_runner_file`], #6387).
+ */
+{ in: "runner"; runner: string; path: string };
 
 /**
  *  **Where a candidate was found**: the pane's project and the chat it draws, where it has them
@@ -11974,6 +12065,8 @@ export type LinkSeen = {
 	target: string,
 	shown: string,
 	does: LinkDoes,
+	/**  The words of a link a program marked, where they name another target than it goes to. */
+	its_text?: string | null,
 	/**  What the chat a chat link names is: none for every other kind. */
 	chat: ChatSeen | null,
 };
@@ -14269,6 +14362,52 @@ export type PluginOffShown = {
 export type PolicyKind = "blocked" | "not-allowed" | "too-young" | "undated" | "unread";
 
 /**
+ *  What the project's enforcement log holds, newest first, at most [`MOST_LINES`], with how
+ *  many lines it holds in all.
+ */
+export type PolicyLog = {
+	/**  How many refusals were let through and logged, every chat's. */
+	count: number,
+	/**  The newest of them. */
+	lines: PolicyLogLine[],
+	/**
+	 *  How many lines the log holds that are not as purlis writes them, left out of the count
+	 *  and the lines: what a process other than the app wrote there.
+	 */
+	dropped: number,
+};
+
+/**  One line of the project's enforcement log: a refusal a family set to `log` let through. */
+export type PolicyLogLine = {
+	/**  When, UTC, RFC 3339. */
+	at: string,
+	/**  The id of the rule that would have refused. */
+	rule: string,
+	/**  The family's key. */
+	family: string,
+	/**
+	 *  The number of the chat it was in, while that chat is open here; `null` for one that has
+	 *  closed, or that purlis could not name: the window says it is unknown.
+	 */
+	session: number | null,
+	/**  The host it was about, where the rule is about one. */
+	host: string | null,
+};
+
+/**  One family the project's `[policy]` sets apart from its template. */
+export type PolicyOverride = {
+	/**  The family's key, as `[policy]` spells it. */
+	family: string,
+	/**  What the file says: `off`, `log` or `enforce`. */
+	said: string,
+	/**
+	 *  How your chats here run it now: stricter than `said` where a lock holds it, where the
+	 *  family is not switchable yet, or where a loosening waits for your press.
+	 */
+	runs: string,
+};
+
+/**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
  *  when it can be taken where it is refused for its age alone.
  */
@@ -14288,6 +14427,11 @@ export type PolicyState = {
 	waiting: PolicyWaiting[],
 	/**  Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile. */
 	refused: string[],
+	/**
+	 *  The families that mean nothing without a sandbox (`network`, `ports`, `processes`),
+	 *  where the project's level is no sandbox: said beside the press that would make it so.
+	 */
+	not_in_force: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
 	/**
@@ -14295,13 +14439,27 @@ export type PolicyState = {
 	 *  file that changed since it was shown accepts nothing.
 	 */
 	digest: string,
+	/**
+	 *  The template the project's committed file names (`open`, `watch`, `hold`, `team` or
+	 *  `strict`), or `watch` where it names none (Q308a: the window says it, Q308 instruction 45).
+	 */
+	template: string,
+	/**  Whether the file named no template, so `watch`, the shipped default, holds. */
+	template_default: boolean,
+	/**  Each family the project sets apart from its template, in the docs' order. */
+	overrides: PolicyOverride[],
+	/**
+	 *  Each family an administrator's lock holds enforced on this machine, whatever the file
+	 *  says (Q308a: Settings shows it as locked).
+	 */
+	locked: string[],
 };
 
-/**  One family the project now runs looser than you accepted. */
+/**  One family the project now runs looser than you accepted, or one dispatch deny it lifted. */
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,
-	/**  What you accepted: `off`, `log` or `enforce`. */
+	/**  What you accepted: `off`, `log` or `enforce`; the sandbox's level `off`, `floor` or `full`. */
 	accepted: string,
 	/**  What the project's file says now. */
 	committed: string,
@@ -17042,6 +17200,19 @@ export type RunnerImageOffered =
 { state: "none_named" } | 
 /**  None: a local build, with no update channel, names none. */
 { state: "local_build" };
+
+/**
+ *  **A pool's runner whose link is down, and why** (#7134): what the window says once its
+ *  chats have said Reconnecting… for longer than a blip.
+ */
+export type RunnerLinkDown = {
+	/**  The pool whose runner it is. */
+	pool: string,
+	/**  The host's own words: what ended the link, or what the last try to link again found. */
+	why: string,
+	/**  When the link went down, in seconds since 1970. */
+	since: number,
+};
 
 /**  How the window reads what a runner records (#3393). */
 export type RunnerLogRead = 

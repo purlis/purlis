@@ -293,7 +293,13 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
         // An app of another build could not read the ask: refused in the words that say so and
         // name what to do (#6960), never decided here.
         Ok(Ok(Answer::No { why })) if why == UNKNOWN_LINE => {
-            let app = mergehold::AppSaid::OtherBuild;
+            // The hook is the app's own binary, so it is the newer one: a bundle replaced under
+            // the running app (#7177). Another hook is a plugin of another build.
+            let app = if is_the_apps_own_binary() {
+                mergehold::AppSaid::OlderApp
+            } else {
+                mergehold::AppSaid::OtherBuild
+            };
             return Some(refused(
                 mergehold::reason(&held, &app),
                 mergehold::refusal(&held, &app),
@@ -384,6 +390,11 @@ fn held_merge(
     let app = match &answer {
         Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
         // An app of another build could not read the hand-over: no refusal of its own (#6960).
+        // The hook is the app's own binary, so it is the newer one: a bundle replaced under the
+        // running app (#7177). Another hook is a plugin of another build.
+        Some(Answer::No { why }) if why == UNKNOWN_LINE && is_the_apps_own_binary() => {
+            AppSaid::OlderApp
+        }
         Some(Answer::No { why }) if why == UNKNOWN_LINE => AppSaid::OtherBuild,
         Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
         _ => AppSaid::Unheard,
@@ -398,6 +409,21 @@ fn held_merge(
             mergehold::refusal(held, &app),
             mergehold::held_by(decision)
         ),
+    }
+}
+
+/// Whether this hook is the program the app hands its chats as their hook binary
+/// ([`purlis_core::plugin::BINARY_ENV`]), by its real path.
+fn is_the_apps_own_binary() -> bool {
+    let (Some(named), Ok(own)) = (
+        purlis_core::envvar::var_os(purlis_core::plugin::BINARY_ENV),
+        std::env::current_exe(),
+    ) else {
+        return false;
+    };
+    match (std::fs::canonicalize(named), std::fs::canonicalize(own)) {
+        (Ok(named), Ok(own)) => named == own,
+        _ => false,
     }
 }
 

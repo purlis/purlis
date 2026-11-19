@@ -113,6 +113,7 @@ const FAILED: FinishedTask = {
   asker: 1,
   name: "ship the docs",
   chat: null,
+  chat_id: null,
   persona: null,
   how: "failed",
   outcome: "failed",

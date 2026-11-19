@@ -235,6 +235,7 @@ pub(crate) fn run_brokered(
         root: held.root().to_path_buf(),
         env: Env::from_process(),
         chat: ask.chat,
+        id: held.chats().id_of(ask.chat),
         persona: open.persona,
         folder: open.cwd,
         // Recorded as the chat started, so the run is held to what the chat itself is held to
@@ -244,6 +245,12 @@ pub(crate) fn run_brokered(
         // The harness the app started it on, for a block of the run's own Notice (#1353).
         harness: open.harness,
         ends_seen: Some(ends_seen),
+        // Its id, so a quiet line in its enforcement log names it (item 8 of the Q308 follow-up).
+        chat_id: held.chats().id_of(ask.chat),
+        policy: held
+            .chats()
+            .handed_from(ask.chat)
+            .and_then(|from| from.policy),
     };
     // Each connection the run makes is the chat's, in the network record (#1667).
     let reached = held.chats().reached_for(ask.chat, asker.persona.clone());
@@ -400,11 +407,14 @@ pub(crate) fn keys_for_chat(
         root: held.root().to_path_buf(),
         env: Env::from_process(),
         chat,
+        id: held.chats().id_of(chat),
         persona: open.persona,
         folder: open.cwd,
         confines: held.chats().confines_now(chat),
         harness: open.harness,
         ends_seen: None,
+        chat_id: held.chats().id_of(chat),
+        policy: held.chats().handed_from(chat).and_then(|from| from.policy),
     };
     let unsandboxed = held.chats().started_unsandboxed(chat);
     keys_answered(

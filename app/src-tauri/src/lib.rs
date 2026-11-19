@@ -200,6 +200,7 @@ mod routedsessions;
 #[cfg(unix)]
 mod runnercode;
 mod runnerdispatches;
+mod runnerfiles;
 mod runnerlinks;
 mod runnerlog;
 mod runnerwrites;
@@ -1339,27 +1340,23 @@ async fn reopen_finished_task(
     .await
 }
 
-/// **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat started
-/// again on its conversation, as the same chat under a new number
-/// ([`chatcard::reopen_closed`]). The answer is the chat as the window draws it.
+/// **Reopen** on the card of a closed chat drawn from its chat's record (#6485): the chat whose
+/// ULID is `chat` started again on its conversation, as the same chat under a new number
+/// ([`chatcard::reopen_closed`]). By its ULID, as more than one record may answer to its number
+/// (#7123). The answer is the chat as the window draws it.
 #[tauri::command]
 #[specta::specta]
 async fn reopen_closed_chat(
     planes: tauri::State<'_, Planes>,
     plane: PlaneId,
-    number: u32,
+    chat: String,
     columns: u16,
     rows: u16,
 ) -> Result<OpenChat, String> {
     let held = planes.held(&plane)?;
     off_the_window(STARTING_A_CHAT, move || {
-        let session = chatcard::reopen_closed(&held, number, Size { columns, rows })?;
-        drawn(&held, session).map_err(|_| {
-            format!(
-                "chat {number} was reopened as chat {session}, which ended as it started. Reopen \
-                 it again from its card, or start a new chat in its place."
-            )
-        })
+        let reopened = chatcard::reopen_closed(&held, &chat, Size { columns, rows })?;
+        drawn(&held, reopened.now).map_err(|_| chatcard::ended_as_it_started(reopened))
     })
     .await
 }

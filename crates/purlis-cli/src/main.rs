@@ -258,7 +258,7 @@ enum Command {
     #[command(subcommand)]
     Theme(theme::ThemeCommand),
 
-    /// The project policy: the Cedar rules that judge what a chat may do (M75, ADR 0126).
+    /// The project policy: the Cedar rules that judge what a chat may do (M75, ADR 0127).
     #[command(subcommand)]
     Policy(policy::PolicyCommand),
 

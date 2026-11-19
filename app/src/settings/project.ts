@@ -71,6 +71,7 @@ import { knownGapsSetting } from "./KnownGaps";
 import { dispatchGroup } from "./dispatch";
 import { projectRunsOnSetting } from "./runsOn";
 import { teamPolicyRow } from "./teamPolicy";
+import { policyGroup, policyLogGroup } from "./policy";
 import {
   levelsWaitingRow,
   plainFilesRow,
@@ -640,6 +641,10 @@ function declaredGroups(
       ? [projectSkillSourcesGroup(read.plane, read.shared.file), projectSkillActsGroup(read.plane)]
       : []),
     ...profilePages(read),
+    // Which of purlis's refusals run here (Q308a, instruction 45), and what they let through.
+    ...(read.plane !== undefined
+      ? [policyGroup(read.plane, read.shared.file), policyLogGroup(read.plane)]
+      : []),
     {
       id: "project.sandbox",
       label: "Sandbox",

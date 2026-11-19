@@ -1956,7 +1956,7 @@ it; every allow, ask and refusal names the rule that decided it. An administrato
 this machine or for the organisation, are part of it and sit above the project: a locked value
 cannot be loosened at any **level**, and Settings shows it as locked. One that forbids the
 opt-out requires the sandbox in every project on that machine, which Settings shows as "On,
-required by policy" (ADR 0067 §1, §4 as amended; ADR 0126).
+required by policy" (ADR 0067 §1, §4 as amended; ADR 0127).
 _Avoid_: supervisor, managed tier (in UI text; that is a harness vendor's), org settings,
 sandbox policy (that was `[sandbox] policy`), an admin's locks alone
 

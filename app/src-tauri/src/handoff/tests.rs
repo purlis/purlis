@@ -205,7 +205,14 @@ impl Plane {
 
     /// With a profile `name` the project offers and this machine approved, whose own
     /// command switches the harness's permission prompts off.
+    ///
+    /// The project enforces `mode` (Q308b), whose refusal of such a profile these tests are
+    /// about: under the default, `watch`, it is only logged.
     fn with_a_profile_that_asks_nobody(self, name: &str) -> Self {
+        let manifest = self.root.join(purlis_core::plane::MANIFEST);
+        let mut text = std::fs::read_to_string(&manifest).unwrap_or_default();
+        text.push_str("\n[policy]\nmode = \"enforce\"\n");
+        std::fs::write(&manifest, text).expect("the manifest");
         self.with_a_profile_whose_command_adds(name, "--dangerously-skip-permissions")
     }
 
@@ -1087,17 +1094,12 @@ fn a_handoff_from_a_chat_nobody_is_at_is_refused_plainly_and_nothing_is_held() {
     // so the chat has neither prompts nor a sandbox, and that is what it is told (#1543): it
     // hands off to no other persona whatever the grants say, and a grant naming the pair
     // would not carry it. Nothing is kept for the person either.
-    assert_eq!(
-        said,
-        Answer::No {
-            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say()
-        }
+    // Ticket T1.1-73: with no sealed grant, the policy's ask is refused at once, in the
+    // words that say nobody is here and no grant covers the pair.
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&no_grant_with_no_sandbox())),
+        "{said:?}"
     );
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("a clock")
-        .as_secs();
-    assert!(purlis_core::dispatchaway::list(held.root(), now + 5).is_empty());
     assert_eq!(told, None);
     assert_eq!(held.chats().open_now().len(), before);
     assert!(
@@ -3481,7 +3483,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
         Ask::Policy(purlis_core::hookwire::PolicyAsk { chat }),
         Ask::PolicyLog(purlis_core::hookwire::PolicyLogAsk {
             chat,
-            family: "guards.git".to_owned(),
+            family: "guards.plane".to_owned(),
             rule: "A3".to_owned(),
             host: None,
         }),
@@ -4270,6 +4272,8 @@ fn a_task_for_the_asking_chats_own_persona_starts_one_chat_beside_it_on_the_stam
             above: Some(vec![Some("steward".to_owned())]),
             by_person: false,
             long: false,
+            // Never looser than the chat that asked (Q308a, Q308b): its policy goes with it.
+            policy: Some(purlis_core::enforcement::in_force(held.root()).spelled()),
         })
     );
     // In the asking chat's folder, on its profile, as its persona.
@@ -4592,6 +4596,7 @@ fn a_slot_held_for_a_chat_that_is_starting_counts_and_is_let_go_when_its_start_e
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..Default::default()
     };
@@ -5875,7 +5880,7 @@ fn the_crossing_rule_stands_aside_exactly_where_the_no_sandbox_refusal_answers()
         // covered, and it is the one case the refusal lets by with no sandbox.
         let refused = matches!(
             answer_of(Covers::Covered, runs_with, to, false, false),
-            Answer::Refused(Refusal::Unsandboxed(_))
+            Answer::Refused(Refusal::Unsandboxed(_) | Refusal::NotSealedHere(_))
         );
         assert_eq!(
             crossing_stands_aside(Some(to), runs_with, false),
@@ -5967,16 +5972,23 @@ fn a_chat_nobody_is_at_starts_no_chat_in_another_workspace_without_a_standing_gr
             "workspace:beta",
         )
     };
-    let unsandboxed = Answer::No {
-        why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say(),
-    };
+    // Ticket T1.1-73: with no grant, the ask is refused at once; with one, it is refused
+    // where no seal keeps it out of the chat's reach, as in this test build.
     let (said, told) = across(&held);
-    assert_eq!(said, unsandboxed);
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&no_grant_with_no_sandbox())),
+        "{said:?}"
+    );
     assert!(told.is_none());
     purlis_core::sandbox::local::grant_dispatch(&plane.root, "steward", "devops")
         .expect("the person allowed it on this machine");
     let (said, told) = across(&held);
-    assert_eq!(said, unsandboxed);
+    assert_eq!(
+        said,
+        Answer::No {
+            why: purlis_core::dispatchunattended::Refusal::NotSealedHere("devops".to_owned()).say()
+        }
+    );
     assert!(told.is_none());
 }
 
@@ -6014,7 +6026,7 @@ fn a_crossing_of_a_chat_with_no_record_of_how_its_run_started_is_refused_as_unsa
     assert_eq!(
         said,
         Answer::No {
-            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say(),
+            why: purlis_core::dispatchunattended::Refusal::NotSealedHere("devops".to_owned()).say(),
         }
     );
     assert!(told.is_none());
@@ -6044,18 +6056,15 @@ fn a_chat_nobody_is_at_with_no_sandbox_is_told_so_before_a_limit() {
     let Answer::No { why: limit } = limited else {
         panic!("refused: {limited:?}");
     };
-    let unsandboxed =
-        purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say();
+    let unsandboxed = no_grant_with_no_sandbox();
     assert_ne!(limit, unsandboxed);
 
     // Nobody at it: told it has no sandbox first.
     its_harness_reports(&held, asking, true);
     let (said, told) = dispatch(&held, &id, &tickets, asking, Some("devops"), "check it");
-    assert_eq!(
-        said,
-        Answer::No {
-            why: unsandboxed.clone()
-        }
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&unsandboxed)),
+        "{said:?}"
     );
     assert!(told.is_none());
     // Its own persona needs no sandbox: the limit still refuses it.
@@ -6735,11 +6744,9 @@ fn a_chat_nobody_is_at_is_refused_what_no_standing_grant_covers_and_nothing_is_h
 
     // It was started without the sandbox, so it has neither prompts nor a sandbox: it
     // dispatches to no other persona, whatever the grants say.
-    assert_eq!(
-        said,
-        Answer::No {
-            why: purlis_core::dispatchunattended::Refusal::Unsandboxed("devops".to_owned()).say()
-        }
+    assert!(
+        matches!(&said, Answer::No { why } if why.starts_with(&no_grant_with_no_sandbox())),
+        "{said:?}"
     );
     assert_eq!(told, None);
     assert_eq!(held.chats().open_now().len(), before);
@@ -7494,6 +7501,8 @@ fn from_a_steward_chat_ask_devops_starts_a_devops_chat_that_may_use_the_devops_v
             above: Some(vec![Some("steward".to_owned())]),
             by_person: true,
             long: false,
+            // Never looser than the chat that asked (Q308a, Q308b): its policy goes with it.
+            policy: Some(purlis_core::enforcement::in_force(held.root()).spelled()),
         }
     );
     // No handoff brief: its first message is purlis's two lines saying the person asked,
@@ -12800,6 +12809,7 @@ fn a_task_still_starting_under_a_name_refuses_a_second_dispatch_of_that_name() {
                 above: None,
                 by_person: false,
                 long: false,
+                policy: None,
             }),
             ..Default::default()
         },
@@ -14451,7 +14461,7 @@ fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_noti
         matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
         "{ran:?}"
     );
-    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team")
+    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team", None)
         .expect("ops holds team");
     assert_eq!(
         pressed.expect("pressed").expect("kept"),
@@ -15935,9 +15945,10 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
         rule: rule.to_owned(),
         host: host.map(str::to_owned),
     };
+    // A3 is `guards.plane`'s (Q308b).
     let guard = purlis_core::toolgate::Arm::PlaneRootBranch.id();
 
-    policy_line(&held, &line(asking, "guards.git", guard, None)).expect("kept");
+    policy_line(&held, &line(asking, "guards.plane", guard, None)).expect("kept");
     policy_line(
         &held,
         &line(
@@ -15976,7 +15987,7 @@ fn a_policy_log_line_is_kept_only_for_an_open_chat_a_known_rule_and_a_host_and_p
             ),
             "a port",
         ),
-        (line(asking + 1000, "guards.git", guard, None), "a chat"),
+        (line(asking + 1000, "guards.plane", guard, None), "a chat"),
     ] {
         assert!(policy_line(&held, &refused).is_err(), "{why}");
     }
@@ -16009,7 +16020,8 @@ fn the_socket_keeps_a_policy_log_line_only_through_its_checks() {
             1,
             Ask::PolicyLog(PolicyLogAsk {
                 chat: asking,
-                family: "guards.git".to_owned(),
+                // A3 is `guards.plane`'s since Q308b (#7104).
+                family: "guards.plane".to_owned(),
                 rule: rule.to_owned(),
                 host: None,
             }),
@@ -16024,4 +16036,18 @@ fn the_socket_keeps_a_policy_log_line_only_through_its_checks() {
     let logged = enforcement::read_log(&plane.root, &chat_id);
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert!(enforcement::read_log(&plane.root, enforcement::UNKNOWN_CHAT).is_empty());
+}
+
+/// What a chat with its prompts off and no sandbox is told where the policy asks and no sealed
+/// grant covers steward to devops (ticket T1.1-73); kept for the needs-you list, so the app may
+/// add that the person will see it.
+fn no_grant_with_no_sandbox() -> String {
+    purlis_core::dispatchunattended::Refusal::Unsandboxed(
+        purlis_core::dispatchunattended::Missing {
+            asking: Some("steward".to_owned()),
+            target: "devops".to_owned(),
+            unreviewed: false,
+        },
+    )
+    .say()
 }

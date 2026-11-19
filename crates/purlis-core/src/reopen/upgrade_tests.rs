@@ -36,6 +36,7 @@ fn task_of(number: u32, asker: u32, workspace: &str) -> Chat {
             above: None,
             by_person: false,
             long: false,
+            policy: None,
         }),
         ..chat(number, workspace)
     }

@@ -103,7 +103,7 @@ grep-searcher = "0.1"
 # `~1.10`, and a minor bump is a reviewed change.
 plist = { version = "~1.10", default-features = false, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
 zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-# The project policy (M75, ADR 0126): AWS's Cedar, the policy language the rulings chose (Q311),
+# The project policy (M75, ADR 0127): AWS's Cedar, the policy language the rulings chose (Q311),
 # Apache-2.0. Pinned exactly: a minor version may change what strict validation accepts, and a
 # policy that validated must keep validating until a reviewed bump. `tpe` is the partial
 # evaluator that compiles a sandbox profile from the policy (plan slice 22).
@@ -195,6 +195,12 @@ toml = { version = "1.1", features = ["preserve_order"] }
 # version already in this workspace's lockfile, so it adds no crate to the tree.
 toml_edit = "0.25"
 unicode-normalization = "0.1.25"
+# **A marked link's words, as a reader sees them** (#6218): UTS #39's skeleton, so a look-alike of
+# `.`, `:` or `/` reads as the character it looks like, and its restriction levels, so a host
+# written in mixed scripts or with a restricted letter asks. From unicode-rs, the authors of the
+# unicode-* crates the tree already has. It brings one crate new to the tree, `unicode-script`
+# 0.5 (the same authors, MIT or Apache-2.0), for the script of each character.
+unicode-security = "0.1"
 # The diagnostic log (`applog`, #647): what the app notices and nobody asked to see goes to
 # `tracing`, and from there to a file that rotates daily and to standard error. `tracing` is
 # already in this workspace's lockfile through Tauri; the subscriber and the rolling appender

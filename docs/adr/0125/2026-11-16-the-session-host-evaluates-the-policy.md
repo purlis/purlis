@@ -3,7 +3,7 @@
 Decision 3 says only the app resolves the setting, and a hook asks the app over the hook socket.
 What a chat's hooks read today is what the chat started with, handed to them in
 `$PURLIS_POLICY` (`enforcement::ENV`), which the app sets at the launch.
-[ADR 0126](../0126-one-project-policy-governs-every-chat-decision-cedar.md) supersedes that
+[ADR 0127](../0127-one-project-policy-governs-every-chat-decision-cedar.md) supersedes that
 hand-off (Q309 point 3):
 
 - **Only the session host loads, verifies and evaluates the policy.** Hooks, the proxy and
@@ -14,6 +14,6 @@ hand-off (Q309 point 3):
 - `$PURLIS_POLICY` is retired. Decision 5's choke points stay: each calls the host's evaluation
   in place of reading the variable.
 
-The rest of decision 3 stands as ADR 0126 decision 2 restates it: the policy is read at the plane
+The rest of decision 3 stands as ADR 0127 decision 2 restates it: the policy is read at the plane
 root's `HEAD`, a loosening waits for the person's press, and what the person accepted is kept
 sealed.

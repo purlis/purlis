@@ -200,6 +200,15 @@ export function openSetupOf(pool: string) {
   set((was) => ({ ...was, adding: true, kind: "docker", setupOf: pool }));
 }
 
+/** **Check pool `pool`** (#7134): its own setup, where a Docker pool's runner is checked step by
+ *  step, once this machine's pools are read. A cluster pool has no such setup: Pools shows it in
+ *  its row. */
+export async function checkPool(pool: string) {
+  if (held.read.state !== "read") await rereadPools();
+  if (held.read.state === "read" && held.read.shown.pools.some((one) => one.name === pool))
+    openSetupOf(pool);
+}
+
 /** Chooses which kind of pool the dialog adds (#3292). */
 export function choosePoolKind(kind: PoolKind) {
   set((was) => ({ ...was, kind }));

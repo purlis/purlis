@@ -1004,6 +1004,7 @@ fn an_answer_to_what_a_project_expects_is_kept_by_what_was_shown() {
     write_new(&path(&root), |held| {
         held.expects_answered = None;
         held.expects_seen = Some(vec!["/opt/run/old.sock".to_owned()]);
+        Ok(())
     })
     .expect("an older record");
     assert_eq!(
@@ -1189,7 +1190,7 @@ fn a_lock_held_on_the_grants_folder_holds_up_no_write() {
     std::thread::spawn(move || {
         TEST_CONFIG_HOME.with(|at| *at.borrow_mut() = Some(config));
         let file = path(&root);
-        let _ = wrote.send(write_new(&file, |_| {}).is_ok());
+        let _ = wrote.send(write_new(&file, |_| Ok(())).is_ok());
     });
     assert_eq!(
         written.recv_timeout(std::time::Duration::from_secs(20)),

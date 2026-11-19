@@ -1672,12 +1672,18 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
             (crate::sandbox::claude_wrap::TMP_ENV.to_owned(), temp),
         ]
     });
+    // The chat's profile's own variables, before the arming's `env` below shadows them.
+    let profile_env = env;
     match harness.state_hooks(armed, cwd, plugins, sandbox) {
         StateHooks::ThisSessionOnly { args, mut env, .. } => {
             // Its guards fail as the project's policy runs them (#7067): armed failing closed,
             // and loosened here to what its start resolves, the same its hooks are handed.
             let args = if harness == Harness::ClaudeCode {
-                crate::harness::claude::under_policy(args, &crate::enforcement::at_start(root))
+                crate::harness::claude::under_policy(
+                    args,
+                    &crate::enforcement::at_start(root),
+                    persons_rules_name_a_program(root, cwd, profile_env),
+                )
             } else {
                 args
             };
@@ -1693,6 +1699,22 @@ pub fn armed(arming: &Arming<'_>) -> Result<Armed, String> {
         )),
         StateHooks::None => Ok((Vec::new(), Vec::new())),
     }
+}
+
+/// **Whether the person's ask and deny rules name a program, as the chat's live Bash guard
+/// will read them** (#7155): the project's files and the layer of the chat's start folder (the
+/// gate's first anchor, `session_dir`), and the person's own settings in the `CLAUDE_CONFIG_DIR`
+/// the chat's profile sets (`env`), not the starting process's.
+///
+/// Read once, at the start: a rule added later arms the block from the next start (the accepted
+/// window, `docs/policy.md`), and a layer reached only through a later `cwd` is not counted.
+pub(crate) fn persons_rules_name_a_program(
+    root: &Path,
+    cwd: Option<&Path>,
+    env: &[(String, String)],
+) -> bool {
+    crate::rulespelling::Rules::in_force_for_chat(root, &[cwd.unwrap_or(root)], env)
+        .names_a_program()
 }
 
 /// **What arms a chat, then what its sandbox's wrap sets over both**, onto `env`: the wrap's

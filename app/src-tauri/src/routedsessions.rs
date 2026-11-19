@@ -1136,6 +1136,34 @@ impl SessionHost for RoutedSessions {
         all.into_iter().collect()
     }
 
+    fn runners_down(&self) -> Vec<crate::reconnecting::RunnerLinkDown> {
+        let mut down: Vec<_> = self
+            .named_pools()
+            .into_iter()
+            .filter_map(|(pool, host)| {
+                host.link_down()
+                    .map(|down| crate::reconnecting::RunnerLinkDown {
+                        pool,
+                        why: down.why,
+                        since: down.since,
+                    })
+            })
+            .collect();
+        // A pool's draining runner and its runner now are one pool to the person: said once, by
+        // the outage that began last, the runner its chats start on now most likely.
+        down.sort_by(|a, b| a.pool.cmp(&b.pool).then(b.since.cmp(&a.since)));
+        down.dedup_by(|later, first| later.pool == first.pool);
+        down
+    }
+
+    fn link_pool_now(&self, pool: &str) {
+        for (named, host) in self.named_pools() {
+            if named == pool {
+                host.link_now();
+            }
+        }
+    }
+
     fn lost_with_its_host(&self, id: u32) -> bool {
         match self.host_of(id) {
             Some(host) => host.lost_with_its_host(id),
@@ -1355,6 +1383,17 @@ impl SessionHost for RoutedSessions {
     /// As [`Self::stays_on_a_draining_runner`].
     fn runner_is_gone(&self) -> bool {
         false
+    }
+
+    /// Asked of the host of the pool it runs on, where there is one already: never made for it.
+    fn reads_files_on_runner(&self, id: u32) -> bool {
+        self.host_of(id)
+            .is_some_and(|host| host.reads_files_on_runner(id))
+    }
+
+    /// As [`Self::reads_files_on_runner`].
+    fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
+        self.host_of(id)?.runner_files_of(id)
     }
 
     /// Asked of the host of the pool it runs on, where there is one already: never made for it.
@@ -1606,6 +1645,12 @@ impl SessionHost for RoutedSessions {
             }
         }
         self.here.close_what_was_not_reattached();
+    }
+
+    /// This machine's host's alone: a pool's chat is taken back by the record of where it runs,
+    /// which a refused record is not (#6737).
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        self.here.runs_left()
     }
 
     /// This machine's host's alone: a browser runs only there (#2025).

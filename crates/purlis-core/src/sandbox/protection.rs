@@ -194,7 +194,7 @@ fn tier_of(root: &Path, persona: Option<&str>, made: &Made) -> Tier {
     let locks = policy::Locks::of(root);
     // Where no tier of the person's set it: the project's, only where its file turns the
     // sandbox on, and otherwise purlis's default floor.
-    let own = if super::Plane::read(root).in_force(&locks).is_some() {
+    let own = if super::project_runs_full(root, &super::Plane::read(root), &locks) {
         Tier::Project
     } else {
         Tier::Purlis

@@ -1294,7 +1294,8 @@ has it; nothing reads the key after that.
   because what you have already seen is yours on this machine. Under the key
   **`"on this machine"`**, in place of a project's path, are the Notices shown once per
   machine whatever the project: `chip-explained`, the Notice the first dispatch shows to explain
-  a tab's chip of tasks (#1501). The core keeps only those causes there, whoever writes the
+  a tab's chip of tasks (#1501), and `policy-watch-announced`, the upgrade to the `watch` policy
+  (Q308a). The core keeps only those causes there, whoever writes the
   key and whatever was hand-edited into it, adds one under the file's lock so two windows keep
   it once, and the window asks the file again before it shows such a Notice. Nothing lets them
   go, and the projects' dismissals never push them out. Delete it to see every Notice again.

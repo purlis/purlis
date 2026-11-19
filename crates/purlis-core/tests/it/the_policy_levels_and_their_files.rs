@@ -1198,6 +1198,10 @@ fn the_table(template: Template, family: &str) -> Mode {
         {
             Mode::Enforce
         }
+        // An unapproved profile or declaration still asks (Q329).
+        (_, Template::Watch | Template::Hold) if family == "trust" => Mode::Enforce,
+        // `ports` takes off or enforce only (Q328), so where the table says log it enforces.
+        _ if family == "ports" => Mode::Enforce,
         _ => Mode::Log,
     }
 }

@@ -186,6 +186,8 @@ import {
   isPlaneRoot,
   outsideFileTitle,
   outsideFileView,
+  runnerFileTitle,
+  runnerFileView,
   pieceFileTitle,
   pieceFileView,
   pieceFilesTitle,
@@ -575,9 +577,11 @@ import { ProjectHostsNotice } from "./ProjectHostsNotice";
 import { RunnerGoneNotice } from "./RunnerGoneNotice";
 import { FreshRunnerKeptNotice } from "./FreshRunnerKeptNotice";
 import { RunnerKeyChangedNotice } from "./RunnerKeyChangedNotice";
+import { RunnerLinkDownNotice } from "./RunnerLinkDownNotice";
 import { ProjectExpectsNotice } from "./ProjectExpectsNotice";
 import { TeamSandboxOffNotice } from "./TeamSandboxOffNotice";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
+import { PolicyWatchAnnounced } from "./PolicyWatchAnnounced";
 import { ProjectPresetsNotice } from "./ProjectPresetsNotice";
 import { PersonaHostsNotice } from "./PersonaHostsNotice";
 import { ProjectDispatchNotice } from "./ProjectDispatchNotice";
@@ -691,7 +695,14 @@ import {
   useChatMoves,
   useChatMovesHeard,
 } from "./chatMoves";
-import { anyPoolKept, readRunnerStage, refusedWith, saveLimits, usePools } from "./pools";
+import {
+  anyPoolKept,
+  checkPool,
+  readRunnerStage,
+  refusedWith,
+  saveLimits,
+  usePools,
+} from "./pools";
 import { useSignOutTerminals } from "./settings/signOutTerminals";
 import { LEAST, LEAST_CHIP, leastAt, pinnedFirst, useRoom } from "./fits";
 import type { Naming } from "./tabFace";
@@ -5474,10 +5485,13 @@ export const PlaneView = memo(function PlaneView({
     if (opened && inFront) rereadAlerts?.();
   }, [noticesShown, inFront, rereadAlerts]);
 
-  /** A file outside the project a pane's link opened (#6216), in a read-only tab of its own. */
+  /** A file outside the project a pane's link opened (#6216), or one on a runner chat's runner
+   *  (#6387), in a read-only tab of its own. */
   const outsideFile = useCallback(
-    ({ session, path }: { session: number | null; path: string }) =>
-      showView(outsideFileView(session, path), outsideFileTitle(path)),
+    ({ session, runner, path }: { session: number | null; runner?: string; path: string }) =>
+      runner === undefined
+        ? showView(outsideFileView(session, path), outsideFileTitle(path))
+        : showView(runnerFileView(session, runner, path), runnerFileTitle(runner, path)),
     [showView],
   );
   useOutsideFileAsks(plane, outsideFile);
@@ -7572,12 +7586,12 @@ export const PlaneView = memo(function PlaneView({
   );
   /**
    * ***Reopen* on a closed chat's card drawn from its chat's record** (#6485): the chat started
-   * again on its conversation, by its number. A refusal is the card's to say.
+   * again on its conversation, by its ULID (#7123). A refusal is the card's to say.
    */
   const reopenClosedChat = useCallback(
-    async (number: number): Promise<string | undefined> => {
+    async (chat: string): Promise<string | undefined> => {
       const said = await commands
-        .reopenClosedChat(plane, number, STARTING_SIZE.columns, STARTING_SIZE.rows)
+        .reopenClosedChat(plane, chat, STARTING_SIZE.columns, STARTING_SIZE.rows)
         .catch((err: unknown) => ({ status: "error" as const, error: String(err) }));
       if (said.status === "error") return said.error;
       showReopened(said.data);
@@ -8981,8 +8995,8 @@ export const PlaneView = memo(function PlaneView({
         const why = await reopenById(id);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
       },
-      reopenClosedChat: async (number) => {
-        const why = await reopenClosedChat(number);
+      reopenClosedChat: async (chat) => {
+        const why = await reopenClosedChat(chat);
         return why === undefined ? { ok: true } : { ok: false, refused: why };
       },
       paneBack: goBack,
@@ -12078,6 +12092,15 @@ export const PlaneView = memo(function PlaneView({
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
+      {/* **A runner's link that stays down past a blip** (#7134): said once for each pool, with
+          why, Try now and Check pool, while its chats' panes say Reconnecting…. */}
+      <RunnerLinkDownNotice
+        plane={plane}
+        onCheckPool={(pool) => {
+          openSettingsAt({ group: "you.machine.pools" });
+          void checkPool(pool);
+        }}
+      />
       {/* **A task's runner kept, since its work is not all here** (#4569): never silent, with
           Fetch again and Discard. */}
       <FreshRunnerKeptNotice plane={plane} />
@@ -12093,6 +12116,9 @@ export const PlaneView = memo(function PlaneView({
       {/* **A loosening of the project's `[policy]`** (Q308a): reaches each person only on their
           one Accept; a value it could not read is said beside it, enforced meanwhile. */}
       <ProjectPolicyNotice plane={plane} />
+      {/* **Blocks are off by default** (Q308a): the upgrade to `watch`, said once on this
+          machine, in a project that names no policy. */}
+      <PolicyWatchAnnounced plane={plane} />
       {/* **A persona's hosts wait for you** (#1362): asked on each machine, never told. A
           Blocking ask too (ADR 0121, amended 2026-11-12), and drawn from that ask. */}
       <PersonaHostsNotice plane={plane} asked={personasAsked} />

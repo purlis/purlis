@@ -67,6 +67,10 @@ pub(crate) enum Found {
     Foreign,
     /// None could be read or made.
     Unread,
+    /// No keyring started for this process: nothing is sealed or kept now, which is said (the
+    /// review of #7113). A plane where a seal was kept reads it as a keyring that failed
+    /// ([`no_keyring`], #7153).
+    NoKeyring,
 }
 
 /// **The keyring calls the seal's key is found, checked and made with** (#7073): the operating
@@ -74,12 +78,30 @@ pub(crate) enum Found {
 /// decides is tested whole.
 pub(crate) trait KeyItems {
     /// The item's value; `None` where there is none.
-    fn read(&self, service: &str, account: &str) -> Result<Option<String>, String>;
+    fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable>;
     /// Whether this program owns the item, shown by making it again in place with `value`
     /// ([`super::keyhold::owned_here`]).
     fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String>;
     /// A new item of this program's own ([`super::keyhold::make_own`]).
     fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String>;
+}
+
+/// Why a key item could not be read.
+pub(crate) enum Unreadable {
+    /// No keyring started for this process (the review of #7113): none on the machine, or one
+    /// whose start-up failed, which keyring 4 does not tell apart and does not try again (#7153).
+    NoKeyring,
+    /// A keyring that is there failed.
+    Failed(String),
+}
+
+impl std::fmt::Display for Unreadable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoKeyring => f.write_str("no keyring on this machine"),
+            Self::Failed(why) => f.write_str(why),
+        }
+    }
 }
 
 /// The operating system's keyring, as the app reaches it.
@@ -88,11 +110,12 @@ struct OsKeyItems;
 
 #[cfg(not(test))]
 impl KeyItems for OsKeyItems {
-    fn read(&self, service: &str, account: &str) -> Result<Option<String>, String> {
+    fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
         match ::keyring::Entry::new(service, account).and_then(|entry| entry.get_password()) {
             Ok(value) => Ok(Some(value)),
             Err(::keyring::Error::NoEntry) => Ok(None),
-            Err(why) => Err(why.to_string()),
+            Err(::keyring::Error::NoDefaultStore) => Err(Unreadable::NoKeyring),
+            Err(why) => Err(Unreadable::Failed(why.to_string())),
         }
     }
 
@@ -142,7 +165,7 @@ fn found(again: bool) -> Found {
 fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     #[cfg(test)]
     {
-        if TEST_FOREIGN.with(std::cell::Cell::get) {
+        if TEST_FOREIGN.with(std::cell::Cell::get) || TEST_NO_KEYRING.with(std::cell::Cell::get) {
             return None;
         }
         TEST_KEY.with(|held| held.borrow().clone().map(zeroize::Zeroizing::new))
@@ -154,7 +177,7 @@ fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
         }
         match found(false) {
             Found::Held(key) => Some(key),
-            Found::Foreign | Found::Unread => None,
+            Found::Foreign | Found::Unread | Found::NoKeyring => None,
         }
     }
 }
@@ -187,6 +210,13 @@ pub const FOREIGN_KEY: &str = "another program made the keychain item purlis kee
 pub const KEY_UNREAD: &str = "purlis could not read or make its seal key in the keyring, so it \
      accepted nothing. Unlock the keychain and press Accept again";
 
+/// What the press says on a machine with no keyring purlis can use (the review of #7113): purlis
+/// looks for the keyring once, as it starts, so a press finds none until it is opened again
+/// (#7153).
+pub const NO_KEYRING: &str = "purlis found no keyring to keep its seal key in when it started, so \
+     it accepted nothing. Start your desktop's secret service (GNOME Keyring or KWallet, say), \
+     then quit and open purlis again: it looks for the keyring once, as it starts";
+
 /// What the press says in a process that is not the app.
 const NOT_THE_APP: &str = "only purlis's app can accept a policy";
 
@@ -209,11 +239,17 @@ pub fn ready_to_seal() -> Result<(), &'static str> {
         if !super::keyhold::is_the_app() || crate::fence::FENCED {
             return Err(NOT_THE_APP);
         }
-        match found(true) {
-            Found::Held(_) => Ok(()),
-            Found::Foreign => Err(FOREIGN_KEY),
-            Found::Unread => Err(KEY_UNREAD),
-        }
+        said(&found(true))
+    }
+}
+
+/// What the press says of what the app found of the seal's key: nothing where it holds it.
+fn said(found: &Found) -> Result<(), &'static str> {
+    match found {
+        Found::Held(_) => Ok(()),
+        Found::Foreign => Err(FOREIGN_KEY),
+        Found::Unread => Err(KEY_UNREAD),
+        Found::NoKeyring => Err(NO_KEYRING),
     }
 }
 
@@ -253,6 +289,7 @@ pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
                 }
             }
         }
+        Err(Unreadable::NoKeyring) => Found::NoKeyring,
         Err(why) => {
             tracing::warn!("purlis: the seal's key could not be read ({why})");
             Found::Unread
@@ -285,6 +322,41 @@ fn fresh(items: &dyn KeyItems) -> Found {
     match items.make_own(SERVICE, ACCOUNT, &hex) {
         Ok(()) => Found::Held(fresh),
         Err(_) => Found::Unread,
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's stand-in for a machine with no keyring purlis can use.
+    static TEST_NO_KEYRING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's machine has no keyring** (or has one again): nothing seals, and nothing is kept.
+#[cfg(test)]
+pub(crate) fn set_no_keyring_for_this_test(none: bool) {
+    TEST_NO_KEYRING.with(|held| held.set(none));
+}
+
+/// **Whether the app found no keyring it can use as it started** (a Linux with no secret
+/// service, say; the review of #7113): the app's own answer, from where it keeps the seal's
+/// key. There no answer is sealed, so no dispatch grant is kept and no never is added. False in
+/// any process but the app.
+///
+/// **Never, alone, a machine where nothing was kept** (#7153): keyring 4 looks for the keyring
+/// once a process, and says there is none for the rest of its life where that look failed
+/// (`Error::NoDefaultStore`), which on Linux is any failure to reach the secret service, one
+/// that had not answered on D-Bus yet included. So a plane whose sealed records say a seal was
+/// kept reads it as a keyring that failed; [`crate::sandbox::local::no_keyring_at`] says which.
+pub fn no_keyring() -> bool {
+    #[cfg(test)]
+    {
+        TEST_NO_KEYRING.with(std::cell::Cell::get)
+    }
+    #[cfg(not(test))]
+    {
+        super::keyhold::is_the_app()
+            && !crate::fence::FENCED
+            && matches!(found(false), Found::NoKeyring)
     }
 }
 
@@ -363,6 +435,40 @@ pub fn keep(kind: &str, clone: &str, text: &str) -> bool {
     #[cfg(not(test))]
     {
         super::keyhold::make_own(SERVICE, &account, &seal).is_ok()
+    }
+}
+
+/// **Whether this process can seal and verify**: it is the app and the key reads.
+pub fn can_seal() -> bool {
+    key().is_some()
+}
+
+/// **Whether a seal is kept for `kind` and `clone`**, whether or not this process can read the
+/// key: only that the keyring holds the item, never what it says. What a presence marker is
+/// where nothing else can be told (ticket T1.1-73: the key unreadable and nevers present).
+///
+/// **A keyring that fails reads as one that holds it**, so what it may hold is not taken for
+/// nothing, **and so does one that did not start** ([`no_keyring`], #7153): keyring 4 tells a
+/// machine with none from one whose start-up failed by nothing it says. Only a caller that
+/// knows the plane can say no keyring was ever used there
+/// ([`crate::sandbox::local::no_keyring_at`]), and so that nothing could have been kept.
+pub fn kept_exists(kind: &str, clone: &str) -> bool {
+    let account = kept_account(kind, clone);
+    #[cfg(test)]
+    {
+        // Every read errs where no keyring started, as a keyring that fails does.
+        TEST_NO_KEYRING.with(std::cell::Cell::get)
+            || TEST_KEPT.with(|kept| kept.borrow().contains_key(&account))
+    }
+    #[cfg(not(test))]
+    {
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return false;
+        }
+        !matches!(
+            ::keyring::Entry::new(SERVICE, &account).and_then(|e| e.get_password()),
+            Err(::keyring::Error::NoEntry)
+        )
     }
 }
 
@@ -464,7 +570,7 @@ mod tests {
     }
 
     impl KeyItems for Items {
-        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, String> {
+        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, Unreadable> {
             Ok(self.value(service))
         }
 
@@ -492,6 +598,7 @@ mod tests {
             Found::Held(key) => key.to_vec(),
             Found::Foreign => panic!("held, not foreign"),
             Found::Unread => panic!("held, not unread"),
+            Found::NoKeyring => panic!("held, not no keyring"),
         }
     }
 
@@ -539,5 +646,81 @@ mod tests {
         items.forget(SERVICE);
         let items = items.with(SERVICE, &"ef".repeat(KEY_BYTES), false);
         assert_eq!(held(cache.found(true, &items)), made);
+    }
+
+    /// A machine whose keyring service is missing altogether.
+    struct NoStore;
+
+    impl KeyItems for NoStore {
+        fn read(&self, _service: &str, _account: &str) -> Result<Option<String>, Unreadable> {
+            Err(Unreadable::NoKeyring)
+        }
+
+        fn owned_here(&self, _: &str, _: &str, _: &str) -> Result<bool, String> {
+            panic!("nothing is checked where there is no keyring")
+        }
+
+        fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            panic!("nothing is made where there is no keyring")
+        }
+    }
+
+    /// A keyring that is there and fails a read: the key's, or, where `key_gone`, its spare's
+    /// once the key reads as none.
+    struct Failing {
+        key_gone: bool,
+    }
+
+    impl KeyItems for Failing {
+        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, Unreadable> {
+            if self.key_gone && service == SERVICE {
+                return Ok(None);
+            }
+            Err(Unreadable::Failed("locked".to_owned()))
+        }
+
+        fn owned_here(&self, _: &str, _: &str, _: &str) -> Result<bool, String> {
+            panic!("nothing is checked that did not read")
+        }
+
+        fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
+            panic!("no key is made where what is there did not read")
+        }
+    }
+
+    #[test]
+    fn a_keyring_that_fails_a_read_is_unread_and_never_no_keyring() {
+        // #7153: the direction #7113's test did not pin. A keyring that fails reads as one that
+        // holds what it cannot show, never as none, and no new key is made over what may be
+        // there: the key's read failing, or the key gone and its spare's read failing.
+        let locked = Failing { key_gone: false };
+        assert!(matches!(read_or_make(&locked), Found::Unread));
+        assert!(matches!(
+            read_or_make(&Failing { key_gone: true }),
+            Found::Unread
+        ));
+        assert_eq!(said(&read_or_make(&locked)), Err(KEY_UNREAD));
+    }
+
+    #[test]
+    fn the_press_on_no_keyring_says_to_open_purlis_again_never_to_press_again() {
+        // #7153: keyring 4 looks for the keyring once a process, so a press cannot find one
+        // started since: only opening purlis again does.
+        assert_eq!(said(&read_or_make(&NoStore)), Err(NO_KEYRING));
+        assert!(NO_KEYRING.contains("open purlis again"), "{NO_KEYRING}");
+        assert!(!NO_KEYRING.contains("press Accept again"), "{NO_KEYRING}");
+        assert_eq!(said(&Found::Foreign), Err(FOREIGN_KEY));
+    }
+
+    #[test]
+    fn a_machine_with_no_keyring_is_said_and_never_taken_for_one_that_failed() {
+        // The review of #7113: no keyring at all is a declared gap, never `Unread`, which reads
+        // as a keyring that holds what it cannot show.
+        assert!(matches!(read_or_make(&NoStore), Found::NoKeyring));
+        // A keyring that is there and fails says its own reason.
+        assert_eq!(
+            Unreadable::Failed("locked".to_owned()).to_string(),
+            "locked"
+        );
     }
 }
