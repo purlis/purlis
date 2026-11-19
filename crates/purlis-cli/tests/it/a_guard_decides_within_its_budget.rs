@@ -267,7 +267,11 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
             for mode in ["bypassPermissions", "default"] {
                 let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), env);
                 assert_eq!(code, Some(0), "{mode} chat={}: {err}", !env.is_empty());
-                assert!(!out.contains("deny"), "{mode} chat={}: {out}", !env.is_empty());
+                assert!(
+                    !out.contains("deny"),
+                    "{mode} chat={}: {out}",
+                    !env.is_empty()
+                );
             }
         }
     }
