@@ -489,6 +489,130 @@ pub fn kept_holds(kind: &str, clone: &str, text: &str) -> Option<bool> {
     Some(holds(&seal, kind, clone, text))
 }
 
+/// What the app found at a keyring item of its own under [`SERVICE`] (an anchor of the answer
+/// store, [`super::answers`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Item {
+    /// The item's value.
+    Value(String),
+    /// A keyring that answered: no item is there.
+    Missing,
+    /// A keyring that is there and failed, or this process is not the app: what the item holds
+    /// is unknown, never none.
+    Unreadable,
+    /// No keyring started for this process ([`no_keyring`]).
+    NoKeyring,
+}
+
+/// **What this process can do with the seal's key now**, for a caller that has to tell a key that
+/// is locked from one that is not the app's to use (#7015: a locked key on an anchored plane is
+/// the deny state; a process that is not the app verifies nothing).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KeyState {
+    /// The key reads: sealing and verifying work.
+    Usable,
+    /// The keyring is there and the key does not read (a cancelled Hello, a wrong password, a
+    /// key item another program made).
+    Locked,
+    /// No keyring started for this process.
+    NoKeyring,
+    /// This process is not the app, or is fenced.
+    NotTheApp,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's stand-in for a keyring that is there and does not read.
+    static TEST_LOCKED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's keyring is locked** (or reads again).
+#[cfg(test)]
+pub(crate) fn set_locked_for_this_test(locked: bool) {
+    TEST_LOCKED.with(|held| held.set(locked));
+}
+
+/// [`KeyState`] of this process.
+pub(crate) fn key_state() -> KeyState {
+    #[cfg(test)]
+    {
+        if TEST_NO_KEYRING.with(std::cell::Cell::get) {
+            KeyState::NoKeyring
+        } else if TEST_LOCKED.with(std::cell::Cell::get) || TEST_FOREIGN.with(std::cell::Cell::get)
+        {
+            KeyState::Locked
+        } else if TEST_KEY.with(|held| held.borrow().is_some()) {
+            KeyState::Usable
+        } else {
+            KeyState::NotTheApp
+        }
+    }
+    #[cfg(not(test))]
+    {
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return KeyState::NotTheApp;
+        }
+        match found(false) {
+            Found::Held(_) => KeyState::Usable,
+            Found::Foreign | Found::Unread => KeyState::Locked,
+            Found::NoKeyring => KeyState::NoKeyring,
+        }
+    }
+}
+
+/// **Reads the app's keyring item `account`** under [`SERVICE`].
+pub(crate) fn item_read(account: &str) -> Item {
+    #[cfg(test)]
+    {
+        if TEST_NO_KEYRING.with(std::cell::Cell::get) {
+            return Item::NoKeyring;
+        }
+        if TEST_LOCKED.with(std::cell::Cell::get) {
+            return Item::Unreadable;
+        }
+        TEST_KEPT.with(|kept| {
+            kept.borrow()
+                .get(&format!("item:{account}"))
+                .map_or(Item::Missing, |value| Item::Value(value.clone()))
+        })
+    }
+    #[cfg(not(test))]
+    {
+        if !super::keyhold::is_the_app() || crate::fence::FENCED {
+            return Item::Unreadable;
+        }
+        match ::keyring::Entry::new(SERVICE, account).and_then(|entry| entry.get_password()) {
+            Ok(value) => Item::Value(value),
+            Err(::keyring::Error::NoEntry) => Item::Missing,
+            Err(::keyring::Error::NoDefaultStore) => Item::NoKeyring,
+            Err(_) => Item::Unreadable,
+        }
+    }
+}
+
+/// **Writes the app's keyring item `account`** under [`SERVICE`]: `false` where it was not
+/// written. Outside [`super::keyhold::HOLD_ARG`]'s reach, as the key is.
+pub(crate) fn item_write(account: &str, value: &str) -> bool {
+    #[cfg(test)]
+    {
+        if TEST_NO_KEYRING.with(std::cell::Cell::get)
+            || TEST_LOCKED.with(std::cell::Cell::get)
+            || TEST_KEY.with(|held| held.borrow().is_none())
+        {
+            return false;
+        }
+        TEST_KEPT.with(|kept| {
+            kept.borrow_mut()
+                .insert(format!("item:{account}"), value.to_owned())
+        });
+        true
+    }
+    #[cfg(not(test))]
+    {
+        super::keyhold::make_own(SERVICE, account, value).is_ok()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

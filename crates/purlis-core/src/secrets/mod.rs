@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 use crate::tui::Markup;
 
+pub mod answers;
 pub mod ask;
 pub mod brokered;
 pub mod cmd;

@@ -4969,6 +4969,73 @@ write into this folder cannot make its own text arrive as the person's.
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
   nothing is sealed and the shipped default holds.
 
+### `~/.config/purlis/app/answers/<clone key>/` — the sealed answer store (outside the plane)
+- **What:** the one sealed store of what the person answered on this machine that decides what a
+  chat may do (M75 spec §8.10, #7015): the accepted policy, acceptances, grants of every scope,
+  nevers (and their presence marker), env-var passes and the accepted floor. **Each entry is
+  sealed on its own**, bound to its kind and the clone key ([the seal](#the-seals-key--the-keyring-item-purlis-seal)).
+  **A sealed manifest covers the whole store.** Entries load only from the manifest's list,
+  never by listing the folder: a sealed file the manifest does not list is ignored, with a
+  Notice, so a removed grant or a used Once grant put back counts for nothing.
+- **Layout:** `manifest.json` and, beside it, `<kind>/<digest>.json` for each entry, in the
+  clone's folder (`<clone key>`, `sandbox::local::clone_key`). The Everywhere nevers are one
+  machine-level store in `answers/everywhere/`, keyed by neither plane nor clone, with its own
+  manifest. **Proposed** (ticket #7015): this layout, which review may move.
+- **Format:** an entry is `{kind, text, mac}`, its file named by `digest`, the first 32 hex
+  digits of the SHA-256 of kind and text. The manifest is `{plane_id, bind, counter,
+  imported_nevers, entries: [{kind, digest, mac}], mac}`: `plane_id` the plane's stable ULID
+  (empty for Everywhere), `bind` the clone key (`everywhere`) it was sealed for, `counter` one
+  past the last write's, rising on **every** write (a grant's removal and a Once grant's use
+  included), `imported_nevers` the mark that the person's existing nevers were imported once
+  (Q320). Kinds: `accepted`, `acceptance`, `grant`, `never`, `never-marker`, `pass`, `floor`.
+- **Which state a plane is in:** the **deny state** where the anchor is present and the manifest
+  is missing or older than the counter; the anchored path's clone key has no manifest (a swapped
+  `.git`); an entry other than a grant is missing or fails its seal or the manifest's digest;
+  the plane was moved, or its store has no anchor; the Everywhere entry is missing or older; the
+  seal key is locked (or a keyring did not start) where a store is kept; or slice 14 recorded a
+  commit past the accepted floor's cap. **Only a grant that is missing or fails its seal reads
+  as "no answer".** With no anchor and no store: a fresh install, and the shipped default
+  applies. With no keyring: the shipped default, with a Notice. Slice 07b refuses on the state.
+- **Status:** **internal** — **purlis only**.
+- **Tier:** Machine, device-bound — never synced. Deleting it is the deny state wherever the
+  [anchor](#the-answer-stores-anchors--keyring-accounts-of-purlis-seal) is kept.
+- **Written by:** `purlis_core::secrets::answers::commit` (and `commit_everywhere`), in the
+  app's own process alone, on the person's press in a window: a windowless host (`purlis
+  serve`) adds nothing. Order: the new entries' files, **the anchor's counter in the keyring**,
+  the manifest, then the removed files. A write cut short between the anchor and the manifest
+  leaves the store older than its anchor: the deny state, mended by the person's next press
+  (`recommit`).
+- **Read by:** `answers::standing`, in the app alone.
+- **Replaces:** `app/sandbox.json`'s "Keep blocked" hosts, `app/dispatch-never.json`,
+  `sandbox-grants/` and `inbox/rules.json`, which doctor names as safe to delete (the import
+  of the first two, once, and doctor's lines are slice 07a's second part).
+
+### The answer store's anchors — keyring accounts of `purlis-seal`
+- **What:** what keeps the [answer store](#configpurlisappanswersclone-key--the-sealed-answer-store-outside-the-plane)
+  from being taken away or put back from before. Three kinds of generic password under the
+  service `purlis-seal`, **outside purlis's own prefixes** (`keyring::OWN_PREFIXES`) as the
+  seal's key is, so the app's one-item writer (`keyhold::HOLD_ARG`) refuses them:
+  - `anchor:<anchor>`: one per plane, **keyed by the plane's path as it is reached**
+    (`sandbox::local::anchor_key`, the same digest the `sealed-planes/` marker of #7164 is
+    named by), never the clone key, which a chat can change by swapping `.git`. It holds the
+    presence anchor, the **high-water counter**, the count of nevers and the count of
+    accepted-floor versions, sealed. The counter is written here before the manifest.
+  - `registry`: one machine-level, sealed registry of anchored planes: each one's id, real path
+    and the path as opened, the clone key of its last sealed write and whether anything was
+    ever sealed for it; and **the device id**, sealed at the plane's first open and
+    **unconfirmed** until the person confirms it in the window. `context.machine` is that id,
+    once confirmed, read from here and never from `machine.json`; with no keyring, or a
+    registry that does not read, it is unset and doctor declares it.
+  - `everywhere`: the anchor of the Everywhere nevers, with its own counter and a count of its
+    nevers; if its manifest is missing or older, every plane is in the deny state.
+- **A plane is registered at first open**, before anything is sealed, so a process inside it is
+  never plane-less; a registered plane whose counter is nought with no sealed store is a fresh
+  install.
+- **Status:** **internal** — **purlis only**.
+- **Tier:** Keyring — device-bound; never synced, never backed up. On Linux and Windows the
+  anchor is only as strong as the declared seal gap: any program of the person's can read
+  the keyring there, so it stops a hand edit and a sandboxed chat only.
+
 ### `~/.config/purlis/sandbox-grants/<clone key>.json` (outside the plane)
 - **What:** everything this machine keeps about one project's sandbox (ADR 0093): the keys
   described under [`app/sandbox.json`](#appsandboxjson), which an older build kept in the
