@@ -373,6 +373,11 @@ struct Kept {
 impl Kept {
     /// Starts keeping a link to the host, as the window does, and waits for its first.
     async fn start(rig: &Rig) -> Kept {
+        Kept::start_within(rig, PATIENCE).await
+    }
+
+    /// As [`Kept::start`], waiting up to `within` for the first link: over a slow link it takes longer.
+    async fn start_within(rig: &Rig, within: Duration) -> Kept {
         let (_folder, known_hosts) = rig.reach.known_hosts_for_a_run().expect("known_hosts");
         let mut args = sshroute::sign_in_args(&rig.reach.route, &rig.reach.pool, &known_hosts)
             .expect("its arguments");
@@ -386,7 +391,7 @@ impl Kept {
             rig.runner.clone(),
             Liveness::default(),
         );
-        let began = Instant::now();
+        let began = rig.began;
         let told = Arc::new(Mutex::new(Vec::new()));
         let client = Arc::new(Mutex::new(None));
         let (told_in, client_in) = (Arc::clone(&told), Arc::clone(&client));
@@ -424,7 +429,7 @@ impl Kept {
             began,
             task,
         };
-        kept.until_up(PATIENCE, "the first link").await;
+        kept.until_up(within, "the first link").await;
         kept
     }
 
@@ -630,8 +635,12 @@ fn a_link_drop_keeps_the_chat(for_: Duration, tag: &str) {
                 assert!(!why.trim().is_empty(), "down with no reason");
             }
         }
-        let back = first_up_after(&told, back_at).expect("the link came back");
-        assert!(back <= START_LIMIT, "back after {back:?}");
+        // A link that was told down came back, inside the limit; one that healed unnoticed never
+        // went.
+        if first_down_after(&told, fault_at).is_some() {
+            let back = first_up_after(&told, back_at).expect("the link came back");
+            assert!(back <= START_LIMIT, "back after {back:?}");
+        }
         // The chat is the same chat, still running, and takes input.
         assert_eq!(running(&after).await, vec![chat.clone()]);
         types_into(&rig, &after, &chat, tag, "after").await;
@@ -918,7 +927,9 @@ fn a_15_second_slow_link_still_links_inside_the_budgets_and_the_chat_works() {
     rt.block_on(async {
         let began = Instant::now();
         rig.fault(&["slow", "15"]);
-        let kept = Kept::start(&rig).await;
+        // Every round trip costs 15 s each way, so the first link may take a minute or two: the
+        // budget is the 3-minute limit.
+        let kept = Kept::start_within(&rig, START_LIMIT).await;
         assert!(
             began.elapsed() <= START_LIMIT,
             "the link took {:?}",

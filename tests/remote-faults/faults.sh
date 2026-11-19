@@ -39,7 +39,7 @@ verbs:
   drop            refuse every new and old connection to the sshd (TCP reset), at once
   blackhole       lose every packet with no reset: a half-open link (netem loss 100%)
   slow [SECONDS]  delay every packet by SECONDS (default 15; netem delay)
-  restart-sshd    end the sshd's sessions and restart it
+  restart-sshd    end the sshd's sessions and restart it (a hangup, where the sshd is PID 1)
   rotate-hostkey  give the sshd a new host key and restart it
   kill-runner     kill -9 the runner: the host of a systemd machine, or a pool's runner containers
   break-registry  stop the registry inside dind, so no image can be pulled
@@ -94,6 +94,11 @@ inside() {
   else
     docker exec "$container" sh -c "$script"
   fi
+}
+
+# Whether the rig has a container called $1; always, when only saying what would run.
+has() {
+  [ -n "${FAULTS_DRY_RUN:-}" ] || docker inspect "$1" >/dev/null 2>&1
 }
 
 case $machine in
@@ -151,8 +156,8 @@ case $verb in
     ;;
   kill-runner)
     if [ "$init" = systemd ]; then
-      # The host of the account's chats: `purlis serve`, as the unit runs it.
-      inside "$machine" "pkill -KILL -u keeper -f ' serve\$' || true"
+      # The host of the account's chats: `purlis serve --as-a-service`, as the unit runs it.
+      inside "$machine" "pkill -KILL -u keeper -f ' serve --as-a-service\$' || true"
     else
       # A pool's runners are containers of the engine behind the sshd.
       inside "$DIND" "docker ps -q --filter label=purlis.runner | xargs -r docker kill"
@@ -165,13 +170,14 @@ case $verb in
     # Each undo is its own command, and one that has nothing to undo says nothing and succeeds.
     inside "$machine" "while iptables -C $RULE 2>/dev/null; do iptables -D $RULE; done"
     inside "$machine" "if test -e $KEEP/netem; then if test \"\$(cat $KEEP/netem)\" = none; then tc qdisc del dev $DEV root 2>/dev/null || true; else tc qdisc replace dev $DEV root netem \$(cat $KEEP/netem); fi; fi"
-    inside "$machine" "if test -e $KEEP/ssh_host_ed25519_key; then cp -p $KEEP/ssh_host_ed25519_key $KEEP/ssh_host_ed25519_key.pub /etc/ssh/; fi"
-    if [ "$init" = systemd ]; then
-      inside "$machine" "systemctl restart ssh"
-    else
-      inside "$machine" "kill -HUP 1"
+    # The key the machine started with goes back, and only then is the sshd restarted: a restore
+    # with no rotation to undo leaves the sshd alone.
+    if [ "$init" = systemd ]; then reload="systemctl restart ssh"; else reload="kill -HUP 1"; fi
+    inside "$machine" "if test -e $KEEP/ssh_host_ed25519_key; then cp -p $KEEP/ssh_host_ed25519_key $KEEP/ssh_host_ed25519_key.pub /etc/ssh/ && rm -f $KEEP/ssh_host_ed25519_key $KEEP/ssh_host_ed25519_key.pub && $reload; fi"
+    # A rig with no engine behind it (the systemd machine's) has no registry or runners to put back.
+    if has "$DIND"; then
+      inside "$DIND" "docker start registry || true"
+      inside "$DIND" "docker ps -aq --filter label=purlis.runner --filter status=exited | xargs -r docker rm"
     fi
-    inside "$DIND" "docker start registry"
-    inside "$DIND" "docker ps -aq --filter label=purlis.runner --filter status=exited | xargs -r docker rm"
     ;;
 esac
