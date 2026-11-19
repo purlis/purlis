@@ -1979,6 +1979,17 @@ pub struct LayoutLine {
     pub foreign: bool,
 }
 
+/// A verdict asks every guard for the layout of the same command, each reading it afresh: the
+/// layout is a function of the text alone, so the last few are kept, with whether the walk met a
+/// string nested too deep, which a hit reports again as a fresh walk would.
+type Recent = std::collections::VecDeque<(String, Vec<LayoutLine>, bool)>;
+
+std::thread_local! {
+    static RECENT: std::cell::RefCell<Recent> = const { std::cell::RefCell::new(Recent::new()) };
+}
+
+const KEPT: usize = 4;
+
 /// Every line of `cmd` as `(text, is a heredoc body, drop it, an executor runs it)` —
 /// `_heredoc_layout`.
 ///
@@ -2012,6 +2023,37 @@ pub struct LayoutLine {
 ///   body, those lines may open heredocs of their own, and the readings do not agree again
 ///   about which lines are bodies.
 pub fn heredoc_layout(cmd: &str) -> Vec<LayoutLine> {
+    if cmd.len() < 1024 {
+        return layout_of(cmd);
+    }
+    let hit = RECENT.with(|recent| {
+        recent
+            .borrow()
+            .iter()
+            .find(|(text, ..)| text == cmd)
+            .map(|(_, layout, too_deep)| (layout.clone(), *too_deep))
+    });
+    if let Some((layout, too_deep)) = hit {
+        if too_deep {
+            shellseg::met_a_string_too_deep();
+        }
+        return layout;
+    }
+    let (layout, too_deep) = shellseg::too_deep_within(|| layout_of(cmd));
+    if too_deep {
+        shellseg::met_a_string_too_deep();
+    }
+    RECENT.with(|recent| {
+        let mut recent = recent.borrow_mut();
+        if recent.len() == KEPT {
+            recent.pop_back();
+        }
+        recent.push_front((cmd.to_owned(), layout.clone(), too_deep));
+    });
+    layout
+}
+
+fn layout_of(cmd: &str) -> Vec<LayoutLine> {
     let lines: Vec<&str> = cmd.split('\n').collect();
     let n = lines.len();
     let mut layout: Vec<LayoutLine> = Vec::new();
@@ -2571,6 +2613,87 @@ mod tests {
             for l in body(cmd) {
                 assert!(!l.fed, "{cmd:?}: {l:?}");
             }
+        }
+    }
+    /// The memo of layouts (`heredoc_layout`, 1024 bytes and up) answers as a fresh reading does:
+    /// the same layout and the same too-deep flag, on a miss and on every hit.
+    mod the_layout_memo {
+        use super::*;
+
+        fn padded(shape: &str) -> String {
+            let pad = "# a line of padding that only takes room in the command\n";
+            let mut text = format!("{shape}\n");
+            while text.len() < 1100 {
+                text.push_str(pad);
+            }
+            text
+        }
+
+        fn nested(depth: usize) -> String {
+            padded(&format!(
+                "cat <<'EOF'\nx\nEOF\necho {}1{}",
+                "$(echo ".repeat(depth),
+                ")".repeat(depth)
+            ))
+        }
+
+        fn fresh(text: &str) -> (Vec<LayoutLine>, bool) {
+            shellseg::too_deep_within(|| layout_of(text))
+        }
+
+        fn through_the_memo(text: &str) -> (Vec<LayoutLine>, bool) {
+            shellseg::too_deep_within(|| heredoc_layout(text))
+        }
+
+        fn forget_everything() {
+            RECENT.with(|recent| recent.borrow_mut().clear());
+        }
+
+        #[test]
+        fn a_long_text_answers_twice_as_a_fresh_reading_does() {
+            for text in [nested(2), nested(crate::guardcaps::MAX_NESTING + 2)] {
+                forget_everything();
+                assert!(text.len() >= 1024);
+                let expected = fresh(&text);
+                assert_eq!(through_the_memo(&text), expected, "the first reading");
+                assert_eq!(through_the_memo(&text), expected, "the hit");
+            }
+        }
+
+        /// No text makes `layout_of` meet a string nested too deep today, so a too-deep entry is
+        /// put in the memo as the walk would have left it: a hit must report it again.
+        #[test]
+        fn a_hit_on_a_text_whose_walk_met_a_string_too_deep_reports_it_again() {
+            let text = nested(crate::guardcaps::MAX_NESTING + 2);
+            forget_everything();
+            RECENT.with(|recent| {
+                recent
+                    .borrow_mut()
+                    .push_front((text.clone(), layout_of(&text), true));
+            });
+            let (layout, too_deep) = through_the_memo(&text);
+            assert_eq!(layout, layout_of(&text));
+            assert!(too_deep, "a hit on a too-deep reading reports it");
+            let (_, too_deep) = through_the_memo(&text);
+            assert!(too_deep, "and every time after");
+        }
+
+        #[test]
+        fn the_first_text_is_answered_as_read_after_four_others_have_pushed_it_out() {
+            forget_everything();
+            let first = nested(crate::guardcaps::MAX_NESTING + 2);
+            let others: Vec<String> = (1..=4)
+                .map(|n| padded(&format!("echo {n}\ncat <<EOF\nbody {n}\nEOF")))
+                .collect();
+            assert_eq!(through_the_memo(&first), fresh(&first));
+            for other in &others {
+                assert_eq!(through_the_memo(other), fresh(other));
+            }
+            assert!(
+                RECENT.with(|recent| recent.borrow().iter().all(|(text, ..)| *text != first)),
+                "the first text is no longer kept"
+            );
+            assert_eq!(through_the_memo(&first), fresh(&first));
         }
     }
 }

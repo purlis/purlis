@@ -3032,13 +3032,106 @@ fn a_closed_chat_being_reopened_is_not_reopened_twice() {
     chats.close(session).expect("closes for good");
     let record = purlis_core::chatrecords::every(plane.path()).remove(0);
     let opened = host.openings().len();
-    chats.claim(session).expect("the first press holds it");
+    chats
+        .claim_conversation(&record.id, record.number)
+        .expect("the first press holds it");
 
     let second = chats.reopen_closed(&record, SIZE).unwrap_err();
 
     assert!(second.contains("not started twice"), "{second}");
     assert_eq!(host.openings().len(), opened, "nothing more started");
-    chats.unclaim(session);
+    chats.unclaim_conversation(&record.id);
+}
+
+/// #7149's review: **Resume on a just-ended chat's band and Reopen on its card, pressed at
+/// once, start it once.** Resume holds the chat by its number and Reopen by its ULID; the two
+/// must also hold each other back, or the same conversation runs twice.
+#[test]
+fn a_just_ended_chat_resumed_and_reopened_at_once_starts_once() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(session).expect("End… ends it");
+    let record = purlis_core::chatrecords::every(plane.path()).remove(0);
+    let opened = host.openings().len();
+    // Long enough that each press is still starting it when the other comes.
+    host.takes(std::time::Duration::from_millis(300));
+
+    let (resumed, reopened) = std::thread::scope(|scope| {
+        let resuming = scope.spawn(|| chats.resume_ended(session, SIZE));
+        let reopening = scope.spawn(|| chats.reopen_closed(&record, SIZE));
+        (
+            resuming.join().expect("Resume"),
+            reopening.join().expect("Reopen"),
+        )
+    });
+
+    assert_eq!(
+        host.openings().len() - opened,
+        1,
+        "one run: {resumed:?} {reopened:?}"
+    );
+    assert!(
+        resumed.is_ok() != reopened.is_ok(),
+        "{resumed:?} {reopened:?}"
+    );
+    chats.end_all();
+}
+
+/// #7149's review: **a just-ended chat reopened from its card is not resumed from its band
+/// after**: it runs again already, under another number.
+#[test]
+fn a_just_ended_chat_reopened_from_its_card_is_not_resumed_too() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(session).expect("End… ends it");
+    let record = purlis_core::chatrecords::every(plane.path()).remove(0);
+    chats.reopen_closed(&record, SIZE).expect("reopens");
+    let opened = host.openings().len();
+
+    let resumed = chats.resume_ended(session, SIZE).unwrap_err();
+
+    assert!(resumed.contains("open again"), "{resumed}");
+    assert_eq!(host.openings().len(), opened, "nothing more started");
+    chats.end_all();
+}
+
+/// #7145: **a closed chat's Reopen is held by its ULID, never its number.** Where a number was
+/// dealt twice (#6740), two closed chats with different ULIDs both answer to it: one being
+/// reopened, or a chat under that number being started again, never refuses the other.
+#[test]
+fn a_closed_chat_reopens_while_another_chat_that_had_its_number_is_being_started() {
+    let plane = a_sandboxed_plane();
+    let host = Pretend::default();
+    let chats = restartable_chats_of(plane.path(), host.clone());
+    let session = chats
+        .start(&a_resumable_chat_in(plane.path()), SIZE)
+        .expect("starts");
+    chats.close(session).expect("closes for good");
+    let older = purlis_core::chatrecords::every(plane.path()).remove(0);
+    let newer = purlis_core::chatrecords::ChatRecord {
+        id: "01K7145NEWERCHAT0000000000".to_owned(),
+        ..older.clone()
+    };
+    // The older one's Reopen is starting it, and a chat under its number is restarting.
+    chats
+        .claim_conversation(&older.id, older.number)
+        .expect("the older one's press");
+    chats.claim(older.number).expect("a restart of the number");
+
+    let started = chats.reopen_closed(&newer, SIZE);
+
+    assert!(started.is_ok(), "{started:?}");
+    chats.unclaim(older.number);
+    chats.unclaim_conversation(&older.id);
+    chats.end_all();
 }
 
 /// A closed chat whose harness named no conversation is not reopened, and says why (#6485).
@@ -8320,8 +8413,8 @@ fn a_cloud_profiles_chat_is_handed_its_values_at_start_and_purlis_records_them_n
         purlis_core::secrets::handedto::masked_for(
             &root,
             session,
-            "id the-aws-id-for-this-test",
-            &|_| None
+            &chats.id_of(session).expect("an id"),
+            "id the-aws-id-for-this-test"
         )
         .as_deref(),
         Some("id ‹secret: id›"),

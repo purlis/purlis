@@ -154,6 +154,10 @@ fn tables() -> Value {
     json!([marks.iter().collect::<String>(), shells, reads, measured,])
 }
 
+/// The one recorded line whose readings differ from the Python's on purpose (round 7c of #7131,
+/// after round 7's B7): only `hl7`, `hr` and `hrd` move, and the recording is not redone.
+const ROUND_SEVEN_HELD: &str = "${RUNNER} <<'EOF'\ncharter handoff w\nEOF";
+
 /// Where the tables start in a recorded `a7tbl`: after the sentence count and the sentences.
 const TABLES_FROM: usize = 2;
 
@@ -173,7 +177,10 @@ fn the_recorded_python_answer_is_the_answer_this_guard_gives() {
     for (at, row) in ats.iter().zip(&rows) {
         let cmd = row["cmd"].as_str().expect("every row names its command");
         let mut check = |what: &str, want: &Value, got: Value| {
-            if want != &got {
+            // A `$`-built program fed a heredoc is read as a shell (round 7, B7), so a handoff
+            // inside it is refused as one a shell runs: three readings of one line move on purpose.
+            let on_purpose = cmd == ROUND_SEVEN_HELD && matches!(what, "hl7" | "hr" | "hrd");
+            if want != &got && !on_purpose {
                 wrong.push(format!(
                     "{at} {cmd:?}\n    {what} python={want}\n    {what}   rust={got}"
                 ));

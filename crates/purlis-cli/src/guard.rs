@@ -290,6 +290,11 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
     let app = match &answer {
         Some(Answer::MergeHeld { said }) => AppSaid::Held(said),
         // An app of another build could not read the hand-over: no refusal of its own (#6960).
+        // The hook is the app's own binary, so it is the newer one: a bundle replaced under the
+        // running app (#7177). Another hook is a plugin of another build.
+        Some(Answer::No { why }) if why == UNKNOWN_LINE && is_the_apps_own_binary() => {
+            AppSaid::OlderApp
+        }
         Some(Answer::No { why }) if why == UNKNOWN_LINE => AppSaid::OtherBuild,
         Some(Answer::No { why }) if why != NOTHING_ANSWERS => AppSaid::Refused(why),
         _ => AppSaid::Unheard,
@@ -301,6 +306,21 @@ fn held_merge(command: &str, cwd: &str, asks_the_app: bool) -> Option<toolgate::
         shape: None,
         denial: mergehold::refusal_for(command, &held, &app),
     })
+}
+
+/// Whether this hook is the program the app hands its chats as their hook binary
+/// ([`purlis_core::plugin::BINARY_ENV`]), by its real path.
+fn is_the_apps_own_binary() -> bool {
+    let (Some(named), Ok(own)) = (
+        purlis_core::envvar::var_os(purlis_core::plugin::BINARY_ENV),
+        std::env::current_exe(),
+    ) else {
+        return false;
+    };
+    match (std::fs::canonicalize(named), std::fs::canonicalize(own)) {
+        (Ok(named), Ok(own)) => named == own,
+        _ => false,
+    }
 }
 
 /// How long the guard waits, in all, for the app to judge a line's branch folder claims

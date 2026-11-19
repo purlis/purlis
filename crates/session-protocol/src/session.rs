@@ -608,9 +608,16 @@ use crate::view::{Limits, Views};
 /// answered an ask for it. Only a plain file is read, at most [`MOST_FILE_READ`] bytes, in
 /// pieces of [`MOST_FILE_PIECE`]; a binary file, a device and a folder are not. An older host
 /// is not asked, and its chat's paths stay no link.
+///
+/// 1.94 has a window name the families its resolution of the project's policy does not enforce
+/// for a chat's confinement ([`Confine::lifted`], the Q308 follow-up): its board answers a host
+/// nothing lists Allow with nobody asked (`asks`), or its proxy carries one (`network`), and the
+/// host tells each ([`SandboxTold::Lifted`]) so the window logs it under the chat. A host
+/// before 1.94 reads no families, and enforces both, as before; a runner applies its own locks over
+/// them.
 pub const VERSION: Version = Version {
     major: 1,
-    minor: 93,
+    minor: 94,
 };
 
 /// The version that first lists a browser's pages and downloads to its views and takes the
@@ -1666,6 +1673,14 @@ pub struct Confine {
     /// Whether its proxy holds a connection to a host nothing lists while the person is asked.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub asks: bool,
+    /// **The families the window's resolution of the project's policy does not enforce for this
+    /// chat** (1.94, the Q308 follow-up): `"asks"`, where its board answers a host nothing
+    /// lists Allow with nobody asked, and `"network"`, where its proxy carries such a host. The
+    /// host tells each one so carried ([`SandboxTold::Lifted`]), and the window, which alone
+    /// resolves the policy and knows the chat, logs it. None, as a host before 1.94 reads it:
+    /// both enforced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lifted: Vec<String>,
 }
 
 /// **The request a browser made of a sign-in's redirect** (1.59, #4044): it holds a one-time code,
@@ -1830,6 +1845,10 @@ pub enum SandboxTold {
     /// An Allow next time · once of `target` ended without its attempt (1.88, T1-34, Q278):
     /// put out past the most a board keeps, or by a Keep blocked. The window audits its end.
     DroppedNext { target: String },
+    /// It let `target`, a host and port, through only because `family` (one of
+    /// [`Confine::lifted`]) is not enforced for the chat (1.94): the window writes the line of
+    /// the chat's enforcement log where the family logs. Told only where the window named it.
+    Lifted { family: String, target: String },
 }
 
 /// What a [`Command::Start`] asks for.

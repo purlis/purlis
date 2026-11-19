@@ -498,10 +498,14 @@ impl HarnessAdapter for ClaudeCode {
         if let Some(why) = settings_keep_a_grade_from_running(env) {
             return Some(why);
         }
-        if let Some(flag) = crate::dispatchunattended::bypass_in(command)
-            .or_else(|| mode_that_does_not_ask(command))
-        {
-            return Some(prompts_off_by(&flag));
+        if let Some(found) = crate::dispatchunattended::bypass_found(command) {
+            return Some(prompts_off_by(&found));
+        }
+        if let Some(flag) = mode_that_does_not_ask(command) {
+            return Some(prompts_off_by(&crate::dispatchunattended::Found {
+                flag,
+                what: crate::dispatchunattended::What::PromptsOff,
+            }));
         }
         // A plugin the command loads itself is not in the install record, so a grade could not
         // turn it off for its chat (P8, #3468).
@@ -1242,11 +1246,12 @@ fn bypass_by_default(text: &str) -> Option<bool> {
 
 /// **Why a grade's chat may not start on a profile whose command holds `flag`**: one that keeps
 /// the chat from ever asking. The one sentence each such flag is refused with.
-fn prompts_off_by(flag: &str) -> String {
+fn prompts_off_by(found: &crate::dispatchunattended::Found) -> String {
     format!(
-        "This profile's command turns the program's permission prompts off ({}), and a grade \
-         never runs on one: pick another profile.",
-        crate::shown::one_line(flag, 60)
+        "This profile's command starts the program with {} ({}), and a grade never runs on \
+         one: pick another profile.",
+        found.what.clause(),
+        crate::shown::one_line(&found.flag, 60)
     )
 }
 
