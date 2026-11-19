@@ -38,8 +38,12 @@ const BUDGET: usize = crate::hoststart::HARNESS_SETTINGS_BYTES;
 /// The most a chat's whole generated harness settings file may weigh.
 const FILE_CAP: usize = crate::hoststart::HARNESS_SETTINGS_FILE_BYTES;
 
-/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured when #7157 set the ratchet.
-const COUNTED_TODAY: usize = 219_348;
+/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the plane's folder stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **This is 1,242 bytes under the budget, and past the 128,000 where allow rules may be shed.**
+const COUNTED_TODAY: usize = 254_758;
+
+/// What the plane's folder is replaced by before the ratchet weighs a chat's settings, so the
+/// weight does not move with the length of `TMPDIR`.
+const STAND_IN: &str = "/plane";
 
 /// Workspaces in the plane.
 const WORKSPACES: usize = 12;
@@ -187,8 +191,17 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
 
     let settings = the_settings_of_a_chat_in(&root, &cwd, home.path());
 
-    let parsed: serde_json::Value = serde_json::from_str(&settings).expect("JSON");
-    let counted = crate::hoststart::auto_mode_weight(&parsed, &[]);
+    // The plane's folder is in each rule several times (as the rule, its `canonical`, its
+    // `pattern` and its `root`), and its length is the machine's: a long `TMPDIR` weighs more.
+    // The ratchet measures with it stood in for by a fixed-length prefix.
+    let normal = settings.replace(root.to_str().unwrap(), STAND_IN);
+    let parsed: serde_json::Value = serde_json::from_str(&normal).expect("JSON");
+    let stood_in = Path::new(STAND_IN).join(cwd.strip_prefix(&root).unwrap());
+    let counted = crate::hoststart::auto_mode_weight(
+        &parsed,
+        &crate::hoststart::RulesOutside::default(),
+        Some(&stood_in),
+    );
     let deny = parsed["permissions"]["deny"].as_array().map_or(0, Vec::len);
     let deny_write = parsed["sandbox"]["filesystem"]["denyWrite"]
         .as_array()
@@ -211,11 +224,18 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
          (`limits.harness_settings_bytes`)"
     );
     // A ratchet (#7157): the budget has room, so a rule added to every chat would pass it
-    // unseen. This weight is what the plane's chats are measured to send today; a change that
-    // moves it either way says so here, and a rise past a tenth is a re-bloat to look at.
+    // unseen. This weight, measured with the plane's folder stood in for ([`STAND_IN`]), is
+    // what the plane's chats are measured to send today; a change that moves it either way
+    // says so here: a rise past a tenth is a re-bloat to look at, a fall past a tenth is a
+    // rule lost (or a better count) to be written into `COUNTED_TODAY`.
     assert!(
         counted <= COUNTED_TODAY + COUNTED_TODAY / 10,
         "{said}: more than a tenth over the {COUNTED_TODAY} bytes this plane weighed when \
+         #7157 measured it"
+    );
+    assert!(
+        counted >= COUNTED_TODAY - COUNTED_TODAY / 10,
+        "{said}: more than a tenth under the {COUNTED_TODAY} bytes this plane weighed when \
          #7157 measured it"
     );
     assert!(

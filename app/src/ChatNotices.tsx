@@ -173,6 +173,10 @@ export type StartNotes = {
   heavySettings?: number;
 };
 
+/** Past this many bytes a harness's auto mode sheds the git state and history too
+ *  (`HARNESS_SETTINGS_BYTES` in `hoststart.rs`). */
+const GIT_STATE_SHED_BYTES = 256_000;
+
 /** The cause of {@link SettingsNearTheLimitNotice}: what its dismissal is kept by. */
 export const SETTINGS_NEAR_THE_LIMIT = "harness-settings-near-limit";
 
@@ -190,7 +194,13 @@ export function SettingsNearTheLimitNotice({
   bytes: number;
   onDismiss: () => void;
 }) {
-  const kb = Math.round(bytes / 1024);
+  const kb = Math.round(bytes / 1000);
+  // Where a harness sheds what its auto mode sends (hoststart.rs, UNVERIFIED against the
+  // bundle): allow rules past 128,000 bytes, the git state and history too past 256,000.
+  const sheds =
+    bytes > GIT_STATE_SHED_BYTES
+      ? "Its auto mode sheds the git state and history it checks with, and may drop allow rules."
+      : "Its auto mode may drop allow rules, and ask for what they would have allowed.";
   return (
     <Notice
       cause={SETTINGS_NEAR_THE_LIMIT}
@@ -199,9 +209,8 @@ export function SettingsNearTheLimitNotice({
       label="This chat's settings near their limit"
       onDismiss={onDismiss}
     >
-      This chat&apos;s permission rules weigh {kb} KB, near the limit of what its harness&apos;s
-      auto mode checks. Past it, auto mode refuses what it would have checked, without asking.
-      Remove the branch folders you no longer need, then start the chat again.
+      This chat&apos;s permission rules weigh {kb} KB. {sheds} Remove the branch folders you no
+      longer need, then start the chat again.
     </Notice>
   );
 }

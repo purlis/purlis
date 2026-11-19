@@ -1314,17 +1314,24 @@ fn recorded(
 pub const SETTINGS_IN_A_WORD: usize = 120 * 1024;
 
 /// **The most what a chat's harness sends its auto mode's check should weigh** (T1.1-71,
-/// #6961): 256 KB of permission rules and auto mode lists, as purlis writes them
+/// #6961): 256,000 bytes (decimal) of permission rules and auto mode lists, as purlis writes them
 /// ([`auto_mode_weight`]). Read in Claude Code 2.1.325's bundled CLI: auto mode sends its server
 /// a context of the session's permission rules (`allow`, `deny`, `ask`, each with its source and
 /// root), its `autoMode` lists, the trusted folders and the git state; past 1,040,000 bytes it
 /// withholds the context, and every action the check would decide is refused, nobody asked.
-/// Past 256,000 it sheds the git state and the history, and past 128,000 in the rules part
-/// alone, allow rules. The sandbox is no part of it. A quarter of the ceiling leaves room for
-/// what Claude Code adds to each rule and for the person's own. The policy key
-/// `limits.harness_settings_bytes`, default 256 KB, measures this, not the file (Q307 Q6, as
-/// clarified on #7005; #6969).
-pub const HARNESS_SETTINGS_BYTES: usize = 256 * 1024;
+/// Past 256,000 it sheds the git state and the history ([`HARNESS_SETTINGS_BYTES`]), and past
+/// 128,000 in the rules part alone, allow rules ([`ALLOW_RULES_SHED_BYTES`]). The sandbox is no
+/// part of it. **UNVERIFIED:** the 128,000 and 256,000 are the figures recorded on #6961 and
+/// #7157 from that reading, not re-read in the bundle by #7225's review; check them against the
+/// bundle before relying on a tier. The policy key `limits.harness_settings_bytes` measures this,
+/// not the file (Q307 Q6, as clarified on #7005; #6969).
+pub const HARNESS_SETTINGS_BYTES: usize = 256_000;
+
+/// **Where a chat's harness starts shedding what auto mode weighs, first its allow rules**
+/// (#7225; **UNVERIFIED**, see [`HARNESS_SETTINGS_BYTES`]): past 128,000 bytes in the rules part
+/// alone. A chat past it is told so, with no refusal in sight yet: the allow rules it asked for
+/// may not be sent.
+pub const ALLOW_RULES_SHED_BYTES: usize = 128_000;
 
 /// **The most a chat's whole harness settings file should weigh**: a sanity cap, apart from
 /// [`HARNESS_SETTINGS_BYTES`], on what grows with the paths a chat is held from. Claude Code
@@ -1333,23 +1340,42 @@ pub const HARNESS_SETTINGS_BYTES: usize = 256 * 1024;
 /// 768 KiB is above the 668 KB a large plane's chats ran on before #6961, and leaves that room.
 pub const HARNESS_SETTINGS_FILE_BYTES: usize = 768 * 1024;
 
+/// **The other settings files a Claude Code session reads** ([`rules_outside`]): their JSON, and
+/// how many were over a megabyte and so not read.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct RulesOutside {
+    /// Each file that was there and was JSON, highest precedence first.
+    pub docs: Vec<serde_json::Value>,
+    /// Files over a megabyte. Unread, so unweighed: each counts as past the budget instead
+    /// (fail closed), because a file that large is what a check's limit is made of.
+    pub too_big: usize,
+}
+
 /// **What of a chat's harness `settings` its auto mode's check counts**, in bytes: the
 /// permission rules (`permissions.allow`, `deny`, `ask`) as auto mode serialises them, and the
 /// `autoMode` lists ([`HARNESS_SETTINGS_BYTES`]). Nothing else in the settings counts, the
 /// sandbox least of all. `outside` are the other settings files the same session reads (the
-/// person's, the project's, the managed policy: [`rules_outside`]), whose rules count too.
+/// person's, the project's, the managed policy: [`rules_outside`]), whose rules count too; `cwd`
+/// is the folder the chat opens in, which each rule carries as its `root`.
 ///
-/// Each rule weighs as the object auto mode sends, `{rule, canonical, source, pattern?}`
+/// Each rule weighs as the object auto mode sends, `{rule, canonical, source, root, pattern?}`
 /// (#7157, from the shape recorded on #7157 after the review of #7005; **not re-read in Claude
 /// Code's bundle by this change**: `canonical` is taken as the rule again, `source` as the
-/// longest spelling of one, `root` left out, so a rule weighs about what it does or a little
-/// less). The raw size of the settings was no measure of it: the rule is sent with three more
+/// longest spelling of one, `projectSettings`, and `root` as `cwd`), so a rule weighs about what
+/// it does. The raw size of the settings was no measure of it: the rule is sent with four more
 /// fields beside it.
-pub fn auto_mode_weight(settings: &serde_json::Value, outside: &[serde_json::Value]) -> usize {
+///
+/// **Still not seen:** the managed settings a device management profile (MDM) sets, a policy
+/// helper's rules, the rules a session adds as it runs (what a person allows when asked), and the
+/// trusted folders and git state beside the rules. A chat can weigh more than this says.
+pub fn auto_mode_weight(
+    settings: &serde_json::Value,
+    outside: &RulesOutside,
+    cwd: Option<&Path>,
+) -> usize {
+    let root = cwd.map(|cwd| cwd.display().to_string()).unwrap_or_default();
     let mut sent = Vec::new();
-    for (source, doc) in std::iter::once(("flagSettings", settings))
-        .chain(outside.iter().map(|doc| ("projectSettings", doc)))
-    {
+    for doc in std::iter::once(settings).chain(&outside.docs) {
         for list in ["allow", "deny", "ask"] {
             let Some(rules) = doc["permissions"][list].as_array() else {
                 continue;
@@ -1358,7 +1384,8 @@ pub fn auto_mode_weight(settings: &serde_json::Value, outside: &[serde_json::Val
                 let mut one = serde_json::json!({
                     "rule": rule,
                     "canonical": rule,
-                    "source": source,
+                    "source": "projectSettings",
+                    "root": root,
                 });
                 if let Some(pattern) = rule
                     .split_once('(')
@@ -1375,46 +1402,96 @@ pub fn auto_mode_weight(settings: &serde_json::Value, outside: &[serde_json::Val
     } else {
         serde_json::to_string(&sent).map_or(0, |json| json.len())
     };
-    for doc in std::iter::once(settings).chain(outside) {
+    for doc in std::iter::once(settings).chain(&outside.docs) {
         if let Some(lists) = doc.get("autoMode") {
             counted += lists.to_string().len();
         }
     }
-    counted
+    counted + outside.too_big * (HARNESS_SETTINGS_BYTES + 1)
 }
 
 /// **The settings files a Claude Code session reads besides the `--settings` purlis writes**,
 /// as JSON: the managed policy and its drop-ins, the person's `settings.json`, and the
 /// project's and local ones for `cwd` (the files whose rules auto mode sends with the chat's,
-/// [`auto_mode_weight`]). A file that is not there, is over a megabyte, or is not JSON counts for
-/// nothing.
-pub fn rules_outside(cwd: Option<&Path>) -> Vec<serde_json::Value> {
-    crate::footerclaim::settings_files(cwd, &crate::doctor::session::claude_config_home())
-        .iter()
-        .filter(|file| {
-            std::fs::metadata(file).is_ok_and(|found| found.is_file() && found.len() <= 1 << 20)
-        })
-        .filter_map(|file| serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok())
-        .collect()
+/// [`auto_mode_weight`]). A file that is not there or is not JSON counts for nothing; one over a
+/// megabyte is counted in [`RulesOutside::too_big`], which weighs it as past the budget.
+pub fn rules_outside(cwd: Option<&Path>) -> RulesOutside {
+    rules_outside_in(cwd, &crate::doctor::session::claude_config_home())
+}
+
+/// [`rules_outside`] against a named Claude Code config folder, which is what a test can hold
+/// still.
+pub(crate) fn rules_outside_in(cwd: Option<&Path>, config_home: &Path) -> RulesOutside {
+    let mut found = RulesOutside::default();
+    for file in crate::footerclaim::settings_files(cwd, config_home) {
+        let Ok(meta) = std::fs::metadata(&file) else {
+            continue;
+        };
+        if !meta.is_file() {
+            continue;
+        }
+        if meta.len() > 1 << 20 {
+            found.too_big += 1;
+        } else if let Some(doc) = std::fs::read_to_string(&file)
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+        {
+            found.docs.push(doc);
+        }
+    }
+    found
 }
 
 /// **How much what auto mode counts of the `--settings` JSON on `args` weighs, where it is past
-/// [`HARNESS_SETTINGS_BYTES`]** ([`auto_mode_weight`], with the `outside` files' rules): what
-/// the chat's tab says, with a way out (#6961). `None` for lighter settings, a path, or none at
-/// all.
-pub fn settings_past_the_budget(args: &[String], outside: &[serde_json::Value]) -> Option<usize> {
+/// [`ALLOW_RULES_SHED_BYTES`]** ([`auto_mode_weight`], with the other files' rules, which
+/// `outside` reads only once the line has settings to weigh, so a chat with none runs no git):
+/// what the chat's tab says, in the tier its weight reaches (past [`ALLOW_RULES_SHED_BYTES`] allow
+/// rules may be shed, past [`HARNESS_SETTINGS_BYTES`] git state and history too), with a way out
+/// (#6961). `None` for lighter settings, a path, or none at all.
+pub fn settings_past_the_budget(
+    args: &[String],
+    cwd: Option<&Path>,
+    outside: impl FnOnce() -> RulesOutside,
+) -> Option<usize> {
     let at = args.iter().position(|word| word == "--settings")? + 1;
     let settings: serde_json::Value = args
         .get(at)
         .filter(|json| json.starts_with('{'))
         .and_then(|json| serde_json::from_str(json).ok())?;
-    Some(auto_mode_weight(&settings, outside)).filter(|&bytes| bytes > HARNESS_SETTINGS_BYTES)
+    Some(auto_mode_weight(&settings, &outside(), cwd))
+        .filter(|&bytes| bytes > ALLOW_RULES_SHED_BYTES)
 }
 
 /// The folder of the plane's state chats' settings files were kept in by earlier builds
 /// (`<state>/chat-settings`): never read now, swept ([`sweep_settings`]), and held as an
 /// integrity path.
 pub const SETTINGS_DIR: &str = "chat-settings";
+
+/// **Refuses a `--settings` JSON on `args` past [`HARNESS_SETTINGS_FILE_BYTES`]**, with a reason
+/// (#7157): a harness builds its sandbox's profile from these settings and hands it to its own
+/// program on a command line, which the system bounds. One past the cap fails there, and a chat
+/// that fails that way says nothing of why. [`settings_in_a_file`] holds every chat with an id to
+/// it; a chat with none is held to it by this alone.
+pub fn settings_within_the_cap(args: &[String]) -> Result<(), String> {
+    let Some(json) = args
+        .iter()
+        .position(|word| word == "--settings")
+        .and_then(|flag| args.get(flag + 1))
+        .filter(|json| json.starts_with('{'))
+    else {
+        return Ok(());
+    };
+    if json.len() > HARNESS_SETTINGS_FILE_BYTES {
+        return Err(format!(
+            "this chat was not started: its harness settings weigh {} KiB, over the {} KiB a \
+             sandbox can be built from. Keep fewer workspaces or branch folders under the plane \
+             this chat is held from, then start it again.",
+            json.len().div_ceil(1024),
+            HARNESS_SETTINGS_FILE_BYTES / 1024
+        ));
+    }
+    Ok(())
+}
 
 /// **`args` with a `--settings` JSON longer than [`SETTINGS_IN_A_WORD`] put in a file**, the
 /// chat `id`'s in `folder`, the app data folder's [`CHAT_SETTINGS`], under the clone key of the
@@ -1442,18 +1519,7 @@ pub fn settings_in_a_file(
     if !args[at].starts_with('{') {
         return Ok(args);
     }
-    // A harness builds its sandbox's profile from these settings and hands it to its own
-    // program on a command line, which the system bounds: one past the cap fails there, and a
-    // chat that fails that way says nothing of why (#7157).
-    if args[at].len() > HARNESS_SETTINGS_FILE_BYTES {
-        return Err(format!(
-            "this chat was not started: its harness settings weigh {} KiB, over the {} KiB a \
-             sandbox can be built from. Keep fewer workspaces or branch folders under the plane \
-             this chat is held from, then start it again.",
-            args[at].len().div_ceil(1024),
-            HARNESS_SETTINGS_FILE_BYTES / 1024
-        ));
-    }
+    settings_within_the_cap(&args)?;
     if args[at].len() <= SETTINGS_IN_A_WORD {
         return Ok(args);
     }
