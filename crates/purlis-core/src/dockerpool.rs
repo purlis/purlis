@@ -4135,23 +4135,16 @@ impl Docker {
 
     /// **The runners on this engine that this desktop did not make** (#7192): what another
     /// desktop made on an engine two desktops share. A runner is this desktop's when it is one
-    /// of `mine` (by its id) or carries `desktop`'s label ([`DESKTOP_LABEL`]), never by what its
-    /// name looks like: a name `purlis-runner-<pool>-<tag>` and one `purlis-runner-<pool>-<8 hex>`
-    /// (a successor, [`successor_name`]) can be the same text. A runner this desktop made whose
-    /// row was lost is not another's. Each is named and only named: nothing here stops, removes,
-    /// renames or links one.
-    pub fn runners_of_other_desktops(
-        &self,
-        mine: &[&Made],
-        desktop: &str,
-    ) -> Result<Vec<String>, Refused> {
+    /// of `mine`, by its id, never by what its name looks like: a name
+    /// `purlis-runner-<pool>-<tag>` and one `purlis-runner-<pool>-<8 hex>` (a successor,
+    /// [`successor_name`]) can be the same text. Nor by the desktop label ([`DESKTOP_LABEL`]):
+    /// it hashes a config path, which two desktops can share. Each is named and only named:
+    /// nothing here stops, removes, renames or links one.
+    pub fn runners_of_other_desktops(&self, mine: &[&Made]) -> Result<Vec<String>, Refused> {
         Ok(self
             .runner_containers()?
             .into_iter()
-            .filter(|(id, _, label)| {
-                label.as_deref() != Some(desktop)
-                    && !mine.iter().any(|made| made.container.as_str() == id)
-            })
+            .filter(|(id, _, _)| !mine.iter().any(|made| made.container.as_str() == id))
             .map(|(_, name, _)| name)
             .collect())
     }

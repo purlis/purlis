@@ -1106,7 +1106,7 @@ pub fn belonging_to_another_desktop(
     let kept = runners::read(config_root)?;
     let mine: Vec<&crate::dockerpool::Made> = kept.iter().map(|one| &one.made).collect();
     let others = docker
-        .runners_of_other_desktops(&mine, &runners::desktop_label(config_root))
+        .runners_of_other_desktops(&mine)
         .map_err(|why| Refused::Other(why.0))?;
     Ok(match others.len() {
         0 => None,
@@ -1436,14 +1436,19 @@ fn clear_leftovers_locked(
     if claimed {
         return Ok(None);
     }
-    let removed = docker
-        .remove_leftovers_of(
-            name,
-            &runners::desktop_label(config_root),
-            device.map(crate::dockerpool::device_tag).as_deref(),
-            None,
-        )
+    let tag = device.map(crate::dockerpool::device_tag);
+    let label = runners::desktop_label(config_root);
+    let mut removed = docker
+        .remove_leftovers_of(name, &label, tag.as_deref(), None)
         .map_err(|why| Refused::Other(why.0))?;
+    // What a make before names carried a tag left is named without one (#7192).
+    if tag.is_some() {
+        removed.extend(
+            docker
+                .remove_leftovers_of(name, &label, None, None)
+                .map_err(|why| Refused::Other(why.0))?,
+        );
+    }
     Ok((!removed.is_empty()).then(|| {
         format!(
             "removed {} that a move of the pool to a new runner left behind",

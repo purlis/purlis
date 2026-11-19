@@ -5617,10 +5617,10 @@ fn pool_status_says_how_many_runners_belong_to_another_desktop() {
     }
 }
 
-/// **A runner this desktop made whose row was lost is not another desktop's** (#7192): Docker's
-/// desktop label says whose it is, whatever its name looks like.
+/// **The desktop label does not make a runner this desktop's** (#7192): it hashes a config path,
+/// which two desktops can share, so a runner with it that no kept row names is still counted.
 #[test]
-fn pool_status_does_not_count_a_runner_this_desktop_made_whose_row_was_lost() {
+fn pool_status_counts_a_runner_with_this_desktops_label_that_no_kept_row_names() {
     let config = tempfile::tempdir().unwrap();
     let fake = a_docker(&runner_answers());
     let kept = kept_before_tags(config.path(), &fake);
@@ -5634,7 +5634,9 @@ fn pool_status_does_not_count_a_runner_this_desktop_made_whose_row_was_lost() {
         ),
     );
     assert_eq!(
-        belonging_to_another_desktop(config.path(), &fake.docker()).unwrap(),
-        None
+        belonging_to_another_desktop(config.path(), &fake.docker())
+            .unwrap()
+            .as_deref(),
+        Some("1 runner belongs to another desktop")
     );
 }

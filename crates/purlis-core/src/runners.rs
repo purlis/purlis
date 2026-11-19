@@ -2052,6 +2052,15 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
     // (#7192): left out for a runner made before names carried one.
     let tag = noted("desktop")?;
     let home_volume = noted("home_volume")?;
+    // Both end up in names handed to Docker: only what purlis writes is read (#7192).
+    if tag.as_deref().is_some_and(|tag| {
+        tag.len() != 8 || !tag.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    }) || home_volume
+        .as_deref()
+        .is_some_and(|volume| !volume.starts_with(crate::dockerpool::PREFIX))
+    {
+        return None;
+    }
     if text("pool")? != "docker" {
         return None;
     }

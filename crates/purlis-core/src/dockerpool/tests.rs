@@ -4633,10 +4633,7 @@ fn runners_of_another_desktop_are_listed_and_never_stopped_removed_or_renamed() 
             ("eeee", "purlis-runner-first-4e5f6a7b-copy", "theirs"),
         ],
     );
-    let others = fake
-        .docker()
-        .runners_of_other_desktops(&[&made()], "mine")
-        .unwrap();
+    let others = fake.docker().runners_of_other_desktops(&[&made()]).unwrap();
     assert_eq!(
         others,
         ["purlis-runner-first-4e5f6a7b", "purlis-runner-second"]
@@ -4689,26 +4686,30 @@ fn the_leftovers_of_an_adopted_runner_include_the_home_it_kept() {
     assert_eq!(removed, ["volume purlis-runner-first-home"]);
 }
 
-/// **A runner is another desktop's by its labels, never by what its name looks like** (#7192): a
-/// tagged name `purlis-runner-<pool>-<tag>` and a successor's `purlis-runner-<pool>-<8 hex>` are
-/// the same text, so neither says whose runner it is.
+/// **A runner is this desktop's by its id, never by what its name looks like** (#7192): a tagged
+/// name `purlis-runner-<pool>-<tag>` and a successor's `purlis-runner-<pool>-<8 hex>` are the
+/// same text, so neither says whose runner it is. Nor does the desktop label, which two desktops
+/// with one config path share.
 #[test]
-fn whose_runner_it_is_is_told_by_its_desktop_label_and_not_by_its_names_shape() {
+fn whose_runner_it_is_is_told_by_its_id_and_not_by_its_names_shape_or_a_shared_label() {
     let fake = FakeDocker::new(&inspected());
     runners_listed(
         &fake,
         &[
-            // This desktop's, its row lost: the name is shaped as another's would be.
+            // Another desktop's, with the label this desktop's config path hashes to as well.
             (OTHER_ID, "purlis-runner-first-0a1b2c3d", "mine"),
             // Another desktop's, named as a successor of the pool `first` would be.
             (THIRD_ID, "purlis-runner-first-4e5f6a7b", "theirs"),
         ],
     );
-    let others = fake
-        .docker()
-        .runners_of_other_desktops(&[&made()], "mine")
-        .unwrap();
-    assert_eq!(others, ["purlis-runner-first-4e5f6a7b"]);
+    let others = fake.docker().runners_of_other_desktops(&[&made()]).unwrap();
+    assert_eq!(
+        others,
+        [
+            "purlis-runner-first-0a1b2c3d",
+            "purlis-runner-first-4e5f6a7b"
+        ]
+    );
 }
 
 /// **A tagged runner's leftovers are never a successor's** (#7192): the pool `p`'s runner of the
