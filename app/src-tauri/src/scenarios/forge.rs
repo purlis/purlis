@@ -318,6 +318,12 @@ mod person {
             ),
         )
         .expect("the person's glab login");
+        // `glab` refuses a config that others can read, as it does a real one.
+        use std::os::unix::fs::PermissionsExt as _;
+        for file in ["gh/hosts.yml", "glab-cli/config.yml"] {
+            std::fs::set_permissions(config.join(file), std::fs::Permissions::from_mode(0o600))
+                .expect("the login file is private");
+        }
     }
 }
 
@@ -846,7 +852,8 @@ fn glab_posts_usage_data_with_the_token_unless_told_not_to() {
 /// reads a merge request (the control: a recorded `200` for the chat's token, through its
 /// proxy) and then tries to merge it by each route, `glab api … merge` and `glab mr merge`, and
 /// each is refused at the hook with the merge hold's own words, so the forge records the read
-/// and no merge. On every wire this OS runs.
+/// and no merge. On every wire this OS runs. (`glab mr merge 4 2>&1` is read as a merge of two
+/// words and so as unreadable: the `mr merge` commands here carry no redirect.)
 #[cfg(unix)]
 #[test]
 fn a_chats_merge_is_held_before_it_reaches_the_fake_forge() {
@@ -874,8 +881,7 @@ fn a_chats_merge_is_held_before_it_reaches_the_fake_forge() {
             "{env} glab api projects/group%2Fproject/merge_requests/4/merge --method PUT \
              -f sha={HEAD} 2>&1; echo \"glab exit $?\""
         );
-        let mr =
-            format!("{env} glab mr merge 4 -R group/project --yes 2>&1; echo \"glab exit $?\"");
+        let mr = format!("{env} glab mr merge 4 -R group/project --yes; echo \"glab exit $?\"");
         let chat = scenario.starts_holding(
             &running(&[("read", read), ("merge-api", api), ("merge-mr", mr)]),
             forge.grants(),
@@ -983,7 +989,7 @@ fn a_chats_gh_merge_is_held_before_it_reaches_the_fake_forge() {
     let api = format!(
         "{env} gh api -X PUT repos/o/r/pulls/7/merge -f sha={HEAD} 2>&1; echo \"gh exit $?\""
     );
-    let pr = format!("{env} gh pr merge 7 -R o/r --squash 2>&1; echo \"gh exit $?\"");
+    let pr = format!("{env} gh pr merge 7 -R o/r --squash; echo \"gh exit $?\"");
     let chat = scenario.starts_holding(
         &running(&[("read", read), ("merge-api", api), ("merge-pr", pr)]),
         forge.grants(),
