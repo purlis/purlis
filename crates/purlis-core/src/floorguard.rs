@@ -1455,8 +1455,25 @@ fn skip_backtick(s: &[char], mut p: usize) -> Option<usize> {
 /// substitutions read whole, or `None` where nothing closes it.
 fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     let mut depth = 0usize;
+    // The quoted heredocs opened on this line, whose bodies are data: a `)` in one closes nothing.
+    let mut pending: Vec<(String, bool)> = Vec::new();
     while let Some(&c) = s.get(p) {
         match c {
+            '\n' if !pending.is_empty() => {
+                p += 1;
+                for (delimiter, dash) in std::mem::take(&mut pending) {
+                    p = after_heredoc_body(s, p, &delimiter, dash)?;
+                }
+            }
+            '<' if s.get(p + 1) == Some(&'<') && s.get(p + 2) != Some(&'<') => {
+                match quoted_heredoc_at(s, p) {
+                    Some((delimiter, dash, after)) => {
+                        pending.push((delimiter, dash));
+                        p = after;
+                    }
+                    None => p += 2,
+                }
+            }
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
             '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
@@ -1474,6 +1491,43 @@ fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
             }
             _ => p += 1,
         }
+    }
+    None
+}
+
+/// A heredoc `<<[-]'WORD'` or `<<[-]"WORD"` (a plain word, wholly quoted, so its body is data)
+/// opened at `p`: its delimiter, whether it is `<<-`, and where the operator and word end.
+/// `None` for any other spelling, which the caller reads as it always did.
+fn quoted_heredoc_at(s: &[char], p: usize) -> Option<(String, bool, usize)> {
+    let mut j = p + 2;
+    let dash = s.get(j) == Some(&'-');
+    if dash {
+        j += 1;
+    }
+    while s.get(j).is_some_and(|c| *c == ' ' || *c == '\t') {
+        j += 1;
+    }
+    let quote = *s.get(j).filter(|c| matches!(c, '\'' | '"'))?;
+    let word_end = j + 1 + s.get(j + 1..)?.iter().position(|c| *c == quote)?;
+    let word: String = s[j + 1..word_end].iter().collect();
+    let plain = !word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    plain.then_some((word, dash, word_end + 1))
+}
+
+/// Where the body of a heredoc ends, starting at the line `from`: one past its delimiter's line,
+/// or `None` where no line is the delimiter.
+fn after_heredoc_body(s: &[char], mut from: usize, delimiter: &str, dash: bool) -> Option<usize> {
+    while from <= s.len() {
+        let end = s[from.min(s.len())..]
+            .iter()
+            .position(|c| *c == '\n')
+            .map_or(s.len(), |n| from + n);
+        let line: String = s[from.min(s.len())..end].iter().collect();
+        let line = if dash { line.trim_start_matches('\t') } else { &line };
+        if line == delimiter {
+            return Some(end);
+        }
+        from = end + 1;
     }
     None
 }
@@ -1954,6 +2008,23 @@ mod tests {
         );
         // Attended, the floor reads nothing.
         assert_eq!(metered(&cmd, false), (None, 0));
+    }
+
+    /// A `)` in the data of a quoted heredoc closes no substitution: a commit body's `1)` or
+    /// `(shellseg)` is text, so the line is read whole and passes, while the same line with a
+    /// merge beside it is still held.
+    #[test]
+    fn a_paren_in_a_quoted_heredoc_body_does_not_close_the_substitution() {
+        for body in ["- 1) the reader\n", "see (shellseg) and 2)\n", "a ) b\n"] {
+            for open in ["<<'EOF'", "<<\"EOF\"", "<<-'EOF'"] {
+                let cmd = format!("git commit -m \"$(cat {open}\n{body}EOF\n)\"");
+                assert_eq!(merge_reason(&cmd), None, "{cmd}");
+            }
+        }
+        let held = "git commit -m \"$(cat <<'EOF'\n- 1) x\nEOF\n)\"; gh pr merge 12";
+        assert!(merge_reason(held).is_some());
+        let inside = "x=\"$(cat <<'EOF'\n- 1) x\nEOF\n; gh pr merge 12)\"";
+        assert!(merge_reason(inside).is_some());
     }
 
     /// What a run really sends — a long pull request body in a substitution, a long script fed
