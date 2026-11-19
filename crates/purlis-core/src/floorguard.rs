@@ -353,6 +353,13 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         continued = crate::heredoc::ends_in_line_continuation(&line);
     }
     let mut hedge_segments: Vec<Vec<String>> = Vec::new();
+    // The segments of each hedged line, to feed a shell on that line and no other line.
+    let mut hedged_line_segments: Vec<Vec<Vec<String>>> = Vec::new();
+    // A residual, known: each hedged line is read on its own as if it began outside any quote,
+    // so a quote one line opens and the next closes is read wrongly by the line-by-line reading.
+    // The reading of the whole text above, which joins the lines, is what holds a merge after
+    // such a close.
+    let mut unparsed_hedge_case = false;
     if !hedged_lines.is_empty() {
         let mut read: std::collections::HashSet<Vec<String>> = segments.iter().cloned().collect();
         let mut add = |toks: Vec<String>| {
@@ -363,22 +370,29 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         for toks in commands_of(&crate::heredoc::commands_a_shell_runs(cmd)) {
             add(toks);
         }
-        let (all_lines, _) = in_command_position(&crate::heredoc::lines_a_shell_runs(cmd));
+        let (all_lines, unparsed) = in_command_position(&crate::heredoc::lines_a_shell_runs(cmd));
+        unparsed_hedge_case |= unparsed;
         for toks in commands_of(&all_lines) {
             add(toks);
         }
         for line in &hedged_lines {
             // On its own a line has no `case` before it, so it is read as one of an arm's
             // lines too: `x) gh pr merge 7` is an arm whose command is the merge.
-            let (blanked, _) = in_command_position(line);
-            let (as_an_arm, _) = in_command_position(&format!("case _ in\n{line}"));
+            let (blanked, unparsed) = in_command_position(line);
+            unparsed_hedge_case |= unparsed;
+            // The wrapper has no `esac` of its own, so it is always "unparsed": its flag says
+            // nothing about the line, and is not read (awaiting a ruling, #7245 round 3).
+            let (as_an_arm, _unparsed) = in_command_position(&format!("case _ in\n{line}"));
+            let mut own = Vec::new();
             for toks in commands_of(line)
                 .into_iter()
                 .chain(commands_of(&blanked))
                 .chain(commands_of(&as_an_arm))
             {
+                own.push(toks.clone());
                 add(toks);
             }
+            hedged_line_segments.push(own);
         }
         if nested_too_deep() {
             return Some(too_nested(fix));
@@ -449,7 +463,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // arithmetic expansion or an array's words, nor in a body an interpreter runs.
     // A `case` the reader does not fully parse could hide any command in what it took for a
     // pattern, so it is unreadable outright (#7131, round 6).
-    if unparsed_case {
+    if unparsed_case || unparsed_hedge_case {
         return Some(format!(
             "{fix}{} A `case` here isn't one purlis can read to its end. {WRITE_IT_OUT}",
             merge::UNREADABLE
@@ -516,6 +530,20 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 return said;
             }
         }
+        // A shell on a hedged line, named or built by the shell, is fed by the other segments of
+        // that line, and of no other line (so the cost stays off a long body).
+        for own in &hedged_line_segments {
+            if !own.iter().any(|toks| takes_its_script_from_stdin(toks)) {
+                continue;
+            }
+            for toks in own.iter().filter(|toks| !takes_its_script_from_stdin(toks)) {
+                for fed in fed_lines(toks) {
+                    if let Some(said) = floor(&fed, unattended, depth + 1) {
+                        return Some(said);
+                    }
+                }
+            }
+        }
         // A line of a body is a piece of text, so what a substitution on it holds is read as the
         // commands it holds (nested ones too, to the depth the floor reads), not as a text of
         // its own that must close: prose with a lone backtick or quote is not refused for it.
@@ -528,6 +556,13 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         while !bodies.is_empty() && levels <= MAX_DEPTH {
             let mut deeper = Vec::new();
             for body in bodies {
+                // A `case` in a substitution is held here as on any line.
+                if names_a_case(&body) {
+                    return Some(format!(
+                        "{fix}{} A `case` inside a substitution can't be read reliably. {WRITE_IT_OUT}",
+                        merge::UNREADABLE
+                    ));
+                }
                 for toks in commands_of(&body) {
                     let said = segment_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
                     if said.is_some() {
@@ -545,9 +580,8 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             levels += 1;
         }
     }
-    // Where a substitution ends is as speculative as what it could print: a piece of a hedged
-    // line is not refused for not closing.
-    if unclosable && !reading_a_hedge() {
+    // Where a substitution ends is a reader limit that fails closed, not a speculative check.
+    if unclosable {
         return Some(format!(
             "{fix}{} A substitution here holds a comment, a heredoc or a `$'` quote, so purlis \
              can't tell where it ends. {WRITE_IT_OUT}",
@@ -2267,6 +2301,27 @@ mod tests {
             let unterminated = format!("git commit -m \"$(cat <<'EOF'\nsee `\"$(x)` (a)\n{plain}");
             assert!(held(&unterminated).is_some(), "{unterminated}");
         }
+    }
+
+    /// Round 3 of #7245: under the hedge only the two ruled checks are skipped. A shell a hedged
+    /// line builds is fed by that line, and a `case` in a substitution on one is held.
+    #[test]
+    fn a_hedged_line_is_held_for_a_built_shell_and_a_case_in_a_substitution() {
+        for held in [
+            "echo gh pr merge 7 | $SHELL",
+            "echo gh pr merge 7 | \"$(echo bash)\"",
+            "echo \"$(case y in (a) gh pr merge 7;; esac)\"",
+        ] {
+            let text = hedged(held);
+            assert!(merge_reason(&text).is_some(), "{text}");
+        }
+    }
+
+    /// A quote one hedged line opens and the next closes is read right by the joined reading.
+    #[test]
+    fn a_quote_closed_on_the_next_hedged_line_leaves_a_merge_held() {
+        let text = hedged("echo \"x\ny\"; gh pr merge 7");
+        assert!(merge_reason(&text).is_some(), "{text}");
     }
 
     /// An unquoted heredoc's substitutions are still read, hedge or not.
