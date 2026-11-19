@@ -685,8 +685,24 @@ fn a_refused_credential_is_known_as_one() {
     }
 }
 
-/// **A forge's credential file never ships without its answers** (#1349): every forge's file in
-/// [`CREDENTIAL_FILES`] names a forge that has
+/// What each entry of [`CREDENTIAL_FILES`] is, said by a row here and never guessed from its name.
+enum Entry {
+    /// A forge's own login file: the program that reads it, the kind of forge, the variable the
+    /// program takes its token from, the words of the setup flow every answer names, and whether
+    /// an undeclared program is guarded ([`GUARDED_FORGES`]).
+    Forge(
+        &'static str,
+        crate::forge::Kind,
+        &'static str,
+        &'static str,
+        bool,
+    ),
+    /// Not a forge's file, with the reason it needs no start note or shim.
+    Exempt(&'static str),
+}
+
+/// **A forge's credential file never ships without its answers** (#1349): every entry of
+/// [`CREDENTIAL_FILES`] is classified here, as exempt with a written reason or as a forge that has
 ///
 /// 1. a **route**: a declared tool that gives the chat a token and reaches the forge's host
 ///    ([`forge_routes`]), the one thing a chat under the class takes in place of the person's login;
@@ -697,8 +713,7 @@ fn a_refused_credential_is_known_as_one() {
 ///    only fails on ([`GUARDED_FORGES`]): its flow, exit 1, the program never run;
 /// 5. a **setup flow** the answers name, that the person can run.
 ///
-/// A forge's file added to the list with no row here, or a row with an answer taken away, turns
-/// this red.
+/// An entry with no row, a row with no entry, or a row with an answer taken away, turns this red.
 #[cfg(unix)]
 #[test]
 fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_setup_flow() {
@@ -709,36 +724,89 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
         guard_forges, no_minted_token_said, shim,
     };
     use std::os::unix::fs::PermissionsExt;
-    /// (file, program, kind, the variable the token is handed in, the words of the setup flow
-    /// every answer names, whether an undeclared program is guarded).
-    const FORGES: [(&str, &str, Kind, &str, &str, bool); 2] = [
+    const GIT: &str = "git's own helper, not a forge's API login: no forge program to shim";
+    const CLOUD: &str = "a cloud provider's login, not a forge's: its tools are not shimmed";
+    const CLASSIFIED: [(&str, Entry); 14] = [
+        (".git-credentials", Entry::Exempt(GIT)),
+        (".config/git/credentials", Entry::Exempt(GIT)),
+        (
+            ".netrc",
+            Entry::Exempt("any program's login, no one forge's"),
+        ),
+        (".aws/credentials", Entry::Exempt(CLOUD)),
+        (".aws/sso/cache", Entry::Exempt(CLOUD)),
+        (".aws/cli/cache", Entry::Exempt(CLOUD)),
+        (".config/gcloud/credentials.db", Entry::Exempt(CLOUD)),
+        (".config/gcloud/access_tokens.db", Entry::Exempt(CLOUD)),
+        (
+            ".config/gcloud/application_default_credentials.json",
+            Entry::Exempt(CLOUD),
+        ),
+        (".config/gcloud/legacy_credentials", Entry::Exempt(CLOUD)),
+        (".azure", Entry::Exempt(CLOUD)),
+        (
+            ".docker/config.json",
+            Entry::Exempt("a registry's login, not a forge's"),
+        ),
         (
             ".config/gh/hosts.yml",
-            "gh",
-            Kind::GitHub,
-            "GH_TOKEN",
-            "Agent identity",
-            false,
+            Entry::Forge("gh", Kind::GitHub, "GH_TOKEN", "Agent identity", false),
         ),
         (
             ".config/glab-cli/config.yml",
-            "glab",
-            Kind::GitLab,
-            "GITLAB_TOKEN",
-            "purlis gitlab access",
-            true,
+            Entry::Forge(
+                "glab",
+                Kind::GitLab,
+                "GITLAB_TOKEN",
+                "purlis gitlab access",
+                true,
+            ),
         ),
     ];
-    let forge_files: Vec<&str> = CREDENTIAL_FILES
+    let mut unclassified: Vec<&str> = CREDENTIAL_FILES
         .iter()
         .copied()
-        .filter(|file| file.contains("/gh/") || file.contains("glab"))
+        .filter(|file| !CLASSIFIED.iter().any(|row| row.0 == *file))
         .collect();
-    let named: Vec<&str> = FORGES.iter().map(|row| row.0).collect();
-    assert_eq!(
-        forge_files, named,
-        "a forge's credential file has no row here"
+    unclassified.sort_unstable();
+    assert!(
+        unclassified.is_empty(),
+        "CREDENTIAL_FILES entries with no class here (a forge, or exempt with a reason): {unclassified:?}"
     );
+    for (file, entry) in &CLASSIFIED {
+        assert!(
+            CREDENTIAL_FILES.contains(file),
+            "{file} is no longer listed"
+        );
+        if let Entry::Exempt(reason) = entry {
+            assert!(!reason.is_empty(), "{file}: an exemption needs its reason");
+        }
+    }
+    let mut unclassified: Vec<&str> = CREDENTIAL_FILES
+        .iter()
+        .copied()
+        .filter(|file| !CLASSIFIED.iter().any(|row| row.0 == *file))
+        .collect();
+    unclassified.sort_unstable();
+    assert!(
+        unclassified.is_empty(),
+        "CREDENTIAL_FILES entries with no class here (a forge, or exempt with a reason): {unclassified:?}"
+    );
+    for (file, entry) in &CLASSIFIED {
+        assert!(
+            CREDENTIAL_FILES.contains(file),
+            "{file} is no longer listed"
+        );
+        if let Entry::Exempt(reason) = entry {
+            assert!(!reason.is_empty(), "{file}: an exemption needs its reason");
+        }
+    }
+    let forges = CLASSIFIED.iter().filter_map(|(_, entry)| match entry {
+        Entry::Forge(program, kind, var, flow, guarded) => {
+            Some((*program, *kind, *var, *flow, *guarded))
+        }
+        Entry::Exempt(_) => None,
+    });
     let run = |script: &Path, var: &str| {
         crate::forklock::output(
             std::process::Command::new(script)
@@ -752,7 +820,7 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
         std::fs::write(path, text).unwrap();
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
     };
-    for (_, program, kind, var, flow, guarded) in FORGES {
+    for (program, kind, var, flow, guarded) in forges {
         // 5. the setup flow, which the answers below name.
         assert!(
             FORGE_PROGRAMS.contains(&program),
@@ -811,7 +879,7 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
         assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
         let said = String::from_utf8_lossy(&out.stderr).into_owned();
         assert!(
-            said.contains(&no_minted_token_said(program)),
+            said.contains(&no_minted_token_said(program, false)),
             "{program}: {said}"
         );
         assert!(

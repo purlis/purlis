@@ -566,7 +566,10 @@ pub const AT_MOST_PER_RESULT: usize = 8;
 /// A `PostToolUse` payload's `tool_response.stderr` is read for all three kinds of evidence; a
 /// `PostToolUseFailure` payload's `error`, and a `tool_response` that is one string (opencode's
 /// and Codex's), hold the command's standard output too, so only their violation block and the
-/// network's refusals as standard output says them are read. The command is read for one
+/// network's refusals as standard output says them are read. One more thing is read from each of
+/// those, and from a `mixed` response's `stderr` (opencode's failed command): a refusal of a path
+/// of the credentials class ([`credential_refusals`], #1349), whose Notice offers no grant, only
+/// the person's own way out. The command is read for one
 /// answer, whether its line runs a container engine's client ([`runs_a_container_client`]), and
 /// nothing of it is kept.
 pub fn detect(payload: &serde_json::Value, place: &Place<'_>) -> Vec<Block> {
@@ -670,6 +673,7 @@ pub fn detect_with_record(
                     .map(|(block, _)| (block, None)),
             );
             found.extend(on_stdout(mixed, place, said));
+            found.extend(credential_refusals(mixed, place));
         }
         response => {
             if let Some(stderr) = response["stderr"].as_str() {
@@ -690,6 +694,8 @@ pub fn detect_with_record(
                                     )));
                         (block, if kept { target } else { None })
                     }));
+                    // The credentials class keeps its target, which is no grant (#1349).
+                    found.extend(credential_refusals(stderr, place));
                 } else {
                     // A command that succeeded (D-sock-5): only the sandbox's own line names a
                     // socket or a service to allow, never what the program printed: the same
@@ -750,6 +756,11 @@ pub fn detect_with_record(
 /// too). A line that names a path of the credentials class ([`crate::sandbox::is_credential`],
 /// ADR 0067 §5 class 6) is the sandbox's refusal all the same, and its path is the block's
 /// target, so the Notice says the way that works.
+///
+/// This stays within ADR 0076: the path chooses only which words the Notice says, and the
+/// offer for that class is never a grant (the person's own way out), so no program's text can
+/// widen what a chat may do, and no run's state moves from it. Linux's supervisor refuses with
+/// `EACCES`, so "permission denied" is read as the refusal too.
 fn credential_refusals(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
     let Some(home) = place.home else {
         return Vec::new();
@@ -759,7 +770,8 @@ fn credential_refusals(text: &str, place: &Place<'_>) -> Vec<(Block, Option<Stri
         home: Some(home.to_path_buf()),
         os: crate::sandbox::Os::this(),
     };
-    let lines: Vec<&str> = text.lines().collect();
+    let owned: Vec<String> = text.lines().map(as_not_permitted).collect();
+    let lines: Vec<&str> = owned.iter().map(String::as_str).collect();
     (0..lines.len())
         .filter_map(|at| refused_path(&lines, at, place))
         .filter(|(_, _, path)| {
@@ -777,6 +789,24 @@ fn credential_refusals(text: &str, place: &Place<'_>) -> Vec<(Block, Option<Stri
             )
         })
         .collect()
+}
+
+/// `line` with a refusal's `EACCES` words (Linux's supervisor answers so) said as the `EPERM` ones
+/// the readers of a refused path know, and no other line changed.
+fn as_not_permitted(line: &str) -> String {
+    let trimmed = line.trim_end();
+    let lower = trimmed.to_ascii_lowercase();
+    if let Some(start) = lower.find("eacces: permission denied, ") {
+        let rest = &trimmed[start + "eacces: permission denied, ".len()..];
+        return format!(
+            "{}EPERM: operation not permitted, {rest}",
+            &trimmed[..start]
+        );
+    }
+    match lower.strip_suffix(": permission denied") {
+        Some(before) => format!("{}: operation not permitted", &trimmed[..before.len()]),
+        None => line.to_owned(),
+    }
 }
 
 /// Whether `block` is a refused certificate check that a grant may name: the one kind with a

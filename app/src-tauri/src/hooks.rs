@@ -1173,9 +1173,15 @@ pub(crate) fn blocked_on(
     whole: Option<bool>,
 ) -> ChatBlocked {
     let locks = purlis_core::sandbox::policy::Locks::of(plane.root());
-    let offered = kept_in_place(harness, plane.root(), block, target)
-        .or_else(|| lifted_here(harness, whole, plane.root(), block, target))
-        .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check));
+    // The person's own credentials first (#1349): no lift or kept git folder fixes a refused
+    // `~/.config/gh/hosts.yml`, so an Allow there would fix nothing.
+    let offered = if names_a_credential(block, target) {
+        offered_to(plane.root(), block, target, has_check)
+    } else {
+        kept_in_place(harness, plane.root(), block, target)
+            .or_else(|| lifted_here(harness, whole, plane.root(), block, target))
+            .unwrap_or_else(|| offered_to(plane.root(), block, target, has_check))
+    };
     let (first, named, why) = for_its_harness(harness, offered);
     // Chosen by the person where nothing was named (#1884): said in place of "nothing to
     // allow". A socket named and refused keeps its own sentence, and may be chosen again.
@@ -1685,6 +1691,23 @@ fn offered(
     target: Option<&str>,
 ) -> (BlockOffer, Option<String>, Option<String>) {
     offered_to(root, block, target, false)
+}
+
+/// Whether `block` refused a path of the credentials class (ADR 0067 §5 class 6), which only
+/// the person's own way out answers ([`offered_to`]).
+fn names_a_credential(block: &purlis_core::sandboxblock::Block, target: Option<&str>) -> bool {
+    use purlis_core::sandboxblock::Operation;
+    !block.ours
+        && matches!(
+            block.operation,
+            Operation::Read | Operation::Write | Operation::File
+        )
+        && target.is_some_and(|path| {
+            purlis_core::sandbox::is_credential(
+                Path::new(path),
+                &purlis_core::sandbox::Machine::this(),
+            )
+        })
 }
 
 /// **A refused write that keeps a repository's git folder where it is**, in a Claude Code chat
