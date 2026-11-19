@@ -18,6 +18,19 @@ export function denySays(deny: readonly string[]): string {
   return `Your answers for this project are in the deny state, so nothing they allow holds: ${deny.join("; ")}. Accepting again in the window mends it.`;
 }
 
+/** Whether `data` is the shape the core answers: a window under test may answer anything. */
+function readable(data: unknown): data is AnswersShown {
+  const shown = data as Partial<AnswersShown> | null | undefined;
+  return (
+    shown !== null &&
+    shown !== undefined &&
+    typeof shown.state === "string" &&
+    Array.isArray(shown.deny) &&
+    Array.isArray(shown.imported) &&
+    Array.isArray(shown.notices)
+  );
+}
+
 /**
  * **What the sealed answers say at a project's window** (M75-07a, #7015): the nevers imported
  * from the old files (once, listed), the deny state and why, and what purlis can't do (no
@@ -33,7 +46,7 @@ export function AnswersNotices({ plane }: { plane: PlaneId }) {
     void commands
       .answersShown(plane)
       .then((done) => {
-        if (!gone && done.status === "ok" && done.data) setShown(done.data);
+        if (!gone && done.status === "ok" && readable(done.data)) setShown(done.data);
       })
       .catch(() => undefined);
     return () => {
