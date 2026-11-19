@@ -13,6 +13,7 @@ import {
   pressTheOneOf,
   tabsAdded,
   theStepSays,
+  trustTheMachineOnTheMergedPage,
   watchTheTabs,
 } from "../poolsetup.js";
 import { closeTheViewTabsOpenedSince, runFromThePalette, tabNames } from "../reach.js";
@@ -56,11 +57,11 @@ describe("Pool setup on rootless Podman on another machine", () => {
     await press("Another machine with Docker");
     await press("Set up Docker on another machine");
 
-    // Connect: the Podman connection picked, the key read, then trusted.
+    // Connect: the Podman connection picked, the key read, then trusted on the merged page (the pool named there).
     await on("Connect");
     await pickTheMachine(CONNECTION);
     await press("Connect to 127.0.0.1", MAKING);
-    await press("Trust this machine", MAKING);
+    await trustTheMachineOnTheMergedPage(POOL);
 
     // Every check passed, the machine is trusted, and setup goes on to the pool.
     // Pool: its name and the image, made on the other machine.
