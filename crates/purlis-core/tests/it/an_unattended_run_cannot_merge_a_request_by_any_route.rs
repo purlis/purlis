@@ -489,11 +489,14 @@ fn a_push_option_value_and_a_requests_sub_paths_are_not_over_read() {
         "glab api -X POST projects/1/merge_requests/5/notes --input note.json",
         "gh api -X POST repos/o/r/pulls/12/reviews --input review.json",
         "gh api -X POST repos/o/r/pulls/12/comments -F \"$K=x\"",
-        // Editing a request's title or description is no merge, with a body read from a file
-        // and a path written out (#7176; Q331).
+    ]);
+    // Editing a request's title or description is no merge, but only a body purlis reads says so:
+    // a file it cannot open is held (#7195; the passing forms are in
+    // `a_call_that_merges_nothing_passes_the_merge_hold`).
+    refused_unattended_only(&[
+        "git push -o \"$OPT\" origin feat",
         "glab api -X PUT projects/1/merge_requests/5 --input body.json",
     ]);
-    refused_unattended_only(&["git push -o \"$OPT\" origin feat"]);
 }
 
 #[test]

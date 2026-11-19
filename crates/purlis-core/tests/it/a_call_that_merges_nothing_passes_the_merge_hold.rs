@@ -96,9 +96,9 @@ fn playing_a_manual_ci_job_passes() {
         "glab api --method POST projects/p/jobs/123/retry",
         "for j in 1 2\ndo\nglab api -X POST projects/p/jobs/$j/play\ndone",
         "for j in 1 2; do\n  glab api -X POST projects/p/jobs/${j}/play;\ndone",
-        // An MR's metadata edit with a body from a file, the id bound to digits.
-        "M=7; glab api --method PUT projects/p/merge_requests/$M --input body.json",
-        "for m in 7 8; do glab api --method PUT projects/p/merge_requests/$m/ --input body.json; done",
+        // An MR's metadata edit, the id bound to digits.
+        "M=7; glab api --method PUT projects/p/merge_requests/$M -f title=T",
+        "for m in 7 8; do glab api --method PUT projects/p/merge_requests/$m/ -f title=T; done",
     ]);
 }
 
@@ -250,11 +250,108 @@ fn a_held_loop_over_a_substitution_says_to_loop_over_digits() {
 #[test]
 fn editing_a_merge_requests_metadata_passes() {
     purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let body = dir.path().join("body.json");
+    std::fs::write(&body, r#"{"title":"New title","description":"Text"}"#).unwrap();
+    let body = body.display();
     passes(&[
-        "glab api --method PUT projects/p/merge_requests/7/ --input $TMPDIR/body.json",
-        "glab api --method PUT projects/p/merge_requests/7 --input $TMPDIR/body.json",
+        &format!("glab api --method PUT projects/p/merge_requests/7/ --input {body}"),
+        &format!("glab api --method PUT projects/p/merge_requests/7 --input {body}"),
         "glab api -X PUT projects/p/merge_requests/7 -f title='New title' -f description='Text'",
         "gh api -X PATCH repos/o/r/pulls/7 -f title='New title'",
+    ]);
+}
+
+/// A request's edit passes when it sets only text (and a pull request's state), and is held when
+/// it can retarget or merge it, or when what it sets cannot be read here (#7195).
+#[test]
+fn editing_a_pull_request_passes_unless_it_retargets_or_cannot_be_read() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, text: &str| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, text).unwrap();
+        path.display().to_string()
+    };
+    let text = write(
+        "text.json",
+        r#"{"title":"T","body":"B","state":"closed","maintainer_can_modify":true}"#,
+    );
+    let retarget = write("retarget.json", r#"{"title":"T","base":"main"}"#);
+    let auto = write("auto.json", r#"{"merge_when_pipeline_succeeds":true}"#);
+    let array = write("array.json", r#"[{"title":"T"}]"#);
+    let broken = write("broken.json", r#"{"title":"#);
+    let missing = dir.path().join("missing.json").display().to_string();
+    passes(&[
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {text}"),
+        &format!("gh api --method=PATCH repos/o/r/pulls/7 --input {text}"),
+        "gh api -X PATCH repos/o/r/pulls/7 -f title=T -f body=B -f state=closed",
+        "gh api -X PATCH repos/o/r/pulls/7 -F maintainer_can_modify=true -f body=@notes.md",
+    ]);
+    held(&[
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {retarget}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {auto}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {array}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {broken}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {missing}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {text} --input {retarget}"),
+        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {text} -f base=main"),
+        &format!(
+            "gh api -X PATCH repos/o/r/pulls/7 --input {dir_path}",
+            dir_path = dir.path().display()
+        ),
+        "gh api -X PATCH repos/o/r/pulls/7 --input -",
+        "gh api -X PATCH repos/o/r/pulls/7 --input $BODY",
+        "gh api -X PATCH repos/o/r/pulls/7 --input ~/body.json",
+        "gh api -X PATCH repos/o/r/pulls/7 --input body-$$.json",
+        "gh api -X PATCH repos/o/r/pulls/7 --input <(echo '{\"title\":\"T\"}')",
+        "gh api -X PATCH repos/o/r/pulls/7 -f base=main",
+        "gh api -X PATCH repos/o/r/pulls/7 -F base=main",
+        "gh api -X PATCH repos/o/r/pulls/7 -f title=T -f base=release",
+        "gh api -X PATCH repos/o/r/pulls/7 -f 'base[x]=main'",
+        "gh api -X PATCH repos/o/r/pulls/7 -f $K=main",
+        "gh api -X PATCH repos/o/r/pulls/7 -f auto_merge=true",
+        "gh api -X PATCH repos/o/r/pulls/7 --form title=T",
+        "gh api -X PATCH repos/o/r/pulls/7/merge -f title=T",
+        "gh api -X PUT repos/o/r/pulls/7/merge --input body.json",
+    ]);
+}
+
+/// The same for GitLab's `PUT merge_requests/<iid>`: only the title and description are set
+/// without a hold (#7195).
+#[test]
+fn editing_a_merge_request_passes_only_for_its_title_and_description() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, text: &str| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, text).unwrap();
+        path.display().to_string()
+    };
+    let text = write("text.json", r#"{"title":"T","description":"D"}"#);
+    let target = write("target.json", r#"{"title":"T","target_branch":"main"}"#);
+    let auto = write("auto.json", r#"{"merge_when_pipeline_succeeds":true}"#);
+    let squash = write("squash.json", r#"{"squash":true}"#);
+    let state = write("state.json", r#"{"state_event":"close"}"#);
+    let missing = dir.path().join("missing.json").display().to_string();
+    passes(&[
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {text}"),
+        "glab api -X PUT projects/9/merge_requests/3 -f title=T -f description=D",
+        "glab api --method PUT projects/g%2Fp/merge_requests/3 -F description=@notes.md",
+    ]);
+    held(&[
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {target}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {auto}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {squash}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {state}"),
+        &format!("glab api -X PUT projects/9/merge_requests/3 --input {missing}"),
+        "glab api -X PUT projects/9/merge_requests/3 --input -",
+        "glab api -X PUT projects/9/merge_requests/3 --input $BODY",
+        "glab api -X PUT projects/9/merge_requests/3 -f target_branch=main",
+        "glab api -X PUT projects/9/merge_requests/3 -f merge_when_pipeline_succeeds=true",
+        "glab api -X PUT projects/9/merge_requests/3 -F squash=true",
+        "glab api -X PUT projects/9/merge_requests/3 -f title=T -f should_remove_source_branch=true",
+        "glab api -X PUT projects/9/merge_requests/3/merge",
     ]);
 }
 

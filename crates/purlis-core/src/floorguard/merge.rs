@@ -337,8 +337,12 @@ struct ApiCall {
     unknown_flag: Option<String>,
     positionals: Vec<String>,
     fields: Vec<Field>,
-    /// `--input` or `--form`: a body this reader does not see.
+    /// `--input` or `--form`: a body this reader does not see on the line.
     opaque_body: bool,
+    /// The files `--input` names, as written (a request edit's body is read from one).
+    inputs: Vec<String>,
+    /// `--form` was given: a multipart body that is never read.
+    form_body: bool,
 }
 
 impl ApiCall {
@@ -414,7 +418,14 @@ impl ApiCall {
             "method" => self.method = Some(value),
             "raw-field" => self.fields.push(Field::new(FieldKind::Raw, &value)),
             "field" => self.fields.push(Field::new(FieldKind::Typed, &value)),
-            "input" | "form" => self.opaque_body = true,
+            "input" => {
+                self.opaque_body = true;
+                self.inputs.push(value);
+            }
+            "form" => {
+                self.opaque_body = true;
+                self.form_body = true;
+            }
             _ => {}
         }
     }
@@ -503,6 +514,17 @@ fn is_merge_path(segs: &[String]) -> bool {
         Some(collection) => speaks_of_merging(collection),
         None => false,
     }
+}
+
+/// Whether a path holds a `$name` or `${name}` reference, the one case the variable way out
+/// (`J=101; ...`) is advice for: a bare `$`, a substitution or an arithmetic expansion is not.
+fn names_a_variable(path: &str) -> bool {
+    path.match_indices('$').any(|(i, _)| {
+        path[i + 1..]
+            .chars()
+            .next()
+            .is_some_and(|c| c == '{' || c == '_' || c.is_ascii_alphabetic())
+    })
 }
 
 /// The sentence a refusal ends with where a writing call's path holds a variable that is not
@@ -808,7 +830,7 @@ fn api_reason(args: &[String], cmd: &str, glab_api: bool) -> Option<String> {
         for fill in ["0", ""] {
             let resolved = with_digit_variables(endpoint, cmd, fill);
             if opaque(&resolved) {
-                let way_out = if resolved.contains('$') {
+                let way_out = if names_a_variable(&resolved) {
                     format!(" {VARIABLE_WAY_OUT}")
                 } else {
                     String::new()
@@ -845,6 +867,14 @@ fn api_reason(args: &[String], cmd: &str, glab_api: bool) -> Option<String> {
             {
                 return Some(why.to_owned());
             }
+            // An edit of a request itself sets only what it is told to set: its text, and for a
+            // pull request its state. A target (retargeting) or a merge setting is held, and so
+            // is a body purlis cannot read (#7195).
+            if let Some(forge) = request_edit(&segs)
+                && let Some(why) = request_edit_reason(&call, forge)
+            {
+                return Some(why);
+            }
             // Where a field the call does not show could set a merge: a repository's settings. A
             // request's own path, GitLab's `merge_requests/N` or GitHub's `pulls/N`, edits its title,
             // description, labels, state and target and has no field that merges: merging is
@@ -865,6 +895,102 @@ fn api_reason(args: &[String], cmd: &str, glab_api: bool) -> Option<String> {
         }
     }
     None
+}
+
+/// Which forge's request a path is the edit endpoint of.
+#[derive(Clone, Copy)]
+enum RequestForge {
+    /// GitHub's `pulls/<n>`.
+    GitHub,
+    /// GitLab's `merge_requests/<iid>`.
+    GitLab,
+}
+
+impl RequestForge {
+    /// The fields a request's edit may set without merging or retargeting it.
+    fn settable(self) -> &'static [&'static str] {
+        match self {
+            Self::GitHub => &["title", "body", "state", "maintainer_can_modify"],
+            Self::GitLab => &["title", "description"],
+        }
+    }
+}
+
+/// The forge whose request a path is the edit endpoint of: exactly `pulls/<n>` or
+/// `merge_requests/<n>` under a repository. Merging is `<that>/merge`, judged elsewhere.
+fn request_edit(segs: &[String]) -> Option<RequestForge> {
+    match under_repository(segs)? {
+        [kind, _] if kind == "pulls" => Some(RequestForge::GitHub),
+        [kind, _] if kind == "merge_requests" => Some(RequestForge::GitLab),
+        _ => None,
+    }
+}
+
+/// The top-level keys of a JSON object in the file a call's `--input` names, or `None` when
+/// they cannot be read from here: a path the shell fills in, stdin (`-`), a file that is missing,
+/// unreadable, too large or not one JSON object.
+fn input_keys(path: &str) -> Option<Vec<String>> {
+    if path.is_empty() || path == "-" || opaque(path) {
+        return None;
+    }
+    let file = std::path::Path::new(path);
+    if !std::fs::metadata(file).ok()?.is_file() {
+        return None;
+    }
+    let mut text = String::new();
+    std::io::Read::read_to_string(
+        &mut std::io::Read::take(std::fs::File::open(file).ok()?, 1 << 20),
+        &mut text,
+    )
+    .ok()?;
+    match serde_json::from_str::<serde_json::Value>(&text).ok()? {
+        serde_json::Value::Object(map) => Some(map.keys().cloned().collect()),
+        _ => None,
+    }
+}
+
+/// The refusal of an edit of a request that sets a field outside `forge`'s settable ones, or
+/// whose body cannot be read, or `None` when it sets only those (#7195). A field that speaks of
+/// merging is the merge refusal; `base` or `target_branch` retargets the request.
+fn request_edit_reason(call: &ApiCall, forge: RequestForge) -> Option<String> {
+    if call.is_read() {
+        return None;
+    }
+    let mut keys: Vec<String> = call.fields.iter().map(|f| f.key.clone()).collect();
+    let mut unread = call.form_body.then(|| "a `--form` body".to_owned());
+    for input in &call.inputs {
+        match input_keys(input) {
+            Some(more) => keys.extend(more),
+            None => {
+                unread.get_or_insert_with(|| format!("the body `{input}`"));
+            }
+        }
+    }
+    if keys.iter().any(|k| speaks_of_merging(k)) {
+        return Some(MERGES.to_owned());
+    }
+    if let Some(key) = keys
+        .iter()
+        .find(|k| !forge.settable().contains(&k.as_str()))
+    {
+        let shown = if opaque(key) {
+            "a field the shell fills in"
+        } else {
+            key
+        };
+        return Some(format!(
+            "Editing a request through the API is no merge when it sets only {}, but this call \
+             sets `{shown}`, which can retarget it or change how it merges. Set the field in the \
+             window, or run a call that sets only those.",
+            forge.settable().join(", ")
+        ));
+    }
+    unread.map(|what| {
+        format!(
+            "{UNREADABLE} This edits a request, and purlis cannot read {what}: it must be a \
+             JSON file this call can open, written out, with no variable in its name. {SPLIT}"
+        )
+    })
 }
 
 /// The sentence a refusal of a write to the default branch's ref ends with (Q330).
