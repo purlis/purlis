@@ -2901,16 +2901,18 @@ pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&P
 /// `mints`: whether the tool is declared with a `mint` line. Only then does Agent identity
 /// matter, and the shim can only see that the chat's hook channel variable is missing, while
 /// `secret exec` may still reach the app by its ancestry (#6995): so it says the app was not
-/// reached from here, never that Agent identity is not set up. Any other tool holds a token in a
-/// vault, and its way on is that vault's key.
+/// reached from here, never that Agent identity is not set up. Any other tool is declared with a
+/// token held in a vault, so its token is not missing: the hook channel that hands it on is, as
+/// under `env -i glab mr list`.
 pub fn no_minted_token_said(name: &str, mints: bool) -> String {
     let way = if mints {
         "The app could not be reached from this shell to mint one: run it from the chat's own \
          terminal, set up Agent identity in Settings › Agent identity if it is not, or choose a \
          sandbox template where the credentials class is off."
     } else {
-        "Declare the tool with a token held in a vault, or choose a sandbox template where the \
-         credentials class is off."
+        "The app could not be reached from this shell to hand on the token the tool is declared \
+         with: run it from the chat's own terminal (not under `env -i`), or choose a sandbox \
+         template where the credentials class is off."
     };
     format!(
         "{name} has no token in this chat, and a chat never uses the person's own {name} login. \

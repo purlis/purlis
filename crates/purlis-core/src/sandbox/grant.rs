@@ -508,14 +508,15 @@ impl fmt::Display for Refused {
 pub const CREDENTIALS_ROUTE: &str = "That is one of your own credentials. A chat never reads or \
      writes them at the full sandbox, or at the basic one where the project's policy says so, so \
      plain gh or git over https that relies on it stops working here. Give the chat a forge token \
-     through purlis's vault, or push through the app.";
+     through purlis's vault (declare the tool with it, or set up Agent identity in Settings), or \
+     push through the app.";
 
 /// [`CREDENTIALS_ROUTE`], where a person can allow their own SSH agent to a chat: on macOS.
 pub const CREDENTIALS_ROUTE_WITH_AGENT: &str = "That is one of your own credentials. A chat never \
      reads or writes them at the full sandbox, or at the basic one where the project's policy \
      says so, so plain gh or git over https that relies on it stops working here. Give the chat \
-     a forge token through purlis's vault, push through the app, or allow your SSH agent for this \
-     chat.";
+     a forge token through purlis's vault (declare the tool with it, or set up Agent identity in \
+     Settings), push through the app, or allow your SSH agent for this chat.";
 
 /// The way that works for something of `class`, which is never granted (ADR 0067 §5).
 pub fn brokered_route(class: Class) -> &'static str {

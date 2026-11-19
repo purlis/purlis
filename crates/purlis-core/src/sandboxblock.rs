@@ -256,11 +256,16 @@ pub enum Kind {
     /// interface, left out of the chat's plan because it was allowed for this chat alone on the
     /// person's own machine, which the runner's proxy asks about.
     RunnerService,
+    /// One of the person's own credentials (ADR 0067 §5 class 6), named by a program's own
+    /// refusal ([`credential_refusals`], #1349). A kind of its own so a path a program printed
+    /// can never be sorted as a file a grant could name: whatever the app's own judgement of
+    /// the path, this kind's offer is the person's own way out and never a grant.
+    Credentials,
 }
 
 impl Kind {
     /// Every kind, in the order they are listed.
-    pub const ALL: [Kind; 17] = [
+    pub const ALL: [Kind; 18] = [
         Self::ProjectFiles,
         Self::ProjectState,
         Self::ProtectedFile,
@@ -278,6 +283,7 @@ impl Kind {
         Self::CertificateCheck,
         Self::SystemService,
         Self::RunnerService,
+        Self::Credentials,
     ];
 
     /// The word it is stored under.
@@ -300,6 +306,7 @@ impl Kind {
             Self::CertificateCheck => "certificate-check",
             Self::SystemService => "system-service",
             Self::RunnerService => "runner-service",
+            Self::Credentials => "credentials",
         }
     }
 
@@ -341,6 +348,7 @@ impl Kind {
             Self::CertificateCheck => "the system's certificate check",
             Self::SystemService => "a system service",
             Self::RunnerService => "a service on the runner this chat runs on",
+            Self::Credentials => "one of your own credentials",
         }
     }
 }
@@ -667,13 +675,17 @@ pub fn detect_with_record(
             // be one the command printed, so it raises a block and names no target to allow; a
             // target comes only from the sandbox's own report or a failed command's own error
             // (D-sock-5), or a container client's own words for its socket.
+            let credentials = credential_refusals(mixed, place, said);
+            // One Notice, not two, where the sandbox's own line and the program's name the same
+            // credential: the credentials one says the way that works.
             found.extend(
                 violations(mixed, place)
                     .into_iter()
+                    .filter(|(_, target)| !names_one_of(&credentials, target))
                     .map(|(block, _)| (block, None)),
             );
             found.extend(on_stdout(mixed, place, said));
-            found.extend(credential_refusals(mixed, place));
+            found.extend(credentials);
         }
         response => {
             if let Some(stderr) = response["stderr"].as_str() {
@@ -684,18 +696,24 @@ pub fn detect_with_record(
                     // said, and never offered. The certificate check keeps to its own rule,
                     // below: what a line of readers printed names none here either.
                     let own = violations(stderr, place);
-                    found.extend(on_stderr(stderr, place).into_iter().map(|(block, target)| {
-                        let kept = target.is_some()
-                            && (own.contains(&(block, target.clone()))
-                                || (names_a_lookup(&block)
-                                    && !matches!(
-                                        block.kind,
-                                        Kind::CertificateCheck | Kind::LocalService
-                                    )));
-                        (block, if kept { target } else { None })
-                    }));
+                    let credentials = credential_refusals(stderr, place, said);
+                    found.extend(
+                        on_stderr(stderr, place)
+                            .into_iter()
+                            .filter(|(_, target)| !names_one_of(&credentials, target))
+                            .map(|(block, target)| {
+                                let kept = target.is_some()
+                                    && (own.contains(&(block, target.clone()))
+                                        || (names_a_lookup(&block)
+                                            && !matches!(
+                                                block.kind,
+                                                Kind::CertificateCheck | Kind::LocalService
+                                            )));
+                                (block, if kept { target } else { None })
+                            }),
+                    );
                     // The credentials class keeps its target, which is no grant (#1349).
-                    found.extend(credential_refusals(stderr, place));
+                    found.extend(credentials);
                 } else {
                     // A command that succeeded (D-sock-5): only the sandbox's own line names a
                     // socket or a service to allow, never what the program printed: the same
@@ -726,14 +744,17 @@ pub fn detect_with_record(
             }
             if let Some(stdout) = response["stdout"].as_str() {
                 found.extend(on_stdout(stdout, place, said));
+                // `gh pr list 2>&1 | head` exits 0 with gh's own line in standard output.
+                found.extend(credential_refusals(stdout, place, said));
             }
         }
     }
     if let Some(mixed) = payload["error"].as_str() {
         found.extend(violations(mixed, place));
         found.extend(on_stdout(mixed, place, Said::Failed));
-        found.extend(credential_refusals(mixed, place));
+        found.extend(credential_refusals(mixed, place, Said::Failed));
     }
+    drop_credential_twins(&mut found);
     // The certificate check is one service, purlis's own word for it: a line that runs a
     // program names it however the line ended ([`runs_a_program`]). Read only where a check
     // was left unnamed, so no other result's line is read for it.
@@ -761,8 +782,9 @@ pub fn detect_with_record(
 /// offer for that class is never a grant (the person's own way out), so no program's text can
 /// widen what a chat may do, and no run's state moves from it. Linux's supervisor refuses with
 /// `EACCES`, so "permission denied" is read as the refusal too.
-fn credential_refusals(text: &str, place: &Place<'_>) -> Vec<(Block, Option<String>)> {
-    let Some(home) = place.home else {
+fn credential_refusals(text: &str, place: &Place<'_>, said: Said) -> Vec<(Block, Option<String>)> {
+    // What a command merely printed (a log it `cat`ed) is no refusal it met (#1972).
+    let Some(home) = place.home.filter(|_| said != Said::Printed) else {
         return Vec::new();
     };
     let machine = crate::sandbox::Machine {
@@ -778,17 +800,35 @@ fn credential_refusals(text: &str, place: &Place<'_>) -> Vec<(Block, Option<Stri
             Path::new(path).is_absolute()
                 && crate::sandbox::is_credential(Path::new(path), &machine)
         })
-        .map(|(operation, kind, path)| {
+        .map(|(operation, _, path)| {
             (
                 Block {
                     operation,
-                    kind,
+                    kind: Kind::Credentials,
                     ours: false,
                 },
                 Some(path),
             )
         })
         .collect()
+}
+
+/// Whether `target` is the path of one of `credentials`' blocks.
+fn names_one_of(credentials: &[(Block, Option<String>)], target: &Option<String>) -> bool {
+    target.is_some() && credentials.iter().any(|(_, named)| named == target)
+}
+
+/// A credential named by a program's own line and by the sandbox's violation line is one Notice,
+/// the credentials one: the other, sorted by path, is dropped.
+fn drop_credential_twins(found: &mut Vec<(Block, Option<String>)>) {
+    let credentials: Vec<(Block, Option<String>)> = found
+        .iter()
+        .filter(|(block, _)| block.kind == Kind::Credentials)
+        .cloned()
+        .collect();
+    found.retain(|(block, target)| {
+        block.kind == Kind::Credentials || !names_one_of(&credentials, target)
+    });
 }
 
 /// `line` with a refusal's `EACCES` words (Linux's supervisor answers so) said as the `EPERM` ones
@@ -801,6 +841,20 @@ fn as_not_permitted(line: &str) -> String {
         return format!(
             "{}EPERM: operation not permitted, {rest}",
             &trimmed[..start]
+        );
+    }
+    // Python's and Rust's own words for the same refusal.
+    if let Some(start) = lower.find("[errno 13] permission denied: '") {
+        let rest = &trimmed[start + "[errno 13] permission denied: '".len()..];
+        return format!(
+            "{}[Errno 1] Operation not permitted: '{rest}",
+            &trimmed[..start]
+        );
+    }
+    if let Some(before) = lower.strip_suffix(": permission denied (os error 13)") {
+        return format!(
+            "{}: operation not permitted (os error 1)",
+            &trimmed[..before.len()]
         );
     }
     match lower.strip_suffix(": permission denied") {
