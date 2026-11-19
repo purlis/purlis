@@ -61,6 +61,7 @@ pub(crate) fn skipped_for_timing(
                 timings: Some(timings),
                 verdict: ReportVerdict::NotRun,
                 reason: Some(SKIPPED_FOR_TIMING.to_owned()),
+                refusal_expected: cell.escape || cell.steps.iter().any(|s| s.refusal_expected),
             })
         })
         .collect()
@@ -228,6 +229,30 @@ fn production_only_cells_are_skipped_and_reported_on_scaled_runs() {
             "{record:?} is in {}",
             at.display()
         );
+    }
+}
+
+/// **A skipped cell's record says whether a refusal is expected of it** (#7175): an escape cell
+/// and a cell with a step that expects a refusal carry `refusal_expected`, a plain cell does not.
+#[test]
+fn a_skipped_cells_record_says_whether_it_expects_a_refusal() {
+    let call = serde_json::json!({"tool": "bash", "input": {"command": "true"}});
+    let pair = serde_json::json!(["hold", "hook_timeout"]);
+    let batch = a_batch(serde_json::json!([
+        {"id": "M-PLAIN", "production_only": pair, "steps": [{"calls": [call]}]},
+        {"id": "M-ESC", "escape": true, "production_only": pair, "steps": [{"calls": [call]}]},
+        {"id": "M-REF", "production_only": pair,
+         "steps": [{"calls": [call], "refusal_expected": true}]},
+    ]));
+    let records = skipped_for_timing(&batch, TimingsMode::Scaled, Trigger::PullRequest);
+    for (row, expected) in [("M-PLAIN", false), ("M-ESC", true), ("M-REF", true)] {
+        let ours: Vec<_> = records.iter().filter(|r| r.row == row).collect();
+        assert_eq!(ours.len(), 3, "{row}: one a dialect");
+        for r in ours {
+            assert_eq!(r.refusal_expected, expected, "{row}");
+            let value = serde_json::to_value(r).expect("a record serialises");
+            assert_eq!(value.get("refusal_expected").is_some(), expected, "{row}");
+        }
     }
 }
 

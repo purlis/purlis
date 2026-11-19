@@ -128,6 +128,9 @@ export const DOCS_READ_BY_RUST = [
   "docs/adr/0083/2026-11-02-a-task-question-is-counted-from-its-steps-and-never-read.md",
   // `it/every_inventory_row_maps_to_exactly_one_family` holds every row of #6970 to one family.
   "docs/policy-inventory-families.md",
+  // `purlis-scenarios`' `the_release_checklist_names_the_live_pass` holds its release steps to
+  // `tools/live-pass` (T1.1-37).
+  "docs/updating.md",
 ];
 
 // The files of the window's sources that Rust reads by name, so a change to one is a change to a
