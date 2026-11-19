@@ -885,7 +885,32 @@ fn kept_reach(reach: &BrowserReach) -> purlis_core::browserposture::Reach {
         listed: reach.listed.iter().map(|one| one.host.clone()).collect(),
         never: reach.never.iter().cloned().collect(),
         withdrawn: reach.withdrawn.iter().copied().collect(),
+        open_web: reach.open_web,
+        answered: reach.answered.iter().cloned().collect(),
     }
+}
+
+/// **Which chats purlis has a record of, for the project at `root`** (#7190): the chats the record
+/// of open chats names, as it is on disk now (another window of the project writes it too), the
+/// chats that closed and keep their card ([`purlis_core::chatrecords`]), `back` (the chats this
+/// launch put back) and those `open_here`. A closed chat is a chat that exists: its Reopen starts
+/// it again under its id, and it finds its kept answer. `None` where either record cannot be
+/// read: a record that does not read is never "no chats", and nothing is pruned on it.
+pub(crate) fn chats_that_exist<'a>(
+    root: &Path,
+    back: &'a [String],
+    open_here: &'a dyn Fn(&str) -> bool,
+) -> Option<impl Fn(&str) -> bool + 'a> {
+    let mut known: std::collections::BTreeSet<String> = back.iter().cloned().collect();
+    if let Some(open) = purlis_core::reopen::read_strictly(root).ok()? {
+        known.extend(open.chats.into_iter().filter_map(|chat| chat.identity.id));
+    }
+    known.extend(
+        purlis_core::chatrecords::every_strictly(root)?
+            .into_iter()
+            .map(|chat| chat.id),
+    );
+    Some(move |id: &str| known.contains(id) || open_here(id))
 }
 
 /// What of `posture` the person answered that is kept across a restart (#7190): their press,
@@ -1071,8 +1096,9 @@ impl ChatBrowsers {
         }
     }
 
-    /// **Drops the kept answers of chats that no longer exist** (`exists` says which do), at
-    /// start: a chat that ended while the app was not running left its answer behind.
+    /// **Drops the kept answers of chats purlis no longer has a record of** (`exists` says which
+    /// it has, [`chats_that_exist`]), at start. A chat that is closed is not one of them: it may
+    /// be resumed, and keeps its answer; it goes when purlis lets go of the chat's record.
     pub fn prune_answers(&self, exists: &dyn Fn(&str) -> bool) {
         let Some(root) = &self.answers_in else {
             return;
@@ -2862,13 +2888,15 @@ impl ChatBrowsers {
     }
 
     /// Every opt-in given on pool `pool`, and every Ask about one: its mark was taken back
-    /// (#4071).
-    pub fn forget_pool_logins(&self, pool: &str) {
-        self.pool_logins.forget_pool(pool);
+    /// (#4071), or it was forgotten. **A failed removal is reported and the opt-in no longer
+    /// applies**: the error says the store could not take it out, and it is not read again.
+    pub fn forget_pool_logins(&self, pool: &str) -> Result<(), String> {
+        let taken = self.pool_logins.forget_pool(pool);
         self.pool_asks
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|_, waits| waits.bound.pool != pool);
+        taken.map_err(|why| not_removed_from_the_store(pool, &why))
     }
 
     /// **Every runner chat whose browser login waits on the person's opt-in** (#2050), longest
@@ -2890,20 +2918,40 @@ impl ChatBrowsers {
     /// off there, each until the pool or its runner changes. Every chat of that persona whose
     /// same login waits on the pool as it was shown is answered with it. Answers the chats
     /// answered, `session`'s first, or none where it waits no more.
+    #[cfg(test)]
     pub fn answer_pool_login(&self, session: u32, allow: bool) -> Vec<PoolLoginWaits> {
+        self.answer_pool_login_told(session, allow).0
+    }
+
+    /// [`Self::answer_pool_login`], and, for Keep off, the words of a removal the machine's store
+    /// could not take: the refusal stands, and the opt-in it replaced no longer applies.
+    pub fn answer_pool_login_told(
+        &self,
+        session: u32,
+        allow: bool,
+    ) -> (Vec<PoolLoginWaits>, Option<String>) {
         let mut asks = self
             .pool_asks
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let Some(asked) = asks.remove(&session) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
+        let mut not_taken = None;
         if allow {
-            self.pool_logins
-                .allow(&asked.persona, &asked.identity, asked.bound.clone());
-        } else {
-            self.pool_logins
-                .keep_off(&asked.persona, &asked.identity, asked.bound.clone());
+            self.pool_logins.allow(
+                &asked.persona,
+                &asked.identity,
+                &asked.login,
+                asked.bound.clone(),
+            );
+        } else if let Err(why) = self.pool_logins.keep_off(
+            &asked.persona,
+            &asked.identity,
+            &asked.login,
+            asked.bound.clone(),
+        ) {
+            not_taken = Some(not_removed_from_the_store(&asked.bound.pool, &why));
         }
         let others: Vec<u32> = asks
             .values()
@@ -2916,7 +2964,7 @@ impl ChatBrowsers {
             .collect();
         let mut answered = vec![asked];
         answered.extend(others.into_iter().filter_map(|other| asks.remove(&other)));
-        answered
+        (answered, not_taken)
     }
 
     /// **Every chat whose browser's sites wait on the person** (#2018), longest waiting first.
@@ -3240,14 +3288,8 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&session);
-        // Its answer ends with it (#7190): a closed chat is never asked after. Under no lock of
-        // the browsers': the file's lock may be held by another purlis for a while.
-        let id = self.lock().get(&session).and_then(|chat| chat.id.clone());
-        if let (Some(root), Some(id)) = (&self.answers_in, id)
-            && let Err(why) = purlis_core::browserposture::remove(root, &id)
-        {
-            tracing::warn!("purlis: a closed chat's browser answer stays on disk ({why})");
-        }
+        // Its kept answer stays (#7190): a closed chat that is resumed keeps the answer it was
+        // given. It goes when purlis lets go of the chat's record ([`chats_that_exist`]).
         let (programs, kept) = {
             let mut chats = self.lock();
             let (kept, programs): (Vec<ChatBrowser>, Vec<ChatBrowser>) = chats
@@ -4505,7 +4547,7 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
     // Who the chat is, for its browsers' notes (#2025).
     held.browsers()
         .identify_for(browse.chat, held.chats().id_of(browse.chat), &|| {
-            reach_of(held, browse.chat)
+            known_reach_of(held, browse.chat)
         });
     let folder = || crate::browserfiles::chat_folder(held, browse.chat);
     // A secret fill asks the person, and reads its value once they allow it (#5115); its notice
@@ -5300,17 +5342,24 @@ pub(crate) fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPerso
 /// nothing. Its own
 /// sites, for this chat alone, are added by [`ChatBrowsers::answer`].
 pub(crate) fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
+    known_reach_of(held, session).unwrap_or_default()
+}
+
+/// **[`reach_of`], where it is known**: `None` for a sandboxed chat reattached under a sandbox
+/// whose compile was not recorded (D-2006-11). Its browser lists nothing then, but that is no
+/// narrowing of what the person answered for: a kept answer is checked against what is known,
+/// never against nothing (#7190).
+pub(crate) fn known_reach_of(held: &crate::planes::Held, session: u32) -> Option<BrowserReach> {
     let Some(confines) = held.chats().confines_now(session) else {
-        // Held by a sandbox whose compile was not recorded (D-2006-11): nothing is listed.
         if !held.chats().started_unsandboxed(session) {
-            return BrowserReach::default();
+            return None;
         }
-        return listed_reach(held, persona_of(held, session).as_deref());
+        return Some(listed_reach(held, persona_of(held, session).as_deref()));
     };
-    with_browser_sites(
+    Some(with_browser_sites(
         held.root(),
         purlis_core::browsertools::browser_reach(&confines.decides(), false),
-    )
+    ))
 }
 
 /// **What a browser the person opens from the window reaches** (#2176): it has no chat, so no
@@ -5675,6 +5724,31 @@ pub fn kept_off(
     Ok(())
 }
 
+/// **Every opt-in given on pool `pool`, in every project in `projects`, forgotten** (#2050): each
+/// project is tried, and the first failed removal is answered ([`ChatBrowsers::forget_pool_logins`]).
+pub fn forget_pool_logins_in(
+    projects: &[Arc<crate::planes::Held>],
+    pool: &str,
+) -> Result<(), String> {
+    let mut first = Ok(());
+    for project in projects {
+        let one = project.browsers().forget_pool_logins(pool);
+        if first.is_ok() {
+            first = one;
+        }
+    }
+    first
+}
+
+/// What is told where the machine's store could not take a pool login opt-in out: it is held
+/// removed all the same.
+fn not_removed_from_the_store(pool: &str, why: &std::io::Error) -> String {
+    format!(
+        "purlis could not remove the kept login opt-ins for pool {pool} from this machine's \
+         store ({why}). They no longer apply."
+    )
+}
+
 /// What a pool login Ask answered by nothing any more says.
 const POOL_LOGIN_WAITS_NO_MORE: &str =
     "Nothing is asking about browser logins on a pool for that chat any more.";
@@ -5707,7 +5781,7 @@ pub fn pool_login_answered(
     allow: bool,
     reason: Option<&str>,
 ) -> Result<(), String> {
-    let answered = held.browsers().answer_pool_login(session, allow);
+    let (answered, not_taken) = held.browsers().answer_pool_login_told(session, allow);
     if answered.is_empty() {
         return Err(POOL_LOGIN_WAITS_NO_MORE.to_owned());
     }
@@ -5732,7 +5806,8 @@ pub fn pool_login_answered(
         );
     }
     held.chats().asks_may_have_moved();
-    Ok(())
+    // The answer stands and each chat is told; the person is told what the store could not do.
+    not_taken.map_or(Ok(()), Err)
 }
 
 /// **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
@@ -6253,7 +6328,7 @@ pub fn handed(
     let may_log_in = |login: &HeldLogin| may_log_in(held, session, login);
     held.browsers()
         .identify_for(session, held.chats().id_of(session), &|| {
-            reach_of(held, session)
+            known_reach_of(held, session)
         });
     let listing = held.browsers().listing();
     let name = held.browsers().hand_over(

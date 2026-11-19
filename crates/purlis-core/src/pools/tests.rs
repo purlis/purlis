@@ -3014,7 +3014,7 @@ mod cluster {
             .unwrap()
         };
         let opt_ins = crate::poollogins::OptIns::default();
-        opt_ins.allow("devops", "site", of_pod("pod-uid-1"));
+        opt_ins.allow("devops", "site", "shop", of_pod("pod-uid-1"));
         assert_eq!(
             opt_ins.standing("devops", "site", &of_pod("pod-uid-1")),
             crate::poollogins::Standing::Allowed

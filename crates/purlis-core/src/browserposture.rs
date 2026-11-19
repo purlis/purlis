@@ -7,7 +7,7 @@
 //!
 //! A chat's first browser call asks the person what its browser may reach. The answer used to
 //! be held in memory, so every restart asked again. It is now kept for **that chat only**, by its
-//! identity (ADR 0066), and it ends with the chat ([`remove`]):
+//! identity (ADR 0066), and it lasts as long as purlis keeps a record of the chat ([`prune`]):
 //!
 //! - **This machine's, never the plane**: under `.purlis/app/`, which is gitignored and never
 //!   synced. No sandboxed chat writes it: `.purlis/app/` is the integrity class's.
@@ -15,7 +15,9 @@
 //!   answer "for every chat of this persona"; that is what the persona's Always is.
 //! - **Only what the person pressed**: an answer that rests on a persona's Always is not kept
 //!   (it follows that Always as it is now).
-//! - **A resumed chat keeps its answer**: the same identity finds it again.
+//! - **A resumed chat keeps its answer**: the same identity finds it again, and a chat that
+//!   closed is resumable, so closing it keeps its answer. It goes only when purlis lets go of
+//!   the chat's record (swept after its days, or never read back), never on a close.
 //! - **A kept answer is checked against the chat's current reach before use**: it is kept with
 //!   the reach the chat had when it was asked ([`Reach`]), and a restored answer is used only
 //!   where the chat's reach now is no narrower ([`Reach::narrower_than`]). Where it narrowed
@@ -23,8 +25,9 @@
 //! - **One writer at a time, across processes**: every change reads the file, changes it and
 //!   writes it whole, under a lock file beside it ([`crate::filelock::beside`]), through a temp
 //!   file renamed over it ([`crate::rewrite::replace`]).
-//! - **A chat that no longer exists leaves nothing**: [`prune`] drops the answers of chats the
-//!   app no longer knows, at start.
+//! - **A chat purlis has no record of leaves nothing**: [`prune`] drops the answers of chats
+//!   the caller says no longer exist, at start. "No record" is never "not open right now" or
+//!   "not open in this window".
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
@@ -70,9 +73,11 @@ impl Answer {
     }
 }
 
-/// **What a chat's browser reached when its answer was asked**: the sites its sandbox lists,
-/// what it never reaches, and the ports of this machine it carries no longer. Sites by name,
-/// the layer that lists them aside: a site moving between layers is no narrowing.
+/// **What a chat's browser reached when its answer was asked**: everything a chat's reach holds
+/// (`BrowserReach`): the sites its sandbox lists, what it never reaches, the ports of this
+/// machine it carries no longer, whether the open web is reached, and the sites the person
+/// allowed it when asked. Sites by name, the layer that lists them aside: a site moving between
+/// layers is no narrowing.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reach {
     #[serde(default)]
@@ -81,14 +86,24 @@ pub struct Reach {
     pub never: BTreeSet<String>,
     #[serde(default)]
     pub withdrawn: BTreeSet<u16>,
+    #[serde(default)]
+    pub open_web: bool,
+    #[serde(default)]
+    pub answered: BTreeSet<String>,
 }
 
 impl Reach {
     /// **Whether this reach, as it is now, is narrower than `then`**: a site `then` listed is no
-    /// longer listed, or something is never reached or withdrawn that `then` reached. A wider
-    /// reach is not narrower, and nor is an equal one.
+    /// longer listed or answered, the open web was reached and is not, or something is never
+    /// reached or withdrawn that `then` reached. A wider reach is not narrower, and nor is an
+    /// equal one.
     pub fn narrower_than(&self, then: &Reach) -> bool {
         then.listed.iter().any(|site| !self.listed.contains(site))
+            || then
+                .answered
+                .iter()
+                .any(|site| !self.answered.contains(site))
+            || (then.open_web && !self.open_web)
             || self.never.iter().any(|site| !then.never.contains(site))
             || self
                 .withdrawn
@@ -221,13 +236,16 @@ fn keep_within(
     })
 }
 
-/// **The chat closed: its answer goes with it.** Nothing to remove is no failure.
+/// **Takes chat `chat`'s answer away**: it was not used (the reach it was given for narrowed), or
+/// the chat is no more. Never a chat's close. Nothing to remove is no failure.
 pub fn remove(root: &Path, chat: &str) -> io::Result<()> {
     change(root, WAIT, |all| Ok(all.remove(chat).is_some()))
 }
 
 /// **Drops the answers of chats that no longer exist** (`exists` says which do), at start: a
-/// chat that ended while the app was not running left its answer behind. Answers how many went.
+/// chat whose record purlis let go while the app was not running left its answer behind. The
+/// caller counts a closed chat, and a chat open in another window, as existing. Answers how many
+/// went.
 pub fn prune(root: &Path, exists: impl Fn(&str) -> bool) -> io::Result<usize> {
     let mut gone = 0;
     // Nothing kept, no file and no lock file to make.

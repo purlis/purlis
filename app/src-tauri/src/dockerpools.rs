@@ -440,9 +440,7 @@ pub async fn set_remote_pool_owned(
             purlis_core::runners::set_remote_owned(&config_root()?, &name, owned, &shown)
                 .map_err(|why| why.to_string())?;
             if !owned {
-                for project in held {
-                    project.browsers().forget_pool_logins(&name);
-                }
+                crate::chatbrowsers::forget_pool_logins_in(&held, &name)?;
             }
             Ok(())
         })
@@ -679,9 +677,7 @@ fn gone_from_here(
     name: &str,
     left: &str,
 ) -> Option<String> {
-    for project in held {
-        project.browsers().forget_pool_logins(name);
-    }
+    let logins_kept = crate::chatbrowsers::forget_pool_logins_in(held, name).err();
     // Its browsers first, while their links stand: each is stopped on its machine where that
     // answers, and one it did not answer for is listed as left there (#7187 item 6).
     let browsers_left = match crate::browsers::browsers(app) {
@@ -695,10 +691,11 @@ fn gone_from_here(
         links_end_once_gone(&host.connection(), config, name);
     }
     let said = (!left.is_empty()).then(|| crate::devices::shown_safely(left));
-    match (said, browsers_left) {
-        (Some(said), Some(browsers)) => Some(format!("{said} {browsers}")),
-        (said, browsers) => said.or(browsers),
-    }
+    // What stays, said together: a login opt-in the store could not take out is one of them.
+    [said, browsers_left, logins_kept]
+        .into_iter()
+        .flatten()
+        .reduce(|all, one| format!("{all} {one}"))
 }
 
 /// **Remove of pool `name` where its machine doesn't answer**: nothing is removed, and the window

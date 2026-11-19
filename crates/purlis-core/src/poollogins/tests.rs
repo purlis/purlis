@@ -30,7 +30,7 @@ fn nobody_is_opted_in_until_the_person_says() {
 #[test]
 fn an_opt_in_holds_for_its_personas_login_on_its_pool_as_it_was() {
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
 
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
@@ -56,7 +56,7 @@ fn an_opt_in_holds_for_its_personas_login_on_its_pool_as_it_was() {
 #[test]
 fn a_changed_image_definition_or_runner_asks_again() {
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
     let paired_again = Bound {
         runner: "01JB0OTHER00000000000000000".into(),
         runner_key: "cd".repeat(32),
@@ -79,9 +79,9 @@ fn a_changed_image_definition_or_runner_asks_again() {
 #[test]
 fn a_pools_answers_are_forgotten_with_its_mark() {
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
-    opt_ins.allow("steward", "id-shop", bound("tests", "d1", "i1"));
-    opt_ins.forget_pool("builds");
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("tests", "d1", "i1"));
+    opt_ins.forget_pool("builds").unwrap();
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
         Standing::Unasked
@@ -95,7 +95,9 @@ fn a_pools_answers_are_forgotten_with_its_mark() {
 #[test]
 fn kept_off_stands_until_the_pool_changes() {
     let opt_ins = OptIns::default();
-    opt_ins.keep_off("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins
+        .keep_off("steward", "id-shop", "shop", bound("builds", "d1", "i1"))
+        .unwrap();
 
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
@@ -492,7 +494,7 @@ fn a_pool_on_another_machine_pinned_again_is_another_bound() {
     assert_eq!(one.runner, two.runner);
     assert_ne!(one.engine, two.engine);
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "forge", one);
+    opt_ins.allow("steward", "forge", "shop", one);
     assert_eq!(
         opt_ins.standing("steward", "forge", &two),
         Standing::Changed
@@ -632,7 +634,12 @@ fn after_a_restart(config: &Path) -> OptIns {
 #[test]
 fn an_opt_in_survives_a_restart_on_this_machine() {
     let config = tempfile::tempdir().unwrap();
-    OptIns::stored_in(config.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    OptIns::stored_in(config.path()).allow(
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
 
     assert_eq!(
         after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
@@ -644,7 +651,7 @@ fn an_opt_in_survives_a_restart_on_this_machine() {
 fn every_binding_of_a_kept_opt_in_asks_again_when_it_changes() {
     let config = tempfile::tempdir().unwrap();
     let then = bound("builds", "d1", "i1");
-    OptIns::stored_in(config.path()).allow("steward", "id-shop", then.clone());
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", "shop", then.clone());
     let restarted = after_a_restart(config.path());
 
     let changed: [(&str, Bound); 7] = [
@@ -728,10 +735,10 @@ fn every_binding_of_a_kept_opt_in_asks_again_when_it_changes() {
 fn taking_back_the_mark_or_forgetting_the_pool_takes_the_kept_opt_in_away() {
     let config = tempfile::tempdir().unwrap();
     let opt_ins = OptIns::stored_in(config.path());
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
-    opt_ins.allow("steward", "id-shop", bound("tests", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("tests", "d1", "i1"));
 
-    opt_ins.forget_pool("builds");
+    opt_ins.forget_pool("builds").unwrap();
 
     let restarted = after_a_restart(config.path());
     assert_eq!(
@@ -748,13 +755,14 @@ fn taking_back_the_mark_or_forgetting_the_pool_takes_the_kept_opt_in_away() {
 fn the_granted_list_shows_each_opt_in_and_remove_takes_it_away_for_good() {
     let config = tempfile::tempdir().unwrap();
     let opt_ins = OptIns::stored_in(config.path());
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
 
     assert_eq!(
         after_a_restart(config.path()).granted(),
         [Granted {
             persona: "steward".into(),
             login: "id-shop".into(),
+            name: "shop".into(),
             pool: "builds".into()
         }]
     );
@@ -781,9 +789,11 @@ fn the_granted_list_shows_each_opt_in_and_remove_takes_it_away_for_good() {
 fn keeping_a_login_off_is_for_this_run_and_it_supersedes_a_kept_opt_in() {
     let config = tempfile::tempdir().unwrap();
     let opt_ins = OptIns::stored_in(config.path());
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
 
-    opt_ins.keep_off("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins
+        .keep_off("steward", "id-shop", "shop", bound("builds", "d1", "i1"))
+        .unwrap();
 
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
@@ -799,7 +809,12 @@ fn keeping_a_login_off_is_for_this_run_and_it_supersedes_a_kept_opt_in() {
 #[test]
 fn the_kept_file_is_this_machines_private_and_holds_no_value() {
     let config = tempfile::tempdir().unwrap();
-    OptIns::stored_in(config.path()).allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    OptIns::stored_in(config.path()).allow(
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
 
     let file = config.path().join(IN_CONFIG);
     #[cfg(unix)]
@@ -838,6 +853,7 @@ fn a_file_that_does_not_read_asks_again_and_a_link_is_never_followed() {
         OptIns::stored_in(elsewhere.path()).allow(
             "steward",
             "id-shop",
+            "shop",
             bound("builds", "d1", "i1"),
         );
         let link = tempfile::tempdir().unwrap();
@@ -868,6 +884,7 @@ fn windows_writing_at_once_lose_none_of_each_others_opt_ins() {
                 OptIns::stored_in(config).allow(
                     "steward",
                     &format!("id-{n}"),
+                    "shop",
                     bound("builds", "d1", "i1"),
                 );
             });
@@ -894,7 +911,7 @@ fn windows_writing_at_once_lose_none_of_each_others_opt_ins() {
 fn a_store_another_process_holds_is_never_written_unlocked() {
     let config = tempfile::tempdir().unwrap();
     let opt_ins = OptIns::stored_in(config.path());
-    opt_ins.allow("steward", "id-first", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-first", "shop", bound("builds", "d1", "i1"));
     let before = std::fs::read(config.path().join(IN_CONFIG)).unwrap();
     let other = crate::filelock::beside(
         &config.path().join(IN_CONFIG),
@@ -918,7 +935,7 @@ fn a_store_another_process_holds_is_never_written_unlocked() {
 fn a_remove_the_store_could_not_take_is_not_reported_as_done() {
     let config = tempfile::tempdir().unwrap();
     let opt_ins = OptIns::stored_in(config.path());
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
     let other = crate::filelock::beside(
         &config.path().join(IN_CONFIG),
         std::time::Duration::from_secs(1),
@@ -940,4 +957,113 @@ fn a_remove_the_store_could_not_take_is_not_reported_as_done() {
         Standing::Allowed,
         "and the opt-in is still kept"
     );
+}
+
+// A removal the store could not take is answered, and the opt-in no longer applies (#7190).
+
+fn held_by_another_process(config: &Path) -> crate::filelock::Held {
+    crate::filelock::beside(
+        &config.join(IN_CONFIG),
+        std::time::Duration::from_secs(1),
+        "the test",
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_forgotten_pool_whose_store_was_busy_is_answered_and_its_opt_in_no_longer_applies() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("tests", "d1", "i1"));
+    let other = held_by_another_process(config.path());
+
+    let busy = opt_ins.forget_pool_within(std::time::Duration::from_millis(60), "builds");
+
+    assert!(busy.is_err(), "the failure is answered, not swallowed");
+    drop(other);
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "it no longer applies"
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "not after a restart either, where the store still holds it"
+    );
+    assert!(
+        after_a_restart(config.path())
+            .granted()
+            .iter()
+            .all(|one| one.pool != "builds"),
+        "and the Granted list does not show it"
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Allowed,
+        "another pool's opt-in is untouched"
+    );
+}
+
+#[test]
+fn an_opt_in_given_again_after_a_failed_removal_applies() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    let other = held_by_another_process(config.path());
+    opt_ins
+        .forget_pool_within(std::time::Duration::from_millis(60), "builds")
+        .unwrap_err();
+    drop(other);
+
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Allowed,
+        "a new yes is a new opt-in, which the old removal does not name"
+    );
+}
+
+#[test]
+fn keeping_a_login_off_where_the_store_was_busy_is_answered_and_the_old_opt_in_does_not_return() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    let other = held_by_another_process(config.path());
+
+    let busy = opt_ins.keep_off_within(
+        std::time::Duration::from_millis(60),
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
+
+    assert!(busy.is_err());
+    drop(other);
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::KeptOff,
+        "the refusal stands for this run"
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "and the opt-in it replaced is not read again after a restart"
+    );
+}
+
+#[test]
+fn the_granted_list_shows_the_declared_name_and_names_the_identity_to_remove_by() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "3f9c1d2e7a", "shop", bound("builds", "d1", "i1"));
+
+    let granted = after_a_restart(config.path()).granted();
+
+    assert_eq!(granted.len(), 1);
+    assert_eq!(granted[0].name, "shop", "what the person reads");
+    assert_eq!(granted[0].login, "3f9c1d2e7a", "what Remove names it by");
 }

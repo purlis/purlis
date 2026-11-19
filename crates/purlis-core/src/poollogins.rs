@@ -523,19 +523,37 @@ type Key = (String, String, String);
 /// The file of the opt-ins the person gave, relative to this machine's config folder.
 pub const IN_CONFIG: &str = "pool-login-optins.json";
 
+/// **The opt-ins whose removal failed**, relative to this machine's config folder: one entry's
+/// nonce a line, appended without the store's lock (which is what failed, or what another
+/// process holds). An opt-in named here is never read, so a removal that could not be written
+/// still holds ([`OptIns::forget_pool`], [`OptIns::keep_off`]).
+pub const REVOKED_IN_CONFIG: &str = "pool-login-optins.revoked";
+
+/// The most bytes read of, and appended to, [`REVOKED_IN_CONFIG`]: a bound on a damaged file.
+const MOST_REVOKED_BYTES: u64 = 64 * 1024;
+
 /// **One opt-in as the Granted list shows it** (#7190 item 2): the persona, the login by its
-/// identity and the pool. Never a value of the login.
+/// identity, the name it was declared by and the pool. Never a value of the login.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Granted {
     pub persona: String,
+    /// The login's identity, which Remove names it by. Not what the person reads.
     pub login: String,
+    /// The login as its persona declared it: what the Granted list shows.
+    pub name: String,
     pub pool: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Stored {
+    /// What a failed removal names it by ([`REVOKED_IN_CONFIG`]). One without is never read.
+    #[serde(default)]
+    nonce: String,
     persona: String,
     login: String,
+    /// The login as declared, for the Granted list. Empty in an entry written without one.
+    #[serde(default)]
+    name: String,
     bound: Bound,
 }
 
@@ -545,13 +563,18 @@ const WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 /// The most opt-ins kept: a bound on a damaged file.
 const MOST_KEPT: usize = 1024;
 
+/// What this run holds of an opt-in: how it stands, and the name it was declared by.
+type Held = (Bound, bool, String);
+
 /// The opt-ins the person gave, by persona, login and pool. Held in memory for this run, and,
 /// where made by [`OptIns::stored_in`], the allowed ones are kept in this machine's store too.
 #[derive(Debug, Default)]
 pub struct OptIns {
-    held: Mutex<HashMap<Key, (Bound, bool)>>,
+    held: Mutex<HashMap<Key, Held>>,
     /// The config folder the allowed opt-ins are kept in, where they are.
     stored: Option<std::path::PathBuf>,
+    /// The nonces of kept opt-ins whose removal failed in this run: never read again.
+    revoked: Mutex<std::collections::HashSet<String>>,
 }
 
 impl OptIns {
@@ -561,10 +584,11 @@ impl OptIns {
         OptIns {
             held: Mutex::default(),
             stored: Some(config_root.to_path_buf()),
+            revoked: Mutex::default(),
         }
     }
 
-    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<Key, (Bound, bool)>> {
+    fn held(&self) -> std::sync::MutexGuard<'_, HashMap<Key, Held>> {
         self.held.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
@@ -577,8 +601,9 @@ impl OptIns {
         self.stored.as_ref().map(|root| root.join(IN_CONFIG))
     }
 
-    /// The opt-ins kept, as the file says now: none where it does not read, or is a link.
-    fn read(&self) -> Vec<Stored> {
+    /// The opt-ins kept, as the file says now, whether or not one was revoked: none where it
+    /// does not read, or is a link.
+    fn read_raw(&self) -> Vec<Stored> {
         let Some(file) = self.file() else {
             return Vec::new();
         };
@@ -592,10 +617,97 @@ impl OptIns {
             .unwrap_or_default()
     }
 
+    /// **The nonces of the opt-ins whose removal failed**: this run's and the file's.
+    fn revoked(&self) -> std::collections::HashSet<String> {
+        use std::io::Read as _;
+        let mut all = self
+            .revoked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(file) = self
+            .stored
+            .as_ref()
+            .map(|root| root.join(REVOKED_IN_CONFIG))
+            && std::fs::symlink_metadata(&file).is_ok_and(|there| there.is_file())
+            && let Ok(open) = std::fs::File::open(&file)
+        {
+            let mut text = String::new();
+            if open
+                .take(MOST_REVOKED_BYTES)
+                .read_to_string(&mut text)
+                .is_ok()
+            {
+                all.extend(
+                    text.lines()
+                        .map(str::trim)
+                        .filter(|one| !one.is_empty())
+                        .map(str::to_owned),
+                );
+            }
+        }
+        all
+    }
+
+    /// Whether `one` reads: it has a nonce, and its removal did not fail.
+    fn reads(one: &Stored, revoked: &std::collections::HashSet<String>) -> bool {
+        !one.nonce.is_empty() && !revoked.contains(&one.nonce)
+    }
+
+    /// **The opt-ins kept**, as the file says now: none where it does not read, or is a link, and
+    /// **never one whose removal failed** (fail closed).
+    fn read(&self) -> Vec<Stored> {
+        let revoked = self.revoked();
+        self.read_raw()
+            .into_iter()
+            .filter(|one| Self::reads(one, &revoked))
+            .collect()
+    }
+
+    /// **Says the kept opt-ins `nonces` are removed though the store could not take them out**:
+    /// held in this run, and appended to [`REVOKED_IN_CONFIG`], which needs no lock, so a
+    /// restart does not read them either. Where that cannot be written, this run alone holds it.
+    fn revoke(&self, nonces: Vec<String>) {
+        use std::io::Write as _;
+        if nonces.is_empty() {
+            return;
+        }
+        self.revoked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(nonces.iter().cloned());
+        let Some(file) = self
+            .stored
+            .as_ref()
+            .map(|root| root.join(REVOKED_IN_CONFIG))
+        else {
+            return;
+        };
+        let big = std::fs::metadata(&file).is_ok_and(|one| one.len() >= MOST_REVOKED_BYTES);
+        let appended = if big {
+            Err(std::io::Error::other("the revoked list is full"))
+        } else {
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&file)
+                .and_then(|mut open| {
+                    open.write_all(format!("{}\n", nonces.join("\n")).as_bytes())?;
+                    open.sync_all()
+                })
+        };
+        if let Err(why) = appended {
+            tracing::warn!(
+                "purlis: a removed pool login opt-in is held removed for this run only ({why})"
+            );
+        }
+    }
+
     /// **One read-modify-write of the file, alone** (across processes: a lock file beside it,
     /// [`crate::filelock::beside`]), written through a temp file renamed over it. `change` says
     /// whether it changed anything and so whether to write; a failure to lock or write is
-    /// answered, and nothing is ever written without the lock.
+    /// answered, and nothing is ever written without the lock. An entry that does not read
+    /// (no nonce, or revoked) is not written back.
     fn update(
         &self,
         wait: std::time::Duration,
@@ -605,8 +717,15 @@ impl OptIns {
             return Ok(());
         };
         let _alone = crate::filelock::beside(&file, wait, "the kept pool login opt-ins")?;
-        let mut all = self.read();
-        if !change(&mut all) {
+        let raw = self.read_raw();
+        let revoked = self.revoked();
+        let mut all: Vec<Stored> = raw
+            .iter()
+            .filter(|one| Self::reads(one, &revoked))
+            .cloned()
+            .collect();
+        let dropped = all.len() != raw.len();
+        if !change(&mut all) && !dropped {
             return Ok(());
         }
         if all.is_empty() {
@@ -640,16 +759,30 @@ impl OptIns {
         })
     }
 
-    fn unkept(&self, matching: impl Fn(&Stored) -> bool) {
-        if let Err(why) = self.take_out(WAIT, matching) {
-            tracing::warn!(
-                "purlis: a pool login opt-in was not removed from this machine's store ({why})"
-            );
+    /// **[`Self::take_out`], and where it could not, the opt-ins are held removed anyway**
+    /// ([`Self::revoke`]): the error is answered, and they no longer apply.
+    fn take_out_or_revoke(
+        &self,
+        wait: std::time::Duration,
+        matching: impl Fn(&Stored) -> bool,
+    ) -> std::io::Result<()> {
+        let done = self.take_out(wait, &matching);
+        if done.is_err() {
+            let nonces = self
+                .read_raw()
+                .iter()
+                .filter(|one| matching(one))
+                .map(|one| one.nonce.clone())
+                .filter(|nonce| !nonce.is_empty())
+                .collect();
+            self.revoke(nonces);
         }
+        done
     }
 
-    /// The person opts `persona`'s login `login` (its identity) in for the pool as `bound` says.
-    pub fn allow(&self, persona: &str, login: &str, bound: Bound) {
+    /// The person opts `persona`'s login `login` (its identity), declared as `name`, in for the
+    /// pool as `bound` says.
+    pub fn allow(&self, persona: &str, login: &str, name: &str, bound: Bound) {
         self.held().remove(&Self::key(persona, login, &bound));
         if self.stored.is_some() {
             let mut full = false;
@@ -660,8 +793,10 @@ impl OptIns {
                 full = all.len() >= MOST_KEPT;
                 if !full {
                     all.push(Stored {
+                        nonce: ulid::Ulid::generate().to_string(),
                         persona: persona.to_owned(),
                         login: login.to_owned(),
+                        name: name.to_owned(),
                         bound: bound.clone(),
                     });
                 }
@@ -676,25 +811,54 @@ impl OptIns {
                 }
             }
         }
-        self.held()
-            .insert(Self::key(persona, login, &bound), (bound, true));
+        self.held().insert(
+            Self::key(persona, login, &bound),
+            (bound, true, name.to_owned()),
+        );
     }
 
-    /// The person keeps `persona`'s login `login` off on the pool as `bound` says it is, for
-    /// this run alone: it takes the opt-in kept for it away.
-    pub fn keep_off(&self, persona: &str, login: &str, bound: Bound) {
-        self.unkept(|one| {
+    /// The person keeps `persona`'s login `login` (declared as `name`) off on the pool as
+    /// `bound` says it is, for this run alone: it takes the opt-in kept for it away. **A removal
+    /// the store could not take is answered, and the opt-in no longer applies**: it is held
+    /// removed ([`REVOKED_IN_CONFIG`]), and the refusal stands for this run either way.
+    pub fn keep_off(
+        &self,
+        persona: &str,
+        login: &str,
+        name: &str,
+        bound: Bound,
+    ) -> std::io::Result<()> {
+        self.keep_off_within(WAIT, persona, login, name, bound)
+    }
+
+    fn keep_off_within(
+        &self,
+        wait: std::time::Duration,
+        persona: &str,
+        login: &str,
+        name: &str,
+        bound: Bound,
+    ) -> std::io::Result<()> {
+        let taken = self.take_out_or_revoke(wait, |one| {
             one.persona == persona && one.login == login && one.bound.pool == bound.pool
         });
-        self.held()
-            .insert(Self::key(persona, login, &bound), (bound, false));
+        self.held().insert(
+            Self::key(persona, login, &bound),
+            (bound, false, name.to_owned()),
+        );
+        taken
     }
 
     /// Every answer given about pool `pool`: its mark was taken back (#4071), or it was
-    /// forgotten.
-    pub fn forget_pool(&self, pool: &str) {
+    /// forgotten. **A removal the store could not take is answered, and the opt-ins no longer
+    /// apply** ([`REVOKED_IN_CONFIG`]).
+    pub fn forget_pool(&self, pool: &str) -> std::io::Result<()> {
+        self.forget_pool_within(WAIT, pool)
+    }
+
+    fn forget_pool_within(&self, wait: std::time::Duration, pool: &str) -> std::io::Result<()> {
         self.held().retain(|(_, _, of), _| of != pool);
-        self.unkept(|one| one.bound.pool == pool);
+        self.take_out_or_revoke(wait, |one| one.bound.pool == pool)
     }
 
     /// **The person removes the opt-in** of `persona`'s login `login` on pool `pool` (the
@@ -726,29 +890,32 @@ impl OptIns {
     /// **The opt-ins in force**, for the Granted list: kept ones and this run's, never a
     /// refusal.
     pub fn granted(&self) -> Vec<Granted> {
+        let shown = |login: &str, name: &str| if name.is_empty() { login } else { name }.to_owned();
         let mut all: Vec<Granted> = self
             .held()
             .iter()
-            .filter(|(_, (_, allowed))| *allowed)
-            .map(|((persona, login, pool), _)| Granted {
+            .filter(|(_, (_, allowed, _))| *allowed)
+            .map(|((persona, login, pool), (_, _, name))| Granted {
                 persona: persona.clone(),
                 login: login.clone(),
+                name: shown(login, name),
                 pool: pool.clone(),
             })
             .chain(self.read().into_iter().map(|one| Granted {
+                name: shown(&one.login, &one.name),
                 persona: one.persona,
                 login: one.login,
                 pool: one.bound.pool,
             }))
             .collect();
         all.sort_by(|a, b| (&a.pool, &a.persona, &a.login).cmp(&(&b.pool, &b.persona, &b.login)));
-        all.dedup();
+        all.dedup_by(|a, b| (&a.pool, &a.persona, &a.login) == (&b.pool, &b.persona, &b.login));
         all
     }
 
     /// Where `persona`'s login `login` stands on the pool as `now` says it is.
     pub fn standing(&self, persona: &str, login: &str, now: &Bound) -> Standing {
-        if let Some((then, allowed)) = self.held().get(&Self::key(persona, login, now)) {
+        if let Some((then, allowed, _)) = self.held().get(&Self::key(persona, login, now)) {
             return match (then != now, allowed) {
                 (true, _) => Standing::Changed,
                 (false, true) => Standing::Allowed,

@@ -658,8 +658,10 @@ _Avoid_: permission, secret (for the approval), capability (that is an extension
 **Pool login opt-in**:
 The person's answer, in an Ask, that one persona's browser login may be filled in its chats'
 browsers on one pool's runner: bound to that login as declared and allowed, to the pool as it is
-defined, its image, the runner that receives the values and the engine it runs on, and kept only
-while purlis runs. It is asked only where purlis can show the runner is the person's own: a Docker
+defined, its image, the runner that receives the values and the engine it runs on. It is kept on
+this machine across restarts, has no time limit, is never synced, and the person removes it from
+Granted (a Keep off is not kept). The person's *This is my own* mark is not bound into it: it is
+checked at each login. It is asked only where purlis can show the runner is the person's own: a Docker
 pool on this machine's own engine, or a cluster pool the person marked *This is my own* whose
 claim the operator vouches for at that moment. A runner not shown to be
 owned is never asked about and never receives a value. A login that waited while the desktop

@@ -168,8 +168,15 @@ impl ChatBrowsers {
     /// **[`Self::identify`], restoring the answer the person gave this chat before a restart**
     /// (#7190), checked against the chat's current reach (`reach`) before it is used: where the
     /// reach narrowed since the chat was asked, the answer is not used and is removed, and the
-    /// chat's next call asks again.
-    pub fn identify_for(&self, session: u32, id: Option<String>, reach: &dyn Fn() -> BrowserReach) {
+    /// chat's next call asks again. **Where the reach is not known** (`reach` answers `None`: its
+    /// sandbox's compile was not recorded), the answer is not used this time and is kept, to be
+    /// checked again at the chat's next call.
+    pub fn identify_for(
+        &self,
+        session: u32,
+        id: Option<String>,
+        reach: &dyn Fn() -> Option<BrowserReach>,
+    ) {
         self.identified(session, id, Some(reach));
     }
 
@@ -177,7 +184,7 @@ impl ChatBrowsers {
         &self,
         session: u32,
         id: Option<String>,
-        reach: Option<&dyn Fn() -> BrowserReach>,
+        reach: Option<&dyn Fn() -> Option<BrowserReach>>,
     ) {
         // Found by its identity alone, so only this chat's, and read before the chats' lock.
         let kept = id
@@ -185,7 +192,11 @@ impl ChatBrowsers {
             .zip(self.answers_in.as_deref())
             .zip(reach)
             .and_then(|((id, root), _)| purlis_core::browserposture::kept(root, id));
-        let now = kept.as_ref().and(reach).map(|reach| kept_reach(&reach()));
+        // `Some(None)`: asked for, and not known.
+        let now = kept
+            .as_ref()
+            .and(reach)
+            .map(|reach| reach().map(|reach| kept_reach(&reach)));
         let (found, stale) = {
             let mut chats = self.lock();
             let chat = chats.entry(session).or_default();
@@ -193,9 +204,12 @@ impl ChatBrowsers {
             match (chat.posture, kept) {
                 // Only where it has not been asked since, and its reach is no narrower now.
                 (Posture::Unasked, Some(kept)) => {
-                    let narrowed = now
-                        .as_ref()
-                        .is_some_and(|now| now.narrower_than(&kept.reach));
+                    let narrowed = match now.as_ref() {
+                        // Its reach is not known: the answer waits, kept, for a call that knows.
+                        Some(None) => return,
+                        Some(Some(now)) => now.narrower_than(&kept.reach),
+                        None => false,
+                    };
                     if narrowed {
                         (false, true)
                     } else {

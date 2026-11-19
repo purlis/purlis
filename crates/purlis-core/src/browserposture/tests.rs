@@ -43,7 +43,7 @@ fn another_chat_finds_no_answer_so_it_asks() {
 }
 
 #[test]
-fn an_answer_ends_with_its_chat_and_the_file_goes_with_the_last() {
+fn an_answer_can_be_taken_away_and_the_file_goes_with_the_last() {
     let dir = project();
     keep(dir.path(), CHAT, Answer::Off, &Reach::default()).expect("kept");
     keep(dir.path(), "other-chat", Answer::Off, &Reach::default()).expect("kept");
@@ -140,6 +140,7 @@ fn reach(listed: &[&str], never: &[&str], withdrawn: &[u16]) -> Reach {
         listed: listed.iter().map(|s| (*s).to_owned()).collect(),
         never: never.iter().map(|s| (*s).to_owned()).collect(),
         withdrawn: withdrawn.iter().copied().collect(),
+        ..Reach::default()
     }
 }
 
@@ -177,6 +178,37 @@ fn a_reach_is_narrower_only_where_it_lost_a_site_or_gained_a_refusal() {
     assert!(
         reach(&["a.test:80", "b.test:80"], &["x.test"], &[3000, 4000]).narrower_than(&then),
         "a port now withdrawn"
+    );
+}
+
+#[test]
+fn a_reach_that_lost_the_open_web_or_an_answered_site_is_narrower() {
+    let then = Reach {
+        open_web: true,
+        answered: ["a.test:443".to_owned()].into(),
+        ..Reach::default()
+    };
+
+    assert!(!then.narrower_than(&then));
+    assert!(
+        Reach {
+            answered: then.answered.clone(),
+            ..Reach::default()
+        }
+        .narrower_than(&then),
+        "the open web is no longer reached"
+    );
+    assert!(
+        Reach {
+            open_web: true,
+            ..Reach::default()
+        }
+        .narrower_than(&then),
+        "a site the person allowed is no longer"
+    );
+    assert!(
+        !then.narrower_than(&Reach::default()),
+        "gaining either is no narrowing"
     );
 }
 

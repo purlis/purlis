@@ -38,6 +38,14 @@ pub const CANCELLED_FOR_THE_CHAT: &str = "The person cancelled the browser engin
 pub const CANCELLED_FOR_THE_PERSON: &str =
     "You cancelled the browser engine's download. Open the browser again to download it.";
 
+/// What a start waiting for the one before it on the same runner is shown as (#7187 item 8):
+/// nothing about a start is silent.
+pub const WAITING_FOR_ANOTHER_START: &str =
+    "Waiting for another browser to finish starting on this machine or runner…";
+
+/// What a waiting start the person cancelled is shown as, until it gets its turn and is refused.
+pub const CANCELLING_A_WAITING_START: &str = "Cancelling…";
+
 /// What a download that has come to `done` bytes, of `total` where known, says: in megabytes of
 /// a million bytes, rounded down.
 pub fn says(done: u64, total: Option<u64>) -> String {
@@ -62,6 +70,9 @@ type Word = (u64, Option<u64>);
 pub struct Downloads {
     /// Each start this window waits on, with the last word of its download once one came.
     under_way: Mutex<BTreeMap<String, Option<Word>>>,
+    /// The starts waiting for another's turn on their runner (#7187 item 8), and whether the
+    /// person cancelled one.
+    queued: Mutex<BTreeMap<String, bool>>,
     tell: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -70,6 +81,7 @@ impl Downloads {
     pub fn telling(tell: Box<dyn Fn() + Send + Sync>) -> Self {
         Downloads {
             under_way: Mutex::default(),
+            queued: Mutex::default(),
             tell: Some(tell),
         }
     }
@@ -116,9 +128,61 @@ impl Downloads {
         }
     }
 
-    /// Every download under way, by program.
+    /// This window's start of `program` waits for another start's turn: shown, with Cancel.
+    pub fn queued(&self, program: &str) {
+        self.queued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(program.to_owned(), false);
+        self.told();
+    }
+
+    /// `program`'s start has its turn, or was let go of. Whether the person cancelled it while
+    /// it waited.
+    pub fn dequeued(&self, program: &str) -> bool {
+        let was = self
+            .queued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(program);
+        if was.is_some() {
+            self.told();
+        }
+        was.unwrap_or(false)
+    }
+
+    /// The person cancels `program`'s start where it waits for its turn: refused as it gets it.
+    /// Whether it was waiting.
+    pub fn cancel_queued(&self, program: &str) -> bool {
+        let waiting = {
+            let mut queued = self.queued.lock().unwrap_or_else(PoisonError::into_inner);
+            queued.get_mut(program).map(|cancelled| *cancelled = true)
+        };
+        if waiting.is_some() {
+            self.told();
+        }
+        waiting.is_some()
+    }
+
+    /// Every download under way, by program, and each start waiting for its turn.
     pub fn shown(&self) -> Vec<EngineDownloadShown> {
-        self.under_way
+        let waiting = self
+            .queued
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .map(|(program, cancelled)| EngineDownloadShown {
+                program: program.clone(),
+                says: if *cancelled {
+                    CANCELLING_A_WAITING_START
+                } else {
+                    WAITING_FOR_ANOTHER_START
+                }
+                .to_owned(),
+            })
+            .collect::<Vec<_>>();
+        let mut shown = self
+            .under_way
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .iter()
@@ -128,7 +192,9 @@ impl Downloads {
                     says: says(done, total),
                 })
             })
-            .collect()
+            .collect::<Vec<_>>();
+        shown.extend(waiting);
+        shown
     }
 }
 

@@ -1972,12 +1972,102 @@ fn browsers_left_on_a_forgotten_pools_machine_are_listed_as_left() {
 }
 
 /// **Starts on different runners are not one queue** (#7187 item 8): the window-wide mutex is
-/// gone, and a link's own gate holds only that link's starts one at a time.
+/// gone, and a runner's own gate holds only that runner's starts one at a time.
 #[test]
-fn a_start_on_one_link_waits_for_that_links_start_alone() {
+fn a_start_on_one_runner_waits_for_that_runners_count_alone() {
     let gates = super::StartGates::default();
-    let (first, same, other) = (gates.of(1), gates.of(1), gates.of(2));
-    let _starting = first.lock().unwrap();
-    assert!(same.try_lock().is_err(), "the same link's next start waits");
-    assert!(other.try_lock().is_ok(), "another runner's start does not");
+    let (builds, same, other, this_machine) = (
+        gates.of(Some("builds")),
+        gates.of(Some("builds")),
+        gates.of(Some("tests")),
+        gates.of(None),
+    );
+    let mut waited = false;
+    let counting = builds.turn(|| waited = true);
+    assert!(!waited, "a free turn waits for nothing");
+    assert!(
+        same.turn.try_lock().is_err(),
+        "the same runner's next start waits"
+    );
+    assert!(
+        other.turn.try_lock().is_ok(),
+        "another runner's start does not"
+    );
+    assert!(
+        this_machine.turn.try_lock().is_ok(),
+        "nor this machine's own host's"
+    );
+    drop(counting);
+}
+
+/// A replaced link is the same runner: the gate is keyed by the runner, so its starts are still
+/// counted against the one budget, and a pool forgotten takes its gate with it.
+#[test]
+fn a_gate_outlives_its_link_and_goes_with_its_pool() {
+    let gates = super::StartGates::default();
+    let before = gates.of(Some("builds"));
+    let slot = before.room_for_one_more(0, 1).expect("room");
+
+    // The link was replaced as it reconnected; the next start finds the same gate.
+    let after = gates.of(Some("builds"));
+    assert!(
+        after.room_for_one_more(0, 1).is_none(),
+        "past the budget the first start is still counting"
+    );
+    drop(slot);
+    assert!(after.room_for_one_more(0, 1).is_some());
+
+    gates.forget("builds");
+    assert!(
+        !Arc::ptr_eq(&before, &gates.of(Some("builds"))),
+        "a forgotten pool's gate is not kept"
+    );
+}
+
+/// The turn is held for the count alone: a start that is on its way (a long engine download)
+/// holds a slot of the budget, never the turn, so the next start counts at once and is refused
+/// only where the budget is spent.
+#[test]
+fn a_start_on_its_way_holds_a_slot_and_not_the_turn() {
+    let gates = super::StartGates::default();
+    let gate = gates.of(Some("builds"));
+    let on_its_way = {
+        let _counting = gate.turn(|| ());
+        gate.room_for_one_more(1, 3).expect("room for the first")
+    };
+
+    let mut waited = false;
+    let _counting = gate.turn(|| waited = true);
+    assert!(
+        !waited,
+        "the next start did not wait for the first's download"
+    );
+    let second = gate.room_for_one_more(1, 3).expect("room for the second");
+    assert!(
+        gate.room_for_one_more(1, 3).is_none(),
+        "one running and two on their way is the budget of 3"
+    );
+    drop((on_its_way, second));
+    assert!(gate.room_for_one_more(1, 3).is_some());
+}
+
+/// A start that has to wait for another's turn says so (nothing silent), and its wait ends
+/// as the turn is free.
+#[test]
+fn a_start_waiting_for_the_turn_says_so() {
+    let gates = super::StartGates::default();
+    let gate = gates.of(Some("builds"));
+    let counting = gate.turn(|| ());
+    let waiting = {
+        let gate = Arc::clone(&gate);
+        std::thread::spawn(move || {
+            let said = Mutex::new(false);
+            let _turn = gate.turn(|| *said.lock().unwrap() = true);
+            *said.lock().unwrap()
+        })
+    };
+    std::thread::sleep(Duration::from_millis(100));
+    drop(counting);
+
+    assert!(waiting.join().unwrap(), "it said it was waiting");
 }

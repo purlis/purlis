@@ -433,21 +433,83 @@ mod hosted {
     use crate::hostedsessions::{Connection, FrameSink, HostLink, OriginSink, Reconnect};
     use crate::reconnecting::Reconnection;
 
-    /// **One gate per link**, so a start counts the host's browsers against its budget before
-    /// the next on that host does, and a start on another runner waits for none (#7187 item 8).
+    /// **One gate per runner, or for this machine's own host** (#7187 item 8), not per link: a
+    /// link is replaced as it reconnects, and a new gate for the new link would let a start run
+    /// past the budget the old one was counting. A start counts the host's browsers against its
+    /// budget before the next on that host does, and a start on another runner waits for none.
+    /// A pool's gate goes when the pool is forgotten ([`Self::forget`]).
     #[derive(Default)]
-    pub(crate) struct StartGates(Mutex<HashMap<u64, Arc<Mutex<()>>>>);
+    pub(crate) struct StartGates(Mutex<HashMap<Option<String>, Arc<Gate>>>);
+
+    /// **One host's turn at counting its browsers, and the starts counted but not yet running.**
+    /// The turn is held for the count alone, never across the start itself, which may download
+    /// the engine for minutes; what that start will add is held as a [`Slot`] meanwhile.
+    #[derive(Default)]
+    pub(crate) struct Gate {
+        turn: Mutex<()>,
+        /// Starts that have counted themselves in and have not answered yet.
+        starting: std::sync::atomic::AtomicUsize,
+    }
+
+    /// A start's place in its host's budget, until its start has answered.
+    pub(crate) struct Slot(Arc<Gate>);
+
+    impl Drop for Slot {
+        fn drop(&mut self) {
+            self.0
+                .starting
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl Gate {
+        /// The turn at counting: `waiting` is called once if another start has it, which the
+        /// window shows, and it is waited for.
+        pub(crate) fn turn(&self, waiting: impl FnOnce()) -> std::sync::MutexGuard<'_, ()> {
+            match self.turn.try_lock() {
+                Ok(turn) => turn,
+                Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    waiting();
+                    self.turn.lock().unwrap_or_else(PoisonError::into_inner)
+                }
+            }
+        }
+
+        /// **A place for one more start**, where `running` browsers and the starts that are
+        /// counted already leave room in `budget`: the caller holds [`Self::turn`].
+        pub(crate) fn room_for_one_more(
+            self: &Arc<Self>,
+            running: usize,
+            budget: usize,
+        ) -> Option<Slot> {
+            use std::sync::atomic::Ordering::SeqCst;
+            (running + self.starting.load(SeqCst) < budget).then(|| {
+                self.starting.fetch_add(1, SeqCst);
+                Slot(Arc::clone(self))
+            })
+        }
+    }
 
     impl StartGates {
-        /// The gate of link `link`: the same one each time, none shared with another link.
-        pub(crate) fn of(&self, link: u64) -> Arc<Mutex<()>> {
+        /// The gate of the host `pool`'s runner is on, or this machine's own where none: the same
+        /// one each time, none shared with another runner.
+        pub(crate) fn of(&self, pool: Option<&str>) -> Arc<Gate> {
             Arc::clone(
                 self.0
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .entry(link)
+                    .entry(pool.map(str::to_owned))
                     .or_default(),
             )
+        }
+
+        /// Pool `pool` was forgotten: its gate goes with it.
+        pub(crate) fn forget(&self, pool: &str) {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove(&Some(pool.to_owned()));
         }
     }
 
@@ -1058,6 +1120,7 @@ mod hosted {
         }
 
         fn end_each_on(&self, pool: &str, closer: Option<Closer>) -> Forgotten {
+            self.starting.forget(pool);
             let programs: Vec<String> = self
                 .projects()
                 .iter()
@@ -1385,28 +1448,41 @@ mod hosted {
             if let Some(why) = at.pool.as_deref().and_then(|pool| self.untrusted(pool)) {
                 return Err(NotStarted::Failed(why));
             }
-            // One start at a time on this link's host, whose budget it counts; starts on other
-            // runners go on at once (#7187 item 8).
-            let gate = self.starting.of(link.id());
-            let _one_at_a_time = gate.lock().unwrap_or_else(PoisonError::into_inner);
-            let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
-                Answer::Chats(listed) => listed
-                    .iter()
-                    .filter(|one| one.kind == Some(ProgramKind::Browser) && one.state != "ended")
-                    .count(),
-                other => {
-                    return Err(NotStarted::Failed(format!(
-                        "the session host answered a list with {other:?}"
-                    )));
-                }
-            };
-            let budget = (self.budget)();
-            if running >= budget {
-                return Err(NotStarted::Full { most: budget });
-            }
-            // Named here, so the engine download this window is told of is known to be this
-            // start's, and waited for as long as the download may take (#2207).
+            // Named here: it is what a start waiting for its turn is shown by, and what its
+            // engine download is told of (#2207).
             let named = purlis_core::browsers::a_browsers_id();
+            // One count at a time on this runner's host, whose budget it is; starts on other
+            // runners go on at once (#7187 item 8). Held for the count alone: what this start
+            // adds is held as a slot until it has answered, so a long engine download keeps the
+            // next start waiting for nothing.
+            let gate = self.starting.of(at.pool.as_deref());
+            let (budget, _slot) = {
+                let _counting = gate.turn(|| crate::enginedownload::here().queued(&named));
+                // Whether it was cancelled as it waited, which it learns as it has the turn.
+                if crate::enginedownload::here().dequeued(&named) {
+                    return Err(NotStarted::Cancelled);
+                }
+                let running = match link.call(Command::List).map_err(NotStarted::Failed)? {
+                    Answer::Chats(listed) => listed
+                        .iter()
+                        .filter(|one| {
+                            one.kind == Some(ProgramKind::Browser) && one.state != "ended"
+                        })
+                        .count(),
+                    other => {
+                        return Err(NotStarted::Failed(format!(
+                            "the session host answered a list with {other:?}"
+                        )));
+                    }
+                };
+                let budget = (self.budget)();
+                let Some(slot) = gate.room_for_one_more(running, budget) else {
+                    return Err(NotStarted::Full { most: budget });
+                };
+                (budget, slot)
+            };
+            // So the engine download this window is told of is known to be this start's, and
+            // waited for as long as the download may take (#2207).
             // Waited on before it is asked for, so no word of its download comes too early.
             crate::enginedownload::here().started(&named);
             // On a pool's runner, its views over the link are held to the pool's own frames
@@ -1524,6 +1600,11 @@ mod hosted {
         /// **The person cancels the engine's download for `program`'s start** (#2207): nothing
         /// of it is kept, and the start is refused in words that say so.
         pub(crate) fn cancel_download(&self, program: &str) -> Result<(), String> {
+            // A start still waiting for its runner's turn has no download to cancel: it is
+            // refused as it gets its turn.
+            if crate::enginedownload::here().cancel_queued(program) {
+                return Ok(());
+            }
             self.link_for(program)?
                 .call(Command::CancelEngineDownload {
                     program: program.to_owned(),

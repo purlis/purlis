@@ -19,33 +19,46 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    the person pressed on a chat's first browser Ask (Allow, with the open web or not, or Keep
    off) is kept in `.purlis/app/browser-postures.json`, by the chat's identity (ADR 0066), in
    this machine's state: never the plane, never synced or committed. A resumed chat keeps the
-   answer it was given; a new chat has a new identity and asks; the answer ends when the chat
-   closes. An answer resting on a persona's Always is not kept, since it follows that Always as
+   answer it was given, so closing a chat does not end it; a new chat has a new identity and
+   asks; the answer ends with purlis's record of the chat. An answer resting on a persona's Always is not kept, since it follows that Always as
    it is now. Narrowing a chat's reach still ends its browsers and leaves the answer. **A kept
    answer is checked against the chat's current reach before it is used:** it is kept with the
    reach the chat had when it was asked, and where the reach is narrower now (a listed site gone,
-   a site now never reached, a port now withdrawn) the answer is not used and is removed, and the
-   person is asked again. A wider reach uses it. An answer of a chat that no longer exists is
-   dropped when purlis starts. Both stores are written whole through a temp file renamed over
+   a site now never reached, a port now withdrawn) the open web or a site the person allowed gone, a site
+   now never reached, a port now withdrawn) the answer is not used and is removed, and the
+   person is asked again. A wider reach uses it. **Where the chat's reach is not known** (its
+   sandbox's compile was not recorded) the answer is not used that time, and is kept for a call
+   that knows it. A closed chat is not a chat that no longer exists: it may be resumed and keeps
+   its answer. The answer goes when purlis lets go of the chat's record, which purlis checks when
+   it starts against the record of open chats as it is on disk, the closed chats' records and the
+   chats open, so another window's live chat is never pruned; where a record does not read,
+   nothing is pruned. Both stores are written whole through a temp file renamed over
    them, under a lock file beside each, so two purlis processes never drop one another's change. There is
    no "for every chat of this persona": that is what Always is, and it is the person's own
    setting. *Why:* the answer is a consent given for one chat's task, so it is bound to that chat
    and dies with it, and it cannot be widened by persisting it.
 3. **The pool-login opt-in survives a restart, on this machine only.** It is kept in
    `pool-login-optins.json` in this machine's config folder, 0600, with what it was given for:
-   the persona, the login, the pool, the pool's definition and image, the runner's device, key
-   and image, and the engine, which for a pool on another machine is the pin with the person's
-   mark (ADR 0123 §5). **Any change to any of them asks again**, and so does taking the mark
-   back, forgetting the pool, or the person's Remove on the Granted list. It has no time limit,
+   the persona, the login as declared (by identity, with its declared name for the Granted list),
+   the pool, the pool's definition and image, the runner's device, key and image, and the engine,
+   which for a pool on another machine is the pin as trusted (ADR 0123 §5). **The person's mark
+   is not in what it is bound to:** it is checked at every login, as for any login on that pool
+   (`Bound::over_the_link`), and an opt-in stands only where the runner is shown to be theirs at
+   that moment. **Any change to the bound facts asks again**, and so does taking the mark back,
+   forgetting the pool, or the person's Remove on the Granted list (audited as a revoke). A
+   removal the store cannot take (another process holds it) is reported, and the opt-in no longer
+   applies: it is recorded as removed in a list beside the store, which is never read past. It has no time limit,
    is never synced, committed or sent to a runner, and holds no value of any login. A Keep off
    is not kept: a refusal holds for the run alone, and replaces the opt-in it contradicts. A
    runner never holds a value or a kept login (#2021). *Why:* the opt-in was asked again at every
    restart for the same pool and persona; the person's trust is in a pool as they pinned it,
    so binding it to that pin keeps the question exactly where something moved.
-4. **A runner browser's cookies live exactly as long as the browser, and no jar is saved.** Its
-   data folder is where the engine keeps them, it is removed at the browser's end however that
-   comes (a close, a stop, the engine ending by itself, the host stopping), and nothing writes
-   a cookie jar elsewhere. Reusing a login across browsers is the job of kept logins (#2021),
+4. **A runner browser's cookies live as long as the browser, and no jar is saved.** Its
+   data folder is where the engine keeps them, and the host removes it when the browser ends.
+   A test covers the engine ending by itself; a close and a stop end the browser the same way
+   and are not tested apart. **A host that is killed cannot clear it:** the folder stays until
+   the runner's own cleanup, so this is the host's doing, not a guarantee. Nothing writes a
+   cookie jar elsewhere. Reusing a login across browsers is the job of kept logins (#2021),
    which never go to a runner. *Why:* a browser that outlives a quit carries its cookies with it
    and no more; a saved jar would be a login the person never opted into on that device.
 5. **Browsers on a forgotten pool end, and are said so.** *Forget it here* (ADR 0123, amended
@@ -55,6 +68,8 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    removed. The log's word is `person` (`browser.closed`), not a new one: the person's own act
    ended it, and `docs/plane-format.md`'s record of the event log is unchanged.
 6. **Browser starts on different runners do not queue behind one another.** The window-wide
-   start lock is gone. A start takes its link's own gate for the host's count against its budget,
-   so two starts on one runner cannot both take the last place, and a start on another runner
-   waits for neither (#7187 item 8).
+   start lock is gone. A start takes its runner's gate (by pool, not link, so a reconnected link keeps
+   it) for the host's count against its budget alone, and holds a slot until its start answers,
+   so two starts cannot both take the last place, a long engine download does not hold the next
+   start, and a start on another runner waits for neither. A start that waits says so in the
+   window's Notice, and Cancel refuses it as it gets its turn (#7187 item 8).

@@ -2641,7 +2641,8 @@ fn pool_login_rows(browsers: &crate::chatbrowsers::ChatBrowsers) -> Vec<SandboxG
         .map(|one| SandboxGrant {
             id: pool_login_id(&one),
             what: GrantWhat::PoolLogin,
-            target: format!("{} on {}", one.login, one.pool),
+            // The login as its persona declared it, never its identity hash.
+            target: format!("{} on {}", one.name, one.pool),
             persona: Some(one.persona),
             level: GrantLevel::Machine,
             by: None,
@@ -2656,18 +2657,38 @@ fn pool_login_rows(browsers: &crate::chatbrowsers::ChatBrowsers) -> Vec<SandboxG
         .collect()
 }
 
-/// **Takes back the pool login opt-in** of `persona`'s login `login` on `pool` (#7190): the next
-/// login there asks. Refused where it is no longer there.
+/// **Takes back the pool login opt-in** of `persona`'s login `login` on `pool` (#7190): checked
+/// to be there, **audited first** as every grant's removal is (`trust.sandbox.revoke`, an audit
+/// that cannot be written takes nothing), then taken out; the next login there asks. Refused
+/// where it is no longer there.
 fn revoke_pool_login(
     browsers: &crate::chatbrowsers::ChatBrowsers,
     persona: &str,
     login: &str,
     pool: &str,
+    audit: Audit<'_>,
 ) -> Result<(), String> {
+    let gone = || "purlis did not remove it: it is no longer there.".to_owned();
+    let Some(one) = browsers
+        .pool_login_grants()
+        .into_iter()
+        .find(|one| one.persona == persona && one.login == login && one.pool == pool)
+    else {
+        return Err(gone());
+    };
+    audit(
+        None,
+        &sandbox::grant::Audited {
+            granted: false,
+            what: POOL_LOGIN,
+            target: &format!("{persona}: {} on {pool}", one.name),
+            level: sandbox::grant::Level::Machine,
+        },
+    )?;
     if browsers.remove_pool_login_grant(persona, login, pool)? {
         Ok(())
     } else {
-        Err("purlis did not remove it: it is no longer there.".to_owned())
+        Err(gone())
     }
 }
 
@@ -3365,7 +3386,7 @@ pub(crate) fn revoke_granted(
     let root = held.root();
     let audit = held.audit_then_record(network);
     if let Some((persona, login, pool)) = pool_login_of(id) {
-        return revoke_pool_login(held.browsers(), persona, login, pool);
+        return revoke_pool_login(held.browsers(), persona, login, pool, &audit);
     }
     if let Some(number) = run_grant_of(id) {
         return revoke_run_grant(held, number);

@@ -6,6 +6,7 @@
 //! same folders, as after a quit.
 
 use super::*;
+use crate::chatbrowsers::chats_that_exist;
 use purlis_core::poollogins::Bound;
 
 const CHAT: &str = "01JA0POSTURE0000000000000A";
@@ -19,7 +20,7 @@ fn window(root: &Path, config: &Path, chat: &str) -> ChatBrowsers {
 /// [`window`] where the chat's reach is now `now`.
 fn window_reaching(root: &Path, config: &Path, chat: &str, now: BrowserReach) -> ChatBrowsers {
     let browsers = ChatBrowsers::default().keeping_answers(root, Some(config));
-    browsers.identify_for(3, Some(chat.into()), &|| now.clone());
+    browsers.identify_for(3, Some(chat.into()), &|| Some(now.clone()));
     browsers
 }
 
@@ -108,24 +109,131 @@ fn an_answer_given_before_the_chats_identity_was_known_is_kept_once_it_is() {
 }
 
 #[test]
-fn the_answer_ends_with_the_chat() {
+fn a_closed_chats_answer_is_kept_and_a_resumed_chat_finds_it() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let hosted = Arc::new(Hosted::default());
+    let first = window(root.path(), config.path(), CHAT);
+    asked(&first, &hosted);
+    first.allow(3, true);
+    let driver: Arc<dyn Driver> = hosted.clone();
+
+    first.forget(Some(&driver), 3, "Chat 3");
+
+    assert!(
+        purlis_core::browserposture::kept(root.path(), CHAT).is_some(),
+        "a close keeps the answer: the chat may be resumed"
+    );
+    // Resumed under its id, in a later run and under another number.
+    let resumed = ChatBrowsers::default().keeping_answers(root.path(), Some(config.path()));
+    resumed.identify_for(7, Some(CHAT.into()), &|| Some(reach()));
+    assert_eq!(resumed.posture(7), Posture::Allowed { open_web: true });
+}
+
+/// A project's records under `root`: chat `open` in the record of open chats (as another
+/// window of the project writes it), chat `closed` among the closed chats.
+fn records(root: &Path, open: &str, closed: &str) {
+    purlis_core::reopen::write(
+        root,
+        &purlis_core::reopen::Record {
+            chats: vec![purlis_core::reopen::Chat {
+                program: "claude".into(),
+                identity: purlis_core::reopen::Identity {
+                    id: Some(open.into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }],
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    purlis_core::chatrecords::keep(
+        root,
+        &purlis_core::chatrecords::ChatRecord {
+            number: 9,
+            id: closed.into(),
+            title: "Closed".into(),
+            started: "2026-11-01T10:00:00Z".into(),
+            ended: "2026-11-01T11:00:00Z".into(),
+            started_by: purlis_core::chatrecords::StartedBy::Person,
+            place: "project root".into(),
+            earlier: Vec::new(),
+            chat: None,
+        },
+    )
+    .unwrap();
+}
+
+fn keep_off_for(root: &Path, chats: &[&str]) {
+    for chat in chats {
+        purlis_core::browserposture::keep(
+            root,
+            chat,
+            purlis_core::browserposture::Answer::Off,
+            &purlis_core::browserposture::Reach::default(),
+        )
+        .unwrap();
+    }
+}
+
+const HERE_ID: &str = "01JA0AAAAA0000000000000001";
+const OTHER_WINDOWS: &str = "01JA0AAAAA0000000000000002";
+const CLOSED_ID: &str = "01JA0AAAAA0000000000000003";
+const GONE_ID: &str = "01JA0AAAAA0000000000000004";
+
+#[test]
+fn a_prune_drops_only_chats_purlis_has_no_record_of() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    records(root.path(), OTHER_WINDOWS, CLOSED_ID);
+    keep_off_for(root.path(), &[HERE_ID, OTHER_WINDOWS, CLOSED_ID, GONE_ID]);
+    let window = ChatBrowsers::default().keeping_answers(root.path(), Some(config.path()));
+    let open_here = |id: &str| id == HERE_ID;
+
+    let exists = chats_that_exist(root.path(), &[], &open_here).expect("the records read");
+    window.prune_answers(&exists);
+
+    let kept = |chat| purlis_core::browserposture::kept(root.path(), chat).is_some();
+    assert!(kept(HERE_ID), "a chat open in this window");
+    assert!(
+        kept(OTHER_WINDOWS),
+        "a chat another window of the project holds live"
+    );
+    assert!(kept(CLOSED_ID), "a closed chat may be resumed");
+    assert!(!kept(GONE_ID), "no record of it any more");
+}
+
+#[test]
+fn nothing_is_pruned_on_a_record_that_does_not_read() {
+    let (root, _config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    records(root.path(), OTHER_WINDOWS, CLOSED_ID);
+    std::fs::write(purlis_core::chatrecords::path(root.path()), "not json").unwrap();
+
+    assert!(
+        chats_that_exist(root.path(), &[], &|_| false).is_none(),
+        "unreadable is never no chats"
+    );
+}
+
+#[test]
+fn an_answer_whose_reach_is_not_known_is_not_used_this_time_and_is_kept() {
     let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let hosted = Arc::new(Hosted::default());
     let first = window(root.path(), config.path(), CHAT);
     asked(&first, &hosted);
     first.allow(3, false);
-    let driver: Arc<dyn Driver> = hosted.clone();
 
-    first.forget(Some(&driver), 3, "Chat 3");
+    // Reattached under a sandbox whose compile was not recorded: its reach is not known.
+    let unknown = ChatBrowsers::default().keeping_answers(root.path(), Some(config.path()));
+    unknown.identify_for(3, Some(CHAT.into()), &|| None);
 
-    assert_eq!(
-        window(root.path(), config.path(), CHAT).posture(3),
-        Posture::Unasked
-    );
+    assert_eq!(unknown.posture(3), Posture::Unasked, "not used this time");
     assert!(
-        !purlis_core::browserposture::path(root.path()).exists(),
-        "nothing of it is left"
+        purlis_core::browserposture::kept(root.path(), CHAT).is_some(),
+        "and not deleted"
     );
+    // The next call knows its reach, which is as it was: the kept answer is used.
+    unknown.identify_for(3, Some(CHAT.into()), &|| Some(reach()));
+    assert_eq!(unknown.posture(3), Posture::Allowed { open_web: false });
 }
 
 #[test]
