@@ -2037,25 +2037,9 @@ export const commands = {
 	dockerPools: __WINDOW_ONLY_RESULT,
 	poolSetup: __WINDOW_ONLY_RESULT,
 	poolSetupCheckAgain: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Try now** (#7191), on the status bar of a pool that can't be reached: every failing forward
-	 *  is tried again at once, not after its wait (the forward's own retry, as Check again does
-	 *  first), and the pool is read again. It runs no doctor: that is Check pool's.
-	 */
-	poolSetupTryNow: (plane: PlaneId) => typedError<PoolSetupShown, string>(__TAURI_INVOKE("pool_setup_try_now", { plane })),
-	/**
-	 *  **Forget the pool an add refused** (#7191), from the status bar: no pool was made, so the
-	 *  refusal Pool setup keeps is all there is to forget. Nothing on any machine is touched.
-	 */
-	poolSetupForgetRefused: () => typedError<null, string>(__TAURI_INVOKE("pool_setup_forget_refused")),
-	/**
-	 *  **Trust and create the pool** (#7191, Refined 2): for Docker on another machine, Connect and
-	 *  Pool in one press. The machine Connect read is trusted at `fingerprint`, which the person saw;
-	 *  every check of the pool's image is asked of its engine, so a full disk or a missing image is a
-	 *  finding before the machine is called connected; `owned` is who can sign in there; and the pool
-	 *  is made. A refused add keeps the pool, Refused, with its reason.
-	 */
-	poolSetupTrustAndCreate: (plane: PlaneId, fingerprint: string, owned: boolean, adding: PoolAdding) => typedError<PoolSetupTrustedAndCreated, string>(__TAURI_INVOKE("pool_setup_trust_and_create", { plane, fingerprint, owned, adding })),
+	poolSetupTryNow: __WINDOW_ONLY_RESULT,
+	poolSetupForgetRefused: __WINDOW_ONLY_RESULT,
+	poolSetupTrustAndCreate: __WINDOW_ONLY_RESULT,
 	poolSetupChooseDocker: __WINDOW_ONLY_RESULT,
 	poolSetupChooseRemoteDocker: __WINDOW_ONLY_RESULT,
 	poolSetupMachine: __WINDOW_ONLY_RESULT,
@@ -2071,12 +2055,7 @@ export const commands = {
 	poolSetupTlsFiles: __WINDOW_ONLY_RESULT,
 	poolSetupChooseOwned: __WINDOW_ONLY_RESULT,
 	poolSetupChooseCluster: __WINDOW_ONLY_RESULT,
-	/**
-	 *  **Keeps the folder a kubeconfig's credential plugin is in** (#7192), named where purlis found
-	 *  it in none of the usual install folders. Only that folder is added to the commands purlis runs
-	 *  for the cluster.
-	 */
-	poolSetupPluginFolder: (folder: string) => typedError<null, string>(__TAURI_INVOKE("pool_setup_plugin_folder", { folder })),
+	poolSetupPluginFolder: __WINDOW_ONLY_RESULT,
 	poolSetupInstall: __WINDOW_ONLY_RESULT,
 	poolSetupOperatorImage: __WINDOW_ONLY_RESULT,
 	poolSetupClusterPool: __WINDOW_ONLY_RESULT,
