@@ -260,3 +260,32 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
         }
     }
 }
+
+/// A commit message whose body holds a `)` and an odd `"` is read as commands as bash 3.2's
+/// hedge, and is still an ordinary one: it passes, but a literal merge on a line of it is held
+/// (#7131).
+#[test]
+fn a_large_commit_body_with_a_paren_and_a_quote_passes_and_a_merge_line_in_it_is_held() {
+    let here = Here::new();
+    let paragraph = "The guard didn't read `\"$(cat <<'EOF'` (see #917)\n- 1) the reader\n\n";
+    let body = paragraph.repeat(65_536 / paragraph.len());
+    let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+    let merging = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+    for mode in ["bypassPermissions", "default"] {
+        let (code, out, err, _) = here.answer("pretooluse", &bash(&ordinary, mode), &[]);
+        assert_eq!(code, Some(0), "{mode}: {err}");
+        assert!(!out.contains("deny"), "{mode}: {out}");
+        let (code, out, err, _) = here.answer("pretooluse", &bash(&merging, mode), &[]);
+        assert!(
+            out.contains("deny") || code == Some(2),
+            "{mode}: a merge line was not held: {code:?} {out} {err}"
+        );
+        // A program the shell builds, on a line nothing hedges, is still refused.
+        let (code, out, err, _) =
+            here.answer("pretooluse", &bash("\"$(echo gh)\" pr view 7", mode), &[]);
+        assert!(
+            out.contains("deny") || code == Some(2),
+            "{mode}: a built program was not refused: {code:?} {out} {err}"
+        );
+    }
+}

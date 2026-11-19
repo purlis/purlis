@@ -2293,7 +2293,13 @@ pub fn strip_reader_heredocs(cmd: &str) -> String {
 /// For a guard that reads a line by its segments ([`shellseg::joined_argv`]), whose lexer knows
 /// no heredoc and would read every line of a body as a command.
 pub fn commands_a_shell_runs(cmd: &str) -> String {
-    shell_runs(cmd, true)
+    shell_runs(cmd, true, true)
+}
+
+/// [`commands_a_shell_runs`] without the body lines read as commands only as a hedge
+/// ([`hedged_body_lines`]), which the floor reads on their own.
+pub fn commands_a_shell_runs_without_the_hedge(cmd: &str) -> String {
+    shell_runs(cmd, true, false)
 }
 
 /// [`commands_a_shell_runs`] without the substitutions of a body nothing runs, and without a
@@ -2301,10 +2307,31 @@ pub fn commands_a_shell_runs(cmd: &str) -> String {
 /// <<'EOF'`): the lines a shell runs as commands of their own, where a word's place on the line
 /// still says what it is (#7131). A substitution in a body is read by its own body's text.
 pub fn lines_a_shell_runs(cmd: &str) -> String {
-    shell_runs(cmd, false)
+    shell_runs(cmd, false, true)
 }
 
-fn shell_runs(cmd: &str, with_body_substitutions: bool) -> String {
+/// [`lines_a_shell_runs`] without the body lines that are read as commands only as a hedge
+/// (`Enclosed`: bash 3.2 may end a substitution at a `)` in the body): the lines a shell runs
+/// on every reading of the text.
+pub fn lines_a_shell_runs_without_the_hedge(cmd: &str) -> String {
+    shell_runs(cmd, false, false)
+}
+
+/// The body lines read as commands only as a hedge ([`lines_a_shell_runs_without_the_hedge`]),
+/// each on its own: bash 3.2 that ends a substitution at a `)` runs each as a line of its own,
+/// whatever quote an earlier line of the body left open for this reading.
+pub fn hedged_body_lines(cmd: &str) -> Vec<String> {
+    if !cmd.contains("<<") {
+        return Vec::new();
+    }
+    heredoc_layout(cmd)
+        .into_iter()
+        .filter(|line| line.body && line.executed && !line.fed)
+        .map(|line| line.text)
+        .collect()
+}
+
+fn shell_runs(cmd: &str, with_body_substitutions: bool, with_hedged: bool) -> String {
     if !cmd.contains("<<") {
         return cmd.to_owned();
     }
@@ -2319,9 +2346,20 @@ fn shell_runs(cmd: &str, with_body_substitutions: bool) -> String {
     let mut out: Vec<String> = Vec::new();
     // The character offset the line starts at: the layout keeps every line, in order.
     let mut at = 0usize;
-    for line in heredoc_layout(cmd) {
+    let layout = heredoc_layout(cmd);
+    // A line read as commands only as a hedge; the last of a run is its terminator, which stays
+    // so the text around the heredoc is read as it stands.
+    let hedged = |l: &LayoutLine| l.body && l.executed && !l.fed;
+    let leaves_out: Vec<bool> = layout
+        .iter()
+        .enumerate()
+        .map(|(k, l)| !with_hedged && hedged(l) && layout.get(k + 1).is_some_and(hedged))
+        .collect();
+    for (k, line) in layout.into_iter().enumerate() {
         let len = line.text.chars().count();
-        if !line.body || (line.executed && !(line.foreign && !with_body_substitutions)) {
+        if !line.body
+            || (line.executed && !leaves_out[k] && !(line.foreign && !with_body_substitutions))
+        {
             out.push(line.text);
         } else if line.expands && with_body_substitutions {
             out.extend(

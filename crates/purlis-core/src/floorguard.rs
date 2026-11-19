@@ -192,6 +192,36 @@ impl Drop for OnlyMerges {
     }
 }
 
+std::thread_local! {
+    /// Whether the floor is reading a body line that is read as commands only as a hedge
+    /// ([`ReadingAHedge`]): the speculative checks of #7131 are not made on one.
+    static READING_A_HEDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the floor is reading a hedged body line.
+fn reading_a_hedge() -> bool {
+    READING_A_HEDGE.get()
+}
+
+/// **The floor reads a hedged body line while this lives**, and as it did before once dropped.
+struct ReadingAHedge {
+    outer: bool,
+}
+
+impl ReadingAHedge {
+    fn on() -> Self {
+        Self {
+            outer: READING_A_HEDGE.replace(true),
+        }
+    }
+}
+
+impl Drop for ReadingAHedge {
+    fn drop(&mut self) {
+        READING_A_HEDGE.set(self.outer);
+    }
+}
+
 /// The rows of [`PUBLISH_FORGE`] that merge a request rather than cut a release.
 const MERGE_ROWS: [(&str, &str, &str); 3] = [
     ("gh", "pr", "merge"),
@@ -281,13 +311,13 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
     // A heredoc body nothing runs is data, and only the substitutions of one the shell
     // expands run (#6293).
-    let runs = crate::heredoc::commands_a_shell_runs(cmd);
+    let runs = crate::heredoc::commands_a_shell_runs_without_the_hedge(cmd);
     let mut segments = commands_of(&runs);
     // A `case` pattern's `)` ends the pattern and starts the arm's command (`x) gh pr merge`),
     // which the segment walk keeps as a word: read the line again with its patterns blanked, and
     // the arm's commands are segments of their own (#7131). Only the segments that are new are
     // added: a copy of each would be read again at every depth of an `eval` chain.
-    let shell_lines = crate::heredoc::lines_a_shell_runs(cmd);
+    let shell_lines = crate::heredoc::lines_a_shell_runs_without_the_hedge(cmd);
     let (lines, unparsed_case) = in_command_position(&shell_lines);
     if nested_too_deep() {
         return Some(too_nested(fix));
@@ -362,7 +392,14 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             merge::UNREADABLE
         ));
     }
-    for reading in shellseg::segment_readings(&lines) {
+    // The two speculative checks below read only lines a shell runs on every reading of the
+    // text: a body line that is read as commands merely as bash 3.2's hedge (a `)` in a
+    // quoted-substitution's heredoc body) is held for a literal merge by the segments above,
+    // never for "could print any command" (#7131, the ruling on the large commit body).
+    for reading in shellseg::segment_readings(&lines)
+        .into_iter()
+        .filter(|_| !reading_a_hedge())
+    {
         // A definition's body is read as the commands it will run: its first program, if the
         // shell builds it, is as unreadable as one in the line itself (round 7).
         for toks in [&reading.outward, &reading.own] {
@@ -404,6 +441,22 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         let said = segment_reason(toks, cmd, unattended, depth, a_shell_reads_stdin);
         if said.is_some() {
             return said;
+        }
+    }
+    // A body line read as commands only as bash 3.2's hedge (a `)` in a quoted substitution's
+    // heredoc body) is read on its own, for a literal merge: a quote an earlier line of the body
+    // left open cannot hide one on a later line, and a program the shell builds there is not
+    // refused for what it could print (#7131, the ruling on the large commit body).
+    let hedged = crate::heredoc::hedged_body_lines(cmd);
+    if !hedged.is_empty() {
+        let _hedge = ReadingAHedge::on();
+        for line in &hedged {
+            for toks in commands_of(line) {
+                let said = segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin);
+                if said.is_some() {
+                    return said;
+                }
+            }
         }
     }
     if unclosable {
@@ -1523,7 +1576,11 @@ fn after_heredoc_body(s: &[char], mut from: usize, delimiter: &str, dash: bool) 
             .position(|c| *c == '\n')
             .map_or(s.len(), |n| from + n);
         let line: String = s[from.min(s.len())..end].iter().collect();
-        let line = if dash { line.trim_start_matches('\t') } else { &line };
+        let line = if dash {
+            line.trim_start_matches('\t')
+        } else {
+            &line
+        };
         if line == delimiter {
             return Some(end);
         }
@@ -2025,6 +2082,20 @@ mod tests {
         assert!(merge_reason(held).is_some());
         let inside = "x=\"$(cat <<'EOF'\n- 1) x\nEOF\n; gh pr merge 12)\"";
         assert!(merge_reason(inside).is_some());
+    }
+
+    /// The ruling on #7131's checks: a body line read as commands only as bash 3.2's hedge is
+    /// never refused for "could print any command", but a literal merge in it stays held, and a
+    /// program built by the shell on an unhedged line is still refused.
+    #[test]
+    fn a_hedged_body_line_is_held_for_a_merge_but_not_for_what_it_could_print() {
+        let body = "The guard didn't read `\"$(cat <<'EOF'` the way (see #917)\n- 1) first\n";
+        let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+        assert_eq!(merge_reason(&ordinary), None, "{ordinary}");
+        let merged = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+        assert!(merge_reason(&merged).is_some(), "{merged}");
+        assert!(merge_reason("\"$(echo gh)\" pr merge 7").is_some());
+        assert!(merge_reason("$(echo gh) pr merge 7").is_some());
     }
 
     /// What a run really sends — a long pull request body in a substitution, a long script fed
