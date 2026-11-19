@@ -1510,10 +1510,9 @@ fn a_removal_beside_a_list_cut_short_does_not_make_it_readable_again() {
 
 #[cfg(unix)]
 fn a_fifo_in_the_lists_place(config: &Path) {
-    let made = std::process::Command::new("mkfifo")
-        .arg(revoked_file(config))
-        .status()
-        .unwrap();
+    let made =
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(revoked_file(config)))
+            .unwrap();
     assert!(made.success());
 }
 

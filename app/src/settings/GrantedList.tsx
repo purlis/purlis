@@ -84,7 +84,8 @@ function removed(one: SandboxGrant): string {
   if (one.what === "browser") return `Always for ${one.persona ?? "a persona"}'s browser`;
   if (one.what === "browser-site") return `browsers reaching ${one.target}`;
   if (one.what === "run-grant") return `running ${one.target}`;
-  if (one.what === "pool-login") return `${one.persona ?? "a persona"}'s browser login ${one.target}`;
+  if (one.what === "pool-login")
+    return `${one.persona ?? "a persona"}'s browser login ${one.target}`;
   return `writing ${one.target}`;
 }
 
