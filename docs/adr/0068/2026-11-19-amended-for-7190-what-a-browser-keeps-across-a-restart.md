@@ -24,8 +24,8 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    it is now. Narrowing a chat's reach still ends its browsers and leaves the answer. **A kept
    answer is checked against the chat's current reach before it is used:** it is kept with the
    reach the chat had when it was asked, and where the reach is narrower now (a listed site gone,
-   a site now never reached, a port now withdrawn) the open web or a site the person allowed gone, a site
-   now never reached, a port now withdrawn) the answer is not used and is removed, and the
+   the open web or a site the person allowed gone, a site now never reached, a port now
+   withdrawn) the answer is not used and is removed, and the
    person is asked again. A wider reach uses it. **Where the chat's reach is not known** (its
    sandbox's compile was not recorded) the answer is not used that time, and is kept for a call
    that knows it. A closed chat is not a chat that no longer exists: it may be resumed and keeps
@@ -36,7 +36,7 @@ new. Items 1 to 4 are **ruled**; their code is `purlis_core::browserposture`,
    them, under a lock file beside each, so two purlis processes never drop one another's change. There is
    no "for every chat of this persona": that is what Always is, and it is the person's own
    setting. *Why:* the answer is a consent given for one chat's task, so it is bound to that chat
-   and dies with it, and it cannot be widened by persisting it.
+   and lasts only as long as purlis keeps the chat, and it cannot be widened by persisting it.
 3. **The pool-login opt-in survives a restart, on this machine only.** It is kept in
    `pool-login-optins.json` in this machine's config folder, 0600, with what it was given for:
    the persona, the login as declared (by identity, with its declared name for the Granted list),

@@ -38,8 +38,8 @@ use purlis_session_protocol::session::HeldProgram;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, answer_of,
-    browser_number, kept_reach,
+    AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, browser_number,
+    kept_reach,
 };
 
 /// **Whose a browser is, as its window note says** (#2025).
@@ -224,10 +224,7 @@ impl ChatBrowsers {
                     }
                 }
                 // Answered before its identity was known: kept now it is.
-                (posture @ (Posture::Allowed { .. } | Posture::Off), None) => (
-                    chat.rests_on.is_none() && answer_of(posture).is_some(),
-                    false,
-                ),
+                (Posture::Allowed { .. } | Posture::Off, None) => (chat.rests_on.is_none(), false),
                 _ => (false, false),
             }
         };

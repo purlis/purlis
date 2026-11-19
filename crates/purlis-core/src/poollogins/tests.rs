@@ -932,7 +932,7 @@ fn a_store_another_process_holds_is_never_written_unlocked() {
 }
 
 #[test]
-fn a_remove_the_store_could_not_take_is_not_reported_as_done() {
+fn a_remove_the_store_could_not_take_is_answered_and_the_opt_in_no_longer_applies() {
     let config = tempfile::tempdir().unwrap();
     let opt_ins = OptIns::stored_in(config.path());
     opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
@@ -950,12 +950,16 @@ fn a_remove_the_store_could_not_take_is_not_reported_as_done() {
         "builds",
     );
 
-    assert!(busy.is_err(), "the store was held, so nothing was removed");
+    assert!(busy.is_err(), "the store was held, so it is answered");
     drop(other);
     assert_eq!(
         after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
-        Standing::Allowed,
-        "and the opt-in is still kept"
+        Standing::Unasked,
+        "and the opt-in no longer applies, here or after a restart"
+    );
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
     );
 }
 

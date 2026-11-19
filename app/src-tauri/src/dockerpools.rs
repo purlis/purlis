@@ -608,7 +608,17 @@ pub async fn remove_docker_pool(
             if let Some(host) = tauri::Manager::try_state::<crate::sessionhost::SessionHost>(&app) {
                 links_end_once_gone(&host.connection(), &config, &name);
             }
-            removed.map(|left| PoolRemoval::Removed { left })
+            // A removed pool keeps no login opt-in, which is kept on disk now (#7190): a store
+            // that could not take one out is said with what stays, and it no longer applies.
+            removed.map(|left| {
+                let logins = crate::chatbrowsers::forget_pool_logins_in(&held, &name).err();
+                PoolRemoval::Removed {
+                    left: [left, logins]
+                        .into_iter()
+                        .flatten()
+                        .reduce(|all, one| format!("{all} {one}")),
+                }
+            })
         })
         .await
     }

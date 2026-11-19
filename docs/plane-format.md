@@ -6891,12 +6891,18 @@ down rather than read off the code.
 - **Written by** the app on the person's press (`purlis_core::poollogins::OptIns::allow`),
   0600, through a temp file renamed over it, under the lock file `pool-login-optins.json.lock`
   beside it; removed by Remove in the Granted list, when the pool is forgotten, or when its mark
-  is taken back. A removal the store could not take (another process holds the lock) is reported
-  and the entry is named by its nonce in `pool-login-optins.revoked` beside it (one per line,
+  is taken back. A Remove on the Granted list, a pool forgotten or removed, a mark taken back and a Keep off that the store could not take (another process holds the lock) are reported and the entry is named by its nonce in `pool-login-optins.revoked` beside it (one per line,
   appended without the lock), which is never read past. It has no time limit. A runner never
   holds a value or a kept login.
 - **Tier:** Machine, device-bound — never synced, never committed, never in a plane. Deleting
   it makes every login on a pool ask again.
+
+### `pool-login-optins.revoked` (this machine's config folder, outside the plane)
+- **What:** the nonces of kept opt-ins whose removal the store could not take, one per line, at
+  most 1 MiB. An opt-in named here is never read. Appended 0600 without the store's lock and never
+  through a link; it is not pruned, since a removed opt-in is gone from the store the next time
+  it is written. Where it is full, a removal holds for the run alone (logged).
+- **Tier:** Machine, device-bound — never synced, never committed, never in a plane.
 
 ### `app/browser-timelines/<chat>/`
 - **What:** chat `<chat>`'s browser timeline (#2017, spec #2008): what its agent did in its

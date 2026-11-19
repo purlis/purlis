@@ -529,8 +529,11 @@ pub const IN_CONFIG: &str = "pool-login-optins.json";
 /// still holds ([`OptIns::forget_pool`], [`OptIns::keep_off`]).
 pub const REVOKED_IN_CONFIG: &str = "pool-login-optins.revoked";
 
+/// The most bytes read of the opt-ins' file: far past [`MOST_KEPT`] entries.
+const MOST_FILE_BYTES: u64 = 8 * 1024 * 1024;
+
 /// The most bytes read of, and appended to, [`REVOKED_IN_CONFIG`]: a bound on a damaged file.
-const MOST_REVOKED_BYTES: u64 = 64 * 1024;
+const MOST_REVOKED_BYTES: u64 = 1024 * 1024;
 
 /// **One opt-in as the Granted list shows it** (#7190 item 2): the persona, the login by its
 /// identity, the name it was declared by and the pool. Never a value of the login.
@@ -611,10 +614,14 @@ impl OptIns {
             Ok(there) if there.is_file() => {}
             _ => return Vec::new(),
         }
-        std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Vec<Stored>>(&text).ok())
-            .unwrap_or_default()
+        use std::io::Read as _;
+        let mut text = String::new();
+        let read = std::fs::File::open(&file)
+            .and_then(|open| open.take(MOST_FILE_BYTES).read_to_string(&mut text));
+        match read {
+            Ok(_) => serde_json::from_str::<Vec<Stored>>(&text).unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// **The nonces of the opt-ins whose removal failed**: this run's and the file's.
@@ -683,18 +690,22 @@ impl OptIns {
         else {
             return;
         };
-        let big = std::fs::metadata(&file).is_ok_and(|one| one.len() >= MOST_REVOKED_BYTES);
+        let big = std::fs::symlink_metadata(&file).is_ok_and(|one| one.len() >= MOST_REVOKED_BYTES);
         let appended = if big {
             Err(std::io::Error::other("the revoked list is full"))
         } else {
-            std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&file)
-                .and_then(|mut open| {
-                    open.write_all(format!("{}\n", nonces.join("\n")).as_bytes())?;
-                    open.sync_all()
-                })
+            let mut options = std::fs::OpenOptions::new();
+            options.create(true).append(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt as _;
+                // Private, and never through a link in the file's place.
+                options.mode(0o600).custom_flags(libc::O_NOFOLLOW);
+            }
+            options.open(&file).and_then(|mut open| {
+                open.write_all(format!("{}\n", nonces.join("\n")).as_bytes())?;
+                open.sync_all()
+            })
         };
         if let Err(why) = appended {
             tracing::warn!(
@@ -863,7 +874,8 @@ impl OptIns {
 
     /// **The person removes the opt-in** of `persona`'s login `login` on pool `pool` (the
     /// Granted list's Remove): the next login asks. Whether one was there, or why it could not be
-    /// taken out of the store (a store another process holds is not written, and stays).
+    /// taken out of the store (a store another process holds is not written): then it is held
+    /// removed all the same ([`REVOKED_IN_CONFIG`]) and no longer applies.
     pub fn remove(&self, persona: &str, login: &str, pool: &str) -> std::io::Result<bool> {
         self.remove_within(WAIT, persona, login, pool)
     }
@@ -881,7 +893,8 @@ impl OptIns {
             .any(|one| one.persona == persona && one.login == login && one.pool == pool);
         self.held()
             .remove(&(persona.to_owned(), login.to_owned(), pool.to_owned()));
-        self.take_out(wait, |one| {
+        // A removal the store could not take is answered, and the opt-in no longer applies.
+        self.take_out_or_revoke(wait, |one| {
             one.persona == persona && one.login == login && one.bound.pool == pool
         })?;
         Ok(was)

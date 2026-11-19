@@ -1116,11 +1116,13 @@ mod hosted {
         /// the person, never crashed; one the machine did not answer for stays running there,
         /// and is counted as `left`. Done before the pool's links end.
         pub(crate) fn end_on_forgotten(&self, pool: &str) -> Forgotten {
+            // Only a forgotten pool loses its gate: one that goes on keeps it, so a start in
+            // progress and the next are counted together.
+            self.starting.forget(pool);
             self.end_each_on(pool, Some(Closer::Person))
         }
 
         fn end_each_on(&self, pool: &str, closer: Option<Closer>) -> Forgotten {
-            self.starting.forget(pool);
             let programs: Vec<String> = self
                 .projects()
                 .iter()

@@ -855,7 +855,7 @@ async fn a_view_is_told_the_browsers_downloads_as_they_move_on_and_a_1_90_view_n
 
 /// **A runner browser's cookies live exactly as long as the browser** (#7190 item 3): its data
 /// folder is where the engine keeps them, it stays while the browser runs, and it is removed at
-/// the browser's end however that end comes: no cookie jar is saved for the next browser.
+/// the browser's end where the engine ends by itself (the case tested; a kill of the host cannot clear it): no cookie jar is saved for the next browser.
 #[tokio::test]
 async fn a_browsers_data_folder_stays_while_it_runs_and_goes_when_its_engine_ends_by_itself() {
     let mut linked = linked().await;
