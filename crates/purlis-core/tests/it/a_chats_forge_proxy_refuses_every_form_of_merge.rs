@@ -94,7 +94,7 @@ fn a_graphql_merge_and_auto_merge_are_refused_even_on_the_chats_own_pull_request
 
 #[test]
 fn an_approval_that_would_stand_for_a_merge_is_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/pulls/7/reviews"),
         (

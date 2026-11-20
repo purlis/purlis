@@ -10,7 +10,7 @@ use crate::support::forge_proxy::{Scene, graphql, is_refused, push_body};
 
 #[test]
 fn release_and_tag_writes_are_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/releases"),
         ("PATCH", "api.github.com", "/repos/acme/app/releases/5"),
@@ -43,7 +43,7 @@ fn release_and_tag_writes_are_refused() {
 
 #[test]
 fn rulesets_and_branch_protection_are_refused_to_read_and_to_write() {
-    let s = Scene::new();
+    let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/rulesets"),
         ("GET", "api.github.com", "/repos/acme/app/rulesets"),
@@ -83,7 +83,7 @@ fn rulesets_and_branch_protection_are_refused_to_read_and_to_write() {
 
 #[test]
 fn repository_administration_is_refused_to_read_and_to_write() {
-    let s = Scene::new();
+    let s = Scene::single();
     for (method, host, target) in [
         ("PATCH", "api.github.com", "/repos/acme/app"),
         ("DELETE", "api.github.com", "/repos/acme/app"),

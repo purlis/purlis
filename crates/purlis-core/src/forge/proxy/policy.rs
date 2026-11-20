@@ -36,6 +36,9 @@ pub enum Refusal {
     MalformedRequest,
     /// A host that is none of the chat's repos' hosts, to the letter.
     HostNotAllowed,
+    /// A call that names no repo (`/user`, GraphQL), when the chat has repos on more than one host
+    /// of that forge: which one is meant is not the chat's to say.
+    AmbiguousHost,
     /// A repo that is not one of the chat's, to the letter.
     OtherRepo,
     /// Merging, in any form: REST, GraphQL, auto-merge, merge when the pipeline succeeds.
@@ -161,6 +164,14 @@ impl ObjectRepo for NoObjects {
     }
 }
 
+/// Hosts that serve a repo's downloads from a signed address, which a chat may tunnel to and which
+/// are never terminated.
+const DOWNLOAD_HOSTS: &[&str] = &[
+    "codeload.github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com",
+];
+
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
 const NON_REPO_READS: &[(&[&str], Kind)] = &[
     (&["user"], Kind::GitHub),
@@ -176,6 +187,12 @@ pub enum ConnectVerdict {
     /// Terminate TLS here with a leaf of the chat's own CA for `host`, then decide each decrypted
     /// request with [`ChatPolicy::decide`]: the same policy as a request on a unix socket.
     Terminate {
+        host: String,
+    },
+    /// A plain tunnel, with the server's own certificate and nothing read: a host that only
+    /// serves downloads, for a chat that has a repo on github.com. Never terminated, so no leaf
+    /// is ever made for it and the chat's CA is not asked to vouch for it.
+    Tunnel {
         host: String,
     },
     Refuse(Refusal),
@@ -228,8 +245,44 @@ impl ChatPolicy {
         };
         if self.repos.iter().any(|r| r.serves(&host, port)) {
             ConnectVerdict::Terminate { host }
+        } else if port == 443
+            && DOWNLOAD_HOSTS.contains(&host.as_str())
+            && self
+                .repos
+                .iter()
+                .any(|r| r.kind == Kind::GitHub && r.host == "github.com")
+        {
+            ConnectVerdict::Tunnel { host }
         } else {
             ConnectVerdict::Refuse(Refusal::HostNotAllowed)
+        }
+    }
+
+    /// Every host a leaf certificate may be made for: the hosts of the chat's repos, and the API
+    /// host of each. The chat's CA is constrained to these names (and no others), and
+    /// [`Self::connect`] terminates only these.
+    pub fn terminable_hosts(&self) -> Vec<String> {
+        let mut hosts: Vec<String> = self
+            .repos
+            .iter()
+            .flat_map(|r| [r.host.clone(), r.api_host().to_string()])
+            .collect();
+        hosts.sort();
+        hosts.dedup();
+        hosts
+    }
+
+    /// Whether a call that names no repo can only mean one host of `kind`: the chat's repos of
+    /// that kind are all on the same host.
+    fn has_one_host(&self, kind: Kind) -> bool {
+        let mut hosts = self
+            .repos
+            .iter()
+            .filter(|r| r.kind == kind)
+            .map(|r| &r.host);
+        match hosts.next() {
+            Some(first) => hosts.all(|h| h == first),
+            None => false,
         }
     }
 
@@ -302,6 +355,9 @@ impl ChatPolicy {
                     }
             });
             if wanted {
+                if kind == Kind::GitHub && !self.has_one_host(Kind::GitHub) {
+                    return Err(Refusal::AmbiguousHost);
+                }
                 return Ok(Allowed {
                     kind,
                     host: first.host.clone(),
@@ -321,6 +377,9 @@ impl ChatPolicy {
         if graphql_path {
             if method != "POST" {
                 return Err(Refusal::NotOnList);
+            }
+            if kind == Kind::GitHub && !self.has_one_host(Kind::GitHub) {
+                return Err(Refusal::AmbiguousHost);
             }
             let class = graphql::decide(kind, &candidates, body, objects)?;
             // Every id in the document was tied to one of the chat's repos.

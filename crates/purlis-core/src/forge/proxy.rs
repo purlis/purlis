@@ -45,6 +45,16 @@
 //! prefix of its body. It runs in the app, which holds the keyring; a proxy held elsewhere
 //! forwards forge calls to the app's, so this is never run where a chat could read its memory.
 //!
+//! **What the listener slice owes, from the final rulings** (this core gives it the decisions, not
+//! the TLS): the per-chat CA lives in the app's memory only, and carries a *critical*
+//! `nameConstraints` permitting exactly [`ChatPolicy::terminable_hosts`]; a leaf is made only for a
+//! host [`ChatPolicy::connect`] says [`ConnectVerdict::Terminate`] for, and a
+//! [`ConnectVerdict::Tunnel`] host is a plain tunnel with its own certificate. The client the proxy
+//! uses upstream checks the chain and the host name strictly, falls back to nothing, ignores the
+//! chat's environment and never trusts a per-chat CA. A unix socket is in a folder of mode 0700,
+//! mode 0600, owned by the app ([`UnixEndpoint`]); where the platform gives peer credentials they
+//! are checked too, and the sentinel always is.
+//!
 //! **Identity.** The chat is the endpoint's: with ADR 0067's per-chat egress proxy, the route for
 //! forge hosts is this core keyed by that proxy's instance, and the secret arrives as
 //! `Proxy-Authorization` (a `Basic` pair's password) or in any credential header, all of which
@@ -237,7 +247,11 @@ impl ForgeProxy {
         let Some(policy) = policy else {
             return self.refuse(chat, inbound, None, Refusal::UnknownChat);
         };
-        if let Err(refusal) = self.sentinels.check(chat, inbound.headers) {
+        // Credentialed means a recorded repo and a valid sentinel. A request without one may still
+        // take the anonymous route, which carries no authorization of any kind; a chat that is
+        // locked out, or unknown, takes none.
+        let sentinel = self.sentinels.check(chat, inbound.headers);
+        if let Err(refusal @ (Refusal::Locked | Refusal::UnknownChat)) = sentinel {
             return self.refuse(chat, inbound, None, refusal);
         }
         if !framing_is_unambiguous(inbound.headers) {
@@ -247,6 +261,9 @@ impl ForgeProxy {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => return self.refuse(chat, inbound, None, refusal),
         };
+        if let (true, Err(refusal)) = (allowed.credentialed(), sentinel) {
+            return self.refuse(chat, inbound, None, refusal);
+        }
         if !allowed.credentialed() {
             // A public read: the chat's own headers without any credential, and none added.
             self.audit

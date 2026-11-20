@@ -14,7 +14,7 @@ fn gh(s: &Scene, query: &str, vars: serde_json::Value) -> Outcome {
 
 #[test]
 fn a_mutation_that_is_not_on_the_list_is_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     for q in [
         "mutation{ deleteIssue(input:{issueId:\"x\"}){ clientMutationId } }",
         "mutation{ addStar(input:{starrableId:\"R_acme_app\"}){ clientMutationId } }",
@@ -39,7 +39,7 @@ fn a_mutation_that_is_not_on_the_list_is_refused() {
 
 #[test]
 fn one_bad_operation_among_good_ones_refuses_the_whole_document() {
-    let s = Scene::new();
+    let s = Scene::single();
     let q = "query A{ viewer{login} } mutation B{ somethingNew(input:{repositoryId:\"R_acme_app\"}){ clientMutationId } }";
     let out = gh(&s, q, serde_json::json!({}));
     assert!(is_refused(&out, Refusal::GraphqlUnknownMutation), "{out:?}");
@@ -51,7 +51,7 @@ fn one_bad_operation_among_good_ones_refuses_the_whole_document() {
 
 #[test]
 fn a_mutation_naming_another_repo_or_nothing_it_can_be_tied_to_is_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     for q in [
         "mutation{ createIssue(input:{repositoryId:\"R_someone_elses\", title:\"t\"}){ clientMutationId } }",
         "mutation{ createIssue(input:{title:\"t\"}){ clientMutationId } }",
@@ -79,7 +79,7 @@ fn a_mutation_naming_another_repo_or_nothing_it_can_be_tied_to_is_refused() {
 
 #[test]
 fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     for q in [
         "query{ repository(owner:\"acme\", name:\"other\"){ name } }",
         "query{ repository(owner:\"acme\", name:\"app-secrets\"){ name } }",
@@ -104,7 +104,7 @@ fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
 
 #[test]
 fn a_variable_is_read_from_the_request_and_one_with_no_value_is_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     let q = "query($o:String!,$n:String!){ repository(owner:$o,name:$n){ name } }";
     assert!(matches!(
         gh(&s, q, serde_json::json!({"o":"acme","n":"app"})),
@@ -130,7 +130,7 @@ fn a_variable_is_read_from_the_request_and_one_with_no_value_is_refused() {
 
 #[test]
 fn a_document_that_is_not_one_request_is_refused() {
-    let s = Scene::new();
+    let s = Scene::single();
     let post = |body: &[u8]| s.send("POST", "api.github.com", "/graphql", body);
     for (name, body) in [
         ("not json", b"query{viewer{login}}".to_vec()),
@@ -162,7 +162,7 @@ fn a_document_that_is_not_one_request_is_refused() {
 
 #[test]
 fn graphql_is_a_post_to_the_forges_one_address_only() {
-    let s = Scene::new();
+    let s = Scene::single();
     let body = graphql("query{ viewer{ login } }", serde_json::json!({}));
     assert!(is_refused(
         &s.send("GET", "api.github.com", "/graphql", &body),
@@ -181,9 +181,18 @@ fn graphql_is_a_post_to_the_forges_one_address_only() {
             Refusal::OtherRepo
         )
     );
-    assert!(matches!(
-        s.send("POST", "ghe.corp.example", "/api/graphql", &body),
-        Outcome::Forward(_)
+    // Two GitHub hosts recorded: a document that names no repo cannot say which is meant.
+    let two = Scene::with_two_github_hosts(
+        purlis_core::forge::proxy::TokenKind::Oauth,
+        crate::support::forge_proxy::Objects::default(),
+    );
+    assert!(is_refused(
+        &two.send("POST", "api.github.com", "/graphql", &body),
+        Refusal::AmbiguousHost
+    ));
+    assert!(is_refused(
+        &two.send("POST", "ghe.corp.example", "/api/graphql", &body),
+        Refusal::AmbiguousHost
     ));
     assert!(matches!(
         s.send("POST", "api.github.com", "/graphql", &body),

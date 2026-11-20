@@ -102,15 +102,15 @@ impl SentinelRegistry {
     /// the request: it is not guessed which one the chat meant.
     pub(crate) fn check(&self, chat: &ChatId, headers: &[(String, String)]) -> Result<(), Refusal> {
         let presented = presented_credentials(headers);
-        if presented.is_empty() {
-            return Err(Refusal::NoSentinel);
-        }
         let mut map = self.by_chat.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(entry) = map.get_mut(chat) else {
             return Err(Refusal::UnknownChat);
         };
         if entry.misses >= MAX_MISSES {
             return Err(Refusal::Locked);
+        }
+        if presented.is_empty() {
+            return Err(Refusal::NoSentinel);
         }
         // Every comparison is made, so how many headers matched does not show in the time taken.
         let mut all_own = true;

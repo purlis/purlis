@@ -88,7 +88,7 @@ fn a_record_holds_neither_a_token_a_path_nor_a_query() {
 
 #[test]
 fn a_graphql_mutation_is_recorded_by_its_name_alone() {
-    let s = Scene::new();
+    let s = Scene::single();
     let body = crate::support::forge_proxy::graphql(
         "mutation{ createIssue(input:{repositoryId:\"R_acme_app\", title:\"PRIVATETITLE\"}){ clientMutationId } }",
         serde_json::json!({}),

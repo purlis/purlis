@@ -172,7 +172,19 @@ fn a_chat_that_ended_is_refused_and_its_sentinel_is_worth_nothing() {
 fn a_chat_that_starts_again_gets_a_new_sentinel_and_the_old_one_stops() {
     let s = Scene::new();
     let old = s.a_sentinel.expose().to_string();
-    let new = s.proxy.enrol(&s.a, vec![]);
+    let new = s.proxy.enrol(
+        &s.a,
+        vec![
+            purlis_core::forge::proxy::AllowedRepo::new(
+                purlis_core::forge::proxy::Kind::GitHub,
+                "github.com",
+                443,
+                "acme/app",
+                "main",
+            )
+            .unwrap(),
+        ],
+    );
     assert_ne!(old, new.expose());
     let out = s.send_as(
         &s.a,

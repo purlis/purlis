@@ -49,18 +49,108 @@ fn a_fetch_of_a_repo_the_chat_did_not_record_goes_through_with_no_credential() {
 }
 
 #[test]
-fn a_chat_that_presents_no_sentinel_gets_no_anonymous_read_either() {
+fn a_request_without_a_valid_sentinel_takes_the_anonymous_route_with_every_authorization_stripped()
+{
+    use crate::support::forge_proxy::Auth;
     let s = Scene::new();
+    let target = "/rust-lang/rust.git/info/refs?service=git-upload-pack";
+    let own = s.a_sentinel.expose().to_string();
+    for auth in [
+        Auth::None,
+        Auth::Bearer("not-it"),
+        Auth::Basic("u", "not-it"),
+        Auth::Bearer(&own),
+    ] {
+        let f = anon(s.send_as(&s.a, "GET", "github.com", 443, target, auth, b""));
+        assert!(!f.credentialed);
+        assert!(
+            f.headers
+                .iter()
+                .all(|(n, _)| !n.eq_ignore_ascii_case("authorization"))
+        );
+    }
+    // The credentialed route is not open to it.
+    let own_repo = "/acme/app.git/info/refs?service=git-upload-pack";
+    let out = s.send_as(&s.a, "GET", "github.com", 443, own_repo, Auth::None, b"");
+    assert!(is_refused(&out, Refusal::NoSentinel), "{out:?}");
     let out = s.send_as(
         &s.a,
         "GET",
         "github.com",
         443,
-        "/rust-lang/rust.git/info/refs?service=git-upload-pack",
-        crate::support::forge_proxy::Auth::None,
+        own_repo,
+        Auth::Bearer("not-it"),
         b"",
     );
-    assert!(is_refused(&out, Refusal::NoSentinel), "{out:?}");
+    assert!(is_refused(&out, Refusal::WrongSentinel), "{out:?}");
+    assert_eq!(s.asked.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_chat_locked_out_by_guessing_gets_no_anonymous_read_either() {
+    use crate::support::forge_proxy::Auth;
+    let s = Scene::new();
+    let target = "/rust-lang/rust.git/info/refs?service=git-upload-pack";
+    for i in 0..10 {
+        let guess = format!("g{i}");
+        let _ = s.send_as(
+            &s.a,
+            "GET",
+            "github.com",
+            443,
+            target,
+            Auth::Bearer(&guess),
+            b"",
+        );
+    }
+    let out = s.send_as(&s.a, "GET", "github.com", 443, target, Auth::None, b"");
+    assert!(is_refused(&out, Refusal::Locked), "{out:?}");
+}
+
+#[test]
+fn a_download_host_is_tunnelled_and_never_terminated_and_a_recorded_host_is_terminated() {
+    use purlis_core::forge::proxy::{AllowedRepo, ChatPolicy, ConnectVerdict, Kind};
+    let gh = AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "main").unwrap();
+    let policy = ChatPolicy::new(vec![gh]);
+    for host in [
+        "codeload.github.com",
+        "release-assets.githubusercontent.com",
+        "objects.githubusercontent.com",
+    ] {
+        assert!(
+            matches!(policy.connect(host, 443), ConnectVerdict::Tunnel { .. }),
+            "{host}"
+        );
+        assert!(
+            matches!(policy.connect(host, 8443), ConnectVerdict::Refuse(_)),
+            "{host}:8443"
+        );
+        assert!(
+            !policy.terminable_hosts().contains(&host.to_string()),
+            "{host} would get a leaf"
+        );
+    }
+    assert_eq!(
+        policy.terminable_hosts(),
+        vec!["api.github.com".to_string(), "github.com".to_string()]
+    );
+    for host in [
+        "raw.githubusercontent.com",
+        "uploads.github.com",
+        "evil.example",
+    ] {
+        assert!(
+            matches!(policy.connect(host, 443), ConnectVerdict::Refuse(_)),
+            "{host}"
+        );
+    }
+    // A chat with no repo on github.com may not tunnel to GitHub's download hosts.
+    let gl = AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "g/p", "main").unwrap();
+    let only_gitlab = ChatPolicy::new(vec![gl]);
+    assert!(matches!(
+        only_gitlab.connect("codeload.github.com", 443),
+        ConnectVerdict::Refuse(_)
+    ));
 }
 
 #[test]

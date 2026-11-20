@@ -170,7 +170,7 @@ fn opening_a_merge_request_commenting_and_reading_ci_are_answered_on_gitlab() {
 
 #[test]
 fn a_graphql_query_on_the_chats_repo_and_a_pull_request_it_creates_are_answered() {
-    let s = Scene::new();
+    let s = Scene::single();
     let query = graphql(
         "query($o:String!,$n:String!){ viewer{login} repository(owner:$o,name:$n){ pullRequest(number:7){ title statusCheckRollup: commits(last:1){ totalCount } } } }",
         serde_json::json!({"o": "ACME", "n": "App"}),

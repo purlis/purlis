@@ -17,18 +17,48 @@ fn fwd(o: Outcome) -> Forwarded {
 
 #[test]
 fn the_few_reads_outside_a_repo_that_a_forge_client_needs_are_named_and_answered() {
-    let s = Scene::new();
+    let s = Scene::single();
     for (host, target) in [
         ("api.github.com", "/user"),
         ("api.github.com", "/meta"),
         ("api.github.com", "/rate_limit"),
-        ("ghe.corp.example", "/api/v3/user"),
         ("gitlab.com", "/api/v4/user"),
         ("gitlab.com", "/api/v4/version"),
     ] {
         let f = fwd(s.send("GET", host, target, b""));
         assert!(f.credentialed, "{host}{target}");
     }
+}
+
+#[test]
+fn a_read_that_names_no_repo_fails_closed_when_the_chat_has_repos_on_two_github_hosts() {
+    let two = Scene::new();
+    for (host, target) in [
+        ("api.github.com", "/user"),
+        ("ghe.corp.example", "/api/v3/user"),
+        ("api.github.com", "/rate_limit"),
+    ] {
+        let out = two.send("GET", host, target, b"");
+        assert!(
+            is_refused(&out, Refusal::AmbiguousHost),
+            "{host}{target}: {out:?}"
+        );
+    }
+    // A repo-less call on GitLab is not ambiguous by GitHub's hosts.
+    assert!(matches!(
+        two.send("GET", "gitlab.com", "/api/v4/user", b""),
+        Outcome::Forward(_)
+    ));
+    // And a call that names a repo is never ambiguous.
+    assert!(matches!(
+        two.send(
+            "GET",
+            "ghe.corp.example",
+            "/api/v3/repos/acme/app/pulls",
+            b""
+        ),
+        Outcome::Forward(_)
+    ));
 }
 
 #[test]

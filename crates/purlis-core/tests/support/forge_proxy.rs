@@ -68,10 +68,25 @@ pub enum Auth<'a> {
 
 impl Scene {
     pub fn new() -> Self {
-        Self::with(TokenKind::Oauth, Objects::default())
+        Self::build(TokenKind::Oauth, Objects::default(), true)
+    }
+
+    /// As [`Scene::new`], but with chat-a's GitHub repos on one host only, so a call that names no
+    /// repo can only mean it.
+    pub fn single() -> Self {
+        Self::build(TokenKind::Oauth, Objects::default(), false)
     }
 
     pub fn with(token_kind: TokenKind, objects: Objects) -> Self {
+        Self::build(token_kind, objects, false)
+    }
+
+    /// chat-a has repos on github.com and on a GHES.
+    pub fn with_two_github_hosts(token_kind: TokenKind, objects: Objects) -> Self {
+        Self::build(token_kind, objects, true)
+    }
+
+    fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
         let proxy = ForgeProxy::new(
             Box::new(Creds {
@@ -82,21 +97,21 @@ impl Scene {
         );
         let a = ChatId::new("chat-a");
         let b = ChatId::new("chat-b");
-        let a_sentinel = proxy.enrol(
-            &a,
-            vec![
-                AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
-                    .unwrap()
-                    .with_node_id("R_acme_app")
-                    .with_protected_branches(&["release"]),
-                AllowedRepo::new(Kind::GitHub, GHES, 443, "acme/app", "trunk").unwrap(),
-                AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
-                    .unwrap()
-                    .with_project_id(42)
-                    .with_own_branches(&["work"]),
-                AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
-            ],
-        );
+        let mut a_repos = vec![
+            AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/App", "main")
+                .unwrap()
+                .with_node_id("R_acme_app")
+                .with_protected_branches(&["release"]),
+            AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
+                .unwrap()
+                .with_project_id(42)
+                .with_own_branches(&["work"]),
+            AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
+        ];
+        if ghes {
+            a_repos.push(AllowedRepo::new(Kind::GitHub, GHES, 443, "acme/app", "trunk").unwrap());
+        }
+        let a_sentinel = proxy.enrol(&a, a_repos);
         let b_sentinel = proxy.enrol(
             &b,
             vec![AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/other", "main").unwrap()],
