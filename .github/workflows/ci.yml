@@ -284,7 +284,22 @@ jobs:
       - name: Build the tests
         id: build
         timeout-minutes: 30
-        run: cargo nextest run --workspace --locked --no-run
+        run: |
+          # Peak memory of the build, in the job summary (#7200): the whole machine's, sampled
+          # every 2 s, and the largest single process's (`/usr/bin/time -v`'s maximum resident
+          # set, which is the biggest rustc or link), so a part that dies with exit 143 can be
+          # read against how near the 16 GB it ran.
+          ( while :; do awk '/MemTotal/{t=$2} /MemAvailable/{a=$2} END{print int((t-a)/1024)}' /proc/meminfo; sleep 2; done ) > "$RUNNER_TEMP/mem.log" &
+          sampler=$!
+          status=0
+          /usr/bin/time -v -o "$RUNNER_TEMP/time.log" cargo nextest run --workspace --locked --no-run || status=$?
+          kill "$sampler" 2>/dev/null || true
+          {
+            echo "### Build the tests, part ${{ matrix.part }}: memory"
+            echo "- machine peak used: $(sort -n "$RUNNER_TEMP/mem.log" | tail -1) MiB of $(awk '/MemTotal/{print int($2/1024)}' /proc/meminfo)"
+            echo "- largest process peak: $(awk '/Maximum resident/{print int($6/1024)}' "$RUNNER_TEMP/time.log") MiB"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
       # **The real harnesses' steps run before the suite, on the build above, not after it** (Q324).
       # After the suite they found that build changed: tests that run a `cargo build` of their own
       # (`purlis_core::testrun::built`, the probes `purlis-cli`'s tests build) build with other
