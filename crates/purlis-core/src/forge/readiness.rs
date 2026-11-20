@@ -41,22 +41,33 @@ use super::{Forge, ForgeError, Kind, registration};
 /// How the person is connected to the forge, which decides the checks that apply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Connection {
-    /// Signed in through purlis's OAuth app: subject to an organization's OAuth app approval
-    /// and to the host knowing the app.
+    /// Signed in through **purlis's own** OAuth app, in the window: subject to an
+    /// organization's OAuth app approval and to the host knowing the app. It is the only
+    /// connection whose reads prove anything about that approval.
     SignIn,
+    /// Read over the `gh` or `glab` login (what `purlis doctor` uses, and the window where the
+    /// person has not signed in to purlis on the host), or an imported one. That is the CLI's
+    /// OAuth app, not purlis's: what it reads says nothing of whether the organization approved
+    /// purlis, so that check is unknown.
+    Cli,
     /// A token (a pasted one, or CI's): not subject to OAuth app approval; its workflow
     /// permissions are checked instead.
     Token,
 }
 
 impl Connection {
-    /// The connection a process is in: a token where CI runs it (`CI` is set, as every CI
-    /// system sets it), the person's sign-in otherwise.
+    /// The connection a process without purlis's sign-in is in: a token where CI runs it (`CI`
+    /// is set, as every CI system sets it), the CLI's login otherwise.
     pub fn of_environment() -> Connection {
         match std::env::var_os("CI") {
             Some(v) if !v.is_empty() && v != "false" && v != "0" => Connection::Token,
-            _ => Connection::SignIn,
+            _ => Connection::Cli,
         }
+    }
+
+    /// Whether this is purlis's own sign-in, the only connection that proves an approval.
+    pub fn is_sign_in(self) -> bool {
+        self == Connection::SignIn
     }
 }
 
@@ -121,9 +132,15 @@ pub struct RepoFacts {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RepoRead {
     Read(RepoFacts),
-    /// The forge refused the sign-in by naming the organization's OAuth app restriction. The
+    /// The forge refused with a 403 that names the organization's OAuth app restriction. The
     /// repo itself was not read, so only that is known.
     Restricted(String),
+    /// A 403 that says the organization enforces SAML single sign-on (`X-GitHub-SSO`): the
+    /// credential is not authorized for it.
+    Sso(String),
+    /// A 403 that names no cause. It is the OAuth app restriction or an IP allow list, and
+    /// nothing purlis can read tells which (ADR D10), so it is guided and never judged.
+    Refused(String),
     Unknown(String),
 }
 
@@ -341,12 +358,14 @@ pub fn check(
     )
 }
 
-/// [`check`] as the window: over the person's purlis sign-in where this process has one.
-pub fn check_in_window(on: &Forge, path: &str, connection: Connection, caller: &Caller) -> Report {
+/// [`check`] as the window: over the person's purlis sign-in where this process has one, and
+/// otherwise over the CLI, with the [`Connection`] the call really takes
+/// ([`super::signin::connection`]).
+pub fn check_in_window(on: &Forge, path: &str, caller: &Caller) -> Report {
     check_with(
         on,
         path,
-        connection,
+        super::signin::connection(on, caller),
         caller,
         on.probe().as_ref(),
         on.backend().as_ref(),
@@ -363,9 +382,9 @@ pub fn check_with(
     backend: &dyn ForgeBackend,
 ) -> Report {
     let repo = probe.repo(caller, path);
-    let registered = registration::on(on.kind, &on.host).is_some();
+    let registered = registration::known_on(on.kind, &on.host);
     let needs_app_policy =
-        connection == Connection::SignIn && on.kind == Kind::GitLab && !registered;
+        connection != Connection::Token && on.kind == Kind::GitLab && !registered;
     let user_apps = if needs_app_policy {
         probe.user_apps(caller)
     } else {
@@ -378,7 +397,9 @@ pub fn check_with(
     };
     let protected = match &repo {
         RepoRead::Read(facts) => protection(backend, path, &facts.default_branch, caller),
-        RepoRead::Restricted(_) => Fact::unknown("the repo could not be read"),
+        RepoRead::Restricted(_) | RepoRead::Sso(_) | RepoRead::Refused(_) => {
+            Fact::unknown("the repo could not be read")
+        }
         RepoRead::Unknown(why) => Fact::unknown(format!("the repo could not be read: {why}")),
     };
     evaluate(
@@ -412,11 +433,10 @@ pub fn check_url(
 pub fn check_url_in_window(
     url: &str,
     root: &std::path::Path,
-    connection: Connection,
     caller: &Caller,
 ) -> Result<Report, String> {
     let (on, path) = target(url, root)?;
-    Ok(check_in_window(&on, &path, connection, caller))
+    Ok(check_in_window(&on, &path, caller))
 }
 
 /// The forge and repo path a remote URL names, or why it names none.
@@ -494,6 +514,20 @@ pub fn evaluate(on: &Forge, path: &str, connection: Connection, facts: &Facts) -
             detail: "your role could not be read: the organization refused purlis".to_owned(),
             fix: None,
         },
+        RepoRead::Sso(_) => Check {
+            id: CheckId::Role,
+            verdict: Verdict::Unknown,
+            detail: "your role could not be read: the organization requires SAML single sign-on"
+                .to_owned(),
+            fix: None,
+        },
+        RepoRead::Refused(_) => Check {
+            id: CheckId::Role,
+            verdict: Verdict::Unknown,
+            detail: "your role could not be read: GitHub refused the read (403) and named no cause"
+                .to_owned(),
+            fix: None,
+        },
         RepoRead::Unknown(why) => Check {
             id: CheckId::Role,
             verdict: Verdict::Unknown,
@@ -502,59 +536,17 @@ pub fn evaluate(on: &Forge, path: &str, connection: Connection, facts: &Facts) -
         },
     });
 
-    // The organization's approval (GitHub, signed in).
-    if on.kind == Kind::GitHub && connection == Connection::SignIn {
-        match &facts.repo {
-            RepoRead::Restricted(said) => {
-                let (who, fix) = words.approval_fix(None);
-                checks.push(Check {
-                    id: CheckId::OauthAppAccess,
-                    verdict: Verdict::Blocked(who),
-                    detail: format!(
-                        "the organization restricts OAuth apps and has not approved purlis: {said}"
-                    ),
-                    fix: Some(fix),
-                });
-            }
-            RepoRead::Read(f) => match f.org_access {
-                OrgAccess::NotApplicable => {}
-                OrgAccess::Approved => checks.push(Check {
-                    id: CheckId::OauthAppAccess,
-                    verdict: Verdict::Ready,
-                    detail: format!("{} lets purlis read its private repos", f.owner),
-                    fix: None,
-                }),
-                OrgAccess::Restricted => {
-                    let (who, fix) = words.approval_fix(Some(f));
-                    checks.push(Check {
-                        id: CheckId::OauthAppAccess,
-                        verdict: Verdict::Blocked(who),
-                        detail: format!("{} has not approved purlis", f.owner),
-                        fix: Some(fix),
-                    });
-                }
-                OrgAccess::Unproven => checks.push(Check {
-                    id: CheckId::OauthAppAccess,
-                    verdict: Verdict::Unknown,
-                    detail: format!(
-                        "{path} is public, which an unapproved app can read too, so nothing shows \
-                         whether {} approved purlis",
-                        f.owner
-                    ),
-                    fix: Some(words.approval_look(f)),
-                }),
-            },
-            RepoRead::Unknown(why) => checks.push(Check {
-                id: CheckId::OauthAppAccess,
-                verdict: Verdict::Unknown,
-                detail: format!("not read: {why}"),
-                fix: Some(words.approval_look_unowned()),
-            }),
-        }
+    // The organization's approval (GitHub). Only a read over purlis's own sign-in says anything
+    // about it: a read over the CLI's login is the CLI's OAuth app, so it is unknown.
+    if on.kind == Kind::GitHub
+        && connection != Connection::Token
+        && let Some(check) = approval(&words, connection, &facts.repo, path)
+    {
+        checks.push(check);
     }
 
-    // purlis registered on a self-hosted server (signed in).
-    if connection == Connection::SignIn && registration::on(on.kind, &on.host).is_none() {
+    // purlis registered on a self-hosted server (anyone who signs in to purlis there).
+    if connection != Connection::Token && !registration::known_on(on.kind, &on.host) {
         let (who, fix) = words.registration_fix(person);
         checks.push(Check {
             id: CheckId::ServerRegistration,
@@ -657,6 +649,97 @@ pub fn evaluate(on: &Forge, path: &str, connection: Connection, facts: &Facts) -
         host: on.host.clone(),
         path: path.to_owned(),
         checks,
+    }
+}
+
+/// The organization approval's check, or none where there is nothing to approve (a personal
+/// repo). **Only purlis's own sign-in can show "ready"**; every other connection, and every
+/// refusal that does not name the restriction, is unknown (and guided).
+fn approval(
+    words: &Words<'_>,
+    connection: Connection,
+    repo: &RepoRead,
+    path: &str,
+) -> Option<Check> {
+    let id = CheckId::OauthAppAccess;
+    let unknown = |detail: String, fix: Fix| {
+        Some(Check {
+            id,
+            verdict: Verdict::Unknown,
+            detail,
+            fix: Some(fix),
+        })
+    };
+    if !connection.is_sign_in() {
+        // Whatever the CLI's login read (or was refused) is not purlis's approval.
+        let by = "this was read over the CLI's login, which is not purlis's own sign-in, so \
+                  it shows nothing about whether the organization approved purlis";
+        return match repo {
+            RepoRead::Read(f) if f.org_access == OrgAccess::NotApplicable => None,
+            RepoRead::Read(f) => unknown(format!("{}: {by}", f.owner), words.cli_look(Some(f))),
+            _ => unknown(
+                format!("{}: {by}", words.owner_of(None)),
+                words.cli_look(None),
+            ),
+        };
+    }
+    match repo {
+        RepoRead::Restricted(said) => {
+            let (who, fix) = words.approval_fix(None);
+            Some(Check {
+                id,
+                verdict: Verdict::Blocked(who),
+                detail: format!(
+                    "the organization restricts OAuth apps and has not approved purlis: {said}"
+                ),
+                fix: Some(fix),
+            })
+        }
+        RepoRead::Sso(_) => unknown(
+            format!(
+                "{} requires SAML single sign-on, and purlis's sign-in is not authorized for it",
+                words.owner_of(None)
+            ),
+            words.sso_fix(),
+        ),
+        RepoRead::Refused(_) => unknown(
+            format!(
+                "GitHub refused the read of {path} with a 403 that names no cause: that is \
+                 either {}'s OAuth app restriction or an IP allow list, and purlis cannot tell \
+                 which, so it cannot say purlis is approved",
+                words.owner_of(None)
+            ),
+            words.refused_look(),
+        ),
+        RepoRead::Read(f) => match f.org_access {
+            OrgAccess::NotApplicable => None,
+            OrgAccess::Approved => Some(Check {
+                id,
+                verdict: Verdict::Ready,
+                detail: format!("{} lets purlis read its private repos", f.owner),
+                fix: None,
+            }),
+            OrgAccess::Restricted => {
+                let (who, fix) = words.approval_fix(Some(f));
+                Some(Check {
+                    id,
+                    verdict: Verdict::Blocked(who),
+                    detail: format!("{} has not approved purlis", f.owner),
+                    fix: Some(fix),
+                })
+            }
+            OrgAccess::Unproven => unknown(
+                format!(
+                    "{path} is public, which an unapproved app can read too, so nothing shows \
+                     whether {} approved purlis",
+                    f.owner
+                ),
+                words.approval_look(f),
+            ),
+        },
+        RepoRead::Unknown(why) => {
+            unknown(format!("not read: {why}"), words.approval_look_unowned())
+        }
     }
 }
 
@@ -832,6 +915,65 @@ impl<'a> Words<'a> {
         }
     }
 
+    /// An approval read over the CLI's login: it proves nothing, so how to see it.
+    fn cli_look(&self, f: Option<&RepoFacts>) -> Fix {
+        let mut fix = match f {
+            Some(f) => self.approval_look(f),
+            None => self.approval_look_unowned(),
+        };
+        fix.steps.insert(
+            0,
+            "Sign in to purlis on this host in Settings, then press Check again: only purlis's own \
+             sign-in can show whether the organization approved it."
+                .to_owned(),
+        );
+        fix
+    }
+
+    /// A 403 for SAML: the credential is not authorized for the organization's single sign-on.
+    fn sso_fix(&self) -> Fix {
+        let org = self.owner_of(None);
+        let link = format!("{}/settings/connections/applications", self.base());
+        Fix {
+            link: link.clone(),
+            steps: vec![
+                format!("Open {link}."),
+                "Open purlis in the list of authorized OAuth apps.".to_owned(),
+                format!(
+                    "Next to {org}, press Grant (SAML single sign-on), then sign in with your identity provider."
+                ),
+                "Back in purlis, press Check again.".to_owned(),
+            ],
+            request: None,
+        }
+    }
+
+    /// A 403 that names no cause: guided, never judged. Both causes, and the cases nothing can
+    /// detect (ADR D10).
+    fn refused_look(&self) -> Fix {
+        let org = self.owner_of(None);
+        let link = format!(
+            "{}/organizations/{org}/settings/oauth_application_policy",
+            self.base()
+        );
+        let allow = format!("{}/organizations/{org}/settings/security", self.base());
+        Fix {
+            link: link.clone(),
+            steps: vec![
+                "purlis cannot detect which of these refused it, so look at each.".to_owned(),
+                format!("OAuth app restriction: open {link}. If purlis is listed as Approved, it is not this; if not, press Grant access (an owner) or Request (a member)."),
+                format!("IP allow list: open {allow} and check the address you work from is on the list."),
+                format!("If {org} uses Enterprise Managed Users, or you are an outside collaborator, you may not be able to request approval: ask an owner of {org} to approve purlis for you."),
+            ],
+            request: self.request(
+                Who::Owner,
+                &format!(
+                    "GitHub refuses purlis on {org}'s repos with a 403 that names no cause. Please check the OAuth app restriction at {link} (approve purlis) and the IP allow list at {allow}."
+                ),
+            ),
+        }
+    }
+
     fn approval_look_unowned(&self) -> Fix {
         let org = self.owner_of(None);
         let link = format!("{}/settings/connections/applications", self.base());
@@ -848,7 +990,13 @@ impl<'a> Words<'a> {
     }
 
     fn registration_fix(&self, person: Option<&RepoFacts>) -> (Who, Fix) {
-        let who = self.admin_fixer(person);
+        // The instance's administrator, or the owner of the organization or group the repo is
+        // in: either may register an application there, so an owner can fix it too.
+        let who = match person {
+            Some(f) if f.instance_admin || (f.owner_is_group && f.org_owner) => Who::You,
+            _ => Who::Admin,
+        };
+        let owner = self.owner_of(person);
         let (link, steps) = match self.kind {
             Kind::GitHub => {
                 let link = format!("{}/settings/applications/new", self.base());
@@ -881,11 +1029,29 @@ impl<'a> Words<'a> {
                 )
             }
         };
+        let group_link = person
+            .filter(|f| f.owner_is_group)
+            .map(|_| match self.kind {
+                Kind::GitHub => format!(
+                    "{}/organizations/{owner}/settings/applications/new",
+                    self.base()
+                ),
+                Kind::GitLab => format!("{}/groups/{owner}/-/settings/applications", self.base()),
+            });
+        let mut steps = steps;
+        if let Some(group) = &group_link {
+            steps.push(format!(
+                "Or, as an owner of {owner}, register it for {owner} alone at {group}."
+            ));
+        }
         let request = self.request(
             who,
             &format!(
-                "purlis needs an OAuth application on {}. Please register one at {link} and send me its client id.",
-                self.host
+                "purlis needs an OAuth application on {}. Please register one at {link}{} and send me its client id.",
+                self.host,
+                group_link
+                    .map(|g| format!(" (or, as an owner of {owner}, at {g})"))
+                    .unwrap_or_default()
             ),
         );
         (

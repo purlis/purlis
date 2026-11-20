@@ -25,8 +25,20 @@ pub(super) fn project_readiness(d: &Doctor) -> Option<Row> {
 }
 
 fn row(d: &Doctor) -> Row {
+    // A chat has no forge login of its own (ADR D5, D10.1): what it read would be the person's.
+    if d.in_chat || d.confined {
+        return Row::warn(
+            NAME,
+            "not checked (this is a chat)",
+            "Run it from the window: Settings › You › Ready for all users.",
+        );
+    }
     let url = match super::remote::origin_url(d, NAME) {
         Ok(url) => url,
+        // `project remote` may say "nothing is pushed" in green; here nothing was checked.
+        Err(row) if row.status == super::Status::Ok => {
+            return Row::not_checked(NAME, row.detail);
+        }
         Err(row) => return row,
     };
     let Some((caller, transport)) = d.forges.as_ref() else {
@@ -152,5 +164,42 @@ mod tests {
         let mut d = crate::doctor::tests::doctor(&root);
         d.preflight = true;
         assert!(project_readiness(&d).is_none());
+    }
+
+    #[test]
+    fn a_chat_is_refused_and_told_to_run_it_from_the_window() {
+        let (_dir, root) = crate::doctor::tests::repo_plane();
+        let mut d = crate::doctor::tests::doctor(&root);
+        d.in_chat = true;
+        let row = row(&d);
+        assert_eq!(row.status, Status::Warn);
+        assert!(row.detail.contains("not checked"), "{row:?}");
+        assert!(row.hint.contains("from the window"), "{row:?}");
+    }
+
+    #[test]
+    fn a_confined_doctor_is_refused_too() {
+        let (_dir, root) = crate::doctor::tests::repo_plane();
+        let mut d = crate::doctor::tests::doctor(&root);
+        d.confined = true;
+        assert_eq!(row(&d).status, Status::Warn);
+    }
+
+    #[test]
+    fn a_project_with_no_origin_is_not_checked_and_never_a_green_row() {
+        let (_dir, root) = crate::doctor::tests::repo_plane();
+        let d = crate::doctor::tests::doctor(&root);
+        let row = row(&d);
+        assert_eq!(row.status, Status::Warn, "{row:?}");
+        assert!(row.detail.starts_with("not checked"), "{row:?}");
+    }
+
+    #[test]
+    fn a_folder_that_is_no_plane_is_not_checked_and_never_a_green_row() {
+        let (_dir, root) = crate::doctor::tests::plane("");
+        let d = crate::doctor::tests::doctor(&root);
+        // `plane("")` has a plane but no repository: the `project remote` row says "ok", this
+        // one asked nothing.
+        assert_ne!(row(&d).status, Status::Ok);
     }
 }

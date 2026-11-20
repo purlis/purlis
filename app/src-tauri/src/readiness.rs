@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use purlis_core::forge::readiness::{Check, Connection, Report, Verdict};
+use purlis_core::forge::readiness::{Check, Report, Verdict};
 
 use crate::planes::{PlaneId, Planes};
 
@@ -62,7 +62,6 @@ pub async fn plane_readiness(
             purlis_core::forge::readiness::check_url_in_window(
                 url,
                 &root,
-                Connection::SignIn,
                 &purlis_core::forge::Caller::window(),
             )
         })

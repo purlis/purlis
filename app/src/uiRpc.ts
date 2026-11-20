@@ -1751,11 +1751,7 @@ export const commands = {
 	 *  shows what it publishes and where at once, and says who reads it when the forge answers.
 	 */
 	planeRemoteReaders: (plane: PlaneId) => typedError<RemoteReaders, string>(__TAURI_INVOKE("plane_remote_readers", { plane })),
-	/**
-	 *  Whether the project at the open plane is ready for all users on its forge. Asks the network:
-	 *  off the UI thread.
-	 */
-	planeReadiness: (plane: PlaneId) => typedError<ReadinessAnswer, string>(__TAURI_INVOKE("plane_readiness", { plane })),
+	planeReadiness: __WINDOW_ONLY_RESULT,
 	/**
 	 *  What deleting this workspace would discard, for the dialog to show **before** anything is
 	 *  pressed.

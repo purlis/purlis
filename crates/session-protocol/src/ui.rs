@@ -243,6 +243,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window draws, and read back. A link has no native window of its own here.
     "draw_native_window",
     "native_window_drawn",
+    // Whether the open project's forge would let everyone else sign in (one login, slice D):
+    // read over the person's own forge sign-in, which no chat has (ADR D5, D10.1), and shown
+    // in their Settings. A link is refused it, so a chat never reads the person's forge
+    // through it.
+    "plane_readiness",
     // Ends.
     "end_task",
     "task_ending",

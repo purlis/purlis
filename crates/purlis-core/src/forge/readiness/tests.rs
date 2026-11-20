@@ -637,3 +637,191 @@ fn a_gitlab_job_token_that_may_not_push_blocks_a_token_connection() {
         Some(Verdict::Blocked(Who::You))
     );
 }
+
+fn refusing(status: u16, headers: &[(&str, &str)], body: &str) -> Arc<Fake> {
+    let reply = Reply {
+        code: 1,
+        out: body.to_owned(),
+        err: format!("HTTP {status}"),
+        status: Some(status),
+        headers: headers
+            .iter()
+            .map(|(n, v)| ((*n).to_owned(), (*v).to_owned()))
+            .collect(),
+    };
+    Arc::new(Fake(HashMap::from([("repos/acme/app".to_owned(), reply)])))
+}
+
+fn read_by(connection: Connection, fake: Arc<Fake>) -> Report {
+    check(
+        &github("github.com"),
+        "acme/app",
+        connection,
+        &Caller::window(),
+        fake,
+    )
+}
+
+#[test]
+fn a_private_org_repo_read_over_the_cli_login_proves_nothing_about_purlis() {
+    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    let report = evaluate(&github("github.com"), "acme/app", Connection::Cli, &f);
+    let approval = check_of(&report, CheckId::OauthAppAccess);
+    assert_eq!(approval.verdict, Verdict::Unknown);
+    assert!(
+        approval.fix.as_ref().unwrap().steps[0].contains("Sign in to purlis"),
+        "{approval:#?}"
+    );
+    assert!(!report.ready_for_all());
+}
+
+#[test]
+fn a_restriction_seen_over_the_cli_login_is_not_purlis_being_refused() {
+    let f = all_known(RepoRead::Restricted("the CLI's app was refused".to_owned()));
+    let report = evaluate(&github("github.com"), "acme/app", Connection::Cli, &f);
+    assert_eq!(
+        verdict(&report, CheckId::OauthAppAccess),
+        Some(Verdict::Unknown)
+    );
+}
+
+#[test]
+fn a_personal_repo_read_over_the_cli_login_has_still_no_approval_to_check() {
+    let mut f = facts(Role::Admin, OrgAccess::NotApplicable);
+    f.owner_is_group = false;
+    let report = evaluate(
+        &github("github.com"),
+        "me/app",
+        Connection::Cli,
+        &all_known(RepoRead::Read(f)),
+    );
+    assert_eq!(verdict(&report, CheckId::OauthAppAccess), None);
+}
+
+#[test]
+fn the_cli_login_is_still_held_to_the_server_knowing_purlis() {
+    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    let report = evaluate(&github("ghe.example.com"), "acme/app", Connection::Cli, &f);
+    assert!(matches!(
+        verdict(&report, CheckId::ServerRegistration),
+        Some(Verdict::Blocked(_))
+    ));
+}
+
+#[test]
+fn a_plain_403_names_both_causes_and_is_unknown_never_ready() {
+    let report = read_by(
+        Connection::SignIn,
+        refusing(403, &[], r#"{"message":"Forbidden"}"#),
+    );
+    let approval = check_of(&report, CheckId::OauthAppAccess);
+    assert_eq!(approval.verdict, Verdict::Unknown);
+    let fix = approval.fix.as_ref().unwrap();
+    let text = fix.steps.join("\n");
+    assert!(text.contains("OAuth app restriction"), "{text}");
+    assert!(text.contains("IP allow list"), "{text}");
+    assert!(text.contains("Enterprise Managed Users"), "{text}");
+    assert!(fix.request.is_some());
+    assert!(!report.ready_for_all());
+}
+
+#[test]
+fn a_saml_403_is_unknown_with_its_own_way_out_and_no_request() {
+    let report = read_by(
+        Connection::SignIn,
+        refusing(
+            403,
+            &[(
+                "x-github-sso",
+                "required; url=https://github.com/orgs/acme/sso?authorization_request=x",
+            )],
+            r#"{"message":"Resource protected by organization SAML enforcement."}"#,
+        ),
+    );
+    let approval = check_of(&report, CheckId::OauthAppAccess);
+    assert_eq!(approval.verdict, Verdict::Unknown);
+    assert!(approval.detail.contains("SAML"), "{}", approval.detail);
+    let fix = approval.fix.as_ref().unwrap();
+    // A header's address is the forge's to name: it is never copied into a link or a request.
+    assert!(!fix.link.contains("authorization_request"), "{fix:#?}");
+    assert!(fix.request.is_none());
+}
+
+#[test]
+fn a_rate_limited_403_says_nothing_about_the_organization() {
+    let report = read_by(
+        Connection::SignIn,
+        refusing(
+            403,
+            &[("x-ratelimit-remaining", "0")],
+            r#"{"message":"API rate limit exceeded"}"#,
+        ),
+    );
+    let approval = check_of(&report, CheckId::OauthAppAccess);
+    assert_eq!(approval.verdict, Verdict::Unknown);
+    assert!(
+        approval.detail.starts_with("not read"),
+        "{}",
+        approval.detail
+    );
+    assert!(!report.ready_for_all());
+}
+
+#[test]
+fn the_restriction_words_on_a_404_are_not_the_restriction() {
+    let report = read_by(
+        Connection::SignIn,
+        refusing(404, &[], r#"{"message":"OAuth App access restrictions"}"#),
+    );
+    assert_eq!(
+        verdict(&report, CheckId::OauthAppAccess),
+        Some(Verdict::Unknown)
+    );
+}
+
+#[test]
+fn a_group_owner_registers_purlis_on_their_servers_group_without_asking() {
+    let mut member = facts(Role::Admin, OrgAccess::Approved);
+    member.org_owner = true;
+    let f = all_known(RepoRead::Read(member));
+    let report = evaluate(
+        &github("ghe.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &f,
+    );
+    let check = check_of(&report, CheckId::ServerRegistration);
+    assert_eq!(check.verdict, Verdict::Blocked(Who::You));
+    assert!(
+        check
+            .fix
+            .as_ref()
+            .unwrap()
+            .steps
+            .iter()
+            .any(|s| s.contains("organizations/acme/settings/applications/new"))
+    );
+}
+
+#[test]
+fn a_member_asks_the_administrator_or_the_groups_owner() {
+    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    let report = evaluate(
+        &gitlab("git.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &f,
+    );
+    let check = check_of(&report, CheckId::ServerRegistration);
+    assert_eq!(check.verdict, Verdict::Blocked(Who::Admin));
+    let request = check.fix.as_ref().unwrap().request.as_ref().unwrap();
+    assert!(request.contains("as an owner of acme"), "{request}");
+}
+
+#[test]
+fn a_host_with_a_pinned_client_id_is_not_told_it_has_no_registration() {
+    // Slice G's store answers `pinned_client_id`; until it does, no host has one, so this holds
+    // the seam: the known-host answer is the table's alone.
+    assert!(registration::known_on(Kind::GitHub, "github.com"));
+    assert!(!registration::known_on(Kind::GitHub, "ghe.example.com"));
+}

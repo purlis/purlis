@@ -84,6 +84,20 @@ pub fn on(kind: Kind, host: &str) -> Option<&'static Registration> {
         .find(|r| r.kind == kind && r.host.eq_ignore_ascii_case(host))
 }
 
+/// The client id the person pinned for `kind` on `host`: the registration of a self-hosted
+/// server, kept per host (one login, slice G). **Not built yet**: slice G builds the store and
+/// replaces this body, and until then no host has one. The readiness check asks it, so a
+/// self-hosted server that has a pinned client id is not told it has no registration.
+pub fn pinned_client_id(_kind: Kind, _host: &str) -> Option<String> {
+    None
+}
+
+/// Whether purlis can sign in on `host`: it ships a registration there ([`on`]) or the person
+/// pinned a client id for it ([`pinned_client_id`]).
+pub fn known_on(kind: Kind, host: &str) -> bool {
+    on(kind, host).is_some() || pinned_client_id(kind, host).is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

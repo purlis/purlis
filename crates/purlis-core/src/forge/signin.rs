@@ -236,6 +236,21 @@ fn signed_in(host: &Host, forge: &Forge) -> Option<ForgeAccount> {
         .flatten()
 }
 
+/// The [`Connection`](super::readiness::Connection) a window read of `forge` as `caller` really
+/// takes: purlis's own sign-in only where the host handed its sign-ins over, `caller` is the
+/// person in the window and an account is signed in on the host, as [`Window::for_caller`]
+/// decides it; the CLI's login otherwise (or a token in CI). A readiness check carries this, so
+/// it never reads a CLI login as purlis's sign-in.
+pub fn connection(forge: &Forge, caller: &Caller) -> super::readiness::Connection {
+    let own = handed()
+        .is_some_and(|host| the_person_in_the_window(caller) && signed_in(&host, forge).is_some());
+    if own {
+        super::readiness::Connection::SignIn
+    } else {
+        super::readiness::Connection::of_environment()
+    }
+}
+
 /// The transports `forge`'s calls take in this process, where the host handed its sign-ins
 /// over; `None` where it did not, and every call takes the CLI.
 pub(super) fn transports(forge: &Forge) -> Option<Arc<dyn Transports>> {

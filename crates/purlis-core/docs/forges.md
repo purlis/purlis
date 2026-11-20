@@ -760,9 +760,9 @@ Nothing is stored (a report is derived on each ask), so there is no tier to name
 | Check | GitHub | GitLab | Applies to |
 |---|---|---|---|
 | Role | `GET repos/{o}/{r}`: `permissions` (`admin`, `push`, `pull`) | `GET projects/{path}`: `permissions.project_access` and `group_access` levels (Developer 30 pushes, Maintainer 40 administers) | every connection |
-| Organization approval | the same read: a 403 naming "OAuth App access restrictions" is blocked; a private organization repo that reads is approved; a public one proves nothing, so unknown | none (GitLab has no approval of an OAuth app) | GitHub, signed in, organization repo |
-| purlis on the server | `registration::on` is `None` (anything but github.com): blocked, the server's admin registers an OAuth app with the device flow on | the same (anything but gitlab.com) | signed in |
-| Server allows OAuth applications | none | `GET application/settings`: `user_oauth_applications` (administrators only; anyone else is unknown) | GitLab, self-hosted, signed in |
+| Organization approval | the same read: a **403** naming "OAuth App access restrictions" is blocked; a private organization repo that reads is approved; a public one proves nothing, so unknown. A 403 with `X-GitHub-SSO` is SAML (unknown, with its own way out); a rate limit says nothing (unknown); any other 403 names no cause, so it is unknown and guided with both the OAuth restriction and the IP allow list | none (GitLab has no approval of an OAuth app) | GitHub organization repo; **ready only over purlis's own sign-in**, unknown over the CLI login or an imported one |
+| purlis on the server | `registration::known_on` is false (no shipped registration and no client id pinned for the host; anything but github.com): blocked, the server's admin, or the organization's owner, registers an OAuth app with the device flow on | the same (anything but gitlab.com; a group's owner registers it for the group) | sign-in or CLI |
+| Server allows OAuth applications | none | `GET application/settings`: `user_oauth_applications` (administrators only; anyone else is unknown) | GitLab, self-hosted, sign-in or CLI |
 | Default branch protected | `ruleset_protects` | `ruleset_protects` | every connection |
 | CI token may push | `GET repos/{o}/{r}/actions/permissions/workflow` (admins only; else unknown) | `ci_push_repository_for_job_token_allowed` on the project | token (`CI` set) |
 
@@ -771,3 +771,21 @@ unknown is never ready: a report is ready for all users only when every check th
 `purlis doctor` shows the `project readiness` row (not in the preflight, which asks no network),
 and the app's Settings › You › Ready for all users shows the same checks with their steps and
 request texts.
+
+**The connection is the real one.** The window carries the `Connection` its call takes
+(`signin::connection`): `SignIn` only for purlis's own OAuth sign-in, `Cli` for the `gh` or `glab`
+login (what `purlis doctor` reads over, and the window where the person has not signed in to
+purlis on the host), `Token` in CI. A private organization repo that reads over the CLI login says
+nothing about purlis's approval, so that check is unknown there, with a step to sign in to purlis.
+
+**What cannot be detected is guided, never judged** (ADR D10): Enterprise Managed Users, outside
+collaborators where approval requests are off, IP allow lists and SAML. A plain 403 gives a row
+that names both the OAuth restriction and the allow list; a SAML 403 (`X-GitHub-SSO`) gives its own
+steps. None is ready. No address from a response header is copied into a link or a request text.
+
+**Where it runs.** The check reads the person's own forge login, so it is the window's alone
+(`plane_readiness` is in `WINDOW_ONLY`: no link, so no chat, can call it) and `purlis doctor`
+refuses it inside a chat ("run it from the window"). A doctor that checked nothing (no plane, no
+repository, no origin) says "not checked", never green. The Settings group asks when it is opened
+(the person opened it; the read is window-only and read-only) and again each time they press Check
+again; nothing is kept.

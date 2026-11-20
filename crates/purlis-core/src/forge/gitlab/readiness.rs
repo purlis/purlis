@@ -98,6 +98,11 @@ fn facts_of(project: &Value) -> Result<RepoFacts, String> {
         Some("user") => false,
         _ => return Err(said("namespace kind")),
     };
+    // A project the account has no membership in still shows `permissions` (both levels null).
+    // No `permissions` at all says nothing about the account, so it is not a level of 0.
+    if !project["permissions"].is_object() {
+        return Err("GitLab did not show this account's permissions on the project".to_owned());
+    }
     let level = |from: &str| project["permissions"][from]["access_level"].as_u64();
     let best = level("project_access").max(level("group_access"));
     // No membership at all reads a public project and may do nothing else.
@@ -155,6 +160,15 @@ mod tests {
     #[test]
     fn no_membership_is_read_only() {
         assert_eq!(facts_of(&project(None, None)).unwrap().role, Role::Read);
+    }
+
+    #[test]
+    fn an_answer_without_permissions_is_not_judged_as_no_membership() {
+        let mut answer = project(Some(40), None);
+        answer["permissions"] = Value::Null;
+        assert!(facts_of(&answer).is_err());
+        answer.as_object_mut().unwrap().remove("permissions");
+        assert!(facts_of(&answer).is_err());
     }
 
     #[test]

@@ -418,6 +418,9 @@ pub struct Doctor {
     /// the hook spool look at, so from there they are not looked at: a look would be refused, and
     /// the refusal drafted as a Report of purlis's own block. Said in the rows, never silent.
     pub(crate) confined: bool,
+    /// Whether this doctor runs inside a chat's tree (`PURLIS_CHAT` is set). The `project
+    /// readiness` row refuses there: it reads the person's forge, which a chat has no login for.
+    pub(crate) in_chat: bool,
     /// What this machine's runner host looks like (RR-15, #724), where this purlis is a
     /// runner's: installed as a version (RR-14) or kept by a service manager. `None` on a
     /// desktop, and for a doctor a test names.
@@ -451,6 +454,7 @@ impl Doctor {
         d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
         d.host_log = host_log::HostLog::here();
         d.confined = crate::sandbox::writes_are_sandboxed();
+        d.in_chat = crate::envvar::var(crate::hookwire::CHAT_ENV).is_some_and(|v| !v.is_empty());
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -529,6 +533,7 @@ impl Doctor {
             cache_home: None,
             host_log: None,
             confined: false,
+            in_chat: false,
             #[cfg(unix)]
             runner_host: None,
         }
