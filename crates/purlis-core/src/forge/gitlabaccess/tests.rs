@@ -231,6 +231,7 @@ fn setting_up_keeps_the_token_in_the_personas_vault_declares_glab_and_allows_wha
     assert!(!file.contains(TOKEN), "{file}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn nothing_is_stored_where_something_would_refuse() {
     let plane = project("");
@@ -296,6 +297,7 @@ fn nothing_is_stored_where_something_would_refuse() {
     let _ = before;
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn removing_takes_the_token_and_the_line_away_and_refuses_what_it_did_not_write() {
     let plane = project("");
@@ -320,6 +322,7 @@ fn removing_takes_the_token_and_the_line_away_and_refuses_what_it_did_not_write(
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn with_no_allow_to_record_every_persona_is_left_for_the_persons_own() {
     let plane = project("");

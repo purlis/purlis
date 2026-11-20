@@ -1,4 +1,4 @@
-use super::{Found, Kind, found_in, kind_of, sentence, token_var};
+use super::{Found, Kind, found_in, kind_named, kind_of, sentence, token_var, told_of};
 
 fn table(text: &str) -> toml::Table {
     text.parse().expect("test toml")
@@ -66,4 +66,42 @@ kubectl = { vault = "v", as = "KUBECONFIG file", key = "c" }
 fn what_each_old_line_says_names_the_step_and_leaves_the_vault_item_alone() {
     assert!(sentence(Kind::GithubApp).contains("Sign in under Settings › Forges"));
     assert!(sentence(Kind::VaultToken).contains("the vault item stays until you delete it"));
+}
+
+#[test]
+fn glab_s_oauth_variable_and_a_forge_cli_by_its_name_are_old_routes_too() {
+    assert!(token_var("OAUTH_TOKEN"));
+    let kubeish = tool("vault = \"v\"\nas = \"KUBECONFIG file\"\nkey = \"k\"");
+    assert_eq!(kind_named("glab", &kubeish), Some(Kind::ForgeProgram));
+    assert_eq!(
+        kind_named("/usr/bin/GH", &kubeish),
+        Some(Kind::ForgeProgram)
+    );
+    assert_eq!(kind_named("kubectl", &kubeish), None);
+}
+
+#[test]
+fn an_old_project_raises_one_notice_whose_cause_moves_only_with_its_lines() {
+    let one = [Found {
+        persona: "dev".into(),
+        tool: "gh".into(),
+        kind: Kind::GithubApp,
+    }];
+    let two = [
+        Found {
+            persona: "dev".into(),
+            tool: "gh".into(),
+            kind: Kind::GithubApp,
+        },
+        Found {
+            persona: "dev".into(),
+            tool: "glab".into(),
+            kind: Kind::VaultToken,
+        },
+    ];
+    let first = told_of(&one).expect("a notice");
+    assert_eq!(told_of(&one), Some(first.clone()));
+    assert_ne!(told_of(&two).expect("a notice").cause, first.cause);
+    assert!(first.text.contains("Nothing was deleted for you"));
+    assert_eq!(told_of(&[]), None);
 }

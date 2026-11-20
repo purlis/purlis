@@ -819,7 +819,7 @@ pub fn keyed(
         // The person's sign-in replaces both old ways of handing a chat a forge token (ADR 0128,
         // "Migration"): the line keeps parsing, and the tool is left out with what to do.
         #[cfg(feature = "forge-wiring")]
-        if let Some(kind) = replaced::kind_of(tool) {
+        if let Some(kind) = replaced::kind_named(name, tool) {
             fault(replaced::sentence(kind).to_owned());
             continue;
         }
@@ -1573,10 +1573,30 @@ pub(crate) fn resolve_beside(
             continue;
         }
         match found {
-            Some((_, program)) => ready.push(Ready {
-                tool: tool.clone(),
-                program,
-            }),
+            Some((_, program)) => {
+                // A forge CLI takes no value from a vault once the sign-in replaces it (ADR
+                // 0128), whatever the line names its variable: judged by the program as found.
+                #[cfg(feature = "forge-wiring")]
+                {
+                    let real = program.canonicalize().ok();
+                    let names: Vec<&Path> = [Path::new(&tool.name), program.as_path()]
+                        .into_iter()
+                        .chain(real.as_deref())
+                        .collect();
+                    if forge_of(&names).is_some() {
+                        left.push(format!(
+                            "{persona}'s tool {} {}",
+                            tool.name,
+                            replaced::FORGE_PROGRAM_SAID
+                        ));
+                        continue;
+                    }
+                }
+                ready.push(Ready {
+                    tool: tool.clone(),
+                    program,
+                });
+            }
             None => {
                 // Nowhere at all, as distinct from only where a chat could have put it.
                 if found_in(wanted, search, &[]).is_none() {

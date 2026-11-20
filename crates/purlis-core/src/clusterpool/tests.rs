@@ -1473,6 +1473,7 @@ fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn at_a_link_a_runner_is_told_again_only_on_a_pool_that_opts_in_and_by_the_pinned_key() {
     let dir = tempfile::tempdir().unwrap();

@@ -488,11 +488,32 @@ pub(crate) fn record(
 pub(crate) const NO_COMMAND: &str =
     "No command given. Usage: purlis secret exec <vault> --env NAME=key -- <command...>";
 
+/// **Whether `req` hands a program a value in a forge token variable** (`GH_TOKEN`,
+/// `GITLAB_TOKEN`, …), by any of `--env`, `--file` and `--dotenv`.
+fn hands_a_forge_token(req: &Request) -> bool {
+    req.env
+        .iter()
+        .chain(&req.file)
+        .chain(&req.dotenv)
+        .filter_map(|spec| spec.split('=').next())
+        .any(crate::sandbox::tools::replaced::token_var)
+}
+
 /// `cmd_secret_exec`.
 pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     let mut command = req.command.clone();
     if command.first().is_some_and(|c| c == "--") {
         command.remove(0);
+    }
+    // A forge token is never handed to a program from a vault once the sign-in replaces it
+    // (ADR 0128): a chat reaches its forge through the app's proxy, and holds none.
+    if cfg!(feature = "forge-wiring") && hands_a_forge_token(req) {
+        io.say(Say::Err(
+            "purlis no longer hands a forge token from a vault to a program: chats use your \
+             sign-in. Sign in under Settings › Forges."
+                .into(),
+        ));
+        return 1;
     }
     // Inside a sandboxed chat the app runs it, and this process never reads the vault
     // (ADR 0067 §5 class 1, #1407). Only where no app takes it does it run here.
@@ -817,3 +838,34 @@ mod tests;
 
 #[cfg(test)]
 mod keychain_tests;
+
+#[cfg(test)]
+mod forge_token_tests {
+    use super::*;
+
+    fn asking(env: &[&str]) -> Request {
+        Request {
+            vault: "forge".to_owned(),
+            env: env.iter().map(|one| (*one).to_owned()).collect(),
+            file: Vec::new(),
+            dotenv: Vec::new(),
+            stream: false,
+            exec: false,
+            command: vec!["gh".to_owned()],
+            argv0: None,
+        }
+    }
+
+    #[test]
+    fn a_request_for_a_forge_token_variable_is_known_whatever_its_case_or_spelling() {
+        assert!(hands_a_forge_token(&asking(&["GH_TOKEN=token"])));
+        assert!(hands_a_forge_token(&asking(&[
+            "glab_oauth=k",
+            "oauth_token=k"
+        ])));
+        assert!(hands_a_forge_token(&asking(&[
+            "PURLIS_FORGE_TOKEN__6769=k"
+        ])));
+        assert!(!hands_a_forge_token(&asking(&["KUBECONFIG=config"])));
+    }
+}

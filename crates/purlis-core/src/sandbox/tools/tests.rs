@@ -1311,6 +1311,7 @@ fn a_program_nowhere_is_absent_and_one_only_where_a_chat_writes_is_not() {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn on_a_runner_the_tools_name_says_why_and_fails_as_a_missing_program() {
     let base = outside_temp("refusing");
@@ -1696,6 +1697,7 @@ fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
 
 /// A persona's declared `glab` has its own shim, which a guard never replaces; with another tool
 /// ready, the guard sits in the same folder and a start without it takes it away again.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_has_the_class() {
     let root = outside_temp("declared-root");

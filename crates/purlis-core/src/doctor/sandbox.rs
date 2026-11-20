@@ -291,8 +291,9 @@ fn replaced_by_sign_in_row(found: &[crate::sandbox::tools::replaced::Found]) -> 
                 if found.len() == 1 { "" } else { "s" },
                 named.join(", ")
             ),
-            "Sign in under Settings › Forges, then delete those lines. A vault item they named \
-             stays until you delete it.",
+            "Sign in under Settings › Forges, then delete those lines. Keep a `mint` line while its \
+             App's key is in a vault: it stops purlis handing that key to a chat. A vault item \
+             a line named stays until you delete it.",
         )
         .in_settings(SettingsGroup::Forges),
     )

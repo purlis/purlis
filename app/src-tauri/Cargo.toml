@@ -140,6 +140,9 @@ cairo-rs = { version = "0.18", features = ["png"] }
 workspace = true
 
 [features]
+# The one-login train's switch (ADR 0128): a chat reaches its forge through the app's proxy, and the
+# old routes that handed it a token are replaced by the sign-in. Off until the train turns it on.
+forge-wiring = ["purlis-core/forge-wiring"]
 # What a scenario test needs inside the app: WebdriverIO's embedded WebDriver server, and its
 # plugin for running code in the window. Never in a build anyone is given.
 #

@@ -55,8 +55,8 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
 
 - **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›
   Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
-  auth login`, then `gh auth status`). A `purlis` command always uses `gh`. A chat holds
-  **no forge token**: it reaches GitHub (and GitLab) through purlis's own proxy as you, with
+  auth login`, then `gh auth status`). A `purlis` command always uses `gh`. With the one-login
+  train (ADR 0128, not in a build yet), a chat holds **no forge token**: it reaches GitHub (and GitLab) through purlis's own proxy as you, with
   your sign-in, inside the repos recorded for that chat and no further (ADR 0128). Every chat
   is on this one route. There is no agent identity, no GitHub App the organisation registers
   for a chat, and no token a vault hands a chat: a project's `mint = "github-app"` line and a
@@ -74,8 +74,8 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`, `env -u GIT_CONFIG_COUNT …`); a socket you
   granted; a bare `ssh` reading `~/.ssh/config` (Codex, opencode); Claude Code's own ssh and its
   ssh agent; and a forge server under a name purlis does not list, since connector servers still
-  start and only calls to the listed names are refused. Until the sign-in ships in your build, a
-  chat is on the baseline only where its sandbox holds your credentials back.
+  start and only calls to the listed names are refused. Until that train lands, a build still mints a token for a chat and a chat is on the baseline
+  only where its sandbox holds your credentials back.
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.

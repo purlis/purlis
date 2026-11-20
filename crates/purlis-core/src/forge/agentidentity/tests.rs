@@ -488,6 +488,7 @@ fn finish_allows_on_a_plane_not_sandboxed_yet() {
     assert_eq!(allowed, ["dev"]);
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn finish_leaves_a_persona_with_more_on_its_list_to_its_own_allow() {
     let root = a_new_plane("[sandbox]\n\n[sandbox.personas.dev]\nhosts = [\"a.example\"]\n");
@@ -544,6 +545,7 @@ fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn held_reads_each_app_with_its_personas() {
     let root = tempfile::tempdir().unwrap();

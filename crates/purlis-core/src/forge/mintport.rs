@@ -130,8 +130,15 @@ impl Told {
     }
 }
 
+/// What a runner says to a word about the port once the sign-in replaces the App (ADR 0128 D9).
+const REPLACED: &str = "this runner takes no mint port: chats use the desktop's sign-in, or a token \
+     connection where no desktop is present";
+
 /// **Keeps what this runner's desktop told it of the port**, replacing what it was told before.
 pub fn tell(config_root: &Path, told: Told) -> Result<(), String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(REPLACED.to_owned());
+    }
     let told = told.checked()?;
     let held = purlis_same_user::PrivateDirectory::open(&crate::machine::charterd(config_root))
         .map_err(|why| format!("the session host's folder could not be opened: {why}"))?;
@@ -189,6 +196,9 @@ fn moved_to(held: &Told, keys: Vec<String>) -> Vec<String> {
 /// True where this settled it. False where the port showed neither, so its desktop tells it again
 /// at its next link.
 pub fn tell_again(config_root: &Path, told: Told) -> Result<bool, String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(REPLACED.to_owned());
+    }
     let told = Told {
         left: Vec::new(),
         ..told.checked()?
@@ -239,6 +249,11 @@ pub fn tell_again(config_root: &Path, told: Told) -> Result<bool, String> {
 
 /// What this runner was told of the port. `None` where nothing was, as on a pool not opted in.
 pub fn told(config_root: &Path) -> Result<Option<Told>, String> {
+    // With the sign-in in place no runner chat is minted a token, so whatever an earlier build
+    // was told of a port is not read: `mint` and `follow` find nothing to ask.
+    if cfg!(feature = "forge-wiring") {
+        return Ok(None);
+    }
     let at = crate::machine::charterd(config_root).join(FILE);
     match purlis_same_user::read_private_file(&at) {
         Ok(text) => serde_json::from_str::<Told>(&text)
@@ -694,6 +709,9 @@ pub fn follow(config_root: &Path, now: u64) -> Result<(), String> {
 /// **Keeps looking for a roll** while this host runs, on a thread of its own, every
 /// [`FOLLOWED_EVERY`]. A runner told of no port does nothing but read that it was not.
 pub fn keep_following(config_root: std::path::PathBuf) {
+    if cfg!(feature = "forge-wiring") {
+        return;
+    }
     let spawned = std::thread::Builder::new()
         .name("purlisd-mint-key".into())
         .spawn(move || {
@@ -709,5 +727,24 @@ pub fn keep_following(config_root: std::path::PathBuf) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "forge-wiring")))]
 mod tests;
+
+#[cfg(all(test, feature = "forge-wiring"))]
+mod replaced_tests {
+    use super::*;
+
+    #[test]
+    fn a_port_an_older_build_was_told_of_is_not_read_and_no_token_is_asked_of_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let held = crate::machine::charterd(dir.path());
+        std::fs::create_dir_all(&held).unwrap();
+        std::fs::write(held.join(FILE), "{\"left\": []}").unwrap();
+        assert_eq!(told(dir.path()), Ok(None));
+        assert_eq!(
+            mint(dir.path(), "Iv1.abc").map(|got| got.is_none()),
+            Ok(true)
+        );
+        assert_eq!(follow(dir.path(), 0), Ok(()));
+    }
+}

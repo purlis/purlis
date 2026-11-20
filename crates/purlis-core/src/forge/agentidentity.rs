@@ -433,6 +433,9 @@ pub fn create_app(
     cancelled: &AtomicBool,
     ways: &Ways<'_>,
 ) -> Result<Created, String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned());
+    }
     let listening = (ways.bind)()?;
     let port = listening.port();
     let state = State::random()?;
@@ -568,6 +571,9 @@ pub fn ready_to_keep(ctx: &Ctx) -> Result<(), String> {
 /// **Stores the App's key, marked by its name** ([`mint::RESERVED_PREFIX`]), in [`VAULT`]. Past
 /// this point the App exists on GitHub, so a failure says what to do with it.
 pub fn keep_key(ctx: &Ctx, created: &Created) -> Result<(), String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned());
+    }
     let kept = || -> Result<(), String> {
         ready_to_keep(ctx)?;
         let vault = own_vault(ctx)?.ok_or("the vault wasn't there")?;
@@ -1022,6 +1028,9 @@ pub(super) fn rewrite_manifest(
 
 /// **Adds App `app`'s line for `personas`** to the project at `root`: what Finish writes (Q11).
 pub fn add_lines(root: &Path, app: &str, personas: &[String]) -> Result<(), String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned());
+    }
     added_lines(root, app, personas).map(drop)
 }
 
@@ -1042,6 +1051,9 @@ pub fn write_and_allow(
     personas: &[String],
     allow: &mut dyn FnMut(&Shown) -> Result<(), String>,
 ) -> Result<Vec<String>, String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned());
+    }
     let (read, written) = added_lines(root, app, personas)?;
     allow_as_written(root, "gh", personas, &read, &written, allow)
 }

@@ -752,11 +752,6 @@ pub const NO_SANDBOX_WHERE_A_TOKEN_IS_NEAR: &str = "this runner's pool mints Git
 /// read refuses too.
 #[cfg(unix)]
 fn refused_where_a_token_is_near(kind: ProgramKind) -> Result<(), String> {
-    // No token is minted in a cluster once the sign-in replaces the App (ADR 0128 D9), so none
-    // is near, whatever port this runner was told of before.
-    if cfg!(feature = "forge-wiring") {
-        return Ok(());
-    }
     if crate::envvar::var(crate::forge::mintport::MARK_VAR).is_some() {
         return no_sandbox_refused(kind, Ok(true));
     }
