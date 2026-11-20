@@ -529,6 +529,27 @@ impl Setup {
         }
     }
 
+    /// Whether anything the forge was sent names `needle`, in its address or its body.
+    fn forge_was_sent(&self, needle: &str) -> bool {
+        let needle = needle.to_ascii_lowercase();
+        self.forge.seen.lock().unwrap().iter().any(|r| {
+            r.url.to_ascii_lowercase().contains(&needle)
+                || String::from_utf8_lossy(&r.body)
+                    .to_ascii_lowercase()
+                    .contains(&needle)
+        })
+    }
+
+    /// How many requests the proxy has refused so far.
+    fn refusals(&self) -> usize {
+        self.world
+            .proxy
+            .audit(&self.world.chat)
+            .into_iter()
+            .filter(|r| matches!(r.verdict, Verdict::Refused(_)))
+            .count()
+    }
+
     fn forge_saw_the_real_token(&self) -> bool {
         self.forge.seen.lock().unwrap().iter().any(|r| {
             r.headers.iter().any(|(n, v)| {
@@ -624,6 +645,80 @@ fn glab_reaches_the_forge_through_connect_and_the_chats_own_authority() {
     assert!(!text.contains("purlis refused"), "{text}");
     s.assert_clean();
     assert!(s.forge_saw_the_real_token());
+}
+
+#[test]
+fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
+    purlis_core::unsteered!();
+    let have_gh = tool("gh");
+    let have_glab = tool("glab");
+    if !have_gh && !have_glab {
+        return;
+    }
+    let s = setup();
+    if have_gh {
+        for (what, args, needle) in [
+            (
+                "another repo, by api",
+                vec!["api", "repos/acme/other"],
+                "acme/other",
+            ),
+            (
+                "another repo, by pr list",
+                vec!["pr", "list", "-R", "github.localhost/acme/other"],
+                "other",
+            ),
+            (
+                "a merge",
+                vec![
+                    "pr",
+                    "merge",
+                    "1",
+                    "--merge",
+                    "-R",
+                    "github.localhost/acme/app",
+                ],
+                "mergepullrequest",
+            ),
+        ] {
+            let before = s.refusals();
+            let (ok, text) = s.gh(&args);
+            assert!(!ok, "gh, {what}, succeeded: {text}");
+            assert!(s.refusals() > before, "gh, {what}, was not refused: {text}");
+            assert!(!s.forge_was_sent(needle), "gh, {what}, reached the forge");
+            assert!(!text.contains(REAL), "{text}");
+        }
+        // `gh auth token` prints what the chat holds, which is the sentinel and never the token.
+        let (_, text) = s.gh(&["auth", "token"]);
+        assert!(
+            !text.contains(REAL),
+            "gh auth token showed the token: {text}"
+        );
+    }
+    if have_glab {
+        for (what, args, needle) in [
+            (
+                "another repo, by api",
+                vec!["api", "projects/other%2Fproj"],
+                "other%2fproj",
+            ),
+            (
+                "a merge",
+                vec!["mr", "merge", "1", "-R", "group/proj", "--yes"],
+                "/merge",
+            ),
+        ] {
+            let before = s.refusals();
+            let (ok, text) = s.glab(&args);
+            assert!(!ok, "glab, {what}, succeeded: {text}");
+            assert!(
+                s.refusals() > before,
+                "glab, {what}, was not refused: {text}"
+            );
+            assert!(!s.forge_was_sent(needle), "glab, {what}, reached the forge");
+            assert!(!text.contains(REAL), "{text}");
+        }
+    }
 }
 
 #[test]

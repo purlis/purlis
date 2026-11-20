@@ -21,6 +21,7 @@
 //! body is sent on with the length it turned out to have.
 
 use std::io::{self, Read, Write};
+use std::time::Instant;
 
 use url::Url;
 
@@ -50,7 +51,7 @@ pub(crate) enum Route<'a> {
 /// Serve one request on `stream` and close it. Nothing here panics on what a client sends, and an
 /// I/O error only ends the connection.
 pub(crate) fn serve_one<S: Read + Write>(wiring: &Wiring, stream: S, route: &Route<'_>) {
-    let mut framed = Framed::new(stream);
+    let mut framed = Framed::new(stream).with_deadline(Instant::now() + wiring.limits.total);
     let _ = serve(wiring, &mut framed, route);
 }
 
@@ -262,11 +263,12 @@ fn forward<W: Write>(
     w: &Wiring,
     out: &mut W,
     rh: &RequestHead,
-    forwarded: Forwarded,
+    mut forwarded: Forwarded,
     chat_body: Vec<u8>,
     side: &ChatSide<'_>,
 ) -> io::Result<()> {
-    let body = forwarded.body.clone().unwrap_or(chat_body);
+    // The one copy of a body that goes upstream is moved, not cloned.
+    let body = forwarded.body.take().unwrap_or(chat_body);
     let request = UpstreamRequest {
         method: rh.method.to_ascii_uppercase(),
         url: forwarded.upstream.clone(),
@@ -428,12 +430,16 @@ fn answer<W: Write>(
     }
     write_head(out, status, &out_headers)?;
     let chunked = by_length.is_none();
+    let deadline = Instant::now() + w.limits.total;
     emit(out, &ready, chunked)?;
     if first == 0 {
         let rest = scanner.finish().map_err(|_| leak())?;
         emit(out, &rest, chunked)?;
     } else {
         loop {
+            if Instant::now() >= deadline {
+                return Err(io::ErrorKind::TimedOut.into());
+            }
             let n = read_some(&mut response.body, &mut buf)?;
             if n == 0 {
                 let rest = scanner.finish().map_err(|_| leak())?;

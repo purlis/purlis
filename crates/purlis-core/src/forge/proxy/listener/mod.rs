@@ -51,7 +51,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub use ca::{CaError, ChatCa};
 pub use lfs::LfsStorage;
@@ -72,6 +72,10 @@ pub struct Limits {
     pub push: usize,
     /// How long a read or a write may wait on a client.
     pub io_timeout: Duration,
+    /// How long one request may take to be read, and one answer to be sent, however steadily the
+    /// client sends or reads: the idle timeout alone lets a client that drips a byte a minute
+    /// hold a connection (and one of the few slots) for ever.
+    pub total: Duration,
     /// Connections served at once; one more is closed.
     pub connections: usize,
 }
@@ -81,8 +85,9 @@ impl Default for Limits {
         Self {
             head: 64 * 1024,
             body: 1 << 20,
-            push: 128 << 20,
+            push: 32 << 20,
             io_timeout: Duration::from_secs(60),
+            total: Duration::from_secs(10 * 60),
             connections: 64,
         }
     }
@@ -338,22 +343,23 @@ fn spawn_connection(
         return;
     }
     let wiring = wiring.clone();
-    let active = Arc::clone(active);
+    let slot = Arc::clone(active);
     let spawned = std::thread::Builder::new()
         .name("forge-proxy-conn".into())
         .spawn(move || {
             serve(&wiring);
-            active.fetch_sub(1, Ordering::SeqCst);
+            slot.fetch_sub(1, Ordering::SeqCst);
         });
     if spawned.is_err() {
-        // Out of threads: the count is given back by nobody else.
+        // Out of threads: the closure never ran, so the slot is given back here.
+        active.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
 /// One connection on the `CONNECT` door: the `CONNECT` line, the core's verdict on its host, and
 /// then a terminated request or a tunnel.
 pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
-    let mut framed = Framed::new(stream);
+    let mut framed = Framed::new(stream).with_deadline(Instant::now() + wiring.limits.total);
     let head = match framed.read_head(wiring.limits.head) {
         Ok(head) => head,
         Err(HeadError::Closed | HeadError::Io) => return,

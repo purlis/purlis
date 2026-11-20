@@ -293,11 +293,25 @@ pub fn tls(
     sni: &str,
     request: &[u8],
 ) -> Result<Reply, String> {
+    tls_with(world, ca, host, port, sni, |_| {}, request)
+}
+
+/// [`tls`] with the client's settings changed first: its ALPN list, or whether it sends SNI.
+pub fn tls_with(
+    world: &World,
+    ca: &ChatCa,
+    host: &str,
+    port: u16,
+    sni: &str,
+    tweak: impl FnOnce(&mut rustls::ClientConfig),
+    request: &[u8],
+) -> Result<Reply, String> {
     let (client, server) = UnixStream::pair().unwrap();
     client
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
-    let config = client_config(ca.certificate_pem());
+    let mut config = client_config(ca.certificate_pem());
+    tweak(Arc::get_mut(&mut config).expect("a config of our own"));
     let name = rustls::pki_types::ServerName::try_from(sni.to_string()).unwrap();
     let connection = rustls::ClientConnection::new(config, name).unwrap();
     let mut stream = rustls::StreamOwned::new(connection, client);

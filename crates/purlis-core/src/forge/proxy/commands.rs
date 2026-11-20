@@ -326,7 +326,7 @@ pub(crate) fn parse_upload(body: &[u8], content_type: Option<&str>) -> Result<Bo
                 disposition = true;
                 let value = value.trim();
                 let ok = value.starts_with("form-data;")
-                    && value.contains("name=\"file\"")
+                    && param_of(value, "name") == Some("file")
                     && file_name_of(value).is_some_and(|f| {
                         !f.is_empty()
                             && f.len() <= 255
@@ -356,8 +356,23 @@ pub(crate) fn parse_upload(body: &[u8], content_type: Option<&str>) -> Result<Bo
 }
 
 fn file_name_of(disposition: &str) -> Option<&str> {
-    let rest = disposition.split("filename=\"").nth(1)?;
-    rest.split('"').next()
+    param_of(disposition, "filename")
+}
+
+/// The value of one quoted parameter of a `Content-Disposition`, matched by its whole name:
+/// `name` is not found inside `filename`.
+fn param_of<'a>(disposition: &'a str, wanted: &str) -> Option<&'a str> {
+    let mut found = None;
+    for part in disposition.split(';').skip(1) {
+        let (name, value) = part.trim().split_once('=')?;
+        if name.trim().eq_ignore_ascii_case(wanted) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(value.trim().strip_prefix('"')?.strip_suffix('"')?);
+        }
+    }
+    found
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {

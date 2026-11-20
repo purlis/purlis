@@ -10,8 +10,9 @@
 //! - **one per chat**, made when the listener starts, **its private key in memory only** and never
 //!   written anywhere; only the certificate is handed out (the file the chat's client is pointed
 //!   at is the caller's to write);
-//! - with a **critical `nameConstraints`** that permits exactly the hosts [`ChatPolicy::terminable_hosts`]
-//!   names (the chat's recorded forge hosts and their API hosts) and **excludes every IP address**,
+//! - with a **critical `nameConstraints`** that permits the hosts [`ChatPolicy::terminable_hosts`]
+//!   names (the chat's recorded forge hosts and their API hosts) and their subdomains, which is
+//!   what a DNS name constraint allows, and **excludes every IP address**,
 //!   so a client that honours constraints refuses anything else the key might sign, and a path
 //!   length of zero so it signs no other authority;
 //! - **leaf certificates only for those hosts**: [`ChatCa::leaf_for`] is `None` for any other name.

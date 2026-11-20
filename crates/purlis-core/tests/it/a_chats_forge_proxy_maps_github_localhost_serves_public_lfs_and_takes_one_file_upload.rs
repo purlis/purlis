@@ -265,6 +265,7 @@ fn one_file_to_gitlabs_upload_route_is_carried_as_it_was_sent_and_nothing_else_m
     let other_name = "--XyZ\r\nContent-Disposition: form-data; name=\"note\"; filename=\"a\"\r\n\r\nx\r\n--XyZ--";
     let path_name = "--XyZ\r\nContent-Disposition: form-data; name=\"file\"; filename=\"../../a\"\r\n\r\nx\r\n--XyZ--";
     let extra_header = "--XyZ\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a\"\r\nX-Other: 1\r\n\r\nx\r\n--XyZ--";
+    let name_inside_another = "--XyZ\r\nContent-Disposition: form-data; name=\"note\"; xname=\"file\"; filename=\"a\"\r\n\r\nx\r\n--XyZ--";
     let trailing = "--XyZ\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a\"\r\n\r\nx\r\n--XyZ--\r\nmore";
     let preamble = "junk\r\n--XyZ\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a\"\r\n\r\nx\r\n--XyZ--";
     for (what, text) in [
@@ -272,6 +273,7 @@ fn one_file_to_gitlabs_upload_route_is_carried_as_it_was_sent_and_nothing_else_m
         ("another name", other_name),
         ("a path as the name", path_name),
         ("another header", extra_header),
+        ("a name that only ends in `name`", name_inside_another),
         ("bytes after the end", trailing),
         ("bytes before the start", preamble),
     ] {

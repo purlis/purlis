@@ -147,6 +147,30 @@ fn an_answer_that_holds_the_real_token_is_never_sent_to_the_chat() {
 }
 
 #[test]
+fn an_encoded_answer_is_never_sent_because_nothing_could_look_inside_it() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    for encoding in ["gzip", "br", "deflate", "zstd", "GZIP"] {
+        // The bytes are not a real encoding of anything: the answer is refused for its header,
+        // not read, so what it holds does not matter, and none of it reaches the chat.
+        w.fake
+            .answer(Answer::ok(&format!("body {REAL}")).with_header("Content-Encoding", encoding));
+        let raw = plain_raw(&w, &gh_get(&w, "/user"));
+        let text = String::from_utf8_lossy(&raw);
+        assert_eq!(parse_reply(&raw).status, 502, "{encoding}: {text}");
+        assert!(!text.contains(REAL), "{encoding}: {text}");
+        assert!(!text.contains("body "), "{encoding}: {text}");
+    }
+    // The identity coding is no coding at all.
+    w.fake
+        .answer(Answer::ok("{}").with_header("Content-Encoding", "identity"));
+    assert_eq!(
+        parse_reply(&plain_raw(&w, &gh_get(&w, "/user"))).status,
+        200
+    );
+}
+
+#[test]
 fn a_token_split_across_two_reads_is_found_and_none_of_it_is_sent() {
     purlis_core::unsteered!();
     let w = World::new();

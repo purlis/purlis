@@ -133,19 +133,16 @@ impl Scanner {
             } else {
                 data.len().saturating_sub(self.hold)
             };
-            if !last {
-                if let Some(open) = open_url(&data, end) {
-                    // Too long to wait for: keep its scheme, drop what follows up to the end of a
-                    // userinfo, and read on from there.
-                    if let Some(scheme) = open.scheme.filter(|_| data.len() - open.start > URL_CAP)
-                    {
-                        out.extend(redact_urls(&data[..scheme + 3]));
-                        data.drain(..scheme + 3);
-                        self.skipping = true;
-                        continue;
-                    }
-                    end = open.start;
+            if !last && let Some(open) = open_url(&data, end) {
+                // Too long to wait for: keep its scheme, drop what follows up to the end of a
+                // userinfo, and read on from there.
+                if let Some(scheme) = open.scheme.filter(|_| data.len() - open.start > URL_CAP) {
+                    out.extend(redact_urls(&data[..scheme + 3]));
+                    data.drain(..scheme + 3);
+                    self.skipping = true;
+                    continue;
                 }
+                end = open.start;
             }
             out.extend(redact_urls(&data[..end]));
             self.carry = data.split_off(end);
@@ -183,13 +180,13 @@ fn skip_userinfo(data: &[u8]) -> (usize, bool) {
 /// its `://`, or after the `://` and before a byte that ends a userinfo.
 fn open_url(data: &[u8], end: usize) -> Option<OpenUrl> {
     let head = &data[..end];
-    if let Some(scheme) = memchr::memmem::rfind(head, b"://") {
-        if !data[scheme + 3..end].iter().copied().any(ends_userinfo) {
-            return Some(OpenUrl {
-                start: scheme_start(data, scheme),
-                scheme: Some(scheme),
-            });
-        }
+    if let Some(scheme) = memchr::memmem::rfind(head, b"://")
+        && !data[scheme + 3..end].iter().copied().any(ends_userinfo)
+    {
+        return Some(OpenUrl {
+            start: scheme_start(data, scheme),
+            scheme: Some(scheme),
+        });
     }
     let colon = if head.ends_with(b":/") {
         2

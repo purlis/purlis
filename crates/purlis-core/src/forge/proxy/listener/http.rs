@@ -10,6 +10,7 @@
 //! read as another one, so a second request cannot ride the first one's verdict.
 
 use std::io::{self, Read, Write};
+use std::time::Instant;
 
 use super::super::normal;
 
@@ -72,6 +73,7 @@ pub(crate) struct Framed<S> {
     pub(crate) stream: S,
     buf: Vec<u8>,
     pos: usize,
+    deadline: Option<Instant>,
 }
 
 const CHUNK: usize = 16 * 1024;
@@ -82,7 +84,14 @@ impl<S: Read + Write> Framed<S> {
             stream,
             buf: Vec::new(),
             pos: 0,
+            deadline: None,
         }
+    }
+
+    /// Reads fail with a timeout once `deadline` has passed, whatever the stream's own timeout.
+    pub(crate) fn with_deadline(mut self, deadline: Instant) -> Self {
+        self.deadline = Some(deadline);
+        self
     }
 
     /// The stream, if nothing was read past what was taken: bytes that came early would be lost
@@ -93,6 +102,9 @@ impl<S: Read + Write> Framed<S> {
 
     /// Read more from the stream. `0` is its end.
     fn fill(&mut self) -> io::Result<usize> {
+        if self.deadline.is_some_and(|d| Instant::now() >= d) {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
         if self.pos > 0 && self.pos == self.buf.len() {
             self.buf.clear();
             self.pos = 0;

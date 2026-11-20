@@ -11,7 +11,7 @@ use x509_cert::der::Decode;
 use x509_cert::ext::pkix::name::GeneralName;
 use x509_cert::ext::pkix::{BasicConstraints, NameConstraints};
 
-use crate::support::forge_listener::{Answer, World, basic, tls};
+use crate::support::forge_listener::{Answer, World, basic, tls, tls_with};
 
 fn der_of(pem: &str) -> Vec<u8> {
     let body: String = pem.lines().filter(|l| !l.starts_with("-----")).collect();
@@ -141,6 +141,56 @@ fn a_client_that_trusts_the_authority_is_served_for_the_name_it_asked_for_and_on
         assert!(result.is_err(), "{sni} was served: {result:?}");
     }
     assert_eq!(w.fake.requests().len(), 1);
+}
+
+#[test]
+fn a_client_that_speaks_only_h2_or_sends_no_server_name_gets_no_handshake_and_no_request() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    let ca = ChatCa::new(&w.proxy.terminable_hosts(&w.chat)).unwrap();
+    let request = format!(
+        "GET /user HTTP/1.1\r\nHost: api.github.com\r\nAuthorization: {}\r\n\r\n",
+        basic("x-access-token", w.sentinel.expose())
+    );
+    w.fake.answer(Answer::ok(r#"{"login":"octocat"}"#));
+    // The listener carries HTTP/1.1 alone: a client that offers only h2 is not served as one.
+    let h2 = tls_with(
+        &w,
+        &ca,
+        "api.github.com",
+        443,
+        "api.github.com",
+        |c| c.alpn_protocols = vec![b"h2".to_vec()],
+        request.as_bytes(),
+    );
+    assert!(h2.is_err(), "an h2-only client was served: {h2:?}");
+    // No SNI is no name to give a certificate for, though the `CONNECT` named one.
+    let nameless = tls_with(
+        &w,
+        &ca,
+        "api.github.com",
+        443,
+        "api.github.com",
+        |c| c.enable_sni = false,
+        request.as_bytes(),
+    );
+    assert!(
+        nameless.is_err(),
+        "a client with no SNI was served: {nameless:?}"
+    );
+    assert!(w.fake.requests().is_empty());
+    // And the same client, offering http/1.1 as well, is served: the refusals are the two above.
+    let both = tls_with(
+        &w,
+        &ca,
+        "api.github.com",
+        443,
+        "api.github.com",
+        |c| c.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()],
+        request.as_bytes(),
+    )
+    .expect("a handshake");
+    assert_eq!(both.status, 200, "{}", both.text());
 }
 
 #[test]
