@@ -58,6 +58,7 @@ pub mod oauth;
 pub mod pkce;
 pub mod poll;
 pub mod pr;
+pub mod proxy;
 pub mod recorded;
 pub mod refresh;
 pub mod registration;
