@@ -250,7 +250,7 @@ export function AgentIdentityTab({ plane, asking }: { plane: PlaneId; asking?: s
         fixes={[{ label: "Open accounts", onPress: () => askSettingsLink(plane, ACCOUNTS) }]}
       >
         purlis is moving to your own sign-in, made once for each forge host, so a chat works as you
-        and needs no App of its own. Sign in in Settings › You › Accounts. What is set up here keeps
+        and needs no App of its own. Make it in Settings › You › Accounts. What is set up here keeps
         working until then.
       </Notice>
       {done && <Proved done={done} onDismiss={() => setDone(null)} />}

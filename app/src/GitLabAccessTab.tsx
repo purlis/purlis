@@ -234,7 +234,7 @@ export function GitLabAccessTab({ plane }: { plane: PlaneId }) {
         fixes={[{ label: "Open accounts", onPress: () => askSettingsLink(plane, ACCOUNTS) }]}
       >
         purlis is moving to your own GitLab sign-in, made once for each host, so a chat works as you
-        and needs no token of its own. Sign in in Settings › You › Accounts. A token set up here
+        and needs no token of its own. Make it in Settings › You › Accounts. A token set up here
         keeps working until then.
       </Notice>
       {done && (
