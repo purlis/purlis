@@ -642,7 +642,10 @@ fn a_held_act_raises_the_ask_and_stays_refused_until_the_person_presses() {
             .contains("approval")
     );
 
-    scene.routes.press(&asks[0]).expect("the press performs");
+    scene
+        .routes
+        .perform_held(&asks[0])
+        .expect("the press performs");
 
     let done = lock(&scene.held.performed).clone();
     assert_eq!(done.len(), 1);
@@ -675,7 +678,10 @@ fn a_plain_refusal_raises_no_ask_and_a_press_without_a_sign_in_says_so() {
         act: HeldAct::Merge,
     };
     scene.sign_ins.end("github.com", "alice");
-    let said = scene.routes.press(&ask).expect_err("an ended sign-in");
+    let said = scene
+        .routes
+        .perform_held(&ask)
+        .expect_err("an ended sign-in");
     assert!(
         said.contains("has ended") && said.contains("Accounts"),
         "{said}"
@@ -684,7 +690,7 @@ fn a_plain_refusal_raises_no_ask_and_a_press_without_a_sign_in_says_so() {
 
     scene.routes.stop("chat-1");
     assert!(
-        scene.routes.press(&ask).is_err(),
+        scene.routes.perform_held(&ask).is_err(),
         "a chat that ended has nothing to allow"
     );
 }

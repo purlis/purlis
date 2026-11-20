@@ -18,7 +18,7 @@
 //! - **Credentials** ([`ProjectCredentials`]): the host and the project's account, asked of slice
 //!   C. A missing or ended sign-in refuses the request in words that name the sign-in step
 //!   ([`ForgeRoutes::refusal_message`]) and raises one Notice per chat ([`Notices`]).
-//! - **Held acts** ([`ForgeRoutes::handle`], [`ForgeRoutes::press`]): a refusal the person may
+//! - **Held acts** ([`ForgeRoutes::handle`], [`ForgeRoutes::perform_held`]): a refusal the person may
 //!   allow raises slice F's ask; their press performs it with their credential, and nothing else
 //!   does.
 //! - **Runners** ([`ForgeRoutes::for_runner`]): an unattended or pool runner's chat is forwarded
@@ -248,7 +248,7 @@ pub struct HeldAsk {
 /// **Slice F's** held acts: the ask the person sees, and the act made when they press.
 pub trait HeldActs: Send + Sync {
     fn raise(&self, ask: &HeldAsk);
-    /// Performs `ask` with `credential`, the person's own. Only [`ForgeRoutes::press`] calls it.
+    /// Performs `ask` with `credential`, the person's own. Only [`ForgeRoutes::perform_held`] calls it.
     fn perform(&self, ask: &HeldAsk, credential: Credential) -> Result<(), String>;
 }
 
@@ -505,7 +505,7 @@ impl ForgeRoutes {
     }
 
     /// One request from `chat`'s endpoint, decided. A refusal that is a held act raises the ask
-    /// as well, and is still refused: only [`Self::press`] performs it.
+    /// as well, and is still refused: only [`Self::perform_held`] performs it.
     pub fn handle(&self, chat: &str, inbound: &Inbound<'_>) -> Outcome {
         let Some(proxy) = self.proxy_of(chat) else {
             return Outcome::Refused(Refusal::UnknownChat);
@@ -533,7 +533,7 @@ impl ForgeRoutes {
 
     /// The person pressed Allow on `ask`: performed with their credential for the host and the
     /// project's account. A sign-in that is missing or ended is an error that says so.
-    pub fn press(&self, ask: &HeldAsk) -> Result<(), String> {
+    pub fn perform_held(&self, ask: &HeldAsk) -> Result<(), String> {
         let project = self
             .live()
             .get(&ask.chat)
