@@ -190,10 +190,39 @@ pub fn tell_the_window_when_a_sign_in_ends(app: &tauri::AppHandle) {
     let Some(scope) = HostScope::claim() else {
         return;
     };
-    let app = app.clone();
+    let ended = app.clone();
     purlis_core::forge::refresh::tell_when_ended(&scope, move |_account| {
-        let _ = app.emit(SIGN_IN_ENDED, ());
+        let _ = ended.emit(SIGN_IN_ENDED, ());
     });
+    let app = app.clone();
+    purlis_core::forge::refresh::tell_of_trouble(&scope, move |account, trouble| {
+        let _ = app.emit(SIGN_IN_TROUBLE, trouble_said(&account.id, trouble));
+    });
+}
+
+/// The event the window is sent when a sign-in is not renewing, though no forge has ended it
+/// (ADR 0077 §3): the application pinned for the host is not the one the account signed in
+/// through, or renewals keep failing. `ForgeSignInEnded.tsx` holds the window's spelling to this
+/// one. It carries the account's id and the kind of trouble, and no token or login.
+pub const SIGN_IN_TROUBLE: &str = "forge-sign-in-trouble";
+
+/// What [`SIGN_IN_TROUBLE`] carries.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SignInTrouble {
+    pub account: String,
+    pub trouble: &'static str,
+}
+
+/// `trouble` for the account `id`, as the window is told it.
+pub fn trouble_said(id: &str, trouble: &purlis_core::forge::refresh::Trouble) -> SignInTrouble {
+    use purlis_core::forge::refresh::Trouble;
+    SignInTrouble {
+        account: id.to_string(),
+        trouble: match trouble {
+            Trouble::PinChanged => "pin-changed",
+            Trouble::RenewalFailing { .. } => "renewal-failing",
+        },
+    }
 }
 
 /// From now on each browser sign-in is renewed before it ends, on a thread of its own, with no
@@ -686,6 +715,21 @@ pub async fn forge_sign_out(id: String) -> Result<Option<bool>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_trouble_is_told_to_the_window_by_account_and_kind_and_nothing_else() {
+        use purlis_core::forge::refresh::Trouble;
+        let pin = trouble_said("01J9ACCOUNT", &Trouble::PinChanged);
+        assert_eq!(
+            serde_json::to_value(&pin).unwrap(),
+            serde_json::json!({"account": "01J9ACCOUNT", "trouble": "pin-changed"})
+        );
+        let failing = trouble_said("01J9ACCOUNT", &Trouble::RenewalFailing { failures: 3 });
+        assert_eq!(
+            serde_json::to_value(&failing).unwrap(),
+            serde_json::json!({"account": "01J9ACCOUNT", "trouble": "renewal-failing"})
+        );
+    }
+
     use super::*;
 
     #[test]
