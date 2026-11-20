@@ -72,7 +72,10 @@ fn header_pairs(v: &Value) -> Vec<(String, String)> {
             list.iter()
                 .filter_map(|p| {
                     let p = p.as_array()?;
-                    Some((p.first()?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string()))
+                    Some((
+                        p.first()?.as_str()?.to_string(),
+                        p.get(1)?.as_str()?.to_string(),
+                    ))
                 })
                 .collect()
         })
@@ -111,7 +114,9 @@ impl Bridge {
             text(msg, "target"),
         );
         let headers = header_pairs(&msg["headers"]);
-        let body = BASE64.decode(text(msg, "body").as_bytes()).unwrap_or_default();
+        let body = BASE64
+            .decode(text(msg, "body").as_bytes())
+            .unwrap_or_default();
         let inbound = Inbound {
             head: &head,
             headers: &headers,
@@ -150,7 +155,10 @@ impl Bridge {
                     .0
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .insert(text(msg, "host").to_string(), text(msg, "token").to_string());
+                    .insert(
+                        text(msg, "host").to_string(),
+                        text(msg, "token").to_string(),
+                    );
                 json!({ "ok": true })
             }
             "enrol" => {
@@ -163,15 +171,26 @@ impl Bridge {
             "advertised" => {
                 let branches = msg["branches"]
                     .as_array()
-                    .map(|b| b.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                    .map(|b| {
+                        b.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default();
-                self.proxy
-                    .note_advertised(&chat, text(msg, "host"), text(msg, "repo_path"), branches);
+                self.proxy.note_advertised(
+                    &chat,
+                    text(msg, "host"),
+                    text(msg, "repo_path"),
+                    branches,
+                );
                 json!({ "ok": true })
             }
             "confirm" => {
                 let id = msg["id"].as_u64().unwrap_or_default();
-                let held = self.forwarded.lock().unwrap_or_else(PoisonError::into_inner);
+                let held = self
+                    .forwarded
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner);
                 if let Some(forwarded) = held.get(&id) {
                     self.proxy.confirm_push(&chat, forwarded);
                 }
@@ -264,9 +283,19 @@ fn a_person_signs_in_once_and_a_chat_works_the_forge_through_the_real_policy() {
         "the core allowed nothing"
     );
     let recorded = format!("{audit:?}");
-    let tokens = bridge.tokens.0.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(!tokens.is_empty(), "the scenario never gave the core a credential");
+    let tokens = bridge
+        .tokens
+        .0
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert!(
+        !tokens.is_empty(),
+        "the scenario never gave the core a credential"
+    );
     for token in tokens.values() {
-        assert!(!recorded.contains(token.as_str()), "the audit holds a token");
+        assert!(
+            !recorded.contains(token.as_str()),
+            "the audit holds a token"
+        );
     }
 }
