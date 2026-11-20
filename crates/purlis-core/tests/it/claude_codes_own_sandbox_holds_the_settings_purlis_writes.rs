@@ -1992,7 +1992,10 @@ fn corpus_run(program: &Path, at: &Path, as_before: bool) -> Vec<(Probe, Came)> 
     // The same path in each of three workspaces: one rule on every workspace's.
     for workspace in ["w", "v", "x"] {
         write(
-            &root.join("workspaces").join(workspace).join("app/.git/config"),
+            &root
+                .join("workspaces")
+                .join(workspace)
+                .join("app/.git/config"),
             Some(true),
             true,
         );
