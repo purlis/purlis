@@ -272,7 +272,7 @@ pub struct VaultAdd {
 }
 
 /// Where the secrets commands speak: `util.py`'s four marks on stderr, the answer on stdout.
-struct Console;
+pub(crate) struct Console;
 
 impl Io for Console {
     fn say(&mut self, line: Say) {

@@ -3863,3 +3863,134 @@ fn a_refused_read_or_write_of_a_credential_says_the_credentials_way_out() {
         )
     );
 }
+
+/// #1349: a `gh` call that fails on its own config load, which a harness hands back as the
+/// failure's `error`, raises the credentials Notice through the real path, detection and then the
+/// Notice's offer: the person's way out, not silence. Run against a path in the person's own home
+/// as a string, so no real credential file is read.
+#[test]
+fn a_gh_call_that_fails_on_its_config_load_raises_the_credentials_notice() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Place, detect_with_targets};
+    let project = tempfile::tempdir().expect("a project");
+    let home = purlis_core::sandbox::Machine::this().home.expect("a home");
+    let place = Place {
+        root: project.path(),
+        chat: project.path(),
+        cwd: project.path(),
+        home: Some(&home),
+    };
+    let hosts = home.join(".config/gh/hosts.yml");
+    let payload = serde_json::json!({
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "error": format!(
+            "Exit code 1\nfailed to read configuration: open {}: operation not permitted",
+            hosts.display()
+        ),
+    });
+    let found = detect_with_targets(&payload, &place);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let (block, target) = &found[0];
+    let plane: PlaneId = serde_json::from_value(serde_json::json!(
+        project
+            .path()
+            .canonicalize()
+            .expect("real")
+            .display()
+            .to_string()
+    ))
+    .expect("an id");
+    let told = blocked_on(
+        &plane,
+        7,
+        block,
+        None,
+        target.as_deref(),
+        false,
+        Some(false),
+    );
+    assert_eq!(
+        (told.offer, told.target, told.route),
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::brokered_route(Class::Credentials).to_owned())
+        )
+    );
+}
+
+/// #1349 round 2: through the real path, [`blocked_on`], a refused `~/.config/gh/hosts.yml` is the
+/// credentials Notice for every harness, never the lift's "Allow this chat to write .config/gh",
+/// which would fix nothing: gh's folder is one a person may lift, and the class is enforced.
+#[test]
+fn a_refused_forge_login_file_is_the_credentials_notice_and_never_a_lift() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let home = purlis_core::sandbox::Machine::this().home.expect("a home");
+    for file in [".config/gh/hosts.yml", ".config/glab-cli/config.yml"] {
+        let target = home.join(file).display().to_string();
+        for harness in Harness::ALL {
+            for operation in [Operation::File, Operation::Write] {
+                let refused = Block {
+                    operation,
+                    kind: Kind::ProtectedFile,
+                    ours: false,
+                };
+                let told = blocked_on(
+                    &plane,
+                    7,
+                    &refused,
+                    Some(harness),
+                    Some(&target),
+                    false,
+                    Some(false),
+                );
+                assert_eq!(told.offer, BlockOffer::Brokered, "{file} {harness:?}");
+                assert_eq!(told.target, None, "{file} {harness:?}");
+                assert_eq!(
+                    told.route.as_deref(),
+                    Some(grant::brokered_route(Class::Credentials)),
+                    "{file} {harness:?}"
+                );
+            }
+        }
+    }
+}
+
+/// #1349 round 3: a program-printed credential path arrives as the credentials kind, which the
+/// app answers with the person's own way out and no grant, whatever its own judgement of the
+/// path: a hook whose environment moved a file (`NETRC` set only there) still never reaches
+/// [`purlis_core::sandbox::grant::write`].
+#[test]
+fn a_credentials_kind_from_the_hook_never_offers_a_grant_whatever_the_path() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let credentials = Some(grant::brokered_route(Class::Credentials).to_owned());
+    // Under the project's own folder, which this app judges no credential and a write there
+    // would otherwise be offered.
+    let elsewhere = project.path().join("moved/netrc").display().to_string();
+    for operation in [Operation::Read, Operation::Write, Operation::File] {
+        let block = Block {
+            operation,
+            kind: Kind::Credentials,
+            ours: false,
+        };
+        assert!(
+            names_a_credential(&block, Some(&elsewhere)),
+            "{operation:?}"
+        );
+        assert_eq!(
+            offered_to(project.path(), &block, Some(&elsewhere), false),
+            (BlockOffer::Brokered, None, credentials.clone()),
+            "{operation:?}"
+        );
+    }
+}

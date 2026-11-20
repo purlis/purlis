@@ -75,6 +75,7 @@ import { DiscardHeldRunner, RemovePool } from "../settings/pools";
 import { LetRunnerGo } from "../KeptRunnerNotice";
 import { StartOverAsk } from "../AgentIdentityFlow";
 import { RemoveIdentity } from "../AgentIdentityTab";
+import { RemoveGitlabAccess } from "../GitLabAccessTab";
 import { RemoveProfile } from "../settings/profiles";
 import { StopKeepingTaskScreens } from "../settings/taskScreens";
 import { SpecimenDialog } from "../specimen/Specimen";
@@ -1270,6 +1271,12 @@ const DIALOGS: Opened[] = [
     file: "AgentIdentityTab.tsx",
     open: async () =>
       render(<RemoveIdentity host="github.com" onClose={nothing} onRemove={nothing} />),
+  },
+  {
+    name: "removing GitLab access",
+    file: "GitLabAccessTab.tsx",
+    open: async () =>
+      render(<RemoveGitlabAccess host="gitlab.example.com" onClose={nothing} onRemove={nothing} />),
   },
   {
     name: "adding a pool",

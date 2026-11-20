@@ -5492,6 +5492,15 @@ impl Chats {
                 &applied.confines().widened,
             )
         }));
+        // Where the class that holds the person's own forge login back is on and nothing mints
+        // the chat a token, said from its start (#1349), not first by a `gh` that failed.
+        late.extend(sandbox.and_then(|applied| {
+            purlis_core::forge::agentidentity::start_note(
+                &self.project,
+                applied.confines(),
+                runs_as.as_deref(),
+            )
+        }));
         // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
         // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
         // reattached keeps its start's, where its record has it (#3466).

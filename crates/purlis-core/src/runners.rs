@@ -6,7 +6,7 @@
 //! "pools": [{"name", "kind", "image", "cpus", "memory", "processes", "tmp", "suspendAfter",
 //! "frames", "width", "profiles"}], "runners":
 //! [{"name", "pool", "container", "image", "user", "home", "device", "key", "paired", "of"?,
-//! "draining"?, "last_stop"?, "engine"?, "home_created"?}]}`.
+//! "draining"?, "last_stop"?, "engine"?, "home_created"?, "desktop"?, "home_volume"?}]}`.
 //!
 //! - **A pool is named and defined only here** ([`Pool`]): a Docker pool's name, the runner
 //!   image by digest, and the limits the person set, each left out where purlis's default
@@ -1940,6 +1940,12 @@ fn to_row(kept: &Kept) -> serde_json::Value {
     if let Some(created) = &kept.home_created {
         row["home_created"] = created.as_str().into();
     }
+    if let Some(tag) = kept.made.runner.tag() {
+        row["desktop"] = tag.into();
+    }
+    if let Some(volume) = kept.made.runner.home_volume_kept() {
+        row["home_volume"] = volume.into();
+    }
     row
 }
 
@@ -1974,6 +1980,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         "engine",
         "home_created",
         "made_with",
+        "desktop",
+        "home_volume",
     ];
     if fields.keys().any(|key| !known.contains(&key.as_str())) {
         return None;
@@ -2040,6 +2048,19 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
     };
     let engine = noted("engine")?;
     let home_created = noted("home_created")?;
+    // The desktop tag its names carry, and the home volume where that keeps its earlier name
+    // (#7192): left out for a runner made before names carried one.
+    let tag = noted("desktop")?;
+    let home_volume = noted("home_volume")?;
+    // Both end up in names handed to Docker: only what purlis writes is read (#7192).
+    if tag.as_deref().is_some_and(|tag| {
+        tag.len() != 8 || !tag.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    }) || home_volume
+        .as_deref()
+        .is_some_and(|volume| !crate::dockerpool::is_runner_volume_name(volume))
+    {
+        return None;
+    }
     if text("pool")? != "docker" {
         return None;
     }
@@ -2051,7 +2072,8 @@ fn from_row(row: &serde_json::Value) -> Option<Kept> {
         user,
         text("home")?,
     )
-    .ok()?;
+    .ok()?
+    .named_as_kept(tag, home_volume);
     let pinned = crate::runnerlink::from_line(
         &serde_json::json!({ "device": text("device")?, "key": text("key")? }).to_string(),
     )

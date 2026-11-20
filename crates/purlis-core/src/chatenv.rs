@@ -412,17 +412,28 @@ pub fn compose(
         .filter(|(name, _)| !strip(name) && !env.iter().any(|(kept, _)| kept == name))
         .collect();
     env.extend(reached);
+    // The forge lock's marker (#7205) says its pair is wanted, and is not itself the chat's.
+    let locked = chat
+        .set
+        .iter()
+        .any(|(name, _)| name == crate::forgelock::MARKER);
     env.extend(
         chat.set
             .iter()
-            .filter(|(name, _)| !strip(OsStr::new(name)))
+            .filter(|(name, _)| !strip(OsStr::new(name)) && name != crate::forgelock::MARKER)
             .map(|(name, value)| (name.into(), value.into())),
     );
     // Every product variable under both its names while the rename's window is open (V93k).
     let env = crate::envvar::twinned(env);
-    match chat.git_hooks {
+    let env = match chat.git_hooks {
         Some(hooks) => hooks.arm(env),
         None => env,
+    };
+    // After every pair there is, hooks' included, so the person's own survive (#7205).
+    if locked {
+        crate::forgelock::arm(env)
+    } else {
+        env
     }
 }
 

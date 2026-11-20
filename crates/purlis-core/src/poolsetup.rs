@@ -48,9 +48,6 @@ pub mod trying;
 /// The file a person's choices are kept in, in this machine's folder.
 const CHOICES_FILE: &str = "pool-setup.json";
 
-/// The programs an agent's forge identity is declared for.
-const FORGE_PROGRAMS: [&str; 2] = ["gh", "glab"];
-
 /// Where a pool's chats run. Only what is built is here (Q46).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -463,6 +460,9 @@ pub struct PoolFacts {
     pub name: String,
     pub runner: Runner,
     pub sign_ins: SignIns,
+    /// **How many runners on the pool's engine belong to another desktop** (#7192), as a status
+    /// line; none where there are none or the engine was not asked. They are only counted.
+    pub others: Option<String>,
     /// Where the pool is a cluster's, what this machine keeps of it (#4494).
     pub cluster: Option<cluster::KeptHere>,
 }
@@ -818,7 +818,11 @@ fn pool_reading(facts: &Facts) -> Reading {
                 "Asks Docker again. It changes nothing.",
             ),
         ),
-        Runner::NotAsked | Runner::Asleep | Runner::Running => Reading::done(name.clone()),
+        Runner::NotAsked | Runner::Asleep | Runner::Running => Reading {
+            // Only said, never acted on (#7192).
+            findings: pool.others.iter().cloned().collect(),
+            ..Reading::done(name.clone())
+        },
     }
 }
 
@@ -1737,10 +1741,17 @@ fn pool_facts(
         (Runner::Running, Some(docker)) => sign_ins_of(here, docker, name),
         _ => SignIns::NotAsked,
     };
+    let others = docker.and_then(|docker| {
+        let device = crate::machine::device_id(here.config).ok()?;
+        crate::pools::belonging_to_another_desktop(docker, &device)
+            .ok()
+            .flatten()
+    });
     Ok(PoolFacts {
         name: name.to_owned(),
         runner,
         sign_ins,
+        others,
         cluster: None,
     })
 }
@@ -1826,7 +1837,7 @@ fn identity_in(plane: Option<&Path>, hosts: &[HostFound]) -> Identity {
     };
     // A project with no sandbox table has no persona's tools to read.
     let personas = looked_at(root).unwrap_or_default();
-    let forge = |name: &str| FORGE_PROGRAMS.contains(&name);
+    let forge = |name: &str| crate::sandbox::tools::FORGE_PROGRAMS.contains(&name);
     let mut short_of_it = None;
     for (shown, declared) in personas {
         let persona = shown.persona.clone();

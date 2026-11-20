@@ -63,6 +63,7 @@ pub fn add(
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(pool.name(), pool.image().clone(), user, &home))
+        .map(|runner| runner.of_desktop(&desktop.device))
         .map(|runner| {
             runner
                 .limited(pool.limits())
@@ -897,11 +898,18 @@ pub fn follow(
     }
     let successor = crate::dockerpool::successor_name(name, image);
     // What a follow that stopped short of keeping its runner left goes first (#2869).
-    clear_leftovers_locked(config_root, docker, &successor, &locked)?;
+    clear_leftovers_locked(
+        config_root,
+        docker,
+        &successor,
+        Some(&desktop.device),
+        &locked,
+    )?;
     let before = before_a_drain(config_root, docker, name);
     let made = docker
         .declared(image)
         .and_then(|(user, home)| Runner::new(&successor, image.clone(), user, &home))
+        .map(|runner| runner.of_desktop(&desktop.device))
         .map(|runner| {
             runner
                 .limited(pool.limits())
@@ -964,11 +972,12 @@ fn replace_as(
         .find(|pool| pool.name() == name)
         .ok_or_else(|| Refused::Other(format!("no pool named {name} is on this machine")))?;
     on_its_engine(docker, &runners::runner_for(config_root, name)?)?;
-    clear_leftovers_locked(config_root, docker, next, &locked)?;
+    clear_leftovers_locked(config_root, docker, next, Some(&desktop.device), &locked)?;
     let before = before_a_drain(config_root, docker, name);
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(next, pool.image().clone(), user, &home))
+        .map(|runner| runner.of_desktop(&desktop.device))
         .map(|runner| {
             runner
                 .limited(pool.limits())
@@ -1053,6 +1062,56 @@ fn noted_where_made(
         ),
     }
     kept
+}
+
+/// **Adopts `kept`, a runner made before names carried a desktop's tag, at its next link**
+/// (#7192): its container is renamed to carry the tag of the desktop whose device id is
+/// `device`, and the row keeps the new names, so the desktop's own runner no longer holds a name
+/// another desktop of this engine might take. Where the container is no longer under its name or
+/// carries another desktop's label, it is left as it is and the refusal says why: the link goes
+/// on by the container's id all the same. A runner that carries a tag is returned as it is.
+pub fn adopt_at_link(
+    config_root: &Path,
+    docker: &Docker,
+    kept: &Kept,
+    device: &str,
+) -> Result<Kept, Refused> {
+    if kept.made.runner.tag().is_some() {
+        return Ok(kept.clone());
+    }
+    let locked = runners::lock(config_root);
+    // As it is kept now: another link may have adopted it while this one waited.
+    let Some(now) = runners::named(config_root, kept.name())? else {
+        return Ok(kept.clone());
+    };
+    if now.made.runner.tag().is_some() {
+        return Ok(now);
+    }
+    let adopted = docker
+        .adopt(&now.made, device, &runners::desktop_label(config_root))
+        .map_err(|why| Refused::Other(why.0))?;
+    let mut done = now;
+    done.made = adopted.clone();
+    runners::note_locked(config_root, kept.name(), |row| row.made = adopted, &locked)?;
+    Ok(done)
+}
+
+/// **How many runners on `docker`'s engine belong to another desktop** (#7192), said as a status
+/// line, or `None` where there are none: the runners it lists that carry the device tag of a
+/// desktop that is not `device`'s ([`Docker::runners_of_other_desktops`]). They are counted and
+/// never touched. One read of the engine, whatever the number of pools on it.
+pub fn belonging_to_another_desktop(
+    docker: &Docker,
+    device: &str,
+) -> Result<Option<String>, Refused> {
+    let others = docker
+        .runners_of_other_desktops(device)
+        .map_err(|why| Refused::Other(why.0))?;
+    Ok(match others.len() {
+        0 => None,
+        1 => Some("1 runner belongs to another desktop".to_owned()),
+        n => Some(format!("{n} runners belong to another desktop")),
+    })
 }
 
 /// **A runner made again** (#4149, [`make_again`]): the runner kept, and whether the sign-ins
@@ -1150,10 +1209,11 @@ fn make_again_as(
             )));
         }
     };
-    clear_leftovers_locked(config_root, docker, again, &locked)?;
+    clear_leftovers_locked(config_root, docker, again, Some(&desktop.device), &locked)?;
     let made = docker
         .declared(pool.image())
         .and_then(|(user, home)| Runner::new(again, pool.image().clone(), user, &home))
+        .map(|runner| runner.of_desktop(&desktop.device))
         .map(|runner| {
             runner
                 .limited(pool.limits())
@@ -1350,14 +1410,22 @@ pub fn clear_leftovers_of(
     config_root: &Path,
     docker: &Docker,
     name: &str,
+    device: Option<&str>,
 ) -> Result<Option<String>, Refused> {
-    clear_leftovers_locked(config_root, docker, name, &runners::lock(config_root))
+    clear_leftovers_locked(
+        config_root,
+        docker,
+        name,
+        device,
+        &runners::lock(config_root),
+    )
 }
 
 fn clear_leftovers_locked(
     config_root: &Path,
     docker: &Docker,
     name: &str,
+    device: Option<&str>,
     _locked: &runners::Locked,
 ) -> Result<Option<String>, Refused> {
     let claimed = runners::named(config_root, name)?.is_some()
@@ -1367,15 +1435,40 @@ fn clear_leftovers_locked(
     if claimed {
         return Ok(None);
     }
-    let removed = docker
-        .remove_leftovers_of(name, &runners::desktop_label(config_root))
+    let tag = device.map(crate::dockerpool::device_tag);
+    let label = runners::desktop_label(config_root);
+    // A name that carries this desktop's tag is this desktop's by it.
+    let mut removed = match tag.as_deref() {
+        Some(tag) => docker
+            .remove_leftovers_of(name, &label, Some(tag), None)
+            .map_err(|why| Refused::Other(why.0))?,
+        None => Vec::new(),
+    };
+    // What a make before names carried a tag left is named without one (#7192). That name and
+    // the desktop label are no proof of whose it is: only a container this desktop recorded in
+    // its own rows is removed. Another's is left as it is, and said.
+    let owned: Vec<String> = runners::read(config_root)?
+        .iter()
+        .map(|kept| kept.made.container.as_str().to_owned())
+        .collect();
+    let (more, left) = docker
+        .remove_untagged_leftovers_of(name, &label, &owned)
         .map_err(|why| Refused::Other(why.0))?;
-    Ok((!removed.is_empty()).then(|| {
-        format!(
+    removed.extend(more);
+    let mut said = Vec::new();
+    if !removed.is_empty() {
+        said.push(format!(
             "removed {} that a move of the pool to a new runner left behind",
             removed.join(" and ")
-        )
-    }))
+        ));
+    }
+    if !left.is_empty() {
+        said.push(format!(
+            "left {}, which this desktop did not record as its own",
+            left.join(" and ")
+        ));
+    }
+    Ok((!said.is_empty()).then(|| said.join("; ")))
 }
 
 /// **How each runner of pool `pool` that a drain would take stands now**, as Docker says, read
@@ -1549,7 +1642,12 @@ pub fn held_for_its_conversations(
         // Removed while it was read: a home the read's mount made again of its name goes too.
         // Nothing else claims that name: it was a draining runner, never its pool's runner now,
         // though the pool may share it.
-        if let Err(why) = docker.remove_leftovers_of(name, &runners::desktop_label(config_root)) {
+        if let Err(why) = docker.remove_leftovers_of(
+            name,
+            &runners::desktop_label(config_root),
+            before.made.runner.tag(),
+            before.made.runner.home_volume_kept(),
+        ) {
             tracing::warn!(
                 "purlis: what a read of runner {name}'s home left was not removed: {why}"
             );

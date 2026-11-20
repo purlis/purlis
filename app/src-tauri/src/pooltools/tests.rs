@@ -20,6 +20,7 @@ fn builds(image: &str) -> Bound {
         runner_image: "a".repeat(64),
         pod: String::new(),
         engine: "this machine's Docker".into(),
+        marked: false,
     }
 }
 
