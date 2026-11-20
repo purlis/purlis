@@ -206,6 +206,10 @@ pub struct Told {
 /// **The one Notice an old project's lines raise**, from what [`found`] reads at `root`: `None`
 /// where it has none. Nothing is written, so the way out is the Notice's own Dismiss.
 pub fn told(root: &Path) -> Option<Told> {
+    // Without the feature both routes still work, so nothing is replaced and nothing is said.
+    if !cfg!(feature = "forge-wiring") {
+        return None;
+    }
     told_of(&found(root))
 }
 
