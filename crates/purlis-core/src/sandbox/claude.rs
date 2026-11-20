@@ -981,7 +981,8 @@ pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
 
 /// **A plain Edit path in one workspace of a plane, as the same path in every workspace**:
 /// `<plane>/workspaces/<ws>/<tail>` as `<plane>/workspaces/*/<tail>`, or `None` for a path that is
-/// not one (a pattern, one with `.` or `..` in it, one that is not below a workspace). The Edit
+/// not one (a pattern, one with `.` or `..` in it, one that is not below a workspace of a plane:
+/// a folder holding a plane's manifest). The Edit
 /// tool pins nothing, and holds what a glob matches and what is below it, so the glob holds each
 /// workspace's path and the same path in a workspace made later, as [`every_branch_folders_git`]
 /// does for a branch folder's git (#7157: a plane's workspaces weigh each by path).
@@ -993,7 +994,10 @@ fn in_every_workspace(path: &str) -> Option<String> {
     let at = path.find(&marker)?;
     let (plane, below) = (&path[..at], &path[at + marker.len()..]);
     let (workspace, tail) = below.split_once('/')?;
-    (!plane.is_empty() && !workspace.is_empty() && !tail.is_empty())
+    // The plane's own folder: a rule's path is `/` and the path, so the folder is what follows
+    // the first `/`. Any other `workspaces` folder is not a plane's, and is left as it is.
+    let folder = plane.strip_prefix('/')?;
+    (!workspace.is_empty() && !tail.is_empty() && crate::plane::is_plane(Path::new(folder)))
         .then(|| format!("{plane}/{}/*/{tail}", super::WORKSPACES))
 }
 

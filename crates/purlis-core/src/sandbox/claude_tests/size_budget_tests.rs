@@ -38,7 +38,7 @@ const BUDGET: usize = crate::hoststart::HARNESS_SETTINGS_BYTES;
 /// The most a chat's whole generated harness settings file may weigh.
 const FILE_CAP: usize = crate::hoststart::HARNESS_SETTINGS_FILE_BYTES;
 
-/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the machine's folders (the plane's, the home's, `TMPDIR`) stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **Per OS, because the plane weighs more on macOS** (#7225 round 3): there every denied path under a firmlink (`/Users`, `/private`, ...) is also denied under its `/System/Volumes/Data` name (`firmlink_twin`), which Linux has no such name for. **On macOS this is 26,354 bytes under the 256,000 budget, and past the 128,000 where allow rules may be shed** (590 deny rules; 259,016 and 656 before each workspace's paths were one rule, #7157); the figure that matters for the person's notice tiers is macOS's. Linux's is in [`COUNTED_TODAY`]'s other form.
+/// What auto mode counts of a chat on the large plane, as serialised (`crate::hoststart::auto_mode_weight`), measured with the machine's folders (the plane's, the home's, `TMPDIR`) stood in for ([`STAND_IN`]) and each rule's `root` counted (#7225; #7157 had 219,348 without them). **Per OS, because the plane weighs more on macOS** (#7225 round 3): there every denied path under a firmlink (`/Users`, `/private`, ...) is also denied under its `/System/Volumes/Data` name (`firmlink_twin`), which Linux has no such name for. **On macOS this is 26,354 bytes under the 256,000 budget, and past the 128,000 where allow rules may be shed** (590 deny rules; 259,016 and 656 before each workspace's paths were one rule, #7157); CI's Mac read 228,749, within 0.4% of a developer's, so the figure is near machine-independent (the user id in a few rules is what is left). The figure that matters for the person's notice tiers is macOS's. Linux's is the other `COUNTED_TODAY`, an estimate until CI's run summary prints it (the test appends each OS's figure to `GITHUB_STEP_SUMMARY`).
 #[cfg(target_os = "macos")]
 const COUNTED_TODAY: usize = 229_646;
 
@@ -266,6 +266,13 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
         settings.len()
     );
     println!("{said}");
+    // CI's run summary carries the figure of each OS, so a ratchet is set from one it measured.
+    if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY")
+        && let Ok(mut file) = fs::OpenOptions::new().append(true).open(summary)
+    {
+        use std::io::Write as _;
+        let _ = writeln!(file, "size budget ({}): {said}", std::env::consts::OS);
+    }
     assert!(
         deny > 0,
         "the chat is sandboxed, and its tools held: {parsed}"
@@ -396,6 +403,9 @@ fn the_workspaces_folded_into_one_rule_deny_the_paths_they_denied() {
     let root = plane.path().canonicalize().unwrap();
     let home = tempfile::tempdir().unwrap();
     a_large_plane(&root);
+    // One workspace has no `infra` clone: the rule on every workspace's `infra/.git/config` is
+    // then wider than what was denied by that workspace's own path (below).
+    fs::remove_dir_all(root.join("workspaces/workspace-05/infra")).unwrap();
     let cwd =
         root.join("workspaces/workspace-00/.worktrees/app/t00-a-piece-of-work-named-at-length");
     let rules = |settings: String| -> Vec<String> {
@@ -438,16 +448,29 @@ fn the_workspaces_folded_into_one_rule_deny_the_paths_they_denied() {
         .filter(|rule| !super::claude::rule_holds(&now, rule))
         .collect();
     assert!(let_go.is_empty(), "no longer denied: {let_go:?}");
-    // Nothing is denied that was not, in a workspace the plane has.
+    // Held by a path of the plane's, as the rules before wrote each: not by a rule on any
+    // folder's (`**/.git/config` holds that path whatever the plane has, and always did).
+    let by_path: Vec<String> = before
+        .iter()
+        .filter(|rule| rule.starts_with("Edit(//"))
+        .cloned()
+        .collect();
+    // What is denied now and was not: the rule on a path that a workspace of the plane does not
+    // have, which is all there is. A glob denies the path in every workspace, those that have it
+    // and those that do not, and those made later: more is denied, never less (fail closed).
+    let mut wider = Vec::new();
     for rule in folded {
         for workspace in (0..WORKSPACES).map(|n| format!("workspace-{n:02}")) {
             let one = rule.replacen("/workspaces/*/", &format!("/workspaces/{workspace}/"), 1);
-            assert!(
-                super::claude::rule_holds(&before, &one),
-                "{one} is denied now, and was not before"
-            );
+            if !super::claude::rule_holds(&by_path, &one) {
+                wider.push(one);
+            }
         }
     }
+    assert!(
+        !wider.is_empty() && wider.iter().all(|one| one.contains("workspace-05/infra/")),
+        "only the workspace without its clone is denied more: {wider:?}"
+    );
 }
 
 /// **A folder granted while the chat runs still finds every git folder pin** (the review of
