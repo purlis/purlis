@@ -6451,6 +6451,7 @@ dependencies = [
  "getrandom 0.4.3",
  "gix",
  "glob",
+ "graphql-parser",
  "graphql_client",
  "grep-matcher",
  "grep-regex",
