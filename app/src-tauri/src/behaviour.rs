@@ -4643,7 +4643,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
              [ \"$1\" = login ] && [ \"$2\" = status ] && exit 0\n\
              for word in \"$@\"; do [ \"$word\" = --version ] && { echo 'codex-cli 0.147.0'; exit 0; }; done\n\
              gh --version | head -1 | sed 's/ version.*/ ANSWERED./'\n\
-             glab --version | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./'\n\
+             said=$(glab --version 2>&1); case \"$said\" in *\"purlis gitlab access\"*) echo 'glab GUARDED.' ;; *) echo \"$said\" | head -1 | cut -c1-4 | sed 's/$/ ANSWERED./' ;; esac\n\
              if gh auth token >/dev/null 2>&1; then echo 'TOKEN some.'; else echo 'TOKEN none.'; fi\n\
              echo \"AT $HOME.\"\n\
              if cat \"$HOME/.config/gh/hosts.yml\" >/dev/null 2>&1; then echo 'KEPT read.'; else echo 'KEPT held.'; fi\n\
@@ -4676,11 +4676,13 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
         (id, Pane::on(target, id))
     };
 
-    // No tool: both answer, and neither is anyone.
+    // No tool: gh answers and is nobody; glab is guarded.
     let (id, pane) = chat_says(None);
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    // #1349: a chat that holds the person's own login back has no glab of its own, and its
+    // shim says which flow gives it a token (and fails) in place of running on a login it never reads.
+    pane.shows("glab GUARDED.");
     pane.shows("TOKEN none.");
     // The home the runner's user keeps it in, so the refusals below are of that file.
     pane.shows(&format!(
@@ -4705,7 +4707,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let (id, pane) = chat_says(None);
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    pane.shows("glab GUARDED.");
     pane.shows("KEPT held.");
     pane.shows("SETTINGS kept.");
     target.sessions.close(id).expect("it closes");
@@ -4749,7 +4751,8 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let (id, pane) = chat_says(Some(digest));
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab ANSWERED.");
+    // The persona declares gh and kubectl, not glab, so glab is still guarded (#1349).
+    pane.shows("glab GUARDED.");
     // `auth` is refused a declared tool (`tools::args`), so the token is never read back.
     pane.shows("TOKEN none.");
     pane.shows("KUBECTL named the image, ended 127.");
