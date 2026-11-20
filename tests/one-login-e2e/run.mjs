@@ -231,8 +231,9 @@ async function main() {
 
   await rp.step('gh pr merge becomes a held ask; nothing merges until the person approves; then it merges that head (github.com)', async () => {
     const r = await chatRun('gh', ['pr', 'merge', '1', '--merge'], GH);
+    const recent = () => JSON.stringify(app.audit.slice(-4).map((a) => [a.method, a.url, a.verdict, a.reason]));
     denied(r, 'gh pr merge');
-    expect((r.stderr + r.stdout).includes('holds merges'), `the refusal should say purlis holds merges: ${tail(r)}`);
+    expect((r.stderr + r.stdout).includes('holds merges'), `the refusal should say purlis holds merges: ${tail(r)}`+recent());
     expect(github.merges.length === 0 && github.prs('o/r')[0].state === 'open', 'the forge merged nothing');
     const ask = app.asks.find((a) => a.host === 'github.com' && !a.done);
     expect(ask && ask.number === 1, `an ask for pull request 1 should be raised: ${JSON.stringify(app.asks.map((a) => [a.host, a.number]))}`);
@@ -249,7 +250,7 @@ async function main() {
     denied(r, 'glab mr merge');
     expect(gitlab.merges.length === 0 && gitlab.prs('o/r')[0].state === 'open', 'the forge merged nothing');
     const ask = app.asks.find((a) => a.host === 'gitlab.com' && !a.done);
-    expect(ask && ask.number === 1, 'an ask for merge request 1 should be raised');
+    expect(ask && ask.number === 1, `an ask for merge request 1 should be raised: ${tail(r)} ${JSON.stringify(app.audit.slice(-5).map((a) => [a.method, a.url, a.verdict, a.reason]))}`);
     const done = await app.approve(ask);
     expect(done.status === 200, `the person's approval should merge: ${done.status} ${done.body}`);
     expect(gitlab.merges.length === 1, 'the forge merged it');

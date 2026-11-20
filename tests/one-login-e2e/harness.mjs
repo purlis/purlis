@@ -115,7 +115,11 @@ export const expect = (cond, message) => {
 };
 
 /** The last lines of a command's output, for a failure message. */
-export const tail = (r) => `exit ${r.code}: ${(r.stderr || r.stdout).trim().split('\n').slice(-4).join(' | ').slice(0, 500)}`;
+export const tail = (r) => {
+  const lines = (r.stderr || r.stdout).trim().split('\n');
+  const shown = lines.length > 6 ? [...lines.slice(0, 3), '...', ...lines.slice(-2)] : lines;
+  return `exit ${r.code}: ${shown.join(' | ').slice(0, 700)}`;
+};
 
 /** Every file under a directory, with its text, for the scan for secrets. */
 export function filesUnder(dir, out = []) {

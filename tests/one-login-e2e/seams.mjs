@@ -309,7 +309,7 @@ export async function createApp({ work, ca, clock, forges }) {
           }
           return { verdict: 'allow' };
         }
-        if (d.repos.length === 0 && !d.roots.every((x) => x === 'viewer')) return refuse('a GraphQL query that names no recorded repository');
+        if (d.repos.length === 0 && !d.roots.every((x) => x === 'viewer')) return refuse(`a GraphQL query that names no recorded repository (roots: ${d.roots.join(',')}; ${q.query.replace(/\s+/g, ' ').slice(0, 160)})`);
         return { verdict: 'allow' };
       }
       if (segs[0] === 'repos' && segs.length >= 3) {
