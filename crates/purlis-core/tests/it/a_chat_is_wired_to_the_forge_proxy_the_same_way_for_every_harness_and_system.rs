@@ -258,6 +258,7 @@ fn only_the_forge_lock_s_files_name_the_chat_s_config_and_the_wiring_s_gh_folder
 
 #[test]
 fn each_system_names_the_versions_it_ran_and_advises_on_any_other() {
+    purlis_core::unsteered!();
     for os in [Os::Linux, Os::MacOs] {
         for tool in [Tool::Gh, Tool::Glab, Tool::Git] {
             let ran = forgewire::proven(tool, os).expect("a version");
@@ -281,6 +282,7 @@ fn each_system_names_the_versions_it_ran_and_advises_on_any_other() {
 
 #[test]
 fn the_download_only_hosts_are_never_named_by_the_chat_s_trust_or_denied_as_a_tunnel() {
+    purlis_core::unsteered!();
     let scratch = tempfile::tempdir().unwrap();
     let wiring = wiring(scratch.path());
     let denied = forgewire::denied_hosts(&repos());

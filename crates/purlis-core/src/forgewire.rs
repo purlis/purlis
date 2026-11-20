@@ -47,6 +47,10 @@ pub use secrecy::SecretString;
 
 use crate::forge::gitcredential::{SENTINEL_ENV, SENTINEL_HELPER_ARG};
 
+/// Started by a chat's git as its credential helper: answer with the sentinel and exit. The
+/// `purlis` command line calls it by this name, so it never names the account helper's module.
+pub use crate::forge::gitcredential::serve_sentinel_if_asked;
+
 /// The host name `gh` is told is its forge. It is never resolved: `gh` reaches it over the chat's
 /// unix socket, and the proxy builds the upstream from the chat's recorded host (D3b).
 pub const GH_HOST: &str = "github.localhost";

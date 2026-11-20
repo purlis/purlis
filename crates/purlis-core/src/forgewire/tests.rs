@@ -709,11 +709,23 @@ fn the_wrapper_never_runs_itself_and_says_so_where_no_gh_is_installed() {
         dir.path(),
     )
     .unwrap();
+    // A PATH holding the wrapper and `dirname` alone: a runner with its own gh in /usr/bin
+    // would otherwise run it.
+    let tools = dir.path().join("tools");
+    std::fs::create_dir(&tools).unwrap();
+    let dirname = ["/usr/bin/dirname", "/bin/dirname"]
+        .into_iter()
+        .find(|path| Path::new(path).exists())
+        .unwrap();
+    std::os::unix::fs::symlink(dirname, tools.join("dirname")).unwrap();
     let out = out(std::process::Command::new("/bin/sh")
         .arg(wiring.bin.join("gh"))
         .arg("api")
         .env_clear()
-        .env("PATH", format!("{}:/usr/bin:/bin", wiring.bin.display())));
+        .env(
+            "PATH",
+            format!("{}:{}", wiring.bin.display(), tools.display()),
+        ));
     assert_eq!(out.status.code(), Some(127));
     assert_eq!(
         String::from_utf8_lossy(&out.stderr).trim(),
