@@ -266,7 +266,17 @@ fn the_generated_settings_of_a_large_plane_stay_within_the_size_budget() {
         settings.len()
     );
     println!("{said}");
-    // CI's run summary carries the figure of each OS, so a ratchet is set from one it measured.
+    // CI's run summary and an annotation of the job carry the figure of each OS, so a ratchet is
+    // set from one it measured. Written past the test harness's capture, which holds a passing
+    // test's output back.
+    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+        use std::io::Write as _;
+        let _ = writeln!(
+            std::io::stderr(),
+            "::notice title=size budget ({})::{said}",
+            std::env::consts::OS
+        );
+    }
     if let Some(summary) = std::env::var_os("GITHUB_STEP_SUMMARY")
         && let Ok(mut file) = fs::OpenOptions::new().append(true).open(summary)
     {
