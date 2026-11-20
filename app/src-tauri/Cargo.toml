@@ -143,8 +143,9 @@ workspace = true
 # **The train switch** (one login, slice J; ADR 0128): the one line that turns the forge proxy
 # on for this app. It is on here, on the `one-login` integration branch, so every pull request
 # into it builds and tests the whole route; `main` keeps it off until the train lands, so the
-# line comes out of (or is not merged into) main's copy of this file. The core's own
-# `forge-wiring` (slice B's) is forwarded from here when B merges.
+# line comes out of (or is not merged into) main's copy of this file. This is the app's own
+# feature: the core's `forge-wiring` is slice I's test-only flag (it runs the real `gh`, `glab`
+# and `git` against a fake forge) and is not forwarded from here.
 default = ["forge-wiring"]
 forge-wiring = []
 
