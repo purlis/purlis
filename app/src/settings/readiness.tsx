@@ -113,7 +113,7 @@ function Verdict({ read }: { read: Read }) {
       <ul aria-label="Checks">
         {answer.checks.map((check) => (
           <li key={check.id}>
-            <Check one={check} />
+            <CheckRow one={check} />
           </li>
         ))}
       </ul>
@@ -121,7 +121,7 @@ function Verdict({ read }: { read: Read }) {
   );
 }
 
-function Check({ one }: { one: ReadinessCheck }) {
+function CheckRow({ one }: { one: ReadinessCheck }) {
   const verdict = SAID_VERDICT[one.verdict as keyof typeof SAID_VERDICT] ?? "Not read";
   const who = one.who === null ? undefined : WHO[one.who as keyof typeof WHO];
   const head = (

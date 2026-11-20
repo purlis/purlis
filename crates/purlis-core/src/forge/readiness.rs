@@ -923,7 +923,7 @@ impl<'a> Words<'a> {
         };
         fix.steps.insert(
             0,
-            "Sign in to purlis on this host in Settings, then press Check again: only purlis's own \
+            "Sign in to purlis on this host in Settings, then read the project's readiness again: only purlis's own \
              sign-in can show whether the organization approved it."
                 .to_owned(),
         );
@@ -942,7 +942,7 @@ impl<'a> Words<'a> {
                 format!(
                     "Next to {org}, press Grant (SAML single sign-on), then sign in with your identity provider."
                 ),
-                "Back in purlis, press Check again.".to_owned(),
+                "Back in purlis, read the project's readiness again.".to_owned(),
             ],
             request: None,
         }
