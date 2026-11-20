@@ -2180,6 +2180,11 @@ pub fn tell_the_mint_port(
     let Claimed {
         namespace, name, ..
     } = &paired.claimed;
+    // No runner chat is minted a token once the sign-in replaces the App (ADR 0128 D9), so a
+    // runner is told of no port, and this reads nothing of the Pool.
+    if cfg!(feature = "forge-wiring") {
+        return Ok(());
+    }
     let seen = kubectl.pool(pool)?;
     if !seen.mints_in_cluster {
         return Ok(());

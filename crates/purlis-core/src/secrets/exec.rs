@@ -507,7 +507,7 @@ pub fn exec(ctx: &Ctx, req: &Request, io: &mut dyn Io) -> i32 {
     }
     // A forge token is never handed to a program from a vault once the sign-in replaces it
     // (ADR 0128): a chat reaches its forge through the app's proxy, and holds none.
-    if cfg!(feature = "forge-wiring") && hands_a_forge_token(req) {
+    if cfg!(feature = "forge-wiring") && cmd::in_a_chat(ctx) && hands_a_forge_token(req) {
         io.say(Say::Err(
             "purlis no longer hands a forge token from a vault to a program: chats use your \
              sign-in. Sign in under Settings › Forges."

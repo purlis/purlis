@@ -737,6 +737,17 @@ pub fn credentials_note(
     if github.is_empty() && gitlab.is_empty() {
         return None;
     }
+    // The person's sign-in is the one way a chat reaches a forge (ADR 0128): no token is set up
+    // for a chat, so no flow is named.
+    if cfg!(feature = "forge-wiring") {
+        let hosts: Vec<&str> = github.iter().chain(gitlab.iter()).copied().collect();
+        return Some(format!(
+            "This chat cannot use your own forge login, because its sandbox holds your \
+             credentials back. It acts on {} through your sign-in: sign in under Settings › \
+             Forges. It takes effect when the chat restarts.",
+            hosts.join(", ")
+        ));
+    }
     let mut ways = Vec::new();
     if !github.is_empty() {
         ways.push(

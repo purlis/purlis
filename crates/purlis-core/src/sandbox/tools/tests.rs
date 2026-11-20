@@ -1617,6 +1617,7 @@ fn a_chat_that_only_refuses_writes_its_shims_apart_from_another_chat_s() {
 /// **An undeclared `glab` in a chat under the credentials class says the flow and fails** (#1349
 /// part 2): its shim is written apart from another chat's, names the command that sets a token up
 /// on the project's one GitLab host and the persona, exits 1, and never runs the program.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
     use std::os::unix::fs::PermissionsExt as _;
@@ -1903,4 +1904,16 @@ fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d
         &bin.join("rcjob"),
         &lib.join("upstart-job")
     ));
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_guarded_glab_says_to_sign_in_and_names_no_token_flow() {
+    let said = crate::sandbox::tools::undeclared_glab_said("dev", Some("gitlab.com"));
+    assert!(said.contains("Settings › Forges"), "{said}");
+    assert!(!said.contains("gitlab access"), "{said}");
+    assert_eq!(
+        crate::sandbox::tools::declared_glab_not_running_said("dev"),
+        said
+    );
 }

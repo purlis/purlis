@@ -747,4 +747,29 @@ mod replaced_tests {
         );
         assert_eq!(follow(dir.path(), 0), Ok(()));
     }
+
+    fn a_word() -> Told {
+        Told {
+            namespace: "ns".to_owned(),
+            claim: "claim".to_owned(),
+            cluster: "cluster".to_owned(),
+            address: "10.0.0.1:1".to_owned(),
+            keys: vec![format!("ed25519:{}", "0".repeat(64))],
+            left: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_word_about_the_port_is_refused_and_keeps_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(tell(dir.path(), a_word()), Err(REPLACED.to_owned()));
+        assert_eq!(tell_again(dir.path(), a_word()), Err(REPLACED.to_owned()));
+        assert!(!crate::machine::charterd(dir.path()).join(FILE).exists());
+    }
+
+    #[test]
+    fn a_runner_follows_no_roll_of_the_key_and_starts_no_thread_for_it() {
+        // Returns at once: the thread that would loop for ever is never made.
+        keep_following(std::path::PathBuf::from("/synthetic/never/read"));
+    }
 }

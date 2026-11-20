@@ -3025,6 +3025,10 @@ pub fn no_minted_token_said(name: &str, mints: bool) -> String {
 /// tool that is allowed here, and the chat never uses the person's own login, so it names the flow
 /// that sets one up and the Allow that follows it.
 pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = (persona, host);
+        return SIGN_IN_SAID.to_owned();
+    }
     format!(
         "glab has no token in this chat, and a chat never uses the person's own glab login. To \
          give it one, {}, and allow it ({ALLOW_IS_ASKED}). Or choose a sandbox template where \
@@ -3037,12 +3041,22 @@ pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
 /// is not allowed yet (or no program was found), and the chat never falls back to the person's
 /// own login.
 pub fn declared_glab_not_running_said(persona: &str) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = persona;
+        return SIGN_IN_SAID.to_owned();
+    }
     format!(
         "glab is {persona}'s tool but is not running in this chat, and a chat never uses the \
          person's own glab login. Allow it in Settings › GitLab access ({ALLOW_IS_ASKED}), make \
          sure glab is installed, then restart the chat."
     )
 }
+
+/// What a guarded `glab` says once the sign-in replaces the tokens a chat was handed (ADR 0128):
+/// the way on is the person's own sign-in, which a chat acts through, never a token of its own.
+const SIGN_IN_SAID: &str = "glab has no token in this chat, and a chat never uses the person's own \
+     glab login. Chats act through your sign-in: sign in to the host under Settings › Forges, \
+     then restart the chat.";
 
 /// **The forge programs a chat under the credentials class is guarded from running bare**
 /// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.

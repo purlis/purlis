@@ -31,6 +31,39 @@ const TOKEN_VARS: [&str; 7] = [
     "CI_JOB_TOKEN",
 ];
 
+/// The prefixes a forge's own tokens carry: GitHub's (`ghp_` classic, `gho_` OAuth, `ghu_` user,
+/// `ghs_` installation, `github_pat_` fine-grained) and GitLab's (`glpat-` personal or project,
+/// `glcbt-` CI build, `glrt-` runner).
+const TOKEN_PREFIXES: [&str; 8] = [
+    "ghp_",
+    "gho_",
+    "ghu_",
+    "ghs_",
+    "github_pat_",
+    "glpat-",
+    "glcbt-",
+    "glrt-",
+];
+
+/// **Whether `value` is a forge token**, by its documented prefix.
+pub fn forge_token_value(value: &str) -> bool {
+    let value = value.trim_start();
+    TOKEN_PREFIXES
+        .iter()
+        .any(|prefix| value.starts_with(prefix))
+}
+
+/// **Whether a vault item called `key` is one purlis recorded as a forge token**: what Agent
+/// identity keeps under its reserved prefix ([`mint::RESERVED_PREFIX`]) and what GitLab access
+/// keeps for a host ([`crate::forge::gitlabaccess::key_of`]).
+pub fn forge_item_name(key: &str) -> bool {
+    let own = crate::forge::gitlabaccess::key_of("");
+    mint::reserved(key)
+        || key
+            .get(..own.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(&own))
+}
+
 /// What a resolved tool whose program is `gh` or `glab` says when it is left out, as the clause
 /// after its name.
 pub const FORGE_PROGRAM_SAID: &str = "runs gh or glab with a value from a vault, which purlis no \
@@ -204,7 +237,8 @@ fn told_of(found: &[Found]) -> Option<Told> {
         text: format!(
             "This project has {lines} that hand a chat a forge token, which purlis no longer \
              does: chats use your sign-in. Sign in under Settings › Forges, then delete the \
-             lines. Nothing was deleted for you."
+             lines. Keep a `mint` line while its GitHub App's key is in a vault: it stops purlis \
+             handing that key to a chat. Nothing was deleted for you."
         ),
     })
 }

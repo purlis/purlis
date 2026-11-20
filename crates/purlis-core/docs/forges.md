@@ -74,7 +74,9 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`, `env -u GIT_CONFIG_COUNT …`); a socket you
   granted; a bare `ssh` reading `~/.ssh/config` (Codex, opencode); Claude Code's own ssh and its
   ssh agent; and a forge server under a name purlis does not list, since connector servers still
-  start and only calls to the listed names are refused. Until that train lands, a build still mints a token for a chat and a chat is on the baseline
+  start and only calls to the listed names are refused; a token an MCP server reads from its own
+  variable (such as `GITHUB_PERSONAL_ACCESS_TOKEN`, which purlis does not list) is not refused; and
+  a program that is not a forge's, under your Allow, is handed what the Allow names. Until that train lands, a build still mints a token for a chat and a chat is on the baseline
   only where its sandbox holds your credentials back.
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —

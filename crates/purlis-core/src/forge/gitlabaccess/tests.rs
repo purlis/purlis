@@ -343,3 +343,28 @@ fn with_no_allow_to_record_every_persona_is_left_for_the_persons_own() {
     );
     assert!(held(plane.path()).unwrap()[0].ours());
 }
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn setting_up_a_gitlab_token_is_refused_and_stores_and_writes_nothing() {
+    let plane = project("");
+    let before = std::fs::read_to_string(crate::names::manifest(plane.path())).unwrap();
+    let (_machine, ctx) = machine(&["dev"]);
+    let said = set_up(
+        &ctx,
+        plane.path(),
+        SELF_HOSTED,
+        TOKEN,
+        &["dev".to_owned()],
+        None,
+    );
+    assert_eq!(
+        said.err(),
+        Some(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned())
+    );
+    assert_eq!(stored(&ctx, "dev", &key_of(SELF_HOSTED)), None);
+    assert_eq!(
+        std::fs::read_to_string(crate::names::manifest(plane.path())).unwrap(),
+        before
+    );
+}

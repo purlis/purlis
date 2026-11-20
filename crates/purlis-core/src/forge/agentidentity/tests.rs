@@ -945,6 +945,7 @@ fn a_wait_that_runs_out_says_so_and_where_the_app_may_be() {
 
 /// #1349: a chat whose sandbox holds the person's own credentials, in a project with a GitHub
 /// remote and no agent identity minting its token, is told so at its start, with both ways out.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_start_with_the_class_on_a_github_remote_and_no_identity_says_the_ways_out() {
     let dir = tempfile::tempdir().unwrap();
@@ -960,6 +961,7 @@ fn a_start_with_the_class_on_a_github_remote_and_no_identity_says_the_ways_out()
     assert!(said.contains("credentials class is off"), "{said}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn the_credentials_note_is_said_only_where_it_is_true() {
     let github = [HostFound {
@@ -997,6 +999,7 @@ fn the_credentials_note_is_said_only_where_it_is_true() {
 /// #1349 part 2: a forge host is served by a route to that very host and kind, so a GitLab
 /// remote is not served by a GitHub mint, a host is not served by a tool of another host, and
 /// each forge is told its own way.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_gitlab_host_is_served_only_by_a_glab_route_to_that_host() {
     let both = [
@@ -1054,4 +1057,63 @@ fn the_operators_mintable_names_are_a_chats_permissions() {
     let mut chat: Vec<&str> = CHAT_PERMISSIONS.iter().map(|(name, _)| *name).collect();
     chat.sort_unstable();
     assert_eq!(mintable, chat);
+}
+
+// With the one-login train no setup writes a line or stores a key for a chat (ADR 0128).
+
+#[cfg(feature = "forge-wiring")]
+const REFUSED: &str = crate::sandbox::tools::replaced::SETUP_REFUSED;
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn setting_up_an_apps_lines_is_refused_and_writes_nothing() {
+    let text = "[sandbox]\n\n[sandbox.personas.dev]\n";
+    let root = a_new_plane(text);
+    assert_eq!(
+        add_lines(root.path(), "Iv23li", &["dev".to_owned()]),
+        Err(REFUSED.to_owned())
+    );
+    let said = write_and_allow(root.path(), "Iv23li", &["dev".to_owned()], &mut |_| {
+        panic!("nothing was written, so nothing is allowed")
+    });
+    assert_eq!(said, Err(REFUSED.to_owned()));
+    assert_eq!(
+        std::fs::read_to_string(crate::names::manifest(root.path())).unwrap(),
+        text
+    );
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn making_an_app_is_refused_before_anything_is_listened_on_or_opened() {
+    let conversions = Conversions::say(201, &serde_json::json!({}));
+    let said = create_app(
+        &acme(),
+        &AtomicBool::new(false),
+        &Ways {
+            bind: &|| panic!("nothing is listened on"),
+            open: &|_: &str| panic!("no page is opened"),
+            exchange: &conversions,
+            clock: loopback::Clock::system(),
+        },
+    );
+    assert_eq!(said.err(), Some(REFUSED.to_owned()));
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_chat_that_cannot_use_the_persons_login_is_pointed_to_the_sign_in_and_no_flow() {
+    let note = credentials_note(
+        true,
+        &[],
+        &[HostFound {
+            host: "github.com".to_owned(),
+            kind: Some(Kind::GitHub),
+        }],
+        Some("dev"),
+    )
+    .expect("a note");
+    assert!(note.contains("sign in under Settings › Forges"), "{note}");
+    assert!(!note.contains("Agent identity"), "{note}");
+    assert!(!note.contains("purlis gitlab access"), "{note}");
 }
