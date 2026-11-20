@@ -99,6 +99,7 @@ import { SavingView } from "./SavingView";
 import { LicencesView } from "./LicencesView";
 import { ShortcutsView } from "./keys/ShortcutsView";
 import { AgentIdentityTab } from "./AgentIdentityTab";
+import { GitLabAccessTab } from "./GitLabAccessTab";
 import { DevicesView } from "./DevicesView";
 import { BrowserView } from "./BrowserView";
 import { BrowserTimeline } from "./BrowserTimeline";
@@ -140,6 +141,7 @@ import {
   SHORTCUTS_VIEW,
   AGENT_IDENTITY_VIEW,
   AGENT_IDENTITY_TITLE,
+  GITLAB_ACCESS_VIEW,
   DEVICES_VIEW,
   SETTINGS_TAB_TITLE,
   settingsLevelOf,
@@ -417,6 +419,8 @@ export const OWN_MARKS: Record<string, React.ComponentType<{ className?: string 
   [CHAT_SCREEN]: ScrollText,
   /** What a chat acts as on a forge (#4485, `AgentIdentityTab.tsx`). */
   [AGENT_IDENTITY_VIEW.view]: BadgeCheck,
+  /** The token a chat's glab is handed (#1349, `GitLabAccessTab.tsx`). */
+  [GITLAB_ACCESS_VIEW.view]: KeyRound,
   /** A browser's DevTools, drawn live (#2028, `inspector.ts`). */
   [INSPECTOR_VIEW]: Bug,
   /** A pinned artifact, rendered (#5952, `artifacts.ts`). */
@@ -650,6 +654,18 @@ export function ViewPane({
         aria-label={title}
       >
         <AgentIdentityTab key={plane} plane={plane} />
+      </section>
+    );
+  }
+  // **GitLab access** (#1349): keyed by the plane, whose clones and personas it reads.
+  if (view.from === null && view.view === GITLAB_ACCESS_VIEW.view) {
+    return (
+      <section
+        className="view-pane view-alone"
+        data-testid="view-pane-gitlab-access"
+        aria-label={title}
+      >
+        <GitLabAccessTab key={plane} plane={plane} />
       </section>
     );
   }

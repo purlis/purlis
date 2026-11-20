@@ -466,11 +466,18 @@ fn token() -> Token {
     }
 }
 
-/// Whatever the installation holds, a token never asks for what administers anything.
+/// Whatever the installation holds, a token asks only for what a chat's token may have.
 #[test]
-fn a_token_asks_only_for_repo_level_permissions_that_administer_nothing() {
+fn a_token_asks_only_for_what_a_chat_needs() {
     let held = json!({
         "contents": "write",
+        "issues": "read",
+        "pull_requests": "write",
+        "metadata": "read",
+        "actions": "write",
+        "statuses": "write",
+        "deployments": "write",
+        "checks": "read",
         "administration": "write",
         "secrets": "write",
         "packages": "write",
@@ -480,7 +487,15 @@ fn a_token_asks_only_for_repo_level_permissions_that_administer_nothing() {
         "organization_administration": "write",
     });
     let asked = github::mintable(held.as_object().expect("an object"));
-    assert_eq!(Value::Object(asked), json!({ "contents": "write" }));
+    assert_eq!(
+        Value::Object(asked),
+        json!({
+            "contents": "write",
+            "issues": "read",
+            "metadata": "read",
+            "pull_requests": "write",
+        })
+    );
 }
 
 fn pod_with(phase: &str, key: &str) -> k8s_openapi::api::core::v1::Pod {
