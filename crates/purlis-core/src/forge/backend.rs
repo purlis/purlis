@@ -1167,13 +1167,19 @@ impl Forge {
     /// person's purlis sign-in for a window call and the CLI for every other
     /// ([`super::signin`]); anywhere else, the CLI.
     pub fn backend(&self) -> Box<dyn ForgeBackend> {
+        self.backend_for(self.process_transports())
+    }
+
+    /// The transports this process gives a call on this forge: the person's sign-in where the
+    /// host handed its sign-ins over, else the CLI.
+    pub(super) fn process_transports(&self) -> Arc<dyn Transports> {
         match super::signin::transports(self) {
-            Some(transports) => self.backend_for(transports),
-            None => self.backend_for(Arc::new(ChatsLoseAnImport {
+            Some(transports) => transports,
+            None => Arc::new(ChatsLoseAnImport {
                 forge: self.clone(),
                 cli: Arc::new(Cli::default()),
                 config_root: crate::machine::config_root(),
-            })),
+            }),
         }
     }
 
