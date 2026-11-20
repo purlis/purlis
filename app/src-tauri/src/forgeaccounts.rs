@@ -186,16 +186,22 @@ pub const SIGN_IN_ENDED: &str = "forge-sign-in-ended";
 /// the person reads which sign-in ended, and how to sign in again, when it happens rather than
 /// at the next thing that fails. Called once, as the app starts.
 pub fn tell_the_window_when_a_sign_in_ends(app: &tauri::AppHandle) {
-    use tauri::Emitter;
     let Some(scope) = HostScope::claim() else {
         return;
     };
+    tell_the_window(&scope, app);
+}
+
+/// [`tell_the_window_when_a_sign_in_ends`] once the host's scope is in hand, over any runtime so
+/// a test can give it a mock one.
+fn tell_the_window<R: tauri::Runtime>(scope: &HostScope, app: &tauri::AppHandle<R>) {
+    use tauri::Emitter;
     let ended = app.clone();
-    purlis_core::forge::refresh::tell_when_ended(&scope, move |_account| {
+    purlis_core::forge::refresh::tell_when_ended(scope, move |_account| {
         let _ = ended.emit(SIGN_IN_ENDED, ());
     });
     let app = app.clone();
-    purlis_core::forge::refresh::tell_of_trouble(&scope, move |account, trouble| {
+    purlis_core::forge::refresh::tell_of_trouble(scope, move |account, trouble| {
         let _ = app.emit(SIGN_IN_TROUBLE, trouble_said(&account.id, trouble));
     });
 }
@@ -731,6 +737,96 @@ mod tests {
     }
 
     use super::*;
+
+    /// A forge that says whose token it is.
+    struct WhoAmI;
+
+    impl purlis_core::forge::transport::Transport for WhoAmI {
+        fn send(
+            &self,
+            _forge: &purlis_core::forge::Forge,
+            _call: &purlis_core::forge::transport::Call,
+        ) -> Result<purlis_core::forge::transport::Reply, purlis_core::forge::transport::NoAnswer>
+        {
+            Ok(purlis_core::forge::transport::Reply {
+                code: 0,
+                out: r#"{"login": "octocat", "username": "octocat"}"#.to_string(),
+                err: String::new(),
+                status: Some(200),
+                headers: Vec::new(),
+            })
+        }
+
+        fn check_auth(
+            &self,
+            _forge: &purlis_core::forge::Forge,
+        ) -> Result<(), purlis_core::forge::ForgeError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_app_registers_the_trouble_handler_and_a_trouble_reaches_the_window_once() {
+        use purlis_core::forge::refresh::Refresher;
+        use tauri::Listener;
+        let app = tauri::test::mock_app();
+        let heard = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = heard.clone();
+        app.listen(SIGN_IN_TROUBLE, move |event| {
+            log.lock().unwrap().push(event.payload().to_string());
+        });
+        let scope = HostScope::for_a_test();
+        tell_the_window(&scope, app.handle());
+
+        // An account signed in through an application the host no longer has pinned, with its
+        // token about to end: renewal stops, and that is told.
+        let home = tempfile::tempdir().unwrap();
+        let keyring = accounts::keyring_at(home.path());
+        let granted = oauth::Answer::of(
+            200,
+            &format!(
+                r#"{{"access_token": "an-access-value", "scope": "{}", "expires_in": 28800,
+                     "refresh_token": "a-refresh-value"}}"#,
+                accounts::needed(Kind::GitHub).join(",")
+            ),
+        )
+        .granted()
+        .unwrap();
+        let reach = |_: &purlis_core::forge::Forge,
+                     _: Arc<dyn purlis_core::forge::http::TokenSource>|
+         -> Result<
+            Arc<dyn purlis_core::forge::transport::Transport>,
+            purlis_core::forge::ForgeError,
+        > { Ok(Arc::new(WhoAmI)) };
+        let account = accounts::sign_in_with_grant(
+            &scope,
+            home.path(),
+            keyring.as_ref(),
+            &reach,
+            Kind::GitHub,
+            "ghe.example.com",
+            granted,
+            Method::Device,
+            "Iv1.ghes-client",
+        )
+        .unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let near_its_end = now + 8 * 60 * 60 - 60;
+        let refresher = Refresher::new(&scope, home.path());
+        // Asked twice: the trouble is the same, and the window is told of it once.
+        for _ in 0..2 {
+            refresher.token_at(&account, near_its_end).unwrap();
+        }
+        let heard = heard.lock().unwrap();
+        assert_eq!(heard.len(), 1, "{heard:?}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&heard[0]).unwrap(),
+            serde_json::json!({"account": account.id, "trouble": "pin-changed"})
+        );
+    }
 
     #[test]
     fn a_handed_token_never_prints() {

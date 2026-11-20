@@ -83,12 +83,20 @@ A long-lived token's expiry is not in the token. Give it as `PURLIS_FORGE_TOKEN_
 process, and one at a time on the machine (`forge-refresh.lock`), so the window and a session host
 never spend the same single-use refresh token. The rotated pair is written to the keyring **before**
 the new token is used; if the keyring refuses, both pairs are held in memory, the write is tried
-again first, and the spent refresh token is never sent. A renewal that cannot take the machine lock
-is not made (it fails closed: the token in hand serves while it lasts). A pair the keyring refused
-also leaves a marker in the lock folder (`forge-refresh-held-<hex>`: the account id and the process
-id, written under the lock), so another process does not send the refresh token the forge has spent;
-and a pair is written only over the refresh token it was made from, so a stale one never overwrites a
-fresh sign-in or makes an item again that another process ended.
+again first, and the spent refresh token is never sent. Sign-in and sign-out take the same lock, so
+a renewal never writes the item back between their change and its own check. A renewal that cannot
+take the machine lock is not made on macOS and Linux (it fails closed: the token in hand serves
+while it lasts). **On Windows there is no machine lock**: purlis keeps no machine-level store there
+(ADR 0031), so a renewal is one at a time within its process only, and the window and a session
+host can spend the same refresh token. A renewal leaves a marker in the lock folder
+(`forge-refresh-held-<hex>`: the account id and the process id), written under the lock before the
+refresh token is sent and removed once the pair is in the keyring, so another process does not send
+a refresh token the forge has spent. A renewal whose marker cannot be written is not made, and a
+marker that cannot be read, or is not an account id and a process id, holds like a live one. A
+marker is cleared when its process is gone, when it is older than 30 minutes (a reused process id,
+or a host that went idle, never blocks renewal for good), and by a fresh sign-in or sign-out of its
+account. A pair is written only over the refresh token it was made from, so a stale one never
+overwrites a fresh sign-in or makes an item again that another process ended.
 
 **Only the forge's word that the grant is over ends a sign-in**: `invalid_grant`, and GitHub's
 `bad_refresh_token`. The account is marked signed out, its keyring item is deleted, and the window
@@ -104,7 +112,10 @@ the person's press.
 
 A token variable that is not text is an error, never unset; `GH_TOKEN` and `GITHUB_TOKEN` (and the
 two enterprise variables) set to different tokens are refused, not ordered. `CI_JOB_TOKEN` is taken
-whatever its length or characters (GitLab's job token is a JWT in newer versions). A chat is given
+without the length and character shapes only when it is `glcbt-` (any length), a JWT (GitLab's job
+token in newer versions) or the original opaque 20-character token; any other value is held to the
+shapes above like any token. The 4096-byte limit and the printable-characters check apply to every
+token, a job's included. A chat is given
 none of the connection variables, under `PURLIS_` or its old `CHARTER_` name.
 
 ## What is kept, and where

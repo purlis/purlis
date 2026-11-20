@@ -1152,6 +1152,11 @@ fn keep(
     };
     drop(held);
 
+    // The machine's renewal lock first, then the file's: a renewal in another process holds the
+    // first while it compares and sets this item, so a sign-in never lands between its check and
+    // its write. The same order everywhere, so no two wait on each other. Best effort when the
+    // lock cannot be had: no renewal is made then either.
+    let _across = crate::machine::Lock::named(config_root, super::refresh::REFRESH_LOCK);
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let same = file.accounts.iter().position(|value| {
@@ -1196,6 +1201,8 @@ fn keep(
     keyring
         .set(&service(&account), ITEM_ACCOUNT, &item)
         .map_err(|e| unechoed(e.message.to_string(), &secret))?;
+    // A fresh sign-in makes the pair another process held, unkept, beside the point.
+    super::refresh::clear_held(config_root, &account.id);
     drop(item);
     drop(secret);
     let value = written(&account, rest);
@@ -1222,6 +1229,9 @@ pub fn sign_out(
     keyring: &dyn Store,
     id: &str,
 ) -> Result<ForgeAccount, String> {
+    // The renewal lock first, as [`keep`] takes it: a renewal in another process never writes
+    // the item back between this delete and the account leaving the list.
+    let _across = crate::machine::Lock::named(config_root, super::refresh::REFRESH_LOCK);
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let at = file
@@ -1239,6 +1249,7 @@ pub fn sign_out(
                 e.message
             )
         })?;
+    super::refresh::clear_held(config_root, &account.id);
     file.accounts.remove(at);
     write(config_root, file)?;
     Ok(account)

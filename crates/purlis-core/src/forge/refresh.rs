@@ -243,7 +243,9 @@ impl Refresher {
         // And one at a time on the machine: the window and a session host are two processes.
         let _across = crate::machine::Lock::named(&self.config_root, REFRESH_LOCK);
         // Fail closed: a refresh rotates the refresh token, so a renewal that cannot be made
-        // one at a time on the machine is not made. The token in hand serves while it lasts.
+        // one at a time on the machine is not made. The token in hand serves while it lasts. Off
+        // unix there is no machine lock to take (`machine::supported` refuses the store, ADR
+        // 0031), so a renewal there is one at a time in its process only.
         if cfg!(unix) && !_across.held() {
             let kept = self.read(keyring.as_ref(), account)?;
             return match kept.expires_at {
@@ -324,14 +326,31 @@ impl Refresher {
             .clone()
             .unwrap_or_else(|| Endpoints::of(registration));
         let endpoint = self.endpoint.get_or_init(Https::shared);
+        // Marked before the refresh token is sent, not after: a renewal that cannot say it is
+        // under way is not made (fail closed), so no process is left free to send a token the
+        // forge has spent. The token in hand serves while it lasts.
+        if let Err(why) = self.mark_held(account) {
+            tracing::warn!("purlis: {why}");
+            return match kept.expires_at {
+                Some(at) if at <= now => Err(ForgeError::transport(format!(
+                    "purlis could not record that it is renewing its sign-in to {} as {}, so it \
+                     did not renew it. Try again.",
+                    account.host, account.login
+                ))),
+                _ => Ok(kept.access),
+            };
+        }
         match renewed(endpoint.as_ref(), &at, &client_id, spent) {
             Renewed::Granted(granted) => {
                 going(&account.id, |g| *g = Going::default());
                 // Kept before it is used: the forge has spent the old refresh token.
                 match self.keep_durably(keyring.as_ref(), account, &granted, Some(spent), now) {
-                    Ok(()) => Ok(granted.access),
+                    Ok(()) => {
+                        self.unmark_held(account);
+                        Ok(granted.access)
+                    }
                     Err(why) => {
-                        self.mark_held(account);
+                        // The marker written before the send stays: the pair is held here.
                         pending(|all| {
                             all.insert(
                                 account.id.clone(),
@@ -356,6 +375,7 @@ impl Refresher {
                 Err(self.ended(keyring.as_ref(), account))
             }
             Renewed::Unreachable(why) => {
+                self.unmark_held(account);
                 let failures = going(&account.id, |g| {
                     g.failures += 1;
                     g.retry_at = now.saturating_add(backoff(g.failures).as_secs());
@@ -433,22 +453,25 @@ impl Refresher {
     /// The marker file of `account`'s unkept pair, in the lock folder (hex of the id: any id is a
     /// safe file name).
     fn marker(&self, account: &ForgeAccount) -> Option<PathBuf> {
-        let hex: String = account.id.bytes().map(|b| format!("{b:02x}")).collect();
-        let dir = crate::machine::locks_dir(&self.config_root).ok()?;
-        Some(dir.join(format!("forge-refresh-held-{hex}")))
+        marker_of(&self.config_root, &account.id)
     }
 
-    /// Says, under the machine lock, that this process holds a renewed pair for `account` it could
-    /// not write: the keychain still has the refresh token the forge spent. The file holds the
-    /// account id and this process's id.
-    fn mark_held(&self, account: &ForgeAccount) {
+    /// Says, under the machine lock, that this process is renewing `account` and so may hold a
+    /// renewed pair it could not write: the keychain still has the refresh token the forge spends.
+    /// The file holds the account id and this process's id; its age is the file's. An error means
+    /// no marker stands, and the renewal is not made.
+    fn mark_held(&self, account: &ForgeAccount) -> Result<(), String> {
         let Some(path) = self.marker(account) else {
-            return;
+            // Off unix purlis keeps no machine store, so there is no lock folder and no second
+            // process to mark it for ([`crate::machine::supported`]).
+            return match crate::machine::supported() {
+                Ok(()) => Err("the folder for the renewal marker could not be made".to_string()),
+                Err(_) => Ok(()),
+            };
         };
         let text = format!("{}\n{}\n", account.id, std::process::id());
-        if let Err(why) = std::fs::write(&path, text) {
-            tracing::warn!("purlis: could not mark a renewed sign-in as held: {why}");
-        }
+        std::fs::write(&path, text)
+            .map_err(|why| format!("could not mark a renewal as under way: {why}"))
     }
 
     fn unmark_held(&self, account: &ForgeAccount) {
@@ -458,26 +481,52 @@ impl Refresher {
     }
 
     /// Why this process must not renew `account`: another live process holds a renewed pair it
-    /// has not yet kept. A marker of a process that is gone is removed: its pair is lost, and the
-    /// forge's own answer to the spent token is what ends the sign-in.
+    /// has not yet kept. A marker of a process that is gone, or older than [`HELD_FOR`], is
+    /// removed: its pair is lost, and the forge's own answer to the spent token is what ends the
+    /// sign-in. **A marker that cannot be read, or says nothing sensible, holds** until it ages
+    /// out: the doubt closes the door.
     fn held_elsewhere(&self, account: &ForgeAccount) -> Option<String> {
         let path = self.marker(account)?;
-        let text = std::fs::read_to_string(&path).ok()?;
-        let mut lines = text.lines();
-        let id = lines.next()?;
-        let pid: u32 = lines.next()?.trim().parse().ok()?;
-        if id != account.id || pid == std::process::id() {
-            return None;
-        }
-        if crate::process::alive(pid) {
-            return Some(format!(
+        let held = || {
+            Some(format!(
                 "another purlis process holds a renewed sign-in to {} as {} that it has not yet \
                  kept in the keychain, so this one did not renew it. Try again shortly.",
                 account.host, account.login
-            ));
+            ))
+        };
+        let text = match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+            Err(_) => return self.hold_or_age_out(&path, held),
+        };
+        let mut lines = text.lines();
+        let said = lines
+            .next()
+            .zip(lines.next().and_then(|l| l.trim().parse::<u32>().ok()));
+        let Some((_, pid)) = said.filter(|(id, _)| *id == account.id) else {
+            return self.hold_or_age_out(&path, held);
+        };
+        if pid == std::process::id() {
+            return None;
         }
-        let _ = std::fs::remove_file(path);
-        None
+        if aged(&path) || !crate::process::alive(pid) {
+            let _ = std::fs::remove_file(path);
+            return None;
+        }
+        held()
+    }
+
+    /// A marker nobody can read the writer of: it holds until it is older than [`HELD_FOR`].
+    fn hold_or_age_out(
+        &self,
+        path: &Path,
+        held: impl FnOnce() -> Option<String>,
+    ) -> Option<String> {
+        if aged(path) {
+            let _ = std::fs::remove_file(path);
+            return None;
+        }
+        held()
     }
 
     fn could_not_reach(&self, account: &ForgeAccount, why: &str) -> ForgeError {
@@ -556,9 +605,40 @@ enum Pin {
     Changed,
 }
 
+/// The marker file of the account `id` under `config_root`.
+fn marker_of(config_root: &Path, id: &str) -> Option<PathBuf> {
+    let hex: String = id.bytes().map(|b| format!("{b:02x}")).collect();
+    let dir = crate::machine::locks_dir(config_root).ok()?;
+    Some(dir.join(format!("forge-refresh-held-{hex}")))
+}
+
+/// Whether the marker at `path` is older than [`HELD_FOR`], by the file's own modified time. One
+/// whose age cannot be read is not aged.
+fn aged(path: &Path) -> bool {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|at| at.elapsed().ok())
+        .is_some_and(|age| age > HELD_FOR)
+}
+
+/// Clears the marker of the account `id`: a fresh sign-in (or a sign-out) makes whatever pair an
+/// earlier renewal held beside the point. The caller holds [`REFRESH_LOCK`].
+pub(super) fn clear_held(config_root: &Path, id: &str) {
+    if let Some(path) = marker_of(config_root, id) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 /// The tries of the keychain write for one renewed pair, before the pair is held for the next
 /// call.
 const WRITE_TRIES: u32 = 3;
+
+/// How long a held-pair marker is believed: a marker older than this is cleared whoever wrote it.
+/// A live process that is not the writer (a reused pid) or an idle session host would otherwise
+/// block renewal for good. The forge's own answer to the spent token then ends the sign-in, which
+/// is the same end a lost pair comes to.
+const HELD_FOR: Duration = Duration::from_secs(30 * 60);
 
 /// What the window says when renewal stopped because the host's application is not the one
 /// `account` signed in through.
@@ -1279,6 +1359,8 @@ pub(crate) mod tests {
         let refresher = machine.refresher(&forge);
         // A directory where the lock file goes: it cannot be opened as a file.
         let dir = crate::machine::locks_dir(machine.home.path()).unwrap();
+        // (The sign-in that made the account has already made the file.)
+        let _ = std::fs::remove_file(dir.join(REFRESH_LOCK));
         std::fs::create_dir(dir.join(REFRESH_LOCK)).unwrap();
         let now = machine.expires_at - AHEAD.as_secs();
         // The token in hand has time left: it serves, and nothing is sent.
@@ -1413,5 +1495,230 @@ pub(crate) mod tests {
         the_keychain_refuses(&machine, false);
         refresher.token_at(&machine.account, now + 10).unwrap();
         assert!(!marker.exists(), "the marker outlived the unkept pair");
+    }
+
+    /// Backdates `path`'s modified time past [`HELD_FOR`].
+    fn aged_past_the_bound(path: &Path) {
+        let long_ago = std::time::SystemTime::now() - HELD_FOR - Duration::from_secs(60);
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(long_ago)
+            .unwrap();
+    }
+
+    /// The account signed in again through a browser sign-in, as the person's press does.
+    fn sign_in_again(machine: &Machine) -> Result<ForgeAccount, String> {
+        let granted = Answer::of(200, RENEWED).granted().unwrap();
+        let reach = |_: &Forge,
+                     _: Arc<dyn TokenSource>|
+         -> Result<Arc<dyn Transport>, ForgeError> { Ok(Arc::new(WhoAmI)) };
+        accounts::sign_in_with_grant(
+            &HostScope::for_a_test(),
+            machine.home.path(),
+            accounts::keyring_at(machine.home.path()).as_ref(),
+            &reach,
+            machine.account.kind,
+            &machine.account.host,
+            granted,
+            machine.account.method,
+            client_id_of_the_application_on(machine.account.kind, &machine.account.host),
+        )
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_marker_older_than_the_bound_is_cleared_though_its_process_is_alive() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        // This test's parent is live, and its marker is two minutes past the bound.
+        held_by(&machine, &refresher, std::os::unix::process::parent_id());
+        let marker = refresher.marker(&machine.account).unwrap();
+        aged_past_the_bound(&marker);
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at - AHEAD.as_secs())
+            .unwrap();
+        assert_eq!(token.expose_secret(), "second-access-value");
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_marker_inside_the_bound_still_holds_a_live_process_to_its_word() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        held_by(&machine, &refresher, std::os::unix::process::parent_id());
+        let marker = refresher.marker(&machine.account).unwrap();
+        // Just inside the bound.
+        let recent = std::time::SystemTime::now() - HELD_FOR + Duration::from_secs(120);
+        std::fs::File::options()
+            .write(true)
+            .open(&marker)
+            .unwrap()
+            .set_modified(recent)
+            .unwrap();
+        assert!(
+            refresher
+                .token_at(&machine.account, machine.expires_at + 1)
+                .is_err()
+        );
+        assert!(marker.exists());
+        assert!(forge.posted.lock().unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fresh_sign_in_and_a_sign_out_clear_the_marker() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[]));
+        let refresher = machine.refresher(&forge);
+        let marker = refresher.marker(&machine.account).unwrap();
+        held_by(&machine, &refresher, std::os::unix::process::parent_id());
+        // The same account id comes back from a sign-in, and the marker of the old pair does not.
+        let again = sign_in_again(&machine).unwrap();
+        assert_eq!(again.id, machine.account.id);
+        assert!(!marker.exists(), "a fresh sign-in left the marker");
+        // And one signed out is not left holding anything either.
+        held_by(&machine, &refresher, std::os::unix::process::parent_id());
+        accounts::sign_out(
+            &HostScope::for_a_test(),
+            machine.home.path(),
+            accounts::keyring_at(machine.home.path()).as_ref(),
+            &machine.account.id,
+        )
+        .unwrap();
+        assert!(!marker.exists(), "a sign-out left the marker");
+    }
+
+    #[test]
+    fn a_marker_nobody_can_read_holds_until_it_ages_out() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        let marker = refresher.marker(&machine.account).unwrap();
+        let expired = machine.expires_at + 1;
+        let id = &machine.account.id;
+        // Garbled: not an id and a process id, a pid that is not a number, another account's id,
+        // and nothing at all.
+        for text in [
+            "garbage".to_string(),
+            format!("{id}\nnot-a-pid\n"),
+            "01J9SOMEONEELSE\n4242\n".to_string(),
+            String::new(),
+        ] {
+            std::fs::write(&marker, &text).unwrap();
+            let why = refresher.token_at(&machine.account, expired).unwrap_err();
+            assert!(
+                why.said().contains("another purlis process"),
+                "{text:?}: {why}"
+            );
+            assert!(marker.exists(), "{text:?}");
+        }
+        // Unreadable: a directory where the file goes.
+        std::fs::remove_file(&marker).unwrap();
+        std::fs::create_dir(&marker).unwrap();
+        let why = refresher.token_at(&machine.account, expired).unwrap_err();
+        assert!(why.said().contains("another purlis process"), "{why}");
+        std::fs::remove_dir(&marker).unwrap();
+        assert!(forge.posted.lock().unwrap().is_empty());
+        // The token in hand still serves while it lasts.
+        std::fs::write(&marker, "garbage").unwrap();
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at - 60)
+            .unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        // And a garbled marker past the bound is cleared, and the renewal goes on.
+        aged_past_the_bound(&marker);
+        let token = refresher.token_at(&machine.account, expired).unwrap();
+        assert_eq!(token.expose_secret(), "second-access-value");
+        assert!(!marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_renewal_that_cannot_write_its_marker_is_not_made() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        let marker = refresher.marker(&machine.account).unwrap();
+        // This process's own marker, which holds nobody off, and which cannot be written over.
+        std::fs::write(
+            &marker,
+            format!("{}\n{}\n", machine.account.id, std::process::id()),
+        )
+        .unwrap();
+        let mut mode = std::fs::metadata(&marker).unwrap().permissions();
+        mode.set_readonly(true);
+        std::fs::set_permissions(&marker, mode).unwrap();
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(&marker)
+            .is_ok()
+        {
+            return; // Running as root: a read-only file stops nothing.
+        }
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at - AHEAD.as_secs())
+            .unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        let why = refresher
+            .token_at(&machine.account, machine.expires_at + 1)
+            .unwrap_err();
+        assert_eq!(why.failure(), &Failure::Transport);
+        assert!(why.said().contains("record"), "{why}");
+        assert!(
+            forge.posted.lock().unwrap().is_empty(),
+            "a refresh token was sent with no marker to say so"
+        );
+        assert_eq!(
+            machine.kept().unwrap().refresh.unwrap().expose_secret(),
+            "first-refresh-value"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sign_in_and_a_sign_out_wait_for_the_machine_wide_lock_a_renewal_holds() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let keyring = accounts::keyring_at(machine.home.path());
+        // Another process is in the middle of a renewal: it holds the lock file.
+        let theirs = crate::machine::Lock::named(machine.home.path(), REFRESH_LOCK);
+        assert!(theirs.held());
+        let access_now = || machine.kept().unwrap().access.expose_secret().to_string();
+        std::thread::scope(|scope| {
+            let signing_in = scope.spawn(|| sign_in_again(&machine).unwrap());
+            std::thread::sleep(Duration::from_millis(300));
+            assert_eq!(
+                access_now(),
+                "first-access-value",
+                "a sign-in wrote while another process held the lock"
+            );
+            drop(theirs);
+            signing_in.join().unwrap();
+            assert_eq!(access_now(), "second-access-value");
+        });
+        let theirs = crate::machine::Lock::named(machine.home.path(), REFRESH_LOCK);
+        std::thread::scope(|scope| {
+            let signing_out = scope.spawn(|| {
+                accounts::sign_out(
+                    &HostScope::for_a_test(),
+                    machine.home.path(),
+                    keyring.as_ref(),
+                    &machine.account.id,
+                )
+                .unwrap()
+            });
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(
+                machine.kept().is_some(),
+                "a sign-out deleted while another process held the lock"
+            );
+            drop(theirs);
+            signing_out.join().unwrap();
+            assert!(machine.kept().is_none());
+        });
     }
 }

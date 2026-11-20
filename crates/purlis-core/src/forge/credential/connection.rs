@@ -42,7 +42,8 @@
 //! | `ghp_` classic PAT, `ghr_` refresh token | refused | refused |
 //! | any other shape | refused | refused unless `PURLIS_FORGE_ACCEPT__<HEX>` is `unrecognised` |
 //!
-//! `CI_JOB_TOKEN` is a job's token whatever it looks like. A token of no known shape on a host
+//! `CI_JOB_TOKEN` is a job's token when it is `glcbt-` (any length), a JWT, or the original opaque
+//! 20-character token; in any other shape it is held to the table above like any token. A token of no known shape on a host
 //! that is not github.com or gitlab.com needs `PURLIS_FORGE_KIND__<HEX>` (`github` or `gitlab`);
 //! where the kind and the shape or the host disagree the token is refused, never guessed at.
 //!
@@ -415,17 +416,16 @@ impl TokenConnection {
         from: &Candidate,
         token: &str,
     ) -> Result<(Kind, TokenKind), CredentialError> {
-        // A CI job's token is whatever the job's server issued: a `glcbt-` value is a job's token
-        // whatever its length or characters (a JWT is longer than any shape here), and one of no
-        // prefix is still the job's. GitLab's documented length was not confirmable offline, so
-        // none is assumed: the check on what a token may be made of ([`MOST_TOKEN`], printable)
-        // still holds.
-        let classified = if from.job {
-            Ok(if token.starts_with("glcbt-") {
-                Class::GitLabJob
-            } else {
-                classify(token).unwrap_or(Class::Unrecognised)
-            })
+        // `CI_JOB_TOKEN` is exempt from the length and character shapes in three forms only: a
+        // `glcbt-` value of any length (a routable one grows), a JWT (GitLab's newer job token:
+        // three dot-separated base64url parts, the first a JSON object, so `eyJ`), and the
+        // original opaque 20-character token. Offline, GitLab's documented shapes could not be
+        // confirmed beyond these. Anything else in that variable is held to the shapes like any
+        // other token, and the check on what a token may be made of ([`MOST_TOKEN`], printable)
+        // holds for all of them.
+        let job = from.job && job_shaped(token);
+        let classified = if job && token.starts_with("glcbt-") {
+            Ok(Class::GitLabJob)
         } else {
             classify(token)
         };
@@ -443,7 +443,7 @@ impl TokenConnection {
             }
         };
         let ambient = from.kind.is_some();
-        if let Some(why) = class.refused(ambient, from.job) {
+        if let Some(why) = class.refused(ambient, job) {
             return Err(unusable(host, format!("The token in {} {why}", from.var)));
         }
         let hint_var = named(family::KIND, host);
@@ -488,7 +488,7 @@ impl TokenConnection {
         };
         // Read whether or not it is needed: a variable purlis names that is not text is an error.
         let accepted = self.accepts(host, "unrecognised")?;
-        if class == Class::Unrecognised && !from.job && !accepted {
+        if class == Class::Unrecognised && !job && !accepted {
             return Err(unusable(
                 host,
                 format!(
@@ -499,7 +499,7 @@ impl TokenConnection {
                 ),
             ));
         }
-        let token_kind = match (kind, from.job) {
+        let token_kind = match (kind, job) {
             (Kind::GitLab, true) => TokenKind::GitLabJob,
             (Kind::GitHub, _) => class.github_kind(),
             (Kind::GitLab, false) => class.gitlab_kind(),
@@ -554,7 +554,8 @@ struct Candidate {
     /// **ambient** (a shell or a CI job exports it for its own use), and not for the variable
     /// purlis names for a host.
     kind: Option<Kind>,
-    /// A CI job's token, whatever it looks like.
+    /// A CI job's token: exempt from the length and character shapes when it has one of GitLab's
+    /// job token shapes ([`job_shaped`]).
     job: bool,
 }
 
@@ -601,6 +602,22 @@ fn unusable(host: &str, said: String) -> CredentialError {
         host: host.to_string(),
         said,
     }
+}
+
+/// Whether `token` has one of the shapes GitLab's job token has: `glcbt-`, a JWT, or the
+/// original 20 characters of letters, digits, `-` and `_`.
+fn job_shaped(token: &str) -> bool {
+    let base64url = |part: &str| {
+        !part.is_empty()
+            && part
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    };
+    let jwt = token.starts_with("eyJ") && {
+        let parts: Vec<&str> = token.split('.').collect();
+        parts.len() == 3 && parts.iter().all(|p| base64url(p))
+    };
+    token.starts_with("glcbt-") || jwt || (token.len() == 20 && base64url(token))
 }
 
 /// What a token is, by its exact prefix and the shape of what follows.
