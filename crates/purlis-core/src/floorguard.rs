@@ -209,6 +209,184 @@ fn only_merges() -> bool {
     ONLY_MERGES.get()
 }
 
+/// **Reads with `cwd`, the hook payload's working directory, as the directory a relative path in
+/// the line is opened against** (#7195): a request edit's `--input body.json` is the file gh
+/// opens in the shell's directory, which only the payload knows. Without it, or where the line
+/// is not one sole call ([`is_sole_call`]), a body is unread.
+pub fn in_directory<R>(cwd: &str, read: impl FnOnce() -> R) -> R {
+    let given = (!cwd.is_empty()).then(|| std::path::PathBuf::from(cwd));
+    let outer = DIRECTORY.replace(given);
+    let _restore = RestoreDirectory(outer);
+    read()
+}
+
+/// Puts the directory [`in_directory`] replaced back, a panic's unwinding included.
+struct RestoreDirectory(Option<std::path::PathBuf>);
+
+impl Drop for RestoreDirectory {
+    fn drop(&mut self) {
+        DIRECTORY.replace(self.0.take());
+    }
+}
+
+std::thread_local! {
+    /// The directory the hook's payload says the shell is in ([`in_directory`]).
+    static DIRECTORY: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+    /// Whether the line being read is one sole call ([`is_sole_call`], set by [`metered`]).
+    static SOLE_CALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Where a relative path in the line is opened: the payload's directory. Only a line that is
+/// one sole call ([`is_sole_call`]) has its bodies read, and no `cd` can come before that.
+fn directory_the_line_runs_in() -> Option<std::path::PathBuf> {
+    DIRECTORY.with_borrow(Clone::clone)
+}
+
+/// Whether the line being read lets a request edit's body be read ([`is_sole_call`]).
+fn bodies_are_readable() -> bool {
+    SOLE_CALL.get()
+}
+
+/// **Whether `cmd` is one `gh` or `glab` call and nothing else** (#7195): one command line (a
+/// heredoc's body aside; a backslash and a newline join lines as the shell does), behind env
+/// assignments only, with no `;`, `&`, `|`, parenthesis, backtick, `$(`, `${` that is not a
+/// parameter's or `$'` outside a single quote, no quote left open and no backslash ending the
+/// line. An output redirection (`>f`, `2>&1`, `&>f`) is no command: only a `&` that is not part
+/// of one holds. A line that is anything else may run something first (a `cd`, an `eval`, a
+/// `source`, a function, an alias) or feed the call another stdin, so a request body is not read
+/// from it. Read off the text and failing closed: a doubt is `false`.
+fn is_sole_call(cmd: &str) -> bool {
+    let layout = crate::heredoc::heredoc_layout(cmd);
+    if !layout
+        .first()
+        .is_some_and(|l| !l.body && !l.text.trim().is_empty())
+    {
+        return false;
+    }
+    // The command's own lines, a heredoc's body aside, joined as the shell reads them. A line
+    // that ends on a backslash and runs into a body is not read: what joins it is not here.
+    let mut lines: Vec<&str> = Vec::new();
+    for (i, l) in layout.iter().enumerate() {
+        if l.body {
+            continue;
+        }
+        if l.text.ends_with('\\') && layout.get(i + 1).is_some_and(|n| n.body) {
+            return false;
+        }
+        lines.push(&l.text);
+    }
+    let text: Vec<char> = lines.join("\n").chars().collect();
+    let mut words: Vec<String> = Vec::new();
+    let mut word = String::new();
+    let mut quote: Option<char> = None;
+    // A newline outside a quote ends the command: only blanks may follow it.
+    let mut ended = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        let c = text[i];
+        let next = text.get(i + 1).copied();
+        i += 1;
+        if ended && !c.is_whitespace() {
+            return false;
+        }
+        // `${` runs a command in the current shell in bash 5.3 (`${ cmd; }`, `${| cmd; }`),
+        // quoted or not: only a parameter's name or a special parameter may follow it.
+        if c == '$' && next == Some('{') && quote != Some('\'') {
+            let after = text.get(i + 1).copied();
+            if !after.is_some_and(|a| a.is_ascii_alphanumeric() || "_#?@*!$-".contains(a)) {
+                return false;
+            }
+        }
+        match quote {
+            Some('\'') => {
+                if c == '\n' {
+                    return false;
+                }
+                quote = (c != '\'').then_some('\'');
+                word.push(c);
+            }
+            Some(_) => match c {
+                '`' | '\n' => return false,
+                '$' if next == Some('(') => return false,
+                '\\' => {
+                    // A backslash and a newline are no text at all, in a quote or out of one.
+                    if next == Some('\n') {
+                        i += 1;
+                        continue;
+                    }
+                    word.push(c);
+                    let Some(n) = next else {
+                        return false;
+                    };
+                    i += 1;
+                    word.push(n);
+                }
+                '"' => {
+                    quote = None;
+                    word.push(c);
+                }
+                _ => word.push(c),
+            },
+            None => match c {
+                // An output redirection is harmless: `2>&1`, `>&2` and `&>file`, `&>>file`. Any
+                // other `&` backgrounds the call or chains it.
+                '&' if word.ends_with('>') && next.is_some_and(|n| n.is_ascii_digit()) => {
+                    word.push(c);
+                }
+                '&' if word.is_empty() && next == Some('>') => word.push(c),
+                ';' | '&' | '|' | '(' | ')' | '`' => return false,
+                '$' if next == Some('\'') => return false,
+                '\\' => {
+                    if next == Some('\n') {
+                        i += 1;
+                        continue;
+                    }
+                    word.push(c);
+                    let Some(n) = next else {
+                        return false;
+                    };
+                    i += 1;
+                    word.push(n);
+                }
+                '\'' | '"' => {
+                    quote = Some(c);
+                    word.push(c);
+                }
+                '\n' => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                    ended = true;
+                }
+                c if c.is_whitespace() => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                }
+                _ => word.push(c),
+            },
+        }
+    }
+    if quote.is_some() {
+        return false;
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    let is_assignment = |w: &String| {
+        w.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty()
+                && !name.starts_with(|c: char| c.is_ascii_digit())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    };
+    words
+        .iter()
+        .find(|w| !is_assignment(w))
+        .is_some_and(|w| w == "gh" || w == "glab")
+}
+
 /// [`release_floor_reason`], and how many bytes of text the floor read on the way, every level
 /// counted ([`Work`]).
 fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
@@ -216,7 +394,15 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
         read: 0,
         allowed: cmd.len().saturating_mul(WORK_FACTOR) + WORK_SLACK,
     }));
+    // A level nested in a reading keeps the outer line's answer: a call inside `bash -c` is not
+    // the sole command of the line it stands in.
+    let sole = SOLE_CALL.replace(if outer.is_some() {
+        SOLE_CALL.get()
+    } else {
+        is_sole_call(cmd)
+    });
     let said = floor(cmd, unattended, 0);
+    SOLE_CALL.set(sole);
     let read = WORK.replace(outer).map_or(0, |work| work.read);
     (said, read)
 }
@@ -288,7 +474,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // the arm's commands are segments of their own (#7131). Only the segments that are new are
     // added: a copy of each would be read again at every depth of an `eval` chain.
     let shell_lines = crate::heredoc::lines_a_shell_runs(cmd);
-    let (lines, unparsed_case) = in_command_position(&shell_lines);
+    let (lines, unparsed_case, time_option) = in_command_position(&shell_lines);
     if nested_too_deep() {
         return Some(too_nested(fix));
     }
@@ -309,7 +495,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // what its commands print as its script: `bash <(echo gh pr merge 12)`, `$SHELL < <(…)`.
     // Each body is read for what it could print, and only a merge among it is refused (round 7).
     if cmd.contains("<(") && segments.iter().any(|toks| hands_a_script_to_a_shell(toks)) {
-        let bodies = substitution_bodies(cmd, true);
+        let (bodies, _) = substitution_bodies(cmd, true);
         if nested_too_deep() {
             return Some(too_nested(fix));
         }
@@ -326,11 +512,15 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // A substitution the shell runs, wherever it stands, even inside double quotes, read from
     // the line as written: the words a substitution's own quotes split are not its body (#866).
     let mut unclosable = false;
-    if livesub::may_substitute(cmd) && livesub::live_substitution(cmd).is_some() {
-        let bodies = substitution_bodies(cmd, true);
+    let live = livesub::may_substitute(cmd) && livesub::live_substitution(cmd).is_some();
+    if live || contains_wide_funsub(cmd) {
+        let (bodies, unclosed_funsub) = substitution_bodies(cmd, true);
         if nested_too_deep() {
             return Some(too_nested(fix));
         }
+        // A `${ …;` that never closes (#7246): read to the line's end, and refused last like a
+        // body the reader cannot close.
+        unclosable |= unclosed_funsub;
         for body in bodies {
             // A `case` inside a substitution is held, parsed or not: its patterns' `)` are
             // what a substitution's own close is told from (#7131, round 6).
@@ -356,6 +546,12 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // arithmetic expansion or an array's words, nor in a body an interpreter runs.
     // A `case` the reader does not fully parse could hide any command in what it took for a
     // pattern, so it is unreadable outright (#7131, round 6).
+    if time_option {
+        return Some(format!(
+            "{fix}{} `time` has an option here that purlis can't read. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
+    }
     if unparsed_case {
         return Some(format!(
             "{fix}{} A `case` here isn't one purlis can read to its end. {WRITE_IT_OUT}",
@@ -919,7 +1115,12 @@ fn substitution_that_could_print_a_command(
     // A process substitution (`<(…)`) is a path the shell hands the program, `/dev/fd/63`, and
     // never a command; its body is read as one by its own text.
     let command_substitution = format!("${}", shellseg::SUBSTITUTED);
-    if !(prog.contains(&command_substitution) || prog.contains("$(") || prog.contains('`')) {
+    let funsub = contains_funsub(prog);
+    if !(prog.contains(&command_substitution)
+        || prog.contains("$(")
+        || prog.contains('`')
+        || funsub)
+    {
         return None;
     }
     let source = reading
@@ -929,8 +1130,8 @@ fn substitution_that_could_print_a_command(
         .and_then(|at| reading.own_source.get(at))
         .filter(|source| !source.is_empty())
         .map_or(prog, String::as_str);
-    let bodies = substitution_bodies(&shellseg::unbacktick(source), false);
-    if bodies.is_empty() {
+    let (bodies, unclosed_funsub) = substitution_bodies(&shellseg::unbacktick(source), false);
+    if bodies.is_empty() || unclosed_funsub {
         return Some(prog.to_owned());
     }
     bodies.into_iter().find(|body| !prints_only_a_path(body))
@@ -1004,11 +1205,12 @@ fn prints_only_a_path(body: &str) -> bool {
 ///
 /// And whether a `case` was met that the reading did not parse whole: a header that is not
 /// `case WORD in` with the WORD read as the shell reads it, or a pattern that no `)` closes.
-/// Such a line is held, never read on (round 6).
-fn in_command_position(line: &str) -> (String, bool) {
+/// Such a line is held, never read on (round 6). The last is whether a `time` had an option
+/// other than `-p`, which is held too and says so.
+fn in_command_position(line: &str) -> (String, bool, bool) {
     let (line, unsure_arithmetic) = without_arithmetic(line);
     let Ok(toks) = shellseg::lex(&line) else {
-        return (line, unsure_arithmetic);
+        return (line, unsure_arithmetic, false);
     };
     let toks = shellseg::split_punctuation(toks);
     let source: Vec<char> = line.chars().collect();
@@ -1016,6 +1218,7 @@ fn in_command_position(line: &str) -> (String, bool) {
     // An arithmetic body with a backslash or a quote is one the reader cannot place the
     // parentheses of: held, never read on (round 7).
     let mut unparsed = unsure_arithmetic;
+    let mut time_option = false;
     // Where a `;` is put in the blanks before a `do` or `{` that follows its header with none.
     let mut breaks: Vec<usize> = Vec::new();
     let mut blank = |from: isize, to: isize| {
@@ -1226,6 +1429,7 @@ fn in_command_position(line: &str) -> (String, bool) {
             }
             if toks.get(i).is_some_and(|t| t.text.starts_with('-')) {
                 unparsed = true;
+                time_option = true;
             }
             continue;
         } else if at_command && reserved && (bare("for") || bare("select")) {
@@ -1247,7 +1451,7 @@ fn in_command_position(line: &str) -> (String, bool) {
             *slot = ';';
         }
     }
-    (chars.into_iter().collect(), unparsed)
+    (chars.into_iter().collect(), unparsed, time_option)
 }
 
 /// One past the `in` of the `case WORD in` whose `case` ends at `from`, with the WORD read as
@@ -1394,7 +1598,9 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
                 }
                 let mut raw = String::new();
                 while let Some(&d) = chars.get(j) {
-                    if d.is_whitespace() || ";&|()<>".contains(d) {
+                    // Bash ends the word only at a blank, a newline or a metacharacter: a CR, FF,
+                    // VT or NBSP stays in it, so the delimiter is not the plain word it looks.
+                    if matches!(d, ' ' | '\t' | '\n') || ";&|()<>".contains(d) {
                         break;
                     }
                     raw.push(d);
@@ -1432,6 +1638,10 @@ fn skip_double_quoted(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
             '"' => return Some(p + 1),
             '`' => p = skip_backtick(s, p + 1)?,
             '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if funsub_opens(s, p) => {
+                let open = shellseg::spliced_end(s, p, "${").unwrap_or(p + 2);
+                p = skip_funsub(s, open, deeper(nest)?)?;
+            }
             '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
             _ => p += 1,
         }
@@ -1462,6 +1672,10 @@ fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
             '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
             '`' => p = skip_backtick(s, p + 1)?,
             '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if funsub_opens(s, p) => {
+                let open = shellseg::spliced_end(s, p, "${").unwrap_or(p + 2);
+                p = skip_funsub(s, open, deeper(nest)?)?;
+            }
             '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
             '(' => {
                 depth += 1;
@@ -1470,6 +1684,80 @@ fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
             ')' if depth == 0 => return Some(p + 1),
             ')' => {
                 depth -= 1;
+                p += 1;
+            }
+            _ => p += 1,
+        }
+    }
+    None
+}
+
+/// One past the `}` that closes the bash 5.3 `${ …;` opened before `p` (#7246), or `None`.
+///
+/// Its body is commands, so the `}` that closes it is a word in command position: after `;`, `&`,
+/// `|` or a newline, or at the start. A `{` in command position opens a group of its own that a
+/// `}` of its own closes. Quotes and nested substitutions are read whole.
+///
+/// A command starts nowhere else, so these start none (#7250): the `&` of `>&`, `<&` and `&>` and
+/// the `|` of `>|`, which are redirections; a `(`, which is read whole to its `)` (a subshell, an
+/// array, a function's `()`, a `<(…)`), so a `}` inside it closes nothing; and a `[[ … ]]`, in
+/// whose `&&` and `||` a word is an operand. Read strictly, so a close the reader is unsure of is
+/// no close and the line is refused, never half read: an unclosed `(` or `[[` ends in `None`.
+fn skip_funsub(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
+    let mut groups = 0usize;
+    let mut at_command = true;
+    let mut in_test = false;
+    let blank = |c: Option<&char>| c.is_none_or(|c| c.is_whitespace());
+    while let Some(&c) = s.get(p) {
+        let command = std::mem::replace(&mut at_command, false);
+        let before = p.checked_sub(1).and_then(|at| s.get(at));
+        match c {
+            '\\' => p += 2,
+            '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
+            '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
+            '`' => p = skip_backtick(s, p + 1)?,
+            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if funsub_opens(s, p) => {
+                let open = shellseg::spliced_end(s, p, "${").unwrap_or(p + 2);
+                p = skip_funsub(s, open, deeper(nest)?)?;
+            }
+            '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
+            '[' if command && !in_test && s.get(p + 1) == Some(&'[') && blank(s.get(p + 2)) => {
+                in_test = true;
+                p += 2;
+            }
+            ']' if in_test
+                && s.get(p + 1) == Some(&']')
+                && blank(before)
+                && (blank(s.get(p + 2)) || matches!(s.get(p + 2), Some(';' | '&' | '|' | ')'))) =>
+            {
+                in_test = false;
+                p += 2;
+            }
+            '(' => {
+                p = skip_paren(s, p + 1, deeper(nest)?)?;
+                // A function's `()` is followed by its body.
+                at_command = true;
+            }
+            _ if in_test => p += 1,
+            '&' if matches!(before, Some('>' | '<')) || s.get(p + 1) == Some(&'>') => p += 1,
+            '|' if before == Some(&'>') => p += 1,
+            ';' | '&' | '|' | '\n' => {
+                at_command = true;
+                p += 1;
+            }
+            '{' if command && blank(s.get(p + 1)) => {
+                groups += 1;
+                at_command = true;
+                p += 1;
+            }
+            '}' if command && groups == 0 => return Some(p + 1),
+            '}' if command => {
+                groups -= 1;
+                p += 1;
+            }
+            c if c.is_whitespace() => {
+                at_command = command;
                 p += 1;
             }
             _ => p += 1,
@@ -1722,11 +2010,31 @@ pub(crate) fn fed_lines(toks: &[String]) -> Vec<String> {
 /// only ever refuses more; the caller asks only of a line where the shell runs one. Unbalanced, a
 /// body runs to the end of the line. A nested one is found when its body is read in turn.
 /// Without `with_process_substitutions`, only command substitutions are read.
-fn substitution_bodies(line: &str, with_process_substitutions: bool) -> Vec<String> {
+///
+/// **A bash 5.3 `${ …; }` or `${| …; }` is one too, in quotes or out** (#7246), read to the `}`
+/// that closes it as a command ([`skip_funsub`]); a `${` that never closes runs to the line's
+/// end, and the second answer says so, for the caller to refuse the line as one it cannot read.
+fn substitution_bodies(line: &str, with_process_substitutions: bool) -> (Vec<String>, bool) {
     let chars: Vec<char> = line.chars().collect();
     let mut out = Vec::new();
+    let mut unclosed_funsub = false;
     let mut i = 0;
     while i < chars.len() {
+        if funsub_opens(&chars, i) {
+            let open = shellseg::spliced_end(&chars, i, "${").unwrap_or(i + 2);
+            let (end, next) = match skip_funsub(&chars, open, 0) {
+                Some(after) => (after - 1, after),
+                None => {
+                    // One the shell would run (after a blank, a newline or `|`) and never closes
+                    // is a line to refuse; the wider spellings it refuses itself.
+                    unclosed_funsub |= livesub::funsub_at(&chars, i);
+                    (chars.len(), chars.len())
+                }
+            };
+            out.push(chars[open..end].iter().collect());
+            i = next;
+            continue;
+        }
         let opens = (chars[i] == '$'
             || (with_process_substitutions && matches!(chars[i], '<' | '>')))
             && chars.get(i + 1) == Some(&'(')
@@ -1752,7 +2060,70 @@ fn substitution_bodies(line: &str, with_process_substitutions: bool) -> Vec<Stri
         }
         i += 1;
     }
-    out
+    (out, unclosed_funsub)
+}
+
+/// Whether a bash 5.3 `${ …; }` or `${| …; }` opens at `i`, read as widely as the floor needs
+/// (#7246): `${` followed by anything that does not start a parameter expansion — a letter, a
+/// digit, `_`, or one of `#?@*!$-` — in quotes as out of them. The shell runs it only after a
+/// blank, a newline or `|` ([`livesub::funsub_at`]) and refuses the rest as a bad substitution, so
+/// the wider reading only ever holds more. It is the floor's own, because the leak and prose
+/// guards' answers are recorded against the narrower one.
+fn funsub_opens(chars: &[char], i: usize) -> bool {
+    livesub::funsub_at(chars, i)
+        || shellseg::spliced_end(chars, i, "${").is_some_and(|j| {
+            chars
+                .get(shellseg::past_continuations(chars, j))
+                .is_some_and(|c| {
+                    !(c.is_ascii_alphanumeric()
+                        || matches!(c, '_' | '#' | '?' | '@' | '*' | '!' | '$' | '-'))
+                })
+        })
+}
+
+/// Whether `text` holds a `${` that only the wide reading ([`funsub_opens`]) takes for a
+/// substitution. A `${` the shell reads as text is none (#7250): one escaped, or inside single
+/// quotes or `$'…'`, as in `grep -E '\${[A-Z_]+}'`. Double quotes run it, so they are read as
+/// open text; an unterminated single quote is read as none, which only holds more. The shell's
+/// own spellings are [`livesub::live_substitution`]'s, which reads quotes, so a literal
+/// `'${ x; }'` stays one.
+fn contains_wide_funsub(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    let mut in_double = false;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 2,
+            '"' => {
+                in_double = !in_double;
+                i += 1;
+            }
+            '\'' if !in_double => {
+                i = chars[i + 1..]
+                    .iter()
+                    .position(|c| *c == '\'')
+                    .map_or(i + 1, |at| i + at + 2);
+            }
+            '$' if !in_double && chars.get(i + 1) == Some(&'\'') => {
+                i = livesub::ansi_c_end(&chars, i + 2);
+            }
+            _ => {
+                if funsub_opens(&chars, i) && !livesub::funsub_at(&chars, i) {
+                    return true;
+                }
+                i += 1;
+            }
+        }
+    }
+    false
+}
+
+/// Whether `text` holds a bash 5.3 `${ …; }` as the shell runs it ([`livesub::funsub_at`]), not a
+/// parameter expansion. The wider spellings are left to [`contains_wide_funsub`]: a word the
+/// shell refuses is no program, and the recorded answers hold none of them held.
+fn contains_funsub(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    (0..chars.len()).any(|i| livesub::funsub_at(&chars, i))
 }
 
 #[cfg(test)]

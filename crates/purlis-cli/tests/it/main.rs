@@ -84,6 +84,7 @@ mod extension_artifacts;
 mod extension_commands;
 mod extensions;
 mod first_task_script;
+mod gitlab_access;
 mod guard;
 mod handback;
 mod handoff_from_inside_the_app;

@@ -51,6 +51,7 @@ pub mod etag;
 pub mod gitcredential;
 mod github;
 mod gitlab;
+pub mod gitlabaccess;
 pub mod http;
 pub mod loopback;
 #[cfg(unix)]
