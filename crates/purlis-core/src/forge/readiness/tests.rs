@@ -818,10 +818,73 @@ fn a_member_asks_the_administrator_or_the_groups_owner() {
     assert!(request.contains("as an owner of acme"), "{request}");
 }
 
+/// The stub of slice G's store: one self-hosted server with a pin.
+fn pins(kind: Kind, host: &str) -> Option<String> {
+    (kind == Kind::GitLab && host == "pinned.example.com").then(|| "client-id".to_owned())
+}
+
 #[test]
 fn a_host_with_a_pinned_client_id_is_not_told_it_has_no_registration() {
-    // Slice G's store answers `pinned_client_id`; until it does, no host has one, so this holds
-    // the seam: the known-host answer is the table's alone.
-    assert!(registration::known_on(Kind::GitHub, "github.com"));
-    assert!(!registration::known_on(Kind::GitHub, "ghe.example.com"));
+    registration::use_pins(pins);
+    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    let pinned = evaluate(
+        &gitlab("pinned.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &f,
+    );
+    assert_eq!(verdict(&pinned, CheckId::ServerRegistration), None);
+    assert_eq!(verdict(&pinned, CheckId::OauthApplications), None);
+    // Another host, and the same host of the other forge, still have none.
+    let other = evaluate(
+        &gitlab("other.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &f,
+    );
+    assert!(matches!(
+        verdict(&other, CheckId::ServerRegistration),
+        Some(Verdict::Blocked(_))
+    ));
+    let github = evaluate(
+        &github("pinned.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &f,
+    );
+    assert!(matches!(
+        verdict(&github, CheckId::ServerRegistration),
+        Some(Verdict::Blocked(_))
+    ));
+}
+
+#[test]
+fn a_pin_also_spares_the_check_of_the_servers_oauth_application_setting() {
+    registration::use_pins(pins);
+    let fake = Fake::new(&[]);
+    let report = check(
+        &gitlab("pinned.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &Caller::window(),
+        fake,
+    );
+    // Nothing was scripted, so nothing could be read; but the setting was never asked for.
+    assert_eq!(verdict(&report, CheckId::OauthApplications), None);
+}
+
+#[test]
+fn only_purlis_own_oauth_flows_are_a_sign_in() {
+    use crate::forge::accounts::Method;
+    assert_eq!(
+        Connection::of_method(Some(Method::Device)),
+        Connection::SignIn
+    );
+    assert_eq!(
+        Connection::of_method(Some(Method::Pkce)),
+        Connection::SignIn
+    );
+    assert_eq!(Connection::of_method(Some(Method::Import)), Connection::Cli);
+    assert_eq!(Connection::of_method(Some(Method::Pat)), Connection::Token);
+    assert_eq!(Connection::of_method(None), Connection::Cli);
 }

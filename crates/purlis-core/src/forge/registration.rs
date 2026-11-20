@@ -84,12 +84,24 @@ pub fn on(kind: Kind, host: &str) -> Option<&'static Registration> {
         .find(|r| r.kind == kind && r.host.eq_ignore_ascii_case(host))
 }
 
-/// The client id the person pinned for `kind` on `host`: the registration of a self-hosted
-/// server, kept per host. The store is slice G's of one login, which gives this function its
-/// body; with none in this branch, no host has a pin. The readiness check asks it, so a
-/// self-hosted server that has a pinned client id is not told it has no registration.
-pub fn pinned_client_id(_kind: Kind, _host: &str) -> Option<String> {
-    None
+/// How a store of pinned client ids answers: the client id kept for `kind` on `host`, if any.
+pub type PinLookup = fn(Kind, &str) -> Option<String>;
+
+static PINS: std::sync::RwLock<Option<PinLookup>> = std::sync::RwLock::new(None);
+
+/// Give the pinned client ids' store to this process: the registration of a self-hosted server,
+/// kept per host. The store is slice G's of one login, which calls this as it starts; with none
+/// given, no host has a pin.
+pub fn use_pins(lookup: PinLookup) {
+    *PINS.write().unwrap_or_else(|e| e.into_inner()) = Some(lookup);
+}
+
+/// The client id the person pinned for `kind` on `host`, from the store [`use_pins`] gave. The
+/// readiness check asks it, so a self-hosted server with a pinned client id is not told it has
+/// no registration.
+pub fn pinned_client_id(kind: Kind, host: &str) -> Option<String> {
+    let lookup = (*PINS.read().unwrap_or_else(|e| e.into_inner()))?;
+    lookup(kind, host)
 }
 
 /// Whether purlis can sign in on `host`: it ships a registration there ([`on`]) or the person

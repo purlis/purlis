@@ -237,18 +237,26 @@ fn signed_in(host: &Host, forge: &Forge) -> Option<ForgeAccount> {
 }
 
 /// The [`Connection`](super::readiness::Connection) a window read of `forge` as `caller` really
-/// takes: purlis's own sign-in only where the host handed its sign-ins over, `caller` is the
-/// person in the window and an account is signed in on the host, as [`Window::for_caller`]
-/// decides it; the CLI's login otherwise (or a token in CI). A readiness check carries this, so
-/// it never reads a CLI login as purlis's sign-in.
+/// takes, from the account [`Window::for_caller`] would ask as: the first signed in on the host,
+/// where the host handed its sign-ins over and `caller` is the person in the window. Its
+/// [`Method`] says what the credential is ([`Connection::of_method`]): purlis's own OAuth
+/// sign-in, an imported CLI login, or a pasted token. With no such account the read goes over the
+/// CLI's login. A readiness check carries this, so it never reads another app's credential as
+/// purlis's sign-in.
 pub fn connection(forge: &Forge, caller: &Caller) -> super::readiness::Connection {
-    let own = handed()
-        .is_some_and(|host| the_person_in_the_window(caller) && signed_in(&host, forge).is_some());
-    if own {
-        super::readiness::Connection::SignIn
-    } else {
-        super::readiness::Connection::of_environment()
-    }
+    connection_in(handed().as_deref(), forge, caller)
+}
+
+fn connection_in(
+    host: Option<&Host>,
+    forge: &Forge,
+    caller: &Caller,
+) -> super::readiness::Connection {
+    let method = host
+        .filter(|_| the_person_in_the_window(caller))
+        .and_then(|host| signed_in(host, forge))
+        .map(|account| account.method);
+    super::readiness::Connection::of_method(method)
 }
 
 /// The transports `forge`'s calls take in this process, where the host handed its sign-ins
@@ -559,6 +567,92 @@ mod tests {
             Caller::mcp("c1"),
         ] {
             assert!(!the_person_in_the_window(&other), "{other:?}");
+        }
+    }
+
+    /// The connection a readiness read takes, through [`connection_in`] and a real accounts file.
+    mod the_connection_a_read_takes {
+        use super::*;
+        use crate::forge::readiness::Connection;
+
+        fn host_with(method: Option<&str>) -> (tempfile::TempDir, Host) {
+            let dir = tempfile::tempdir().unwrap();
+            if let Some(method) = method {
+                let file = accounts::path(dir.path());
+                std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+                let account = serde_json::json!({
+                    "id": "A1", "kind": "github", "host": "github.com", "login": "octo",
+                    "method": method, "state": "signed-in"});
+                std::fs::write(
+                    file,
+                    serde_json::json!({"version": 1, "accounts": [account]}).to_string(),
+                )
+                .unwrap();
+            }
+            let host = Host {
+                scope: HostScope::for_a_test(),
+                config_root: dir.path().to_path_buf(),
+                cli: None,
+                native_through: None,
+                root: None,
+                cli_logins: Arc::default(),
+            };
+            (dir, host)
+        }
+
+        fn taken(method: Option<&str>, caller: &Caller) -> Connection {
+            let (_dir, host) = host_with(method);
+            connection_in(Some(&host), &Forge::default_of(Kind::GitHub), caller)
+        }
+
+        #[test]
+        fn purlis_own_device_and_pkce_sign_ins_are_a_sign_in() {
+            assert_eq!(taken(Some("device"), &Caller::window()), Connection::SignIn);
+            assert_eq!(taken(Some("pkce"), &Caller::window()), Connection::SignIn);
+        }
+
+        #[test]
+        fn an_imported_cli_login_is_the_cli_and_never_a_sign_in() {
+            assert_eq!(taken(Some("import"), &Caller::window()), Connection::Cli);
+        }
+
+        #[test]
+        fn a_pasted_token_is_a_token() {
+            assert_eq!(taken(Some("pat"), &Caller::window()), Connection::Token);
+        }
+
+        #[test]
+        fn no_account_means_the_cli_login() {
+            assert_eq!(taken(None, &Caller::window()), Connection::Cli);
+            assert_eq!(
+                connection_in(None, &Forge::default_of(Kind::GitHub), &Caller::window()),
+                Connection::Cli
+            );
+        }
+
+        #[test]
+        fn a_chat_or_a_command_is_never_the_person_so_has_no_sign_in() {
+            for other in [Caller::command(), Caller::chat("c1"), Caller::trigger()] {
+                assert_eq!(taken(Some("device"), &other), Connection::Cli, "{other:?}");
+            }
+        }
+
+        #[test]
+        fn a_signed_out_account_is_no_sign_in() {
+            let (dir, host) = host_with(Some("device"));
+            let file = accounts::path(dir.path());
+            let text = std::fs::read_to_string(&file)
+                .unwrap()
+                .replace("signed-in", "signed-out");
+            std::fs::write(&file, text).unwrap();
+            assert_eq!(
+                connection_in(
+                    Some(&host),
+                    &Forge::default_of(Kind::GitHub),
+                    &Caller::window()
+                ),
+                Connection::Cli
+            );
         }
     }
 

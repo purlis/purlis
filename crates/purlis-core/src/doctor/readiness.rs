@@ -47,7 +47,8 @@ fn row(d: &Doctor) -> Row {
     match readiness::check_url(
         &url,
         d.root.as_path(),
-        Connection::of_environment(),
+        // The doctor asks over the CLI's login, never over a purlis sign-in or a token.
+        Connection::Cli,
         caller,
         transport.clone(),
     ) {

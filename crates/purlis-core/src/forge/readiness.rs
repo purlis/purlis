@@ -34,6 +34,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::accounts::Method;
 use super::backend::{Caller, Fixed, ForgeBackend, Kept, PROBE_KEPT_FOR, Transports};
 use super::transport::Transport;
 use super::{Forge, ForgeError, Kind, registration};
@@ -50,18 +51,22 @@ pub enum Connection {
     /// OAuth app, not purlis's: what it reads says nothing of whether the organization approved
     /// purlis, so that check is unknown.
     Cli,
-    /// A token (a pasted one, or CI's): not subject to OAuth app approval; its workflow
+    /// A token pasted in for the host: not subject to OAuth app approval; its workflow
     /// permissions are checked instead.
     Token,
 }
 
 impl Connection {
-    /// The connection a process without purlis's sign-in is in: a token where CI runs it (`CI`
-    /// is set, as every CI system sets it), the CLI's login otherwise.
-    pub fn of_environment() -> Connection {
-        match std::env::var_os("CI") {
-            Some(v) if !v.is_empty() && v != "false" && v != "0" => Connection::Token,
-            _ => Connection::Cli,
+    /// The connection a credential is, from how its account was signed in: only purlis's own
+    /// OAuth flows ([`Method::Device`], [`Method::Pkce`]) are [`Connection::SignIn`]; an imported
+    /// CLI login is the CLI's ([`Connection::Cli`], which is also no account at all); a pasted
+    /// token is [`Connection::Token`]. What the environment says (`CI` being set) decides
+    /// nothing: only a token configured for the host is one.
+    pub fn of_method(method: Option<Method>) -> Connection {
+        match method {
+            Some(Method::Device | Method::Pkce) => Connection::SignIn,
+            Some(Method::Pat) => Connection::Token,
+            Some(Method::Import) | None => Connection::Cli,
         }
     }
 
