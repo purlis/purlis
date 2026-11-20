@@ -45,8 +45,9 @@ fn gh(s: &Scene, query: &str) -> Outcome {
 fn every_document_gh_sends_for_view_and_list_is_answered() {
     purlis_core::unsteered!();
     let s = scene();
-    let documents = fixtures("gh.json");
-    assert!(documents.len() >= 10, "the fixtures are the evidence");
+    let mut documents = fixtures("gh.json");
+    documents.extend(fixtures("gh-detect-status-create.json"));
+    assert!(documents.len() >= 20, "the fixtures are the evidence");
     for doc in documents {
         let body = graphql(doc["query"].as_str().unwrap(), doc["variables"].clone());
         let out = s.send("POST", "api.github.com", "/graphql", &body);
@@ -251,5 +252,84 @@ fn what_a_mutation_asks_back_is_read_against_the_tables_too() {
             is_refused(&out, Refusal::GraphqlOtherRepo),
             "{back}: {out:?}"
         );
+    }
+}
+
+#[test]
+fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing_else() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let search = |q: &str| {
+        let doc = "query($q:String!){ search(query:$q, type:ISSUE, first:5){ issueCount nodes{ ...on PullRequest{ number } } } }";
+        s.send(
+            "POST",
+            "api.github.com",
+            "/graphql",
+            &graphql(doc, serde_json::json!({ "q": q })),
+        )
+    };
+    for q in [
+        "repo:acme/app is:pr is:open",
+        "is:pr repo:Acme/App author:octocat",
+        "repo:acme/app (author:a OR author:b)",
+    ] {
+        assert!(matches!(search(q), Outcome::Forward(_)), "{q}");
+    }
+    for q in [
+        "is:pr is:open",
+        "repo:acme/other is:pr",
+        "repo:acme/app repo:acme/other",
+        "repo:acme/app OR org:acme",
+        "repo:acme/app user:someone",
+        "repo:acme/app owner:someone",
+        "repo:acme/app team:acme/x",
+        "repo:acme/app enterprise:x",
+        "-repo:acme/app",
+        "repo:acme/app -org:acme",
+        "repo:\"acme/app\"",
+        "repo:acme/app \"org:acme\"",
+        "repo:acme/app,acme/other",
+        "repo:acme/*",
+        "",
+    ] {
+        let out = search(q);
+        assert!(
+            is_refused(&out, Refusal::GraphqlOtherRepo),
+            "{q:?}: {out:?}"
+        );
+    }
+    // Not issues, not a literal type, and not what a search of a repo can return.
+    for q in [
+        "query{ search(query:\"repo:acme/app\", type:REPOSITORY, first:5){ repositoryCount } }",
+        "query{ search(query:\"repo:acme/app\", type:USER, first:5){ userCount } }",
+        "query($t:SearchType!){ search(query:\"repo:acme/app\", type:$t, first:5){ issueCount } }",
+        "query{ search(query:\"repo:acme/app\", type:ISSUE, first:5){ nodes{ ...on User{ login } } } }",
+        "query{ search(query:\"repo:acme/app\", type:ISSUE, first:5){ nodes{ ...on Repository{ name } } } }",
+        "query{ search(type:ISSUE, first:5){ issueCount } }",
+    ] {
+        let out = gh(&s, q);
+        assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
+    }
+}
+
+#[test]
+fn the_schemas_own_description_is_read_only_metadata_and_is_answered() {
+    purlis_core::unsteered!();
+    let s = scene();
+    for q in [
+        "query{ __type(name:\"PullRequest\"){ fields{ name } } }",
+        "query{ A: __type(name:\"Issue\"){ fields{ name type{ name kind ofType{ name } } } } B: __type(name:\"Repository\"){ fields{ name } } }",
+        "query{ __schema{ queryType{ name } types{ name kind } } }",
+        "query{ __type(name:\"CreateIssueInput\"){ inputFields{ name } } }",
+    ] {
+        assert!(matches!(gh(&s, q), Outcome::Forward(_)), "{q}");
+    }
+    // It is metadata and no more: a field the specification does not have is not one.
+    for q in [
+        "query{ __type(name:\"Repository\"){ secrets } }",
+        "query{ __schema{ repositories{ name } } }",
+    ] {
+        let out = gh(&s, q);
+        assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
     }
 }

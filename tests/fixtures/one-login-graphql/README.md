@@ -5,6 +5,10 @@ What `gh` and `glab` ask the forge's GraphQL API for, one document per command, 
 the proxy's per-type field allowlist (ADR 0128 D3e, review item M2). Every document must be
 answered.
 
+Files: `gh.json` (view and list), `gh-detect-status-create.json` (feature detection through
+`__type`, `pr status` and filtered `pr list` through `search`, `pr create` and `issue create`),
+`glab.json`.
+
 **Provenance.** These are transcribed from the query builders in `gh`'s source
 (`api/queries_pr.go`, `api/queries_issue.go`, `api/queries_repo.go`, `api/query_builder.go`, the
 release commands) as shipped in the 2.103 and 2.105 lines the spike pinned, and from the documents

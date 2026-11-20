@@ -193,6 +193,12 @@ const DOWNLOAD_HOSTS: &[&str] = &[
     "objects.githubusercontent.com",
 ];
 
+/// Whether `host` only serves a repo's downloads from a signed address: tunnelled to, never
+/// terminated, and the one place the proxy follows a redirect to, once and with no credential.
+pub fn is_download_host(host: &str) -> bool {
+    DOWNLOAD_HOSTS.contains(&host)
+}
+
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
 const NON_REPO_READS: &[(&[&str], Kind)] = &[
     (&["user"], Kind::GitHub),

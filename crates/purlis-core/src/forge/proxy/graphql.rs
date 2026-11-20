@@ -191,9 +191,20 @@ fn root_allowed(kind: Kind, name: &str) -> bool {
     match kind {
         Kind::GitHub => matches!(
             name,
-            "repository" | "viewer" | "rateLimit" | "node" | "nodes" | "__typename"
+            "repository"
+                | "viewer"
+                | "rateLimit"
+                | "node"
+                | "nodes"
+                | "search"
+                | "__type"
+                | "__schema"
+                | "__typename"
         ),
-        Kind::GitLab => matches!(name, "project" | "currentUser" | "metadata" | "__typename"),
+        Kind::GitLab => matches!(
+            name,
+            "project" | "currentUser" | "metadata" | "__type" | "__schema" | "__typename"
+        ),
     }
 }
 
@@ -350,6 +361,12 @@ impl<'d> Context<'_, 'd> {
                     Ty::Obj("Project")
                 }
                 "rateLimit" => Ty::Obj("RateLimit"),
+                "__type" => Ty::Obj("__Type"),
+                "__schema" => Ty::Obj("__Schema"),
+                "search" => {
+                    self.check_search(field, vars)?;
+                    Ty::Conn("SearchResultItem")
+                }
                 "metadata" => Ty::Obj("Metadata"),
                 "node" => {
                     self.check_node_ids(field, vars, "id", false)?;
@@ -373,6 +390,57 @@ impl<'d> Context<'_, 'd> {
             self.walk(&ty, &field.selection_set, 0)?;
         }
         Ok(())
+    }
+
+    /// `search(query:, type: ISSUE)`, which `gh pr status` and a filtered `gh pr list` use: only
+    /// issues and pull requests, and only of the chat's repos. The query must name **exactly one**
+    /// `repo:` and it must be one of the chat's, and it may not name an organisation, a user, an
+    /// owner, a team or an enterprise, or negate any of them: search says which repos by those
+    /// qualifiers alone, so a query with none of them but the one is a search of that repo.
+    fn check_search(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
+        let refuse = Refusal::GraphqlOtherRepo;
+        let is_issue = field
+            .arguments
+            .iter()
+            .any(|(n, v)| n == "type" && matches!(v, Value::Enum(e) if e == "ISSUE"));
+        if !is_issue {
+            return Err(refuse);
+        }
+        let query = field
+            .arguments
+            .iter()
+            .find(|(n, _)| n == "query")
+            .and_then(|(_, v)| vars.resolve(v).ok())
+            .and_then(|v| match v {
+                Val::Str(s) => Some(s),
+                _ => None,
+            })
+            .ok_or(refuse)?;
+        // A quote hides a qualifier from this reading and not from the forge's.
+        if query.contains(['"', '\'', '\\', '`']) {
+            return Err(refuse);
+        }
+        let mut repos = Vec::new();
+        for token in query.split_whitespace() {
+            let lower = token
+                .trim_start_matches(['(', '-', '+', '!'])
+                .to_ascii_lowercase();
+            if let Some(path) = lower.strip_prefix("repo:") {
+                if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
+                    return Err(refuse);
+                }
+                repos.push(path.to_string());
+            } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
+                .iter()
+                .any(|q| lower.starts_with(q))
+            {
+                return Err(refuse);
+            }
+        }
+        let [path] = repos.as_slice() else {
+            return Err(refuse);
+        };
+        self.in_repos(path)
     }
 
     /// `node(id:)` and `nodes(ids:)`: every id must be one of the chat's repos' own, or resolve

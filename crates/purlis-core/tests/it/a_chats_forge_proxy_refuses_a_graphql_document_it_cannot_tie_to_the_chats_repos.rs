@@ -98,7 +98,6 @@ fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
         "query{ repository(owner:\"acme\", name:\"app\"){ parent{ pullRequests(first:1){ totalCount } } } }",
         "query{ repository(owner:\"acme\", name:\"app\"){ ...F } } fragment F on Repository{ forks(first:1){ totalCount } }",
         "query{ repository(owner:\"acme\", name:\"app\"){ pullRequest(number:1){ headRepository{ collaborators(first:5){ totalCount } } } } }",
-        "query{ __schema{ types{ name } } }",
         "query{ ...F } fragment F on Query{ viewer{ login } }",
     ] {
         let out = gh(&s, q, serde_json::json!({}));

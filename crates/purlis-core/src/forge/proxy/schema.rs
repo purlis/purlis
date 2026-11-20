@@ -62,7 +62,7 @@ pub(crate) fn field(kind: Kind, parent: &Ty, name: &str) -> Option<Ty> {
             "nodes" => Some(Obj(node)),
             "edges" => Some(Ty::Edge(node)),
             "pageInfo" => Some(Obj("PageInfo")),
-            "totalCount" | "count" | "totalSize" => Some(Ty::Leaf),
+            "totalCount" | "count" | "totalSize" | "issueCount" => Some(Ty::Leaf),
             _ => None,
         },
         Ty::Edge(node) => match name {
@@ -70,6 +70,7 @@ pub(crate) fn field(kind: Kind, parent: &Ty, name: &str) -> Option<Ty> {
             "cursor" | "size" => Some(Ty::Leaf),
             _ => None,
         },
+        Ty::Obj(type_name) if type_name.starts_with("__") => introspection(type_name, name),
         Ty::Obj(type_name) => {
             let (_, leaves, objects) = table(kind).iter().find(|(t, _, _)| *t == type_name)?;
             if leaves.contains(&name) {
@@ -77,6 +78,57 @@ pub(crate) fn field(kind: Kind, parent: &Ty, name: &str) -> Option<Ty> {
             } else {
                 objects.iter().find(|(f, _)| *f == name).map(|(_, ty)| *ty)
             }
+        }
+    }
+}
+
+/// The schema's own description of itself (`__type`, `__schema`): read-only metadata of the API,
+/// the same for every repo, which `gh` reads to learn what the forge supports. Fields of the
+/// introspection types are the specification's.
+fn introspection(type_name: &str, name: &str) -> Option<Ty> {
+    let obj = |t: &'static str| Some(Obj(t));
+    match (type_name, name) {
+        ("__Schema", "description") => Some(Ty::Leaf),
+        ("__Schema", "types") => Some(Conn("__Type").introspected()),
+        ("__Schema", "queryType" | "mutationType" | "subscriptionType") => obj("__Type"),
+        ("__Schema", "directives") => obj("__Directive"),
+        ("__Type", "kind" | "name" | "description" | "specifiedByURL" | "isOneOf") => {
+            Some(Ty::Leaf)
+        }
+        ("__Type", "fields" | "inputFields" | "interfaces" | "possibleTypes" | "enumValues") => {
+            match name {
+                "fields" => obj("__Field"),
+                "inputFields" => obj("__InputValue"),
+                "enumValues" => obj("__EnumValue"),
+                _ => obj("__Type"),
+            }
+        }
+        ("__Type", "ofType") => obj("__Type"),
+        ("__Field", "name" | "description" | "isDeprecated" | "deprecationReason") => {
+            Some(Ty::Leaf)
+        }
+        ("__Field", "args") => obj("__InputValue"),
+        ("__Field", "type") => obj("__Type"),
+        (
+            "__InputValue",
+            "name" | "description" | "defaultValue" | "isDeprecated" | "deprecationReason",
+        ) => Some(Ty::Leaf),
+        ("__InputValue", "type") => obj("__Type"),
+        ("__EnumValue", "name" | "description" | "isDeprecated" | "deprecationReason") => {
+            Some(Ty::Leaf)
+        }
+        ("__Directive", "name" | "description" | "locations" | "isRepeatable") => Some(Ty::Leaf),
+        ("__Directive", "args") => obj("__InputValue"),
+        _ => None,
+    }
+}
+
+impl Ty {
+    /// `__Schema.types` is a plain list: its type, not a connection.
+    fn introspected(self) -> Ty {
+        match self {
+            Conn(node) => Obj(node),
+            other => other,
         }
     }
 }
@@ -112,6 +164,7 @@ const POSSIBLE: &[(&str, &[&str])] = &[
         &["User", "Organization", "Actor", "RepositoryOwner"],
     ),
     ("RequestedReviewer", &["User", "Team", "Mannequin", "Bot"]),
+    ("SearchResultItem", &["Issue", "PullRequest"]),
     ("GitObject", &["Commit", "Blob"]),
     ("IssueOrPullRequest", &["Issue", "PullRequest"]),
     ("StatusCheckRollupContext", &["CheckRun", "StatusContext"]),
@@ -233,8 +286,20 @@ const GITHUB: Table = &[
         ("parent", Obj("RepoRef")),
         ("templateRepository", Obj("RepoRef")),
         ("assignableUsers", Conn("Actor")),
+        ("mentionableUsers", Conn("Actor")),
+        ("pullRequestTemplates", Obj("PullRequestTemplate")),
+        ("issueTemplates", Obj("IssueTemplate")),
+        ("contactLinks", Obj("ContactLink")),
+        ("fundingLinks", Obj("FundingLink")),
+        ("codeOfConduct", Obj("CodeOfConduct")),
     ]),
     ("IssueOrPullRequest", &["id", "number", "title", "url", "state", "body"], &[]),
+    ("SearchResultItem", &[], &[]),
+    ("PullRequestTemplate", &["body", "filename", "isDefault", "repository"], &[]),
+    ("IssueTemplate", &["name", "title", "body", "about", "filename"], &[]),
+    ("ContactLink", &["about", "name", "url"], &[]),
+    ("FundingLink", &["platform", "url"], &[]),
+    ("CodeOfConduct", &["name", "key", "url", "body", "resourcePath"], &[]),
     ("Ref", &["id", "name", "prefix"], &[
         ("target", Obj("GitObject")),
         ("associatedPullRequests", Conn("PullRequest")),

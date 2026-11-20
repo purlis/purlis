@@ -65,6 +65,8 @@ mod commands;
 mod endpoint;
 mod git;
 mod graphql;
+#[cfg(feature = "forge-wiring")]
+pub mod listener;
 mod policy;
 mod repo;
 mod request;
@@ -78,7 +80,7 @@ pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GithubAlias, NoObjects,
-    ObjectRepo, Refusal,
+    ObjectRepo, Refusal, is_download_host,
 };
 pub use repo::{AddressError, AllowedRepo, Kind};
 pub use request::RequestHead;
@@ -178,6 +180,59 @@ pub struct Forwarded {
     pub body: Option<Vec<u8>>,
     /// Branches a push makes, for [`ForgeProxy::confirm_push`].
     pub(crate) created: Vec<(String, String, String)>,
+    /// What the answer must never hold: the real credential, as it is sent and in the other forms
+    /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
+    /// and zeroed with the request.
+    needles: Vec<zeroize::Zeroizing<Vec<u8>>>,
+    /// The host the request is for, and the allowed repo (empty for a public one): what the
+    /// listener tells the core of a push's advertisement and its outcome.
+    pub host: String,
+    pub repo: String,
+}
+
+impl Forwarded {
+    /// A fetch of an LFS object the listener holds the address of: no credential of the person's,
+    /// no header but the ones the listener adds, and nothing to look for in the answer.
+    #[cfg(feature = "forge-wiring")]
+    pub(crate) fn for_storage(host: &str, url: &str) -> Forwarded {
+        Forwarded {
+            upstream: url.to_string(),
+            headers: Vec::new(),
+            class: Class::PublicRead,
+            credentialed: false,
+            body: None,
+            created: Vec::new(),
+            needles: Vec::new(),
+            host: host.to_string(),
+            repo: String::new(),
+        }
+    }
+
+    /// The request that follows a redirect of this one, to `url`: **no credential, no header and
+    /// no body**, and the same needles, since what the storage host answers is read too.
+    #[cfg(feature = "forge-wiring")]
+    pub(crate) fn anonymous_follow(&self, url: &str) -> Forwarded {
+        Forwarded {
+            upstream: url.to_string(),
+            headers: Vec::new(),
+            class: self.class.clone(),
+            credentialed: false,
+            body: None,
+            created: Vec::new(),
+            needles: self
+                .needles
+                .iter()
+                .map(|n| zeroize::Zeroizing::new(n.to_vec()))
+                .collect(),
+            host: self.host.clone(),
+            repo: String::new(),
+        }
+    }
+
+    /// The byte strings the answer to this request may not contain.
+    pub fn leak_needles(&self) -> impl Iterator<Item = &[u8]> {
+        self.needles.iter().map(|n| n.as_slice())
+    }
 }
 
 impl std::fmt::Debug for Forwarded {
@@ -295,6 +350,51 @@ impl ForgeProxy {
         }
     }
 
+    /// Every host a leaf certificate may be made for, for `chat`: the chat's per-chat CA is
+    /// constrained to exactly these names.
+    pub fn terminable_hosts(&self, chat: &ChatId) -> Vec<String> {
+        self.policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .map(|policy| policy.terminable_hosts())
+            .unwrap_or_default()
+    }
+
+    /// Decide a `CONNECT host:port` that arrived on `chat`'s endpoint, and record it: a host of the
+    /// chat's repos is terminated, a download-only host is tunnelled, anything else is refused.
+    pub fn connect(&self, chat: &ChatId, host: &str, port: u16) -> ConnectVerdict {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        let verdict = match policy {
+            Some(policy) => policy.connect(host, port),
+            None => ConnectVerdict::Refuse(Refusal::UnknownChat),
+        };
+        let head = RequestHead::new("CONNECT", host, port, "/");
+        let recorded = match &verdict {
+            ConnectVerdict::Refuse(refusal) => Verdict::Refused(*refusal),
+            _ => Verdict::Allowed,
+        };
+        self.audit.record(chat, &head, None, recorded);
+        verdict
+    }
+
+    /// Record a request the listener answered itself, from an address the forge handed it.
+    pub fn note_allowed(&self, chat: &ChatId, head: &RequestHead) {
+        self.audit.record(chat, head, None, Verdict::Allowed);
+    }
+
+    /// Record a request the listener refused before the core could read it: a name it maps
+    /// (`github.localhost`) that has no one host to map to.
+    pub fn note_refused(&self, chat: &ChatId, head: &RequestHead, refusal: Refusal) {
+        self.audit
+            .record(chat, head, None, Verdict::Refused(refusal));
+    }
+
     /// What of the body the listener must read before [`Self::handle`] can decide.
     pub fn body_need(&self, head: &RequestHead) -> BodyNeed {
         policy::body_need(head)
@@ -365,6 +465,9 @@ impl ForgeProxy {
                 credentialed: false,
                 body: allowed.canonical_body,
                 created: Vec::new(),
+                needles: Vec::new(),
+                host: allowed.host,
+                repo: allowed.repo,
             });
         }
         let request = CredentialRequest {
@@ -374,7 +477,8 @@ impl ForgeProxy {
         let Ok(credential) = self.credentials.credential_for(&request) else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
-        let Some(mut headers) = swap_credential(inbound.headers, &allowed, credential) else {
+        let Some((mut headers, needles)) = swap_credential(inbound.headers, &allowed, credential)
+        else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
         self.audit
@@ -387,6 +491,9 @@ impl ForgeProxy {
             credentialed: true,
             body: allowed.canonical_body,
             created: allowed.created,
+            needles,
+            host: allowed.host,
+            repo: allowed.repo,
         })
     }
 
@@ -465,7 +572,7 @@ fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
 /// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`
 /// while this reads it as another header: a name with an underscore is refused, as is a second
 /// `Content-Type` of any spelling (two readers pick two types).
-fn header_names_are_plain(headers: &[(String, String)]) -> bool {
+pub(crate) fn header_names_are_plain(headers: &[(String, String)]) -> bool {
     headers
         .iter()
         .all(|(n, _)| !n.is_empty() && !n.contains('_'))
@@ -507,15 +614,17 @@ fn request_host(head: &RequestHead) -> Result<String, ()> {
 
 /// The chat's headers with the credential headers removed and the real credential set. `None` when
 /// the secret would break a header (a line break in it).
+#[allow(clippy::type_complexity)]
 fn swap_credential(
     sent: &[(String, String)],
     allowed: &Allowed,
     credential: Credential,
-) -> Option<Vec<(String, String)>> {
-    let secret = credential.secret.into_inner();
+) -> Option<(Vec<(String, String)>, Vec<zeroize::Zeroizing<Vec<u8>>>)> {
+    let secret = zeroize::Zeroizing::new(credential.secret.into_inner());
     if secret.is_empty() || secret.bytes().any(|b| b.is_ascii_control()) {
         return None;
     }
+    let needles = leak_needles_of(&secret);
     let mut headers = without_credentials(sent);
     let (name, value) = match (allowed.surface, allowed.kind, credential.token_kind) {
         (policy::Surface::Git, kind, _) => {
@@ -523,15 +632,36 @@ fn swap_credential(
                 Kind::GitHub => "x-access-token",
                 Kind::GitLab => "oauth2",
             };
-            let basic = data_encoding::BASE64.encode(format!("{user}:{secret}").as_bytes());
+            let basic =
+                data_encoding::BASE64.encode(format!("{user}:{}", secret.as_str()).as_bytes());
             ("Authorization", format!("Basic {basic}"))
         }
         (policy::Surface::Anonymous, _, _) => return None,
-        (policy::Surface::Api, Kind::GitLab, TokenKind::Pat) => ("PRIVATE-TOKEN", secret),
-        (policy::Surface::Api, _, _) => ("Authorization", format!("Bearer {secret}")),
+        (policy::Surface::Api, Kind::GitLab, TokenKind::Pat) => {
+            ("PRIVATE-TOKEN", secret.to_string())
+        }
+        (policy::Surface::Api, _, _) => ("Authorization", format!("Bearer {}", secret.as_str())),
     };
     headers.push((name.to_string(), value));
-    Some(headers)
+    Some((headers, needles))
+}
+
+/// The forms of a credential an answer must not hold: as it is, percent-encoded, and in Base64
+/// (standard and URL alphabets, which is how a `Basic` pair or a token in a URL is carried).
+fn leak_needles_of(secret: &str) -> Vec<zeroize::Zeroizing<Vec<u8>>> {
+    use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+    let mut forms: Vec<Vec<u8>> = vec![secret.as_bytes().to_vec()];
+    let encoded = utf8_percent_encode(secret, NON_ALPHANUMERIC).to_string();
+    if encoded != secret {
+        forms.push(encoded.into_bytes());
+    }
+    forms.push(data_encoding::BASE64.encode(secret.as_bytes()).into_bytes());
+    forms.push(
+        data_encoding::BASE64URL_NOPAD
+            .encode(secret.as_bytes())
+            .into_bytes(),
+    );
+    forms.into_iter().map(zeroize::Zeroizing::new).collect()
 }
 
 /// Headers that name where a request goes or which method it is, which the proxy decides itself:
@@ -563,7 +693,7 @@ fn without_credentials(sent: &[(String, String)]) -> Vec<(String, String)> {
 /// A request whose body length is told once, or not at all, and never also as `chunked`: two
 /// readers (this one's and the forge's) that frame it differently are a smuggled request. The only
 /// transfer coding is exactly `chunked`.
-fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
+pub(crate) fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
     let named = |wanted: &'static str| {
         headers
             .iter()
