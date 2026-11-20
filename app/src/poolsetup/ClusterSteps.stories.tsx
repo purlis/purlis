@@ -155,6 +155,9 @@ export const AClusterIsRecommended: Story = {
   },
 };
 
+/** How long a list may take to go: WebKit draws the next frame late in a busy run (as Select's own stories). */
+const CLOSES = { timeout: 3_000 };
+
 export const ContextsUnderOptions: Story = {
   beforeEach: AClusterIsRecommended.beforeEach,
   play: async ({ canvasElement }) => {
@@ -164,7 +167,7 @@ export const ContextsUnderOptions: Story = {
     await expect(context).toHaveTextContent("kind-team (recommended)");
     await userEvent.click(context);
     await userEvent.click(await within(document.body).findByRole("option", { name: "prod-eu" }));
-    await waitFor(() => expect(within(document.body).queryByRole("listbox")).toBeNull());
+    await waitFor(() => expect(within(document.body).queryByRole("listbox")).toBeNull(), CLOSES);
     await expect(canvas.getByRole("button", { name: /Context/ })).toHaveTextContent("prod-eu");
     await expectFocusInSight();
   },
