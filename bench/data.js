@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795175127091,
+  "lastUpdate": 1795204172484,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51828,6 +51828,48 @@ window.BENCHMARK_DATA = {
             "value": 102.0758265,
             "unit": "ms",
             "extra": "median of 5 runs: 101.192, 101.793, 102.076, 102.160, 102.700 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e65d34fb5133b2eb5ce584635a083acedfd30fe9",
+          "message": "Give the rust test parts 12 GB of swap so a 12 GB compile no longer kills the runner (#7200) (#7271)\n\n* Record the peak memory of the rust parts' build in the job summary (#7200)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W92BXQBZEYVZ3H0BJTSDJ1\nPurlis-Persona: steward\n\n* Build the rust parts without debug info, and say which process peaks (#7200)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W92BXQBZEYVZ3H0BJTSDJ1\nPurlis-Persona: steward\n\n* Give the rust parts 12 GB of swap; drop the debug-info change that did not lower the peak (#7200)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W92BXQBZEYVZ3H0BJTSDJ1\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-11-20T18:59:04Z",
+          "tree_id": "b28c0800aa350e2ff3e5003cd219ee42f27fde19",
+          "url": "https://github.com/purlis/purlis/commit/e65d34fb5133b2eb5ce584635a083acedfd30fe9"
+        },
+        "date": 1795204165412,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6900705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.675, 0.687, 0.690, 0.722, 0.742 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.656297000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.407, 16.558, 16.656, 16.714, 16.862 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.24745,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.873, 101.918, 102.247, 102.725, 103.580 ms"
           }
         ]
       }
