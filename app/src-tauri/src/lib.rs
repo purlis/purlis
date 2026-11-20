@@ -97,6 +97,31 @@ mod forgeaccounts;
 mod forgepkce;
 #[cfg(feature = "forge-wiring")]
 mod forgeroute;
+
+/// `main` ships the forge route off (one login, ADR 0128 J): the feature exists, and no default
+/// turns it on. The one-login train turns it on in CI (`FORGE_WIRING`, `ci.yml`), never in the
+/// manifest. Ungated, so the off build runs it too.
+#[cfg(test)]
+mod forge_wiring_is_off_by_default {
+    #[test]
+    fn the_apps_manifest_declares_the_feature_and_no_default_turns_it_on() {
+        let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+            .expect("the app's manifest");
+        assert!(
+            manifest.contains("\nforge-wiring = ["),
+            "the feature is declared"
+        );
+        let defaults: Vec<&str> = manifest
+            .lines()
+            .filter(|line| line.trim_start().starts_with("default"))
+            .filter(|line| line.contains('='))
+            .collect();
+        assert!(
+            defaults.iter().all(|line| !line.contains("forge-wiring")),
+            "a default feature turns the forge route on: {defaults:?}"
+        );
+    }
+}
 mod getproject;
 mod gitbroker;
 mod goingaway;
@@ -4115,15 +4140,17 @@ pub fn run() {
             mainwatch::start(app.handle());
             // The theme specimen's painter (#2330): hidden windows of this app's own.
             specimen::install(app.handle());
-            // The forge proxy's routes: stale ones from a crashed app are swept (ADR 0128 J).
-            #[cfg(feature = "forge-wiring")]
-            forgeroute::install();
             // One charter per user even without a session bus (`instance.rs`). After the
             // single-instance plugin, which has already handed an ordinary second launch over;
             // before the window and before any plane, whose hook socket `hookwire` removes
             // when it is stale on the promise that no second app is running.
             #[cfg(target_os = "linux")]
             instance::one_per_user(app);
+            // The forge proxy's routes (ADR 0128 J): after the one-per-user lock, so the sweep of
+            // a crashed app's folders never meets a second app's; it removes only those whose
+            // app is gone.
+            #[cfg(feature = "forge-wiring")]
+            forgeroute::install();
             // This machine's local state moves to the purlis names (RN-5, V93f): after the
             // single-instance handoff and the one-per-user lock, so a second launch never
             // migrates, and before any project, chat or watch opens a file under one. Anything

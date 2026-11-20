@@ -8202,15 +8202,20 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Git:** gitignored (under `/.charter/`).
 
 ### `forge-route/<chat>/` — a chat's forge socket and certificate authority
-- **Format:** a folder of mode 0700 per chat that has a forge route, `<chat>` the chat's id, under
-  the per-user temp directory's `purlis-forge/` (short, because a unix socket's path may not pass
-  104 bytes on macOS). It holds the socket the chat's `gh` and `git` reach the forge proxy by and
-  the PEM of the chat's own certificate authority, whose key is never written. **It holds no
-  credential and no sentinel**: those are the app's memory (ADR 0128).
-- **Status:** **internal** — made when a chat with recorded repos starts and removed when it ends,
-  and every folder is removed at the app's next start and exit, so none outlives its chat.
-  **purlis only.**
-- **Tier:** Machine, device-bound, transient — it lasts as long as the chat; the app sweeps it.
+- **Format:** a folder per run of a chat that has a forge route, named `<pid>-<run>` (the pid of the
+  app that made it, the run's id with anything but letters, digits, `-` and `_` replaced), inside
+  the app's private root `purlis-forge-<uid>/` in this user's `$XDG_RUNTIME_DIR`, else the
+  per-user temporary directory (short, because a unix socket's path may not pass 104 bytes on
+  macOS). The root and each folder are mode 0700 and the user's own; a root that is a link or
+  another user's is refused. A folder holds the socket the run's `gh` and `git` reach the forge
+  proxy by and the PEM of the run's own certificate authority, whose key is never written. **It
+  holds no credential and no sentinel**: those are the app's memory (ADR 0128).
+- **Status:** **internal** — made when a run with recorded repos starts and removed when that run
+  ends (its session closes, its program exits, its project closes, or its start fails). A
+  restart is another run, with a folder of its own. At the app's next start, only the folders of
+  an app that is gone (a pid no process holds) are removed, never a link's target and never a
+  name this does not make. **purlis only.**
+- **Tier:** Machine, device-bound, transient — it lasts as long as the run; the app sweeps it.
 - **Written by:** `forgeroute::ForgeRoutes::start` makes the folder and removes it
   (`app/src-tauri/src/forgeroute/`); the listener binds the socket and writes the CA in it.
 - **Git:** not in a repository.

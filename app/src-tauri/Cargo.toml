@@ -104,6 +104,11 @@ notify = "8.2"
 # The theme specimen's picture (#2330, `specimen.rs`): WebKit's own snapshot of the hidden
 # window's webview, as a PNG. The crates and versions wry already brings in on macOS, with the
 # few more of their features the snapshot and the PNG need, so nothing new is in the tree.
+# The forge route's private folder and its sweep (`forgeroute`): this user's directory made and
+# checked on one descriptor, and whether a pid is a running process. A workspace crate already.
+[target.'cfg(unix)'.dependencies]
+purlis-same-user.workspace = true
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # The crash handler, on macOS alone for now (#5691; `nativecrash.rs` says why it is not started yet).
 purlis-crash-handler.workspace = true
@@ -140,13 +145,11 @@ cairo-rs = { version = "0.18", features = ["png"] }
 workspace = true
 
 [features]
-# **The train switch** (one login, slice J; ADR 0128): the one line that turns the forge proxy
-# on for this app. It is on here, on the `one-login` integration branch, so every pull request
-# into it builds and tests the whole route; `main` keeps it off until the train lands, so the
-# line comes out of (or is not merged into) main's copy of this file. This is the app's own
-# feature: the core's `forge-wiring` is slice I's test-only flag (it runs the real `gh`, `glab`
-# and `git` against a fake forge) and is not forwarded from here.
-default = ["forge-wiring"]
+# **The forge route** (one login, slice J; ADR 0128): the app runs the forge proxy per chat. Off
+# by default, so `main`'s build never has it until the train lands. The `one-login` branch turns
+# it on in CI alone (`FORGE_WIRING` in `.github/workflows/ci.yml`), never here, so nothing in this
+# file has to be reverted when the train lands. This is the app's own feature: the core's
+# `forge-wiring` is slice I's test-only flag and is not forwarded from here.
 forge-wiring = []
 
 # What a scenario test needs inside the app: WebdriverIO's embedded WebDriver server, and its

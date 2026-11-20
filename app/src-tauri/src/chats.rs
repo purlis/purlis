@@ -4868,6 +4868,9 @@ impl Chats {
             }
         }
         self.project_settings.forget(session);
+        // Its forge route goes with its program, whether or not it was a restart's.
+        #[cfg(feature = "forge-wiring")]
+        crate::forgeroute::stop_session(session);
         // The GitHub App tokens minted for it go with its program (#3808).
         purlis_core::forge::apptoken::chat_ended(&self.project, session);
     }
@@ -5093,15 +5096,6 @@ impl Chats {
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
         first_message: Option<&str>,
     ) -> Result<u32, String> {
-        // The chat's forge route (ADR 0128 J): made as it starts, removed as it closes. Slice B
-        // turns the params into the chat's environment; until it merges the route runs and
-        // nothing is handed over, so a chat reaches no forge by it yet.
-        #[cfg(feature = "forge-wiring")]
-        let _route = chat
-            .identity
-            .id
-            .as_deref()
-            .and_then(|id| crate::forgeroute::start_chat(id, &self.project));
         let again = (
             program.clone(),
             command.clone(),
@@ -5284,6 +5278,21 @@ impl Chats {
                 run: Some(minted()),
                 resumed_from: chat.identity.resumed_from.clone(),
             },
+        };
+        // The run's forge route (ADR 0128 J), held by a guard: stopped by any return below until
+        // the chat is open, then by the session's close, its program's end or its project's.
+        // Keyed by this run, so a restart's old run ending leaves the new run's route alone.
+        // Slice B turns its params into the run's environment; until it merges nothing is
+        // handed over. A chat put back from the session host starts nothing and has none.
+        #[cfg(feature = "forge-wiring")]
+        let route = if reattaching {
+            None
+        } else {
+            identity
+                .id
+                .as_deref()
+                .zip(identity.run.as_deref())
+                .and_then(|(chat_id, run)| crate::forgeroute::guard(chat_id, run, &self.project))
         };
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
         // composes its own line, and would start it with none of them.
@@ -6571,6 +6580,10 @@ impl Chats {
             let _ = self.close(session);
             return Err(LETTING_GO.to_owned());
         }
+        #[cfg(feature = "forge-wiring")]
+        if let Some(route) = route {
+            route.commit(session);
+        }
         Ok((session, failed))
     }
 
@@ -6605,16 +6618,10 @@ impl Chats {
         if let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_ref()) {
             lock(&self.one_jobs).remove(id);
         }
-        // A chat closed for good takes its forge route with it; a restart's replacement has
-        // started its own by now and `ForgeRoutes::start` replaced this one's.
+        // Whichever run this session was takes its forge route with it, restart or not: a
+        // restart's replacement is another run, with a route of its own.
         #[cfg(feature = "forge-wiring")]
-        if a_chat
-            && let Some(id) = gone
-                .as_ref()
-                .and_then(|one| one.chat.identity.id.as_deref())
-        {
-            crate::forgeroute::stop_chat(id);
-        }
+        crate::forgeroute::stop_session(session);
         // **A chat closed for good takes the folder kept for its wake line with it** (#5827),
         // where no other open chat carries it: a restart starts before the chat it replaces
         // ends, and carries it on.
@@ -9656,6 +9663,9 @@ impl Chats {
     pub fn end_all(&self) {
         self.ending.store(true, Ordering::SeqCst);
         self.sessions.end_all();
+        // Every forge route of this project goes with its chats.
+        #[cfg(feature = "forge-wiring")]
+        crate::forgeroute::stop_project(&self.project);
         // Waited on a little, so a quit right after does not cut the revokes off (#3808).
         purlis_core::forge::apptoken::project_ended(
             &self.project,
