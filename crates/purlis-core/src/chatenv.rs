@@ -280,6 +280,7 @@ pub fn inherited(
                 && !crate::hookwire::NOT_INHERITED
                     .iter()
                     .any(|never| crate::envvar::same(never, text))
+                && !crate::forge::credential::is_connection_variable(text)
                 && passes(text, harness, operator)
         })
         .collect()
@@ -356,6 +357,7 @@ fn kept_from_every_chat(name: &OsStr, text: &str) -> bool {
             .spellings()
             .any(|prefix| upper.starts_with(prefix))
         || crate::envvar::same(text, SESSION_BUS_KEPT)
+        || crate::forge::credential::is_connection_variable(text)
         || crate::hookwire::NOT_INHERITED
             .iter()
             .any(|never| crate::envvar::same(never, text) || never.eq_ignore_ascii_case(text))

@@ -93,6 +93,26 @@ mod family {
     pub const ACCEPT: &str = "PURLIS_FORGE_ACCEPT__";
 }
 
+/// Whether `name` is one of the variables purlis reads a host's connection from, under either of
+/// its names (`PURLIS_FORGE_TOKEN__<HEX>`, or `CHARTER_FORGE_TOKEN__<HEX>` while the rename's
+/// window is open): no chat is given one, whoever lists it.
+pub fn is_connection_variable(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    [
+        family::TOKEN,
+        family::FILE,
+        family::EXPIRES_AT,
+        family::KIND,
+        family::ACCEPT,
+    ]
+    .into_iter()
+    .any(|family| {
+        crate::envvar::spellings(family)
+            .iter()
+            .any(|spelling| upper.starts_with(&spelling.to_ascii_uppercase()))
+    })
+}
+
 fn named(family: &str, host: &str) -> String {
     format!("{family}{}", host_key(&host.to_ascii_lowercase()))
 }
@@ -113,7 +133,7 @@ pub struct TokenConnection {
 }
 
 /// How a variable is read.
-type Reading = Box<dyn Fn(&str) -> Option<String> + Send + Sync>;
+type Reading = Box<dyn Fn(&str) -> Option<std::ffi::OsString> + Send + Sync>;
 
 /// A variable as the process has it.
 enum Var {
@@ -121,6 +141,9 @@ enum Var {
     /// Set, and nothing but white space.
     Blank,
     Value(Zeroizing<String>),
+    /// Set, and not text: a value no token is. An error where a variable purlis names is read,
+    /// never "unset", which would let another variable answer in its place.
+    NotText,
 }
 
 /// A variable that names a host, as it was read.
@@ -134,21 +157,31 @@ enum Naming {
 impl TokenConnection {
     /// This process's environment.
     pub fn of_process() -> TokenConnection {
-        TokenConnection::reading(crate::envvar::var)
+        TokenConnection {
+            env: Box::new(crate::envvar::var_os),
+        }
     }
 
     /// Reads variables through `env`: a test's own, or a runner's.
     pub fn reading(
         env: impl Fn(&str) -> Option<String> + Send + Sync + 'static,
     ) -> TokenConnection {
+        TokenConnection::reading_os(move |name| env(name).map(std::ffi::OsString::from))
+    }
+
+    /// [`TokenConnection::reading`], for values that may not be text.
+    pub fn reading_os(
+        env: impl Fn(&str) -> Option<std::ffi::OsString> + Send + Sync + 'static,
+    ) -> TokenConnection {
         TokenConnection { env: Box::new(env) }
     }
 
     fn var(&self, name: &str) -> Var {
-        match (self.env)(name) {
+        match (self.env)(name).map(std::ffi::OsString::into_string) {
             None => Var::Unset,
-            Some(v) if v.trim().is_empty() => Var::Blank,
-            Some(v) => Var::Value(Zeroizing::new(v)),
+            Some(Err(_)) => Var::NotText,
+            Some(Ok(v)) if v.trim().is_empty() => Var::Blank,
+            Some(Ok(v)) => Var::Value(Zeroizing::new(v)),
         }
     }
 
@@ -157,14 +190,31 @@ impl TokenConnection {
     fn set(&self, name: &str) -> Option<Zeroizing<String>> {
         match self.var(name) {
             Var::Value(v) => Some(v),
-            Var::Unset | Var::Blank => None,
+            Var::Unset | Var::Blank | Var::NotText => None,
+        }
+    }
+
+    /// The value of a variable purlis names for a host (a kind, an expiry, an opt-in): unset is
+    /// `None`, and a value that is not text is an error.
+    fn named_set(
+        &self,
+        host: &str,
+        name: &str,
+    ) -> Result<Option<Zeroizing<String>>, CredentialError> {
+        match self.var(name) {
+            Var::Value(v) => Ok(Some(v)),
+            Var::Unset | Var::Blank => Ok(None),
+            Var::NotText => Err(not_text(host, name)),
         }
     }
 
     /// The host a variable of a URL or a host names, lower-case.
     fn naming(&self, name: &str) -> Naming {
-        let Some(value) = self.set(name) else {
-            return Naming::Unset;
+        let value = match self.var(name) {
+            Var::Value(value) => value,
+            // A host variable that is not text names no host.
+            Var::NotText => return Naming::Bad,
+            Var::Unset | Var::Blank => return Naming::Unset,
         };
         let trimmed = value.trim().to_ascii_lowercase();
         let host = trimmed
@@ -282,6 +332,11 @@ impl TokenConnection {
         Ok(credential)
     }
 
+    /// Whether `var` is one of the ambient variables offered to `host`.
+    fn offers(&self, host: &str, var: &str) -> bool {
+        self.ambient(host).iter().any(|c| c.var == var)
+    }
+
     /// The first variable that is set for `host`, and its token. The two variables purlis names
     /// for a host are an error when both are set, and when the one that is set is empty: a CI
     /// that failed to fill a secret must not be answered by another variable's token.
@@ -297,6 +352,8 @@ impl TokenConnection {
             )
         };
         match (self.var(&token_var), self.var(&file_var)) {
+            (Var::NotText, _) => return Err(not_text(host, &token_var)),
+            (_, Var::NotText) => return Err(not_text(host, &file_var)),
             (Var::Unset, Var::Unset) => {}
             (Var::Unset, Var::Blank) => return Err(empty(&file_var)),
             (Var::Unset, Var::Value(path)) => {
@@ -318,10 +375,35 @@ impl TokenConnection {
                 ));
             }
         }
-        for candidate in self.ambient(host) {
-            if let Some(value) = self.set(&candidate.var) {
-                return Ok(Some((candidate, value)));
+        let candidates = self.ambient(host);
+        for candidate in &candidates {
+            if matches!(self.var(&candidate.var), Var::NotText) {
+                return Err(not_text(host, &candidate.var));
             }
+        }
+        for candidate in candidates {
+            let Some(value) = self.set(&candidate.var) else {
+                continue;
+            };
+            // Two variables of one level (D9.2) that say different tokens are a conflict, not
+            // an order: `GH_TOKEN` does not beat `GITHUB_TOKEN`. The same value twice is one
+            // choice made twice, as Actions sets them.
+            if let Some(peer) = peer_of(&candidate.var) {
+                if let Some(other) = self.set(peer) {
+                    if other.trim() != value.trim() && self.offers(host, peer) {
+                        return Err(unusable(
+                            host,
+                            format!(
+                                "{} and {peer} are both set to different tokens, and purlis \
+                                 does not choose between them. Unset one, and start purlis \
+                                 again.",
+                                candidate.var
+                            ),
+                        ));
+                    }
+                }
+            }
+            return Ok(Some((candidate, value)));
         }
         Ok(None)
     }
@@ -334,7 +416,21 @@ impl TokenConnection {
         from: &Candidate,
         token: &str,
     ) -> Result<(Kind, TokenKind), CredentialError> {
-        let class = match classify(token) {
+        // A CI job's token is whatever the job's server issued: a `glcbt-` value is a job's token
+        // whatever its length or characters (a JWT is longer than any shape here), and one of no
+        // prefix is still the job's. GitLab's documented length was not confirmable offline, so
+        // none is assumed: the check on what a token may be made of ([`MOST_TOKEN`], printable)
+        // still holds.
+        let classified = if from.job {
+            Ok(if token.starts_with("glcbt-") {
+                Class::GitLabJob
+            } else {
+                classify(token).unwrap_or(Class::Unrecognised)
+            })
+        } else {
+            classify(token)
+        };
+        let class = match classified {
             Ok(class) => class,
             Err(prefix) => {
                 return Err(unusable(
@@ -352,7 +448,7 @@ impl TokenConnection {
             return Err(unusable(host, format!("The token in {} {why}", from.var)));
         }
         let hint_var = named(family::KIND, host);
-        let hinted = match self.set(&hint_var) {
+        let hinted = match self.named_set(host, &hint_var)? {
             None => None,
             Some(word) => Some(Kind::parse(&word.trim().to_ascii_lowercase()).ok_or_else(
                 || {
@@ -391,7 +487,7 @@ impl TokenConnection {
                 ),
             ));
         };
-        if class == Class::Unrecognised && !from.job && !self.accepts(host, "unrecognised") {
+        if class == Class::Unrecognised && !from.job && !self.accepts(host, "unrecognised")? {
             return Err(unusable(
                 host,
                 format!(
@@ -412,17 +508,19 @@ impl TokenConnection {
 
     /// Whether the operator opted `what` in for `host`: `PURLIS_FORGE_ACCEPT__<HEX>` is a
     /// comma-separated list of the types it takes beyond the ones purlis knows.
-    fn accepts(&self, host: &str, what: &str) -> bool {
-        self.set(&named(family::ACCEPT, host)).is_some_and(|list| {
-            list.split(',')
-                .any(|word| word.trim().eq_ignore_ascii_case(what))
-        })
+    fn accepts(&self, host: &str, what: &str) -> Result<bool, CredentialError> {
+        Ok(self
+            .named_set(host, &named(family::ACCEPT, host))?
+            .is_some_and(|list| {
+                list.split(',')
+                    .any(|word| word.trim().eq_ignore_ascii_case(what))
+            }))
     }
 
     /// `PURLIS_FORGE_TOKEN_EXPIRES_AT__<HEX>`, as seconds since the epoch.
     fn expiry_of(&self, host: &str) -> Result<Option<u64>, CredentialError> {
         let name = named(family::EXPIRES_AT, host);
-        let Some(text) = self.set(&name) else {
+        let Some(text) = self.named_set(host, &name)? else {
             return Ok(None);
         };
         let text = text.trim();
@@ -476,6 +574,25 @@ impl Candidate {
             job: false,
         }
     }
+}
+
+/// The variable that a forge CLI reads at the same level as `var`: a second spelling of one
+/// choice.
+fn peer_of(var: &str) -> Option<&'static str> {
+    match var {
+        "GH_TOKEN" => Some("GITHUB_TOKEN"),
+        "GITHUB_TOKEN" => Some("GH_TOKEN"),
+        "GH_ENTERPRISE_TOKEN" => Some("GITHUB_ENTERPRISE_TOKEN"),
+        "GITHUB_ENTERPRISE_TOKEN" => Some("GH_ENTERPRISE_TOKEN"),
+        _ => None,
+    }
+}
+
+fn not_text(host: &str, var: &str) -> CredentialError {
+    unusable(
+        host,
+        format!("{var} is set to something that is not text, so it is not a token. Correct it."),
+    )
 }
 
 fn unusable(host: &str, said: String) -> CredentialError {
