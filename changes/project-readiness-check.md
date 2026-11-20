@@ -10,5 +10,6 @@
   where a token is used in CI, whether it may push. Each blocker has the clicks with their
   addresses and, when you are not the one who can fix it, a request to send them.
   Only purlis's own sign-in can show an organization's approval as ready: read over the `gh` or
-  `glab` login, it is Not read. A 403 that names no cause, or SAML, is guided and never ready, and
+  `glab` login or with a token pasted in the window, it is Not read (a pasted token cannot show
+  whether the organization approved purlis). A 403 that names no cause, or SAML, is guided and never ready, and
   `purlis doctor` says "not checked" inside a chat, and where there is no origin.

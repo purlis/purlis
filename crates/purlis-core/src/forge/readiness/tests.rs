@@ -151,11 +151,38 @@ fn a_personal_repo_has_no_org_approval_to_check() {
 }
 
 #[test]
-fn a_token_is_not_held_to_an_organizations_oauth_approval() {
+fn a_headless_token_connection_is_not_held_to_an_organizations_oauth_approval() {
     let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Restricted)));
     let report = evaluate(&github("github.com"), "acme/app", Connection::Token, &f);
     assert_eq!(verdict(&report, CheckId::OauthAppAccess), None);
     assert_eq!(verdict(&report, CheckId::CiToken), Some(Verdict::Ready));
+}
+
+#[test]
+fn a_pasted_token_in_the_window_cannot_show_the_approval_so_a_restricted_org_is_not_ready() {
+    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Restricted)));
+    let report = evaluate(&github("github.com"), "acme/app", Connection::Pasted, &f);
+    let approval = check_of(&report, CheckId::OauthAppAccess);
+    assert_eq!(approval.verdict, Verdict::Unknown);
+    assert!(approval.detail.contains("pasted token cannot show"));
+    assert_eq!(verdict(&report, CheckId::CiToken), None);
+    assert!(!report.ready_for_all());
+}
+
+#[test]
+fn a_pasted_token_is_still_held_to_the_server_knowing_purlis() {
+    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    let report = evaluate(
+        &github("ghe.example.com"),
+        "acme/app",
+        Connection::Pasted,
+        &f,
+    );
+    assert!(matches!(
+        verdict(&report, CheckId::ServerRegistration),
+        Some(Verdict::Blocked(_))
+    ));
+    assert!(!report.ready_for_all());
 }
 
 #[test]
@@ -959,6 +986,7 @@ fn only_purlis_own_oauth_flows_are_a_sign_in() {
         Connection::SignIn
     );
     assert_eq!(Connection::of_method(Some(Method::Import)), Connection::Cli);
-    assert_eq!(Connection::of_method(Some(Method::Pat)), Connection::Token);
+    assert_eq!(Connection::of_method(Some(Method::Pat)), Connection::Pasted);
+    assert_ne!(Connection::of_method(Some(Method::Pat)), Connection::Token);
     assert_eq!(Connection::of_method(None), Connection::Cli);
 }

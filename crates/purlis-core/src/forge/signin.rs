@@ -617,8 +617,8 @@ mod tests {
         }
 
         #[test]
-        fn a_pasted_token_is_a_token() {
-            assert_eq!(taken(Some("pat"), &Caller::window()), Connection::Token);
+        fn a_pasted_token_is_pasted_never_the_headless_token() {
+            assert_eq!(taken(Some("pat"), &Caller::window()), Connection::Pasted);
         }
 
         #[test]

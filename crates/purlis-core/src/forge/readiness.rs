@@ -51,8 +51,13 @@ pub enum Connection {
     /// OAuth app, not purlis's: what it reads says nothing of whether the organization approved
     /// purlis, so that check is unknown.
     Cli,
-    /// A token pasted in for the host: not subject to OAuth app approval; its workflow
-    /// permissions are checked instead.
+    /// A token pasted in the window (a personal access token): it is not purlis's OAuth app, so
+    /// what it reads says nothing of whether the organization approved purlis, nor of whether
+    /// the host knows the app. Both checks are unknown, never skipped.
+    Pasted,
+    /// A token given to a headless run (CI, `purlis serve`) through slice C's `TokenConnection`:
+    /// no person signs in, so OAuth app approval and the host's registration do not apply, and
+    /// its workflow permissions are checked instead. A window never has this connection.
     Token,
 }
 
@@ -60,12 +65,13 @@ impl Connection {
     /// The connection a credential is, from how its account was signed in: only purlis's own
     /// OAuth flows ([`Method::Device`], [`Method::Pkce`]) are [`Connection::SignIn`]; an imported
     /// CLI login is the CLI's ([`Connection::Cli`], which is also no account at all); a pasted
-    /// token is [`Connection::Token`]. What the environment says (`CI` being set) decides
-    /// nothing: only a token configured for the host is one.
+    /// token is [`Connection::Pasted`]. [`Connection::Token`] is never the answer here: what the
+    /// environment says (`CI` being set) decides nothing, and only a headless run's configured
+    /// token connection is one.
     pub fn of_method(method: Option<Method>) -> Connection {
         match method {
             Some(Method::Device | Method::Pkce) => Connection::SignIn,
-            Some(Method::Pat) => Connection::Token,
+            Some(Method::Pat) => Connection::Pasted,
             Some(Method::Import) | None => Connection::Cli,
         }
     }
@@ -730,9 +736,14 @@ fn approval(
         })
     };
     if !connection.is_sign_in() {
-        // Whatever the CLI's login read (or was refused) is not purlis's approval.
-        let by = "this was read over the CLI's login, which is not purlis's own sign-in, so \
-                  it shows nothing about whether the organization approved purlis";
+        // Whatever the CLI's login or a pasted token read (or was refused) is not purlis's approval.
+        let by = if connection == Connection::Pasted {
+            "this was read with a pasted token, which is not purlis's own sign-in, so a pasted \
+             token cannot show whether the organization approved purlis"
+        } else {
+            "this was read over the CLI's login, which is not purlis's own sign-in, so \
+             it shows nothing about whether the organization approved purlis"
+        };
         return match repo {
             RepoRead::Read(f) if f.org_access == OrgAccess::NotApplicable => None,
             RepoRead::Read(f) => unknown(format!("{}: {by}", f.owner), words.cli_look(Some(f))),
