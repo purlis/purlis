@@ -33,6 +33,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import tls from 'node:tls';
+import zlib from 'node:zlib';
 
 const SENTINEL = 'purlis-sentinel-7d3e9c';
 const REAL = 'real-token-never-shown-to-the-chat-4c11';
@@ -153,6 +154,19 @@ function forgeHandler(req, res) {
       });
       return;
     }
+    if (req.method === 'POST' && normal.startsWith('/o/r.git/git-upload-pack')) {
+      const out = [];
+      const child = spawn('git', ['upload-pack', '--stateless-rpc', bare]);
+      child.stdout.on('data', (c) => out.push(c));
+      child.on('close', () => {
+        entry.status = 200;
+        res.writeHead(200, { 'content-type': 'application/x-git-upload-pack-result', 'cache-control': 'no-cache', connection: 'close' });
+        res.end(Buffer.concat(out));
+      });
+      const raw = Buffer.concat(chunks);
+      child.stdin.end(req.headers['content-encoding'] === 'gzip' ? zlib.gunzipSync(raw) : raw);
+      return;
+    }
     if (req.method === 'GET' && normal.split('?')[0] === '/user') return json(200, { login: 'fake-user', id: 1 });
     if (req.method === 'GET' && normal.split('?')[0] === '/api/v4/user') return json(200, { username: 'fake-user', id: 1 });
     if (req.method === 'GET' && normal.split('?')[0] === '/repos/o/r')
@@ -196,12 +210,15 @@ const proxyLog = [];
 function proxyHandler(via) {
   return (req, res) => {
     const arrived = typeof via === 'function' ? via(req) : via;
+    // A client that treats this as its HTTP proxy sends the absolute form (`GET http://host/path`).
+    const target = /^https?:\/\//i.test(req.url) ? new URL(req.url) : null;
+    const asked = target ? target.pathname + target.search : req.url;
     const { headers, did } = swapped(req.headers);
     delete headers.connection;
     delete headers['proxy-connection'];
-    proxyLog.push({ via: arrived, method: req.method, url: req.url, host: req.headers.host, swapped: did });
+    proxyLog.push({ via: target ? `${arrived} (absolute-form)` : arrived, method: req.method, url: req.url, host: req.headers.host, swapped: did });
     const up = https.request(
-      { host: '127.0.0.1', port: ports.forge, method: req.method, path: req.url, headers, ca: caPem, servername: 'localhost' },
+      { host: '127.0.0.1', port: ports.forge, method: req.method, path: asked, headers, ca: caPem, servername: 'localhost' },
       (r) => {
         res.writeHead(r.statusCode, r.headers);
         r.pipe(res);
@@ -468,6 +485,85 @@ function cases() {
     expect: 'refs/heads/main',
     env: (home) => gitEnv(home),
   });
+  // The chat's own environment (instruction 181): HTTP(S)_PROXY at the proxy, NO_PROXY=localhost.
+  for (const [noProxy, note] of [['', 'NO_PROXY cleared'], ['localhost,127.0.0.1', 'NO_PROXY=localhost,127.0.0.1 as a chat has it']]) {
+    add({
+      tool: 'gh',
+      mechanism: `GH_HOST=github.localhost + HTTP_PROXY at the proxy's http port (${note})`,
+      label: 'api user',
+      phases: ['env'],
+      cmd: ['gh', 'api', 'user'],
+      expect: 'fake-user',
+      env: (home) => gh(home, { GH_HOST: 'github.localhost', GH_TOKEN: SENTINEL, HTTP_PROXY: `http://127.0.0.1:${ports.http}`, HTTPS_PROXY: `http://127.0.0.1:${ports.http}`, NO_PROXY: noProxy, no_proxy: noProxy }),
+    });
+  }
+  const gitGlobal = (home) => {
+    fs.writeFileSync(path.join(home, 'gitconfig'), `[credential]\n\thelper =\n\thelper = ${path.join(work, 'credential-sentinel.sh')}\n[protocol]\n\tversion = 0\n`);
+  };
+  const viaConnect = (home, trust) => ({ HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, ...(trust === 'env' ? { SSL_CERT_FILE: ca.pem, GIT_SSL_CAINFO: ca.pem } : {}), ...gitEnv(home) });
+  add({
+    tool: 'git',
+    mechanism: 'HTTPS_PROXY env alone (no git config) to a CONNECT proxy that terminates TLS under the spike CA; GIT_SSL_CAINFO',
+    label: 'ls-remote https://github.com/o/r.git',
+    phases: ['env', 'os'],
+    tls: true,
+    setup: gitGlobal,
+    cmd: ['git', 'ls-remote', 'https://github.com/o/r.git'],
+    expect: 'refs/heads/main',
+    env: (home, trust) => viaConnect(home, trust),
+  });
+  add({
+    tool: 'git',
+    mechanism: 'HTTPS_PROXY env alone: a whole clone, then what `git remote -v` records',
+    label: 'clone https://github.com/o/r.git; remote -v',
+    phases: ['env', 'os'],
+    tls: true,
+    info: true,
+    setup: gitGlobal,
+    cmd: ['sh', '-c', 'git clone -q https://github.com/o/r.git c && git -C c remote -v'],
+    expect: 'https://github.com/o/r.git (fetch)',
+    env: (home, trust) => viaConnect(home, trust),
+  });
+  add({
+    tool: 'gh',
+    mechanism: 'HTTPS_PROXY to the CONNECT proxy (host stays github.com): gh repo clone, then `git remote -v`',
+    label: 'repo clone o/r; remote -v',
+    phases: ['env', 'os'],
+    tls: true,
+    info: true,
+    setup: gitGlobal,
+    cmd: ['sh', '-c', 'gh repo clone o/r c && git -C c remote -v'],
+    expect: 'github.com/o/r.git (fetch)',
+    env: (home, trust) => gh(home, { GH_TOKEN: SENTINEL, ...viaConnect(home, trust) }),
+  });
+  add({
+    tool: 'gh',
+    mechanism: 'GH_HOST=127.0.0.1:<port> as an enterprise host: gh repo clone, then `git remote -v`',
+    label: 'repo clone o/r; remote -v',
+    phases: ['env', 'os'],
+    tls: true,
+    info: true,
+    setup: gitGlobal,
+    cmd: ['sh', '-c', 'gh repo clone o/r c && git -C c remote -v'],
+    expect: '/o/r.git (fetch)',
+    env: (home, trust) => gh(home, { GH_HOST: `127.0.0.1:${ports.tls}`, GH_ENTERPRISE_TOKEN: SENTINEL, ...(trust === 'env' ? { SSL_CERT_FILE: ca.pem, GIT_SSL_CAINFO: ca.pem } : {}), ...gitEnv(home) }),
+  });
+  for (const [mech, envFor] of [
+    ['HTTPS_PROXY to the CONNECT proxy (host stays github.com)', (home, trust) => gh(home, { GH_TOKEN: SENTINEL, HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, ...sslFile(trust) })],
+    ['GH_HOST=127.0.0.1:<port> as an enterprise host', (home, trust) => gh(home, { GH_HOST: `127.0.0.1:${ports.tls}`, GH_ENTERPRISE_TOKEN: SENTINEL, ...sslFile(trust) })],
+  ]) {
+    add({
+      tool: 'gh',
+      mechanism: `${mech}: what gh browse prints`,
+      label: 'browse --no-browser -R o/r',
+      phases: ['env'],
+      tls: true,
+      info: true,
+      cmd: ['gh', 'browse', '--no-browser', '-R', 'o/r'],
+      expect: '/o/r',
+      env: envFor,
+    });
+  }
   return list;
 }
 
