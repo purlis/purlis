@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795204172484,
+  "lastUpdate": 1795206291142,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51870,6 +51870,48 @@ window.BENCHMARK_DATA = {
             "value": 102.24745,
             "unit": "ms",
             "extra": "median of 5 runs: 101.873, 101.918, 102.247, 102.725, 103.580 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "47b6a94ce65d1edf50989b1d6c53a09fb426858e",
+          "message": "A hedged heredoc body line is held for a literal merge, never for what it could print (Refs #7131) (#7245)\n\n* Floor: a ) in a quoted heredoc body no longer closes the substitution around it (partial fix for the large-commit-body refusal)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SDNZV8DFGZBVCMHS8FKKYV\nPurlis-Persona: steward\n\n* A hedged heredoc body line is held for a literal merge, never for what it could print (Refs #7131)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SDNZV8DFGZBVCMHS8FKKYV\nPurlis-Persona: steward\n\n* Exempt only the bash 3.2 hedge from the speculative checks, and read hedged lines in context too (Refs #7131)\n\nA body line is a hedge only where the quoted-substitution hedge is the one reason it is read as commands (LayoutLine::hedge), not after a shift, a heredoc closed on its line or an earlier body read both ways. Hedged lines are read for a literal merge joined with their neighbours, each on its own (continuations joined, case arms read as arms) and by the substitutions on each line; only program_built_by_the_shell, substitution_that_could_print_a_command, an unparsed case and an unclosable substitution are skipped. A here-string no longer opens a heredoc in skip_paren.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SKTHZY8HT99K9SQTWQ0R7T\nPurlis-Persona: steward\n\n* Under the bash 3.2 hedge only the two ruled checks skip: a built shell on a hedged line feeds that line, unclosable and unparsed case are read again, a case in a hedged substitution is held (Refs #7131)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ST22GE21MADC88CJ1TVBSC\nPurlis-Persona: steward\n\n* A merge line in a large body is held on every runner: the CI allow was the test's missing chat, a cut-short reading always refuses, the hedge reads each distinct line once (Refs #7131, #7245)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SVKXZF9T75XEGRZ09MA8T0\nPurlis-Persona: steward\n\n* An ordinary large body passes inside a chat too: a hedge's re-spelled heredoc is no substitution that must close (Refs #7131, #7245)\n\nThe merge hold runs only in a chat, so the large-body test now runs as one as well. In a chat the\nhedge reading (a heredoc body read as commands, as bash 3.2 would) re-spelled a quoted\n`<<'EOF'` in the prose as an unquoted `<<EOF` with no body, and the unclosable-body check\nrefused it. That check is a limit of the real reading, whose own bodies are read first; it is\nskipped while reading a hedge. An unquoted or unterminated heredoc in the real reading is still\nrefused, and a merge line in the body is still held.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SZNBTJ19J92BB8QHDFFCE6\nPurlis-Persona: steward\n\n* Format the large-body test (rustfmt)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SZNBTJ19J92BB8QHDFFCE6\nPurlis-Persona: steward\n\n* Test: a hedged line with a real merge and an unclosable fragment is held for the merge (Refs #7131, #7245)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code\nPurlis-Chat: 01M7SZNBTJ19J92BB8QHDFFCE6\nPurlis-Persona: steward\n\n* The guard reads a large body once per check, not once per guard (Refs #7131, #7245)\n\nOne hook read the same large heredoc body with shellseg::segment_readings several times\n(the release floor, the merge reading and the merge hold, each two whole-text reads), and the\nwalk is the cost of it: about 110 ms per 64 KB in a debug build, linear in the body. Nothing\nwas super-linear; the merge of main added reads, and the sum crossed the hook's two seconds.\n\nThe last four readings of a text of 4 KB or more are kept per thread. A reading is a pure\nfunction of its text, and its one effect, the report of a nesting past the cap, is made again\non a hit. A timing test reads a body at 1x and 4x and fails past ten times.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WMPTP2XFGDHBYF0Y1D28X2\nPurlis-Persona: steward\n\n* Changelog fragment: the guard reads a large body once (#7245)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WMPTP2XFGDHBYF0Y1D28X2\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-20T19:27:16Z",
+          "tree_id": "4e3988449376fafd0afb0e10012aaf8225826e2b",
+          "url": "https://github.com/purlis/purlis/commit/47b6a94ce65d1edf50989b1d6c53a09fb426858e"
+        },
+        "date": 1795206284598,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5063685,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.499, 0.500, 0.506, 0.507, 0.520 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3874785,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.199, 16.310, 16.387, 16.401, 16.412 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.999562,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.752, 100.884, 101.000, 101.179, 102.561 ms"
           }
         ]
       }
