@@ -235,7 +235,9 @@ test("the scenarios are purlis-app's one-word scenarios module, and the script's
   assert.match(runScript("production-timings").calls[0], /test\(\/\^scenarios::production_timings::\/\)/);
   // The resolver seam's own tests bind local ports, so the suite runs them on each OS's leg (T1.1-02).
   assert.match(runScript("suite").calls[0], /\| binary_id\(purlis-scenarios::resolver_seam\)/);
+  assert.match(runScript("suite").calls[0], /\| binary_id\(purlis-scenarios::fake_forge\)/);
   assert.doesNotMatch(runScript("production-timings").calls[0], /resolver_seam/);
+  assert.doesNotMatch(runScript("production-timings").calls[0], /fake_forge/);
 });
 
 test("the Linux scenario build is the rust job's test build, so it restores the rust job's cache", () => {

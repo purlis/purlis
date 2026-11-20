@@ -20,7 +20,8 @@
   },
   "approved_marks": [],
   "gaps": [
-    {"rows":["M-RST-12","M-RST-13","M-RST-14"],"os":"macos","reason":"host_killed cells run on Linux only: the fixture has no killable host process on macOS (T1.1-06)"}
+    {"rows":["M-RST-12","M-RST-13","M-RST-14"],"os":"macos","reason":"host_killed cells run on Linux only: the fixture has no killable host process on macOS (T1.1-06)"},
+    {"rows":["T1.1-50"],"os":"macos","reason":"gh is Go: on macOS it ignores the test CA, has no CA setting, and speaks http only to github.localhost, which purlis refuses as this machine (T1.1-50's fallback)"}
   ],
   "rows": [
     {"row":"M-PRB-01","dialect":"claude","os":"linux","log":true,"window":true,"chat":true,"carried":"scenario","kind":"scenario","cover":"pending: 11"},

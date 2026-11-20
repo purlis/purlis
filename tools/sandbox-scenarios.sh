@@ -33,13 +33,13 @@
 #
 # The scenarios are a `#[cfg(test)]` module of purlis-app, `scenarios` (ticket 06); the suite also
 # runs the resolver seam's and local origins' own tests (`purlis-scenarios`'s `resolver_seam`,
-# T1.1-02), which bind local ports, so they run on each OS's leg. Each run writes
+# T1.1-02) and the fake forge's (`fake_forge`, T1.1-50), which bind local ports, so they run on each OS's leg. Each run writes
 # what a red run's reader needs (event logs, transcripts, the scenario report) under
 # `target/sandbox-scenarios/`, which the workflow uploads when a run fails.
 set -euo pipefail
 
 case "${1-}" in
-  suite) filter='(package(purlis-app) & test(/^scenarios::/) & not test(/^scenarios::production_timings::/)) | binary_id(purlis-scenarios::resolver_seam)' ;;
+  suite) filter='(package(purlis-app) & test(/^scenarios::/) & not test(/^scenarios::production_timings::/)) | binary_id(purlis-scenarios::resolver_seam) | binary_id(purlis-scenarios::fake_forge)' ;;
   production-timings) filter='package(purlis-app) & test(/^scenarios::production_timings::/)' ;;
   *) echo "usage: $0 suite|production-timings" >&2; exit 2 ;;
 esac
