@@ -287,14 +287,58 @@ fn clean(command: &mut Command, home: &Path) {
         .stdin(Stdio::null());
 }
 
+/// How long a tool may take before it is ended and said to have: a tool that waits for something
+/// that never comes is a finding, not a hung job.
+const TOOL_TIME: std::time::Duration = std::time::Duration::from_secs(60);
+
 fn run(mut command: Command) -> (bool, String) {
-    let out = purlis_core::forklock::output(&mut command).expect("the tool ran");
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
-    );
-    (out.status.success(), text)
+    use std::io::Read;
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = purlis_core::forklock::spawn(&mut command).expect("the tool ran");
+    let mut readers = Vec::new();
+    for pipe in [
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    ] {
+        readers.push(std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            bytes
+        }));
+    }
+    let started = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if started.elapsed() < TOOL_TIME => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+        }
+    };
+    let text: String = readers
+        .into_iter()
+        .map(|r| String::from_utf8_lossy(&r.join().unwrap_or_default()).into_owned())
+        .collect();
+    match status {
+        Some(status) => (status.success(), text),
+        None => (
+            false,
+            format!("TIMED OUT after {TOOL_TIME:?}, ended\n{text}"),
+        ),
+    }
 }
 
 impl Setup {
