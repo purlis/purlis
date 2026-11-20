@@ -1,0 +1,17 @@
+[
+ {
+  "command": "glab api graphql (merge requests of the project)",
+  "variables": {"path": "group/proj"},
+  "query": "query($path: ID!) { project(fullPath: $path) { id name fullPath webUrl mergeRequests(first: 20, state: opened) { count nodes { iid title state webUrl draft author { username name } labels { nodes { title } } headPipeline { status detailedStatus { text label } } } pageInfo { hasNextPage endCursor } } } }"
+ },
+ {
+  "command": "glab api graphql (one merge request with its discussions)",
+  "variables": {"path": "group/proj", "iid": "3"},
+  "query": "query($path: ID!, $iid: String!) { project(fullPath: $path) { mergeRequest(iid: $iid) { iid title description sourceBranch targetBranch detailedMergeStatus diffStatsSummary { additions deletions fileCount } discussions { nodes { id resolved notes { nodes { body author { username } createdAt } } } } } } }"
+ },
+ {
+  "command": "glab api graphql (issues, releases and pipelines)",
+  "variables": {"path": "group/proj"},
+  "query": "query($path: ID!) { currentUser { username name } project(fullPath: $path) { issues(first: 20, state: opened) { nodes { iid title webUrl labels { nodes { title color } } assignees { nodes { username } } } } releases(first: 5) { nodes { name tagName releasedAt assets { count links { nodes { name url } } sources { nodes { format url } } } } } pipelines(first: 3) { nodes { iid status ref jobs { nodes { name status } } } } } metadata { version } }"
+ }
+]
