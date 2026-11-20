@@ -83,18 +83,29 @@ A long-lived token's expiry is not in the token. Give it as `PURLIS_FORGE_TOKEN_
 process, and one at a time on the machine (`forge-refresh.lock`), so the window and a session host
 never spend the same single-use refresh token. The rotated pair is written to the keyring **before**
 the new token is used; if the keyring refuses, both pairs are held in memory, the write is tried
-again first, and the spent refresh token is never sent.
+again first, and the spent refresh token is never sent. A renewal that cannot take the machine lock
+is not made (it fails closed: the token in hand serves while it lasts). A pair the keyring refused
+also leaves a marker in the lock folder (`forge-refresh-held-<hex>`: the account id and the process
+id, written under the lock), so another process does not send the refresh token the forge has spent;
+and a pair is written only over the refresh token it was made from, so a stale one never overwrites a
+fresh sign-in or makes an item again that another process ended.
 
 **Only the forge's word that the grant is over ends a sign-in**: `invalid_grant`, and GitHub's
 `bad_refresh_token`. The account is marked signed out, its keyring item is deleted, and the window
 is told once, which draws "Sign in again to `<host>`". Anything else (`invalid_client`,
 `unauthorized_client`, a 5xx, a rate limit, a proxy, a network that is down) ends nothing: the
 keyring item is kept, the token is used while it has time, the next try waits 30 seconds, then
-longer, to 15 minutes, and after three failures in a row the window is told once.
+longer, to 15 minutes, and after three failures in a row the window is told once (a Notice, "Sign in again").
 
 **A renewal uses the client id the account signed in through**, never what the registrations say
 now. If the host's pin is another application, or none, renewal stops, the item is kept, and the
-window is told once; signing in again is the person's press.
+window is told once, and told again if the pin moves again after it was put right; signing in again is
+the person's press.
+
+A token variable that is not text is an error, never unset; `GH_TOKEN` and `GITHUB_TOKEN` (and the
+two enterprise variables) set to different tokens are refused, not ordered. `CI_JOB_TOKEN` is taken
+whatever its length or characters (GitLab's job token is a JWT in newer versions). A chat is given
+none of the connection variables, under `PURLIS_` or its old `CHARTER_` name.
 
 ## What is kept, and where
 

@@ -69,7 +69,9 @@ mod connection;
 pub mod renewal;
 mod signedin;
 
-pub use connection::{TokenConnection, file_variable_for, host_key, variable_for};
+pub use connection::{
+    TokenConnection, file_variable_for, host_key, is_connection_variable, variable_for,
+};
 pub use signedin::SignedIn;
 
 /// How long before a long-lived token's known expiry it is warned about: two weeks, enough to
