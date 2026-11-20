@@ -44,6 +44,11 @@ const denied = (r, what) => {
   expect((r.refusals ?? []).length > 0, `${what} failed, but purlis did not refuse it (the audit has no refusal for it): ${tail(r)}`);
 };
 
+// A repo outside the project is unreachable: purlis refuses it, or (the anonymous route, ADR 0128 D3i) serves it as the public
+// read it is, with no credential, and the forge refuses a private repo to an anonymous caller. Either way the check below
+// (no credentialed request for it ever reaches a forge) is the one that matters.
+const unreachable = (r, what) => expect(r.code !== 0, `${what} should not work, and it exited 0: ${r.stdout.trim().slice(0, 200)}`);
+
 async function main() {
   const clock = manualClock();
   const ca = makeCa(work);
@@ -226,9 +231,9 @@ async function main() {
     denied(await chatRun('gh', ['api', 'repos/o/other'], GH), 'gh api repos/o/other');
     denied(await chatRun('gh', ['pr', 'list', '-R', 'github.localhost/o/other'], GH), 'gh pr list -R o/other');
     denied(await chatRun('gh', ['api', 'search/repositories?q=x'], GH), 'gh api search');
-    denied(await chatRun('git', ['ls-remote', 'https://github.com/o/other.git'], GH), 'git ls-remote o/other (github.com)');
+    unreachable(await chatRun('git', ['ls-remote', 'https://github.com/o/other.git'], GH), 'git ls-remote o/other (github.com)');
     denied(await chatRun('glab', ['api', 'projects/o%2Fother'], GL), 'glab api projects/o%2Fother');
-    denied(await chatRun('git', ['ls-remote', 'https://gitlab.com/o/other.git'], GL), 'git ls-remote o/other (gitlab.com)');
+    unreachable(await chatRun('git', ['ls-remote', 'https://gitlab.com/o/other.git'], GL), 'git ls-remote o/other (gitlab.com)');
     for (const f of [github, gitlab]) {
       const hits = f.log.filter((e) => /\/o\/other|o%2Fother/.test(e.path) && e.credentials.length > 0);
       expect(hits.length === 0, `${f.kind}: the forge got a credentialed request for o/other: ${hits.map((e) => `${e.method} ${e.path}`).join('; ')}`);
@@ -240,8 +245,13 @@ async function main() {
       const hits = f.log.filter((e) => e.path.startsWith('/o/public.git'));
       expect(hits.length > 0 && hits.every((e) => e.credentials.length === 0 && e.status === 200), `${f.kind}: the public repo should be read with no credential and answered: ${JSON.stringify(hits.map((e) => [e.path, e.status, e.credentials.length]))}`);
     }
-    const priv = github.log.filter((e) => e.path.startsWith('/o/r.git/info/refs') && e.credentials.length === 0);
-    expect(priv.length > 0 && priv.every((e) => e.status === 401), 'a private repo answers an anonymous request with 401, and git then asks the helper');
+    if (app.bridged) {
+      // The core refuses a recorded repo's request that has no sentinel, so git is challenged by the listener and the forge is not asked.
+      expect(app.audit.some((a) => a.reason === 'no sentinel yet: challenged'), 'a recorded private repo\'s first request is challenged, and git then asks the helper');
+    } else {
+      const priv = github.log.filter((e) => e.path.startsWith('/o/r.git/info/refs') && e.credentials.length === 0);
+      expect(priv.length > 0 && priv.every((e) => e.status === 401), 'a private repo answers an anonymous request with 401, and git then asks the helper');
+    }
   });
   await rp.step('gh auth token gives a chat no token: the wrapper refuses, and what gh itself prints is worth nothing', async () => {
     const wrapped = await chatRun('gh', ['auth', 'token'], GH);
