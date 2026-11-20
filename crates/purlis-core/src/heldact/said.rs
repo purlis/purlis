@@ -8,7 +8,7 @@
 //! happens next. None says the act will happen: it happens when the person presses, which a yes
 //! in the chat is not.
 
-use super::{NOBODY_HERE, Refused, Requested, Why};
+use super::{NOBODY_HERE, Refused, Requested, Shown, Why};
 
 /// The noun an act is told with, and the verb of its press.
 fn words(requested: &Requested) -> (&'static str, &'static str, &'static str) {
@@ -31,6 +31,16 @@ pub fn asked(requested: &Requested) -> String {
         "purlis holds {nouns}. It has asked the person; {the} happens when they approve it in \
          Asks."
     )
+}
+
+/// **The ask, named**, so the chat can say which one it waits on: its number, what it is of and
+/// what it names, in the words the window draws.
+pub fn naming(id: u64, shown: &Shown) -> String {
+    let named = ["Tag", "Branch", "Source"]
+        .iter()
+        .find_map(|label| shown.rows.iter().find(|row| row.label == *label))
+        .map_or(String::new(), |row| format!(" {}", row.value));
+    format!("Ask {id}: {}{named} in {}.", shown.kind, shown.repo)
 }
 
 /// **The 403's sentence where nobody was asked**, because `why`.

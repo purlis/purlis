@@ -68,6 +68,7 @@ use crate::mergehold::{Base, HeadSha, Repo};
 use crate::secrets::keyring::Secret;
 
 mod ci;
+mod handoff;
 mod holds;
 mod prepare;
 mod recognise;
@@ -76,6 +77,7 @@ mod tag;
 mod tip;
 
 pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push};
+pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{Asked, HeldActs, NotDone, Performed, Pressed, Waiting};
 pub use prepare::{pinned, prepare};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise};
