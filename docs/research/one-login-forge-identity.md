@@ -431,3 +431,36 @@ against a forge. **The sandbox refused every loopback bind and connect and the n
 A live `gh` and `glab` through the proxy (the first task of the build); git's proxying of
 `*.localhost`; GHES `offline_access`; an owner's approval widening an existing token; the exact
 refusal text of a restricted organization; the Linux sandbox's one-port-per-chat.
+
+## 8. Round 4: what the reviewers' second round changed in the facts
+
+Read from the forges' documentation as known; **not re-fetched this round and nothing run live**.
+Each line is a claim the ADR's open items name as needing a probe.
+
+- **GitHub OAuth app tokens and expiry.** `offline_access` and 8-hour user tokens belong to a
+  GitHub App's user token. An OAuth app's token does not expire unless the owner of the app turns
+  on "Expire user access tokens" in its settings. Round 3's D2 assumed expiry from a scope the
+  OAuth app does not take. **Gating probe:** one live sign-in against the existing registration,
+  read `expires_in` and `refresh_token`, and one refresh with no client secret.
+- **Who may register on GHES and self-hosted GitLab.** A user-owned application is owned by one
+  person; the safe shape is an organization-, enterprise-, group- or instance-owned one, made by an
+  owner or administrator, whose owner the forge reports and purlis shows at sign-in. A GitLab
+  administrator who disables user-owned applications (`user_oauth_applications`) leaves group-owned
+  and instance-wide ones untouched.
+- **Signals the readiness check reads** (D10.1): `X-OAuth-Scopes` on any authenticated reply;
+  `X-GitHub-SSO: required; url=…` on a SAML-blocked 403; a 403 on a private repo the person is a
+  member of, with a message naming OAuth app access restrictions or an IP allow list; GitLab's
+  `GET /personal_access_tokens/self` and the `git-upload-pack` 403 against a working API for
+  git-only blocks. The exact message texts are the forge's and are shown, not parsed.
+- **Fine-grained-PAT-only organizations** govern personal access tokens; they do not touch an OAuth
+  app's token. They matter only to a token connection (ADR 0128 D9).
+- **Roles.** GitHub: Read, Triage, Write, Maintain, Admin (Read comments on issues and pull
+  requests; Triage manages issues and pull requests without code write). GitLab: Guest and Planner
+  cannot read code in a private project; Reporter reads code and cannot push; Developer pushes to
+  non-protected branches; Maintainer and Owner administer.
+- **Held CI files.** GitHub: `.github/workflows/**`, and a push touching one needs the `workflow`
+  scope (OAuth) or the `workflows` permission (App). GitLab: `.gitlab-ci.yml`, its `include:`
+  files and the project's `ci_config_path`.
+- **LFS.** The batch reply names storage `href`s on other hosts with their own credentials, which a
+  reverse proxy that follows no redirect and binds its credential to one host cannot vouch for.
+- **Still unproven:** everything in section 7.4, plus the items above.
