@@ -20,11 +20,14 @@ use purlis_core::forge::proxy::{EndpointKind, Refusal};
 use crate::support::forge_listener::{Answer, World, basic, client_config, gh_get, parse_reply};
 
 fn short_dir() -> tempfile::TempDir {
-    // A socket's path is short on macOS.
-    tempfile::Builder::new()
+    // A socket's path is short on macOS. The folder is made private, as the app's own is: the
+    // listener refuses one that is not, and a temporary folder is made with the umask's mode.
+    let dir = tempfile::Builder::new()
         .prefix("fp")
         .tempdir_in("/tmp")
-        .expect("a folder in /tmp")
+        .expect("a folder in /tmp");
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    dir
 }
 
 #[test]

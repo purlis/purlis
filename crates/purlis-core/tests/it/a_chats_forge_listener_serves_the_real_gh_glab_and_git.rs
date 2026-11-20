@@ -234,6 +234,10 @@ fn setup() -> Setup {
         .prefix("fp")
         .tempdir_in("/tmp")
         .unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
     // A repo to serve: one commit on `main`.
     let work = dir.path().join("work");
     std::fs::create_dir(&work).unwrap();
