@@ -13,6 +13,7 @@
 
 pub mod folders;
 pub mod forge_cli;
+pub mod forge_proxy;
 pub mod one_login;
 pub mod shipped;
 
