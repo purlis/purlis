@@ -421,6 +421,9 @@ pub(crate) fn confirm_after_trust(clone: &std::path::Path) {
 /// After a repo was removed from its workspace: what was confirmed for its clone, named by the key
 /// read before it went, is taken away. Best effort.
 pub(crate) fn forget_removed_clone(key: Option<&str>) {
+    if purlis_core::fence::FENCED {
+        return;
+    }
     let (Some(key), Ok(scope), Ok(root)) = (key, host_scope(), config_root()) else {
         return;
     };
