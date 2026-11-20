@@ -65,7 +65,9 @@ pub use audit::{AuditLog, AuditRecord, Verdict};
 #[cfg(unix)]
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
-pub use policy::{Allowed, BodyNeed, ChatPolicy, Class, Decision, NoObjects, ObjectRepo, Refusal};
+pub use policy::{
+    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, NoObjects, ObjectRepo, Refusal,
+};
 pub use repo::{AddressError, AllowedRepo, Kind};
 pub use request::RequestHead;
 pub use sentinel::{ChatId, Sentinel, SentinelRegistry};

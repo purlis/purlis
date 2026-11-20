@@ -35,8 +35,24 @@ pub enum EndpointKind {
     Loopback(SocketAddr),
 }
 
+/// How a client speaks to an endpoint. The policy is the same for both ([`ChatPolicy`]
+/// (super::ChatPolicy)): only how a request arrives differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClientProtocol {
+    /// Plain HTTP in origin form, on a unix socket: `gh` (its `http_unix_socket` setting, with a
+    /// host name of its own). The request names the forge by `Host`, which the policy matches.
+    PlainHttp,
+    /// `CONNECT host:port`, then TLS: git and `glab` through `HTTPS_PROXY`. The proxy asks
+    /// [`ChatPolicy::connect`](super::ChatPolicy::connect), terminates TLS with a leaf of the
+    /// chat's own CA for a host it says to, and decides each decrypted request as any other.
+    ConnectTls,
+}
+
 /// One chat's endpoint.
 pub trait ChatEndpoint: Send {
+    /// How its clients speak to it. A unix socket serves [`ClientProtocol::PlainHttp`]; a loopback
+    /// port is the `HTTPS_PROXY` of git and `glab`, which is [`ClientProtocol::ConnectTls`].
+    fn protocol(&self) -> ClientProtocol;
     /// The chat this endpoint was bound for: the only source of a connection's chat.
     fn chat(&self) -> &ChatId;
     /// Where it listens, for the chat's environment and git configuration.
@@ -82,6 +98,10 @@ impl LoopbackEndpoint {
 }
 
 impl ChatEndpoint for LoopbackEndpoint {
+    fn protocol(&self) -> ClientProtocol {
+        ClientProtocol::ConnectTls
+    }
+
     fn chat(&self) -> &ChatId {
         &self.chat
     }
@@ -140,6 +160,10 @@ mod unix {
     }
 
     impl ChatEndpoint for UnixEndpoint {
+        fn protocol(&self) -> ClientProtocol {
+            ClientProtocol::PlainHttp
+        }
+
         fn chat(&self) -> &ChatId {
             &self.chat
         }

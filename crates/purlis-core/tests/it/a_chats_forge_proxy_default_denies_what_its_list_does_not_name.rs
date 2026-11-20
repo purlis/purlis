@@ -250,3 +250,37 @@ fn headers_that_choose_the_host_the_method_or_a_login_are_not_forwarded() {
     }
     assert!(names.contains(&"content-length".to_string()));
 }
+
+#[test]
+fn a_connect_is_terminated_only_for_a_host_and_port_the_chat_has_a_repo_on() {
+    use purlis_core::forge::proxy::ConnectVerdict;
+    let policy = purlis_core::forge::proxy::ChatPolicy::new(vec![
+        purlis_core::forge::proxy::AllowedRepo::new(
+            purlis_core::forge::proxy::Kind::GitHub,
+            "github.com",
+            443,
+            "acme/app",
+            "main",
+        )
+        .unwrap(),
+    ]);
+    for host in ["github.com", "API.github.com", "github.com."] {
+        assert!(
+            matches!(policy.connect(host, 443), ConnectVerdict::Terminate { .. }),
+            "{host}"
+        );
+    }
+    for (host, port) in [
+        ("evil.example", 443),
+        ("github.com.evil.example", 443),
+        ("github.com", 8443),
+        ("gitlab.com", 443),
+        ("", 443),
+        ("a b", 443),
+    ] {
+        assert!(
+            matches!(policy.connect(host, port), ConnectVerdict::Refuse(_)),
+            "{host}:{port}"
+        );
+    }
+}

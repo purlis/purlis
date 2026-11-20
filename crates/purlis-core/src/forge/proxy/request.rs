@@ -109,3 +109,8 @@ pub(crate) fn parse_target(target: &str) -> Result<Target, Refusal> {
         .collect();
     Ok(Target { segments, query })
 }
+
+/// A `CONNECT` host as the policy reads it.
+pub(crate) fn normalise_connect_host(host: &str) -> Result<String, Refusal> {
+    normalise_host(host).map_err(|_| Refusal::MalformedRequest)
+}

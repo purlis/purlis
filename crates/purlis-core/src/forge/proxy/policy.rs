@@ -170,6 +170,17 @@ const NON_REPO_READS: &[(&[&str], Kind)] = &[
     (&["api", "v4", "version"], Kind::GitLab),
 ];
 
+/// What to do with a client's `CONNECT host:port` (git and `glab` through `HTTPS_PROXY`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConnectVerdict {
+    /// Terminate TLS here with a leaf of the chat's own CA for `host`, then decide each decrypted
+    /// request with [`ChatPolicy::decide`]: the same policy as a request on a unix socket.
+    Terminate {
+        host: String,
+    },
+    Refuse(Refusal),
+}
+
 /// A chat's repos, the branches it created, and the rule that decides every request against them.
 #[derive(Debug)]
 pub struct ChatPolicy {
@@ -205,6 +216,20 @@ impl ChatPolicy {
         Self {
             repos,
             own_branches: Mutex::new(own),
+        }
+    }
+
+    /// Decide a `CONNECT`: only a host and port one of the chat's repos is on is terminated, so a
+    /// leaf is never made for any other name. Anything else is refused, not tunnelled: a tunnel
+    /// cannot be policed (anonymous reads of other hosts are a later, stated rule).
+    pub fn connect(&self, host: &str, port: u16) -> ConnectVerdict {
+        let Ok(host) = request::normalise_connect_host(host) else {
+            return ConnectVerdict::Refuse(Refusal::MalformedRequest);
+        };
+        if self.repos.iter().any(|r| r.serves(&host, port)) {
+            ConnectVerdict::Terminate { host }
+        } else {
+            ConnectVerdict::Refuse(Refusal::HostNotAllowed)
         }
     }
 
