@@ -1977,6 +1977,12 @@ pub struct LayoutLine {
     /// Only an interpreter of another language runs this body (`python3 - <<'EOF'`), so none
     /// of its lines is a shell's command (#7131).
     pub foreign: bool,
+    /// A body line read as commands for one reason only: bash 3.2 may end the `"$( … )"` it
+    /// stands in at a `)` of the body, though what follows is still inside the quotes for every
+    /// other shell ([`Enclosed::quoted_alone`]). Never set on a body read both ways for another
+    /// reason (a shift, a delimiter the shells read differently, a substitution closed on its
+    /// line) nor on one after a body that was: those lines are commands in some shell outright.
+    pub hedge: bool,
 }
 
 /// A verdict asks every guard for the layout of the same command, each reading it afresh: the
@@ -2084,6 +2090,8 @@ fn layout_of(cmd: &str) -> Vec<LayoutLine> {
         let mut body_count = 0usize;
         // Bodies the shells read differently, which are read both ways.
         let mut read_both_ways: HashSet<usize> = HashSet::new();
+        // Bodies read as commands only as bash 3.2's hedge, and for no other reason.
+        let mut hedge_only: HashSet<usize> = HashSet::new();
         // Bodies a pipeline after their substitution's close runs (#799).
         let mut run_after_the_close: HashSet<usize> = HashSet::new();
         let mut plan_text = String::new();
@@ -2181,8 +2189,17 @@ fn layout_of(cmd: &str) -> Vec<LayoutLine> {
                             && !(quoted && Enclosed::quoted_alone(&lines[i..(i + len).min(n)]))
                     }
                 };
+                // Read as commands for the `"$( … )"` hedge and nothing else.
+                let hedge = matches!(within, Enclosed::SpansLines(_, true))
+                    && differ
+                    && !diverged
+                    && !m.maybe_shift
+                    && !h.shells_disagree;
                 if m.maybe_shift || h.shells_disagree || differ {
                     read_both_ways.insert(idx);
+                    if hedge {
+                        hedge_only.insert(idx);
+                    }
                     diverged = true;
                 }
                 for body_line in &lines[i..i + len] {
@@ -2259,6 +2276,11 @@ fn layout_of(cmd: &str) -> Vec<LayoutLine> {
                         && !both_ways(k)
                         && !run_after(k)
                 }),
+                hedge: idx.is_some_and(|k| {
+                    hedge_only.contains(&k)
+                        && !run_after(k)
+                        && !executed.get(&k).copied().unwrap_or(false)
+                }),
             });
         }
     }
@@ -2293,7 +2315,13 @@ pub fn strip_reader_heredocs(cmd: &str) -> String {
 /// For a guard that reads a line by its segments ([`shellseg::joined_argv`]), whose lexer knows
 /// no heredoc and would read every line of a body as a command.
 pub fn commands_a_shell_runs(cmd: &str) -> String {
-    shell_runs(cmd, true)
+    shell_runs(cmd, true, true)
+}
+
+/// [`commands_a_shell_runs`] without the body lines read as commands only as a hedge
+/// ([`hedged_body_lines`]), which the floor reads on their own.
+pub fn commands_a_shell_runs_without_the_hedge(cmd: &str) -> String {
+    shell_runs(cmd, true, false)
 }
 
 /// [`commands_a_shell_runs`] without the substitutions of a body nothing runs, and without a
@@ -2301,10 +2329,31 @@ pub fn commands_a_shell_runs(cmd: &str) -> String {
 /// <<'EOF'`): the lines a shell runs as commands of their own, where a word's place on the line
 /// still says what it is (#7131). A substitution in a body is read by its own body's text.
 pub fn lines_a_shell_runs(cmd: &str) -> String {
-    shell_runs(cmd, false)
+    shell_runs(cmd, false, true)
 }
 
-fn shell_runs(cmd: &str, with_body_substitutions: bool) -> String {
+/// [`lines_a_shell_runs`] without the body lines that are read as commands only as a hedge
+/// (`Enclosed`: bash 3.2 may end a substitution at a `)` in the body): the lines a shell runs
+/// on every reading of the text.
+pub fn lines_a_shell_runs_without_the_hedge(cmd: &str) -> String {
+    shell_runs(cmd, false, false)
+}
+
+/// The body lines read as commands only as a hedge ([`lines_a_shell_runs_without_the_hedge`]),
+/// each on its own: bash 3.2 that ends a substitution at a `)` runs each as a line of its own,
+/// whatever quote an earlier line of the body left open for this reading.
+pub fn hedged_body_lines(cmd: &str) -> Vec<String> {
+    if !cmd.contains("<<") {
+        return Vec::new();
+    }
+    heredoc_layout(cmd)
+        .into_iter()
+        .filter(|line| line.hedge)
+        .map(|line| line.text)
+        .collect()
+}
+
+fn shell_runs(cmd: &str, with_body_substitutions: bool, with_hedged: bool) -> String {
     if !cmd.contains("<<") {
         return cmd.to_owned();
     }
@@ -2319,9 +2368,20 @@ fn shell_runs(cmd: &str, with_body_substitutions: bool) -> String {
     let mut out: Vec<String> = Vec::new();
     // The character offset the line starts at: the layout keeps every line, in order.
     let mut at = 0usize;
-    for line in heredoc_layout(cmd) {
+    let layout = heredoc_layout(cmd);
+    // A line read as commands only as a hedge; the last of a run is its terminator, which stays
+    // so the text around the heredoc is read as it stands.
+    let hedged = |l: &LayoutLine| l.hedge;
+    let leaves_out: Vec<bool> = layout
+        .iter()
+        .enumerate()
+        .map(|(k, l)| !with_hedged && hedged(l) && layout.get(k + 1).is_some_and(hedged))
+        .collect();
+    for (k, line) in layout.into_iter().enumerate() {
         let len = line.text.chars().count();
-        if !line.body || (line.executed && !(line.foreign && !with_body_substitutions)) {
+        if !line.body
+            || (line.executed && !leaves_out[k] && !(line.foreign && !with_body_substitutions))
+        {
             out.push(line.text);
         } else if line.expands && with_body_substitutions {
             out.extend(
@@ -2539,6 +2599,26 @@ mod tests {
 
     fn argv(line: &str) -> Vec<String> {
         line.split_whitespace().map(str::to_owned).collect()
+    }
+
+    /// A line is `hedge` only where the `"$( … )"` hedge is the one reason it is read as commands:
+    /// not after an arithmetic shift, in a substitution closed on its line, or after a body
+    /// that was read both ways.
+    #[test]
+    fn only_the_quoted_substitution_hedge_marks_a_line_as_a_hedge() {
+        let hedged = |cmd: &str| -> Vec<String> {
+            heredoc_layout(cmd)
+                .into_iter()
+                .filter(|l| l.hedge)
+                .map(|l| l.text)
+                .collect()
+        };
+        let body = "git commit -m \"$(cat <<'EOF'\nsee `\"$(x)` (a)\nline\nEOF\n)\"";
+        assert_eq!(hedged(body), ["see `\"$(x)` (a)", "line", "EOF"]);
+        assert!(hedged("echo $((1<<2))\nline\ntrue\n2\n").is_empty());
+        assert!(hedged("x=$(cat <<'EOF' ); echo\nline\nEOF\n").is_empty());
+        let after = format!("x=$(cat <<'EOF' ); echo\nfoo\nEOF\n{body}");
+        assert!(hedged(&after).is_empty());
     }
 
     /// #1068: the body-on-stdin reading is gh's alone, for the reason [`GH_BODY_COMMANDS`] gives.
