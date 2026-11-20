@@ -53,8 +53,9 @@ async function main() {
     fs.mkdirSync(root, { recursive: true });
     return startFakeForge({ kind, root, tls: leaf, clock, expiresIn, host, repos: ['o/r', 'o/other'], publicRepos: ['o/public'] });
   };
-  // GitHub's OAuth app has "Expire user access tokens" on here (8 hours, refresh works); GitLab's access token lasts 2 hours.
-  const github = await startForge('github', 'github.com', 8 * 3600);
+  // purlis's github.com registration is an OAuth App: its tokens do not expire and have no refresh token (ADR 0128 D2).
+  // GitLab's access token lasts 2 hours, and each refresh replaces both tokens.
+  const github = await startForge('github', 'github.com', null);
   const gitlab = await startForge('gitlab', 'gitlab.com', 2 * 3600);
   const app = await createApp({ work, ca, clock, forges: { github, gitlab } });
   for (const f of [github, gitlab]) f.mustNotSee.add(app.sentinel);
@@ -88,13 +89,14 @@ async function main() {
     const who = await app.signIn(github);
     expect(who === 'alice', `signed in as ${who}`);
     const k = app.keyring.get('github.com');
-    expect(k.access && k.refresh && k.expiresAt, 'the keyring holds an access token, a refresh token and an expiry');
+    expect(k.access && !k.refresh && !k.expiresAt, 'the keyring holds an access token with no refresh token and no expiry (an OAuth App\'s)');
     expect(github.grants.includes('urn:ietf:params:oauth:grant-type:device_code'), 'the forge saw a device grant');
   });
   await rp.step('sign in to gitlab.com once: the device flow, the token in the keyring', async () => {
     const who = await app.signIn(gitlab);
     expect(who === 'alice', `signed in as ${who}`);
-    expect(app.keyring.get('gitlab.com').refresh, 'the keyring holds a refresh token');
+    const k = app.keyring.get('gitlab.com');
+    expect(k.access && k.refresh && k.expiresAt, 'the keyring holds an access token, a refresh token and an expiry');
   });
   await rp.step('the authorization-code flow with PKCE refuses a wrong verifier and accepts the right one (both forges)', async () => {
     for (const f of [github, gitlab]) {
@@ -204,7 +206,7 @@ async function main() {
   for (const [label, dir, forge] of [['github.com', () => GH, github], ['gitlab.com', () => GL, gitlab]]) {
     await rp.step(`refused: a push to main, a tag, and a branch the chat did not create (${label})`, async () => {
       const before = forge.refSha('o/r', 'refs/heads/main');
-      denied(await chatRun('git', ['push', 'origin', 'HEAD:main'], dir()), 'git push HEAD:main');
+      denied(await chatRun('git', ['push', 'origin', '+HEAD:main'], dir()), 'git push +HEAD:main (forced, so git itself does not stop it first)');
       denied(await chatRun('git', ['push', 'origin', 'HEAD:refs/tags/v1'], dir()), 'a tag push');
       denied(await chatRun('git', ['push', 'origin', ':chat/feature'], dir()), 'deleting the chat\'s branch');
       forge.teammatePush('o/r', 'mates-branch', 'mate.txt');
@@ -249,11 +251,13 @@ async function main() {
     expect(printed === '' || printed === app.sentinel, `gh printed something that is not the sentinel: ${printed.slice(0, 8)}...`);
     if (printed) {
       for (const f of [github, gitlab]) {
+        f.mustNotSee.delete(app.sentinel); // this test sends it to the forge on purpose
         const direct = await app.rawForge(f, f.kind === 'github' ? '/user' : '/api/v4/user', printed);
+        f.mustNotSee.add(app.sentinel);
         expect(direct.status === 401, `${f.kind}: the printed value must be worthless at the forge, and it answered ${direct.status}`);
       }
       const mark = app.audit.length;
-      const other = await chat.exec(realGh, ['api', '-R', 'github.localhost/o/other', 'repos/o/other'], GH);
+      const other = await chat.exec(realGh, ['api', 'repos/o/other'], GH);
       expect(other.code !== 0 && app.audit.slice(mark).some((a) => a.verdict === 'refuse'), 'the sentinel gh printed buys nothing from the proxy outside the project');
     }
   });
@@ -295,24 +299,23 @@ async function main() {
 
   // ---- the token renews unattended --------------------------------------------------------------------
 
-  await rp.step('the token renews before it expires, unattended: gh, glab and git carry on (both forges)', async () => {
-    clock.advance(9 * HOUR); // past GitHub's 8 hours and GitLab's 2
-    ok(await chatRun('gh', ['pr', 'list', '--state', 'all'], GH), 'gh pr list after the token expired');
+  await rp.step('GitHub\'s token needs no renewal (it does not expire); GitLab\'s renews before it expires, unattended', async () => {
+    clock.advance(9 * HOUR); // long past GitLab's 2 hours
+    ok(await chatRun('gh', ['pr', 'list', '--state', 'all'], GH), 'gh pr list nine hours later');
+    ok(await chatRun('git', ['fetch', 'origin'], GH), 'git fetch (github.com) nine hours later');
     ok(await chatRun('glab', ['mr', 'list', '--all'], GL), 'glab mr list after the token expired');
-    ok(await chatRun('git', ['fetch', 'origin'], GH), 'git fetch (github.com) after the token expired');
     ok(await chatRun('git', ['fetch', 'origin'], GL), 'git fetch (gitlab.com) after the token expired');
-    expect(github.grants.includes('refresh_token') && gitlab.grants.includes('refresh_token'), 'each forge saw a refresh grant');
-    expect(app.refreshes.some((x) => x.startsWith('github.com') && x.endsWith('before expiry')) && app.refreshes.some((x) => x.startsWith('gitlab.com') && x.endsWith('before expiry')), `renewals: ${app.refreshes.join('; ')}`);
+    expect(!github.grants.includes('refresh_token'), 'GitHub was never asked to refresh');
+    expect(gitlab.grants.includes('refresh_token'), 'GitLab saw a refresh grant');
+    expect(app.refreshes.some((x) => x.startsWith('gitlab.com') && x.endsWith('before expiry')), `renewals: ${app.refreshes.join('; ')}`);
+    expect(!app.refreshes.some((x) => x.startsWith('github.com')), 'no GitHub renewal was made');
   });
-  await rp.step('the token renews once on a 401 (the forge revoked it), and the rotated refresh token is the one kept', async () => {
-    github.revokeAccessTokens();
+  await rp.step('GitLab\'s token renews once on a 401 (the forge revoked it), and the rotated refresh token is the one kept', async () => {
     gitlab.revokeAccessTokens();
-    ok(await chatRun('gh', ['pr', 'view', '1'], GH), 'gh pr view after a revocation');
     ok(await chatRun('glab', ['mr', 'view', '1'], GL), 'glab mr view after a revocation');
-    ok(await chatRun('git', ['fetch', 'origin'], GH), 'git fetch (github.com) after a revocation');
-    expect(app.refreshes.some((x) => x.endsWith('after a 401')), `renewals: ${app.refreshes.join('; ')}`);
+    ok(await chatRun('git', ['fetch', 'origin'], GL), 'git fetch (gitlab.com) after a revocation');
+    expect(app.refreshes.some((x) => x.startsWith('gitlab.com') && x.endsWith('after a 401')), `renewals: ${app.refreshes.join('; ')}`);
     clock.advance(9 * HOUR); // a third renewal uses the refresh token the second one returned
-    ok(await chatRun('gh', ['pr', 'list'], GH), 'gh pr list after a second expiry');
     ok(await chatRun('glab', ['mr', 'list'], GL), 'glab mr list after a second expiry');
   });
 
@@ -320,9 +323,9 @@ async function main() {
 
   await rp.step('the chat never saw a token: its environment, its files and every output are scanned', async () => {
     const stored = [...app.keyring.values()].flatMap((k) => [k.access, k.refresh]).filter(Boolean);
-    expect(stored.length >= 4 && stored.every((t) => github.issued.has(t) || gitlab.issued.has(t)), 'the keyring holds an access and a refresh token per forge, each one the forge issued');
+    expect(stored.length >= 3 && stored.every((t) => github.issued.has(t) || gitlab.issued.has(t)), 'the keyring holds GitHub\'s access token and GitLab\'s access and refresh tokens, each one the forge issued');
     const secrets = [...new Set([...github.issued, ...gitlab.issued, ...stored])];
-    expect(secrets.length >= 6, 'the forges issued tokens to look for');
+    expect(secrets.length >= 4, 'the forges issued tokens to look for');
     const hit = (text) => secrets.find((s) => text.includes(s));
     for (const [k, v] of Object.entries(chat.env)) expect(!hit(String(v)), `the chat's environment variable ${k} holds a token`);
     expect(chat.env.GH_TOKEN === app.sentinel && chat.env.GITLAB_TOKEN === app.sentinel, 'the chat holds the sentinel where a tool looks for its token');

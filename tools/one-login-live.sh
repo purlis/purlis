@@ -13,8 +13,10 @@
 # prints PASS, FAIL or SKIP for every step:
 #
 #   probes    the two gates ADR 0128 names (Open item 3), read from the live forge:
-#             1. the OAuth app's access tokens EXPIRE and a refresh works (GitHub: the registration's
-#                "Expire user access tokens" is on); for GitLab the same, read from the reply;
+#             1. what the sign-in's reply says of expiry (ADR 0128 D2): github.com's registration is an
+#                OAuth App, whose token does not expire and needs no renewal (PASS, with where to
+#                revoke it); a token that expires must come with a refresh token that works with no
+#                client secret and rotates (GitLab: 2 hours; GHES or a GitHub App, if it returns one);
 #             2. the consent page shows who registered the application (GHES, GitLab).
 #   scenario  sign in once, clone as a project, then a chat's gh, glab and git: pr/mr create, list
 #             and view, `gh api`, fetch, pull and a push to a branch it made; and what must be
@@ -230,9 +232,11 @@ probe() {
   ref="$(printf '%s' "$resp" | jget refresh_token)"; exp="$(printf '%s' "$resp" | jget expires_in)"
   [ -n "$ref" ] && printf '%s' "$ref" | keyring_set "$host:refresh"
   if [ -n "$exp" ] && [ -n "$ref" ]; then step_pass "[$host] access tokens expire (${exp}s) and a refresh token comes with them"
-  elif [ "$kind" = github ] && [[ "$cid" == Ov23* ]]; then
-    step_fail "[$host] access tokens expire and a refresh token comes with them" "GATING: this client id (Ov23...) is a GitHub OAuth App. An OAuth App's tokens do not expire and come with no refresh token; *Expire user access tokens* is a GitHub App setting, not an OAuth App's. Renewal on GitHub cannot be shown with this registration (ADR 0128 D2, Open item 3): decide between a GitHub App registration and no renewal."
-  else step_fail "[$host] access tokens expire and a refresh token comes with them" "none came back: the registration does not issue expiring tokens, so renewal cannot be shown"; fi
+  elif [ -z "$exp" ] && [ -z "$ref" ]; then
+    # ADR 0128 D2: a GitHub OAuth App's token does not expire and has no refresh token. That is the requirement met:
+    # one sign-in, and the person stays signed in until they revoke it.
+    step_pass "[$host] renewal: not needed, the token does not expire (revoke it at https://$host/settings/applications)"
+  else step_fail "[$host] an expiry and a refresh token come together" "the reply carried ${exp:+an expiry (${exp}s)}${ref:+a refresh token} but not both: a token that expires with no way to renew it ends the sign-in"; fi
   if [ -n "$ref" ]; then
     resp="$(printf 'client_id=%s&grant_type=refresh_token&refresh_token=%s' "$cid" "$ref" | post "$tok_url")"
     newref="$(printf '%s' "$resp" | jget refresh_token)"
