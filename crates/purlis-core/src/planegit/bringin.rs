@@ -318,6 +318,9 @@ pub(super) fn plan_between(
     base: Option<&str>,
 ) -> Result<Plan, String> {
     let given = base.map(|base| format!("--merge-base={base}"));
+    if given.is_some() {
+        git::needs_git(git::MERGE_BASE_SINCE, "bringing in the remote's work")?;
+    }
     let mut args = vec![
         "merge-tree",
         "--write-tree",

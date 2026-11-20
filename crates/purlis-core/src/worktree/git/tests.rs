@@ -335,8 +335,11 @@ fn a_git_that_only_a_relative_path_entry_reaches_is_never_the_one_charter_runs()
 
     let fixed_dir = fixed.path().display().to_string();
     let path = format!(".::{relative}");
-    let (binary, child_path) =
-        git_binary_in(&[fixed_dir.as_str()], Some(std::ffi::OsStr::new(&path)));
+    let (binary, child_path) = git_binary_in(
+        &[fixed_dir.as_str()],
+        Some(std::ffi::OsStr::new(&path)),
+        &|_| None,
+    );
     assert_eq!(
         binary,
         PathBuf::from("git"),
@@ -2196,4 +2199,66 @@ fn every_git_call_reads_its_messages_in_the_c_locale() {
     });
     assert!(env.contains(&("LC_ALL", "C".to_owned())), "{env:?}");
     assert!(!env.iter().any(|(name, _)| *name == "LANG"), "{env:?}");
+}
+
+/// Two installed gits, `(fixed dirs, the two binaries)`: each a plain file, for a search that
+/// only asks which exist.
+fn two_installed_gits() -> (tempfile::TempDir, [String; 2], [PathBuf; 2]) {
+    let dir = tempfile::tempdir().unwrap();
+    let mut dirs = Vec::new();
+    let mut binaries = Vec::new();
+    for name in ["system", "newer"] {
+        let bin = dir.path().join(name);
+        std::fs::create_dir(&bin).unwrap();
+        std::fs::write(bin.join("git"), "").unwrap();
+        binaries.push(bin.join("git"));
+        dirs.push(bin.display().to_string());
+    }
+    (dir, dirs.try_into().unwrap(), binaries.try_into().unwrap())
+}
+
+#[test]
+fn a_git_new_enough_for_a_merge_is_chosen_over_an_older_one_listed_before_it() {
+    let (_dir, dirs, [system, newer]) = two_installed_gits();
+    let fixed: Vec<&str> = dirs.iter().map(String::as_str).collect();
+
+    let (binary, _) = git_binary_in(&fixed, None, &|candidate| {
+        Some(if candidate == system {
+            "git version 2.39.5 (Apple Git-154)".to_owned()
+        } else {
+            "git version 2.56.1".to_owned()
+        })
+    });
+
+    assert_eq!(binary, newer, "Apple's 2.39 led the list and was chosen");
+}
+
+#[test]
+fn the_first_git_is_kept_when_it_is_new_enough_or_none_is() {
+    let (_dir, dirs, [system, _]) = two_installed_gits();
+    let fixed: Vec<&str> = dirs.iter().map(String::as_str).collect();
+
+    let (both_new, _) = git_binary_in(&fixed, None, &|_| Some("git version 2.50.0".to_owned()));
+    let (both_old, _) = git_binary_in(&fixed, None, &|_| Some("git version 2.39.5".to_owned()));
+    let (unknown, _) = git_binary_in(&fixed, None, &|_| None);
+
+    assert_eq!(both_new, system);
+    assert_eq!(both_old, system);
+    assert_eq!(unknown, system);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_git_before_2_40_is_named_with_its_version_and_the_version_a_merge_needs() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = stand_in::program(dir.path(), "git", "#!/bin/sh\necho 'git version 2.39.5'\n");
+
+    let said = with_stand_in(&old, || {
+        needs_git(MERGE_BASE_SINCE, "bringing in the remote's work")
+    })
+    .expect_err("2.39 has no merge-tree --merge-base");
+
+    assert!(said.contains(&old.display().to_string()), "{said}");
+    assert!(said.contains("2.39.5") && said.contains("2.40"), "{said}");
+    assert!(!said.contains("usage"), "{said}");
 }

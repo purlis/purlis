@@ -39,7 +39,22 @@ pub(super) fn git_in(dir: &Path, args: &[&str]) -> Result<Run, String> {
 pub(super) fn git() -> Row {
     const NAME: &str = "git";
     match git_in(Path::new("/"), &["--version"]) {
-        Ok(run) => Row::ok(NAME, first_line(&run.out)),
+        Ok(run) => {
+            let said = first_line(&run.out);
+            let (major, minor) = crate::worktree::git::MERGE_BASE_SINCE;
+            match crate::worktree::git::version_of(&said) {
+                // A save that replays commits needs `merge-tree --merge-base` (#6846).
+                Some(found) if found < (major, minor) => Row::warn(
+                    NAME,
+                    said,
+                    format!(
+                        "purlis needs git {major}.{minor} or later to bring a remote's work \
+                         in: brew install git."
+                    ),
+                ),
+                _ => Row::ok(NAME, said),
+            }
+        }
         Err(why) if why.starts_with("timed out") => Row::not_checked(NAME, why),
         Err(_) => Row::fail(
             NAME,
