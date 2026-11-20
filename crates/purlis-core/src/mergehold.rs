@@ -667,6 +667,10 @@ pub struct Facts {
     /// nor an app or a bot, by login ([`approves`], R-122). A review the forge did not give in
     /// time, or could not give whole, is no approval.
     pub approved_by: Option<String>,
+    /// **The merge method the row shows** (ADR 0128 D8.1): whether the repo's own method squashes
+    /// the request, as the forge said at this read. A press merges by it and only while the forge
+    /// still says it ([`NotMerged::MethodMoved`]); a read that says otherwise asks once more.
+    pub squash: bool,
     /// When the forge was read for these facts, in seconds since 1970: a try again at the same
     /// head reads it again, and the newer read replaces these ([`Holds::raise`]).
     pub read_at: u64,
@@ -761,6 +765,7 @@ pub fn read(
             checks,
             ruleset,
             approved_by,
+            squash: at.squash,
             read_at: now,
         },
         at,
@@ -929,11 +934,6 @@ pub struct Waits {
     /// Whether purlis recorded the asking chat pushing its head (R-124): said by
     /// [`Holds::every`] as it lists it. A head it did not is flagged.
     pub pushed_here: bool,
-    /// **The merge method the row showed** (ADR 0128 D8.1): whether the repo's own method squashes
-    /// it, as the forge said when the ask was read. `None` where no read said (an ask raised
-    /// before the app recorded it). A press merges only while the forge still says it
-    /// ([`Holds::shown_method`], [`NotMerged::MethodMoved`]).
-    pub squash_shown: Option<bool>,
 }
 
 impl Facts {
@@ -956,6 +956,7 @@ impl Facts {
                 Some(by) => by.as_str(),
                 None => "\u{1f}not approved",
             },
+            method_word(self.squash),
         ]
         .join("\u{1e}");
         sha2::Sha256::digest(shown.as_bytes())
@@ -1119,7 +1120,6 @@ impl Holds {
             asked: false,
             look: Look::NotViewed { since: None },
             pushed_here: false,
-            squash_shown: None,
         });
         Raised::New
     }
@@ -1178,25 +1178,8 @@ impl Holds {
             asked: false,
             look: Look::NotViewed { since: None },
             pushed_here: false,
-            squash_shown: None,
         });
         Ok(Refreshed::Moved)
-    }
-
-    /// **The merge method chat `session`'s ask for `key` shows** (ADR 0128 D8.1): whether the
-    /// repo's own method squashes, as the forge said at the read the row was drawn from. An ask
-    /// that showed another method is asked once more of the new one.
-    pub fn shown_method(&self, session: u32, key: &MergeKey, squash: bool) {
-        let mut held = self.lock();
-        if let Some(one) = held
-            .iter_mut()
-            .find(|one| one.session == session && one.key == *key)
-        {
-            if one.squash_shown.is_some_and(|was| was != squash) {
-                one.asked = false;
-            }
-            one.squash_shown = Some(squash);
-        }
     }
 
     /// Every merge ask that waits, oldest first, each saying what the person has seen of its
@@ -1400,7 +1383,7 @@ impl Holds {
             }
             held.remove(at)
         };
-        let shown = taken.squash_shown;
+        let shown = taken.facts.squash;
         let merged = forge
             .at(key)
             .map_err(NotMerged::Forge)
@@ -1414,17 +1397,18 @@ impl Holds {
                     })
                 }
             })
-            .and_then(|at| match shown {
+            .and_then(|at| {
                 // The method the row showed is the one the merge is made by, or none is made.
-                Some(was) if was != at.squash => {
-                    taken.squash_shown = Some(at.squash);
+                if at.squash == shown {
+                    Ok(at)
+                } else {
+                    taken.facts.squash = at.squash;
                     taken.asked = false;
                     Err(NotMerged::MethodMoved {
-                        was: method_word(was),
+                        was: method_word(shown),
                         now: method_word(at.squash),
                     })
                 }
-                _ => Ok(at),
             })
             .and_then(|at| forge.merge_at(key, at.squash).map_err(NotMerged::Forge));
         match merged {

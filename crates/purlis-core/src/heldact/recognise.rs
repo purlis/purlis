@@ -87,6 +87,10 @@ pub enum Why {
     ForkElsewhere,
     /// The repository is not one the person recorded for this chat (D4).
     NotRecorded,
+    /// The branch-merge endpoint (`POST …/merges`), which merges with no request to hold.
+    MergesWithoutRequest,
+    /// A change to a release that exists, or a file added to one: never a chat's.
+    ReleaseEdit,
     /// The request names something purlis cannot read as one act, in these words.
     Unreadable(&'static str),
 }
@@ -98,12 +102,13 @@ pub enum Recognised {
     Hold(Requested),
     /// Refused, with no ask.
     Refuse(Why),
-    /// Not a held act: the proxy's ordinary rules decide.
+    /// Not a held act: the proxy's allowlist decides, and **a request it does not list is
+    /// refused**. `Other` is never permission.
     Other,
 }
 
 /// **The repos the person recorded for a chat** (D4), as the recogniser asks it.
-pub trait Recorded {
+pub trait Recorded: Send + Sync {
     /// The recorded repo `id` names on a forge of `kind`: GitHub's `owner/name`, and on GitLab a
     /// project's path or its numeric id. `None` where `id` is not a recorded repo.
     fn resolve(&self, kind: Kind, id: &str) -> Option<Repo>;
@@ -150,13 +155,39 @@ impl Call<'_> {
 
 /// **Reads one request**: a held act, a refusal, or none of them.
 pub fn recognise(kind: Kind, call: &Call<'_>, recorded: &dyn Recorded) -> Recognised {
-    let segments: Vec<&str> = call.segments.iter().map(String::as_str).collect();
-    let (repo_id, rest): (String, &[&str]) = match (kind, &segments[..]) {
-        (Kind::GitHub, ["api", "v3", "repos", owner, name, rest @ ..])
-        | (Kind::GitHub, ["repos", owner, name, rest @ ..]) => (format!("{owner}/{name}"), rest),
-        (Kind::GitLab, ["api", "v4", "projects", id, rest @ ..]) => ((*id).to_owned(), rest),
-        _ => return Recognised::Other,
+    // The proxy decodes each segment once, so `git/refs/tags%2Fv1` arrives as the segments `git`,
+    // `refs` and `tags/v1`: read as the path it is, every segment split at its slashes. (A
+    // GitLab project's id is the one segment that keeps its slash, and is taken before this.)
+    let flat = |segments: &[String]| -> Vec<String> {
+        segments
+            .iter()
+            .flat_map(|segment| segment.split('/').map(str::to_owned))
+            .collect()
     };
+    let (repo_id, rest): (String, Vec<String>) = match kind {
+        Kind::GitHub => {
+            let all = flat(call.segments);
+            let all: Vec<&str> = all.iter().map(String::as_str).collect();
+            match &all[..] {
+                ["api", "v3", "repos", owner, name, rest @ ..]
+                | ["repos", owner, name, rest @ ..] => (
+                    format!("{owner}/{name}"),
+                    rest.iter().map(|part| (*part).to_owned()).collect(),
+                ),
+                _ => return Recognised::Other,
+            }
+        }
+        Kind::GitLab => match call.segments {
+            [api, v4, projects, id, rest @ ..]
+                if api == "api" && v4 == "v4" && projects == "projects" =>
+            {
+                (id.clone(), flat(rest))
+            }
+            _ => return Recognised::Other,
+        },
+    };
+    let rest: Vec<&str> = rest.iter().map(String::as_str).collect();
+    let rest = &rest[..];
     let Some(verb) = verb(kind, call, rest) else {
         return Recognised::Other;
     };
@@ -174,6 +205,8 @@ enum Verb {
     Fork,
     TagMoved,
     TagDeleted,
+    MergesWithoutRequest,
+    ReleaseEdit,
     Unreadable(&'static str),
 }
 
@@ -186,6 +219,8 @@ impl Verb {
             Verb::Fork => fork(repo, call),
             Verb::TagMoved => Recognised::Refuse(Why::TagMoved),
             Verb::TagDeleted => Recognised::Refuse(Why::TagDeleted),
+            Verb::MergesWithoutRequest => Recognised::Refuse(Why::MergesWithoutRequest),
+            Verb::ReleaseEdit => Recognised::Refuse(Why::ReleaseEdit),
             Verb::Unreadable(why) => Recognised::Refuse(Why::Unreadable(why)),
         }
     }
@@ -210,6 +245,21 @@ fn verb(kind: Kind, call: &Call<'_>, rest: &[&str]) -> Option<Verb> {
         (Kind::GitHub, "DELETE", ["git", "refs", "tags", ..]) => Some(Verb::TagDeleted),
         (Kind::GitHub, "POST", ["releases"]) => Some(Verb::Release),
         (Kind::GitHub, "POST", ["forks"]) => Some(Verb::Fork),
+        // The branch-merge endpoint merges with no pull request to hold.
+        (Kind::GitHub, _, ["merges"]) => Some(Verb::MergesWithoutRequest),
+        // A release is made once, on a press: changing, deleting or adding a file to one is not.
+        (Kind::GitHub, "PATCH" | "PUT" | "DELETE", ["releases", ..])
+        | (Kind::GitHub, "POST", ["releases", _, "assets", ..])
+        | (Kind::GitHub, "POST", ["releases", "assets", ..]) => Some(Verb::ReleaseEdit),
+        (Kind::GitLab, "PUT" | "PATCH" | "DELETE", ["releases", ..])
+        | (Kind::GitLab, "POST", ["releases", _, ..]) => Some(Verb::ReleaseEdit),
+        // A merge train merges the request in its turn.
+        (Kind::GitLab, "POST" | "PUT", ["merge_trains", "merge_requests", iid]) => {
+            Some(match iid.parse::<u64>() {
+                Ok(n) if n > 0 && iid.bytes().all(|b| b.is_ascii_digit()) => Verb::Merge(n),
+                _ => Verb::Unreadable("a merge train entry whose request number is not a number"),
+            })
+        }
         // GitLab.
         (Kind::GitLab, "POST", ["repository", "tags"]) => Some(Verb::Tag),
         (Kind::GitLab, "DELETE", ["repository", "tags", ..]) => Some(Verb::TagDeleted),

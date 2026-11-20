@@ -12,7 +12,7 @@
 //! |---|---|---|
 //! | **Tag** | repo, name, **the commit**, and **whether it is on the default branch** | creates the tag at that commit. An existing tag is never moved: refused, not held |
 //! | **Release** | the same, plus the title, the notes and whether it makes the tag | makes the tag at the commit shown, then the release **against the tag**, with no `target_commitish` |
-//! | **CI-file push** | the branch, the new tip, what it was compared with and **the changed lines of the CI files** | pushes the held tip with **the second credential** ([`WorkflowCredential`]) |
+//! | **CI-file push** | the branch, the new tip, what it was compared with and **the changed lines of the CI files** | pushes the held tip: on GitHub with **the second credential** ([`WorkflowCredential`]), on GitLab with the everyday sign-in |
 //! | **Fork** | the source (a recorded repo) and the person's own account as the only place it goes | forks into that account, and says what it made |
 //!
 //! # The ask is what happens
@@ -34,7 +34,10 @@
 //! forge says them now; the second performs, and only if nothing the row showed has changed
 //! between them. **A CI-file push is never approved by default and never remembered**: no grant
 //! exists for any held act ([`SOURCE`]; [`crate::askrules::Store::make`] refuses one), and a
-//! press takes an [`Answerer`], which only the window's own connection makes.
+//! press takes an [`Answerer`] made from the **window's own connection** (ADR 0128 D5): a press
+//! from `charter inbox`, a shell or a socket is refused ([`NotDone::NotTheWindow`]). The second
+//! press names the nonce the first returned ([`Pressed::AsksOnceMore`]), so a double click of
+//! the first performs nothing and a double click of the second performs once.
 //!
 //! **"purlis decides" never applies.** Nothing here has a path by which a policy, a rule or a mode
 //! presses. **Unattended, nothing is performed**: the act is refused with [`NOBODY_HERE`], and
@@ -42,7 +45,7 @@
 //!
 //! # The second credential
 //!
-//! A push that changes a workflow needs GitHub's `workflow` scope, which lives on **a second
+//! On GitHub a push that changes a workflow needs the `workflow` scope, which lives on **a second
 //! credential, made by its own sign-in, used only for a held push and for no route of a chat**.
 //! Slice C makes it; [`WorkflowCredential`] is the seam, and until it lands [`NoWorkflowCredential`]
 //! says it is not there. Where it is not, the CI-file act is not offered and the chat and the
@@ -211,13 +214,15 @@ impl Prepared {
 }
 
 /// **The trees of a clone**: the pushed commit's tree against the base's, as [`ci`] reads them.
-pub trait Trees {
+pub trait Trees: Send + Sync {
     /// Every path whose content differs between the trees of `against` and `tip`, added, changed
     /// or removed, with a rename read as the removal and the addition it is. An object the clone
     /// lacks is an error: there is no tree to compare.
     fn changed(&self, against: &HeadSha, tip: &HeadSha) -> Result<Vec<String>, String>;
     /// The patch of `paths` between the trees.
     fn patch(&self, against: &HeadSha, tip: &HeadSha, paths: &[String]) -> Result<String, String>;
+    /// Every file of the tree of `commit`, as a path.
+    fn files(&self, commit: &HeadSha) -> Result<Vec<String>, String>;
     /// The text of `path` at `commit`, or `None` where the commit has no such file.
     fn read(&self, commit: &HeadSha, path: &str) -> Result<Option<String>, String>;
 }
@@ -278,7 +283,8 @@ pub trait HeldForge: Send + Sync {
     ) -> Result<(), String>;
     /// Forks `source` into the person's own account, and says what it made.
     fn make_fork(&self, source: &Repo, source_id: &str) -> Result<Forked, String>;
-    /// Pushes `tip` to `branch` of `repo` with `workflow`, the second credential. The app holds
+    /// Pushes `tip` to `branch` of `repo`: with `workflow`, the second credential, on GitHub, and
+    /// with the everyday sign-in (`None`) on GitLab, which has no such scope. The app holds
     /// the commit objects of `tip`; this sends exactly them, and updates only `branch`, which
     /// where the forge has a tip for it must still be `base` (a lease), and where it has none
     /// must still not exist.
@@ -288,7 +294,7 @@ pub trait HeldForge: Send + Sync {
         branch: &Base,
         tip: &HeadSha,
         existing: Option<&HeadSha>,
-        workflow: &Secret,
+        workflow: Option<&Secret>,
     ) -> Result<(), String>;
 }
 
@@ -344,8 +350,10 @@ pub enum Refused {
     NoSuchCommit { rev: String, why: String },
     /// The CI-file push touches no CI file, so it is not a held act.
     NoCiFiles,
-    /// The second credential is not there.
+    /// The second credential is not there (GitHub only).
     NoWorkflowCredential(String),
+    /// A title or notes too long, or text purlis will not show, in these words.
+    Text(&'static str),
     /// The push's diff could not be computed or shown.
     CiDiff(String),
     /// The host or the organization forbids the person forking the repo.

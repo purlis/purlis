@@ -40,6 +40,7 @@ fn merge_of(number: u64) -> Recognised {
 
 #[test]
 fn glab_mr_merge_sends_a_request_the_proxy_holds_as_a_merge_of_that_request() {
+    purlis_core::unsteered!();
     // glab: PUT /projects/:id/merge_requests/:iid/merge, whatever flags it carries.
     for body in [
         json!({}),
@@ -133,6 +134,7 @@ fn glab_mr_merge_sends_a_request_the_proxy_holds_as_a_merge_of_that_request() {
 
 #[test]
 fn a_github_rest_merge_and_the_graphql_readings_merge_are_the_same_held_request() {
+    purlis_core::unsteered!();
     assert_eq!(
         run(
             Kind::GitHub,
@@ -175,6 +177,7 @@ fn a_github_rest_merge_and_the_graphql_readings_merge_are_the_same_held_request(
 
 #[test]
 fn the_sentence_the_chat_is_told_for_a_held_merge_is_the_one_the_record_gives() {
+    purlis_core::unsteered!();
     assert_eq!(
         said::asked(&Requested::merge_of(repo("acme/app"), 12)),
         "purlis holds merges. It has asked the person; the merge happens when they approve it in Asks."
@@ -183,6 +186,7 @@ fn the_sentence_the_chat_is_told_for_a_held_merge_is_the_one_the_record_gives() 
 
 #[test]
 fn a_tag_is_held_by_its_ref_on_github_and_its_name_on_gitlab() {
+    purlis_core::unsteered!();
     let sha = "a".repeat(40);
     let want = Recognised::Hold(Requested::Tag {
         repo: repo("acme/app"),
@@ -225,6 +229,7 @@ fn a_tag_is_held_by_its_ref_on_github_and_its_name_on_gitlab() {
 
 #[test]
 fn a_tag_is_never_moved_or_deleted_by_a_chat() {
+    purlis_core::unsteered!();
     assert_eq!(
         run(
             Kind::GitHub,
@@ -271,6 +276,7 @@ fn a_tag_is_never_moved_or_deleted_by_a_chat() {
 
 #[test]
 fn a_release_names_its_tag_and_where_the_tag_is_made() {
+    purlis_core::unsteered!();
     let want = Recognised::Hold(Requested::Release {
         repo: repo("acme/app"),
         tag: tag("v2"),
@@ -305,6 +311,7 @@ fn a_release_names_its_tag_and_where_the_tag_is_made() {
 
 #[test]
 fn the_chat_is_told_nothing_happened_and_what_happens_next_for_every_kind() {
+    purlis_core::unsteered!();
     let sha = "a".repeat(40);
     for (requested, noun) in [
         (
@@ -331,6 +338,7 @@ fn the_chat_is_told_nothing_happened_and_what_happens_next_for_every_kind() {
 
 #[test]
 fn a_repo_the_person_did_not_record_is_refused_for_every_kind() {
+    purlis_core::unsteered!();
     for (method, path, body) in [
         ("PUT", "/repos/evil/other/pulls/1/merge", json!({})),
         ("POST", "/repos/evil/other/forks", json!({})),
@@ -355,6 +363,7 @@ fn a_repo_the_person_did_not_record_is_refused_for_every_kind() {
 
 #[test]
 fn a_read_or_an_ordinary_write_is_not_a_held_act() {
+    purlis_core::unsteered!();
     assert_eq!(
         run(
             Kind::GitHub,
@@ -384,5 +393,103 @@ fn a_read_or_an_ordinary_write_is_not_a_held_act() {
             json!({"body": "hi"})
         ),
         Recognised::Other
+    );
+}
+
+#[test]
+fn a_path_the_proxy_decoded_into_one_segment_is_read_as_the_path_it_is() {
+    purlis_core::unsteered!();
+    // `git/refs/tags%2Fv1` reaches the recogniser as the segments `git`, `refs`, `tags/v1`.
+    let segments: Vec<String> = ["repos", "acme", "app", "git", "refs", "tags/v1"]
+        .map(str::to_owned)
+        .to_vec();
+    let body = json!({"sha": "a".repeat(40), "force": true});
+    let call = Call {
+        method: "PATCH",
+        segments: &segments,
+        query: &[],
+        body: &body,
+    };
+    assert_eq!(
+        recognise(Kind::GitHub, &call, &Rec::acme()),
+        Recognised::Refuse(Why::TagMoved)
+    );
+    let call = Call {
+        method: "DELETE",
+        segments: &segments,
+        query: &[],
+        body: &body,
+    };
+    assert_eq!(
+        recognise(Kind::GitHub, &call, &Rec::acme()),
+        Recognised::Refuse(Why::TagDeleted)
+    );
+    // And a merge spelled with an encoded slash in its path.
+    let segments: Vec<String> = ["repos", "acme/app", "pulls", "12", "merge"]
+        .map(str::to_owned)
+        .to_vec();
+    let call = Call {
+        method: "PUT",
+        segments: &segments,
+        query: &[],
+        body: &json!({}),
+    };
+    assert_eq!(recognise(Kind::GitHub, &call, &Rec::acme()), merge_of(12));
+}
+
+#[test]
+fn the_other_ways_to_merge_and_to_change_a_release_are_refused_or_held_never_left_to_chance() {
+    purlis_core::unsteered!();
+    assert_eq!(
+        run(
+            Kind::GitHub,
+            "POST",
+            "/repos/acme/app/merges",
+            &[],
+            json!({"base": "main", "head": "x"})
+        ),
+        Recognised::Refuse(Why::MergesWithoutRequest)
+    );
+    for (method, path) in [
+        ("PATCH", "/repos/acme/app/releases/7"),
+        ("DELETE", "/repos/acme/app/releases/7"),
+        ("POST", "/repos/acme/app/releases/7/assets"),
+        ("PATCH", "/repos/acme/app/releases/assets/9"),
+        ("DELETE", "/repos/acme/app/releases/assets/9"),
+    ] {
+        assert_eq!(
+            run(Kind::GitHub, method, path, &[], json!({})),
+            Recognised::Refuse(Why::ReleaseEdit),
+            "{method} {path}"
+        );
+    }
+    let id = "acme/app".to_owned();
+    let on_gitlab = |method: &str, rest: &[&str], body: Value| {
+        let mut segments: Vec<String> = ["api", "v4", "projects"].map(str::to_owned).to_vec();
+        segments.push(id.clone());
+        segments.extend(rest.iter().map(|part| (*part).to_owned()));
+        let call = Call {
+            method,
+            segments: &segments,
+            query: &[],
+            body: &body,
+        };
+        recognise(Kind::GitLab, &call, &Rec::acme())
+    };
+    assert_eq!(
+        on_gitlab("POST", &["merge_trains", "merge_requests", "12"], json!({})),
+        merge_of(12)
+    );
+    assert_eq!(
+        on_gitlab("PUT", &["releases", "v1"], json!({})),
+        Recognised::Refuse(Why::ReleaseEdit)
+    );
+    assert_eq!(
+        on_gitlab("DELETE", &["releases", "v1"], json!({})),
+        Recognised::Refuse(Why::ReleaseEdit)
+    );
+    assert_eq!(
+        on_gitlab("POST", &["releases", "v1", "assets", "links"], json!({})),
+        Recognised::Refuse(Why::ReleaseEdit)
     );
 }

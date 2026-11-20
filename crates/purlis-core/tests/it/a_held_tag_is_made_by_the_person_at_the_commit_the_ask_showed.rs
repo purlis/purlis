@@ -7,9 +7,7 @@
 
 use purlis_core::heldact::{Act, Asked, HeldActs, NotDone, Pressed, Refused, Requested};
 
-use crate::support::held_acts::{
-    Fake, NoTrees, Rec, Second, base, repo, sha, tag, the_person, world,
-};
+use crate::support::held_acts::{Fake, NoTrees, Rec, Second, base, press, repo, sha, tag, world};
 
 fn tag_request(name: &str, rev: &str) -> Requested {
     Requested::Tag {
@@ -31,6 +29,7 @@ fn forge() -> Fake {
 
 #[test]
 fn the_ask_shows_the_commit_and_says_in_words_that_nobody_merged_it() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -76,6 +75,7 @@ fn the_ask_shows_the_commit_and_says_in_words_that_nobody_merged_it() {
 
 #[test]
 fn nothing_is_made_by_an_ask_nor_by_the_first_press_and_the_second_makes_what_was_shown() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -86,7 +86,7 @@ fn nothing_is_made_by_an_ask_nor_by_the_first_press_and_the_second_makes_what_wa
     assert_eq!(forge.log(), Vec::<String>::new(), "an ask performs nothing");
 
     let (shown, digest) = held.shown(id).unwrap();
-    let Ok(Pressed::AsksOnceMore(again)) = held.press(&world, id, &digest, the_person()) else {
+    let Ok(Pressed::AsksOnceMore { shown: again, .. }) = press(&held, &world, id, &digest) else {
         panic!("the first press asks once more");
     };
     assert_eq!(*again, shown, "it asks once more of exactly what was shown");
@@ -96,7 +96,7 @@ fn nothing_is_made_by_an_ask_nor_by_the_first_press_and_the_second_makes_what_wa
         "one press performs nothing"
     );
 
-    let Ok(Pressed::Done(done)) = held.press(&world, id, &digest, the_person()) else {
+    let Ok(Pressed::Done(done)) = press(&held, &world, id, &digest) else {
         panic!("the second press performs");
     };
     assert_eq!(
@@ -114,7 +114,7 @@ fn nothing_is_made_by_an_ask_nor_by_the_first_press_and_the_second_makes_what_wa
     );
     // A third press finds nothing: it is done once.
     assert_eq!(
-        held.press(&world, id, &digest, the_person()).unwrap_err(),
+        press(&held, &world, id, &digest).unwrap_err(),
         NotDone::NotHeld
     );
     assert_eq!(forge.log().len(), 1);
@@ -122,6 +122,7 @@ fn nothing_is_made_by_an_ask_nor_by_the_first_press_and_the_second_makes_what_wa
 
 #[test]
 fn a_press_of_a_row_that_is_not_what_the_ask_shows_does_nothing() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -130,8 +131,7 @@ fn a_press_of_a_row_that_is_not_what_the_ask_shows_does_nothing() {
         panic!();
     };
     assert_eq!(
-        held.press(&world, id, "not-the-digest", the_person())
-            .unwrap_err(),
+        press(&held, &world, id, "not-the-digest").unwrap_err(),
         NotDone::NotWhatYouSaw
     );
     assert!(forge.log().is_empty());
@@ -139,6 +139,7 @@ fn a_press_of_a_row_that_is_not_what_the_ask_shows_does_nothing() {
 
 #[test]
 fn an_existing_tag_is_never_moved_neither_asked_nor_pressed() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -158,6 +159,7 @@ fn an_existing_tag_is_never_moved_neither_asked_nor_pressed() {
 
 #[test]
 fn a_tag_made_after_the_ask_refuses_the_press_and_nothing_is_made() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -167,14 +169,14 @@ fn a_tag_made_after_the_ask_refuses_the_press_and_nothing_is_made() {
     };
     let (_, digest) = held.shown(id).unwrap();
     assert!(matches!(
-        held.press(&world, id, &digest, the_person()),
-        Ok(Pressed::AsksOnceMore(_))
+        press(&held, &world, id, &digest),
+        Ok(Pressed::AsksOnceMore { .. })
     ));
     // Someone tags v1 on the forge between the presses.
     forge.with(|s| {
         s.tags.insert("v1".into(), sha('3'));
     });
-    let refused = held.press(&world, id, &digest, the_person()).unwrap_err();
+    let refused = press(&held, &world, id, &digest).unwrap_err();
     assert_eq!(
         refused,
         NotDone::Refused(Refused::TagExists {
@@ -192,6 +194,7 @@ fn a_tag_made_after_the_ask_refuses_the_press_and_nothing_is_made() {
 
 #[test]
 fn a_fact_that_changes_between_the_presses_asks_again_instead_of_performing() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -201,15 +204,15 @@ fn a_fact_that_changes_between_the_presses_asks_again_instead_of_performing() {
     };
     let (_, digest) = held.shown(id).unwrap();
     assert!(matches!(
-        held.press(&world, id, &digest, the_person()),
-        Ok(Pressed::AsksOnceMore(_))
+        press(&held, &world, id, &digest),
+        Ok(Pressed::AsksOnceMore { .. })
     ));
     // The commit gets merged onto the default branch: the row would now read otherwise.
     forge.with(|s| {
         s.merged.insert(sha('2'));
     });
     assert_eq!(
-        held.press(&world, id, &digest, the_person()).unwrap_err(),
+        press(&held, &world, id, &digest).unwrap_err(),
         NotDone::ShowsOtherwise
     );
     assert!(forge.log().is_empty());
@@ -217,12 +220,12 @@ fn a_fact_that_changes_between_the_presses_asks_again_instead_of_performing() {
     let (shown, fresh) = held.shown(id).unwrap();
     assert!(shown.rows.iter().any(|r| r.value == "Yes, it is on main"));
     assert!(matches!(
-        held.press(&world, id, &fresh, the_person()),
-        Ok(Pressed::AsksOnceMore(_))
+        press(&held, &world, id, &fresh),
+        Ok(Pressed::AsksOnceMore { .. })
     ));
     assert!(forge.log().is_empty());
     assert!(matches!(
-        held.press(&world, id, &fresh, the_person()),
+        press(&held, &world, id, &fresh),
         Ok(Pressed::Done(_))
     ));
     assert_eq!(forge.log().len(), 1);
@@ -230,6 +233,7 @@ fn a_fact_that_changes_between_the_presses_asks_again_instead_of_performing() {
 
 #[test]
 fn a_forge_that_refuses_leaves_the_ask_waiting() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -238,10 +242,10 @@ fn a_forge_that_refuses_leaves_the_ask_waiting() {
         panic!();
     };
     let (_, digest) = held.shown(id).unwrap();
-    held.press(&world, id, &digest, the_person()).unwrap();
+    press(&held, &world, id, &digest).unwrap();
     forge.with(|s| s.refuses = Some("the forge said no".into()));
     assert_eq!(
-        held.press(&world, id, &digest, the_person()).unwrap_err(),
+        press(&held, &world, id, &digest).unwrap_err(),
         NotDone::Forge("the forge said no".into())
     );
     assert_eq!(held.every().len(), 1, "the ask waits again, as it was");
@@ -249,6 +253,7 @@ fn a_forge_that_refuses_leaves_the_ask_waiting() {
 
 #[test]
 fn a_tag_of_a_repo_the_person_did_not_record_is_not_asked() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -265,6 +270,7 @@ fn a_tag_of_a_repo_the_person_did_not_record_is_not_asked() {
 
 #[test]
 fn a_chat_is_asked_for_a_tag_once_however_often_it_tries() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);

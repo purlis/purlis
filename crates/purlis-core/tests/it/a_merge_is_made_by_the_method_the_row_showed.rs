@@ -42,7 +42,7 @@ fn key() -> MergeKey {
     }
 }
 
-fn facts() -> purlis_core::mergehold::Facts {
+fn facts(squash: bool) -> purlis_core::mergehold::Facts {
     purlis_core::mergehold::Facts {
         title: "Add the parser".to_owned(),
         author: "octo".to_owned(),
@@ -54,6 +54,7 @@ fn facts() -> purlis_core::mergehold::Facts {
         },
         ruleset: purlis_core::mergehold::Ruleset::None,
         approved_by: None,
+        squash,
         read_at: 40,
     }
 }
@@ -64,10 +65,9 @@ fn the_window() -> Answerer {
 
 fn held(shown_squash: bool) -> Holds {
     let holds = Holds::default();
-    assert_eq!(holds.raise(4, key(), facts(), 40), Raised::New);
-    holds.shown_method(4, &key(), shown_squash);
+    assert_eq!(holds.raise(4, key(), facts(shown_squash), 40), Raised::New);
     holds
-        .refresh(4, &key(), key(), facts(), Reread::AsksOnceMore)
+        .refresh(4, &key(), key(), facts(shown_squash), Reread::AsksOnceMore)
         .unwrap();
     holds
 }
@@ -111,7 +111,7 @@ fn a_repo_whose_method_changed_after_the_ask_refuses_the_press_and_asks_once_mor
     // The ask waits, now showing the new method, and has not been asked once more of it.
     let waits = holds.every();
     assert_eq!(waits.len(), 1);
-    assert_eq!(waits[0].squash_shown, Some(true));
+    assert!(waits[0].facts.squash);
     assert_eq!(
         holds
             .press(4, &key(), Seen::None, the_window(), &forge)
@@ -119,7 +119,7 @@ fn a_repo_whose_method_changed_after_the_ask_refuses_the_press_and_asks_once_mor
         NotMerged::NotAsked
     );
     holds
-        .refresh(4, &key(), key(), facts(), Reread::AsksOnceMore)
+        .refresh(4, &key(), key(), facts(true), Reread::AsksOnceMore)
         .unwrap();
     holds
         .press(4, &key(), Seen::None, the_window(), &forge)
@@ -131,6 +131,11 @@ fn a_repo_whose_method_changed_after_the_ask_refuses_the_press_and_asks_once_mor
 fn a_new_read_that_shows_another_method_asks_once_more() {
     purlis_core::unsteered!();
     let holds = held(false);
-    holds.shown_method(4, &key(), true);
+    assert!(holds.every()[0].asked);
+    // The same head, read again, with the repo now squashing: the row shows it and asks again.
+    holds
+        .refresh(4, &key(), key(), facts(true), Reread::Watches)
+        .unwrap();
     assert!(!holds.every()[0].asked);
+    assert!(holds.every()[0].facts.squash);
 }

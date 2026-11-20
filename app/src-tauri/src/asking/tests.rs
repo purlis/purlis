@@ -1622,13 +1622,13 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
             },
             ruleset: purlis_core::mergehold::Ruleset::Protects,
             approved_by: None,
+            squash: false,
             read_at: 40,
         },
         since: 40,
         asked: false,
         look: purlis_core::mergehold::Look::NotViewed { since: None },
         pushed_here: false,
-        squash_shown: None,
     }
 }
 

@@ -64,6 +64,8 @@ pub fn refused_request(why: &Why) -> String {
             "This repo is not one the person recorded for this chat, so purlis does not act on it."
                 .to_owned()
         }
+        Why::MergesWithoutRequest => "purlis never merges a branch without a pull request or merge request. Open one and ask for it to be merged.".to_owned(),
+        Why::ReleaseEdit => "purlis holds the making of a release only. Changing, deleting or adding files to one is the person's to do on the forge.".to_owned(),
         Why::Unreadable(what) => {
             format!("purlis could not read this request ({what}), so it did nothing.")
         }
@@ -98,6 +100,7 @@ pub fn refused(why: &Refused) -> String {
             "The host does not let the person fork {}. Ask an owner to allow forks.",
             repo.as_str()
         ),
+        Refused::Text(what) => format!("Not offered: {what}."),
         Refused::Forge(why) => format!("The forge did not say: {why}."),
         Refused::Unattended { .. } => NOBODY_HERE.to_owned(),
     }

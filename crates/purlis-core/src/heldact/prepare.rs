@@ -89,6 +89,58 @@ pub fn pinned(requested: &Requested, prepared: &Prepared) -> Requested {
     }
 }
 
+/// The most a release's title and notes are, in characters.
+const MOST_TITLE: usize = 200;
+const MOST_NOTES: usize = 60_000;
+
+/// Whether `c` draws nothing or changes how the text around it reads: a control character other
+/// than a tab or a line break, a zero-width or direction mark, a line or paragraph separator.
+fn unseen(c: char) -> bool {
+    (c.is_control() && !matches!(c, '\n' | '\t'))
+        || matches!(
+            c,
+            '\u{061C}'
+                | '\u{200B}'..='\u{200F}'
+                | '\u{2028}'..='\u{202E}'
+                | '\u{2060}'..='\u{2064}'
+                | '\u{2066}'..='\u{206F}'
+                | '\u{FEFF}'
+        )
+}
+
+/// **A release's title as it is shown and made**: one line, nothing unseen in it. Text a chat
+/// wrote is read as the person will read it, so what is shown is what is published.
+fn title_of(text: &str) -> Result<String, Refused> {
+    let one: String = text
+        .chars()
+        .filter(|c| !unseen(*c))
+        .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
+        .collect();
+    let one = one.trim().to_owned();
+    if one.chars().count() > MOST_TITLE {
+        return Err(Refused::Text(
+            "a release's title is longer than purlis shows",
+        ));
+    }
+    Ok(one)
+}
+
+/// **A release's notes as they are shown and made**: line breaks kept, nothing unseen in them.
+fn notes_of(text: &str) -> Result<String, Refused> {
+    let notes: String = text
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .chars()
+        .filter(|c| !unseen(*c))
+        .collect();
+    if notes.chars().count() > MOST_NOTES {
+        return Err(Refused::Text(
+            "a release's notes are longer than purlis shows",
+        ));
+    }
+    Ok(notes)
+}
+
 fn row(label: &str, value: impl Into<String>) -> Row {
     Row {
         label: label.to_owned(),
@@ -174,6 +226,12 @@ fn release(
     text: Text<'_>,
     (draft, prerelease): (bool, bool),
 ) -> Result<Prepared, Refused> {
+    let title = title_of(text.title)?;
+    let notes = notes_of(text.notes)?;
+    let text = Text {
+        title: &title,
+        notes: &notes,
+    };
     let exists = world.forge.tag_at(repo, tag).map_err(forge_said)?;
     let asked = match rev {
         Some(rev) => Some(commit(world, repo, rev)?),
@@ -251,11 +309,16 @@ fn ci_push(
     branch: &Base,
     tip: &HeadSha,
 ) -> Result<Prepared, Refused> {
-    world
-        .workflow
-        .available(&world.forge.host())
-        .map_err(|why| Refused::NoWorkflowCredential(why.0))?;
     let forge = world.forge;
+    // GitHub's `workflow` scope is the second credential's; GitLab has none, so a pipeline file
+    // is pushed with the everyday sign-in and the act is offered without it.
+    let second = forge.kind() == crate::forge::Kind::GitHub;
+    if second {
+        world
+            .workflow
+            .available(&forge.host())
+            .map_err(|why| Refused::NoWorkflowCredential(why.0))?;
+    }
     let (against, base) = match forge.branch_tip(repo, branch).map_err(forge_said)? {
         Some(tip) => (Against::BranchTip, tip),
         None => {
@@ -285,9 +348,23 @@ fn ci_push(
         row("CI files", diff.files.join(", ")),
         row(
             "Sign-in used",
-            "The second sign-in, with the workflow permission. It is used for this push only",
+            if second {
+                "The second sign-in, with the workflow permission. It is used for this push only"
+            } else {
+                "Your everyday sign-in"
+            },
         ),
     ];
+    let unseen_in_diff = diff.diff.chars().filter(|c| unseen(*c)).count();
+    if unseen_in_diff > 0 {
+        rows.push(row(
+            "Characters that do not show",
+            format!(
+                "The changed lines hold {unseen_in_diff} control or direction characters that \
+                 draw nothing. Read the diff as text before you approve it"
+            ),
+        ));
+    }
     if !diff.outside.is_empty() {
         rows.push(row(
             "The pipeline also runs, outside this push",

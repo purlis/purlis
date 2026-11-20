@@ -18,7 +18,7 @@ use purlis_core::heldact::{
 use purlis_core::mergehold::HeadSha;
 
 use crate::support::git;
-use crate::support::held_acts::{Fake, Rec, Second, base, repo, the_person, world};
+use crate::support::held_acts::{Fake, Rec, Second, base, press, repo, world};
 
 const WORKFLOW: &str = ".github/workflows/ci.yml";
 
@@ -96,6 +96,7 @@ fn evil_workflow(clone: &Clone, branch: &str) -> HeadSha {
 #[test]
 fn a_new_branch_that_changes_a_workflow_is_held_with_the_changed_lines_against_the_default_branch()
 {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     let tip = evil_workflow(&clone, "feature");
     let (forge, held) = (forge_at(&clone), HeldActs::default());
@@ -133,10 +134,10 @@ fn a_new_branch_that_changes_a_workflow_is_held_with_the_changed_lines_against_t
     // Nothing is pushed, and the second credential is not even read, until the second press.
     assert!(forge.log().is_empty());
     assert_eq!(second.reads(), 0);
-    held.press(&world, id, &digest, the_person()).unwrap();
+    press(&held, &world, id, &digest).unwrap();
     assert!(forge.log().is_empty());
     assert_eq!(second.reads(), 0);
-    let Ok(Pressed::Done(done)) = held.press(&world, id, &digest, the_person()) else {
+    let Ok(Pressed::Done(done)) = press(&held, &world, id, &digest) else {
         panic!()
     };
     assert_eq!(second.reads(), 1, "read once, for this push");
@@ -147,7 +148,7 @@ fn a_new_branch_that_changes_a_workflow_is_held_with_the_changed_lines_against_t
     assert_eq!(
         forge.log(),
         vec![format!(
-            "push_tip acme/app feature {} lease=none",
+            "push_tip acme/app feature {} lease=none second_credential=true",
             tip.as_str()
         )]
     );
@@ -155,6 +156,7 @@ fn a_new_branch_that_changes_a_workflow_is_held_with_the_changed_lines_against_t
 
 #[test]
 fn a_branch_the_forge_has_is_compared_with_its_own_tip_and_the_push_leases_it() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     git(&clone.path, &["checkout", "-q", "-b", "feature", "main"]);
     write(&clone.path, "README.md", "two\n");
@@ -182,12 +184,12 @@ fn a_branch_the_forge_has_is_compared_with_its_own_tip_and_the_push_leases_it() 
         shown.rows.iter().any(|r| r.label == "Compared with"
             && r.value.starts_with("the tip of feature on the forge"))
     );
-    held.press(&world, id, &digest, the_person()).unwrap();
-    held.press(&world, id, &digest, the_person()).unwrap();
+    press(&held, &world, id, &digest).unwrap();
+    press(&held, &world, id, &digest).unwrap();
     assert_eq!(
         forge.log(),
         vec![format!(
-            "push_tip acme/app feature {} lease={}",
+            "push_tip acme/app feature {} lease={} second_credential=true",
             tip.as_str(),
             on_forge.as_str()
         )]
@@ -196,6 +198,7 @@ fn a_branch_the_forge_has_is_compared_with_its_own_tip_and_the_push_leases_it() 
 
 #[test]
 fn a_ref_created_at_a_commit_whose_own_change_is_not_a_workflow_is_still_held_for_its_tree() {
+    purlis_core::unsteered!();
     // `side` changes a workflow, and its tip changes only the README. A create-ref at that tip
     // moves no workflow in its own diff, but its tree has the workflow the default branch lacks.
     let clone = Clone::new();
@@ -229,6 +232,7 @@ fn a_ref_created_at_a_commit_whose_own_change_is_not_a_workflow_is_still_held_fo
 
 #[test]
 fn a_commit_that_came_from_a_fork_network_is_diffed_by_its_tree_wherever_its_objects_came_from() {
+    purlis_core::unsteered!();
     // A commit with no history in common with the base, as one fetched from a fork is.
     let clone = Clone::new();
     git(&clone.path, &["checkout", "-q", "--orphan", "from-a-fork"]);
@@ -252,6 +256,7 @@ fn a_commit_that_came_from_a_fork_network_is_diffed_by_its_tree_wherever_its_obj
 
 #[test]
 fn a_commit_the_clone_does_not_have_refuses_the_push_it_is_not_allowed_or_guessed() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     let missing = HeadSha::try_from("d".repeat(40)).unwrap();
     let verdict = check_push(
@@ -278,6 +283,7 @@ fn a_commit_the_clone_does_not_have_refuses_the_push_it_is_not_allowed_or_guesse
 
 #[test]
 fn a_push_that_changes_no_ci_file_is_not_a_held_act() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     git(&clone.path, &["checkout", "-q", "-b", "plain", "main"]);
     write(&clone.path, "src/lib.rs", "// changed\n");
@@ -294,6 +300,7 @@ fn a_push_that_changes_no_ci_file_is_not_a_held_act() {
 
 #[test]
 fn removing_a_workflow_is_a_change_to_one() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     git(&clone.path, &["checkout", "-q", "-b", "gone", "main"]);
     git(&clone.path, &["rm", "-q", WORKFLOW]);
@@ -309,6 +316,7 @@ fn removing_a_workflow_is_a_change_to_one() {
 
 #[test]
 fn a_diff_too_large_to_show_refuses_the_push() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     git(&clone.path, &["checkout", "-q", "-b", "big", "main"]);
     write(
@@ -328,6 +336,7 @@ fn a_diff_too_large_to_show_refuses_the_push() {
 
 #[test]
 fn without_the_second_credential_the_act_is_not_offered_and_says_why() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     let tip = evil_workflow(&clone, "feature");
     let (forge, held) = (forge_at(&clone), HeldActs::default());
@@ -354,6 +363,7 @@ fn without_the_second_credential_the_act_is_not_offered_and_says_why() {
 
 #[test]
 fn a_base_that_moves_after_the_ask_refuses_the_press_and_pushes_nothing() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     let tip = evil_workflow(&clone, "feature");
     let (forge, held) = (forge_at(&clone), HeldActs::default());
@@ -369,7 +379,7 @@ fn a_base_that_moves_after_the_ask_refuses_the_press_and_pushes_nothing() {
         s.branches
             .insert("feature".into(), sha_of(&clone.path, "main"));
     });
-    let refused = held.press(&world, id, &digest, the_person()).unwrap_err();
+    let refused = press(&held, &world, id, &digest).unwrap_err();
     assert!(matches!(refused, NotDone::Changed { .. }), "{refused:?}");
     assert!(forge.log().is_empty());
     assert_eq!(second.reads(), 0);
@@ -377,6 +387,7 @@ fn a_base_that_moves_after_the_ask_refuses_the_press_and_pushes_nothing() {
 
 #[test]
 fn a_ci_push_is_never_remembered_and_each_one_asks() {
+    purlis_core::unsteered!();
     let clone = Clone::new();
     let tip = evil_workflow(&clone, "feature");
     let (forge, held) = (forge_at(&clone), HeldActs::default());
@@ -387,8 +398,8 @@ fn a_ci_push_is_never_remembered_and_each_one_asks() {
         panic!()
     };
     let (_, digest) = held.shown(id).unwrap();
-    held.press(&world, id, &digest, the_person()).unwrap();
-    held.press(&world, id, &digest, the_person()).unwrap();
+    press(&held, &world, id, &digest).unwrap();
+    press(&held, &world, id, &digest).unwrap();
     // The same push again is a new ask: the first answer left nothing behind.
     let Asked::Held { new, .. } = held.ask(&world, 1, true, &push("feature", &tip), 30) else {
         panic!()

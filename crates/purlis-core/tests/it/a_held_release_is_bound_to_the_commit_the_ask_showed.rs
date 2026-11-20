@@ -8,7 +8,7 @@
 
 use purlis_core::heldact::{Act, Asked, HeldActs, NotDone, Pressed, Refused, Requested};
 
-use crate::support::held_acts::{Fake, NoTrees, Rec, Second, repo, sha, tag, the_person, world};
+use crate::support::held_acts::{Fake, NoTrees, Rec, Second, press, repo, sha, tag, world};
 
 fn release(rev: Option<&str>) -> Requested {
     Requested::Release {
@@ -38,12 +38,13 @@ fn press_twice(
     id: u64,
 ) -> Result<Pressed, NotDone> {
     let (_, digest) = held.shown(id).unwrap();
-    held.press(world, id, &digest, the_person())?;
-    held.press(world, id, &digest, the_person())
+    press(held, world, id, &digest)?;
+    press(held, world, id, &digest)
 }
 
 #[test]
 fn a_branch_that_moves_after_the_ask_changes_nothing_about_what_is_released() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -95,6 +96,7 @@ fn a_branch_that_moves_after_the_ask_changes_nothing_about_what_is_released() {
 
 #[test]
 fn a_release_with_no_target_is_bound_to_the_default_branch_as_it_was_at_the_ask() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -114,6 +116,7 @@ fn a_release_with_no_target_is_bound_to_the_default_branch_as_it_was_at_the_ask(
 
 #[test]
 fn a_release_against_a_tag_that_exists_is_made_at_the_tags_commit_and_makes_no_tag() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -139,6 +142,7 @@ fn a_release_against_a_tag_that_exists_is_made_at_the_tags_commit_and_makes_no_t
 
 #[test]
 fn a_release_that_would_move_an_existing_tag_is_refused() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -156,6 +160,7 @@ fn a_release_that_would_move_an_existing_tag_is_refused() {
 
 #[test]
 fn an_existing_tag_that_moves_after_the_ask_refuses_the_press() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -181,6 +186,7 @@ fn an_existing_tag_that_moves_after_the_ask_refuses_the_press() {
 
 #[test]
 fn a_commit_the_forge_no_longer_has_refuses_the_press() {
+    purlis_core::unsteered!();
     let (forge, held) = (forge(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -194,7 +200,7 @@ fn a_commit_the_forge_no_longer_has_refuses_the_press() {
     });
     let (_, digest) = held.shown(id).unwrap();
     assert!(matches!(
-        held.press(&world, id, &digest, the_person()),
+        press(&held, &world, id, &digest),
         Err(NotDone::Refused(Refused::NoSuchCommit { .. }))
     ));
     assert!(forge.log().is_empty());

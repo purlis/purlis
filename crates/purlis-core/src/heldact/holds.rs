@@ -36,16 +36,18 @@ pub struct Waiting {
     /// What will happen, and what the person is shown of it.
     pub prepared: Prepared,
     pub since: u64,
-    /// The first press was made, and the facts it asked once more of are what is shown.
-    pub asked_once_more: bool,
+    /// **The nonce the first press returned** (ADR 0128 D8.5): the second press names it, so a
+    /// second press is only ever of a first the window was answered, and a double click of the
+    /// first is not a second.
+    pub nonce: Option<String>,
 }
 
 /// **What a press did.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Pressed {
-    /// The first press: the facts were read again and are as shown. Press once more to perform.
-    /// It hands back what the second press must be of.
-    AsksOnceMore(Box<Shown>),
+    /// The first press: the facts were read again and are as shown. The second press names the
+    /// nonce and performs. A repeat of the first press gets the same nonce and performs nothing.
+    AsksOnceMore { shown: Box<Shown>, nonce: String },
     /// The act was performed.
     Done(Box<Performed>),
 }
@@ -66,6 +68,20 @@ pub enum NotDone {
     /// No such ask waits: answered already, put away, or its chat gone.
     #[error("this is not waiting any more, so nothing was done")]
     NotHeld,
+    /// Only the person at the window answers a held act (ADR 0128 D5): not `charter inbox`, not a
+    /// shell, not a socket.
+    #[error("a held act is answered in the purlis window only, so nothing was done")]
+    NotTheWindow,
+    /// The tag was made but the release was not: said exactly, so nobody reads it as nothing done.
+    #[error(
+        "the tag {tag} was made at {at}, but the release was not: {why}. The ask now shows the \
+         release against that tag"
+    )]
+    TagMadeReleaseFailed {
+        tag: String,
+        at: String,
+        why: String,
+    },
     /// The press was of a row that is not what the ask shows now.
     #[error("the ask no longer shows what you pressed, so nothing was done. Read it again")]
     NotWhatYouSaw,
@@ -168,7 +184,7 @@ impl HeldActs {
                 let one = &mut state.held[at];
                 if one.prepared != prepared {
                     one.prepared = prepared;
-                    one.asked_once_more = false;
+                    one.nonce = None;
                 }
                 return Asked::Held {
                     id: one.id,
@@ -194,7 +210,7 @@ impl HeldActs {
             requested,
             prepared,
             since: now,
-            asked_once_more: false,
+            nonce: None,
         });
         Asked::Held { id, new: true }
     }
@@ -239,8 +255,12 @@ impl HeldActs {
         world: &World<'_>,
         id: u64,
         digest: &str,
+        nonce: Option<&str>,
         by: Answerer,
     ) -> Result<Pressed, NotDone> {
+        if scope_of(by) != HumanScope::LocalUi {
+            return Err(NotDone::NotTheWindow);
+        }
         let held = {
             let state = locked(&self.state);
             state
@@ -288,12 +308,29 @@ impl HeldActs {
             if state.held[at].prepared != fresh {
                 return Err(NotDone::ShowsOtherwise);
             }
-            if !state.held[at].asked_once_more {
-                state.held[at].asked_once_more = true;
-                return Ok(Pressed::AsksOnceMore(Box::new(fresh.shown)));
+            match (state.held[at].nonce.clone(), nonce) {
+                // The first press: it asks once more, and hands back the nonce the second names.
+                (None, _) => {
+                    let nonce = uuid::Uuid::new_v4().to_string();
+                    state.held[at].nonce = Some(nonce.clone());
+                    return Ok(Pressed::AsksOnceMore {
+                        shown: Box::new(fresh.shown),
+                        nonce,
+                    });
+                }
+                // The first press again (a double click): the same answer, and nothing performed.
+                (Some(stored), None) => {
+                    return Ok(Pressed::AsksOnceMore {
+                        shown: Box::new(fresh.shown),
+                        nonce: stored,
+                    });
+                }
+                (Some(stored), Some(given)) if stored != given => {
+                    return Err(NotDone::NotWhatYouSaw);
+                }
+                // Taken out, so a second press of this ask finds nothing, whatever the forge says.
+                (Some(_), Some(_)) => state.held.remove(at),
             }
-            // Taken out, so a second press of this ask finds nothing, whatever the forge says.
-            state.held.remove(at)
         };
         match perform(world, &taken.prepared.act) {
             Ok(forked) => Ok(Pressed::Done(Box::new(Performed {
@@ -307,7 +344,15 @@ impl HeldActs {
                 if !state.held.iter().any(|one| {
                     one.session == taken.session && key(&one.requested) == key(&taken.requested)
                 }) {
-                    state.held.push(taken);
+                    state.held.push(taken.clone());
+                }
+                drop(state);
+                // A tag made and a release not: the ask is read again, so it shows the release
+                // against the tag that is there.
+                if matches!(why, NotDone::TagMadeReleaseFailed { .. })
+                    && let Ok(fresh) = prepare(world, &taken.requested)
+                {
+                    self.replace(taken.id, fresh);
                 }
                 Err(why)
             }
@@ -316,8 +361,11 @@ impl HeldActs {
 
     /// **The person's Don't**: the ask waits no more and nothing is done. Answers whether it was
     /// waiting.
-    pub fn dont(&self, id: u64, _by: Answerer) -> bool {
-        self.drop_ask(id).is_some()
+    pub fn dont(&self, id: u64, by: Answerer) -> Result<bool, NotDone> {
+        if scope_of(by) != HumanScope::LocalUi {
+            return Err(NotDone::NotTheWindow);
+        }
+        Ok(self.drop_ask(id).is_some())
     }
 
     /// Chat `session` has closed: none of its held acts waits.
@@ -339,7 +387,7 @@ impl HeldActs {
         if let Some(one) = state.held.iter_mut().find(|one| one.id == id) {
             one.requested = pinned(&one.requested, &fresh);
             one.prepared = fresh;
-            one.asked_once_more = false;
+            one.nonce = None;
         }
     }
 }
@@ -370,7 +418,17 @@ fn perform(world: &World<'_>, act: &Act) -> Result<Option<super::Forked>, NotDon
             }
             forge
                 .create_release(repo, tag, title, notes, *draft, *prerelease)
-                .map_err(NotDone::Forge)?;
+                .map_err(|why| {
+                    if *creates_tag {
+                        NotDone::TagMadeReleaseFailed {
+                            tag: tag.as_str().to_owned(),
+                            at: target.as_str().to_owned(),
+                            why,
+                        }
+                    } else {
+                        NotDone::Forge(why)
+                    }
+                })?;
             Ok(None)
         }
         Act::CiPush {
@@ -381,13 +439,20 @@ fn perform(world: &World<'_>, act: &Act) -> Result<Option<super::Forked>, NotDon
             base,
             ..
         } => {
-            let secret = world
-                .workflow
-                .secret(&forge.host())
-                .map_err(|why| NotDone::WorkflowCredential(why.0))?;
+            // GitHub's `workflow` scope is the second credential's, read for this push alone.
+            // GitLab has no such scope: the person's everyday sign-in pushes a pipeline file.
+            let secret = match forge.kind() {
+                crate::forge::Kind::GitHub => Some(
+                    world
+                        .workflow
+                        .secret(&forge.host())
+                        .map_err(|why| NotDone::WorkflowCredential(why.0))?,
+                ),
+                crate::forge::Kind::GitLab => None,
+            };
             let existing = matches!(against, super::Against::BranchTip).then_some(base);
             forge
-                .push_tip(repo, branch, tip, existing, &secret)
+                .push_tip(repo, branch, tip, existing, secret.as_ref())
                 .map_err(NotDone::Forge)?;
             Ok(None)
         }

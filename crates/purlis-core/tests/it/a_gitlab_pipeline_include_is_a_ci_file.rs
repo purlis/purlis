@@ -64,6 +64,7 @@ fn check(root: &Path, config: Option<&str>, tip: &HeadSha) -> PushCheck {
 
 #[test]
 fn a_local_include_a_glob_and_a_triggered_child_are_ci_files_beside_the_pipeline_file() {
+    purlis_core::unsteered!();
     for file in [
         "ci/build.yml",
         "ci/jobs/test.yml",
@@ -96,6 +97,7 @@ fn a_local_include_a_glob_and_a_triggered_child_are_ci_files_beside_the_pipeline
 
 #[test]
 fn a_file_the_pipeline_does_not_include_is_not_one() {
+    purlis_core::unsteered!();
     let dir = clone(ROOT);
     let root = std::fs::canonicalize(dir.path()).unwrap();
     let tip = change(&root, "README.md", "changed\n");
@@ -110,6 +112,7 @@ fn a_file_the_pipeline_does_not_include_is_not_one() {
 
 #[test]
 fn the_projects_own_ci_config_path_is_a_ci_file() {
+    purlis_core::unsteered!();
     let dir = clone("stages: [build]\n");
     let root = std::fs::canonicalize(dir.path()).unwrap();
     let tip = change(&root, "pipelines/main.yml", "x:\n  script: [y]\n");
@@ -127,6 +130,7 @@ fn the_projects_own_ci_config_path_is_a_ci_file() {
 
 #[test]
 fn an_include_path_with_a_variable_cannot_be_resolved_so_the_push_is_refused() {
+    purlis_core::unsteered!();
     let dir = clone("include:\n  - local: /ci/$STAGE.yml\n");
     let root = std::fs::canonicalize(dir.path()).unwrap();
     let tip = change(&root, "README.md", "changed\n");
@@ -140,6 +144,7 @@ fn an_include_path_with_a_variable_cannot_be_resolved_so_the_push_is_refused() {
 
 #[test]
 fn a_pipeline_file_that_does_not_parse_refuses_the_push() {
+    purlis_core::unsteered!();
     let dir = clone("include: [unclosed\n");
     let root = std::fs::canonicalize(dir.path()).unwrap();
     let tip = change(&root, "README.md", "changed\n");
@@ -148,6 +153,7 @@ fn a_pipeline_file_that_does_not_parse_refuses_the_push() {
 
 #[test]
 fn an_include_the_push_removes_is_still_a_file_of_the_pipeline_it_changed() {
+    purlis_core::unsteered!();
     let dir = clone(ROOT);
     let root = std::fs::canonicalize(dir.path()).unwrap();
     git(&root, &["checkout", "-q", "-b", "work", "main"]);
@@ -167,4 +173,45 @@ fn an_include_the_push_removes_is_still_a_file_of_the_pipeline_it_changed() {
         diff.files,
         vec![".gitlab-ci.yml".to_owned(), "ci/build.yml".to_owned()]
     );
+}
+
+#[test]
+fn a_glob_include_is_resolved_to_the_files_it_names_and_what_they_include() {
+    purlis_core::unsteered!();
+    let dir = clone("include:\n  - local: 'ci/jobs/*.yml'\n");
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    // `test.yml` is named by the glob, and includes `ci/child.yml`, which no glob names.
+    write(
+        &root,
+        "ci/jobs/test.yml",
+        "include: /ci/child.yml\ntest:\n  script: [x]\n",
+    );
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "test includes child"]);
+    let tip = change(&root, "ci/child.yml", "child:\n  script: [evil]\n");
+    let PushCheck::Hold(diff) = check(&root, None, &tip) else {
+        panic!("held")
+    };
+    assert_eq!(diff.files, vec!["ci/child.yml".to_owned()]);
+}
+
+#[test]
+fn an_include_a_yaml_merge_key_builds_makes_every_yaml_file_one() {
+    purlis_core::unsteered!();
+    let dir =
+        clone("base: &base\n  local: /ci/build.yml\ninclude:\n  - <<: *base\nstages: [build]\n");
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let tip = change(&root, "anything/else.yml", "x: 1\n");
+    let PushCheck::Hold(diff) = check(&root, None, &tip) else {
+        panic!("held: unresolvable")
+    };
+    assert_eq!(diff.files, vec!["anything/else.yml".to_owned()]);
+    assert!(
+        diff.outside.iter().any(|note| note.contains("merge key")),
+        "{:?}",
+        diff.outside
+    );
+    // A file that is no YAML is still not one.
+    let tip = change(&root, "README.md", "changed\n");
+    assert_eq!(check(&root, None, &tip), PushCheck::NoCiFiles);
 }

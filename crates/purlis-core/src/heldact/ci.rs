@@ -91,7 +91,7 @@ pub fn check_push(
         return PushCheck::NoCiFiles;
     }
     let (matcher, outside) = match kind {
-        Kind::GitHub => (Matcher::workflows(), Vec::new()),
+        Kind::GitHub => (Matcher::always(), Vec::new()),
         Kind::GitLab => match gitlab_matcher(ci_config, trees, against, tip) {
             Ok(found) => found,
             Err(why) => return PushCheck::Refuse(why),
@@ -123,6 +123,15 @@ pub fn check_push(
             MOST_DIFF / 1024
         ));
     }
+    if diff.lines().any(|line| line.starts_with("Binary files ")) {
+        // What git would not show as text is what a chat can hide a change in: never held on a
+        // diff the person cannot read.
+        return PushCheck::Refuse(format!(
+            "the push changes {} in a way git shows as binary, so it cannot be shown and is not \
+             allowed",
+            files.join(", ")
+        ));
+    }
     if diff.trim().is_empty() {
         // A change git shows no lines for (a mode change, a binary file): nothing to read, so
         // nothing the person could approve knowingly.
@@ -152,14 +161,42 @@ struct Matcher {
     exact: Vec<String>,
     /// A path a glob matches.
     globs: Vec<String>,
+    /// Every YAML file: set where a pipeline's includes cannot all be resolved (a YAML merge
+    /// key builds one), so no changed YAML file can be said not to be one the pipeline runs.
+    any_yaml: bool,
 }
 
+/// Files beside the workflows that decide what runs or who approves it, on both forges.
+const ALWAYS: &[&str] = &[
+    ".github/dependabot.yml",
+    ".github/dependabot.yaml",
+    "renovate.json",
+    "renovate.json5",
+    ".renovaterc",
+    ".renovaterc.json",
+    ".renovaterc.json5",
+    ".github/renovate.json",
+    ".github/renovate.json5",
+    ".gitlab/renovate.json",
+    "CODEOWNERS",
+    ".github/CODEOWNERS",
+    "docs/CODEOWNERS",
+    ".gitlab/CODEOWNERS",
+];
+
 impl Matcher {
-    fn workflows() -> Matcher {
+    /// What runs, or decides who may approve what runs, on either forge: workflows and the
+    /// actions they use, dependency bots' configuration (a bot's pull request is merged by
+    /// rules the file sets), and who owns a path.
+    fn always() -> Matcher {
         Matcher {
-            prefixes: vec![".github/workflows/".to_owned()],
-            exact: Vec::new(),
+            prefixes: vec![
+                ".github/workflows/".to_owned(),
+                ".github/actions/".to_owned(),
+            ],
+            exact: ALWAYS.iter().map(|path| (*path).to_owned()).collect(),
             globs: Vec::new(),
+            any_yaml: false,
         }
     }
 
@@ -167,6 +204,7 @@ impl Matcher {
         self.prefixes.iter().any(|prefix| path.starts_with(prefix))
             || self.exact.iter().any(|exact| exact == path)
             || self.globs.iter().any(|glob| glob_matches(glob, path))
+            || (self.any_yaml && (path.ends_with(".yml") || path.ends_with(".yaml")))
     }
 }
 
@@ -175,6 +213,8 @@ impl Matcher {
 struct Includes {
     local: Vec<String>,
     outside: Vec<String>,
+    /// An include a YAML merge key (`<<`) builds: it cannot be read from the tree as parsed.
+    unresolved: bool,
 }
 
 fn gitlab_matcher(
@@ -191,11 +231,8 @@ fn gitlab_matcher(
             roots.push(path.trim_start_matches('/').to_owned());
         }
     }
-    let mut matcher = Matcher {
-        prefixes: Vec::new(),
-        exact: roots.clone(),
-        globs: Vec::new(),
-    };
+    let mut matcher = Matcher::always();
+    matcher.exact.extend(roots.iter().cloned());
     let mut outside = Vec::new();
     // Read at the tip and at the base: an include the push removes is a change of the root file,
     // and a file the base included is still one a push of it changes.
@@ -222,8 +259,30 @@ fn gitlab_matcher(
                 )
             })?;
             outside.extend(found.outside);
+            if found.unresolved {
+                matcher.any_yaml = true;
+                outside.push(
+                    "includes a YAML merge key builds, which purlis cannot resolve: every YAML \
+                     file of the push is read as a pipeline file"
+                        .to_owned(),
+                );
+            }
             for local in found.local {
                 if local.contains(['*', '?']) {
+                    // A glob names the files of the tree it matches: each is read in turn, for
+                    // the includes it makes.
+                    let files = trees.files(commit).map_err(|why| {
+                        format!(
+                            "purlis could not list the files at {}: {why}",
+                            short(commit)
+                        )
+                    })?;
+                    for file in files.into_iter().filter(|file| glob_matches(&local, file)) {
+                        if !matcher.exact.contains(&file) {
+                            matcher.exact.push(file.clone());
+                            queue.push((file, depth + 1));
+                        }
+                    }
                     if !matcher.globs.contains(&local) {
                         matcher.globs.push(local);
                     }
@@ -249,6 +308,9 @@ fn includes_of(text: &str) -> Result<Includes, String> {
     let mut found = Includes::default();
     for doc in &docs {
         let Yaml::Hash(top) = doc else { continue };
+        if top.contains_key(&Yaml::String("<<".to_owned())) {
+            found.unresolved = true;
+        }
         for (key, value) in top {
             if key.as_str() == Some("include") {
                 one_include(value, &mut found)?;
@@ -269,6 +331,9 @@ fn one_include(value: &yaml_rust2::Yaml, found: &mut Includes) -> Result<(), Str
         Yaml::String(text) => string_include(text, found),
         Yaml::Array(items) => items.iter().try_for_each(|item| one_include(item, found)),
         Yaml::Hash(map) => {
+            if map.contains_key(&Yaml::String("<<".to_owned())) {
+                found.unresolved = true;
+            }
             let get = |name: &str| map.get(&Yaml::String(name.to_owned()));
             if let Some(local) = get("local") {
                 match local {
@@ -365,9 +430,20 @@ impl GitTrees {
         }
     }
 
+    /// git, read with nothing of the clone's own to say about what it shows: **replace refs are
+    /// not followed** (a `refs/replace/<sha>` makes git read another object for a commit's id, so
+    /// a tree diff of the real commits would be empty), and every call that shows a patch is
+    /// `--text` (a `-diff` attribute in `.git/info/attributes` or a `.gitattributes` makes git
+    /// print "Binary files differ" for a file whose lines are the change).
     fn git(&self, args: &[&str]) -> Result<String, String> {
         use crate::worktree::git;
-        let done = git::run(&self.clone, args, git::READ).map_err(|why| why.to_string())?;
+        let mut argv = vec![
+            "--no-replace-objects",
+            "-c",
+            "core.attributesFile=/dev/null",
+        ];
+        argv.extend_from_slice(args);
+        let done = git::run(&self.clone, &argv, git::READ).map_err(|why| why.to_string())?;
         if done.ok() {
             Ok(done.out)
         } else {
@@ -394,6 +470,7 @@ impl Trees for GitTrees {
             "-r",
             "-z",
             "--raw",
+            "--text",
             "--no-renames",
             "--no-textconv",
             "--no-ext-diff",
@@ -423,6 +500,7 @@ impl Trees for GitTrees {
             "diff-tree",
             "-r",
             "-p",
+            "--text",
             "--no-renames",
             "--no-textconv",
             "--no-ext-diff",
@@ -434,6 +512,15 @@ impl Trees for GitTrees {
         ];
         args.extend(paths.iter().map(String::as_str));
         self.git(&args)
+    }
+
+    fn files(&self, commit: &HeadSha) -> Result<Vec<String>, String> {
+        let out = self.git(&["ls-tree", "-r", "-z", "--name-only", commit.as_str()])?;
+        Ok(out
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(str::to_owned)
+            .collect())
     }
 
     fn read(&self, commit: &HeadSha, path: &str) -> Result<Option<String>, String> {

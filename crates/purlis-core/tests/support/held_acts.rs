@@ -35,6 +35,31 @@ pub fn tag(name: &str) -> TagName {
     TagName::try_from(name).unwrap()
 }
 
+std::thread_local! {
+    static NONCES: std::cell::RefCell<HashMap<u64, String>> = std::cell::RefCell::default();
+}
+
+/// **The person presses ask `id`**, as the window does: a second press names the nonce the first
+/// press was answered with.
+pub fn press(
+    held: &purlis_core::heldact::HeldActs,
+    world: &World<'_>,
+    id: u64,
+    digest: &str,
+) -> Result<purlis_core::heldact::Pressed, purlis_core::heldact::NotDone> {
+    let nonce = NONCES.with(|n| n.borrow().get(&id).cloned());
+    let pressed = held.press(world, id, digest, nonce.as_deref(), the_person());
+    NONCES.with(|n| match &pressed {
+        Ok(purlis_core::heldact::Pressed::AsksOnceMore { nonce, .. }) => {
+            n.borrow_mut().insert(id, nonce.clone());
+        }
+        _ => {
+            n.borrow_mut().remove(&id);
+        }
+    });
+    pressed
+}
+
 /// The person, pressing in the window.
 pub fn the_person() -> Answerer {
     Answerer::admitted(Admitted::LocalUi).unwrap()
@@ -59,6 +84,8 @@ pub struct State {
     pub fork_lands_in: Option<String>,
     /// Refuses every performed act, in these words.
     pub refuses: Option<String>,
+    /// Refuses only the making of a release, in these words.
+    pub fail_release: Option<String>,
     /// Every act performed, as one line each, in order.
     pub log: Vec<String>,
 }
@@ -199,6 +226,9 @@ impl HeldForge for Fake {
             if let Some(why) = &s.refuses {
                 return Err(why.clone());
             }
+            if let Some(why) = &s.fail_release {
+                return Err(why.clone());
+            }
             let at = s.tags.get(tag.as_str()).cloned().ok_or("no such tag")?;
             s.log.push(format!(
                 "create_release {} {} at {} title={title:?} notes={notes:?} draft={draft} \
@@ -233,18 +263,19 @@ impl HeldForge for Fake {
         branch: &Base,
         tip: &HeadSha,
         existing: Option<&HeadSha>,
-        _workflow: &Secret,
+        workflow: Option<&Secret>,
     ) -> Result<(), String> {
         self.with(|s| {
             if let Some(why) = &s.refuses {
                 return Err(why.clone());
             }
             s.log.push(format!(
-                "push_tip {} {} {} lease={}",
+                "push_tip {} {} {} lease={} second_credential={}",
                 repo.as_str(),
                 branch.as_str(),
                 tip.as_str(),
-                existing.map_or("none", HeadSha::as_str)
+                existing.map_or("none", HeadSha::as_str),
+                workflow.is_some()
             ));
             Ok(())
         })
@@ -260,6 +291,10 @@ impl Trees for NoTrees {
     }
 
     fn patch(&self, _: &HeadSha, _: &HeadSha, _: &[String]) -> Result<String, String> {
+        Err("no clone".to_owned())
+    }
+
+    fn files(&self, _: &HeadSha) -> Result<Vec<String>, String> {
         Err("no clone".to_owned())
     }
 

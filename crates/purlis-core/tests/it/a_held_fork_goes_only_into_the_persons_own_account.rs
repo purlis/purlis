@@ -10,7 +10,7 @@ use purlis_core::heldact::{
 };
 use serde_json::json;
 
-use crate::support::held_acts::{Fake, NoTrees, Rec, Second, repo, the_person, world};
+use crate::support::held_acts::{Fake, NoTrees, Rec, Second, press, repo, world};
 
 fn fork() -> Requested {
     Requested::Fork {
@@ -20,6 +20,7 @@ fn fork() -> Requested {
 
 #[test]
 fn the_ask_names_the_source_and_the_persons_own_account_as_the_only_place_it_goes() {
+    purlis_core::unsteered!();
     let (forge, held) = (Fake::github(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -31,9 +32,9 @@ fn the_ask_names_the_source_and_the_persons_own_account_as_the_only_place_it_goe
     assert_eq!(shown.rows[1].value, "your own account, aaron");
     assert!(forge.log().is_empty(), "an ask forks nothing");
 
-    held.press(&world, id, &digest, the_person()).unwrap();
+    press(&held, &world, id, &digest).unwrap();
     assert!(forge.log().is_empty(), "one press forks nothing");
-    let Ok(Pressed::Done(done)) = held.press(&world, id, &digest, the_person()) else {
+    let Ok(Pressed::Done(done)) = press(&held, &world, id, &digest) else {
         panic!()
     };
     assert_eq!(forge.log(), vec!["make_fork acme/app id-1".to_owned()]);
@@ -43,6 +44,7 @@ fn the_ask_names_the_source_and_the_persons_own_account_as_the_only_place_it_goe
 
 #[test]
 fn a_source_that_is_not_a_recorded_repo_is_refused_not_held() {
+    purlis_core::unsteered!();
     let (forge, held) = (Fake::github(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -58,6 +60,7 @@ fn a_source_that_is_not_a_recorded_repo_is_refused_not_held() {
 
 #[test]
 fn a_host_that_forbids_forking_leaves_the_person_read_only_and_says_so() {
+    purlis_core::unsteered!();
     let (forge, held) = (Fake::github(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     forge.with(|s| s.may_fork = false);
@@ -70,6 +73,7 @@ fn a_host_that_forbids_forking_leaves_the_person_read_only_and_says_so() {
 
 #[test]
 fn a_fork_that_lands_outside_the_persons_account_is_not_recorded() {
+    purlis_core::unsteered!();
     let (forge, held) = (Fake::github(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     forge.with(|s| s.fork_lands_in = Some("an-org".into()));
@@ -78,8 +82,8 @@ fn a_fork_that_lands_outside_the_persons_account_is_not_recorded() {
         panic!()
     };
     let (_, digest) = held.shown(id).unwrap();
-    held.press(&world, id, &digest, the_person()).unwrap();
-    let refused = held.press(&world, id, &digest, the_person()).unwrap_err();
+    press(&held, &world, id, &digest).unwrap();
+    let refused = press(&held, &world, id, &digest).unwrap_err();
     assert!(
         matches!(refused, NotDone::ForkElsewhere { .. }),
         "{refused:?}"
@@ -88,6 +92,7 @@ fn a_fork_that_lands_outside_the_persons_account_is_not_recorded() {
 
 #[test]
 fn a_repo_deleted_and_made_again_under_the_name_is_not_the_one_asked_about() {
+    purlis_core::unsteered!();
     let (forge, held) = (Fake::github(), HeldActs::default());
     let (second, rec) = (Second::there(), Rec::acme());
     let world = world(&forge, &NoTrees, &second, &rec);
@@ -96,13 +101,14 @@ fn a_repo_deleted_and_made_again_under_the_name_is_not_the_one_asked_about() {
     };
     let (_, digest) = held.shown(id).unwrap();
     forge.with(|s| s.source_id = "id-2".into());
-    let refused = held.press(&world, id, &digest, the_person()).unwrap_err();
+    let refused = press(&held, &world, id, &digest).unwrap_err();
     assert!(matches!(refused, NotDone::Changed { .. }), "{refused:?}");
     assert!(forge.log().is_empty());
 }
 
 #[test]
 fn a_chats_fork_into_another_organization_or_namespace_is_refused_whoever_asks() {
+    purlis_core::unsteered!();
     let rec = Rec::acme();
     let github_body = json!({"organization": "someone-else"});
     let segments: Vec<String> = ["repos", "acme", "app", "forks"]
