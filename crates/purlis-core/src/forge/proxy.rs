@@ -139,6 +139,52 @@ impl CredentialSource for NoCredentials {
     }
 }
 
+/// The person's credential as slice C holds it ([`crate::forge::credential`]: the browser sign-in,
+/// renewed, or a token connection), given to the proxy as the one it asks for. It asks the source
+/// for each request, so a renewal that happened since is the token that is used.
+///
+/// A credential that is not the host's forge, or a CI job's GitLab token (which the forge reads
+/// from a header the proxy does not set), is no credential here: the request is refused.
+pub struct BrokeredCredentials {
+    source: Arc<dyn crate::forge::credential::CredentialSource>,
+}
+
+impl BrokeredCredentials {
+    pub fn new(source: Arc<dyn crate::forge::credential::CredentialSource>) -> Self {
+        Self { source }
+    }
+}
+
+impl CredentialSource for BrokeredCredentials {
+    fn credential_for(&self, request: &CredentialRequest) -> Result<Credential, CredentialError> {
+        use crate::forge::credential::TokenKind as Held;
+        let held = self
+            .source
+            .credential_for(&request.host)
+            .map_err(|_| CredentialError::Unavailable)?;
+        let same_forge = matches!(
+            (held.kind(), request.kind),
+            (crate::forge::Kind::GitHub, Kind::GitHub) | (crate::forge::Kind::GitLab, Kind::GitLab)
+        );
+        let token_kind = match held.token_kind() {
+            Held::SignIn | Held::GitHubUser => TokenKind::Oauth,
+            Held::GitLabJob => return Err(CredentialError::Unavailable),
+            Held::Pasted
+            | Held::GitHubInstallation
+            | Held::GitHubFineGrained
+            | Held::GitLabAccess
+            | Held::Unrecognised => TokenKind::Pat,
+        };
+        if !same_forge {
+            return Err(CredentialError::Unavailable);
+        }
+        Ok(Credential {
+            token_kind,
+            secret: Secret::new(held.expose().to_string()),
+        })
+    }
+}
+
 /// One request as a chat's endpoint read it.
 #[derive(Debug)]
 pub struct Inbound<'a> {
