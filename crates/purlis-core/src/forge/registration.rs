@@ -15,7 +15,8 @@
 //!
 //! **A registration exists on one host only.** [`on`] answers for the exact forge and host a
 //! sign-in names, so purlis's github.com client id is never sent to a GitHub Enterprise server,
-//! nor its gitlab.com one to a self-managed GitLab. Those hosts take a token (ADR 0077 §4).
+//! nor its gitlab.com one to a self-managed GitLab. Those hosts take a token (ADR 0077 §4), or
+//! an application the person registered there ([`resolve`], [`super::registered`]).
 
 use super::Kind;
 
@@ -82,6 +83,21 @@ pub fn on(kind: Kind, host: &str) -> Option<&'static Registration> {
     TABLE
         .iter()
         .find(|r| r.kind == kind && r.host.eq_ignore_ascii_case(host))
+}
+
+/// The registration a sign-in or a renewal uses for `kind` on `host`: purlis's own where it has
+/// one ([`on`]), otherwise the application the person registered on that host
+/// ([`super::registered`], ADR 0128 D1). A registered file that cannot be read is an error, never
+/// "none", so a renewal does not end a sign-in over a file it could not open.
+pub fn resolve(
+    config_root: &std::path::Path,
+    kind: Kind,
+    host: &str,
+) -> Result<Option<&'static Registration>, String> {
+    if let Some(own) = on(kind, host) {
+        return Ok(Some(own));
+    }
+    super::registered::find(config_root, kind, host)
 }
 
 #[cfg(test)]

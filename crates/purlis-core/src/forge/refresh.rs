@@ -107,9 +107,21 @@ impl Refresher {
 
     /// [`Refresher::token`], with the time given.
     pub fn token_at(&self, account: &ForgeAccount, now: u64) -> Result<SecretString, ForgeError> {
+        self.token_ahead(account, now, AHEAD)
+    }
+
+    /// [`Refresher::token_at`], renewing a token with less than `ahead` left: the renewal sweep
+    /// ([`super::credential::renewal`]) asks for a longer lead than a request does, so a token
+    /// is renewed while nobody is waiting on it.
+    pub(super) fn token_ahead(
+        &self,
+        account: &ForgeAccount,
+        now: u64,
+        ahead: Duration,
+    ) -> Result<SecretString, ForgeError> {
         let keyring = accounts::keyring_at(&self.config_root);
         let kept = self.read(keyring.as_ref(), account)?;
-        if !due(account, &kept, now) {
+        if !due(account, &kept, now, ahead) {
             return Ok(kept.access);
         }
         let _one = REFRESHING.lock().unwrap_or_else(|e| e.into_inner());
@@ -117,14 +129,22 @@ impl Refresher {
         // process (the session host, the window) may have: read afresh, past this process's
         // memory, so a spent refresh token is never sent (#2656).
         let kept = self.read_afresh(keyring.as_ref(), account)?;
-        if !due(account, &kept, now) {
+        if !due(account, &kept, now, ahead) {
             return Ok(kept.access);
         }
         let expired = kept.expires_at.is_some_and(|at| at <= now);
-        let (Some(registration), Some(spent)) = (
-            registration::on(account.kind, &account.host),
-            kept.refresh.as_ref(),
-        ) else {
+        // A host the person registered an application on is renewed with that application's
+        // client id; a registrations file that cannot be read ends nothing (ADR 0128 D1).
+        let registration =
+            match registration::resolve(&self.config_root, account.kind, &account.host) {
+                Ok(found) => found,
+                Err(why) if !expired => {
+                    tracing::warn!("purlis: a sign-in could not be renewed yet: {why}");
+                    return Ok(kept.access);
+                }
+                Err(why) => return Err(ForgeError::transport(why)),
+            };
+        let (Some(registration), Some(spent)) = (registration, kept.refresh.as_ref()) else {
             // Nothing to renew it with. It is used while it lasts.
             if expired {
                 return Err(self.ended(keyring.as_ref(), account));
@@ -228,12 +248,12 @@ pub fn ended_said(account: &ForgeAccount) -> String {
     )
 }
 
-/// Whether `account`'s token is to be renewed before it is used at `now`.
-fn due(account: &ForgeAccount, kept: &Kept, now: u64) -> bool {
+/// Whether `account`'s token is to be renewed before it is used at `now`, with `ahead` to spare.
+fn due(account: &ForgeAccount, kept: &Kept, now: u64, ahead: Duration) -> bool {
     matches!(account.method, Method::Device | Method::Pkce)
         && kept
             .expires_at
-            .is_some_and(|at| at <= now.saturating_add(AHEAD.as_secs()))
+            .is_some_and(|at| at <= now.saturating_add(ahead.as_secs()))
 }
 
 /// OAuth's `error` words that say "not now" and nothing about the grant (RFC 6749 §4.1.2.1,
