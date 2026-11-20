@@ -18,6 +18,11 @@ read-only) must be served, on github.com, GHES, gitlab.com and self-hosted GitLa
 > App and GitLab project tokens because they do not serve every collaborator and bind a token by
 > installation, not by the person's access. Read section 6 first.
 
+> **Round 3 (2026-11-20).** The person rejected two modes. **Sections 4, 5 and 6 are superseded
+> by section 7**, which holds the facts for ADR 0128's one approach (an OAuth app sign-in on
+> every host, renewed by the app, brokered by one proxy). Sections 1 to 3 stay as facts; the
+> GitHub App and bot-token material in them is now history.
+
 ## 1. GitHub
 
 ### 1.1 Creating an App without a browser
@@ -333,3 +338,96 @@ answers with it. So the helper answers a stand-in and a proxy swaps (the key-pro
 **Not run:** the sandbox this note was written in refused a fetch of the forge docs, so no fact in
 this section was re-read on 2026-11-20 beyond sections 1 to 3. Re-read each before the ADR is
 accepted.
+
+## 7. Round 3: one approach (facts)
+
+Re-read on 2026-11-20 by `curl` to stdout from docs.github.com and docs.gitlab.com (all pages
+below fetched in this session; the GHES pages are the 3.22 edition). Tool facts are from the
+`gh` 2.69.0 and `glab` 1.119.0 installed here, read from their own help and binary, not run
+against a forge. **The sandbox refused every loopback bind and connect and the name
+`api.github.localhost`, so no proxy run was made, and none was worked around.**
+
+### 7.1 GitHub: OAuth app against GitHub App user token
+
+- **Who may approve an OAuth app, and what restricts it** (*About OAuth app access restrictions*).
+  "When you create a new organization, OAuth app access restrictions are enabled by default."
+  With restrictions on, "organization members and outside collaborators cannot authorize OAuth
+  app access to organization resources. Users can request owner approval... and organization
+  owners receive a notification". Owners choose whether outside collaborators may request. An
+  organization with no restrictions: "any OAuth app authorized by an organization member can also
+  access the organization's private resources", and on authorizing, "the application will
+  automatically be authorized" (*Authorizing OAuth apps*). An unapproved app reaches only the
+  organization's public resources. Approval is the owner's, per organization.
+- **Privileged OAuth apps** (*Privileged OAuth apps*): GitHub-owned apps, among them GitHub CLI,
+  Git Credential Manager, GitHub Desktop and Visual Studio Code, which a user "can still authorize
+  ... even if an organization owner has restricted access". purlis is not on the list and must
+  not use another vendor's client id.
+- **Reach** (*Differences between GitHub Apps and OAuth apps*): an OAuth token has access to "the
+  user's accessible resources", "loses access to resources when the user loses access", and is
+  "limited via scopes". A GitHub App must be installed per account and repository; installing "on
+  your personal repository" is the owner's; "GitHub Apps aren't subject to organization application
+  policies", but need an install, which a non-owner can only request.
+- **Scopes** (*Scopes for OAuth apps*): `repo` is full access to code, statuses, invitations,
+  collaborators, deployments and repository webhooks; `workflow` is separate ("the ability to add
+  and update GitHub Actions workflow files"); `delete_repo`, `write:packages` and `admin:repo_hook`
+  are separate. "You can't scope source code access to read-only."
+- **Expiry and refresh** (*Authorizing OAuth apps*): tokens do not expire unless the app opts in,
+  by an app setting or by requesting `offline_access` per sign-in; then "the access token expires
+  after eight hours, and the refresh token expires after six months without use", both replaced
+  on each refresh. The refresh's `client_secret` is "required unless the token was generated using
+  the device flow". The device flow must be enabled on the app. Limits: ten tokens per
+  user/application/scope, ten created per hour. If the refresh token expires, "send the user
+  through the web application flow or device flow again".
+- **SAML** (*About authentication with SAML single sign-on*): "You must have an active SSO session
+  each time you authorize an OAuth app or GitHub App", and after SSO is enforced "you must
+  reauthorize any OAuth apps or GitHub Apps".
+- **Creating one** (*Creating an OAuth app*, github.com and GHES 3.22): any user, "under your
+  personal account or any organization you have administrative access to", with an "Enable Device
+  Flow" checkbox. No administrator.
+- **Not read:** whether GHES 3.22 honours `offline_access`; the exact text of a restricted
+  organization's refusal; whether an owner's approval widens an existing token; the "Requesting
+  organization approval" and "Limiting requests" pages (both returned 404 at the paths tried).
+
+### 7.2 GitLab
+
+- **OAuth** (*OAuth 2.0 identity provider API*): access token 7200 s, a refresh token that "may be
+  used even after the access_token itself expires" and invalidates the pair it replaces; PKCE
+  needs no client secret; the device authorization grant is in 17.1 and later, generally
+  available in 17.9. Scopes name a kind of access, not a project: `api`, `write_repository`
+  ("read-write access to repositories on private projects using Git-over-HTTP (not using the
+  API)"), `read_user`. The page states no refresh-token lifetime.
+- **Self-managed** (*Configure GitLab as an OAuth 2.0 authentication identity provider*): a **user
+  owned application** is made from Edit profile › Access › Applications, "user owned, group owned
+  and instance-wide" exist, and the administrator-only kind is the instance-wide one. From 19.6 an
+  upgrade also creates instance-wide applications for `glab`, the VS Code extension and the
+  JetBrains plugin, with their gitlab.com client ids. Access-token expiry is administrator
+  configurable from 19.1.
+- **The administrator's switch** (*Application settings API*; *Account and limit settings*):
+  `user_oauth_applications` — "Allow users to register any application to use GitLab as an OAuth
+  provider. This setting does not affect group-level OAuth applications."
+
+### 7.3 What `gh` and `glab` can be pointed at (read here; not run against a forge)
+
+- **`gh` 2.69.0.** `help config` lists `http_unix_socket` ("a Unix socket through which to make an
+  HTTP connection"), with no CA setting. `help environment` lists `GH_HOST`, `GH_TOKEN`,
+  `GH_ENTERPRISE_TOKEN` and `GH_REPO` (`[HOST/]OWNER/REPO`). The binary's strings hold
+  `github.localhost`, `http://api.%s/`, `http://api.%s/graphql`, `https://api.%s/` and
+  `https://%s/api/v3/`. With `GH_HOST=github.localhost` a request failed with `error connecting to
+  api.github.localhost`; with `GH_HOST=ghe.example.test` it printed `Get
+  "https://ghe.example.test/api/v3/user"`. So the host `github.localhost` selects a plain-HTTP,
+  `api.`-prefixed route, and an ordinary enterprise host never does.
+- **`glab` 1.119.0.** `config --help` lists `host` (`GITLAB_HOST`), `api_host` (`GITLAB_API_HOST`,
+  "hostname or hostname:port"), `api_protocol` (`GLAB_API_PROTOCOL`, `http`/`https`), `token`
+  (`GITLAB_TOKEN`), `ca_cert` (`GLAB_CA_CERT`), `client_id` and `custom_headers`.
+- **TLS.** Go on macOS reads no `SSL_CERT_FILE`, which is why a MITM certificate is rejected and
+  the design avoids TLS to the chat's tools. That is from the Go documentation as known, not
+  re-fetched here.
+- **The sandbox itself.** A chat cannot bind a loopback port (`Operation not permitted`) and is
+  refused a connect to a loopback port its profile does not list. That is what makes a per-chat
+  port an identity (ADR 0128 D3d), and it is why the proxy run could not be made here.
+
+### 7.4 Still unproven
+
+A live `gh` and `glab` through the proxy (the first task of the build); git's proxying of
+`*.localhost`; GHES `offline_access`; an owner's approval widening an existing token; the exact
+refusal text of a restricted organization; the Linux sandbox's one-port-per-chat.
