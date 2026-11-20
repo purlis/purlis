@@ -136,17 +136,26 @@ fn client_id_ok(app: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
+/// **What a chat's token may do, and what the App asks for** (Q5, #7206): one list, so the App
+/// cannot be given less than the mint asks, nor the mint ask for more than the App is given.
+/// The cluster operator's `MINTABLE` (`operator/src/github.rs`) carries the same names, which a
+/// test pins.
+pub const CHAT_PERMISSIONS: [(&str, &str); 4] = [
+    ("contents", "write"),
+    ("issues", "write"),
+    ("metadata", "read"),
+    ("pull_requests", "write"),
+];
+
+/// The one more permission, which the person ticks for (`.github/workflows/*`).
+pub const WORKFLOWS_PERMISSION: (&str, &str) = ("workflows", "write");
+
 impl Wanted {
     /// The permissions the App asks for (Q5).
     fn permissions(&self) -> Vec<(&'static str, &'static str)> {
-        let mut asked = vec![
-            ("contents", "write"),
-            ("issues", "write"),
-            ("metadata", "read"),
-            ("pull_requests", "write"),
-        ];
+        let mut asked = CHAT_PERMISSIONS.to_vec();
         if self.workflows {
-            asked.push(("workflows", "write"));
+            asked.push(WORKFLOWS_PERMISSION);
         }
         asked
     }
