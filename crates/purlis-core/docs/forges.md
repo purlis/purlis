@@ -55,27 +55,27 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
 
 - **What it needs:** in the window, a purlis sign-in to the host (Settings › You ›
   Accounts), or else [`gh`](https://cli.github.com/) installed and authenticated (`gh
-  auth login`, then `gh auth status`). A `purlis` command always uses `gh`. A chat uses `gh`
-  only with a token minted for it (Settings › Agent identity, or a tool declared with a vault
-  token). A chat on a repo that claims the merge and release lock has `gh`'s config folder emptied,
-  git's credential helpers emptied (yours, the system's, a repository's own) with no prompt, its
-  ssh agent socket emptied and git's ssh told no agent (not in Claude Code, whose sandbox sets
-  git's ssh itself), `browser_login` to a forge host refused, and its tool calls to a forge
-  connector (`github`, `gitlab`, the claude.ai and plugin forms of each, `gh`, `glab`) refused
-  (#7205). That is **not** a lock yet. A claim made by a mint alone denies no file, so your `gh`
-  config and `~/.ssh` stay readable there. Open: on macOS `gh`'s keychain token; a helper the
-  chat names itself (`git -c credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`,
-  `env -u GIT_CONFIG_COUNT …`); a socket you granted; a bare `ssh` reading `~/.ssh/config`
-  (Codex, opencode); Claude Code's own ssh and its ssh agent; and a forge server under a name
-  purlis does not list, since connector servers still start and only calls to the listed names
-  are refused. No harness version reads as locked. What a chat with no minted token is told
-  is purlis's own, not `gh`'s (#1349, #7218): the tab says from the chat's start that its
-  sandbox holds your credentials back and no agent identity gives it a token, naming Agent
-  identity and a template where the class is off; a `gh` or `glab` shim of a tool that mints
-  answers with the same sentence and exits, never running the program bare; and a failed command's
-  refusal of one of your credential files raises the credentials Notice. On a locked repo `gh`
-  reads an empty config folder, so it never reads `hosts.yml` and the Notice does not wait on that
-  refusal: the tab's note and the shim's sentence are what that chat is told.
+  auth login`, then `gh auth status`). A `purlis` command always uses `gh`. A chat holds
+  **no forge token**: it reaches GitHub (and GitLab) through purlis's own proxy as you, with
+  your sign-in, inside the repos recorded for that chat and no further (ADR 0128). Every chat
+  is on this one route. There is no agent identity, no GitHub App the organisation registers
+  for a chat, and no token a vault hands a chat: a project's `mint = "github-app"` line and a
+  tool that hands a vault value in `GH_TOKEN` or `GITLAB_TOKEN` still load, run nothing, and
+  raise a Notice and a `purlis doctor` row that say to sign in under Settings › Forges and
+  delete the line. purlis never deletes a vault item or a keyring entry for you: it offers, and
+  waits for your press. A runner holds no sign-in either: with the desktop present its forge
+  calls go to the desktop's proxy, and a headless runner uses a token connection the operator
+  provisions. Every chat is also on the lock's baseline: `gh`'s config folder emptied, git's
+  credential helpers emptied (yours, the system's, a repository's own) with no prompt, its ssh
+  agent socket emptied and git's ssh told no agent (not in Claude Code, whose sandbox sets git's
+  ssh itself), `browser_login` to a forge host refused, and its tool calls to a forge connector
+  (`github`, `gitlab`, the claude.ai and plugin forms of each, `gh`, `glab`) refused (#7205).
+  Open: on macOS `gh`'s keychain token; a helper the chat names itself (`git -c
+  credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`, `env -u GIT_CONFIG_COUNT …`); a socket you
+  granted; a bare `ssh` reading `~/.ssh/config` (Codex, opencode); Claude Code's own ssh and its
+  ssh agent; and a forge server under a name purlis does not list, since connector servers still
+  start and only calls to the listed names are refused. Until the sign-in ships in your build, a
+  chat is on the baseline only where its sandbox holds your credentials back.
 - **What "owner" means:** a GitHub **org** or a personal **user** account. `purlis`
   tries the org endpoint first and falls back to the user endpoint on a genuine 404 —
   you don't have to say which one it is.

@@ -164,8 +164,20 @@ impl Route {
 ///
 /// Slice 3 (#7207) reads the forge's own rulesets; until it does, a chat that has a mint or holds
 /// the credentials class is one for which the person has asked purlis to keep their login away.
+///
+/// With the `forge-wiring` feature on every chat is on the lock's baseline (ADR 0128, D3g): the claim
+/// test goes with the mint, and a chat holds no path to the person's forge login whatever else
+/// it holds.
 pub fn claimed(holds_credentials: bool, mints: bool) -> bool {
-    holds_credentials || mints
+    #[cfg(feature = "forge-wiring")]
+    {
+        let _ = (holds_credentials, mints);
+        true
+    }
+    #[cfg(not(feature = "forge-wiring"))]
+    {
+        holds_credentials || mints
+    }
 }
 
 /// What `GIT_SSH_COMMAND` is for a locked chat: git's ssh told no agent, and only the identities

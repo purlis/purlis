@@ -190,6 +190,7 @@ fn held_reads_each_personas_glab_line_and_says_which_are_ours() {
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn setting_up_keeps_the_token_in_the_personas_vault_declares_glab_and_allows_what_it_wrote() {
     let plane = project("");

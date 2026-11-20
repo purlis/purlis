@@ -85,6 +85,7 @@ pub mod fill;
 pub mod host;
 pub mod login;
 pub mod mint;
+pub mod replaced;
 pub mod repo;
 
 /// The key in a persona's table that holds its tools.
@@ -813,6 +814,13 @@ pub fn keyed(
                 "{other} is not a key purlis reads — a tool holds vault, then as and key, or \
                  values"
             ));
+            continue;
+        }
+        // The person's sign-in replaces both old ways of handing a chat a forge token (ADR 0128,
+        // "Migration"): the line keeps parsing, and the tool is left out with what to do.
+        #[cfg(feature = "forge-wiring")]
+        if let Some(kind) = replaced::kind_of(tool) {
+            fault(replaced::sentence(kind).to_owned());
             continue;
         }
         // Its `args` (#3421), set on the tool once it is read whole, below.
@@ -3430,6 +3438,7 @@ mod fill_tests;
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]
+#[cfg(not(feature = "forge-wiring"))]
 mod mint_tests;
 #[cfg(test)]
 mod repo_tests;

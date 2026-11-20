@@ -260,6 +260,44 @@ fn local_ports_row(binding: &crate::sandbox::claude::LocalBinding) -> Option<Row
     }
 }
 
+/// The `forge sign-in replaces` row (ADR 0128, "Migration"): the project's tool lines that hand a
+/// chat a GitHub App token (`mint = "github-app"`) or a vault forge token, which the person's
+/// sign-in replaces. Only where the `forge-wiring` feature is on and the project has one: any
+/// other build, or project, prints the rows it always printed.
+pub(super) fn replaced_by_sign_in(d: &Doctor) -> Option<Row> {
+    if !cfg!(feature = "forge-wiring") {
+        return None;
+    }
+    replaced_by_sign_in_row(&crate::sandbox::tools::replaced::found(&d.root))
+}
+
+/// The row [`replaced_by_sign_in`] prints for `found`: how many lines, and the step. It names
+/// each persona's tool and touches no file and no vault item.
+fn replaced_by_sign_in_row(found: &[crate::sandbox::tools::replaced::Found]) -> Option<Row> {
+    if found.is_empty() {
+        return None;
+    }
+    let named: Vec<String> = found
+        .iter()
+        .map(|one| format!("{} of {}", one.tool, one.persona))
+        .collect();
+    Some(
+        Row::warn(
+            "forge sign-in replaces",
+            format!(
+                "{} tool line{} in this project's settings hand a chat a forge token, which \
+                 purlis no longer does, so they run nothing: {}. Chats use your sign-in",
+                found.len(),
+                if found.len() == 1 { "" } else { "s" },
+                named.join(", ")
+            ),
+            "Sign in under Settings › Forges, then delete those lines. A vault item they named \
+             stays until you delete it.",
+        )
+        .in_settings(SettingsGroup::Forges),
+    )
+}
+
 /// The `sandbox relayed internal` row (#2530): each entry of this machine's policy's
 /// `relayed-internal` that is not taken, which a chat planned on another machine reaches
 /// nothing by. Only where one is not: any other machine prints the rows it always printed.

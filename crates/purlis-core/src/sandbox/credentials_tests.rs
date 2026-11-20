@@ -688,6 +688,7 @@ fn a_refused_credential_is_known_as_one() {
 /// #7205: a chat that holds the person's credentials claims the forge lock, and its line hands it
 /// no path to their forge login; one at the floor under `watch`, which holds none and has no mint,
 /// keeps its own login on purpose and is handed nothing of the lock.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
     let (_home, home) = home();
@@ -762,6 +763,7 @@ fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
 
 /// #7205: the config purlis compiles for a chat that claims the forge lock has the harness's
 /// forge connector off, and one that does not claim it is compiled as it was.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_chat_that_claims_the_forge_lock_is_compiled_with_its_forge_connectors_off() {
     use crate::harness::{Kit, StateHooks};

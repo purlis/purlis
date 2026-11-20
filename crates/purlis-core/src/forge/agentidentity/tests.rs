@@ -474,6 +474,7 @@ fn a_new_plane(text: &str) -> tempfile::TempDir {
     root
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn finish_allows_on_a_plane_not_sandboxed_yet() {
     let root = a_new_plane("[sandbox]\n\n[sandbox.personas.dev]\n");
@@ -497,6 +498,7 @@ fn finish_leaves_a_persona_with_more_on_its_list_to_its_own_allow() {
     assert_eq!(left, ["dev"]);
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn finish_allows_what_it_wrote_and_never_a_line_on_disk_it_did_not_write() {
     let before = "[sandbox]\n\n[sandbox.personas.dev]\n";
