@@ -215,6 +215,7 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
             ("PUT", &["issues", "#"], Class::IssueWrite),
             ("POST", &["issues", "#", "notes"], Class::CommentWrite),
             ("PUT", &["issues", "#", "notes", "#"], Class::CommentWrite),
+            ("POST", &["uploads"], Class::UploadWrite),
         ]),
     }
 }
@@ -285,6 +286,10 @@ fn check_body(
         .strings
         .iter()
         .any(|text| commands::has_merge_command(text))
+        || body
+            .labels
+            .iter()
+            .any(|label| commands::is_merge_label(label))
     {
         return Err(Refusal::MergeCommand);
     }

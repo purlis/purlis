@@ -126,16 +126,20 @@ fn a_write_body_is_read_by_its_content_type_and_nothing_else_is_read() {
     for (ct, body) in [
         (None, &br#"{"title":"t"}"#[..]),
         (Some("text/plain"), &br#"{"title":"t"}"#[..]),
-        (
-            Some("multipart/form-data; boundary=x"),
-            &b"--x\r\n\r\n--x--"[..],
-        ),
         (Some("application/octet-stream"), &b"x"[..]),
         (Some("application/json"), &b"{not json"[..]),
     ] {
         let out = post(&s, ISSUES, ct, body);
         assert!(is_refused(&out, Refusal::BodyUnreadable), "{ct:?}: {out:?}");
     }
+    // A multipart body is named for what it is, and is carried only as one file to an upload.
+    let out = post(
+        &s,
+        ISSUES,
+        Some("multipart/form-data; boundary=x"),
+        b"--x\r\n\r\n--x--",
+    );
+    assert!(is_refused(&out, Refusal::Multipart), "{out:?}");
 }
 
 #[test]
@@ -384,12 +388,27 @@ fn only_a_plain_chunked_transfer_coding_is_carried_and_a_request_body_is_never_e
 fn a_credential_header_is_one_whichever_way_its_name_is_spelled() {
     purlis_core::unsteered!();
     let s = Scene::single();
+    // A name with an underscore is refused whole (slice A2, F1): a forge's front end that reads
+    // `_` as `-` and this reading it as another header are two readers.
     for name in [
         "Private_Token",
-        "PRIVATE-TOKEN",
         "private_token",
         "Job_Token",
         "X_GitHub_Token",
+    ] {
+        for value in [REAL, s.a_sentinel.expose()] {
+            let out = with_header(&s, &[(name, value)]);
+            assert!(
+                is_refused(&out, Refusal::MalformedRequest),
+                "{name}: {out:?}"
+            );
+        }
+    }
+    for name in [
+        "PRIVATE-TOKEN",
+        "private-token",
+        "Job-Token",
+        "X-GitHub-Token",
     ] {
         let out = with_header(&s, &[(name, REAL)]);
         assert!(is_refused(&out, Refusal::WrongSentinel), "{name}: {out:?}");

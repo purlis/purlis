@@ -269,7 +269,6 @@ fn headers_that_choose_the_host_the_method_or_a_login_are_not_forwarded() {
             ("Forwarded", "host=evil.example"),
             ("X-Original-URL", "/admin"),
             ("X-Rewrite-URL", "/admin"),
-            ("PRIVATE_TOKEN", s.a_sentinel.expose()),
             ("X-HTTP-Method-Override", "PUT"),
             ("X-Method-Override", "DELETE"),
             ("PRIVATE-TOKEN", s.a_sentinel.expose()),

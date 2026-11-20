@@ -95,9 +95,9 @@ fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
         "query{ search(query:\"x\", type:REPOSITORY, first:5){ repositoryCount } }",
         "query{ viewer{ repositories(first:100){ totalCount } } }",
         "query{ viewer{ login ...F } } fragment F on User{ email }",
-        "query{ repository(owner:\"acme\", name:\"app\"){ parent{ name } } }",
+        "query{ repository(owner:\"acme\", name:\"app\"){ parent{ pullRequests(first:1){ totalCount } } } }",
         "query{ repository(owner:\"acme\", name:\"app\"){ ...F } } fragment F on Repository{ forks(first:1){ totalCount } }",
-        "query{ repository(owner:\"acme\", name:\"app\"){ pullRequest(number:1){ commits(last:1){ nodes{ commit{ oid } } } } } }",
+        "query{ repository(owner:\"acme\", name:\"app\"){ pullRequest(number:1){ headRepository{ collaborators(first:5){ totalCount } } } } }",
         "query{ __schema{ types{ name } } }",
         "query{ ...F } fragment F on Query{ viewer{ login } }",
     ] {

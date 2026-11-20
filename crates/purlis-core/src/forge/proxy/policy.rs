@@ -69,6 +69,10 @@ pub enum Refusal {
     GraphqlOtherRepo,
     /// A credential in the query string, which the forge would read as the chat's own login.
     CredentialInQuery,
+    /// A multipart body, which a chat may send only as one file to a route that takes an upload.
+    Multipart,
+    /// A credential as a key of a request body (`private_token`, `access_token`, `token`…).
+    CredentialInBody,
     /// A push makes a branch of a repo whose refs the proxy was not told: whether the branch exists
     /// is not known, so it is not made.
     NoAdvertisement,
@@ -98,6 +102,10 @@ pub enum Class {
     IssueWrite,
     LabelWrite,
     GraphqlQuery,
+    /// The batch call of Git LFS, asking for download addresses only.
+    LfsBatch,
+    /// A file uploaded for a comment or a description (GitLab's `uploads`).
+    UploadWrite,
     /// The mutation's name, which is on the list.
     GraphqlMutation(String),
 }
@@ -126,6 +134,8 @@ pub struct Allowed {
     pub upstream: String,
     /// What to send as the body in place of the chat's: the body as it was read.
     pub canonical_body: Option<Vec<u8>>,
+    /// The `Content-Type` that body is sent with, said once.
+    pub canonical_media: Option<String>,
     /// Branches this push makes, as `(host, repo, branch)`. They become the chat's own only when
     /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge made them.
     pub(crate) created: Vec<(String, String, String)>,
@@ -209,6 +219,42 @@ pub enum ConnectVerdict {
     Refuse(Refusal),
 }
 
+/// Where the name `github.localhost` leads for a chat: the recorded GitHub host's API address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GithubAlias {
+    /// The host its API answers on: `api.github.com`, or the GHES host.
+    pub host: String,
+    pub port: u16,
+    /// A GHES host, whose API is at `/api/v3` and `/api/graphql`, where github.com's is at the
+    /// root: `gh` speaks github.com's shape to `github.localhost`.
+    pub enterprise: bool,
+}
+
+impl GithubAlias {
+    /// The request-target a GitHub Enterprise Server serves for the one `gh` sent in
+    /// github.com's shape (`/user` is `/api/v3/user`, `/graphql` is `/api/graphql`). On
+    /// github.com it is the target as it is.
+    #[must_use]
+    pub fn target(&self, target: &str) -> String {
+        if !self.enterprise {
+            return target.to_string();
+        }
+        let (path, query) = match target.split_once('?') {
+            Some((path, query)) => (path, Some(query)),
+            None => (target, None),
+        };
+        let mapped = if path == "/graphql" {
+            "/api/graphql".to_string()
+        } else {
+            format!("/api/v3{path}")
+        };
+        match query {
+            Some(query) => format!("{mapped}?{query}"),
+            None => mapped,
+        }
+    }
+}
+
 /// A chat's repos, the branches it created, and the rule that decides every request against them.
 #[derive(Debug)]
 pub struct ChatPolicy {
@@ -269,6 +315,42 @@ impl ChatPolicy {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .extend(created.iter().cloned());
+    }
+
+    /// What `gh`'s `GH_HOST=github.localhost` means for this chat (ADR 0128 D3c): the one GitHub
+    /// host its repos are on. `None` is: not that name. `Some(Err(AmbiguousHost))` is: two GitHub
+    /// hosts are recorded (github.com and a GHES, or two GHES), which of them a call that names
+    /// no host means is not the chat's to say, so it is refused; and `Some(Err(HostNotAllowed))`
+    /// is: no GitHub repo at all.
+    pub fn github_alias(&self, host: &str) -> Option<Result<GithubAlias, Refusal>> {
+        let host = request::normalise_connect_host(host).ok()?;
+        if host != "github.localhost" && host != "api.github.localhost" {
+            return None;
+        }
+        let mut places: Vec<(&str, u16)> = self
+            .repos
+            .iter()
+            .filter(|r| r.kind == Kind::GitHub)
+            .map(|r| (r.host.as_str(), r.port))
+            .collect();
+        places.sort_unstable();
+        places.dedup();
+        Some(match places.as_slice() {
+            [] => Err(Refusal::HostNotAllowed),
+            [(recorded, port)] => {
+                let repo = self
+                    .repos
+                    .iter()
+                    .find(|r| r.kind == Kind::GitHub && r.host == *recorded && r.port == *port)
+                    .ok_or(Refusal::HostNotAllowed);
+                repo.map(|repo| GithubAlias {
+                    host: repo.api_host().to_string(),
+                    port: repo.port,
+                    enterprise: repo.host != "github.com",
+                })
+            }
+            _ => Err(Refusal::AmbiguousHost),
+        })
     }
 
     /// Decide a `CONNECT`: only a host and port one of the chat's repos is on is terminated, so a
@@ -370,7 +452,10 @@ impl ChatPolicy {
         {
             return Err(Refusal::OAuthFlow);
         }
-        if strs.windows(2).any(|w| w == ["info", "lfs"]) {
+        // Git LFS is its batch call, asking to download, and nothing else of it: the locks API,
+        // an upload batch and the object routes are refused.
+        let lfs_repo = git::lfs_batch(method, segments);
+        if lfs_repo.is_none() && strs.windows(2).any(|w| w == ["info", "lfs"]) {
             return Err(Refusal::Lfs);
         }
 
@@ -404,6 +489,7 @@ impl ChatPolicy {
                     class: Class::ApiRead,
                     upstream: upstream(first, Surface::Api, segments, &target),
                     canonical_body: None,
+                    canonical_media: None,
                     created: Vec::new(),
                     surface: Surface::Api,
                 });
@@ -439,6 +525,7 @@ impl ChatPolicy {
                 repo: first.path.clone(),
                 class,
                 upstream: upstream(first, Surface::Api, segments, &target),
+                canonical_media: Some(document.media),
                 canonical_body: Some(document.canonical),
                 created: Vec::new(),
                 surface: Surface::Api,
@@ -457,20 +544,43 @@ impl ChatPolicy {
                 return Err(Refusal::MalformedRequest);
             }
             let read = method == "GET" || method == "HEAD";
+            // The one multipart a chat may send: a file for a comment, to GitLab's `uploads`.
+            let upload = kind == Kind::GitLab
+                && method == "POST"
+                && rel.len() == 1
+                && rel[0].eq_ignore_ascii_case("uploads");
             let parsed = if read {
                 None
+            } else if upload {
+                Some(commands::parse_upload(body, head.content_type.as_deref())?)
             } else {
                 commands::parse(body, head.content_type.as_deref())?
             };
             let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo)?;
             let mut answer = allowed(repo, class, Surface::Api, segments, &target);
-            answer.canonical_body = parsed.map(|b| b.canonical);
+            if let Some(b) = parsed {
+                answer.canonical_media = Some(b.media);
+                answer.canonical_body = Some(b.canonical);
+            }
             return Ok(answer);
         }
 
         // Git over HTTP, and a repo's public downloads.
         if on_api_host {
             return Err(Refusal::NotOnList);
+        }
+        if let Some(repo_segments) = lfs_repo {
+            let path = normalise_repo_path(kind, &repo_segments.join("/"))
+                .map_err(|_| Refusal::OtherRepo)?;
+            let batch = Self::lfs_download_batch(body, head.content_type.as_deref())?;
+            let mut answer = match candidates.iter().find(|r| r.path == path) {
+                Some(repo) => allowed(repo, Class::LfsBatch, Surface::Git, segments, &target),
+                // Not the chat's: a public repo's files, asked for with no credential.
+                None => public(first, Class::LfsBatch, segments, &target),
+            };
+            answer.canonical_media = Some(batch.media);
+            answer.canonical_body = Some(batch.canonical);
+            return Ok(answer);
         }
         if let Some((repo_segments, op)) = git::classify(method, segments, &target) {
             let path = normalise_repo_path(kind, &repo_segments.join("/"))
@@ -514,6 +624,35 @@ impl ChatPolicy {
             });
         }
         Err(Refusal::NotOnList)
+    }
+
+    /// The body of an LFS batch call, which may only ask for download addresses. Git LFS says its own
+    /// media type, which is JSON; it is read as JSON and sent as it was said.
+    fn lfs_download_batch(
+        body: &[u8],
+        content_type: Option<&str>,
+    ) -> Result<commands::Body, Refusal> {
+        const LFS: &str = "application/vnd.git-lfs+json";
+        let media = content_type
+            .and_then(|ct| ct.split(';').next())
+            .map(|m| m.trim().to_ascii_lowercase());
+        let said = match media.as_deref() {
+            Some(LFS) => LFS,
+            Some("application/json") => "application/json",
+            _ => return Err(Refusal::BodyUnreadable),
+        };
+        let mut batch =
+            commands::parse(body, Some("application/json"))?.ok_or(Refusal::BodyUnreadable)?;
+        let download = batch
+            .json
+            .as_ref()
+            .and_then(|j| j.get("operation"))
+            .is_some_and(|op| op == "download");
+        if !download {
+            return Err(Refusal::Lfs);
+        }
+        batch.media = said.to_string();
+        Ok(batch)
     }
 
     /// A push's commands against the repo: every ref a branch, none the default, a protected one,
@@ -585,6 +724,7 @@ fn allowed(
         class,
         upstream: upstream(repo, surface, segments, target),
         canonical_body: None,
+        canonical_media: None,
         created: Vec::new(),
         surface,
     }
@@ -599,6 +739,7 @@ fn public(host_of: &AllowedRepo, class: Class, segments: &[String], target: &Tar
         class,
         upstream: upstream(host_of, Surface::Anonymous, segments, target),
         canonical_body: None,
+        canonical_media: None,
         created: Vec::new(),
         surface: Surface::Anonymous,
     }

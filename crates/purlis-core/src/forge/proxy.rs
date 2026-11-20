@@ -69,6 +69,7 @@ mod policy;
 mod repo;
 mod request;
 mod rest;
+mod schema;
 mod sentinel;
 
 pub use audit::{AuditLog, AuditRecord, Verdict};
@@ -76,7 +77,8 @@ pub use audit::{AuditLog, AuditRecord, Verdict};
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use policy::{
-    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, NoObjects, ObjectRepo, Refusal,
+    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GithubAlias, NoObjects,
+    ObjectRepo, Refusal,
 };
 pub use repo::{AddressError, AllowedRepo, Kind};
 pub use request::RequestHead;
@@ -276,6 +278,23 @@ impl ForgeProxy {
         self.sentinels.revoke(chat);
     }
 
+    /// Where `github.localhost` leads for `chat` (`gh`'s `GH_HOST`, on its unix socket): the one
+    /// GitHub host its repos are on, and a refusal when it has two or none. `None` for any other
+    /// name. The listener rewrites the request to that host before it asks [`Self::handle`], so
+    /// the policy only ever sees a recorded host.
+    pub fn github_alias(&self, chat: &ChatId, host: &str) -> Option<Result<GithubAlias, Refusal>> {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        match policy {
+            Some(policy) => policy.github_alias(host),
+            None => Some(Err(Refusal::UnknownChat)),
+        }
+    }
+
     /// What of the body the listener must read before [`Self::handle`] can decide.
     pub fn body_need(&self, head: &RequestHead) -> BodyNeed {
         policy::body_need(head)
@@ -305,17 +324,26 @@ impl ForgeProxy {
         if let Err(refusal @ (Refusal::Locked | Refusal::UnknownChat)) = sentinel {
             return self.refuse(chat, inbound, None, refusal);
         }
-        if !framing_is_unambiguous(inbound.headers) || !host_agrees(inbound) {
+        if !framing_is_unambiguous(inbound.headers)
+            || !header_names_are_plain(inbound.headers)
+            || !host_agrees(inbound)
+        {
             return self.refuse(chat, inbound, None, Refusal::MalformedRequest);
         }
         let head = inbound
             .head
             .clone()
             .with_content_type(header_value(inbound.headers, "content-type"));
-        let allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
+        let mut allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => return self.refuse(chat, inbound, None, refusal),
         };
+        // A read goes upstream with no body, whatever the chat sent and whatever its headers say
+        // of one: a body on a `GET` is read by a forge or a cache in front of it as it likes.
+        if request::method(inbound.head).is_some_and(request::is_read) {
+            allowed.canonical_body = Some(Vec::new());
+            allowed.canonical_media = None;
+        }
         if let (true, Err(refusal)) = (allowed.credentialed(), sentinel) {
             return self.refuse(chat, inbound, None, refusal);
         }
@@ -328,12 +356,14 @@ impl ForgeProxy {
             // A public read: the chat's own headers without any credential, and none added.
             self.audit
                 .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
+            let mut headers = without_credentials(inbound.headers);
+            apply_canonical(&mut headers, &allowed);
             return Outcome::Forward(Forwarded {
                 upstream: allowed.upstream,
-                headers: without_credentials(inbound.headers),
+                headers,
                 class: allowed.class,
                 credentialed: false,
-                body: None,
+                body: allowed.canonical_body,
                 created: Vec::new(),
             });
         }
@@ -344,19 +374,12 @@ impl ForgeProxy {
         let Ok(credential) = self.credentials.credential_for(&request) else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
-        let Some(headers) = swap_credential(inbound.headers, &allowed, credential) else {
+        let Some(mut headers) = swap_credential(inbound.headers, &allowed, credential) else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
         self.audit
             .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
-        let mut headers = headers;
-        if let Some(body) = &allowed.canonical_body {
-            headers.retain(|(n, _)| {
-                !["content-length", "transfer-encoding", "content-encoding"]
-                    .contains(&normal(n).as_str())
-            });
-            headers.push(("Content-Length".to_string(), body.len().to_string()));
-        }
+        apply_canonical(&mut headers, &allowed);
         Outcome::Forward(Forwarded {
             upstream: allowed.upstream,
             headers,
@@ -411,6 +434,46 @@ fn header_value<'a>(headers: &'a [(String, String)], wanted: &str) -> Option<&'a
         .iter()
         .find(|(n, _)| normal(n) == wanted)
         .map(|(_, v)| v.as_str())
+}
+
+/// When a body was read, it is sent in the chat's place with exactly one `Content-Type` (the type
+/// it was read by) and a `Content-Length` of its own: none of the chat's variants of those headers
+/// (case, `_` for `-`), its `Transfer-Encoding` or its `Content-Encoding` goes on.
+fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
+    let Some(body) = &allowed.canonical_body else {
+        return;
+    };
+    headers.retain(|(n, _)| {
+        ![
+            "content-length",
+            "transfer-encoding",
+            "content-encoding",
+            "content-type",
+        ]
+        .contains(&normal(n).as_str())
+    });
+    if !body.is_empty() {
+        let media = allowed
+            .canonical_media
+            .clone()
+            .unwrap_or_else(|| "application/json".to_string());
+        headers.push(("Content-Type".to_string(), media));
+    }
+    headers.push(("Content-Length".to_string(), body.len().to_string()));
+}
+
+/// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`
+/// while this reads it as another header: a name with an underscore is refused, as is a second
+/// `Content-Type` of any spelling (two readers pick two types).
+fn header_names_are_plain(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .all(|(n, _)| !n.is_empty() && !n.contains('_'))
+        && headers
+            .iter()
+            .filter(|(n, _)| normal(n) == "content-type")
+            .count()
+            <= 1
 }
 
 /// A `Host` the request line does not agree with is a request for two places: refused. Without a

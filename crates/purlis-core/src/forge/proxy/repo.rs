@@ -138,8 +138,16 @@ impl AllowedRepo {
     /// branch, and the names a deploy or a release is triggered from (ADR 0128 D3h.8).
     pub(crate) fn protects(&self, branch: &str) -> bool {
         let lower = branch.to_ascii_lowercase();
-        const NAMES: &[&str] = &["main", "master", "prod", "production", "gh-pages"];
-        const PREFIXES: &[&str] = &["release/", "deploy/", "prod/", "production/"];
+        const NAMES: &[&str] = &[
+            "main",
+            "master",
+            "prod",
+            "production",
+            "gh-pages",
+            "release",
+            "deploy",
+        ];
+        const PREFIXES: &[&str] = &["release/", "release-", "deploy/", "prod/", "production/"];
         lower == self.default_branch.to_ascii_lowercase()
             || NAMES.contains(&lower.as_str())
             || PREFIXES.iter().any(|p| lower.starts_with(p))

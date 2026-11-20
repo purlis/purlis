@@ -47,6 +47,19 @@ pub(crate) fn classify(
     Some((repo.to_vec(), op))
 }
 
+/// The repo's path segments of Git LFS's batch call: `POST …/info/lfs/objects/batch`.
+pub(crate) fn lfs_batch(method: &str, segments: &[String]) -> Option<Vec<String>> {
+    let n = segments.len();
+    let is_batch = n >= 5
+        && method == "POST"
+        && segments[n - 4] == "info"
+        && segments[n - 3] == "lfs"
+        && segments[n - 2] == "objects"
+        && segments[n - 1] == "batch";
+    let repo = &segments[..n.saturating_sub(4)];
+    (is_batch && !repo.is_empty() && !repo.iter().any(|s| s.contains('/'))).then(|| repo.to_vec())
+}
+
 /// The repo's path segments of a download a browser makes without the API: an archive or a
 /// release asset. GET only.
 pub(crate) fn public_download(
