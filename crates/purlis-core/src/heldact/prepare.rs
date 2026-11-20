@@ -95,7 +95,7 @@ const MOST_NOTES: usize = 60_000;
 
 /// Whether `c` draws nothing or changes how the text around it reads: a control character other
 /// than a tab or a line break, a zero-width or direction mark, a line or paragraph separator.
-fn unseen(c: char) -> bool {
+pub(super) fn unseen(c: char) -> bool {
     (c.is_control() && !matches!(c, '\n' | '\t'))
         || matches!(
             c,
@@ -139,6 +139,32 @@ fn notes_of(text: &str) -> Result<String, Refused> {
         ));
     }
     Ok(notes)
+}
+
+/// The most characters of one row's value, and of one entry of a list in a row.
+const MOST_ROW: usize = 2_000;
+const MOST_ENTRY: usize = 300;
+
+/// **Text a chat may have written, as a row shows it**: a character that draws nothing, or breaks
+/// the line, is written out (`\u{202e}`), so what is shown can never read as other text, and an
+/// entry longer than `most` characters is cut and says so.
+fn shown_text(text: &str, most: usize) -> String {
+    let mut out = String::new();
+    for (at, c) in text.chars().enumerate() {
+        if at == most {
+            out.push_str(&format!(
+                "… ({} more characters)",
+                text.chars().count() - most
+            ));
+            break;
+        }
+        if unseen(c) || matches!(c, '\n' | '\t') {
+            out.push_str(&format!("\\u{{{:04x}}}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn row(label: &str, value: impl Into<String>) -> Row {
@@ -339,17 +365,37 @@ fn ci_push(
         PushCheck::NoCiFiles => return Err(Refused::NoCiFiles),
         PushCheck::Refuse(why) => return Err(Refused::CiDiff(why)),
     };
+    // A path is shown as it is, so one that holds a line break or a character that draws nothing
+    // could read as other paths or other words: such a push is not offered.
+    if let Some(bad) = diff
+        .files
+        .iter()
+        .find(|path| path.chars().any(|c| c.is_control() || unseen(c)))
+    {
+        return Err(Refused::CiDiff(format!(
+            "a changed file's path holds a line break or a character that draws nothing: {}",
+            shown_text(bad, MOST_ENTRY)
+        )));
+    }
+    if diff.files.join(", ").chars().count() > MOST_ROW {
+        return Err(Refused::Text(
+            "the changed CI files' paths are longer than purlis shows",
+        ));
+    }
     let compared = match &against {
-        Against::BranchTip => format!("the tip of {} on the forge", branch.as_str()),
+        Against::BranchTip => format!(
+            "the tip of {} on the forge",
+            shown_text(branch.as_str(), MOST_ENTRY)
+        ),
         Against::DefaultBranch(default) => format!(
             "the tip of {}, the default branch: {} is a new branch",
-            default.as_str(),
-            branch.as_str()
+            shown_text(default.as_str(), MOST_ENTRY),
+            shown_text(branch.as_str(), MOST_ENTRY)
         ),
     };
     let mut rows = vec![
         row("Repo", repo.as_str()),
-        row("Branch", branch.as_str()),
+        row("Branch", shown_text(branch.as_str(), MOST_ENTRY)),
         row("New tip", tip.as_str()),
         row("Compared with", format!("{compared} ({})", base.as_str())),
         row("CI files", diff.files.join(", ")),
@@ -375,7 +421,11 @@ fn ci_push(
     if !diff.outside.is_empty() {
         rows.push(row(
             "The pipeline also runs, outside this push",
-            diff.outside.join("; "),
+            diff.outside
+                .iter()
+                .map(|note| shown_text(note, MOST_ENTRY))
+                .collect::<Vec<_>>()
+                .join("; "),
         ));
     }
     let body = Some(Body {

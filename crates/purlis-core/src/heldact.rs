@@ -71,6 +71,7 @@ mod ci;
 mod handoff;
 mod holds;
 mod prepare;
+mod quarantine;
 mod recognise;
 pub mod said;
 mod tag;
@@ -80,6 +81,7 @@ pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push}
 pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{Asked, HeldActs, NotDone, Performed, Pressed, Waiting};
 pub use prepare::{pinned, prepare};
+pub use quarantine::{BaseObjects, FromForge, Quarantine};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise};
 pub use tag::{InvalidTag, TagName};
 pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles};

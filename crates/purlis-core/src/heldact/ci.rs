@@ -308,7 +308,9 @@ fn includes_of(text: &str) -> Result<Includes, String> {
     let mut found = Includes::default();
     for doc in &docs {
         let Yaml::Hash(top) = doc else { continue };
-        if top.contains_key(&Yaml::String("<<".to_owned())) {
+        // A merge key at **any depth**: `<<: *anchor` copies the anchor's keys into a job, so a
+        // job can get `trigger: include:` from an anchor this reading would never see in it.
+        if has_merge_key(doc) {
             found.unresolved = true;
         }
         for (key, value) in top {
@@ -323,6 +325,18 @@ fn includes_of(text: &str) -> Result<Includes, String> {
         }
     }
     Ok(found)
+}
+
+/// Whether a YAML merge key (`<<`) appears anywhere in `yaml`.
+fn has_merge_key(yaml: &yaml_rust2::Yaml) -> bool {
+    use yaml_rust2::Yaml;
+    match yaml {
+        Yaml::Hash(map) => map.iter().any(|(key, value)| {
+            key.as_str() == Some("<<") || has_merge_key(key) || has_merge_key(value)
+        }),
+        Yaml::Array(items) => items.iter().any(has_merge_key),
+        _ => false,
+    }
 }
 
 fn one_include(value: &yaml_rust2::Yaml, found: &mut Includes) -> Result<(), String> {
@@ -423,8 +437,12 @@ pub struct GitTrees {
 }
 
 impl GitTrees {
-    /// Trees of the clone at `clone`.
-    pub fn of(clone: impl Into<std::path::PathBuf>) -> GitTrees {
+    /// Trees of the repository at `store`, **which only purlis writes**: the quarantine
+    /// ([`super::Quarantine`]) or a test's own repository. **Never a chat's clone**, whose objects
+    /// a chat can overwrite so that this shows other lines than the commit the forge receives;
+    /// `no_chat_clone_is_read_for_a_held_act` fails on any other use in the source.
+    pub fn of_trusted_store(store: impl Into<std::path::PathBuf>) -> GitTrees {
+        let clone = store;
         GitTrees {
             clone: clone.into(),
         }

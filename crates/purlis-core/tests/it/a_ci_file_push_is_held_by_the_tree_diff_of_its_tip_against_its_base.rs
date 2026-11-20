@@ -45,7 +45,7 @@ impl Clone {
     }
 
     fn trees(&self) -> GitTrees {
-        GitTrees::of(&self.path)
+        GitTrees::of_trusted_store(&self.path)
     }
 }
 

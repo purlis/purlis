@@ -48,8 +48,9 @@ pub trait HeldContext: Send + Sync {
     fn attended(&self) -> bool;
     /// Seconds since the epoch.
     fn now(&self) -> u64;
-    /// The forge (as the person), the clone's trees and the recorded repos for `repo`.
-    fn world(&self, chat: &ChatId, repo: &Repo) -> Result<OwnedWorld, String>;
+    /// The forge (as the person), the clone's trees and the recorded repos for `repo`, for chat
+    /// `session`: read at the ask, and again at each press.
+    fn world(&self, session: u32, repo: &Repo) -> Result<OwnedWorld, String>;
     /// A merge of `request`: raised on the merge hold, and the sentence the chat is told.
     fn merge(&self, chat: &ChatId, request: &Request) -> String;
 }
@@ -89,7 +90,7 @@ impl HeldSink for Handoff {
         let Some(repo) = repo_of(requested) else {
             return not_asked(Refused::Forge("the request names no repo".to_owned()));
         };
-        let world = match self.context.world(chat, repo) {
+        let world = match self.context.world(session, repo) {
             Ok(world) => world,
             Err(why) => return not_asked(Refused::Forge(why)),
         };

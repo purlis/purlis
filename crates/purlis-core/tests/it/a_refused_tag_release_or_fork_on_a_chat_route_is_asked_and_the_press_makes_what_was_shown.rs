@@ -31,7 +31,7 @@ impl HeldContext for App {
     fn now(&self) -> u64 {
         100
     }
-    fn world(&self, _: &ChatId, _: &Repo) -> Result<OwnedWorld, String> {
+    fn world(&self, _: u32, _: &Repo) -> Result<OwnedWorld, String> {
         Ok(OwnedWorld {
             forge: self.forge.clone(),
             trees: Arc::new(NoTrees),

@@ -10,7 +10,8 @@
 pub struct InvalidTag;
 
 /// **A tag's name**, without `refs/tags/`: 1 to 255 bytes, none of the characters git refuses in a
-/// ref, no component starting with `.` or ending in `.lock`, and not a commit's own 40 or 64 digit
+/// ref (**nor a zero-width, direction or other character that draws nothing**, which would make a
+/// name read as another), no component starting with `.` or ending in `.lock`, and not a commit's own 40 or 64 digit
 /// spelling (a tag named like a commit is read two ways).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -68,9 +69,12 @@ fn is_tag(name: &str) -> bool {
         || name.contains("..")
         || name.contains("//")
         || name.contains("@{")
-        || name
-            .chars()
-            .any(|c| c.is_whitespace() || c.is_control() || "~^:?*[\\".contains(c))
+        || name.chars().any(|c| {
+            c.is_whitespace()
+                || c.is_control()
+                || super::prepare::unseen(c)
+                || "~^:?*[\\".contains(c)
+        })
     {
         return false;
     }

