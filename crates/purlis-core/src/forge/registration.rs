@@ -85,8 +85,8 @@ pub fn on(kind: Kind, host: &str) -> Option<&'static Registration> {
 }
 
 /// The client id the person pinned for `kind` on `host`: the registration of a self-hosted
-/// server, kept per host (one login, slice G). **Not built yet**: slice G builds the store and
-/// replaces this body, and until then no host has one. The readiness check asks it, so a
+/// server, kept per host. The store is slice G's of one login, which gives this function its
+/// body; with none in this branch, no host has a pin. The readiness check asks it, so a
 /// self-hosted server that has a pinned client id is not told it has no registration.
 pub fn pinned_client_id(_kind: Kind, _host: &str) -> Option<String> {
     None
