@@ -1256,10 +1256,25 @@ pub(super) fn keep_refreshed(
     granted: &Granted,
     was: Option<&SecretString>,
     now: u64,
-) -> Result<(), String> {
+) -> Result<KeepOutcome, String> {
     crate::applog::keep_out(&granted.access);
     if let Some(refresh) = &granted.refresh {
         crate::applog::keep_out(refresh);
+    }
+    // Compare and set: the item is written only while it still holds the refresh token `was`,
+    // the one this renewal spent. A fresh sign-in or another process's renewal since is never
+    // overwritten by a stale pair, and an item another process ended is never made again.
+    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    let current = kept_afresh(keyring, account)?;
+    let holds_it = current.as_ref().is_some_and(|now_kept| {
+        now_kept
+            .refresh
+            .as_ref()
+            .map(|r| r.expose_secret().to_string())
+            == was.map(|r| r.expose_secret().to_string())
+    });
+    if !holds_it {
+        return Ok(KeepOutcome::Superseded);
     }
     let item = pair_of(granted, was, now);
     keyring
@@ -1270,7 +1285,17 @@ pub(super) fn keep_refreshed(
                 unechoed(e.message.to_string(), &granted.access)
             )
         })
-        .map(|_| ())
+        .map(|_| KeepOutcome::Written)
+}
+
+/// How [`keep_refreshed`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum KeepOutcome {
+    /// The renewed pair is in the keyring item.
+    Written,
+    /// The item no longer holds the refresh token this renewal spent (it was signed in again,
+    /// renewed elsewhere, or ended): nothing was written.
+    Superseded,
 }
 
 /// The forge ended the sign-in of the account `id` (ADR 0077 §3: a refresh it refuses): the

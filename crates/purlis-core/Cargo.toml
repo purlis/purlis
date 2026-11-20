@@ -281,10 +281,13 @@ fenced = []
 # What a test playing a chat's hook inside the host's own process needs and nothing else may
 # call (`hookwire::permission::ask_permission_of_an_admitted_host`, HP-6). Only tests turn it on.
 test-support = []
-# The forge proxy's listener (one login, slice A2; ADR 0128 D3a to D3c): the per-chat unix socket
-# and `CONNECT` endpoint that read a chat's request, ask the proxy's core, and send what it allows
-# to the forge. Off by default: nothing starts it until slice B's wiring does, and CI builds and
-# tests it with the feature on (`one-login-proxy-listener.yml`).
+# One login (ADR 0128), off by default; only a test or the app's wiring turns it on, and no
+# release build does until slice J's wiring starts a listener.
+# - the forge proxy's listener (slice A2; D3a to D3c): the per-chat unix socket and `CONNECT`
+#   endpoint that read a chat's request, ask the proxy's core, and send what it allows to the forge.
+#   CI builds and tests it with the feature on (`one-login-proxy-listener.yml`);
+# - the end-to-end test (slice I): `tests/it/one_login_end_to_end.rs` runs the real `gh`, `glab`
+#   and `git` against a fake forge, so it needs those programs.
 forge-wiring = ["dep:rcgen", "dep:httparse"]
 
 [dev-dependencies]
