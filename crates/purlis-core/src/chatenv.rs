@@ -925,6 +925,37 @@ mod tests {
     }
 
     #[test]
+    fn a_hosts_forge_connection_stays_out_of_a_chat_under_both_spellings_whoever_lists_it() {
+        let hex = "6769746875622e636f6d";
+        let names: Vec<String> = ["TOKEN", "TOKEN_FILE", "TOKEN_EXPIRES_AT", "KIND", "ACCEPT"]
+            .iter()
+            .flat_map(|family| {
+                ["PURLIS", "CHARTER"]
+                    .iter()
+                    .map(move |prefix| format!("{prefix}_FORGE_{family}__{hex}"))
+            })
+            .chain(["PURLIS_ROOT".to_string()])
+            .collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        // Listed by exact name and by prefix, and neither brings one in.
+        assert_eq!(
+            kept(&refs, None, &refs, &nothing),
+            ["PURLIS_ROOT"],
+            "a connection variable reached a chat"
+        );
+        assert_eq!(
+            kept(&refs, None, &["PURLIS_*", "CHARTER_*"], &nothing),
+            ["PURLIS_ROOT"]
+        );
+        assert!(crate::forge::credential::is_connection_variable(
+            "charter_forge_token__6769746875622e636f6d"
+        ));
+        assert!(!crate::forge::credential::is_connection_variable(
+            "PURLIS_FORGE_API_URL"
+        ));
+    }
+
+    #[test]
     fn what_is_never_passed_stays_out_whoever_lists_it() {
         let strip = |name: &OsStr| name == "OP_SERVICE_ACCOUNT_TOKEN" || name == "PROD_1P_TOKEN";
         assert_eq!(

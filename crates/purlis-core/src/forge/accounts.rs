@@ -1267,7 +1267,10 @@ pub(super) fn keep_refreshed(
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let current = kept_afresh(keyring, account)?;
     let holds_it = current.as_ref().is_some_and(|now_kept| {
-        now_kept.refresh.as_ref().map(|r| r.expose_secret().to_string())
+        now_kept
+            .refresh
+            .as_ref()
+            .map(|r| r.expose_secret().to_string())
             == was.map(|r| r.expose_secret().to_string())
     });
     if !holds_it {

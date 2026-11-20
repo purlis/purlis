@@ -1263,10 +1263,10 @@ pub(crate) mod tests {
             .token_at(&machine.account, machine.expires_at - 60)
             .unwrap();
         assert!(!going(&id, |g| g.told_pin), "told_pin outlived the pin");
-        // Moved again: told again.
+        // Moved again: told again. (The renewal above made a new token, so the time is its.)
         pin("Iv1.another-application");
         refresher
-            .token_at(&machine.account, machine.expires_at - 60)
+            .token_at(&machine.account, machine.expires_at + 28_700)
             .unwrap();
         assert!(going(&id, |g| g.told_pin));
     }
@@ -1384,7 +1384,8 @@ pub(crate) mod tests {
         let machine = machine(Kind::GitHub, "github.com", Method::Device);
         let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
         let refresher = machine.refresher(&forge);
-        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let mut command = std::process::Command::new("true");
+        let mut child = crate::forklock::spawn(&mut command).unwrap();
         let gone = child.id();
         child.wait().unwrap();
         held_by(&machine, &refresher, gone);

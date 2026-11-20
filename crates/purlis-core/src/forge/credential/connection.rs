@@ -388,20 +388,19 @@ impl TokenConnection {
             // Two variables of one level (D9.2) that say different tokens are a conflict, not
             // an order: `GH_TOKEN` does not beat `GITHUB_TOKEN`. The same value twice is one
             // choice made twice, as Actions sets them.
-            if let Some(peer) = peer_of(&candidate.var) {
-                if let Some(other) = self.set(peer) {
-                    if other.trim() != value.trim() && self.offers(host, peer) {
-                        return Err(unusable(
-                            host,
-                            format!(
-                                "{} and {peer} are both set to different tokens, and purlis \
-                                 does not choose between them. Unset one, and start purlis \
-                                 again.",
-                                candidate.var
-                            ),
-                        ));
-                    }
-                }
+            if let Some(peer) = peer_of(&candidate.var)
+                && let Some(other) = self.set(peer)
+                && other.trim() != value.trim()
+                && self.offers(host, peer)
+            {
+                return Err(unusable(
+                    host,
+                    format!(
+                        "{} and {peer} are both set to different tokens, and purlis does not \
+                         choose between them. Unset one, and start purlis again.",
+                        candidate.var
+                    ),
+                ));
             }
             return Ok(Some((candidate, value)));
         }
@@ -487,7 +486,9 @@ impl TokenConnection {
                 ),
             ));
         };
-        if class == Class::Unrecognised && !from.job && !self.accepts(host, "unrecognised")? {
+        // Read whether or not it is needed: a variable purlis names that is not text is an error.
+        let accepted = self.accepts(host, "unrecognised")?;
+        if class == Class::Unrecognised && !from.job && !accepted {
             return Err(unusable(
                 host,
                 format!(
