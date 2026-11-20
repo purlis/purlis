@@ -2502,4 +2502,23 @@ mod tests {
             );
         }
     }
+
+    /// **A hedged line with a real merge and an unclosable fragment is still held, for the
+    /// merge** (#7245, round 5 ruling): the unclosable check is skipped only for a line read as
+    /// commands solely by bash 3.2's hedge, after that line's merge readings found nothing.
+    #[test]
+    fn a_hedged_line_with_a_merge_and_an_unclosable_fragment_is_held_for_the_merge() {
+        let paragraph = "The guard didn't read `\"$(cat <<'EOF'` (see #917), so `echo \"$(date)\"` \
+                         was refused.\n- 1) the reader\n\n";
+        let body = paragraph.repeat(65_536 / paragraph.len());
+        for merge_line in ["gh pr merge 7", "gh pr merge 7 && echo \"$(cat <<EOF)"] {
+            let cmd = format!("git commit -m \"$(cat <<'EOF'\n{body}{merge_line}\nEOF\n)\"");
+            let said = release_floor_reason(&cmd, true)
+                .unwrap_or_else(|| panic!("not held: {merge_line}"));
+            assert!(
+                !said.contains("can't tell where it ends"),
+                "{merge_line}: {said}"
+            );
+        }
+    }
 }
