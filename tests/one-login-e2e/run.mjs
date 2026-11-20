@@ -341,7 +341,7 @@ async function main() {
     expect(!hit(rp.outputs.join('\n')), 'a token is in something a command printed');
     for (const f of [github, gitlab]) {
       expect(f.log.every((e) => !e.sawForbidden), `${f.kind}: the chat's sentinel reached the forge`);
-      const strangers = f.log.flatMap((e) => e.credentials).filter((c) => !f.issued.has(c));
+      const strangers = f.log.flatMap((e) => e.credentials).filter((c) => !f.issued.has(c) && c !== app.sentinel); // the sentinel is caught by sawForbidden; the test replays it once on purpose
       expect(strangers.length === 0, `${f.kind}: the forge saw a credential it never issued`);
     }
     const inKeyring = [...app.keyring.values()].every((k) => secrets.includes(k.access));
