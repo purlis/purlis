@@ -31,6 +31,7 @@ import http from 'node:http';
 import https from 'node:https';
 import path from 'node:path';
 import tls from 'node:tls';
+import net from 'node:net';
 import zlib from 'node:zlib';
 import { describe } from './graphql-lite.mjs';
 import { run, tool } from './harness.mjs';
@@ -115,7 +116,32 @@ function pushCommands(body) {
  *           forges: Record<'github' | 'gitlab', any> }} o
  */
 export async function createApp({ work, ca, clock, forges }) {
-  const sentinel = `sentinel-${crypto.randomBytes(24).toString('base64url')}`; // TODO(slice A): per chat, 128 bits, constant-time compare
+  let sentinel = `sentinel-${crypto.randomBytes(24).toString('base64url')}`; // stand-in mode only; with the core it is the core's
+  // With PURLIS_DECIDE_ADDR set (the Rust test sets it), every request is decided by slice A's `ForgeProxy`, hosted by
+  // that test; without it this file's own short list decides, so `node run.mjs` runs alone.
+  const BRIDGE = process.env.PURLIS_DECIDE_ADDR ?? '';
+  const CHAT = 'e2e-chat';
+  const decide = (msg) =>
+    new Promise((resolve, reject) => {
+      const [h, p] = BRIDGE.split(':');
+      const sock = net.connect(Number(p), h, () => sock.write(`${JSON.stringify({ chat: CHAT, ...msg })}\n`));
+      let buf = '';
+      sock.on('data', (c) => {
+        buf += c;
+        if (buf.includes('\n')) {
+          sock.end();
+          try {
+            resolve(JSON.parse(buf));
+          } catch (e) {
+            reject(e);
+          }
+        }
+      });
+      sock.on('error', reject);
+    });
+  const syncCredential = async (forge) => {
+    if (BRIDGE) await decide({ op: 'credential', host: forge.host, token: keyring.get(forge.host).access });
+  };
   const sockDir = fs.mkdtempSync(path.join(work, 's-'));
   fs.chmodSync(sockDir, 0o700);
   const sockPath = path.join(sockDir, 'p.sock');
@@ -166,6 +192,7 @@ export async function createApp({ work, ca, clock, forges }) {
         keyring.set(forge.host, { access: t.access_token, refresh: t.refresh_token ?? null, expiresAt: t.expires_in ? clock.now() + t.expires_in * 1000 : null });
         const me = JSON.parse((await asPerson(forge, { pathname: forge.kind === 'github' ? '/user' : '/api/v4/user' })).body);
         keyring.get(forge.host).account = me.login ?? me.username;
+        await syncCredential(forge);
         return keyring.get(forge.host).account;
       }
       if (t.error !== 'authorization_pending') throw new Error(`sign-in failed: ${t.error}`);
@@ -187,6 +214,7 @@ export async function createApp({ work, ca, clock, forges }) {
       if (!t.access_token) throw new Error(`renewal refused: ${t.error}`);
       keyring.set(forge.host, { ...k, access: t.access_token, refresh: t.refresh_token ?? null, expiresAt: t.expires_in ? clock.now() + t.expires_in * 1000 : null });
       refreshes.push(`${forge.host}: ${why}`);
+      await syncCredential(forge);
     })().finally(() => renewing.delete(forge.host));
     renewing.set(forge.host, p);
     return p;
@@ -420,6 +448,91 @@ export async function createApp({ work, ca, clock, forges }) {
     return forward(Boolean(j.git), j.rec);
   }
 
+  // ---- the same proxy, with slice A's policy deciding (the Rust test hosts it) ---------------------------------
+
+  const branchesAdvertised = (buf) => {
+    const out = [];
+    let i = 0;
+    while (i + 4 <= buf.length) {
+      const len = parseInt(buf.subarray(i, i + 4).toString(), 16);
+      if (Number.isNaN(len)) break;
+      if (len === 0) {
+        i += 4;
+        continue;
+      }
+      const m = /^[0-9a-f]{40} refs\/heads\/([^\0\n]+)/.exec(buf.subarray(i + 4, i + len).toString());
+      if (m) out.push(m[1]);
+      i += len;
+    }
+    return out;
+  };
+
+  /** TODO(slice A2): the listener builds this from the connection. Here: gh's socket speaks to the API host, a CONNECT to its own. */
+  async function handleBridged(req, res, tunnelHost, via) {
+    const send = (status, body, headers = {}) => {
+      res.writeHead(status, { 'content-type': 'application/json', connection: 'close', ...headers });
+      res.end(typeof body === 'string' ? body : JSON.stringify(body));
+    };
+    const record = (verdict, reason, extra = {}) => audit.push({ via, host: tunnelHost, method: req.method, url: req.url.split('?')[0], verdict, reason, ...extra });
+    const body = await readBody(req);
+    const url = new URL(req.url, 'http://x');
+    const api = via === 'unix socket';
+    const seenHost = api ? 'api.github.com' : tunnelHost;
+    const forge = byHost.get(tunnelHost);
+    if (!forge) {
+      record('refuse', 'a host that is not a recorded forge');
+      return send(403, { message: REFUSED });
+    }
+    const headers = [];
+    for (let i = 0; i < req.rawHeaders.length; i += 2) headers.push([req.rawHeaders[i], req.rawHeaders[i + 1]]);
+    const hostAt = headers.findIndex(([n]) => n.toLowerCase() === 'host');
+    if (hostAt >= 0) headers[hostAt] = ['Host', seenHost];
+    else headers.push(['Host', seenHost]);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (keyring.has(forge.host)) await accessFor(forge); // a renewal is pushed to the core before it decides
+      const reply = await decide({ op: 'handle', method: req.method, host: seenHost, port: 443, target: req.url, headers, body: body.toString('base64') });
+      if (reply.outcome === 'refused') {
+        const gitPath = /^\/[^/]+\/[^/]+\.git\//.test(url.pathname);
+        if (reply.refusal === 'NoSentinel' && gitPath) {
+          record('refuse', 'no sentinel yet: challenged');
+          return send(401, { message: 'sign in' }, { 'www-authenticate': 'Basic realm="purlis"' });
+        }
+        if (reply.refusal === 'Merge') {
+          // TODO(slice F): the hold is the product's; here the core's refusal raises the ask, and what the ask is for is read from the request.
+          const j = await judge(forge, forge.host, req.method, url.pathname, url.searchParams, body);
+          if (j.verdict === 'hold') {
+            await raiseMerge(forge, j.rec, j.number, j.via);
+            record('hold', `Merge (${j.via})`);
+            return send(403, { message: HELD });
+          }
+        }
+        record('refuse', reply.refusal);
+        return send(403, { message: `${REFUSED} (${reply.refusal})` });
+      }
+      const target = new URL(reply.upstream);
+      const out = {};
+      for (const [n, v] of reply.headers) if (!HOP.has(n.toLowerCase())) out[n.toLowerCase()] = v;
+      const sendBody = reply.body == null ? body : Buffer.from(reply.body, 'base64');
+      const r = await upstream(forge, { method: req.method, pathname: target.pathname + target.search, headers: { ...out, host: forge.host }, body: sendBody.length ? sendBody : null });
+      if (r.status === 401 && reply.credentialed && attempt === 0 && keyring.get(forge.host)?.refresh) {
+        await renew(forge, 'after a 401');
+        continue;
+      }
+      if (reply.class === 'GitRefs' && url.searchParams.get('service') === 'git-receive-pack' && r.status === 200) {
+        const m = /^\/([^/]+\/[^/]+)\.git\//.exec(url.pathname);
+        if (m) await decide({ op: 'advertised', host: forge.host, repo_path: m[1], branches: branchesAdvertised(r.body) });
+      }
+      if (reply.class === 'GitPush' && r.status < 300) await decide({ op: 'confirm', id: reply.id });
+      record('allow', reply.class);
+      const hdr = {};
+      for (const [k, v] of Object.entries(r.headers)) if (!HOP.has(k)) hdr[k] = v;
+      res.writeHead(r.status, { ...hdr, connection: 'close' });
+      return res.end(r.body);
+    }
+    return send(502, { message: 'the forge refused the renewed credential' });
+  }
+  const dispatch = BRIDGE ? handleBridged : handle;
+
   // ---- the listeners ----------------------------------------------------------------------------
 
   const servers = [];
@@ -435,10 +548,10 @@ export async function createApp({ work, ca, clock, forges }) {
 
   // gh: plain HTTP on the chat's unix socket; `github.localhost` is the one recorded GitHub host. TODO(slice A): two GitHub hosts.
   const githubHost = forges.github.host;
-  await listen(http.createServer((req, res) => handle(req, res, githubHost, 'unix socket').catch((e) => { res.writeHead(502); res.end(String(e)); })), sockPath);
+  await listen(http.createServer((req, res) => dispatch(req, res, githubHost, 'unix socket').catch((e) => { res.writeHead(502); res.end(String(e)); })), sockPath);
 
   // git and glab: a CONNECT the proxy terminates under the CA, for a recorded forge host only.
-  const inside = http.createServer((req, res) => handle(req, res, req.socket.tunnelTo.split(':')[0], 'connect').catch((e) => { res.writeHead(502); res.end(String(e)); }));
+  const inside = http.createServer((req, res) => dispatch(req, res, req.socket.tunnelTo.split(':')[0], 'connect').catch((e) => { res.writeHead(502); res.end(String(e)); }));
   const connect = http.createServer((_, res) => {
     res.writeHead(405);
     res.end();
@@ -545,7 +658,17 @@ exec "$REAL" "$@"
   }
 
   return {
-    sentinel,
+    get sentinel() {
+      return sentinel;
+    },
+    /** The chat's repos are recorded: with the core, enrol it and take the sentinel it minted. TODO(slice J): the app does this when a chat starts. */
+    async enrol() {
+      if (!BRIDGE) return sentinel;
+      const repos = [...recorded.values()].map((r) => ({ kind: r.forge, host: r.host, port: 443, path: `${r.owner}/${r.name}`, default_branch: 'main', node_id: r.forge === 'github' ? `R_${r.id}` : null, project_id: r.forge === 'gitlab' ? r.id : null }));
+      sentinel = (await decide({ op: 'enrol', repos })).sentinel;
+      return sentinel;
+    },
+    bridged: Boolean(BRIDGE),
     keyring,
     recorded,
     asks,

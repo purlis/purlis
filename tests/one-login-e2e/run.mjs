@@ -58,7 +58,6 @@ async function main() {
   const github = await startForge('github', 'github.com', null);
   const gitlab = await startForge('gitlab', 'gitlab.com', 2 * 3600);
   const app = await createApp({ work, ca, clock, forges: { github, gitlab } });
-  for (const f of [github, gitlab]) f.mustNotSee.add(app.sentinel);
 
   const versions = Object.fromEntries(
     [['gh', ['--version']], ['glab', ['--version']], ['git', ['--version']], ['node', ['--version']]].map(([c, a]) => {
@@ -108,18 +107,22 @@ async function main() {
 
   // ---- clone as a project, recorded ------------------------------------------------------------
 
-  chat = app.makeChat();
-  await rp.step('clone github.com/o/r as a project: recorded, and the remote is unchanged', async () => {
-    const rec = await app.recordProject(github, 'o', 'r');
-    expect(rec.id === github.repos.get('o/r').id && app.recorded.has('github.com/o/r'), `the project is recorded with the forge's own id: ${JSON.stringify(rec)}`);
+  await rp.step(`record both projects, then start the chat${app.bridged ? ' (slice A\'s ForgeProxy enrols it and mints its sentinel)' : ''}`, async () => {
+    const g = await app.recordProject(github, 'o', 'r');
+    expect(g.id === github.repos.get('o/r').id && app.recorded.has('github.com/o/r'), `the project is recorded with the forge's own id: ${JSON.stringify(g)}`);
+    const l = await app.recordProject(gitlab, 'o', 'r');
+    expect(l.id === gitlab.repos.get('o/r').id && app.recorded.has('gitlab.com/o/r'), `the project is recorded with the forge's own id: ${JSON.stringify(l)}`);
+    await app.enrol();
+    for (const f of [github, gitlab]) f.mustNotSee.add(app.sentinel);
+    chat = app.makeChat();
+  });
+  await rp.step('clone github.com/o/r as a project: the remote is unchanged', async () => {
     ok(await chatRun('git', ['clone', 'https://github.com/o/r.git', 'github-r']), 'git clone');
     GH = path.join(chat.projects, 'github-r');
     const r = await chatRun('git', ['remote', '-v'], GH);
     expect(r.stdout.includes('https://github.com/o/r.git (fetch)'), `git remote -v should say github.com: ${r.stdout}`);
   });
-  await rp.step('clone gitlab.com/o/r as a project: recorded, and the remote is unchanged', async () => {
-    const rec = await app.recordProject(gitlab, 'o', 'r');
-    expect(rec.id === gitlab.repos.get('o/r').id && app.recorded.has('gitlab.com/o/r'), `the project is recorded with the forge's own id: ${JSON.stringify(rec)}`);
+  await rp.step('clone gitlab.com/o/r as a project: the remote is unchanged', async () => {
     ok(await chatRun('git', ['clone', 'https://gitlab.com/o/r.git', 'gitlab-r']), 'git clone');
     GL = path.join(chat.projects, 'gitlab-r');
     const r = await chatRun('git', ['remote', '-v'], GL);
