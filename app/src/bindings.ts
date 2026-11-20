@@ -1040,8 +1040,8 @@ export const commands = {
 	/**
 	 *  **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 	 *  browser logins may be filled on the pool's runner while the app runs and the pool stays as
-	 *  the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
-	 *  person typed. Every chat of that persona that waits on that pool is answered with it, and
+	 *  the Ask showed it; Keep off refuses them there until the pool changes or another window of
+	 *  this machine gives a yes, with the reason the person typed. Every chat of that persona that waits on that pool is answered with it, and
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
@@ -11171,7 +11171,13 @@ export type GrantWhat =
  *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
  *  memory only.
  */
-"run-grant";
+"run-grant" | 
+/**
+ *  A persona's browser logins on a pool's runner (#7190): the opt-in the person gave once,
+ *  kept on this machine across a restart and bound to the pool's definition and image. Given
+ *  from its own Ask (`answer_pool_login`), never from a block's Allow.
+ */
+"pool-login";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -15174,6 +15180,13 @@ export type PoolVersion = {
 	 *  each by name with what is left of it: the Pools group names each in a line of its own.
 	 */
 	not_checked: PoolNotChecked[],
+	/**
+	 *  **How many runners on its engine belong to another desktop** (#7192), as a line ("2
+	 *  runners belong to another desktop"): two desktops can share one remote engine, each with
+	 *  its own runner of a pool. Only said, never acted on. Left out where there are none or the
+	 *  engine could not be asked.
+	 */
+	other_desktops?: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */

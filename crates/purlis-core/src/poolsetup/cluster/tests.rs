@@ -392,6 +392,7 @@ fn a_cluster_pool(owned: bool, mints: bool, sign_ins: SignIns) -> PoolFacts {
         name: "team".into(),
         runner: Runner::Running,
         sign_ins,
+        others: None,
         cluster: Some(KeptHere {
             context: "kind-team".into(),
             pool: "team".into(),

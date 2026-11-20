@@ -68,6 +68,10 @@ impl HarnessAdapter for ClaudeCode {
         // the chat runs in (its manifests, #1336). A form of another kind is not one, and the
         // chat is armed with nothing rather than started without it.
         let form = sandbox.applied().map(|applied| applied.form_in(cwd));
+        // A chat on a repo that claims the forge lock (#7205), before `sandbox` names its form.
+        let forge_locked = sandbox
+            .applied()
+            .is_some_and(crate::sandbox::Applied::forge_locked);
         let wrapped;
         let sandbox = match &form {
             None => None,
@@ -110,7 +114,8 @@ impl HarnessAdapter for ClaudeCode {
             args: [
                 args,
                 // A grade's chat loads no MCP server but purlis's (SK-16): none of the person's
-                // own, nor a project's, nor a connector.
+                // own, nor a project's, nor a connector. (A chat on a repo that claims the forge
+                // lock keeps them all but a forge's, which [`denied_tools`] denies, #7205.)
                 if kit.graded {
                     words(["--strict-mcp-config"])
                 } else {
@@ -140,7 +145,7 @@ impl HarnessAdapter for ClaudeCode {
                             own_listing(kit.own),
                         ),
                         sandbox,
-                        &denied_tools(kit),
+                        &denied_tools(kit, forge_locked),
                         screened.as_ref(),
                         kit.graded,
                         // An outcome eval's chat has no shell unless its skill asked for one (#4476).
@@ -1104,7 +1109,7 @@ fn mcp_config(kit: Kit<'_>) -> String {
 }
 
 /// The tools the chat's persona denies it ([`crate::personaverbs::chatstart::denied_tools`]).
-fn denied_tools(kit: Kit<'_>) -> Vec<String> {
+fn denied_tools(kit: Kit<'_>, forge_locked: bool) -> Vec<String> {
     let mut denied = kit.persona.map_or_else(Vec::new, |of| {
         crate::personaverbs::chatstart::denied_tools(of.root, of.persona)
     });
@@ -1120,6 +1125,11 @@ fn denied_tools(kit: Kit<'_>) -> Vec<String> {
     }
     if kit.writes_its_piece {
         denied.push(format!("mcp__{}", crate::chattools::SERVER));
+    }
+    // A chat on a repo that claims the forge lock has no forge connector's tool (#7205); every
+    // other server, purlis's own and the person's, is as it was.
+    if forge_locked {
+        denied.extend(crate::forgelock::claude_denied());
     }
     denied
 }

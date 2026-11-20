@@ -39,6 +39,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use zeroize::Zeroizing;
 
+use super::agentidentity::{CHAT_PERMISSIONS, WORKFLOWS_PERMISSION};
 use super::transport::{Call, Field, Method, Transport};
 use super::{Forge, Kind};
 
@@ -543,6 +544,76 @@ fn not_found(reply: &super::transport::Reply) -> bool {
     reply.status == Some(404) || reply.err.contains("(HTTP 404)")
 }
 
+/// **What a chat's token may do** (#7206, design `docs/research/forge-credential-lock.md` §1) is
+/// [`CHAT_PERMISSIONS`], and `workflows` only through [`mint_over_with`], so a permission the App
+/// gains later (`administration`, `actions`, `statuses`, `deployments`) is not on the chat's
+/// token. The mint asks for that **intersected with what the installation has**, each at the lesser
+/// level, as the operator's mint does (#7249): a permission the installation lacks leaves the token
+/// narrower, not refused.
+///
+/// This does **not** close the release gaps (R5b delete, R3 draft, R6 notes edit): GitHub has no
+/// narrower permission for them than `contents:write`, which the chat needs to push.
+fn allowed(workflows: bool) -> impl Iterator<Item = (&'static str, &'static str)> {
+    CHAT_PERMISSIONS
+        .iter()
+        .chain(workflows.then_some(&WORKFLOWS_PERMISSION))
+        .copied()
+}
+
+/// The mint's `permissions[..]` fields: [`allowed`] where `held` (the installation's permissions)
+/// has it, at the lesser level.
+fn permission_fields(
+    held: &serde_json::Map<String, serde_json::Value>,
+    workflows: bool,
+) -> Vec<Field> {
+    allowed(workflows)
+        .filter_map(|(name, level)| {
+            let level = lesser(level, held.get(name)?.as_str()?)?;
+            Some(Field::text(&format!("permissions[{name}]"), level))
+        })
+        .collect()
+}
+
+/// The lesser of two permission levels, or None for one that is neither `read` nor `write`.
+fn lesser<'a>(a: &'a str, b: &'a str) -> Option<&'a str> {
+    let rank = |level: &str| match level {
+        "read" => Some(1),
+        "write" => Some(2),
+        _ => None,
+    };
+    if rank(a)? <= rank(b)? {
+        Some(a)
+    } else {
+        Some(b)
+    }
+}
+
+/// Whether the permissions GitHub's reply says the token has are all within [`allowed`], at no
+/// higher a level. A reply that names none is not within it: the token is refused, not kept.
+fn within_allowlist(reply: &serde_json::Value, workflows: bool) -> bool {
+    let Some(granted) = reply
+        .get("permissions")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return false;
+    };
+    granted.iter().all(|(name, level)| {
+        allowed(workflows).any(|(allowed_name, allowed_level)| {
+            allowed_name == name
+                && level
+                    .as_str()
+                    .is_some_and(|level| lesser(level, allowed_level) == Some(level))
+        })
+    })
+}
+
+/// Whether `reply` is GitHub's 422 about a permission, and not another 422 (a repo the installation
+/// cannot reach, say).
+fn permission_refusal(reply: &super::transport::Reply) -> bool {
+    (reply.status == Some(422) || reply.err.contains("(HTTP 422)"))
+        && (reply.out.contains("permission") || reply.err.contains("permission"))
+}
+
 /// **The token `transport`'s App mints for `remotes`** (E3), all on one host, sent with the
 /// App's JWT as its bearer: each repo's installation, then the installation the clone `here`
 /// (the run's folder) is on, or else the only one, mints a token limited to those of its repos.
@@ -552,6 +623,18 @@ pub fn mint_over(
     forge: &Forge,
     remotes: &[Remote],
     here: Option<&Path>,
+) -> Result<Minted, String> {
+    mint_over_with(transport, forge, remotes, here, false)
+}
+
+/// [`mint_over`], with `workflows` (the App has it and the person ticked it) added to the
+/// token's permissions.
+pub fn mint_over_with(
+    transport: &dyn Transport,
+    forge: &Forge,
+    remotes: &[Remote],
+    here: Option<&Path>,
+    workflows: bool,
 ) -> Result<Minted, String> {
     let mut distinct: Vec<(&str, &str)> = remotes
         .iter()
@@ -570,6 +653,9 @@ pub fn mint_over(
         ));
     }
     let mut installed: Vec<(u64, &Remote)> = Vec::new();
+    // What each installation holds, as GitHub's answer for a repo of it says.
+    let mut held: std::collections::HashMap<u64, serde_json::Map<String, serde_json::Value>> =
+        std::collections::HashMap::new();
     let mut asked: Vec<(&str, &str)> = Vec::new();
     for remote in remotes.iter().filter(|remote| remote.host == forge.host) {
         if asked.contains(&(remote.owner.as_str(), remote.name.as_str())) {
@@ -597,10 +683,16 @@ pub fn mint_over(
                 reply.err.trim()
             ));
         }
-        let id = serde_json::from_str::<serde_json::Value>(&reply.out)
-            .ok()
+        let answer = serde_json::from_str::<serde_json::Value>(&reply.out).ok();
+        let id = answer
+            .as_ref()
             .and_then(|answer| answer.get("id")?.as_u64())
             .ok_or_else(|| "GitHub's answer named no installation".to_owned())?;
+        let permissions = answer
+            .as_ref()
+            .and_then(|answer| answer.get("permissions")?.as_object().cloned())
+            .unwrap_or_default();
+        held.insert(id, permissions);
         installed.push((id, remote));
     }
     let mut installations: Vec<u64> = installed.iter().map(|(id, _)| *id).collect();
@@ -633,19 +725,41 @@ pub fn mint_over(
         .collect();
     repos.sort();
     repos.dedup();
+    let permissions = permission_fields(
+        held.get(&installation).unwrap_or(&Default::default()),
+        workflows,
+    );
+    // Never mint without `permissions`: that is everything the App has.
+    if permissions.is_empty() {
+        return Err(
+            "the GitHub App's installation holds no permission a chat's token may ask \
+                    for (contents, issues, metadata, pull requests), so none was minted"
+                .to_owned(),
+        );
+    }
     let call = Call::write(
         Method::Post,
         format!("app/installations/{installation}/access_tokens"),
         repos
             .iter()
             .map(|name| Field::text("repositories[]", name))
+            .chain(permissions)
             .collect(),
     );
     let reply = transport
         .send(forge, &call)
         .map_err(|e| format!("GitHub could not be asked for a token ({})", e.said()))?;
+    let refused_as_too_much = permission_refusal(&reply);
     let out = Zeroizing::new(reply.out);
     if reply.code != 0 {
+        // Fail closed: never retry without `permissions`, which would mint everything the App has.
+        if refused_as_too_much {
+            return Err(format!(
+                "GitHub refused the permissions a chat's token asks for, so none was minted and \
+                 none was widened ({})",
+                reply.err.trim()
+            ));
+        }
         return Err(format!(
             "GitHub refused to mint a token for the App's installation ({})",
             reply.err.trim()
@@ -653,6 +767,15 @@ pub fn mint_over(
     }
     let answer: serde_json::Value = serde_json::from_str(&out)
         .map_err(|_| "GitHub's answer to the token request was not JSON".to_owned())?;
+    // The token is the allowlist or narrower, whatever GitHub was asked: a reply that has more is
+    // refused, not kept.
+    if !within_allowlist(&answer, workflows) {
+        return Err(
+            "GitHub minted a token with permissions beyond what a chat's token may have, so it \
+             was dropped and none was minted"
+                .to_owned(),
+        );
+    }
     let token = answer
         .get("token")
         .and_then(serde_json::Value::as_str)
