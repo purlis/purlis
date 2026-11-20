@@ -2416,6 +2416,40 @@ fn contains_funsub(text: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// #7245: the floor's reading of a large commit body is linear in the body. The body is timed
+    /// at its size and at four times it, each run on text the others did not see (so no kept
+    /// reading answers), the least of three runs each; a reading that grows with the square of
+    /// the body costs sixteen times as much at four times the size, and the bound is ten.
+    #[test]
+    fn the_floor_reads_a_large_body_in_time_linear_in_its_size() {
+        use std::time::{Duration, Instant};
+        let paragraph = "## Why\n\nThe guard didn't read `\"$(cat <<'EOF'` the way bash does (see \
+                         #917), so `echo \"$(date)\"` was refused. It's fixed: `$((1+2))`, \
+                         `<(sort a)` and `${x:-y}` are read as substitutions.\n\n\
+                         - 1) the reader (shellseg)\n- 2) the floor's \"eval\" walk\n\n";
+        let least = |times: usize| {
+            (0..3)
+                .map(|n| {
+                    let body = paragraph.repeat(times * 16_384 / paragraph.len());
+                    let tag = times * 10 + n;
+                    let cmd = format!("git commit -m \"$(cat <<'EOF'\n{body}run {tag}\nEOF\n)\"");
+                    let began = Instant::now();
+                    let said = merge_reason(&cmd);
+                    (began.elapsed(), said)
+                })
+                .min_by_key(|(took, _)| *took)
+                .expect("three runs")
+        };
+        let (one, said_one) = least(1);
+        let (four, said_four) = least(4);
+        assert_eq!(said_one, None, "a body's prose is no merge");
+        assert_eq!(said_four, None, "a body's prose is no merge");
+        assert!(
+            four < one * 10 + Duration::from_millis(50),
+            "4x the body took {four:?}, 1x took {one:?}: more than linear"
+        );
+    }
+
     /// T1-11's review: the floor reads for merges alone only while a merge read lasts, and a
     /// panic inside one leaves the thread reading the whole floor again, tags and pushes too.
     #[test]
