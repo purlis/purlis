@@ -196,6 +196,23 @@ pub fn tell_the_window_when_a_sign_in_ends(app: &tauri::AppHandle) {
     });
 }
 
+/// From now on each browser sign-in is renewed before it ends, on a thread of its own, with no
+/// prompt (ADR 0128 D1, `forge::credential::renewal`): a forge that refuses ends the sign-in and
+/// [`tell_the_window_when_a_sign_in_ends`] draws the Notice. Called once, as the app starts. A test
+/// build reaches no forge, so it renews nothing.
+pub fn keep_sign_ins_renewed() {
+    static KEPT: std::sync::OnceLock<purlis_core::forge::credential::renewal::Keeper> =
+        std::sync::OnceLock::new();
+    if purlis_core::fence::FENCED {
+        return;
+    }
+    let (Some(scope), Some(root)) = (HostScope::claim(), purlis_core::machine::config_root())
+    else {
+        return;
+    };
+    let _ = KEPT.set(purlis_core::forge::credential::renewal::Renewal::new(&scope, &root).keep());
+}
+
 /// Run `work` on a blocking thread: each act may wait on the keychain or the forge.
 pub(crate) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
@@ -413,7 +430,7 @@ pub async fn forge_device_sign_in_start(
     blocking(move || {
         host_scope()?;
         let host = accounts::host_named(kind, &host)?;
-        let registration = registration::on(kind, &host)
+        let registration = registration::resolve(&config_root()?, kind, &host)?
             .filter(|r| r.flow == registration::Flow::Device)
             .ok_or_else(|| no_device_flow(kind, &host))?;
         // A test build (the e2e build among them) has no person at a browser, and must never
@@ -687,6 +704,7 @@ mod tests {
             method: Method::Pat,
             state: State::SignedIn,
             scopes: Some(vec!["repo".into(), "read:org".into(), "gist".into()]),
+            client_id: None,
         });
         assert_eq!(row.method, "token");
         assert_eq!(row.kind, "github");
