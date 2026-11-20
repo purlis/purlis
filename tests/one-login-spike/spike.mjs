@@ -150,6 +150,7 @@ function forgeHandler(req, res) {
     }
     const host = req.headers.host;
     const body = Buffer.concat(chunks).toString();
+    if (body) entry.body = body.slice(0, 700);
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     if (method === 'GET' && normal.startsWith('/o/r.git/info/refs')) {
       const out = [];
@@ -459,7 +460,7 @@ function cases() {
   const helper = path.join(work, 'credential-sentinel.sh');
   fs.writeFileSync(helper, `#!/bin/sh\n[ "$1" = get ] && printf 'username=x-access-token\\npassword=${SENTINEL}\\n'\nexit 0\n`, { mode: 0o755 });
   const gitBase = ['-c', 'protocol.version=0', '-c', 'credential.helper=', '-c', `credential.helper=${helper}`];
-  const gitEnv = (home) => ({ GIT_CONFIG_GLOBAL: path.join(home, 'gitconfig'), GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' });
+  const gitEnv = (home) => ({ GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'), GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' });
   add({
     tool: 'git',
     mechanism: 'url.<proxy>.insteadOf + credential helper answering the sentinel (https, http.sslCAInfo)',
@@ -520,7 +521,7 @@ function cases() {
     });
   }
   const gitGlobal = (home) => {
-    fs.writeFileSync(path.join(home, 'gitconfig'), `[credential]\n\thelper =\n\thelper = ${path.join(work, 'credential-sentinel.sh')}\n[protocol]\n\tversion = 0\n`);
+    fs.writeFileSync(path.join(home, '.gitconfig'), `[credential]\n\thelper =\n\thelper = ${path.join(work, 'credential-sentinel.sh')}\n[protocol]\n\tversion = 0\n`);
   };
   const viaConnect = (home, trust) => ({ HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, ...(trust === 'env' ? { SSL_CERT_FILE: ca.pem, GIT_SSL_CAINFO: ca.pem } : {}), ...gitEnv(home) });
   add({
@@ -728,8 +729,8 @@ async function runCase(c, phase) {
     ...row,
     verdict: works ? 'works' : 'fails',
     detail: works
-      ? `forge saw ${good.map((e) => `${e.method} ${e.path} (Host ${e.host})`).join('; ')}${c.reachOnly ? `; exit ${r.code}: ${lastLine(r.stderr || r.stdout)}` : ''}`
-      : `exit ${r.code}; ${lastLine(r.stderr || r.stdout) || 'no output'}; the forge saw ${seen.length} request(s) [${seen.map((e) => `${e.method} ${e.path} -> ${e.status}`).join('; ')}], the proxy ${proxied.length} [${proxied.map((e) => `${e.via} ${e.method} ${e.url}`).join('; ')}]`,
+      ? `forge saw ${good.map((e) => `${e.method} ${e.path} (Host ${e.host})`).join('; ')}${c.reachOnly ? `; exit ${r.code}: ${(r.stderr || r.stdout).trim().split('\n').slice(0, 2).join(' | ').slice(0, 300)}` : ''}`
+      : `exit ${r.code}; ${(r.stderr || r.stdout).trim().split('\n').slice(0, 2).join(' | ').slice(0, 300) || 'no output'}; the forge saw ${seen.length} request(s) [${seen.map((e) => `${e.method} ${e.path} -> ${e.status}${e.body && c.label.includes('clone') ? ` body ${e.body}` : ''}`).join('; ')}], the proxy ${proxied.length} [${proxied.map((e) => `${e.via} ${e.method} ${e.url}`).join('; ')}]`,
     ...(leaked ? { leaked: true } : {}),
     ...(sentinelAtForge ? { sentinelReachedForge: true } : {}),
     output: lastLine(r.stdout),
