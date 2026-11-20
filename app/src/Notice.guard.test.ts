@@ -426,6 +426,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       ACTION +
       ". An Undo in Rules I made that could not take its rule's grant away: said in the list's own dialog, beside the rule, which stays (#6010)",
   },
+  "HeldActAsks.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". A held act's own row (one login F2): the question its first press asks once more, what a press that did nothing refused with, and what the second press made, said beside the row's answers",
+  },
   "KillSwitch.tsx": {
     count: 1,
     why: "the kill switch's refusal, on the title bar control it belongs to",
