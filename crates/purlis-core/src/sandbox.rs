@@ -5435,10 +5435,10 @@ impl Applied {
         // takes out, and before the PATH file below, which reads the folder it names.
         #[cfg(feature = "forge-wiring")]
         if let Some(route) = self.forge_route() {
-            let scratch = at.confinement.and_then(Confinement::tmp).ok_or_else(|| {
-                under("the forge route needs the chat's own folder, and it has none".to_owned())
-            })?;
-            let wiring = crate::forgewire::compose(&route, scratch)
+            // Written where no chat writes ([`crate::forgewire::wire_folder`]), never in the chat's
+            // own temporary folder: its `gh` goes first on the `PATH` of the harness, its hooks and
+            // its MCP servers, which run outside the chat's sandbox.
+            let wiring = crate::forgewire::compose(&route, &self.root)
                 .map_err(|why| under(format!("the forge route was not made: {why}")))?;
             let already = line
                 .env
@@ -8866,6 +8866,7 @@ pub mod compile_cache;
 pub mod confined;
 pub mod door;
 pub mod egress;
+pub mod forgedeny;
 pub mod grant;
 pub mod held;
 pub mod hosted;

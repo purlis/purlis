@@ -126,10 +126,10 @@ fn every_harness_is_given_exactly_the_wiring_the_design_names() {
         let at = |name: &str| get(&env, name).unwrap_or_else(|| panic!("{harness:?}: no {name}"));
         // gh.
         assert_eq!(at("GH_HOST"), "github.localhost", "{harness:?}");
-        assert_eq!(
-            at("GH_CONFIG_DIR"),
-            s.join("forge-wire/gh").to_str().unwrap()
-        );
+        // Written where no chat writes, never in the chat's own scratch folder.
+        let gh_dir = PathBuf::from(at("GH_CONFIG_DIR"));
+        assert!(gh_dir.starts_with(forgewire::wire_folder(s)), "{harness:?}");
+        assert!(gh_dir.ends_with("gh"), "{harness:?}");
         assert_eq!(
             at("GH_TOKEN"),
             SENTINEL,
@@ -186,9 +186,9 @@ fn every_harnesss_git_pairs_reset_the_helper_list_before_purlis_s_helper_and_not
             .iter()
             .position(|(k, v)| k == "credential.helper" && v.is_empty())
             .unwrap_or_else(|| panic!("{harness:?}: no reset in {got:?}"));
-        let tail = &got[at..at + 5];
+        let tail = &got[at..at + 15];
         assert!(
-            got[at + 5..].iter().all(|(k, _)| k == "core.hooksPath"),
+            got[at + 15..].iter().all(|(k, _)| k == "core.hooksPath"),
             "{harness:?}: {got:?}"
         );
         let helper =
@@ -207,7 +207,26 @@ fn every_harnesss_git_pairs_reset_the_helper_list_before_purlis_s_helper_and_not
                     ca.clone()
                 ),
                 ("http.https://github.com/.sslCAInfo".to_owned(), ca),
-            ],
+            ]
+            .into_iter()
+            .chain(
+                [
+                    "api.github.com",
+                    "git.example.org",
+                    "github.com",
+                    "githubusercontent.com",
+                    "gitlab.com",
+                ]
+                .into_iter()
+                .flat_map(|host| [host.to_owned(), format!("*.{host}")])
+                .map(|url| {
+                    (
+                        format!("http.https://{url}/.proxy"),
+                        "http://127.0.0.1:44123".to_owned(),
+                    )
+                })
+            )
+            .collect::<Vec<_>>(),
             "{harness:?}"
         );
         // After the reset no pair resets again, and no helper but purlis's is named at all.
@@ -246,7 +265,8 @@ fn only_the_forge_lock_s_files_name_the_chat_s_config_and_the_wiring_s_gh_folder
     let env = chat_env(Harness::Codex, scratch.path());
     // The lock's empty gh folder is replaced by the chat's own, which holds the socket setting.
     let gh = PathBuf::from(get(&env, "GH_CONFIG_DIR").unwrap());
-    assert_eq!(gh, scratch.path().join("forge-wire/gh"));
+    assert!(gh.starts_with(forgewire::wire_folder(scratch.path())));
+    assert!(!gh.starts_with(scratch.path().join("home")));
     assert!(gh.join("config.yml").is_file());
     assert!(!gh.join("hosts.yml").exists());
     // The lock's global git file and empty system config still stand, so no helper of the

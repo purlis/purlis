@@ -154,7 +154,7 @@ fn the_composed_environment_is_exactly_what_the_design_names() {
         ],
     );
     let wiring = compose(&route, dir.path()).expect("composed");
-    let gh = dir.path().join("forge-wire/gh");
+    let gh = wiring.bin.parent().unwrap().join("gh");
     let mut expected = vec![
         ("GH_HOST", "github.localhost".to_owned()),
         ("GH_CONFIG_DIR", gh.display().to_string()),
@@ -177,7 +177,17 @@ fn the_composed_environment_is_exactly_what_the_design_names() {
     assert_eq!(wiring.env, expected);
     // `GITLAB_HOST` stays the real one (glab's own inference), so it is not set.
     assert_eq!(get(&wiring.env, "GITLAB_HOST"), None);
-    assert_eq!(wiring.bin, dir.path().join("forge-wire/bin"));
+    // In a folder made new inside the one given, never beside the chat's own.
+    assert_eq!(wiring.bin.file_name().unwrap(), "bin");
+    let folder = wiring.bin.parent().unwrap();
+    assert_eq!(folder.parent().unwrap(), wire_folder(dir.path()));
+    assert!(
+        folder
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(&format!("chat-{}-", std::process::id()))
+    );
 }
 
 #[test]
@@ -253,6 +263,27 @@ fn gits_pairs_name_the_reset_first_then_a_helper_and_a_ca_for_each_recorded_host
             ),
             ("http.https://github.com/.sslCAInfo".to_owned(), ca),
         ]
+        .into_iter()
+        .chain(
+            // A proxy for each forge host and for every name under it, so `NO_PROXY` and a
+            // person's own `http.proxy` cannot send git direct to one.
+            [
+                "api.github.com",
+                "git.example.org",
+                "github.com",
+                "githubusercontent.com",
+                "gitlab.com",
+            ]
+            .into_iter()
+            .flat_map(|host| [host.to_owned(), format!("*.{host}")])
+            .map(|url| {
+                (
+                    format!("http.https://{url}/.proxy"),
+                    "http://127.0.0.1:43001".to_owned(),
+                )
+            }),
+        )
+        .collect::<Vec<_>>()
     );
 }
 
@@ -263,8 +294,8 @@ fn the_gh_folder_holds_one_setting_and_no_login() {
         dir.path(),
         vec![repo("github.com", "o", "r", ForgeKind::GitHub)],
     );
-    compose(&route, dir.path()).unwrap();
-    let gh = dir.path().join("forge-wire/gh");
+    let wiring = compose(&route, dir.path()).unwrap();
+    let gh = wiring.bin.parent().unwrap().join("gh");
     let mut names: Vec<_> = std::fs::read_dir(&gh)
         .unwrap()
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
@@ -295,20 +326,20 @@ fn the_folders_are_the_chats_alone_and_no_file_holds_the_sentinel() {
         dir.path(),
         vec![repo("github.com", "o", "r", ForgeKind::GitHub)],
     );
-    compose(&route, dir.path()).unwrap();
-    let mode = |p: &str| {
-        std::fs::metadata(dir.path().join(p))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777
-    };
-    for folder in ["forge-wire", "forge-wire/gh", "forge-wire/bin"] {
-        assert_eq!(mode(folder), 0o700, "{folder}");
+    let wiring = compose(&route, dir.path()).unwrap();
+    let root = wiring.bin.parent().unwrap().to_path_buf();
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    for folder in [
+        root.clone(),
+        root.join("gh"),
+        root.join("bin"),
+        wire_folder(dir.path()),
+    ] {
+        assert_eq!(mode(&folder), 0o700, "{}", folder.display());
     }
-    assert_eq!(mode("forge-wire/gh/config.yml"), 0o600);
-    assert_eq!(mode("forge-wire/bin/gh"), 0o700);
-    let wrapper = std::fs::read_to_string(dir.path().join("forge-wire/bin/gh")).unwrap();
+    assert_eq!(mode(&root.join("gh/config.yml")), 0o600);
+    assert_eq!(mode(&root.join("bin/gh")), 0o700);
+    let wrapper = std::fs::read_to_string(root.join("bin/gh")).unwrap();
     assert!(!wrapper.contains(SENTINEL));
 }
 
@@ -358,7 +389,10 @@ fn the_pairs_go_after_every_pair_already_there_and_the_count_covers_them() {
         ("PATH".to_owned(), "/usr/bin".to_owned()),
     ];
     let out = apply(env, &wiring);
-    assert_eq!(get(&out, "GIT_CONFIG_COUNT"), Some("5"));
+    assert_eq!(
+        get(&out, "GIT_CONFIG_COUNT"),
+        Some((2 + wiring.git_pairs.len()).to_string().as_str())
+    );
     assert_eq!(get(&out, "GIT_CONFIG_KEY_0"), Some("user.name"));
     assert_eq!(get(&out, "GIT_CONFIG_KEY_1"), Some("core.hooksPath"));
     // The reset is the first of purlis's, and the helper follows it.
@@ -396,7 +430,7 @@ fn a_locked_chats_marker_is_taken_out_so_its_empty_helper_cannot_come_after_purl
     // The chat's own gh folder, not the lock's empty one.
     assert_eq!(
         get(&out, "GH_CONFIG_DIR"),
-        Some(dir.path().join("forge-wire/gh").to_str().unwrap())
+        Some(wiring.bin.parent().unwrap().join("gh").to_str().unwrap())
     );
     assert_eq!(out.iter().filter(|(n, _)| n == "GH_CONFIG_DIR").count(), 1);
 }
@@ -416,8 +450,19 @@ fn every_ambient_forge_token_is_scrubbed_and_the_chat_holds_the_sentinel_alone()
         "GITLAB_TOKEN",
         "GLAB_TOKEN",
         "CI_JOB_TOKEN",
+        "GITHUB_ENTERPRISE_TOKEN",
+        "OAUTH_TOKEN",
+        "GITLAB_ACCESS_TOKEN",
         "PURLIS_FORGE_TOKEN",
         "PURLIS_FORGE_TOKEN_GITHUB",
+        "CHARTER_FORGE_TOKEN",
+        "CHARTER_FORGE_TOKEN_GITHUB",
+        "CHARTER_FORGE_TOKEN__6769746875622e636f6d",
+        "PURLIS_FORGE_TOKEN_FILE__6769746875622e636f6d",
+        "CHARTER_FORGE_TOKEN_EXPIRES_AT__6769746875622e636f6d",
+        "PURLIS_FORGE_KIND__6769746875622e636f6d",
+        "PURLIS_FORGE_ACCEPT__6769746875622e636f6d",
+        "gh_token",
     ];
     let mut env: Vec<(String, String)> = ambient
         .iter()
@@ -438,6 +483,20 @@ fn every_ambient_forge_token_is_scrubbed_and_the_chat_holds_the_sentinel_alone()
     assert_eq!(get(&out, "GLAB_TOKEN"), None);
     assert_eq!(get(&out, "CI_JOB_TOKEN"), None);
     assert_eq!(get(&out, "PURLIS_FORGE_TOKEN_GITHUB"), None);
+    for name in [
+        "GITHUB_ENTERPRISE_TOKEN",
+        "OAUTH_TOKEN",
+        "GITLAB_ACCESS_TOKEN",
+        "CHARTER_FORGE_TOKEN",
+        "CHARTER_FORGE_TOKEN_GITHUB",
+        "CHARTER_FORGE_TOKEN__6769746875622e636f6d",
+        "PURLIS_FORGE_TOKEN_FILE__6769746875622e636f6d",
+        "CHARTER_FORGE_TOKEN_EXPIRES_AT__6769746875622e636f6d",
+        "PURLIS_FORGE_KIND__6769746875622e636f6d",
+        "PURLIS_FORGE_ACCEPT__6769746875622e636f6d",
+    ] {
+        assert_eq!(get(&out, name), None, "{name} survived");
+    }
     assert!(!out.iter().any(|(_, v)| v == "ambient-value"));
     assert_eq!(get(&out, "PATH"), Some("/usr/bin"));
 }
@@ -454,7 +513,7 @@ fn the_wrappers_folder_goes_first_ahead_of_the_one_already_named() {
 }
 
 #[test]
-fn the_forge_hosts_are_denied_as_a_tunnel_and_the_download_only_hosts_never_are() {
+fn the_forge_hosts_are_denied_as_a_tunnel_and_the_tunnelled_names_never_are() {
     let repos = vec![
         repo("ghe.corp.example", "o", "r", ForgeKind::GitHub),
         repo("git.example.org", "g", "r", ForgeKind::GitLab),
@@ -464,14 +523,15 @@ fn the_forge_hosts_are_denied_as_a_tunnel_and_the_download_only_hosts_never_are(
     for host in [
         "github.com",
         "api.github.com",
-        "uploads.github.com",
+        "githubusercontent.com",
         "gitlab.com",
         "ghe.corp.example",
         "git.example.org",
     ] {
         assert!(denied.iter().any(|d| d == host), "{host} in {denied:?}");
     }
-    for host in DOWNLOAD_ONLY {
+    for entry in TUNNELLED {
+        let host = entry.split(':').next().unwrap();
         assert!(!denied.iter().any(|d| d == host), "{host} is denied");
     }
     // Once each, in order.
@@ -479,7 +539,7 @@ fn the_forge_hosts_are_denied_as_a_tunnel_and_the_download_only_hosts_never_are(
     sorted.sort();
     sorted.dedup();
     assert_eq!(denied, sorted);
-    // A recorded repo on a download-only host cannot make it denied.
+    // A recorded repo on a tunnelled name cannot make it denied.
     let odd = vec![repo("codeload.github.com", "o", "r", ForgeKind::GitHub)];
     assert!(
         !denied_hosts(&odd)
@@ -488,10 +548,130 @@ fn the_forge_hosts_are_denied_as_a_tunnel_and_the_download_only_hosts_never_are(
     );
 }
 
+/// The wiring of a chat in a folder under `dir`, for the tests of where it is written.
+fn wired(dir: &Path) -> Route {
+    route(dir, vec![repo("github.com", "o", "r", ForgeKind::GitHub)])
+}
+
+#[test]
+fn the_wiring_is_written_in_the_apps_folder_no_chat_writes_never_the_chats_own() {
+    let root = Path::new("/plane");
+    let folder = wire_folder(root);
+    // Under the state's `app`, the folder every chat is denied writing.
+    assert!(folder.starts_with(crate::names::state(root).join("app")));
+    assert!(folder.ends_with("forge-wire"));
+}
+
+#[test]
+fn a_folder_that_is_there_already_is_refused_and_nothing_is_written_through_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let planted = dir.path().join("chat-1-planted");
+    std::fs::create_dir(&planted).unwrap();
+    assert!(compose_at(&wired(dir.path()), &planted).is_err());
+    assert_eq!(
+        std::fs::read_dir(&planted).unwrap().count(),
+        0,
+        "wrote into a folder a chat could have planted"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_in_the_folders_place_is_refused_and_its_target_is_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = tempfile::tempdir().unwrap();
+    let link = dir.path().join("chat-1-link");
+    std::os::unix::fs::symlink(target.path(), &link).unwrap();
+    assert!(compose_at(&wired(dir.path()), &link).is_err());
+    assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
+    // A link that points nowhere is no way in either.
+    let dangling = dir.path().join("chat-2-dangling");
+    std::os::unix::fs::symlink(dir.path().join("nowhere"), &dangling).unwrap();
+    assert!(compose_at(&wired(dir.path()), &dangling).is_err());
+    assert!(!dir.path().join("nowhere").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_wire_folder_that_is_a_link_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let within = wire_folder(dir.path());
+    std::fs::create_dir_all(within.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), &within).unwrap();
+    assert!(compose(&wired(dir.path()), dir.path()).is_err());
+    assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn a_wire_folder_reached_through_a_link_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let app = crate::names::state(dir.path()).join("app");
+    std::fs::create_dir_all(app.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(elsewhere.path(), &app).unwrap();
+    assert!(compose(&wired(dir.path()), dir.path()).is_err());
+    assert_eq!(std::fs::read_dir(elsewhere.path()).unwrap().count(), 0);
+}
+
+#[cfg(unix)]
+#[test]
+fn nothing_in_the_wiring_is_writable_by_anyone_but_the_person() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let within = wire_folder(dir.path());
+    let wiring = compose(&wired(dir.path()), dir.path()).unwrap();
+    let mut seen = vec![within.clone(), wiring.bin.parent().unwrap().to_path_buf()];
+    let mut at = 0;
+    while at < seen.len() {
+        if seen[at].is_dir() {
+            for entry in std::fs::read_dir(&seen[at]).unwrap() {
+                seen.push(entry.unwrap().path());
+            }
+        }
+        at += 1;
+    }
+    for path in seen {
+        let mode = std::fs::symlink_metadata(&path)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o077, 0, "{} is open to others", path.display());
+    }
+}
+
+#[test]
+fn an_enterprise_host_stands_for_the_names_under_it_in_the_per_host_proxy_pairs() {
+    let dir = tempfile::tempdir().unwrap();
+    let route = route(
+        dir.path(),
+        vec![repo("ghe.corp.example", "o", "r", ForgeKind::GitHub)],
+    );
+    let wiring = compose(&route, dir.path()).unwrap();
+    for key in [
+        "http.https://ghe.corp.example/.proxy",
+        "http.https://*.ghe.corp.example/.proxy",
+        "http.https://github.com/.proxy",
+        "http.https://*.github.com/.proxy",
+        "http.https://*.gitlab.com/.proxy",
+    ] {
+        assert!(
+            wiring
+                .git_pairs
+                .iter()
+                .any(|(k, v)| k == key && v == "http://127.0.0.1:43001"),
+            "{key} in {:?}",
+            wiring.git_pairs
+        );
+    }
+}
+
 /// A `gh` that prints each argument on a line, and a clone with the `remotes` given.
 #[cfg(unix)]
 struct Shop {
     dir: tempfile::TempDir,
+    bin: PathBuf,
 }
 
 #[cfg(unix)]
@@ -527,18 +707,21 @@ impl Shop {
         for (name, url) in remotes {
             git(&["remote", "add", name, url]);
         }
-        Self { dir }
+        Self {
+            bin: wiring.bin,
+            dir,
+        }
     }
 
     /// What the real `gh` was given when the wrapper ran `args` from the clone.
     fn run(&self, args: &[&str]) -> Vec<String> {
         let path = format!(
             "{}:{}:/usr/bin:/bin",
-            self.dir.path().join("forge-wire/bin").display(),
+            self.bin.display(),
             self.dir.path().join("real").display()
         );
         let out = out(std::process::Command::new("/bin/sh")
-            .arg(self.dir.path().join("forge-wire/bin/gh"))
+            .arg(self.bin.join("gh"))
             .args(args)
             .current_dir(self.dir.path().join("clone"))
             .env_clear()

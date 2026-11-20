@@ -2126,3 +2126,221 @@ fn a_denied_forge_host_is_matched_by_name_as_a_host_is_listed_whatever_its_case(
          release-assets.githubusercontent.com address the release redirects to"
     );
 }
+
+/// A proxy that lists every forge name a chat might be allowed elsewhere, denying the forge hosts
+/// of a recorded GHES host as the chat's does ([`crate::forgewire::denied_hosts`]); nothing is
+/// looked up for addresses unless `resolves` says what a forge host resolves to.
+fn forge_proxy(heard: &Heard, resolves: &'static [(&'static str, &'static str)]) -> Proxy {
+    let denied = crate::forgewire::denied_hosts(&[crate::forgewire::Repo::new(
+        "ghe.corp.example",
+        "o",
+        "r",
+        crate::forgewire::ForgeKind::GitHub,
+    )
+    .expect("a repo")]);
+    let listed: Vec<String> = [
+        "github.com",
+        "*.github.com",
+        "*.githubusercontent.com",
+        "gitlab.com",
+        "*.gitlab.com",
+        "ghe.corp.example",
+        "*.ghe.corp.example",
+        "140.82.112.3",
+        "172.65.251.78",
+        "[2a0a:a440::1]",
+    ]
+    .iter()
+    .map(|host| (*host).to_owned())
+    .collect();
+    Proxy::serving(super::Serving {
+        forge_denied: denied,
+        forge_resolver: Some(std::sync::Arc::new(move |name: &str| {
+            resolves
+                .iter()
+                .filter(|(host, _)| *host == name)
+                .map(|(_, at)| at.parse().expect("an address"))
+                .collect()
+        })),
+        ..heard.serving(Reach::open(listed))
+    })
+    .expect("a proxy")
+}
+
+fn connect_status(proxy: &Proxy, target: &str) -> String {
+    status(
+        &mut to(proxy),
+        &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+    )
+}
+
+#[test]
+fn every_subdomain_of_a_forge_host_is_refused_even_where_a_layer_lists_it() {
+    let heard = Heard::default();
+    let proxy = forge_proxy(&heard, &[]);
+    for host in [
+        "evil.github.com",
+        "a.b.github.com",
+        "x.githubusercontent.com",
+        "foo.gitlab.com",
+        "api.ghe.corp.example",
+        "ghe.corp.example",
+        // Not tunnelled either: only the three download-only hosts are.
+        "ssh.github.com",
+        "altssh.gitlab.com",
+        "gist.github.com",
+        "raw.githubusercontent.com",
+        "uploads.github.com",
+        "raw.ghe.corp.example",
+        "uploads.ghe.corp.example",
+    ] {
+        assert_eq!(
+            connect_status(&proxy, &format!("{host}:443")),
+            "HTTP/1.1 403 Forbidden",
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn an_address_literal_a_forge_is_at_is_refused_as_a_tunnel_and_over_socks() {
+    let heard = Heard::default();
+    // A forge host that resolves to an address no snapshot lists.
+    let proxy = forge_proxy(&heard, &[("gitlab.com", "172.65.251.78")]);
+    for literal in ["140.82.112.3", "172.65.251.78", "[2a0a:a440::1]"] {
+        assert_eq!(
+            connect_status(&proxy, &format!("{literal}:443")),
+            "HTTP/1.1 403 Forbidden",
+            "{literal}"
+        );
+    }
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "140.82.112.3", 443), 2);
+}
+
+#[test]
+fn port_22_is_refused_to_every_forge_name_the_ssh_over_443_hosts_included() {
+    let heard = Heard::default();
+    let proxy = forge_proxy(&heard, &[]);
+    for host in [
+        "github.com",
+        "ssh.github.com",
+        "gitlab.com",
+        "altssh.gitlab.com",
+        "ghe.corp.example",
+        "x.ghe.corp.example",
+    ] {
+        assert_eq!(
+            connect_status(&proxy, &format!("{host}:22")),
+            "HTTP/1.1 403 Forbidden",
+            "{host}:22"
+        );
+    }
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "github.com", 22), 2);
+}
+
+#[test]
+fn a_name_a_layer_lists_that_resolves_to_a_forge_address_is_never_connected_to() {
+    // This machine's own server stands for the forge: a forge host resolves to it, and a name
+    // that is no forge's is listed exactly, so only the address check can stop the connection.
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        tunnel_ports: vec![port],
+        plain_ports: vec![port],
+        forge_denied: vec!["forge.invalid".to_owned()],
+        forge_resolver: Some(std::sync::Arc::new(|_| vec![LOOPBACK.parse().unwrap()])),
+        ..heard.serving(Reach::of(vec![(exactly(port), By::You)]))
+    })
+    .expect("a proxy");
+    let said = connect_status(&proxy, &format!("{LOOPBACK}:{port}"));
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "connected to a forge's address");
+}
+
+/// A `git ls-remote` of a forge repo through `proxy` with `extra` set, and what it said.
+#[cfg(unix)]
+fn git_says(proxy: &Proxy, home: &std::path::Path, extra: &[(&str, &str)]) -> (bool, String) {
+    let repo = home.join("clone");
+    std::fs::create_dir_all(&repo).expect("a folder");
+    let git = |args: &[&str]| {
+        let out = crate::forklock::output(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
+                .env("HOME", home)
+                .env("GIT_CONFIG_NOSYSTEM", "1"),
+        )
+        .expect("git ran");
+        assert!(out.status.success(), "{args:?}");
+    };
+    git(&["init", "-q"]);
+    git(&["remote", "add", "origin", "https://github.com/o/r.git"]);
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["ls-remote", "origin"])
+        .current_dir(&repo)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("HTTPS_PROXY", format!("http://127.0.0.1:{}", proxy.port()));
+    for (name, value) in extra {
+        command.env(name, value);
+    }
+    let out = crate::forklock::output(&mut command).expect("git ran");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chats_own_git_meets_the_denial_whatever_it_sets_for_itself() {
+    use std::os::unix::fs::PermissionsExt;
+    let heard = Heard::default();
+    let proxy = forge_proxy(&heard, &[]);
+    let home = tempfile::tempdir().unwrap();
+    // An askpass that answers with a password: git would send it to the forge if it got there.
+    let askpass = home.path().join("askpass");
+    std::fs::write(&askpass, "#!/bin/sh\necho leaked\n").unwrap();
+    std::fs::set_permissions(&askpass, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A helper reached through `includeIf`, which an empty `credential.helper` pair never sees
+    // before it, and a config that names no proxy.
+    std::fs::write(
+        home.path().join("helper.inc"),
+        "[credential]\n\thelper = !echo password=leaked\n",
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join(".gitconfig"),
+        format!(
+            "[includeIf \"hasconfig:remote.*.url:https://github.com/**\"]\n\tpath = {}\n",
+            home.path().join("helper.inc").display()
+        ),
+    )
+    .unwrap();
+    let askpass = askpass.to_str().unwrap().to_owned();
+    for (what, extra) in [
+        ("nothing", vec![]),
+        ("GIT_ASKPASS", vec![("GIT_ASKPASS", askpass.as_str())]),
+        ("GIT_CONFIG_COUNT=0", vec![("GIT_CONFIG_COUNT", "0")]),
+        ("GH_CONFIG_DIR", vec![("GH_CONFIG_DIR", "/nowhere")]),
+        (
+            "a token of its own",
+            vec![("GH_TOKEN", "ghp_x"), ("GITHUB_TOKEN", "ghp_x")],
+        ),
+    ] {
+        let (ok, said) = git_says(&proxy, home.path(), &extra);
+        assert!(!ok, "{what}: reached a forge");
+        assert!(
+            said.contains("403"),
+            "{what}: refused by something other than the proxy: {said}"
+        );
+    }
+}

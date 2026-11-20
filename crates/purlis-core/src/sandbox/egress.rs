@@ -617,8 +617,12 @@ pub struct Serving {
     /// SOCKS5 request or a plain request to one is refused, whatever a layer lists, because the
     /// only route to a forge is the proxy's forge route, which terminates the connection itself
     /// before this decision is asked ([`crate::forgewire::denied_hosts`]). Empty denies none,
-    /// which is a chat with no forge route.
+    /// which is a chat with no forge route. Each stands for every name under it, less the
+    /// tunnelled ones, and for the addresses it resolves to ([`super::forgedeny::ForgeDenial`]).
     pub forge_denied: Vec<String>,
+    /// How [`Self::forge_denied`] is looked up for its addresses: none uses the system's. Tests
+    /// name one.
+    pub forge_resolver: Option<super::forgedeny::Resolver>,
 }
 
 impl Serving {
@@ -641,6 +645,7 @@ impl Serving {
             providers: None,
             network: None,
             forge_denied: Vec::new(),
+            forge_resolver: None,
         }
     }
 
@@ -792,7 +797,12 @@ impl Proxy {
             network: serving
                 .network
                 .map(|told| (told, Mutex::new(std::collections::HashSet::new()))),
-            forge_denied: serving.forge_denied,
+            forge: (!serving.forge_denied.is_empty()).then(|| match serving.forge_resolver {
+                Some(resolve) => {
+                    super::forgedeny::ForgeDenial::resolving(&serving.forge_denied, resolve)
+                }
+                None => super::forgedeny::ForgeDenial::of(&serving.forge_denied),
+            }),
             live: Live::default(),
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
@@ -1069,8 +1079,8 @@ struct Allowed {
     live: Live,
     /// [`Serving::network`], and the hosts and ports it was told of already.
     network: Option<(super::asks::Answered, ToldOnce)>,
-    /// [`Serving::forge_denied`].
-    forge_denied: Vec<String>,
+    /// [`Serving::forge_denied`], held as names, addresses and port 22.
+    forge: Option<super::forgedeny::ForgeDenial>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1122,6 +1132,13 @@ impl Allowed {
     /// Whether `host`, reached at `at`, is carried past what its runner's policy lists, for a
     /// chat planned on another machine (#2445): always, for any other.
     fn carries(&self, host: &str, at: SocketAddr, own: Option<&[super::hosts::Network]>) -> bool {
+        // Whatever name was asked, never at an address the forge is at (ADR 0128 D3g): a name a
+        // layer lists that resolves to one, or an address literal, is refused here.
+        if let Some(forge) = &self.forge
+            && !forge.carries(host, at.ip())
+        {
+            return false;
+        }
         // A confined extension reaches no private or special-use address, whatever a name
         // resolved to, at this connect (ADR 0101 §2).
         if self.confined && !carried_when_confined(at) {
@@ -1136,7 +1153,11 @@ impl Allowed {
     fn decide(&self, host: &str, port: u16, tunnel: bool, own: &[std::net::IpAddr]) -> Decision {
         // A forge host is reached only through the forge route (ADR 0128 D3g), never as a tunnel
         // or a plain request, whatever a layer lists: asked first, so nothing can allow it.
-        if allows(&self.forge_denied, host) {
+        if self
+            .forge
+            .as_ref()
+            .is_some_and(|forge| forge.refuses(host, port))
+        {
             return Decision::Refused(Refused::ForgeRoute);
         }
         // A service on this Mac is reached by a name of this Mac too (qw384b), never looked up.

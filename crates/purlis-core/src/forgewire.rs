@@ -64,13 +64,21 @@ pub const DOWNLOAD_ONLY: [&str; 3] = [
 ];
 
 /// The forge hosts every chat's egress proxy denies as a direct tunnel, besides the hosts of its
-/// recorded repos (D3g): the only route to them is the forge route.
+/// recorded repos (D3g): the only route to them is the forge route. **Each also stands for every
+/// name under it** (`*.github.com`, `*.githubusercontent.com`), less [`TUNNELLED`], the download-only hosts: see
+/// [`crate::sandbox::forgedeny`].
 pub const KNOWN_FORGE_HOSTS: [&str; 4] = [
     "github.com",
     "api.github.com",
-    "uploads.github.com",
+    "githubusercontent.com",
     "gitlab.com",
 ];
+
+/// **The names under a forge host that are tunnelled all the same** (D3g, D3i): the
+/// [`DOWNLOAD_ONLY`] hosts and no other. `ssh.github.com` (on any port), `altssh.gitlab.com`,
+/// `gist`, `raw` and `uploads` are each denied with the rest of the names under a forge host.
+/// **Port 22 is refused to every forge name, these too.**
+pub const TUNNELLED: [&str; 3] = DOWNLOAD_ONLY;
 
 /// A tool whose version purlis has run the route with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -369,17 +377,16 @@ pub struct Wiring {
     pub bin: PathBuf,
 }
 
-/// The folder in the chat's scratch the wiring is written in.
-const FOLDER: &str = "forge-wire";
-
 /// The names taken out of a chat's environment: git reads each over a per-host `sslCAInfo`, so a
 /// chat that had one would be trusting its bundle for the forge hosts instead of the chat's CA.
 const OVERRIDDEN: [&str; 2] = ["GIT_SSL_CAINFO", "GIT_SSL_CAPATH"];
 
 /// Ambient forge tokens taken out of a chat's environment (ADR, D3h): a chat carries the sentinel
 /// and nothing else. `GH_TOKEN`, `GH_ENTERPRISE_TOKEN` and `GITLAB_TOKEN` are then set to it.
-/// Any variable starting with [`FORGE_TOKEN_PREFIX`] goes too.
-const AMBIENT_FORGE_TOKENS: [&str; 7] = [
+/// **This list and [`forge::credential::is_connection_variable`](crate::forge::credential::is_connection_variable)
+/// are the one list** ([`is_ambient_forge_token`]): the second names purlis's own
+/// `PURLIS_FORGE_TOKEN__*` and `CHARTER_FORGE_TOKEN__*` families.
+const AMBIENT_FORGE_TOKENS: [&str; 9] = [
     "GH_TOKEN",
     "GITHUB_TOKEN",
     "GH_ENTERPRISE_TOKEN",
@@ -387,13 +394,58 @@ const AMBIENT_FORGE_TOKENS: [&str; 7] = [
     "GLAB_TOKEN",
     "CI_JOB_TOKEN",
     "GITHUB_ENTERPRISE_TOKEN",
+    "OAUTH_TOKEN",
+    "GITLAB_ACCESS_TOKEN",
 ];
 
-/// The prefix of purlis's own forge-token variables, none of which a chat may keep.
+/// The prefix of purlis's own forge-token variables, under each of its spellings
+/// ([`crate::envvar::spellings`]): none of which a chat may keep.
 const FORGE_TOKEN_PREFIX: &str = "PURLIS_FORGE_TOKEN";
 
-/// **Composes and writes** the wiring for `route`, in `scratch` (a folder no other chat shares).
-pub fn compose(route: &Route, scratch: &Path) -> io::Result<Wiring> {
+/// Whether a chat's variable `name` is a forge credential it may not keep: one of
+/// [`AMBIENT_FORGE_TOKENS`], any name starting with [`FORGE_TOKEN_PREFIX`] under either spelling,
+/// or a connection variable purlis reads ([`crate::forge::credential::is_connection_variable`]).
+/// Compared without regard to case, as a person's shell may have written it.
+pub fn is_ambient_forge_token(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    AMBIENT_FORGE_TOKENS.contains(&upper.as_str())
+        || crate::envvar::spellings(FORGE_TOKEN_PREFIX)
+            .iter()
+            .any(|spelling| upper.starts_with(&spelling.to_ascii_uppercase()))
+        || crate::forge::credential::is_connection_variable(name)
+}
+
+/// **The folder the wiring of every chat of the project at `root` is written in**: under the
+/// app's state, which every chat is denied writing ([`crate::sandbox::Class::Integrity`]), as the
+/// ssh route's is ([`crate::sandbox::tunnel::routes_folder`]). The folder goes first on the
+/// `PATH` of a harness, its hooks and its MCP servers, all run outside the chat's sandbox, so a
+/// folder a chat may write (its own temporary one) would let it plant a `gh` they run.
+pub fn wire_folder(root: &Path) -> PathBuf {
+    crate::names::state(root).join("app").join("forge-wire")
+}
+
+/// **Composes and writes** the wiring for `route`, in a folder made new inside the project's
+/// [`wire_folder`], which must be a folder of its own with no link on the way to it from `root`
+/// ([`crate::contain::no_link_on_the_way`], [`crate::sandbox::tunnel::make_own_folder`]). The
+/// folder is named `chat-<pid>-<random>`, so
+/// one an app killed before the chat ended is known as left behind
+/// ([`crate::sandbox::tunnel::sweep_routes`]).
+pub fn compose(route: &Route, root: &Path) -> io::Result<Wiring> {
+    let within = wire_folder(root);
+    crate::contain::no_link_on_the_way(root, &within)?;
+    crate::sandbox::tunnel::make_own_folder(&within)?;
+    let folder = within.join(format!(
+        "chat-{}-{}",
+        std::process::id(),
+        uuid::Uuid::new_v4().simple()
+    ));
+    compose_at(route, &folder)
+}
+
+/// **Composes the wiring for `route` in `folder`, which must not exist**: made new, never one
+/// that is there already and never a link (even a dangling one), and every file in it made new
+/// too, so nothing a chat planted is written through or used.
+pub fn compose_at(route: &Route, folder: &Path) -> io::Result<Wiring> {
     if !route.egress_url.starts_with("http://127.0.0.1:") {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -427,28 +479,26 @@ pub fn compose(route: &Route, scratch: &Path) -> io::Result<Wiring> {
         )
     })?;
 
-    let folder = scratch.join(FOLDER);
     let gh = folder.join("gh");
     let bin = folder.join("bin");
-    for dir in [&folder, &gh, &bin] {
-        std::fs::create_dir_all(dir)?;
+    // `create_dir` is the one call that refuses a path that is there, a link included.
+    for dir in [folder, &gh, &bin] {
+        std::fs::create_dir(dir)?;
         set_mode(dir, 0o700)?;
     }
     // Holds the one setting and no login: `hosts.yml` is never written here.
     let config = gh.join("config.yml");
-    std::fs::write(
+    write_new(
         &config,
-        format!(
+        &format!(
             "# purlis: this chat's gh settings. No login is kept here: the chat's gh reaches\n\
              # purlis's forge proxy over this socket and carries a sentinel, never a token.\n\
              http_unix_socket: '{}'\n",
             socket.replace('\'', "''")
         ),
+        0o600,
     )?;
-    set_mode(&config, 0o600)?;
-    let wrapper = bin.join("gh");
-    std::fs::write(&wrapper, gh_wrapper(&route.repos))?;
-    set_mode(&wrapper, 0o700)?;
+    write_new(&bin.join("gh"), &gh_wrapper(&route.repos), 0o700)?;
 
     let mut env = vec![
         ("GH_HOST".to_owned(), GH_HOST.to_owned()),
@@ -480,6 +530,23 @@ pub fn compose(route: &Route, scratch: &Path) -> io::Result<Wiring> {
     for host in &hosts {
         git_pairs.push((format!("http.https://{host}/.sslCAInfo"), ca.to_owned()));
     }
+    // A proxy named for each forge host and each name under it, so neither `NO_PROXY` nor a
+    // person's own `http.proxy` can send git direct to one: a URL's own setting is read over both.
+    let mut proxied: Vec<&str> = hosts
+        .iter()
+        .copied()
+        .chain(KNOWN_FORGE_HOSTS.iter().copied())
+        .collect();
+    proxied.sort_unstable();
+    proxied.dedup();
+    for host in proxied {
+        for url in [host.to_owned(), format!("*.{host}")] {
+            git_pairs.push((
+                format!("http.https://{url}/.proxy"),
+                route.egress_url.clone(),
+            ));
+        }
+    }
     Ok(Wiring {
         env,
         git_pairs,
@@ -500,8 +567,7 @@ pub fn apply(mut env: Vec<(String, String)>, wiring: &Wiring) -> Vec<(String, St
     env.retain(|(name, _)| {
         name != crate::forgelock::MARKER
             && !OVERRIDDEN.contains(&name.as_str())
-            && !AMBIENT_FORGE_TOKENS.contains(&name.as_str())
-            && !name.starts_with(FORGE_TOKEN_PREFIX)
+            && !is_ambient_forge_token(name)
             && !wiring.env.iter().any(|(set, _)| set == name)
     });
     env.extend(wiring.env.iter().cloned());
@@ -546,13 +612,19 @@ pub fn first_on_path(already: Option<&str>, bin: &Path) -> String {
 
 /// **The hosts a chat's egress proxy denies as a direct tunnel** (D3g): [`KNOWN_FORGE_HOSTS`] and
 /// the host of every recorded repo, but never a [`DOWNLOAD_ONLY`] host. The only route to them
-/// is the forge route, which terminates the tunnel itself.
+/// is the forge route, which terminates the tunnel itself. Each stands for every name under it
+/// as well, less [`TUNNELLED`], and for the addresses it resolves to
+/// ([`crate::sandbox::forgedeny::ForgeDenial`]).
 pub fn denied_hosts(repos: &[Repo]) -> Vec<String> {
     let mut hosts: Vec<String> = KNOWN_FORGE_HOSTS
         .iter()
         .map(|host| (*host).to_owned())
         .chain(repos.iter().map(|repo| repo.host().to_owned()))
-        .filter(|host| !DOWNLOAD_ONLY.contains(&host.as_str()))
+        .filter(|host| {
+            !TUNNELLED
+                .iter()
+                .any(|name| name.split(':').next() == Some(host))
+        })
         .collect();
     hosts.sort();
     hosts.dedup();
@@ -713,6 +785,20 @@ fn quoted(path: &Path) -> Option<String> {
 
 fn shown(path: &Path) -> String {
     path.display().to_string()
+}
+
+/// Writes `text` to a file made new at `path`, with `mode`: it fails where anything is there.
+fn write_new(path: &Path, text: &str, mode: u32) -> io::Result<()> {
+    use std::io::Write;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(mode);
+    }
+    options.open(path)?.write_all(text.as_bytes())?;
+    set_mode(path, mode)
 }
 
 fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
