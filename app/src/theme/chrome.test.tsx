@@ -1608,6 +1608,7 @@ const DIALOGS: Opened[] = [
               reason: "purlis will not open an address that carries a name or a password",
             },
             candidate: { kind: "url", text: "https://purlis.dev/account" },
+            place: { left: 0, top: 0, width: 0, height: 0 },
           }}
           onClose={nothing}
           onConfirm={nothing}
@@ -1630,6 +1631,7 @@ const DIALOGS: Opened[] = [
               about: { about: "link" },
             },
             candidate: { kind: "url", text: "docs.purlis.dev/setup" },
+            place: { left: 0, top: 0, width: 0, height: 0 },
           }}
           onClose={nothing}
           onConfirm={nothing}
@@ -1645,6 +1647,7 @@ const DIALOGS: Opened[] = [
           links={[
             {
               candidate: { kind: "url", text: "https://purlis.dev/setup" },
+              place: { left: 0, top: 0, width: 0, height: 0 },
               seen: {
                 kind: "url",
                 target: "https://purlis.dev/setup",
@@ -1655,6 +1658,7 @@ const DIALOGS: Opened[] = [
             },
             {
               candidate: { kind: "url", text: "ftp://purlis.dev/old" },
+              place: { left: 0, top: 0, width: 0, height: 0 },
               seen: {
                 kind: "url",
                 target: "ftp://purlis.dev/old",

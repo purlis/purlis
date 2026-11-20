@@ -19,7 +19,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRow, ListRowSection, type Selection } from "./ui/list/List";
 import { RowBelow, RowLabel, RowTrail } from "./ui/list/Row";
 import { ViewPageHeader } from "./ui/panel/ViewFrame";
-import { capitalised } from "./chatEnded";
+import { capitalised } from "./textCase";
 import { harnessOfId, harnessSkillId, skillOfRowId, skillRowId } from "./skillStudio";
 
 /** Whose a skill from outside the project is, as a row says it. */

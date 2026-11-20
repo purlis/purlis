@@ -149,7 +149,7 @@ export interface Shortcut {
   where: Scope;
   /** **Where the sheet says it applies**, for an act its scope's word does not fit: a terminal
    *  key only a chat answers says "In a chat", where every other says "In a pane" (#6483). */
-  place?: string;
+  whereSaid?: string;
   /** `key` is matched by its handler; a `path` is keys already declared, in turn; a `native`
    *  key is the system menu's or an editor's own. */
   kind: "key" | "path" | "native";
@@ -776,9 +776,11 @@ export const SHORTCUTS: readonly Shortcut[] = [
     chords: { mac: [PANE_LINKS.mac], other: [PANE_LINKS.other] },
     said: linksListKeySaid,
     // The terminal's menu row that opens the list (#6219) says this key, drawn and to a reader.
-    // So does each pane's ⋯ and head row (#6332). The palette's draws no key: ⇧⌘L is the
-    // focused terminal's, not the window's, and the palette shows only the window's.
-    rows: ["terminal.links", "chat.links:"],
+    // A pane's ⋯ and head row (#6332) says it only where it is the focused pane's, which only
+    // the catalogue knows (`Offer.keyHere`, #6488), so it is not named here. The palette's draws
+    // no key: ⇧⌘L is the focused terminal's, not the window's, and the palette shows only the
+    // window's.
+    rows: ["terminal.links"],
     yields: [],
     matches: opensTheLinksList,
   },
@@ -815,7 +817,7 @@ export const SHORTCUTS: readonly Shortcut[] = [
     group: "Tabs and chats",
     where: "terminal",
     // The one terminal key that needs a chat: a shell has no harness, and keeps its own Enter.
-    place: "In a chat",
+    whereSaid: "In a chat",
     kind: "key",
     chords: both(bare("Enter", { shift: true })),
     said: (mac) => (mac ? "⇧↩" : "Shift+Enter"),

@@ -490,7 +490,7 @@ import {
 
 /** Which window action a trouble line is about (NO-4): the picker's options, a shell, Needs
  *  you, or a browser (#2012). */
-type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser";
+type TroubleFrom = "start-options" | "shell" | "needs-you" | "browser" | "links";
 
 /** **A chat ended on purpose in its pane** (#5019), as the window held it when it ended: its
  *  name, and the record a Smart close wrote, which is its way back. */
@@ -800,7 +800,7 @@ import {
   whenAChatLogIsAsked,
 } from "./blockedMarkers";
 import { SeenRowsOf } from "./seenRows";
-import { listLinksOf } from "./paneLinksOpen";
+import { LINKS_UNLISTED, listLinksOf } from "./paneLinksOpen";
 
 /** Whether two lists of the right side's extension panels draw the same tabs. */
 const samePanels = (a: readonly PanelTab[], b: readonly PanelTab[]) =>
@@ -8973,8 +8973,12 @@ export const PlaneView = memo(function PlaneView({
       // A chat's Ask {persona}… and Use skill… open their dialogs: the one way in to each.
       askPersona: openAskPersona,
       useSkill: openUseSkill,
-      // The pane's own list (#6332): the pane drawing the chat says how to open it.
-      listLinks: (session) => void listLinksOf(plane, session),
+      // The pane's own list (#6332): the pane drawing the chat says how to open it. Where none
+      // has yet, the row says so rather than nothing (#6488).
+      listLinks: (session) => {
+        if (listLinksOf(plane, session)) succeeded("links");
+        else refusedBy("links", LINKS_UNLISTED);
+      },
       showChatSkills: (session) => askChatSkills(plane, session),
       openStudioChat: (session) => {
         const link = studioLinks[session];
@@ -9150,6 +9154,8 @@ export const PlaneView = memo(function PlaneView({
       shellInFolder,
       startChatHere,
       plane,
+      refusedBy,
+      succeeded,
       focusWorkspace,
       ofWorkspace,
       ignoreNeedsYou,

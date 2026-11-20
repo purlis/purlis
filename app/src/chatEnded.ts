@@ -14,8 +14,3 @@ export function endedAt(ended: string | null): string | undefined {
   if (Number.isNaN(at.getTime())) return undefined;
   return at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 }
-
-/** `words` with its first letter a capital, as a badge or a sentence starts: "Done". */
-export function capitalised(words: string): string {
-  return words.charAt(0).toUpperCase() + words.slice(1);
-}
