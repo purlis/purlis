@@ -2263,6 +2263,8 @@ fn a_name_a_layer_lists_that_resolves_to_a_forge_address_is_never_connected_to()
 #[cfg(unix)]
 fn git_says(proxy: &Proxy, home: &std::path::Path, extra: &[(&str, &str)]) -> (bool, String) {
     let repo = home.join("clone");
+    // A new clone each time: the cases share one home.
+    let _ = std::fs::remove_dir_all(&repo);
     std::fs::create_dir_all(&repo).expect("a folder");
     let git = |args: &[&str]| {
         let out = crate::forklock::output(
