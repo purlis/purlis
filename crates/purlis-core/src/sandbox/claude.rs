@@ -920,7 +920,9 @@ fn plain_and_cased(prefix: &str, name: &str) -> [String; 2] {
 /// - `T(<p>/**)` beside `T(<p>)`, which holds what is below `<p>` already;
 /// - `T(<glob>)` that [`either_case`] made, beside `T(<the name as written>)`, which matches
 ///   every case already;
-/// - `T(<q>)`, a plain path, below `T(<p>)`, a plain path that is a folder above it.
+/// - `T(<q>)`, a plain path, below `T(<p>)`, a plain path that is a folder above it;
+/// - and, of the Edit tool's, the same path in each of three workspaces or more of a plane, as
+///   one glob ([`in_every_workspace`]), which holds each of them and the same path in any other.
 ///
 /// A rule on another tool, or one that is not a path rule, is kept as it is, in its place. That
 /// every spelling the rules held before is held still, and by the pinned Claude Code itself, is
@@ -937,6 +939,8 @@ pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
         .filter_map(|rule| parts(rule))
         .filter(|(_, path)| literal(path))
         .collect();
+    let globs = workspace_globs(&rules);
+    let mut folded = std::collections::HashSet::new();
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for rule in &rules {
@@ -962,9 +966,69 @@ pub(crate) fn fewest(rules: Vec<String>) -> Vec<String> {
         {
             continue;
         }
+        if tool == "Edit"
+            && let Some(glob) = in_every_workspace(&path).filter(|glob| globs.contains(glob))
+        {
+            if !written.contains(format!("Edit({glob})").as_str()) && folded.insert(glob.clone()) {
+                out.push(format!("Edit({glob})"));
+            }
+            continue;
+        }
         out.push(rule.clone());
     }
     out
+}
+
+/// **A plain Edit path in one workspace of a plane, as the same path in every workspace**:
+/// `<plane>/workspaces/<ws>/<tail>` as `<plane>/workspaces/*/<tail>`, or `None` for a path that is
+/// not one (a pattern, one with `.` or `..` in it, one that is not below a workspace of a plane:
+/// a folder holding a plane's manifest). The Edit
+/// tool pins nothing, and holds what a glob matches and what is below it, so the glob holds each
+/// workspace's path and the same path in a workspace made later, as [`every_branch_folders_git`]
+/// does for a branch folder's git (#7157: a plane's workspaces weigh each by path).
+fn in_every_workspace(path: &str) -> Option<String> {
+    if as_before() || !literal(path) || path.split('/').any(|part| part == ".." || part == ".") {
+        return None;
+    }
+    let marker = format!("/{}/", super::WORKSPACES);
+    let at = path.find(&marker)?;
+    let (plane, below) = (&path[..at], &path[at + marker.len()..]);
+    let (workspace, tail) = below.split_once('/')?;
+    // The plane's own folder: a rule's path is `/` and the path, so the folder is what follows
+    // the first `/`. Any other `workspaces` folder is not a plane's, and is left as it is.
+    let folder = plane.strip_prefix('/')?;
+    (!workspace.is_empty() && !tail.is_empty() && crate::plane::is_plane(Path::new(folder)))
+        .then(|| format!("{plane}/{}/*/{tail}", super::WORKSPACES))
+}
+
+/// Each glob [`in_every_workspace`] makes of three plain Edit paths or more in `rules`, each in a
+/// workspace of its own: a path in one or two workspaces is held by its own rule, which weighs no
+/// more than the glob.
+fn workspace_globs(rules: &[String]) -> std::collections::HashSet<String> {
+    let marker = format!("/{}/", super::WORKSPACES);
+    let mut by_glob: std::collections::HashMap<String, std::collections::HashSet<&str>> =
+        std::collections::HashMap::new();
+    for rule in rules {
+        let Some(path) = rule
+            .strip_prefix("Edit(")
+            .and_then(|rest| rest.strip_suffix(')'))
+        else {
+            continue;
+        };
+        let Some(glob) = in_every_workspace(path) else {
+            continue;
+        };
+        let workspace = path
+            .find(&marker)
+            .and_then(|at| path[at + marker.len()..].split('/').next())
+            .unwrap_or_default();
+        by_glob.entry(glob).or_default().insert(workspace);
+    }
+    by_glob
+        .into_iter()
+        .filter(|(_, workspaces)| workspaces.len() >= 3)
+        .map(|(glob, _)| glob)
+        .collect()
 }
 
 /// `paths` for Claude Code's sandbox, each written once, and none below a plain path in the list:
@@ -1100,11 +1164,19 @@ fn every_branch_folders_git(path: &str) -> Option<String> {
 /// keeps, which is `had`'s or another added one.
 fn added_once(had: &[String], now: &[String], tidy: fn(Vec<String>) -> Vec<String>) -> Vec<String> {
     debug_assert!(now.starts_with(had), "added after what was there");
-    let kept: std::collections::HashSet<String> = tidy(now.to_vec()).into_iter().collect();
+    let tidied = tidy(now.to_vec());
+    let kept: std::collections::HashSet<&String> = tidied.iter().collect();
     let mut out = had.to_vec();
     for added in &now[had.len().min(now.len())..] {
         if kept.contains(added) && !out.contains(added) {
             out.push(added.clone());
+        }
+    }
+    // A rule `tidy` made of several ([`in_every_workspace`]) is in none of them, and holds the
+    // added ones it dropped.
+    for made in &tidied {
+        if !now.contains(made) && !out.contains(made) {
+            out.push(made.clone());
         }
     }
     out

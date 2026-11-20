@@ -62,7 +62,7 @@ test("a_nightly_verdict_difference_opens_a_flaky_scenario_issue", () => {
     assert.match(issue.body, /counts as failing/);
 
     // The command, dry: it prints the issue it would open, opens none, and is red.
-    const ran = spawnSync("node", [TOOL, "flaky", dir, "--dry-run", "--cells", "/nonexistent"], { encoding: "utf8" });
+    const ran = spawnSync("node", [TOOL, "flaky", dir, "--dry-run"], { encoding: "utf8" });
     assert.equal(ran.status, 1, ran.stderr);
     const would = ran.stdout.split("\n").filter((l) => l.startsWith("{")).map((l) => JSON.parse(l));
     assert.equal(would.length, 1);
@@ -263,7 +263,7 @@ test("an_issue_that_could_not_be_opened_is_an_error_and_the_run_stays_red_withou
   const dir = runsOf([[rec("M-NET-01", "pass")], [rec("M-NET-01", "fail")], [rec("M-NET-01", "pass")]]);
   try {
     // `--open` with no gh that works (none on this PATH): the failure is an error, never a warning.
-    const ran = spawnSync(process.execPath, [TOOL, "flaky", dir, "--open", "--cells", "/nonexistent"], {
+    const ran = spawnSync(process.execPath, [TOOL, "flaky", dir, "--open"], {
       encoding: "utf8",
       env: { ...process.env, PATH: "/nonexistent", GITHUB_REPOSITORY: "o/r" },
     });
@@ -271,9 +271,31 @@ test("an_issue_that_could_not_be_opened_is_an_error_and_the_run_stays_red_withou
     assert.match(ran.stdout, /::error title=flaky scenario::could not open/);
     assert.doesNotMatch(ran.stdout, /::warning/);
     // Without `--open` the runs are compared and nothing is opened or attempted.
-    const compared = spawnSync(process.execPath, [TOOL, "flaky", dir, "--cells", "/nonexistent"], { encoding: "utf8", env: { ...process.env, PATH: "/nonexistent" } });
+    const compared = spawnSync(process.execPath, [TOOL, "flaky", dir], { encoding: "utf8", env: { ...process.env, PATH: "/nonexistent" } });
     assert.equal(compared.status, 1);
     assert.doesNotMatch(compared.stdout, /could not open/);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test("one_run_without_refusal_expected_and_one_with_true_make_a_differing_verdict_an_escape", () => {
+  const dir = runsOf([[rec("M-REF-02", "pass")], [rec("M-REF-02", "fail", { refusal_expected: true })]]);
+  try {
+    const found = flaky(dir, {});
+    assert.equal(found.differences[0].escape, true, "any run's record is enough, whichever run carries the field");
+    assert.deepEqual(found.issues[0].labels, ["area:security", "priority:p0", "bot-maintained"]);
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test("a_missing_cells_folder_is_an_error_not_an_empty_set_of_escapes", () => {
+  const missing = join(tmpdir(), "legs-no-such-cells-folder");
+  assert.throws(() => escapeRows(missing), /does not exist/);
+  const dir = runsOf([[rec("M-A-01", "pass")], [rec("M-A-01", "fail")]]);
+  try {
+    assert.throws(() => flaky(dir, { cells: missing }), /does not exist/);
   } finally {
     rmSync(dir, { recursive: true });
   }

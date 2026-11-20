@@ -19,14 +19,15 @@
 //   nightly's step alone, which alone holds a token that can) each opens (or comments on) a public
 //   issue, labelled `flaky-scenario` (created when the repository has none) and `bot-maintained`;
 //   above five entries one summary issue lists them instead (an escape always opens its own), and
-//   an issue that could not be opened is an error, not a warning. An entry that is an escape
-//   (`kind: escape`, or a record with `refusal_expected: true`, which the scenario host writes for a
-//   cell with `escape: true` or a step that expects a refusal, so a refusal that did not hold; a
-//   `refusal_expected` that is not a boolean counts as true; a report without the field falls back
-//   to reading `tests/scenarios/cells/*.json`, so an old report is never read as "not an escape") opens one labelled `area:security` and `priority:p0` instead: everything
-//   runs in public (Q301), and nothing goes anywhere private. `--dry-run` prints each issue it
-//   would open, as JSON, and opens none; so does `FLAKY_DRY_RUN=1`. Each run's `junit*.xml`
-//   (nextest's, one a batch) is compared with its leg report, test by test. `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
+//   an issue that could not be opened is an error, not a warning. An entry is an escape when a run's
+//   record says so (`kind: escape`, or `refusal_expected`, which the scenario host writes for an
+//   escape cell or a step that expects a refusal; a value that is not a boolean counts as true), or
+//   when its row is an escape in `tests/scenarios/cells/*.json`, which is read for a report that
+//   lacks the field and must exist. An escape opens one labelled `area:security` and `priority:p0`
+//   instead: everything runs in public (Q301), and nothing goes anywhere private. `--dry-run` prints
+//   each issue it would open, as JSON, and opens none; so does `FLAKY_DRY_RUN=1`. Each run's
+//   `junit*.xml` (nextest's, one a batch) is compared with its leg report, test by test.
+//   `GH_TOKEN` and `GITHUB_REPOSITORY` name who opens them.
 // - **shuffle**: the batches of a suite, in an order seeded by `<seed>`. A batch is a test's module
 //   path (everything before its last `::`), so the order of batches changes between runs and the
 //   order of a batch's own cells never does (cells depend on earlier cells' state).
@@ -102,8 +103,9 @@ const describe = (r) =>
  * in one run and held in another is read as an escape and never as noise.
  */
 export function escapeRows(folder) {
+  // A missing folder is an error: an empty set would read every old report as "not an escape".
+  if (!existsSync(folder)) throw new Error(`the cells folder ${folder} does not exist: escapes cannot be read from it`);
   const ids = new Set();
-  if (!existsSync(folder)) return ids;
   for (const name of readdirSync(folder)) {
     if (!name.endsWith(".json")) continue;
     const batch = JSON.parse(readFileSync(join(folder, name), "utf8"));
