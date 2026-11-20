@@ -4283,6 +4283,8 @@ pub fn run() {
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
             forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
+            // And each browser sign-in is renewed before it ends, without a prompt (one login).
+            forgeaccounts::keep_sign_ins_renewed();
             // The engine's first download is shown as it goes (#2207).
             {
                 let window = app.handle().clone();

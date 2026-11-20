@@ -9,25 +9,46 @@
 //! that has less than [`AHEAD`] left. No client secret is sent: a public client refreshes with
 //! its client id alone.
 //!
-//! **One writer.** A refresh rotates the refresh token, so two refreshes of one account at once
-//! would end its sign-in. Only the host's process refreshes (a [`Refresher`] is made with the
-//! [`HostScope`]), one refresh at a time in it, and the new pair replaces the old in one write
-//! to the account's keyring item. The git credential helper, which is another process, never
-//! refreshes: the window renews the token before it starts the git that will ask for it.
+//! **One writer, across processes.** A refresh rotates the refresh token, so two refreshes of
+//! one account at once would end its sign-in. Only the host's processes refresh (a [`Refresher`]
+//! is made with the [`HostScope`]), one refresh at a time in a process ([`REFRESHING`]) **and one
+//! at a time on the machine** (a lock file in the session host's folder, [`REFRESH_LOCK`]), so the
+//! window and a session host never spend the same refresh token. The one that waits reads the item
+//! afresh when it gets the lock, and finds the new pair. The git credential helper, which is another
+//! process, never refreshes: the window renews the token before it starts the git that will ask
+//! for it.
 //!
-//! **A refresh the forge refuses ends the sign-in, and says so.** The account is marked signed
-//! out, its keyring item is deleted, and the request that needed the token fails with a
-//! sentence that names the account and where to sign in again. It is never retried under
-//! another account or through the forge's CLI (ADR 0070 §5).
+//! **The new pair is written before the new token is used.** The forge has already spent the old
+//! refresh token when it answers, so a pair that was not kept would end the sign-in at the next
+//! renewal. The write to the keychain is tried again; if it still fails, both pairs stay in this
+//! process's memory ([`PENDING`]), the write is tried first the next time the account is asked
+//! for, **the spent refresh token is never sent**, and the new access token is not used until it
+//! is kept. The old access token serves while it lasts.
 //!
-//! **A forge that cannot be reached ends nothing**, and neither does an answer that is not the
-//! forge's refusal of the grant (a rate limit, a proxy's refusal, OAuth's own "not now"). While the token still has time left it is
-//! used as it is; once it has none the request fails saying the forge could not be reached, and
-//! the sign-in is kept for the next try.
+//! **Only the forge's word that the grant is over ends the sign-in**: `invalid_grant`, and GitHub's
+//! `bad_refresh_token`, the refresh token revoked or expired ([`ENDS_IT`]). The account is marked
+//! signed out, its keyring item is deleted, and the request that needed the token fails with a
+//! sentence that names the account and where to sign in again. It is never retried under another
+//! account or through the forge's CLI (ADR 0070 section 5).
+//!
+//! **Nothing else ends it**: not `invalid_client` or `unauthorized_client` (the application, not
+//! the grant), not a 5xx, a rate limit, a proxy's refusal, OAuth's own "not now", and not a forge
+//! that cannot be reached. The keyring item is kept. While the token still has time left it is
+//! used as it is; once it has none the request fails saying the forge could not be reached. The
+//! next try waits longer each time ([`backoff`]), and after [`NOTICE_AFTER`] failures in a row the
+//! window is told once ([`Trouble::RenewalFailing`]).
+//!
+//! **A renewal uses the client id the account signed in through** ([`ForgeAccount::client_id`]),
+//! never what the registrations file says now (ADR 0128 D1.3): a refresh token belongs to one
+//! application. If the pin on the host is another application than the one the account was made
+//! with, or is gone, the renewal **stops**, the item is kept and the window is told once
+//! ([`Trouble::PinChanged`]); the token in hand is used while it lasts, and signing in again is
+//! the person's press.
 //!
 //! **Only purlis's own grants are refreshed.** A pasted token does not expire through purlis,
 //! and an imported CLI login is never refreshed with the CLI's registration (ADR 0077 §5).
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -47,8 +68,102 @@ pub const AHEAD: Duration = Duration::from_secs(5 * 60);
 /// One refresh at a time in this process, whatever the account.
 pub(super) static REFRESHING: Mutex<()> = Mutex::new(());
 
+/// The file name of the lock that makes a refresh one act across processes, in the session
+/// host's folder of the config home (`machine::Lock`).
+pub const REFRESH_LOCK: &str = "forge-refresh.lock";
+
+/// The words in an OAuth error reply that say the **grant** is over: the refresh token was
+/// revoked, expired or already spent (RFC 6749 section 5.2 `invalid_grant`; GitHub's
+/// `bad_refresh_token`). No other reply ends a sign-in.
+const ENDS_IT: [&str; 2] = ["invalid_grant", "bad_refresh_token"];
+
+/// Failures in a row after which the window is told that renewal is not working.
+pub const NOTICE_AFTER: u32 = 3;
+
+/// The wait before the next try after `failures` in a row: 30 seconds, doubling, at most 15
+/// minutes.
+pub fn backoff(failures: u32) -> Duration {
+    let doubled = 30u64.saturating_mul(1u64 << failures.saturating_sub(1).min(10));
+    Duration::from_secs(doubled.min(15 * 60))
+}
+
 /// What the host is told with when a forge ended a sign-in.
 type Told = Box<dyn Fn(&ForgeAccount) + Send + Sync>;
+
+/// What the host is told of a sign-in that is not renewing, though the forge has not ended it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Trouble {
+    /// The application pinned for the host is not the one the account signed in through (or is
+    /// no longer pinned): renewal has stopped, and the item is kept. The fix is the person's
+    /// press, in the window.
+    PinChanged,
+    /// [`NOTICE_AFTER`] renewals in a row did not get an answer the sign-in could use.
+    RenewalFailing { failures: u32 },
+}
+
+type TroubleTold = Box<dyn Fn(&ForgeAccount, &Trouble) + Send + Sync>;
+
+static TROUBLE: OnceLock<TroubleTold> = OnceLock::new();
+
+/// From now on `told` is called, once per kind of trouble per account (until it clears), with the
+/// account: the app draws a Notice with the fix. Set once, by the host, as it starts.
+pub fn tell_of_trouble(
+    _host: &HostScope,
+    told: impl Fn(&ForgeAccount, &Trouble) + Send + Sync + 'static,
+) {
+    let _ = TROUBLE.set(Box::new(told));
+}
+
+/// How one account's renewals are going, in this process.
+#[derive(Default)]
+struct Going {
+    failures: u32,
+    /// Not before this (seconds since the epoch).
+    retry_at: u64,
+    told_failing: bool,
+    told_pin: bool,
+}
+
+static GOING: Mutex<Option<HashMap<String, Going>>> = Mutex::new(None);
+
+fn going<R>(id: &str, with: impl FnOnce(&mut Going) -> R) -> R {
+    let mut all = GOING.lock().unwrap_or_else(|e| e.into_inner());
+    with(
+        all.get_or_insert_with(HashMap::new)
+            .entry(id.to_string())
+            .or_default(),
+    )
+}
+
+/// A renewed pair the keychain would not take: what the forge granted, and the refresh token it
+/// spent. Held until it is written.
+struct Pending {
+    granted: super::oauth::Granted,
+    spent: Option<SecretString>,
+    at: u64,
+}
+
+static PENDING: Mutex<Option<HashMap<String, Pending>>> = Mutex::new(None);
+
+fn pending<R>(with: impl FnOnce(&mut HashMap<String, Pending>) -> R) -> R {
+    let mut all = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+    with(all.get_or_insert_with(HashMap::new))
+}
+
+fn copy_of(granted: &super::oauth::Granted) -> super::oauth::Granted {
+    super::oauth::Granted {
+        access: granted.access.clone(),
+        refresh: granted.refresh.clone(),
+        expires_in: granted.expires_in,
+        scopes: granted.scopes.clone(),
+    }
+}
+
+fn raise(account: &ForgeAccount, trouble: &Trouble) {
+    if let Some(told) = TROUBLE.get() {
+        told(account, trouble);
+    }
+}
 
 /// Whom to tell when a forge ended a sign-in: the window, so it can say so at once.
 static TOLD: OnceLock<Told> = OnceLock::new();
@@ -107,56 +222,270 @@ impl Refresher {
 
     /// [`Refresher::token`], with the time given.
     pub fn token_at(&self, account: &ForgeAccount, now: u64) -> Result<SecretString, ForgeError> {
+        self.token_ahead(account, now, AHEAD)
+    }
+
+    /// [`Refresher::token_at`], renewing a token with less than `ahead` left: the renewal sweep
+    /// ([`super::credential::renewal`]) asks for a longer lead than a request does, so a token
+    /// is renewed while nobody is waiting on it.
+    pub(super) fn token_ahead(
+        &self,
+        account: &ForgeAccount,
+        now: u64,
+        ahead: Duration,
+    ) -> Result<SecretString, ForgeError> {
         let keyring = accounts::keyring_at(&self.config_root);
         let kept = self.read(keyring.as_ref(), account)?;
-        if !due(account, &kept, now) {
+        if !due(account, &kept, now, ahead) && !pending(|all| all.contains_key(&account.id)) {
             return Ok(kept.access);
         }
         let _one = REFRESHING.lock().unwrap_or_else(|e| e.into_inner());
+        // And one at a time on the machine: the window and a session host are two processes.
+        let _across = crate::machine::Lock::named(&self.config_root, REFRESH_LOCK);
+        // Fail closed: a refresh rotates the refresh token, so a renewal that cannot be made
+        // one at a time on the machine is not made. The token in hand serves while it lasts.
+        if cfg!(unix) && !_across.held() {
+            let kept = self.read(keyring.as_ref(), account)?;
+            return match kept.expires_at {
+                Some(at) if at <= now => Err(ForgeError::transport(format!(
+                    "purlis could not take the lock that makes a renewal one act on this machine, \
+                     so it did not renew its sign-in to {} as {}. Try again.",
+                    account.host, account.login
+                ))),
+                _ => Ok(kept.access),
+            };
+        }
+        // A renewed pair another process could not keep is not to be replayed over: the refresh
+        // token in the keychain is spent.
+        if let Some(why) = self.held_elsewhere(account) {
+            let kept = self.read(keyring.as_ref(), account)?;
+            return match kept.expires_at {
+                Some(at) if at <= now => Err(ForgeError::transport(why)),
+                _ => Ok(kept.access),
+            };
+        }
+        // A renewal an earlier call could not keep is kept first, before anything is sent.
+        if let Err(why) = self.settle(keyring.as_ref(), account) {
+            tracing::warn!("purlis: a renewed sign-in is still not in the keychain: {why}");
+            let kept = self.read(keyring.as_ref(), account)?;
+            return match kept.expires_at {
+                Some(at) if at <= now => Err(ForgeError::transport(why)),
+                _ => Ok(kept.access),
+            };
+        }
         // Another request may have renewed it while this one waited its turn, or another
         // process (the session host, the window) may have: read afresh, past this process's
         // memory, so a spent refresh token is never sent (#2656).
         let kept = self.read_afresh(keyring.as_ref(), account)?;
-        if !due(account, &kept, now) {
+        if !due(account, &kept, now, ahead) {
             return Ok(kept.access);
         }
         let expired = kept.expires_at.is_some_and(|at| at <= now);
-        let (Some(registration), Some(spent)) = (
-            registration::on(account.kind, &account.host),
-            kept.refresh.as_ref(),
-        ) else {
+        let Some(spent) = kept.refresh.as_ref() else {
             // Nothing to renew it with. It is used while it lasts.
             if expired {
                 return Err(self.ended(keyring.as_ref(), account));
             }
             return Ok(kept.access);
         };
+        // The client id the account signed in through, which the pin on the host must still say.
+        let (client_id, registration) = match self.client_id_of(account) {
+            Ok(found) => found,
+            Err(Pin::Unreadable(why)) if !expired => {
+                tracing::warn!("purlis: a sign-in could not be renewed yet: {why}");
+                return Ok(kept.access);
+            }
+            Err(Pin::Unreadable(why)) => return Err(ForgeError::transport(why)),
+            Err(Pin::Changed) => {
+                if !going(&account.id, |g| std::mem::replace(&mut g.told_pin, true)) {
+                    raise(account, &Trouble::PinChanged);
+                }
+                return if expired {
+                    Err(ForgeError::of(Failure::Auth, pin_changed_said(account)))
+                } else {
+                    Ok(kept.access)
+                };
+            }
+        };
+        // The pin says the application the account signed in through again: told afresh if it
+        // moves again.
+        going(&account.id, |g| g.told_pin = false);
+        // A host that answered with a failure waits its turn: not before the backoff says.
+        let wait = going(&account.id, |g| g.retry_at);
+        if now < wait {
+            return if expired {
+                Err(self.could_not_reach(account, "it is not being asked again yet"))
+            } else {
+                Ok(kept.access)
+            };
+        }
         let at = self
             .at
             .clone()
             .unwrap_or_else(|| Endpoints::of(registration));
         let endpoint = self.endpoint.get_or_init(Https::shared);
-        match renewed(endpoint.as_ref(), &at, registration, spent) {
+        match renewed(endpoint.as_ref(), &at, &client_id, spent) {
             Renewed::Granted(granted) => {
-                accounts::keep_refreshed(
-                    &self.scope,
-                    keyring.as_ref(),
-                    account,
-                    &granted,
-                    Some(spent),
-                    now,
-                )
-                .map_err(ForgeError::transport)?;
-                Ok(granted.access)
+                going(&account.id, |g| *g = Going::default());
+                // Kept before it is used: the forge has spent the old refresh token.
+                match self.keep_durably(keyring.as_ref(), account, &granted, Some(spent), now) {
+                    Ok(()) => Ok(granted.access),
+                    Err(why) => {
+                        self.mark_held(account);
+                        pending(|all| {
+                            all.insert(
+                                account.id.clone(),
+                                Pending {
+                                    granted: copy_of(&granted),
+                                    spent: Some(spent.clone()),
+                                    at: now,
+                                },
+                            )
+                        });
+                        tracing::warn!("purlis: {why}");
+                        match kept.expires_at {
+                            Some(at) if at <= now => Err(ForgeError::transport(why)),
+                            _ => Ok(kept.access),
+                        }
+                    }
+                }
             }
-            Renewed::Refused => Err(self.ended(keyring.as_ref(), account)),
-            Renewed::Unreachable(_) if !expired => Ok(kept.access),
-            Renewed::Unreachable(why) => Err(ForgeError::transport(format!(
-                "purlis could not reach {} to renew its sign-in as {}: {why}. Check your \
-                 connection and try again.",
-                account.host, account.login
-            ))),
+            Renewed::Refused => {
+                pending(|all| all.remove(&account.id));
+                self.unmark_held(account);
+                Err(self.ended(keyring.as_ref(), account))
+            }
+            Renewed::Unreachable(why) => {
+                let failures = going(&account.id, |g| {
+                    g.failures += 1;
+                    g.retry_at = now.saturating_add(backoff(g.failures).as_secs());
+                    g.failures
+                });
+                if failures >= NOTICE_AFTER
+                    && !going(&account.id, |g| {
+                        std::mem::replace(&mut g.told_failing, true)
+                    })
+                {
+                    raise(account, &Trouble::RenewalFailing { failures });
+                }
+                if expired {
+                    Err(self.could_not_reach(account, &why))
+                } else {
+                    Ok(kept.access)
+                }
+            }
         }
+    }
+
+    /// The client id `account` is renewed with: the one it signed in through, which the pin on
+    /// its host must still say. A compiled-in host's account made before the id was kept is
+    /// renewed with purlis's own registration.
+    fn client_id_of(&self, account: &ForgeAccount) -> Result<(String, &'static Registration), Pin> {
+        let current = registration::resolve(&self.config_root, account.kind, &account.host)
+            .map_err(Pin::Unreadable)?;
+        match (current, account.client_id.as_deref()) {
+            (Some(now), Some(pinned)) if now.client_id == pinned => Ok((pinned.to_string(), now)),
+            (Some(now), None) if registration::on(account.kind, &account.host).is_some() => {
+                Ok((now.client_id.to_string(), now))
+            }
+            _ => Err(Pin::Changed),
+        }
+    }
+
+    /// Writes a renewed pair to the account's keyring item, trying a few times.
+    fn keep_durably(
+        &self,
+        keyring: &dyn crate::secrets::keyring::Store,
+        account: &ForgeAccount,
+        granted: &super::oauth::Granted,
+        spent: Option<&SecretString>,
+        now: u64,
+    ) -> Result<(), String> {
+        let mut last = String::new();
+        for _ in 0..WRITE_TRIES {
+            match accounts::keep_refreshed(&self.scope, keyring, account, granted, spent, now) {
+                // Superseded is settled too: a newer item stands, and this pair is dropped.
+                Ok(_) => return Ok(()),
+                Err(why) => last = why,
+            }
+        }
+        Err(last)
+    }
+
+    /// Writes the pair an earlier renewal could not keep, if there is one.
+    fn settle(
+        &self,
+        keyring: &dyn crate::secrets::keyring::Store,
+        account: &ForgeAccount,
+    ) -> Result<(), String> {
+        let Some(held) = pending(|all| {
+            all.get(&account.id)
+                .map(|p| (copy_of(&p.granted), p.spent.clone(), p.at))
+        }) else {
+            return Ok(());
+        };
+        self.keep_durably(keyring, account, &held.0, held.1.as_ref(), held.2)?;
+        pending(|all| all.remove(&account.id));
+        self.unmark_held(account);
+        Ok(())
+    }
+
+    /// The marker file of `account`'s unkept pair, in the lock folder (hex of the id: any id is a
+    /// safe file name).
+    fn marker(&self, account: &ForgeAccount) -> Option<PathBuf> {
+        let hex: String = account.id.bytes().map(|b| format!("{b:02x}")).collect();
+        let dir = crate::machine::locks_dir(&self.config_root).ok()?;
+        Some(dir.join(format!("forge-refresh-held-{hex}")))
+    }
+
+    /// Says, under the machine lock, that this process holds a renewed pair for `account` it could
+    /// not write: the keychain still has the refresh token the forge spent. The file holds the
+    /// account id and this process's id.
+    fn mark_held(&self, account: &ForgeAccount) {
+        let Some(path) = self.marker(account) else {
+            return;
+        };
+        let text = format!("{}\n{}\n", account.id, std::process::id());
+        if let Err(why) = std::fs::write(&path, text) {
+            tracing::warn!("purlis: could not mark a renewed sign-in as held: {why}");
+        }
+    }
+
+    fn unmark_held(&self, account: &ForgeAccount) {
+        if let Some(path) = self.marker(account) {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
+    /// Why this process must not renew `account`: another live process holds a renewed pair it
+    /// has not yet kept. A marker of a process that is gone is removed: its pair is lost, and the
+    /// forge's own answer to the spent token is what ends the sign-in.
+    fn held_elsewhere(&self, account: &ForgeAccount) -> Option<String> {
+        let path = self.marker(account)?;
+        let text = std::fs::read_to_string(&path).ok()?;
+        let mut lines = text.lines();
+        let id = lines.next()?;
+        let pid: u32 = lines.next()?.trim().parse().ok()?;
+        if id != account.id || pid == std::process::id() {
+            return None;
+        }
+        if crate::process::alive(pid) {
+            return Some(format!(
+                "another purlis process holds a renewed sign-in to {} as {} that it has not yet \
+                 kept in the keychain, so this one did not renew it. Try again shortly.",
+                account.host, account.login
+            ));
+        }
+        let _ = std::fs::remove_file(path);
+        None
+    }
+
+    fn could_not_reach(&self, account: &ForgeAccount, why: &str) -> ForgeError {
+        ForgeError::transport(format!(
+            "purlis could not reach {} to renew its sign-in as {}: {why}. Check your \
+             connection and try again.",
+            account.host, account.login
+        ))
     }
 
     fn read(
@@ -219,6 +548,28 @@ impl Refresher {
     }
 }
 
+/// Why a renewal cannot say which application to use.
+enum Pin {
+    /// The pins could not be read.
+    Unreadable(String),
+    /// The host's pin is not the application the account signed in through, or there is none.
+    Changed,
+}
+
+/// The tries of the keychain write for one renewed pair, before the pair is held for the next
+/// call.
+const WRITE_TRIES: u32 = 3;
+
+/// What the window says when renewal stopped because the host's application is not the one
+/// `account` signed in through.
+pub fn pin_changed_said(account: &ForgeAccount) -> String {
+    format!(
+        "purlis stopped renewing its sign-in to {} as {}: the application pinned for {} is not the \
+         one it signed in through. Check the application in {SIGN_IN_AT}, then sign in again.",
+        account.host, account.login, account.host
+    )
+}
+
 /// What the window says when the forge ended `account`'s sign-in.
 pub fn ended_said(account: &ForgeAccount) -> String {
     format!(
@@ -228,39 +579,36 @@ pub fn ended_said(account: &ForgeAccount) -> String {
     )
 }
 
-/// Whether `account`'s token is to be renewed before it is used at `now`.
-fn due(account: &ForgeAccount, kept: &Kept, now: u64) -> bool {
+/// Whether `account`'s token is to be renewed before it is used at `now`, with `ahead` to spare.
+fn due(account: &ForgeAccount, kept: &Kept, now: u64, ahead: Duration) -> bool {
     matches!(account.method, Method::Device | Method::Pkce)
         && kept
             .expires_at
-            .is_some_and(|at| at <= now.saturating_add(AHEAD.as_secs()))
+            .is_some_and(|at| at <= now.saturating_add(ahead.as_secs()))
 }
-
-/// OAuth's `error` words that say "not now" and nothing about the grant (RFC 6749 §4.1.2.1,
-/// RFC 8628 §3.5).
-const NOT_NOW: [&str; 3] = ["temporarily_unavailable", "server_error", "slow_down"];
 
 /// How a refresh went.
 enum Renewed {
     Granted(super::oauth::Granted),
-    /// The forge answered and would not: the sign-in has ended.
+    /// The forge said the grant is over ([`ENDS_IT`]): the sign-in has ended.
     Refused,
-    /// Nothing answered, or not as a forge would: nothing is known about the sign-in.
+    /// Anything else that was not a grant: nothing is known about the sign-in, and ending it
+    /// cannot be undone. The sentence says what was seen.
     Unreachable(String),
 }
 
-/// `spent` traded for a new pair at `at`, with the registration's public client id and no
-/// secret.
+/// `spent` traded for a new pair at `at`, with the public client id the account signed in
+/// through and no secret.
 fn renewed(
     endpoint: &dyn Endpoint,
     at: &Endpoints,
-    registration: &Registration,
+    client_id: &str,
     spent: &SecretString,
 ) -> Renewed {
     let answer = match endpoint.post(
         &at.token,
         &[
-            ("client_id", registration.client_id),
+            ("client_id", client_id),
             ("grant_type", "refresh_token"),
             ("refresh_token", spent.expose_secret()),
         ],
@@ -270,20 +618,11 @@ fn renewed(
     };
     let status = answer.status;
     match answer.error() {
-        // The forge's own word that it is busy: nothing is known about the sign-in.
-        Some(word) if NOT_NOW.contains(&word) => {
-            return Renewed::Unreachable(format!("it answered HTTP {status}"));
-        }
-        // `bad_refresh_token`, `invalid_grant`, an app the person revoked: the forge's answer,
-        // whatever its word.
-        Some(_) => return Renewed::Refused,
-        // A bare 400 or 401 is how a token endpoint refuses a grant.
-        None if matches!(status, 400 | 401) => return Renewed::Refused,
-        // Any other refusal without OAuth's word (a rate limit, a proxy between here and the
-        // forge) says nothing about the sign-in, and ending it cannot be undone.
-        None if (400..500).contains(&status) => {
-            return Renewed::Unreachable(format!("it answered HTTP {status}"));
-        }
+        Some(word) if ENDS_IT.contains(&word) => return Renewed::Refused,
+        // `invalid_client`, `unauthorized_client`, `temporarily_unavailable`, a rate limit, a
+        // proxy, a 5xx: the forge's word is not about the grant, so the sign-in stands.
+        Some(word) => return Renewed::Unreachable(format!("it answered {word} (HTTP {status})")),
+        None if status >= 400 => return Renewed::Unreachable(format!("it answered HTTP {status}")),
         None => {}
     }
     match answer.granted() {
@@ -301,6 +640,7 @@ pub(crate) mod tests {
     use crate::forge::device::tests::StandIn;
     use crate::forge::http::TokenSource;
     use crate::forge::oauth::Answer;
+    use crate::forge::registered;
     use crate::forge::transport::{Call, NoAnswer, Reply, Transport};
 
     /// A forge that says whose token it is: `octocat`'s.
@@ -332,6 +672,16 @@ pub(crate) mod tests {
         pub(crate) expires_at: u64,
     }
 
+    /// The client id a sign-in on `host` is made through: purlis's own where it has a registration
+    /// there, else the one a test pins for a host of its own ([`registered::pin`]).
+    pub(crate) fn client_id_of_the_application_on(kind: Kind, host: &str) -> &'static str {
+        match (registration::on(kind, host), kind) {
+            (Some(own), _) => own.client_id,
+            (None, Kind::GitHub) => "Iv1.ghes-client",
+            (None, Kind::GitLab) => "gl-group-app",
+        }
+    }
+
     pub(crate) fn machine(kind: Kind, host: &str, method: Method) -> Machine {
         let home = tempfile::tempdir().unwrap();
         let keyring = accounts::keyring_at(home.path());
@@ -357,6 +707,7 @@ pub(crate) mod tests {
             host,
             granted,
             method,
+            client_id_of_the_application_on(kind, host),
         )
         .unwrap();
         let expires_at = accounts::kept(keyring.as_ref(), &account)
@@ -510,7 +861,10 @@ pub(crate) mod tests {
         for answer in [
             (200, r#"{"error": "bad_refresh_token"}"#),
             (400, r#"{"error": "invalid_grant"}"#),
-            (401, ""),
+            (
+                401,
+                r#"{"error": "invalid_grant", "error_description": "revoked"}"#,
+            ),
         ] {
             let machine = machine(Kind::GitHub, "github.com", Method::Device);
             let forge = Arc::new(StandIn::answering(&[Ok(answer)]));
@@ -555,9 +909,9 @@ pub(crate) mod tests {
         ]));
         let refresher = machine.refresher(&forge);
         // With time left, the token it has is used.
-        for _ in 0..2 {
+        for later in [0, backoff(1).as_secs()] {
             let token = refresher
-                .token_at(&machine.account, machine.expires_at - 60)
+                .token_at(&machine.account, machine.expires_at - 60 + later)
                 .unwrap();
             assert_eq!(token.expose_secret(), "first-access-value");
         }
@@ -598,6 +952,14 @@ pub(crate) mod tests {
             (407, ""),
             (503, r#"{"error": "temporarily_unavailable"}"#),
             (400, r#"{"error": "server_error"}"#),
+            // The application, not the grant: a wrong or retired client id, or one that may not
+            // use the flow. Ending the sign-in would punish the person for a setting of the owner's.
+            (401, r#"{"error": "invalid_client"}"#),
+            (400, r#"{"error": "unauthorized_client"}"#),
+            (200, r#"{"error": "incorrect_client_credentials"}"#),
+            // A bare 400 or 401 carries no word about the grant.
+            (400, ""),
+            (401, ""),
         ] {
             let machine = machine(Kind::GitHub, "github.com", Method::Device);
             let forge = Arc::new(StandIn::answering(&[Ok(answer), Ok(answer)]));
@@ -637,5 +999,419 @@ pub(crate) mod tests {
                 .is_err()
         );
         assert!(forge.posted.lock().unwrap().is_empty());
+    }
+
+    /// The keyring stub's file, which a test makes unwritable to make the keychain refuse.
+    fn the_keychain_refuses(machine: &Machine, refuses: bool) {
+        use std::os::unix::fs::PermissionsExt;
+        let stub =
+            crate::machine::dir(machine.home.path()).join(crate::secrets::keyring::STUB_FILE);
+        let dir = stub.parent().unwrap();
+        let (file_mode, dir_mode) = if refuses {
+            (0o400, 0o500)
+        } else {
+            (0o600, 0o700)
+        };
+        if !refuses {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(dir_mode)).unwrap();
+        }
+        std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(file_mode)).unwrap();
+        if refuses {
+            std::fs::set_permissions(dir, std::fs::Permissions::from_mode(dir_mode)).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_renewed_pair_the_keychain_would_not_take_is_kept_in_memory_and_the_spent_token_never_sent()
+    {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        let now = machine.expires_at - AHEAD.as_secs();
+        the_keychain_refuses(&machine, true);
+        // The forge renewed, and the keychain refused the write: the new access token is not
+        // used before it is kept. The old one has time left, so it serves.
+        let token = refresher.token_at(&machine.account, now).unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        assert_eq!(forge.posted.lock().unwrap().len(), 1);
+        // The next request does not post the refresh token the forge has spent.
+        let token = refresher.token_at(&machine.account, now + 10).unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        assert_eq!(
+            forge.posted.lock().unwrap().len(),
+            1,
+            "the spent token was sent"
+        );
+        // With the old token spent too, the request fails and says why; nothing is signed out.
+        let why = refresher
+            .token_at(&machine.account, machine.expires_at + 1)
+            .unwrap_err();
+        assert_eq!(why.failure(), &Failure::Transport);
+        assert_eq!(forge.posted.lock().unwrap().len(), 1);
+        // The keychain takes it again: the pair held is written first, and then used.
+        the_keychain_refuses(&machine, false);
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at + 2)
+            .unwrap();
+        assert_eq!(token.expose_secret(), "second-access-value");
+        assert_eq!(forge.posted.lock().unwrap().len(), 1, "it renewed again");
+        let kept = machine.kept().unwrap();
+        assert_eq!(kept.access.expose_secret(), "second-access-value");
+        assert_eq!(
+            kept.refresh.as_ref().map(|r| r.expose_secret()),
+            Some("second-refresh-value")
+        );
+        assert_eq!(machine.listed().state, State::SignedIn);
+    }
+
+    #[test]
+    fn requests_at_once_renew_once_and_all_get_the_new_token() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let now = machine.expires_at - AHEAD.as_secs();
+        let tokens: Vec<String> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..6)
+                .map(|_| {
+                    scope.spawn(|| {
+                        // Each is a refresher of its own, as the window's and the session host's are.
+                        let refresher = machine.refresher(&forge);
+                        refresher
+                            .token_at(&machine.account, now)
+                            .unwrap()
+                            .expose_secret()
+                            .to_string()
+                    })
+                })
+                .collect();
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+        assert!(
+            tokens.iter().all(|t| t == "second-access-value"),
+            "{tokens:?}"
+        );
+        assert_eq!(forge.posted.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_renewal_waits_for_the_machine_wide_lock_another_process_holds() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let now = machine.expires_at - AHEAD.as_secs();
+        // Another process of the app is in the middle of a renewal: it holds the lock file.
+        let theirs = crate::machine::Lock::named(machine.home.path(), REFRESH_LOCK);
+        assert!(theirs.held());
+        std::thread::scope(|scope| {
+            let renewing = scope.spawn(|| {
+                machine
+                    .refresher(&forge)
+                    .token_at(&machine.account, now)
+                    .unwrap()
+            });
+            std::thread::sleep(Duration::from_millis(300));
+            assert!(
+                forge.posted.lock().unwrap().is_empty(),
+                "a renewal went ahead while another process held the lock"
+            );
+            drop(theirs);
+            assert_eq!(
+                renewing.join().unwrap().expose_secret(),
+                "second-access-value"
+            );
+        });
+        assert_eq!(forge.posted.lock().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_renewal_that_fails_waits_longer_each_time_and_the_window_is_told_after_three() {
+        assert_eq!(backoff(1), Duration::from_secs(30));
+        assert_eq!(backoff(2), Duration::from_secs(60));
+        assert_eq!(backoff(3), Duration::from_secs(120));
+        assert_eq!(backoff(40), Duration::from_secs(15 * 60));
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[
+            Ok((503, "")),
+            Ok((503, "")),
+            Ok((503, "")),
+            Ok((503, "")),
+        ]));
+        let refresher = machine.refresher(&forge);
+        let id = machine.account.id.clone();
+        let mut at = machine.expires_at - 290;
+        for round in 1..=3u32 {
+            refresher.token_at(&machine.account, at).unwrap();
+            assert_eq!(forge.posted.lock().unwrap().len(), round as usize);
+            assert_eq!(going(&id, |g| g.told_failing), round >= NOTICE_AFTER);
+            // Inside the wait it is not asked again.
+            refresher.token_at(&machine.account, at + 1).unwrap();
+            assert_eq!(forge.posted.lock().unwrap().len(), round as usize);
+            at += backoff(round).as_secs();
+        }
+        // The item is kept through all of it.
+        assert_eq!(
+            machine.kept().unwrap().refresh.unwrap().expose_secret(),
+            "first-refresh-value"
+        );
+        assert_eq!(machine.listed().state, State::SignedIn);
+    }
+
+    #[test]
+    fn a_renewal_uses_the_client_id_the_account_signed_in_through_and_stops_when_the_pin_moves() {
+        let machine = machine(Kind::GitHub, "ghe.example.com", Method::Device);
+        assert_eq!(
+            machine.account.client_id.as_deref(),
+            Some("Iv1.ghes-client")
+        );
+        let pin = |id: &str| {
+            registered::pin(
+                &HostScope::for_a_test(),
+                machine.home.path(),
+                Kind::GitHub,
+                "ghe.example.com",
+                id,
+            )
+            .unwrap()
+        };
+        pin("Iv1.ghes-client");
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = Refresher::through(
+            &HostScope::for_a_test(),
+            machine.home.path(),
+            forge.clone(),
+            Endpoints::of(
+                registered::pinned(machine.home.path(), Kind::GitHub, "ghe.example.com")
+                    .unwrap()
+                    .unwrap(),
+            ),
+        );
+        // Another application is pinned for the host (someone pressed Use this application, or
+        // the file was replaced): the renewal sends the refresh token to nobody.
+        pin("Iv1.another-application");
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at - 60)
+            .unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        let why = refresher
+            .token_at(&machine.account, machine.expires_at + 1)
+            .unwrap_err();
+        assert_eq!(why.failure(), &Failure::Auth);
+        assert!(why.said().contains("stopped renewing"), "{why}");
+        assert!(forge.posted.lock().unwrap().is_empty());
+        assert!(going(&machine.account.id, |g| g.told_pin));
+        // The item is kept, and the account is still listed as signed in.
+        assert!(machine.kept().unwrap().refresh.is_some());
+        assert_eq!(machine.listed().state, State::SignedIn);
+        // Nothing pinned at all is the same.
+        registered::unpin(
+            &HostScope::for_a_test(),
+            machine.home.path(),
+            Kind::GitHub,
+            "ghe.example.com",
+        )
+        .unwrap();
+        assert!(
+            refresher
+                .token_at(&machine.account, machine.expires_at + 1)
+                .is_err()
+        );
+        assert!(forge.posted.lock().unwrap().is_empty());
+        // Pinned back to the application the account was made with, it renews with that id.
+        pin("Iv1.ghes-client");
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at + 1)
+            .unwrap();
+        assert_eq!(token.expose_secret(), "second-access-value");
+        assert_eq!(
+            forge.posted.lock().unwrap()[0].1[0],
+            ("client_id".to_string(), "Iv1.ghes-client".to_string())
+        );
+    }
+
+    #[test]
+    fn a_pin_that_is_settled_again_is_told_afresh_when_it_moves_again() {
+        let machine = machine(Kind::GitHub, "ghe.example.com", Method::Device);
+        let pin = |id: &str| {
+            registered::pin(
+                &HostScope::for_a_test(),
+                machine.home.path(),
+                Kind::GitHub,
+                "ghe.example.com",
+                id,
+            )
+            .unwrap()
+        };
+        pin("Iv1.ghes-client");
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = Refresher::through(
+            &HostScope::for_a_test(),
+            machine.home.path(),
+            forge.clone(),
+            Endpoints::of(
+                registered::pinned(machine.home.path(), Kind::GitHub, "ghe.example.com")
+                    .unwrap()
+                    .unwrap(),
+            ),
+        );
+        let id = machine.account.id.clone();
+        pin("Iv1.another-application");
+        refresher
+            .token_at(&machine.account, machine.expires_at - 60)
+            .unwrap();
+        assert!(going(&id, |g| g.told_pin));
+        // Pinned back: the pin is settled, and the flag is cleared.
+        pin("Iv1.ghes-client");
+        refresher
+            .token_at(&machine.account, machine.expires_at - 60)
+            .unwrap();
+        assert!(!going(&id, |g| g.told_pin), "told_pin outlived the pin");
+        // Moved again: told again. (The renewal above made a new token, so the time is its.)
+        pin("Iv1.another-application");
+        refresher
+            .token_at(&machine.account, machine.expires_at + 28_700)
+            .unwrap();
+        assert!(going(&id, |g| g.told_pin));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_renewal_that_cannot_take_the_machine_lock_is_not_made() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        // A directory where the lock file goes: it cannot be opened as a file.
+        let dir = crate::machine::locks_dir(machine.home.path()).unwrap();
+        std::fs::create_dir(dir.join(REFRESH_LOCK)).unwrap();
+        let now = machine.expires_at - AHEAD.as_secs();
+        // The token in hand has time left: it serves, and nothing is sent.
+        let token = refresher.token_at(&machine.account, now).unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        // With none left the request fails and says so, and still nothing is sent.
+        let why = refresher
+            .token_at(&machine.account, machine.expires_at + 1)
+            .unwrap_err();
+        assert_eq!(why.failure(), &Failure::Transport);
+        assert!(why.said().contains("lock"), "{why}");
+        assert!(forge.posted.lock().unwrap().is_empty());
+        assert_eq!(
+            machine.kept().unwrap().refresh.unwrap().expose_secret(),
+            "first-refresh-value"
+        );
+    }
+
+    fn keep(machine: &Machine, was: Option<&str>) -> Result<accounts::KeepOutcome, String> {
+        let granted = Answer::of(200, RENEWED).granted().unwrap();
+        let was = was.map(SecretString::from);
+        accounts::keep_refreshed(
+            &HostScope::for_a_test(),
+            accounts::keyring_at(machine.home.path()).as_ref(),
+            &machine.account,
+            &granted,
+            was.as_ref(),
+            accounts::now(),
+        )
+    }
+
+    #[test]
+    fn a_pair_is_written_only_over_the_refresh_token_it_spent() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        // A stale pair (it spent a token the item no longer holds) overwrites nothing.
+        assert_eq!(
+            keep(&machine, Some("an-older-refresh-value")),
+            Ok(accounts::KeepOutcome::Superseded)
+        );
+        assert_eq!(
+            machine.kept().unwrap().access.expose_secret(),
+            "first-access-value"
+        );
+        // The one it was made from is written.
+        assert_eq!(
+            keep(&machine, Some("first-refresh-value")),
+            Ok(accounts::KeepOutcome::Written)
+        );
+        assert_eq!(
+            machine.kept().unwrap().access.expose_secret(),
+            "second-access-value"
+        );
+    }
+
+    #[test]
+    fn a_pair_is_never_written_to_an_item_another_process_ended() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let keyring = accounts::keyring_at(machine.home.path());
+        accounts::signed_out_by_the_forge(
+            &HostScope::for_a_test(),
+            machine.home.path(),
+            keyring.as_ref(),
+            &machine.account.id,
+        )
+        .unwrap();
+        assert_eq!(
+            keep(&machine, Some("first-refresh-value")),
+            Ok(accounts::KeepOutcome::Superseded)
+        );
+        assert!(machine.kept().is_none(), "the ended item was made again");
+    }
+
+    /// The marker a process that holds an unkept pair leaves, written by `pid`.
+    fn held_by(machine: &Machine, refresher: &Refresher, pid: u32) {
+        let path = refresher.marker(&machine.account).unwrap();
+        std::fs::write(path, format!("{}\n{pid}\n", machine.account.id)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_renewal_waits_for_a_live_process_that_holds_an_unkept_pair() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        // This test's parent is another live process.
+        held_by(&machine, &refresher, std::os::unix::process::parent_id());
+        let now = machine.expires_at - AHEAD.as_secs();
+        let token = refresher.token_at(&machine.account, now).unwrap();
+        assert_eq!(token.expose_secret(), "first-access-value");
+        let why = refresher
+            .token_at(&machine.account, machine.expires_at + 1)
+            .unwrap_err();
+        assert!(why.said().contains("another purlis process"), "{why}");
+        assert!(
+            forge.posted.lock().unwrap().is_empty(),
+            "the spent refresh token was replayed"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_marker_of_a_process_that_is_gone_is_cleared_and_the_renewal_goes_on() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        let mut command = std::process::Command::new("true");
+        let mut child = crate::forklock::spawn(&mut command).unwrap();
+        let gone = child.id();
+        child.wait().unwrap();
+        held_by(&machine, &refresher, gone);
+        let token = refresher
+            .token_at(&machine.account, machine.expires_at - AHEAD.as_secs())
+            .unwrap();
+        assert_eq!(token.expose_secret(), "second-access-value");
+        assert!(!refresher.marker(&machine.account).unwrap().exists());
+    }
+
+    #[test]
+    fn a_pair_the_keychain_would_not_take_leaves_a_marker_until_it_is_kept() {
+        let machine = machine(Kind::GitHub, "github.com", Method::Device);
+        let forge = Arc::new(StandIn::answering(&[Ok((200, RENEWED))]));
+        let refresher = machine.refresher(&forge);
+        let marker = refresher.marker(&machine.account).unwrap();
+        let now = machine.expires_at - AHEAD.as_secs();
+        the_keychain_refuses(&machine, true);
+        refresher.token_at(&machine.account, now).unwrap();
+        let text = std::fs::read_to_string(&marker).unwrap();
+        assert_eq!(
+            text,
+            format!("{}\n{}\n", machine.account.id, std::process::id())
+        );
+        the_keychain_refuses(&machine, false);
+        refresher.token_at(&machine.account, now + 10).unwrap();
+        assert!(!marker.exists(), "the marker outlived the unkept pair");
     }
 }

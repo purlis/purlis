@@ -250,6 +250,11 @@ url = "2"
 # arguments the way a shell splits words, with no shell. Both already in this workspace's
 # lockfile, so they add no crate to the tree.
 percent-encoding = "2"
+# **The forge proxy's GraphQL gate** (ADR 0128 D2, Open item 6): a chat's GraphQL document is
+# parsed, never matched as text, so a mutation or a field outside the allowlist is found by its
+# syntax tree. MIT or Apache-2.0, and already in this workspace's lockfile (through
+# `graphql_client`'s code generator), so it adds no crate to the lockfile.
+graphql-parser = "0.4"
 # Whether an artifact's template holds script a browser runs (#5959, ADR 0122 §4): its pages
 # read by the HTML tokenizer browsers' parsing is specified by, never by matching text. Servo's,
 # MIT OR Apache-2.0, already in this workspace's lockfile through the webview's crates.
