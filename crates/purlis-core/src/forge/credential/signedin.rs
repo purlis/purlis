@@ -9,13 +9,15 @@
 //! answers [`CredentialError::SignInAgain`]. **It never answers with another account's token**,
 //! another host's, or a forge CLI's login (ADR 0070 §5): where a host has more than one account
 //! and none is chosen for the project it refuses, and an account the forge ended is not replaced by
-//! another that is signed in.
+//! another that is signed in. **An account whose token holds `workflow`** (GitHub folded the CI-file
+//! permission into it) **is refused the same way** until the person signs in again without it: that
+//! token is never on a chat's route.
 
 use std::path::{Path, PathBuf};
 
 use super::{Credential, CredentialError, CredentialSource, Source, TokenKind};
 use crate::forge::accounts::{self, ForgeAccount, State};
-use crate::forge::refresh::{Refresher, ended_said};
+use crate::forge::refresh::{Refresher, Trouble, ended_said};
 use crate::forge::route::HostScope;
 use crate::forge::signin::SIGN_IN_AT;
 use crate::forge::{Failure, ForgeError};
@@ -115,6 +117,15 @@ impl SignedIn {
             return Err(CredentialError::SignInAgain {
                 host: host.to_string(),
                 said: ended_said(account),
+            });
+        }
+        // A token that holds `workflow` is never a chat route's (ADR 0128 D1.1): checked before
+        // the keyring is read, so nothing of it is even fetched.
+        if accounts::everyday_holds_workflow(account) {
+            crate::forge::refresh::raise_once(account, &Trouble::EverydayHoldsWorkflow);
+            return Err(CredentialError::SignInAgain {
+                host: host.to_string(),
+                said: accounts::workflow::needs_narrower_sign_in(account),
             });
         }
         let token = self

@@ -281,6 +281,114 @@ fn when_github_folds_workflow_into_the_everyday_token_nothing_is_kept_and_a_push
 }
 
 #[test]
+fn an_everyday_read_back_that_says_nothing_of_scopes_is_a_refusal_and_keeps_nothing() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    // The forge no longer says what the everyday token may do (no `X-OAuth-Scopes`): purlis cannot
+    // tell whether the scope was folded in, so it must not call that "not folded".
+    scene.tokens.know_without_scopes(EVERYDAY, "octocat");
+    let why = scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap_err();
+    assert!(why.contains("did not say"), "{why}");
+    assert!(why.contains("Nothing was kept"), "{why}");
+    assert!(!why.contains("canary"), "{why}");
+    let keyring = scene.keyring();
+    assert!(
+        keyring
+            .get(&accounts::service(&scene.account), "workflow")
+            .unwrap()
+            .is_none(),
+        "the second token was dropped"
+    );
+    assert_eq!(
+        workflow::availability(keyring.as_ref(), &scene.listed()),
+        Availability::NeedsPress,
+        "a push that changes a CI file is still held for a press"
+    );
+}
+
+#[test]
+fn after_a_fold_the_everyday_token_is_served_to_no_chat_until_a_sign_in_without_workflow() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let github = registration::on(Kind::GitHub, "github.com").unwrap();
+    let source = || {
+        SignedIn::through(
+            Refresher::through(
+                &scope(),
+                scene.home.path(),
+                Arc::new(Never),
+                Endpoints::of(github),
+            ),
+            scene.home.path(),
+        )
+    };
+    // Before: the everyday token is served.
+    assert_eq!(
+        source()
+            .credential_at("github.com", now())
+            .unwrap()
+            .expose(),
+        EVERYDAY
+    );
+    // GitHub folds `workflow` into it.
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .tokens
+        .know(EVERYDAY, "octocat", "repo, read:org, workflow");
+    let outcome = scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
+    assert!(matches!(outcome, Outcome::Folded(_)));
+    // The account is marked by what it holds, and no route of a chat is given its token.
+    let listed = scene.listed();
+    assert!(accounts::everyday_holds_workflow(&listed));
+    let why = source().credential_at("github.com", now()).unwrap_err();
+    assert!(why.is_sign_in_again(), "{why:?}");
+    let said = why.to_string();
+    assert!(
+        said.contains("Revoke") && said.contains("sign in again"),
+        "{said}"
+    );
+    assert!(!said.contains(EVERYDAY) && !said.contains(SECOND), "{said}");
+    let by_id = source()
+        .credential_of("github.com", &listed.id, now())
+        .unwrap_err();
+    assert!(by_id.is_sign_in_again(), "{by_id:?}");
+    // The person revokes purlis on GitHub and signs in again, without allowing CI files: served.
+    const NARROW: &str = "canaryNARROWtoken5d2";
+    scene.tokens.know(NARROW, "octocat", "repo, read:org");
+    let keyring = scene.keyring();
+    let reach = scene.tokens.reach();
+    accounts::sign_in_with_grant(
+        &scope(),
+        scene.home.path(),
+        keyring.as_ref(),
+        &reach,
+        Kind::GitHub,
+        "github.com",
+        grant_that_does_not_expire(NARROW, "repo,read:org"),
+        Method::Device,
+        "Ov23litEn94I5HXrpdsX",
+    )
+    .unwrap();
+    assert!(!accounts::everyday_holds_workflow(&scene.listed()));
+    assert_eq!(
+        source()
+            .credential_at("github.com", now())
+            .unwrap()
+            .expose(),
+        NARROW
+    );
+}
+
+#[test]
 fn a_grant_for_another_login_or_without_workflow_keeps_nothing() {
     purlis_core::unsteered!();
     let scene = scene();
@@ -392,7 +500,13 @@ fn the_second_token_is_read_by_one_call_alone() {
             } else if path.extension().is_some_and(|e| e == "rs")
                 && std::fs::read_to_string(&path)
                     .unwrap()
-                    .contains("workflow::for_ci_push")
+                    .lines()
+                    .filter(|l| !l.trim_start().starts_with("//"))
+                    .any(|l| {
+                        l.contains("for_ci_push")
+                            && !path.ends_with("workflow.rs")
+                            && !path.ends_with("provision.rs")
+                    })
             {
                 readers.push(path);
             }

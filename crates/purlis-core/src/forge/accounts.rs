@@ -1014,6 +1014,16 @@ pub fn holds(account: &ForgeAccount, scopes: &[&str]) -> bool {
         .is_some_and(|held| scopes.iter().all(|scope| grants(account.kind, held, scope)))
 }
 
+/// Whether `account`'s everyday token holds `workflow`, the permission to push CI files (ADR 0128
+/// D1.1 and D8.3). **Such a token is never served to a chat's route**: the CI-file protection on
+/// GitHub is that the token a chat's route carries cannot push a workflow file. It holds it when
+/// GitHub folded the scope in from a second sign-in, when it was signed in again after that, or
+/// when a pasted token was made with it. The person's own press is the only way out: sign in again
+/// through a grant that lacks it ([`workflow::needs_narrower_sign_in`] says what to do).
+pub fn everyday_holds_workflow(account: &ForgeAccount) -> bool {
+    account.kind == Kind::GitHub && holds(account, &[workflow::SCOPE])
+}
+
 /// **`account`'s token and scopes replaced with what a step-up `granted`** (#5627, ADR 0116 §5):
 /// the device flow asked for the scopes it holds and `more` ([`widened_scopes`]), and the forge
 /// granted a new token. Kept only on a GitHub account, where the grant holds every one of `more`

@@ -99,6 +99,10 @@ pub enum Trouble {
     PinChanged,
     /// [`NOTICE_AFTER`] renewals in a row did not get an answer the sign-in could use.
     RenewalFailing { failures: u32 },
+    /// GitHub added `workflow`, the permission to push CI files, to the account's everyday token
+    /// (ADR 0128 D1.1): purlis stopped serving that token to any chat until the person signs in
+    /// again without it.
+    EverydayHoldsWorkflow,
 }
 
 type TroubleTold = Box<dyn Fn(&ForgeAccount, &Trouble) + Send + Sync>;
@@ -164,6 +168,22 @@ fn raise(account: &ForgeAccount, trouble: &Trouble) {
         told(account, trouble);
     }
 }
+
+/// [`raise`] for the troubles that a request, not a renewal, finds: told once per account and kind
+/// of trouble in this process, so a chat that asks again and again does not tell the window
+/// again. The Notice itself is derived from the account list, so it survives a restart.
+pub(crate) fn raise_once(account: &ForgeAccount, trouble: &Trouble) {
+    let key = format!("{}:{trouble:?}", account.id);
+    let first = {
+        let mut told = ONCE.lock().unwrap_or_else(|e| e.into_inner());
+        told.get_or_insert_with(Default::default).insert(key)
+    };
+    if first {
+        raise(account, trouble);
+    }
+}
+
+static ONCE: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
 
 /// Whom to tell when a forge ended a sign-in: the window, so it can say so at once.
 static TOLD: OnceLock<Told> = OnceLock::new();

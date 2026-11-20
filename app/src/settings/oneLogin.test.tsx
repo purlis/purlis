@@ -33,11 +33,12 @@ const PIN: ForgeApplicationRow = {
 function repo(path: string, more: Partial<ProjectAccountRow> = {}): ProjectAccountRow {
   return {
     clone_key: `key-${path}`,
+    kind: "github",
     repo_id: "1001",
     host: "github.com",
     path,
     serving: { id: "personal", login: "octocat" },
-    chosen_is_signed_out: false,
+    state: "serving",
     choices: [{ id: "personal", login: "octocat" }],
     ...more,
   };
@@ -198,6 +199,8 @@ describe("You › Accounts › Account for each project", () => {
     await waitFor(() =>
       expect(sent.find((one) => one.cmd === "forge_choose_project_account")?.args).toEqual({
         cloneKey: "key-acme/platform",
+        kind: "github",
+        host: "github.com",
         repoId: "2002",
         accountId: "personal",
       }),
@@ -205,10 +208,35 @@ describe("You › Accounts › Account for each project", () => {
   });
 
   it("says a signed-out account is not replaced by the other one", async () => {
-    repos = [repo("acme/platform", { serving: null, chosen_is_signed_out: true, choices: [] })];
+    repos = [repo("acme/platform", { serving: null, state: "signed-out", choices: [] })];
     render(<Row setting={projectAccounts} />);
     const table = await findGrid(screen, "Account for each repo");
     expect(within(table).getByText("signed out")).toBeTruthy();
     expect(within(table).getByText(/No other account serves this repo meanwhile/)).toBeTruthy();
+  });
+
+  it("says a repo with no account chosen is served by none, and asks", async () => {
+    repos = [
+      repo("acme/platform", {
+        serving: null,
+        state: "unchosen",
+        choices: [
+          { id: "personal", login: "octocat" },
+          { id: "emu", login: "octocat_acme" },
+        ],
+      }),
+    ];
+    render(<Row setting={projectAccounts} />);
+    const table = await findGrid(screen, "Account for each repo");
+    expect(within(table).getByText(/Choose which account serves this repo/)).toBeTruthy();
+    expect(within(table).getByRole("button", { name: /Account for acme\/platform/ })).toBeTruthy();
+  });
+
+  it("says an account signed in through an application the host dropped serves nothing", async () => {
+    repos = [repo("acme/platform", { serving: null, state: "application-changed", choices: [] })];
+    render(<Row setting={projectAccounts} />);
+    const table = await findGrid(screen, "Account for each repo");
+    expect(within(table).getByText("sign in again")).toBeTruthy();
+    expect(within(table).getByText(/application the host no longer uses/)).toBeTruthy();
   });
 });

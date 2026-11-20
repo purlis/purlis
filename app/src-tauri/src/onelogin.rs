@@ -98,6 +98,7 @@ pub async fn forge_applications() -> Result<Vec<ForgeApplicationRow>, String> {
 #[tauri::command]
 #[specta::specta]
 pub async fn forge_use_application(
+    app: tauri::AppHandle,
     kind: String,
     host: String,
     client_id: String,
@@ -108,6 +109,9 @@ pub async fn forge_use_application(
         let scope = host_scope()?;
         let root = config_root()?;
         let pinned = registered::pin_with_owner(&scope, &root, kind, &host, &client_id, &owner)?;
+        if pinned.replaced.is_some() {
+            tell_of_changed_pin(&app, &root, kind, &pinned.host, client_id.trim());
+        }
         let (change, replaced) = match (pinned.replaced, pinned.owner_was) {
             (Some(id), _) => ("client-id", Some(id)),
             (None, Some(owner)) => ("owner", Some(owner)),
@@ -121,6 +125,37 @@ pub async fn forge_use_application(
         })
     })
     .await
+}
+
+/// **A changed pin is a Notice** (D1.3 rule 2): every account on `host` that signed in through
+/// another application than `now` is told to the window as a trouble, which draws the Notice with
+/// its way out (*Sign in again*). Those accounts stop serving chats until then
+/// ([`confirmed::account_for`]).
+fn tell_of_changed_pin(
+    app: &tauri::AppHandle,
+    root: &std::path::Path,
+    kind: Kind,
+    host: &str,
+    now: &str,
+) {
+    use tauri::Emitter;
+    let Ok(listed) = accounts::listed(root) else {
+        return;
+    };
+    for account in listed.iter().filter(|a| {
+        a.kind == kind
+            && a.host.eq_ignore_ascii_case(host)
+            && a.state == State::SignedIn
+            && a.client_id.as_deref().is_some_and(|id| id != now)
+    }) {
+        let _ = app.emit(
+            crate::forgeaccounts::SIGN_IN_TROUBLE,
+            crate::forgeaccounts::trouble_said(
+                &account.id,
+                &purlis_core::forge::refresh::Trouble::PinChanged,
+            ),
+        );
+    }
 }
 
 /// Takes `host`'s pinned application away. Accounts signed in through it stay listed and keep
@@ -165,6 +200,8 @@ pub struct ProjectAccountChoice {
 pub struct ProjectAccountRow {
     /// What the choice names the clone by.
     pub clone_key: String,
+    /// `github` or `gitlab`: with the host and the repo number, what names the repo.
+    pub kind: String,
     /// The forge's own number for the repo, as text (a repo number can outgrow what the window's
     /// numbers hold).
     pub repo_id: String,
@@ -172,9 +209,12 @@ pub struct ProjectAccountRow {
     pub path: String,
     /// The account serving it, or null when it is signed out or gone.
     pub serving: Option<ProjectAccountChoice>,
-    /// Set when the chosen account is signed out: the person signs it in again, or chooses
-    /// another. **No other account serves in its place.**
-    pub chosen_is_signed_out: bool,
+    /// `serving`; `signed-out` (the chosen account is signed out, or holds CI-file permission:
+    /// the person signs it in again, or chooses another; **no other account serves in its
+    /// place**); `unchosen` (several accounts are signed in, and none was chosen); or
+    /// `application-changed` (the chosen account signed in through an application the host no
+    /// longer pins).
+    pub state: String,
     /// The signed-in accounts on this repo's host, for the choice.
     pub choices: Vec<ProjectAccountChoice>,
 }
@@ -199,18 +239,20 @@ pub async fn forge_project_accounts() -> Result<Vec<ProjectAccountRow>, String> 
                     })
                     .map(choice_of)
                     .collect();
-                let (serving, chosen_is_signed_out) =
-                    match confirmed::account_for(&repo, &accounts_here) {
-                        Serving::Account(account) => (Some(choice_of(&account)), false),
-                        Serving::ChosenIsSignedOut { .. } => (None, true),
-                    };
+                let (serving, state) = match confirmed::account_for(&root, &repo, &accounts_here) {
+                    Serving::Account(account) => (Some(choice_of(&account)), "serving"),
+                    Serving::ChosenIsSignedOut { .. } => (None, "signed-out"),
+                    Serving::Unchosen => (None, "unchosen"),
+                    Serving::ApplicationChanged { .. } => (None, "application-changed"),
+                };
                 ProjectAccountRow {
+                    kind: repo.kind.word().to_string(),
                     clone_key: repo.clone_key,
                     repo_id: repo.repo_id.to_string(),
                     host: repo.host,
                     path: repo.path,
                     serving,
-                    chosen_is_signed_out,
+                    state: state.to_string(),
                     choices,
                 }
             })
@@ -232,9 +274,12 @@ fn choice_of(account: &ForgeAccount) -> ProjectAccountChoice {
 #[specta::specta]
 pub async fn forge_choose_project_account(
     clone_key: String,
+    kind: String,
+    host: String,
     repo_id: String,
     account_id: String,
 ) -> Result<(), String> {
+    let kind = kind_of(&kind)?;
     blocking(move || {
         let scope = host_scope()?;
         let root = config_root()?;
@@ -245,7 +290,8 @@ pub async fn forge_choose_project_account(
             .into_iter()
             .find(|a| a.id == account_id)
             .ok_or_else(|| "That account is not on this machine any more.".to_string())?;
-        confirmed::choose_account(&scope, &root, &clone_key, repo_id, &account).map(|_| ())
+        confirmed::choose_account(&scope, &root, &clone_key, kind, &host, repo_id, &account)
+            .map(|_| ())
     })
     .await
 }
@@ -291,8 +337,10 @@ pub async fn forge_trust_clone_repo(
 }
 
 /// Confirms `clone`, which the trust list holds an address for, with the account named, or the
-/// host's only one. Several accounts and none named is a question for the person; none is a
-/// sign-in.
+/// host's only one. **Several accounts and none named is a question for the person, and the repo
+/// is recorded all the same**, with no account ([`confirmed::record_unchosen`]): its number is read
+/// as whichever signed-in account on the host can see it, which serves nothing, and the project
+/// accounts list asks which account serves it. None signed in is a sign-in.
 fn confirm_clone(
     scope: &purlis_core::forge::route::HostScope,
     clone: &std::path::Path,
@@ -306,6 +354,11 @@ fn confirm_clone(
         .into_iter()
         .filter(|a| a.state == State::SignedIn && a.host.eq_ignore_ascii_case(&host))
         .collect();
+    let keyring = accounts::keyring_at(&root);
+    let lookup = AsThePerson {
+        keyring: keyring.as_ref(),
+        reach: &token_check,
+    };
     let account = match account_id {
         Some(id) => on_host
             .into_iter()
@@ -313,17 +366,25 @@ fn confirm_clone(
             .ok_or_else(|| format!("That account is not signed in on {host}."))?,
         None => match confirmed::default_account(on_host) {
             Pick::Only(account) => account,
-            Pick::Choose(_) => return Ok(confirmed_answer("choose", None)),
+            Pick::Choose(several) => {
+                let url = format!("https://{place}");
+                let found = several
+                    .iter()
+                    .find_map(|a| confirmed::candidate_of(&url, &lookup, a).ok());
+                return Ok(match found {
+                    Some(candidate) => {
+                        let repo = confirmed::record_unchosen(scope, &root, clone, &candidate)?;
+                        confirmed_answer("choose", Some(&repo))
+                    }
+                    None => confirmed_answer("choose", None),
+                });
+            }
             Pick::SignIn => return Ok(confirmed_answer("sign-in", None)),
         },
     };
-    // The application the account signed in through, which C's sign-in pins on the account.
-    let client_id = account.client_id.clone().unwrap_or_default();
-    let keyring = accounts::keyring_at(&root);
-    let lookup = AsThePerson {
-        keyring: keyring.as_ref(),
-        reach: &token_check,
-    };
+    // The application the account signed in through, which the host still pins: an account that
+    // another application made records nothing.
+    let client_id = confirmed::application_of(&root, &account)?;
     let repo = confirmed::confirm_trusted(scope, &root, clone, &lookup, &account, &client_id)?;
     Ok(confirmed_answer("recorded", Some(&repo)))
 }
@@ -342,9 +403,30 @@ pub(crate) fn confirm_after_clone(clone: &std::path::Path) {
     }
 }
 
-/// After *Trust this clone*: the same.
+/// After *Trust this clone*: what was confirmed for the clone is taken away first and read afresh
+/// (ADR 0128 D4: a trust is a new confirmation, so a repo the clone no longer is, or an account
+/// that was removed, is not served by an old entry), then the same.
 pub(crate) fn confirm_after_trust(clone: &std::path::Path) {
+    if purlis_core::fence::FENCED {
+        return;
+    }
+    if let (Ok(scope), Ok(root)) = (host_scope(), config_root())
+        && let Err(why) = confirmed::forget_clone(&scope, &root, clone)
+    {
+        tracing::info!("purlis: an earlier confirmation of the clone was not taken away: {why}");
+    }
     confirm_after_clone(clone);
+}
+
+/// After a repo was removed from its workspace: what was confirmed for its clone, named by the key
+/// read before it went, is taken away. Best effort.
+pub(crate) fn forget_removed_clone(key: Option<&str>) {
+    let (Some(key), Ok(scope), Ok(root)) = (key, host_scope(), config_root()) else {
+        return;
+    };
+    if let Err(why) = confirmed::forget_by_key(&scope, &root, key) {
+        tracing::info!("purlis: the confirmation of a removed clone was not taken away: {why}");
+    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -517,6 +599,11 @@ pub async fn forge_ci_permission_wait(flow: u32) -> Result<CiPermissionAnswer, S
 #[tauri::command]
 #[specta::specta]
 pub async fn forge_ci_permission_cancel(flow: u32) {
+    // Like every command here it is the window's alone: a process a chat started cannot stop the
+    // person's sign-in (D5).
+    if host_scope().is_err() {
+        return;
+    }
     let mut held = CI_FLOW.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(flow) = held.take_if(|held| held.number == flow) {
         flow.cancelled.store(true, Ordering::SeqCst);

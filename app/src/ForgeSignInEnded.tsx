@@ -15,7 +15,10 @@ export const SIGN_IN_ENDED = "forge-sign-in-ended";
 export const SIGN_IN_TROUBLE = "forge-sign-in-trouble";
 
 /** What {@link SIGN_IN_TROUBLE} carries: the account's id and the kind of trouble. */
-export type SignInTrouble = { account: string; trouble: "pin-changed" | "renewal-failing" };
+export type SignInTrouble = {
+  account: string;
+  trouble: "pin-changed" | "renewal-failing" | "everyday-holds-workflow";
+};
 
 /** The event a surface sends this window when it signed an account in or out. */
 export const ACCOUNTS_CHANGED = "purlis:forge-accounts-changed";
@@ -37,6 +40,17 @@ function ended(account: ForgeAccountRow): boolean {
     !account.signed_in &&
     account.method === "browser" &&
     BROWSER_HOSTS[account.kind] === account.host
+  );
+}
+
+/** What the Notice for an everyday token that holds `workflow` says. */
+function WorkflowHeld({ account }: { account: ForgeAccountRow }) {
+  return (
+    <>
+      GitHub added permission to push CI files (<code>workflow</code>) to purlis&apos;s sign-in to{" "}
+      {account.host} as {account.login}, so purlis gives it to no chat. To fix it, revoke purlis at
+      https://{account.host}/settings/applications, then sign in again without allowing CI files.
+    </>
   );
 }
 
@@ -100,10 +114,25 @@ export function ForgeSignInEnded() {
   }, [reread]);
 
   /** The accounts a trouble is drawn for: still listed, and still signed in. */
-  const troubled = troubles.flatMap((trouble) => {
+  const told = troubles.flatMap((trouble) => {
     const account = accounts.find((a) => a.id === trouble.account && a.signed_in);
     return account ? [{ account, trouble: trouble.trouble }] : [];
   });
+  // An account whose everyday token holds `workflow` is read off the list, so the Notice outlives
+  // the event and a restart: purlis serves such a token to no chat until it is signed in again
+  // without it (ADR 0128 D1.1).
+  const troubled = [
+    ...told,
+    ...accounts
+      .filter(
+        (a) =>
+          a.signed_in &&
+          a.kind === "github" &&
+          (a.scopes ?? []).includes("workflow") &&
+          !told.some((t) => t.account.id === a.id && t.trouble === "everyday-holds-workflow"),
+      )
+      .map((account) => ({ account, trouble: "everyday-holds-workflow" as const })),
+  ];
 
   return (
     <>
@@ -134,7 +163,9 @@ export function ForgeSignInEnded() {
             )
           }
         >
-          {trouble === "pin-changed" ? (
+          {trouble === "everyday-holds-workflow" ? (
+            <WorkflowHeld account={account} />
+          ) : trouble === "pin-changed" ? (
             <>
               purlis stopped renewing its sign-in to {account.host} as {account.login}: the
               application pinned for {account.host} is not the one it signed in through. Until you

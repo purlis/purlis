@@ -119,11 +119,12 @@ const APPLICATIONS: ForgeApplicationRow[] = [
 const PROJECT_ACCOUNTS: ProjectAccountRow[] = [
   {
     clone_key: "a1",
+    kind: "github",
     repo_id: "1001",
     host: "github.com",
     path: "octocat/hello",
     serving: { id: "github:github.com:octocat", login: "octocat" },
-    chosen_is_signed_out: false,
+    state: "serving",
     choices: [
       { id: "github:github.com:octocat", login: "octocat" },
       { id: "github:github.com:octocat_acme", login: "octocat_acme" },
@@ -131,11 +132,12 @@ const PROJECT_ACCOUNTS: ProjectAccountRow[] = [
   },
   {
     clone_key: "b2",
+    kind: "gitlab",
     repo_id: "2002",
     host: "gitlab.example.org",
     path: "platform/tools",
     serving: null,
-    chosen_is_signed_out: true,
+    state: "signed-out",
     choices: [],
   },
 ];

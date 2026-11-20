@@ -65,6 +65,7 @@ use secrecy::{ExposeSecret, SecretString};
 use super::Kind;
 use super::accounts::Method;
 
+pub mod chatroute;
 mod connection;
 pub mod renewal;
 mod signedin;

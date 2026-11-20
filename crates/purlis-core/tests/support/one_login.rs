@@ -21,8 +21,9 @@ use secrecy::ExposeSecret;
 #[derive(Clone)]
 pub struct Whose {
     pub login: &'static str,
-    /// Sent as `X-OAuth-Scopes` on GitHub; GitLab's grant says its own.
-    pub scopes: &'static str,
+    /// Sent as `X-OAuth-Scopes` on GitHub; GitLab's grant says its own. `None` sends no header,
+    /// as a forge that does not say what a token may do.
+    pub scopes: Option<&'static str>,
 }
 
 #[derive(Clone, Default)]
@@ -30,10 +31,24 @@ pub struct Tokens(Arc<Mutex<HashMap<String, Whose>>>);
 
 impl Tokens {
     pub fn know(&self, token: &str, login: &'static str, scopes: &'static str) {
-        self.0
-            .lock()
-            .unwrap()
-            .insert(token.to_string(), Whose { login, scopes });
+        self.0.lock().unwrap().insert(
+            token.to_string(),
+            Whose {
+                login,
+                scopes: Some(scopes),
+            },
+        );
+    }
+
+    /// A token the forge knows, and says nothing of the scopes of: no `X-OAuth-Scopes`.
+    pub fn know_without_scopes(&self, token: &str, login: &'static str) {
+        self.0.lock().unwrap().insert(
+            token.to_string(),
+            Whose {
+                login,
+                scopes: None,
+            },
+        );
     }
 
     /// The reach a sign-in checks a token over: a transport that answers for the token it carries.
@@ -71,7 +86,10 @@ impl Transport for ByToken {
                     out: format!(r#"{{"{login_key}": "{}"}}"#, who.login),
                     err: String::new(),
                     status: Some(200),
-                    headers: vec![("x-oauth-scopes".to_string(), who.scopes.to_string())],
+                    headers: who
+                        .scopes
+                        .map(|scopes| vec![("x-oauth-scopes".to_string(), scopes.to_string())])
+                        .unwrap_or_default(),
                 }
             }
             None => Reply {

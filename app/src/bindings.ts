@@ -2408,7 +2408,7 @@ export const commands = {
 	/**  Every confirmed repo, with the account that serves it and the accounts it could be served by. */
 	forgeProjectAccounts: () => typedError<ProjectAccountRow[], string>(__TAURI_INVOKE("forge_project_accounts")),
 	/**  **The press that chooses which account serves a repo.** */
-	forgeChooseProjectAccount: (cloneKey: string, repoId: string, accountId: string) => typedError<null, string>(__TAURI_INVOKE("forge_choose_project_account", { cloneKey, repoId, accountId })),
+	forgeChooseProjectAccount: (cloneKey: string, kind: string, host: string, repoId: string, accountId: string) => typedError<null, string>(__TAURI_INVOKE("forge_choose_project_account", { cloneKey, kind, host, repoId, accountId })),
 	/**
 	 *  The person's press that records the clone at `folder` (relative to the project) for D4: the
 	 *  repo's numeric id is read from the forge as `account_id` (the only account on the host, when
@@ -15457,6 +15457,8 @@ export type ProjectAccountChoice = {
 export type ProjectAccountRow = {
 	/**  What the choice names the clone by. */
 	clone_key: string,
+	/**  `github` or `gitlab`: with the host and the repo number, what names the repo. */
+	kind: string,
 	/**
 	 *  The forge's own number for the repo, as text (a repo number can outgrow what the window's
 	 *  numbers hold).
@@ -15467,10 +15469,13 @@ export type ProjectAccountRow = {
 	/**  The account serving it, or null when it is signed out or gone. */
 	serving: ProjectAccountChoice | null,
 	/**
-	 *  Set when the chosen account is signed out: the person signs it in again, or chooses
-	 *  another. **No other account serves in its place.**
+	 *  `serving`; `signed-out` (the chosen account is signed out, or holds CI-file permission:
+	 *  the person signs it in again, or chooses another; **no other account serves in its
+	 *  place**); `unchosen` (several accounts are signed in, and none was chosen); or
+	 *  `application-changed` (the chosen account signed in through an application the host no
+	 *  longer pins).
 	 */
-	chosen_is_signed_out: boolean,
+	state: string,
 	/**  The signed-in accounts on this repo's host, for the choice. */
 	choices: ProjectAccountChoice[],
 };

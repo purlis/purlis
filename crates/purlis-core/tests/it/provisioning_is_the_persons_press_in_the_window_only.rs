@@ -114,33 +114,71 @@ fn code(text: &str) -> impl Iterator<Item = &str> {
     text.lines().filter(|l| !l.trim_start().starts_with("//"))
 }
 
+/// The sources of one directory, which must exist and hold at least `at_least` of them: a scan
+/// of a folder that was renamed or moved reads nothing and must not pass for a clean one.
+fn scanned(crates: &Path, dir: &str, at_least: usize) -> Vec<PathBuf> {
+    let at = crates.join(dir);
+    assert!(
+        at.is_dir(),
+        "the scanned directory {} is missing",
+        at.display()
+    );
+    let mut found = Vec::new();
+    sources(&at, &mut found);
+    assert!(
+        found.len() >= at_least,
+        "the scan found {} sources in {dir}, and wants at least {at_least}",
+        found.len()
+    );
+    found
+}
+
+/// The core's own files that may hold a provisioning entry point's name: the forge's modules that
+/// define or use one, **each named** (a new file in `src/forge/` is not exempt until it is added
+/// here, with the reason it calls one), and the window's helpers.
+const ALLOWED_IN_CORE: &[&str] = &[
+    "src/forge/accounts.rs",
+    "src/forge/accounts/workflow.rs",
+    "src/forge/confirmed.rs",
+    "src/forge/device.rs",
+    "src/forge/gitcredential/vouch.rs",
+    "src/forge/provision.rs",
+    "src/forge/refresh.rs",
+    "src/forge/registered/owner.rs",
+    "src/forge/signin.rs",
+    "src/windowonly.rs",
+    "src/signingsetup.rs",
+    "src/repolist.rs",
+    "src/testrun.rs",
+    "src/applog.rs",
+];
+
+fn is_allowed_in_core(path: &Path) -> bool {
+    let shown = path.to_string_lossy().replace('\\', "/");
+    ALLOWED_IN_CORE.iter().any(|ok| shown.ends_with(ok))
+}
+
 #[test]
-fn no_source_but_the_windows_and_the_forge_modules_calls_a_provisioning_entry_point() {
+fn no_source_but_the_windows_and_the_named_forge_files_calls_a_provisioning_entry_point() {
     purlis_core::unsteered!();
     let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // Each directory is held to its own count, so one that emptied cannot hide behind the others.
     let mut found = Vec::new();
-    // The command line and the session host: what a chat's `purlis` runs, and what serves a link.
-    for dir in ["purlis-cli/src", "host/src", "session-protocol/src"] {
-        sources(&crates.join(dir), &mut found);
+    for (dir, at_least) in [
+        ("purlis-cli/src", 30),
+        ("host/src", 15),
+        ("session-protocol/src", 12),
+        ("purlis-core/src", 600),
+    ] {
+        let all = scanned(&crates, dir, at_least);
+        found.extend(all.into_iter().filter(|path| !is_allowed_in_core(path)));
     }
-    // The core outside the forge module: nothing there provisions, but the window's own helpers
-    // (`windowonly`, which the app calls with its scope) and the forge's own modules.
-    let core = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut core_sources = Vec::new();
-    sources(&core, &mut core_sources);
-    let allowed_in_core = [
-        "src/forge/",
-        "src/windowonly.rs",
-        "src/signingsetup.rs",
-        "src/repolist.rs",
-        "src/testrun.rs",
-        "src/applog.rs",
-    ];
-    found.extend(core_sources.into_iter().filter(|path| {
-        let shown = path.to_string_lossy();
-        !allowed_in_core.iter().any(|ok| shown.contains(ok))
-    }));
-    assert!(found.len() > 50, "the scan found {} sources", found.len());
+    for ok in ALLOWED_IN_CORE {
+        assert!(
+            crates.join("purlis-core").join(ok).is_file(),
+            "{ok} is allowed to call a provisioning entry point and is not a file"
+        );
+    }
     let mut calls = Vec::new();
     for path in &found {
         let Ok(text) = std::fs::read_to_string(path) else {
@@ -157,6 +195,73 @@ fn no_source_but_the_windows_and_the_forge_modules_calls_a_provisioning_entry_po
         "a source that is not the window's provisions:\n{}",
         calls.join("\n")
     );
+}
+
+/// Whether `line` names `symbol` as an identifier (an import, a path or a call), however it is
+/// spelled: `workflow::for_ci_push(`, `use ...::{for_ci_push, ...}`, `as`-renamed or bare.
+fn names_symbol(line: &str, symbol: &str) -> bool {
+    line.match_indices(symbol).any(|(at, _)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + symbol.len()..].chars().next();
+        let part = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+        !part(before) && !part(after)
+    })
+}
+
+#[test]
+fn only_the_window_names_the_ci_push_credential_and_nothing_reads_the_second_token_by_name() {
+    purlis_core::unsteered!();
+    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut found = Vec::new();
+    for (dir, at_least) in [
+        ("purlis-cli/src", 30),
+        ("host/src", 15),
+        ("session-protocol/src", 12),
+        ("purlis-core/src", 600),
+    ] {
+        found.extend(scanned(&crates, dir, at_least));
+    }
+    let mut bad = Vec::new();
+    for path in &found {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let shown = path.to_string_lossy().replace('\\', "/");
+        // `for_ci_push` is defined in `workflow.rs` and listed in `provision.rs`; the window and
+        // slice F2's held push call it, from the app, which is not scanned here.
+        let owns_it = shown.ends_with("src/forge/accounts/workflow.rs")
+            || shown.ends_with("src/forge/provision.rs");
+        for line in code(&text) {
+            if !owns_it && names_symbol(line, "for_ci_push") {
+                bad.push(format!("{shown} names for_ci_push: {}", line.trim()));
+            }
+            // The keyring item of the second token is read by its name in `workflow.rs` alone.
+            let reads_item = ["get(", "exists(", "delete(", "set("]
+                .iter()
+                .any(|call| line.contains(call))
+                && line.contains("\"workflow\"");
+            if !shown.ends_with("src/forge/accounts/workflow.rs") && reads_item {
+                bad.push(format!("{shown} reads the workflow item: {}", line.trim()));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+#[test]
+fn the_symbol_scan_sees_an_import_a_rename_and_a_call_and_not_a_longer_name() {
+    purlis_core::unsteered!();
+    for hit in [
+        "use purlis_core::forge::accounts::workflow::for_ci_push;",
+        "use x::workflow::{keep, for_ci_push as push};",
+        "    workflow::for_ci_push(&scope, k, &a)",
+        "let f = for_ci_push;",
+    ] {
+        assert!(names_symbol(hit, "for_ci_push"), "{hit}");
+    }
+    for miss in ["let x = for_ci_push_later(1);", "let my_for_ci_push = 1;"] {
+        assert!(!names_symbol(miss, "for_ci_push"), "{miss}");
+    }
 }
 
 #[test]

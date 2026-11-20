@@ -342,8 +342,19 @@ export const applications: LiveSetting = {
 /** What a repo's row says of who serves it. */
 function servedBy(row: ProjectAccountRow): string {
   if (row.serving !== null) return row.serving.login;
+  if (row.state === "unchosen") return "not chosen";
+  if (row.state === "application-changed") return "sign in again";
   return "signed out";
 }
+
+/** What a repo's row says when no account serves it, and what to do. */
+const NOT_SERVED: Readonly<Record<string, string>> = {
+  "signed-out":
+    "Sign that account in again, or choose another. No other account serves this repo meanwhile.",
+  unchosen: "Choose which account serves this repo. No account serves it until you do.",
+  "application-changed":
+    "This account signed in through an application the host no longer uses. Sign in again. No other account serves this repo meanwhile.",
+};
 
 /** **Account for each project**: which account serves each repo the person confirmed. */
 export const projectAccounts: LiveSetting = {
@@ -371,7 +382,7 @@ export const projectAccounts: LiveSetting = {
 
     const choose = async (row: ProjectAccountRow, accountId: string) => {
       const done = await commands
-        .forgeChooseProjectAccount(row.clone_key, row.repo_id, accountId)
+        .forgeChooseProjectAccount(row.clone_key, row.kind, row.host, row.repo_id, accountId)
         .catch(failure);
       if (done.status === "error") setTrouble(done.error);
       read();
@@ -429,15 +440,14 @@ export const projectAccounts: LiveSetting = {
                             onValueChange={(to) => void choose(row, to)}
                           />
                         ) : (
-                          <Badge variant={row.chosen_is_signed_out ? "waiting" : "accent"}>
+                          <Badge variant={row.state === "serving" ? "accent" : "waiting"}>
                             {servedBy(row)}
                           </Badge>
                         )}
-                        {row.chosen_is_signed_out && (
+                        {NOT_SERVED[row.state] !== undefined && (
                           <span className="ui-setting-help ui-text-secondary">
                             {" "}
-                            Sign that account in again, or choose another. No other account serves
-                            this repo meanwhile.
+                            {NOT_SERVED[row.state]}
                           </span>
                         )}
                       </TableCell>

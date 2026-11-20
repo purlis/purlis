@@ -15,20 +15,25 @@
 //!
 //! **Who may read it.** [`for_ci_push`] takes a [`HostScope`], refused inside a chat's process
 //! tree, and answers only the app's own code that performs an approved, held CI push. Nothing
-//! else in this crate reads the item, and `tests/it/one_login_second_token.rs` pins that.
+//! else in this crate reads the item, and `tests/it/the_second_token_is_kept_apart_and_never_on_a_chat_route.rs` pins that.
 //!
 //! **GitHub may fold the scope into the first token** (a re-consent can widen the grant the
 //! everyday token already belongs to; ADR 0128 Open item 3 is the live probe that settles it).
 //! After the second sign-in the everyday token is read back, and **if it now says `workflow`
 //! ([`Outcome::Folded`]) nothing is kept, the account's recorded scopes are corrected, and a CI-file
 //! push is not offered** ([`Availability::NotOffered`]): the ask says to push it from the person's own
-//! terminal, rather than the everyday token silently gaining `workflow`.
+//! terminal, rather than the everyday token silently gaining `workflow`. **That token is then
+//! never served to a chat's route** ([`super::everyday_holds_workflow`]: the credential source
+//! refuses it, the window raises a Notice, and the way out is a press: revoke purlis on GitHub and
+//! sign in again, [`needs_narrower_sign_in`]). **A read-back that says nothing about scopes** (no
+//! `X-OAuth-Scopes`) **is a refusal, never "not folded"**: purlis cannot tell, so nothing is kept.
 //!
 //! **GitLab has no second token.** Its one scope, `api`, covers the API and git over HTTP, so the
 //! protection there is the hold and its Ask (D8.3), not a scope. [`for_ci_push`] answers the
 //! everyday token for a GitLab account, to the app alone.
 
 use super::*;
+use crate::forge::refresh::Trouble;
 
 /// The scope GitHub requires to push a workflow file.
 pub const SCOPE: &str = "workflow";
@@ -211,10 +216,18 @@ pub fn keep(
         .map_err(|e| e.to_string())
         .and_then(|transport| check(transport.as_ref(), &forge, true))
         .map_err(|why| unechoed(why, &everyday))?;
-    if let Some(scopes) = &everyday_now.scopes
-        && grants(Kind::GitHub, scopes, SCOPE)
-    {
+    // The second token is dropped here, in memory, on every path that does not write it below.
+    let Some(scopes) = &everyday_now.scopes else {
+        return Err(format!(
+            "{} did not say what purlis's everyday sign-in as {} may do, so purlis cannot tell \
+             whether it now allows CI files too. Nothing was kept, and a push that changes a CI \
+             file stays held. Try again later.",
+            forge.host, account.login
+        ));
+    };
+    if grants(Kind::GitHub, scopes, SCOPE) {
         let account = set_scopes(config_root, account, scopes.clone())?;
+        crate::forge::refresh::raise_once(&account, &Trouble::EverydayHoldsWorkflow);
         return Ok(Outcome::Folded(account));
     }
 
@@ -222,6 +235,17 @@ pub fn keep(
         .set(&service(account), ITEM, second.expose_secret())
         .map_err(|e| unechoed(e.message.to_string(), &second))?;
     Ok(Outcome::Kept)
+}
+
+/// What the person does when `account`'s everyday token holds `workflow` and purlis therefore
+/// serves it to no chat ([`super::everyday_holds_workflow`]).
+pub fn needs_narrower_sign_in(account: &ForgeAccount) -> String {
+    format!(
+        "GitHub added permission to push CI files ({SCOPE}) to purlis's sign-in to {} as {}, so \
+         purlis does not give it to your chats. Revoke purlis under Settings › Applications › \
+         Authorized OAuth Apps on {}, then sign in again here without allowing CI files.",
+        account.host, account.login, account.host
+    )
 }
 
 /// Deletes the second token of `account`, if there is one. Called wherever the everyday token's

@@ -137,7 +137,7 @@ fn a_chats_route_for_a_repo_is_the_account_the_person_chose_for_it() {
         let repo = confirmed::repos_of_clone(scene.home.path(), clone)
             .unwrap()
             .remove(0);
-        match confirmed::account_for(&repo, &both) {
+        match confirmed::account_for(scene.home.path(), &repo, &both) {
             Serving::Account(account) => source
                 .credential_of("github.com", &account.id, now())
                 .unwrap(),
@@ -155,6 +155,8 @@ fn a_chats_route_for_a_repo_is_the_account_the_person_chose_for_it() {
         &scope(),
         scene.home.path(),
         &confirmed::key_of_clone(platform.path()),
+        Kind::GitHub,
+        "github.com",
         2002,
         &scene.personal,
     )
@@ -192,7 +194,7 @@ fn a_chosen_account_that_is_gone_is_never_answered_by_the_other_one() {
         "the personal account is still signed in"
     );
     assert!(matches!(
-        confirmed::account_for(&repo, &remaining),
+        confirmed::account_for(scene.home.path(), &repo, &remaining),
         Serving::ChosenIsSignedOut { .. }
     ));
     let why = source

@@ -12083,6 +12083,8 @@ export type ProjectAccountChoice = {
 export type ProjectAccountRow = {
 	/**  What the choice names the clone by. */
 	clone_key: string,
+	/**  `github` or `gitlab`: with the host and the repo number, what names the repo. */
+	kind: string,
 	/**
 	 *  The forge's own number for the repo, as text (a repo number can outgrow what the window's
 	 *  numbers hold).
@@ -12093,10 +12095,13 @@ export type ProjectAccountRow = {
 	/**  The account serving it, or null when it is signed out or gone. */
 	serving: ProjectAccountChoice | null,
 	/**
-	 *  Set when the chosen account is signed out: the person signs it in again, or chooses
-	 *  another. **No other account serves in its place.**
+	 *  `serving`; `signed-out` (the chosen account is signed out, or holds CI-file permission:
+	 *  the person signs it in again, or chooses another; **no other account serves in its
+	 *  place**); `unchosen` (several accounts are signed in, and none was chosen); or
+	 *  `application-changed` (the chosen account signed in through an application the host no
+	 *  longer pins).
 	 */
-	chosen_is_signed_out: boolean,
+	state: string,
 	/**  The signed-in accounts on this repo's host, for the choice. */
 	choices: ProjectAccountChoice[],
 };

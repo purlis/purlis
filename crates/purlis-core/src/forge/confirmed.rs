@@ -44,8 +44,9 @@ use std::sync::Arc;
 
 use secrecy::SecretString;
 
-use super::accounts::{self, ForgeAccount, Reach, State};
+use super::accounts::{self, ForgeAccount, Method, Reach, State};
 use super::http::TokenSource;
+use super::registration;
 use super::route::HostScope;
 use super::transport::Call;
 use super::{Forge, ForgeError, Kind, host_of, host_ok, namespace_of};
@@ -88,9 +89,13 @@ pub struct ConfirmedRepo {
     /// Lower-case, no `.git`: what a request's path is compared with.
     pub path: String,
     pub repo_id: u64,
-    /// The id of the account that serves it ([`ForgeAccount::id`]).
+    /// The id of the account that serves it ([`ForgeAccount::id`]). **Empty while the person has
+    /// not chosen** (several accounts are signed in on the host, and purlis never picks between
+    /// them): the repo is recorded, and nothing serves it until [`choose_account`].
     pub account: String,
-    /// The public client id the account was signed in through.
+    /// The public client id of the application the account was signed in through: the host's
+    /// pin at that press ([`application_of`]). Empty for a pasted token or an imported login,
+    /// which no application granted.
     pub client_id: String,
 }
 
@@ -225,7 +230,6 @@ fn repo_of(value: &Value) -> Option<ConfirmedRepo> {
     let kind = Kind::parse(&entry.kind)?;
     let usable = host_ok(&entry.host)
         && entry.host == entry.host.to_ascii_lowercase()
-        && !entry.account.is_empty()
         && entry.repo_id != 0
         && normalised_path(kind, &entry.path).as_deref() == Some(entry.path.as_str());
     usable.then_some(ConfirmedRepo {
@@ -263,6 +267,38 @@ pub fn normalised_path(kind: Kind, path: &str) -> Option<String> {
 /// The key the list names `clone` by: the trust list's own.
 fn clone_key(clone: &Path) -> String {
     crate::sandbox::local::clone_key(clone)
+}
+
+/// **The application `account` was signed in through, as the host pins it now** (D1.3 rule 2, D4):
+/// what a repo is recorded with, and what serving it is checked against. A browser sign-in is
+/// through the application its account recorded, and it counts only while the host's pin still
+/// names that very one: a pin the person changed since, or took away, makes it another
+/// application's, and the answer is a refusal that says what to do. A browser sign-in made before
+/// the id was kept, on a host purlis has its own application for, is that application's. A pasted
+/// token and an imported login were granted by no application, and answer an empty id.
+pub fn application_of(config_root: &Path, account: &ForgeAccount) -> Result<String, String> {
+    if matches!(account.method, Method::Pat | Method::Import) {
+        return Ok(String::new());
+    }
+    let current =
+        registration::resolve(config_root, account.kind, &account.host)?.map(|r| r.client_id);
+    match (current, account.client_id.as_deref()) {
+        (Some(now), Some(signed_in_through)) if now == signed_in_through => Ok(now.to_string()),
+        (Some(now), None) if registration::on(account.kind, &account.host).is_some() => {
+            Ok(now.to_string())
+        }
+        _ => Err(application_changed_said(account)),
+    }
+}
+
+/// What the person is told when an account's application is not the host's pinned one.
+pub fn application_changed_said(account: &ForgeAccount) -> String {
+    format!(
+        "{} now uses a different application than the one {} on {} signed in through, so purlis \
+         does not use that sign-in. Check the application in Settings › You › Accounts and sign \
+         in again.",
+        account.host, account.login, account.host
+    )
 }
 
 /// **The press that confirms a repo** (D4): records `candidate` for `clone`, served by `account`,
@@ -342,6 +378,65 @@ pub fn confirm(
     })
 }
 
+/// **Records a repo whose account the person has not chosen yet** (D2: several accounts are signed
+/// in on the host, and purlis never picks between them). The repo is on the list by its numeric
+/// id with **no account**, so the project accounts list shows it and asks, and nothing serves it
+/// until [`choose_account`]. A repo already recorded for that clone keeps the account it has: a
+/// second look at the clone never undoes a choice.
+pub fn record_unchosen(
+    _host: &HostScope,
+    config_root: &Path,
+    clone: &Path,
+    candidate: &Candidate,
+) -> Result<ConfirmedRepo, String> {
+    let path = normalised_path(candidate.kind, &candidate.path).ok_or_else(|| {
+        format!(
+            "{} is not a repo path on {}, so nothing was recorded.",
+            candidate.path, candidate.host
+        )
+    })?;
+    let host = candidate.host.to_ascii_lowercase();
+    if !host_ok(&host) || candidate.repo_id == 0 {
+        return Err(format!(
+            "{} did not say which repo this is, so nothing was recorded.",
+            candidate.host
+        ));
+    }
+    let key = clone_key(clone);
+    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    let mut file = read(config_root)?;
+    let same = file.repos.iter().position(|value| {
+        repo_of(value).is_some_and(|r| {
+            r.clone_key == key
+                && r.kind == candidate.kind
+                && r.host == host
+                && r.repo_id == candidate.repo_id
+        })
+    });
+    if let Some(repo) = same.and_then(|at| repo_of(&file.repos[at])) {
+        return Ok(repo);
+    }
+    file.repos.push(serde_json::json!({
+        "clone_key": key,
+        "kind": candidate.kind.word(),
+        "host": host,
+        "path": path,
+        "repo_id": candidate.repo_id,
+        "account": "",
+        "client_id": "",
+    }));
+    write(config_root, file)?;
+    Ok(ConfirmedRepo {
+        clone_key: key,
+        kind: candidate.kind,
+        host,
+        path,
+        repo_id: candidate.repo_id,
+        account: String::new(),
+        client_id: String::new(),
+    })
+}
+
 /// **Clones from the window, and "Trust this clone"** (D4): reads which repo `remote_url` is on
 /// the forge, **as the person and through `lookup`**, then confirms it for `clone`. The repo is
 /// named by the clone's remote, but trusted by the id the forge gave it. Refused when the
@@ -355,6 +450,17 @@ pub fn record_clone(
     account: &ForgeAccount,
     client_id: &str,
 ) -> Result<ConfirmedRepo, String> {
+    let candidate = candidate_of(remote_url, lookup, account)?;
+    confirm(host, config_root, clone, &candidate, account, client_id)
+}
+
+/// What the forge says `remote_url` is, read through `lookup` as `account`: the host, the path and
+/// the numeric id. Refused when the remote is on another host than `account`, or names no repo.
+pub fn candidate_of(
+    remote_url: &str,
+    lookup: &dyn RepoLookup,
+    account: &ForgeAccount,
+) -> Result<Candidate, String> {
     let named = host_port_of(remote_url);
     if named.is_empty() || !named.eq_ignore_ascii_case(&account.host) {
         let on = if named.is_empty() { "no host" } else { &named };
@@ -370,19 +476,12 @@ pub fn record_clone(
                 .to_string()
         })?;
     let repo_id = lookup.repo_id(account, &path)?;
-    confirm(
-        host,
-        config_root,
-        clone,
-        &Candidate {
-            kind: account.kind,
-            host: account.host.clone(),
-            path,
-            repo_id,
-        },
-        account,
-        client_id,
-    )
+    Ok(Candidate {
+        kind: account.kind,
+        host: account.host.clone(),
+        path,
+        repo_id,
+    })
 }
 
 /// The host of `url` as a web address names it: with its port for `http` and `https`, where it
@@ -473,7 +572,26 @@ pub fn serves(
     if !super::gitcredential::vouch::trusted(config_root, clone) {
         return Ok(Admission::NotConfirmed);
     }
-    admission(config_root, clone, kind, host, path, id_of_path)
+    let admitted = admission(config_root, clone, kind, host, path, id_of_path)?;
+    let (Admission::Confirmed(repo) | Admission::Alias(repo)) = &admitted else {
+        return Ok(admitted);
+    };
+    // The application the repo was recorded under must still be the host's pin (D1.3 rule 2): a
+    // pin changed since means the account that serves it is another application's.
+    if !repo.client_id.is_empty() {
+        let current = registration::resolve(config_root, repo.kind, &repo.host)?
+            .map(|r| r.client_id.to_string());
+        if current.as_deref() != Some(repo.client_id.as_str()) {
+            if let Some(account) = accounts::listed(config_root)?
+                .into_iter()
+                .find(|a| a.id == repo.account)
+            {
+                super::refresh::raise_once(&account, &super::refresh::Trouble::PinChanged);
+            }
+            return Ok(Admission::NotConfirmed);
+        }
+    }
+    Ok(admitted)
 }
 
 /// **The press that changes which account serves a confirmed repo** (D2): the account must be
@@ -483,6 +601,8 @@ pub fn choose_account(
     _host: &HostScope,
     config_root: &Path,
     clone_key: &str,
+    kind: Kind,
+    host: &str,
     repo_id: u64,
     account: &ForgeAccount,
 ) -> Result<ConfirmedRepo, String> {
@@ -492,7 +612,12 @@ pub fn choose_account(
         .repos
         .iter()
         .position(|value| {
-            repo_of(value).is_some_and(|r| r.clone_key == clone_key && r.repo_id == repo_id)
+            repo_of(value).is_some_and(|r| {
+                r.clone_key == clone_key
+                    && r.kind == kind
+                    && r.host.eq_ignore_ascii_case(host)
+                    && r.repo_id == repo_id
+            })
         })
         .ok_or_else(|| "That clone is not trusted yet. Trust it first.".to_string())?;
     let repo = repo_of(&file.repos[at]).ok_or_else(|| "That entry cannot be read.".to_string())?;
@@ -508,12 +633,16 @@ pub fn choose_account(
             account.login, account.host
         ));
     }
+    // The repo is then served through the application this account is signed in through.
+    let client_id = application_of(config_root, account)?;
     if let Some(Value::Object(fields)) = file.repos.get_mut(at) {
         fields.insert("account".to_string(), Value::String(account.id.clone()));
+        fields.insert("client_id".to_string(), Value::String(client_id.clone()));
     }
     write(config_root, file)?;
     Ok(ConfirmedRepo {
         account: account.id.clone(),
+        client_id,
         ..repo
     })
 }
@@ -565,10 +694,15 @@ pub fn confirm_trusted(
     )
 }
 
-/// Takes the confirmation of every repo of `clone` away (the clone is gone, or the person no
-/// longer trusts it).
-pub fn forget_clone(_host: &HostScope, config_root: &Path, clone: &Path) -> Result<(), String> {
-    let key = clone_key(clone);
+/// Takes the confirmation of every repo of `clone` away (the person no longer trusts it, or trusts
+/// it again and it is read afresh). A clone that is gone has no identity to read: use
+/// [`forget_by_key`] with the key taken before it was removed ([`key_of_clone`]).
+pub fn forget_clone(host: &HostScope, config_root: &Path, clone: &Path) -> Result<(), String> {
+    forget_by_key(host, config_root, &clone_key(clone))
+}
+
+/// [`forget_clone`] for the clone named by `key` ([`key_of_clone`]).
+pub fn forget_by_key(_host: &HostScope, config_root: &Path, key: &str) -> Result<(), String> {
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let before = file.repos.len();
@@ -609,25 +743,48 @@ pub enum Serving {
     /// another principal, and a chat acting as it would act as someone the person did not choose.
     /// The window raises a Notice to sign that account in again.
     ChosenIsSignedOut { account_id: String },
+    /// The person has not chosen: several accounts were signed in on the host when the repo was
+    /// recorded. Nothing serves it, and no account is picked.
+    Unchosen,
+    /// The chosen account was signed in through another application than the host pins now (the
+    /// pin changed since, ADR 0128 D1.3 rule 2). Nothing serves it until the person signs in
+    /// again; the window raises a Notice.
+    ApplicationChanged { account_id: String },
 }
 
-/// The account that serves `repo`, among `accounts` (every account on this machine).
-pub fn account_for(repo: &ConfirmedRepo, accounts: &[ForgeAccount]) -> Serving {
-    accounts
-        .iter()
-        .find(|a| {
-            a.id == repo.account
-                && a.state == State::SignedIn
-                && a.kind == repo.kind
-                && a.host.eq_ignore_ascii_case(&repo.host)
-        })
-        .cloned()
-        .map_or_else(
-            || Serving::ChosenIsSignedOut {
+/// The account that serves `repo`, among `accounts` (every account on this machine). Refused, with
+/// no other account standing in, when it is signed out or gone, when its token holds `workflow`
+/// ([`accounts::everyday_holds_workflow`]: never a chat's), and when it was signed in through
+/// another application than the host's pin ([`application_of`]), which also raises a Notice.
+pub fn account_for(config_root: &Path, repo: &ConfirmedRepo, accounts: &[ForgeAccount]) -> Serving {
+    use super::refresh::{Trouble, raise_once};
+    if repo.account.is_empty() {
+        return Serving::Unchosen;
+    }
+    let signed_out = || Serving::ChosenIsSignedOut {
+        account_id: repo.account.clone(),
+    };
+    let Some(account) = accounts.iter().find(|a| {
+        a.id == repo.account
+            && a.state == State::SignedIn
+            && a.kind == repo.kind
+            && a.host.eq_ignore_ascii_case(&repo.host)
+    }) else {
+        return signed_out();
+    };
+    if super::accounts::everyday_holds_workflow(account) {
+        raise_once(account, &Trouble::EverydayHoldsWorkflow);
+        return signed_out();
+    }
+    match application_of(config_root, account) {
+        Ok(now) if now == repo.client_id => Serving::Account(account.clone()),
+        _ => {
+            raise_once(account, &Trouble::PinChanged);
+            Serving::ApplicationChanged {
                 account_id: repo.account.clone(),
-            },
-            Serving::Account,
-        )
+            }
+        }
+    }
 }
 
 /// A repo a token connection names: not confirmed by a press, only configured.
@@ -635,14 +792,37 @@ pub fn account_for(repo: &ConfirmedRepo, accounts: &[ForgeAccount]) -> Serving {
 pub struct ConfiguredRepo {
     pub host: String,
     pub path: String,
+    /// The forge's own number for the repo, where the runner's environment gives it for this very
+    /// repo (a CI job names its own: `GITHUB_REPOSITORY_ID` and `CI_PROJECT_ID`). `None` where it
+    /// does not: [`reconcile`] then has only the host and the path.
+    pub repo_id: Option<u64>,
+}
+
+/// The numeric id the runner's environment gives for `path`, when `path` is the repo of the job.
+fn id_of_the_jobs_repo(
+    kind: Kind,
+    env: &dyn Fn(&str) -> Option<String>,
+    path: &str,
+) -> Option<u64> {
+    let (named, id) = match kind {
+        Kind::GitHub => ("GITHUB_REPOSITORY", "GITHUB_REPOSITORY_ID"),
+        Kind::GitLab => ("CI_PROJECT_PATH", "CI_PROJECT_ID"),
+    };
+    let jobs = normalised_path(kind, &env(named)?)?;
+    (jobs == path)
+        .then(|| env(id)?.trim().parse::<u64>().ok())
+        .flatten()
+        .filter(|id| *id != 0)
 }
 
 /// **The repos a headless runner serves** (D9), read from the token connection's own
 /// configuration at start, in memory, never written to [`FILE`]: `PURLIS_FORGE_REPOS`, a
 /// comma-separated list of `host/owner/name`, else the CI checkout's `origin` (the one repo the
 /// job runs in). Fails closed: a list with an entry that is not a repo on a host `kind` has, and a
-/// checkout whose remote names none, start nothing.
+/// checkout whose remote names none, start nothing. **It takes the host's scope, so it is never run
+/// inside a chat's process tree**: a chat that could name its own repos would confirm itself.
 pub fn headless_repos(
+    _host: &HostScope,
     kind: Kind,
     env: &dyn Fn(&str) -> Option<String>,
     checkout_origin: Option<&str>,
@@ -664,7 +844,12 @@ pub fn headless_repos(
                         .to_string(),
                 );
             };
-            repos.push(ConfiguredRepo { host, path });
+            let repo_id = id_of_the_jobs_repo(kind, env, &path);
+            repos.push(ConfiguredRepo {
+                host,
+                path,
+                repo_id,
+            });
         }
         return Ok(repos);
     }
@@ -676,22 +861,33 @@ pub fn headless_repos(
     let host = host_port_of(origin);
     let path = namespace_of(origin).and_then(|raw| normalised_path(kind, &raw));
     match (host.is_empty(), path) {
-        (false, Some(path)) => Ok(vec![ConfiguredRepo { host, path }]),
+        (false, Some(path)) => {
+            let repo_id = id_of_the_jobs_repo(kind, env, &path);
+            Ok(vec![ConfiguredRepo {
+                host,
+                path,
+                repo_id,
+            }])
+        }
         _ => Err("The checkout's origin does not name a repo, so nothing was started.".to_string()),
     }
 }
 
 /// **Reconciles what a press confirmed with what a headless runner was configured with**: the
-/// repos in `configured` that are also in `confirmed` by host and path. A desktop that forwards
-/// for a runner trusts its own list for that runner's chats, never the runner's (D9): this is the
-/// intersection, so a runner naming a repo the desktop never confirmed is not served.
+/// repos in `configured` that are also in `confirmed` by host and path, **and by numeric id where
+/// the runner's environment gave one**: a lookalike that has the same path and another id is not
+/// served. A desktop that forwards for a runner trusts its own list for that runner's chats, never
+/// the runner's (D9): this is the intersection, so a runner naming a repo the desktop never
+/// confirmed is not served. Each repo answered carries the id the press recorded.
 pub fn reconcile(confirmed: &[ConfirmedRepo], configured: &[ConfiguredRepo]) -> Vec<ConfirmedRepo> {
     confirmed
         .iter()
         .filter(|c| {
-            configured
-                .iter()
-                .any(|r| r.host.eq_ignore_ascii_case(&c.host) && r.path == c.path)
+            configured.iter().any(|r| {
+                r.host.eq_ignore_ascii_case(&c.host)
+                    && r.path == c.path
+                    && r.repo_id.is_none_or(|id| id == c.repo_id)
+            })
         })
         .cloned()
         .collect()

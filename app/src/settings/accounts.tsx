@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 import { commands, type ForgeAccountRow } from "../bindings";
 import { ForgeBrowserSignIn } from "../ForgeBrowserSignIn";
+import { ForgeCiPermission } from "../ForgeCiPermission";
 import { ACCOUNTS_CHANGED, forgeAccountsChanged } from "../ForgeSignInEnded";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
 import { ImportCliLogin } from "../ImportCliLogin";
@@ -63,6 +64,8 @@ type Held = {
   said: string | undefined;
   /** Whether the sign-in dialog is open. */
   signingIn: boolean;
+  /** The account whose Allow CI files dialog is open (ADR 0128 D1.1). */
+  allowingCi: ForgeAccountRow | undefined;
 };
 
 const START: Held = {
@@ -70,6 +73,7 @@ const START: Held = {
   refused: undefined,
   said: undefined,
   signingIn: false,
+  allowingCi: undefined,
 };
 let held: Held = START;
 const listeners = new Set<() => void>();
@@ -150,9 +154,22 @@ function signedOutSays(account: ForgeAccountRow, ended: boolean | null): string 
   return `${deleted}.`;
 }
 
+/** Whether the second GitHub sign-in, for CI files, is offered for `account`: a signed-in browser
+ *  sign-in on GitHub whose everyday token does not already hold `workflow`. */
+function canAllowCi(account: ForgeAccountRow): boolean {
+  return (
+    account.kind === "github" &&
+    account.signed_in &&
+    account.method === "browser" &&
+    !(account.scopes ?? []).includes("workflow")
+  );
+}
+
 /** What the row says about an account beside its name. */
 function note(account: ForgeAccountRow): string {
   if (!account.signed_in) return "signed out";
+  if ((account.scopes ?? []).includes("workflow"))
+    return "CI-file permission on the everyday sign-in: not given to chats";
   const how = account.method === "token" ? "token" : account.method;
   return account.wider.length > 0 ? `${how}; wider than needed: ${account.wider.join(", ")}` : how;
 }
@@ -211,6 +228,17 @@ const forgeAccounts: LiveSetting = {
                         <Badge variant="accent">{note(account)}</Badge>
                       </TableCell>
                       <TableCell align="end">
+                        {canAllowCi(account) && (
+                          <>
+                            <Button
+                              size="sm"
+                              aria-label={`Allow CI files for ${account.login} on ${account.host}`}
+                              onPress={() => set((was) => ({ ...was, allowingCi: account }))}
+                            >
+                              Allow CI files
+                            </Button>{" "}
+                          </>
+                        )}
                         <Button
                           size="sm"
                           aria-label={`Sign out of ${account.login} on ${account.host}`}
@@ -240,6 +268,19 @@ const forgeAccounts: LiveSetting = {
           {/* An existing gh or glab login, offered and never taken (#1376, ADR 0077 §5). The
               list is read again once one is imported. */}
           <ImportCliLogin onImported={() => void reread()} />
+          {now.allowingCi !== undefined && (
+            <ForgeCiPermission
+              accountId={now.allowingCi.id}
+              login={now.allowingCi.login}
+              host={now.allowingCi.host}
+              onCancel={() => set((was) => ({ ...was, allowingCi: undefined }))}
+              onDone={() => {
+                set((was) => ({ ...was, allowingCi: undefined }));
+                void reread();
+                forgeAccountsChanged();
+              }}
+            />
+          )}
           {now.signingIn && (
             <ForgeTokenSignIn
               onCancel={() => set((was) => ({ ...was, signingIn: false }))}

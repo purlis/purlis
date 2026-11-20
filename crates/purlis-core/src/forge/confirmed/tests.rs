@@ -53,15 +53,14 @@ fn forge() -> Numbers {
     ]))
 }
 
-const CLIENT: &str = "Ov23litEn94I5HXrpdsX";
-
 fn record(
     home: &Path,
     clone: &Path,
     url: &str,
     who: &ForgeAccount,
 ) -> Result<ConfirmedRepo, String> {
-    record_clone(&scope(), home, clone, url, &forge(), who, CLIENT)
+    let client_id = application_of(home, who)?;
+    record_clone(&scope(), home, clone, url, &forge(), who, &client_id)
 }
 
 #[test]
@@ -79,7 +78,8 @@ fn a_clone_from_the_window_records_the_host_the_path_the_numeric_id_the_account_
     assert_eq!(repo.path, "octocat/hello");
     assert_eq!(repo.repo_id, 1001);
     assert_eq!(repo.account, "01PERSONAL");
-    assert_eq!(repo.client_id, CLIENT);
+    // A pasted token was granted by no application.
+    assert_eq!(repo.client_id, "");
     assert_eq!(repos_of_clone(home.path(), clone.path()).unwrap(), [repo]);
 }
 
@@ -178,20 +178,31 @@ fn a_personal_and_an_enterprise_account_on_one_host_serve_different_projects() {
         &emu(),
     )
     .unwrap();
-    assert_eq!(account_for(&a, &both), Serving::Account(personal()));
-    assert_eq!(account_for(&b, &both), Serving::Account(emu()));
+    assert_eq!(
+        account_for(home.path(), &a, &both),
+        Serving::Account(personal())
+    );
+    assert_eq!(account_for(home.path(), &b, &both), Serving::Account(emu()));
     // A press changes which serves a project, and only that project.
     let changed = choose_account(
         &scope(),
         home.path(),
         &key_of_clone(platform.path()),
+        Kind::GitHub,
+        "github.com",
         2002,
         &personal(),
     )
     .unwrap();
-    assert_eq!(account_for(&changed, &both), Serving::Account(personal()));
+    assert_eq!(
+        account_for(home.path(), &changed, &both),
+        Serving::Account(personal())
+    );
     let still = repos_of_clone(home.path(), hello.path()).unwrap();
-    assert_eq!(account_for(&still[0], &both), Serving::Account(personal()));
+    assert_eq!(
+        account_for(home.path(), &still[0], &both),
+        Serving::Account(personal())
+    );
 }
 
 #[test]
@@ -208,13 +219,13 @@ fn a_chosen_account_that_is_signed_out_is_never_replaced_by_the_other_one() {
     let mut signed_out = emu();
     signed_out.state = State::SignedOut;
     assert_eq!(
-        account_for(&repo, &[personal(), signed_out]),
+        account_for(home.path(), &repo, &[personal(), signed_out]),
         Serving::ChosenIsSignedOut {
             account_id: "01EMU".into()
         }
     );
     assert_eq!(
-        account_for(&repo, &[personal()]),
+        account_for(home.path(), &repo, &[personal()]),
         Serving::ChosenIsSignedOut {
             account_id: "01EMU".into()
         }
@@ -275,6 +286,8 @@ fn an_account_of_another_host_or_forge_or_a_signed_out_one_cannot_serve_a_repo()
             &scope(),
             home.path(),
             &key_of_clone(clone.path()),
+            Kind::GitHub,
+            "github.com",
             1001,
             &ghes
         )
@@ -285,6 +298,8 @@ fn an_account_of_another_host_or_forge_or_a_signed_out_one_cannot_serve_a_repo()
             &scope(),
             home.path(),
             &key_of_clone(clone.path()),
+            Kind::GitHub,
+            "github.com",
             7,
             &personal()
         )
@@ -436,6 +451,7 @@ fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> +
 #[test]
 fn a_headless_runner_serves_the_repos_its_token_connection_names() {
     let got = headless_repos(
+        &scope(),
         Kind::GitHub,
         &env(&[(
             "PURLIS_FORGE_REPOS",
@@ -449,11 +465,13 @@ fn a_headless_runner_serves_the_repos_its_token_connection_names() {
         [
             ConfiguredRepo {
                 host: "github.com".into(),
-                path: "acme/platform".into()
+                path: "acme/platform".into(),
+                repo_id: None,
             },
             ConfiguredRepo {
                 host: "ghe.example.com".into(),
-                path: "acme/tools".into()
+                path: "acme/tools".into(),
+                repo_id: None,
             },
         ]
     );
@@ -462,6 +480,7 @@ fn a_headless_runner_serves_the_repos_its_token_connection_names() {
 #[test]
 fn a_headless_runner_with_no_list_serves_the_one_repo_of_its_checkout() {
     let got = headless_repos(
+        &scope(),
         Kind::GitLab,
         &env(&[]),
         Some("git@git.example.com:group/sub/proj.git"),
@@ -471,7 +490,8 @@ fn a_headless_runner_with_no_list_serves_the_one_repo_of_its_checkout() {
         got,
         [ConfiguredRepo {
             host: "git.example.com".into(),
-            path: "group/sub/proj".into()
+            path: "group/sub/proj".into(),
+            repo_id: None,
         }]
     );
 }
@@ -486,14 +506,21 @@ fn a_headless_runner_fails_closed_on_a_list_or_a_checkout_it_cannot_read() {
         ",",
     ] {
         assert!(
-            headless_repos(Kind::GitHub, &env(&[("PURLIS_FORGE_REPOS", list)]), None).is_err(),
+            headless_repos(
+                &scope(),
+                Kind::GitHub,
+                &env(&[("PURLIS_FORGE_REPOS", list)]),
+                None
+            )
+            .is_err(),
             "{list:?}"
         );
     }
-    assert!(headless_repos(Kind::GitHub, &env(&[]), None).is_err());
-    assert!(headless_repos(Kind::GitHub, &env(&[]), Some("")).is_err());
+    assert!(headless_repos(&scope(), Kind::GitHub, &env(&[]), None).is_err());
+    assert!(headless_repos(&scope(), Kind::GitHub, &env(&[]), Some("")).is_err());
     assert!(
         headless_repos(
+            &scope(),
             Kind::GitHub,
             &env(&[]),
             Some("https://github.com/only-owner")
@@ -503,6 +530,7 @@ fn a_headless_runner_fails_closed_on_a_list_or_a_checkout_it_cannot_read() {
     // A blank variable is no list: the checkout answers.
     assert!(
         headless_repos(
+            &scope(),
             Kind::GitHub,
             &env(&[("PURLIS_FORGE_REPOS", "  ")]),
             Some("https://github.com/acme/platform")
@@ -532,6 +560,7 @@ fn what_a_press_confirmed_and_what_a_runner_names_are_reconciled_to_their_inters
         .unwrap(),
     ];
     let configured = headless_repos(
+        &scope(),
         Kind::GitHub,
         &env(&[(
             "PURLIS_FORGE_REPOS",
@@ -759,16 +788,9 @@ fn a_trusted_clone_is_confirmed_from_the_address_the_trust_list_holds() {
     let clone = tempfile::tempdir().unwrap();
     // Not trusted: nothing to read.
     assert!(
-        confirm_trusted(
-            &scope(),
-            home.path(),
-            clone.path(),
-            &forge(),
-            &emu(),
-            CLIENT
-        )
-        .unwrap_err()
-        .contains("not trusted yet")
+        confirm_trusted(&scope(), home.path(), clone.path(), &forge(), &emu(), "")
+            .unwrap_err()
+            .contains("not trusted yet")
     );
     crate::forge::gitcredential::remote::record(
         home.path(),
@@ -776,15 +798,81 @@ fn a_trusted_clone_is_confirmed_from_the_address_the_trust_list_holds() {
         "github.com/Acme/Platform".to_string(),
     )
     .unwrap();
-    let repo = confirm_trusted(
+    let repo = confirm_trusted(&scope(), home.path(), clone.path(), &forge(), &emu(), "").unwrap();
+    assert_eq!((repo.path.as_str(), repo.repo_id), ("acme/platform", 2002));
+    assert_eq!(all(home.path()).unwrap(), [repo]);
+}
+
+#[test]
+fn a_runner_that_says_the_number_of_its_repo_is_served_only_a_repo_with_that_number() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let confirmed = vec![
+        record(
+            home.path(),
+            clone.path(),
+            "https://github.com/acme/platform",
+            &emu(),
+        )
+        .unwrap(),
+    ];
+    let said = |id: &str| {
+        headless_repos(
+            &scope(),
+            Kind::GitHub,
+            &env(&[
+                ("PURLIS_FORGE_REPOS", "github.com/acme/platform"),
+                ("GITHUB_REPOSITORY", "Acme/Platform"),
+                ("GITHUB_REPOSITORY_ID", id),
+            ]),
+            None,
+        )
+        .unwrap()
+    };
+    let same = said("2002");
+    assert_eq!(same[0].repo_id, Some(2002));
+    assert_eq!(reconcile(&confirmed, &same)[0].repo_id, 2002);
+    // The same path with another number is a lookalike: not served.
+    assert!(reconcile(&confirmed, &said("999")).is_empty());
+}
+
+#[test]
+fn choosing_an_account_names_the_repo_by_its_forge_and_host_too() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    record(
+        home.path(),
+        clone.path(),
+        "https://github.com/octocat/hello",
+        &personal(),
+    )
+    .unwrap();
+    let key = key_of_clone(clone.path());
+    let choose = |kind, host| choose_account(&scope(), home.path(), &key, kind, host, 1001, &emu());
+    assert!(choose(Kind::GitLab, "github.com").is_err());
+    assert!(choose(Kind::GitHub, "ghe.example.com").is_err());
+    assert!(choose(Kind::GitHub, "GitHub.com").is_ok());
+}
+
+#[test]
+fn a_repo_recorded_with_no_account_is_listed_and_served_by_none() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let repo = record_unchosen(
         &scope(),
         home.path(),
         clone.path(),
-        &forge(),
-        &emu(),
-        CLIENT,
+        &Candidate {
+            kind: Kind::GitHub,
+            host: "github.com".into(),
+            path: "octocat/hello".into(),
+            repo_id: 1001,
+        },
     )
     .unwrap();
-    assert_eq!((repo.path.as_str(), repo.repo_id), ("acme/platform", 2002));
-    assert_eq!(all(home.path()).unwrap(), [repo]);
+    assert_eq!(all(home.path()).unwrap(), std::slice::from_ref(&repo));
+    assert_eq!(
+        account_for(home.path(), &repo, &[personal(), emu()]),
+        Serving::Unchosen
+    );
 }

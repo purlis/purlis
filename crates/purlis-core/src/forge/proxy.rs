@@ -102,6 +102,12 @@ pub enum TokenKind {
 pub struct CredentialRequest {
     pub kind: Kind,
     pub host: String,
+    /// The chat the request is for: the endpoint's, never the request's own. A source that
+    /// serves only what the person confirmed answers for this chat's clones alone.
+    pub chat: ChatId,
+    /// The allowed repo the request is for (`owner/repo`), or empty for the few credentialed
+    /// reads outside a repo.
+    pub repo: String,
 }
 
 /// The real credential, held for one request.
@@ -340,6 +346,8 @@ impl ForgeProxy {
         let request = CredentialRequest {
             kind: allowed.kind,
             host: allowed.host.clone(),
+            chat: chat.clone(),
+            repo: allowed.repo.clone(),
         };
         let Ok(credential) = self.credentials.credential_for(&request) else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);

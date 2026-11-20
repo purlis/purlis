@@ -145,12 +145,25 @@ enterprise-managed one), **a chat's route is for one repo and one account**, so 
   cannot read. `forge::confirmed::reconcile` is the intersection with what a desktop confirmed, for a
   runner whose calls are forwarded.
 
+**What a chat's route is given** is `forge::credential::chatroute::ChatRoute`, the credential source the
+forge proxy asks. For a request it takes the chat's own clones (named when the chat starts), asks
+`confirmed::serves` (the clone is trusted, the repo is in the list by numeric id, the application it
+was recorded under is still the host's pin), then `confirmed::account_for` (one chosen account, signed
+in, not holding `workflow`, signed in through the host's pinned application), then
+`SignedIn::credential_of`. Every other case is `Unavailable`, which the proxy answers as a refusal.
+Wiring it into the app's proxy listener is the listener slices' (A2, B); until then the app records
+and lists, and nothing serves a chat. A GitHub account whose everyday token holds `workflow` (GitHub
+folded it in) is refused by `SignedIn` itself, and the window draws a Notice from the account list.
+
 **The second token** (`forge::accounts::workflow`, D1.1 and D8.3) is the only credential that may
 push a CI file on GitHub. The everyday sign-in never asks for `workflow`. On the person's press, the
 first time a held CI-file push needs it, a second device sign-in asks for what the account holds and
 `workflow`, and the result is its own keyring item (`purlis/@forge/<host>/<id>`, account
 `workflow`). It is read only by `workflow::for_ci_push`, for a push the person approved, in the
-app's own process; no chat's route reads it. If GitHub folds the scope into the everyday token, the
+app's own process; no chat's route reads it. **Its caller is slice F2's held push** (the seam is the
+ask's approval, which is not built yet): `for_ci_push` has no caller until then, and a scan
+(`tests/it/provisioning_is_the_persons_press_in_the_window_only.rs`) fails if any source but the app
+names it. If GitHub folds the scope into the everyday token, the
 push is not offered. GitLab has no second token: its one `api` scope covers CI files, and the hold
 and its Ask are the protection.
 

@@ -327,6 +327,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": reading which forge tools this machine has, or that it could not",
   },
+  "ForgeCiPermission.tsx": {
+    count: 4,
+    why:
+      ACTION +
+      ". The second sign-in's own lines (ADR 0128 D1.1), inside its dialog: asking, the code and " +
+      "the wait for the person to allow it on the forge's page, the answer, and the core's " +
+      "sentence for how it ended; Try again and Cancel are the way out",
+  },
   "ForgeDeviceSignIn.tsx": {
     count: 4,
     why:
