@@ -20,7 +20,7 @@ on:
   pull_request:
     paths:
       - tests/one-login-e2e/**
-      - crates/purlis-core/tests/one_login_end_to_end.rs
+      - crates/purlis-core/tests/it/one_login_end_to_end.rs
       - crates/purlis-core/Cargo.toml
       - .github/workflows/one-login-e2e.yml
   workflow_dispatch:
@@ -72,7 +72,9 @@ jobs:
           if-no-files-found: warn
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: the same scenario, behind the forge-wiring feature
         timeout-minutes: 30
         shell: bash
-        run: cargo test -p purlis-core --locked --features forge-wiring --test one_login_end_to_end -- --nocapture
+        run: cargo test -p purlis-core --locked --features forge-wiring --test it -- --nocapture one_login_end_to_end

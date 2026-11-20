@@ -14,8 +14,6 @@
 //! As each slice merges, its stand-in is replaced by a call into this crate and its marker goes;
 //! this file is where those calls belong.
 
-#![cfg(feature = "forge-wiring")]
-
 use std::path::Path;
 use std::process::Command;
 
