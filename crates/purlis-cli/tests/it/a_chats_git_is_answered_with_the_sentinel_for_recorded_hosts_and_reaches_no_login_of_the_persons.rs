@@ -382,7 +382,13 @@ fn the_chats_gh_folder_holds_no_login_and_reads_the_sockets_setting_if_gh_is_ins
                     })
                     .map(|(n, v)| (n, v)),
             )
-            .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin");
+            .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
+            // `gh auth token` asks the system keyring; with no bus to reach it starts none, where
+            // it would leave a session `dbus-daemon` running after the test (the no-orphans check).
+            .env(
+                "DBUS_SESSION_BUS_ADDRESS",
+                "unix:path=/nonexistent/no-session-bus",
+            );
         run.output().expect("gh")
     };
     let socket = gh(&["config", "get", "http_unix_socket"], true);
