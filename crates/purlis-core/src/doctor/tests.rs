@@ -4311,3 +4311,15 @@ fn inside_a_chats_sandbox_no_row_looks_at_what_the_sandbox_denies_and_each_says_
         "a skip blocks nothing"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn a_git_before_2_40_is_a_warning_naming_the_version_purlis_needs() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = stand_in::program(dir.path(), "git", "#!/bin/sh\necho 'git version 2.39.5'\n");
+
+    let row = crate::worktree::git::with_stand_in(&old, super::git::git);
+
+    assert_eq!(row.status, Status::Warn, "{row:?}");
+    assert!(row.hint.contains("2.40"), "{row:?}");
+}
