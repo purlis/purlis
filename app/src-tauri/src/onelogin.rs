@@ -140,11 +140,14 @@ pub async fn forge_remove_application(kind: String, host: String) -> Result<(), 
 /// as text to copy (D1.3 rule 3).
 #[tauri::command]
 #[specta::specta]
-pub fn forge_application_request(kind: String, host: String) -> Result<String, String> {
+pub async fn forge_application_request(kind: String, host: String) -> Result<String, String> {
     let kind = kind_of(&kind)?;
-    host_scope()?;
-    let host = accounts::host_named(kind, &host)?;
-    Ok(registered::owner_request(kind, &host))
+    blocking(move || {
+        host_scope()?;
+        let host = accounts::host_named(kind, &host)?;
+        Ok(registered::owner_request(kind, &host))
+    })
+    .await
 }
 
 // ---------------------------------------------------------------------------------------
@@ -501,7 +504,7 @@ pub async fn forge_ci_permission_wait(flow: u32) -> Result<CiPermissionAnswer, S
 /// is kept.
 #[tauri::command]
 #[specta::specta]
-pub fn forge_ci_permission_cancel(flow: u32) {
+pub async fn forge_ci_permission_cancel(flow: u32) {
     let mut held = CI_FLOW.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(flow) = held.take_if(|held| held.number == flow) {
         flow.cancelled.store(true, Ordering::SeqCst);

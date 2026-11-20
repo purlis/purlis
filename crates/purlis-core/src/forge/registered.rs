@@ -385,7 +385,7 @@ pub fn owner_request(kind: Kind, host: &str) -> String {
              Owner: an organization (or the enterprise), not a person's own account.\n\
              Settings > Developer settings > OAuth Apps > New OAuth App\n\
              Application name: purlis\n\
-             Homepage URL: https://github.com/purlis/purlis\n\
+             Homepage URL: any address of your own (GitHub requires one; purlis never opens it)\n\
              Authorization callback URL: http://127.0.0.1/purlis/signin (the device flow never uses it)\n\
              Tick: Enable Device Flow\n\
              \n\
