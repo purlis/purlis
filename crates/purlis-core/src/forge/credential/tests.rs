@@ -357,11 +357,6 @@ const PAT_FILE: &str = concat!(
     "_pat_",
     "file____________________________________"
 );
-const PAT_DIRECT: &str = concat!(
-    "github",
-    "_pat_",
-    "direct__________________________________"
-);
 const PAT_SECRET: &str = concat!(
     "github",
     "_pat_",
@@ -373,7 +368,6 @@ const GLPAT_C: &str = concat!("gl", "pat-", "CCCCCCCCCCCCCCCCCCCC");
 const GLCBT: &str = concat!("gl", "cbt-", "0123456789abcdef");
 const GITHUB_COM: &str = "6769746875622e636f6d";
 const GITLAB_COM: &str = "6769746c61622e636f6d";
-const GHE_EXAMPLE_COM: &str = "6768652e6578616d706c652e636f6d";
 const GIT_EXAMPLE_COM: &str = "6769742e6578616d706c652e636f6d";
 
 fn got(vars: &[(&str, &str)], host: &str) -> Credential {

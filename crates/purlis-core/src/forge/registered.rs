@@ -529,10 +529,10 @@ mod tests {
             let path = entry.path();
             if path.is_dir() {
                 visit(&path, with);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                if let Ok(text) = std::fs::read_to_string(&path) {
-                    with(&path, &text);
-                }
+            } else if path.extension().is_some_and(|e| e == "rs")
+                && let Ok(text) = std::fs::read_to_string(&path)
+            {
+                with(&path, &text);
             }
         }
     }
