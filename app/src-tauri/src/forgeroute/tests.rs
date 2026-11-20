@@ -35,11 +35,20 @@ impl Drop for Alive {
 }
 
 impl Listener for FakeListener {
-    fn bind(&self, _: &ChatId, dir: &Path, _: Arc<ForgeProxy>, hosts: &[String]) -> io::Result<Bound> {
+    fn bind(
+        &self,
+        _: &ChatId,
+        dir: &Path,
+        _: Arc<ForgeProxy>,
+        hosts: &[String],
+    ) -> io::Result<Bound> {
         if self.fail.load(Ordering::SeqCst) {
             return Err(io::Error::other("cannot bind"));
         }
-        assert!(!hosts.is_empty(), "the listener is told the hosts the CA may name");
+        assert!(
+            !hosts.is_empty(),
+            "the listener is told the hosts the CA may name"
+        );
         std::fs::write(dir.join("proxy.sock"), b"")?;
         std::fs::write(dir.join("ca.pem"), b"PEM")?;
         self.alive.fetch_add(1, Ordering::SeqCst);
@@ -55,19 +64,27 @@ impl Listener for FakeListener {
     }
 }
 
+/// A recorded repo: its forge, host and path.
+type Recorded3 = (Kind, &'static str, &'static str);
+/// A fake sign-in: its kind and token.
+type Held = (TokenKind, &'static str);
+
 /// Recorded repos and bindings, by project.
 #[derive(Default)]
 struct FakeRecorded {
-    repos: Mutex<HashMap<PathBuf, Vec<(Kind, &'static str, &'static str)>>>,
+    repos: Mutex<HashMap<PathBuf, Vec<Recorded3>>>,
     accounts: Mutex<HashMap<(PathBuf, String), String>>,
 }
 
 impl FakeRecorded {
-    fn record(&self, project: &str, repos: Vec<(Kind, &'static str, &'static str)>) {
+    fn record(&self, project: &str, repos: Vec<Recorded3>) {
         lock(&self.repos).insert(PathBuf::from(project), repos);
     }
     fn bind(&self, project: &str, host: &str, account: &str) {
-        lock(&self.accounts).insert((PathBuf::from(project), host.to_owned()), account.to_owned());
+        lock(&self.accounts).insert(
+            (PathBuf::from(project), host.to_owned()),
+            account.to_owned(),
+        );
     }
 }
 
@@ -92,37 +109,47 @@ impl Recorded for FakeRecorded {
 /// Sign-ins by `(host, account)`; every read is counted.
 #[derive(Default)]
 struct FakeSignIns {
-    tokens: Mutex<HashMap<(String, String), (TokenKind, &'static str)>>,
+    tokens: Mutex<HashMap<(String, String), Held>>,
     ended: Mutex<Vec<(String, String)>>,
     asked: Mutex<Vec<(String, String)>>,
 }
 
 impl FakeSignIns {
     fn sign_in(&self, host: &str, account: &str, token: &'static str) {
-        lock(&self.tokens).insert((host.to_owned(), account.to_owned()), (TokenKind::Pat, token));
+        lock(&self.tokens).insert(
+            (host.to_owned(), account.to_owned()),
+            (TokenKind::Pat, token),
+        );
     }
     fn end(&self, host: &str, account: &str) {
         lock(&self.ended).push((host.to_owned(), account.to_owned()));
     }
-    fn lookup(&self, host: &str, account: &str) -> Result<&'static str, SignInState> {
+    fn lookup(&self, host: &str, account: &str) -> Result<&'static str, SignInFailure> {
         let host = host.strip_prefix("api.").unwrap_or(host).to_owned();
-        let key = (host, account.to_owned());
+        let key = (host.clone(), account.to_owned());
+        let failed = |state| SignInFailure {
+            state,
+            said: sign_in_words(&host, state),
+        };
         if lock(&self.ended).contains(&key) {
-            return Err(SignInState::Ended);
+            return Err(failed(SignInState::Ended));
         }
-        lock(&self.tokens).get(&key).map(|(_, t)| *t).ok_or(SignInState::Missing)
+        lock(&self.tokens)
+            .get(&key)
+            .map(|(_, t)| *t)
+            .ok_or_else(|| failed(SignInState::Missing))
     }
 }
 
 impl Credentials for FakeSignIns {
-    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInState> {
+    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInFailure> {
         lock(&self.asked).push((host.to_owned(), account.to_owned()));
         self.lookup(host, account).map(|token| Credential {
             token_kind: TokenKind::Pat,
             secret: Secret::new(token.to_owned()),
         })
     }
-    fn check(&self, host: &str, account: &str) -> Result<(), SignInState> {
+    fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
         self.lookup(host, account).map(|_| ())
     }
 }
@@ -202,7 +229,17 @@ impl Scene {
                 runner_link: link.clone(),
             },
         );
-        Self { _root: root, dir, routes, listener, recorded, sign_ins, notices, held, link }
+        Self {
+            _root: root,
+            dir,
+            routes,
+            listener,
+            recorded,
+            sign_ins,
+            notices,
+            held,
+            link,
+        }
     }
 
     fn start(&self, chat: &str, project: &str) -> RouteParams {
@@ -214,23 +251,47 @@ impl Scene {
 }
 
 /// A comment on acme/app, from the chat that holds `sentinel`.
-fn send(scene: &Scene, chat: &str, sentinel: &str, method: &str, host: &str, target: &str) -> Outcome {
-    let head = RequestHead::new(method, host, 443, target).with_content_type(Some("application/json"));
+fn send(
+    scene: &Scene,
+    chat: &str,
+    sentinel: &str,
+    method: &str,
+    host: &str,
+    target: &str,
+) -> Outcome {
+    let head =
+        RequestHead::new(method, host, 443, target).with_content_type(Some("application/json"));
     let headers = vec![
         ("Host".to_owned(), host.to_owned()),
         ("Authorization".to_owned(), format!("Bearer {sentinel}")),
         ("Content-Type".to_owned(), "application/json".to_owned()),
     ];
     let body: &[u8] = b"{\"body\":\"hello\"}";
-    scene.routes.handle(chat, &Inbound { head: &head, headers: &headers, body })
+    scene.routes.handle(
+        chat,
+        &Inbound {
+            head: &head,
+            headers: &headers,
+            body,
+        },
+    )
 }
 
 fn comment(scene: &Scene, chat: &str, sentinel: &str) -> Outcome {
-    send(scene, chat, sentinel, "POST", "api.github.com", "/repos/acme/app/issues/7/comments")
+    send(
+        scene,
+        chat,
+        sentinel,
+        "POST",
+        "api.github.com",
+        "/repos/acme/app/issues/7/comments",
+    )
 }
 
 fn bearer(outcome: &Outcome) -> Option<String> {
-    let Outcome::Forward(forwarded) = outcome else { return None };
+    let Outcome::Forward(forwarded) = outcome else {
+        return None;
+    };
     forwarded
         .headers
         .iter()
@@ -256,11 +317,17 @@ fn a_chat_that_starts_is_handed_its_socket_ca_sentinel_helper_and_recorded_repos
             ("gitlab.com".to_owned(), "group/proj".to_owned())
         ]
     );
-    assert!(!format!("{params:?}").contains(&params.sentinel), "Debug shows no sentinel");
+    assert!(
+        !format!("{params:?}").contains(&params.sentinel),
+        "Debug shows no sentinel"
+    );
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mode = std::fs::metadata(params.socket.parent().unwrap()).unwrap().permissions().mode();
+        let mode = std::fs::metadata(params.socket.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o700, "the chat's folder is the app's alone");
     }
 }
@@ -269,7 +336,10 @@ fn a_chat_that_starts_is_handed_its_socket_ca_sentinel_helper_and_recorded_repos
 fn a_project_that_records_no_repo_gets_no_route() {
     let scene = Scene::new();
 
-    let started = scene.routes.start("chat-1", Path::new("/p/none")).expect("no error");
+    let started = scene
+        .routes
+        .start("chat-1", Path::new("/p/none"))
+        .expect("no error");
 
     assert!(started.is_none());
     assert!(!scene.routes.is_live("chat-1"));
@@ -280,14 +350,21 @@ fn a_project_that_records_no_repo_gets_no_route() {
 fn a_chat_that_ends_leaves_no_socket_no_ca_no_listener_and_a_dead_sentinel() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "/p/one");
-    assert!(matches!(comment(&scene, "chat-1", &params.sentinel), Outcome::Forward(_)));
+    assert!(matches!(
+        comment(&scene, "chat-1", &params.sentinel),
+        Outcome::Forward(_)
+    ));
     assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 1);
 
     scene.routes.stop("chat-1");
 
     assert!(!params.socket.exists() && !params.ca.exists());
     assert!(!params.socket.parent().unwrap().exists());
-    assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 0, "the listener is closed");
+    assert_eq!(
+        scene.listener.alive.load(Ordering::SeqCst),
+        0,
+        "the listener is closed"
+    );
     assert!(matches!(
         comment(&scene, "chat-1", &params.sentinel),
         Outcome::Refused(Refusal::UnknownChat)
@@ -319,7 +396,10 @@ fn a_chat_that_starts_again_replaces_its_route_and_the_old_sentinel_stops() {
         comment(&scene, "chat-1", &first.sentinel),
         Outcome::Refused(Refusal::WrongSentinel)
     ));
-    assert!(matches!(comment(&scene, "chat-1", &second.sentinel), Outcome::Forward(_)));
+    assert!(matches!(
+        comment(&scene, "chat-1", &second.sentinel),
+        Outcome::Forward(_)
+    ));
 }
 
 #[test]
@@ -332,9 +412,16 @@ fn an_app_that_crashed_leaves_folders_the_next_start_sweeps() {
     std::mem::forget(routes);
     assert!(leftover.exists(), "the crash left its folder");
 
-    let restarted = ForgeRoutes::new(leftover.parent().unwrap().to_owned(), PathBuf::new(), Seams::stubs());
+    let restarted = ForgeRoutes::new(
+        leftover.parent().unwrap().to_owned(),
+        PathBuf::new(),
+        Seams::stubs(),
+    );
 
-    assert!(!leftover.exists(), "the next app removes what no chat can use");
+    assert!(
+        !leftover.exists(),
+        "the next app removes what no chat can use"
+    );
     drop(restarted);
     drop(_root);
 }
@@ -366,7 +453,23 @@ fn stub_seams_fail_closed_a_chat_has_no_route_without_a_listener() {
 
     // Nothing is recorded, so there is no route; and were something recorded, NoListener refuses.
     assert!(routes.start("c", Path::new("/p")).unwrap().is_none());
-    assert!(NoListener.bind(&ChatId::new("c"), root.path(), Arc::new(ForgeProxy::new(Box::new(NoSignInsSource), Box::new(NoObjects))), &[]).is_err());
+    assert_eq!(
+        NoSignIns.check("github.com", "a").unwrap_err().state,
+        SignInState::Missing
+    );
+    assert!(
+        NoListener
+            .bind(
+                &ChatId::new("c"),
+                root.path(),
+                Arc::new(ForgeProxy::new(
+                    Box::new(NoSignInsSource),
+                    Box::new(NoObjects)
+                )),
+                &[]
+            )
+            .is_err()
+    );
 }
 
 struct NoSignInsSource;
@@ -393,16 +496,24 @@ fn each_host_is_answered_with_the_credential_of_the_account_its_project_is_bound
         "/api/v4/projects/group%2Fproj/issues/3/notes",
     );
 
-    assert!(bearer(&github).is_some_and(|v| v.contains(GITHUB_TOKEN)), "{github:?}");
+    assert!(
+        bearer(&github).is_some_and(|v| v.contains(GITHUB_TOKEN)),
+        "{github:?}"
+    );
     let gitlab_headers = match &gitlab {
-        Outcome::Forward(f) => f.headers.iter().map(|(_, v)| v.clone()).collect::<Vec<_>>().join("|"),
+        Outcome::Forward(f) => f
+            .headers
+            .iter()
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<_>>()
+            .join("|"),
         other => panic!("{other:?}"),
     };
     assert!(gitlab_headers.contains(GITLAB_TOKEN), "{gitlab_headers}");
     assert_eq!(
         *lock(&scene.sign_ins.asked),
         vec![
-            ("api.github.com".to_owned(), "alice".to_owned()),
+            ("github.com".to_owned(), "alice".to_owned()),
             ("gitlab.com".to_owned(), "alice-gl".to_owned())
         ]
     );
@@ -411,9 +522,13 @@ fn each_host_is_answered_with_the_credential_of_the_account_its_project_is_bound
 #[test]
 fn two_projects_on_one_host_use_their_own_accounts() {
     let scene = Scene::new();
-    scene.recorded.record("/p/two", vec![(Kind::GitHub, "github.com", "acme/app")]);
+    scene
+        .recorded
+        .record("/p/two", vec![(Kind::GitHub, "github.com", "acme/app")]);
     scene.recorded.bind("/p/two", "github.com", "bob");
-    scene.sign_ins.sign_in("github.com", "bob", "REAL-bob-token-1");
+    scene
+        .sign_ins
+        .sign_in("github.com", "bob", "REAL-bob-token-1");
     let one = scene.start("chat-1", "/p/one");
     let two = scene.start("chat-2", "/p/two");
 
@@ -432,14 +547,26 @@ fn a_missing_sign_in_is_refused_in_words_that_name_the_sign_in_step_and_noticed_
 
     for _ in 0..3 {
         let outcome = comment(&scene, "chat-1", &params.sentinel);
-        assert!(matches!(outcome, Outcome::Refused(Refusal::NoCredential)), "{outcome:?}");
+        assert!(
+            matches!(outcome, Outcome::Refused(Refusal::NoCredential)),
+            "{outcome:?}"
+        );
     }
 
-    let said = scene.routes.refusal_message("chat-1", Refusal::NoCredential);
-    assert!(said.contains("github.com") && said.contains("Sign in") && said.contains("Accounts"), "{said}");
+    let said = scene
+        .routes
+        .refusal_message("chat-1", Refusal::NoCredential);
+    assert!(
+        said.contains("github.com") && said.contains("Sign in") && said.contains("Accounts"),
+        "{said}"
+    );
     assert_eq!(
         *lock(&scene.notices.0),
-        vec![("chat-1".to_owned(), "api.github.com".to_owned(), SignInState::Missing)],
+        vec![(
+            "chat-1".to_owned(),
+            "github.com".to_owned(),
+            SignInState::Missing
+        )],
         "one Notice for the chat, however many requests"
     );
 }
@@ -454,7 +581,12 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
         comment(&scene, "chat-1", &params.sentinel),
         Outcome::Refused(Refusal::NoCredential)
     ));
-    assert!(scene.routes.refusal_message("chat-1", Refusal::NoCredential).contains("has ended"));
+    assert!(
+        scene
+            .routes
+            .refusal_message("chat-1", Refusal::NoCredential)
+            .contains("has ended")
+    );
 
     scene.recorded.accounts.lock().unwrap().clear();
     let other = scene.start("chat-2", "/p/one");
@@ -462,7 +594,12 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
         comment(&scene, "chat-2", &other.sentinel),
         Outcome::Refused(Refusal::NoCredential)
     ));
-    assert!(scene.routes.refusal_message("chat-2", Refusal::NoCredential).contains("no sign-in"));
+    assert!(
+        scene
+            .routes
+            .refusal_message("chat-2", Refusal::NoCredential)
+            .contains("no sign-in")
+    );
     assert_eq!(lock(&scene.notices.0).len(), 2, "each chat is told once");
 }
 
@@ -479,30 +616,54 @@ fn a_held_act_raises_the_ask_and_stays_refused_until_the_person_presses() {
         &params.sentinel,
         "PUT",
         "api.github.com",
-        "/repos/acme/app/pulls/7/merge?token=zzz",
+        "/repos/acme/app/pulls/7/merge?sha=zzz",
     );
 
-    assert!(matches!(outcome, Outcome::Refused(Refusal::Merge)), "{outcome:?}");
+    assert!(
+        matches!(outcome, Outcome::Refused(Refusal::Merge)),
+        "{outcome:?}"
+    );
     let asks = lock(&scene.held.asks).clone();
     assert_eq!(asks.len(), 1);
     assert_eq!(asks[0].act, HeldAct::Merge);
     assert_eq!(asks[0].method, "PUT");
-    assert_eq!(asks[0].path, "/repos/acme/app/pulls/7/merge", "no query in an ask");
-    assert!(lock(&scene.held.performed).is_empty(), "nothing is performed by the ask");
-    assert!(scene.routes.refusal_message("chat-1", Refusal::Merge).contains("approval"));
+    assert_eq!(
+        asks[0].path, "/repos/acme/app/pulls/7/merge",
+        "no query in an ask"
+    );
+    assert!(
+        lock(&scene.held.performed).is_empty(),
+        "nothing is performed by the ask"
+    );
+    assert!(
+        scene
+            .routes
+            .refusal_message("chat-1", Refusal::Merge)
+            .contains("approval")
+    );
 
     scene.routes.press(&asks[0]).expect("the press performs");
 
     let done = lock(&scene.held.performed).clone();
     assert_eq!(done.len(), 1);
-    assert_eq!(done[0].1, GITHUB_TOKEN, "performed with the person's own credential");
+    assert_eq!(
+        done[0].1, GITHUB_TOKEN,
+        "performed with the person's own credential"
+    );
 }
 
 #[test]
 fn a_plain_refusal_raises_no_ask_and_a_press_without_a_sign_in_says_so() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "/p/one");
-    let other_repo = send(&scene, "chat-1", &params.sentinel, "POST", "api.github.com", "/repos/evil/app/issues/1/comments");
+    let other_repo = send(
+        &scene,
+        "chat-1",
+        &params.sentinel,
+        "POST",
+        "api.github.com",
+        "/repos/evil/app/issues/1/comments",
+    );
     assert!(matches!(other_repo, Outcome::Refused(Refusal::OtherRepo)));
     assert!(lock(&scene.held.asks).is_empty());
 
@@ -515,11 +676,17 @@ fn a_plain_refusal_raises_no_ask_and_a_press_without_a_sign_in_says_so() {
     };
     scene.sign_ins.end("github.com", "alice");
     let said = scene.routes.press(&ask).expect_err("an ended sign-in");
-    assert!(said.contains("has ended") && said.contains("Accounts"), "{said}");
+    assert!(
+        said.contains("has ended") && said.contains("Accounts"),
+        "{said}"
+    );
     assert!(lock(&scene.held.performed).is_empty());
 
     scene.routes.stop("chat-1");
-    assert!(scene.routes.press(&ask).is_err(), "a chat that ended has nothing to allow");
+    assert!(
+        scene.routes.press(&ask).is_err(),
+        "a chat that ended has nothing to allow"
+    );
 }
 
 // ---- runners ----
@@ -531,7 +698,9 @@ fn a_runner_chat_is_forwarded_to_the_desktop_proxy_when_its_link_is_up() {
 
     let forward = scene.routes.for_runner("job-1", Path::new("/p/one"));
 
-    let RunnerForward::Desktop(params) = forward else { panic!("{forward:?}") };
+    let RunnerForward::Desktop(params) = forward else {
+        panic!("{forward:?}")
+    };
     assert!(scene.routes.is_live("job-1"));
     assert!(params.sentinel.starts_with("purlis-sentinel-"));
 }
@@ -558,7 +727,14 @@ fn the_audit_has_a_line_per_request_and_never_a_token_or_a_path() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "/p/one");
     comment(&scene, "chat-1", &params.sentinel);
-    send(&scene, "chat-1", &params.sentinel, "PUT", "api.github.com", "/repos/acme/app/pulls/7/merge?token=zzz");
+    send(
+        &scene,
+        "chat-1",
+        &params.sentinel,
+        "PUT",
+        "api.github.com",
+        "/repos/acme/app/pulls/7/merge?sha=zzz",
+    );
 
     let lines = scene.routes.audit_lines("chat-1");
 
@@ -578,29 +754,72 @@ fn the_doctor_row_says_proxy_up_and_a_sign_in_for_every_recorded_host() {
 
     let ok = scene.routes.row(project);
     assert!(!ok.problem, "{ok:?}");
-    assert!(ok.detail.contains("github.com") && ok.detail.contains("gitlab.com"), "{ok:?}");
+    assert!(
+        ok.detail.contains("github.com") && ok.detail.contains("gitlab.com"),
+        "{ok:?}"
+    );
 
     scene.sign_ins.end("gitlab.com", "alice-gl");
     let one_missing = scene.routes.row(project);
-    assert!(one_missing.problem && one_missing.detail.contains("gitlab.com"), "{one_missing:?}");
+    assert!(
+        one_missing.problem && one_missing.detail.contains("gitlab.com"),
+        "{one_missing:?}"
+    );
     assert!(!one_missing.detail.contains("github.com"));
 
     scene.listener.fail.store(true, Ordering::SeqCst);
     let down = scene.routes.row(project);
-    assert!(down.problem && down.detail.contains("not running"), "{down:?}");
+    assert!(
+        down.problem && down.detail.contains("not running"),
+        "{down:?}"
+    );
 
-    assert!(!scene.routes.row(Path::new("/p/none")).problem, "no recorded repo, nothing to check");
+    assert!(
+        !scene.routes.row(Path::new("/p/none")).problem,
+        "no recorded repo, nothing to check"
+    );
 }
 
 // ---- the train switch ----
 
 #[test]
 fn the_train_switch_is_one_line_in_the_apps_manifest() {
-    let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).unwrap();
+    let manifest =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")).unwrap();
     let defaults: Vec<&str> = manifest
         .lines()
         .filter(|line| line.trim_start().starts_with("default = "))
         .collect();
-    assert_eq!(defaults, vec!["default = [\"forge-wiring\"]"], "the one place the train is on");
-    assert!(manifest.contains("\nforge-wiring = ["), "the feature is declared");
+    assert_eq!(
+        defaults,
+        vec!["default = [\"forge-wiring\"]"],
+        "the one place the train is on"
+    );
+    assert!(
+        manifest.contains("\nforge-wiring = ["),
+        "the feature is declared"
+    );
+}
+
+#[test]
+fn the_real_sign_ins_answer_missing_with_the_step_named_when_no_account_is_listed() {
+    let Some(scope) = purlis_core::forge::route::HostScope::claim() else {
+        return; // another test of this process holds the scope; this one asks nothing then
+    };
+    let root = tempfile::tempdir().unwrap();
+    let real = AccountCredentials::new(purlis_core::forge::credential::SignedIn::new(
+        &scope,
+        root.path(),
+    ));
+
+    let failure = real
+        .credential("github.com", "no-such-account")
+        .expect_err("no account");
+
+    assert!(
+        failure.said.to_lowercase().contains("sign in")
+            || failure.said.contains("Choose an account"),
+        "{}",
+        failure.said
+    );
 }

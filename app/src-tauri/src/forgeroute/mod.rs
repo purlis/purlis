@@ -27,8 +27,8 @@
 //!   ([`ForgeRoutes::row`]).
 //!
 //! **Stubs, each filled by the slice named.** [`Listener`]: A2 (listener, per-chat CA, GraphQL
-//! types). [`RouteParams`] into the chat's environment: B (`forgewire.rs`). [`Credentials`]:
-//! C (credential sources and renewal). [`HeldActs`]: F. [`Recorded`]: G (recorded repos and the
+//! types). [`RouteParams`] into the chat's environment: B (`forgewire.rs`). [`Credentials`] is
+//! C's now ([`AccountCredentials`], over `SignedIn::credential_of`). [`HeldActs`]: F. [`Recorded`]: G (recorded repos and the
 //! project's account binding). [`Notices`]'s real sink and [`RunnerLink`]: the sign-in Notice's
 //! settings group is G's, the runner link is the pools'. Until then each is the stub next to its
 //! trait, which refuses: a chat with no listener has no route, and fails closed.
@@ -38,7 +38,10 @@
 
 // The seams are called by the slices that fill them (A2's listener, B's route, F's asks, the
 // pools' link); until they merge, only the tests reach them.
-#![allow(dead_code, reason = "slices A2, B, F and the pools call these; see the module note")]
+#![allow(
+    dead_code,
+    reason = "slices A2, B, F and the pools call these; see the module note"
+)]
 
 use std::collections::HashMap;
 use std::io;
@@ -48,8 +51,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use purlis_core::forge::proxy::{
     AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
-    CredentialSource, ForgeProxy, Inbound, NoObjects, Outcome, Refusal,
+    CredentialSource, ForgeProxy, Inbound, NoObjects, Outcome, Refusal, TokenKind,
 };
+use purlis_core::secrets::keyring::Secret;
 
 #[cfg(test)]
 mod tests;
@@ -65,22 +69,80 @@ pub enum SignInState {
     Ended,
 }
 
-/// **Slice C's** `Credentials`: the person's credential for a host and an account.
-pub trait Credentials: Send + Sync {
-    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInState>;
-    /// Whether [`Self::credential`] would answer, without reading the secret out.
-    fn check(&self, host: &str, account: &str) -> Result<(), SignInState>;
+/// Why a credential was not had: the state, and the sentence that names the sign-in step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInFailure {
+    pub state: SignInState,
+    pub said: String,
 }
 
-/// The stub until C lands: nobody is signed in.
+impl SignInFailure {
+    fn missing(host: &str) -> Self {
+        Self {
+            state: SignInState::Missing,
+            said: sign_in_words(host, SignInState::Missing),
+        }
+    }
+}
+
+/// The person's credential for a host and an account (**slice C's**, through
+/// [`AccountCredentials`]); a trait so a test stands where the keyring would.
+pub trait Credentials: Send + Sync {
+    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInFailure>;
+    /// Whether [`Self::credential`] would answer.
+    fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure>;
+}
+
+/// Nobody is signed in: the app has no config root or no host scope (a process a chat started).
 pub struct NoSignIns;
 
 impl Credentials for NoSignIns {
-    fn credential(&self, _: &str, _: &str) -> Result<Credential, SignInState> {
-        Err(SignInState::Missing)
+    fn credential(&self, host: &str, _: &str) -> Result<Credential, SignInFailure> {
+        Err(SignInFailure::missing(host))
     }
-    fn check(&self, _: &str, _: &str) -> Result<(), SignInState> {
-        Err(SignInState::Missing)
+    fn check(&self, host: &str, _: &str) -> Result<(), SignInFailure> {
+        Err(SignInFailure::missing(host))
+    }
+}
+
+/// **Slice C's sign-ins** as this app's [`Credentials`]: the token of the account the project is
+/// bound to on the host, renewed by C as it needs. No other account answers for it.
+pub struct AccountCredentials(purlis_core::forge::credential::SignedIn);
+
+impl AccountCredentials {
+    pub fn new(signed_in: purlis_core::forge::credential::SignedIn) -> Self {
+        Self(signed_in)
+    }
+}
+
+impl Credentials for AccountCredentials {
+    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInFailure> {
+        use purlis_core::forge::credential::TokenKind as Made;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let got = self
+            .0
+            .credential_of(host, account, now)
+            .map_err(|e| SignInFailure {
+                // C's sentence names the step (`SIGN_IN_AT`) and carries no token.
+                state: if e.is_none_given() {
+                    SignInState::Missing
+                } else {
+                    SignInState::Ended
+                },
+                said: e.to_string(),
+            })?;
+        Ok(Credential {
+            token_kind: match got.token_kind() {
+                Made::SignIn | Made::GitHubUser => TokenKind::Oauth,
+                _ => TokenKind::Pat,
+            },
+            secret: Secret::new(got.expose().to_owned()),
+        })
+    }
+    fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
+        self.credential(host, account).map(|_| ())
     }
 }
 
@@ -279,7 +341,7 @@ pub enum RunnerForward {
 #[derive(Default)]
 struct SignInTrouble {
     told: AtomicBool,
-    last: Mutex<Option<(String, SignInState)>>,
+    last: Mutex<Option<(String, SignInFailure)>>,
 }
 
 /// A chat's [`CredentialSource`]: the credential for the host and the account its project is
@@ -293,20 +355,19 @@ pub struct ProjectCredentials {
 
 impl CredentialSource for ProjectCredentials {
     fn credential_for(&self, request: &CredentialRequest) -> Result<Credential, CredentialError> {
-        let state = match self.seams.recorded.account(&self.project, &request.host) {
-            None => SignInState::Missing,
-            Some(account) => {
-                match self.seams.credentials.credential(&request.host, &account) {
-                    Ok(credential) => return Ok(credential),
-                    Err(state) => state,
-                }
-            }
+        let failure = match self.seams.recorded.account(&self.project, &request.host) {
+            None => SignInFailure::missing(&request.host),
+            Some(account) => match self.seams.credentials.credential(&request.host, &account) {
+                Ok(credential) => return Ok(credential),
+                Err(failure) => failure,
+            },
         };
+        let state = failure.state;
         *self
             .trouble
             .last
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some((request.host.clone(), state));
+            .unwrap_or_else(PoisonError::into_inner) = Some((request.host.clone(), failure));
         // One Notice per chat, however many requests it makes.
         if !self.trouble.told.swap(true, Ordering::SeqCst) {
             self.seams
@@ -379,7 +440,11 @@ impl ForgeRoutes {
         hosts.sort();
         hosts.dedup();
         let sentinel = proxy.enrol(&id, repos);
-        let bound = match self.seams.listener.bind(&id, &chat_dir, proxy.clone(), &hosts) {
+        let bound = match self
+            .seams
+            .listener
+            .bind(&id, &chat_dir, proxy.clone(), &hosts)
+        {
             Ok(bound) => bound,
             Err(refused) => {
                 proxy.retire(&id);
@@ -476,9 +541,9 @@ impl ForgeRoutes {
             .ok_or_else(|| "That chat has ended, so there is nothing to allow.".to_owned())?;
         let account = self.seams.recorded.account(&project, &ask.host);
         let credential = account
-            .ok_or(SignInState::Missing)
+            .ok_or_else(|| SignInFailure::missing(&ask.host))
             .and_then(|account| self.seams.credentials.credential(&ask.host, &account))
-            .map_err(|state| sign_in_words(&ask.host, state))?;
+            .map_err(|failure| failure.said)?;
         self.seams.held.perform(ask, credential)
     }
 
@@ -494,7 +559,7 @@ impl ForgeRoutes {
                         .clone()
                 });
                 match last {
-                    Some((host, state)) => sign_in_words(&host, state),
+                    Some((_, failure)) => failure.said,
                     None => "There is no sign-in for this forge. Sign in under Accounts in \
                          Settings, then try again."
                         .to_owned(),
@@ -560,7 +625,10 @@ impl ForgeRoutes {
             .cloned()
             .collect();
         if without.is_empty() {
-            RouteRow::ok(&format!("the proxy is up and signed in on {}", hosts.join(", ")))
+            RouteRow::ok(&format!(
+                "the proxy is up and signed in on {}",
+                hosts.join(", ")
+            ))
         } else {
             RouteRow::problem(
                 format!("no usable sign-in on {}", without.join(", ")),
@@ -631,7 +699,13 @@ fn audit_line(record: &AuditRecord) -> String {
 /// A chat id as one folder name: nothing that could climb out of the folder.
 fn safe_name(chat: &str) -> String {
     chat.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(40)
         .collect()
 }
@@ -683,10 +757,21 @@ static ROUTES: std::sync::OnceLock<ForgeRoutes> = std::sync::OnceLock::new();
 /// executable is this binary for now.
 pub fn install() {
     let _ = ROUTES.get_or_init(|| {
+        let mut seams = Seams::stubs();
+        // Slice C's sign-ins, where this process may read them (only the app's own, never a
+        // process a chat started) and a config root exists.
+        if let (Some(scope), Some(root)) = (
+            purlis_core::forge::route::HostScope::claim(),
+            purlis_core::machine::config_root(),
+        ) {
+            seams.credentials = Arc::new(AccountCredentials::new(
+                purlis_core::forge::credential::SignedIn::new(&scope, &root),
+            ));
+        }
         ForgeRoutes::new(
             route_dir(),
             std::env::current_exe().unwrap_or_default(),
-            Seams::stubs(),
+            seams,
         )
     });
 }
