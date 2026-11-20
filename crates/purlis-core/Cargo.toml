@@ -278,6 +278,10 @@ fenced = []
 # What a test playing a chat's hook inside the host's own process needs and nothing else may
 # call (`hookwire::permission::ask_permission_of_an_admitted_host`, HP-6). Only tests turn it on.
 test-support = []
+# The one-login end-to-end test (ADR 0128, slice I): `tests/it/one_login_end_to_end.rs` runs the real
+# `gh`, `glab` and `git` against a fake forge, so it needs those programs and is off by default.
+# Only a test turns it on, and no release build does.
+forge-wiring = []
 
 [dev-dependencies]
 # The heap of a design-tokens import, counted, so its memory bound is a measured one (#2926).
