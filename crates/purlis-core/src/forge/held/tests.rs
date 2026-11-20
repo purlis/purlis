@@ -133,7 +133,7 @@ fn build(
             Kind::GitLab => "gitlab.com".to_owned(),
         },
     };
-    let held = held_forge_over(
+    let held = held_forge(
         forge,
         Arc::new(person),
         Arc::new(Files(files)),

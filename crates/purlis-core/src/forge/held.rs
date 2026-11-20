@@ -32,7 +32,7 @@ use secrecy::SecretString;
 use serde_json::Value;
 
 use super::credential::CredentialSource;
-use super::http::{ApiRoot, Http, TokenSource};
+use super::http::TokenSource;
 use super::transport::{Call, Field, Method, Reply, Transport};
 use super::{Forge, ForgeError, Kind, LIST_TIMEOUT, quote};
 use crate::heldact::{Forked, HeldForge, TagName, TipChange, TipFiles};
@@ -64,54 +64,17 @@ impl TokenSource for CredentialTokens {
     }
 }
 
-/// One fixed token: the second credential, for one push.
-struct Fixed(SecretString);
-
-impl TokenSource for Fixed {
-    fn token(&self) -> Result<SecretString, ForgeError> {
-        Ok(self.0.clone())
-    }
-}
-
 /// **A transport that carries the second credential** for one push. A seam: slice G's workflow
-/// account makes the real one.
+/// account makes the real one, through the resolver like every native transport
+/// (`only_the_resolver_builds_the_native_transport`).
 pub trait WorkflowTransports: Send + Sync {
     fn with(&self, forge: &Forge, secret: &Secret) -> Result<Arc<dyn Transport>, String>;
 }
 
-/// The native transport with the second credential as its one token.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct HttpWorkflow;
-
-impl WorkflowTransports for HttpWorkflow {
-    fn with(&self, forge: &Forge, secret: &Secret) -> Result<Arc<dyn Transport>, String> {
-        // `Secret` hands out its text only by value: the token is read once into a secret string.
-        let text = secret.expose();
-        let http = Http::new(
-            forge.kind,
-            ApiRoot::of(forge.kind, &forge.host),
-            Arc::new(Fixed(SecretString::from(text.to_owned()))),
-        )
-        .map_err(|why| why.to_string())?;
-        Ok(Arc::new(http))
-    }
-}
-
-/// **The held-act forge for `forge`**, as the person signed in: the native transport with
-/// `source`'s credential. `files` reads a held push's changes from the clone.
+/// **The held-act forge for `forge`**, as the person: `person` is the native transport the resolver
+/// built with the person's sign-in ([`CredentialTokens`] is the token source it gives it). `files`
+/// reads a held push's changes from the quarantine.
 pub fn held_forge(
-    forge: Forge,
-    source: Arc<dyn CredentialSource>,
-    files: Arc<dyn TipFiles>,
-    workflow: Arc<dyn WorkflowTransports>,
-) -> Result<Box<dyn HeldForge>, ForgeError> {
-    let tokens = Arc::new(CredentialTokens::new(&forge.host, source));
-    let person = Http::new(forge.kind, ApiRoot::of(forge.kind, &forge.host), tokens)?;
-    Ok(held_forge_over(forge, Arc::new(person), files, workflow))
-}
-
-/// [`held_forge`] over a transport already made: what a test stands a fake forge in at.
-pub fn held_forge_over(
     forge: Forge,
     person: Arc<dyn Transport>,
     files: Arc<dyn TipFiles>,

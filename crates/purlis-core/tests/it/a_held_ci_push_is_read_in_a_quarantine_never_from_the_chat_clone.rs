@@ -158,8 +158,13 @@ fn a_tampered_loose_object_in_the_chat_clone_does_not_change_what_is_shown() {
     let lies = from_the_clone
         .patch(&s.base, &s.tip, &[WORKFLOW.to_owned()])
         .unwrap();
-    assert!(lies.contains("# nothing to see"), "{lies}");
-    assert!(!lies.contains("curl evil"), "{lies}");
+    // Where this git reads the overwritten object (it does on macOS) the clone lies; a git that
+    // checks a loose object's hash on read (CI's Linux) shows the real lines, and the quarantine
+    // below is held to the real lines either way.
+    assert!(
+        lies.contains("# nothing to see") || lies.contains("curl evil"),
+        "{lies}"
+    );
 
     // Read from the quarantine, it is what the forge will receive.
     let trees = quarantine.trees();
@@ -235,6 +240,7 @@ fn a_quarantine_is_removed_with_its_owner_and_holds_no_clone_of_the_chat() {
 
 #[test]
 fn a_tag_name_with_a_direction_or_zero_width_character_is_refused_outright() {
+    purlis_core::unsteered!();
     for name in [
         "v1\u{202E}0",
         "v\u{200B}1",
@@ -431,6 +437,7 @@ fn sources(dir: &Path, into: &mut Vec<PathBuf>) {
 
 #[test]
 fn no_chat_clone_is_read_for_a_held_act() {
+    purlis_core::unsteered!();
     // The one way to read a repository as `Trees` or `TipFiles` is a store purlis writes: the
     // quarantine makes one, and nothing else in the source may name another.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
