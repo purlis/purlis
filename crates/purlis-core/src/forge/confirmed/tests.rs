@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::*;
 use crate::forge::accounts::Method;
@@ -16,7 +17,7 @@ fn account(id: &str, kind: Kind, host: &str, login: &str) -> ForgeAccount {
         kind,
         host: host.to_string(),
         login: login.to_string(),
-        method: Method::Device,
+        method: Method::Pat,
         state: State::SignedIn,
         scopes: None,
     }
@@ -32,9 +33,9 @@ fn emu() -> ForgeAccount {
 }
 
 /// What the forge says each repo's number is.
-struct Forge(HashMap<&'static str, u64>);
+struct Numbers(HashMap<&'static str, u64>);
 
-impl RepoLookup for Forge {
+impl RepoLookup for Numbers {
     fn repo_id(&self, _account: &ForgeAccount, path: &str) -> Result<u64, String> {
         self.0
             .get(path)
@@ -43,8 +44,8 @@ impl RepoLookup for Forge {
     }
 }
 
-fn forge() -> Forge {
-    Forge(HashMap::from([
+fn forge() -> Numbers {
+    Numbers(HashMap::from([
         ("octocat/hello", 1001),
         ("acme/platform", 2002),
         ("acme/tools", 3003),
@@ -171,7 +172,7 @@ fn a_personal_and_an_enterprise_account_on_one_host_serve_different_projects() {
     assert_eq!(account_for(&a, &both), Serving::Account(personal()));
     assert_eq!(account_for(&b, &both), Serving::Account(emu()));
     // A press changes which serves a project, and only that project.
-    let changed = choose_account(&scope(), home.path(), platform.path(), 2002, &personal()).unwrap();
+    let changed = choose_account(&scope(), home.path(), &key_of_clone(platform.path()), 2002, &personal()).unwrap();
     assert_eq!(account_for(&changed, &both), Serving::Account(personal()));
     let still = repos_of_clone(home.path(), hello.path()).unwrap();
     assert_eq!(account_for(&still[0], &both), Serving::Account(personal()));
@@ -250,8 +251,8 @@ fn an_account_of_another_host_or_forge_or_a_signed_out_one_cannot_serve_a_repo()
         &personal(),
     )
     .unwrap();
-    assert!(choose_account(&scope(), home.path(), clone.path(), 1001, &ghes).is_err());
-    assert!(choose_account(&scope(), home.path(), clone.path(), 7, &personal()).is_err());
+    assert!(choose_account(&scope(), home.path(), &key_of_clone(clone.path()), 1001, &ghes).is_err());
+    assert!(choose_account(&scope(), home.path(), &key_of_clone(clone.path()), 7, &personal()).is_err());
 }
 
 #[test]
@@ -547,4 +548,131 @@ fn a_confirmed_id_on_a_clone_nobody_trusts_is_not_served() {
         .unwrap(),
         Admission::NotConfirmed
     );
+}
+
+/// A forge that answers each request from a table of path to answer, and keeps the paths asked.
+struct Answers {
+    table: HashMap<String, (i32, String)>,
+    asked: std::sync::Mutex<Vec<String>>,
+    tokens: std::sync::Mutex<Vec<String>>,
+    token: Arc<dyn TokenSource>,
+}
+
+impl crate::forge::transport::Transport for Answers {
+    fn send(
+        &self,
+        _forge: &Forge,
+        call: &Call,
+    ) -> Result<crate::forge::transport::Reply, crate::forge::transport::NoAnswer> {
+        use secrecy::ExposeSecret;
+        self.asked.lock().unwrap().push(call.path().to_string());
+        self.tokens
+            .lock()
+            .unwrap()
+            .push(self.token.token().unwrap().expose_secret().to_string());
+        let (code, out) = self
+            .table
+            .get(call.path())
+            .cloned()
+            .unwrap_or((1, String::new()));
+        Ok(crate::forge::transport::Reply::of(code, out, String::new()))
+    }
+
+    fn check_auth(&self, _forge: &Forge) -> Result<(), ForgeError> {
+        Ok(())
+    }
+}
+
+#[test]
+fn the_window_reads_a_repos_number_from_the_forge_as_the_account_with_its_own_token() {
+    let home = tempfile::tempdir().unwrap();
+    let keyring = accounts::keyring_at(home.path());
+    let who = personal();
+    keyring
+        .set(&accounts::service(&who), "token", "canaryPERSONALtoken")
+        .unwrap();
+    let seen = Arc::new(std::sync::Mutex::new(None::<Arc<Answers>>));
+    let kept = seen.clone();
+    let reach = move |_: &Forge, tokens: Arc<dyn TokenSource>| {
+        let answers = Arc::new(Answers {
+            table: HashMap::from([
+                ("repos/octocat/hello".to_string(), (0, r#"{"id": 1001}"#.to_string())),
+                ("repos/octocat/gone".to_string(), (1, String::new())),
+                ("repos/octocat/odd".to_string(), (0, r#"{"id": "x"}"#.to_string())),
+            ]),
+            asked: Default::default(),
+            tokens: Default::default(),
+            token: tokens,
+        });
+        *kept.lock().unwrap() = Some(answers.clone());
+        Ok(answers as Arc<dyn crate::forge::transport::Transport>)
+    };
+    let lookup = AsThePerson {
+        keyring: keyring.as_ref(),
+        reach: &reach,
+    };
+    assert_eq!(lookup.repo_id(&who, "octocat/hello"), Ok(1001));
+    let answers = seen.lock().unwrap().clone().unwrap();
+    assert_eq!(*answers.asked.lock().unwrap(), ["repos/octocat/hello"]);
+    // Asked as the account, with the account's own token and no other.
+    assert_eq!(*answers.tokens.lock().unwrap(), ["canaryPERSONALtoken"]);
+    let gone = lookup.repo_id(&who, "octocat/gone").unwrap_err();
+    assert!(gone.contains("did not show octocat/gone to octocat"), "{gone}");
+    assert!(!gone.contains("canary"), "{gone}");
+    assert!(lookup.repo_id(&who, "octocat/odd").is_err());
+}
+
+#[test]
+fn a_gitlab_project_is_asked_by_its_encoded_path_and_a_signed_out_account_asks_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let keyring = accounts::keyring_at(home.path());
+    let who = account("01GL", Kind::GitLab, "git.example.com", "octocat");
+    let asked = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = asked.clone();
+    let reach = move |_: &Forge, tokens: Arc<dyn TokenSource>| {
+        let answers = Arc::new(Answers {
+            table: HashMap::from([(
+                "projects/group%2Fsub%2Fproj".to_string(),
+                (0, r#"{"id": 77}"#.to_string()),
+            )]),
+            asked: Default::default(),
+            tokens: Default::default(),
+            token: tokens,
+        });
+        log.lock().unwrap().push("reached".into());
+        Ok(answers as Arc<dyn crate::forge::transport::Transport>)
+    };
+    let lookup = AsThePerson {
+        keyring: keyring.as_ref(),
+        reach: &reach,
+    };
+    // No token in the keyring: signed out, and the forge is never reached.
+    assert!(lookup.repo_id(&who, "group/sub/proj").unwrap_err().contains("signed out"));
+    assert!(asked.lock().unwrap().is_empty());
+    keyring
+        .set(&accounts::service(&who), "token", "glpat-canary")
+        .unwrap();
+    assert_eq!(lookup.repo_id(&who, "group/sub/proj"), Ok(77));
+}
+
+#[test]
+fn a_trusted_clone_is_confirmed_from_the_address_the_trust_list_holds() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    // Not trusted: nothing to read.
+    assert!(
+        confirm_trusted(&scope(), home.path(), clone.path(), &forge(), &emu(), CLIENT)
+            .unwrap_err()
+            .contains("not trusted yet")
+    );
+    crate::forge::gitcredential::remote::record(
+        home.path(),
+        clone.path(),
+        "github.com/Acme/Platform".to_string(),
+    )
+    .unwrap();
+    let repo =
+        confirm_trusted(&scope(), home.path(), clone.path(), &forge(), &emu(), CLIENT).unwrap();
+    assert_eq!((repo.path.as_str(), repo.repo_id), ("acme/platform", 2002));
+    assert_eq!(all(home.path()).unwrap(), [repo]);
 }

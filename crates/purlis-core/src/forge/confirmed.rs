@@ -40,9 +40,16 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use super::accounts::{ForgeAccount, State};
+use std::sync::Arc;
+
+use secrecy::SecretString;
+
+use super::accounts::{self, ForgeAccount, Reach, State};
+use super::http::TokenSource;
 use super::route::HostScope;
-use super::{Kind, host_ok, host_of, namespace_of};
+use super::transport::Call;
+use super::{Forge, ForgeError, Kind, host_ok, host_of, namespace_of};
+use crate::secrets::keyring::Store;
 
 /// The confirmed repos' file, in purlis's directory of the config home.
 pub const FILE: &str = "forge-repos.json";
@@ -91,6 +98,74 @@ pub struct ConfirmedRepo {
 /// calls the forge with the sign-in; a test's answers from a table.
 pub trait RepoLookup {
     fn repo_id(&self, account: &ForgeAccount, path: &str) -> Result<u64, String>;
+}
+
+/// **The window's [`RepoLookup`]**: asks the forge for the repo **as the account**, with its own
+/// token, over `reach` (HTTPS in the app, a recorded forge in a test). GitHub: `GET repos/<path>`,
+/// its `id`; GitLab: `GET projects/<path, percent-encoded>`, its `id`. A repo the account cannot
+/// see is a refusal, never an id.
+pub struct AsThePerson<'a> {
+    pub keyring: &'a dyn Store,
+    pub reach: Reach<'a>,
+}
+
+/// A token handed to the transport for one request.
+struct Fixed(SecretString);
+
+impl TokenSource for Fixed {
+    fn token(&self) -> Result<SecretString, ForgeError> {
+        Ok(self.0.clone())
+    }
+}
+
+impl RepoLookup for AsThePerson<'_> {
+    fn repo_id(&self, account: &ForgeAccount, path: &str) -> Result<u64, String> {
+        let token = accounts::token(self.keyring, account)?.ok_or_else(|| {
+            format!(
+                "{} on {} is signed out. Sign in first, then trust the clone.",
+                account.login, account.host
+            )
+        })?;
+        let forge = Forge {
+            kind: account.kind,
+            host: account.host.clone(),
+        };
+        let transport =
+            (self.reach)(&forge, Arc::new(Fixed(token))).map_err(|e| e.to_string())?;
+        let at = match account.kind {
+            Kind::GitHub => format!("repos/{path}"),
+            Kind::GitLab => format!("projects/{}", path.replace('/', "%2F")),
+        };
+        let not_found = || {
+            format!(
+                "{} did not show {path} to {}. Check that this account can see the repo, then \
+                 try again.",
+                account.host, account.login
+            )
+        };
+        let reply = transport
+            .send(&forge, &Call::get(at, super::STATUS_TIMEOUT))
+            .map_err(|no| {
+                format!(
+                    "purlis could not reach {}: {}. Check the host and your connection.",
+                    account.host,
+                    no.said()
+                )
+            })?;
+        if !reply.ok() {
+            return Err(not_found());
+        }
+        serde_json::from_str::<Value>(&reply.out)
+            .ok()
+            .and_then(|body| body.get("id").and_then(Value::as_u64))
+            .filter(|id| *id != 0)
+            .ok_or_else(|| {
+                format!(
+                    "{} answered without saying which repo {path} is, so nothing was recorded.",
+                    account.host
+                )
+            })
+    }
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -400,22 +475,22 @@ pub fn serves(
 }
 
 /// **The press that changes which account serves a confirmed repo** (D2): the account must be
-/// signed in on the repo's own host.
+/// signed in on the repo's own host. The repo is named by its clone's key and its numeric id, as
+/// [`all`] lists them.
 pub fn choose_account(
     _host: &HostScope,
     config_root: &Path,
-    clone: &Path,
+    clone_key: &str,
     repo_id: u64,
     account: &ForgeAccount,
 ) -> Result<ConfirmedRepo, String> {
-    let key = clone_key(clone);
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let at = file
         .repos
         .iter()
         .position(|value| {
-            repo_of(value).is_some_and(|r| r.clone_key == key && r.repo_id == repo_id)
+            repo_of(value).is_some_and(|r| r.clone_key == clone_key && r.repo_id == repo_id)
         })
         .ok_or_else(|| "That clone is not trusted yet. Trust it first.".to_string())?;
     let repo = repo_of(&file.repos[at]).ok_or_else(|| "That entry cannot be read.".to_string())?;
@@ -439,6 +514,49 @@ pub fn choose_account(
         account: account.id.clone(),
         ..repo
     })
+}
+
+/// Every confirmed repo on this machine, in the order they were confirmed: what Settings lists.
+pub fn all(config_root: &Path) -> Result<Vec<ConfirmedRepo>, String> {
+    Ok(read(config_root)?.repos.iter().filter_map(repo_of).collect())
+}
+
+/// The key `clone` is named by in this list.
+pub fn key_of_clone(clone: &Path) -> String {
+    clone_key(clone)
+}
+
+/// The address (`<host>/<owner>/<repo>`) the trust list holds for `clone`, when the person trusts
+/// it.
+pub fn trusted_place(config_root: &Path, clone: &Path) -> Option<String> {
+    super::gitcredential::read_push_remotes(config_root)
+        .get(&clone_key(clone))
+        .cloned()
+}
+
+/// **Confirms the clone the person trusts** (a clone from the window, or *Trust this clone*): the
+/// address the trust list holds for it ([`super::gitcredential::vouch::trusted`] says whether
+/// there is one) is read from the forge as `account`, and recorded. Refused when the clone is not
+/// trusted, or its trusted address is on another host than the account.
+pub fn confirm_trusted(
+    host: &HostScope,
+    config_root: &Path,
+    clone: &Path,
+    lookup: &dyn RepoLookup,
+    account: &ForgeAccount,
+    client_id: &str,
+) -> Result<ConfirmedRepo, String> {
+    let place = trusted_place(config_root, clone)
+        .ok_or_else(|| "That clone is not trusted yet. Trust it first.".to_string())?;
+    record_clone(
+        host,
+        config_root,
+        clone,
+        &format!("https://{place}"),
+        lookup,
+        account,
+        client_id,
+    )
 }
 
 /// Takes the confirmation of every repo of `clone` away (the clone is gone, or the person no

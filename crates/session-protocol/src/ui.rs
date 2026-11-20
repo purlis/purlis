@@ -311,6 +311,20 @@ pub const WINDOW_ONLY: &[&str] = &[
     // starts one or stops one.
     "forge_pkce_sign_in",
     "forge_pkce_sign_in_cancel",
+    // One login (ADR 0128 D5): provisioning is the person's press, in the window. An application an
+    // owner made, pinned with the owner the person expects (D1.3); which account serves a repo
+    // (D2); the repo's number recorded at a clone or a trust (D4); and the second, CI-file token
+    // (D1.1). No link and no chat presses any of them.
+    "forge_applications",
+    "forge_use_application",
+    "forge_remove_application",
+    "forge_application_request",
+    "forge_project_accounts",
+    "forge_choose_project_account",
+    "forge_trust_clone_repo",
+    "forge_ci_permission_start",
+    "forge_ci_permission_wait",
+    "forge_ci_permission_cancel",
     // This machine's profiles (#2034, ADR 0095): the list, and the person's make, import and
     // remove of one, each asked in the window. What a chat runs as is never a chat's to change.
     "machine_profiles",

@@ -149,7 +149,8 @@ pub(crate) fn config_root() -> Result<std::path::PathBuf, String> {
 }
 
 pub(crate) fn host_scope() -> Result<HostScope, String> {
-    HostScope::claim().ok_or_else(|| "Forge sign-in is the window's, never a chat's.".to_string())
+    // ADR 0128 D5: provisioning is the person's press, in the window.
+    purlis_core::forge::provision::on_the_persons_press()
 }
 
 /// Hand this machine's forge sign-ins to the window's own forge calls (#1816): from here on a
@@ -386,11 +387,17 @@ static DEVICE_FLOW: Mutex<Option<DeviceFlow>> = Mutex::new(None);
 /// The number the next flow gets.
 static NEXT_FLOW: AtomicU32 = AtomicU32::new(1);
 
+/// The number the next flow of any kind gets: the sign-in's and the CI permission's share one
+/// sequence, so a number names one flow.
+pub(crate) fn next_flow_number() -> u32 {
+    NEXT_FLOW.fetch_add(1, Ordering::SeqCst)
+}
+
 /// How often a waiting flow looks for a cancel.
 const CANCEL_CHECK: Duration = Duration::from_millis(200);
 
 /// Waits between a flow's polls, a slice at a time, so a cancel ends it within a moment.
-struct UntilCancelled(Arc<AtomicBool>);
+pub(crate) struct UntilCancelled(pub(crate) Arc<AtomicBool>);
 
 impl device::Pace for UntilCancelled {
     fn wait(&self, for_: Duration) -> bool {
@@ -410,8 +417,8 @@ impl device::Pace for UntilCancelled {
 /// Why `kind` on `host` has no browser sign-in, when it has none.
 fn no_device_flow(kind: Kind, host: &str) -> String {
     format!(
-        "purlis signs in through the browser on github.com only. On {host}, sign in to {} with \
-         a token.",
+        "purlis has no application on {host} yet. Use your organization's application for it \
+         (Settings › You › Accounts), or sign in to {} with a token.",
         kind.display()
     )
 }

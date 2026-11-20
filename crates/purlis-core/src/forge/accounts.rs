@@ -160,6 +160,8 @@ fn granted_by(kind: Kind, scope: &str) -> &'static [&'static str] {
     match (kind, scope) {
         (Kind::GitHub, "read:org") => &["read:org", "write:org", "admin:org"],
         (Kind::GitHub, "repo") => &["repo"],
+        // The second token's scope (ADR 0128 D1.1): held by itself and no other.
+        (Kind::GitHub, "workflow") => &["workflow"],
         (Kind::GitHub, "user:email") => &["user:email", "user"],
         (Kind::GitHub, "admin:ssh_signing_key") => &["admin:ssh_signing_key"],
         (Kind::GitLab, "api") => &["api"],

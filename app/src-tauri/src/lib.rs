@@ -94,6 +94,7 @@ mod firstrun;
 mod firsttask;
 mod forgeaccounts;
 mod forgepkce;
+mod onelogin;
 mod getproject;
 mod gitbroker;
 mod goingaway;
