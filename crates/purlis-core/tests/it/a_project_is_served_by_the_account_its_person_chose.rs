@@ -195,6 +195,7 @@ fn a_chosen_account_that_is_gone_is_never_answered_by_the_other_one() {
     let why = source
         .credential_of("github.com", &scene.emu.id, now())
         .unwrap_err();
-    assert!(matches!(why, CredentialError::None { .. }), "{why:?}");
+    assert!(matches!(why, CredentialError::Unusable { .. }), "{why:?}");
+    assert!(why.to_string().contains("Choose an account"), "{why}");
     assert!(!why.to_string().contains(PERSONAL) && !why.to_string().contains(EMU));
 }
