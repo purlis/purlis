@@ -80,6 +80,10 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
     count: 1,
     why: READING,
   },
+  "GitLabAccessTab.tsx": {
+    count: 1,
+    why: READING,
+  },
   // Why a pinned artifact cannot be opened (#5952): its folder gone, or its read refused. Read
   // once as the tab opens; closing and pressing its icon again is the retry. Since #5954 a
   // missing, too-large or refused one carries Repin and Unpin as its way out, and an unpinned

@@ -311,6 +311,10 @@ pub const WINDOW_ONLY: &[&str] = &[
     "agent_identity_lines",
     "agent_identity_finish",
     "agent_identity_remove",
+    "gitlab_access_list",
+    "gitlab_access_lines",
+    "gitlab_access_set",
+    "gitlab_access_remove",
     // The browser sign-in to gitlab.com (#730, ADR 0077 §3): it opens the person's browser and
     // a loopback listener on this machine, and ends with a token in the keychain. No link
     // starts one or stops one.

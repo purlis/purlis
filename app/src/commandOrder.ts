@@ -191,6 +191,10 @@ export const OUTSIDE_THE_LANES: Partial<Record<keyof typeof commands, string>> =
     "It asks GitHub for seconds before it writes, which would hold every read of the sandbox's " +
     "lane behind it. Its Allow is one the person made by pressing Finish, and Settings reads the " +
     "standing again after it.",
+  gitlabAccessSet:
+    "It keeps a token in a vault and writes a tool line before its Allow, which would hold every " +
+    "read of the sandbox's lane behind it. Its Allow is one the person made by pressing Set up, " +
+    "and Settings reads the standing again after it.",
   addProjectForge:
     "It writes the manifest's forges, which no read of the sandbox's lane draws; Settings reads " +
     "the file again after it. The read it answers with drops the confirmed hosts the file no " +

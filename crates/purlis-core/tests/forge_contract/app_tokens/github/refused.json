@@ -13,7 +13,7 @@
       },
       "reply": {
         "code": 0,
-        "out": "{\"id\": 42, \"account\": {\"login\": \"acme\", \"type\": \"Organization\"}, \"app_slug\": \"acme-agents\"}",
+        "out": "{\"id\": 42, \"account\": {\"login\": \"acme\", \"type\": \"Organization\"}, \"app_slug\": \"acme-agents\", \"permissions\": {\"contents\": \"write\", \"issues\": \"write\", \"metadata\": \"read\", \"pull_requests\": \"write\", \"actions\": \"read\"}}",
         "err": "",
         "status": 200
       }
@@ -31,6 +31,30 @@
             "text": [
               "repositories[]",
               "api"
+            ]
+          },
+          {
+            "text": [
+              "permissions[contents]",
+              "write"
+            ]
+          },
+          {
+            "text": [
+              "permissions[issues]",
+              "write"
+            ]
+          },
+          {
+            "text": [
+              "permissions[metadata]",
+              "read"
+            ]
+          },
+          {
+            "text": [
+              "permissions[pull_requests]",
+              "write"
             ]
           }
         ]
