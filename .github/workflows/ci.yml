@@ -643,7 +643,7 @@ jobs:
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
           echo "$changed"
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the host, the protocol, the sandbox or the browsers has changed; the parity suite is not run against Docker"
@@ -753,10 +753,18 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.changes.outputs.parity != 'false') }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    # Evidence until it has a record of green runs to be required by (#4471).
-    continue-on-error: ${{ github.event_name == 'push' }}
+    # The fault suite (below) adds about 25 minutes to the hour the parity suite took, and 44 at
+    # the worst of its cases (its step's limit is 60): an hour and 44 minutes fit in 120.
+    timeout-minutes: 120
+    # **A required check, and red on a push means red** (#7188, ruling 3): this was evidence, with
+    # `continue-on-error` on a push, until it had a record to be required by (#4471). The fault
+    # suite is why it is required now: remote is trusted only if a live chat survives what the
+    # link does, so a pull request that touches remote code waits on it, and the nightly runs it
+    # whole and files an issue when red (`remote-faults-notice`). A fault test that cannot pass
+    # yet is `#[ignore]`d with the train it waits for, never left failing: a red job here reds
+    # `main`.
     env:
+      # A missing fixture fails here instead of passing unrun (`support::real_infra`).
       PURLIS_PARITY: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -776,7 +784,7 @@ jobs:
             exit 0
           fi
           changed=$(git diff --name-only "$BASE" HEAD)
-          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
+          if echo "$changed" | grep -qE '^(crates/(host|session-protocol|linux-sandbox|browser-engine|fake-harness|terminal|stand-in)/|crates/purlis-core/src/(sandbox|browser|hook|runner|eventlog|linkkey|host|dockerpool|dockercontext|pools|poolsetup|sshroute|tlsroute|codelink|session)[^/]*(\.rs$|/)|crates/purlis-core/tests/it/a_remote_(docker|podman)_pool_(is_reached_(over_(ssh|tls)|through_a_docker_context)|doctor_names_each_fault)\.rs$|crates/purlis-core/tests/it/an_ssh_runner_(takes_a_new_version_beside_the_old|host_outlives_the_sign_out_and_a_restart)\.rs$|crates/purlis-core/tests/it/(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci|a_chat_moves_to_a_docker_pools_runner_and_back|a_docker_pool_runner_is_linked_through_docker_exec|a_killed_docker_exec_closes_what_it_ran_on_a_runner|code_crosses_to_a_docker_pools_runner_and_back)\.rs$|crates/purlis-core/tests/support/(outage|real_infra|remote_rig)\.rs$|crates/purlis-cli/src/(bridge|mcp|hooks|browsing|main)[^/]*(\.rs$|/)|app/src-tauri/plugin/|app/src-tauri/src/(behaviour|host|session|hooks|killswitch|browser|chatbrowsers|routedsessions|runner|dockerpools|poolsetuptab|sandboxing|poolfollow)[^/]*(\.rs$|/)|runner-image/|tests/(parity|remote-docker|remote-podman|ssh-runner|remote-faults)/|Cargo\.lock$|rust-toolchain\.toml$|\.github/workflows/ci\.yml$)'; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "::notice::nothing of the pools or the SSH route has changed; the parity suite is not run against Docker on another machine"
@@ -893,6 +901,27 @@ jobs:
         run: >-
           cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
           --test-threads 1 --test it -E 'test(/^an_ssh_runner_host_outlives_the_sign_out_and_a_restart::/)'
+      # **The fault suite** (#7188, the ruling of 2026-11-18): fifteen cases, a live chat on the
+      # systemd machine above and a live browser, each with a fault put on the link, the sshd,
+      # the runner or the registry (`tests/remote-faults/faults.sh`) and the outage rules checked:
+      # nothing silent for over 30 s, the 3-minute limit, the five named states. One at a time,
+      # no retries (a flake is a lifecycle bug), and every case starts from `restore`. It runs
+      # after the steps above, which leave their machines as the fixtures need them. A case that
+      # waits on train A (#7187) or D (#7190) is `#[ignore]`d with the reason; list them with
+      # `cargo nextest list --run-ignored only`.
+      - name: The fault suite, on the pool and the systemd machine
+        if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
+        # The cases one at a time, each at its worst (every wait at its limit: 3 minutes for the host
+        # to answer and link, up to 3 for the link after a fault, the fault's own 90 s or reboot):
+        # 1 drop 5 s 6, 1 drop 90 s 7.5, 2 sshd 6, 6 app restart 8, 8 slow link 7.5, 9 registry 2,
+        # 10 half-open 7 = 44 minutes, and the unit tests of the rules a few seconds. Case 5 runs
+        # in the systemd step above. The ignored cases are not run. A case's own limit is the
+        # nextest override's 10 minutes.
+        timeout-minutes: 60
+        run: >-
+          cargo nextest run --locked -p purlis-core --profile ci --retries 0 --no-tests fail
+          --no-fail-fast --test-threads 1 --test it
+          -E 'test(/^(a_live_remote_chat_survives_the_faults_that_define_trust|a_missing_real_infra_fixture_fails_in_ci)::/)'
       - name: The behaviour suite on its remote Docker pool target
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
@@ -912,6 +941,60 @@ jobs:
           docker exec ssh-runner sh -c 'tail -n 200 /home/runner/serve.log; ls -laR /home/runner/.config' || true
           docker logs --tail 100 ssh-runner-systemd || true
           docker exec ssh-runner-systemd sh -c 'systemctl --failed --no-pager; loginctl list-users; journalctl -b --no-pager -n 300; ls -laR /home/keeper/.config' || true
+
+  # **A red nightly of the remote parity job and its fault suite files an issue** (#7188, ruling
+  # 3), as `forge-live.yml` and `mutants.yml` do: a scheduled run's red X is on a page nobody
+  # opens, an issue is in the repo. One issue, found by its exact title, rewritten each red night
+  # and closed by the first night that ran the job and passed. A night where the job did not run
+  # leaves the issue as it is. Only a nightly: a pull request's red is its own check.
+  remote-faults-notice:
+    name: say so where someone will see it (remote parity nightly)
+    needs: remote-parity
+    if: ${{ always() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the nightly's issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RESULT: ${{ needs.remote-parity.result }}
+        run: |
+          set -euo pipefail
+          TITLE='the remote fault suite nightly is not clean'
+          gh issue list --state open --limit 200 --json number,title \
+            --template '{{range .}}{{.number}} {{.title}}{{"\n"}}{{end}}' > "$RUNNER_TEMP/issues.txt"
+          EXISTING="$(awk -v t="$TITLE" \
+            '{n=$1; $1=""; sub(/^ /,""); if ($0 == t) {print n; exit}}' "$RUNNER_TEMP/issues.txt")"
+          if [ "$RESULT" = success ]; then
+            if [ -n "$EXISTING" ]; then
+              gh issue close "$EXISTING" --comment "The remote parity job and its fault suite ran clean again: $RUN_URL"
+            fi
+            exit 0
+          fi
+          if [ "$RESULT" != failure ]; then
+            echo "the job ended $RESULT, not red: the nightly's issue is left as it is"
+            exit 0
+          fi
+          BODY_FILE="$RUNNER_TEMP/body.md"
+          {
+            echo "Last run: $RUN_URL"
+            echo
+            echo "The remote parity job failed (\`remote-parity\`: $RESULT). Its fault suite"
+            echo "(\`a_live_remote_chat_survives_the_faults_that_define_trust\`) puts a fault under a"
+            echo "live remote chat and checks the outage rules (#7188): nothing silent for over 30 s,"
+            echo "the 3-minute limit, the five named states. The run's log names the case."
+            echo
+            echo "A fault test is not retried: a flake is a lifecycle bug. A case may be quarantined"
+            echo "only with a linked issue, and the quarantine expires after 7 days."
+          } > "$BODY_FILE"
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body-file "$BODY_FILE"
+          else
+            gh issue create --title "$TITLE" --body-file "$BODY_FILE"
+          fi
 
   # A required check, so it always runs, and skips its steps when nothing Rust reads has changed.
   deny:
