@@ -10702,7 +10702,7 @@ export type ForgeAccountRow = {
 /**  What a press of *Use this application* changed. */
 export type ForgeApplicationPinned = {
 	host: string,
-	/**  `new`, `same`, `client-id` or `owner`. */
+	/**  `pinned`, `client-id` (another application replaced the pinned one) or `owner`. */
 	change: string,
 	/**  The client id (or owner) this replaced, for the Notice a changed pin raises. */
 	replaced: string | null,

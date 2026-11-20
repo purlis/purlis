@@ -96,6 +96,7 @@ fn sign_in(
 
 #[test]
 fn github_com_signs_in_through_purlis_own_app_and_keeps_a_token_that_does_not_expire() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canaryGITHUBaccess1", "octocat", "repo, read:org");
@@ -137,6 +138,7 @@ fn github_com_signs_in_through_purlis_own_app_and_keeps_a_token_that_does_not_ex
 
 #[test]
 fn gitlab_com_signs_in_by_pkce_and_keeps_the_pair_that_renews() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canaryGITLABaccess1", "octocat", "api");
@@ -170,6 +172,7 @@ fn gitlab_com_signs_in_by_pkce_and_keeps_the_pair_that_renews() {
 
 #[test]
 fn a_ghes_host_signs_in_through_the_application_an_owner_made_and_never_githubs() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canaryGHESaccess1", "octocat", "repo, read:org");
@@ -216,6 +219,7 @@ fn a_ghes_host_signs_in_through_the_application_an_owner_made_and_never_githubs(
 
 #[test]
 fn a_self_hosted_gitlab_signs_in_by_pkce_through_the_group_application() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canarySELFaccess1", "octocat", "api");
@@ -253,6 +257,7 @@ fn a_self_hosted_gitlab_signs_in_by_pkce_through_the_group_application() {
 
 #[test]
 fn the_press_refuses_an_application_with_no_owner_and_a_pin_cannot_replace_githubs_own() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     for owner in ["", "  ", "a b"] {
         assert!(
@@ -293,6 +298,7 @@ fn the_press_refuses_an_application_with_no_owner_and_a_pin_cannot_replace_githu
 
 #[test]
 fn each_host_keeps_its_own_accounts_token() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canaryONEaccess", "octocat", "repo, read:org");

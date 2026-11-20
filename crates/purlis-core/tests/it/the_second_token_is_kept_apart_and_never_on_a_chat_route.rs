@@ -121,6 +121,7 @@ fn token_of(credential: CiPushCredential) -> String {
 
 #[test]
 fn the_everyday_sign_in_never_asks_for_workflow_and_the_second_asks_for_what_is_held_and_it() {
+    purlis_core::unsteered!();
     let scene = scene();
     let github = registration::on(Kind::GitHub, "github.com").unwrap();
     assert!(!github.scopes().contains(&workflow::SCOPE));
@@ -146,6 +147,7 @@ fn the_everyday_sign_in_never_asks_for_workflow_and_the_second_asks_for_what_is_
 
 #[test]
 fn a_press_keeps_the_second_token_as_its_own_item_beside_the_unchanged_everyday_one() {
+    purlis_core::unsteered!();
     let scene = scene();
     scene
         .tokens
@@ -196,6 +198,7 @@ fn a_press_keeps_the_second_token_as_its_own_item_beside_the_unchanged_everyday_
 
 #[test]
 fn the_second_token_is_in_no_route_a_chat_has_and_in_no_file() {
+    purlis_core::unsteered!();
     let scene = scene();
     scene
         .tokens
@@ -243,6 +246,7 @@ fn the_second_token_is_in_no_route_a_chat_has_and_in_no_file() {
 
 #[test]
 fn when_github_folds_workflow_into_the_everyday_token_nothing_is_kept_and_a_push_is_not_offered() {
+    purlis_core::unsteered!();
     let scene = scene();
     scene
         .tokens
@@ -278,6 +282,7 @@ fn when_github_folds_workflow_into_the_everyday_token_nothing_is_kept_and_a_push
 
 #[test]
 fn a_grant_for_another_login_or_without_workflow_keeps_nothing() {
+    purlis_core::unsteered!();
     let scene = scene();
     scene
         .tokens
@@ -311,6 +316,7 @@ fn a_grant_for_another_login_or_without_workflow_keeps_nothing() {
 
 #[test]
 fn a_gitlab_account_has_no_second_token_and_its_one_serves_the_app_for_a_held_push() {
+    purlis_core::unsteered!();
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canaryGITLABapi", "octocat", "api");
@@ -350,6 +356,7 @@ fn a_gitlab_account_has_no_second_token_and_its_one_serves_the_app_for_a_held_pu
 
 #[test]
 fn signing_out_deletes_the_second_token_with_the_first() {
+    purlis_core::unsteered!();
     let scene = scene();
     scene
         .tokens
@@ -372,6 +379,7 @@ fn signing_out_deletes_the_second_token_with_the_first() {
 
 #[test]
 fn the_second_token_is_read_by_one_call_alone() {
+    purlis_core::unsteered!();
     // A source scan: only `for_ci_push` reads the item, and nothing calls it but the window.
     let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut readers = Vec::new();

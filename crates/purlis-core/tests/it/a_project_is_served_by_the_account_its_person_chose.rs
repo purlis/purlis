@@ -96,6 +96,7 @@ fn source(scene: &Scene) -> SignedIn {
 
 #[test]
 fn two_accounts_on_one_host_are_two_accounts_and_the_unchosen_route_picks_neither() {
+    purlis_core::unsteered!();
     let scene = scene();
     assert_ne!(scene.personal.id, scene.emu.id);
     let source = source(&scene);
@@ -107,6 +108,7 @@ fn two_accounts_on_one_host_are_two_accounts_and_the_unchosen_route_picks_neithe
 
 #[test]
 fn a_chats_route_for_a_repo_is_the_account_the_person_chose_for_it() {
+    purlis_core::unsteered!();
     let scene = scene();
     let source = source(&scene);
     let both = accounts::listed(scene.home.path()).unwrap();
@@ -163,6 +165,7 @@ fn a_chats_route_for_a_repo_is_the_account_the_person_chose_for_it() {
 
 #[test]
 fn a_chosen_account_that_is_gone_is_never_answered_by_the_other_one() {
+    purlis_core::unsteered!();
     let scene = scene();
     let source = source(&scene);
     let platform = tempfile::tempdir().unwrap();

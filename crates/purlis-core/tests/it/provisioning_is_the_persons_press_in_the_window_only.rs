@@ -61,6 +61,7 @@ fn a_child_claims_the_persons_press_only_outside_a_chat() {
 
 #[test]
 fn every_provisioning_command_is_the_windows_alone_and_no_link_serves_one() {
+    purlis_core::unsteered!();
     for command in PROVISIONING_COMMANDS {
         assert!(
             ui::window_only(command),
@@ -115,6 +116,7 @@ fn code(text: &str) -> impl Iterator<Item = &str> {
 
 #[test]
 fn no_source_but_the_windows_and_the_forge_modules_calls_a_provisioning_entry_point() {
+    purlis_core::unsteered!();
     let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let mut found = Vec::new();
     // The command line and the session host: what a chat's `purlis` runs, and what serves a link.
@@ -159,6 +161,7 @@ fn no_source_but_the_windows_and_the_forge_modules_calls_a_provisioning_entry_po
 
 #[test]
 fn the_scan_finds_a_provisioning_call_where_there_is_one() {
+    purlis_core::unsteered!();
     // The control: the window's own file, which the scan skips, does call them.
     let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/src/onelogin.rs");
     let text = std::fs::read_to_string(app).expect("the app's file");
