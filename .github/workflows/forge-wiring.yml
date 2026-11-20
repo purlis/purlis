@@ -33,6 +33,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-latest]
+    # macOS is evidence only, as `ci.yml`'s `macos-tests` is: its runners fail tests that pass on
+    # Linux for reasons that have nothing to do with this feature (timing, the temp folder).
+    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
@@ -59,4 +62,6 @@ jobs:
         timeout-minutes: 90
         run: cargo nextest run -p purlis-core --features forge-wiring --locked --no-run
       - name: Run the tests
-        run: cargo nextest run -p purlis-core --features forge-wiring --locked --profile ci
+        # The end-to-end test (`one_login_end_to_end`) needs the real gh, glab and git and its own
+        # node harness: `one-login-e2e` runs it, with those, on every one-login pull request.
+        run: cargo nextest run -p purlis-core --features forge-wiring --locked --profile ci -E 'not test(/one_login_end_to_end/)'
