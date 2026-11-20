@@ -5519,6 +5519,11 @@ fn main() -> ExitCode {
     if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
+    // Started by a chat's git as its credential helper (ADR 0128 D3c): answer with the chat's
+    // sentinel and exit, before anything else of the command runs.
+    if let Some(code) = purlis_core::forge::gitcredential::serve_sentinel_if_asked() {
+        std::process::exit(code);
+    }
     // Started by a chat's ssh as its route's `ProxyCommand` (#3536): carry one connection
     // through the chat's SOCKS port and exit. Nothing else of the command runs.
     if let Some(code) = purlis_core::sandbox::sshproxy::proxy_if_asked() {

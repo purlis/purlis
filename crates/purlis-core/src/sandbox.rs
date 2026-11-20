@@ -5430,6 +5430,28 @@ impl Applied {
             )
             .map_err(|why| under(format!("the forge credential lock was not made: {why}")))?;
         }
+        // One login (ADR 0128 D3b, D3c): the chat's `gh`, git, `glab` and cargo are routed to
+        // the forge proxy and carry its sentinel, never a token. After the lock, whose marker it
+        // takes out, and before the PATH file below, which reads the folder it names.
+        #[cfg(feature = "forge-wiring")]
+        if let Some(route) = self.forge_route() {
+            let scratch = at.confinement.and_then(Confinement::tmp).ok_or_else(|| {
+                under("the forge route needs the chat's own folder, and it has none".to_owned())
+            })?;
+            let wiring = crate::forgewire::compose(&route, scratch)
+                .map_err(|why| under(format!("the forge route was not made: {why}")))?;
+            let already = line
+                .env
+                .iter()
+                .find(|(key, _)| key == tools::FIRST_ON_PATH)
+                .map(|(_, dir)| dir.clone());
+            line.env = crate::forgewire::apply(std::mem::take(&mut line.env), &wiring);
+            line.env.retain(|(key, _)| key != tools::FIRST_ON_PATH);
+            line.env.push((
+                tools::FIRST_ON_PATH.to_owned(),
+                crate::forgewire::first_on_path(already.as_deref(), &wiring.bin),
+            ));
+        }
         // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
         // first on each command's `PATH` through the one file Claude Code reads before each
         // command, never on the harness's own `PATH`. The persona's tools go before it there.
@@ -5599,6 +5621,26 @@ impl Applied {
         )
     }
 
+    /// **Where this chat's forge traffic goes** (ADR 0128 D3a), or none where it has no forge
+    /// route. The route's parts are slice A's: its endpoint's unix socket and egress port, its
+    /// CA, its sentinel, and the repos the person recorded for it. They are not in the tree yet,
+    /// so this answers none, and a chat is wired by nothing until the train that turns the
+    /// `forge-wiring` feature on replaces this with the proxy's answer.
+    #[cfg(feature = "forge-wiring")]
+    fn forge_route(&self) -> Option<crate::forgewire::Route> {
+        None
+    }
+
+    /// The forge hosts this chat's proxy never tunnels to ([`egress::Serving::forge_denied`]):
+    /// those of its route, none where it has none.
+    fn forge_denied(&self) -> Vec<String> {
+        #[cfg(feature = "forge-wiring")]
+        if let Some(route) = self.forge_route() {
+            return crate::forgewire::denied_hosts(&route.repos);
+        }
+        Vec::new()
+    }
+
     /// **A Claude Code chat's ssh route** (#1667), from `confinement`: only one written in this
     /// project's routes folder ([`tunnel::routes_folder`]), where no chat writes, and handed to
     /// the commands its sandbox runs alone ([`Self::line`]).
@@ -5686,15 +5728,18 @@ impl Applied {
         refusals: egress::Refusals,
         reached: Option<egress::Reached>,
     ) -> egress::Serving {
-        self.planned().serving(
-            (*self.reach).clone(),
-            plan::Telling {
-                refusals,
-                reached,
-                asks: None,
-                network: None,
-            },
-        )
+        egress::Serving {
+            forge_denied: self.forge_denied(),
+            ..self.planned().serving(
+                (*self.reach).clone(),
+                plan::Telling {
+                    refusals,
+                    reached,
+                    asks: None,
+                    network: None,
+                },
+            )
+        }
     }
 }
 

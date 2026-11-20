@@ -2017,3 +2017,112 @@ fn with_network_not_enforced_a_confined_proxy_still_refuses_a_host_nothing_lists
     assert_eq!(said, "HTTP/1.1 403 Forbidden");
     assert!(told.lock().unwrap().is_empty());
 }
+
+/// A proxy whose layer lists `127.0.0.1:port` exactly, with `denied` as its forge hosts: the one
+/// way to show a listed host is refused is a host this machine's own server answers for.
+fn forging(heard: &Heard, port: u16, denied: &[&str]) -> Proxy {
+    Proxy::serving(super::Serving {
+        tunnel_ports: vec![port],
+        plain_ports: vec![port],
+        forge_denied: denied.iter().map(|host| (*host).to_owned()).collect(),
+        ..heard.serving(Reach::of(vec![(exactly(port), By::You)]))
+    })
+    .expect("a proxy")
+}
+
+#[test]
+fn a_forge_host_is_refused_as_a_tunnel_even_where_a_layer_lists_it() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = forging(&heard, port, &[LOOPBACK]);
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        listener.accept().is_err(),
+        "the proxy connected to a forge host it denied"
+    );
+    proxy.settled();
+    // Counted in the record as refused, never as carried.
+    assert_eq!(heard.reached(), [(Some(exactly(port)), "refused", 1)]);
+}
+
+#[test]
+fn a_forge_host_is_refused_as_a_plain_request_and_over_socks_too() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = forging(&heard, port, &["127.0.0.1"]);
+    let mut plain = to(&proxy);
+    let said = status(
+        &mut plain,
+        &format!("GET http://127.0.0.1:{port}/ HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    // SOCKS's own word for it: not allowed by the ruleset.
+    assert_eq!(socks_connect(&mut to_socks(&proxy), LOOPBACK, port), 2);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        listener.accept().is_err(),
+        "a denied forge host was connected to"
+    );
+}
+
+#[test]
+fn a_host_that_is_not_a_forge_is_still_tunnelled_where_forge_hosts_are_denied() {
+    let (listener, port) = an_echo_server();
+    let echoed = echo_once(listener);
+    let heard = Heard::default();
+    // A forge host elsewhere is denied; this server's is not one.
+    let proxy = forging(
+        &heard,
+        port,
+        &["github.com", "gitlab.com", "git.example.org"],
+    );
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    client.write_all(b"ping").expect("through the tunnel");
+    let mut back = [0u8; 4];
+    client.read_exact(&mut back).expect("echoed back");
+    assert_eq!(&back, b"ping");
+    assert_eq!(echoed.join().expect("the server"), b"ping");
+}
+
+#[test]
+fn a_denied_forge_host_is_matched_by_name_as_a_host_is_listed_whatever_its_case() {
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        forge_denied: vec!["github.com".to_owned()],
+        ..heard.serving(Reach::open(vec!["github.com".to_owned()]))
+    })
+    .expect("a proxy");
+    for host in ["github.com", "GitHub.COM", "github.com."] {
+        let mut client = to(&proxy);
+        let said = status(
+            &mut client,
+            &format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{host}");
+    }
+    // Its answer tells the chat where a forge is reached, in words it can act on.
+    let refusal = super::refusal_said(
+        "github.com",
+        443,
+        &crate::sandbox::reach::Decision::Refused(crate::sandbox::reach::Refused::ForgeRoute),
+    );
+    assert_eq!(
+        refusal,
+        "purlis's sandbox does not allow github.com:443: a forge is reached only through purlis. \
+         Use gh, glab or git, which go through it; for a release, `gh release download`, or the \
+         release-assets.githubusercontent.com address the release redirects to"
+    );
+}

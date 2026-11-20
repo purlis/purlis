@@ -5897,6 +5897,23 @@ set = { PURLIS_HARNESS = "codex" }
   the chat's `PATH` starts with `bin/`, and its `GIT_SSH_COMMAND` names that `ssh`. No key,
   agent or value is in either file.
 
+### `<chat temp dir>/forge-wire/` — a chat's forge wiring
+
+- **Format:** `gh/config.yml` (one setting, `http_unix_socket`, `0600`; **no `hosts.yml`**: the
+  folder holds no login) and `bin/gh` (a POSIX shell script, `0700`); the folders are `0700`.
+- **Tier:** Machine, device-bound, rebuildable — written again for every chat whose forge calls
+  go through purlis's forge proxy, as it starts, and removed with the chat's own temp directory
+  when it ends.
+- **Written by:** `crates/purlis-core/src/forgewire.rs` (`compose`), only where the
+  `forge-wiring` feature is on (ADR 0128 D3c, "One login", slice B).
+- **What it says:** `gh`, told `GH_CONFIG_DIR` is `gh/`, reaches the chat's own proxy over the
+  unix socket the setting names. `bin/gh` is first on the chat's `PATH`: it runs the next `gh`
+  with `-R github.localhost/<owner>/<repo>` added, from the recorded repo whose remote the
+  working directory has, where the subcommand takes `-R` and the chat gave none (the table is
+  `forgewire::TAKES_REPO`). It never reads `gh`'s output. **No token, sentinel or key is in
+  either file**: the sentinel is only in the chat's environment (`PURLIS_FORGE_SENTINEL`,
+  `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITLAB_TOKEN`).
+
 ### `.purlis/app/ssh/chat-<pid>-*/purlis-ssh/` — a Claude Code chat's ssh route
 
 - **Format:** as `<chat temp dir>/purlis-ssh/` above (`config` and `bin/ssh`), and

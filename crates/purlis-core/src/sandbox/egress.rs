@@ -613,6 +613,12 @@ pub struct Serving {
     /// administrator's policy pins as never allowed and the person's Keep blocked are never
     /// carried by it.
     pub network: Option<super::asks::Answered>,
+    /// **The forge hosts this chat's proxy never tunnels to** (ADR 0128 D3g): a `CONNECT`, a
+    /// SOCKS5 request or a plain request to one is refused, whatever a layer lists, because the
+    /// only route to a forge is the proxy's forge route, which terminates the connection itself
+    /// before this decision is asked ([`crate::forgewire::denied_hosts`]). Empty denies none,
+    /// which is a chat with no forge route.
+    pub forge_denied: Vec<String>,
 }
 
 impl Serving {
@@ -634,6 +640,7 @@ impl Serving {
             asking: None,
             providers: None,
             network: None,
+            forge_denied: Vec::new(),
         }
     }
 
@@ -785,6 +792,7 @@ impl Proxy {
             network: serving
                 .network
                 .map(|told| (told, Mutex::new(std::collections::HashSet::new()))),
+            forge_denied: serving.forge_denied,
             live: Live::default(),
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
@@ -1061,6 +1069,8 @@ struct Allowed {
     live: Live,
     /// [`Serving::network`], and the hosts and ports it was told of already.
     network: Option<(super::asks::Answered, ToldOnce)>,
+    /// [`Serving::forge_denied`].
+    forge_denied: Vec<String>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1124,6 +1134,11 @@ impl Allowed {
 
     /// The decision for a connection to `host` on `port`, a tunnel or not.
     fn decide(&self, host: &str, port: u16, tunnel: bool, own: &[std::net::IpAddr]) -> Decision {
+        // A forge host is reached only through the forge route (ADR 0128 D3g), never as a tunnel
+        // or a plain request, whatever a layer lists: asked first, so nothing can allow it.
+        if allows(&self.forge_denied, host) {
+            return Decision::Refused(Refused::ForgeRoute);
+        }
         // A service on this Mac is reached by a name of this Mac too (qw384b), never looked up.
         let ports = if self.any_port {
             &[port][..]
@@ -1372,6 +1387,12 @@ fn refusal_said(host: &str, port: u16, decision: &Decision) -> String {
         Decision::Refused(Refused::Policy) => format!(
             "purlis's sandbox does not allow {host}:{port}: an administrator's policy pins it as \
              never allowed"
+        ),
+        Decision::Refused(Refused::ForgeRoute) => format!(
+            "purlis's sandbox does not allow {host}:{port}: a forge is reached only through \
+             purlis. Use gh, glab or git, which go through it; for a \
+             release, `gh release download`, or the release-assets.githubusercontent.com address \
+             the release redirects to"
         ),
         Decision::Refused(Refused::LocalAddress) => format!(
             "purlis's sandbox does not allow {host}:{port}: it is this machine, a link-local \
