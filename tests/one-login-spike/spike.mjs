@@ -123,7 +123,8 @@ function forgeHandler(req, res) {
   const ok = credential === REAL;
   const normal = req.url
     .replace(/^\/api\/v3(?=\/|\?|$)/, '')
-    .replace(/^\/api\/graphql(?=\?|$)/, '/graphql');
+    .replace(/^\/api\/graphql(?=\?|$)/, '/graphql')
+    .replace(/^\/o\/r(?=\/(info\/refs|git-upload-pack))/, '/o/r.git'); // cargo asks for the URL without .git
   const entry = {
     method: req.method,
     path: req.url,
@@ -569,6 +570,18 @@ function cases() {
     expect: '/o/r.git (fetch)',
     env: (home, trust) => gh(home, { GH_HOST: `127.0.0.1:${ports.tls}`, GH_ENTERPRISE_TOKEN: SENTINEL, ...(trust === 'env' ? { SSL_CERT_FILE: ca.pem, GIT_SSL_CAINFO: ca.pem } : {}), ...gitEnv(home) }),
   });
+  add({
+    tool: 'gh',
+    mechanism: 'HTTPS_PROXY to the CONNECT proxy: gh repo clone by URL (no API lookup), then `git remote -v`',
+    label: 'repo clone https://github.com/o/r; remote -v',
+    phases: ['env'],
+    tls: true,
+    info: true,
+    setup: gitGlobal,
+    cmd: ['sh', '-c', 'gh repo clone https://github.com/o/r c && git -C c remote -v'],
+    expect: 'github.com/o/r',
+    env: (home, trust) => gh(home, { GH_TOKEN: SENTINEL, ...viaConnect(home, trust) }),
+  });
   for (const [mech, envFor] of [
     ['HTTPS_PROXY to the CONNECT proxy (host stays github.com)', (home, trust) => gh(home, { GH_TOKEN: SENTINEL, HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, ...sslFile(trust) })],
     ['GH_HOST=127.0.0.1:<port> as an enterprise host', (home, trust) => gh(home, { GH_HOST: `127.0.0.1:${ports.tls}`, GH_ENTERPRISE_TOKEN: SENTINEL, ...sslFile(trust) })],
@@ -604,8 +617,8 @@ function cases() {
     ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'checks']],
     ['remote github.localhost, no -R', 'https://github.localhost/o/r.git', ['pr', 'view']],
     ['remote github.localhost, no -R', 'https://github.localhost/o/r.git', ['pr', 'checks']],
-    ['remote github.com, -R o/r', 'https://github.com/o/r.git', ['-R', 'o/r', 'pr', 'view']],
-    ['remote github.com, -R github.localhost/o/r', 'https://github.com/o/r.git', ['-R', 'github.localhost/o/r', 'pr', 'view']],
+    ['remote github.com, -R o/r', 'https://github.com/o/r.git', ['pr', 'view', '-R', 'o/r']],
+    ['remote github.com, -R github.localhost/o/r', 'https://github.com/o/r.git', ['pr', 'view', '-R', 'github.localhost/o/r']],
     ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'create', '--title', 't', '--body', 'b', '--head', 'main', '--base', 'main']],
   ];
   for (const [label, url, args] of matching) {
