@@ -196,7 +196,7 @@ function forgeHandler(req, res) {
       return json(200, { id: 42, name: 'r', path: 'r', path_with_namespace: 'o/r', default_branch: 'main', name_with_namespace: 'o / r', description: 'fake', web_url: `http://${host}/o/r`, http_url_to_repo: `http://${host}/o/r.git`, visibility: 'private' });
     if (method === 'POST' && normal.split('?')[0] === '/graphql') {
       if (body.includes('viewer')) return json(200, { data: { viewer: { login: 'fake-user' } } });
-      const repository = { id: 'R_1', name: 'r', nameWithOwner: 'o/r', url: `https://${host}/o/r`, description: 'fake', isPrivate: false, defaultBranchRef: { name: 'main' }, owner: { login: 'o' } };
+      const repository = { databaseId: 1, sshUrl: 'git@github.com:o/r.git', hasIssuesEnabled: true, hasWikiEnabled: false, viewerPermission: 'ADMIN', mergeCommitAllowed: true, rebaseMergeAllowed: true, squashMergeAllowed: true, parent: null, id: 'R_1', name: 'r', nameWithOwner: 'o/r', url: `https://${host}/o/r`, description: 'fake', isPrivate: false, defaultBranchRef: { name: 'main' }, owner: { login: 'o' } };
       const aliases = [...body.matchAll(/(\w+)\s*:\s*repository\s*\(/g)].map((m) => m[1]);
       return json(200, { data: { repository, ...Object.fromEntries(aliases.map((a) => [a, repository])) } });
     }
@@ -618,8 +618,8 @@ function cases() {
     ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'checks']],
     ['remote github.localhost, no -R', 'https://github.localhost/o/r.git', ['pr', 'view']],
     ['remote github.localhost, no -R', 'https://github.localhost/o/r.git', ['pr', 'checks']],
-    ['remote github.com, -R o/r', 'https://github.com/o/r.git', ['pr', 'view', '-R', 'o/r']],
-    ['remote github.com, -R github.localhost/o/r', 'https://github.com/o/r.git', ['pr', 'view', '-R', 'github.localhost/o/r']],
+    ['remote github.com, -R o/r', 'https://github.com/o/r.git', ['pr', 'view', '1', '-R', 'o/r']],
+    ['remote github.com, -R github.localhost/o/r', 'https://github.com/o/r.git', ['pr', 'view', '1', '-R', 'github.localhost/o/r']],
     ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'create', '--title', 't', '--body', 'b', '--head', 'main', '--base', 'main']],
   ];
   for (const [label, url, args] of matching) {
@@ -640,6 +640,8 @@ function cases() {
   // cargo's git dependency: libgit2, then the git CLI.
   const cargoApp = (home) => {
     gitGlobal(home);
+    // libgit2 reads the helper list itself and does not know git's empty-entry reset: one helper, no reset.
+    fs.writeFileSync(path.join(home, '.gitconfig'), `[credential]\n\thelper = ${path.join(work, 'credential-sentinel.sh')}\n[protocol]\n\tversion = 0\n`);
     fs.mkdirSync(path.join(home, 'app', 'src'), { recursive: true });
     fs.writeFileSync(path.join(home, 'app', 'Cargo.toml'), '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\nr = { git = "https://github.com/o/r" }\n');
     fs.writeFileSync(path.join(home, 'app', 'src', 'lib.rs'), '');
