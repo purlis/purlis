@@ -438,9 +438,11 @@ Read from the forges' documentation as known; **not re-fetched this round and no
 Each line is a claim the ADR's open items name as needing a probe.
 
 - **GitHub OAuth app tokens and expiry.** `offline_access` and 8-hour user tokens belong to a
-  GitHub App's user token. An OAuth app's token does not expire unless the owner of the app turns
-  on "Expire user access tokens" in its settings. Round 3's D2 assumed expiry from a scope the
-  OAuth app does not take. **Gating probe:** one live sign-in against the existing registration,
+  GitHub App's user token, and so does the "Expire user authorization tokens" setting (section
+  7.1 above reads it as a GitHub App's, on by default). An OAuth app's token does not expire, has
+  no refresh token, and is revoked by GitHub after a year unused. Round 4 said an OAuth app's
+  owner could turn expiry on; that is not supported by what was read and is withdrawn (ADR 0128
+  round 5). Round 3's D2 assumed expiry from a scope the OAuth app does not take. **Gating probe:** one live sign-in against the existing registration,
   read `expires_in` and `refresh_token`, and one refresh with no client secret.
 - **Who may register on GHES and self-hosted GitLab.** A user-owned application is owned by one
   person; the safe shape is an organization-, enterprise-, group- or instance-owned one, made by an
