@@ -6608,7 +6608,11 @@ impl Chats {
         // A chat closed for good takes its forge route with it; a restart's replacement has
         // started its own by now and `ForgeRoutes::start` replaced this one's.
         #[cfg(feature = "forge-wiring")]
-        if a_chat && let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_deref()) {
+        if a_chat
+            && let Some(id) = gone
+                .as_ref()
+                .and_then(|one| one.chat.identity.id.as_deref())
+        {
             crate::forgeroute::stop_chat(id);
         }
         // **A chat closed for good takes the folder kept for its wake line with it** (#5827),

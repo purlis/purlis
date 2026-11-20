@@ -94,9 +94,9 @@ mod finished;
 mod firstrun;
 mod firsttask;
 mod forgeaccounts;
+mod forgepkce;
 #[cfg(feature = "forge-wiring")]
 mod forgeroute;
-mod forgepkce;
 mod getproject;
 mod gitbroker;
 mod goingaway;
