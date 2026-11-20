@@ -151,6 +151,9 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
         }
     }
     headers.retain(|(n, _)| normal(n) != "expect");
+    if let Some(observer) = &w.observe {
+        observer.request(&rh, &body);
+    }
 
     let outcome = w.proxy.handle(
         &w.chat,

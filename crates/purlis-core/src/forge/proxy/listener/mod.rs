@@ -152,6 +152,13 @@ pub fn is_public(ip: IpAddr) -> bool {
     }
 }
 
+/// Sees every request a listener reads, with its body, before the core decides it. For a test or
+/// a capture of what a tool sent; the app sets none. What it is given is what the chat sent, which
+/// holds no credential of the person's.
+pub trait Observe: Send + Sync {
+    fn request(&self, head: &super::RequestHead, body: &[u8]);
+}
+
 /// Everything one chat's listener needs, as plain values.
 #[derive(Clone)]
 pub struct Wiring {
@@ -163,6 +170,8 @@ pub struct Wiring {
     pub limits: Limits,
     /// The storage addresses this chat's LFS batches handed the listener.
     pub storage: Arc<LfsStorage>,
+    /// See every request read ([`Observe`]); none in the app.
+    pub observe: Option<Arc<dyn Observe>>,
 }
 
 impl Wiring {
@@ -176,6 +185,7 @@ impl Wiring {
             dial: Arc::new(PublicDial),
             limits: Limits::default(),
             storage: Arc::new(LfsStorage::default()),
+            observe: None,
         }
     }
 }
@@ -296,20 +306,21 @@ impl ForgeListener {
 impl Drop for ForgeListener {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::SeqCst);
-        // The accept loop is blocked in `accept`: one connection of our own wakes it.
-        match &self.wake {
+        // The accept loop is blocked in `accept`: one connection of our own wakes it. If none can
+        // be made (the socket's folder is already gone), the loop cannot be woken, and waiting for
+        // it would wait for ever: it is left, and ends with the process.
+        let woke = match &self.wake {
             #[cfg(unix)]
-            Wake::Unix(path) => {
-                let _ = std::os::unix::net::UnixStream::connect(path);
-            }
-            Wake::Tcp(address) => {
-                let _ = TcpStream::connect_timeout(
-                    &SocketAddr::from((Ipv4Addr::LOCALHOST, address.port())),
-                    Duration::from_secs(1),
-                );
-            }
-        }
-        if let Some(thread) = self.thread.take() {
+            Wake::Unix(path) => std::os::unix::net::UnixStream::connect(path).is_ok(),
+            Wake::Tcp(address) => TcpStream::connect_timeout(
+                &SocketAddr::from((Ipv4Addr::LOCALHOST, address.port())),
+                Duration::from_secs(1),
+            )
+            .is_ok(),
+        };
+        if let Some(thread) = self.thread.take()
+            && woke
+        {
             let _ = thread.join();
         }
     }

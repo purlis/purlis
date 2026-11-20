@@ -158,6 +158,7 @@ impl World {
                 ..Limits::default()
             },
             storage: Default::default(),
+            observe: None,
         };
         Self {
             proxy,

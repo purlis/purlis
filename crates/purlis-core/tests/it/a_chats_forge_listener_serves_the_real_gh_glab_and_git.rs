@@ -220,13 +220,38 @@ fn git_ok(dir: &Path, args: &[&str]) {
     );
 }
 
+/// Every request the listener read, with its body: what a tool sent, refused or not.
+#[derive(Default)]
+struct Seen(Mutex<Vec<(String, String, String)>>);
+
+impl purlis_core::forge::proxy::listener::Observe for Seen {
+    fn request(&self, head: &purlis_core::forge::proxy::RequestHead, body: &[u8]) {
+        let body = String::from_utf8_lossy(body).into_owned();
+        if let Some(dir) = std::env::var_os("PURLIS_CAPTURE_GRAPHQL")
+            && head.target.ends_with("/graphql")
+        {
+            let n = self.0.lock().unwrap_or_else(PoisonError::into_inner).len();
+            let _ = std::fs::create_dir_all(&dir);
+            let _ = std::fs::write(Path::new(&dir).join(format!("seen-{n:03}.json")), &body);
+        }
+        self.0.lock().unwrap_or_else(PoisonError::into_inner).push((
+            head.method.clone(),
+            head.target.clone(),
+            body,
+        ));
+    }
+}
+
+/// The listeners are dropped before the folder the socket is in: a listener woken through a
+/// socket that is gone is a listener that is not woken.
 struct Setup {
     world: World,
     forge: Arc<Forge>,
-    dir: tempfile::TempDir,
     socket: ForgeListener,
     connect: ForgeListener,
+    seen: Arc<Seen>,
     ca_file: PathBuf,
+    dir: tempfile::TempDir,
 }
 
 fn setup() -> Setup {
@@ -265,6 +290,8 @@ fn setup() -> Setup {
     });
     let mut world = World::new();
     world.wiring.upstream = forge.clone();
+    let seen = Arc::new(Seen::default());
+    world.wiring.observe = Some(seen.clone());
     let socket =
         ForgeListener::serve_socket(world.wiring.clone(), &dir.path().join("sock")).unwrap();
     let connect = ForgeListener::serve_connect(world.wiring.clone()).unwrap();
@@ -273,10 +300,11 @@ fn setup() -> Setup {
     Setup {
         world,
         forge,
-        dir,
         socket,
         connect,
+        seen,
         ca_file,
+        dir,
     }
 }
 
@@ -478,6 +506,7 @@ fn gh_reads_pull_requests_issues_releases_and_repos_through_the_socket() {
     }
     let s = setup();
     let mut outcomes = Vec::new();
+    let mut refused = Vec::new();
     for args in [
         vec!["api", "user"],
         vec!["api", "graphql", "-f", "query={ viewer { login } }"],
@@ -499,8 +528,26 @@ fn gh_reads_pull_requests_issues_releases_and_repos_through_the_socket() {
             text.trim()
         ));
         if text.contains("purlis refused") {
-            panic!("gh {} was refused: {text}", args.join(" "));
+            refused.push(format!("gh {}: {}", args.join(" "), text.trim()));
         }
+    }
+    // Every document a refused command sent, so that one run says everything the list lacks.
+    if !refused.is_empty() {
+        let documents: Vec<String> = s
+            .seen
+            .0
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, target, _)| target.ends_with("/graphql"))
+            .map(|(_, _, body)| body.clone())
+            .collect();
+        panic!(
+            "the proxy refused what gh sent:\n{}\n--- every GraphQL document gh sent:\n{}\n--- outcomes:\n{}",
+            refused.join("\n"),
+            documents.join("\n---\n"),
+            outcomes.join("\n")
+        );
     }
     s.assert_clean();
     assert!(s.forge_saw_the_real_token(), "{outcomes:#?}");
