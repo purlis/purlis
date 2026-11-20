@@ -363,6 +363,9 @@ pub(super) fn registered_in(config_root: Option<&std::path::Path>, on: &Forge) -
 
 /// Check a project: read what the forge says as `caller` over `transport`, and judge it.
 ///
+/// `pins_in` is the config home whose pinned applications ([`super::registered`]) say whether
+/// purlis has an OAuth app on a self-hosted host; `None` holds none.
+///
 /// It asks the network, several requests: call it off the UI thread. A request that fails is
 /// that check's `Unknown`, never an error here.
 pub fn check(
@@ -370,6 +373,7 @@ pub fn check(
     path: &str,
     connection: Connection,
     caller: &Caller,
+    pins_in: Option<&std::path::Path>,
     transport: Arc<dyn Transport>,
 ) -> Report {
     check_with(
@@ -377,6 +381,7 @@ pub fn check(
         path,
         connection,
         caller,
+        pins_in,
         on.probe_over(transport.clone()).as_ref(),
         on.backend_over(transport).as_ref(),
     )
@@ -385,12 +390,18 @@ pub fn check(
 /// [`check`] as the window: over the person's purlis sign-in where this process has one, and
 /// otherwise over the CLI, with the [`Connection`] the call really takes
 /// ([`super::signin::connection`]).
-pub fn check_in_window(on: &Forge, path: &str, caller: &Caller) -> Report {
+pub fn check_in_window(
+    on: &Forge,
+    path: &str,
+    caller: &Caller,
+    pins_in: Option<&std::path::Path>,
+) -> Report {
     check_with(
         on,
         path,
         super::signin::connection(on, caller),
         caller,
+        pins_in,
         on.probe().as_ref(),
         on.backend().as_ref(),
     )
@@ -402,11 +413,12 @@ pub fn check_with(
     path: &str,
     connection: Connection,
     caller: &Caller,
+    pins_in: Option<&std::path::Path>,
     probe: &dyn Probe,
     backend: &dyn ForgeBackend,
 ) -> Report {
     let repo = probe.repo(caller, path);
-    let registered = registered_in(crate::machine::config_root().as_deref(), on);
+    let registered = registered_in(pins_in, on);
     let needs_app_policy = connection != Connection::Token
         && on.kind == Kind::GitLab
         && registered == Fact::Known(false);
@@ -449,10 +461,11 @@ pub fn check_url(
     root: &std::path::Path,
     connection: Connection,
     caller: &Caller,
+    pins_in: Option<&std::path::Path>,
     transport: Arc<dyn Transport>,
 ) -> Result<Report, String> {
     let (on, path) = target(url, root)?;
-    Ok(check(&on, &path, connection, caller, transport))
+    Ok(check(&on, &path, connection, caller, pins_in, transport))
 }
 
 /// [`check_url`] as the window, over the person's sign-in ([`check_in_window`]).
@@ -460,9 +473,10 @@ pub fn check_url_in_window(
     url: &str,
     root: &std::path::Path,
     caller: &Caller,
+    pins_in: Option<&std::path::Path>,
 ) -> Result<Report, String> {
     let (on, path) = target(url, root)?;
-    Ok(check_in_window(&on, &path, caller))
+    Ok(check_in_window(&on, &path, caller, pins_in))
 }
 
 /// The forge and repo path a remote URL names, or why it names none.

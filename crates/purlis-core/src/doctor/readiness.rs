@@ -50,6 +50,7 @@ fn row(d: &Doctor) -> Row {
         // The doctor asks over the CLI's login, never over a purlis sign-in or a token.
         Connection::Cli,
         caller,
+        d.budgets.as_deref(),
         transport.clone(),
     ) {
         Ok(report) => said(&report),

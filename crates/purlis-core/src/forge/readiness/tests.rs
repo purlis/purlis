@@ -462,6 +462,7 @@ fn reading_a_github_org_repo_through_the_forge_is_ready_when_all_is_open() {
         "acme/app",
         Connection::SignIn,
         &Caller::window(),
+        None,
         fake,
     );
     assert!(report.ready_for_all(), "{report:#?}");
@@ -477,6 +478,7 @@ fn reading_a_restricted_org_names_githubs_refusal_as_the_blocker() {
         "acme/app",
         Connection::SignIn,
         &Caller::window(),
+        None,
         fake,
     );
     assert_eq!(
@@ -495,6 +497,7 @@ fn a_404_on_a_repo_is_unknown_never_blocked_or_ready() {
         "acme/app",
         Connection::SignIn,
         &Caller::window(),
+        None,
         fake,
     );
     assert_eq!(verdict(&report, CheckId::Role), Some(Verdict::Unknown));
@@ -508,6 +511,7 @@ fn a_forge_that_answers_nothing_is_not_ready() {
         "acme/app",
         Connection::SignIn,
         &Caller::window(),
+        None,
         Fake::new(&[]),
     );
     assert!(!report.ready_for_all());
@@ -536,6 +540,7 @@ fn reading_the_workflow_permissions_of_a_token_connection() {
         "acme/app",
         Connection::Token,
         &Caller::window(),
+        None,
         fake,
     );
     assert_eq!(
@@ -566,6 +571,7 @@ fn a_workflow_permission_only_admins_read_is_unknown() {
         "acme/app",
         Connection::Token,
         &Caller::window(),
+        None,
         fake,
     );
     assert_eq!(verdict(&report, CheckId::CiToken), Some(Verdict::Unknown));
@@ -595,6 +601,7 @@ fn reading_a_self_hosted_gitlab_asks_its_application_settings() {
         "acme/app",
         Connection::SignIn,
         &Caller::window(),
+        None,
         fake,
     );
     assert_eq!(verdict(&report, CheckId::Role), Some(Verdict::Ready));
@@ -631,6 +638,7 @@ fn a_gitlab_job_token_that_may_not_push_blocks_a_token_connection() {
         "acme/app",
         Connection::Token,
         &Caller::window(),
+        None,
         fake,
     );
     assert_eq!(
@@ -659,6 +667,7 @@ fn read_by(connection: Connection, fake: Arc<Fake>) -> Report {
         "acme/app",
         connection,
         &Caller::window(),
+        None,
         fake,
     )
 }
@@ -885,6 +894,29 @@ mod the_pins_the_store_keeps {
         assert_eq!(at(Kind::GitLab, "other.example.com"), Fact::Known(false));
         // A pin is of one forge: the other forge on the same host has none.
         assert_eq!(at(Kind::GitHub, "git.example.com"), Fact::Known(false));
+    }
+
+    #[test]
+    fn the_whole_check_reads_the_pins_of_the_config_home_it_is_given() {
+        let dir = pinned_on("git.example.com");
+        let read = |pins: Option<&std::path::Path>| {
+            check(
+                &gitlab("git.example.com"),
+                "acme/app",
+                Connection::SignIn,
+                &Caller::window(),
+                pins,
+                Fake::new(&[]),
+            )
+        };
+        assert_eq!(
+            verdict(&read(Some(dir.path())), CheckId::ServerRegistration),
+            None
+        );
+        assert!(matches!(
+            verdict(&read(None), CheckId::ServerRegistration),
+            Some(Verdict::Blocked(_))
+        ));
     }
 
     #[test]

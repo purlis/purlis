@@ -63,6 +63,7 @@ pub async fn plane_readiness(
                 url,
                 &root,
                 &purlis_core::forge::Caller::window(),
+                purlis_core::machine::config_root().as_deref(),
             )
         })
     })
