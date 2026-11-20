@@ -845,7 +845,7 @@ fn a_host_with_a_pinned_application_is_not_told_it_has_no_registration() {
 #[test]
 fn pins_that_could_not_be_read_leave_the_registration_unknown_and_not_ready() {
     let mut f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
-    f.registered = Fact::unknown("forge-registrations.json is not readable");
+    f.registered = Fact::unknown("the file of pinned applications is not readable");
     let report = evaluate(
         &gitlab("git.example.com"),
         "acme/app",
