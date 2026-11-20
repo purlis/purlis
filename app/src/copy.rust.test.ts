@@ -465,6 +465,8 @@ const NOT_READ: Readonly<Record<string, string>> = {
  * `file: .method` (the command's file), naming the file of the one it calls.
  */
 const METHODS: Readonly<Record<string, string>> = {
+  // The merge hold's press, beside the held acts' of the same name (`heldact::HeldActs::press`).
+  "app/src-tauri/src/mergeholds.rs: .press": "crates/purlis-core/src/mergehold.rs",
   "app/src-tauri/src/lib.rs: .personas": "crates/purlis-core/src/workspaces.rs",
   "app/src-tauri/src/personas.rs: .personas": "crates/purlis-core/src/workspaces.rs",
   "app/src-tauri/src/piecefiles.rs: .place": "crates/purlis-core/src/files.rs",
