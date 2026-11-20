@@ -3942,6 +3942,11 @@ export const commands = {
 	 */
 	planeRemoteReaders: (plane: PlaneId) => typedError<RemoteReaders, string>(__TAURI_INVOKE("plane_remote_readers", { plane })),
 	/**
+	 *  Whether the project at the open plane is ready for all users on its forge. Asks the network:
+	 *  off the UI thread.
+	 */
+	planeReadiness: (plane: PlaneId) => typedError<ReadinessAnswer, string>(__TAURI_INVOKE("plane_readiness", { plane })),
+	/**
 	 *  What deleting this workspace would discard, for the dialog to show **before** anything is
 	 *  pressed.
 	 * 
@@ -15927,6 +15932,31 @@ export type ReadOnlyProject = {
 	 *  person mends (#1759). Every other write stays off.
 	 */
 	mendable: boolean,
+};
+
+/**  What asking about the project's forge came to. */
+export type ReadinessAnswer = 
+/**
+ *  Nothing was checked, and why on one line: no `origin`, a path on this machine, a host no
+ *  forge purlis knows.
+ */
+{ state: "notChecked"; why: string } | 
+/**  The forge `host` was asked about `path`. `ready` is every check ready, and only that. */
+{ state: "checked"; host: string; path: string; ready: boolean; checks: ReadinessCheck[] };
+
+/**  One check, as the window draws it. */
+export type ReadinessCheck = {
+	id: string,
+	title: string,
+	/**  `ready`, `blocked` or `unknown`. */
+	verdict: string,
+	/**  Who can fix a blocker: `you`, `owner` or `admin`. */
+	who: string | null,
+	detail: string,
+	link: string | null,
+	steps: string[],
+	/**  A short message for whoever can fix it, when it is not the person. */
+	request: string | null,
 };
 
 /**  The prefix rebuilds this conversation has paid for (`↻N 696k`). */
