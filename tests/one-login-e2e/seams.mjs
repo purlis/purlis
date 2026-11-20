@@ -15,8 +15,12 @@
 //                 starts. Here `makeChat` does it.
 //   TODO(slice B) the chat's wiring: the environment, the `gh` wrapper, the credential helper.
 //                 Here they are written to a folder by `makeChat`.
-//   TODO(slice C) the credential source: the keyring and renewal. Here a Map in memory and a
-//                 refresh before expiry and once on a 401.
+//   TODO(slice C, merged on `one-login`) the credential source: `forge::credential::{Credentials, SignedIn,
+//                 renewal::Renewal}`. Here a Map in memory and a refresh before expiry and once on a 401.
+//                 Not wired yet, for two reasons the next slice to touch it must settle: the proxy has its own
+//                 `CredentialSource` trait (`forge::proxy`) beside C's, so one adapts to the other; and
+//                 `SignedIn` reads the account store through a `HostScope` and the keyring, which a CI runner
+//                 does not offer (a headless run's `TokenConnection` needs none, and is the first thing to try).
 //   TODO(slice D) the readiness check and the project record. Here `recordProject`.
 //   TODO(slice F) held forge acts. Here a list of asks and `approve`.
 //   TODO(slice G) the sign-in. Here the device flow, against the fake forge.
