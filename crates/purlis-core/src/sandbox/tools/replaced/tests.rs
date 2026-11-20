@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 use super::{Found, Kind, found_in, kind_named, kind_of, sentence, token_var, told_of};
 
 fn table(text: &str) -> toml::Table {

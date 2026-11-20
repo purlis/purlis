@@ -285,10 +285,11 @@ fn replaced_by_sign_in_row(found: &[crate::sandbox::tools::replaced::Found]) -> 
         Row::warn(
             "forge sign-in replaces",
             format!(
-                "{} tool line{} in this project's settings hand a chat a forge token, which \
-                 purlis no longer does, so they run nothing: {}. Chats use your sign-in",
-                found.len(),
-                if found.len() == 1 { "" } else { "s" },
+                "{} in this project's settings {} a chat a forge token, which purlis no longer \
+                 does, so {} nothing: {}. Chats use your sign-in",
+                crate::counts::counted(found.len(), "tool line", "tool lines"),
+                crate::counts::plural(found.len(), "hands", "hand"),
+                crate::counts::plural(found.len(), "it runs", "they run"),
                 named.join(", ")
             ),
             "Sign in under Settings › Forges, then delete those lines. Keep a `mint` line while its \
