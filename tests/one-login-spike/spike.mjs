@@ -48,7 +48,7 @@ fs.mkdirSync(outDir, { recursive: true });
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'one-login-spike-'));
 
 const tool = (cmd, args, opts = {}) =>
-  execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', ...opts });
+  execFileSync(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: 60_000, ...opts });
 
 // ---- a CA of the spike's own, and a leaf per name set -----------------------------------------
 
@@ -90,7 +90,13 @@ const bare = path.join(work, 'forge-repos', 'o', 'r.git');
     tool('git', ['-c', 'user.name=spike', '-c', 'user.email=spike@example.invalid', ...a], { cwd, env: { ...process.env, GIT_CONFIG_GLOBAL: os.devNull, GIT_CONFIG_NOSYSTEM: '1' } });
   fs.mkdirSync(src);
   git(src, 'init', '-q', '-b', 'main');
-  git(src, 'commit', '-q', '--allow-empty', '-m', 'spike');
+  fs.mkdirSync(path.join(src, 'src'));
+  fs.writeFileSync(path.join(src, 'Cargo.toml'), '[package]\nname = "r"\nversion = "0.1.0"\nedition = "2021"\n');
+  fs.writeFileSync(path.join(src, 'src', 'lib.rs'), '');
+  fs.writeFileSync(path.join(src, 'package.json'), '{"name":"r","version":"0.1.0"}\n');
+  fs.writeFileSync(path.join(src, 'setup.py'), "from setuptools import setup\nsetup(name='r', version='0.1')\n");
+  git(src, 'add', '-A');
+  git(src, 'commit', '-q', '-m', 'spike');
   fs.mkdirSync(path.dirname(bare), { recursive: true });
   git(work, 'clone', '-q', '--bare', src, bare);
 }
@@ -143,7 +149,8 @@ function forgeHandler(req, res) {
     }
     const host = req.headers.host;
     const body = Buffer.concat(chunks).toString();
-    if (req.method === 'GET' && normal.startsWith('/o/r.git/info/refs')) {
+    const method = req.method === 'HEAD' ? 'GET' : req.method;
+    if (method === 'GET' && normal.startsWith('/o/r.git/info/refs')) {
       const out = [];
       const child = spawn('git', ['upload-pack', '--stateless-rpc', '--advertise-refs', bare]);
       child.stdout.on('data', (c) => out.push(c));
@@ -154,7 +161,18 @@ function forgeHandler(req, res) {
       });
       return;
     }
-    if (req.method === 'POST' && normal.startsWith('/o/r.git/git-upload-pack')) {
+    if (method === 'GET' && /^\/o\/r\/(legacy\.)?(tar\.gz|tarball)\//.test(normal)) {
+      const out = [];
+      const child = spawn('git', ['-C', bare, 'archive', '--format=tar.gz', '--prefix=r-main/', 'main']);
+      child.stdout.on('data', (c) => out.push(c));
+      child.on('close', () => {
+        entry.status = 200;
+        res.writeHead(200, { 'content-type': 'application/x-gzip', connection: 'close' });
+        res.end(Buffer.concat(out));
+      });
+      return;
+    }
+    if (method === 'POST' && normal.startsWith('/o/r.git/git-upload-pack')) {
       const out = [];
       const child = spawn('git', ['upload-pack', '--stateless-rpc', bare]);
       child.stdout.on('data', (c) => out.push(c));
@@ -167,15 +185,18 @@ function forgeHandler(req, res) {
       child.stdin.end(req.headers['content-encoding'] === 'gzip' ? zlib.gunzipSync(raw) : raw);
       return;
     }
-    if (req.method === 'GET' && normal.split('?')[0] === '/user') return json(200, { login: 'fake-user', id: 1 });
-    if (req.method === 'GET' && normal.split('?')[0] === '/api/v4/user') return json(200, { username: 'fake-user', id: 1 });
-    if (req.method === 'GET' && normal.split('?')[0] === '/repos/o/r')
+    if (method === 'GET' && normal.split('?')[0] === '/') return json(200, {});
+    if (method === 'GET' && normal.split('?')[0] === '/user') return json(200, { login: 'fake-user', id: 1 });
+    if (method === 'GET' && normal.split('?')[0] === '/api/v4/user') return json(200, { username: 'fake-user', id: 1 });
+    if (method === 'GET' && normal.split('?')[0] === '/repos/o/r')
       return json(200, { full_name: 'o/r', name: 'r', default_branch: 'main', html_url: `https://${host}/o/r`, private: false });
-    if (req.method === 'GET' && normal.split('?')[0] === '/api/v4/projects/o%2Fr')
-      return json(200, { id: 42, name: 'r', path: 'r', path_with_namespace: 'o/r', default_branch: 'main', web_url: `http://${host}/o/r`, http_url_to_repo: `http://${host}/o/r.git`, visibility: 'private' });
-    if (req.method === 'POST' && normal.split('?')[0] === '/graphql') {
+    if (method === 'GET' && normal.split('?')[0] === '/api/v4/projects/o%2Fr')
+      return json(200, { id: 42, name: 'r', path: 'r', path_with_namespace: 'o/r', default_branch: 'main', name_with_namespace: 'o / r', description: 'fake', web_url: `http://${host}/o/r`, http_url_to_repo: `http://${host}/o/r.git`, visibility: 'private' });
+    if (method === 'POST' && normal.split('?')[0] === '/graphql') {
       if (body.includes('viewer')) return json(200, { data: { viewer: { login: 'fake-user' } } });
-      return json(200, { data: { repository: { id: 'R_1', name: 'r', nameWithOwner: 'o/r', url: `https://${host}/o/r`, description: 'fake', isPrivate: false, defaultBranchRef: { name: 'main' }, owner: { login: 'o' } } } });
+      const repository = { id: 'R_1', name: 'r', nameWithOwner: 'o/r', url: `https://${host}/o/r`, description: 'fake', isPrivate: false, defaultBranchRef: { name: 'main' }, owner: { login: 'o' } };
+      const aliases = [...body.matchAll(/(\w+)\s*:\s*repository\s*\(/g)].map((m) => m[1]);
+      return json(200, { data: { repository, ...Object.fromEntries(aliases.map((a) => [a, repository])) } });
     }
     return json(404, { message: `fake forge: no answer for ${req.method} ${req.url}` });
   });
@@ -564,6 +585,99 @@ function cases() {
       env: envFor,
     });
   }
+  // gh's remote matching (instruction 184): GH_HOST=github.localhost while the clone's remote says
+  // github.com, or github.localhost. A case "works" when a request REACHED the forge (the fake has
+  // no pull request endpoints, so what gh does with the answer is not the question).
+  const repoWithRemote = (url) => (home) => {
+    gitGlobal(home);
+    const r = path.join(home, 'repo');
+    fs.mkdirSync(r);
+    const g = (...a) => tool('git', ['-C', r, ...a], { env: { ...process.env, ...gitEnv(home) } });
+    g('init', '-q', '-b', 'main');
+    g('remote', 'add', 'origin', url);
+    fs.mkdirSync(path.join(home, 'gh'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'gh', 'config.yml'), `http_unix_socket: ${sockPath}\n`);
+  };
+  const ghLocal = (home) => ({ ...gh(home, { GH_HOST: 'github.localhost', GH_TOKEN: SENTINEL, GH_ENTERPRISE_TOKEN: SENTINEL }), ...gitEnv(home) });
+  const matching = [
+    ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'view']],
+    ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'checks']],
+    ['remote github.localhost, no -R', 'https://github.localhost/o/r.git', ['pr', 'view']],
+    ['remote github.localhost, no -R', 'https://github.localhost/o/r.git', ['pr', 'checks']],
+    ['remote github.com, -R o/r', 'https://github.com/o/r.git', ['-R', 'o/r', 'pr', 'view']],
+    ['remote github.com, -R github.localhost/o/r', 'https://github.com/o/r.git', ['-R', 'github.localhost/o/r', 'pr', 'view']],
+    ['remote github.com, no -R', 'https://github.com/o/r.git', ['pr', 'create', '--title', 't', '--body', 'b', '--head', 'main', '--base', 'main']],
+  ];
+  for (const [label, url, args] of matching) {
+    add({
+      tool: 'gh',
+      mechanism: `GH_HOST=github.localhost + unix socket; ${label}`,
+      label: args.join(' '),
+      phases: ['env'],
+      reachOnly: true,
+      info: true,
+      setup: repoWithRemote(url),
+      cmd: ['sh', '-c', `cd repo && gh ${args.map((a) => `'${a}'`).join(' ')}`],
+      expect: '',
+      env: ghLocal,
+    });
+  }
+
+  // cargo's git dependency: libgit2, then the git CLI.
+  const cargoApp = (home) => {
+    gitGlobal(home);
+    fs.mkdirSync(path.join(home, 'app', 'src'), { recursive: true });
+    fs.writeFileSync(path.join(home, 'app', 'Cargo.toml'), '[package]\nname = "app"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\nr = { git = "https://github.com/o/r" }\n');
+    fs.writeFileSync(path.join(home, 'app', 'src', 'lib.rs'), '');
+  };
+  const rust = { RUSTUP_HOME: process.env.RUSTUP_HOME ?? path.join(os.homedir(), '.rustup'), CARGO_TERM_COLOR: 'never' };
+  for (const [label, cli] of [['libgit2 (cargo built in)', 'false'], ['git CLI (net.git-fetch-with-cli)', 'true']]) {
+    add({
+      tool: 'cargo',
+      mechanism: `git dependency through HTTPS_PROXY to the CONNECT proxy, ${label}; CARGO_HTTP_CAINFO + GIT_SSL_CAINFO`,
+      label: 'fetch',
+      phases: ['env'],
+      tls: true,
+      info: true,
+      setup: cargoApp,
+      cmd: ['sh', '-c', 'cd app && cargo fetch'],
+      expect: '',
+      reachOnly: true,
+      env: (home) => ({ ...rust, ...gitEnv(home), CARGO_HOME: path.join(home, 'cargo'), CARGO_NET_GIT_FETCH_WITH_CLI: cli, HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, CARGO_HTTP_CAINFO: ca.pem, GIT_SSL_CAINFO: ca.pem, SSL_CERT_FILE: ca.pem }),
+    });
+  }
+
+  // a GitHub tarball (codeload.github.com) through the CONNECT proxy.
+  const tarball = 'https://codeload.github.com/o/r/tar.gz/refs/heads/main';
+  add({
+    tool: 'npm',
+    mechanism: 'tarball URL through HTTPS_PROXY to the CONNECT proxy; NODE_EXTRA_CA_CERTS; .npmrc _authToken for codeload.github.com',
+    label: 'install codeload tarball',
+    phases: ['env'],
+    tls: true,
+    info: true,
+    reachOnly: true,
+    setup: (home) => {
+      fs.mkdirSync(path.join(home, 'p'), { recursive: true });
+      fs.writeFileSync(path.join(home, 'p', 'package.json'), '{"name":"p","version":"1.0.0"}\n');
+      fs.writeFileSync(path.join(home, '.npmrc'), `//codeload.github.com/:_authToken=${SENTINEL}\n`);
+    },
+    cmd: ['sh', '-c', `cd p && npm install --no-audit --no-fund ${tarball}`],
+    expect: '',
+    env: () => ({ HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, NODE_EXTRA_CA_CERTS: ca.pem }),
+  });
+  add({
+    tool: 'pip',
+    mechanism: 'tarball URL with the sentinel as URL user info, through HTTPS_PROXY to the CONNECT proxy; PIP_CERT',
+    label: 'download codeload tarball',
+    phases: ['env'],
+    tls: true,
+    info: true,
+    reachOnly: true,
+    cmd: ['sh', '-c', `python3 -m pip download --no-deps --no-build-isolation -d out 'https://x-access-token:${SENTINEL}@codeload.github.com/o/r/tar.gz/refs/heads/main'`],
+    expect: '',
+    env: () => ({ HTTPS_PROXY: `http://127.0.0.1:${ports.connect}`, PIP_CERT: ca.pem }),
+  });
   return list;
 }
 
@@ -592,14 +706,16 @@ async function runCase(c, phase) {
   const good = seen.filter((e) => e.ok && e.status < 400);
   const leaked = (r.stdout + r.stderr).includes(REAL);
   const sentinelAtForge = seen.some((e) => e.sawSentinel);
-  const works = r.code === 0 && r.stdout.includes(c.expect) && good.length > 0 && !sentinelAtForge && !leaked;
+  const works = c.reachOnly
+    ? good.length > 0 && !sentinelAtForge && !leaked
+    : r.code === 0 && r.stdout.includes(c.expect) && good.length > 0 && !sentinelAtForge && !leaked;
   const lastLine = (s) => s.trim().split('\n').filter(Boolean).slice(-2).join(' | ').slice(0, 300);
   console.log(`${works ? 'works' : 'FAILS'}  [${trust}] ${c.tool}: ${c.mechanism} :: ${c.label} (exit ${r.code})`);
   results.push({
     ...row,
     verdict: works ? 'works' : 'fails',
     detail: works
-      ? `forge saw ${good.map((e) => `${e.method} ${e.path} (Host ${e.host})`).join('; ')}`
+      ? `forge saw ${good.map((e) => `${e.method} ${e.path} (Host ${e.host})`).join('; ')}${c.reachOnly ? `; exit ${r.code}: ${lastLine(r.stderr || r.stdout)}` : ''}`
       : `exit ${r.code}; ${lastLine(r.stderr || r.stdout) || 'no output'}; the forge saw ${seen.length} request(s) [${seen.map((e) => `${e.method} ${e.path} -> ${e.status}`).join('; ')}], the proxy ${proxied.length} [${proxied.map((e) => `${e.via} ${e.method} ${e.url}`).join('; ')}]`,
     ...(leaked ? { leaked: true } : {}),
     ...(sentinelAtForge ? { sentinelReachedForge: true } : {}),
@@ -623,8 +739,8 @@ function installOsTrust() {
 
 function removeOsTrust() {
   try {
-    if (process.platform === 'darwin') tool('sudo', ['-n', 'security', 'remove-trusted-cert', '-d', ca.pem]);
-    else {
+    // macOS: `security remove-trusted-cert` hung a runner for 20 minutes; the runner is thrown away.
+    if (process.platform !== 'darwin') {
       tool('sudo', ['-n', 'rm', '-f', osTrustFile]);
       tool('sudo', ['-n', 'update-ca-certificates', '--fresh']);
     }
@@ -655,6 +771,9 @@ async function main() {
     go: versionOf('go', ['version']),
     node: process.version,
     openssl: versionOf('openssl', ['version']),
+    cargo: versionOf('cargo', ['--version']),
+    npm: versionOf('npm', ['--version']),
+    python: versionOf('python3', ['--version']),
     port80: ports.eighty ? 'bound' : `not bound (${ports.eightyWhy})`,
   };
   console.log(JSON.stringify(versions, null, 2));
