@@ -37,6 +37,7 @@ fn facts(ci: Ci, title: &str, read_at: u64) -> Facts {
         },
         ruleset: Ruleset::None,
         approved_by: None,
+        squash: false,
         read_at,
     }
 }
@@ -150,6 +151,7 @@ fn the_digest_is_of_what_is_shown_and_the_ask_holds_the_window_to_it() {
         shown.digest(),
         Facts {
             approved_by: Some("ana".to_owned()),
+            squash: false,
             ..shown.clone()
         }
         .digest()
