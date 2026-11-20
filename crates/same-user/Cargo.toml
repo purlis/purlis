@@ -23,7 +23,7 @@ thiserror.workspace = true
 # clock tick rate, which turns a Linux process's start into a time of day (#1542): nix's own
 # safe wrapper, so no `unsafe` here. `fs` is for `openat`, `renameat` and `unlinkat`, which write a
 # credential through the directory descriptor that was checked (#992).
-nix = { version = "0.31", default-features = false, features = ["feature", "fs", "process", "socket", "user"] }
+nix = { version = "0.32", default-features = false, features = ["feature", "fs", "process", "socket", "user"] }
 
 [dev-dependencies]
 tempfile.workspace = true
