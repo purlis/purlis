@@ -111,6 +111,15 @@ export const AGENT_IDENTITY_VIEW: ViewRef = { from: null, view: "agent-identity"
 export const AGENT_IDENTITY_TITLE = "Agent identity";
 
 /**
+ * **GitLab access** (#1349): the token a chat's `glab` is handed where its sandbox holds your own
+ * sign-in back, set up and removed. One per project, whose clones and personas it reads.
+ */
+export const GITLAB_ACCESS_VIEW: ViewRef = { from: null, view: "gitlab-access", key: "" };
+
+/** What the GitLab access tab is called: the words the credentials Notice names. */
+export const GITLAB_ACCESS_TITLE = "GitLab access";
+
+/**
  * **Settings at a workspace's level** (SE-20, #1170; first a page of its own, charter-app#280):
  * the Settings tab keyed by the level and its target — the workspace — so there is one per
  * workspace, deduplicated by the same `viewKey` and filed on that workspace's strip. It keeps the

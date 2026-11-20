@@ -676,46 +676,118 @@ pub fn hosts_of_the_project(root: &Path) -> Vec<HostFound> {
 
 /// **What a chat's tab says from its start** where the person's own credentials are held from it
 /// ([`crate::sandbox::Class::Credentials`], ADR 0067 §5 class 6), the project's chats reach a
-/// forge, and no agent identity mints the chat a token (#1349): a plain `gh` or `glab` then has
-/// no login to use, and said nothing until a call failed on its own config. The sentence is
-/// purlis's own and names the way out: Agent identity where the forge is GitHub, which is the
-/// one that mints, and a template where the class is off.
+/// forge, and nothing gives the chat a token for it (#1349): a plain `gh` or `glab` then has no
+/// login to use, and said nothing until a call failed on its own config. The sentence is
+/// purlis's own and names the way out for each forge it concerns: Agent identity where the forge
+/// is GitHub, which mints, the GitLab access flow where it is GitLab, which keeps a token in a
+/// vault, and a template where the class is off.
 ///
-/// `holds`: the class is in the chat's sandbox. `mints`: a tool of the chat mints its token.
-/// `forges`: the hosts the project's clones have remotes on ([`hosts_of_the_project`]).
+/// `holds`: the class is in the chat's sandbox. `routes`: the forge and host each tool of the chat
+/// reaches with a token ([`crate::sandbox::tools::forge_routes`]; `true` is glab's). `forges`: the
+/// hosts the project's clones have remotes on ([`hosts_of_the_project`]). A forge host is served
+/// only by a route to that very host: a `glab` tool whose `host` is another's serves none, and
+/// the sentence says it. `persona` is whom the chat runs as, where the flow's command names it.
 #[must_use]
-pub fn credentials_note(holds: bool, mints: bool, forges: &[HostFound]) -> Option<String> {
-    if !holds || mints || !forges.iter().any(|found| found.kind.is_some()) {
+pub fn credentials_note(
+    holds: bool,
+    routes: &[(bool, String)],
+    forges: &[HostFound],
+    persona: Option<&str>,
+) -> Option<String> {
+    if !holds {
         return None;
     }
-    let github = forges.iter().any(|found| found.kind == Some(Kind::GitHub));
-    let way_out = if github {
-        "Set up Agent identity in Settings › Agent identity so this chat gets a token of its own, \
-         or choose a sandbox template where the credentials class is off."
-    } else {
-        "Choose a sandbox template where the credentials class is off."
+    let served = |found: &HostFound| {
+        let glab = found.kind == Some(Kind::GitLab);
+        routes
+            .iter()
+            .any(|(route_glab, host)| *route_glab == glab && host.eq_ignore_ascii_case(&found.host))
     };
+    let unserved = |kind: Kind| -> Vec<&str> {
+        forges
+            .iter()
+            .filter(|found| found.kind == Some(kind) && !served(found))
+            .map(|found| found.host.as_str())
+            .collect()
+    };
+    let (github, gitlab) = (unserved(Kind::GitHub), unserved(Kind::GitLab));
+    let gitlab_known: Vec<&str> = forges
+        .iter()
+        .filter(|found| found.kind == Some(Kind::GitLab))
+        .map(|found| found.host.as_str())
+        .collect();
+    // A glab tool that reaches a host none of the project's remotes is on.
+    let astray: Vec<&str> = routes
+        .iter()
+        .filter(|(glab, host)| {
+            *glab
+                && !gitlab_known.is_empty()
+                && !gitlab_known
+                    .iter()
+                    .any(|known| known.eq_ignore_ascii_case(host))
+        })
+        .map(|(_, host)| host.as_str())
+        .collect();
+    if github.is_empty() && gitlab.is_empty() {
+        return None;
+    }
+    let mut ways = Vec::new();
+    if !github.is_empty() {
+        ways.push(
+            "For GitHub, set up Agent identity in Settings › Agent identity so this chat gets a \
+             token of its own."
+                .to_owned(),
+        );
+    }
+    if !gitlab.is_empty() {
+        let mismatch = if astray.is_empty() {
+            String::new()
+        } else {
+            format!(
+                " Its glab tool reaches {}, which is not where the project's remote is, and a \
+                 tool's host must match it.",
+                astray.join(", ")
+            )
+        };
+        ways.push(format!(
+            "For GitLab, {}.{mismatch}",
+            crate::sandbox::tools::gitlab_flow(
+                persona.unwrap_or("<persona>"),
+                gitlab.first().copied()
+            )
+        ));
+    }
+    let hosts: Vec<&str> = github.iter().chain(gitlab.iter()).copied().collect();
     Some(format!(
         "This chat cannot use your own forge login, because its sandbox holds your credentials \
-         back, and no agent identity gives it a token, so gh and glab will fail here. {way_out} \
-         It takes effect when the chat restarts."
+         back, and nothing gives it a token for {}, so gh and glab will fail there. {} Or choose a \
+         sandbox template where the credentials class is off. It takes effect when the chat \
+         restarts.",
+        hosts.join(", "),
+        ways.join(" ")
     ))
 }
 
 /// [`credentials_note`] for a chat whose sandbox was compiled as `confines`, in the project at
-/// `root`: the class holds where a denial of it stands, and the chat mints where one of its
-/// tools does. The remotes are read only where the class holds and nothing mints.
+/// `root`, running as `persona`: the class holds where a denial of it stands, and the chat's
+/// routes are those of its tools. The remotes are read only where the class holds.
 #[must_use]
-pub fn start_note(root: &Path, confines: &crate::sandbox::Confines) -> Option<String> {
+pub fn start_note(
+    root: &Path,
+    confines: &crate::sandbox::Confines,
+    persona: Option<&str>,
+) -> Option<String> {
     let holds = confines
         .denied
         .iter()
         .any(|denial| denial.class == crate::sandbox::Class::Credentials);
-    let mints = confines.tools.iter().any(|ready| ready.tool.mint.is_some());
-    if !holds || mints {
+    if !holds {
         return None;
     }
-    credentials_note(holds, mints, &hosts_of_the_project(root))
+    let routes = crate::sandbox::tools::forge_routes(&confines.tools);
+    // Read fresh, as the guard of the chat's own `glab` reads it: a kept answer could say
+    // "covered" for a remote that has since changed, or keep a failed `git` read as no hosts.
+    credentials_note(holds, &routes, &hosts_of_the_project(root), persona)
 }
 
 /// **An App a persona's tool line names**, read from the project file.
@@ -794,7 +866,8 @@ pub fn pending(ctx: &Ctx, root: &Path) -> Result<Vec<String>, String> {
 }
 
 /// What a project file that doesn't parse is refused with.
-const UNPARSED: &str = "The project's settings file doesn't parse. Fix it, then try again.";
+pub(super) const UNPARSED: &str =
+    "The project's settings file doesn't parse. Fix it, then try again.";
 
 /// Whether the `gh` table `gh` is this flow's line for App `app`.
 fn is_ours(gh: &dyn toml_edit::TableLike, app: &str) -> bool {
@@ -831,7 +904,10 @@ pub fn lines_shown(app: &str, personas: &[String]) -> String {
 }
 
 /// The table under `key` of `item`, made where there is none, of the same form as `item`.
-fn child<'a>(item: &'a mut toml_edit::Item, key: &str) -> Result<&'a mut toml_edit::Item, String> {
+pub(super) fn child<'a>(
+    item: &'a mut toml_edit::Item,
+    key: &str,
+) -> Result<&'a mut toml_edit::Item, String> {
     let inline = item.is_inline_table();
     let not_a_table =
         || format!("{key} in the project's settings isn't a table. Fix it, then try again.");
@@ -917,7 +993,7 @@ pub fn without_lines(text: &str, app: &str) -> Result<String, String> {
 }
 
 /// The project's file as it stands, empty where there is none.
-fn read_manifest(root: &Path) -> Result<String, String> {
+pub(super) fn read_manifest(root: &Path) -> Result<String, String> {
     match std::fs::read_to_string(crate::names::manifest(root)) {
         Ok(text) => Ok(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
@@ -929,7 +1005,7 @@ fn read_manifest(root: &Path) -> Result<String, String> {
 
 /// **The project's file changed by `edit`**, one writer at a time and whole or not at all.
 /// Answers the text it read and the text it wrote, under the same lock.
-fn rewrite_manifest(
+pub(super) fn rewrite_manifest(
     root: &Path,
     edit: impl FnOnce(&str) -> Result<String, String>,
 ) -> Result<(String, String), String> {
@@ -967,14 +1043,15 @@ pub fn write_and_allow(
     allow: &mut dyn FnMut(&Shown) -> Result<(), String>,
 ) -> Result<Vec<String>, String> {
     let (read, written) = added_lines(root, app, personas)?;
-    allow_as_written(root, personas, &read, &written, allow)
+    allow_as_written(root, "gh", personas, &read, &written, allow)
 }
 
 /// **[`write_and_allow`]'s judgement**, from `before`, the project's file as the write read it,
 /// and `written`, the file as it wrote it: never from the file read back, so a line another
 /// writer adds after the write never comes in under the Allow.
-fn allow_as_written(
+pub(super) fn allow_as_written(
     root: &Path,
+    tool: &str,
     personas: &[String],
     before: &str,
     written: &str,
@@ -987,9 +1064,7 @@ fn allow_as_written(
         let was = before.iter().find(|one| one.persona == *persona);
         let clear = was.is_none_or(|one| one.allowed() || !one.asks());
         match after.iter().find(|one| one.persona == *persona) {
-            Some(now)
-                if clear && !now.default && now.tools.iter().any(|tool| tool.name == "gh") =>
-            {
+            Some(now) if clear && !now.default && now.tools.iter().any(|one| one.name == tool) => {
                 allow(now)?;
             }
             _ => left.push(persona.clone()),
