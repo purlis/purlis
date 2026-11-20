@@ -39,7 +39,10 @@ impl Forge {
 
     fn git(&self, rpc: &str, advertise: bool, body: &[u8]) -> Reply {
         let mut command = Command::new("git");
-        command.arg(rpc).arg("--stateless-rpc");
+        // `git upload-pack`, not `git git-upload-pack`.
+        command
+            .arg(rpc.trim_start_matches("git-"))
+            .arg("--stateless-rpc");
         if advertise {
             command.arg("--advertise-refs");
         }
@@ -60,6 +63,14 @@ impl Forge {
         });
         let out = child.wait_with_output().expect("git ran");
         let _ = writer.join();
+        if !out.status.success() {
+            // The fake forge says what went wrong, so a failure is a reading and not a guess.
+            return Reply::new(
+                500,
+                "text/plain",
+                format!("git {rpc} failed: {}", String::from_utf8_lossy(&out.stderr)).into_bytes(),
+            );
+        }
         let service = rpc.trim_start_matches("git-").to_string();
         let mut bytes = Vec::new();
         let kind = if advertise {
