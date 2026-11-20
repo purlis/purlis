@@ -22,6 +22,7 @@ on:
       - tests/one-login-e2e/**
       - crates/purlis-core/tests/it/one_login_end_to_end.rs
       - crates/purlis-core/Cargo.toml
+      - crates/purlis-core/src/forge/**
       - .github/workflows/one-login-e2e.yml
   workflow_dispatch:
 
@@ -50,16 +51,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # `gh` is on both images; `glab` is on neither (as in the scenarios' action).
+      # `gh` is on both images; `glab` is on neither. Built from one pinned release on both, so a
+      # runner image's `brew` bump cannot move what the test runs.
       - name: glab
         shell: bash
         run: |
-          if [ "$RUNNER_OS" = macOS ]; then
-            brew install glab
-          else
-            go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
-            echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          fi
+          go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: the scenario, on its own
         timeout-minutes: 20
         shell: bash

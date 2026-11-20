@@ -4,11 +4,15 @@
 // **The seams: stand-ins for the slices of ADR 0128 that have not merged yet.**
 //
 // The scenario in `run.mjs` talks only to what this file exports, and to real `gh`, `glab` and
-// `git`. Each slice, when it merges, replaces its part here with the product's, and its TODO
-// marker goes with it:
+// `git`. What is real here: the clients, the fake forge's wire, and (through the Rust test, see
+// `crates/purlis-core/tests/it/one_login_end_to_end.rs`) slice A's policy. What is a stand-in is each
+// part below, and its TODO marker goes when the product's replaces it:
 //
-//   TODO(slice A) the forge proxy: the listeners, the sentinel swap, the default-deny list, the
-//                 push rule, the hold. Here a small one in this file, with a short list.
+//   TODO(slice A2, #7291) the forge proxy's listeners and CA (slice A, merged on `one-login`, is the
+//                 policy: `ForgeProxy::handle`). Here the listeners are this file's, and a short
+//                 list of its own judges what the Rust policy does not yet judge for it.
+//   TODO(slice J, #7290) the app's lifecycle: a chat enrolled and its environment made when it
+//                 starts. Here `makeChat` does it.
 //   TODO(slice B) the chat's wiring: the environment, the `gh` wrapper, the credential helper.
 //                 Here they are written to a folder by `makeChat`.
 //   TODO(slice C) the credential source: the keyring and renewal. Here a Map in memory and a
@@ -551,6 +555,8 @@ exec "$REAL" "$@"
     sockPath,
     signIn,
     asPerson,
+    /** A call straight to a forge with a given token, as anyone on the network could make it. */
+    rawForge: (forge, pathname, token) => upstream(forge, { pathname, headers: { authorization: `Bearer ${token}` } }),
     recordProject,
     approve,
     makeChat,

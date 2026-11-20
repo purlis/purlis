@@ -45,7 +45,7 @@ function git(args, opts = {}) {
  * @param {{ kind: 'github' | 'gitlab', root: string, tls: { key: Buffer, cert: Buffer }, clock: { now(): number },
  *           expiresIn: number | null, host: string, repos: string[] }} options
  */
-export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, repos: repoNames }) {
+export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, repos: repoNames, publicRepos = [] }) {
   const gh = kind === 'github';
   const prefix = gh ? 'fake-gh-' : 'fake-gl-';
   const log = [];
@@ -63,7 +63,7 @@ export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, 
   // ---- repositories ---------------------------------------------------------------------------
 
   const repos = new Map();
-  for (const full of repoNames) {
+  for (const full of [...repoNames, ...publicRepos]) {
     const [owner, name] = full.split('/');
     const bare = path.join(root, owner, `${name}.git`);
     const src = fs.mkdtempSync(path.join(root, 'seed-'));
@@ -75,7 +75,7 @@ export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, 
     git(['clone', '-q', '--bare', src, bare]);
     git(['config', 'http.receivepack', 'true'], { cwd: bare });
     nextProjectId += 1;
-    repos.set(full, { id: nextProjectId, owner, name, full, bare, prs: [] });
+    repos.set(full, { id: nextProjectId, owner, name, full, bare, prs: [], isPublic: publicRepos.includes(full) });
   }
   const refSha = (repo, ref) => {
     try {
@@ -559,6 +559,11 @@ export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, 
       }
 
       if (!credentials.some(tokenOk)) {
+        // Anonymous: only a public repository's git reads answer. Everything else is a 401, as a real forge's is.
+        const g = /^\/([^/]+)\/([^/]+)\.git\//.exec(req.path);
+        const pub = g && repos.get(`${g[1]}/${g[2]}`)?.isPublic;
+        const push = req.path.endsWith('/git-receive-pack') || req.query.get('service') === 'git-receive-pack';
+        if (pub && !push) return gitBackend(req, raw, res, entry);
         const r = { status: 401, body: { message: gh ? 'Bad credentials' : '401 Unauthorized' }, headers: { 'www-authenticate': 'Basic realm="forge"' } };
         return send(r);
       }

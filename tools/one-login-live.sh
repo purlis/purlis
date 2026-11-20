@@ -36,11 +36,16 @@
 #   PURLIS_LIVE_CHAT_DIR   print the folder a chat can read (its home and clones)         TODO(slice B)
 #   PURLIS_LIVE_ASKS       print the pending asks, one per line                           TODO(slice F)
 #   PURLIS_LIVE_RENEW      make the stored token due for renewal now                      TODO(slice C)
+#   PURLIS_LIVE_TOKEN_ITEMS print, one per line, `service<TAB>account` of each keyring item purlis
+#                          stored a token in, so the scan looks for THOSE tokens        TODO(slice C)
+#   PURLIS_LIVE_AUDIT      print the proxy's audit, one line per request                  TODO(slice A2)
 #
 # Refusals that would change a real repository if purlis failed to refuse them (a push to main,
 # `gh pr merge`) run only with `--probe-refusals`: use a scratch repo whose main is protected.
-# The script makes a branch `purlis-live-<time>` and a pull or merge request, and says at the end
-# what to close and delete: a chat may not, by design.
+# The script makes a branch `purlis-live-<time>` and a pull or merge request. At the end it closes
+# them and deletes the branch and tag itself, with the token of its own probe sign-in (a chat may not,
+# by design), revokes the probe tokens where the forge allows it (GitLab; GitHub's needs the app's
+# client secret, so it prints the page to revoke on), and removes its temporary clones.
 
 set -u -o pipefail
 
@@ -111,7 +116,55 @@ keyring_del() {
   else secret-tool clear service "$SERVICE" account "$1" >/dev/null 2>&1; fi
   return 0
 }
-cleanup() { for h in "${PROBED[@]:-}"; do [ -n "$h" ] && for a in access refresh; do keyring_del "$h:$a"; done; done; }
+declare -a TMPDIRS=() MADE=()
+api_base() { # host kind
+  if [ "$2" = github ]; then if [ "$1" = github.com ]; then printf 'https://api.github.com'; else printf 'https://%s/api/v3' "$1"; fi
+  else printf 'https://%s/api/v4' "$1"; fi
+}
+# `call <method> <url> <token on stdin>`: the status code only. The token goes by `-H @-`.
+call() { { printf 'Authorization: Bearer '; cat; printf '\n'; } | curl -sS -o /dev/null -w '%{http_code}' --max-time 30 -X "$1" -H @- -H 'Accept: application/json' "$2" 2>/dev/null; }
+# Close what the scenario opened and delete its branch and tag, with the probe's own token.
+remote_cleanup() { # host kind repo branch
+  local host="$1" kind="$2" repo="$3" br="$4" base num enc
+  base="$(api_base "$host" "$kind")"; enc="${repo//\//%2F}"
+  keyring_get "$host:access" >/dev/null || return 0
+  if [ "$kind" = github ]; then
+    num="$(keyring_get "$host:access" | authed_get "$base/repos/$repo/pulls?state=open&head=${repo%%/*}:$br" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s)[0].number))}catch{}})')"
+    [ -n "$num" ] && keyring_get "$host:access" | call PATCH "$base/repos/$repo/pulls/$num?state=closed" >/dev/null
+    keyring_get "$host:access" | call DELETE "$base/repos/$repo/git/refs/heads/$br" >/dev/null
+    keyring_get "$host:access" | call DELETE "$base/repos/$repo/git/refs/tags/$br" >/dev/null
+  else
+    num="$(keyring_get "$host:access" | authed_get "$base/projects/$enc/merge_requests?state=opened&source_branch=$br" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(String(JSON.parse(s)[0].iid))}catch{}})')"
+    [ -n "$num" ] && keyring_get "$host:access" | call PUT "$base/projects/$enc/merge_requests/$num?state_event=close" >/dev/null
+    keyring_get "$host:access" | call DELETE "$base/projects/$enc/repository/branches/$br" >/dev/null
+    keyring_get "$host:access" | call DELETE "$base/projects/$enc/repository/tags/$br" >/dev/null
+  fi
+}
+# Revoke a probe token where the forge lets a public client do it (GitLab); say where, otherwise.
+revoke_probe() { # host kind
+  local host="$1" kind="$2" cid t
+  cid="$(client_id_for "$host" "$kind")"
+  if [ "$kind" = gitlab ] && [ -n "$cid" ]; then
+    for a in access refresh; do
+      t="$(keyring_get "$host:$a")"; [ -n "$t" ] || continue
+      printf 'client_id=%s&token=%s' "$cid" "$t" | post "https://$host/oauth/revoke" >/dev/null
+    done
+    printf 'revoked the probe tokens on %s\n' "$host"
+  else
+    printf 'REVOKE BY HAND: the probe signed in to %s; its token cannot be revoked without the app\x27s client secret. Remove the authorization at https://%s/settings/applications\n' "$host" "$host"
+  fi
+}
+cleanup() {
+  local m h k
+  for m in "${MADE[@]:-}"; do [ -n "$m" ] || continue; read -r h k r b <<<"$m"; remote_cleanup "$h" "$k" "$r" "$b"; done
+  for h in "${PROBED[@]:-}"; do
+    [ -n "$h" ] || continue
+    k=github; [[ " $glhost gitlab.com " == *" $h "* ]] && k=gitlab
+    revoke_probe "$h" "$k"
+    for a in access refresh; do keyring_del "$h:$a"; done
+  done
+  for d in "${TMPDIRS[@]:-}"; do [ -n "$d" ] && rm -rf "$d"; done
+}
 trap cleanup EXIT
 
 # ---- a reply's JSON, read without printing it ------------------------------------------------------
@@ -143,7 +196,7 @@ open_url() { command -v open >/dev/null 2>&1 && open "$1" 2>/dev/null || { comma
 # tried without a secret, the account and (GitHub) the granted scopes read, and the consent page checked
 # by you. The tokens go to the keyring and are deleted when the script ends.
 probe() {
-  local host="$1" kind="$2" cid dev_url tok_url dc uc vu resp tok="" ref="" exp="" err owner who i
+  local host="$1" kind="$2" cid dev_url tok_url dc uc vu resp tok="" ref="" newref="" exp="" err owner who
   cid="$(client_id_for "$host" "$kind")"
   if [ -z "$cid" ]; then step_skip "[$host] probes" "no client id: pass --client-id $host <id> (the registration an owner made for purlis on this host)"; return 1; fi
   if [ "$kind" = github ]; then dev_url="https://$host/login/device/code"; tok_url="https://$host/login/oauth/access_token"
@@ -172,20 +225,26 @@ probe() {
   [ -n "$tok" ] || { step_fail "[$host] the person's approval" "timed out waiting for the approval"; return 1; }
   PROBED+=("$host")
   printf '%s' "$tok" | keyring_set "$host:access"
+  if [ "$(keyring_get "$host:access")" = "$tok" ]; then step_pass "[$host] signed in; the token is in the keyring (read back, equal)"
+  else step_fail "[$host] the token is in the keyring" "the keyring did not return what was written: nothing below can be trusted"; return 1; fi
   ref="$(printf '%s' "$resp" | jget refresh_token)"; exp="$(printf '%s' "$resp" | jget expires_in)"
   [ -n "$ref" ] && printf '%s' "$ref" | keyring_set "$host:refresh"
-  step_pass "[$host] signed in; the token is in the keyring"
   if [ -n "$exp" ] && [ -n "$ref" ]; then step_pass "[$host] access tokens expire (${exp}s) and a refresh token comes with them"
-  else step_fail "[$host] access tokens expire and a refresh token comes with them" "none came back: on GitHub, tick *Expire user access tokens* on the registration (ADR 0128 D2 expects renewal to be provable)"; fi
+  elif [ "$kind" = github ] && [[ "$cid" == Ov23* ]]; then
+    step_fail "[$host] access tokens expire and a refresh token comes with them" "GATING: this client id (Ov23...) is a GitHub OAuth App. An OAuth App's tokens do not expire and come with no refresh token; *Expire user access tokens* is a GitHub App setting, not an OAuth App's. Renewal on GitHub cannot be shown with this registration (ADR 0128 D2, Open item 3): decide between a GitHub App registration and no renewal."
+  else step_fail "[$host] access tokens expire and a refresh token comes with them" "none came back: the registration does not issue expiring tokens, so renewal cannot be shown"; fi
   if [ -n "$ref" ]; then
     resp="$(printf 'client_id=%s&grant_type=refresh_token&refresh_token=%s' "$cid" "$ref" | post "$tok_url")"
-    if [ -n "$(printf '%s' "$resp" | jget access_token)" ]; then
+    newref="$(printf '%s' "$resp" | jget refresh_token)"
+    if [ -n "$(printf '%s' "$resp" | jget access_token)" ] && [ -n "$newref" ] && [ "$newref" != "$ref" ]; then
       printf '%s' "$resp" | jget access_token | keyring_set "$host:access"
-      printf '%s' "$resp" | jget refresh_token | keyring_set "$host:refresh"
-      step_pass "[$host] a refresh works with no client secret, and returns a new refresh token"
+      printf '%s' "$newref" | keyring_set "$host:refresh"
+      if [ "$(keyring_get "$host:refresh")" = "$newref" ]; then step_pass "[$host] a refresh works with no client secret, returns a NEW refresh token, and it is in the keyring"
+      else step_fail "[$host] the rotated refresh token is in the keyring" "the keyring did not return what was written"; fi
       resp="$(printf 'client_id=%s&grant_type=refresh_token&refresh_token=%s' "$cid" "$ref" | post "$tok_url")"
       if [ -z "$(printf '%s' "$resp" | jget access_token)" ]; then step_pass "[$host] the used refresh token is refused (single use)"
       else step_fail "[$host] the used refresh token is refused (single use)" "the forge honoured it a second time"; fi
+    elif [ -n "$(printf '%s' "$resp" | jget access_token)" ]; then step_fail "[$host] a refresh returns a new refresh token" "the refresh worked but returned no new refresh token (or the same one): ADR 0128 D2 relies on rotation"
     else step_fail "[$host] a refresh works with no client secret" "the forge answered: $(printf '%s' "$resp" | jget error) (the sign-in is a public client: ADR 0128 D2)"; fi
   fi
   local api="https://$host/api/v3/user" field=login
@@ -215,10 +274,15 @@ expect_ok() { # <step> <cmd...>
   if out="$(chat "$@" 2>&1)"; then step_pass "$name"; return 0; fi
   step_fail "$name" "$(printf '%s' "$out" | tail -3 | tr '\n' ' ' | cut -c1-300)"; return 1
 }
+# A refusal counts only when it is purlis's: its wording in what the client printed, or (with the audit
+# driver) a refusal the proxy recorded since. A forge's own 403 or 404 proves nothing about purlis.
 expect_refused() {
-  local name="$1" out; shift
+  local name="$1" out before after; shift
+  before=0; [ -n "${PURLIS_LIVE_AUDIT:-}" ] && before="$($PURLIS_LIVE_AUDIT 2>/dev/null | grep -ci 'refus\|held')"
   if out="$(chat "$@" 2>&1)"; then step_fail "$name" "it was NOT refused"; return 1; fi
-  step_pass "$name (refused: $(printf '%s' "$out" | tail -1 | cut -c1-120))"
+  after=0; [ -n "${PURLIS_LIVE_AUDIT:-}" ] && after="$($PURLIS_LIVE_AUDIT 2>/dev/null | grep -ci 'refus\|held')"
+  if printf '%s' "$out" | grep -qi 'purlis' || [ "$after" -gt "$before" ]; then step_pass "$name (refused by purlis: $(printf '%s' "$out" | tail -1 | cut -c1-120))"
+  else step_fail "$name" "it failed, but not in purlis's words and with no refusal in the audit: the forge may have refused it, which proves nothing about purlis. Output: $(printf '%s' "$out" | tail -1 | cut -c1-160)"; fi
 }
 
 scenario() { # <host> <github|gitlab> <repo>
@@ -232,7 +296,7 @@ scenario() { # <host> <github|gitlab> <repo>
   need PURLIS_LIVE_CLONE "slice D" "[$host] clone $repo as a project, recorded" || return
   read -ra cmd <<<"$(fill "$PURLIS_LIVE_CLONE" host "$host" repo "$repo" dest "$dest")"
   if "${cmd[@]}" >/dev/null 2>&1; then step_pass "[$host] clone $repo as a project, recorded"; else step_fail "[$host] clone $repo as a project, recorded" "the clone driver failed"; return; fi
-  CLONE="$dest"
+  CLONE="$dest"; TMPDIRS+=("$(dirname "$dest")"); MADE+=("$host $kind $repo $branch")
   need PURLIS_LIVE_CHAT "slice B" "[$host] the chat's commands" || return
 
   expect_ok "[$host] git: a branch the chat creates" sh -c "git checkout -q -b $branch && echo live > purlis-live.txt && git add purlis-live.txt && git commit -q -m 'purlis one-login live check'" || return
@@ -276,23 +340,34 @@ scenario() { # <host> <github|gitlab> <repo>
   PROJECTS+=("$host $repo $branch")
 }
 
+# The tokens to look for: the probe's, and the ones purlis itself stored (its own keyring items).
+stored_tokens() { # prints one token per line, into a pipe: never to a terminal or a file
+  local h a svc acct
+  for h in "${SIGNED[@]:-}"; do for a in access refresh; do keyring_get "$h:$a"; echo; done; done
+  [ -n "${PURLIS_LIVE_TOKEN_ITEMS:-}" ] || return 0
+  while IFS=$'\t' read -r svc acct; do
+    [ -n "$svc" ] || continue
+    if [ "$KEYRING" = macos ]; then security find-generic-password -s "$svc" -a "$acct" -w 2>/dev/null
+    else secret-tool lookup service "$svc" account "$acct" 2>/dev/null; fi
+    echo
+  done < <($PURLIS_LIVE_TOKEN_ITEMS 2>/dev/null)
+}
+
 chat_saw_no_token() {
   if ! need PURLIS_LIVE_CHAT_DIR "slice B" "the chat never saw a token (its files, its environment)"; then return; fi
-  local dir found=0 h t
+  if [ -z "${PURLIS_LIVE_TOKEN_ITEMS:-}" ]; then step_skip "the scan covers the tokens purlis itself stored" "TODO(slice C): set PURLIS_LIVE_TOKEN_ITEMS; without it only this script's probe tokens are searched for, which proves nothing about purlis's"; fi
+  local dir envout
   dir="$($PURLIS_LIVE_CHAT_DIR 2>/dev/null)"
   [ -d "$dir" ] || { step_fail "the chat never saw a token" "the chat-dir driver printed no folder"; return; }
-  for h in "${SIGNED[@]:-}"; do
-    for a in access refresh; do
-      t="$(keyring_get "$h:$a")"
-      [ -n "$t" ] || continue
-      # The secret goes to grep on stdin as a pattern file: never on a command line.
-      if printf '%s\n' "$t" | grep -rqF -f /dev/stdin "$dir" 2>/dev/null; then found=1; fi
-    done
-  done
-  if [ "$found" = 0 ]; then step_pass "the chat never saw a token (its files)"; else step_fail "the chat never saw a token (its files)" "a stored token appears in a file the chat can read"; fi
-  if chat env 2>/dev/null | grep -qE '(gho_|ghp_|ghu_|glpat-|glcbt-)[A-Za-z0-9_-]{16,}'; then step_fail "the chat never saw a token (its environment)" "a token-shaped value is in the chat's environment"
+  # The secrets go to grep on stdin as a pattern file: never on a command line. Empty lines are dropped.
+  if stored_tokens | grep -v '^$' | grep -rqF -f /dev/stdin "$dir" 2>/dev/null; then step_fail "the chat never saw a token (its files)" "a stored token appears in a file the chat can read"
+  else step_pass "the chat never saw a token (its files)"; fi
+  if ! envout="$(chat env 2>&1)"; then step_fail "the chat never saw a token (its environment)" "could not read the chat's environment: $(printf '%s' "$envout" | tail -1 | cut -c1-120)"; return; fi
+  if printf '%s' "$envout" | grep -qE '(gho_|ghp_|ghu_|ghr_|ghs_|github_pat_|glpat-|gloas-|glcbt-|gldt-|glrt-)[A-Za-z0-9_-]{16,}'; then step_fail "the chat never saw a token (its environment)" "a token-shaped value is in the chat's environment"
+  elif printf '%s' "$envout" | stored_tokens_match; then step_fail "the chat never saw a token (its environment)" "a stored token is in the chat's environment"
   else step_pass "the chat never saw a token (its environment)"; fi
 }
+stored_tokens_match() { local in; in="$(cat)"; printf '%s' "$in" | grep -qF -f <(stored_tokens | grep -v '^$'); }
 
 # ---- run ----------------------------------------------------------------------------------------------------
 

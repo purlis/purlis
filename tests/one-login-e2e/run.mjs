@@ -24,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { startFakeForge } from './fake-forge.mjs';
 import { expect, filesUnder, makeCa, manualClock, reporter, tail, tool } from './harness.mjs';
-import { createApp, HELD } from './seams.mjs';
+import { createApp } from './seams.mjs';
 
 const PLATFORM = process.platform === 'darwin' ? 'macOS' : process.platform === 'linux' ? 'Linux' : process.platform;
 const outDir = (() => {
@@ -37,7 +37,12 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ol-'));
 const HOUR = 3600 * 1000;
 const rp = reporter();
 const ok = (r, what) => expect(r.code === 0, `${what} should work; ${tail(r)}`);
-const denied = (r, what) => expect(r.code !== 0, `${what} should be refused, and it exited 0: ${r.stdout.trim().slice(0, 200)}`);
+// Refused means purlis refused it: a non-zero exit AND a refusal or hold in the proxy's audit for that command.
+// (git's first, unauthenticated request of a push is answered 401 to ask for the helper's credential; that is no refusal.)
+const denied = (r, what) => {
+  expect(r.code !== 0, `${what} should be refused, and it exited 0: ${r.stdout.trim().slice(0, 200)}`);
+  expect((r.refusals ?? []).length > 0, `${what} failed, but purlis did not refuse it (the audit has no refusal for it): ${tail(r)}`);
+};
 
 async function main() {
   const clock = manualClock();
@@ -46,7 +51,7 @@ async function main() {
   const startForge = (kind, host, expiresIn) => {
     const root = path.join(work, `forge-${kind}`);
     fs.mkdirSync(root, { recursive: true });
-    return startFakeForge({ kind, root, tls: leaf, clock, expiresIn, host, repos: ['o/r', 'o/other'] });
+    return startFakeForge({ kind, root, tls: leaf, clock, expiresIn, host, repos: ['o/r', 'o/other'], publicRepos: ['o/public'] });
   };
   // GitHub's OAuth app has "Expire user access tokens" on here (8 hours, refresh works); GitLab's access token lasts 2 hours.
   const github = await startForge('github', 'github.com', 8 * 3600);
@@ -67,7 +72,9 @@ async function main() {
 
   let chat;
   const chatRun = async (cmd, args, cwd) => {
+    const mark = app.audit.length;
     const r = await chat.exec(cmd, args, cwd);
+    r.refusals = app.audit.slice(mark).filter((a) => (a.verdict === 'refuse' || a.verdict === 'hold') && !/challenged/.test(a.reason));
     rp.outputs.push(r.stdout, r.stderr);
     return r;
   };
@@ -102,14 +109,15 @@ async function main() {
   chat = app.makeChat();
   await rp.step('clone github.com/o/r as a project: recorded, and the remote is unchanged', async () => {
     const rec = await app.recordProject(github, 'o', 'r');
-    expect(rec.id, 'the project is recorded with its forge id');
+    expect(rec.id === github.repos.get('o/r').id && app.recorded.has('github.com/o/r'), `the project is recorded with the forge's own id: ${JSON.stringify(rec)}`);
     ok(await chatRun('git', ['clone', 'https://github.com/o/r.git', 'github-r']), 'git clone');
     GH = path.join(chat.projects, 'github-r');
     const r = await chatRun('git', ['remote', '-v'], GH);
     expect(r.stdout.includes('https://github.com/o/r.git (fetch)'), `git remote -v should say github.com: ${r.stdout}`);
   });
   await rp.step('clone gitlab.com/o/r as a project: recorded, and the remote is unchanged', async () => {
-    await app.recordProject(gitlab, 'o', 'r');
+    const rec = await app.recordProject(gitlab, 'o', 'r');
+    expect(rec.id === gitlab.repos.get('o/r').id && app.recorded.has('gitlab.com/o/r'), `the project is recorded with the forge's own id: ${JSON.stringify(rec)}`);
     ok(await chatRun('git', ['clone', 'https://gitlab.com/o/r.git', 'gitlab-r']), 'git clone');
     GL = path.join(chat.projects, 'gitlab-r');
     const r = await chatRun('git', ['remote', '-v'], GL);
@@ -221,10 +229,33 @@ async function main() {
       expect(hits.length === 0, `${f.kind}: the forge got a credentialed request for o/other: ${hits.map((e) => `${e.method} ${e.path}`).join('; ')}`);
     }
   });
-  await rp.step('refused: gh auth token prints no token', async () => {
-    const r = await chatRun('gh', ['auth', 'token'], GH);
-    denied(r, 'gh auth token');
-    expect(r.stdout.trim() === '', `gh auth token printed: ${r.stdout}`);
+  await rp.step('the anonymous route: a public repo outside the project reads with no credential; a recorded private one asks for the sentinel first', async () => {
+    for (const [f, url] of [[github, 'https://github.com/o/public.git'], [gitlab, 'https://gitlab.com/o/public.git']]) {
+      ok(await chatRun('git', ['ls-remote', url], GH), `git ls-remote ${url}`);
+      const hits = f.log.filter((e) => e.path.startsWith('/o/public.git'));
+      expect(hits.length > 0 && hits.every((e) => e.credentials.length === 0 && e.status === 200), `${f.kind}: the public repo should be read with no credential and answered: ${JSON.stringify(hits.map((e) => [e.path, e.status, e.credentials.length]))}`);
+    }
+    const priv = github.log.filter((e) => e.path.startsWith('/o/r.git/info/refs') && e.credentials.length === 0);
+    expect(priv.length > 0 && priv.every((e) => e.status === 401), 'a private repo answers an anonymous request with 401, and git then asks the helper');
+  });
+  await rp.step('gh auth token gives a chat no token: the wrapper refuses, and what gh itself prints is worth nothing', async () => {
+    const wrapped = await chatRun('gh', ['auth', 'token'], GH);
+    expect(wrapped.code !== 0 && wrapped.stdout.trim() === '', `the wrapper should print nothing: ${wrapped.stdout}`);
+    // Past the wrapper, to the real gh: it prints what is in its environment, the sentinel, and no more.
+    const realGh = tool('sh', ['-c', 'command -v gh']).trim();
+    const bare = await chat.exec(realGh, ['auth', 'token'], GH);
+    rp.outputs.push(bare.stdout, bare.stderr);
+    const printed = bare.stdout.trim();
+    expect(printed === '' || printed === app.sentinel, `gh printed something that is not the sentinel: ${printed.slice(0, 8)}...`);
+    if (printed) {
+      for (const f of [github, gitlab]) {
+        const direct = await app.rawForge(f, f.kind === 'github' ? '/user' : '/api/v4/user', printed);
+        expect(direct.status === 401, `${f.kind}: the printed value must be worthless at the forge, and it answered ${direct.status}`);
+      }
+      const mark = app.audit.length;
+      const other = await chat.exec(realGh, ['api', '-R', 'github.localhost/o/other', 'repos/o/other'], GH);
+      expect(other.code !== 0 && app.audit.slice(mark).some((a) => a.verdict === 'refuse'), 'the sentinel gh printed buys nothing from the proxy outside the project');
+    }
   });
 
   // ---- merges are held, then done by the person's press ---------------------------------------------
@@ -255,10 +286,11 @@ async function main() {
     expect(done.status === 200, `the person's approval should merge: ${done.status} ${done.body}`);
     expect(gitlab.merges.length === 1, 'the forge merged it');
   });
-  await rp.step('the held ask says what the proxy was asked, and a request the proxy refused is audited', async () => {
-    expect(app.audit.some((a) => a.verdict === 'hold'), 'a hold is audited');
-    expect(app.audit.some((a) => a.verdict === 'refuse'), 'a refusal is audited');
-    expect(HELD.includes('holds merges'), 'the held sentence is stable');
+  await rp.step('the proxy audits what it held and what it refused, never a token', async () => {
+    const held = app.audit.filter((a) => a.verdict === 'hold');
+    expect(held.length >= 2, `a hold per merge is audited: ${held.length}`);
+    expect(app.audit.some((a) => a.verdict === 'refuse' && a.reason), 'a refusal is audited with its reason');
+    expect(!JSON.stringify(app.audit).match(/fake-g[hl]-|sentinel-/), 'the audit holds no token and no sentinel');
   });
 
   // ---- the token renews unattended --------------------------------------------------------------------
@@ -287,7 +319,9 @@ async function main() {
   // ---- the chat never saw a token -----------------------------------------------------------------------
 
   await rp.step('the chat never saw a token: its environment, its files and every output are scanned', async () => {
-    const secrets = [...github.issued, ...gitlab.issued];
+    const stored = [...app.keyring.values()].flatMap((k) => [k.access, k.refresh]).filter(Boolean);
+    expect(stored.length >= 4 && stored.every((t) => github.issued.has(t) || gitlab.issued.has(t)), 'the keyring holds an access and a refresh token per forge, each one the forge issued');
+    const secrets = [...new Set([...github.issued, ...gitlab.issued, ...stored])];
     expect(secrets.length >= 6, 'the forges issued tokens to look for');
     const hit = (text) => secrets.find((s) => text.includes(s));
     for (const [k, v] of Object.entries(chat.env)) expect(!hit(String(v)), `the chat's environment variable ${k} holds a token`);
