@@ -1,7 +1,6 @@
 # Where purlis's forge credential comes from
 
-One login ([ADR 0128](adr/0128-everyone-works-as-themselves-and-the-forge-token-never-enters-a-chat.md),
-proposed in #7269): purlis holds the person's forge credential and acts with it for a chat; a chat
+One login (ADR 0128, proposed in #7269): purlis holds the person's forge credential and acts with it for a chat; a chat
 never holds the token. The forge proxy asks one question of one trait,
 `CredentialSource::credential_for(host)` (`crates/purlis-core/src/forge/credential.rs`), and two
 sources answer it.
