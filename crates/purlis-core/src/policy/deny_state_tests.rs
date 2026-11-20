@@ -69,8 +69,10 @@ fn in_the_deny_state_every_action_but_start_is_refused_and_a_re_press_is_raised(
     }
 
     // `.git` swapped at an anchored path: the deny state.
-    std::fs::remove_dir_all(root.join(".git")).unwrap();
+    // Made beside the old one before it goes, so its inode is another (a freed inode is reused).
+    std::fs::rename(root.join(".git"), root.join(".git-old")).unwrap();
     std::fs::create_dir(root.join(".git")).unwrap();
+    std::fs::remove_dir_all(root.join(".git-old")).unwrap();
     let sealed = Sealed::of(&root);
     assert!(sealed.standing.is_deny(), "{:?}", sealed.standing);
     for (action, resource) in [
