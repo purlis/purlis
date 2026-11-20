@@ -19,6 +19,7 @@ use std::process::Command;
 
 #[test]
 fn a_person_signs_in_once_and_a_chat_works_the_forge_without_a_token() {
+    purlis_core::unsteered!();
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let out = Command::new("node")
         .arg("tests/one-login-e2e/run.mjs")
