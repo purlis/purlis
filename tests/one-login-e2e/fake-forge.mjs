@@ -236,6 +236,7 @@ export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, 
   });
   const ghGraphql = {
     query: {
+      __type: () => ({ fields: [], inputFields: [], enumValues: [] }),
       viewer: { __typename: 'User', login: ACCOUNT, id: 'U_1', name: 'Alice' },
       repository: (a) => {
         const repo = repos.get(`${a.owner}/${a.name}`);
@@ -290,6 +291,7 @@ export async function startFakeForge({ kind, root, tls, clock, expiresIn, host, 
     sha: headSha(repo, pr),
     web_url: `${webUrl(repo)}/-/merge_requests/${pr.number}`,
     author: { id: 1, username: ACCOUNT, name: 'Alice' },
+    user: { can_merge: true },
     merge_status: 'can_be_merged',
     detailed_merge_status: 'mergeable',
     has_conflicts: false,

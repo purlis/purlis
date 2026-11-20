@@ -291,6 +291,8 @@ export async function createApp({ work, ca, clock, forges }) {
           return refuse('a GraphQL body that is not JSON');
         }
         const d = describe(q.query ?? '', q.variables ?? {});
+        // gh asks the schema what it can do (`__type`) before it merges: introspection reads no repository.
+        if (d.operation === 'query' && d.roots.length > 0 && d.roots.every((x) => x.startsWith('__'))) return { verdict: 'allow' };
         if (d.roots.some((x) => ['node', 'nodes', 'search'].includes(x))) return refuse('a GraphQL root that reads any object');
         for (const full of d.repos) {
           const [o, n] = full.split('/');
@@ -527,7 +529,6 @@ exec "$REAL" "$@"
       GLAB_CHECK_UPDATE: 'false',
       GLAB_NO_PROMPT: '1',
       GLAB_SEND_TELEMETRY: 'false',
-      NO_PROMPT: '1',
     };
     return {
       dir,

@@ -117,7 +117,7 @@ export const expect = (cond, message) => {
 /** The last lines of a command's output, for a failure message. */
 export const tail = (r) => {
   const lines = (r.stderr || r.stdout).trim().split('\n');
-  const shown = lines.length > 6 ? [...lines.slice(0, 3), '...', ...lines.slice(-2)] : lines;
+  const shown = lines.some((l) => l.startsWith('panic:')) ? lines.filter((l) => !/^\s*$/.test(l)).slice(0, 16) : lines.length > 6 ? [...lines.slice(0, 3), '...', ...lines.slice(-2)] : lines;
   return `exit ${r.code}: ${shown.join(' | ').slice(0, 700)}`;
 };
 
