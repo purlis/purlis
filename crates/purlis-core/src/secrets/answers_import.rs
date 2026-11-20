@@ -234,7 +234,7 @@ pub(crate) fn nevers_in_step(root: &Path, step: Step<'_>) -> io::Result<bool> {
     // in `the_press_is_made_only_by_the_windows_command_layer`.
     #[allow(
         clippy::disallowed_methods,
-        reason = "the window's own never, until the press is passed down from the window (#7251)"
+        reason = "a never the person said, kept in step, until the caller hands the press down (#7251)"
     )]
     let press = Press::of_the_persons_press();
     if said {
