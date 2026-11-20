@@ -903,6 +903,15 @@ impl MergeForge for ByForge<'_> {
     }
 }
 
+/// The merge method a squash flag names, as an ask says it.
+fn method_word(squash: bool) -> &'static str {
+    if squash {
+        "squashing"
+    } else {
+        "a merge commit"
+    }
+}
+
 /// One merge ask that waits: the chat it holds, its key, what the forge said of the request
 /// when it was raised, and since when, in seconds since 1970.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -920,6 +929,11 @@ pub struct Waits {
     /// Whether purlis recorded the asking chat pushing its head (R-124): said by
     /// [`Holds::every`] as it lists it. A head it did not is flagged.
     pub pushed_here: bool,
+    /// **The merge method the row showed** (ADR 0128 D8.1): whether the repo's own method squashes
+    /// it, as the forge said when the ask was read. `None` where no read said (an ask raised
+    /// before the app recorded it). A press merges only while the forge still says it
+    /// ([`Holds::shown_method`], [`NotMerged::MethodMoved`]).
+    pub squash_shown: Option<bool>,
 }
 
 impl Facts {
@@ -1026,6 +1040,16 @@ pub enum NotMerged {
          was merged"
     )]
     BaseMoved { was: String, now: String },
+    /// The repo's merge method is not the one the person was shown (ADR 0128 D8.1): the ask
+    /// bound the method as well as the head and the base. The ask waits, showing the method now.
+    #[error(
+        "the repo now merges by {now}, not by {was} as it did when you were asked, so nothing was \
+         merged. Press Merge again"
+    )]
+    MethodMoved {
+        was: &'static str,
+        now: &'static str,
+    },
     /// Whether a ruleset protects the base is not what the person was shown (R-150). The ask
     /// still waits, showing what purlis read last.
     #[error(
@@ -1095,6 +1119,7 @@ impl Holds {
             asked: false,
             look: Look::NotViewed { since: None },
             pushed_here: false,
+            squash_shown: None,
         });
         Raised::New
     }
@@ -1153,8 +1178,25 @@ impl Holds {
             asked: false,
             look: Look::NotViewed { since: None },
             pushed_here: false,
+            squash_shown: None,
         });
         Ok(Refreshed::Moved)
+    }
+
+    /// **The merge method chat `session`'s ask for `key` shows** (ADR 0128 D8.1): whether the
+    /// repo's own method squashes, as the forge said at the read the row was drawn from. An ask
+    /// that showed another method is asked once more of the new one.
+    pub fn shown_method(&self, session: u32, key: &MergeKey, squash: bool) {
+        let mut held = self.lock();
+        if let Some(one) = held
+            .iter_mut()
+            .find(|one| one.session == session && one.key == *key)
+        {
+            if one.squash_shown.is_some_and(|was| was != squash) {
+                one.asked = false;
+            }
+            one.squash_shown = Some(squash);
+        }
     }
 
     /// Every merge ask that waits, oldest first, each saying what the person has seen of its
@@ -1344,7 +1386,7 @@ impl Holds {
         by: Answerer,
         forge: &dyn MergeForge,
     ) -> Result<(HumanScope, Merged), NotMerged> {
-        let taken = {
+        let mut taken = {
             let mut held = self.lock();
             let at = held
                 .iter()
@@ -1358,6 +1400,7 @@ impl Holds {
             }
             held.remove(at)
         };
+        let shown = taken.squash_shown;
         let merged = forge
             .at(key)
             .map_err(NotMerged::Forge)
@@ -1370,6 +1413,18 @@ impl Holds {
                         now: at.base.as_str().to_owned(),
                     })
                 }
+            })
+            .and_then(|at| match shown {
+                // The method the row showed is the one the merge is made by, or none is made.
+                Some(was) if was != at.squash => {
+                    taken.squash_shown = Some(at.squash);
+                    taken.asked = false;
+                    Err(NotMerged::MethodMoved {
+                        was: method_word(was),
+                        now: method_word(at.squash),
+                    })
+                }
+                _ => Ok(at),
             })
             .and_then(|at| forge.merge_at(key, at.squash).map_err(NotMerged::Forge));
         match merged {

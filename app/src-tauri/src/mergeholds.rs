@@ -456,10 +456,13 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         number: ask.request.number,
     };
     let holds = project.holds();
+    // The merge method the forge said at this read: what the row shows, and what a press is held to.
+    let squash = std::cell::Cell::new(None);
     let resolve = |request: &Request| -> Result<(MergeKey, mergehold::Facts), String> {
         let read = project
             .read(&on, request.number)
             .map_err(|why| format!("purlis could not read it from the forge ({why})."))?;
+        squash.set(Some(read.at.squash));
         let key = MergeKey {
             repo: repo.clone(),
             number: request.number,
@@ -483,6 +486,9 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
         &resolve,
         crate::sandboxing::now_secs(),
     )?;
+    if let Some(squash) = squash.get() {
+        holds.holds.shown_method(chat, &key, squash);
+    }
     match raised {
         Raised::New => {
             holds.on_forge(chat, &key, on);
