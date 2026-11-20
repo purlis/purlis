@@ -56,15 +56,19 @@ impl Listener for FakeListener {
             !hosts.is_empty(),
             "the listener is told the hosts the CA may name"
         );
-        std::fs::write(dir.join("proxy.sock"), b"")?;
+        // A real socket, as A2's will be: a path too long for one fails here as it would there.
+        #[cfg(unix)]
+        let bound = std::os::unix::net::UnixListener::bind(dir.join(SOCKET_NAME))?;
+        #[cfg(not(unix))]
+        let bound = std::fs::File::create(dir.join(SOCKET_NAME))?;
         std::fs::write(dir.join("ca.pem"), b"PEM")?;
         lock(&self.handlers).insert(run.to_owned(), handler);
         self.alive.fetch_add(1, Ordering::SeqCst);
         Ok(Bound {
-            socket: dir.join("proxy.sock"),
+            socket: dir.join(SOCKET_NAME),
             egress_url: "http://127.0.0.1:9/".to_owned(),
             ca: dir.join("ca.pem"),
-            guard: Box::new(Alive(self.alive.clone())),
+            guard: Box::new((Alive(self.alive.clone()), bound)),
         })
     }
     fn ready(&self) -> bool {
@@ -274,9 +278,14 @@ impl Scene {
             .expect("the project records repos")
     }
 
-    /// The folder the route of `run` is made in.
+    /// The folder the route of `run` is made in, while it is live.
     fn folder_of(&self, run: &str) -> PathBuf {
-        self.dir.join(folder_name(run))
+        self.routes.folder_of(run).expect("a live route")
+    }
+
+    /// What is in the root: the folders of every route made and not yet removed.
+    fn folders(&self) -> usize {
+        std::fs::read_dir(&self.dir).map_or(0, Iterator::count)
     }
 }
 
@@ -301,6 +310,39 @@ fn send_via(
         headers: &headers,
         body,
     })
+}
+
+/// A request with its own body, from the run that holds `sentinel`.
+fn send_body(
+    scene: &Scene,
+    run: &str,
+    sentinel: &str,
+    host: &str,
+    target: &str,
+    body: &str,
+) -> Outcome {
+    let head =
+        RequestHead::new("POST", host, 443, target).with_content_type(Some("application/json"));
+    let headers = vec![
+        ("Host".to_owned(), host.to_owned()),
+        ("Authorization".to_owned(), format!("Bearer {sentinel}")),
+        ("Content-Type".to_owned(), "application/json".to_owned()),
+    ];
+    scene.listener.handler_of(run).handle(&Inbound {
+        head: &head,
+        headers: &headers,
+        body: body.as_bytes(),
+    })
+}
+
+/// A GitLab GraphQL mutation that accepts a merge request, naming `project` and the request's `iid`.
+fn gitlab_merge_mutation(project: &str, iid: u32) -> String {
+    serde_json::json!({
+        "query": format!(
+            "mutation {{ mergeRequestAccept(input: {{projectPath: \"{project}\", iid: \"{iid}\"}}) {{ clientMutationId }} }}"
+        )
+    })
+    .to_string()
 }
 
 fn send(
@@ -412,12 +454,13 @@ fn a_run_that_ends_leaves_no_socket_no_ca_no_listener_and_a_dead_sentinel() {
         Outcome::Forward(_)
     ));
     let door = scene.listener.handler_of("run-1");
+    let folder = scene.folder_of("run-1");
     assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 1);
 
     scene.routes.stop("run-1");
 
     assert!(!params.socket.exists() && !params.ca.exists());
-    assert!(!scene.folder_of("run-1").exists());
+    assert!(!folder.exists());
     assert_eq!(
         scene.listener.alive.load(Ordering::SeqCst),
         0,
@@ -444,7 +487,7 @@ fn a_listener_that_cannot_bind_leaves_nothing_behind() {
 
     assert!(started.is_err());
     assert!(!scene.routes.is_live("run-1"));
-    assert!(!scene.folder_of("run-1").exists());
+    assert_eq!(scene.folders(), 0, "no folder is left");
 }
 
 #[test]
@@ -507,7 +550,7 @@ fn a_start_that_returns_early_stops_its_route_and_one_that_opens_keeps_it_until_
         !scene.routes.is_live("run-1"),
         "a dropped guard stops the route"
     );
-    assert!(!scene.folder_of("run-1").exists());
+    assert_eq!(scene.folders(), 0);
     assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 0);
 
     // An open chat keeps it until its session closes or its program ends.
@@ -552,7 +595,7 @@ fn an_app_that_crashed_leaves_folders_the_next_start_sweeps_when_its_pid_is_gone
         purlis_core::forklock::spawn(&mut std::process::Command::new("true")).expect("true");
     let gone = child.id();
     child.wait().unwrap();
-    let from_a_dead_app = scene.dir.join(format!("{gone}-run-old"));
+    let from_a_dead_app = scene.dir.join(format!("{gone}-0a0a0a0a"));
     std::fs::create_dir(&from_a_dead_app).unwrap();
     std::fs::write(from_a_dead_app.join("proxy.sock"), b"").unwrap();
     // An app that is running (this test's parent), a name that is not ours, and a link.
@@ -560,14 +603,14 @@ fn an_app_that_crashed_leaves_folders_the_next_start_sweeps_when_its_pid_is_gone
     let parent = std::os::unix::process::parent_id();
     #[cfg(not(unix))]
     let parent = 1;
-    let from_a_live_app = scene.dir.join(format!("{parent}-run-other"));
+    let from_a_live_app = scene.dir.join(format!("{parent}-0b0b0b0b"));
     std::fs::create_dir(&from_a_live_app).unwrap();
     let not_ours = scene.dir.join("notes");
     std::fs::create_dir(&not_ours).unwrap();
     let elsewhere = tempfile::tempdir().unwrap();
     std::fs::write(elsewhere.path().join("keep"), b"x").unwrap();
     #[cfg(unix)]
-    std::os::unix::fs::symlink(elsewhere.path(), scene.dir.join(format!("{gone}-run-link")))
+    std::os::unix::fs::symlink(elsewhere.path(), scene.dir.join(format!("{gone}-0c0c0c0c")))
         .unwrap();
     // A crash runs no destructor.
     let Scene { routes, _root, .. } = scene;
@@ -594,15 +637,25 @@ fn an_app_that_crashed_leaves_folders_the_next_start_sweeps_when_its_pid_is_gone
 }
 
 #[test]
-fn folder_names_are_pid_then_a_safe_run_and_only_those_are_read_back() {
-    assert_eq!(pid_of_folder("123-run-1"), Some(123));
-    assert_eq!(pid_of_folder("123-a_b"), Some(123));
+fn folder_names_are_pid_then_eight_hex_and_only_those_are_read_back() {
+    assert_eq!(pid_of_folder("123-0a1b2c3d"), Some(123));
     for not_ours in [
-        "notes", "-run", "12a-run", "123-", "123-a/b", "123-..", "../123-x",
+        "notes",
+        "-0a1b2c3d",
+        "12a-0a1b2c3d",
+        "123-",
+        "123-run-1",
+        "123-0A1B2C3D",
+        "123-0a1b2c3",
+        "123-0a1b2c3d4",
+        "123-../0a1b",
+        "../123-0a1b2c3d",
     ] {
         assert_eq!(pid_of_folder(not_ours), None, "{not_ours}");
     }
-    assert!(!safe_name("../../etc").contains('/'));
+    let made = folder_name().unwrap();
+    assert_eq!(pid_of_folder(&made), Some(std::process::id()), "{made}");
+    assert_ne!(made, folder_name().unwrap(), "each folder is its own");
 }
 
 #[cfg(unix)]
@@ -610,7 +663,7 @@ fn folder_names_are_pid_then_a_safe_run_and_only_those_are_read_back() {
 fn a_root_that_is_a_link_is_refused_and_what_it_points_at_is_left_alone() {
     let scene = Scene::new();
     let target = tempfile::tempdir().unwrap();
-    let victim = target.path().join("1-run-victim");
+    let victim = target.path().join("1-0e0e0e0e");
     std::fs::create_dir(&victim).unwrap();
     let linked = scene._root.path().join("linked-root");
     std::os::unix::fs::symlink(target.path(), &linked).unwrap();
@@ -661,7 +714,7 @@ fn quitting_stops_every_route_of_this_app_and_leaves_another_apps_folders() {
     let parent = std::os::unix::process::parent_id();
     #[cfg(not(unix))]
     let parent = 1;
-    let another = scene.dir.join(format!("{parent}-run-other"));
+    let another = scene.dir.join(format!("{parent}-0d0d0d0d"));
     std::fs::create_dir(&another).unwrap();
 
     scene.routes.stop_all();
@@ -1153,4 +1206,443 @@ fn the_real_sign_ins_answer_missing_with_the_step_named_when_no_account_is_liste
         "{}",
         failure.said
     );
+}
+
+// ---- a program that exits before its start commits ----
+
+#[test]
+fn a_program_that_exits_before_its_start_commits_has_its_route_stopped_by_the_commit() {
+    let scene = Scene::new();
+    // The start has opened session 7 and holds its route; the exit arrives on another thread.
+    let held = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let folder = scene.folder_of("run-1");
+    assert!(scene.routes.is_live("run-1"));
+
+    scene.routes.stop_session(7);
+    assert!(
+        scene.routes.is_live("run-1"),
+        "nothing is mapped yet, so nothing is stopped by the exit alone"
+    );
+    held.commit(7);
+
+    assert!(!scene.routes.is_live("run-1"), "the commit stops it");
+    assert!(!folder.exists());
+    assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 0);
+    assert!(
+        scene.routes.sessions().exited.is_empty(),
+        "nothing is remembered once nothing is pending"
+    );
+}
+
+#[test]
+fn an_exit_before_the_commit_stops_only_the_run_of_that_session() {
+    let scene = Scene::new();
+    scene
+        .routes
+        .guard("chat-1", "run-a", Path::new("/p/one"))
+        .commit(1);
+    let held = scene.routes.guard("chat-2", "run-b", Path::new("/p/one"));
+
+    // Another chat's session ends while run-b is still being opened as session 2.
+    scene.routes.stop_session(1);
+    scene.routes.stop_session(2);
+    held.commit(2);
+
+    assert!(!scene.routes.is_live("run-a") && !scene.routes.is_live("run-b"));
+
+    // A run that opens after an exit of another session keeps its route.
+    let held = scene.routes.guard("chat-3", "run-c", Path::new("/p/one"));
+    scene.routes.stop_session(3);
+    held.commit(4);
+    assert!(
+        scene.routes.is_live("run-c"),
+        "session 3 was not its session"
+    );
+    scene.routes.stop_session(4);
+    assert!(!scene.routes.is_live("run-c"));
+}
+
+#[test]
+fn exits_of_chats_with_no_route_are_not_remembered_when_nothing_is_pending() {
+    let scene = Scene::new();
+    for session in 0..50 {
+        scene.routes.stop_session(session);
+    }
+    assert!(scene.routes.sessions().exited.is_empty());
+
+    // A paired runner's route is never committed to a session, so it never makes one pending.
+    scene
+        .pairing
+        .runs
+        .lock()
+        .unwrap()
+        .insert("run-r".to_owned(), PathBuf::from("/p/one"));
+    let forwarded = scene.routes.for_runner(&runner(), "chat-r", "run-r");
+    assert!(matches!(forwarded, RunnerForward::Desktop(_)));
+    scene.routes.stop_session(99);
+    assert!(scene.routes.sessions().exited.is_empty());
+    assert!(scene.routes.is_live("run-r"));
+}
+
+#[test]
+fn a_run_started_again_with_nothing_recorded_stops_its_old_route() {
+    let scene = Scene::new();
+    let old = scene.start("chat-1", "run-1", "/p/one");
+    let folder = scene.folder_of("run-1");
+    scene.recorded.record("/p/one", Vec::new());
+
+    let again = scene
+        .routes
+        .start("chat-1", "run-1", Path::new("/p/one"))
+        .expect("no error");
+
+    assert!(again.is_none());
+    assert!(!scene.routes.is_live("run-1"), "the old route is gone");
+    assert!(!folder.exists() && !old.socket.exists());
+    assert!(matches!(
+        comment(&scene, "run-1", &old.sentinel),
+        Outcome::Refused(Refusal::UnknownChat)
+    ));
+}
+
+// ---- held acts are bound to the run's repos ----
+
+fn an_ask(run: &str, host: &str, repo: Option<&str>, digest: &str) -> HeldAsk {
+    HeldAsk {
+        id: 0,
+        run: run.to_owned(),
+        host: host.to_owned(),
+        method: "PUT".to_owned(),
+        path: "/repos/acme/app/pulls/7/merge".to_owned(),
+        repo: repo.map(str::to_owned),
+        act: HeldAct::Merge,
+        digest: digest.to_owned(),
+    }
+}
+
+#[test]
+fn an_ask_is_performed_only_for_a_repo_the_run_records_on_the_asks_host() {
+    let scene = Scene::new();
+    scene.start("chat-1", "run-1", "/p/one");
+    for (why, ask) in [
+        ("no repo", an_ask("run-1", "github.com", None, "a")),
+        (
+            "a repo the run does not record",
+            an_ask("run-1", "github.com", Some("evil/app"), "b"),
+        ),
+        (
+            "a recorded path on another forge's host",
+            an_ask("run-1", "gitlab.com", Some("acme/app"), "c"),
+        ),
+        (
+            "a recorded repo of another host's name",
+            an_ask("run-1", "github.example", Some("acme/app"), "d"),
+        ),
+    ] {
+        let registered = scene.routes.asks.register(ask).expect("registered");
+        let said = scene.routes.perform_held(registered.id).expect_err(why);
+        assert!(
+            said.contains("not for a repo this chat was given"),
+            "{why}: {said}"
+        );
+    }
+    assert!(
+        lock(&scene.held.performed).is_empty(),
+        "nothing was performed, and no credential was read for it"
+    );
+    assert!(lock(&scene.sign_ins.asked).is_empty());
+
+    // The same ask for a recorded repo on its own host is performed.
+    let fine = scene
+        .routes
+        .asks
+        .register(an_ask("run-1", "github.com", Some("acme/app"), "e"))
+        .unwrap();
+    scene.routes.perform_held(fine.id).expect("performed");
+    assert_eq!(lock(&scene.held.performed).len(), 1);
+}
+
+#[test]
+fn a_held_act_on_a_repo_the_run_does_not_record_raises_no_ask() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    for target in [
+        "/repos/evil/app/pulls/1/merge",
+        "/repos/acme/other/pulls/1/merge",
+        // A numeric project id names no repo here.
+        "/api/v4/projects/12345/merge_requests/1/merge",
+    ] {
+        let outcome = send(
+            &scene,
+            "run-1",
+            &params.sentinel,
+            "PUT",
+            "api.github.com",
+            target,
+        );
+        assert!(
+            matches!(outcome, Outcome::Refused(_)),
+            "{target}: {outcome:?}"
+        );
+    }
+
+    assert!(lock(&scene.held.asks).is_empty());
+    assert!(scene.routes.pending_asks("run-1").is_empty());
+}
+
+#[test]
+fn a_gitlab_path_names_its_repo_by_its_encoded_segment() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    let outcome = send(
+        &scene,
+        "run-1",
+        &params.sentinel,
+        "PUT",
+        "gitlab.com",
+        "/api/v4/projects/group%2Fproj/merge_requests/3/merge",
+    );
+
+    assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
+    let asks = lock(&scene.held.asks).clone();
+    assert_eq!(asks.len(), 1, "{asks:?}");
+    assert_eq!(asks[0].repo.as_deref(), Some("group/proj"));
+    assert_eq!(asks[0].host, "gitlab.com");
+}
+
+#[test]
+fn a_graphql_held_act_is_asked_with_the_repo_its_ids_name_and_never_without_one() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let sentinel = &params.sentinel;
+
+    // A GitLab merge that names the project it is in.
+    let named = gitlab_merge_mutation("group/proj", 3);
+    let outcome = send_body(
+        &scene,
+        "run-1",
+        sentinel,
+        "gitlab.com",
+        "/api/graphql",
+        &named,
+    );
+    assert!(
+        matches!(outcome, Outcome::Refused(Refusal::Merge)),
+        "{outcome:?}"
+    );
+    let asks = lock(&scene.held.asks).clone();
+    assert_eq!(asks.len(), 1, "{asks:?}");
+    assert_eq!(asks[0].repo.as_deref(), Some("group/proj"));
+    scene
+        .routes
+        .perform_held(asks[0].id)
+        .expect("a recorded repo");
+
+    // A project the run does not record: refused, no ask.
+    let other = gitlab_merge_mutation("evil/proj", 3);
+    send_body(
+        &scene,
+        "run-1",
+        sentinel,
+        "gitlab.com",
+        "/api/graphql",
+        &other,
+    );
+    // A GitHub merge naming only a pull request's node id, which nothing here can place in a
+    // repo (`NoObjects`): refused, no ask.
+    let by_object = serde_json::json!({
+        "query": "mutation { mergePullRequest(input: {pullRequestId: \"PR_kwDOabc\"}) { clientMutationId } }"
+    })
+    .to_string();
+    let outcome = send_body(
+        &scene,
+        "run-1",
+        sentinel,
+        "api.github.com",
+        "/graphql",
+        &by_object,
+    );
+    assert!(
+        matches!(outcome, Outcome::Refused(Refusal::Merge)),
+        "{outcome:?}"
+    );
+    // A document naming two repos is in neither.
+    let two = serde_json::json!({
+        "query": "mutation { a: mergeRequestAccept(input: {projectPath: \"group/proj\", iid: \"1\"}) { clientMutationId } b: mergeRequestAccept(input: {projectPath: \"evil/proj\", iid: \"1\"}) { clientMutationId } }"
+    })
+    .to_string();
+    send_body(
+        &scene,
+        "run-1",
+        sentinel,
+        "gitlab.com",
+        "/api/graphql",
+        &two,
+    );
+
+    assert_eq!(
+        lock(&scene.held.asks).len(),
+        1,
+        "only the first was ever asked: {:?}",
+        lock(&scene.held.asks)
+    );
+    assert!(scene.routes.pending_asks("run-1").is_empty());
+}
+
+#[test]
+fn different_acts_are_different_asks_and_only_the_same_act_is_one() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let sentinel = &params.sentinel;
+    let merge_with = |query: &str| {
+        send(
+            &scene,
+            "run-1",
+            sentinel,
+            "PUT",
+            "api.github.com",
+            &format!("/repos/acme/app/pulls/7/merge{query}"),
+        )
+    };
+
+    // The same act, twice.
+    merge_with("?sha=aaa");
+    merge_with("?sha=aaa");
+    assert_eq!(lock(&scene.held.asks).len(), 1);
+    // The same path with another query is another act.
+    merge_with("?sha=bbb");
+    assert_eq!(lock(&scene.held.asks).len(), 2);
+    // The same GraphQL endpoint with another mutation is another act, though method, host and
+    // path are the same.
+    for iid in [1, 2, 1] {
+        send_body(
+            &scene,
+            "run-1",
+            sentinel,
+            "gitlab.com",
+            "/api/graphql",
+            &gitlab_merge_mutation("group/proj", iid),
+        );
+    }
+    let asks = lock(&scene.held.asks).clone();
+    assert_eq!(asks.len(), 4, "{asks:?}");
+    let mut digests: Vec<&str> = asks.iter().map(|a| a.digest.as_str()).collect();
+    digests.sort_unstable();
+    digests.dedup();
+    assert_eq!(digests.len(), 4, "each ask has its own digest");
+    assert!(asks.iter().all(|a| a.digest.len() == 64));
+}
+
+// ---- the socket path fits ----
+
+#[test]
+fn a_run_folder_makes_a_socket_path_within_the_limit_and_a_real_socket_binds_in_it() {
+    let scene = Scene::new();
+
+    let params = scene.start(
+        "a-run-with-a-very-long-id-0123456789-0123456789-0123456789",
+        "run-1",
+        "/p/one",
+    );
+
+    let length = params.socket.as_os_str().len();
+    assert!(length <= MAX_SOCKET_PATH, "{length}: {:?}", params.socket);
+    assert!(params.socket.exists(), "the fake bound a real socket there");
+    let name = scene.folder_of("run-1");
+    assert_eq!(
+        pid_of_folder(name.file_name().unwrap().to_str().unwrap()),
+        Some(std::process::id()),
+        "the run's id is not in the folder's name"
+    );
+}
+
+#[test]
+fn a_root_too_deep_for_a_socket_path_is_refused_by_name_before_anything_is_made() {
+    let scene = Scene::new();
+    let deep = scene._root.path().join("d".repeat(MAX_SOCKET_PATH));
+    let routes = ForgeRoutes::new(deep.clone(), PathBuf::new(), {
+        let mut seams = Seams::stubs();
+        seams.recorded = scene.recorded.clone();
+        seams.listener = scene.listener.clone();
+        seams
+    });
+
+    let refused = routes
+        .start("chat-1", "run-1", Path::new("/p/one"))
+        .expect_err("a path no socket can hold");
+
+    let said = refused.to_string();
+    assert!(
+        said.contains("socket path") && said.contains(&MAX_SOCKET_PATH.to_string()),
+        "{said}"
+    );
+    assert!(!routes.is_live("run-1"));
+    assert_eq!(
+        std::fs::read_dir(&deep).map_or(0, Iterator::count),
+        0,
+        "no folder was made"
+    );
+    assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn the_route_folder_of_this_machine_leaves_room_for_the_longest_pid_and_user() {
+    let Some(root) = route_dir_in(
+        None,
+        None,
+        std::env::temp_dir(),
+        &u32::MAX.to_string(),
+        false,
+    ) else {
+        panic!("a temporary directory always gives one");
+    };
+    let socket = root
+        .join(format!("{}-{}", u32::MAX, "0a1b2c3d"))
+        .join(SOCKET_NAME);
+    assert!(
+        socket.as_os_str().len() <= MAX_SOCKET_PATH,
+        "{} bytes: {socket:?}",
+        socket.as_os_str().len()
+    );
+}
+
+#[test]
+fn without_a_runtime_directory_linux_uses_the_users_own_machine_folder_never_tmp() {
+    let runtime = tempfile::tempdir().unwrap();
+    let machine = PathBuf::from("/home/u/.config/purlis");
+    let tmp = PathBuf::from("/tmp");
+
+    let with = route_dir_in(
+        Some(runtime.path().to_owned()),
+        Some(machine.clone()),
+        tmp.clone(),
+        "1000",
+        true,
+    );
+    let without = route_dir_in(None, Some(machine.clone()), tmp.clone(), "1000", true);
+    let gone = route_dir_in(
+        Some(PathBuf::from("/no/such/runtime")),
+        Some(machine.clone()),
+        tmp.clone(),
+        "1000",
+        true,
+    );
+    let relative = route_dir_in(
+        Some(PathBuf::from("run")),
+        Some(machine.clone()),
+        tmp.clone(),
+        "1000",
+        true,
+    );
+    let nowhere = route_dir_in(None, None, tmp.clone(), "1000", true);
+    let mac = route_dir_in(None, Some(machine.clone()), tmp.clone(), "501", false);
+
+    assert_eq!(with, Some(runtime.path().join("pf-1000")));
+    for fallback in [without, gone, relative] {
+        assert_eq!(fallback, Some(machine.join("forge-route")));
+    }
+    assert_eq!(nowhere, None, "no route rather than one in /tmp");
+    assert_eq!(mac, Some(tmp.join("pf-501")));
 }

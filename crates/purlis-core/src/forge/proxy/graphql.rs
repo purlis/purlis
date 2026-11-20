@@ -496,6 +496,87 @@ impl Context<'_> {
     }
 }
 
+/// **The one allowed repo a refused mutation document is about**, read from the ids its fields
+/// name, so a person asked to allow it is asked about a repo and no other. `None` when the
+/// document is not a readable mutation, names no id, an id is tied to none of `repos` (a
+/// `repositoryId` the repo is known by, a `projectPath` that is its path, or an object id
+/// `objects` places in it), or the ids are in more than one repo. Never decides whether the
+/// request is allowed: [`decide`] does that; this only says where a held act would land.
+pub fn mutation_repo(
+    repos: &[&AllowedRepo],
+    content_type: Option<&str>,
+    body: &[u8],
+    objects: &dyn ObjectRepo,
+) -> Option<String> {
+    let document = commands::parse(body, content_type).ok()??;
+    let json = document.json?;
+    let Json::Object(object) = &json else {
+        return None;
+    };
+    let Some(Json::String(query)) = object.get("query") else {
+        return None;
+    };
+    let empty = serde_json::Map::new();
+    let given = match object.get("variables") {
+        None | Some(Json::Null) => &empty,
+        Some(Json::Object(map)) => map,
+        Some(_) => return None,
+    };
+    let parsed: Document<'_, String> = parse_query(query).ok()?;
+    let mut ids = Vec::new();
+    for definition in &parsed.definitions {
+        let Definition::Operation(OperationDefinition::Mutation(mutation)) = definition else {
+            continue;
+        };
+        let vars = Vars {
+            given,
+            defaults: defaults(&mutation.variable_definitions),
+        };
+        for selection in &mutation.selection_set.items {
+            let Selection::Field(field) = selection else {
+                return None;
+            };
+            for (_, value) in &field.arguments {
+                collect_ids("", &vars.resolve(value).ok()?, &mut ids);
+            }
+        }
+    }
+    let mut found: Option<String> = None;
+    for (key, value) in &ids {
+        let path = repo_of_id(repos, key, value, objects)?;
+        match &found {
+            Some(first) if *first != path => return None,
+            _ => found = Some(path),
+        }
+    }
+    found
+}
+
+/// The path of the repo among `repos` that the id `value`, named by `key`, is in.
+fn repo_of_id(
+    repos: &[&AllowedRepo],
+    key: &str,
+    value: &str,
+    objects: &dyn ObjectRepo,
+) -> Option<String> {
+    match key {
+        "repositoryId" => repos
+            .iter()
+            .find(|r| r.node_ids.iter().any(|id| id == value))
+            .map(|r| r.path.clone()),
+        "projectPath" | "fullPath" => repos.iter().find_map(|r| {
+            normalise_repo_path(r.kind, value)
+                .ok()
+                .filter(|path| *path == r.path)
+        }),
+        _ => repos.iter().find_map(|r| {
+            objects
+                .repo_of(r.kind, &r.host, value)
+                .filter(|path| *path == r.path)
+        }),
+    }
+}
+
 /// The ids in a mutation's arguments: strings under a key that names an id or a path.
 fn collect_ids(key: &str, val: &Val, out: &mut Vec<(String, String)>) {
     match val {

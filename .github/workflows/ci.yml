@@ -559,6 +559,43 @@ jobs:
       - run: mkdir -p app/dist
       - name: Run the doctests
         run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
+  # **The forge route's tests, with the route on** (ADR 0128, slice J). The switch is out of the
+  # manifest (`FORGE_WIRING`), so `rust`'s parts build the app without it and the `forgeroute`
+  # module's tests are not even compiled there; the Docker-pool jobs filter to their own tests.
+  # This runs only `forgeroute::` tests, on Linux and on macOS (where the socket path limit is
+  # 104 bytes and the route's folder is made differently), and `--no-tests fail` makes a filter
+  # that matches nothing a red run, not a green one. The train's landing pull request deletes
+  # this job with the switch.
+  forgeroute:
+    name: forge route tests (${{ matrix.os }}, forge-wiring on)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Tauri's Linux build dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: forgeroute-${{ matrix.os }}
+          save-if: false
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
+      # tauri::generate_context! reads the built frontend, so it has to exist before a build.
+      - run: mkdir -p app/dist
+      - name: The forgeroute tests
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --profile ci --no-tests fail -E 'test(/^forgeroute::/)'
   # The required check `rust (fmt, clippy, test)`: green only when the lint, the doctests and every
   # part of `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.

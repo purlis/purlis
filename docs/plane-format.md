@@ -8202,12 +8202,14 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Git:** gitignored (under `/.charter/`).
 
 ### `forge-route/<chat>/` — a chat's forge socket and certificate authority
-- **Format:** a folder per run of a chat that has a forge route, named `<pid>-<run>` (the pid of the
-  app that made it, the run's id with anything but letters, digits, `-` and `_` replaced), inside
-  the app's private root `purlis-forge-<uid>/` in this user's `$XDG_RUNTIME_DIR`, else the
-  per-user temporary directory (short, because a unix socket's path may not pass 104 bytes on
-  macOS). The root and each folder are mode 0700 and the user's own; a root that is a link or
-  another user's is refused. A folder holds the socket the run's `gh` and `git` reach the forge
+- **Format:** a folder per run of a chat that has a forge route, named `<pid>-<id>` (the pid of the
+  app that made it, and 8 random lower-case hex digits; the run's id is not in the name), inside
+  the app's private root `pf-<uid>/` in this user's `$XDG_RUNTIME_DIR` on Linux, else this
+  user's machine folder (`forge-route/`, never `/tmp`), and on macOS in the per-user temporary
+  directory. Short, because a unix socket's path may not pass 104 bytes on macOS: a folder whose
+  socket path would pass 100 bytes is refused, by name, when it would be made. The root and each
+  folder are mode 0700 and the user's own; a root that is a link or another user's is refused. A
+  folder holds the socket (`proxy.sock`) the run's `gh` and `git` reach the forge
   proxy by and the PEM of the run's own certificate authority, whose key is never written. **It
   holds no credential and no sentinel**: those are the app's memory (ADR 0128).
 - **Status:** **internal** — made when a run with recorded repos starts and removed when that run
