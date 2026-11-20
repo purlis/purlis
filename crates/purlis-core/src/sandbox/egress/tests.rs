@@ -2272,10 +2272,15 @@ fn git_says(proxy: &Proxy, home: &std::path::Path, extra: &[(&str, &str)]) -> (b
                 .env_clear()
                 .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
                 .env("HOME", home)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
                 .env("GIT_CONFIG_NOSYSTEM", "1"),
         )
         .expect("git ran");
-        assert!(out.status.success(), "{args:?}");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     };
     git(&["init", "-q"]);
     git(&["remote", "add", "origin", "https://github.com/o/r.git"]);
