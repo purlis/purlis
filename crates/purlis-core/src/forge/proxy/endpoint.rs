@@ -132,8 +132,11 @@ mod unix {
         path: PathBuf,
     }
 
-    /// The process-wide umask is held at `0o177` only while a socket is bound, and one bind at a
-    /// time sets it: a socket is made `0600` by the bind itself, with no moment at which it is wider.
+    /// The process-wide umask is held at `0o077` only while a socket is bound, and one bind at a
+    /// time sets it: the socket is made for its owner alone by the bind itself, with no moment at
+    /// which it is wider. **Not `0o177`**: a mask that takes the owner's own bits would make a folder
+    /// another thread creates in that moment one its owner cannot enter, and the process has other
+    /// threads. This one only ever takes from group and others.
     static UMASK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct Umask {
@@ -146,7 +149,7 @@ mod unix {
             let held = UMASK
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let before = rustix::process::umask(rustix::fs::Mode::from_bits_truncate(0o177));
+            let before = rustix::process::umask(rustix::fs::Mode::from_bits_truncate(0o077));
             Self {
                 _held: held,
                 before,

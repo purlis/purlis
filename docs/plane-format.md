@@ -9686,7 +9686,7 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   chat that has a recorded forge repo, **a unix socket** `fp-<16 hex>.sock` in a folder the caller
   names, mode `0700` and owned by the app (an existing folder that is open to others, owned by
   another user or a link is refused, never repaired), the socket `0600`, bound with the umask held
-  at `0177`. `gh`'s `http_unix_socket` setting names it. The chat's **authority certificate** (PEM,
+  at `0077`. `gh`'s `http_unix_socket` setting names it. The chat's **authority certificate** (PEM,
   public) is the one part of the per-chat authority that leaves memory: [`ChatCa::certificate_pem`]
   gives it to the caller, who writes it to the chat's own folder for `git`'s
   `http.<host>.sslCAInfo` and `glab`'s `GLAB_CA_CERT` to name. The authority's **private key is
