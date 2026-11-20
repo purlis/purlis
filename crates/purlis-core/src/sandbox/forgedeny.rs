@@ -11,22 +11,29 @@
 //!    `*.githubusercontent.com`, `*.gitlab.com` and `*.<a recorded GHES or GitLab host>`, less
 //!    [`crate::forgewire::TUNNELLED`], which carry downloads and never a sign-in.
 //! 2. **The addresses of the forge**: an allowed name that *resolves* to one is refused at
-//!    connect, and so is an address literal that belongs to one ([`ForgeDenial::carries`]). A
+//!    connect, and so is an address literal that belongs to one, in any spelling `getaddrinfo`
+//!    reads (decimal, hex, octal, IPv4-mapped, NAT64) ([`ForgeDenial::carries`]). A
 //!    [`TUNNELLED`](crate::forgewire::TUNNELLED) name is not asked, since GitHub serves it from the
-//!    same ranges. GitHub's published ranges for its web, api and git services are held as a
-//!    snapshot ([`GITHUB_RANGES`]); every forge host is also resolved, and what it answers is held
-//!    for [`TTL`], so a range GitHub adds is held as soon as a name resolves into it.
-//! 3. **Port 22** to a forge name or address, a tunnelled name included: no ssh to a forge leaves
+//!    same ranges. GitHub's published ranges for its web, api and git services are a vendored
+//!    snapshot ([`SNAPSHOT`], refreshed by `tools/github-ranges-refresh.mjs`, never fetched from
+//!    a chat's path); every forge host is also resolved, and what it answers is held for
+//!    [`TTL`] (a failed lookup is not held: it is asked again).
+//! 3. **The name inside the tunnel** ([`ForgeDenial::pins`]): GitHub serves `github.com` from
+//!    many addresses no list holds (Azure `/32`s and `/28`s that come and go), so a tunnel is
+//!    carried only where the SNI of its TLS ClientHello is no forge name, or is the exempt name
+//!    the tunnel was asked for. A ClientHello that cannot be read is not carried.
+//! 4. **Port 22** to a forge name or address, a tunnelled name included: no ssh to a forge leaves
 //!    the machine but through purlis's own ssh route.
 //!
-//! **Residual** (named in ADR 0128 and the pull request): a forge reached at an address neither
-//! snapshotted nor resolved here (a forge behind a CDN address shared with other sites is
-//! held at the shared address, so those sites are refused too); and a recorded host that is
-//! never looked up while it is down.
+//! **Residual** (named in ADR 0128 and the pull request): a chat with the network family off
+//! is not served by this proxy at all; a forge that publishes no ranges is held only by name, by
+//! SNI and by what its host resolves to; a TLS handshake that hides its name (ECH) to an address
+//! no list holds is carried; a server-first protocol through a tunnel is not carried while a
+//! forge is denied, as its first bytes cannot be read.
 
-use std::collections::HashSet;
-use std::net::IpAddr;
-use std::sync::{Arc, Mutex};
+use std::collections::{HashMap, HashSet};
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use super::egress::allows;
@@ -40,15 +47,37 @@ pub const TTL: Duration = Duration::from_secs(300);
 /// The port of ssh.
 const SSH: u16 = 22;
 
-/// A snapshot of GitHub's published web, api and git ranges (`api.github.com/meta`), less its
-/// Pages and Actions ranges, which carry other people's sites. Held beside resolution, which is
-/// what keeps it current.
-pub const GITHUB_RANGES: [&str; 4] = [
-    "192.30.252.0/22",
-    "140.82.112.0/20",
-    "143.55.64.0/20",
-    "2a0a:a440::/29",
-];
+/// GitHub's published web, api and git ranges (`api.github.com/meta`), one a line, less its
+/// Pages, Actions and other lists, which carry other people's sites. Vendored, and refreshed by
+/// `node tools/github-ranges-refresh.mjs`; resolution is held beside it.
+pub const SNAPSHOT: &str = include_str!("forgedeny/github-ranges.txt");
+
+/// What a tunnel's first bytes said of the server it is for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Hello {
+    /// A whole ClientHello naming one server.
+    Named(String),
+    /// A whole ClientHello that names none.
+    NoName,
+    /// A ClientHello that carries an encrypted one (ECH): its real name is not readable.
+    Ech,
+    /// TLS that is no whole ClientHello in its first record, or is none that can be read.
+    Unreadable,
+    /// Bytes that do not start a TLS handshake.
+    NotTls,
+}
+
+/// The snapshot's ranges, read once.
+fn snapshot() -> &'static [Range] {
+    static RANGES: OnceLock<Vec<Range>> = OnceLock::new();
+    RANGES.get_or_init(|| {
+        SNAPSHOT
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .filter_map(Range::parse)
+            .collect()
+    })
+}
 
 /// Forge hosts never looked up for their addresses: a domain that serves other people's content
 /// from addresses shared with sites the chat may reach, and takes no sign-in.
@@ -94,13 +123,80 @@ impl Range {
     }
 
     fn holds(&self, ip: IpAddr) -> bool {
-        let ip = ip.to_canonical();
+        let ip = canonical(ip);
         if ip.is_ipv6() != self.v6 {
             return false;
         }
         let width = if self.v6 { 128 } else { 32 };
         Self::number(ip) & Self::mask(width, self.bits) == self.net
     }
+}
+
+/// An address as the one it stands for: IPv4-mapped and NAT64 (`64:ff9b::/96`) literals are the
+/// IPv4 address they carry.
+fn canonical(ip: IpAddr) -> IpAddr {
+    let ip = ip.to_canonical();
+    if let IpAddr::V6(six) = ip {
+        let octets = six.octets();
+        if octets[..4] == [0, 0x64, 0xff, 0x9b] && octets[4..12].iter().all(|b| *b == 0) {
+            return IpAddr::V4(Ipv4Addr::new(
+                octets[12], octets[13], octets[14], octets[15],
+            ));
+        }
+    }
+    ip
+}
+
+/// An IPv4 address as `inet_aton` reads it, which is how `getaddrinfo` does: one to four parts,
+/// each decimal, hex (`0x`) or octal (`0`), the last filling the bytes that are left.
+fn numeric_v4(host: &str) -> Option<Ipv4Addr> {
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() > 4 {
+        return None;
+    }
+    let mut numbers = Vec::new();
+    for part in &parts {
+        let (digits, radix) =
+            if let Some(hex) = part.strip_prefix("0x").or_else(|| part.strip_prefix("0X")) {
+                (hex, 16)
+            } else if part.len() > 1 && part.starts_with('0') {
+                (&part[1..], 8)
+            } else {
+                (*part, 10)
+            };
+        if digits.is_empty() && radix != 16 {
+            return None;
+        }
+        // `0x` alone is zero to `inet_aton`.
+        let number = if digits.is_empty() {
+            0
+        } else {
+            u64::from_str_radix(digits, radix).ok()?
+        };
+        numbers.push(number);
+    }
+    let (last, init) = numbers.split_last()?;
+    if init.iter().any(|n| *n > 255) {
+        return None;
+    }
+    let room = 8 * (4 - init.len() as u32);
+    if *last >= 1u64 << room {
+        return None;
+    }
+    let mut value = *last;
+    for (at, n) in init.iter().enumerate() {
+        value |= n << (8 * (3 - at as u32));
+    }
+    Some(Ipv4Addr::from(u32::try_from(value).ok()?))
+}
+
+/// The address a host is, where it is a literal in any of those spellings.
+fn literal(host: &str) -> Option<IpAddr> {
+    let host = plain(host);
+    host.parse::<IpAddr>()
+        .ok()
+        .or_else(|| numeric_v4(&host).map(IpAddr::V4))
+        .map(canonical)
 }
 
 /// The name a connection is asked for, as a host is listed: lower case, no final dot, and an IPv6
@@ -123,8 +219,9 @@ pub struct ForgeDenial {
     tunnelled: Vec<(String, Option<u16>)>,
     ranges: Vec<Range>,
     resolve: Resolver,
-    /// What the forge hosts resolved to, and when.
-    resolved: Mutex<Option<(Instant, HashSet<IpAddr>)>>,
+    /// What each forge host resolved to, and when. A host whose lookup answered nothing has no
+    /// entry, so it is asked again at the next question.
+    resolved: Mutex<HashMap<String, (Instant, HashSet<IpAddr>)>>,
 }
 
 impl ForgeDenial {
@@ -144,12 +241,9 @@ impl ForgeDenial {
                     (name.to_ascii_lowercase(), port)
                 })
                 .collect(),
-            ranges: GITHUB_RANGES
-                .iter()
-                .filter_map(|r| Range::parse(r))
-                .collect(),
+            ranges: snapshot().to_vec(),
             resolve,
-            resolved: Mutex::new(None),
+            resolved: Mutex::new(HashMap::new()),
         }
     }
 
@@ -167,41 +261,67 @@ impl ForgeDenial {
             .any(|(name, held)| name == host && (port.is_none() || held.is_none() || *held == port))
     }
 
-    /// Whether the forge is at `ip`: in a snapshotted range, or among what a forge host resolved
-    /// to in the last [`TTL`].
-    fn holds(&self, ip: IpAddr) -> bool {
-        let ip = ip.to_canonical();
-        if self.ranges.iter().any(|range| range.holds(ip)) {
-            return true;
-        }
-        let fresh = |at: &Instant| at.elapsed() < TTL;
+    /// What `base` resolves to: held for [`TTL`] where it answered, asked again where it did not.
+    fn addresses_of(&self, base: &str) -> HashSet<IpAddr> {
         {
             let seen = self
                 .resolved
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some((at, addresses)) = &*seen
-                && fresh(at)
+            if let Some((at, addresses)) = seen.get(base)
+                && at.elapsed() < TTL
             {
-                return addresses.contains(&ip);
+                return addresses.clone();
             }
         }
-        // Looked up outside the lock, once for every host: a slow answer holds only this call.
-        let found: HashSet<IpAddr> = self
-            .bases
+        // Looked up outside the lock: a slow answer holds only this call.
+        let found: HashSet<IpAddr> = (self.resolve)(base).into_iter().map(canonical).collect();
+        if !found.is_empty() {
+            self.resolved
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(base.to_owned(), (Instant::now(), found.clone()));
+        }
+        found
+    }
+
+    /// Whether the forge is at `ip`: in a snapshotted range, or among what a forge host resolved
+    /// to in the last [`TTL`].
+    fn holds(&self, ip: IpAddr) -> bool {
+        let ip = canonical(ip);
+        if self.ranges.iter().any(|range| range.holds(ip)) {
+            return true;
+        }
+        self.bases
             .iter()
-            .filter(|base| {
-                base.parse::<IpAddr>().is_err() && !NOT_ADDRESSED.contains(&base.as_str())
-            })
-            .flat_map(|base| (self.resolve)(base))
-            .map(|at| at.to_canonical())
-            .collect();
-        let held = found.contains(&ip);
-        *self
-            .resolved
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some((Instant::now(), found));
-        held
+            .filter(|base| literal(base).is_none() && !NOT_ADDRESSED.contains(&base.as_str()))
+            .any(|base| self.addresses_of(base).contains(&ip))
+    }
+
+    /// **Whether a tunnel asked for `host`, whose first bytes were `hello`, is refused**
+    /// (ADR 0128 D3g, round 3). An exempt name is carried only where the SNI is exactly it: GitHub
+    /// serves every name from the same addresses, so an exempt name's connection could say
+    /// `github.com` inside. Any other name is refused where the SNI names a forge host or a name
+    /// under one, and wherever the first record cannot be read as a whole ClientHello, since a
+    /// hello split across records hides its name. A hello that names nothing, or hides it (ECH),
+    /// is carried to an address no list holds, as [`Self::carries`] has already refused every
+    /// address a list does hold; and bytes that start no TLS handshake are carried, to anything
+    /// but an exempt name.
+    pub fn pins(&self, host: &str, hello: &Hello) -> bool {
+        let host = plain(host);
+        let exempt = self.tunnels(&host, None);
+        match hello {
+            Hello::Named(sni) => {
+                let sni = plain(sni);
+                if exempt {
+                    sni != host
+                } else {
+                    self.is_forge_name(&sni) || literal(&sni).is_some_and(|ip| self.holds(ip))
+                }
+            }
+            Hello::NoName | Hello::Ech | Hello::NotTls => exempt,
+            Hello::Unreadable => true,
+        }
     }
 
     /// **Whether a connection to `host` on `port` is refused before any address is looked up**:
@@ -209,11 +329,10 @@ impl ForgeDenial {
     /// port; an address literal the forge holds.
     pub fn refuses(&self, host: &str, port: u16) -> bool {
         let host = plain(host);
-        if host.parse::<IpAddr>().is_ok() {
+        if let Some(ip) = literal(&host) {
             // A listed address literal is a forge host as any name is; any other is one only if
             // the forge is at it.
-            let ip: IpAddr = host.parse().expect("parsed above");
-            return self.bases.contains(&host) || self.holds(ip);
+            return self.bases.iter().any(|base| literal(base) == Some(ip)) || self.holds(ip);
         }
         let named = self.is_forge_name(&host) || self.tunnels(&host, None);
         if !named {

@@ -2259,6 +2259,126 @@ fn a_name_a_layer_lists_that_resolves_to_a_forge_address_is_never_connected_to()
     assert!(listener.accept().is_err(), "connected to a forge's address");
 }
 
+/// A TLS record holding a ClientHello naming `name` (none where `None`), carrying an encrypted
+/// ClientHello (ECH) where `ech`, as a client writes one.
+fn client_hello(name: Option<&str>, ech: bool) -> Vec<u8> {
+    let mut extensions = Vec::new();
+    if let Some(name) = name {
+        let name = name.as_bytes();
+        let mut list = Vec::new();
+        list.extend(u16::try_from(3 + name.len()).unwrap().to_be_bytes());
+        list.push(0);
+        list.extend(u16::try_from(name.len()).unwrap().to_be_bytes());
+        list.extend(name);
+        extensions.extend(0u16.to_be_bytes());
+        extensions.extend(u16::try_from(list.len()).unwrap().to_be_bytes());
+        extensions.extend(list);
+    }
+    if ech {
+        extensions.extend(0xfe0du16.to_be_bytes());
+        extensions.extend(4u16.to_be_bytes());
+        extensions.extend([0, 0, 1, 0]);
+    }
+    let mut hello = vec![3, 3];
+    hello.extend([7u8; 32]);
+    hello.push(0);
+    hello.extend(2u16.to_be_bytes());
+    hello.extend([0x13, 0x01]);
+    hello.extend([1, 0]);
+    hello.extend(u16::try_from(extensions.len()).unwrap().to_be_bytes());
+    hello.extend(extensions);
+    let mut handshake = vec![1, 0];
+    handshake.extend(u16::try_from(hello.len()).unwrap().to_be_bytes());
+    handshake.extend(hello);
+    let mut record = vec![0x16, 3, 1];
+    record.extend(u16::try_from(handshake.len()).unwrap().to_be_bytes());
+    record.extend(handshake);
+    record
+}
+
+#[test]
+fn a_hello_is_read_for_what_it_says_of_its_server() {
+    use super::{Hello, hello_of};
+    assert_eq!(
+        hello_of(&client_hello(Some("github.com"), false)),
+        Hello::Named("github.com".into())
+    );
+    assert_eq!(hello_of(&client_hello(None, false)), Hello::NoName);
+    assert_eq!(hello_of(&client_hello(Some("a.example"), true)), Hello::Ech);
+    assert_eq!(hello_of(b"GET / HTTP/1.1\r\n"), Hello::NotTls);
+    assert_eq!(hello_of(b""), Hello::NotTls);
+    // A record cut short, or one that holds no whole hello: not read.
+    let whole = client_hello(Some("github.com"), false);
+    assert_eq!(hello_of(&whole[..whole.len() - 3]), Hello::Unreadable);
+    assert_eq!(hello_of(&[0x16, 3, 1]), Hello::Unreadable);
+}
+
+/// What a server behind a proxy that denies `github.com` received of a tunnel whose client sent
+/// `first` after the `CONNECT`, up to the end of the connection: nothing where it was cut. The
+/// server echoes it back, and the client is shown to read what the server did.
+fn tunnelled_first(first: &[u8]) -> Vec<u8> {
+    let (listener, port) = an_echo_server();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("a connection");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .expect("a timeout");
+        let mut got = Vec::new();
+        let _ = stream.read_to_end(&mut got);
+        let _ = stream.write_all(&got);
+        got
+    });
+    let heard = Heard::default();
+    let proxy = forging(&heard, port, &["github.com", "gitlab.com"]);
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    client.write_all(first).expect("sent");
+    let _ = client.shutdown(std::net::Shutdown::Write);
+    let mut back = Vec::new();
+    let _ = client.read_to_end(&mut back);
+    let got = server.join().expect("the server");
+    assert_eq!(
+        back, got,
+        "what the client read back is what the server got"
+    );
+    got
+}
+
+#[test]
+fn a_tunnel_whose_sni_names_a_forge_is_cut_before_a_byte_reaches_the_server() {
+    // The address is one no list holds (a wildcard name that resolves to a GitHub address that
+    // is in no list): the name inside is what holds it.
+    for inside in [
+        "github.com",
+        "API.GitHub.com.",
+        "evil.github.com",
+        "gitlab.com",
+        "objects.githubusercontent.com",
+    ] {
+        assert!(
+            tunnelled_first(&client_hello(Some(inside), false)).is_empty(),
+            "{inside}"
+        );
+    }
+}
+
+#[test]
+fn a_tunnel_whose_hello_cannot_be_read_is_cut_and_one_that_names_another_host_is_carried() {
+    let whole = client_hello(Some("example.org"), false);
+    // A record that holds the start of a hello, the rest in another, hides its name from the
+    // proxy: not carried.
+    assert!(tunnelled_first(&[0x16, 3, 1, 0, 4, 1, 0, 0, 50]).is_empty());
+    // The same hello whole, another host's name, no name, and plain bytes, are carried.
+    assert_eq!(tunnelled_first(&whole), whole);
+    let nameless = client_hello(None, false);
+    assert_eq!(tunnelled_first(&nameless), nameless);
+    assert_eq!(tunnelled_first(b"ping"), b"ping");
+}
+
 /// A `git ls-remote` of a forge repo through `proxy` with `extra` set, and what it said.
 #[cfg(unix)]
 fn git_says(proxy: &Proxy, home: &std::path::Path, extra: &[(&str, &str)]) -> (bool, String) {

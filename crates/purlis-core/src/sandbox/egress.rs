@@ -81,6 +81,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::asks::{Answer, Asks};
+use super::forgedeny::Hello;
 use super::internal::Internal;
 use super::localport;
 use super::reach::{Decision, Reach, Refused};
@@ -1149,6 +1150,31 @@ impl Allowed {
             .is_none_or(|internal| internal.carries(host, at, own))
     }
 
+    /// **What a tunnel to `host` carries on, where a forge is denied** (ADR 0128 D3g, round 3): the
+    /// first TLS record the client sent, read from `client` after `already`, sent on whole. The
+    /// SNI inside it is held to what [`super::forgedeny::ForgeDenial::pins`] allows, so a name
+    /// that resolves to an address no list holds reaches no forge by saying its name inside.
+    /// `None` where it is refused, or the client said nothing in time: the refusal is recorded.
+    fn pinned_hello(
+        self: &Arc<Self>,
+        client: &mut TcpStream,
+        already: &[u8],
+        host: &str,
+        port: u16,
+    ) -> Option<Vec<u8>> {
+        let Some(forge) = &self.forge else {
+            return Some(already.to_vec());
+        };
+        let first = first_record(client, already, self.head);
+        match first {
+            Some(bytes) if !forge.pins(host, &hello_of(&bytes)) => Some(bytes),
+            _ => {
+                self.refused(host, port, &Decision::Refused(Refused::ForgeRoute));
+                None
+            }
+        }
+    }
+
     /// The decision for a connection to `host` on `port`, a tunnel or not.
     fn decide(&self, host: &str, port: u16, tunnel: bool, own: &[std::net::IpAddr]) -> Decision {
         // A forge host is reached only through the forge route (ADR 0128 D3g), never as a tunnel
@@ -1576,6 +1602,15 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
                 return;
             }
         }
+    } else if request.forward.is_none() {
+        match allowed.pinned_hello(&mut client, &rest, &request.host, request.port) {
+            Some(hello) => hello,
+            None => {
+                let _ = client.shutdown(Shutdown::Both);
+                let _ = upstream.shutdown(Shutdown::Both);
+                return;
+            }
+        }
     } else {
         rest
     };
@@ -1653,7 +1688,7 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return socks_reply(&mut client, reply::NOT_ALLOWED);
     }
     let _ = client.set_write_timeout(Some(allowed.idle));
-    let upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
+    let mut upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
             allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));
@@ -1670,7 +1705,15 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
     if client.write_all(&socks_answer(reply::SUCCEEDED)).is_err() {
         return;
     }
+    let Some(hello) = allowed.pinned_hello(&mut client, &[], &host, port) else {
+        let _ = client.shutdown(Shutdown::Both);
+        let _ = upstream.shutdown(Shutdown::Both);
+        return;
+    };
     allowed.carried(&host, port, &decision);
+    if upstream.write_all(&hello).is_err() {
+        return;
+    }
     splice(client, upstream, u64::MAX, allowed.idle);
 }
 
@@ -2165,16 +2208,11 @@ const ENCRYPTED_CLIENT_HELLO: usize = 0xfe0d;
 /// The most a TLS record may hold: 2^14 bytes of plaintext and the record's own overhead.
 const MOST_TLS_RECORD: usize = (1 << 14) + 2048;
 
-/// **The ClientHello a tunnel's client sent, where it names `host`**, read from `client` after
-/// `already` (what arrived with the request's head) within `within`: the whole first TLS
-/// record, returned to be sent on unchanged. `None` where it is no TLS handshake, does not hold
-/// a whole ClientHello in its first record, names no server, or names another than `host`.
-fn hello_naming(
-    client: &mut TcpStream,
-    already: &[u8],
-    host: &str,
-    within: Duration,
-) -> Option<Vec<u8>> {
+/// **The first TLS record a tunnel's client sent**, read from `client` after `already` (what
+/// arrived with the request's head) within `within`, and returned whole, to be sent on unchanged.
+/// Bytes that do not start a TLS handshake are returned as they came, the first of them at least.
+/// `None` where the client said nothing in time, or sent a record larger than TLS allows.
+fn first_record(client: &mut TcpStream, already: &[u8], within: Duration) -> Option<Vec<u8>> {
     let deadline = Instant::now() + within;
     let mut hello = already.to_vec();
     let mut chunk = [0u8; 4096];
@@ -2182,8 +2220,11 @@ fn hello_naming(
         (hello.len() >= 5).then(|| 5 + usize::from(u16::from_be_bytes([hello[3], hello[4]])))
     };
     loop {
+        if !hello.is_empty() && hello[0] != 0x16 {
+            return Some(hello);
+        }
         if let Some(record) = whole(&hello)
-            && (hello[0] != 0x16 || record > MOST_TLS_RECORD || hello.len() >= record)
+            && (record > MOST_TLS_RECORD || hello.len() >= record)
         {
             break;
         }
@@ -2197,7 +2238,21 @@ fn hello_naming(
             Ok(n) => hello.extend_from_slice(&chunk[..n]),
         }
     }
-    let record = whole(&hello)?;
+    Some(hello)
+}
+
+/// **The ClientHello a tunnel's client sent, where it names `host`**: its first record
+/// ([`first_record`]), returned to be sent on unchanged. `None` where it is no TLS handshake,
+/// does not hold a whole ClientHello in its first record, names no server, or names another than
+/// `host`.
+fn hello_naming(
+    client: &mut TcpStream,
+    already: &[u8],
+    host: &str,
+    within: Duration,
+) -> Option<Vec<u8>> {
+    let hello = first_record(client, already, within)?;
+    let record = 5 + usize::from(u16::from_be_bytes([*hello.get(3)?, *hello.get(4)?]));
     let named = hello_names(hello.get(..record)?)?;
     let wanted = host.trim_end_matches('.');
     named.eq_ignore_ascii_case(wanted).then_some(hello)
@@ -2207,6 +2262,22 @@ fn hello_naming(
 /// 6066 §3), read within the record's bounds, or `None` for anything else: one carrying an
 /// encrypted ClientHello among them, whose real server name is inside it.
 pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
+    match hello_of(record) {
+        Hello::Named(name) => Some(name),
+        _ => None,
+    }
+}
+
+/// **What a tunnel's first record says of its server** ([`Hello`]): [`hello_names`] with the
+/// reason a name is missing.
+pub(crate) fn hello_of(record: &[u8]) -> Hello {
+    if record.first() != Some(&0x16) {
+        return Hello::NotTls;
+    }
+    read_hello(record).unwrap_or(Hello::Unreadable)
+}
+
+fn read_hello(record: &[u8]) -> Option<Hello> {
     let take = |at: &mut usize, n: usize, from: &[u8]| -> Option<std::ops::Range<usize>> {
         let range = *at..at.checked_add(n)?;
         from.get(range.clone())?;
@@ -2251,7 +2322,7 @@ pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
         // read: the outer name says nothing of where the tunnel goes, so none is carried.
         let kind = len16(extensions, kind);
         if kind == ENCRYPTED_CLIENT_HELLO {
-            return None;
+            return Some(Hello::Ech);
         }
         if kind != 0 {
             continue;
@@ -2280,7 +2351,7 @@ pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
         }
         named = Some(name.trim_end_matches('.').to_owned());
     }
-    named
+    Some(named.map_or(Hello::NoName, Hello::Named))
 }
 
 pub(super) fn answer(client: &mut TcpStream, status: &str, why: &str) {
