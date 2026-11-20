@@ -6,7 +6,7 @@ import { commands, type ForgeAccountRow } from "./bindings";
 import { Dialog } from "./ui/dialog/Dialog";
 
 /** The one host purlis has a GitLab application on (ADR 0077 §1). */
-const HOST = "gitlab.com";
+const DEFAULT_HOST = "gitlab.com";
 
 /**
  * **Sign in with GitLab** (#730, ADR 0077 §1 and §3): the browser sign-in to gitlab.com. One
@@ -24,9 +24,16 @@ const HOST = "gitlab.com";
  *   sign-in where that is the fix.
  */
 export function ForgeGitLabSignIn({
+  host: HOST = DEFAULT_HOST,
+  consent,
   onSignedIn,
   onCancel,
 }: {
+  /** The host to sign in on: gitlab.com, or a self-managed GitLab whose application the person
+   *  pinned (ADR 0128 D1.3). */
+  host?: string;
+  /** What to check on the forge's own page before approving: the pinned owner, said. */
+  consent?: string;
   /** The account the sign-in made, as Settings lists it. */
   onSignedIn: (account: ForgeAccountRow) => void;
   onCancel: () => void;
@@ -62,7 +69,7 @@ export function ForgeGitLabSignIn({
         if (said.status === "ok") signedIn.current(said.data);
         else setTrouble(said.error);
       });
-  }, [stop]);
+  }, [stop, HOST]);
 
   useEffect(() => {
     start();
@@ -108,6 +115,7 @@ export function ForgeGitLabSignIn({
           {trouble}
         </p>
       )}
+      {consent !== undefined && <p role="note">{consent}</p>}
       <p className="ui-setting-help ui-text-secondary">
         purlis asks {HOST} for the <code>api</code> scope, the only one that lets it open merge
         requests and push for you. It never hands the sign-in to a chat.

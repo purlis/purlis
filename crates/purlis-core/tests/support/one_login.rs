@@ -39,7 +39,8 @@ impl Tokens {
     /// The reach a sign-in checks a token over: a transport that answers for the token it carries.
     pub fn reach(
         &self,
-    ) -> impl Fn(&Forge, Arc<dyn TokenSource>) -> Result<Arc<dyn Transport>, ForgeError> + use<> {
+    ) -> impl Fn(&Forge, Arc<dyn TokenSource>) -> Result<Arc<dyn Transport>, ForgeError> + use<>
+    {
         let table = self.0.clone();
         move |_forge: &Forge, tokens: Arc<dyn TokenSource>| {
             Ok(Arc::new(ByToken {

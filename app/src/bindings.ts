@@ -2387,6 +2387,51 @@ export const commands = {
 	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
 	 */
 	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
+	/**  This machine's pinned applications, in the order they were pinned. */
+	forgeApplications: () => typedError<ForgeApplicationRow[], string>(__TAURI_INVOKE("forge_applications")),
+	/**
+	 *  **The person's press of *Use this application*** (D1.3 rule 2): pins `client_id` for `kind` on
+	 *  `host`, with `owner`, the organization or group the person expects the application to be owned
+	 *  by. A changed client id or owner is a new press, and the answer says what it replaced.
+	 */
+	forgeUseApplication: (kind: string, host: string, clientId: string, owner: string) => typedError<ForgeApplicationPinned, string>(__TAURI_INVOKE("forge_use_application", { kind, host, clientId, owner })),
+	/**
+	 *  Takes `host`'s pinned application away. Accounts signed in through it stay listed and keep
+	 *  their tokens until they end; they can no longer be renewed.
+	 */
+	forgeRemoveApplication: (kind: string, host: string) => typedError<null, string>(__TAURI_INVOKE("forge_remove_application", { kind, host })),
+	/**
+	 *  **The request to send an owner** who has not made the application on `host`: what to enter,
+	 *  as text to copy (D1.3 rule 3).
+	 */
+	forgeApplicationRequest: (kind: string, host: string) => typedError<string, string>(__TAURI_INVOKE("forge_application_request", { kind, host })),
+	/**  Every confirmed repo, with the account that serves it and the accounts it could be served by. */
+	forgeProjectAccounts: () => typedError<ProjectAccountRow[], string>(__TAURI_INVOKE("forge_project_accounts")),
+	/**  **The press that chooses which account serves a repo.** */
+	forgeChooseProjectAccount: (cloneKey: string, repoId: string, accountId: string) => typedError<null, string>(__TAURI_INVOKE("forge_choose_project_account", { cloneKey, repoId, accountId })),
+	/**
+	 *  The person's press that records the clone at `folder` (relative to the project) for D4: the
+	 *  repo's numeric id is read from the forge as `account_id` (the only account on the host, when
+	 *  none is named) and kept with the account. The clone must already be trusted.
+	 */
+	forgeTrustCloneRepo: (plane: PlaneId, folder: string, accountId: string | null) => typedError<ConfirmedAnswer, string>(__TAURI_INVOKE("forge_trust_clone_repo", { plane, folder, accountId })),
+	/**
+	 *  **Ask GitHub for CI-file permission** on the press a held CI-file push needs (D1.1, D8.3): a
+	 *  device flow asking for what the account holds and `workflow`. The code and the forge's page
+	 *  are answered for the window to show. Waited on with [`forge_ci_permission_wait`].
+	 */
+	forgeCiPermissionStart: (accountId: string) => typedError<ForgeDeviceCode, string>(__TAURI_INVOKE("forge_ci_permission_start", { accountId })),
+	/**
+	 *  Wait for the person to allow CI files on GitHub's page for `flow`, then keep the second token
+	 *  as its own keychain item. The everyday token is read back first: if GitHub folded the
+	 *  permission into it, nothing is kept and a CI-file push is not offered.
+	 */
+	forgeCiPermissionWait: (flow: number) => typedError<CiPermissionAnswer, string>(__TAURI_INVOKE("forge_ci_permission_wait", { flow })),
+	/**
+	 *  Stop waiting on a CI-permission `flow`: the polling ends within a moment, and nothing of it
+	 *  is kept.
+	 */
+	forgeCiPermissionCancel: (flow: number) => __TAURI_INVOKE<void>("forge_ci_permission_cancel", { flow }),
 	/**
 	 *  This machine's profiles, in the order they were made, each with the version of its harness
 	 *  installed here beside its pin (#2038): each harness asked `--version` once.
@@ -8636,6 +8681,16 @@ export type ChosenInstruction = {
 	text: string,
 };
 
+/**  How a second sign-in ended. */
+export type CiPermissionAnswer = {
+	/**
+	 *  `ready` (the second token is kept) or `not-offered` (GitHub folded the permission into
+	 *  the everyday sign-in, so a CI-file push is not offered).
+	 */
+	state: string,
+	says: string,
+};
+
 /**  What came of a clash. */
 export type ClashOutcome = 
 /**  Both copies load. */
@@ -8805,6 +8860,15 @@ export type CommandDoes =
 { kind: "open"; view: string; title: string } | 
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
+
+/**  What a recording found, for the window to say. */
+export type ConfirmedAnswer = {
+	/**  `recorded`, `choose` (several accounts on the host: the person picks) or `sign-in` (none). */
+	state: string,
+	/**  The repo as recorded, `owner/name`. */
+	path: string | null,
+	host: string | null,
+};
 
 /**  The crash Notice's state (#5700), as the window names it. */
 export type CrashNoticeSaid = 
@@ -10633,6 +10697,29 @@ export type ForgeAccountRow = {
 	scopes: string[] | null,
 	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
 	wider: string[],
+};
+
+/**  What a press of *Use this application* changed. */
+export type ForgeApplicationPinned = {
+	host: string,
+	/**  `new`, `same`, `client-id` or `owner`. */
+	change: string,
+	/**  The client id (or owner) this replaced, for the Notice a changed pin raises. */
+	replaced: string | null,
+	consent: string,
+};
+
+/**  A host's pinned application, as Settings lists it. */
+export type ForgeApplicationRow = {
+	kind: string,
+	host: string,
+	client_id: string,
+	/**  The owner the person expects the forge's page to show. */
+	owner: string,
+	/**  What to read before signing in: *check that the application is owned by …*. */
+	consent: string,
+	/**  Accounts signed in on the host now. */
+	signed_in: number,
 };
 
 /**
@@ -15358,6 +15445,34 @@ export type ProfileRow = {
 	 *  sent; optional for the same reason.
 	 */
 	icon?: HarnessIconRow | null,
+};
+
+/**  One account the person may choose for a repo. */
+export type ProjectAccountChoice = {
+	id: string,
+	login: string,
+};
+
+/**  A confirmed repo, and the account that serves it. */
+export type ProjectAccountRow = {
+	/**  What the choice names the clone by. */
+	clone_key: string,
+	/**
+	 *  The forge's own number for the repo, as text (a repo number can outgrow what the window's
+	 *  numbers hold).
+	 */
+	repo_id: string,
+	host: string,
+	path: string,
+	/**  The account serving it, or null when it is signed out or gone. */
+	serving: ProjectAccountChoice | null,
+	/**
+	 *  Set when the chosen account is signed out: the person signs it in again, or chooses
+	 *  another. **No other account serves in its place.**
+	 */
+	chosen_is_signed_out: boolean,
+	/**  The signed-in accounts on this repo's host, for the choice. */
+	choices: ProjectAccountChoice[],
 };
 
 /**

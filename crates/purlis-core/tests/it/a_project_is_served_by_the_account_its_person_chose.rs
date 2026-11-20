@@ -11,6 +11,7 @@
 
 use std::sync::Arc;
 
+use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::{self, ForgeAccount, Method};
 use purlis_core::forge::confirmed::{self, Serving};
 use purlis_core::forge::credential::{CredentialError, SignedIn};
@@ -18,7 +19,6 @@ use purlis_core::forge::oauth::{Answer, Endpoint, Endpoints};
 use purlis_core::forge::refresh::Refresher;
 use purlis_core::forge::registration;
 use purlis_core::forge::route::HostScope;
-use purlis_core::forge::Kind;
 
 use crate::support::one_login::{Tokens, grant_that_does_not_expire};
 
@@ -142,7 +142,10 @@ fn a_chats_route_for_a_repo_is_the_account_the_person_chose_for_it() {
     };
     assert_eq!(credential_for(hello.path()).expose(), PERSONAL);
     assert_eq!(credential_for(platform.path()).expose(), EMU);
-    assert_eq!(credential_for(platform.path()).login(), Some("octocat_acme"));
+    assert_eq!(
+        credential_for(platform.path()).login(),
+        Some("octocat_acme")
+    );
     // The person changes which serves the enterprise repo, on a press, and only that repo.
     confirmed::choose_account(
         &scope(),
@@ -178,7 +181,11 @@ fn a_chosen_account_that_is_gone_is_never_answered_by_the_other_one() {
     let keyring = accounts::keyring_at(scene.home.path());
     accounts::sign_out(&scope(), scene.home.path(), keyring.as_ref(), &scene.emu.id).unwrap();
     let remaining = accounts::listed(scene.home.path()).unwrap();
-    assert_eq!(remaining.len(), 1, "the personal account is still signed in");
+    assert_eq!(
+        remaining.len(),
+        1,
+        "the personal account is still signed in"
+    );
     assert!(matches!(
         confirmed::account_for(&repo, &remaining),
         Serving::ChosenIsSignedOut { .. }

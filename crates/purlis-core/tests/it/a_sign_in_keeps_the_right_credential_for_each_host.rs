@@ -12,11 +12,11 @@
 
 use std::path::Path;
 
+use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::{self, ForgeAccount, Method, State};
 use purlis_core::forge::registered;
 use purlis_core::forge::registration::{self, Flow};
 use purlis_core::forge::route::HostScope;
-use purlis_core::forge::Kind;
 use secrecy::ExposeSecret;
 
 use crate::support::one_login::{Tokens, grant, grant_that_does_not_expire};
@@ -97,7 +97,11 @@ fn github_com_signs_in_through_purlis_own_app_and_keeps_a_token_that_does_not_ex
         .unwrap()
         .unwrap();
     assert_eq!(github.flow, Flow::Device);
-    assert_eq!(github.scopes(), ["repo", "read:org"], "no workflow at sign-in");
+    assert_eq!(
+        github.scopes(),
+        ["repo", "read:org"],
+        "no workflow at sign-in"
+    );
     let account = sign_in(
         home.path(),
         &tokens,
@@ -113,7 +117,10 @@ fn github_com_signs_in_through_purlis_own_app_and_keeps_a_token_that_does_not_ex
     let keyring = accounts::keyring_at(home.path());
     let kept = item(keyring.as_ref(), &account);
     assert_eq!(kept["access"], "canaryGITHUBaccess1");
-    assert!(kept.get("refresh").is_none(), "an OAuth app's token has no refresh token");
+    assert!(
+        kept.get("refresh").is_none(),
+        "an OAuth app's token has no refresh token"
+    );
     assert!(kept.get("expires_at").is_none(), "and does not expire");
     assert_eq!(
         accounts::service(&account),
@@ -145,8 +152,14 @@ fn gitlab_com_signs_in_by_pkce_and_keeps_the_pair_that_renews() {
     let kept = item(keyring.as_ref(), &account);
     assert_eq!(kept["access"], "canaryGITLABaccess1");
     assert_eq!(kept["refresh"], "canaryGITLABrefresh1");
-    assert!(kept.get("expires_at").is_some(), "GitLab's token expires, so it is renewed");
-    in_no_file(home.path(), &["canaryGITLABaccess1", "canaryGITLABrefresh1"]);
+    assert!(
+        kept.get("expires_at").is_some(),
+        "GitLab's token expires, so it is renewed"
+    );
+    in_no_file(
+        home.path(),
+        &["canaryGITLABaccess1", "canaryGITLABrefresh1"],
+    );
 }
 
 #[test]
@@ -175,7 +188,10 @@ fn a_ghes_host_signs_in_through_the_application_an_owner_made_and_never_githubs(
     assert_eq!(ghes.flow, Flow::Device);
     assert_eq!(ghes.client_id, "Iv1.ghesAppOfAcme");
     let own = registration::on(Kind::GitHub, "github.com").unwrap();
-    assert_ne!(ghes.client_id, own.client_id, "github.com's id is never sent to a GHES host");
+    assert_ne!(
+        ghes.client_id, own.client_id,
+        "github.com's id is never sent to a GHES host"
+    );
     let account = sign_in(
         home.path(),
         &tokens,
@@ -223,7 +239,9 @@ fn a_self_hosted_gitlab_signs_in_by_pkce_through_the_group_application() {
     // gitlab.com's application is not this host's.
     assert_ne!(
         pinned.client_id,
-        registration::on(Kind::GitLab, "gitlab.com").unwrap().client_id
+        registration::on(Kind::GitLab, "gitlab.com")
+            .unwrap()
+            .client_id
     );
 }
 
@@ -288,14 +306,23 @@ fn each_host_keeps_its_own_accounts_token() {
         grant_that_does_not_expire("canaryTWOaccess", "repo,read:org"),
         Method::Device,
     );
-    assert_ne!(one.id, two.id, "the same login on two hosts is two accounts");
+    assert_ne!(
+        one.id, two.id,
+        "the same login on two hosts is two accounts"
+    );
     let keyring = accounts::keyring_at(home.path());
     assert_eq!(
-        accounts::token(keyring.as_ref(), &one).unwrap().unwrap().expose_secret(),
+        accounts::token(keyring.as_ref(), &one)
+            .unwrap()
+            .unwrap()
+            .expose_secret(),
         "canaryONEaccess"
     );
     assert_eq!(
-        accounts::token(keyring.as_ref(), &two).unwrap().unwrap().expose_secret(),
+        accounts::token(keyring.as_ref(), &two)
+            .unwrap()
+            .unwrap()
+            .expose_secret(),
         "canaryTWOaccess"
     );
     let on = |host: &str| {

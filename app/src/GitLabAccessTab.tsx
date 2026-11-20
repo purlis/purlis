@@ -11,12 +11,16 @@ import {
 } from "./bindings";
 import { WhoUses, answer, whyOf } from "./AgentIdentityFlow";
 import { Notice } from "./Notice";
+import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { KeyRound } from "lucide-react";
 import { Badge } from "./ui/badge/Badge";
 import { EmptyState } from "./ui/empty-state/EmptyState";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { AlertDialog } from "./ui/dialog/Dialog";
 import { TextField } from "./ui/field/Field";
+
+/** Settings › You › Accounts, where one sign-in per forge host is made (ADR 0128). */
+const ACCOUNTS: SettingsLink = { group: "you.accounts" };
 
 /**
  * **GitLab access** (#1349): what lets a chat use `glab` where its sandbox holds your own sign-in
@@ -224,6 +228,15 @@ export function GitLabAccessTab({ plane }: { plane: PlaneId }) {
   const shown = read.state === "read" ? read.shown : null;
   return (
     <div className="agent-identity" data-testid="gitlab-access">
+      <Notice
+        cause="gitlab-access-one-login"
+        title="One sign-in per forge host is coming"
+        fixes={[{ label: "Open accounts", onPress: () => askSettingsLink(plane, ACCOUNTS) }]}
+      >
+        purlis is moving to your own GitLab sign-in, made once for each host, so a chat works as you
+        and needs no token of its own. Sign in in Settings › You › Accounts. A token set up here
+        keeps working until then.
+      </Notice>
       {done && (
         <Notice
           cause="gitlab-access-set-up"

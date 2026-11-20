@@ -11,6 +11,7 @@ import type { LiveSetting, SettingsGroup } from "./groups";
 import { Button } from "../ui/button/Button";
 import { Badge } from "../ui/badge/Badge";
 import { Table, TableBody, TableCell, TableColumn, TableHeader, TableRow } from "../ui/table/Table";
+import { applications, projectAccounts } from "./oneLogin";
 import { signedCommits } from "./signing";
 
 /**
@@ -45,7 +46,7 @@ export function accountsGroup(): SettingsGroup {
     id: "you.accounts",
     label: "Accounts",
     help: "The GitHub and GitLab accounts signed in on this machine. Their tokens are kept in your system keychain, never in a project, and never reach a chat. The forge work you do in this window uses them: the repo picker, discover, saves and the requests they open, and each workspace's request and checks. A host with no account here uses gh or glab, and chats always do.",
-    settings: [forgeAccounts, signedCommits],
+    settings: [forgeAccounts, applications, projectAccounts, signedCommits],
   };
 }
 

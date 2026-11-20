@@ -22,6 +22,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use purlis_core::forge::Kind;
 use purlis_core::forge::accounts::workflow::{self, Availability, CiPushCredential, Outcome};
 use purlis_core::forge::accounts::{self, ForgeAccount, Method};
 use purlis_core::forge::credential::SignedIn;
@@ -29,7 +30,6 @@ use purlis_core::forge::oauth::{Answer, Endpoint, Endpoints};
 use purlis_core::forge::refresh::Refresher;
 use purlis_core::forge::registration;
 use purlis_core::forge::route::HostScope;
-use purlis_core::forge::Kind;
 use secrecy::ExposeSecret;
 
 use crate::support::one_login::{Tokens, grant, grant_that_does_not_expire};
@@ -123,7 +123,15 @@ fn the_everyday_sign_in_never_asks_for_workflow_and_the_second_asks_for_what_is_
     let scene = scene();
     let github = registration::on(Kind::GitHub, "github.com").unwrap();
     assert!(!github.scopes().contains(&workflow::SCOPE));
-    assert!(!scene.account.scopes.clone().unwrap_or_default().iter().any(|s| s == "workflow"));
+    assert!(
+        !scene
+            .account
+            .scopes
+            .clone()
+            .unwrap_or_default()
+            .iter()
+            .any(|s| s == "workflow")
+    );
     assert_eq!(
         workflow::scopes_to_ask(&scene.account),
         ["repo", "read:org", "workflow"]
@@ -138,7 +146,9 @@ fn the_everyday_sign_in_never_asks_for_workflow_and_the_second_asks_for_what_is_
 #[test]
 fn a_press_keeps_the_second_token_as_its_own_item_beside_the_unchanged_everyday_one() {
     let scene = scene();
-    scene.tokens.know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
     assert_eq!(
         scene.second_sign_in(SECOND, "repo,read:org,workflow"),
         Ok(Outcome::Kept)
@@ -152,12 +162,27 @@ fn a_press_keeps_the_second_token_as_its_own_item_beside_the_unchanged_everyday_
             .expose_secret(),
         EVERYDAY
     );
-    assert!(!scene.listed().scopes.unwrap_or_default().iter().any(|s| s == "workflow"));
+    assert!(
+        !scene
+            .listed()
+            .scopes
+            .unwrap_or_default()
+            .iter()
+            .any(|s| s == "workflow")
+    );
     // The second is another item of the same service.
     let service = accounts::service(&scene.account);
-    let item = keyring.get(&service, "workflow").unwrap().unwrap().into_inner();
+    let item = keyring
+        .get(&service, "workflow")
+        .unwrap()
+        .unwrap()
+        .into_inner();
     assert_eq!(item, SECOND);
-    let everyday_item = keyring.get(&service, "token").unwrap().unwrap().into_inner();
+    let everyday_item = keyring
+        .get(&service, "token")
+        .unwrap()
+        .unwrap()
+        .into_inner();
     assert!(!everyday_item.contains(SECOND));
     assert_eq!(
         workflow::availability(keyring.as_ref(), &scene.account),
@@ -171,8 +196,12 @@ fn a_press_keeps_the_second_token_as_its_own_item_beside_the_unchanged_everyday_
 #[test]
 fn the_second_token_is_in_no_route_a_chat_has_and_in_no_file() {
     let scene = scene();
-    scene.tokens.know(SECOND, "octocat", "repo, read:org, workflow");
-    scene.second_sign_in(SECOND, "repo,read:org,workflow").unwrap();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
     // What the proxy asks for a chat's repos: the credential source. It answers the everyday token.
     let github = registration::on(Kind::GitHub, "github.com").unwrap();
     let refresher = Refresher::through(
@@ -186,7 +215,10 @@ fn the_second_token_is_in_no_route_a_chat_has_and_in_no_file() {
     assert_eq!(credential.expose(), EVERYDAY);
     assert_ne!(credential.expose(), SECOND);
     let shown = format!("{credential:?}");
-    assert!(!shown.contains(SECOND) && !shown.contains(EVERYDAY), "{shown}");
+    assert!(
+        !shown.contains(SECOND) && !shown.contains(EVERYDAY),
+        "{shown}"
+    );
     // And the account store, as the window lists it, holds neither.
     let listed = format!("{:?}", scene.listed());
     assert!(!listed.contains(SECOND), "{listed}");
@@ -198,7 +230,11 @@ fn the_second_token_is_in_no_route_a_chat_has_and_in_no_file() {
                 stack.push(path);
             } else if path.file_name().is_some_and(|n| n != "keyring-stub.json") {
                 let text = String::from_utf8_lossy(&std::fs::read(&path).unwrap()).into_owned();
-                assert!(!text.contains(SECOND), "{} holds the second token", path.display());
+                assert!(
+                    !text.contains(SECOND),
+                    "{} holds the second token",
+                    path.display()
+                );
             }
         }
     }
@@ -207,11 +243,19 @@ fn the_second_token_is_in_no_route_a_chat_has_and_in_no_file() {
 #[test]
 fn when_github_folds_workflow_into_the_everyday_token_nothing_is_kept_and_a_push_is_not_offered() {
     let scene = scene();
-    scene.tokens.know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
     // The forge now says the everyday token holds workflow too.
-    scene.tokens.know(EVERYDAY, "octocat", "repo, read:org, workflow");
-    let outcome = scene.second_sign_in(SECOND, "repo,read:org,workflow").unwrap();
-    assert!(matches!(outcome, Outcome::Folded(ref a) if a.scopes.as_ref().is_some_and(|s| s.iter().any(|w| w == "workflow"))));
+    scene
+        .tokens
+        .know(EVERYDAY, "octocat", "repo, read:org, workflow");
+    let outcome = scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
+    assert!(
+        matches!(outcome, Outcome::Folded(ref a) if a.scopes.as_ref().is_some_and(|s| s.iter().any(|w| w == "workflow")))
+    );
     let keyring = scene.keyring();
     assert!(
         keyring
@@ -234,19 +278,21 @@ fn when_github_folds_workflow_into_the_everyday_token_nothing_is_kept_and_a_push
 #[test]
 fn a_grant_for_another_login_or_without_workflow_keeps_nothing() {
     let scene = scene();
-    scene.tokens.know("canaryOTHERlogin", "mallory", "repo, read:org, workflow");
+    scene
+        .tokens
+        .know("canaryOTHERlogin", "mallory", "repo, read:org, workflow");
     let why = scene
         .second_sign_in("canaryOTHERlogin", "repo,read:org,workflow")
         .unwrap_err();
     assert!(why.contains("not as octocat"), "{why}");
-    scene.tokens.know("canaryNOworkflow", "octocat", "repo, read:org");
+    scene
+        .tokens
+        .know("canaryNOworkflow", "octocat", "repo, read:org");
     let why = scene
         .second_sign_in("canaryNOworkflow", "repo,read:org")
         .unwrap_err();
     assert!(why.contains("did not allow workflow"), "{why}");
-    for said in [why] {
-        assert!(!said.contains("canary"), "{said}");
-    }
+    assert!(!why.contains("canary"), "{why}");
     assert!(
         scene
             .keyring()
@@ -255,7 +301,11 @@ fn a_grant_for_another_login_or_without_workflow_keeps_nothing() {
             .is_none()
     );
     // A token the forge does not know is refused, and says nothing of it.
-    assert!(scene.second_sign_in("canaryUNKNOWN", "repo,workflow").is_err());
+    assert!(
+        scene
+            .second_sign_in("canaryUNKNOWN", "repo,workflow")
+            .is_err()
+    );
 }
 
 #[test]
@@ -299,10 +349,20 @@ fn a_gitlab_account_has_no_second_token_and_its_one_serves_the_app_for_a_held_pu
 #[test]
 fn signing_out_deletes_the_second_token_with_the_first() {
     let scene = scene();
-    scene.tokens.know(SECOND, "octocat", "repo, read:org, workflow");
-    scene.second_sign_in(SECOND, "repo,read:org,workflow").unwrap();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
     let keyring = scene.keyring();
-    accounts::sign_out(&scope(), scene.home.path(), keyring.as_ref(), &scene.account.id).unwrap();
+    accounts::sign_out(
+        &scope(),
+        scene.home.path(),
+        keyring.as_ref(),
+        &scene.account.id,
+    )
+    .unwrap();
     let service = accounts::service(&scene.account);
     assert!(keyring.get(&service, "token").unwrap().is_none());
     assert!(keyring.get(&service, "workflow").unwrap().is_none());
@@ -320,7 +380,9 @@ fn the_second_token_is_read_by_one_call_alone() {
             if path.is_dir() {
                 stack.push(path);
             } else if path.extension().is_some_and(|e| e == "rs")
-                && std::fs::read_to_string(&path).unwrap().contains("workflow::for_ci_push")
+                && std::fs::read_to_string(&path)
+                    .unwrap()
+                    .contains("workflow::for_ci_push")
             {
                 readers.push(path);
             }

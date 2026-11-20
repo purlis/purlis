@@ -12,6 +12,7 @@ import {
 } from "./bindings";
 import { AgentIdentityFlow, Out, WhoUses, answer, openPage, whyOf } from "./AgentIdentityFlow";
 import { Notice } from "./Notice";
+import { askSettingsLink, type SettingsLink } from "./settings/links";
 import { Badge } from "./ui/badge/Badge";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Fact, Facts } from "./ui/card/Facts";
@@ -23,6 +24,9 @@ import { AlertDialog } from "./ui/dialog/Dialog";
  * ({@link AgentIdentityFlow}). What it shows is read fresh as it opens and after each press: the
  * project file's lines, the vault's key names, and GitHub.
  */
+
+/** Settings › You › Accounts, where one sign-in per forge host is made (ADR 0128). */
+const ACCOUNTS: SettingsLink = { group: "you.accounts" };
 
 const said = (row: IdentityRow) =>
   row.acts_as === null
@@ -240,6 +244,15 @@ export function AgentIdentityTab({ plane, asking }: { plane: PlaneId; asking?: s
   const flow = shown !== null && (!setUp || adding || shown.pending.length > 0);
   return (
     <div className="agent-identity" data-testid="agent-identity">
+      <Notice
+        cause="agent-identity-one-login"
+        title="One sign-in per forge host is coming"
+        fixes={[{ label: "Open accounts", onPress: () => askSettingsLink(plane, ACCOUNTS) }]}
+      >
+        purlis is moving to your own sign-in, made once for each forge host, so a chat works as you
+        and needs no App of its own. Sign in in Settings › You › Accounts. What is set up here keeps
+        working until then.
+      </Notice>
       {done && <Proved done={done} onDismiss={() => setDone(null)} />}
       {gone && <Removed gone={gone} onDismiss={() => setGone(null)} onOpenFailed={setTrouble} />}
       {trouble && (

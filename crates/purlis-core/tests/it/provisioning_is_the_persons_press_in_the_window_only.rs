@@ -91,7 +91,10 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "tests" || n == "target") {
+            if path
+                .file_name()
+                .is_some_and(|n| n == "tests" || n == "target")
+            {
                 continue;
             }
             sources(&path, out);
@@ -157,8 +160,7 @@ fn no_source_but_the_windows_and_the_forge_modules_calls_a_provisioning_entry_po
 #[test]
 fn the_scan_finds_a_provisioning_call_where_there_is_one() {
     // The control: the window's own file, which the scan skips, does call them.
-    let app = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../app/src-tauri/src/onelogin.rs");
+    let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/src/onelogin.rs");
     let text = std::fs::read_to_string(app).expect("the app's file");
     assert!(
         PROVISIONING_ENTRY_POINTS

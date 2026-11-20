@@ -29,8 +29,8 @@ use std::sync::{Arc, Mutex};
 
 use purlis_core::forge::accounts::{self, ForgeAccount, State, workflow};
 use purlis_core::forge::confirmed::{self, AsThePerson, Pick, Serving};
-use purlis_core::forge::registration::{self, Registration};
 use purlis_core::forge::registered::{self, Change};
+use purlis_core::forge::registration::{self, Registration};
 use purlis_core::forge::{Kind, device, oauth};
 
 use crate::forgeaccounts::{
@@ -196,11 +196,11 @@ pub async fn forge_project_accounts() -> Result<Vec<ProjectAccountRow>, String> 
                     })
                     .map(choice_of)
                     .collect();
-                let (serving, chosen_is_signed_out) = match confirmed::account_for(&repo, &accounts_here)
-                {
-                    Serving::Account(account) => (Some(choice_of(&account)), false),
-                    Serving::ChosenIsSignedOut { .. } => (None, true),
-                };
+                let (serving, chosen_is_signed_out) =
+                    match confirmed::account_for(&repo, &accounts_here) {
+                        Serving::Account(account) => (Some(choice_of(&account)), false),
+                        Serving::ChosenIsSignedOut { .. } => (None, true),
+                    };
                 ProjectAccountRow {
                     clone_key: repo.clone_key,
                     repo_id: repo.repo_id.to_string(),

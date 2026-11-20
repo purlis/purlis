@@ -48,7 +48,7 @@ use super::accounts::{self, ForgeAccount, Reach, State};
 use super::http::TokenSource;
 use super::route::HostScope;
 use super::transport::Call;
-use super::{Forge, ForgeError, Kind, host_ok, host_of, namespace_of};
+use super::{Forge, ForgeError, Kind, host_of, host_ok, namespace_of};
 use crate::secrets::keyring::Store;
 
 /// The confirmed repos' file, in purlis's directory of the config home.
@@ -130,8 +130,7 @@ impl RepoLookup for AsThePerson<'_> {
             kind: account.kind,
             host: account.host.clone(),
         };
-        let transport =
-            (self.reach)(&forge, Arc::new(Fixed(token))).map_err(|e| e.to_string())?;
+        let transport = (self.reach)(&forge, Arc::new(Fixed(token))).map_err(|e| e.to_string())?;
         let at = match account.kind {
             Kind::GitHub => format!("repos/{path}"),
             Kind::GitLab => format!("projects/{}", path.replace('/', "%2F")),
@@ -202,7 +201,10 @@ fn read(config_root: &Path) -> Result<OnDisk, String> {
     std::io::Read::read_to_string(&mut std::io::Read::take(file, MOST_BYTES + 1), &mut text)
         .map_err(|e| format!("purlis cannot read {}: {e}", at.display()))?;
     if text.len() as u64 > MOST_BYTES {
-        return Err(format!("{} is larger than a list of repos can be", at.display()));
+        return Err(format!(
+            "{} is larger than a list of repos can be",
+            at.display()
+        ));
     }
     serde_json::from_str(&text)
         .map_err(|e| format!("{} is not a list of confirmed repos: {e}", at.display()))
@@ -226,7 +228,7 @@ fn repo_of(value: &Value) -> Option<ConfirmedRepo> {
         && !entry.account.is_empty()
         && entry.repo_id != 0
         && normalised_path(kind, &entry.path).as_deref() == Some(entry.path.as_str());
-    usable.then(|| ConfirmedRepo {
+    usable.then_some(ConfirmedRepo {
         clone_key: entry.clone_key,
         kind,
         host: entry.host,
@@ -518,7 +520,11 @@ pub fn choose_account(
 
 /// Every confirmed repo on this machine, in the order they were confirmed: what Settings lists.
 pub fn all(config_root: &Path) -> Result<Vec<ConfirmedRepo>, String> {
-    Ok(read(config_root)?.repos.iter().filter_map(repo_of).collect())
+    Ok(read(config_root)?
+        .repos
+        .iter()
+        .filter_map(repo_of)
+        .collect())
 }
 
 /// The key `clone` is named by in this list.
@@ -648,7 +654,7 @@ pub fn headless_repos(
                 .split_once('/')
                 .and_then(|(host, path)| {
                     let host = host.to_ascii_lowercase();
-                    (host_ok(&host)).then(|| (host, path))
+                    host_ok(&host).then_some((host, path))
                 })
                 .and_then(|(host, path)| Some((host, normalised_path(kind, path)?)));
             let Some((host, path)) = named else {
@@ -671,9 +677,7 @@ pub fn headless_repos(
     let path = namespace_of(origin).and_then(|raw| normalised_path(kind, &raw));
     match (host.is_empty(), path) {
         (false, Some(path)) => Ok(vec![ConfiguredRepo { host, path }]),
-        _ => Err(
-            "The checkout's origin does not name a repo, so nothing was started.".to_string(),
-        ),
+        _ => Err("The checkout's origin does not name a repo, so nothing was started.".to_string()),
     }
 }
 

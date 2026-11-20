@@ -315,17 +315,17 @@ pub fn use_application(
             .is_ok_and(|e| Kind::parse(&e.kind) == Some(kind) && e.host == host)
     };
     let at = file.hosts.iter().position(same);
-    let change = match at.and_then(|at| serde_json::from_value::<Entry>(file.hosts[at].clone()).ok())
-    {
-        None => Change::New,
-        Some(was) if was.client_id != client_id => Change::ClientId {
-            previous: was.client_id,
-        },
-        Some(was) if was.owner.as_deref() != Some(owner) => Change::Owner {
-            previous: was.owner.unwrap_or_default(),
-        },
-        Some(_) => Change::Same,
-    };
+    let change =
+        match at.and_then(|at| serde_json::from_value::<Entry>(file.hosts[at].clone()).ok()) {
+            None => Change::New,
+            Some(was) if was.client_id != client_id => Change::ClientId {
+                previous: was.client_id,
+            },
+            Some(was) if was.owner.as_deref() != Some(owner) => Change::Owner {
+                previous: was.owner.unwrap_or_default(),
+            },
+            Some(_) => Change::Same,
+        };
     if change == Change::Same {
         return Ok(Pinned { host, change });
     }
@@ -352,8 +352,15 @@ pub(crate) fn register(
     typed_host: &str,
     client_id: &str,
 ) -> Result<String, String> {
-    use_application(scope, config_root, kind, typed_host, client_id, "acme-platform")
-        .map(|pinned| pinned.host)
+    use_application(
+        scope,
+        config_root,
+        kind,
+        typed_host,
+        client_id,
+        "acme-platform",
+    )
+    .map(|pinned| pinned.host)
 }
 
 /// **The sentence the window shows before the sign-in opens the forge's page** (ADR 0128 D1.3
@@ -656,13 +663,18 @@ mod tests {
             find(home.path(), Kind::GitHub, "ghe.example.com").unwrap(),
             None
         );
-        assert_eq!(pin(home.path(), Kind::GitHub, "ghe.example.com").unwrap(), None);
+        assert_eq!(
+            pin(home.path(), Kind::GitHub, "ghe.example.com").unwrap(),
+            None
+        );
     }
 
     #[test]
     fn an_owner_no_forge_spells_is_refused_and_nothing_is_written() {
         let home = tempfile::tempdir().unwrap();
-        for bad in ["", "  ", "a b", "/acme", "acme/", "a//b", "../x", "a/./b", "a;b", "a\nb"] {
+        for bad in [
+            "", "  ", "a b", "/acme", "acme/", "a//b", "../x", "a/./b", "a;b", "a\nb",
+        ] {
             assert!(
                 use_application(
                     &scope(),
@@ -693,9 +705,16 @@ mod tests {
     fn a_changed_client_id_is_a_new_press_that_says_what_it_replaced() {
         let home = tempfile::tempdir().unwrap();
         let press = |id: &str, owner: &str| {
-            use_application(&scope(), home.path(), Kind::GitHub, "ghe.example.com", id, owner)
-                .unwrap()
-                .change
+            use_application(
+                &scope(),
+                home.path(),
+                Kind::GitHub,
+                "ghe.example.com",
+                id,
+                owner,
+            )
+            .unwrap()
+            .change
         };
         assert_eq!(press("first", "acme"), Change::New);
         assert_eq!(press("first", "acme"), Change::Same);
@@ -730,7 +749,10 @@ mod tests {
         let gitlab = owner_request(Kind::GitLab, "git.example.com");
         assert!(gitlab.contains("Confidential: off") && gitlab.contains("Scopes: api"));
         for port in registration::REDIRECT_PORTS {
-            assert!(gitlab.contains(&registration::redirect_uri(port)), "{gitlab}");
+            assert!(
+                gitlab.contains(&registration::redirect_uri(port)),
+                "{gitlab}"
+            );
         }
         assert!(gitlab.contains("not a person's own"));
     }
