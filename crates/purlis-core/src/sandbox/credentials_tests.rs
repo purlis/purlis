@@ -1132,8 +1132,8 @@ fn a_locked_chat_with_no_token_is_told_so_without_gh_reading_its_config() {
             .denied
             .iter()
             .any(|denial| denial.class == Class::Credentials);
-        let mints = confines.tools.iter().any(|ready| ready.tool.mint.is_some());
-        let note = credentials_note(holds, mints, &found)
+        let routes = crate::sandbox::tools::forge_routes(&confines.tools);
+        let note = credentials_note(holds, &routes, &found, Some("dev"))
             .unwrap_or_else(|| panic!("a locked chat with no mint says so: {manifest}"));
         assert!(note.contains("Agent identity"), "{note}");
     }
