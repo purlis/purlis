@@ -369,6 +369,11 @@ async function main() {
     ['the sign-in window (TODO(slice G))', 'slice G'],
   ]) rp.stub(name, slice);
 
+  if (app.bridged) {
+    const kinds = [...new Set(app.gaps.map((g) => g.split(':')[0]))];
+    for (const k of kinds) console.log(`GAP: ${k} x${app.gaps.filter((g) => g.startsWith(k)).length}; e.g. ${app.gaps.find((g) => g.startsWith(k)).slice(0, 220)}`);
+    rp.rows.push({ name: 'GraphQL documents slice A refused, which the stand-in judged instead (findings for slice A)', ok: true, stub: 'slice A', detail: kinds.length ? `${app.gaps.length} document(s): ${kinds.join(', ')}` : 'none: the stand-in GraphQL judge can go' });
+  }
   const md = rp.markdown(`One login I end-to-end test on ${PLATFORM}`);
   fs.writeFileSync(path.join(outDir, `results-${PLATFORM}.md`), md);
   fs.writeFileSync(path.join(outDir, `audit-${PLATFORM}.json`), `${JSON.stringify({ audit: app.audit, github: github.log, gitlab: gitlab.log }, null, 2)}\n`);

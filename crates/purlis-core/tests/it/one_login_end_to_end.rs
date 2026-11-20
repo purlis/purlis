@@ -236,6 +236,19 @@ fn a_person_signs_in_once_and_a_chat_works_the_forge_through_the_real_policy() {
         "the scenario did not say every step passed:\n{stdout}"
     );
 
+    // Where the core refused something the scenario needs, the stand-in judged it and said so (`GAP:`).
+    // Only GraphQL may be a gap: `gh` asks for `repository.parent` and introspection, which the core
+    // refuses today (a finding for slice A). A gap of any other kind is a failure, and when none is left
+    // the stand-in's GraphQL judge in `seams.mjs` is to be removed.
+    let gaps: Vec<&str> = stdout.lines().filter(|l| l.starts_with("GAP: ")).collect();
+    for gap in &gaps {
+        assert!(
+            gap.starts_with("GAP: Graphql"),
+            "the core refused something that is not GraphQL, and the scenario needs it: {gap}"
+        );
+    }
+    println!("{} GraphQL gap kind(s) in slice A: {gaps:#?}", gaps.len());
+
     // What the core itself recorded: the policy's own account of the run.
     let audit = bridge.proxy.audit(&ChatId::new("e2e-chat"));
     for wanted in [Refusal::Merge, Refusal::ProtectedRef, Refusal::OtherRepo] {

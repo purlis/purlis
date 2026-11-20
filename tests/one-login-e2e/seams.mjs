@@ -378,7 +378,7 @@ export async function createApp({ work, ca, clock, forges }) {
     return refuse(`${method} ${pathname}`);
   }
 
-  async function handle(req, res, host, via) {
+  async function handle(req, res, host, via, preBody = null) {
     const forge = byHost.get(host);
     const send = (status, body, headers = {}) => {
       res.writeHead(status, { 'content-type': 'application/json', connection: 'close', ...headers });
@@ -389,7 +389,7 @@ export async function createApp({ work, ca, clock, forges }) {
       record('refuse', 'a host that is not a recorded forge');
       return send(403, { message: REFUSED });
     }
-    const body = await readBody(req);
+    const body = preBody ?? (await readBody(req));
     const url = new URL(req.url, 'http://x');
     const creds = presented(req.headers);
     const credentialed = creds.length > 0;
@@ -467,6 +467,9 @@ export async function createApp({ work, ca, clock, forges }) {
     return out;
   };
 
+  /** Documents the core refused that the stand-in judged instead: findings for slice A, printed by the scenario. */
+  const gaps = [];
+
   /** TODO(slice A2): the listener builds this from the connection. Here: gh's socket speaks to the API host, a CONNECT to its own. */
   async function handleBridged(req, res, tunnelHost, via) {
     const send = (status, body, headers = {}) => {
@@ -505,6 +508,13 @@ export async function createApp({ work, ca, clock, forges }) {
             record('hold', `Merge (${j.via})`);
             return send(403, { message: HELD });
           }
+        }
+        if (reply.refusal.startsWith('Graphql') && !url.pathname.startsWith('/api/v4')) {
+          // FINDING for slice A: `gh` sends GraphQL documents the core refuses (it asks for `repository.parent` and introspection on every
+          // command). Until slice A decides them, the stand-in's own list judges GraphQL, and the refusal is reported, so the gap is
+          // visible in every run and the Rust test fails when it shows a kind of refusal that is not GraphQL's.
+          gaps.push(`${reply.refusal}: ${body.toString().replace(/\s+/g, ' ').slice(0, 160)}`);
+          return handle(req, res, forge.host, via, body);
         }
         record('refuse', reply.refusal, reply.refusal.startsWith('Graphql') ? { detail: body.toString().replace(/\s+/g, ' ').slice(0, 700) } : {});
         // The document is shown in a GraphQL refusal so a failing run says which query the policy read as another repo's.
@@ -671,6 +681,7 @@ exec "$REAL" "$@"
       return sentinel;
     },
     bridged: Boolean(BRIDGE),
+    gaps,
     keyring,
     recorded,
     asks,
