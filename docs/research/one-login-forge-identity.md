@@ -1,7 +1,7 @@
 # One sign-in, then every chat's git and forge work unblocked
 
 Research, 2026-11-20. Facts first, then the options compared. The decision is the proposed
-ADR 0127, which the steward and the person rule on. Repo facts are read from `origin/main` at
+ADR 0128, which the steward and the person rule on. Repo facts are read from `origin/main` at
 `4568a3c7b4`. Forge facts are read on 2026-11-20 from docs.github.com (the GitHub Enterprise
 Server pages are the 3.22 edition) and docs.gitlab.com (which describes GitLab up to 19.x).
 Each fact says which page it comes from. Where a page does not say, this note says "not
@@ -9,6 +9,14 @@ documented" and lists it under "Unverified" at the end. Nothing was run against 
 
 **The requirement.** A person signs in to a forge account with purlis. A chat then runs `gh`,
 `glab` and native `git fetch`, `pull` and `push` with no command the person runs by hand.
+**Anyone with access** to an organization or personal repo (owner, member, outside collaborator,
+read-only) must be served, on github.com, GHES, gitlab.com and self-hosted GitLab.
+
+> **Round 2 (2026-11-20).** Sections 1 to 3 are facts and stand. **Section 4's recommendation,
+> (b), and section 5 are superseded** by the steward's ruling: per-user tokens are the base
+> (section 6), and the token never enters the chat. Round 1's reviewers rejected the per-owner
+> App and GitLab project tokens because they do not serve every collaborator and bind a token by
+> installation, not by the person's access. Read section 6 first.
 
 ## 1. GitHub
 
@@ -250,7 +258,7 @@ documented" and lists it under "Unverified" at the end. Nothing was run against 
 3. **GitLab.com Free cannot have a narrow bot identity.** Project and group access tokens need
    Premium on GitLab.com (section 2.1). Only the person's own fine-grained token (19.2 and
    later) is narrowed by project (section 2.2), and it is the person's identity. Decision 6 says
-   never to fall back to the person's login, so this needs the steward's ruling (ADR 0127 gap 2).
+   never to fall back to the person's login, so this needs the steward's ruling (ADR 0128 gap 2).
 4. **A GitLab chat's token is per project and long-lived**, not per chat and an hour. That is
    GitLab's limit, not a choice (section 2.1).
 
@@ -271,3 +279,57 @@ documented" and lists it under "Unverified" at the end. Nothing was run against 
   pull request, and whether the App may be put on the bypass list. It does not push to a
   protected default branch without it.
 - **G6.** The exact scope names a GitLab project token needs for `glab` plus git push.
+
+## 6. Round 2: per-user tokens, brokered
+
+What the ruling needs, from the facts above and from what is not yet read.
+
+**GitHub, a public App for agents, device flow, user tokens (sections 1.2, 1.4).**
+
+- It is option (c) of section 4, now the base. Section 4 rejected (c) on two grounds: the token
+  cannot be narrowed per chat without a client secret, and it is the person's authority. Neither
+  matters when **the token never leaves the app**: the narrowing is the proxy's, and the
+  attribution to the person is wanted.
+- The device flow needs the client id only. Its refresh "needs the client secret unless the user
+  access token was generated using the device flow" (section 1.4), so a device-flow token
+  refreshes with no secret. The refresh token is single use; the app must be the only refresher.
+- The token is limited to what **both the App and the person** may reach, in installed accounts
+  (1.4). An organization owner installs once; a member's install is a request the owners get
+  (1.2). On someone else's personal account only the owner can install: a collaborator cannot.
+- The device flow is an App setting; section 1.1's manifest fields were read with no device-flow
+  field. For purlis's own App, staff tick it once. For a GHES App, the host's registrant must
+  tick it by hand. **Unverified** against a live GHES.
+- No `workflows` permission: GitHub then rejects a push that changes `.github/workflows`.
+
+**GitLab, an agent OAuth application (sections 2.2, 2.3).**
+
+- 2-hour access token and a rotating refresh token (2.3). Scopes name a kind of API access, not a
+  project, so the project narrowing is the proxy's, or the fine-grained token's (2.2).
+- A fine-grained personal access token can be limited to named projects and permissions and acts
+  as the person (2.2). **Whether `POST /user/personal_access_tokens` accepts an OAuth token is
+  unverified (G1).** If it does, the app can make one per chat, delete it at the end and omit
+  `self_rotate`.
+- A user-owned OAuth application (no administrator) is what a self-hosted host needs. Where the
+  sign-in there is a pasted PAT (`forge/registration.rs:18`), it has the person's whole scopes and
+  can only be narrowed by the proxy.
+
+**Why the git credential helper cannot hold the token (new).** A helper answers whoever runs it,
+including a chat that runs `git credential fill`. The token reaches the chat the moment a helper
+answers with it. So the helper answers a stand-in and a proxy swaps (the key-proxy pattern of
+#6762 and #6812, whose issues are open and which has no code in `crates/` at `4568a3c7b4`).
+
+**What is not known (the probes).**
+
+- **P1.** How `gh` (github.com has no base-URL variable) and `glab` reach a local proxy. `gh` has a
+  per-configuration unix-socket option; `SSL_CERT_FILE` is ignored by Go on macOS. Neither read in
+  a live `gh` or `glab` here.
+- **P2.** Kernel peer identity for a TCP loopback connection (no `SO_PEERCRED`); `hookwire/reach.rs`
+  reads a unix socket.
+- **P3.** G1, and a manifest field for the device flow.
+- **P4.** SAML organizations, enterprise-owned organizations, whether a user token needs a
+  per-organization authorisation.
+- **P5.** Whether GitLab or GitHub forks are enabled for a read-only person on a given host.
+
+**Not run:** the sandbox this note was written in refused a fetch of the forge docs, so no fact in
+this section was re-read on 2026-11-20 beyond sections 1 to 3. Re-read each before the ADR is
+accepted.
