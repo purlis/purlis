@@ -15,7 +15,8 @@
 //!
 //! **A registration exists on one host only.** [`on`] answers for the exact forge and host a
 //! sign-in names, so purlis's github.com client id is never sent to a GitHub Enterprise server,
-//! nor its gitlab.com one to a self-managed GitLab. Those hosts take a token (ADR 0077 §4).
+//! nor its gitlab.com one to a self-managed GitLab. Those hosts take a token (ADR 0077 §4), or
+//! the application the person pinned there ([`resolve`], [`super::registered`]).
 
 use super::Kind;
 
@@ -84,30 +85,20 @@ pub fn on(kind: Kind, host: &str) -> Option<&'static Registration> {
         .find(|r| r.kind == kind && r.host.eq_ignore_ascii_case(host))
 }
 
-/// How a store of pinned client ids answers: the client id kept for `kind` on `host`, if any.
-pub type PinLookup = fn(Kind, &str) -> Option<String>;
-
-static PINS: std::sync::RwLock<Option<PinLookup>> = std::sync::RwLock::new(None);
-
-/// Give the pinned client ids' store to this process: the registration of a self-hosted server,
-/// kept per host. The store is slice G's of one login, which calls this as it starts; with none
-/// given, no host has a pin.
-pub fn use_pins(lookup: PinLookup) {
-    *PINS.write().unwrap_or_else(|e| e.into_inner()) = Some(lookup);
-}
-
-/// The client id the person pinned for `kind` on `host`, from the store [`use_pins`] gave. The
-/// readiness check asks it, so a self-hosted server with a pinned client id is not told it has
-/// no registration.
-pub fn pinned_client_id(kind: Kind, host: &str) -> Option<String> {
-    let lookup = (*PINS.read().unwrap_or_else(|e| e.into_inner()))?;
-    lookup(kind, host)
-}
-
-/// Whether purlis can sign in on `host`: it ships a registration there ([`on`]) or the person
-/// pinned a client id for it ([`pinned_client_id`]).
-pub fn known_on(kind: Kind, host: &str) -> bool {
-    on(kind, host).is_some() || pinned_client_id(kind, host).is_some()
+/// The registration a **new** sign-in uses for `kind` on `host`: purlis's own where it has one
+/// ([`on`]), otherwise the application the person pinned on that host ([`super::registered`], ADR
+/// 0128 D1.3). A file that cannot be read is an error, never "none". A renewal does not choose its
+/// client id from here: it uses the one its account signed in through, and only checks that this
+/// still says the same ([`super::refresh`]).
+pub fn resolve(
+    config_root: &std::path::Path,
+    kind: Kind,
+    host: &str,
+) -> Result<Option<&'static Registration>, String> {
+    if let Some(own) = on(kind, host) {
+        return Ok(Some(own));
+    }
+    super::registered::pinned(config_root, kind, host)
 }
 
 #[cfg(test)]

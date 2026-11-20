@@ -106,6 +106,12 @@ pub struct ForgeAccount {
     /// The token's scopes when it was checked, or `None` when the forge does not say (a GitHub
     /// fine-grained token, whose permissions are set on GitHub).
     pub scopes: Option<Vec<String>>,
+    /// The client id of the application the account **signed in through**, pinned when it signed
+    /// in (ADR 0128 D1.3): a renewal uses this one, never whatever the registrations say now, and
+    /// stops when they say another. `None` for a token the person pasted or a forge CLI's login
+    /// copied in, which no application granted, and for a browser sign-in made before this was
+    /// kept (renewed with purlis's own registration of its host, where it has one).
+    pub client_id: Option<String>,
 }
 
 /// The keyring service an account's token is kept under: `purlis/@forge/<host>/<id>`.
@@ -625,6 +631,8 @@ struct Written {
     state: State,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     scopes: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
     #[serde(flatten)]
     rest: Map<String, Value>,
 }
@@ -646,6 +654,7 @@ fn account_of(value: &Value) -> Option<ForgeAccount> {
         method: written.method,
         state: written.state,
         scopes: written.scopes,
+        client_id: written.client_id,
     })
 }
 
@@ -658,6 +667,7 @@ fn written(account: &ForgeAccount, rest: Map<String, Value>) -> Value {
         method: account.method,
         state: account.state,
         scopes: account.scopes.clone(),
+        client_id: account.client_id.clone(),
         rest,
     })
     .unwrap_or(Value::Null)
@@ -924,6 +934,7 @@ pub(super) fn sign_in(
         Held::Token(token.0),
         method,
         None,
+        None,
     )
 }
 
@@ -936,7 +947,9 @@ pub(super) fn sign_in(
 /// host. The account, as listed.
 ///
 /// `typed` is the host of the registration the grant came from, and the account is that host's
-/// alone: the token is checked with, and only ever sent to, the forge at that host.
+/// alone: the token is checked with, and only ever sent to, the forge at that host. `client_id`
+/// is that registration's, **pinned on the account** ([`ForgeAccount::client_id`]): the grant's
+/// refresh token belongs to that application alone.
 #[allow(clippy::too_many_arguments)]
 pub fn sign_in_with_grant(
     _host: &HostScope,
@@ -947,6 +960,7 @@ pub fn sign_in_with_grant(
     typed: &str,
     granted: Granted,
     method: Method,
+    client_id: &str,
 ) -> Result<ForgeAccount, String> {
     if !granted_by_a_flow(method) {
         return Err("A browser sign-in is by the device flow or by PKCE.".to_string());
@@ -965,6 +979,7 @@ pub fn sign_in_with_grant(
         host,
         Held::Grant(granted),
         method,
+        Some(client_id.to_string()),
         None,
     )
 }
@@ -1031,6 +1046,7 @@ pub fn widened(
         account.host.clone(),
         Held::Grant(granted),
         Method::Device,
+        account.client_id.clone(),
         Some(StepUp { account, more }),
     )
 }
@@ -1059,6 +1075,7 @@ fn keep(
     host: String,
     held: Held,
     method: Method,
+    client_id: Option<String>,
     step_up: Option<StepUp<'_>>,
 ) -> Result<ForgeAccount, String> {
     let secret = match &held {
@@ -1174,6 +1191,7 @@ fn keep(
         method,
         state: State::SignedIn,
         scopes: checked.scopes,
+        client_id,
     };
     keyring
         .set(&service(&account), ITEM_ACCOUNT, &item)
