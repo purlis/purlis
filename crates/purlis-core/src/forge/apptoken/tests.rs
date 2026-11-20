@@ -1094,6 +1094,180 @@ fn a_clone_there_at_start_raises_trust_this_clone_and_after_the_press_the_mint_s
     let _ = taken_at_end(root, None);
 }
 
+/// A workspace whose clone `api` the window recorded and whose clone `web` was cloned from the
+/// CLI (#7196), and a chat that started with both. A token kept for it is handed, and a mint
+/// here would fail, so an `Ok` is the kept token.
+struct Mixed {
+    dir: tempfile::TempDir,
+    config: tempfile::TempDir,
+    started: Vec<super::Started>,
+    api: PathBuf,
+    web: PathBuf,
+}
+
+impl Mixed {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        let config = tempfile::tempdir().unwrap();
+        let api = a_clone(dir.path(), "api", "https://github.com/acme/api.git");
+        let web = a_clone(dir.path(), "web", "https://github.com/acme/web.git");
+        let mut recorded = std::collections::BTreeMap::new();
+        recorded.insert(
+            crate::sandbox::local::clone_key(&api),
+            "github.com/acme/api".to_owned(),
+        );
+        crate::forge::gitcredential::write_push_remotes(config.path(), &recorded).unwrap();
+        let started = clones_now(dir.path());
+        Self {
+            dir,
+            config,
+            started,
+            api,
+            web,
+        }
+    }
+
+    fn ws(&self) -> PathBuf {
+        self.dir.path().join("workspaces/ws")
+    }
+
+    fn chat<'a>(&'a self, ws: &'a Path, here: &'a Path) -> For<'a> {
+        For {
+            root: self.dir.path(),
+            chat: 21,
+            folder: Some(ws),
+            here: Some(here),
+            writes: &[],
+            started: Some(&self.started),
+            on_a_runner: false,
+            config_root: Some(self.config.path()),
+            ends_seen: None,
+        }
+    }
+
+    /// The token `ghs_api` kept for the chat, for the clone `scoped_to` (the one its run is in).
+    fn keep_for(&self, scoped_to: Option<&Path>) {
+        let ws = self.ws();
+        let recorded = crate::forge::gitcredential::read_push_remotes(self.config.path());
+        let remotes = remotes_of_workspace(
+            self.dir.path(),
+            Some(&ws),
+            &[],
+            Some(&self.started),
+            &recorded,
+        )
+        .unwrap();
+        assert_eq!(remotes.len(), 1, "{remotes:?}");
+        let gh = minted_gh();
+        let hour = super::after(jiff::Timestamp::now(), Duration::from_secs(3600));
+        assert!(super::keep_one(
+            super::Asked {
+                root: self.dir.path().to_path_buf(),
+                chat: 21,
+                app: "Iv23liExample".to_owned(),
+                vault: gh.vault.clone(),
+                key: gh.values[0].key.clone(),
+                clone: clone_of(&remotes, scoped_to),
+                remotes,
+            },
+            super::ends_so_far(),
+            zeroize::Zeroizing::new("ghs_api".to_owned()),
+            hour,
+            hour,
+        ));
+    }
+
+    fn token(&self, here: &Path) -> Result<String, String> {
+        let ws = self.ws();
+        token_for(&self.chat(&ws, here), &minted_gh(), &|| {
+            Err("the key is read only to mint".to_owned())
+        })
+        .map(|token| token.as_str().to_owned())
+    }
+}
+
+#[test]
+fn a_run_in_a_recorded_clone_gets_its_token() {
+    let fix = Mixed::new();
+    fix.keep_for(Some(&fix.api));
+    assert_eq!(fix.token(&fix.api).as_deref(), Ok("ghs_api"));
+    let _ = taken_at_end(fix.dir.path(), None);
+}
+
+#[test]
+fn a_run_in_an_unrecorded_clone_is_not_refused_and_asks_nothing_so_gh_r_a_recorded_repo_works() {
+    let fix = Mixed::new();
+    fix.keep_for(None);
+    // `gh -R acme/api` from inside `web`: the token the recorded repo has, as before (#7196).
+    assert_eq!(fix.token(&fix.web).as_deref(), Ok("ghs_api"));
+    assert_eq!(crate::windowonly::every(fix.dir.path()), []);
+    let _ = taken_at_end(fix.dir.path(), None);
+}
+
+#[test]
+fn the_start_note_names_every_clone_the_window_did_not_make_and_the_press_clears_it() {
+    let fix = Mixed::new();
+    let ws = fix.ws();
+    let said = super::unrecorded_note(&fix.chat(&ws, &fix.api)).unwrap();
+    assert!(said.contains("workspaces/ws/web"), "{said}");
+    assert!(!said.contains("workspaces/ws/api"), "{said}");
+    assert!(said.contains("wasn't made from the window"), "{said}");
+    assert!(said.contains("no Agent identity token"), "{said}");
+    assert!(said.contains("Trust this clone"), "{said}");
+    crate::windowonly::trust_this_clone(
+        &crate::forge::route::HostScope::for_a_test(),
+        fix.config.path(),
+        fix.dir.path(),
+        "workspaces/ws/web",
+        "github.com/acme/web",
+    )
+    .unwrap();
+    assert_eq!(super::unrecorded_note(&fix.chat(&ws, &fix.web)), None);
+    assert_eq!(super::unrecorded_here_note(&fix.chat(&ws, &fix.web)), None);
+}
+
+#[test]
+fn a_gh_that_failed_in_an_unrecorded_clone_names_that_one_clone_and_a_recorded_one_says_nothing() {
+    let fix = Mixed::new();
+    let ws = fix.ws();
+    let said = super::unrecorded_here_note(&fix.chat(&ws, &fix.web)).unwrap();
+    assert!(said.contains("workspaces/ws/web"), "{said}");
+    assert!(!said.contains("workspaces/ws/api"), "{said}");
+    assert!(said.contains("Trust this clone"), "{said}");
+    // A folder inside it, and its branch folder, are in it too.
+    let inside = fix.web.join("src");
+    std::fs::create_dir_all(&inside).unwrap();
+    assert!(super::unrecorded_here_note(&fix.chat(&ws, &inside)).is_some());
+    let branch = ws.join(".worktrees/web/p1");
+    std::fs::create_dir_all(&branch).unwrap();
+    let said = super::unrecorded_here_note(&fix.chat(&ws, &branch)).unwrap();
+    assert!(said.contains("workspaces/ws/web"), "{said}");
+    // The recorded clone, and a folder in none, say nothing.
+    assert_eq!(super::unrecorded_here_note(&fix.chat(&ws, &fix.api)), None);
+    assert_eq!(super::unrecorded_here_note(&fix.chat(&ws, &ws)), None);
+}
+
+#[test]
+fn a_branch_folder_is_in_its_clone_for_the_run_s_token() {
+    let fix = Mixed::new();
+    let branch = fix.ws().join(".worktrees/api/p1");
+    std::fs::create_dir_all(&branch).unwrap();
+    let recorded = crate::forge::gitcredential::read_push_remotes(fix.config.path());
+    let ws = fix.ws();
+    let remotes = remotes_of_workspace(
+        fix.dir.path(),
+        Some(&ws),
+        &[],
+        Some(&fix.started),
+        &recorded,
+    )
+    .unwrap();
+    assert_eq!(
+        clone_of(&remotes, Some(&branch)),
+        Some(fix.api.canonicalize().unwrap())
+    );
+}
+
 /// A fake forge for the mint: one installation (42) of an App that has `has`. As GitHub does, a
 /// mint with `permissions` gets exactly those, one with none gets all the App has, and one asking
 /// for a permission the installation lacks is a 422. With `ignores_the_ask` the token comes back

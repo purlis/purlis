@@ -24,14 +24,20 @@ struct World {
     root: PathBuf,
     forge: tempfile::TempDir,
     home: tempfile::TempDir,
+    host: &'static str,
 }
 
 impl World {
     fn holding(repos: &[&str]) -> Self {
+        Self::holding_on("gitlab", HOST, repos)
+    }
+
+    /// [`Self::holding`] on a forge of `kind` at `host`.
+    fn holding_on(kind: &str, host: &'static str, repos: &[&str]) -> Self {
         let (dir, root) = plane();
         std::fs::write(
             root.join("charter.toml"),
-            format!("[[forge]]\nkind = \"gitlab\"\nhost = \"{HOST}\"\nowner = \"acme\"\n"),
+            format!("[[forge]]\nkind = \"{kind}\"\nhost = \"{host}\"\nowner = \"acme\"\n"),
         )
         .unwrap();
         let rows: Vec<Value> = repos
@@ -40,8 +46,8 @@ impl World {
                 json!({
                     "name": name,
                     "path_with_namespace": format!("acme/{name}"),
-                    "web_url": format!("https://{HOST}/acme/{name}"),
-                    "forge": "gitlab",
+                    "web_url": format!("https://{host}/acme/{name}"),
+                    "forge": kind,
                 })
             })
             .collect();
@@ -61,6 +67,7 @@ impl World {
             root,
             forge,
             home: tempfile::tempdir().unwrap(),
+            host,
         }
     }
 
@@ -91,8 +98,9 @@ impl World {
 
     fn sent_to_the_stand_in(&self) -> String {
         format!(
-            "url.file://{}/acme/.insteadOf=https://{HOST}/acme/",
-            self.forge.path().display()
+            "url.file://{}/acme/.insteadOf=https://{}/acme/",
+            self.forge.path().display(),
+            self.host
         )
     }
 
@@ -126,7 +134,7 @@ impl World {
     /// to the chat's hosts, with `watch` standing in for the forge.
     fn clone_for_a_chat(&self, repos: &[&str], watch: &Watch) -> (u8, Vec<Say>) {
         let repos: Vec<String> = repos.iter().map(|name| (*name).to_owned()).collect();
-        let hosts = [HOST.to_owned()];
+        let hosts = [self.host.to_owned()];
         let mut said = Vec::new();
         let code = git::isolated(&git::Isolated::default(), || {
             clone(
@@ -142,6 +150,25 @@ impl World {
                 &mut |line| said.push(line),
             )
         });
+        (code, said)
+    }
+
+    /// Clones `repos` as `purlis clone` does in a terminal: no window, no isolation.
+    fn clone_from_the_terminal(&self, repos: &[&str], watch: &Watch) -> (u8, Vec<Say>) {
+        let repos: Vec<String> = repos.iter().map(|name| (*name).to_owned()).collect();
+        let mut said = Vec::new();
+        let code = clone(
+            &Request {
+                root: &self.root,
+                ws: "alpha",
+                repos: &repos,
+                now: jiff::Timestamp::now(),
+                author: "tester",
+                hosts: None,
+                watch: Some(watch),
+            },
+            &mut |line| said.push(line),
+        );
         (code, said)
     }
 
@@ -1037,3 +1064,59 @@ fn a_clone_whose_repos_was_taken_away_before_its_claim_still_lands() {
 }
 
 mod real_lfs;
+
+/// What a clone not made from the window says about the mint (#7196): said for github.com, the
+/// one host the mint covers, to the terminal and to a chat's own clone, and never for the window
+/// or another host.
+fn the_mint_warning(said: &[Say]) -> Option<&str> {
+    said.iter().find_map(|line| match line {
+        Say::Warn(text) if text.contains("Agent identity token") => Some(text.as_ref()),
+        _ => None,
+    })
+}
+
+fn clone_on_github(how: impl Fn(&World, &Watch) -> (u8, Vec<Say>)) -> Option<String> {
+    let world = World::holding_on("github", "github.com", &["web"]);
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_secs(60), None);
+    let (code, said) = how(&world, &watch);
+    assert_eq!(code, 0, "{said:?}");
+    the_mint_warning(&said).map(str::to_owned)
+}
+
+#[test]
+fn a_github_clone_from_the_terminal_says_a_running_chat_picks_nothing_up_until_it_restarts() {
+    let said = clone_on_github(|world, watch| world.clone_from_the_terminal(&["web"], watch))
+        .expect("a warning");
+    assert!(said.contains("wasn't made from the window"), "{said}");
+    assert!(said.contains("already running"), "{said}");
+    assert!(said.contains("until it restarts"), "{said}");
+    assert!(said.contains("Trust this clone"), "{said}");
+}
+
+#[test]
+fn a_chat_s_own_github_clone_says_the_same_in_the_command_s_output() {
+    let said =
+        clone_on_github(|world, watch| world.clone_for_a_chat(&["web"], watch)).expect("a warning");
+    assert!(said.contains("until it restarts"), "{said}");
+}
+
+#[test]
+fn a_clone_from_the_window_says_nothing_of_the_mint() {
+    assert_eq!(
+        clone_on_github(|world, watch| world.clone_as_the_window(&["web"], watch)),
+        None
+    );
+}
+
+#[test]
+fn a_gitlab_clone_from_the_terminal_says_nothing_of_the_mint() {
+    let world = World::holding(&["web"]);
+    let off = AtomicBool::new(false);
+    let heard = |_: Stage, _: u8| {};
+    let watch = world.watching(&heard, &off, Duration::from_secs(60), None);
+    let (code, said) = world.clone_from_the_terminal(&["web"], &watch);
+    assert_eq!(code, 0, "{said:?}");
+    assert_eq!(the_mint_warning(&said), None, "{said:?}");
+}

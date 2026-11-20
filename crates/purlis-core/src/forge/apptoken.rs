@@ -58,6 +58,83 @@ pub const HOST: &str = "github.com";
 pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purlis cloned, or \
     that the person trusted, has a github.com remote, so no GitHub App token was minted";
 
+/// **The github.com clones of the chat's workspace the mint would count once trusted and has no
+/// record of** (#7196), each as `(folder, place, path)`: the clones [`trust_asked`] asks for.
+/// Empty where the chat has no config home, no workspace, or no such clone.
+fn unrecorded_clones(chat: &For<'_>) -> Vec<(String, String, PathBuf)> {
+    let Some(config_root) = chat.config_root else {
+        return Vec::new();
+    };
+    let plane = crate::workspaces::Plane::open(chat.root.to_path_buf());
+    let Some(workspace) = chat.folder.and_then(|folder| plane.workspace_of(folder)) else {
+        return Vec::new();
+    };
+    let Ok(clones) = crate::repos::clones(chat.root, &workspace) else {
+        return Vec::new();
+    };
+    let clones = match chat.started {
+        Some(started) => there_at_start(clones.repos, started),
+        None => clones.repos,
+    };
+    let counted: Vec<String> = held_from_chats(clones, &grantable_beside(chat.root, chat.writes))
+        .iter()
+        .map(|repo| crate::sandbox::local::clone_key(&repo.path))
+        .collect();
+    super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
+        .into_iter()
+        .filter(|clone| clone.workspace == workspace)
+        .filter(|clone| counted.contains(&crate::sandbox::local::clone_key(&clone.path)))
+        .filter_map(|clone| {
+            let place = clone.place?;
+            place
+                .starts_with(&format!("{HOST}/"))
+                .then_some((clone.folder, place, clone.path))
+        })
+        .collect()
+}
+
+/// **What a chat is told about the clones of its workspace that were not made from the window**
+/// (#7196): they get no Agent identity token, and the person can record them. `None` where there
+/// is none. Said from a chat's start, and by a `gh` that fails in one
+/// ([`unrecorded_here_note`]); it raises no ask.
+#[must_use]
+pub fn unrecorded_note(chat: &For<'_>) -> Option<String> {
+    let folders: Vec<String> = unrecorded_clones(chat)
+        .into_iter()
+        .map(|(folder, ..)| folder)
+        .collect();
+    if folders.is_empty() {
+        return None;
+    }
+    let (this, them) = if folders.len() == 1 {
+        ("this clone wasn't", "it")
+    } else {
+        ("these clones weren't", "them")
+    };
+    Some(format!(
+        "{}: {this} made from the window, so this chat's gh gets no Agent identity token for \
+         {them}. Re-clone from the window, or the person can press \"Trust this clone\" on {them} in the window.",
+        folders.join(", "),
+    ))
+}
+
+/// **What a chat is told when its `gh` failed in a clone the window did not make** (#7196): the
+/// one clone `chat.here` is in, named, and *Trust this clone*. `None` where it is in no such
+/// clone. Said, never refused: a run there that named a recorded repo worked, and still does.
+#[must_use]
+pub fn unrecorded_here_note(chat: &For<'_>) -> Option<String> {
+    let here = chat.here?;
+    let here = here.canonicalize().unwrap_or_else(|_| here.to_path_buf());
+    let (folder, ..) = unrecorded_clones(chat)
+        .into_iter()
+        .find(|(_, _, path)| is_in(&here, &path.canonicalize().unwrap_or_else(|_| path.clone())))?;
+    Some(format!(
+        "{folder}: this clone wasn't made from the window, so this chat's gh gets no Agent \
+         identity token for it, and a command that failed here may be why. Re-clone from the \
+         window, or the person can press \"Trust this clone\" on it there.",
+    ))
+}
+
 /// **A mint refused for a clone purlis has no record of raises Trust this clone** (R-330,
 /// R-328): each github.com clone of the chat's workspace with no record, at the one address its
 /// remote names, is one ask for the chat ([`crate::windowonly`]). Only a clone the mint would
@@ -66,30 +143,10 @@ pub const NO_RECORDED_CLONE: &str = "no clone in this chat's workspace that purl
 /// them (Q249). Answers what the chat is told, naming the ask, or `None` where there is no such
 /// clone, and so nothing to ask.
 fn trust_asked(chat: &For<'_>) -> Option<String> {
-    let config_root = chat.config_root?;
-    let plane = crate::workspaces::Plane::open(chat.root.to_path_buf());
-    let workspace = chat.folder.and_then(|folder| plane.workspace_of(folder))?;
-    let clones = crate::repos::clones(chat.root, &workspace).ok()?.repos;
-    let clones = match chat.started {
-        Some(started) => there_at_start(clones, started),
-        None => clones,
-    };
-    let counted: Vec<String> = held_from_chats(clones, &grantable_beside(chat.root, chat.writes))
-        .iter()
-        .map(|repo| crate::sandbox::local::clone_key(&repo.path))
+    let folders: Vec<(String, String)> = unrecorded_clones(chat)
+        .into_iter()
+        .map(|(folder, place, _)| (folder, place))
         .collect();
-    let folders: Vec<(String, String)> =
-        super::gitcredential::vouch::unvouched_clones(chat.root, config_root)
-            .into_iter()
-            .filter(|clone| clone.workspace == workspace)
-            .filter(|clone| counted.contains(&crate::sandbox::local::clone_key(&clone.path)))
-            .filter_map(|clone| {
-                let place = clone.place?;
-                place
-                    .starts_with(&format!("{HOST}/"))
-                    .then_some((clone.folder, place))
-            })
-            .collect();
     if folders.is_empty() {
         return None;
     }
@@ -381,7 +438,19 @@ pub fn clone_of(remotes: &[Remote], here: Option<&Path>) -> Option<PathBuf> {
                 .canonicalize()
                 .unwrap_or_else(|_| remote.clone.clone())
         })
-        .find(|clone| here.starts_with(clone))
+        .find(|clone| is_in(&here, clone))
+}
+
+/// Whether the canonical folder `here` is in the clone at `clone`, or in a branch folder of it
+/// (`<workspace>/.worktrees/<repo>/<piece>`, #7196).
+fn is_in(here: &Path, clone: &Path) -> bool {
+    here.starts_with(clone)
+        || clone
+            .parent()
+            .zip(clone.file_name())
+            .is_some_and(|(workspace, repo)| {
+                here.starts_with(workspace.join(crate::worktree::DIR_NAME).join(repo))
+            })
 }
 
 /// The DER of the private key in `pem`, and whether it is PKCS#8 (`PRIVATE KEY`) rather than

@@ -364,6 +364,11 @@ pub(crate) fn helper_for_push_with(
     }
 }
 
+/// Every address the remotes of `clone` name now, empty where git cannot read them.
+pub fn places_of(clone: &Path) -> Vec<String> {
+    remote::places_now(clone).unwrap_or_default()
+}
+
 /// Records `url` as the remote of `clone`, for a clone the window just made. Nothing outside the
 /// window's git.
 pub fn record_push_remote(clone: &Path, url: &str) {
