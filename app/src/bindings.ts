@@ -1258,6 +1258,11 @@ export const commands = {
 	 */
 	with_the_runner: boolean,
 	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
+	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
 	 *  end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
@@ -4613,9 +4618,10 @@ export const commands = {
 	 *  `discarding` names the held runners whose conversations the person was asked about, and agreed
 	 *  to discard with the pool (#4860): a runner held now that it does not name removes nothing.
 	 *  A pool on another machine that doesn't answer is removed not at all: the answer says so, and
-	 *  the window offers to forget it here.
+	 *  the window offers to forget it here. One that answers and refuses is offered Remove as well,
+	 *  which goes on where `despite_its_check` says it was asked again (#7187).
 	 */
-	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[]) => typedError<PoolRemoval, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding })),
+	removeDockerPool: (name: string, elsewhere: boolean, discarding: string[], despiteItsCheck: boolean) => typedError<PoolRemoval, string>(__TAURI_INVOKE("remove_docker_pool", { name, elsewhere, discarding, despiteItsCheck })),
 	/**
 	 *  **Forgets pool `name` on this machine without contacting its machine**: the window's Forget it
 	 *  here, offered where Remove found that machine doesn't answer. Its runners stay there, and the
@@ -4696,7 +4702,8 @@ export const commands = {
 	clusterPoolKey: (kubeconfig: string | null, context: string, pool: string, pasted: string | null) => typedError<ClusterPoolKey, string>(__TAURI_INVOKE("cluster_pool_key", { kubeconfig, context, pool, pasted })),
 	/**
 	 *  **Where the runner of a chat being started has got to** (#3709), read from the cluster, for the
-	 *  window's Start while it waits. Nothing where there is no stage to say.
+	 *  window's Start while it waits. Nothing where there is no stage to say; for a pool whose link is
+	 *  down, that it is waited for (#7187).
 	 */
 	runnerStage: (plane: PlaneId, workspace: string | null, runsOn: {
 	pool: string | null,
@@ -12075,6 +12082,24 @@ export type LinkSeen = {
 	chat: ChatSeen | null,
 };
 
+/**
+ *  **Which remote state a pool's runner is in while its link is down** (#7187, CONTEXT.md), as
+ *  the window says it: the core's [`RemoteState`](purlis_core::sshroute::connect::RemoteState),
+ *  read where the link tells it. A runner gone and a pool forgotten are not here: a link that
+ *  says them is not down but ended, and they are told as [`Reconnection::RunnerGone`] and
+ *  [`Reconnection::PoolForgotten`], with no [`LinkDown`] kept.
+ */
+export type LinkState = 
+/**
+ *  Nothing answers, or not yet (Docker still starting on a machine whose `sshd` is up
+ *  included): purlis tries again, and the person may press Try now.
+ */
+"unreachable" | 
+/**  The machine answers and refuses: purlis stopped trying on its own; Try now and Check pool. */
+"refused" | 
+/**  The machine presents another key or engine than the pinned one. */
+"host_key_changed";
+
 /**  One repo the person can get. */
 export type ListedRepo = {
 	/**  `github` or `gitlab`. */
@@ -12199,6 +12224,11 @@ export type LostChat = {
 	 *  home (#4350).
 	 */
 	with_the_runner: boolean,
+	/**
+	 *  Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+	 *  runner may be there still, though no longer reached from here.
+	 */
+	pool_forgotten: boolean,
 	/**
 	 *  **What it had left running of its own, which ended with its host** (#5752, spec #5743),
 	 *  in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
@@ -14620,6 +14650,17 @@ export type PoolLink =
 /**  It did not answer, and why. */
 { state: "down"; why: string } | 
 /**
+ *  **Its machine answers, but refuses** (#7187, Refused): its sign-in, Docker or forwarding
+ *  fails, and why. purlis stopped trying on its own; Check pool says what changed.
+ */
+{ state: "refused"; why: string } | 
+/**
+ *  **Its machine presents another host key, CA or engine than the pinned one** (#7187, Host
+ *  key changed), and why, as a link says it: a security stop, never tried again on its own;
+ *  the person says it is all right in the pool's settings.
+ */
+{ state: "host_key_changed"; why: string } | 
+/**
  *  It suspended itself, a day without a link (#2051): its container is stopped, its home
  *  kept, and the window's next chat there starts it again. A check never wakes it.
  */
@@ -14747,8 +14788,18 @@ export type PoolProfiles = {
 export type PoolRemoval = 
 /**  It is gone, or what of it stays is said in `left`. */
 { state: "removed"; left: string | null } | 
-/**  Its machine, `host`, doesn't answer, `why`: nothing was removed, and nothing was sent. */
-{ state: "unreachable"; why: string; host: string };
+/**
+ *  Its machine, `host`, doesn't answer, or presents another key or engine, `why`: nothing
+ *  was removed, and nothing was sent. Such a machine is never contacted (#7187, Unreachable,
+ *  Host key changed).
+ */
+{ state: "unreachable"; why: string; host: string } | 
+/**
+ *  Its machine, `host`, answers and refuses, `why` (#7187, Refused): nothing was removed.
+ *  Remove, which cleans the machine, stays offered beside Forget it here, and goes on where
+ *  it is asked again.
+ */
+{ state: "refused"; why: string; host: string };
 
 /**
  *  **A pool whose runner was removed outside purlis** (#4149): what the Notice of a refused
@@ -16013,11 +16064,25 @@ export type Reconnection =
  */
 "key_changed" | 
 /**
- *  The runner was removed outside purlis (#4149): its host does not link to it again until
- *  it is made again, so its chats stay dimmed and the window offers Make the runner again in
- *  a Notice of its own.
+ *  The runner was removed outside purlis (#4149, #7187 Runner gone): its chats end, as a
+ *  forgotten pool's do, and are not dimmed; the window offers Start again on this pool in a
+ *  Notice of its own.
  */
-"runner_gone";
+"runner_gone" | 
+/**
+ *  The runner's machine answers, but its sign-in, Docker or forwarding fails (#7187,
+ *  Refused): its host stops trying on its own, so its chats stay dimmed and the window says
+ *  why, with Check pool and Try now, which dials once.
+ */
+"refused" | 
+/**
+ *  The runner's machine presents another host key, CA or engine than the pinned one (#7187,
+ *  Host key changed): its host never links to it again on its own, so its chats stay dimmed
+ *  and the window says why, with Check and trust again in the pool's settings.
+ */
+"host_key_changed" | 
+/**  The pool was forgotten here (#7187, Pool forgotten): its chats end, and say so. */
+"pool_forgotten";
 
 /**
  *  The level a referrer is changed at, when it is not the entry's own
@@ -17223,6 +17288,8 @@ export type RunnerLinkDown = {
 	why: string,
 	/**  When the link went down, in seconds since 1970. */
 	since: number,
+	/**  Which state it is in (#7187): Refused says why and offers Check pool and Try now (purlis's own retries stopped). */
+	state: LinkState,
 };
 
 /**  How the window reads what a runner records (#3393). */

@@ -217,6 +217,12 @@ const SORTED: &[(&str, &str, Group, &str)] = &[
     ),
     (
         "crates/host/src/relay.rs",
+        "LATE_START_TRIES",
+        Internal,
+        "how purlis waits or looks",
+    ),
+    (
+        "crates/host/src/relay.rs",
         "PARKED_FOR",
         Internal,
         "how purlis waits or looks",

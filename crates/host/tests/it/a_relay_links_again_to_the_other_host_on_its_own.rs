@@ -1058,6 +1058,8 @@ impl session::Host for SaysItsLink {
                 why: "host B's own link".into(),
                 key_changed: false,
                 gone: false,
+                refused: false,
+                host_key_changed: false,
             },
             Pushed::LinkBack {},
             Pushed::Event(event(1)),

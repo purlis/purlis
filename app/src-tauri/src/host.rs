@@ -716,6 +716,14 @@ pub trait SessionHost: Send + Sync {
         false
     }
 
+    /// Whether the host session `id`'s program ended with was a pool forgotten on this machine
+    /// (#7187, Pool forgotten): its runner may be there still, but is no longer reached from
+    /// here. Never, where chats run in the window's own process.
+    fn lost_with_its_pool_forgotten(&self, id: u32) -> bool {
+        let _ = id;
+        false
+    }
+
     /// The sessions that are running, in the order they were opened.
     fn running(&self) -> Vec<u32>;
 

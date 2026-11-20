@@ -2484,6 +2484,7 @@ fn a_task_whose_program_ends_with_its_session_host_is_not_failed_and_its_pane_sa
             left_in: crate::hostlost::LeftIn::Failed,
             resumable: true,
             with_the_runner: false,
+            pool_forgotten: false,
         }),
         "failed: it never said its turn ended; it has its conversation to resume"
     );
@@ -2601,6 +2602,7 @@ fn a_chat_that_ended_with_a_gone_runner_is_not_resumable() {
             left_in: crate::hostlost::LeftIn::Hibernated,
             resumable: false,
             with_the_runner: true,
+            pool_forgotten: false,
         })
     );
 }
@@ -2629,6 +2631,7 @@ fn a_chat_idle_when_its_session_host_ends_is_hibernated_and_resume_starts_it_on_
             left_in: crate::hostlost::LeftIn::Hibernated,
             resumable: true,
             with_the_runner: false,
+            pool_forgotten: false,
         })
     );
     held.chats().ask_restart(steward).expect("Resume asks");

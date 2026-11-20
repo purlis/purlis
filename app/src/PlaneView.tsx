@@ -12087,7 +12087,7 @@ export const PlaneView = memo(function PlaneView({
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
       />
       {/* **The runner this project's chats run on was removed outside purlis** (#4149): said
-          once for the project, with Make the runner again. */}
+          once for the project, with Start again on this pool. */}
       <RunnerGoneNotice
         plane={plane}
         onOpenPools={() => openSettingsAt({ group: "you.machine.pools" })}
