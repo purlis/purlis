@@ -308,6 +308,7 @@ fn a_browser_sign_in_ends_with_the_account_and_its_token_in_the_keyring_alone() 
         gitlab.host,
         granted,
         Method::Pkce,
+        gitlab.client_id,
     )
     .unwrap();
     assert_eq!(
@@ -399,6 +400,7 @@ fn signed_in_by_the_browser(config: &Path) -> ForgeAccount {
         "gitlab.com",
         granted,
         Method::Pkce,
+        "a-client-id",
     )
     .unwrap();
     // The control: the token IS kept, in its own keyring item.
