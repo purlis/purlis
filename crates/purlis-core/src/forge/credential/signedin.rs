@@ -50,7 +50,8 @@ impl SignedIn {
             .into_iter()
             .filter(|a| a.host.eq_ignore_ascii_case(&host))
             .collect();
-        // The first signed-in account on the host, as the window's own requests choose it.
+        // The first signed-in account on the host, as the window's own requests choose it. A
+        // chat's route is not this: it names the project's account ([`SignedIn::credential_of`]).
         let Some(account) = on_host.iter().find(|a| a.state == State::SignedIn) else {
             return Err(match on_host.first() {
                 // Listed and signed out: the forge ended it, or the person signed out.
@@ -64,17 +65,58 @@ impl SignedIn {
                 },
             });
         };
+        self.credential_of(account, &host, now)
+    }
+
+    /// **The credential of the one account `account_id`** (ADR 0128 D2: *which account serves a
+    /// project is the person's choice*), with the time given: the account the person chose for a
+    /// repo ([`crate::forge::confirmed::account_for`]), never the first one on its host. An
+    /// account that is signed out or gone is an error, and **no other account on the host
+    /// answers in its place**: it is another principal.
+    pub fn credential_for_account(
+        &self,
+        host: &str,
+        account_id: &str,
+        now: u64,
+    ) -> Result<Credential, CredentialError> {
+        let host = host.trim().to_ascii_lowercase();
+        let listed: Vec<ForgeAccount> = accounts::listed(&self.config_root)
+            .map_err(|why| unusable(&host, why))?
+            .into_iter()
+            .filter(|a| a.id == account_id && a.host.eq_ignore_ascii_case(&host))
+            .collect();
+        match listed.first() {
+            Some(account) if account.state == State::SignedIn => {
+                self.credential_of(account, &host, now)
+            }
+            Some(ended) => Err(CredentialError::SignInAgain {
+                host,
+                said: ended_said(ended),
+            }),
+            None => Err(CredentialError::None {
+                how: super::no_account_how(super::Mode::Interactive, &host),
+                host,
+            }),
+        }
+    }
+
+    fn credential_of(
+        &self,
+        account: &ForgeAccount,
+        host: &str,
+        now: u64,
+    ) -> Result<Credential, CredentialError> {
         let token = self
             .refresher
             .token_at(account, now)
-            .map_err(|e| failed(&host, account, &e))?;
+            .map_err(|e| failed(host, account, &e))?;
         let expires_at = accounts::kept(accounts::keyring_at(&self.config_root).as_ref(), account)
             .ok()
             .flatten()
             .and_then(|kept| kept.expires_at);
         Ok(Credential::new(
             account.kind,
-            &host,
+            host,
             token,
             Source::SignedIn,
             TokenKind::of_method(account.method),

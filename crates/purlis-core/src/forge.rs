@@ -45,6 +45,7 @@ pub mod budget;
 pub mod checks;
 pub mod cli;
 pub mod cliimport;
+pub mod confirmed;
 pub mod credential;
 pub mod device;
 pub mod etag;

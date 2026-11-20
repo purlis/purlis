@@ -53,6 +53,7 @@ use crate::names::KEYCHAIN_PREFIX;
 use crate::secrets::keyring::{FileStore, OsStore, Presence, STUB_FILE, Store};
 
 mod memory;
+pub mod workflow;
 use memory::Remembering;
 
 /// The accounts file, in purlis's directory of the config home (ADR 0077 §8).
@@ -1221,6 +1222,8 @@ pub fn sign_out(
                 e.message
             )
         })?;
+    // The second token (ADR 0128 D1.1) goes with the first: a signed-out account leaves none.
+    workflow::remove(keyring, &account)?;
     file.accounts.remove(at);
     write(config_root, file)?;
     Ok(account)
@@ -1279,6 +1282,7 @@ pub(super) fn signed_out_by_the_forge(
     // The item first: an account listed signed in must never be left with a token that the
     // forge has ended.
     let _ = keyring.delete(&service(&account), ITEM_ACCOUNT);
+    let _ = workflow::remove(keyring, &account);
     if let Some(Value::Object(fields)) = file.accounts.get_mut(at) {
         fields.insert(
             "state".to_string(),

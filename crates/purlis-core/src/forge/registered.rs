@@ -5,16 +5,32 @@
 //! Enterprise Server and self-hosted GitLab).
 //!
 //! purlis's compiled-in registrations ([`super::registration::TABLE`]) exist on github.com and
-//! gitlab.com only. A GHES host or a self-hosted GitLab knows purlis by nothing until somebody
-//! makes an application there and gives purlis its **client id**: on GHES one OAuth app or GitHub
-//! App with the device flow ticked, on a self-hosted GitLab an OAuth application owned by the
-//! person's own profile (no administrator, no instance setting). This file keeps those client
-//! ids, one per kind and host.
+//! gitlab.com only. A GHES host or a self-hosted GitLab knows purlis by nothing until an
+//! **owner** makes an application there and the person pins its **client id** on this machine
+//! (ADR 0128 D1.3): on GHES an OAuth app owned by an organization (or enterprise) with the
+//! device flow ticked, on a self-hosted GitLab an OAuth application owned by a group, or
+//! instance-wide, never a single user's own (a user-owned application can be deleted or
+//! re-pointed by its one owner, and the first person who registers one would decide what every
+//! teammate signs in to). This file keeps those client ids, one per kind and host, **with the
+//! owner the person expects**.
+//!
+//! **The pin is the person's press, and it is device-bound.** [`use_application`] is the act of
+//! pressing *Use this application* for a host: a client id that arrives from a teammate or a
+//! workspace is only a value the window shows, and it takes effect only when the person presses.
+//! The file is **Machine, device-bound** (`docs/plane-format.md`) and never synced as an
+//! instruction: a sync that changed it would point every teammate's sign-in at an attacker's
+//! application. A changed client id is a new press and answers [`Change::ClientId`], which the
+//! window raises as a Notice.
+//!
+//! **The owner is what the person checks, not what purlis can.** No API returns an OAuth
+//! application's owner (the device-flow and token replies carry none), so the pinned owner is the
+//! name the person typed from the forge's page, and [`consent_check`] is the sentence the window
+//! shows before the sign-in: *check that the application is owned by `<owner>` on `<host>`*. A
+//! pin with no owner is no pin: [`find`] does not answer it.
 //!
 //! **Nothing here is secret.** A client id is public, and a registration is a public client: the
-//! device flow and PKCE send no client secret, and neither does a refresh. So the file is a
-//! Machine-tier store a person's sync may carry (`docs/plane-format.md`), and a restored copy
-//! asks nothing of the keyring.
+//! device flow and PKCE send no client secret, and neither does a refresh. A restored copy asks
+//! nothing of the keyring.
 //!
 //! **Only the host writes it.** [`register`] takes a [`HostScope`], refused inside a chat's
 //! process tree, as a sign-in does (ADR 0128 D5): a chat cannot point the sign-in at an
@@ -74,6 +90,10 @@ struct Entry {
     kind: String,
     host: String,
     client_id: String,
+    /// The organization or group the person expects to own the application: shown on the forge's
+    /// consent page, where the person compares it. Without one the entry is not a pin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<String>,
     #[serde(flatten)]
     rest: Map<String, Value>,
 }
@@ -103,6 +123,25 @@ fn handed_out(kind: Kind, host: &str, client_id: &str) -> &'static Registration 
     kept.push(made);
     made
 }
+
+/// An owner as a forge's page spells it: an organization's login, or a group's path with
+/// subgroups. Letters, digits, `-`, `_`, `.` and `/` between segments, none empty.
+fn owner_ok(owner: &str) -> bool {
+    !owner.is_empty()
+        && owner.len() <= MOST_OWNER
+        && !owner.starts_with('/')
+        && !owner.ends_with('/')
+        && !owner.contains("//")
+        && owner
+            .split('/')
+            .all(|segment| segment != "." && segment != "..")
+        && owner
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b'/'))
+}
+
+/// The longest owner path a forge allows, with room to spare.
+const MOST_OWNER: usize = 255;
 
 fn id_ok(client_id: &str) -> bool {
     !client_id.is_empty()
@@ -166,8 +205,39 @@ pub fn find(
                 && host_ok(&e.host)
                 && e.host.eq_ignore_ascii_case(host)
                 && id_ok(&e.client_id)
+                && e.owner.as_deref().is_some_and(owner_ok)
         })
         .map(|e| handed_out(kind, &e.host, &e.client_id)))
+}
+
+/// What the person pinned for a host: the client id and the owner they expect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pin {
+    pub client_id: String,
+    pub owner: String,
+}
+
+/// The pin for `kind` on `host`, or `None` when there is none (or the entry has no owner).
+pub fn pin(config_root: &Path, kind: Kind, host: &str) -> Result<Option<Pin>, String> {
+    let file = read(config_root)?;
+    Ok(file
+        .hosts
+        .iter()
+        .filter_map(|value| serde_json::from_value::<Entry>(value.clone()).ok())
+        .find(|e| {
+            Kind::parse(&e.kind) == Some(kind)
+                && e.host == e.host.to_ascii_lowercase()
+                && host_ok(&e.host)
+                && e.host.eq_ignore_ascii_case(host)
+                && id_ok(&e.client_id)
+                && e.owner.as_deref().is_some_and(owner_ok)
+        })
+        .and_then(|e| {
+            Some(Pin {
+                client_id: e.client_id,
+                owner: e.owner?,
+            })
+        }))
 }
 
 /// Every host the person registered, as `(kind, host)`, in the order they were added.
@@ -180,16 +250,41 @@ pub fn hosts(config_root: &Path) -> Result<Vec<(Kind, String)>, String> {
         .collect())
 }
 
-/// Registers `client_id` for `kind` on `host`, replacing the one already there. The host is
-/// normalised as a sign-in's is ([`host_named`]); a host purlis ships a registration on is
-/// refused. Returns the host as kept.
-pub fn register(
+/// What a press of *Use this application* changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Change {
+    /// The host had no pin.
+    New,
+    /// The same client id and owner: nothing changed.
+    Same,
+    /// A different client id replaced the pinned one. **The window raises a Notice**: accounts
+    /// signed in through the old application cannot be renewed through the new one.
+    ClientId { previous: String },
+    /// The same client id with another expected owner.
+    Owner { previous: String },
+}
+
+/// A pin as kept: the host as normalised, and what the press changed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pinned {
+    pub host: String,
+    pub change: Change,
+}
+
+/// **The person's press of *Use this application*** (ADR 0128 D1.3 rule 2, D5): pins `client_id`
+/// and the `owner` the person expects the forge's consent page to show, for `kind` on `host`,
+/// replacing any pin there. The host is normalised as a sign-in's is ([`host_named`]); a host
+/// purlis ships a registration on is refused; an owner or client id of a shape no forge has is
+/// refused. Refused inside a chat's process tree (the [`HostScope`]), so a chat, the CLI and a
+/// socket call cannot point a sign-in at an application of their own.
+pub fn use_application(
     _host: &HostScope,
     config_root: &Path,
     kind: Kind,
     typed_host: &str,
     client_id: &str,
-) -> Result<String, String> {
+    owner: &str,
+) -> Result<Pinned, String> {
     let host = host_named(kind, typed_host)?;
     if registration::on(kind, &host).is_some() {
         return Err(format!(
@@ -205,23 +300,106 @@ pub fn register(
                 .to_string(),
         );
     }
+    let owner = owner.trim();
+    if !owner_ok(owner) {
+        return Err(format!(
+            "Name the organization or group that owns the application on {host}, as its page \
+             spells it: letters, digits, dashes, underscores and dots, with / between a group's \
+             subgroups."
+        ));
+    }
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
-    let entry = serde_json::json!({
-        "kind": kind.word(),
-        "host": host,
-        "client_id": client_id,
-    });
     let same = |value: &Value| {
         serde_json::from_value::<Entry>(value.clone())
             .is_ok_and(|e| Kind::parse(&e.kind) == Some(kind) && e.host == host)
     };
-    match file.hosts.iter().position(same) {
+    let at = file.hosts.iter().position(same);
+    let change = match at.and_then(|at| serde_json::from_value::<Entry>(file.hosts[at].clone()).ok())
+    {
+        None => Change::New,
+        Some(was) if was.client_id != client_id => Change::ClientId {
+            previous: was.client_id,
+        },
+        Some(was) if was.owner.as_deref() != Some(owner) => Change::Owner {
+            previous: was.owner.unwrap_or_default(),
+        },
+        Some(_) => Change::Same,
+    };
+    if change == Change::Same {
+        return Ok(Pinned { host, change });
+    }
+    let entry = serde_json::json!({
+        "kind": kind.word(),
+        "host": host,
+        "client_id": client_id,
+        "owner": owner,
+    });
+    match at {
         Some(at) => file.hosts[at] = entry,
         None => file.hosts.push(entry),
     }
     write(config_root, file)?;
-    Ok(host)
+    Ok(Pinned { host, change })
+}
+
+/// A pin made for a test, owned by `acme-platform`; returns the host as kept.
+#[cfg(test)]
+pub(crate) fn register(
+    scope: &HostScope,
+    config_root: &Path,
+    kind: Kind,
+    typed_host: &str,
+    client_id: &str,
+) -> Result<String, String> {
+    use_application(scope, config_root, kind, typed_host, client_id, "acme-platform")
+        .map(|pinned| pinned.host)
+}
+
+/// **The sentence the window shows before the sign-in opens the forge's page** (ADR 0128 D1.3
+/// rule 1): what the person compares with the line the forge's own page shows. `owner` is the
+/// pinned one.
+pub fn consent_check(owner: &str, host: &str) -> String {
+    format!(
+        "On the next page, check that the application is owned by {owner} on {host}. Sign in only \
+         if it is."
+    )
+}
+
+/// **The request an owner can be sent** (ADR 0128 D1.3 rule 3): what to enter when making the
+/// application on `host`, as text to copy. GitHub: an OAuth app owned by an organization with
+/// *Enable Device Flow* ticked. GitLab: an application owned by a group, not confidential,
+/// with the redirect addresses and the `api` scope.
+pub fn owner_request(kind: Kind, host: &str) -> String {
+    match kind {
+        Kind::GitHub => format!(
+            "Please register an OAuth app for purlis on {host}.\n\
+             \n\
+             Owner: an organization (or the enterprise), not a person's own account.\n\
+             Settings > Developer settings > OAuth Apps > New OAuth App\n\
+             Application name: purlis\n\
+             Homepage URL: https://github.com/purlis/purlis\n\
+             Authorization callback URL: http://127.0.0.1/purlis/signin (the device flow never uses it)\n\
+             Tick: Enable Device Flow\n\
+             \n\
+             Then send back the client id, shown on the app's page. No client secret is needed."
+        ),
+        Kind::GitLab => format!(
+            "Please register an OAuth application for purlis on {host}.\n\
+             \n\
+             Owner: a group (Group > Settings > Applications), or the instance (Admin > \
+             Applications), not a person's own.\n\
+             Name: purlis\n\
+             Redirect URIs, one per line:\n{}\n\
+             Confidential: off\n\
+             Scopes: api\n\
+             \n\
+             Then send back the application ID. No secret is needed.",
+            registration::REDIRECT_PORTS
+                .map(registration::redirect_uri)
+                .join("\n")
+        ),
+    }
 }
 
 /// Takes `host`'s registration away. An account signed in through it stays listed and keeps
@@ -440,5 +618,120 @@ mod tests {
             .unwrap()
             .unwrap();
         assert!(std::ptr::eq(a, b));
+    }
+
+    #[test]
+    fn pressing_use_this_application_pins_the_client_id_with_the_owner_the_person_expects() {
+        let home = tempfile::tempdir().unwrap();
+        let pinned = use_application(
+            &scope(),
+            home.path(),
+            Kind::GitHub,
+            "GHE.example.com",
+            "Iv1.abc",
+            "acme-platform",
+        )
+        .unwrap();
+        assert_eq!(pinned.change, Change::New);
+        assert_eq!(
+            pin(home.path(), Kind::GitHub, "ghe.example.com").unwrap(),
+            Some(Pin {
+                client_id: "Iv1.abc".into(),
+                owner: "acme-platform".into()
+            })
+        );
+    }
+
+    #[test]
+    fn a_pin_with_no_owner_is_no_pin_and_signs_nobody_in() {
+        let home = tempfile::tempdir().unwrap();
+        let at = path(home.path());
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(
+            &at,
+            r#"{"version":1,"hosts":[{"kind":"github","host":"ghe.example.com","client_id":"abc"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            find(home.path(), Kind::GitHub, "ghe.example.com").unwrap(),
+            None
+        );
+        assert_eq!(pin(home.path(), Kind::GitHub, "ghe.example.com").unwrap(), None);
+    }
+
+    #[test]
+    fn an_owner_no_forge_spells_is_refused_and_nothing_is_written() {
+        let home = tempfile::tempdir().unwrap();
+        for bad in ["", "  ", "a b", "/acme", "acme/", "a//b", "../x", "a/./b", "a;b", "a\nb"] {
+            assert!(
+                use_application(
+                    &scope(),
+                    home.path(),
+                    Kind::GitLab,
+                    "git.example.com",
+                    "abc",
+                    bad
+                )
+                .is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(!path(home.path()).exists());
+        // A group's subgroups are an owner.
+        use_application(
+            &scope(),
+            home.path(),
+            Kind::GitLab,
+            "git.example.com",
+            "abc",
+            "platform/tools",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_changed_client_id_is_a_new_press_that_says_what_it_replaced() {
+        let home = tempfile::tempdir().unwrap();
+        let press = |id: &str, owner: &str| {
+            use_application(&scope(), home.path(), Kind::GitHub, "ghe.example.com", id, owner)
+                .unwrap()
+                .change
+        };
+        assert_eq!(press("first", "acme"), Change::New);
+        assert_eq!(press("first", "acme"), Change::Same);
+        assert_eq!(
+            press("second", "acme"),
+            Change::ClientId {
+                previous: "first".into()
+            }
+        );
+        assert_eq!(
+            press("second", "acme-platform"),
+            Change::Owner {
+                previous: "acme".into()
+            }
+        );
+        assert_eq!(hosts(home.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_sentence_before_the_forge_page_names_the_pinned_owner_and_the_host() {
+        assert_eq!(
+            consent_check("acme-platform", "ghe.example.com"),
+            "On the next page, check that the application is owned by acme-platform on \
+             ghe.example.com. Sign in only if it is."
+        );
+    }
+
+    #[test]
+    fn the_request_to_an_owner_asks_for_an_organization_or_group_owned_application() {
+        let github = owner_request(Kind::GitHub, "ghe.example.com");
+        assert!(github.contains("organization") && github.contains("Enable Device Flow"));
+        let gitlab = owner_request(Kind::GitLab, "git.example.com");
+        assert!(gitlab.contains("Confidential: off") && gitlab.contains("Scopes: api"));
+        for port in registration::REDIRECT_PORTS {
+            assert!(gitlab.contains(&registration::redirect_uri(port)), "{gitlab}");
+        }
+        assert!(gitlab.contains("not a person's own"));
     }
 }

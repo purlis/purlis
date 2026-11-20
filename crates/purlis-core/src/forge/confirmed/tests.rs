@@ -1,0 +1,550 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+use std::collections::HashMap;
+
+use super::*;
+use crate::forge::accounts::Method;
+
+fn scope() -> HostScope {
+    HostScope::for_a_test()
+}
+
+fn account(id: &str, kind: Kind, host: &str, login: &str) -> ForgeAccount {
+    ForgeAccount {
+        id: id.to_string(),
+        kind,
+        host: host.to_string(),
+        login: login.to_string(),
+        method: Method::Device,
+        state: State::SignedIn,
+        scopes: None,
+    }
+}
+
+fn personal() -> ForgeAccount {
+    account("01PERSONAL", Kind::GitHub, "github.com", "octocat")
+}
+
+/// An enterprise-managed account on the same host.
+fn emu() -> ForgeAccount {
+    account("01EMU", Kind::GitHub, "github.com", "octocat_acme")
+}
+
+/// What the forge says each repo's number is.
+struct Forge(HashMap<&'static str, u64>);
+
+impl RepoLookup for Forge {
+    fn repo_id(&self, _account: &ForgeAccount, path: &str) -> Result<u64, String> {
+        self.0
+            .get(path)
+            .copied()
+            .ok_or_else(|| format!("{path} was not found on the forge as that account"))
+    }
+}
+
+fn forge() -> Forge {
+    Forge(HashMap::from([
+        ("octocat/hello", 1001),
+        ("acme/platform", 2002),
+        ("acme/tools", 3003),
+    ]))
+}
+
+const CLIENT: &str = "Ov23litEn94I5HXrpdsX";
+
+fn record(
+    home: &Path,
+    clone: &Path,
+    url: &str,
+    who: &ForgeAccount,
+) -> Result<ConfirmedRepo, String> {
+    record_clone(&scope(), home, clone, url, &forge(), who, CLIENT)
+}
+
+#[test]
+fn a_clone_from_the_window_records_the_host_the_path_the_numeric_id_the_account_and_the_client() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let repo = record(
+        home.path(),
+        clone.path(),
+        "https://github.com/OctoCat/Hello.git",
+        &personal(),
+    )
+    .unwrap();
+    assert_eq!(repo.host, "github.com");
+    assert_eq!(repo.path, "octocat/hello");
+    assert_eq!(repo.repo_id, 1001);
+    assert_eq!(repo.account, "01PERSONAL");
+    assert_eq!(repo.client_id, CLIENT);
+    assert_eq!(repos_of_clone(home.path(), clone.path()).unwrap(), [repo]);
+}
+
+#[test]
+fn a_clone_nobody_confirmed_has_no_repo_in_the_list() {
+    let home = tempfile::tempdir().unwrap();
+    let from_the_cli = tempfile::tempdir().unwrap();
+    assert!(
+        repos_of_clone(home.path(), from_the_cli.path())
+            .unwrap()
+            .is_empty()
+    );
+    let other = tempfile::tempdir().unwrap();
+    record(
+        home.path(),
+        other.path(),
+        "git@github.com:octocat/hello.git",
+        &personal(),
+    )
+    .unwrap();
+    // The same repo cloned somewhere else is not served until it is trusted too.
+    assert!(
+        repos_of_clone(home.path(), from_the_cli.path())
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn the_repo_is_the_one_the_forge_numbers_so_a_rename_is_the_same_repo_and_a_lookalike_is_not() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    record(
+        home.path(),
+        clone.path(),
+        "https://github.com/acme/platform",
+        &emu(),
+    )
+    .unwrap();
+    let ask = |path: &str, id: u64| {
+        admission(home.path(), clone.path(), Kind::GitHub, "github.com", path, id).unwrap()
+    };
+    assert!(matches!(
+        ask("acme/platform", 2002),
+        Admission::Confirmed(r) if r.repo_id == 2002
+    ));
+    // Renamed or transferred: another path, the same number.
+    assert!(matches!(
+        ask("acme-new/platform", 2002),
+        Admission::Alias(r) if r.path == "acme/platform"
+    ));
+    // The recorded path, now another repo's: a lookalike.
+    assert_eq!(ask("acme/platform", 9999), Admission::NotConfirmed);
+    assert_eq!(ask("acme/other", 4004), Admission::NotConfirmed);
+    assert_eq!(ask("../etc", 2002), Admission::NotConfirmed);
+    // Another host's repo with the same number is not this one.
+    assert_eq!(
+        admission(
+            home.path(),
+            clone.path(),
+            Kind::GitHub,
+            "ghe.example.com",
+            "acme/platform",
+            2002
+        )
+        .unwrap(),
+        Admission::NotConfirmed
+    );
+}
+
+#[test]
+fn a_personal_and_an_enterprise_account_on_one_host_serve_different_projects() {
+    let home = tempfile::tempdir().unwrap();
+    let hello = tempfile::tempdir().unwrap();
+    let platform = tempfile::tempdir().unwrap();
+    let both = vec![personal(), emu()];
+    let a = record(
+        home.path(),
+        hello.path(),
+        "https://github.com/octocat/hello",
+        &personal(),
+    )
+    .unwrap();
+    let b = record(
+        home.path(),
+        platform.path(),
+        "https://github.com/acme/platform",
+        &emu(),
+    )
+    .unwrap();
+    assert_eq!(account_for(&a, &both), Serving::Account(personal()));
+    assert_eq!(account_for(&b, &both), Serving::Account(emu()));
+    // A press changes which serves a project, and only that project.
+    let changed = choose_account(&scope(), home.path(), platform.path(), 2002, &personal()).unwrap();
+    assert_eq!(account_for(&changed, &both), Serving::Account(personal()));
+    let still = repos_of_clone(home.path(), hello.path()).unwrap();
+    assert_eq!(account_for(&still[0], &both), Serving::Account(personal()));
+}
+
+#[test]
+fn a_chosen_account_that_is_signed_out_is_never_replaced_by_the_other_one() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let repo = record(
+        home.path(),
+        clone.path(),
+        "https://github.com/acme/platform",
+        &emu(),
+    )
+    .unwrap();
+    let mut signed_out = emu();
+    signed_out.state = State::SignedOut;
+    assert_eq!(
+        account_for(&repo, &[personal(), signed_out]),
+        Serving::ChosenIsSignedOut {
+            account_id: "01EMU".into()
+        }
+    );
+    assert_eq!(
+        account_for(&repo, &[personal()]),
+        Serving::ChosenIsSignedOut {
+            account_id: "01EMU".into()
+        }
+    );
+}
+
+#[test]
+fn one_account_on_a_host_is_the_default_and_asks_nothing_and_two_ask_the_person() {
+    assert_eq!(default_account(vec![]), Pick::SignIn);
+    assert_eq!(default_account(vec![personal()]), Pick::Only(personal()));
+    assert_eq!(
+        default_account(vec![personal(), emu()]),
+        Pick::Choose(vec![personal(), emu()])
+    );
+}
+
+#[test]
+fn an_account_of_another_host_or_forge_or_a_signed_out_one_cannot_serve_a_repo() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let gitlab = account("01GL", Kind::GitLab, "gitlab.com", "octocat");
+    let ghes = account("01GHES", Kind::GitHub, "ghe.example.com", "octocat");
+    for who in [&gitlab, &ghes] {
+        let why = record(
+            home.path(),
+            clone.path(),
+            "https://github.com/octocat/hello",
+            who,
+        )
+        .unwrap_err();
+        assert!(why.contains("signed in to") || why.contains("is on"), "{why}");
+    }
+    let mut out = personal();
+    out.state = State::SignedOut;
+    assert!(
+        record(
+            home.path(),
+            clone.path(),
+            "https://github.com/octocat/hello",
+            &out
+        )
+        .unwrap_err()
+        .contains("signed out")
+    );
+    assert!(!path(home.path()).exists(), "nothing was recorded");
+    record(
+        home.path(),
+        clone.path(),
+        "https://github.com/octocat/hello",
+        &personal(),
+    )
+    .unwrap();
+    assert!(choose_account(&scope(), home.path(), clone.path(), 1001, &ghes).is_err());
+    assert!(choose_account(&scope(), home.path(), clone.path(), 7, &personal()).is_err());
+}
+
+#[test]
+fn a_remote_that_names_no_repo_or_one_the_forge_does_not_know_records_nothing() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    for url in [
+        "https://github.com/octocat",
+        "https://github.com/a/b/c",
+        "https://github.com/../hello",
+        "",
+    ] {
+        assert!(record(home.path(), clone.path(), url, &personal()).is_err(), "{url:?}");
+    }
+    let why = record(
+        home.path(),
+        clone.path(),
+        "https://github.com/octocat/missing",
+        &personal(),
+    )
+    .unwrap_err();
+    assert!(why.contains("not found"), "{why}");
+    assert!(!path(home.path()).exists());
+}
+
+#[test]
+fn a_ghes_host_with_a_port_is_matched_whole() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let ghes = account("01GHES", Kind::GitHub, "ghe.example.com:8443", "octocat");
+    let ok = record_clone(
+        &scope(),
+        home.path(),
+        clone.path(),
+        "https://ghe.example.com:8443/acme/platform.git",
+        &forge(),
+        &ghes,
+        "Iv1.pinned",
+    )
+    .unwrap();
+    assert_eq!(ok.host, "ghe.example.com:8443");
+    // The same server on its default port is another host.
+    assert!(
+        record_clone(
+            &scope(),
+            home.path(),
+            clone.path(),
+            "https://ghe.example.com/acme/tools",
+            &forge(),
+            &ghes,
+            "Iv1.pinned",
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn a_file_that_cannot_be_read_is_an_error_never_an_empty_list() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let at = path(home.path());
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(&at, "not json").unwrap();
+    assert!(repos_of_clone(home.path(), clone.path()).is_err());
+    assert!(
+        record(
+            home.path(),
+            clone.path(),
+            "https://github.com/octocat/hello",
+            &personal()
+        )
+        .is_err()
+    );
+    assert_eq!(std::fs::read_to_string(&at).unwrap(), "not json");
+}
+
+#[test]
+fn an_entry_this_purlis_cannot_use_is_skipped_and_kept_when_the_file_is_written() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let at = path(home.path());
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    std::fs::write(
+        &at,
+        r#"{"version":1,"repos":[{"clone":"/x","kind":"forgejo","host":"h.example.com",
+            "path":"a/b","repo_id":1,"account":"A","client_id":"c"}],"note":"kept"}"#,
+    )
+    .unwrap();
+    assert!(repos_of_clone(home.path(), Path::new("/x")).unwrap().is_empty());
+    record(
+        home.path(),
+        clone.path(),
+        "https://github.com/octocat/hello",
+        &personal(),
+    )
+    .unwrap();
+    let text = std::fs::read_to_string(&at).unwrap();
+    assert!(text.contains("forgejo") && text.contains("\"note\""), "{text}");
+}
+
+#[test]
+fn forgetting_a_clone_takes_its_repos_away_and_no_other() {
+    let home = tempfile::tempdir().unwrap();
+    let one = tempfile::tempdir().unwrap();
+    let two = tempfile::tempdir().unwrap();
+    record(home.path(), one.path(), "https://github.com/octocat/hello", &personal()).unwrap();
+    record(home.path(), two.path(), "https://github.com/acme/tools", &emu()).unwrap();
+    forget_clone(&scope(), home.path(), one.path()).unwrap();
+    assert!(repos_of_clone(home.path(), one.path()).unwrap().is_empty());
+    assert_eq!(repos_of_clone(home.path(), two.path()).unwrap().len(), 1);
+}
+
+fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+    move |name| {
+        pairs
+            .iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| (*v).to_string())
+    }
+}
+
+#[test]
+fn a_headless_runner_serves_the_repos_its_token_connection_names() {
+    let got = headless_repos(
+        Kind::GitHub,
+        &env(&[(
+            "PURLIS_FORGE_REPOS",
+            "github.com/Acme/Platform, ghe.example.com/acme/tools",
+        )]),
+        Some("https://github.com/ignored/when-listed"),
+    )
+    .unwrap();
+    assert_eq!(
+        got,
+        [
+            ConfiguredRepo {
+                host: "github.com".into(),
+                path: "acme/platform".into()
+            },
+            ConfiguredRepo {
+                host: "ghe.example.com".into(),
+                path: "acme/tools".into()
+            },
+        ]
+    );
+}
+
+#[test]
+fn a_headless_runner_with_no_list_serves_the_one_repo_of_its_checkout() {
+    let got = headless_repos(
+        Kind::GitLab,
+        &env(&[]),
+        Some("git@git.example.com:group/sub/proj.git"),
+    )
+    .unwrap();
+    assert_eq!(
+        got,
+        [ConfiguredRepo {
+            host: "git.example.com".into(),
+            path: "group/sub/proj".into()
+        }]
+    );
+}
+
+#[test]
+fn a_headless_runner_fails_closed_on_a_list_or_a_checkout_it_cannot_read() {
+    for list in ["github.com/acme", "github.com/acme/a/b", "acme/platform", "github.com/../x,", ","] {
+        assert!(
+            headless_repos(Kind::GitHub, &env(&[("PURLIS_FORGE_REPOS", list)]), None).is_err(),
+            "{list:?}"
+        );
+    }
+    assert!(headless_repos(Kind::GitHub, &env(&[]), None).is_err());
+    assert!(headless_repos(Kind::GitHub, &env(&[]), Some("")).is_err());
+    assert!(headless_repos(Kind::GitHub, &env(&[]), Some("https://github.com/only-owner")).is_err());
+    // A blank variable is no list: the checkout answers.
+    assert!(
+        headless_repos(
+            Kind::GitHub,
+            &env(&[("PURLIS_FORGE_REPOS", "  ")]),
+            Some("https://github.com/acme/platform")
+        )
+        .is_ok()
+    );
+}
+
+#[test]
+fn what_a_press_confirmed_and_what_a_runner_names_are_reconciled_to_their_intersection() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let confirmed = vec![
+        record(home.path(), clone.path(), "https://github.com/acme/platform", &emu()).unwrap(),
+        record(home.path(), clone.path(), "https://github.com/acme/tools", &emu()).unwrap(),
+    ];
+    let configured = headless_repos(
+        Kind::GitHub,
+        &env(&[(
+            "PURLIS_FORGE_REPOS",
+            "github.com/acme/platform,github.com/acme/never-confirmed",
+        )]),
+        None,
+    )
+    .unwrap();
+    let served = reconcile(&confirmed, &configured);
+    assert_eq!(served.len(), 1);
+    assert_eq!(served[0].path, "acme/platform");
+}
+
+#[test]
+fn a_path_is_lower_cased_stripped_of_dot_git_and_never_climbs() {
+    assert_eq!(
+        normalised_path(Kind::GitHub, "/Acme/Platform.git/").as_deref(),
+        Some("acme/platform")
+    );
+    assert_eq!(
+        normalised_path(Kind::GitLab, "G/Sub/Proj").as_deref(),
+        Some("g/sub/proj")
+    );
+    for bad in ["a", "a/b/c", "a/..", "a/b c", "a//b", ""] {
+        assert_eq!(normalised_path(Kind::GitHub, bad), None, "{bad:?}");
+    }
+    assert_eq!(normalised_path(Kind::GitLab, "a"), None);
+}
+
+#[test]
+fn a_repo_is_served_only_when_the_clone_is_trusted_and_its_id_is_confirmed() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    let ask = || {
+        serves(
+            home.path(),
+            clone.path(),
+            Kind::GitHub,
+            "github.com",
+            "acme/platform",
+            2002,
+        )
+        .unwrap()
+    };
+    // Trusted, with no id read from the forge yet: not served.
+    crate::forge::gitcredential::remote::record(
+        home.path(),
+        clone.path(),
+        "github.com/acme/platform".to_string(),
+    )
+    .unwrap();
+    assert_eq!(ask(), Admission::NotConfirmed);
+    // Confirmed too: served.
+    record(
+        home.path(),
+        clone.path(),
+        "https://github.com/acme/platform",
+        &emu(),
+    )
+    .unwrap();
+    assert!(matches!(ask(), Admission::Confirmed(_)));
+    // Another folder with no trust of its own is not served, whatever this one holds.
+    let elsewhere = tempfile::tempdir().unwrap();
+    assert_eq!(
+        serves(
+            home.path(),
+            elsewhere.path(),
+            Kind::GitHub,
+            "github.com",
+            "acme/platform",
+            2002
+        )
+        .unwrap(),
+        Admission::NotConfirmed
+    );
+}
+
+#[test]
+fn a_confirmed_id_on_a_clone_nobody_trusts_is_not_served() {
+    let home = tempfile::tempdir().unwrap();
+    let clone = tempfile::tempdir().unwrap();
+    record(
+        home.path(),
+        clone.path(),
+        "https://github.com/acme/platform",
+        &emu(),
+    )
+    .unwrap();
+    assert_eq!(
+        serves(
+            home.path(),
+            clone.path(),
+            Kind::GitHub,
+            "github.com",
+            "acme/platform",
+            2002
+        )
+        .unwrap(),
+        Admission::NotConfirmed
+    );
+}
