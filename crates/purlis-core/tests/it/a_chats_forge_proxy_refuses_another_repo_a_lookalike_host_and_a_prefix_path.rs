@@ -10,6 +10,7 @@ use crate::support::forge_proxy::{Scene, is_refused};
 
 #[test]
 fn another_repo_is_refused_by_git_and_by_the_api() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (host, target) in [
         (
@@ -42,6 +43,7 @@ fn another_repo_is_refused_by_git_and_by_the_api() {
 
 #[test]
 fn a_repo_whose_path_only_starts_like_the_chats_is_another_repo() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (host, target) in [
         (
@@ -106,6 +108,7 @@ fn a_repo_whose_path_only_starts_like_the_chats_is_another_repo() {
 
 #[test]
 fn a_path_that_could_be_read_two_ways_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for target in [
         "/acme/app.git/../other.git/info/refs?service=git-upload-pack",
@@ -159,6 +162,7 @@ fn a_path_that_could_be_read_two_ways_is_refused() {
 
 #[test]
 fn a_lookalike_host_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let userinfo_host = format!("github.com{}evil.example", '\u{40}');
     for host in [
@@ -203,6 +207,7 @@ fn a_lookalike_host_is_refused() {
 
 #[test]
 fn the_port_is_part_of_the_address() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let target = "/acme/app.git/info/refs?service=git-upload-pack";
     assert!(is_refused(
@@ -226,6 +231,7 @@ fn the_port_is_part_of_the_address() {
 
 #[test]
 fn a_repo_is_the_one_a_chat_was_given_not_the_one_another_chat_has() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     // `acme/other` is chat-b's. On chat-a's endpoint it is another repo.
     let out = s.send(
@@ -239,6 +245,7 @@ fn a_repo_is_the_one_a_chat_was_given_not_the_one_another_chat_has() {
 
 #[test]
 fn an_address_that_cannot_be_a_repo_cannot_be_given_to_a_chat() {
+    purlis_core::unsteered!();
     let userinfo_host = format!("user{}github.com", '\u{40}');
     for (kind, host, path) in [
         (Kind::GitHub, "github.com", "acme"),

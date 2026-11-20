@@ -14,6 +14,7 @@ fn gh(s: &Scene, query: &str, vars: serde_json::Value) -> Outcome {
 
 #[test]
 fn a_mutation_that_is_not_on_the_list_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for q in [
         "mutation{ deleteIssue(input:{issueId:\"x\"}){ clientMutationId } }",
@@ -39,6 +40,7 @@ fn a_mutation_that_is_not_on_the_list_is_refused() {
 
 #[test]
 fn one_bad_operation_among_good_ones_refuses_the_whole_document() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     let q = "query A{ viewer{login} } mutation B{ somethingNew(input:{repositoryId:\"R_acme_app\"}){ clientMutationId } }";
     let out = gh(&s, q, serde_json::json!({}));
@@ -51,6 +53,7 @@ fn one_bad_operation_among_good_ones_refuses_the_whole_document() {
 
 #[test]
 fn a_mutation_naming_another_repo_or_nothing_it_can_be_tied_to_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for q in [
         "mutation{ createIssue(input:{repositoryId:\"R_someone_elses\", title:\"t\"}){ clientMutationId } }",
@@ -79,6 +82,7 @@ fn a_mutation_naming_another_repo_or_nothing_it_can_be_tied_to_is_refused() {
 
 #[test]
 fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for q in [
         "query{ repository(owner:\"acme\", name:\"other\"){ name } }",
@@ -104,6 +108,7 @@ fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
 
 #[test]
 fn a_variable_is_read_from_the_request_and_one_with_no_value_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     let q = "query($o:String!,$n:String!){ repository(owner:$o,name:$n){ name } }";
     assert!(matches!(
@@ -130,6 +135,7 @@ fn a_variable_is_read_from_the_request_and_one_with_no_value_is_refused() {
 
 #[test]
 fn a_document_that_is_not_one_request_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     let post = |body: &[u8]| s.send("POST", "api.github.com", "/graphql", body);
     for (name, body) in [
@@ -162,6 +168,7 @@ fn a_document_that_is_not_one_request_is_refused() {
 
 #[test]
 fn graphql_is_a_post_to_the_forges_one_address_only() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     let body = graphql("query{ viewer{ login } }", serde_json::json!({}));
     assert!(is_refused(

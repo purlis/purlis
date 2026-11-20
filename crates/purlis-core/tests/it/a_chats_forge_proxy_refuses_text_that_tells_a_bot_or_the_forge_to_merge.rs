@@ -29,6 +29,7 @@ const COMMANDS: &[&str] = &[
 
 #[test]
 fn a_comment_or_description_with_a_merge_command_on_a_line_of_its_own_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for cmd in COMMANDS {
         for text in [
@@ -68,6 +69,7 @@ fn a_comment_or_description_with_a_merge_command_on_a_line_of_its_own_is_refused
 
 #[test]
 fn the_same_text_form_encoded_is_refused_too() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send(
         "POST",
@@ -80,6 +82,7 @@ fn the_same_text_form_encoded_is_refused_too() {
 
 #[test]
 fn a_label_that_is_a_merge_command_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send(
         "POST",
@@ -92,6 +95,7 @@ fn a_label_that_is_a_merge_command_is_refused() {
 
 #[test]
 fn ordinary_words_about_merging_are_not_commands() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for text in [
         "Please do not merge this yet.",
@@ -113,6 +117,7 @@ fn ordinary_words_about_merging_are_not_commands() {
 
 #[test]
 fn a_graphql_comment_with_a_merge_command_is_refused() {
+    purlis_core::unsteered!();
     let mut objects = Objects::default();
     objects.0.insert("PR_kwDO_1".into(), "acme/app".into());
     let s = Scene::with(TokenKind::Oauth, objects);

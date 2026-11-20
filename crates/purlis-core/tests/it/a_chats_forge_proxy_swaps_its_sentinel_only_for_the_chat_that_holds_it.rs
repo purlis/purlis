@@ -14,6 +14,7 @@ const TARGET: &str = "/repos/acme/app/pulls";
 
 #[test]
 fn a_request_with_no_credential_is_refused_and_the_credential_is_not_even_asked_for() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send_as(&s.a, "GET", "api.github.com", 443, TARGET, Auth::None, b"");
     assert!(is_refused(&out, Refusal::NoSentinel), "{out:?}");
@@ -22,6 +23,7 @@ fn a_request_with_no_credential_is_refused_and_the_credential_is_not_even_asked_
 
 #[test]
 fn a_request_with_a_wrong_sentinel_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let near = format!("{}0", s.a_sentinel.expose());
     for auth in [
@@ -43,6 +45,7 @@ fn a_request_with_a_wrong_sentinel_is_refused() {
 
 #[test]
 fn another_chats_sentinel_is_refused_on_this_chats_endpoint() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let theirs = s.b_sentinel.expose().to_string();
     let out = s.send_as(
@@ -72,6 +75,7 @@ fn another_chats_sentinel_is_refused_on_this_chats_endpoint() {
 
 #[test]
 fn a_real_token_a_chat_got_from_somewhere_else_is_refused_not_passed_on() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send_as(
         &s.a,
@@ -87,6 +91,7 @@ fn a_real_token_a_chat_got_from_somewhere_else_is_refused_not_passed_on() {
 
 #[test]
 fn a_sentinel_beside_another_credential_is_refused_it_is_not_guessed_which_was_meant() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let mut sent = headers(Auth::Bearer(s.a_sentinel.expose()));
     sent.push(("PRIVATE-TOKEN".into(), "glpat-another".into()));
@@ -104,6 +109,7 @@ fn a_sentinel_beside_another_credential_is_refused_it_is_not_guessed_which_was_m
 
 #[test]
 fn the_sentinel_is_accepted_in_the_forms_git_gh_and_glab_send_it() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let sent = s.a_sentinel.expose().to_string();
     for (auth, host, target) in [
@@ -127,6 +133,7 @@ fn the_sentinel_is_accepted_in_the_forms_git_gh_and_glab_send_it() {
 
 #[test]
 fn the_credential_is_asked_for_only_after_the_policy_allows() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let _ = s.send(
         "PUT",
@@ -142,6 +149,7 @@ fn the_credential_is_asked_for_only_after_the_policy_allows() {
 
 #[test]
 fn a_chat_that_ended_is_refused_and_its_sentinel_is_worth_nothing() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let sent = s.a_sentinel.expose().to_string();
     s.proxy.retire(&s.a);
@@ -170,6 +178,7 @@ fn a_chat_that_ended_is_refused_and_its_sentinel_is_worth_nothing() {
 
 #[test]
 fn a_chat_that_starts_again_gets_a_new_sentinel_and_the_old_one_stops() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let old = s.a_sentinel.expose().to_string();
     let new = s.proxy.enrol(
@@ -200,6 +209,7 @@ fn a_chat_that_starts_again_gets_a_new_sentinel_and_the_old_one_stops() {
 
 #[test]
 fn a_sentinel_is_long_random_and_never_printed() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let a = s.a_sentinel.expose();
     assert!(a.len() >= 64 + "purlis-sentinel-".len());
@@ -209,6 +219,7 @@ fn a_sentinel_is_long_random_and_never_printed() {
 
 #[test]
 fn with_no_credential_source_an_allowed_request_is_refused_and_nothing_is_sent() {
+    purlis_core::unsteered!();
     let proxy = ForgeProxy::new(Box::new(NoCredentials), Box::new(NoObjects));
     let chat = ChatId::new("c");
     let repo = purlis_core::forge::proxy::AllowedRepo::new(
@@ -235,6 +246,7 @@ fn with_no_credential_source_an_allowed_request_is_refused_and_nothing_is_sent()
 
 #[test]
 fn what_is_forwarded_never_prints_the_credential() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send("GET", "api.github.com", TARGET, b"");
     assert!(matches!(out, Outcome::Forward(_)));
@@ -243,6 +255,7 @@ fn what_is_forwarded_never_prints_the_credential() {
 
 #[test]
 fn a_chat_that_keeps_guessing_is_locked_out_even_for_the_right_sentinel_until_it_starts_again() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for i in 0..10 {
         let guess = format!("guess-{i}");
@@ -295,6 +308,7 @@ fn a_chat_that_keeps_guessing_is_locked_out_even_for_the_right_sentinel_until_it
 
 #[test]
 fn a_few_mistakes_do_not_lock_a_chat_and_a_good_request_clears_them() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let mine = s.a_sentinel.expose().to_string();
     for round in 0..3 {

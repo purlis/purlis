@@ -18,6 +18,7 @@ mod unix {
 
     #[test]
     fn a_unix_socket_is_private_to_the_app_and_names_its_chat_by_the_endpoint() {
+        purlis_core::unsteered!();
         let dir = tempfile::tempdir().unwrap();
         let sockets = dir.path().join("s");
         let a = UnixEndpoint::bind(&ChatId::new("chat-a"), &sockets).unwrap();
@@ -47,6 +48,7 @@ mod unix {
 
     #[test]
     fn a_socket_is_removed_with_its_endpoint() {
+        purlis_core::unsteered!();
         let dir = tempfile::tempdir().unwrap();
         let endpoint = UnixEndpoint::bind(&ChatId::new("c"), dir.path()).unwrap();
         let EndpointKind::UnixSocket(path) = endpoint.kind() else {
@@ -59,6 +61,7 @@ mod unix {
 
     #[test]
     fn a_unix_socket_is_picked_where_the_client_can_use_one() {
+        purlis_core::unsteered!();
         let dir = tempfile::tempdir().unwrap();
         let endpoint = pick_endpoint(&ChatId::new("c"), dir.path(), true).unwrap();
         assert!(matches!(endpoint.kind(), EndpointKind::UnixSocket(_)));
@@ -67,6 +70,7 @@ mod unix {
 
 #[test]
 fn a_loopback_port_is_on_the_loopback_address_only_and_names_its_chat_by_the_endpoint() {
+    purlis_core::unsteered!();
     let a = LoopbackEndpoint::bind(&ChatId::new("chat-a")).unwrap();
     let b = LoopbackEndpoint::bind(&ChatId::new("chat-b")).unwrap();
     let (EndpointKind::Loopback(addr_a), EndpointKind::Loopback(addr_b)) = (a.kind(), b.kind())
@@ -85,6 +89,7 @@ fn a_loopback_port_is_on_the_loopback_address_only_and_names_its_chat_by_the_end
 
 #[test]
 fn a_loopback_port_is_picked_where_the_client_cannot_use_a_unix_socket() {
+    purlis_core::unsteered!();
     let dir = tempfile::tempdir().unwrap();
     let endpoint = pick_endpoint(&ChatId::new("c"), dir.path(), false).unwrap();
     assert!(matches!(endpoint.kind(), EndpointKind::Loopback(_)));

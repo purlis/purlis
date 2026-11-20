@@ -20,6 +20,7 @@ fn push(s: &Scene, cmds: &[(&str, &str)]) -> Outcome {
 
 #[test]
 fn a_branch_the_chat_created_it_may_move_and_delete_afterwards() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     assert!(matches!(
         push(&s, &[("create", "refs/heads/mine")]),
@@ -37,6 +38,7 @@ fn a_branch_the_chat_created_it_may_move_and_delete_afterwards() {
 
 #[test]
 fn a_branch_it_did_not_create_it_may_neither_move_nor_delete() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for kind in ["update", "delete"] {
         let out = push(&s, &[(kind, "refs/heads/colleagues")]);
@@ -46,6 +48,7 @@ fn a_branch_it_did_not_create_it_may_neither_move_nor_delete() {
 
 #[test]
 fn a_refused_push_records_no_branch() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = push(
         &s,
@@ -60,6 +63,7 @@ fn a_refused_push_records_no_branch() {
 
 #[test]
 fn a_branch_is_the_chats_own_on_one_repo_only() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     assert!(matches!(
         push(&s, &[("create", "refs/heads/mine")]),
@@ -76,6 +80,7 @@ fn a_branch_is_the_chats_own_on_one_repo_only() {
 
 #[test]
 fn a_branch_the_chat_was_given_at_the_start_is_its_own() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send(
         "POST",
@@ -88,6 +93,7 @@ fn a_branch_the_chat_was_given_at_the_start_is_its_own() {
 
 #[test]
 fn a_pages_branch_is_never_pushed_to() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for name in ["refs/heads/gh-pages", "refs/heads/GH-Pages"] {
         assert!(
@@ -99,6 +105,7 @@ fn a_pages_branch_is_never_pushed_to() {
 
 #[test]
 fn a_push_with_push_options_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     // `-o merge_request.merge_when_pipeline_succeeds` rides as a push option: the capability and
     // the options after the commands.
@@ -119,6 +126,7 @@ fn a_push_with_push_options_is_refused() {
 
 #[test]
 fn lfs_is_not_carried_because_its_answer_hands_back_credentials() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, target) in [
         ("POST", "/acme/app.git/info/lfs/objects/batch"),

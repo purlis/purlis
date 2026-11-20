@@ -10,6 +10,7 @@ use crate::support::forge_proxy::{Scene, graphql, is_refused, push_body};
 
 #[test]
 fn release_and_tag_writes_are_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/releases"),
@@ -43,6 +44,7 @@ fn release_and_tag_writes_are_refused() {
 
 #[test]
 fn rulesets_and_branch_protection_are_refused_to_read_and_to_write() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/rulesets"),
@@ -83,6 +85,7 @@ fn rulesets_and_branch_protection_are_refused_to_read_and_to_write() {
 
 #[test]
 fn repository_administration_is_refused_to_read_and_to_write() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for (method, host, target) in [
         ("PATCH", "api.github.com", "/repos/acme/app"),
@@ -132,6 +135,7 @@ fn repository_administration_is_refused_to_read_and_to_write() {
 
 #[test]
 fn a_write_route_that_is_not_on_the_list_is_refused_whatever_it_is() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, host, target) in [
         (
@@ -177,6 +181,7 @@ fn a_write_route_that_is_not_on_the_list_is_refused_whatever_it_is() {
 
 #[test]
 fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_of_ref() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let push = |host: &str, repo: &str, cmds: &[(&str, &str)]| {
         s.send(
@@ -241,6 +246,7 @@ fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_
 
 #[test]
 fn a_push_whose_commands_cannot_be_read_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let url = "/acme/app.git/git-receive-pack";
     let mut cert = Vec::new();

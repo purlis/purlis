@@ -17,6 +17,7 @@ fn fwd(o: Outcome) -> Forwarded {
 
 #[test]
 fn the_few_reads_outside_a_repo_that_a_forge_client_needs_are_named_and_answered() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for (host, target) in [
         ("api.github.com", "/user"),
@@ -32,6 +33,7 @@ fn the_few_reads_outside_a_repo_that_a_forge_client_needs_are_named_and_answered
 
 #[test]
 fn a_read_that_names_no_repo_fails_closed_when_the_chat_has_repos_on_two_github_hosts() {
+    purlis_core::unsteered!();
     let two = Scene::new();
     for (host, target) in [
         ("api.github.com", "/user"),
@@ -63,6 +65,7 @@ fn a_read_that_names_no_repo_fails_closed_when_the_chat_has_repos_on_two_github_
 
 #[test]
 fn every_other_route_outside_a_repo_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, host, target) in [
         ("POST", "api.github.com", "/user/repos"),
@@ -98,6 +101,7 @@ fn every_other_route_outside_a_repo_is_refused() {
 
 #[test]
 fn a_contents_write_and_a_ref_write_are_refused_even_for_a_branch_the_chat_owns() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, target) in [
         ("PUT", "/repos/acme/app/contents/README.md"),
@@ -115,6 +119,7 @@ fn a_contents_write_and_a_ref_write_are_refused_even_for_a_branch_the_chat_owns(
 
 #[test]
 fn a_double_encoded_slash_is_not_a_slash() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for target in [
         "/api/v4/projects/group%252Fproj/merge_requests",
@@ -127,6 +132,7 @@ fn a_double_encoded_slash_is_not_a_slash() {
 
 #[test]
 fn a_gitlab_merge_request_aimed_at_another_project_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let post = |body: &[u8], q: &str| {
         s.send(
@@ -164,6 +170,7 @@ fn a_gitlab_merge_request_aimed_at_another_project_is_refused() {
 
 #[test]
 fn what_is_sent_upstream_is_the_proxys_own_address_never_the_chats() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let up =
         |host: &str, port: u16, target: &str| fwd(s.send_port("GET", host, port, target)).upstream;
@@ -195,6 +202,7 @@ fn what_is_sent_upstream_is_the_proxys_own_address_never_the_chats() {
 
 #[test]
 fn an_absolute_form_target_and_a_method_override_query_are_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for target in [
         "https://evil.example/repos/acme/app/pulls",
@@ -226,6 +234,7 @@ fn run(s: &Scene, extra: &[(&str, &str)]) -> Outcome {
 
 #[test]
 fn a_request_the_two_ends_could_frame_differently_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for extra in [
         vec![("Content-Length", "2"), ("Transfer-Encoding", "chunked")],
@@ -249,6 +258,7 @@ fn a_request_the_two_ends_could_frame_differently_is_refused() {
 
 #[test]
 fn headers_that_choose_the_host_the_method_or_a_login_are_not_forwarded() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let f = fwd(run(
         &s,
@@ -283,6 +293,7 @@ fn headers_that_choose_the_host_the_method_or_a_login_are_not_forwarded() {
 
 #[test]
 fn a_connect_is_terminated_only_for_a_host_and_port_the_chat_has_a_repo_on() {
+    purlis_core::unsteered!();
     use purlis_core::forge::proxy::ConnectVerdict;
     let policy = purlis_core::forge::proxy::ChatPolicy::new(vec![
         purlis_core::forge::proxy::AllowedRepo::new(

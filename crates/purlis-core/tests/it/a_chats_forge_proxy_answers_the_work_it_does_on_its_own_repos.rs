@@ -22,6 +22,7 @@ fn class(outcome: Outcome) -> Class {
 
 #[test]
 fn a_fetch_and_a_clone_of_the_chats_repo_are_answered_on_every_host() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (host, port, repo) in [
         ("github.com", 443, "/Acme/App.git"),
@@ -46,6 +47,7 @@ fn a_fetch_and_a_clone_of_the_chats_repo_are_answered_on_every_host() {
 
 #[test]
 fn a_push_of_a_feature_branch_to_the_recorded_address_is_answered() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let advert = s.send(
         "GET",
@@ -78,6 +80,7 @@ fn a_push_of_a_feature_branch_to_the_recorded_address_is_answered() {
 
 #[test]
 fn opening_a_pull_request_commenting_and_reading_ci_are_answered_on_github() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, target, want) in [
         ("POST", "/repos/acme/app/pulls", Class::PullRequestWrite),
@@ -122,6 +125,7 @@ fn opening_a_pull_request_commenting_and_reading_ci_are_answered_on_github() {
 
 #[test]
 fn the_same_work_is_answered_on_a_github_enterprise_servers_api() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     assert_eq!(
         class(s.send("POST", GHES, "/api/v3/repos/acme/app/pulls", b"{}")),
@@ -135,6 +139,7 @@ fn the_same_work_is_answered_on_a_github_enterprise_servers_api() {
 
 #[test]
 fn opening_a_merge_request_commenting_and_reading_ci_are_answered_on_gitlab() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (host, port, base) in [
         ("gitlab.com", 443, "/api/v4/projects/group%2Fproj"),
@@ -170,6 +175,7 @@ fn opening_a_merge_request_commenting_and_reading_ci_are_answered_on_gitlab() {
 
 #[test]
 fn a_graphql_query_on_the_chats_repo_and_a_pull_request_it_creates_are_answered() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     let query = graphql(
         "query($o:String!,$n:String!){ viewer{login} repository(owner:$o,name:$n){ pullRequest(number:7){ title statusCheckRollup: commits(last:1){ totalCount } } } }",
@@ -199,6 +205,7 @@ fn a_graphql_query_on_the_chats_repo_and_a_pull_request_it_creates_are_answered(
 
 #[test]
 fn a_mutation_on_an_object_is_answered_only_when_the_object_is_known_to_be_in_the_chats_repo() {
+    purlis_core::unsteered!();
     let mut known = Objects::default();
     known.0.insert("PR_kwDO_1".into(), "acme/app".into());
     known.0.insert("PR_kwDO_other".into(), "acme/other".into());
@@ -235,6 +242,7 @@ fn a_mutation_on_an_object_is_answered_only_when_the_object_is_known_to_be_in_th
 
 #[test]
 fn the_forge_is_sent_the_real_credential_and_none_of_the_chats() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let sentinel = s.a_sentinel.expose().to_string();
     let mut sent = headers(Auth::Bearer(&sentinel));
@@ -280,6 +288,7 @@ fn the_forge_is_sent_the_real_credential_and_none_of_the_chats() {
 
 #[test]
 fn the_credential_takes_the_form_each_surface_reads() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let find = |o: Outcome, name: &str| match o {
         Outcome::Forward(f) => f

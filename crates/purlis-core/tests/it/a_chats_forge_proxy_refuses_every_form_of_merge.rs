@@ -14,6 +14,7 @@ use purlis_core::forge::proxy::TokenKind;
 
 #[test]
 fn a_rest_merge_is_refused_on_every_forge() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, host, target) in [
         ("PUT", "api.github.com", "/repos/acme/app/pulls/7/merge"),
@@ -59,6 +60,7 @@ fn a_rest_merge_is_refused_on_every_forge() {
 
 #[test]
 fn a_graphql_merge_and_auto_merge_are_refused_even_on_the_chats_own_pull_request() {
+    purlis_core::unsteered!();
     let mut objects = Objects::default();
     objects.0.insert("PR_kwDO_1".into(), "acme/app".into());
     let s = Scene::with(TokenKind::Oauth, objects);
@@ -94,6 +96,7 @@ fn a_graphql_merge_and_auto_merge_are_refused_even_on_the_chats_own_pull_request
 
 #[test]
 fn an_approval_that_would_stand_for_a_merge_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/pulls/7/reviews"),
@@ -126,6 +129,7 @@ fn an_approval_that_would_stand_for_a_merge_is_refused() {
 
 #[test]
 fn reading_whether_a_pull_request_is_merged_is_not_a_merge() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     assert!(matches!(
         s.send(

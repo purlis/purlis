@@ -10,6 +10,7 @@ use crate::support::forge_proxy::{REAL, Scene, push_body};
 
 #[test]
 fn an_allowed_and_a_refused_request_are_each_recorded_with_their_verdict() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let _ = s.send(
         "GET",
@@ -37,6 +38,7 @@ fn an_allowed_and_a_refused_request_are_each_recorded_with_their_verdict() {
 
 #[test]
 fn a_refused_request_for_a_missing_sentinel_is_recorded_too() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send_as(
         &s.a,
@@ -59,6 +61,7 @@ fn a_refused_request_for_a_missing_sentinel_is_recorded_too() {
 
 #[test]
 fn a_record_holds_neither_a_token_a_path_nor_a_query() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let _ = s.send(
         "GET",
@@ -88,6 +91,7 @@ fn a_record_holds_neither_a_token_a_path_nor_a_query() {
 
 #[test]
 fn a_graphql_mutation_is_recorded_by_its_name_alone() {
+    purlis_core::unsteered!();
     let s = Scene::single();
     let body = crate::support::forge_proxy::graphql(
         "mutation{ createIssue(input:{repositoryId:\"R_acme_app\", title:\"PRIVATETITLE\"}){ clientMutationId } }",
@@ -104,6 +108,7 @@ fn a_graphql_mutation_is_recorded_by_its_name_alone() {
 
 #[test]
 fn each_chats_record_is_its_own() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let _ = s.send("GET", "api.github.com", "/repos/acme/app/pulls", b"");
     assert_eq!(s.proxy.audit(&s.a).len(), 1);
@@ -112,6 +117,7 @@ fn each_chats_record_is_its_own() {
 
 #[test]
 fn a_chats_record_outlives_the_chat() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let _ = s.send("GET", "api.github.com", "/repos/acme/app/pulls", b"");
     s.proxy.retire(&s.a);
@@ -120,6 +126,7 @@ fn a_chats_record_outlives_the_chat() {
 
 #[test]
 fn the_record_keeps_the_newest_and_drops_the_oldest_past_its_cap() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for _ in 0..AuditLog::CAP + 5 {
         let _ = s.send("GET", "api.github.com", "/repos/acme/app/pulls", b"");

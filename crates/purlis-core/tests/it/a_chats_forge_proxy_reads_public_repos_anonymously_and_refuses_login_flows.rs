@@ -19,6 +19,7 @@ fn anon(o: Outcome) -> Forwarded {
 
 #[test]
 fn a_fetch_of_a_repo_the_chat_did_not_record_goes_through_with_no_credential() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (host, repo) in [
         ("github.com", "/rust-lang/rust"),
@@ -49,8 +50,8 @@ fn a_fetch_of_a_repo_the_chat_did_not_record_goes_through_with_no_credential() {
 }
 
 #[test]
-fn a_request_without_a_valid_sentinel_takes_the_anonymous_route_with_every_authorization_stripped()
-{
+fn no_valid_sentinel_means_the_anonymous_route_with_all_authorization_stripped() {
+    purlis_core::unsteered!();
     use crate::support::forge_proxy::Auth;
     let s = Scene::new();
     let target = "/rust-lang/rust.git/info/refs?service=git-upload-pack";
@@ -88,6 +89,7 @@ fn a_request_without_a_valid_sentinel_takes_the_anonymous_route_with_every_autho
 
 #[test]
 fn a_chat_locked_out_by_guessing_gets_no_anonymous_read_either() {
+    purlis_core::unsteered!();
     use crate::support::forge_proxy::Auth;
     let s = Scene::new();
     let target = "/rust-lang/rust.git/info/refs?service=git-upload-pack";
@@ -109,6 +111,7 @@ fn a_chat_locked_out_by_guessing_gets_no_anonymous_read_either() {
 
 #[test]
 fn a_download_host_is_tunnelled_and_never_terminated_and_a_recorded_host_is_terminated() {
+    purlis_core::unsteered!();
     use purlis_core::forge::proxy::{AllowedRepo, ChatPolicy, ConnectVerdict, Kind};
     let gh = AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "main").unwrap();
     let policy = ChatPolicy::new(vec![gh]);
@@ -155,6 +158,7 @@ fn a_download_host_is_tunnelled_and_never_terminated_and_a_recorded_host_is_term
 
 #[test]
 fn archives_and_release_downloads_of_an_unrecorded_repo_are_anonymous_reads() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (host, target) in [
         (
@@ -183,6 +187,7 @@ fn archives_and_release_downloads_of_an_unrecorded_repo_are_anonymous_reads() {
 
 #[test]
 fn nothing_else_is_anonymous_not_a_push_not_a_write_not_the_api() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, host, target) in [
         (
@@ -206,6 +211,7 @@ fn nothing_else_is_anonymous_not_a_push_not_a_write_not_the_api() {
 
 #[test]
 fn a_host_the_chat_has_no_repo_on_is_not_reachable_even_anonymously() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     let out = s.send(
         "GET",
@@ -218,6 +224,7 @@ fn a_host_the_chat_has_no_repo_on_is_not_reachable_even_anonymously() {
 
 #[test]
 fn a_login_flow_at_the_forge_is_refused() {
+    purlis_core::unsteered!();
     let s = Scene::new();
     for (method, host, target) in [
         ("POST", "github.com", "/login/device/code"),
