@@ -2329,7 +2329,11 @@ fn tunnelled_first(first: &[u8]) -> Vec<u8> {
         got
     });
     let heard = Heard::default();
-    let proxy = forging(&heard, port, &["github.com", "gitlab.com"]);
+    let proxy = forging(
+        &heard,
+        port,
+        &["github.com", "githubusercontent.com", "gitlab.com"],
+    );
     let mut client = to(&proxy);
     let said = status(
         &mut client,
