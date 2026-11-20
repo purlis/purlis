@@ -396,7 +396,9 @@ impl<'d> Context<'_, 'd> {
     /// issues and pull requests, and only of the chat's repos. The query must name **exactly one**
     /// `repo:` and it must be one of the chat's, and it may not name an organisation, a user, an
     /// owner, a team or an enterprise, or negate any of them: search says which repos by those
-    /// qualifiers alone, so a query with none of them but the one is a search of that repo.
+    /// qualifiers alone, so a query with none of them but the one is a search of that repo. No
+    /// boolean operator (`OR`, `AND`, `NOT`, any case) and no parenthesis is read: `gh` sends
+    /// neither for `pr status` or a filtered `pr list`, which join their terms by spaces.
     fn check_search(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
         let refuse = Refusal::GraphqlOtherRepo;
         let is_issue = field
@@ -420,8 +422,19 @@ impl<'d> Context<'_, 'd> {
         if query.contains(['"', '\'', '\\', '`']) {
             return Err(refuse);
         }
+        // Without a boolean operator or a group, every other term only narrows the one repo's
+        // results; with one, `repo:a OR is:issue` widens them to the whole forge.
+        if query.contains(['(', ')']) {
+            return Err(refuse);
+        }
         let mut repos = Vec::new();
         for token in query.split_whitespace() {
+            if ["or", "and", "not"]
+                .iter()
+                .any(|op| token.eq_ignore_ascii_case(op))
+            {
+                return Err(refuse);
+            }
             let lower = token
                 .trim_start_matches(['(', '-', '+', '!'])
                 .to_ascii_lowercase();

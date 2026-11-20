@@ -273,7 +273,7 @@ fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing
     for q in [
         "repo:acme/app is:pr is:open",
         "is:pr repo:Acme/App author:octocat",
-        "repo:acme/app (author:a OR author:b)",
+        "repo:acme/app author:a -label:wip",
     ] {
         assert!(matches!(search(q), Outcome::Forward(_)), "{q}");
     }
@@ -282,6 +282,15 @@ fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing
         "repo:acme/other is:pr",
         "repo:acme/app repo:acme/other",
         "repo:acme/app OR org:acme",
+        "repo:acme/app OR is:issue",
+        "repo:acme/app or is:issue",
+        "repo:acme/app Or is:issue",
+        "is:issue OR repo:acme/app",
+        "repo:acme/app AND is:issue",
+        "repo:acme/app NOT is:closed",
+        "repo:acme/app (author:a OR author:b)",
+        "repo:acme/app (is:issue)",
+        "(repo:acme/app)",
         "repo:acme/app user:someone",
         "repo:acme/app owner:someone",
         "repo:acme/app team:acme/x",
@@ -312,6 +321,66 @@ fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing
         let out = gh(&s, q);
         assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
     }
+}
+
+#[test]
+fn what_a_reference_reaches_is_named_and_never_read() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // "Fixes org/private#N" in the chat's own pull request makes `closingIssuesReferences` name
+    // an issue of another repo: only what names it may be asked for, never its body.
+    let reach = |root: &str, edge: &str, inner: &str| {
+        gh(
+            &s,
+            &format!(
+                "query{{ repository(owner:\"acme\", name:\"app\"){{ {root}(number:1){{ {edge}(first:5){{ nodes{{ {inner} }} }} }} }} }}"
+            ),
+        )
+    };
+    let named = "number title url state repository{ nameWithOwner }";
+    for (root, edge) in [
+        ("pullRequest", "closingIssuesReferences"),
+        ("issue", "closedByPullRequestsReferences"),
+    ] {
+        assert!(
+            matches!(reach(root, edge, named), Outcome::Forward(_)),
+            "{edge}"
+        );
+        for secret in [
+            "body",
+            "bodyText",
+            "bodyHTML",
+            "comments(first:5){ nodes{ body } }",
+            "author{ login }",
+            "labels(first:5){ nodes{ name } }",
+            "reactionGroups{ content }",
+        ] {
+            let out = reach(root, edge, &format!("{named} {secret}"));
+            assert!(
+                is_refused(&out, Refusal::GraphqlOtherRepo),
+                "{edge} {secret}: {out:?}"
+            );
+        }
+    }
+    for (root, inner) in [
+        (
+            "ref(qualifiedName:\"refs/heads/main\"){ associatedPullRequests(first:5){ nodes{ body } } }",
+            "repository",
+        ),
+        (
+            "ref(qualifiedName:\"refs/heads/main\"){ associatedPullRequests(first:5){ nodes{ comments(first:1){ totalCount } } } }",
+            "repository",
+        ),
+    ] {
+        let q = format!("query{{ repository(owner:\"acme\", name:\"app\"){{ {root} }} }}");
+        let out = gh(&s, &q);
+        assert!(
+            is_refused(&out, Refusal::GraphqlOtherRepo),
+            "{root} {inner}: {out:?}"
+        );
+    }
+    let ok = "query{ repository(owner:\"acme\", name:\"app\"){ ref(qualifiedName:\"refs/heads/main\"){ associatedPullRequests(first:5){ nodes{ number title url state repository{ nameWithOwner } } } } } }";
+    assert!(matches!(gh(&s, ok), Outcome::Forward(_)));
 }
 
 #[test]

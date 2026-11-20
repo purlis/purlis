@@ -302,7 +302,7 @@ const GITHUB: Table = &[
     ("CodeOfConduct", &["name", "key", "url", "body", "resourcePath"], &[]),
     ("Ref", &["id", "name", "prefix"], &[
         ("target", Obj("GitObject")),
-        ("associatedPullRequests", Conn("PullRequest")),
+        ("associatedPullRequests", Conn("PullRequestRef")),
     ]),
     ("GitObject", &["id", "oid", "abbreviatedOid"], &[]),
     ("Commit", &[
@@ -313,7 +313,7 @@ const GITHUB: Table = &[
         ("committer", Obj("GitActor")),
         ("authors", Conn("GitActor")),
         ("statusCheckRollup", Obj("StatusCheckRollup")),
-        ("associatedPullRequests", Conn("PullRequest")),
+        ("associatedPullRequests", Conn("PullRequestRef")),
     ]),
     ("Blob", &["id", "oid", "abbreviatedOid", "text", "byteSize", "isBinary", "isTruncated"], &[]),
     ("GitActor", &["name", "email", "date", "id", "login"], &[("user", Obj("User"))]),
@@ -358,7 +358,7 @@ const GITHUB: Table = &[
         ("reviewThreads", Conn("PullRequestReviewThread")),
         ("commits", Conn("PullRequestCommit")),
         ("files", Conn("PullRequestChangedFile")),
-        ("closingIssuesReferences", Conn("Issue")),
+        ("closingIssuesReferences", Conn("IssueRef")),
         ("headRepository", Obj("RepoRef")),
         ("headRepositoryOwner", Obj("Actor")),
         ("baseRepository", Obj("RepoRef")),
@@ -425,7 +425,7 @@ const GITHUB: Table = &[
         ("milestone", Obj("Milestone")),
         ("comments", Conn("IssueComment")),
         ("repository", Obj("RepoRef")),
-        ("closedByPullRequestsReferences", Conn("PullRequest")),
+        ("closedByPullRequestsReferences", Conn("PullRequestRef")),
         ("issueType", Obj("IssueType")),
         ("parent", Obj("IssueRef")),
         ("subIssues", Conn("IssueRef")),
@@ -439,6 +439,9 @@ const GITHUB: Table = &[
     // An issue reached from another issue (its parent, a sub-issue, one it is blocked by): what
     // names it, and nothing it holds.
     ("IssueRef", &["id", "number", "title", "url", "state", "closed"], &[("repository", Obj("RepoRef"))]),
+    // The same for a pull request reached from an issue, a ref or a commit: a reference such as
+    // "Fixes org/private#N" can name another repo's, so only what names it is readable.
+    ("PullRequestRef", &["id", "number", "title", "url", "state", "closed", "merged"], &[("repository", Obj("RepoRef"))]),
     ("IssueType", &["id", "name", "description", "color"], &[]),
     ("SubIssuesSummary", &["total", "completed", "percentCompleted"], &[]),
     ("Label", &["id", "name", "color", "description", "url", "isDefault", "createdAt", "updatedAt"], &[]),

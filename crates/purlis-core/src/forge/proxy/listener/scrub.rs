@@ -33,11 +33,18 @@ pub(crate) struct Scanner {
     /// looked through for the needles.
     redact: bool,
     carry: Vec<u8>,
+    /// Set while the rest of a userinfo that outgrew [`URL_CAP`] is being dropped.
+    skipping: bool,
     hold: usize,
 }
 
 /// A URL's userinfo may be this long and still be cut down when it straddles two reads.
 const URL_WINDOW: usize = 2048;
+/// A URL that is still open after this many bytes is not read further: what follows its `://` up
+/// to the byte that ends a userinfo is dropped, so a hold never grows with the answer.
+const URL_CAP: usize = 4096;
+/// The longest scheme held back when a read ends inside one.
+const SCHEME_MAX: usize = 32;
 
 fn userinfo() -> &'static Regex {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
@@ -48,6 +55,20 @@ fn userinfo() -> &'static Regex {
     })
 }
 
+fn token_only() -> &'static Regex {
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        // A lone userinfo over HTTP is the credential (a token, or a user name that is one); over
+        // ssh it is the account's name, and is left alone.
+        Regex::new(r#"(?-u)((?i:https?|wss?|ftps?))://[^/\s"'<>@?#:]+@"#).expect("a fixed pattern")
+    })
+}
+
+fn redact_urls(ready: &[u8]) -> Vec<u8> {
+    let pairs = userinfo().replace_all(ready, &b"$1://"[..]);
+    token_only().replace_all(&pairs, &b"$1://"[..]).into_owned()
+}
+
 impl Scanner {
     pub(crate) fn new(needles: Vec<Vec<u8>>, redact: bool) -> Self {
         let longest = needles.iter().map(Vec::len).max().unwrap_or(0);
@@ -55,6 +76,7 @@ impl Scanner {
             needles,
             redact,
             carry: Vec::new(),
+            skipping: false,
             hold: if redact {
                 URL_WINDOW.max(longest)
             } else {
@@ -90,39 +112,102 @@ impl Scanner {
         if self.leaks(&data) {
             return Err(Leak);
         }
-        let mut end = if last {
-            data.len()
-        } else {
-            data.len().saturating_sub(self.hold)
-        };
-        if self.redact && !last {
-            end = open_url_start(&data, end);
+        if !self.redact {
+            let end = if last {
+                data.len()
+            } else {
+                data.len().saturating_sub(self.hold)
+            };
+            self.carry = data.split_off(end);
+            return Ok(data);
         }
-        let ready = &data[..end];
-        let out = if self.redact {
-            userinfo().replace_all(ready, &b"$1://"[..]).into_owned()
-        } else {
-            ready.to_vec()
-        };
-        self.carry = data[end..].to_vec();
-        Ok(out)
+        let mut out = Vec::new();
+        loop {
+            if self.skipping {
+                let (n, done) = skip_userinfo(&data);
+                data.drain(..n);
+                self.skipping = !done;
+            }
+            let mut end = if last {
+                data.len()
+            } else {
+                data.len().saturating_sub(self.hold)
+            };
+            if !last {
+                if let Some(open) = open_url(&data, end) {
+                    // Too long to wait for: keep its scheme, drop what follows up to the end of a
+                    // userinfo, and read on from there.
+                    if let Some(scheme) = open.scheme.filter(|_| data.len() - open.start > URL_CAP)
+                    {
+                        out.extend(redact_urls(&data[..scheme + 3]));
+                        data.drain(..scheme + 3);
+                        self.skipping = true;
+                        continue;
+                    }
+                    end = open.start;
+                }
+            }
+            out.extend(redact_urls(&data[..end]));
+            self.carry = data.split_off(end);
+            return Ok(out);
+        }
     }
 }
 
-/// The index `end` moved back to the start of a URL that is still open there: one that started
-/// before `end` and has not yet met a byte that ends a userinfo, so what follows may complete it.
-fn open_url_start(data: &[u8], end: usize) -> usize {
-    let Some(scheme) = memchr::memmem::rfind(&data[..end], b"://") else {
-        return end;
-    };
-    let ended = data[scheme + 3..end]
-        .iter()
-        .any(|b| b.is_ascii_whitespace() || b"/\"'<>?#".contains(b));
-    if ended {
-        return end;
+/// An open URL: where it starts, and where its `://` is when the read is already past it.
+struct OpenUrl {
+    start: usize,
+    scheme: Option<usize>,
+}
+
+/// A byte that ends a userinfo.
+fn ends_userinfo(b: u8) -> bool {
+    b.is_ascii_whitespace() || b"/\"'<>?#".contains(&b)
+}
+
+/// How much of `data` is the rest of a userinfo being dropped, and whether it ended in it.
+fn skip_userinfo(data: &[u8]) -> (usize, bool) {
+    for (i, b) in data.iter().enumerate() {
+        if *b == b'@' {
+            return (i + 1, true);
+        }
+        if ends_userinfo(*b) {
+            return (i, true);
+        }
     }
-    let mut start = scheme;
+    (data.len(), false)
+}
+
+/// The URL that is still open at `end`, if there is one: what is held back has to start there, so
+/// that what follows can complete it. Open means the cut falls inside the scheme, between it and
+/// its `://`, or after the `://` and before a byte that ends a userinfo.
+fn open_url(data: &[u8], end: usize) -> Option<OpenUrl> {
+    let head = &data[..end];
+    if let Some(scheme) = memchr::memmem::rfind(head, b"://") {
+        if !data[scheme + 3..end].iter().copied().any(ends_userinfo) {
+            return Some(OpenUrl {
+                start: scheme_start(data, scheme),
+                scheme: Some(scheme),
+            });
+        }
+    }
+    let colon = if head.ends_with(b":/") {
+        2
+    } else {
+        usize::from(head.ends_with(b":"))
+    };
+    let start = scheme_start(data, end - colon);
+    (start < end).then_some(OpenUrl {
+        start,
+        scheme: None,
+    })
+}
+
+/// Where the scheme that ends at `end` starts (at most [`SCHEME_MAX`] bytes back).
+fn scheme_start(data: &[u8], end: usize) -> usize {
+    let mut start = end;
     while start > 0
+        && end - start < SCHEME_MAX
         && (data[start - 1].is_ascii_alphanumeric() || b"+.-".contains(&data[start - 1]))
     {
         start -= 1;
@@ -356,4 +441,79 @@ pub(crate) fn advertised_branches(body: &[u8]) -> Vec<String> {
             name.strip_prefix("refs/heads/").map(str::to_string)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A credentialed URL, built here so no source line is one.
+    fn credentialed(scheme: &str, user: &str, pw: &str) -> String {
+        [scheme, "://", user, ":", pw, "@host.example/x"].concat()
+    }
+
+    fn run(scanner: &mut Scanner, parts: &[&[u8]]) -> String {
+        let mut out = Vec::new();
+        for part in parts {
+            out.extend(scanner.feed(part).expect("no needle"));
+        }
+        out.extend(scanner.finish().expect("no needle"));
+        String::from_utf8(out).expect("text")
+    }
+
+    #[test]
+    fn a_credentialed_url_is_cut_down_at_every_offset_the_hold_boundary_can_fall() {
+        let url = credentialed("https", "someone", "hunter2hunter2");
+        for k in 0..=url.len() {
+            // The first read's cut (its length less the hold) falls `k` bytes into the URL.
+            let mut first = b"pad ".to_vec();
+            first.extend_from_slice(url.as_bytes());
+            first.resize(4 + k + URL_WINDOW, b'z');
+            let mut scanner = Scanner::new(Vec::new(), true);
+            let text = run(&mut scanner, &[&first, b" more text"]);
+            assert!(!text.contains("someone"), "offset {k}: {text:.80}");
+            assert!(!text.contains("hunter2"), "offset {k}: {text:.80}");
+            assert!(text.contains("https://host.example/x"), "offset {k}");
+        }
+    }
+
+    #[test]
+    fn a_url_split_across_two_reads_at_every_byte_is_cut_down() {
+        let url = credentialed("https", "someone", "hunter2hunter2");
+        let body = format!("see {url} and {url}");
+        for k in 0..=body.len() {
+            let (a, b) = body.as_bytes().split_at(k);
+            let mut scanner = Scanner::new(Vec::new(), true);
+            let text = run(&mut scanner, &[a, b]);
+            assert!(!text.contains("hunter2"), "split {k}: {text}");
+            assert!(!text.contains("someone"), "split {k}: {text}");
+        }
+    }
+
+    #[test]
+    fn a_token_only_userinfo_over_http_is_cut_and_an_ssh_user_is_not() {
+        let token = ["https://", "tok123", "@host.example/r"].concat();
+        let ssh = ["ssh://", "git", "@host.example/r"].concat();
+        let kept = ["ssh://git", "@host.example/r"].concat();
+        let mut scanner = Scanner::new(Vec::new(), true);
+        let text = run(&mut scanner, &[format!("{token} {ssh}").as_bytes()]);
+        assert!(!text.contains("tok123"), "{text}");
+        assert!(text.contains(&kept), "{text}");
+    }
+
+    #[test]
+    fn a_userinfo_longer_than_the_cap_is_dropped_and_the_hold_stays_bounded() {
+        let long = "q".repeat(URL_CAP * 3);
+        let body = ["https://", &long, ":pw", "@host.example/x tail"].concat();
+        let mut scanner = Scanner::new(Vec::new(), true);
+        let mut out = Vec::new();
+        for piece in body.as_bytes().chunks(1000) {
+            out.extend(scanner.feed(piece).expect("no needle"));
+            assert!(scanner.carry.len() <= URL_CAP + 1000);
+        }
+        out.extend(scanner.finish().expect("no needle"));
+        let text = String::from_utf8(out).expect("text");
+        assert!(!text.contains("qqqq"), "{}", text.len());
+        assert!(text.ends_with("host.example/x tail"), "{text}");
+    }
 }
