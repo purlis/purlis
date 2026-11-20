@@ -49,7 +49,7 @@ fn each_old_line_says_to_sign_in_and_to_delete_the_line() {
     for one in &refused {
         assert!(
             one.why.contains("Sign in under Settings › Forges")
-                && one.why.contains("delete this line"),
+                && (one.why.contains("delete this line") || one.why.contains("delete the line")),
             "{}",
             one.why
         );

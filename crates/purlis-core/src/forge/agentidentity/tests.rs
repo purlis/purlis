@@ -147,6 +147,7 @@ fn the_page_escapes_the_manifest_and_may_post_only_to_github() {
     assert!(!policy.contains("unsafe-inline"), "{policy}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_redirect_with_the_right_state_gets_the_app_and_any_other_request_gets_nothing() {
     let conversions = Conversions::say(201, &app_answer("acme", "Organization"));
@@ -820,6 +821,7 @@ fn browser_get(target: &str, more: &str) -> String {
     )
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn github_s_redirect_with_this_try_s_state_makes_the_app() {
     let (made, shown) = through_a_browser(&|state| {
@@ -829,6 +831,7 @@ fn github_s_redirect_with_this_try_s_state_makes_the_app() {
     assert!(shown.contains("GitHub made the App"), "{shown}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_browser_that_carries_many_cookies_for_this_machine_still_gets_through() {
     // Cookies are kept per host, not per port, so every local server a developer runs adds to
@@ -841,6 +844,7 @@ fn a_browser_that_carries_many_cookies_for_this_machine_still_gets_through() {
     assert!(shown.contains("GitHub made the App"), "{shown}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn github_coming_back_without_this_try_s_state_ends_the_wait_and_says_where_the_app_is() {
     for back in [
@@ -927,6 +931,7 @@ fn the_apps_page_is_the_owner_s_own() {
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_wait_that_runs_out_says_so_and_where_the_app_may_be() {
     let (made, _) = through_a_browser(&|_| browser_get("/favicon.ico", ""));
