@@ -28,6 +28,7 @@ use graphql_parser::query::{
 };
 use serde_json::Value as Json;
 
+use super::commands;
 use super::policy::{Class, ObjectRepo, Refusal};
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
 
@@ -229,6 +230,8 @@ const DENIED_FIELDS: &[&str] = &[
     "pushRules",
     "runners",
     "mirrorUrl",
+    "headRepository",
+    "headRepositoryOwner",
 ];
 
 /// Decide a GraphQL request body. `repos` are the chat's repos that this host serves.
@@ -264,7 +267,13 @@ pub(crate) fn decide(
     let mut class = Class::GraphqlQuery;
     for definition in &document.definitions {
         match definition {
-            Definition::Fragment(fragment) => ctx.check_fields(&fragment.selection_set)?,
+            Definition::Fragment(fragment) => {
+                let vars = Vars {
+                    given,
+                    defaults: Vec::new(),
+                };
+                ctx.check_fields(&fragment.selection_set, &vars)?;
+            }
             Definition::Operation(operation) => {
                 let (defs, selection_set, is_mutation) = match operation {
                     OperationDefinition::SelectionSet(set) => (&[][..], set, false),
@@ -304,8 +313,9 @@ struct Context<'a> {
 }
 
 impl Context<'_> {
-    /// Refuse a denied field anywhere in a selection set.
-    fn check_fields(&self, set: &SelectionSet<'_, String>) -> Result<(), Refusal> {
+    /// Refuse a denied field anywhere in a selection set. A `repository(owner:, name:)` or `project(fullPath:)` met below the root names an allowed
+    /// repo too.
+    fn check_fields(&self, set: &SelectionSet<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
         for selection in &set.items {
             match selection {
                 Selection::Field(field) => {
@@ -315,10 +325,21 @@ impl Context<'_> {
                     {
                         return Err(Refusal::GraphqlOtherRepo);
                     }
-                    self.check_fields(&field.selection_set)?;
+                    if !field.arguments.is_empty() {
+                        match (self.kind, field.name.as_str()) {
+                            (Kind::GitHub, "repository") => {
+                                self.check_named(field, vars, "owner", Some("name"))?
+                            }
+                            (Kind::GitLab, "project") => {
+                                self.check_named(field, vars, "fullPath", None)?
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.check_fields(&field.selection_set, vars)?;
                 }
                 Selection::InlineFragment(fragment) => {
-                    self.check_fields(&fragment.selection_set)?
+                    self.check_fields(&fragment.selection_set, vars)?
                 }
                 Selection::FragmentSpread(_) => {}
             }
@@ -341,7 +362,7 @@ impl Context<'_> {
                 "project" => self.check_named(field, vars, "fullPath", None)?,
                 _ => {}
             }
-            self.check_fields(&field.selection_set)?;
+            self.check_fields(&field.selection_set, vars)?;
         }
         Ok(())
     }
@@ -416,6 +437,12 @@ impl Context<'_> {
                     .resolve(value)
                     .map_err(|()| Refusal::GraphqlOtherRepo)?;
                 collect_ids("", &val, &mut ids);
+                if strings(&val)
+                    .iter()
+                    .any(|text| commands::has_merge_command(text))
+                {
+                    return Err(Refusal::MergeCommand);
+                }
             }
             self.check_scoped(&ids)?;
             class = Some(Class::GraphqlMutation(field.name.clone()));
@@ -473,4 +500,14 @@ fn names_an_id(key: &str) -> bool {
             || key.ends_with("Ids")
             || key == "projectPath"
             || key == "fullPath")
+}
+
+/// Every string in a value.
+fn strings(val: &Val) -> Vec<String> {
+    match val {
+        Val::Str(s) => vec![s.clone()],
+        Val::List(items) => items.iter().flat_map(strings).collect(),
+        Val::Obj(fields) => fields.iter().flat_map(|(_, v)| strings(v)).collect(),
+        Val::Other => Vec::new(),
+    }
 }

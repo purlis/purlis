@@ -59,8 +59,18 @@ impl std::fmt::Debug for Sentinel {
 /// Every chat's current sentinel.
 #[derive(Default)]
 pub struct SentinelRegistry {
-    by_chat: Mutex<HashMap<ChatId, Sentinel>>,
+    by_chat: Mutex<HashMap<ChatId, Entry>>,
 }
+
+/// A chat's sentinel and how many wrong ones in a row it has presented.
+struct Entry {
+    sentinel: Sentinel,
+    misses: u32,
+}
+
+/// Wrong sentinels in a row after which a chat is locked until it starts again: far above a
+/// mistake, far below a search of 256 bits.
+const MAX_MISSES: u32 = 10;
 
 impl SentinelRegistry {
     /// A new sentinel for `chat`; the one it had stops working.
@@ -69,7 +79,13 @@ impl SentinelRegistry {
         self.by_chat
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(chat.clone(), sentinel.clone());
+            .insert(
+                chat.clone(),
+                Entry {
+                    sentinel: sentinel.clone(),
+                    misses: 0,
+                },
+            );
         sentinel
     }
 
@@ -89,18 +105,23 @@ impl SentinelRegistry {
         if presented.is_empty() {
             return Err(Refusal::NoSentinel);
         }
-        let map = self.by_chat.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(own) = map.get(chat) else {
+        let mut map = self.by_chat.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(entry) = map.get_mut(chat) else {
             return Err(Refusal::UnknownChat);
         };
+        if entry.misses >= MAX_MISSES {
+            return Err(Refusal::Locked);
+        }
         // Every comparison is made, so how many headers matched does not show in the time taken.
         let mut all_own = true;
         for value in &presented {
-            all_own &= bool::from(value.as_bytes().ct_eq(own.0.as_bytes()));
+            all_own &= bool::from(value.as_bytes().ct_eq(entry.sentinel.0.as_bytes()));
         }
         if all_own {
+            entry.misses = 0;
             Ok(())
         } else {
+            entry.misses += 1;
             Err(Refusal::WrongSentinel)
         }
     }

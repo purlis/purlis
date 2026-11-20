@@ -14,14 +14,17 @@ fn another_repo_is_refused_by_git_and_by_the_api() {
     for (host, target) in [
         (
             "github.com",
-            "/acme/other.git/info/refs?service=git-upload-pack",
+            "/acme/other.git/info/refs?service=git-receive-pack",
         ),
-        ("github.com", "/acme/other.git/git-upload-pack"),
+        (
+            "github.com",
+            "/acme/other.git/info/refs?service=git-receive-pack",
+        ),
         ("api.github.com", "/repos/acme/other/pulls"),
         ("api.github.com", "/repos/other/app/pulls"),
         (
             "gitlab.com",
-            "/group/other.git/info/refs?service=git-upload-pack",
+            "/group/other.git/info/refs?service=git-receive-pack",
         ),
         (
             "gitlab.com",
@@ -29,12 +32,7 @@ fn another_repo_is_refused_by_git_and_by_the_api() {
         ),
         ("gitlab.com", "/api/v4/projects/43/merge_requests"),
     ] {
-        let method = if target.contains("upload-pack") && !target.contains("info/refs") {
-            "POST"
-        } else {
-            "GET"
-        };
-        let out = s.send(method, host, target, b"");
+        let out = s.send("GET", host, target, b"");
         assert!(
             is_refused(&out, Refusal::OtherRepo),
             "{host}{target}: {out:?}"
@@ -48,29 +46,29 @@ fn a_repo_whose_path_only_starts_like_the_chats_is_another_repo() {
     for (host, target) in [
         (
             "github.com",
-            "/acme/app-secrets.git/info/refs?service=git-upload-pack",
+            "/acme/app-secrets.git/info/refs?service=git-receive-pack",
         ),
         (
             "github.com",
-            "/acme/app2.git/info/refs?service=git-upload-pack",
+            "/acme/app2.git/info/refs?service=git-receive-pack",
         ),
         (
             "github.com",
-            "/acme/app.git.evil/info/refs?service=git-upload-pack",
+            "/acme/app.git.evil/info/refs?service=git-receive-pack",
         ),
         (
             "github.com",
-            "/acme/ap.git/info/refs?service=git-upload-pack",
+            "/acme/ap.git/info/refs?service=git-receive-pack",
         ),
         ("api.github.com", "/repos/acme/app-secrets/pulls"),
         ("api.github.com", "/repos/acme/app.git/pulls"),
         (
             "gitlab.com",
-            "/group/proj-x.git/info/refs?service=git-upload-pack",
+            "/group/proj-x.git/info/refs?service=git-receive-pack",
         ),
         (
             "gitlab.com",
-            "/group/proj/sub.git/info/refs?service=git-upload-pack",
+            "/group/proj/sub.git/info/refs?service=git-receive-pack",
         ),
         (
             "gitlab.com",
@@ -86,11 +84,11 @@ fn a_repo_whose_path_only_starts_like_the_chats_is_another_repo() {
         ),
         (
             "git.corp.example",
-            "/grp/sub/proj-x.git/info/refs?service=git-upload-pack",
+            "/grp/sub/proj-x.git/info/refs?service=git-receive-pack",
         ),
         (
             "git.corp.example",
-            "/grp/sub.git/info/refs?service=git-upload-pack",
+            "/grp/sub.git/info/refs?service=git-receive-pack",
         ),
     ] {
         let port = if host == "git.corp.example" {
@@ -233,7 +231,7 @@ fn a_repo_is_the_one_a_chat_was_given_not_the_one_another_chat_has() {
     let out = s.send(
         "GET",
         "github.com",
-        "/acme/other.git/info/refs?service=git-upload-pack",
+        "/acme/other.git/info/refs?service=git-receive-pack",
         b"",
     );
     assert!(is_refused(&out, Refusal::OtherRepo), "{out:?}");

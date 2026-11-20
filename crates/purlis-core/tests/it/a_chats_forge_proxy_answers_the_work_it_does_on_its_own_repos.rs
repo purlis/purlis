@@ -64,7 +64,7 @@ fn a_push_of_a_feature_branch_to_the_recorded_address_is_answered() {
         )),
         Class::GitPush
     );
-    let body = push_body(&[("update", "refs/heads/work")]);
+    let body = push_body(&[("update", "refs/heads/work")]); // seeded as the chat's own
     assert_eq!(
         class(s.send(
             "POST",

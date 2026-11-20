@@ -92,7 +92,8 @@ impl Scene {
                 AllowedRepo::new(Kind::GitHub, GHES, 443, "acme/app", "trunk").unwrap(),
                 AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                     .unwrap()
-                    .with_project_id(42),
+                    .with_project_id(42)
+                    .with_own_branches(&["work"]),
                 AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
             ],
         );

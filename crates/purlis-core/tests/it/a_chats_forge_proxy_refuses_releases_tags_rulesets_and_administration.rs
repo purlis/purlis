@@ -163,8 +163,8 @@ fn a_write_route_that_is_not_on_the_list_is_refused_whatever_it_is() {
             "gitlab.com",
             "/api/v4/projects/42/repository/commits",
         ),
-        ("GET", "api.github.com", "/user"),
-        ("GET", "gitlab.com", "/api/v4/user"),
+        ("GET", "api.github.com", "/user/repos"),
+        ("GET", "gitlab.com", "/api/v4/users"),
         ("TRACE", "api.github.com", "/repos/acme/app/pulls"),
     ] {
         let out = s.send(method, host, target, b"{}");
@@ -188,6 +188,14 @@ fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_
     };
     for (cmds, why) in [
         (vec![("update", "refs/heads/main")], Refusal::ProtectedRef),
+        (
+            vec![("create", "refs/heads/gh-pages")],
+            Refusal::ProtectedRef,
+        ),
+        (
+            vec![("update", "refs/heads/someone-elses")],
+            Refusal::ProtectedRef,
+        ),
         (vec![("update", "refs/heads/MAIN")], Refusal::ProtectedRef),
         (vec![("delete", "refs/heads/main")], Refusal::ProtectedRef),
         (
@@ -225,7 +233,7 @@ fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_
         push(
             "ghe.corp.example",
             "/acme/app",
-            &[("update", "refs/heads/main")]
+            &[("create", "refs/heads/main")]
         ),
         Outcome::Forward(_)
     ));

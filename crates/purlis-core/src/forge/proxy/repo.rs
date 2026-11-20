@@ -43,6 +43,8 @@ pub struct AllowedRepo {
     pub(crate) node_ids: Vec<String>,
     /// GitLab's numeric project id, which a REST path may use instead of the path.
     pub(crate) project_id: Option<u64>,
+    /// Branches the chat may move and delete from the start: the ones purlis made for it.
+    pub(crate) own_branches: Vec<String>,
 }
 
 impl AllowedRepo {
@@ -72,6 +74,7 @@ impl AllowedRepo {
             protected_branches: Vec::new(),
             node_ids: Vec::new(),
             project_id: None,
+            own_branches: Vec::new(),
         })
     }
 
@@ -93,6 +96,14 @@ impl AllowedRepo {
     #[must_use]
     pub fn with_project_id(mut self, id: u64) -> Self {
         self.project_id = Some(id);
+        self
+    }
+
+    /// Branches the chat owns from the start (the one purlis cut for its task). A branch the chat
+    /// creates later is recorded as it is pushed; any other it may not move or delete.
+    #[must_use]
+    pub fn with_own_branches(mut self, names: &[&str]) -> Self {
+        self.own_branches = names.iter().map(|n| (*n).to_string()).collect();
         self
     }
 
@@ -126,6 +137,7 @@ impl AllowedRepo {
     /// Whether `branch` (a short name) may not be pushed to.
     pub(crate) fn protects(&self, branch: &str) -> bool {
         branch.eq_ignore_ascii_case(&self.default_branch)
+            || branch.eq_ignore_ascii_case("gh-pages")
             || self
                 .protected_branches
                 .iter()

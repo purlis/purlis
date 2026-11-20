@@ -228,3 +228,85 @@ fn what_is_forwarded_never_prints_the_credential() {
     assert!(matches!(out, Outcome::Forward(_)));
     assert!(!format!("{out:?}").contains(REAL));
 }
+
+#[test]
+fn a_chat_that_keeps_guessing_is_locked_out_even_for_the_right_sentinel_until_it_starts_again() {
+    let s = Scene::new();
+    for i in 0..10 {
+        let guess = format!("guess-{i}");
+        let _ = s.send_as(
+            &s.a,
+            "GET",
+            "api.github.com",
+            443,
+            TARGET,
+            Auth::Bearer(&guess),
+            b"",
+        );
+    }
+    let mine = s.a_sentinel.expose().to_string();
+    let out = s.send_as(
+        &s.a,
+        "GET",
+        "api.github.com",
+        443,
+        TARGET,
+        Auth::Bearer(&mine),
+        b"",
+    );
+    assert!(is_refused(&out, Refusal::Locked), "{out:?}");
+    // Another chat is not locked by it.
+    let theirs = s.b_sentinel.expose().to_string();
+    let out = s.send_as(
+        &s.b,
+        "GET",
+        "api.github.com",
+        443,
+        "/repos/acme/other/pulls",
+        Auth::Bearer(&theirs),
+        b"",
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+    let fresh = s.proxy.enrol(&s.a, vec![]);
+    let fresh = fresh.expose().to_string();
+    let out = s.send_as(
+        &s.a,
+        "GET",
+        "api.github.com",
+        443,
+        TARGET,
+        Auth::Bearer(&fresh),
+        b"",
+    );
+    assert!(!is_refused(&out, Refusal::Locked));
+}
+
+#[test]
+fn a_few_mistakes_do_not_lock_a_chat_and_a_good_request_clears_them() {
+    let s = Scene::new();
+    let mine = s.a_sentinel.expose().to_string();
+    for round in 0..3 {
+        for i in 0..9 {
+            let guess = format!("guess-{round}-{i}");
+            let _ = s.send_as(
+                &s.a,
+                "GET",
+                "api.github.com",
+                443,
+                TARGET,
+                Auth::Bearer(&guess),
+                b"",
+            );
+        }
+        let out = s.send_as(
+            &s.a,
+            "GET",
+            "api.github.com",
+            443,
+            TARGET,
+            Auth::Bearer(&mine),
+            b"",
+        );
+        assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+    }
+}

@@ -9,8 +9,9 @@
 //! are an allowlist: a route not named below is refused, whatever it would do. The names exist so
 //! the refusal says why; they are never what lets a request through.
 
+use super::commands;
 use super::policy::{Class, Refusal};
-use super::repo::Kind;
+use super::repo::{AllowedRepo, Kind};
 use super::request::{Target, is_read};
 
 /// Whether `rel` matches `pattern`: `*` is any one segment, `#` one made of digits.
@@ -218,12 +219,57 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
     }
 }
 
+/// What a write's body may not say: a merge command in any text, and, on GitLab, a merge request
+/// aimed at another project.
+fn check_body(
+    kind: Kind,
+    rel: &[String],
+    target: &Target,
+    body: &[u8],
+    repo: &AllowedRepo,
+) -> Result<(), Refusal> {
+    if commands::body_strings(body)
+        .iter()
+        .any(|text| commands::has_merge_command(text))
+    {
+        return Err(Refusal::MergeCommand);
+    }
+    if kind == Kind::GitLab && rel.first().is_some_and(|f| f == "merge_requests") {
+        let mut named: Vec<String> = target
+            .query
+            .iter()
+            .filter(|(k, _)| k.eq_ignore_ascii_case("target_project_id"))
+            .map(|(_, v)| v.clone())
+            .collect();
+        match serde_json::from_slice::<serde_json::Value>(body) {
+            Ok(serde_json::Value::Object(map)) => {
+                if let Some(v) = map.get("target_project_id") {
+                    named.push(v.as_str().map_or_else(|| v.to_string(), str::to_string));
+                }
+            }
+            Ok(_) => {}
+            Err(_) => named.extend(
+                url::form_urlencoded::parse(body)
+                    .filter(|(k, _)| k == "target_project_id")
+                    .map(|(_, v)| v.into_owned()),
+            ),
+        }
+        let own = repo.project_id.map(|id| id.to_string());
+        if named.iter().any(|n| Some(n) != own.as_ref()) {
+            return Err(Refusal::OtherRepo);
+        }
+    }
+    Ok(())
+}
+
 /// Decide one REST request under a chat's repo.
 pub(crate) fn decide(
     kind: Kind,
     method: &str,
     rel: &[String],
     target: &Target,
+    body: &[u8],
+    repo: &AllowedRepo,
 ) -> Result<Class, Refusal> {
     if let Some(refusal) = named_refusal(method, rel, target) {
         return Err(refusal);
@@ -231,5 +277,7 @@ pub(crate) fn decide(
     if is_read(method) {
         return Ok(Class::ApiRead);
     }
-    write_class(kind, method, rel).ok_or(Refusal::NotOnList)
+    let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
+    check_body(kind, rel, target, body, repo)?;
+    Ok(class)
 }
