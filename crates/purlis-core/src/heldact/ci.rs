@@ -435,7 +435,7 @@ impl GitTrees {
     /// a tree diff of the real commits would be empty), and every call that shows a patch is
     /// `--text` (a `-diff` attribute in `.git/info/attributes` or a `.gitattributes` makes git
     /// print "Binary files differ" for a file whose lines are the change).
-    fn git(&self, args: &[&str]) -> Result<String, String> {
+    pub(super) fn git(&self, args: &[&str]) -> Result<String, String> {
         use crate::worktree::git;
         let mut argv = vec![
             "--no-replace-objects",

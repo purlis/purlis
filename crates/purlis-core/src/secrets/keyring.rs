@@ -104,6 +104,11 @@ impl Secret {
     pub fn into_inner(self) -> String {
         self.0
     }
+
+    /// The value, for the one request it authorises.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
 }
 
 impl std::fmt::Debug for Secret {

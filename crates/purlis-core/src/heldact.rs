@@ -73,12 +73,14 @@ mod prepare;
 mod recognise;
 pub mod said;
 mod tag;
+mod tip;
 
 pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push};
 pub use holds::{Asked, HeldActs, NotDone, Performed, Pressed, Waiting};
 pub use prepare::{pinned, prepare};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise};
 pub use tag::{InvalidTag, TagName};
+pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles};
 
 /// The source a held act is listed under, and the one a rule made from an answer may never name.
 pub const SOURCE: &str = "held-act";

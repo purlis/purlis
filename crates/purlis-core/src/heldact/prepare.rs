@@ -226,6 +226,13 @@ fn release(
     text: Text<'_>,
     (draft, prerelease): (bool, bool),
 ) -> Result<Prepared, Refused> {
+    // GitLab's releases have no draft and no pre-release: not offered, rather than made as
+    // something other than what was asked.
+    if world.forge.kind() == crate::forge::Kind::GitLab && (draft || prerelease) {
+        return Err(Refused::Text(
+            "GitLab has no draft or pre-release releases, so a release is not made as one",
+        ));
+    }
     let title = title_of(text.title)?;
     let notes = notes_of(text.notes)?;
     let text = Text {
