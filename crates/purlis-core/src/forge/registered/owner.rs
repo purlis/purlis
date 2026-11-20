@@ -95,8 +95,8 @@ pub fn pin_with_owner(
     });
     let Some(Value::Object(entry)) = at.and_then(|at| file.hosts.get_mut(at)) else {
         return Err(format!(
-            "purlis pinned the application on {} but could not record its owner. Press Use this \
-             application again.",
+            "purlis pinned the application on {} but could not record its owner. Pin it again with \
+             its owner.",
             pinned.host
         ));
     };
@@ -119,8 +119,8 @@ pub fn consent_check(owner: Option<&str>, host: &str) -> String {
         ),
         None => format!(
             "No owner was named for the application on {host}. On the next page, check that it \
-             is owned by the organization or group you expect, and use this application again \
-             with its owner to have it said here."
+             is owned by the organization or group you expect, and pin the application again with \
+             its owner to have it said here."
         ),
     }
 }

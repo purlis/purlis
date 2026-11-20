@@ -43,7 +43,7 @@ type ForgeWord = (typeof FORGES)[number]["value"];
 const failure = (err: unknown) => ({ status: "error" as const, error: String(err) });
 
 /** **Use this application**: pin the client id with the owner the person expects. */
-function UseApplication({
+export function UseApplication({
   onPinned,
   onCancel,
 }: {

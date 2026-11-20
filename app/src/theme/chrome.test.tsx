@@ -66,6 +66,7 @@ import { RemoveSigningConfirm } from "../settings/signing";
 import { SigningSetupDialog } from "../SigningSetupDialog";
 import { ForgeGitLabSignIn } from "../ForgeGitLabSignIn";
 import { ForgeTokenSignIn } from "../ForgeTokenSignIn";
+import { UseApplication } from "../settings/oneLogin";
 import { AddDockerPoolHost } from "../AddDockerPool";
 import { ReportConsentDialog, WhatReportsSend } from "../ReportConsent";
 import { SentReports } from "../settings/SentReports";
@@ -1327,6 +1328,11 @@ const DIALOGS: Opened[] = [
     name: "the forge token sign-in",
     file: "ForgeTokenSignIn.tsx",
     open: async () => render(<ForgeTokenSignIn onSignedIn={nothing} onCancel={nothing} />),
+  },
+  {
+    name: "using an owner's application",
+    file: "settings/oneLogin.tsx",
+    open: async () => render(<UseApplication onPinned={nothing} onCancel={nothing} />),
   },
   {
     name: "removing a profile",
