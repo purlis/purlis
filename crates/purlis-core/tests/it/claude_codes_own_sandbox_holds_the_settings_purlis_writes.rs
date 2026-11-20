@@ -1885,7 +1885,15 @@ fn corpus_run(program: &Path, at: &Path, as_before: bool) -> Vec<(Probe, Came)> 
             ],
         );
     };
-    for (workspace, piece) in [("w", "p1"), ("w", "p2"), ("v", "q1"), ("v", "q2")] {
+    // Three workspaces, so the Edit rule on the same path in each ([`sandbox::claude`]'s fold of
+    // three or more) is the rule Claude Code decides, and not each by its own.
+    for (workspace, piece) in [
+        ("w", "p1"),
+        ("w", "p2"),
+        ("v", "q1"),
+        ("v", "q2"),
+        ("x", "r1"),
+    ] {
         branch(workspace, piece);
     }
     let dispatches = root.join(".purlis/app/dispatches");
@@ -1981,6 +1989,17 @@ fn corpus_run(program: &Path, at: &Path, as_before: bool) -> Vec<(Probe, Came)> 
     write(&dispatches, Some(true), true);
     write(&root.join("purlis.toml"), Some(true), true);
     write(&root.join("repo/.git/config"), Some(true), true);
+    // The same path in each of three workspaces: one rule on every workspace's.
+    for workspace in ["w", "v", "x"] {
+        write(
+            &root
+                .join("workspaces")
+                .join(workspace)
+                .join("app/.git/config"),
+            Some(true),
+            true,
+        );
+    }
     // Later code, held by a glob wherever it is made.
     write(&root.join("made-later/.husky"), Some(true), true);
     write(&root.join("made-later/.vscode"), Some(true), true);
