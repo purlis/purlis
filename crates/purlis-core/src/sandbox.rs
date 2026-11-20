@@ -340,11 +340,15 @@ impl Policy {
 
 impl Policy {
     /// **The deny state's policy** (M75-07b): the model providers' preset alone, no host of the
-    /// project's own, no persona's grants, no compile cache. The certificate check stays on, which
-    /// the providers' TLS needs (a project's file only ever narrows it; policy locks apply on top).
-    pub fn deny_state() -> Self {
+    /// project's own, no persona's grants, no compile cache. **Never wider than the project's own
+    /// sandbox**: `project`, what its file says (or the defaults), lends every key that only
+    /// narrows ([`CERTIFICATE_CHECKS`] `= false`, [`OWN_TERMINAL_ONLY`] `= true`); policy locks
+    /// apply on top, as they do to any start.
+    pub fn deny_state(project: &Policy) -> Self {
         Self {
             egress: vec![Preset::ModelProviders],
+            certificate_checks: project.certificate_checks,
+            own_terminal_only: project.own_terminal_only,
             ..Self::defaults()
         }
     }
@@ -4816,8 +4820,10 @@ impl Compiled {
     /// model providers' hosts, and the system's certificate check those hosts' TLS needs where
     /// policy leaves it on.
     pub fn deny_state(plane: &Plane, root: &Path, machine: &Machine) -> Self {
+        let said = plane.said();
+        let project = said.policy.or(said.unset).unwrap_or_else(Policy::defaults);
         let mut compiled = Self::granted(
-            &Policy::deny_state(),
+            &Policy::deny_state(&project),
             plane,
             root,
             machine,
@@ -4825,7 +4831,9 @@ impl Compiled {
             &grant::Grants::default(),
         );
         let locks = policy::Locks::of(root);
-        let providers = hosts(&[Preset::ModelProviders], plane, &locks);
+        // An administrator's policy may turn the preset off: the lock holds here as it does for
+        // any start.
+        let providers = hosts(&locks.presets(&[Preset::ModelProviders]), plane, &locks);
         compiled.reach = reach::Reach::of(
             providers
                 .iter()
@@ -4837,6 +4845,7 @@ impl Compiled {
         compiled.writable = Vec::new();
         compiled.widened = Widened {
             trust: compiled.widened.trust,
+            own_terminal_only: compiled.widened.own_terminal_only,
             ..Widened::default()
         };
         compiled

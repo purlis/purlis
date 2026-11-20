@@ -2390,6 +2390,66 @@ fn in_the_deny_state_the_sandbox_is_full_with_the_minimum_permits() {
     );
 }
 
+/// M75-07b round 2: the deny state strips everything the person kept (a host of their own, a
+/// socket), a persona's grants and the project's own hosts, and holds an administrator's preset
+/// lock: where policy turns the model providers off, so does the deny state.
+#[test]
+fn the_deny_state_strips_what_was_kept_and_holds_a_locked_preset() {
+    let plane = plane_saying(
+        "[sandbox]\nmode = \"on\"\nhosts = [\"api.example.com\"]\n\n\
+         [sandbox.personas.devops]\nhosts = [\"persona.example.com\"]\n",
+    );
+    let root = plane.path().canonicalize().expect("the project");
+    std::fs::write(
+        root.join("charter.local.toml"),
+        "[sandbox]\nhosts = [\"mine.example.com\"]\n",
+    )
+    .expect("charter.local.toml");
+    local::confirm_host(&root, "mine.example.com").expect("confirmed");
+    local::grant_socket(&root, StdPath::new("/var/run/docker.sock")).expect("granted");
+    let machine = Machine::this();
+    let read = Plane::read(&root);
+
+    policy::set_for_this_test(policy::Locks::none());
+    let open = Compiled::deny_state(&read, &root, &machine);
+    assert!(
+        open.hosts.contains(&"api.anthropic.com".to_owned()),
+        "{open:?}"
+    );
+    for kept in ["api.example.com", "mine.example.com", "persona.example.com"] {
+        assert!(!open.hosts.contains(&kept.to_owned()), "{kept}: {open:?}");
+    }
+    assert!(open.widened.sockets.is_empty(), "{:?}", open.widened);
+    assert!(open.writable.is_empty(), "{:?}", open.writable);
+
+    // An administrator who lets only the forge preset on: the providers stay off here too.
+    policy::set_for_this_test(policy::Locks::parse(
+        r#"{"owner": "IT", "sandbox": {"presets": ["forge"]}}"#,
+        StdPath::new("/etc/purlis/policy.json"),
+    ));
+    let locked = Compiled::deny_state(&read, &root, &machine);
+    policy::set_for_this_test(policy::Locks::none());
+    assert!(
+        locked.hosts.is_empty(),
+        "a locked preset is held: {:?}",
+        locked.hosts
+    );
+}
+
+/// M75-07b round 2: the deny state is never wider than the project's own sandbox, so it keeps
+/// every narrowing the file says.
+#[test]
+fn the_deny_state_keeps_the_projects_narrowing_keys() {
+    let plane = plane_saying(
+        "[sandbox]\nmode = \"on\"\ncertificate-checks = false\nown-terminal-only = true\n",
+    );
+    let root = plane.path().canonicalize().expect("the project");
+    policy::set_for_this_test(policy::Locks::none());
+    let denied = Compiled::deny_state(&Plane::read(&root), &root, &Machine::this());
+    assert!(!denied.widened.trust, "{:?}", denied.widened);
+    assert!(denied.widened.own_terminal_only, "{:?}", denied.widened);
+}
+
 #[test]
 fn a_project_without_the_sandbox_has_nothing_besides_its_presets() {
     let root = tempfile::tempdir().expect("a project");

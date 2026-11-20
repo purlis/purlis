@@ -166,3 +166,89 @@ fn core_makes_a_press_in_one_file_only() {
         vec![CORES_OWN.to_owned()]
     );
 }
+
+/// The calls that write or lift a never, and so reach the Press exception in
+/// `answers_import.rs` (`nevers_in_step`): they are public, so a chat-serving caller could reach
+/// the store through them without ever naming the press.
+const NEVER_WRITERS: [&str; 6] = [
+    "dispatchgrant::never(",
+    "never_said_as(",
+    "lift_never(",
+    "dispatchnever::add(",
+    "dispatchnever::add_said(",
+    "dispatchnever::lift(",
+];
+
+/// The non-test files that may call one, and why. A new caller is a new decision, not an edit.
+const NEVER_CALLERS: [(&str, &str); 3] = [
+    (
+        "crates/purlis-core/src/dispatchgrant.rs",
+        "the definitions, each calling the next",
+    ),
+    (
+        "app/src-tauri/src/dispatchgrants.rs",
+        "the window's own Never and Lift never, said by the person in Settings",
+    ),
+    (
+        "app/src-tauri/src/dispatchaway.rs",
+        "the person's Never answer to a question put to them in the window",
+    ),
+];
+
+fn is_a_test_file(at: &str) -> bool {
+    at.contains("/tests/")
+        || at.ends_with("tests.rs")
+        || at.ends_with("_tests.rs")
+        || at.contains("_tests/")
+}
+
+/// Only the window's own handlers say or lift a never, so the Press exception stays the window's
+/// (review of #7257, round 2): no handler that serves a chat calls these.
+#[test]
+fn a_never_is_said_or_lifted_only_where_the_window_does_it() {
+    purlis_core::unsteered!();
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut files = Vec::new();
+    rust_files(&root.join("crates"), &mut files);
+    rust_files(&root.join("app/src-tauri"), &mut files);
+    let mut outside = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for file in &files {
+        if file.file_name() == Path::new(file!()).file_name() {
+            continue;
+        }
+        let at = file
+            .strip_prefix(&root)
+            .unwrap_or(file)
+            .to_string_lossy()
+            .replace('\\', "/")
+            .trim_start_matches("./")
+            .to_owned();
+        if is_a_test_file(&at) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        for (n, line) in text.lines().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") || !NEVER_WRITERS.iter().any(|call| code.contains(call)) {
+                continue;
+            }
+            seen.insert(at.clone());
+            if !NEVER_CALLERS.iter().any(|(allowed, _)| at == *allowed) {
+                outside.push(format!("{at}:{}", n + 1));
+            }
+        }
+    }
+    assert!(
+        outside.is_empty(),
+        "a never is said or lifted outside the window's handlers (a chat's request is never the \
+         person's press):\n{}",
+        outside.join("\n")
+    );
+    // The allowlist names real callers: a stale entry is dropped, not kept.
+    for (allowed, _) in NEVER_CALLERS {
+        assert!(seen.contains(allowed), "{allowed} no longer calls one");
+    }
+}

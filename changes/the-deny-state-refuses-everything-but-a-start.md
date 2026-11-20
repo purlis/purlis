@@ -6,7 +6,9 @@
   action a chat asks of the app but a start is refused, naming the deny state and the way out: a
   press in the window that starts again from the shipped default, which holds no nevers and no
   accepted floor. The message counts what was lost, this project's nevers and accepted versions
-  and the nevers that apply everywhere. A rule that forbids a start still refuses the chat. Such a
-  chat starts at the full sandbox with only the model providers reachable. A rule that names the
+  and the nevers that apply everywhere. A rule that forbids a start still refuses the chat. The
+  sandbox for such a chat (the full sandbox, only the model providers reachable, none of what the
+  person kept, never wider than the project's own) is built but not yet used: the app starts it
+  in the next part. A rule that names the
   device id (`context.machine`) reads the id you confirmed in the window, and forbids where there
   is none.
