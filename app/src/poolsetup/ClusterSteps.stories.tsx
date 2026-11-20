@@ -7,7 +7,7 @@
  * The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, within } from "storybook/test";
+import { expect, userEvent, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type { PoolSetupAction, PoolSetupShown, PoolSetupStep } from "../bindings";
 import { PoolSetupTab } from "../PoolSetupTab";
@@ -67,6 +67,7 @@ const CONTEXTS = {
   joining: false,
   pinned: null,
   key_changed: false,
+  kubeconfig: null,
 };
 
 const shown = (
@@ -138,12 +139,18 @@ export const AClusterIsRecommended: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    const main = await canvas.findByRole("button", { name: "Continue with this cluster" });
-    main.focus();
-    await userEvent.tab();
+    // Three places are offered at once (#7191); a cluster is the one picked, and Docker here is
+    // one arrow away, whose own button then reads as the core worded it.
+    const cluster = await canvas.findByRole("radio", { name: /A Kubernetes cluster/ });
+    await expect(cluster).toBeChecked();
     await expect(
-      canvas.getByRole("button", { name: "Use Docker on this machine instead" }),
-    ).toHaveFocus();
+      canvas.getByRole("button", { name: "Continue with this cluster" }),
+    ).toBeInTheDocument();
+    cluster.focus();
+    await userEvent.click(canvas.getByRole("radio", { name: /This machine/ }));
+    await expect(
+      await canvas.findByRole("button", { name: "Use Docker on this machine instead" }),
+    ).toBeEnabled();
     await expectFocusInSight();
   },
 };
@@ -151,13 +158,14 @@ export const AClusterIsRecommended: Story = {
 export const ContextsUnderOptions: Story = {
   beforeEach: AClusterIsRecommended.beforeEach,
   play: async ({ canvasElement }) => {
+    // The contexts are a field on the cluster card now (#7192), the recommended one picked.
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Options" }));
-    const chosen = canvas.getByRole("radio", { name: /kind-team/ });
-    await expect(chosen).toBeChecked();
-    chosen.focus();
-    await userEvent.keyboard("{ArrowDown}");
-    await expect(canvas.getByRole("radio", { name: "prod-eu" })).toBeChecked();
+    const context = await canvas.findByRole("button", { name: /Context/ });
+    await expect(context).toHaveTextContent("kind-team (recommended)");
+    await userEvent.click(context);
+    await userEvent.click(await within(document.body).findByRole("option", { name: "prod-eu" }));
+    await waitFor(() => expect(within(document.body).queryByRole("listbox")).toBeNull());
+    await expect(canvas.getByRole("button", { name: /Context/ })).toHaveTextContent("prod-eu");
     await expectFocusInSight();
   },
 };
@@ -188,6 +196,7 @@ export const NoClusterInTheKubeconfig: Story = {
         joining: false,
         pinned: null,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
   ),
@@ -220,12 +229,20 @@ export const NoKubectl: Story = {
         joining: false,
         pinned: null,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
   ),
 };
 
-const ok = (title: string) => ({ about: "cluster", verdict: "ok", title, more: null });
+const ok = (title: string) => ({
+  about: "cluster",
+  verdict: "ok",
+  title,
+  more: null,
+  took_ms: null,
+  waiting_on: null,
+});
 
 export const ReadyForTheInstall: Story = {
   beforeEach: faked(
@@ -239,6 +256,8 @@ export const ReadyForTheInstall: Story = {
           ok("Kubernetes v1.36.4"),
           ok("you may apply the install's cluster-scoped definitions"),
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "todo",
             title: "upstream agent-sandbox v1.0.6: not installed",
@@ -275,12 +294,16 @@ export const TheClusterLacksSomething: Story = {
         checks: [
           ok("asked context kind-team, API server https://127.0.0.1:6443/"),
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "missing",
             title: "Kubernetes 1.36 or later: this cluster runs v1.33.2",
             more: "Next: upgrade the cluster to Kubernetes 1.36 or later; its pod user namespaces are what runners need.",
           },
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "missing",
             title:
@@ -314,6 +337,8 @@ export const AnOperatorIsInstalled: Story = {
         ],
         checks: [
           {
+            took_ms: null,
+            waiting_on: null,
             about: "cluster",
             verdict: "ok",
             title: "purlis's cluster operator runs",
@@ -489,6 +514,7 @@ const onPool = (findings: string, next: PoolSetupAction, pools: string[]) =>
       joining: false,
       pinned: null,
       key_changed: false,
+      kubeconfig: null,
     },
   );
 
@@ -574,6 +600,7 @@ export const MarkThePoolAsYourOwn: Story = {
         joining: false,
         pinned: null,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
   ),
@@ -604,6 +631,7 @@ const TEAMMATE = {
   joining: true,
   pinned: null,
   key_changed: false,
+  kubeconfig: null,
 };
 
 const ADMINS_KEY = "ed25519:4b7e1a9c3d5f7b2e8a0c6d4f1b3e5a7c9d2f4b6e8a1c3d5f7b9e2a4c6d8f0b1e";
@@ -721,6 +749,7 @@ export const AChangedKeyAsksAgain: Story = {
         joining: false,
         pinned: KEY,
         key_changed: true,
+        kubeconfig: null,
       },
     ),
     pool: "team",
@@ -752,6 +781,7 @@ export const TheKeyPinnedHereForTeammates: Story = {
         joining: false,
         pinned: KEY,
         key_changed: false,
+        kubeconfig: null,
       },
     ),
     pool: "team",
@@ -848,6 +878,126 @@ export const GetHelpOnAStepThatNeedsYou: Story = {
     const help = await canvas.findByRole("button", { name: "Get help" });
     help.focus();
     await expect(help).toHaveFocus();
+    await expectFocusInSight();
+  },
+};
+
+const contexts = (more: Partial<PoolSetupShown["contexts"]>): PoolSetupShown["contexts"] => ({
+  ...CONTEXTS,
+  ...more,
+});
+
+/** The kubeconfig file and the context are two fields on Where, whatever file they are read from. */
+export const KubeconfigFileAndContext: Story = {
+  beforeEach: faked(
+    shown(
+      "where",
+      [
+        step("where", "Where chats run", "current", {
+          findings: ["Your kubeconfig reaches a cluster through context kind-team."],
+          next: act("use-cluster", "Continue with this cluster", "Saves your choice of context."),
+          also: USE_DOCKER,
+        }),
+        ...AFTER_CHECK(0),
+      ],
+      contexts({ kubeconfig: "/Users/sam/.kube/team-config" }),
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const file = await canvas.findByRole("textbox", { name: "Kubeconfig file" });
+    await expect(file).toHaveValue("/Users/sam/.kube/team-config");
+    await expect(
+      canvas.getByText(/purlis reaches the cluster with your own sign-in/),
+    ).toBeVisible();
+    file.focus();
+    await userEvent.tab();
+    await expectFocusInSight();
+  },
+};
+
+/** A context whose sign-in is a plugin purlis found in none of the usual folders: it asks for its folder. */
+export const TheCredentialPluginIsMissing: Story = {
+  beforeEach: faked(
+    shown("check", [
+      DONE_WHERE,
+      step("check", "Check the cluster", "attention", {
+        findings: [
+          "Needs gke-gcloud-auth-plugin, not found. Your kubeconfig signs in with it, and purlis looks in the usual install folders only. Name the folder it is in.",
+        ],
+        next: act(
+          "use-plugin-folder",
+          "Use this folder",
+          "Adds only that folder to the commands purlis runs for this cluster.",
+        ),
+      }),
+      ...AFTER_CHECK(1),
+    ]),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const folder = await canvas.findByRole("textbox", { name: "Folder with the plugin" });
+    await userEvent.type(folder, "~/google-cloud-sdk/bin");
+    await expect(folder).toHaveValue("~/google-cloud-sdk/bin");
+    await expect(canvas.getByRole("button", { name: "Use this folder" })).toBeEnabled();
+    await expectFocusInSight();
+  },
+};
+
+/** Each check says how long it took, and one past thirty seconds says what it waited on. */
+export const ChecksSayTheirTimeAndWhatTheyWaitedOn: Story = {
+  beforeEach: faked(
+    shown("check", [
+      DONE_WHERE,
+      step("check", "Check the cluster", "done", {
+        line: "Ready for the install",
+        took_ms: 34_100,
+        checks: [
+          { ...ok("Kubernetes v1.36.4"), took_ms: 820 },
+          { ...ok("asked context kind-team"), took_ms: 4_200 },
+          {
+            ...ok("you may apply the install's cluster-scoped definitions"),
+            took_ms: 29_000,
+            waiting_on:
+              "the cluster's API server, which answered slowly: kubectl waits for it before it asks the next question",
+          },
+        ],
+      }),
+      ...AFTER_CHECK(1),
+    ]),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /Check the cluster/ }));
+    await canvas.findByText("0.8 s");
+    await canvas.findByText("4.2 s");
+    await expect(canvas.getByText("Waiting on:")).toBeVisible();
+  },
+};
+
+/** The longest wait for a runner to be vouched for is a pool option, under Options. */
+export const TheVouchWaitUnderOptions: Story = {
+  beforeEach: faked(
+    shown(
+      "pool",
+      [
+        DONE_WHERE,
+        DONE_CHECK,
+        step("install", "Install", "done", { line: "Installed" }),
+        step("pool", "Pool", "current", { findings: ["Pool team is in the cluster."] }),
+        ...AFTER_CHECK(3),
+      ],
+      contexts({ chosen: "kind-team", pools: ["team"] }),
+    ),
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Options" }));
+    const wait = canvas.getByRole("textbox", {
+      name: "Longest wait for a cluster runner to be vouched for",
+    });
+    await userEvent.type(wait, "10");
+    await expect(wait).toHaveValue("10");
     await expectFocusInSight();
   },
 };

@@ -6,6 +6,7 @@
  * what that does, Options, See what this does, and a line of what happened. Drawn from the kit, so
  * a later step only says what it says.
  */
+import { tookWords } from "./took";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "../ui/badge/Badge";
@@ -187,5 +188,24 @@ export function Say({
         )}
       </NoticeMessage>
     </NoticeBox>
+  );
+}
+
+/** **How long a check took**, once it was done (#7191): nothing where it wasn't timed. */
+export function Took({ ms }: { ms: number | null | undefined }) {
+  const words = tookWords(ms);
+  if (words === undefined) return null;
+  return <span className="pool-setup-took">{words}</span>;
+}
+
+/**
+ * **What a check past thirty seconds is waiting on, and why** (#7191), in the core's own words, so
+ * a slow line never reads as a stuck one.
+ */
+export function WaitingOn({ text }: { text: string }) {
+  return (
+    <span className="pool-setup-waiting-on">
+      <strong>Waiting on:</strong> {text}
+    </span>
   );
 }

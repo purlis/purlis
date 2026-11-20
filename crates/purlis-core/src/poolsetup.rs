@@ -38,11 +38,14 @@ pub mod admin;
 pub mod asked;
 pub mod cluster;
 pub mod connecting;
+pub mod declined;
 pub mod doctoring;
 pub mod help;
 pub mod install;
 pub mod pinchange;
+pub mod plugin;
 pub mod signins;
+pub mod timing;
 pub mod trying;
 
 /// The file a person's choices are kept in, in this machine's folder.
@@ -172,6 +175,8 @@ pub enum ActionId {
     UseDocker,
     /// Keeps the cluster, on the context chosen, as where chats run (#4492).
     UseCluster,
+    /// Keeps the folder a kubeconfig's credential plugin is in (#7192).
+    UsePluginFolder,
     /// kubectl isn't on this machine: its own install page.
     GetKubectl,
     /// The install's parts, each on its own button (#4493).
@@ -266,6 +271,12 @@ pub struct Check {
     pub verdict: Verdict,
     pub title: String,
     pub more: Option<String>,
+    /// **How long the check took**, in whole milliseconds, where it was measured (#7191).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub took_ms: Option<u32>,
+    /// **What a check that took past thirty seconds waited on, and why** (#7191).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waiting_on: Option<String>,
 }
 
 /// What a line of Try it checks.
@@ -342,6 +353,10 @@ pub struct Setup {
     pub others: Vec<String>,
     /// The kubeconfig's contexts, the one recommended and the one chosen, for Where's Options.
     pub contexts: Contexts,
+    /// **The pool's state, where Pool setup keeps one** (#7191): a failed add keeps the pool,
+    /// refused, with its reason. `None` where there is nothing to say.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pool_state: Option<declined::PoolStatus>,
 }
 
 /// **The contexts a cluster can be reached by** (#4492): names only, never what they sign in with.
@@ -363,6 +378,9 @@ pub struct Contexts {
     pub named_now: Option<String>,
     /// The chosen cluster's Pools, by name, where its operator runs (#4494).
     pub pools: Vec<String>,
+    /// The one kubeconfig file the contexts are read from (#7192): the one chosen, else the
+    /// home's `.kube/config` where it exists. Its path, nothing of what is in it.
+    pub kubeconfig: Option<String>,
 }
 
 impl Setup {
@@ -494,6 +512,13 @@ pub struct Choices {
     /// The kubeconfig context chosen on Where for a cluster (#4492): its name, nothing of what it
     /// signs in with.
     pub context: Option<String>,
+    /// **The one kubeconfig file the context is read from** (#7192): named, never inherited from
+    /// `KUBECONFIG` (#3292), and never several merged. Kept on this machine with the choice, and
+    /// never committed: the file points at credentials.
+    pub kubeconfig: Option<PathBuf>,
+    /// **The one folder a context's credential plugin is in**, named by the person where purlis
+    /// found it in none of the usual install folders (#7192). Only it is added to a run's `PATH`.
+    pub plugin_dir: Option<PathBuf>,
     /// The cluster operator's image, by its digest, named under Install's Options (#4493).
     pub operator_image: Option<String>,
     /// The name typed on the Pool step, for the box to hold.
@@ -514,6 +539,9 @@ pub struct Choices {
     /// **The machine Connect read, and the pin the person trusted there** (#6266), for a pool on
     /// another machine before it is made.
     pub connect: Option<Chosen>,
+    /// **The pool whose add was refused, and why** (#7191): kept, as Refused, until an add of it
+    /// works or the person starts over.
+    pub declined: Option<declined::Declined>,
 }
 
 /// **What Connect keeps** (#6266, `connect` in `pool-setup.json`): the machine, as the person
@@ -1278,7 +1306,27 @@ pub fn of(kind: Kind, facts: &Facts, choices: &Choices) -> Setup {
                 _ => None,
             }),
             pools: facts.cluster.pools.clone().unwrap_or_default(),
+            kubeconfig: facts.cluster.kubeconfig.clone(),
         },
+        pool_state: declined::status_of(choices.declined.as_ref(), &place_chosen(choices)),
+    }
+}
+
+/// **Where the add being set up is asked for** (#7191), as a refusal keeps it: the machine
+/// Connect holds, a cluster's `cluster:<context>`, or empty for this machine.
+fn place_chosen(choices: &Choices) -> String {
+    match choices.kind {
+        Some(Kind::RemoteDocker) => choices
+            .connect
+            .as_ref()
+            .map(|chosen| chosen.route.clone())
+            .unwrap_or_default(),
+        Some(Kind::Cluster) => choices
+            .context
+            .as_ref()
+            .map(|context| format!("cluster:{context}"))
+            .unwrap_or_default(),
+        _ => String::new(),
     }
 }
 
@@ -1292,6 +1340,8 @@ fn try_checks(steps: &[Step], pool: &str, tried: bool, repos: bool) -> Vec<Check
         verdict,
         title,
         more: more.map(str::to_owned),
+        took_ms: None,
+        waiting_on: None,
     };
     let mut checks = vec![if tried {
         check(
@@ -1609,11 +1659,19 @@ pub fn read_pressed(
         .map(crate::forge::agentidentity::hosts_of_the_project)
         .unwrap_or_default();
     // Contexts are read from the kubeconfig alone; the cluster itself only on a cluster's setup.
-    let contexts = cluster::read(
-        here.kubectl.map_err(str::to_owned),
+    let kubectl_named = here
+        .kubectl
+        .map(|kubectl| cluster::pointed(kubectl, &choices));
+    let kubeconfig = cluster::kubeconfig_shown(
+        &choices,
+        crate::envvar::var_os("HOME").map(PathBuf::from).as_deref(),
+    );
+    let mut contexts = cluster::read(
+        kubectl_named.as_ref().map_err(|why| (*why).to_owned()),
         choices.context.as_deref(),
         false,
     );
+    contexts.kubeconfig = kubeconfig.map(|path| path.display().to_string());
     let on_a_cluster = pool.as_ref().map(|pool| pool.cluster.is_some());
     let kind = if remote {
         kind
@@ -1621,14 +1679,48 @@ pub fn read_pressed(
         kind_of(&choices, engine, on_a_cluster, &contexts)
     };
     let cluster = if kind == Kind::Cluster {
-        cluster::read(
-            here.kubectl.map_err(str::to_owned),
-            pool.as_ref()
-                .and_then(|pool| pool.cluster.as_ref())
-                .map(|kept| kept.context.as_str())
-                .or(choices.context.as_deref()),
-            true,
-        )
+        let context = pool
+            .as_ref()
+            .and_then(|pool| pool.cluster.as_ref())
+            .map(|kept| kept.context.as_str())
+            .or(choices.context.as_deref());
+        // The credential plugin the context signs in with (#7192): found, its folder joins the
+        // runs' `PATH`; missing, Check the cluster says so instead of kubectl's own error.
+        let home = crate::envvar::var_os("HOME").map(PathBuf::from);
+        let plugin = match (&kubectl_named, context) {
+            (Ok(kubectl), Some(context)) if contexts.contexts.iter().any(|one| one == context) => {
+                cluster::plugin_facts(
+                    kubectl,
+                    context,
+                    choices.plugin_dir.as_deref(),
+                    home.as_deref(),
+                )
+            }
+            _ => None,
+        };
+        let with_plugin = kubectl_named.as_ref().map(|kubectl| {
+            match plugin.as_ref().and_then(|plugin| plugin.found.as_deref()) {
+                Some(folder) => kubectl.clone().with_plugin_folder(folder),
+                None => kubectl.clone(),
+            }
+        });
+        let mut deep = if plugin.as_ref().is_some_and(|plugin| plugin.found.is_none()) {
+            // Nothing is asked of a cluster that can't be signed in to.
+            cluster::read(
+                with_plugin.as_ref().map_err(|why| (**why).to_owned()),
+                context,
+                false,
+            )
+        } else {
+            cluster::read(
+                with_plugin.as_ref().map_err(|why| (**why).to_owned()),
+                context,
+                true,
+            )
+        };
+        deep.plugin = plugin;
+        deep.kubeconfig.clone_from(&contexts.kubeconfig);
+        deep
     } else {
         contexts
     };
@@ -1992,6 +2084,8 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
     Ok(Choices {
         kind: held.kind,
         context: held.context,
+        kubeconfig: held.kubeconfig.map(PathBuf::from),
+        plugin_dir: held.plugin_dir.map(PathBuf::from),
         operator_image: held.operator_image,
         name: held.name,
         name_free: held.name_free,
@@ -2000,6 +2094,7 @@ pub fn read_choices(config: &Path) -> Result<Choices, Refused> {
         tried: held.tried,
         admin: held.admin,
         made: held.made,
+        declined: held.declined,
         connect: match held.connect {
             None => None,
             Some(connect) => Some(chosen_from(connect).ok_or_else(unreadable)?),
@@ -2124,6 +2219,10 @@ struct Held {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     context: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    kubeconfig: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    plugin_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     operator_image: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -2140,6 +2239,8 @@ struct Held {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     made: Option<MadeKey>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    declined: Option<declined::Declined>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     connect: Option<HeldConnect>,
 }
 
@@ -2148,6 +2249,8 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         version: 1,
         kind: choices.kind,
         context: choices.context,
+        kubeconfig: choices.kubeconfig.map(|path| path.display().to_string()),
+        plugin_dir: choices.plugin_dir.map(|path| path.display().to_string()),
         operator_image: choices.operator_image,
         name: choices.name,
         name_free: choices.name_free,
@@ -2156,6 +2259,7 @@ fn write_choices(config: &Path, choices: Choices) -> Result<(), Refused> {
         tried: choices.tried,
         admin: choices.admin,
         made: choices.made,
+        declined: choices.declined,
         connect: choices.connect.map(|chosen| HeldConnect {
             route: chosen.route,
             tls: chosen.tls.as_ref().map(runners::tls_to_row),
@@ -2298,6 +2402,15 @@ pub fn forget_machine(config: &Path) -> Result<(), Refused> {
     Ok(())
 }
 
+/// **Puts the machine Connect read back as it was** (#7191): what `before` held, trust and who
+/// can sign in included, once a press that trusted it on the way to a pool made nothing.
+pub fn restore_machine(config: &Path, before: &Chosen) -> Result<(), Refused> {
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.connect = Some(before.clone());
+    write_choices(config, choices)
+}
+
 /// **Keeps what the person trusted on Connect** (#6266): the route with its socket, and the pin
 /// the Pool step's pool is made with.
 pub fn trusted(config: &Path, remote: &crate::runners::Remote) -> Result<(), Refused> {
@@ -2430,6 +2543,33 @@ pub fn prefill_of(
 /// `context`** (#4492): its name alone, nothing of what it signs in with. Refused for a name no
 /// context could have.
 pub fn choose_cluster(config: &Path, context: &str) -> Result<(), Refused> {
+    choose_cluster_in(config, None, context)
+}
+
+/// **Keeps the cluster chosen on Where, with the one kubeconfig file its context is read from**
+/// (#7192): `None` is kubectl's own default file. The file is named, never inherited from
+/// `KUBECONFIG` (#3292), and never several merged: an absolute path to a file that exists.
+pub fn choose_cluster_in(
+    config: &Path,
+    kubeconfig: Option<&Path>,
+    context: &str,
+) -> Result<(), Refused> {
+    if let Some(file) = kubeconfig {
+        let text = file.display().to_string();
+        if text.contains(':') || text.contains('\n') || !file.is_absolute() {
+            return Err(Refused::Other(format!(
+                "\"{}\" isn't one kubeconfig file's absolute path. Setup uses one file per pool \
+                 and never merges several.",
+                crate::shown::short(&text)
+            )));
+        }
+        if !file.is_file() {
+            return Err(Refused::Other(format!(
+                "there is no kubeconfig file at {}",
+                crate::shown::short(&text)
+            )));
+        }
+    }
     if !crate::clusterpool::is_context(context) {
         return Err(Refused::Other(format!(
             "\"{}\" isn't a kubeconfig context's name",
@@ -2440,7 +2580,71 @@ pub fn choose_cluster(config: &Path, context: &str) -> Result<(), Refused> {
     let mut choices = read_choices(config)?;
     choices.kind = Some(Kind::Cluster);
     choices.context = Some(context.to_owned());
+    choices.kubeconfig = kubeconfig.map(Path::to_path_buf);
     write_choices(config, choices)
+}
+
+/// **Keeps the folder a context's credential plugin is in** (#7192), named where purlis found it
+/// in none of the usual install folders. Only this folder is added to a run's `PATH`. Refused
+/// unless it is an absolute folder that exists, with no `:` in it, which would add several.
+pub fn choose_plugin_folder(config: &Path, folder: &Path) -> Result<(), Refused> {
+    let text = folder.display().to_string();
+    if text.contains(':') || text.contains('\n') || !folder.is_absolute() || !folder.is_dir() {
+        return Err(Refused::Other(format!(
+            "\"{}\" isn't the absolute path of one folder that exists",
+            crate::shown::short(&text)
+        )));
+    }
+    let _locked = runners::lock(config);
+    let mut choices = read_choices(config)?;
+    choices.plugin_dir = Some(folder.to_path_buf());
+    write_choices(config, choices)
+}
+
+/// **The folder a person typed for a credential plugin** (#7192): `~/` is the home folder, which
+/// the field's own placeholder (`~/google-cloud-sdk/bin`) starts with, and is expanded here, once,
+/// by purlis, never by a shell. A `$` (`$HOME`, `${X}`, `$(…)`), a backtick or a `~user` is an
+/// expansion nobody guards here, and is refused; so is the home folder itself, which holds every
+/// binary of the person's and is no plugin's folder.
+pub fn plugin_folder_typed(typed: &str, home: Option<&Path>) -> Result<PathBuf, Refused> {
+    let text = typed.trim();
+    let shown = crate::shown::short(text);
+    if text.split('/').any(|part| part == "..") {
+        return Err(Refused::Other(format!(
+            "\"{shown}\" goes up through \"..\". Write the folder out in full"
+        )));
+    }
+    if text.contains('$')
+        || text.contains('`')
+        || (text.starts_with('~') && !text.starts_with("~/"))
+    {
+        return Err(Refused::Other(format!(
+            "\"{shown}\" uses a variable or shortcut purlis doesn't expand. Write the folder out in full, or start it with ~/"
+        )));
+    }
+    let folder = match text.strip_prefix("~/") {
+        Some(under) => home
+            .ok_or_else(|| Refused::Other("purlis found no home folder for ~/".to_owned()))?
+            .join(under),
+        None => PathBuf::from(text),
+    };
+    if home.is_some_and(|home| folder == home) {
+        return Err(Refused::Other(
+            "that is your home folder, which holds all of your files. Name the folder the plugin is in"
+                .to_owned(),
+        ));
+    }
+    Ok(folder)
+}
+
+/// **Keeps the folder typed for a context's credential plugin** ([`plugin_folder_typed`], then
+/// [`choose_plugin_folder`]).
+pub fn choose_plugin_folder_typed(
+    config: &Path,
+    typed: &str,
+    home: Option<&Path>,
+) -> Result<(), Refused> {
+    choose_plugin_folder(config, &plugin_folder_typed(typed, home)?)
 }
 
 /// **Applies part `part` of the install to the cluster chosen on Where** (#4493), with the
@@ -2564,7 +2768,14 @@ pub fn create_cluster_pool(
             "nothing was made: choose your team's cluster on Where first".to_owned(),
         ));
     };
-    cluster::create_pool(&kubectl.clone().with_context(context), name, image)
+    // A refused add keeps the pool, as Refused, with its reason (#7191).
+    declined::kept_after(
+        config,
+        name,
+        &format!("cluster:{context}"),
+        cluster::create_pool(&kubectl.clone().with_context(context), name, image),
+        |()| true,
+    )
 }
 
 /// **Keeps the cluster operator's image named under Install's Options** (#4493), or none. Refused
@@ -2754,6 +2965,9 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
         && choices.name.is_none()
         && choices.pool.is_none()
         && choices.made.is_none()
+        && choices.declined.is_none()
+        && choices.kubeconfig.is_none()
+        && choices.plugin_dir.is_none()
     {
         return Ok(());
     }
@@ -2762,11 +2976,15 @@ fn forget_the_new_one(config: &Path, choices: Choices) -> Result<(), Refused> {
         Choices {
             kind: None,
             context: None,
+            kubeconfig: None,
+            plugin_dir: None,
             name: None,
             name_free: false,
             pool: None,
             // A key made in this setup confirms nothing in the next one.
             made: None,
+            // A refusal belongs to the setup it was made in.
+            declined: None,
             ..choices
         },
     )

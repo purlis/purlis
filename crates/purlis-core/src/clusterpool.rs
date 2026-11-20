@@ -1067,6 +1067,22 @@ impl Kubectl {
         )
     }
 
+    /// **This kubectl, with `folder` added to the `PATH` of its runs** (#7192): the one folder a
+    /// kubeconfig's credential plugin was found in, never the person's whole shell `PATH`. An
+    /// absolute folder only, and not twice; a kubectl held by its path alone is left as it is.
+    #[must_use]
+    pub fn with_plugin_folder(mut self, folder: &std::path::Path) -> Kubectl {
+        let Some(path) = self.path.take() else {
+            return self;
+        };
+        let mut folders: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        if folder.is_absolute() && !folders.iter().any(|one| one == folder) {
+            folders.push(folder.to_path_buf());
+        }
+        self.path = std::env::join_paths(folders).ok().or(Some(path));
+        self
+    }
+
     /// This kubectl, reading the kubeconfig at `path`.
     #[must_use]
     pub fn with_kubeconfig(mut self, path: impl Into<PathBuf>) -> Kubectl {

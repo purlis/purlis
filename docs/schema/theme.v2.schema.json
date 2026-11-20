@@ -9978,6 +9978,69 @@
         "steps.line.later.font-weight": {
           "$ref": "#/$defs/part-font-weight"
         },
+        "steps.took.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.took.done.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.done.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.done.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.took.current.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.current.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.current.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.took.attention.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.attention.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.attention.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.took.skipped.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.skipped.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.skipped.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.took.waiting.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.waiting.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.waiting.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
+        "steps.took.later.text": {
+          "$ref": "#/$defs/part-text"
+        },
+        "steps.took.later.font-size": {
+          "$ref": "#/$defs/part-font-size"
+        },
+        "steps.took.later.font-weight": {
+          "$ref": "#/$defs/part-font-weight"
+        },
         "switch.root.text": {
           "$ref": "#/$defs/part-text"
         },

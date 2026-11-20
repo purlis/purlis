@@ -96,6 +96,7 @@ function Row({ id, children }: { id: string; children: ReactNode }) {
 
 /** Pool setup's Sign-ins step, as the core reads it. */
 const SIGN_INS: PoolSetupStep = {
+  took_ms: null,
   id: "signins",
   name: "Sign-ins",
   state: "current",

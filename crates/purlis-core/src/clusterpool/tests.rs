@@ -1215,6 +1215,33 @@ fn a_kubectl_run_never_inherits_a_kubeconfig_and_finds_plugins_beside_it_or_syst
 
 #[cfg(unix)]
 #[test]
+fn only_the_plugin_folder_named_joins_a_runs_path_and_never_a_relative_or_repeated_one() {
+    let cluster = FakeCluster::new();
+    let sdk = cluster.dir.path().join("google-cloud-sdk/bin");
+    let kubectl = cluster
+        .kubectl()
+        .with_plugin_folder(&sdk)
+        .with_plugin_folder(&sdk)
+        .with_plugin_folder(std::path::Path::new("relative/bin"))
+        .pointed_at(std::path::Path::new("/home/ada/.kube/config"), "team");
+    kubectl.whoami().unwrap();
+    let env = cluster.environments();
+    let (kubeconfig, path) = env.trim().split_once('|').unwrap();
+    assert_eq!(kubeconfig, "unset");
+    let folders: Vec<&str> = path.split(':').collect();
+    let sdk = sdk.display().to_string();
+    assert_eq!(
+        folders.iter().filter(|dir| **dir == sdk).count(),
+        1,
+        "{path}"
+    );
+    assert!(!folders.contains(&"relative/bin"), "{path}");
+    // The shell's own folders are still not the run's.
+    assert!(!path.contains(".local/bin"), "{path}");
+}
+
+#[cfg(unix)]
+#[test]
 fn a_kubeconfigs_contexts_and_its_contexts_namespace_are_read() {
     let cluster = FakeCluster::new();
     let kubectl = cluster.kubectl();
