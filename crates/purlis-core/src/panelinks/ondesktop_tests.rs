@@ -304,6 +304,36 @@ fn a_file_address_names_the_runners_file() {
     assert_eq!(*runner.asked.lock().unwrap(), ["/etc/hosts"]);
 }
 
+/// **A runner chat's path is read as a path on this machine is** (#7081): one reading, the host
+/// file link's, so a `FILE:` address is the same scheme as `file:` on both, and one naming
+/// another host says why on both, before the runner is asked anything.
+#[test]
+fn a_runner_chats_path_is_read_as_a_path_here_is() {
+    let runner = fake();
+
+    let capitals = links(&runner).resolve(&file("FILE:///etc/hosts:3"), &on_runner());
+    let elsewhere = links(&runner).resolve(&file("file://build-7/etc/hosts"), &on_runner());
+
+    let Resolved::Link(Target::File(found)) = capitals else {
+        panic!("a FILE: address names the runner's file: {capitals:?}");
+    };
+    assert_eq!(found.line, Some(3));
+    let here = Pane {
+        runs: Runs::Here,
+        ..on_runner()
+    };
+    assert_eq!(
+        elsewhere,
+        super::super::LinkKind::resolve(
+            &LocalFile::with(None, Vec::new()),
+            "file://build-7/etc/hosts",
+            &here
+        )
+    );
+    assert!(matches!(elsewhere, Resolved::NotALink(_)), "{elsewhere:?}");
+    assert_eq!(*runner.asked.lock().unwrap(), ["/etc/hosts"]);
+}
+
 #[test]
 fn a_runner_chats_path_is_never_read_on_this_machine() {
     let here = tempfile::tempdir().expect("a folder");

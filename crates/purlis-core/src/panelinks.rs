@@ -33,10 +33,10 @@ mod osc8;
 pub use asks::{Asks, Identity};
 pub use file::{FileAt, Home, HomeIs, LocalFile, NOT_OFFERED, Offers, ReadFrom, home_of};
 mod chat;
+mod ondesktop;
 pub mod onrunner;
-mod runner;
 pub use chat::{ChatAt, ChatNumber, Goes};
-pub use runner::{RunnerFile, RunnerFiles};
+pub use ondesktop::{RunnerFile, RunnerFiles};
 
 /// **What the pane thinks a candidate is**: a hint that picks the kind that reads it, never
 /// trusted for more.

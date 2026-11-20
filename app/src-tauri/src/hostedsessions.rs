@@ -727,6 +727,12 @@ impl Connection {
         self.to_a_pool.as_ref().map(|(_, named)| pool_named(named))
     }
 
+    /// **The runner this connection's links reach, by the name the window keeps for it**:
+    /// `<pool>`, or `<pool>/<runner>` for a draining runner and a chat's fresh runner.
+    pub(crate) fn link_name(&self) -> Option<&str> {
+        self.to_a_pool.as_ref().map(|(_, named)| named.as_str())
+    }
+
     /// The draining runner this connection's links name, where they name one (#4271): a chat's
     /// fresh runner is named under its pool too, and never drains.
     fn draining_runner(&self) -> Option<&str> {
@@ -4792,16 +4798,13 @@ impl HostedSessions {
         })
     }
 
-    /// **Whether this project's chats run on a Docker pool's runner** (#6387): a pool this
-    /// machine keeps among its Docker pools, on this machine's engine or another's. A cluster
-    /// pool's runner has no adapter to read its files yet.
-    fn on_a_docker_pool(&self) -> bool {
-        let (Some(pool), Some(config)) = (self.connection.pool(), self.connection.runners_config())
-        else {
-            return false;
-        };
-        purlis_core::runners::pools(&config)
-            .is_ok_and(|pools| pools.iter().any(|one| one.name() == pool))
+    /// **What reading this project's chats' files on the runner they run on needs of its link**
+    /// (#6387, #6949): [`crate::runnerfiles::reading_files_needs`] of the runner this
+    /// connection's links reach, `None` where the window reads none there.
+    fn reading_its_runners_files_needs(&self) -> Option<purlis_session_protocol::version::Version> {
+        let named = self.connection.link_name()?;
+        let config = self.connection.runners_config()?;
+        crate::runnerfiles::reading_files_needs(&config, named)
     }
 
     /// **The runner `link` reached, as a chat's tab names it** (#2977): [`runner_shown`], none
@@ -5467,18 +5470,15 @@ impl SessionHost for HostedSessions {
         self.connection.fresh_runner_went();
     }
 
-    /// Only of a link already open, to a Docker pool's runner of 1.93 or later (#6387): a hover
-    /// never opens one to the runner.
-    fn reads_files_on_runner(&self, id: u32) -> bool {
-        self.runner_files_of(id).is_some()
-    }
-
+    /// Only of a link already open, to a runner of a kind the window reads files on, of the
+    /// version that needs (#6387, #6949): a hover never opens one to the runner.
     fn runner_files_of(&self, id: u32) -> Option<crate::runnerfiles::ReadsOnRunner> {
-        if !self.kept_on_the_runner || !self.on_a_docker_pool() {
+        if !self.kept_on_the_runner {
             return None;
         }
+        let needs = self.reading_its_runners_files_needs()?;
         let link = self.own_link(Duration::ZERO).ok()?;
-        if link.version() < session::KNOWS_READ_FILE {
+        if link.version() < needs {
             return None;
         }
         let program = lock(&self.running).get(&id)?.id.clone();

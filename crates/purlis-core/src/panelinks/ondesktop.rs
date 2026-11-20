@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **A file path a runner chat prints** (#6387): looked for on the runner, never on this machine,
-//! and opened read-only in the light editor, read from there.
+//! and opened read-only in the light editor, read from there. This is the desktop's half, run
+//! in the window; the runner's half, which reads the file there, is [`super::onrunner`].
 //!
-//! - **One neutral model, one adapter per runner kind.** [`RunnerFile`] is the link kind: it
-//!   reads the chat's text into a path, asks the runner about it, and decides what opening it
-//!   does. How a runner is asked is its kind's adapter ([`RunnerFiles`]); a Docker pool's runner
-//!   is the first, asked over the session protocol's `read_file`.
+//! - **One neutral model, behind an adapter.** [`RunnerFile`] is the link kind: it reads the
+//!   chat's text into a path, as a path on this machine is read (`file::written`), asks the
+//!   runner about it, and decides what opening it does. How a runner is asked is the adapter's
+//!   ([`RunnerFiles`]): the window's asks every kind of runner purlis pairs, a Docker pool's and a
+//!   cluster pool's, over the session protocol's `read_file` (#6949).
 //! - **The path crosses as data**, without its `:line:col`, and is resolved on the runner, from
 //!   the chat's own folder there, every link followed on that side. The runner says whether the
 //!   file is in the chat's workspace there; one that is not asks first, as a file outside the
@@ -22,7 +24,7 @@ use std::path::{Path, PathBuf};
 
 use purlis_session_protocol::session::{FileRead, MOST_FILE_READ};
 
-use super::file::{at_line, at_suffix, on_this_machine};
+use super::file::{Written, at_suffix, written};
 use super::{
     Asking, Asks, FileAt, Home, HomeIs, Kind, LinkKind, Opening, Pane, ReadFrom, Resolved, Runs,
     Target,
@@ -72,22 +74,19 @@ impl LinkKind for RunnerFile {
     }
 
     fn resolve(&self, text: &str, pane: &Pane) -> Resolved {
-        if pane.runs != Runs::OnRunner
-            || text.is_empty()
-            || text.chars().any(|c| c.is_whitespace() || c.is_control())
-        {
+        if pane.runs != Runs::OnRunner {
             return Resolved::Quiet;
         }
-        let (words, line, column) = at_line(text);
-        let named = match words.strip_prefix("file:") {
-            Some(_) => match on_this_machine(words) {
-                Ok(path) => match path.to_str() {
-                    Some(path) => path.to_owned(),
-                    None => return Resolved::Quiet,
-                },
-                Err(why) => return why,
+        let (written, line, column) = match written(text) {
+            Ok(read) => read,
+            Err(why) => return why,
+        };
+        let named = match written {
+            Written::Address(path) => match path.into_os_string().into_string() {
+                Ok(path) => path,
+                Err(_) => return Resolved::Quiet,
             },
-            None => words.to_owned(),
+            Written::Words(words) => words.to_owned(),
         };
         if named.starts_with('~') {
             return Resolved::Quiet;
@@ -176,5 +175,5 @@ impl LinkKind for RunnerFile {
 }
 
 #[cfg(test)]
-#[path = "runner_tests.rs"]
+#[path = "ondesktop_tests.rs"]
 mod tests;
