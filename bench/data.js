@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795107635476,
+  "lastUpdate": 1795171336993,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51744,6 +51744,48 @@ window.BENCHMARK_DATA = {
             "value": 102.63376550000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.070, 102.104, 102.634, 102.718, 103.650 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "06a60629db2af078318187f722dab3e24ce3be9c",
+          "message": "Mint the chat token with an exact permission allowlist (#7206) (#7249)\n\n* Mint the chat token with an exact permission allowlist (#7206)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7SYFD6T6NX1Q3NY8KNT6ZHH\nPurlis-Persona: steward\n\n* Ask for the allowlist intersected with the installation, check the token's reply, one list for the operator too (#7249)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7T1BF0T818DSP3SMR2XZ3SF\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>",
+          "timestamp": "2026-11-20T09:36:39Z",
+          "tree_id": "75d0725989b8d5794ee1e04a6505ef97549ab360",
+          "url": "https://github.com/purlis/purlis/commit/06a60629db2af078318187f722dab3e24ce3be9c"
+        },
+        "date": 1795171330687,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.557064,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.554, 0.557, 0.559, 0.570 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.270574500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.216, 16.248, 16.271, 16.313, 16.321 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 99.83606950000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.535, 99.648, 99.836, 101.661, 102.032 ms"
           }
         ]
       }
