@@ -247,6 +247,8 @@ mod nothing_escapes_a_worktree;
 mod nothing_escapes_while_a_writer_races;
 #[cfg(feature = "forge-wiring")]
 mod old_forge_routes_are_replaced_by_the_sign_in;
+#[cfg(feature = "forge-wiring")]
+mod one_login_end_to_end;
 mod only_attendance_compares_permission_mode_with_bypass;
 mod only_the_resolver_builds_the_native_transport;
 mod only_the_updater_and_report_name_charters_own_address;

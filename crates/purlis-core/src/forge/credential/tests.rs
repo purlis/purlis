@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
+use std::ffi::OsString;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -709,8 +710,9 @@ fn the_named_variable_for_a_host_wins_over_the_forge_clis_own() {
         (c.expose(), c.from()),
         (PAT_NAMED, "PURLIS_FORGE_TOKEN__6769746875622e636f6d")
     );
-    let gh_first = [("GH_TOKEN", PAT_GH), ("GITHUB_TOKEN", PAT_GITHUB)];
-    assert_eq!(got(&gh_first, "github.com").expose(), PAT_GH);
+    // Same level, same token: one choice made twice, as Actions sets them.
+    let twice = [("GH_TOKEN", PAT_GH), ("GITHUB_TOKEN", PAT_GH)];
+    assert_eq!(got(&twice, "github.com").expose(), PAT_GH);
     // An explicit GITLAB_TOKEN is a choice; a job's own token is the fallback.
     let ci = [
         ("GITLAB_TOKEN", GLPAT_C),
@@ -1412,4 +1414,129 @@ fn a_sign_in_the_forge_ended_is_never_silently_replaced_by_another_account_on_th
             .expose(),
         "github_pat_emu_token"
     );
+}
+
+#[test]
+fn gh_token_and_github_token_set_to_different_tokens_are_refused_naming_both_and_neither_token() {
+    let vars = [("GH_TOKEN", PAT_GH), ("GITHUB_TOKEN", PAT_GITHUB)];
+    for order in [vars, [vars[1], vars[0]]] {
+        let why = refused(&order, "github.com");
+        assert!(matches!(why, CredentialError::Unusable { .. }));
+        let said = why.to_string();
+        assert!(
+            said.contains("GH_TOKEN") && said.contains("GITHUB_TOKEN"),
+            "{said}"
+        );
+        assert!(
+            !said.contains(PAT_GH) && !said.contains(PAT_GITHUB),
+            "{said}"
+        );
+    }
+    // The enterprise pair is one level too.
+    let ghes = [
+        ("GH_ENTERPRISE_TOKEN", PAT_GH),
+        ("GITHUB_ENTERPRISE_TOKEN", PAT_GITHUB),
+        ("GH_HOST", "ghe.example.com"),
+    ];
+    assert!(matches!(
+        refused(&ghes, "ghe.example.com"),
+        CredentialError::Unusable { .. }
+    ));
+    // A variable that is not offered to the host is no conflict: GH_TOKEN is github.com's.
+    let on_ghes = [
+        ("GH_TOKEN", PAT_GH),
+        ("GITHUB_TOKEN", GHS_A),
+        ("GITHUB_SERVER_URL", "https://ghe.example.com"),
+    ];
+    assert_eq!(got(&on_ghes, "ghe.example.com").expose(), GHS_A);
+}
+
+#[cfg(unix)]
+fn reading_os(vars: Vec<(&'static str, OsString)>) -> TokenConnection {
+    TokenConnection::reading_os(move |name| {
+        vars.iter()
+            .find(|(k, _)| *k == name)
+            .map(|(_, v)| v.clone())
+    })
+}
+
+#[cfg(unix)]
+fn not_text() -> OsString {
+    use std::os::unix::ffi::OsStringExt;
+    OsString::from_vec(vec![0x66, 0xff, 0xfe])
+}
+
+#[cfg(unix)]
+#[test]
+fn a_variable_that_is_not_text_is_an_error_and_never_unset() {
+    let named: &'static str =
+        Box::leak(format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}").into_boxed_str());
+    let file: &'static str =
+        Box::leak(format!("PURLIS_FORGE_TOKEN_FILE__{GITHUB_COM}").into_boxed_str());
+    let expires: &'static str =
+        Box::leak(format!("PURLIS_FORGE_TOKEN_EXPIRES_AT__{GITHUB_COM}").into_boxed_str());
+    let kind: &'static str = Box::leak(format!("PURLIS_FORGE_KIND__{GITHUB_COM}").into_boxed_str());
+    let accept: &'static str =
+        Box::leak(format!("PURLIS_FORGE_ACCEPT__{GITHUB_COM}").into_boxed_str());
+    let good = OsString::from(PAT_FINE);
+    // The ambient token that would answer in its place is good, and is not used.
+    for bad in [named, file, "GH_TOKEN", "GITHUB_TOKEN"] {
+        let vars = vec![(bad, not_text()), ("GITHUB_TOKEN", good.clone())];
+        let why = reading_os(vars)
+            .credential_at("github.com", NOW)
+            .unwrap_err();
+        assert!(matches!(why, CredentialError::Unusable { .. }), "{bad}");
+        assert!(why.to_string().contains(bad), "{bad}: {why}");
+    }
+    for bad in [expires, kind, accept] {
+        let vars = vec![(named, good.clone()), (bad, not_text())];
+        let why = reading_os(vars)
+            .credential_at("github.com", NOW)
+            .unwrap_err();
+        assert!(matches!(why, CredentialError::Unusable { .. }), "{bad}");
+        assert!(why.to_string().contains(bad), "{bad}: {why}");
+    }
+    // And a host variable that is not text names no host: nothing is offered on its account.
+    let vars = vec![
+        ("GITLAB_TOKEN", OsString::from(GLPAT_A)),
+        ("GITLAB_HOST", not_text()),
+    ];
+    assert!(
+        reading_os(vars)
+            .credential_at("gitlab.com", NOW)
+            .unwrap_err()
+            .is_none_given()
+    );
+}
+
+#[test]
+fn a_job_token_is_taken_whatever_its_length_or_characters() {
+    let job = |token: &str| {
+        got(
+            &[
+                ("CI_JOB_TOKEN", token),
+                ("CI_SERVER_HOST", "git.example.com"),
+            ],
+            "git.example.com",
+        )
+    };
+    // A JWT-shaped `glcbt-` value, longer than any shape, with dots and a long body.
+    let jwt = format!(
+        "glcbt-{}.{}.{}",
+        "a".repeat(300),
+        "b".repeat(200),
+        "c".repeat(200)
+    );
+    let c = job(&jwt);
+    assert_eq!(c.token_kind(), TokenKind::GitLabJob);
+    assert_eq!(c.expose(), jwt);
+    // One that is too short for the shape, and one with a character outside it.
+    assert_eq!(job("glcbt-ab").token_kind(), TokenKind::GitLabJob);
+    assert_eq!(job("glcbt-a~b+c/d=").token_kind(), TokenKind::GitLabJob);
+    // The exemption is the job variable's own: a named variable still holds the shape.
+    let named = format!("PURLIS_FORGE_TOKEN__{GIT_EXAMPLE_COM}");
+    assert!(matches!(
+        refused(&[(named.as_str(), jwt.as_str())], "git.example.com"),
+        CredentialError::Unusable { .. }
+    ));
 }

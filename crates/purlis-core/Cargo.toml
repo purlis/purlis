@@ -277,6 +277,9 @@ test-support = []
 # A chat's `gh`, git, `glab` and cargo are routed to the forge proxy (ADR 0128, "One login").
 # Off until slice A's proxy answers at the endpoint the wiring names: a chat wired with no proxy
 # behind it would find every forge call refused. The train turns it on with the proxy.
+# The one-login end-to-end test (ADR 0128, slice I): `tests/it/one_login_end_to_end.rs` runs the real
+# `gh`, `glab` and `git` against a fake forge, so it needs those programs and is off by default.
+# Only a test turns it on, and no release build does.
 forge-wiring = []
 
 [dev-dependencies]

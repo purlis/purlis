@@ -11,6 +11,12 @@ import { Notice } from "./Notice";
 /** The event the core's refresh sends the window when a forge ended a sign-in. */
 export const SIGN_IN_ENDED = "forge-sign-in-ended";
 
+/** The event the core sends the window when a sign-in is not renewing, though no forge ended it. */
+export const SIGN_IN_TROUBLE = "forge-sign-in-trouble";
+
+/** What {@link SIGN_IN_TROUBLE} carries: the account's id and the kind of trouble. */
+export type SignInTrouble = { account: string; trouble: "pin-changed" | "renewal-failing" };
+
 /** The event a surface sends this window when it signed an account in or out. */
 export const ACCOUNTS_CHANGED = "purlis:forge-accounts-changed";
 
@@ -52,6 +58,8 @@ function ended(account: ForgeAccountRow): boolean {
 export function ForgeSignInEnded() {
   const [accounts, setAccounts] = useState<ForgeAccountRow[]>([]);
   const [dismissed, setDismissed] = useState<readonly string[]>([]);
+  /** The troubles the core told of, until the account ends, is signed in again or one is dismissed. */
+  const [troubles, setTroubles] = useState<readonly SignInTrouble[]>([]);
   /** The forge of the account being signed in to again. */
   const [again, setAgain] = useState<string>();
 
@@ -66,14 +74,36 @@ export function ForgeSignInEnded() {
 
   useEffect(() => {
     reread();
-    window.addEventListener(ACCOUNTS_CHANGED, reread);
+    // A surface here signed an account in or out: what was told of its trouble is the person's
+    // to have acted on.
+    const changed = () => {
+      setTroubles([]);
+      reread();
+    };
+    window.addEventListener(ACCOUNTS_CHANGED, changed);
     const listening = listen(SIGN_IN_ENDED, reread).catch(() => undefined);
+    const hearing = listen<SignInTrouble>(SIGN_IN_TROUBLE, (heard) => {
+      const { account, trouble } = heard.payload;
+      setTroubles((was) =>
+        was.some((t) => t.account === account && t.trouble === trouble)
+          ? was
+          : [...was, { account, trouble }],
+      );
+      reread();
+    }).catch(() => undefined);
     return () => {
-      window.removeEventListener(ACCOUNTS_CHANGED, reread);
+      window.removeEventListener(ACCOUNTS_CHANGED, changed);
       // The window may be gone before the listener is: nothing is left to stop then.
       void listening.then((stop) => stop?.()).catch(() => undefined);
+      void hearing.then((stop) => stop?.()).catch(() => undefined);
     };
   }, [reread]);
+
+  /** The accounts a trouble is drawn for: still listed, and still signed in. */
+  const troubled = troubles.flatMap((trouble) => {
+    const account = accounts.find((a) => a.id === trouble.account && a.signed_in);
+    return account ? [{ account, trouble: trouble.trouble }] : [];
+  });
 
   return (
     <>
@@ -92,6 +122,34 @@ export function ForgeSignInEnded() {
             there.
           </Notice>
         ))}
+      {troubled.map(({ account, trouble }) => (
+        <Notice
+          key={`${trouble}:${account.id}`}
+          cause={`forge-sign-in-${trouble}:${account.id}`}
+          tone="trouble"
+          fixes={[{ label: "Sign in again", onPress: () => setAgain(account.kind) }]}
+          onDismiss={() =>
+            setTroubles((was) =>
+              was.filter((t) => !(t.account === account.id && t.trouble === trouble)),
+            )
+          }
+        >
+          {trouble === "pin-changed" ? (
+            <>
+              purlis stopped renewing its sign-in to {account.host} as {account.login}: the
+              application pinned for {account.host} is not the one it signed in through. Until you
+              check the application in Settings › You › Accounts and sign in again, the sign-in
+              stops working when its token expires.
+            </>
+          ) : (
+            <>
+              purlis could not renew its sign-in to {account.host} as {account.login} several times
+              in a row. It keeps trying and keeps the sign-in, which {account.host} has not ended.
+              If it keeps failing, check your connection or sign in again.
+            </>
+          )}
+        </Notice>
+      ))}
       {again === "gitlab" && (
         <ForgeGitLabSignIn
           onCancel={() => setAgain(undefined)}
