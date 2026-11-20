@@ -142,7 +142,9 @@ fn made(act: &Act, forked: Option<&purlis_core::heldact::Forked>) -> String {
 }
 
 impl HeldActState {
-    /// The project's context for held acts: set by the slice that turns the proxy on per chat.
+    /// The project's context for held acts: set by the slice that turns the proxy on per chat
+    /// (seam "J"), so nothing in this build calls it yet.
+    #[allow(dead_code)]
     pub fn set_context(&self, context: Arc<dyn HeldContext>) {
         *self.context.lock().unwrap_or_else(PoisonError::into_inner) = Some(context);
     }
@@ -154,7 +156,8 @@ impl HeldActState {
             .clone()
     }
 
-    /// **The proxy's sink** for this project's chats, where a context is set.
+    /// **The proxy's sink** for this project's chats, where a context is set (seam "J").
+    #[allow(dead_code)]
     pub fn handoff(&self) -> Option<Handoff> {
         Some(Handoff::new(self.acts.clone(), self.context()?))
     }

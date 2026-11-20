@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
 import { commands, type HeldActShown, type PlaneId } from "./bindings";
 import { ASKS_CHANGED } from "./permissionAsks";
 import { asksMoved, onAsksMoved } from "./asks";
+import { listen } from "./here";
 import { Button, ButtonRow } from "./ui/button/Button";
 import { Card, CardTitle } from "./ui/card/Card";
 import { Fact, Facts } from "./ui/card/Facts";
@@ -113,6 +113,8 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
   const [firsts, setFirsts] = useState<Record<number, FirstPress>>({});
   const [refusals, setRefusals] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number>();
+  /** What the last act made, said where its row was: the ask is gone once it is made. */
+  const [made, setMade] = useState<string>();
 
   const read = useCallback(() => {
     void commands
@@ -137,23 +139,12 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
     };
   }, [plane, read]);
 
-  /** An ask drawn again at other facts asks from the start: its first press was of a row that is gone. */
-  useEffect(() => {
-    setFirsts((was) => {
-      const kept = Object.fromEntries(
-        Object.entries(was).filter(([ask, one]) =>
-          acts.some((act) => act.ask === Number(ask) && act.digest === one.digest),
-        ),
-      );
-      return Object.keys(kept).length === Object.keys(was).length ? was : kept;
-    });
-  }, [acts]);
-
   const press = (act: HeldActShown) => {
     if (busy !== undefined) return;
     setBusy(act.ask);
     setRefusals((was) => without(was, act.ask));
-    const first = firsts[act.ask];
+    // A first press of a row that is gone (the ask now shows other facts) is no first press.
+    const first = firsts[act.ask]?.digest === act.digest ? firsts[act.ask] : undefined;
     void commands
       .pressHeldAct(plane, act.ask, act.digest, first?.nonce ?? null)
       .then((answer) => {
@@ -169,8 +160,9 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
           }));
           setActs((was) => was.map((one) => (one.ask === act.ask ? again.shown : one)));
         } else {
+          const said = answer.data.said;
           setFirsts((was) => without(was, act.ask));
-          setRefusals((was) => ({ ...was, [act.ask]: answer.data.said }));
+          setMade(said);
         }
       })
       .catch((err: unknown) =>
@@ -195,21 +187,24 @@ export function HeldActAsks({ plane }: { plane: PlaneId }) {
       });
   };
 
-  if (acts.length === 0) return null;
+  if (acts.length === 0 && made === undefined) return null;
   return (
-    <ul aria-label="Held forge acts" className="held-acts">
-      {acts.map((act) => (
-        <HeldActRow
-          key={act.ask}
-          act={act}
-          first={firsts[act.ask]}
-          busy={busy === act.ask}
-          refused={refusals[act.ask]}
-          onPress={() => press(act)}
-          onCancel={() => setFirsts((was) => without(was, act.ask))}
-          onDont={() => dont(act)}
-        />
-      ))}
-    </ul>
+    <>
+      {made !== undefined && <p role="status">{made}</p>}
+      <ul aria-label="Held forge acts" className="held-acts">
+        {acts.map((act) => (
+          <HeldActRow
+            key={act.ask}
+            act={act}
+            first={firsts[act.ask]?.digest === act.digest ? firsts[act.ask] : undefined}
+            busy={busy === act.ask}
+            refused={refusals[act.ask]}
+            onPress={() => press(act)}
+            onCancel={() => setFirsts((was) => without(was, act.ask))}
+            onDont={() => dont(act)}
+          />
+        ))}
+      </ul>
+    </>
   );
 }

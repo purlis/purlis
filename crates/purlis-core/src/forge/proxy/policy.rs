@@ -220,6 +220,9 @@ pub struct ChatPolicy {
     advertised: Mutex<HashMap<(String, String), HashSet<String>>>,
 }
 
+/// The kind, path segments, query and host of a request, for the hand-off of a held act.
+pub(super) type HeldRoute = (Kind, Vec<String>, Vec<(String, String)>, String);
+
 /// What of the body a request needs, from its line alone.
 pub(crate) fn body_need(head: &RequestHead) -> BodyNeed {
     let path = head.target.split(['?', '#']).next().unwrap_or_default();
@@ -253,10 +256,7 @@ impl ChatPolicy {
 
     /// The forge kind, path segments, query and host a request of this chat is for, where one of
     /// the chat's repos is served at its host. For the hand-off of a held act.
-    pub(super) fn route_of(
-        &self,
-        head: &RequestHead,
-    ) -> Option<(Kind, Vec<String>, Vec<(String, String)>, String)> {
+    pub(super) fn route_of(&self, head: &RequestHead) -> Option<HeldRoute> {
         let host = request::host(head).ok()?;
         let target = request::parse_target(&head.target).ok()?;
         let first = self.repos.iter().find(|r| r.serves(&host, head.port))?;

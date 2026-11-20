@@ -11,13 +11,16 @@ use serde_json::{Value, json};
 use super::*;
 use crate::forge::transport::{Endpoint, NoAnswer};
 
+/// Every call a fake saw: who sent it, the method, the path and the call.
+type Seen = Arc<Mutex<Vec<(String, String, String, Call)>>>;
+
 type Handler = dyn Fn(&str, &str, &Call) -> Option<(u16, Value)> + Send + Sync;
 
 /// A forge that answers from a function of (method, path) and records what it was sent.
 struct Fake {
     who: &'static str,
     answer: Box<Handler>,
-    seen: Arc<Mutex<Vec<(String, String, String, Call)>>>,
+    seen: Seen,
 }
 
 impl Transport for Fake {
@@ -66,7 +69,7 @@ impl TipFiles for Files {
 
 struct Second {
     answer: Arc<Handler>,
-    seen: Arc<Mutex<Vec<(String, String, String, Call)>>>,
+    seen: Seen,
     used: Arc<Mutex<Vec<String>>>,
 }
 
@@ -81,8 +84,6 @@ impl WorkflowTransports for Second {
         }))
     }
 }
-
-type Seen = Arc<Mutex<Vec<(String, String, String, Call)>>>;
 
 fn sha(c: char) -> HeadSha {
     HeadSha::try_from(c.to_string().repeat(40)).unwrap()

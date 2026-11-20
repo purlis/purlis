@@ -32,7 +32,8 @@ describe("what an ask shows", () => {
           <HeldActRow act={act} onPress={noop} onCancel={noop} onDont={noop} />
         </ul>,
       );
-      const facts = screen.getByRole("list", { name: `What the ${act.kind} is` }) ?? undefined;
+      const facts = document.querySelector<HTMLElement>(`dl[aria-label="What the ${act.kind} is"]`);
+      if (facts === null) throw new Error("no facts");
       for (const row of act.rows) {
         const term = within(facts).getByText(row.label);
         expect(term.closest("div")?.textContent).toContain(row.value);
@@ -135,9 +136,7 @@ describe("the two presses", () => {
     await waitFor(() => expect(screen.queryByText(onceMoreSaid(FORK))).toBeNull());
     expect(log.filter((one) => one.cmd === "press_held_act")).toHaveLength(1);
     await user.click(screen.getByRole("button", { name: "Fork it" }));
-    await waitFor(() =>
-      expect(log.filter((one) => one.cmd === "press_held_act")).toHaveLength(2),
-    );
+    await waitFor(() => expect(log.filter((one) => one.cmd === "press_held_act")).toHaveLength(2));
     expect(log.filter((one) => one.cmd === "press_held_act")[1].args).toMatchObject({
       nonce: null,
     });
@@ -148,9 +147,7 @@ describe("the two presses", () => {
     core([TAG], { press_held_act: new Error("the ask no longer shows what you pressed") });
     render(<HeldActAsks plane={PLANE} />);
     await user.click(await screen.findByRole("button", { name: "Make the tag" }));
-    expect(
-      await screen.findByText(/the ask no longer shows what you pressed/),
-    ).toBeTruthy();
+    expect(await screen.findByText(/the ask no longer shows what you pressed/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Make the tag" })).toBeTruthy();
   });
 

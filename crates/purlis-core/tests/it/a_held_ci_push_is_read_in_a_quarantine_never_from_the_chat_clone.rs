@@ -107,13 +107,13 @@ fn scene() -> Scene {
 
 /// What `git push` sends: a thin pack of `tip` and what is not in `base`.
 fn pack_of(from: &Path, tip: &HeadSha, base: &HeadSha) -> Vec<u8> {
-    let mut child = crate::support::unsigned()
+    let mut command = crate::support::unsigned();
+    command
         .current_dir(from)
         .args(["pack-objects", "--revs", "--thin", "--stdout", "-q"])
         .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+        .stdout(Stdio::piped());
+    let mut child = purlis_core::forklock::spawn(&mut command).unwrap();
     child
         .stdin
         .take()
