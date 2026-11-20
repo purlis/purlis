@@ -5093,6 +5093,15 @@ impl Chats {
         sign_in: Option<&purlis_core::profilesignin::AtStart>,
         first_message: Option<&str>,
     ) -> Result<u32, String> {
+        // The chat's forge route (ADR 0128 J): made as it starts, removed as it closes. Slice B
+        // turns the params into the chat's environment; until it merges the route runs and
+        // nothing is handed over, so a chat reaches no forge by it yet.
+        #[cfg(feature = "forge-wiring")]
+        let _route = chat
+            .identity
+            .id
+            .as_deref()
+            .and_then(|id| crate::forgeroute::start_chat(id, &self.project));
         let again = (
             program.clone(),
             command.clone(),
@@ -6595,6 +6604,12 @@ impl Chats {
         let gone = lock(&self.open).remove(&session);
         if let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_ref()) {
             lock(&self.one_jobs).remove(id);
+        }
+        // A chat closed for good takes its forge route with it; a restart's replacement has
+        // started its own by now and `ForgeRoutes::start` replaced this one's.
+        #[cfg(feature = "forge-wiring")]
+        if a_chat && let Some(id) = gone.as_ref().and_then(|one| one.chat.identity.id.as_deref()) {
+            crate::forgeroute::stop_chat(id);
         }
         // **A chat closed for good takes the folder kept for its wake line with it** (#5827),
         // where no other open chat carries it: a restart starts before the chat it replaces

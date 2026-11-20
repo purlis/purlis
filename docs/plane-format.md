@@ -362,6 +362,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/chat-handed/<chat>.names` — what a chat was handed, by vault and key](#appchat-handedchatnames--what-a-chat-was-handed-by-vault-and-key)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
+  - [`forge-route/<chat>/` — a chat's forge socket and certificate authority](#forge-routechat--a-chats-forge-socket-and-certificate-authority)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
   - [`chat-turns/<chat>`](#chat-turnschat)
   - [`dispatch-inflight/<agent>.<random>.json`](#dispatch-inflightagentrandomjson)
@@ -8199,6 +8200,20 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Written by:** `hookwire::serve::Receiving::bind` (`crates/purlis-core/src/hookwire/serve.rs`,
   in `app/src-tauri/src/hooks.rs`); handed on to by `hookwire::serve::hand_on`.
 - **Git:** gitignored (under `/.charter/`).
+
+### `forge-route/<chat>/` — a chat's forge socket and certificate authority
+- **Format:** a folder of mode 0700 per chat that has a forge route, `<chat>` the chat's id, under
+  the per-user temp directory's `purlis-forge/` (short, because a unix socket's path may not pass
+  104 bytes on macOS). It holds the socket the chat's `gh` and `git` reach the forge proxy by and
+  the PEM of the chat's own certificate authority, whose key is never written. **It holds no
+  credential and no sentinel**: those are the app's memory (ADR 0128).
+- **Status:** **internal** — made when a chat with recorded repos starts and removed when it ends,
+  and every folder is removed at the app's next start and exit, so none outlives its chat.
+  **purlis only.**
+- **Tier:** Machine, device-bound, transient — it lasts as long as the chat; the app sweeps it.
+- **Written by:** `forgeroute::ForgeRoutes::start` makes the folder and removes it
+  (`app/src-tauri/src/forgeroute/`); the listener binds the socket and writes the CA in it.
+- **Git:** not in a repository.
 
 ### `app/spool/<n>/`
 - **Format:** a folder per chat, `<n>` the chat's number, with one file per hook line the host

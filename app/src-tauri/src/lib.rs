@@ -94,6 +94,8 @@ mod finished;
 mod firstrun;
 mod firsttask;
 mod forgeaccounts;
+#[cfg(feature = "forge-wiring")]
+mod forgeroute;
 mod forgepkce;
 mod getproject;
 mod gitbroker;
@@ -4113,6 +4115,9 @@ pub fn run() {
             mainwatch::start(app.handle());
             // The theme specimen's painter (#2330): hidden windows of this app's own.
             specimen::install(app.handle());
+            // The forge proxy's routes: stale ones from a crashed app are swept (ADR 0128 J).
+            #[cfg(feature = "forge-wiring")]
+            forgeroute::install();
             // One charter per user even without a session bus (`instance.rs`). After the
             // single-instance plugin, which has already handed an ordinary second launch over;
             // before the window and before any plane, whose hook socket `hookwire` removes
@@ -5158,6 +5163,9 @@ pub fn run() {
                 // group, so that nothing an extension was asked to run outlives the window
                 // that asked (`purlis_core::executor`).
                 app.state::<views::Views>().stop_all();
+                // No forge socket or CA outlives the app (ADR 0128 J).
+                #[cfg(feature = "forge-wiring")]
+                forgeroute::stop_all();
                 app.state::<heard::Heard>().stop_all();
                 // Every plane, not "the" plane: each one writes its own record into itself
                 // and ends its own sessions. A failure is not worth refusing to exit over —
