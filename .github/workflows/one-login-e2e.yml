@@ -1,0 +1,78 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: one-login-e2e
+
+# **One login, slice I: the end-to-end test that proves the scenario** (ADR 0128).
+#
+# Someone makes a repo. Anyone with access signs in to their own forge account once, clones the
+# repo as a project, and a chat runs `gh`, `glab` and `git` with no manual command. This runs that
+# on a runner of each OS (Linux and macOS, where the clients' trust and proxy handling differ):
+# real `gh`, `glab` and `git` against a local fake forge of each shape, and it FAILS if a step
+# does. The first step runs the harness itself, so a failure is the scenario's and fast; the
+# second is the `forge-wiring` Rust test that runs it from the core's own test tree.
+#
+# `tests/one-login-e2e/seams.mjs` stands in for the slices of the ADR that have not merged, each
+# marked `TODO(slice X)`. The live counterpart, with real accounts, is `tools/one-login-live.sh`
+# and is never run here.
+
+on:
+  pull_request:
+    paths:
+      - tests/one-login-e2e/**
+      - crates/purlis-core/tests/one_login_end_to_end.rs
+      - crates/purlis-core/Cargo.toml
+      - .github/workflows/one-login-e2e.yml
+  workflow_dispatch:
+
+# Nothing by default: the job names what it needs.
+permissions: {}
+
+concurrency:
+  group: one-login-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  e2e:
+    name: end to end (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `gh` is on both images; `glab` is on neither (as in the scenarios' action).
+      - name: glab
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install glab
+          else
+            go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
+            echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          fi
+      - name: the scenario, on its own
+        timeout-minutes: 20
+        shell: bash
+        run: node tests/one-login-e2e/run.mjs --out "$RUNNER_TEMP/e2e-out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: one-login-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e-out
+          if-no-files-found: warn
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: the same scenario, behind the forge-wiring feature
+        timeout-minutes: 30
+        shell: bash
+        run: cargo test -p purlis-core --locked --features forge-wiring --test one_login_end_to_end -- --nocapture
