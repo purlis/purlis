@@ -268,7 +268,7 @@ async function startServers() {
 
 // ---- running a client -------------------------------------------------------------------------
 
-function exec(cmd, args, { env, cwd, timeout = 45_000 }) {
+function exec(cmd, args, { env, cwd, timeout = 20_000 }) {
   return new Promise((resolve) => {
     let stdout = '';
     let stderr = '';
@@ -472,6 +472,7 @@ function cases() {
 }
 
 const results = [];
+let flush = () => {};
 
 async function runCase(c, phase) {
   const home = fs.mkdtempSync(path.join(work, 'home-'));
@@ -484,6 +485,7 @@ async function runCase(c, phase) {
     results.push({ ...row, verdict: 'not run', detail: skip });
     return;
   }
+  console.log(`start  [${trust}] ${c.tool}: ${c.mechanism} :: ${c.label}`);
   c.setup?.(home);
   const cmd = typeof c.cmd === 'function' ? c.cmd(trust) : c.cmd;
   const mark = forgeLog.length;
@@ -496,6 +498,7 @@ async function runCase(c, phase) {
   const sentinelAtForge = seen.some((e) => e.sawSentinel);
   const works = r.code === 0 && r.stdout.includes(c.expect) && good.length > 0 && !sentinelAtForge && !leaked;
   const lastLine = (s) => s.trim().split('\n').filter(Boolean).slice(-2).join(' | ').slice(0, 300);
+  console.log(`${works ? 'works' : 'FAILS'}  [${trust}] ${c.tool}: ${c.mechanism} :: ${c.label} (exit ${r.code})`);
   results.push({
     ...row,
     verdict: works ? 'works' : 'fails',
@@ -506,6 +509,7 @@ async function runCase(c, phase) {
     ...(sentinelAtForge ? { sentinelReachedForge: true } : {}),
     output: lastLine(r.stdout),
   });
+  flush();
 }
 
 // ---- trusting the CA the way the OS does ------------------------------------------------------
@@ -558,6 +562,10 @@ async function main() {
     port80: ports.eighty ? 'bound' : `not bound (${ports.eightyWhy})`,
   };
   console.log(JSON.stringify(versions, null, 2));
+  flush = () => {
+    fs.writeFileSync(path.join(outDir, `results-${PLATFORM}.json`), `${JSON.stringify({ versions, results, proxyLog }, null, 2)}\n`);
+    fs.writeFileSync(path.join(outDir, `results-${PLATFORM}.md`), markdown(versions));
+  };
   const all = cases();
   for (const c of all) await runCase(c, 'env').catch((e) => results.push({ os: PLATFORM, tool: c.tool, mechanism: c.mechanism, command: c.label, verdict: 'harness error', detail: String(e) }));
   const osCases = all.filter((c) => c.phases.includes('os'));

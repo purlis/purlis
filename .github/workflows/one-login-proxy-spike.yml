@@ -57,6 +57,7 @@ jobs:
           echo "127.0.0.1 github.localhost api.github.localhost" | sudo tee -a /etc/hosts
           if [ "$RUNNER_OS" = Linux ]; then sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0; fi
       - name: spike
+        timeout-minutes: 20
         shell: bash
         run: node tests/one-login-spike/spike.mjs --out "$RUNNER_TEMP/spike-out"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
