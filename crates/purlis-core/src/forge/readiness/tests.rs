@@ -42,6 +42,7 @@ fn all_known(repo: RepoRead) -> Facts {
         protected: Fact::Known(true),
         user_apps: Fact::Known(true),
         ci_token: Fact::Known(true),
+        registered: Fact::Known(false),
     }
 }
 
@@ -818,59 +819,100 @@ fn a_member_asks_the_administrator_or_the_groups_owner() {
     assert!(request.contains("as an owner of acme"), "{request}");
 }
 
-/// The stub of slice G's store: one self-hosted server with a pin.
-fn pins(kind: Kind, host: &str) -> Option<String> {
-    (kind == Kind::GitLab && host == "pinned.example.com").then(|| "client-id".to_owned())
-}
-
 #[test]
-fn a_host_with_a_pinned_client_id_is_not_told_it_has_no_registration() {
-    registration::use_pins(pins);
-    let f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
-    let pinned = evaluate(
-        &gitlab("pinned.example.com"),
+fn a_host_with_a_pinned_application_is_not_told_it_has_no_registration() {
+    let mut f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    f.registered = Fact::Known(true);
+    let report = evaluate(
+        &gitlab("git.example.com"),
         "acme/app",
         Connection::SignIn,
         &f,
     );
-    assert_eq!(verdict(&pinned, CheckId::ServerRegistration), None);
-    assert_eq!(verdict(&pinned, CheckId::OauthApplications), None);
-    // Another host, and the same host of the other forge, still have none.
-    let other = evaluate(
-        &gitlab("other.example.com"),
-        "acme/app",
-        Connection::SignIn,
-        &f,
-    );
-    assert!(matches!(
-        verdict(&other, CheckId::ServerRegistration),
-        Some(Verdict::Blocked(_))
-    ));
-    let github = evaluate(
-        &github("pinned.example.com"),
-        "acme/app",
-        Connection::SignIn,
-        &f,
-    );
-    assert!(matches!(
-        verdict(&github, CheckId::ServerRegistration),
-        Some(Verdict::Blocked(_))
-    ));
-}
-
-#[test]
-fn a_pin_also_spares_the_check_of_the_servers_oauth_application_setting() {
-    registration::use_pins(pins);
-    let fake = Fake::new(&[]);
-    let report = check(
-        &gitlab("pinned.example.com"),
-        "acme/app",
-        Connection::SignIn,
-        &Caller::window(),
-        fake,
-    );
-    // Nothing was scripted, so nothing could be read; but the setting was never asked for.
+    assert_eq!(verdict(&report, CheckId::ServerRegistration), None);
     assert_eq!(verdict(&report, CheckId::OauthApplications), None);
+}
+
+#[test]
+fn pins_that_could_not_be_read_leave_the_registration_unknown_and_not_ready() {
+    let mut f = all_known(RepoRead::Read(facts(Role::Write, OrgAccess::Approved)));
+    f.registered = Fact::unknown("forge-registrations.json is not readable");
+    let report = evaluate(
+        &gitlab("git.example.com"),
+        "acme/app",
+        Connection::SignIn,
+        &f,
+    );
+    assert_eq!(
+        verdict(&report, CheckId::ServerRegistration),
+        Some(Verdict::Unknown)
+    );
+    assert!(!report.ready_for_all());
+}
+
+/// The pins the person pressed, through slice C's store: a real file in a temporary config home.
+mod the_pins_the_store_keeps {
+    use super::*;
+    use crate::forge::registered;
+    use crate::forge::route::HostScope;
+
+    fn pinned_on(host: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        registered::pin(
+            &HostScope::for_a_test(),
+            dir.path(),
+            Kind::GitLab,
+            host,
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_pinned_host_is_registered_and_another_is_not() {
+        let dir = pinned_on("git.example.com");
+        let at = |kind, host: &str| {
+            registered_in(
+                Some(dir.path()),
+                &Forge {
+                    kind,
+                    host: host.to_owned(),
+                },
+            )
+        };
+        assert_eq!(at(Kind::GitLab, "git.example.com"), Fact::Known(true));
+        assert_eq!(at(Kind::GitLab, "other.example.com"), Fact::Known(false));
+        // A pin is of one forge: the other forge on the same host has none.
+        assert_eq!(at(Kind::GitHub, "git.example.com"), Fact::Known(false));
+    }
+
+    #[test]
+    fn a_host_purlis_ships_a_registration_on_needs_no_pin() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            registered_in(Some(dir.path()), &github("github.com")),
+            Fact::Known(true)
+        );
+    }
+
+    #[test]
+    fn no_config_home_holds_no_pin() {
+        assert_eq!(
+            registered_in(None, &gitlab("git.example.com")),
+            Fact::Known(false)
+        );
+    }
+
+    #[test]
+    fn a_pin_file_that_cannot_be_read_is_unknown_and_never_none() {
+        let dir = pinned_on("git.example.com");
+        std::fs::write(registered::path(dir.path()), "not json").unwrap();
+        assert!(matches!(
+            registered_in(Some(dir.path()), &gitlab("git.example.com")),
+            Fact::Unknown(_)
+        ));
+    }
 }
 
 #[test]

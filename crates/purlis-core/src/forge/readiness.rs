@@ -340,6 +340,25 @@ pub struct Facts {
     pub user_apps: Fact<bool>,
     /// Read only for [`Connection::Token`].
     pub ci_token: Fact<bool>,
+    /// Whether purlis has an OAuth application on the host: one it ships, or one the person
+    /// pinned there ([`super::registered`]). Unknown where the pins could not be read. A host
+    /// purlis ships a registration on is registered whatever this says.
+    pub registered: Fact<bool>,
+}
+
+/// Whether purlis has an OAuth application on `on`'s host, read from `config_root`'s pins. No
+/// config home holds no pin; a pin file that cannot be read is unknown, never "none".
+pub(super) fn registered_in(config_root: Option<&std::path::Path>, on: &Forge) -> Fact<bool> {
+    if registration::on(on.kind, &on.host).is_some() {
+        return Fact::Known(true);
+    }
+    let Some(root) = config_root else {
+        return Fact::Known(false);
+    };
+    match super::registered::pinned(root, on.kind, &on.host) {
+        Ok(pin) => Fact::Known(pin.is_some()),
+        Err(why) => Fact::Unknown(one_line(&why)),
+    }
 }
 
 /// Check a project: read what the forge says as `caller` over `transport`, and judge it.
@@ -387,9 +406,10 @@ pub fn check_with(
     backend: &dyn ForgeBackend,
 ) -> Report {
     let repo = probe.repo(caller, path);
-    let registered = registration::known_on(on.kind, &on.host);
-    let needs_app_policy =
-        connection != Connection::Token && on.kind == Kind::GitLab && !registered;
+    let registered = registered_in(crate::machine::config_root().as_deref(), on);
+    let needs_app_policy = connection != Connection::Token
+        && on.kind == Kind::GitLab
+        && registered == Fact::Known(false);
     let user_apps = if needs_app_policy {
         probe.user_apps(caller)
     } else {
@@ -416,6 +436,7 @@ pub fn check_with(
             protected,
             user_apps,
             ci_token,
+            registered,
         },
     )
 }
@@ -550,8 +571,27 @@ pub fn evaluate(on: &Forge, path: &str, connection: Connection, facts: &Facts) -
         checks.push(check);
     }
 
-    // purlis registered on a self-hosted server (anyone who signs in to purlis there).
-    if connection != Connection::Token && !registration::known_on(on.kind, &on.host) {
+    // purlis registered on a self-hosted server (anyone who signs in to purlis there): shipped
+    // or pinned. Pins that could not be read leave it unknown, never blocked or ready.
+    let registered = if registration::on(on.kind, &on.host).is_some() {
+        Fact::Known(true)
+    } else {
+        facts.registered.clone()
+    };
+    if connection != Connection::Token
+        && let Fact::Unknown(why) = &registered
+    {
+        checks.push(Check {
+            id: CheckId::ServerRegistration,
+            verdict: Verdict::Unknown,
+            detail: format!(
+                "whether purlis has an OAuth app on {} was not read: {why}",
+                on.host
+            ),
+            fix: Some(words.registration_fix(person).1),
+        });
+    }
+    if connection != Connection::Token && registered == Fact::Known(false) {
         let (who, fix) = words.registration_fix(person);
         checks.push(Check {
             id: CheckId::ServerRegistration,
