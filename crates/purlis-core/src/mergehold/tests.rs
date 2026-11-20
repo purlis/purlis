@@ -656,3 +656,52 @@ fn a_quoted_parameter_expansion_is_not_a_bash_5_3_substitution() {
         );
     }
 }
+
+/// #7250, round 2: a `}` that is a plain word closes nothing, so the merge after it is read. The
+/// `&`, `|` and `(` of a redirection, an array or a `[[ … ]]` start no command.
+#[test]
+fn a_funsub_close_is_read_only_where_bash_closes_it() {
+    for cmd in [
+        r#"echo "${ echo >& } ; gh pr merge 12; }""#,
+        r#"echo "${ echo >| } ; gh pr merge 12; }""#,
+        r#"echo "${ a=( } ); gh pr merge 12; }""#,
+        r#"echo "${ [[ x == y || } == z ]]; gh pr merge 12; }""#,
+        // The neighbours: a `<&`, an `&>`, a subshell, a function body and a `[[ … ]]` that ends.
+        r#"echo "${ cat <& } ; gh pr merge 12; }""#,
+        r#"echo "${ echo &> } ; gh pr merge 12; }""#,
+        r#"echo "${ ( } ); gh pr merge 12; }""#,
+        r#"echo "${ f() { true; }; gh pr merge 12; }""#,
+        r#"echo "${ [[ a && b ]]; gh pr merge 12; }""#,
+        r#"echo "${ echo >&2; gh pr merge 12; }""#,
+        // One that does not close is refused, not half read.
+        r#"echo "${ [[ x == y ; gh pr merge 12; }""#,
+    ] {
+        assert_eq!(held(cmd), Some(Held::Unreadable), "{cmd}");
+    }
+}
+
+/// #7250, round 2: a `${` inside single quotes, or escaped, is text, so a regex that holds one is
+/// no substitution.
+#[test]
+fn a_quoted_or_escaped_dollar_brace_is_no_funsub() {
+    for cmd in [
+        "sed 's/${[a-z]*}/x/' f",
+        r"grep -E '\${[A-Z_]+}' f",
+        r"grep -rn '\${\*}' src",
+        "grep -c '${.*}' f",
+        r"grep -c \${.*} f",
+        "sed $'s/${[a-z]*}/x/' f",
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+        assert_eq!(
+            crate::floorguard::release_floor_reason(cmd, true),
+            None,
+            "{cmd}"
+        );
+    }
+    // Quoted by single quotes inside double quotes is not quoted at all.
+    assert_eq!(
+        held(r#"echo "'${ gh pr merge 12; }'""#),
+        Some(Held::Unreadable)
+    );
+}

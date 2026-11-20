@@ -1498,15 +1498,22 @@ fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
 /// One past the `}` that closes the bash 5.3 `${ …;` opened before `p` (#7246), or `None`.
 ///
 /// Its body is commands, so the `}` that closes it is a word in command position: after `;`, `&`,
-/// `|`, `(` or a newline, or at the start. A `{` in command position opens a group of its own
-/// that a `}` of its own closes. Quotes and nested substitutions are read whole. Read strictly,
-/// so a close the reader is unsure of is no close and the line is refused, never half read.
+/// `|` or a newline, or at the start. A `{` in command position opens a group of its own that a
+/// `}` of its own closes. Quotes and nested substitutions are read whole.
+///
+/// A command starts nowhere else, so these start none (#7250): the `&` of `>&`, `<&` and `&>` and
+/// the `|` of `>|`, which are redirections; a `(`, which is read whole to its `)` (a subshell, an
+/// array, a function's `()`, a `<(…)`), so a `}` inside it closes nothing; and a `[[ … ]]`, in
+/// whose `&&` and `||` a word is an operand. Read strictly, so a close the reader is unsure of is
+/// no close and the line is refused, never half read: an unclosed `(` or `[[` ends in `None`.
 fn skip_funsub(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     let mut groups = 0usize;
     let mut at_command = true;
+    let mut in_test = false;
     let blank = |c: Option<&char>| c.is_none_or(|c| c.is_whitespace());
     while let Some(&c) = s.get(p) {
         let command = std::mem::replace(&mut at_command, false);
+        let before = p.checked_sub(1).and_then(|at| s.get(at));
         match c {
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
@@ -1518,7 +1525,27 @@ fn skip_funsub(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
                 p = skip_funsub(s, open, deeper(nest)?)?;
             }
             '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
-            ';' | '&' | '|' | '(' | '\n' => {
+            '[' if command && !in_test && s.get(p + 1) == Some(&'[') && blank(s.get(p + 2)) => {
+                in_test = true;
+                p += 2;
+            }
+            ']' if in_test
+                && s.get(p + 1) == Some(&']')
+                && blank(before)
+                && (blank(s.get(p + 2)) || matches!(s.get(p + 2), Some(';' | '&' | '|' | ')'))) =>
+            {
+                in_test = false;
+                p += 2;
+            }
+            '(' => {
+                p = skip_paren(s, p + 1, deeper(nest)?)?;
+                // A function's `()` is followed by its body.
+                at_command = true;
+            }
+            _ if in_test => p += 1,
+            '&' if matches!(before, Some('>' | '<')) || s.get(p + 1) == Some(&'>') => p += 1,
+            '|' if before == Some(&'>') => p += 1,
+            ';' | '&' | '|' | '\n' => {
                 at_command = true;
                 p += 1;
             }
@@ -1858,11 +1885,40 @@ fn funsub_opens(chars: &[char], i: usize) -> bool {
 }
 
 /// Whether `text` holds a `${` that only the wide reading ([`funsub_opens`]) takes for a
-/// substitution, quotes not read. The shell's own spellings are [`livesub::live_substitution`]'s,
-/// which reads quotes, so a literal `'${ x; }'` stays one.
+/// substitution. A `${` the shell reads as text is none (#7250): one escaped, or inside single
+/// quotes or `$'…'`, as in `grep -E '\${[A-Z_]+}'`. Double quotes run it, so they are read as
+/// open text; an unterminated single quote is read as none, which only holds more. The shell's
+/// own spellings are [`livesub::live_substitution`]'s, which reads quotes, so a literal
+/// `'${ x; }'` stays one.
 fn contains_wide_funsub(text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
-    (0..chars.len()).any(|i| funsub_opens(&chars, i) && !livesub::funsub_at(&chars, i))
+    let mut i = 0;
+    let mut in_double = false;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 2,
+            '"' => {
+                in_double = !in_double;
+                i += 1;
+            }
+            '\'' if !in_double => {
+                i = chars[i + 1..]
+                    .iter()
+                    .position(|c| *c == '\'')
+                    .map_or(i + 1, |at| i + at + 2);
+            }
+            '$' if !in_double && chars.get(i + 1) == Some(&'\'') => {
+                i = livesub::ansi_c_end(&chars, i + 2);
+            }
+            _ => {
+                if funsub_opens(&chars, i) && !livesub::funsub_at(&chars, i) {
+                    return true;
+                }
+                i += 1;
+            }
+        }
+    }
+    false
 }
 
 /// Whether `text` holds a bash 5.3 `${ …; }` as the shell runs it ([`livesub::funsub_at`]), not a
