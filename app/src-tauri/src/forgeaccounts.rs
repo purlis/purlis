@@ -704,6 +704,7 @@ mod tests {
             method: Method::Pat,
             state: State::SignedIn,
             scopes: Some(vec!["repo".into(), "read:org".into(), "gist".into()]),
+            client_id: None,
         });
         assert_eq!(row.method, "token");
         assert_eq!(row.kind, "github");

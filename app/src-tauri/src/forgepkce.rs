@@ -126,6 +126,7 @@ fn through_the_browser(
         registration.host,
         granted,
         Method::Pkce,
+        registration.client_id,
     )
     .map(ForgeAccountRow::from)
 }

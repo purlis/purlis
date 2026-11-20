@@ -14,7 +14,7 @@
 //!   [`renewal::Renewal`] renews them before they do, without the person.
 //! - **[`TokenConnection`]**, a token given without a person: a CI job, `purlis serve`, a pool
 //!   runner, the operator's Secret. It is read from named variables
-//!   (`PURLIS_FORGE_TOKEN_<HOST>`, or the forge CLI's own `GH_TOKEN`, `GITHUB_TOKEN`,
+//!   (`PURLIS_FORGE_TOKEN__<HEX>`, or the forge CLI's own `GH_TOKEN`, `GITHUB_TOKEN`,
 //!   `GITLAB_TOKEN`, `CI_JOB_TOKEN`) or from a file a variable names (a mounted Secret), and its
 //!   kind is read from its shape. A per-job token is never renewed and never warned about; a
 //!   long-lived one that says when it expires is warned about before it does ([`Expiry`]).
@@ -49,7 +49,7 @@
 //! - **Pool tools** (`app/src-tauri/src/pooltools.rs`) hand a runner chat's tool a GitHub App
 //!   installation token as `GH_TOKEN` ([`super::apptoken`]). That is the per-agent token ADR 0128
 //!   replaces: a chat holds no token, so it is not routed through here; it goes when the proxy
-//!   does. A runner that is given a token (`PURLIS_FORGE_TOKEN_<HOST>`, or what the operator mints
+//!   does. A runner that is given a token (`PURLIS_FORGE_TOKEN__<HEX>`, or what the operator mints
 //!   for it) reads it through [`TokenConnection`].
 //! - **The operator** (`operator/`) is a workspace of its own that links nothing of this crate
 //!   (its `Cargo.toml` says so, to keep its Kubernetes client tree out of every build). It mints
@@ -69,7 +69,7 @@ mod connection;
 pub mod renewal;
 mod signedin;
 
-pub use connection::{TokenConnection, host_key};
+pub use connection::{TokenConnection, file_variable_for, host_key, variable_for};
 pub use signedin::SignedIn;
 
 /// How long before a long-lived token's known expiry it is warned about: two weeks, enough to
@@ -107,8 +107,6 @@ pub enum TokenKind {
     GitHubInstallation,
     /// GitHub: a fine-grained personal access token (`github_pat_`).
     GitHubFineGrained,
-    /// GitHub: a classic personal access token (`ghp_`).
-    GitHubClassic,
     /// GitHub: a user-to-server or OAuth token (`ghu_`, `gho_`), eight hours, with a refresh
     /// token a token connection does not have.
     GitHubUser,
@@ -141,7 +139,6 @@ impl TokenKind {
             }
             TokenKind::Pasted
             | TokenKind::GitHubFineGrained
-            | TokenKind::GitHubClassic
             | TokenKind::GitLabAccess
             | TokenKind::Unrecognised => Lifetime::LongLived,
         }
