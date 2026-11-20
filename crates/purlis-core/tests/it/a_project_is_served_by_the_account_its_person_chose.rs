@@ -68,6 +68,7 @@ fn scene() -> Scene {
             "github.com",
             grant_that_does_not_expire(access, "repo,read:org"),
             Method::Device,
+            "Ov23litEn94I5HXrpdsX",
         )
         .unwrap()
     };
@@ -94,13 +95,14 @@ fn source(scene: &Scene) -> SignedIn {
 }
 
 #[test]
-fn two_accounts_on_one_host_are_two_accounts_and_the_unchosen_route_takes_the_first() {
+fn two_accounts_on_one_host_are_two_accounts_and_the_unchosen_route_picks_neither() {
     let scene = scene();
     assert_ne!(scene.personal.id, scene.emu.id);
     let source = source(&scene);
-    // The window's own calls take the first account on the host, as before.
-    let first = source.credential_at("github.com", now()).unwrap();
-    assert_eq!(first.expose(), PERSONAL);
+    // With two accounts on the host and none chosen for the repo, nothing is picked.
+    let why = source.credential_at("github.com", now()).unwrap_err();
+    assert!(why.to_string().contains("More than one account"), "{why}");
+    assert!(!why.to_string().contains(PERSONAL) && !why.to_string().contains(EMU));
 }
 
 #[test]
@@ -135,7 +137,7 @@ fn a_chats_route_for_a_repo_is_the_account_the_person_chose_for_it() {
             .remove(0);
         match confirmed::account_for(&repo, &both) {
             Serving::Account(account) => source
-                .credential_for_account("github.com", &account.id, now())
+                .credential_of("github.com", &account.id, now())
                 .unwrap(),
             other => panic!("{other:?}"),
         }
@@ -191,7 +193,7 @@ fn a_chosen_account_that_is_gone_is_never_answered_by_the_other_one() {
         Serving::ChosenIsSignedOut { .. }
     ));
     let why = source
-        .credential_for_account("github.com", &scene.emu.id, now())
+        .credential_of("github.com", &scene.emu.id, now())
         .unwrap_err();
     assert!(matches!(why, CredentialError::None { .. }), "{why:?}");
     assert!(!why.to_string().contains(PERSONAL) && !why.to_string().contains(EMU));

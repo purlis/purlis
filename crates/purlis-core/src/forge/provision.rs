@@ -60,8 +60,9 @@ pub const PROVISIONING_COMMANDS: &[&str] = &[
 pub const PROVISIONING_ENTRY_POINTS: &[&str] = &[
     "sign_in_with_grant(",
     "sign_in_with_token(",
-    "use_application(",
-    "registered::unregister(",
+    "pin_with_owner(",
+    "registered::pin(",
+    "registered::unpin(",
     "confirmed::confirm(",
     "record_clone(",
     "confirm_trusted(",

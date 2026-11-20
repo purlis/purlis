@@ -29,7 +29,7 @@ use std::sync::{Arc, Mutex};
 
 use purlis_core::forge::accounts::{self, ForgeAccount, State, workflow};
 use purlis_core::forge::confirmed::{self, AsThePerson, Pick, Serving};
-use purlis_core::forge::registered::{self, Change};
+use purlis_core::forge::registered;
 use purlis_core::forge::registration::{self, Registration};
 use purlis_core::forge::{Kind, device, oauth};
 
@@ -57,7 +57,7 @@ pub struct ForgeApplicationRow {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct ForgeApplicationPinned {
     pub host: String,
-    /// `new`, `same`, `client-id` or `owner`.
+    /// `pinned`, `client-id` (another application replaced the pinned one) or `owner`.
     pub change: String,
     /// The client id (or owner) this replaced, for the Notice a changed pin raises.
     pub replaced: Option<String>,
@@ -72,17 +72,18 @@ pub async fn forge_applications() -> Result<Vec<ForgeApplicationRow>, String> {
         host_scope()?;
         let root = config_root()?;
         let mut rows = Vec::new();
-        for (kind, host) in registered::hosts(&root)? {
-            let Some(pin) = registered::pin(&root, kind, &host)? else {
+        for (kind, host) in registered::pinned_hosts(&root)? {
+            let Some(pin) = registered::pinned(&root, kind, &host)? else {
                 continue;
             };
+            let owner = registered::owner_of(&root, kind, &host)?;
             let signed_in = accounts::every_signed_in_on(&root, kind, &host)?.len();
             rows.push(ForgeApplicationRow {
                 kind: kind.word().to_string(),
-                consent: registered::consent_check(&pin.owner, &host),
+                consent: registered::consent_check(owner.as_deref(), &host),
                 host,
-                client_id: pin.client_id,
-                owner: pin.owner,
+                client_id: pin.client_id.to_string(),
+                owner: owner.unwrap_or_default(),
                 signed_in: u32::try_from(signed_in).unwrap_or(u32::MAX),
             });
         }
@@ -106,15 +107,14 @@ pub async fn forge_use_application(
     blocking(move || {
         let scope = host_scope()?;
         let root = config_root()?;
-        let pinned = registered::use_application(&scope, &root, kind, &host, &client_id, &owner)?;
-        let (change, replaced) = match pinned.change {
-            Change::New => ("new", None),
-            Change::Same => ("same", None),
-            Change::ClientId { previous } => ("client-id", Some(previous)),
-            Change::Owner { previous } => ("owner", Some(previous)),
+        let pinned = registered::pin_with_owner(&scope, &root, kind, &host, &client_id, &owner)?;
+        let (change, replaced) = match (pinned.replaced, pinned.owner_was) {
+            (Some(id), _) => ("client-id", Some(id)),
+            (None, Some(owner)) => ("owner", Some(owner)),
+            (None, None) => ("pinned", None),
         };
         Ok(ForgeApplicationPinned {
-            consent: registered::consent_check(owner.trim(), &pinned.host),
+            consent: registered::consent_check(Some(owner.trim()), &pinned.host),
             host: pinned.host,
             change: change.to_string(),
             replaced,
@@ -131,7 +131,7 @@ pub async fn forge_remove_application(kind: String, host: String) -> Result<(), 
     let kind = kind_of(&kind)?;
     blocking(move || {
         let scope = host_scope()?;
-        registered::unregister(&scope, &config_root()?, kind, &host)
+        registered::unpin(&scope, &config_root()?, kind, &host)
     })
     .await
 }
@@ -317,9 +317,8 @@ fn confirm_clone(
             Pick::SignIn => return Ok(confirmed_answer("sign-in", None)),
         },
     };
-    let client_id = registration::resolve(&root, account.kind, &account.host)?
-        .map(|r| r.client_id.to_string())
-        .unwrap_or_default();
+    // The application the account signed in through, which C's sign-in pins on the account.
+    let client_id = account.client_id.clone().unwrap_or_default();
     let keyring = accounts::keyring_at(&root);
     let lookup = AsThePerson {
         keyring: keyring.as_ref(),
@@ -400,6 +399,19 @@ pub async fn forge_ci_permission_start(account_id: String) -> Result<ForgeDevice
                     account.host
                 )
             })?;
+        // The second sign-in asks the application the account signed in through, and no other:
+        // GitHub then reads it as the same grant (D1.1).
+        if account
+            .client_id
+            .as_deref()
+            .is_some_and(|id| id != registration.client_id)
+        {
+            return Err(format!(
+                "{} now uses a different application than the one you signed in through. Sign in \
+                 again, then allow CI files.",
+                account.host
+            ));
+        }
         if purlis_core::fence::FENCED {
             return Err(
                 "A test build of purlis does not ask GitHub for permission through the browser."

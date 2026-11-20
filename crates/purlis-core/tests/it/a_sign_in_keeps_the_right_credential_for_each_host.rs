@@ -75,6 +75,11 @@ fn sign_in(
 ) -> ForgeAccount {
     let keyring = accounts::keyring_at(home);
     let reach = tokens.reach();
+    // The application the sign-in is made through, as the window resolves it for the host.
+    let client = registration::resolve(home, kind, host)
+        .unwrap()
+        .expect("a registration for the host")
+        .client_id;
     accounts::sign_in_with_grant(
         &scope(),
         home,
@@ -84,6 +89,7 @@ fn sign_in(
         host,
         granted,
         method,
+        client,
     )
     .unwrap()
 }
@@ -173,7 +179,7 @@ fn a_ghes_host_signs_in_through_the_application_an_owner_made_and_never_githubs(
             .unwrap()
             .is_none()
     );
-    registered::use_application(
+    registered::pin_with_owner(
         &scope(),
         home.path(),
         Kind::GitHub,
@@ -213,7 +219,7 @@ fn a_self_hosted_gitlab_signs_in_by_pkce_through_the_group_application() {
     let home = tempfile::tempdir().unwrap();
     let tokens = Tokens::default();
     tokens.know("canarySELFaccess1", "octocat", "api");
-    registered::use_application(
+    registered::pin_with_owner(
         &scope(),
         home.path(),
         Kind::GitLab,
@@ -246,24 +252,34 @@ fn a_self_hosted_gitlab_signs_in_by_pkce_through_the_group_application() {
 }
 
 #[test]
-fn an_application_with_no_owner_the_person_expects_signs_nobody_in() {
+fn the_press_refuses_an_application_with_no_owner_and_a_pin_cannot_replace_githubs_own() {
     let home = tempfile::tempdir().unwrap();
-    // A pin written by a build before the owner was asked for.
-    let at = registered::path(home.path());
-    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-    std::fs::write(
-        &at,
-        r#"{"version":1,"hosts":[{"kind":"github","host":"ghe.example.com","client_id":"Iv1.old"}]}"#,
-    )
-    .unwrap();
+    for owner in ["", "  ", "a b"] {
+        assert!(
+            registered::pin_with_owner(
+                &scope(),
+                home.path(),
+                Kind::GitHub,
+                "ghe.example.com",
+                "Iv1.old",
+                owner
+            )
+            .is_err(),
+            "{owner:?}"
+        );
+    }
+    assert!(
+        !registered::path(home.path()).exists(),
+        "nothing was pinned"
+    );
     assert!(
         registration::resolve(home.path(), Kind::GitHub, "ghe.example.com")
             .unwrap()
             .is_none()
     );
-    // And one nobody can pin is refused outright: github.com's own cannot be replaced.
+    // And github.com's own cannot be replaced.
     assert!(
-        registered::use_application(
+        registered::pin_with_owner(
             &scope(),
             home.path(),
             Kind::GitHub,
@@ -281,7 +297,7 @@ fn each_host_keeps_its_own_accounts_token() {
     let tokens = Tokens::default();
     tokens.know("canaryONEaccess", "octocat", "repo, read:org");
     tokens.know("canaryTWOaccess", "octocat", "repo, read:org");
-    registered::use_application(
+    registered::pin_with_owner(
         &scope(),
         home.path(),
         Kind::GitHub,

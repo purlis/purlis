@@ -79,6 +79,7 @@ fn scene() -> Scene {
         "github.com",
         grant_that_does_not_expire(EVERYDAY, "repo,read:org"),
         Method::Device,
+        "Ov23litEn94I5HXrpdsX",
     )
     .unwrap();
     Scene {
@@ -324,6 +325,7 @@ fn a_gitlab_account_has_no_second_token_and_its_one_serves_the_app_for_a_held_pu
         "gitlab.com",
         grant("canaryGITLABapi", "canaryGITLABrefresh", "api"),
         Method::Pkce,
+        "Ov23litEn94I5HXrpdsX",
     )
     .unwrap();
     assert_eq!(

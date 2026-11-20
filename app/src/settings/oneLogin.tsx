@@ -90,8 +90,8 @@ function UseApplication({
     onPinned(
       said.data.change === "client-id" && was !== null
         ? `${said.data.host} now uses a different application, so sign-ins made through ${was} cannot be renewed. Sign in again.`
-        : said.data.change === "same"
-          ? `${said.data.host} already used this application.`
+        : said.data.change === "owner" && was !== null
+          ? `${said.data.host} now expects ${owner.trim()} to own the application, not ${was}. ${said.data.consent}`
           : `${said.data.host} will use this application. ${said.data.consent}`,
     );
   };
@@ -273,7 +273,7 @@ export const applications: LiveSetting = {
                     >
                       <TableCell>{row.host}</TableCell>
                       <TableCell heading="Owner">
-                        {row.owner}
+                        {row.owner === "" ? "no owner named" : row.owner}
                         <span className="ui-setting-help ui-text-secondary"> {row.consent}</span>
                       </TableCell>
                       <TableCell heading="Client ID">
