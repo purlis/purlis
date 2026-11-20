@@ -416,6 +416,7 @@ const GITHUB: Table = &[
         "state", "stateReason", "url", "resourcePath", "closed", "closedAt", "createdAt",
         "updatedAt", "locked", "activeLockReason", "isPinned", "authorAssociation",
         "viewerDidAuthor", "viewerCanUpdate", "viewerSubscription", "includesCreatedEdit",
+        "viewerCanReact", "viewerCanSubscribe", "isReadByViewer",
         "lastEditedAt", "publishedAt",
     ], &[
         ("author", Obj("Actor")),
@@ -425,10 +426,21 @@ const GITHUB: Table = &[
         ("comments", Conn("IssueComment")),
         ("repository", Obj("RepoRef")),
         ("closedByPullRequestsReferences", Conn("PullRequest")),
+        ("issueType", Obj("IssueType")),
+        ("parent", Obj("IssueRef")),
+        ("subIssues", Conn("IssueRef")),
+        ("blockedBy", Conn("IssueRef")),
+        ("blocking", Conn("IssueRef")),
+        ("subIssuesSummary", Obj("SubIssuesSummary")),
         ("projectCards", Conn("ProjectCard")),
         ("projectItems", Conn("ProjectV2Item")),
         ("reactionGroups", Obj("ReactionGroup")),
     ]),
+    // An issue reached from another issue (its parent, a sub-issue, one it is blocked by): what
+    // names it, and nothing it holds.
+    ("IssueRef", &["id", "number", "title", "url", "state", "closed"], &[("repository", Obj("RepoRef"))]),
+    ("IssueType", &["id", "name", "description", "color"], &[]),
+    ("SubIssuesSummary", &["total", "completed", "percentCompleted"], &[]),
     ("Label", &["id", "name", "color", "description", "url", "isDefault", "createdAt", "updatedAt"], &[]),
     ("Milestone", &[
         "id", "number", "title", "description", "dueOn", "state", "url", "closed", "closedAt",
@@ -459,7 +471,7 @@ const GITHUB: Table = &[
         "id", "name", "contentType", "size", "downloadUrl", "downloadCount", "createdAt",
         "updatedAt", "url", "label",
     ], &[("uploadedBy", Obj("Actor"))]),
-    ("License", &["id", "name", "nameWithOwner", "key", "spdxId", "url", "pseudoLicense", "description"], &[]),
+    ("License", &["id", "name", "nameWithOwner", "nickname", "key", "spdxId", "url", "pseudoLicense", "description"], &[]),
     ("Language", &["id", "name", "color"], &[]),
     ("RepositoryTopic", &["id", "url"], &[("topic", Obj("Topic"))]),
     ("Topic", &["id", "name"], &[]),

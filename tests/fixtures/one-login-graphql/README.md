@@ -7,9 +7,11 @@ answered.
 
 Files: `gh.json` (view and list), `gh-detect-status-create.json` (feature detection through
 `__type`, `pr status` and filtered `pr list` through `search`, `pr create` and `issue create`),
-`glab.json`.
+`glab.json`, and `gh-captured.json`: **what `gh` itself sent** (the runner's own `gh`, on Linux and
+macOS, through the listener of `one-login-proxy-listener.yml`, with the `Observe` hook of the
+wiring), kept as it was sent.
 
-**Provenance.** These are transcribed from the query builders in `gh`'s source
+**Provenance.** The other files are transcribed from the query builders in `gh`'s source
 (`api/queries_pr.go`, `api/queries_issue.go`, `api/queries_repo.go`, `api/query_builder.go`, the
 release commands) as shipped in the 2.103 and 2.105 lines the spike pinned, and from the documents
 `glab api graphql` callers write. They were **not** captured off a wire, because the sandbox the

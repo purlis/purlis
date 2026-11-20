@@ -1,0 +1,91 @@
+[
+ {
+  "command": "captured: gh api graphql -f query='{ viewer { login } }'",
+  "variables": {},
+  "query": "{ viewer { login } }"
+ },
+ {
+  "command": "captured: gh pr list -R github.localhost/acme/app",
+  "variables": {
+   "limit": 30,
+   "owner": "acme",
+   "repo": "app",
+   "state": [
+    "OPEN"
+   ]
+  },
+  "query": "fragment pr on PullRequest{number,title,state,url,headRefName,headRepositoryOwner{id,login,...on User{name}},isCrossRepository,isDraft,createdAt}\n\t\tquery PullRequestList(\n\t\t\t$owner: String!,\n\t\t\t$repo: String!,\n\t\t\t$limit: Int!,\n\t\t\t$endCursor: String,\n\t\t\t$baseBranch: String,\n\t\t\t$headBranch: String,\n\t\t\t$state: [PullRequestState!] = OPEN\n\t\t) {\n\t\t\trepository(owner: $owner, name: $repo) {\n\t\t\t\tpullRequests(\n\t\t\t\t\tstates: $state,\n\t\t\t\t\tbaseRefName: $baseBranch,\n\t\t\t\t\theadRefName: $headBranch,\n\t\t\t\t\tfirst: $limit,\n\t\t\t\t\tafter: $endCursor,\n\t\t\t\t\torderBy: {field: CREATED_AT, direction: DESC}\n\t\t\t\t) {\n\t\t\t\t\ttotalCount\n\t\t\t\t\tnodes {\n\t\t\t\t\t\t...pr\n\t\t\t\t\t}\n\t\t\t\t\tpageInfo {\n\t\t\t\t\t\thasNextPage\n\t\t\t\t\t\tendCursor\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t}"
+ },
+ {
+  "command": "captured: gh pr view 1 / gh pr checks 1 / gh pr status -R github.localhost/acme/app",
+  "variables": {
+   "owner": "acme",
+   "pr_number": 1,
+   "repo": "app"
+  },
+  "query": "\n\tquery PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) {\n\t\trepository(owner: $owner, name: $repo) {\n\t\t\tpullRequest(number: $pr_number) {url,number,title,state,body,author{login,...on User{id,name}},autoMergeRequest {authorEmail,commitBody,commitHeadline,mergeMethod,enabledAt,enabledBy{login,...on User{id,name}}},isDraft,maintainerCanModify,mergeable,additions,deletions,commits{totalCount},baseRefName,headRefName,headRepositoryOwner{id,login,...on User{name}},headRepository{id,name,nameWithOwner},isCrossRepository,reviewRequests(first: 100) {nodes {requestedReviewer {__typename,...on User{login,name},...on Bot{login},...on Team{organization{login}name,slug}}}},reviews(first: 100) {nodes {id,author{login},authorAssociation,submittedAt,body,state,commit{oid},reactionGroups{content,users{totalCount}}}pageInfo{hasNextPage,endCursor}totalCount},assignees(first:100){nodes{id,login,name,databaseId},totalCount},labels(first:100){nodes{id,name,description,color},totalCount},milestone{number,title,description,dueOn},comments(first: 100) {nodes {id,author{login,...on User{id,name}},authorAssociation,body,createdAt,includesCreatedEdit,isMinimized,minimizedReason,reactionGroups{content,users{totalCount}},url,viewerDidAuthor},pageInfo{hasNextPage,endCursor},totalCount},reactionGroups{content,users{totalCount}},createdAt,statusCheckRollup: commits(last: 1) {nodes {commit {statusCheckRollup {contexts(first:100) {nodes {__typename...on StatusContext {context,state,targetUrl,createdAt,description},...on CheckRun {name,checkSuite{workflowRun{workflow{name}}},status,conclusion,startedAt,completedAt,detailsUrl}},pageInfo{hasNextPage,endCursor}}}}}},id}\n\t\t}\n\t}"
+ },
+ {
+  "command": "captured: gh pr view 1 (the pull request's project items)",
+  "variables": {
+   "endCursor": null,
+   "name": "app",
+   "number": 1,
+   "owner": "acme"
+  },
+  "query": "query PullRequestProjectItems($endCursor:String$name:String!$number:Int!$owner:String!){repository(owner: $owner, name: $name){pullRequest(number: $number){projectItems(first: 100, after: $endCursor){totalCount,nodes{id,project{id,title},status:fieldValueByName(name: \"Status\"){... on ProjectV2ItemFieldSingleSelectValue{optionId,name}}},pageInfo{hasNextPage,endCursor}}}}}"
+ },
+ {
+  "command": "captured: gh pr view 1 / gh pr checks 1 / gh pr status -R github.localhost/acme/app",
+  "variables": {
+   "owner": "acme",
+   "pr_number": 1,
+   "repo": "app"
+  },
+  "query": "\n\tquery PullRequestByNumber($owner: String!, $repo: String!, $pr_number: Int!) {\n\t\trepository(owner: $owner, name: $repo) {\n\t\t\tpullRequest(number: $pr_number) {number,headRefName,id}\n\t\t}\n\t}"
+ },
+ {
+  "command": "captured: gh (feature detection before a pull request command)",
+  "variables": {},
+  "query": "query PullRequest_fields2{WorkflowRun: __type(name: \"WorkflowRun\"){fields(includeDeprecated: true){name}}}"
+ },
+ {
+  "command": "captured: gh (feature detection before a pull request command)",
+  "variables": {},
+  "query": "query PullRequest_fields{PullRequest: __type(name: \"PullRequest\"){fields(includeDeprecated: true){name}},StatusCheckRollupContextConnection: __type(name: \"StatusCheckRollupContextConnection\"){fields(includeDeprecated: true){name}}}"
+ },
+ {
+  "command": "captured: gh issue list -R github.localhost/acme/app",
+  "variables": {
+   "limit": 30,
+   "owner": "acme",
+   "repo": "app",
+   "states": [
+    "OPEN"
+   ]
+  },
+  "query": "fragment issue on Issue {number,title,url,state,updatedAt,labels(first:100){nodes{id,name,description,color},totalCount},stateReason}\n\tquery IssueList($owner: String!, $repo: String!, $limit: Int, $endCursor: String, $states: [IssueState!] = OPEN, $assignee: String, $author: String, $mention: String) {\n\t\trepository(owner: $owner, name: $repo) {\n\t\t\thasIssuesEnabled\n\t\t\tissues(first: $limit, after: $endCursor, orderBy: {field: CREATED_AT, direction: DESC}, states: $states, filterBy: {assignee: $assignee, createdBy: $author, mentioned: $mention}) {\n\t\t\t\ttotalCount\n\t\t\t\tnodes {\n\t\t\t\t\t...issue\n\t\t\t\t}\n\t\t\t\tpageInfo {\n\t\t\t\t\thasNextPage\n\t\t\t\t\tendCursor\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t}\n\t"
+ },
+ {
+  "command": "captured: gh issue view 1 -R github.localhost/acme/app",
+  "variables": {
+   "number": 1,
+   "owner": "acme",
+   "repo": "app"
+  },
+  "query": "\n\tquery IssueByNumber($owner: String!, $repo: String!, $number: Int!) {\n\t\trepository(owner: $owner, name: $repo) {\n\t\t\thasIssuesEnabled\n\t\t\tissue: issueOrPullRequest(number: $number) {\n\t\t\t\t__typename\n\t\t\t\t...on Issue{number,url,state,createdAt,title,body,author{login,...on User{id,name}},milestone{number,title,description,dueOn},assignees(first:100){nodes{id,login,name,databaseId},totalCount},labels(first:100){nodes{id,name,description,color},totalCount},reactionGroups{content,users{totalCount}},comments(last: 1) {nodes {author{login,...on User{id,name}},authorAssociation,body,createdAt,includesCreatedEdit,isMinimized,minimizedReason,reactionGroups{content,users{totalCount}}},totalCount},stateReason,issueType{id,name,description,color},parent{id,number,title,url,state,repository{nameWithOwner}},subIssues(first:100){nodes{id,number,title,url,state,repository{nameWithOwner}},totalCount},subIssuesSummary{total,completed,percentCompleted},blockedBy(first:50){nodes{id,number,title,url,state,repository{nameWithOwner}},totalCount},blocking(first:50){nodes{id,number,title,url,state,repository{nameWithOwner}},totalCount},id}\n\t\t\t\t...on PullRequest{number,url,state,createdAt,title,body,author{login,...on User{id,name}},milestone{number,title,description,dueOn},assignees(first:100){nodes{id,login,name,databaseId},totalCount},labels(first:100){nodes{id,name,description,color},totalCount},reactionGroups{content,users{totalCount}},comments(last: 1) {nodes {author{login,...on User{id,name}},authorAssociation,body,createdAt,includesCreatedEdit,isMinimized,minimizedReason,reactionGroups{content,users{totalCount}}},totalCount},id}\n\t\t\t}\n\t\t}\n\t}"
+ },
+ {
+  "command": "captured: gh release list (feature detection)",
+  "variables": {},
+  "query": "query Release_fields{Release: __type(name: \"Release\"){fields{name}}}"
+ },
+ {
+  "command": "captured: gh repo view github.localhost/acme/app",
+  "variables": {
+   "name": "app",
+   "owner": "acme"
+  },
+  "query": "query RepositoryInfo($owner: String!, $name: String!) {\n\t\trepository(owner: $owner, name: $name) {name,owner{id,login},description}\n\t}"
+ }
+]

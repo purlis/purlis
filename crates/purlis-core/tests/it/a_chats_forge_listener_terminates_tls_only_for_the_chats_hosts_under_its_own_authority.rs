@@ -370,3 +370,46 @@ fn an_lfs_batch_that_names_a_host_off_the_list_or_an_action_that_is_not_a_downlo
         assert!(!reply.text().contains("evil.example") && !reply.text().contains("storage-secret"));
     }
 }
+
+#[test]
+fn a_git_request_with_no_credential_is_challenged_so_git_asks_its_helper_and_a_wrong_one_is_refused()
+ {
+    purlis_core::unsteered!();
+    let w = World::new();
+    let ca = ChatCa::new(&w.proxy.terminable_hosts(&w.chat)).unwrap();
+    let target =
+        "GET /acme/app.git/info/refs?service=git-upload-pack HTTP/1.1\r\nHost: github.com\r\n";
+    // `git` sends its first request with none, and only a 401 makes it ask for one.
+    let none = tls(
+        &w,
+        &ca,
+        "github.com",
+        443,
+        "github.com",
+        format!("{target}\r\n").as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(none.status, 401, "{}", none.text());
+    assert!(
+        none.header("www-authenticate")
+            .is_some_and(|v| v.starts_with("Basic ")),
+        "{none:?}"
+    );
+    // A credential that is not this chat's is not a challenge: it is refused.
+    let wrong = format!(
+        "{target}Authorization: {}\r\n\r\n",
+        basic("x-access-token", "not-the-sentinel")
+    );
+    let wrong = tls(&w, &ca, "github.com", 443, "github.com", wrong.as_bytes()).unwrap();
+    assert_eq!(wrong.status, 403, "{}", wrong.text());
+    assert!(w.fake.requests().is_empty());
+    // And with the helper's answer the request goes through.
+    w.fake
+        .answer(Answer::ok("001e# service=git-upload-pack\n0000"));
+    let right = format!(
+        "{target}Authorization: {}\r\n\r\n",
+        basic("x-access-token", w.sentinel.expose())
+    );
+    let right = tls(&w, &ca, "github.com", 443, "github.com", right.as_bytes()).unwrap();
+    assert_eq!(right.status, 200);
+}

@@ -47,7 +47,9 @@ fn every_document_gh_sends_for_view_and_list_is_answered() {
     let s = scene();
     let mut documents = fixtures("gh.json");
     documents.extend(fixtures("gh-detect-status-create.json"));
-    assert!(documents.len() >= 20, "the fixtures are the evidence");
+    // What `gh` itself sent on the CI runners of the listener's workflow, Linux and macOS.
+    documents.extend(fixtures("gh-captured.json"));
+    assert!(documents.len() >= 30, "the fixtures are the evidence");
     for doc in documents {
         let body = graphql(doc["query"].as_str().unwrap(), doc["variables"].clone());
         let out = s.send("POST", "api.github.com", "/graphql", &body);

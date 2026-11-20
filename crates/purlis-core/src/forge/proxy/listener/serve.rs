@@ -177,6 +177,23 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
 }
 
 fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
+    // A request with no credential at all is **challenged**, not refused outright: `git` sends its
+    // first request with none and asks its credential helper (which answers the sentinel) only when
+    // it is told to by a `401`. A wrong credential, or any other refusal, stays `403`.
+    if refusal == Refusal::NoSentinel {
+        let body = message("purlis needs this chat's credential for this request: NoSentinel");
+        let headers = vec![
+            ("Content-Type".to_string(), "application/json".to_string()),
+            ("Content-Length".to_string(), body.len().to_string()),
+            (
+                "WWW-Authenticate".to_string(),
+                "Basic realm=\"purlis\", charset=\"UTF-8\"".to_string(),
+            ),
+        ];
+        write_head(out, 401, &headers)?;
+        out.write_all(body.as_bytes())?;
+        return out.flush();
+    }
     write_answer(
         out,
         403,
