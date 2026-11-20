@@ -246,11 +246,12 @@ amendment list below, never edited in place):
   paths are read (D8.3)**, which is held up to a size limit (Open item 5).
 - **`egress.rs`'s refusal of every `Transfer-Encoding` head** (a request smuggling guard in the
   built proxy): **the forge route accepts `Transfer-Encoding: chunked` on a request body**, because
-  `git push` over HTTP sends a pack of unknown length that way. This is **new code in `egress.rs`**:
+  `git push` over HTTP sends a pack of unknown length that way, and so can the anonymous route's
+  upload-pack `POST` (D3i), which gets the same de-chunking. This is **new code in `egress.rs`**:
   the route de-chunks the body itself (it is read for D3f and D8.3 anyway), forwards a
   `Content-Length` request upstream, and still **refuses `Content-Length` together with
   `Transfer-Encoding`, any `Transfer-Encoding` value but a single `chunked`, and a chunked body on
-  every route but the forge's** (D3g). The tunnel and every non-forge request keep the built
+  every route but the forge's and the anonymous read route's** (D3g, D3i). The tunnel and every non-forge request keep the built
   refusal.
 - **2026-10-10-02 item 4** (*no other local port*; `allowLocalBinding` false): unchanged, and
   D3h.2 says what a managed setting that turns it on costs.
@@ -338,8 +339,8 @@ chat's own port** (D3b).
   stays empty as #7241 makes it, so `git credential fill` yields nothing. **Reconciling the
   rewrite with "no path segment names an upstream" (D3b):** the first segment `<host>` is a
   **lookup key into the chat's recorded hosts**, and the upstream string is the proxy's own;
-  `/anon/<host>/` is a lookup into a **closed list** (the forge hosts the app knows and the
-  storage hosts of D3i), never an open host.
+  `/anon/<host>/` is a lookup into a **closed list** (the forge hosts the app knows), never an
+  open host; storage hosts are not on it (D3i).
 - **glab.** `GITLAB_HOST` is the real host name, `GITLAB_API_HOST` is the loopback address and
   port, `GLAB_API_PROTOCOL=http`, `GITLAB_TOKEN` is the chat's secret (a value glab will not run
   without; it is sent as `PRIVATE-TOKEN` or a bearer and the proxy accepts it there, D3b).
@@ -527,7 +528,8 @@ fragments are expanded**, and then:
   credential-carrying header of the chat.
 - **`Content-Length` and `Transfer-Encoding` together are rejected** (request smuggling), as is
   any duplicate of either that disagrees. **A lone `Transfer-Encoding: chunked` request body is
-  accepted on the forge route only** (D3a: a push needs it); any other value is refused.
+  accepted on the forge route and the anonymous route's upload-pack `POST` only** (D3a: a push
+  needs it, and so can a clone's request); any other value is refused.
 - **Credentials in a URL are refused on every route and every forge host:** the query parameters
   `private_token`, `access_token`, `job_token` and `token`, and **URL userinfo**
   (`https://user:secret@host/`). A chat does not have a token, so one in a URL is one it found or
@@ -628,8 +630,10 @@ and dial the forge directly, which is **spike E's** to measure (Open item 1), wi
   addressable through `/anon/<host>/` at all. The proxy dials one **only for the exact URL it
   received in a forge's redirect `Location` or in an LFS batch `href`** on this request chain, once,
   with the credential dropped, and holds the URL in memory for that fetch. A chat that names a
-  storage URL itself gets a refusal, so a signed URL of another repo cannot be replayed through
-  the route.
+  storage URL itself gets a refusal. For GitLab's buckets that keeps a signed URL of another repo
+  from being replayed through the route; **for GitHub it is a narrower guard**, because `CONNECT`
+  to `objects.githubusercontent.com` is open (last bullet) and a chat can fetch such a URL
+  directly. There the rule keeps the route's audit and its closed list, not secrecy.
 - **`GET` and `HEAD` only, with two `POST`s that read.** The upload-pack `POST`
   (`git-upload-pack`) **and the LFS batch `POST`** (`/info/lfs/objects/batch`, whose body must say
   `operation: download`; **an `upload` operation, `locks` and every other `POST` are refused**).
@@ -639,7 +643,9 @@ and dial the forge directly, which is **spike E's** to measure (Open item 1), wi
 - **Tools with their own HTTPS client: the `CONNECT` ruling.** The egress proxy still denies
   `CONNECT` to the forge hosts that take a credential or serve the API, but **allows `CONNECT` to
   download-only hosts that never take a credential**: **`codeload.github.com`,
-  `objects.githubusercontent.com`** and GitLab's archive and package download paths **where they
+  `objects.githubusercontent.com`** (and **`release-assets.githubusercontent.com`**, to which
+  GitHub may redirect release assets: **added to this list pending spike E's probe** of where a
+  release download lands) and GitLab's archive and package download paths **where they
   are on separate hosts** (a GitLab archive on the instance's own host cannot be separated and
   stays on the route above). That serves `curl` and `npm`, `pip`, `go` tarball fetches and an
   installer's release binary **when the URL names such a host**. **`CONNECT` to `github.com`,
@@ -1226,8 +1232,9 @@ a restart drops it and the chat re-asks); the per-chat secret (memory only, not 
 | **One login** | Once per forge host (and account, D2) | **SAML** reauthorization, **revocation**, **GitHub's one-year-unused revocation**, and a GitLab refresh token unused past its limit (D2) |
 | **Auto renewal, no interaction** | D2: **GitHub's OAuth-app token does not expire (from documentation, a gating probe), so there is nothing to renew there**; the app refreshes GitLab's | a token connection (none); revocation; the same SAML case; the one-year rule |
 | **Runners and CI** | D9: desktop forwarding over the runner's authenticated connection, else a token connection; repos recorded from the token's own config; chat environment scrubbed and token types checked by prefix | a runner with no desktop cannot approve a held act (D8.4); **`CI_JOB_TOKEN` reaches only a short list of GitLab endpoints** (D9.4), so most `glab` writes are refused by GitLab, not by purlis; `GITHUB_TOKEN`'s limits (D9.4) apply |
-| **A chat can merge, tag, release, change CI, fork** (**conditional on spike E for `gh pr create`**: if `GH_HOST=github.localhost` cannot match a `github.com` remote, the fallback is `GH_REPO` and `--repo` set by the wrapper (D3c), which gives up `gh`'s inference of the repo from the remotes; if that fails too, `gh` is the named gap on GitHub and the pull request is opened by the app on the person's press, as ADR 0078's V9 amendment says) | D8: asks that show exactly what will happen, approved in Asks, performed by the app with the SHA bound; a CI-file push on GitHub uses a **second, `workflow`-scoped token** the chat's routes never see | none held dead. **Not closed:** what an existing workflow runs on the chat's branch push, merge-bot labels and comments the proxy was not told, deploy-trigger branch names it was not told, the keychain `gh` token at the watch floor (use stopped, exfiltration not), and a chat's own words asking the person to open a sign-in page (D3h.6 to D3h.9, D3j). **A CI-file push on GitHub is not offered if GitHub folds the second token's scope into the first** (D1.1) |
-| **Dependencies still fetch** | D3i: an anonymous read-only route for unrecorded public repos, release and asset downloads and public LFS, with no credential ever injected; recorded repos keep the credentialed route | a private unrecorded repo is refused, as it would be to anyone |
+| **The chat does `gh`/`glab` and native git fetch, pull and push, pull and merge requests, comments and CI reads, nothing typed** | D3c: `gh` and `glab` pointed at the proxy, git through the environment's rewrite, no helper and nothing to type. **Conditional on spike E for `gh pr create`**: if `GH_HOST=github.localhost` cannot match a `github.com` remote, the fallback is `GH_REPO` and `--repo` set by the wrapper (D3c), which gives up `gh`'s inference of the repo from the remotes; if that fails too, `gh` is the named gap on GitHub and the pull request is opened by the app on the person's press, as ADR 0078's V9 amendment says.** | what the fallback gives up: `gh`'s inference of the repo from the remotes (`GH_REPO`), or, if that fails too, `gh pr create` on GitHub |
+| **A chat can merge, tag, release, change CI, fork** | D8: asks that show exactly what will happen, approved in Asks, performed by the app with the SHA bound; a CI-file push on GitHub uses a **second, `workflow`-scoped token** the chat's routes never see | none held dead. **Not closed:** what an existing workflow runs on the chat's branch push, merge-bot labels and comments the proxy was not told, deploy-trigger branch names it was not told, the keychain `gh` token at the watch floor (use stopped, exfiltration not), and a chat's own words asking the person to open a sign-in page (D3h.6 to D3h.9, D3j). **A CI-file push on GitHub is not offered if GitHub folds the second token's scope into the first** (D1.1) |
+| **Dependencies still fetch** | D3i: an anonymous read-only route for unrecorded public repos, release and asset downloads and public LFS, with no credential ever injected; recorded repos keep the credentialed route | a private unrecorded repo is refused, as it would be to anyone. **Two exceptions (D3i):** `curl https://github.com/<o>/<r>/releases/download/…` is refused with a Notice (use `gh release download`), and **`cargo`'s built-in git client** may dial the forge directly, pending spike E (`net.git-fetch-with-cli = true` is the fallback) |
 
 ## Consequences
 
