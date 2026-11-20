@@ -49,17 +49,14 @@ fn renewal(machine: &Machine, forge: &Arc<StandIn>) -> Renewal {
     Renewal::through(refresher(machine, forge), machine.home.path())
 }
 
+/// The press: pins the application the account was signed in through on its host.
 fn register(machine: &Machine) {
-    let client_id = match machine.account.kind {
-        Kind::GitHub => "Iv1.ghes-client",
-        Kind::GitLab => "gl-user-owned-app",
-    };
-    registered::register(
+    registered::pin(
         &scope(),
         machine.home.path(),
         machine.account.kind,
         &machine.account.host,
-        client_id,
+        machine.account.client_id.as_deref().unwrap(),
     )
     .unwrap();
 }
@@ -127,7 +124,7 @@ fn ghes_renews_with_the_client_id_registered_for_that_host_and_at_that_host() {
 }
 
 #[test]
-fn a_self_hosted_gitlab_renews_through_the_users_own_oauth_application() {
+fn a_self_hosted_gitlab_renews_through_the_application_its_account_signed_in_through() {
     let machine = machine(Kind::GitLab, "git.example.com", accounts::Method::Pkce);
     register(&machine);
     let forge = Arc::new(StandIn::answering(&[Ok((
@@ -145,7 +142,7 @@ fn a_self_hosted_gitlab_renews_through_the_users_own_oauth_application() {
     assert!(
         posted[0]
             .1
-            .contains(&("client_id".to_string(), "gl-user-owned-app".to_string()))
+            .contains(&("client_id".to_string(), "gl-group-app".to_string()))
     );
 }
 
@@ -316,6 +313,63 @@ fn connection(vars: &[(&str, &str)]) -> TokenConnection {
 
 const NOW: u64 = 1_800_000_000;
 
+// Tokens of the shape each forge issues: the exact prefix, then the characters and the length.
+// Each prefix is split in the source, so a scan of the source for a token finds none.
+const GHS_A: &str = concat!("gh", "s_", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+const GHS_B: &str = concat!("gh", "s_", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB");
+const GHS_JOB: &str = concat!("gh", "s_", "JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ");
+const GHU: &str = concat!("gh", "u_", "UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU");
+const GHO: &str = concat!("gh", "o_", "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO");
+const GHP: &str = concat!("gh", "p_", "PPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPP");
+const GHR: &str = concat!("gh", "r_", "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR");
+const PAT_FINE: &str = concat!(
+    "github",
+    "_pat_",
+    "fine____________________________________"
+);
+const PAT_NAMED: &str = concat!(
+    "github",
+    "_pat_",
+    "named___________________________________"
+);
+const PAT_CLI: &str = concat!(
+    "github",
+    "_pat_",
+    "cli_____________________________________"
+);
+const PAT_GH: &str = concat!(
+    "github",
+    "_pat_",
+    "gh______________________________________"
+);
+const PAT_GITHUB: &str = concat!(
+    "github",
+    "_pat_",
+    "github__________________________________"
+);
+const PAT_ENT: &str = concat!(
+    "github",
+    "_pat_",
+    "ent_____________________________________"
+);
+const PAT_FILE: &str = concat!(
+    "github",
+    "_pat_",
+    "file____________________________________"
+);
+const PAT_SECRET: &str = concat!(
+    "github",
+    "_pat_",
+    "do_not_print_me_________________________"
+);
+const GLPAT_A: &str = concat!("gl", "pat-", "AAAAAAAAAAAAAAAAAAAA");
+const GLPAT_X: &str = concat!("gl", "pat-", "XXXXXXXXXXXXXXXXXXXX");
+const GLPAT_C: &str = concat!("gl", "pat-", "CCCCCCCCCCCCCCCCCCCC");
+const GLCBT: &str = concat!("gl", "cbt-", "0123456789abcdef");
+const GITHUB_COM: &str = "6769746875622e636f6d";
+const GITLAB_COM: &str = "6769746c61622e636f6d";
+const GIT_EXAMPLE_COM: &str = "6769742e6578616d706c652e636f6d";
+
 fn got(vars: &[(&str, &str)], host: &str) -> Credential {
     connection(vars)
         .credential_at(host, NOW)
@@ -330,7 +384,7 @@ fn refused(vars: &[(&str, &str)], host: &str) -> CredentialError {
 
 #[test]
 fn actions_github_token_is_an_installation_token_per_job_and_never_warned_about() {
-    let c = got(&[("GITHUB_TOKEN", "ghs_installation")], "github.com");
+    let c = got(&[("GITHUB_TOKEN", GHS_A)], "github.com");
     assert_eq!(
         (c.kind(), c.token_kind()),
         (Kind::GitHub, TokenKind::GitHubInstallation)
@@ -343,54 +397,153 @@ fn actions_github_token_is_an_installation_token_per_job_and_never_warned_about(
 
 #[test]
 fn each_github_token_kind_is_read_from_its_shape() {
+    // From the CLI's own variable: an installation token and a fine-grained one.
     for (token, kind, lifetime) in [
-        ("ghp_classic", TokenKind::GitHubClassic, Lifetime::LongLived),
-        (
-            "github_pat_fine",
-            TokenKind::GitHubFineGrained,
-            Lifetime::LongLived,
-        ),
-        (
-            "ghs_install",
-            TokenKind::GitHubInstallation,
-            Lifetime::PerJob,
-        ),
-        ("ghu_user", TokenKind::GitHubUser, Lifetime::PerJob),
-        ("gho_oauth", TokenKind::GitHubUser, Lifetime::PerJob),
+        (GHS_A, TokenKind::GitHubInstallation, Lifetime::PerJob),
+        (PAT_FINE, TokenKind::GitHubFineGrained, Lifetime::LongLived),
     ] {
         let c = got(&[("GH_TOKEN", token)], "github.com");
         assert_eq!(c.token_kind(), kind, "{token}");
         assert_eq!(c.token_kind().lifetime(), lifetime, "{token}");
     }
+    // A user-to-server token only from the variable purlis names for the host.
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    for token in [GHU, GHO] {
+        let c = got(&[(named.as_str(), token)], "github.com");
+        assert_eq!(c.token_kind(), TokenKind::GitHubUser, "{token}");
+        assert_eq!(c.token_kind().lifetime(), Lifetime::PerJob, "{token}");
+        let why = refused(&[("GH_TOKEN", token)], "github.com").to_string();
+        assert!(why.contains("only from the variable it names"), "{why}");
+        assert!(!why.contains(token), "{why}");
+    }
 }
 
 #[test]
-fn an_ambient_variable_takes_only_a_token_of_a_known_shape_and_an_opaque_one_must_be_named() {
-    // A CLI's own variable (what a CI job or a shell exports) is not an opt-in: a token of no
-    // known prefix is refused. Naming it for the host is the opt-in.
-    for vars in [
-        vec![("GH_TOKEN", "0123456789abcdef")],
-        vec![("GITLAB_TOKEN", "0123456789abcdef")],
+fn a_classic_token_and_a_refresh_token_are_refused_from_any_variable_and_the_message_names_fine_grained()
+ {
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    for (var, token) in [
+        ("GH_TOKEN", GHP),
+        ("GITHUB_TOKEN", GHP),
+        (named.as_str(), GHP),
+        (named.as_str(), GHR),
+        ("GH_TOKEN", GHR),
     ] {
-        let host = if vars[0].0 == "GH_TOKEN" {
-            "github.com"
-        } else {
-            "gitlab.com"
-        };
+        let why = refused(&[(var, token)], "github.com");
+        assert!(matches!(why, CredentialError::Unusable { .. }), "{var}");
+        let said = why.to_string();
+        assert!(!said.contains(token), "{said}");
+        assert!(
+            said.contains("fine-grained") || said.contains("refresh token"),
+            "{said}"
+        );
+    }
+    // And a classic token on a GHES host the same.
+    let why = refused(
+        &[("GH_ENTERPRISE_TOKEN", GHP), ("GH_HOST", "ghe.example.com")],
+        "ghe.example.com",
+    );
+    assert!(why.to_string().contains("fine-grained"), "{why}");
+}
+
+#[test]
+fn a_token_is_taken_by_its_exact_prefix_and_shape_not_by_how_it_begins() {
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    let too_short = "ghs_abc".to_string();
+    let wrong_characters = format!("ghs_{}", "-".repeat(36));
+    let too_long = format!("ghs_{}", "a".repeat(300));
+    let pat_short = "github_pat_short".to_string();
+    for bad in [too_short, wrong_characters, too_long, pat_short] {
+        let why = refused(&[(named.as_str(), bad.as_str())], "github.com");
+        assert!(matches!(why, CredentialError::Unusable { .. }), "{bad}");
+        assert!(why.to_string().contains("is not the shape of one"), "{why}");
+        assert!(!why.to_string().contains(&bad), "{why}");
+    }
+    // A prefix that merely looks alike is no known prefix at all.
+    for other in ["GHS_aaaa", "ghsx_aaaa", "xghs_aaaa", "gh_s_aaaa"] {
+        let why = refused(&[("GH_TOKEN", other)], "github.com");
+        assert!(why.to_string().contains("no shape purlis knows"), "{why}");
+    }
+    // The GitLab prefixes the same.
+    let gitlab = [
+        ("GITLAB_HOST", "gitlab.com"),
+        ("GITLAB_TOKEN", "glpat-short"),
+    ];
+    assert!(
+        refused(&gitlab, "gitlab.com")
+            .to_string()
+            .contains("is not the shape of one")
+    );
+}
+
+#[test]
+fn an_ambient_variable_takes_only_a_token_of_a_known_shape_and_an_opaque_one_needs_the_operators_opt_in()
+ {
+    // A CLI's own variable (what a CI job or a shell exports) is not an opt-in: a token of no
+    // known prefix is refused.
+    for (vars, host) in [
+        (vec![("GH_TOKEN", "0123456789abcdef")], "github.com"),
+        (
+            vec![
+                ("GITLAB_HOST", "gitlab.com"),
+                ("GITLAB_TOKEN", "0123456789abcdef"),
+            ],
+            "gitlab.com",
+        ),
+    ] {
         assert!(
             matches!(refused(&vars, host), CredentialError::Unusable { .. }),
             "{vars:?}"
         );
     }
-    let named = [("PURLIS_FORGE_TOKEN_GITHUB_COM", "0123456789abcdef")];
-    let c = got(&named, "github.com");
+    // Naming it for the host is not enough on its own: an unknown type is the operator's per-type
+    // opt-in (ADR 0128 D9).
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    let accept = format!("PURLIS_FORGE_ACCEPT__{GITHUB_COM}");
+    let why = refused(&[(named.as_str(), "0123456789abcdef")], "github.com").to_string();
+    assert!(
+        why.contains(&accept) && why.contains("unrecognised"),
+        "{why}"
+    );
+    let c = got(
+        &[
+            (named.as_str(), "0123456789abcdef"),
+            (accept.as_str(), "unrecognised"),
+        ],
+        "github.com",
+    );
     assert_eq!(c.token_kind(), TokenKind::Unrecognised);
     assert_eq!(c.token_kind().lifetime(), Lifetime::LongLived);
+    // The opt-in is for that type and that host only.
+    let other = format!("PURLIS_FORGE_ACCEPT__{GITLAB_COM}");
+    assert!(matches!(
+        refused(
+            &[
+                (named.as_str(), "0123456789abcdef"),
+                (other.as_str(), "unrecognised")
+            ],
+            "github.com"
+        ),
+        CredentialError::Unusable { .. }
+    ));
+    assert!(matches!(
+        refused(
+            &[
+                (named.as_str(), "0123456789abcdef"),
+                (accept.as_str(), "ghu")
+            ],
+            "github.com"
+        ),
+        CredentialError::Unusable { .. }
+    ));
 }
 
 #[test]
 fn each_gitlab_token_kind_is_read_from_its_shape_and_its_variable() {
-    let c = got(&[("GITLAB_TOKEN", "glpat-abc")], "gitlab.com");
+    let c = got(
+        &[("GITLAB_TOKEN", GLPAT_A), ("GITLAB_HOST", "gitlab.com")],
+        "gitlab.com",
+    );
     assert_eq!(
         (c.kind(), c.token_kind()),
         (Kind::GitLab, TokenKind::GitLabAccess)
@@ -409,10 +562,8 @@ fn each_gitlab_token_kind_is_read_from_its_shape_and_its_variable() {
     );
     assert_eq!(c.expiry(NOW), Expiry::PerJob);
     // And a `glcbt-` token is a job's by its prefix.
-    let c = got(
-        &[("PURLIS_FORGE_TOKEN_GIT_EXAMPLE_COM", "glcbt-job")],
-        "git.example.com",
-    );
+    let named = format!("PURLIS_FORGE_TOKEN__{GIT_EXAMPLE_COM}");
+    let c = got(&[(named.as_str(), GLCBT)], "git.example.com");
     assert_eq!(c.token_kind(), TokenKind::GitLabJob);
 }
 
@@ -428,7 +579,7 @@ fn a_job_token_is_offered_only_to_the_host_ci_names() {
 
 #[test]
 fn a_token_is_offered_only_to_the_host_its_variable_names() {
-    let github = [("GITHUB_TOKEN", "ghs_a"), ("GH_TOKEN", "ghp_b")];
+    let github = [("GITHUB_TOKEN", GHS_A), ("GH_TOKEN", GHS_B)];
     for host in [
         "ghe.example.com",
         "gitlab.com",
@@ -439,83 +590,234 @@ fn a_token_is_offered_only_to_the_host_its_variable_names() {
     }
     // GHES: the enterprise variable, on the host `GH_HOST` names, and Actions' on its own server.
     let ghes = [
-        ("GH_ENTERPRISE_TOKEN", "ghp_ent"),
+        ("GH_ENTERPRISE_TOKEN", PAT_ENT),
         ("GH_HOST", "ghe.example.com"),
     ];
-    assert_eq!(got(&ghes, "ghe.example.com").expose(), "ghp_ent");
+    assert_eq!(got(&ghes, "ghe.example.com").expose(), PAT_ENT);
     assert!(refused(&ghes, "github.com").is_none_given());
     assert!(refused(&ghes, "other.example.com").is_none_given());
     let actions = [
-        ("GITHUB_TOKEN", "ghs_a"),
+        ("GITHUB_TOKEN", GHS_A),
         ("GITHUB_SERVER_URL", "https://ghe.example.com"),
     ];
-    assert_eq!(got(&actions, "ghe.example.com").expose(), "ghs_a");
+    assert_eq!(got(&actions, "ghe.example.com").expose(), GHS_A);
     assert!(refused(&actions, "other.example.com").is_none_given());
     // A self-hosted GitLab's `GITLAB_TOKEN` is its `GITLAB_HOST`'s, never gitlab.com's.
     let gitlab = [
-        ("GITLAB_TOKEN", "glpat-x"),
+        ("GITLAB_TOKEN", GLPAT_X),
         ("GITLAB_HOST", "https://git.example.com/"),
     ];
-    assert_eq!(got(&gitlab, "git.example.com").expose(), "glpat-x");
+    assert_eq!(got(&gitlab, "git.example.com").expose(), GLPAT_X);
     assert!(refused(&gitlab, "gitlab.com").is_none_given());
+}
+
+#[test]
+fn github_token_on_a_ghes_job_is_never_offered_to_github_com() {
+    // Actions on GHES: GITHUB_TOKEN (and a GH_TOKEN set from it) is the GHES server's.
+    for server in [
+        "https://ghe.example.com",
+        "ghe.example.com",
+        "https://GHE.Example.com/",
+    ] {
+        let job = [
+            ("GITHUB_TOKEN", GHS_A),
+            ("GH_TOKEN", GHS_B),
+            ("GITHUB_SERVER_URL", server),
+        ];
+        assert!(refused(&job, "github.com").is_none_given(), "{server}");
+        assert_eq!(got(&job, "ghe.example.com").expose(), GHS_A, "{server}");
+    }
+    // A server URL that is not a host names no host, and the doubt closes the door.
+    for server in ["https://", "not a url", "https://ghe.example.com:port/x y"] {
+        let job = [("GITHUB_TOKEN", GHS_A), ("GITHUB_SERVER_URL", server)];
+        assert!(refused(&job, "github.com").is_none_given(), "{server:?}");
+        assert!(
+            refused(&job, "ghe.example.com").is_none_given(),
+            "{server:?}"
+        );
+    }
+    // github.com's own job, or no server named: github.com.
+    for job in [
+        vec![
+            ("GITHUB_TOKEN", GHS_A),
+            ("GITHUB_SERVER_URL", "https://github.com"),
+        ],
+        vec![("GITHUB_TOKEN", GHS_A)],
+        vec![("GITHUB_TOKEN", GHS_A), ("GITHUB_SERVER_URL", "  ")],
+    ] {
+        assert_eq!(got(&job, "github.com").expose(), GHS_A, "{job:?}");
+    }
+    // The variable purlis names for github.com is the operator's own choice, whatever the job says.
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    let job = [
+        (named.as_str(), PAT_NAMED),
+        ("GITHUB_TOKEN", GHS_A),
+        ("GITHUB_SERVER_URL", "https://ghe.example.com"),
+    ];
+    assert_eq!(got(&job, "github.com").expose(), PAT_NAMED);
+}
+
+#[test]
+fn gitlab_tokens_are_offered_only_to_the_host_gitlab_names_and_to_none_when_it_names_none() {
+    // No host named: neither is offered, gitlab.com included.
+    let bare = [("GITLAB_TOKEN", GLPAT_A), ("CI_JOB_TOKEN", "abcdef012345")];
+    for host in ["gitlab.com", "git.example.com"] {
+        assert!(refused(&bare, host).is_none_given(), "{host}");
+    }
+    // GitLab.com's own CI names it.
+    let on_gitlab_com = [
+        ("GITLAB_TOKEN", GLPAT_A),
+        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_SERVER_HOST", "gitlab.com"),
+    ];
+    assert_eq!(got(&on_gitlab_com, "gitlab.com").expose(), GLPAT_A);
+    // A self-managed job's token, and its GITLAB_TOKEN, are that server's and nobody else's.
+    let on_self_managed = [
+        ("GITLAB_TOKEN", GLPAT_A),
+        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_SERVER_HOST", "git.example.com"),
+    ];
+    assert!(refused(&on_self_managed, "gitlab.com").is_none_given());
+    assert_eq!(got(&on_self_managed, "git.example.com").expose(), GLPAT_A);
+    let job_only = [
+        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_SERVER_HOST", "git.example.com"),
+    ];
+    assert!(refused(&job_only, "gitlab.com").is_none_given());
+    // GITLAB_HOST wins over CI_SERVER_HOST for GITLAB_TOKEN, and does not move the job's token.
+    let both = [
+        ("GITLAB_TOKEN", GLPAT_A),
+        ("GITLAB_HOST", "other.example.com"),
+        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_SERVER_HOST", "git.example.com"),
+    ];
+    assert_eq!(got(&both, "other.example.com").expose(), GLPAT_A);
+    assert_eq!(got(&both, "git.example.com").expose(), "abcdef012345");
+    // A host variable that is not a host names none.
+    let bad = [("GITLAB_TOKEN", GLPAT_A), ("GITLAB_HOST", "not a host")];
+    assert!(refused(&bad, "gitlab.com").is_none_given());
 }
 
 #[test]
 fn the_named_variable_for_a_host_wins_over_the_forge_clis_own() {
     let both = [
-        ("PURLIS_FORGE_TOKEN_GITHUB_COM", "ghp_named"),
-        ("GH_TOKEN", "ghp_cli"),
+        ("PURLIS_FORGE_TOKEN__6769746875622e636f6d", PAT_NAMED),
+        ("GH_TOKEN", PAT_CLI),
     ];
     let c = got(&both, "github.com");
     assert_eq!(
         (c.expose(), c.from()),
-        ("ghp_named", "PURLIS_FORGE_TOKEN_GITHUB_COM")
+        (PAT_NAMED, "PURLIS_FORGE_TOKEN__6769746875622e636f6d")
     );
-    let gh_first = [("GH_TOKEN", "ghp_gh"), ("GITHUB_TOKEN", "ghp_github")];
-    assert_eq!(got(&gh_first, "github.com").expose(), "ghp_gh");
+    let gh_first = [("GH_TOKEN", PAT_GH), ("GITHUB_TOKEN", PAT_GITHUB)];
+    assert_eq!(got(&gh_first, "github.com").expose(), PAT_GH);
     // An explicit GITLAB_TOKEN is a choice; a job's own token is the fallback.
     let ci = [
-        ("GITLAB_TOKEN", "glpat-chosen"),
+        ("GITLAB_TOKEN", GLPAT_C),
         ("CI_JOB_TOKEN", "job"),
         ("CI_SERVER_HOST", "gitlab.com"),
     ];
-    assert_eq!(got(&ci, "gitlab.com").expose(), "glpat-chosen");
+    assert_eq!(got(&ci, "gitlab.com").expose(), GLPAT_C);
 }
 
 #[test]
 fn a_variable_that_is_set_and_unusable_is_an_error_and_the_next_one_is_not_tried() {
-    let vars = [
-        ("PURLIS_FORGE_TOKEN_GITHUB_COM", "has a space"),
-        ("GH_TOKEN", "ghp_fine"),
-    ];
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    let vars = [(named.as_str(), "has a space"), ("GH_TOKEN", PAT_FINE)];
     assert!(matches!(
         refused(&vars, "github.com"),
         CredentialError::Unusable { .. }
     ));
-    // An empty variable is not set.
-    let vars = [
-        ("PURLIS_FORGE_TOKEN_GITHUB_COM", "  "),
-        ("GH_TOKEN", "ghp_fine"),
-    ];
-    assert_eq!(got(&vars, "github.com").expose(), "ghp_fine");
+}
+
+#[test]
+fn a_named_variable_that_is_set_and_empty_is_an_error_never_a_fallback() {
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    let file = format!("PURLIS_FORGE_TOKEN_FILE__{GITHUB_COM}");
+    for (var, value) in [
+        (named.as_str(), ""),
+        (named.as_str(), "  "),
+        (named.as_str(), "\n"),
+        (file.as_str(), ""),
+        (file.as_str(), " "),
+    ] {
+        // The CLI's own variable is set and good, and is not what answers.
+        let vars = [
+            (var, value),
+            ("GH_TOKEN", PAT_FINE),
+            ("GITHUB_TOKEN", GHS_A),
+        ];
+        let why = refused(&vars, "github.com");
+        assert!(matches!(why, CredentialError::Unusable { .. }), "{var}");
+        assert!(
+            why.to_string().contains(&format!("{var} is set but empty")),
+            "{why}"
+        );
+    }
+    // An ambient variable exported empty is not a choice, and is skipped.
+    let vars = [("GH_TOKEN", ""), ("GITHUB_TOKEN", GHS_A)];
+    assert_eq!(got(&vars, "github.com").expose(), GHS_A);
+}
+
+#[test]
+fn the_token_and_its_file_both_set_is_a_refusal_naming_both() {
+    let named = format!("PURLIS_FORGE_TOKEN__{GITHUB_COM}");
+    let file = format!("PURLIS_FORGE_TOKEN_FILE__{GITHUB_COM}");
+    for (token, path) in [
+        (PAT_FINE, "/run/secrets/x"),
+        ("", "/run/secrets/x"),
+        (PAT_FINE, ""),
+    ] {
+        let vars = [(named.as_str(), token), (file.as_str(), path)];
+        let why = refused(&vars, "github.com");
+        assert!(
+            matches!(why, CredentialError::Unusable { .. }),
+            "{token:?} {path:?}"
+        );
+        let said = why.to_string();
+        assert!(said.contains(&named) && said.contains(&file), "{said}");
+        assert!(!said.contains(PAT_FINE), "{said}");
+    }
 }
 
 #[test]
 fn a_token_of_a_host_purlis_cannot_place_needs_its_forge_named() {
-    let vars = [("PURLIS_FORGE_TOKEN_GHE_EXAMPLE_COM", "0123456789abcdef")];
+    let vars = [(
+        "PURLIS_FORGE_TOKEN__6768652e6578616d706c652e636f6d",
+        "0123456789abcdef",
+    )];
     let why = refused(&vars, "ghe.example.com").to_string();
-    assert!(why.contains("PURLIS_FORGE_KIND_GHE_EXAMPLE_COM"), "{why}");
+    assert!(
+        why.contains("PURLIS_FORGE_KIND__6768652e6578616d706c652e636f6d"),
+        "{why}"
+    );
     let hinted = [
-        ("PURLIS_FORGE_TOKEN_GHE_EXAMPLE_COM", "0123456789abcdef"),
-        ("PURLIS_FORGE_KIND_GHE_EXAMPLE_COM", "github"),
+        (
+            "PURLIS_FORGE_TOKEN__6768652e6578616d706c652e636f6d",
+            "0123456789abcdef",
+        ),
+        (
+            "PURLIS_FORGE_KIND__6768652e6578616d706c652e636f6d",
+            "github",
+        ),
+        (
+            "PURLIS_FORGE_ACCEPT__6768652e6578616d706c652e636f6d",
+            "unrecognised",
+        ),
     ];
     assert_eq!(got(&hinted, "ghe.example.com").kind(), Kind::GitHub);
     // A prefix that says GitHub is enough.
-    let by_prefix = [("PURLIS_FORGE_TOKEN_GHE_EXAMPLE_COM", "ghp_enterprise")];
+    let by_prefix = [(
+        "PURLIS_FORGE_TOKEN__6768652e6578616d706c652e636f6d",
+        PAT_ENT,
+    )];
     assert_eq!(got(&by_prefix, "ghe.example.com").kind(), Kind::GitHub);
     let bad = [
-        ("PURLIS_FORGE_TOKEN_GHE_EXAMPLE_COM", "abc"),
-        ("PURLIS_FORGE_KIND_GHE_EXAMPLE_COM", "forgejo"),
+        ("PURLIS_FORGE_TOKEN__6768652e6578616d706c652e636f6d", "abc"),
+        (
+            "PURLIS_FORGE_KIND__6768652e6578616d706c652e636f6d",
+            "forgejo",
+        ),
     ];
     assert!(matches!(
         refused(&bad, "ghe.example.com"),
@@ -526,20 +828,29 @@ fn a_token_of_a_host_purlis_cannot_place_needs_its_forge_named() {
 #[test]
 fn a_token_that_disagrees_with_its_variable_its_hint_or_its_host_is_refused_not_guessed_at() {
     for (vars, host) in [
-        (vec![("GH_TOKEN", "glpat-gitlab")], "github.com"),
-        (vec![("GITLAB_TOKEN", "ghp_github")], "gitlab.com"),
+        (vec![("GH_TOKEN", GLPAT_X)], "github.com"),
         (
-            vec![("PURLIS_FORGE_TOKEN_GITHUB_COM", "glpat-gitlab")],
+            vec![("GITLAB_TOKEN", PAT_GITHUB), ("GITLAB_HOST", "gitlab.com")],
+            "gitlab.com",
+        ),
+        (
+            vec![("PURLIS_FORGE_TOKEN__6769746875622e636f6d", GLPAT_X)],
             "github.com",
         ),
         (
-            vec![("PURLIS_FORGE_TOKEN_GITLAB_COM", "ghp_github")],
+            vec![("PURLIS_FORGE_TOKEN__6769746c61622e636f6d", PAT_GITHUB)],
             "gitlab.com",
         ),
         (
             vec![
-                ("PURLIS_FORGE_TOKEN_GIT_EXAMPLE_COM", "glpat-x"),
-                ("PURLIS_FORGE_KIND_GIT_EXAMPLE_COM", "github"),
+                (
+                    "PURLIS_FORGE_TOKEN__6769742e6578616d706c652e636f6d",
+                    GLPAT_X,
+                ),
+                (
+                    "PURLIS_FORGE_KIND__6769742e6578616d706c652e636f6d",
+                    "github",
+                ),
             ],
             "git.example.com",
         ),
@@ -554,11 +865,10 @@ fn a_token_that_disagrees_with_its_variable_its_hint_or_its_host_is_refused_not_
 
 #[test]
 fn a_long_lived_token_with_a_known_expiry_is_warned_about_before_it_ends_and_refused_after() {
-    let var = "PURLIS_FORGE_TOKEN_GITHUB_COM_EXPIRES_AT";
+    let var = "PURLIS_FORGE_TOKEN_EXPIRES_AT__6769746875622e636f6d";
     let in_days = |days: u64| (NOW + days * 86_400).to_string();
     let with = |expires: &str| {
-        connection(&[("GH_TOKEN", "github_pat_fine"), (var, expires)])
-            .credential_at("github.com", NOW)
+        connection(&[("GH_TOKEN", PAT_FINE), (var, expires)]).credential_at("github.com", NOW)
     };
     assert_eq!(with(&in_days(60)).unwrap().expiry(NOW), Expiry::Fine);
     match with(&in_days(3)).unwrap().expiry(NOW) {
@@ -574,7 +884,7 @@ fn a_long_lived_token_with_a_known_expiry_is_warned_about_before_it_ends_and_ref
     // Ended: no credential, naming the variable that gave the token and not the token.
     let why = with(&(NOW - 1).to_string()).unwrap_err();
     assert!(matches!(why, CredentialError::Expired { .. }), "{why:?}");
-    assert!(why.to_string().contains("GH_TOKEN") && !why.to_string().contains("github_pat_fine"));
+    assert!(why.to_string().contains("GH_TOKEN") && !why.to_string().contains(PAT_FINE));
     // RFC 3339 is read too, and a time that is no time is an error.
     let at = jiff::Timestamp::from_second(i64::try_from(NOW).unwrap() + 86_400).unwrap();
     assert!(matches!(
@@ -589,9 +899,9 @@ fn a_long_lived_token_with_a_known_expiry_is_warned_about_before_it_ends_and_ref
 
 #[test]
 fn a_per_job_token_is_never_warned_about_whatever_its_expiry_says() {
-    let var = "PURLIS_FORGE_TOKEN_GITHUB_COM_EXPIRES_AT";
+    let var = "PURLIS_FORGE_TOKEN_EXPIRES_AT__6769746875622e636f6d";
     let c = got(
-        &[("GITHUB_TOKEN", "ghs_job"), (var, &(NOW + 60).to_string())],
+        &[("GITHUB_TOKEN", GHS_JOB), (var, &(NOW + 60).to_string())],
         "github.com",
     );
     assert_eq!(c.expiry(NOW), Expiry::PerJob);
@@ -621,18 +931,15 @@ fn something_that_is_not_a_token_is_refused_without_repeating_it() {
 fn a_token_in_a_mounted_file_is_read_trimmed_and_a_bad_file_says_so_without_its_content() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("token");
-    std::fs::write(&file, "ghp_from_a_file\n").unwrap();
-    let var = "PURLIS_FORGE_TOKEN_GITHUB_COM_FILE";
+    std::fs::write(&file, format!("{PAT_FILE}\n")).unwrap();
+    let var = "PURLIS_FORGE_TOKEN_FILE__6769746875622e636f6d";
     let path = file.to_str().unwrap();
     let c = got(&[(var, path)], "github.com");
     assert_eq!(
         (c.expose(), c.token_kind()),
-        ("ghp_from_a_file", TokenKind::GitHubClassic)
+        (PAT_FILE, TokenKind::GitHubFineGrained)
     );
     assert_eq!(c.from(), var);
-    // The token itself, if both are set, wins over the file.
-    let both = [("PURLIS_FORGE_TOKEN_GITHUB_COM", "ghp_direct"), (var, path)];
-    assert_eq!(got(&both, "github.com").expose(), "ghp_direct");
     // A path with nothing at it, a directory, and a file too large for a token.
     let missing = dir.path().join("none");
     let large = dir.path().join("large");
@@ -653,7 +960,7 @@ fn no_variable_gives_the_name_of_the_one_to_set() {
     assert!(why.is_none_given());
     assert!(
         why.to_string()
-            .contains("PURLIS_FORGE_TOKEN_GHE_EXAMPLE_COM"),
+            .contains("PURLIS_FORGE_TOKEN__6768652e6578616d706c652e636f6d"),
         "{why}"
     );
     assert!(matches!(
@@ -663,52 +970,74 @@ fn no_variable_gives_the_name_of_the_one_to_set() {
 }
 
 #[test]
-fn two_different_hosts_never_share_a_variable_name() {
+fn two_different_hosts_never_share_a_variable_name_in_any_family() {
     let hosts = [
         "github.com",
         "git-hub.com",
         "git.hub.com",
         "git--hub.com",
-        "git-.hub.com".trim_start_matches("git-.hub.com"), // not a host: skipped below
         "a.b",
         "a-b",
+        "a--b",
         "a-b.c",
         "a.b-c",
         "a.b:8443",
         "a:8443",
         "a.8443",
         "a-8443",
+        "x",
+        "x.file",
+        "x.expires.at",
+        "x.expires.at.file",
+        "x-file",
         "ghe.example.com",
         "ghe-example.com",
         "ghe-example-com",
         "ghe.example.com:443",
     ];
-    let mut seen: HashMap<String, &str> = HashMap::new();
+    let mut seen: HashMap<String, String> = HashMap::new();
     for host in hosts.into_iter().filter(|h| crate::forge::host_ok(h)) {
         let key = host_key(host);
-        assert!(
-            seen.insert(key.clone(), host)
-                .is_none_or(|before| before == host),
-            "{host} and {} are both {key}",
-            seen[&key]
-        );
+        for name in [
+            variable_for(host),
+            file_variable_for(host),
+            format!("PURLIS_FORGE_TOKEN_EXPIRES_AT__{key}"),
+            format!("PURLIS_FORGE_KIND__{key}"),
+            format!("PURLIS_FORGE_ACCEPT__{key}"),
+        ] {
+            let was = seen.insert(name.clone(), host.to_string());
+            assert!(
+                was.is_none(),
+                "{host} and {} are both {name}",
+                was.unwrap_or_default()
+            );
+        }
     }
-    assert_eq!(host_key("ghe.example.com"), "GHE_EXAMPLE_COM");
-    assert_eq!(host_key("git-example.com"), "GIT__EXAMPLE_COM");
-    assert_eq!(host_key("ghe.example.com:8443"), "GHE_EXAMPLE_COM___8443");
+    // One spelling per host: the lower-case hex of its bytes, ADR 0128 D9.2.
+    assert_eq!(host_key("github.com"), "6769746875622e636f6d");
+    assert_eq!(
+        variable_for("GitHub.com"),
+        "PURLIS_FORGE_TOKEN__6769746875622e636f6d"
+    );
+    assert_eq!(
+        file_variable_for("ghe.example.com:8443"),
+        format!(
+            "PURLIS_FORGE_TOKEN_FILE__{}",
+            host_key("ghe.example.com:8443")
+        )
+    );
+    // No spelling has an underscore, so a family's prefix is the whole of what is not the host.
+    assert!(hosts.iter().all(|h| !host_key(h).contains('_')));
 }
 
 #[test]
 fn a_credential_shows_no_token_in_debug_and_the_token_is_a_secret() {
-    let c = got(&[("GH_TOKEN", "ghp_do_not_print_me")], "github.com");
+    let c = got(&[("GH_TOKEN", PAT_SECRET)], "github.com");
     let shown = format!("{c:?}");
     assert!(!shown.contains("do_not_print"), "{shown}");
     assert!(shown.contains("github.com"));
-    assert_eq!(
-        secrecy::ExposeSecret::expose_secret(c.token()),
-        "ghp_do_not_print_me"
-    );
-    assert!(crate::applog::holds_a_value_kept_out("ghp_do_not_print_me"));
+    assert_eq!(secrecy::ExposeSecret::expose_secret(c.token()), PAT_SECRET);
+    assert!(crate::applog::holds_a_value_kept_out(PAT_SECRET));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -731,7 +1060,7 @@ impl Scripted {
                     host,
                     secrecy::SecretString::from(token.to_string()),
                     source,
-                    TokenKind::GitHubClassic,
+                    TokenKind::GitHubFineGrained,
                     "scripted".to_string(),
                 ))
             }),
@@ -875,7 +1204,7 @@ fn a_machine_with_no_keyring_and_no_token_says_how_to_give_one() {
     assert!(why.is_none_given());
     assert!(
         why.to_string()
-            .contains("PURLIS_FORGE_TOKEN_GHE_EXAMPLE_COM"),
+            .contains("PURLIS_FORGE_TOKEN__6768652e6578616d706c652e636f6d"),
         "{why}"
     );
     let window = Credentials::new(Mode::Interactive, None, None);
@@ -892,8 +1221,7 @@ fn the_real_sources_follow_the_rule_with_both_a_token_and_a_sign_in_on_one_host(
     let now_ok = machine.expires_at - LEAD.as_secs() - 1;
     let account: Arc<dyn CredentialSource> =
         Arc::new(signed_in(&machine, &Arc::new(StandIn::answering(&[]))));
-    let token: Arc<dyn CredentialSource> =
-        Arc::new(connection(&[("GITHUB_TOKEN", "ghs_the_jobs_own")]));
+    let token: Arc<dyn CredentialSource> = Arc::new(connection(&[("GITHUB_TOKEN", GHS_JOB)]));
     let _ = now_ok;
     let headless = Credentials::new(Mode::Headless, Some(account.clone()), Some(token.clone()));
     let interactive = Credentials::new(Mode::Interactive, Some(account), Some(token));
@@ -901,7 +1229,7 @@ fn the_real_sources_follow_the_rule_with_both_a_token_and_a_sign_in_on_one_host(
     let in_ci = headless.credential_for("github.com").unwrap();
     assert_eq!(
         (in_ci.expose(), in_ci.source()),
-        ("ghs_the_jobs_own", Source::TokenConnection)
+        (GHS_JOB, Source::TokenConnection)
     );
     let in_the_window = interactive.credential_for("github.com").unwrap();
     assert_eq!(
@@ -915,5 +1243,173 @@ fn the_real_sources_follow_the_rule_with_both_a_token_and_a_sign_in_on_one_host(
             .credential_for("ghe.example.com")
             .unwrap_err()
             .is_none_given()
+    );
+}
+
+// ---------------------------------------------------------------------------------------
+// More than one account on a host.
+
+/// A forge that says whose token it is: `login`'s.
+struct Who(&'static str);
+
+impl crate::forge::transport::Transport for Who {
+    fn send(
+        &self,
+        _forge: &crate::forge::Forge,
+        _call: &crate::forge::transport::Call,
+    ) -> Result<crate::forge::transport::Reply, crate::forge::transport::NoAnswer> {
+        Ok(crate::forge::transport::Reply {
+            code: 0,
+            out: format!(r#"{{"login": "{0}", "username": "{0}"}}"#, self.0),
+            err: String::new(),
+            status: Some(200),
+            headers: Vec::new(),
+        })
+    }
+
+    fn check_auth(&self, _forge: &crate::forge::Forge) -> Result<(), crate::forge::ForgeError> {
+        Ok(())
+    }
+}
+
+fn pasted_as(
+    home: &std::path::Path,
+    host: &str,
+    login: &'static str,
+    token: &str,
+) -> accounts::ForgeAccount {
+    let keyring = accounts::keyring_at(home);
+    let reach = move |_: &crate::forge::Forge,
+                      _: Arc<dyn crate::forge::http::TokenSource>|
+          -> Result<
+        Arc<dyn crate::forge::transport::Transport>,
+        crate::forge::ForgeError,
+    > { Ok(Arc::new(Who(login))) };
+    accounts::sign_in_with_token(
+        &scope(),
+        home,
+        keyring.as_ref(),
+        &reach,
+        Kind::GitHub,
+        host,
+        accounts::Pasted::new(token.to_string()),
+    )
+    .unwrap()
+}
+
+#[test]
+fn with_two_accounts_on_a_host_and_none_chosen_nothing_is_picked() {
+    let home = tempfile::tempdir().unwrap();
+    pasted_as(
+        home.path(),
+        "ghe.example.com",
+        "alice",
+        "github_pat_alice_token",
+    );
+    pasted_as(
+        home.path(),
+        "ghe.example.com",
+        "alice-emu",
+        "github_pat_emu_token",
+    );
+    let source = SignedIn::new(&scope(), home.path());
+    let why = source.credential_at("ghe.example.com", 1_000).unwrap_err();
+    assert!(matches!(why, CredentialError::Unusable { .. }), "{why:?}");
+    let said = why.to_string();
+    assert!(said.contains("Choose an account"), "{said}");
+    assert!(
+        said.contains("alice") && said.contains("alice-emu"),
+        "{said}"
+    );
+    assert!(!said.contains("github_pat_"), "{said}");
+}
+
+#[test]
+fn an_account_the_project_is_bound_to_is_the_only_one_that_answers() {
+    let home = tempfile::tempdir().unwrap();
+    let alice = pasted_as(
+        home.path(),
+        "ghe.example.com",
+        "alice",
+        "github_pat_alice_token",
+    );
+    let emu = pasted_as(
+        home.path(),
+        "ghe.example.com",
+        "alice-emu",
+        "github_pat_emu_token",
+    );
+    let source = SignedIn::new(&scope(), home.path());
+    assert_eq!(
+        source
+            .credential_of("ghe.example.com", &emu.id, 1_000)
+            .unwrap()
+            .expose(),
+        "github_pat_emu_token"
+    );
+    assert_eq!(
+        source
+            .credential_of("GHE.example.com", &alice.id, 1_000)
+            .unwrap()
+            .login(),
+        Some("alice")
+    );
+    // An account of another host, or one that is not listed, is never answered with.
+    let elsewhere = pasted_as(
+        home.path(),
+        "other.example.com",
+        "alice",
+        "github_pat_other_token",
+    );
+    for id in [elsewhere.id.as_str(), "01NOSUCHACCOUNT"] {
+        let why = source
+            .credential_of("ghe.example.com", id, 1_000)
+            .unwrap_err();
+        assert!(
+            matches!(why, CredentialError::Unusable { .. }),
+            "{id}: {why:?}"
+        );
+        assert!(why.to_string().contains("Choose an account"), "{why}");
+    }
+}
+
+#[test]
+fn a_sign_in_the_forge_ended_is_never_silently_replaced_by_another_account_on_the_host() {
+    let home = tempfile::tempdir().unwrap();
+    let ended = pasted_as(
+        home.path(),
+        "ghe.example.com",
+        "alice",
+        "github_pat_alice_token",
+    );
+    let other = pasted_as(
+        home.path(),
+        "ghe.example.com",
+        "alice-emu",
+        "github_pat_emu_token",
+    );
+    let keyring = accounts::keyring_at(home.path());
+    accounts::signed_out_by_the_forge(&scope(), home.path(), keyring.as_ref(), &ended.id).unwrap();
+    let source = SignedIn::new(&scope(), home.path());
+    // Asked without a choice: neither the ended account's token nor the other's.
+    let why = source.credential_at("ghe.example.com", 1_000).unwrap_err();
+    assert!(!why.to_string().contains("github_pat_"), "{why}");
+    assert!(
+        why.is_none_given() || matches!(why, CredentialError::Unusable { .. }),
+        "{why:?}"
+    );
+    assert!(why.to_string().contains("Choose an account"), "{why}");
+    // Asked for the ended one: it says to sign in again, and does not answer with the other.
+    let why = source
+        .credential_of("ghe.example.com", &ended.id, 1_000)
+        .unwrap_err();
+    assert!(why.is_sign_in_again(), "{why:?}");
+    // The other still answers for itself.
+    assert_eq!(
+        source
+            .credential_of("ghe.example.com", &other.id, 1_000)
+            .unwrap()
+            .expose(),
+        "github_pat_emu_token"
     );
 }

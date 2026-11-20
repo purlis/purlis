@@ -12,35 +12,55 @@ sources answer it.
 | For | A person in the window | A CI job, `purlis serve`, a pool runner, the operator's Secret |
 | Where it is | The keyring (`purlis/@forge/<host>/<id>`, ADR 0077) | The process's environment, or a file a variable names |
 | github.com | Device flow, client id only | `GH_TOKEN`, `GITHUB_TOKEN` |
-| GitHub Enterprise Server | Device flow, through the application registered on that host (`forge-registrations.json`) | `GH_ENTERPRISE_TOKEN` with `GH_HOST`; `GITHUB_TOKEN` with `GITHUB_SERVER_URL` |
-| gitlab.com | PKCE, 2 h access token and a rotating refresh token | `GITLAB_TOKEN` |
-| Self-hosted GitLab | PKCE, through a user-owned OAuth application on that host (no administrator) | `GITLAB_TOKEN` with `GITLAB_HOST`; `CI_JOB_TOKEN` with `CI_SERVER_HOST` |
+| GitHub Enterprise Server | Device flow, through the application an owner registered on that host and the person pinned (`forge-registrations.json`) | `GH_ENTERPRISE_TOKEN` with `GH_HOST`; `GITHUB_TOKEN` with `GITHUB_SERVER_URL` |
+| gitlab.com | PKCE, 2 h access token and a rotating refresh token | `GITLAB_TOKEN` with `GITLAB_HOST`; `CI_JOB_TOKEN` on gitlab.com's own CI |
+| Self-hosted GitLab | PKCE, through the OAuth application a group owner or an administrator registered on that host and the person pinned | `GITLAB_TOKEN` with `GITLAB_HOST`; `CI_JOB_TOKEN` with `CI_SERVER_HOST` |
 | Fallback | A pasted personal access token | Any host: `PURLIS_FORGE_TOKEN_<HOST>` |
 | Renewal | Before it expires, without the person (`forge::credential::renewal`) | None for a per-job token; an expiry warning for a long-lived one |
 
-`<HOST>` is the host upper-cased with `.` as `_`, `-` as `__` and a port's `:` as `___`:
-`ghe.example.com` is `GHE_EXAMPLE_COM`, `git-example.com` is `GIT__EXAMPLE_COM`. Two hosts never
-share a name. Per host, in order, the first variable that is set decides: `PURLIS_FORGE_TOKEN_<HOST>`,
-`PURLIS_FORGE_TOKEN_<HOST>_FILE` (a path: a Kubernetes or CI secret mounted as a file), then the
-forge CLI's own variables above. **A token is only offered to the host its variable names**:
-`GITHUB_TOKEN` answers github.com, never `ghe.example.com`.
+`<HEX>` is the lower-case hex of the host's bytes (ADR 0128 D9.2): `github.com` is
+`6769746875622e636f6d`. One host has one spelling, and no two hosts share one. Per host, in order, the
+first variable that is set decides: `PURLIS_FORGE_TOKEN__<HEX>`, `PURLIS_FORGE_TOKEN_FILE__<HEX>` (a
+path: a Kubernetes or CI secret mounted as a file), then the forge CLI's own variables above.
+Both of the first two set is a refusal, and one set and empty is an error, never a fallback to the
+next. `PURLIS_FORGE_TOKEN_EXPIRES_AT__<HEX>`, `PURLIS_FORGE_KIND__<HEX>` and `PURLIS_FORGE_ACCEPT__<HEX>`
+(below) are the other names of a host; the window and `purlis doctor forge` show them, so nobody
+computes one.
+
+**A token is only offered to the host its variable names.**
+
+| Variable | Offered to |
+|---|---|
+| `GITHUB_TOKEN`, `GH_TOKEN` | github.com, **only when `GITHUB_SERVER_URL` is unset or names github.com** |
+| `GITHUB_TOKEN` | the host `GITHUB_SERVER_URL` names (Actions on GHES), never github.com |
+| `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | the host `GH_HOST` names |
+| `GITLAB_TOKEN` | the host `GITLAB_HOST` names, else the one `CI_SERVER_HOST` names; **no host named, no host** |
+| `CI_JOB_TOKEN` | the host `CI_SERVER_HOST` names |
+
+A variable that names a host that is not a host name names none, and nothing is offered on its
+account.
 
 ## Token kinds, read from the token
 
-| Token | Kind | Lifetime |
-|---|---|---|
-| `ghs_…` (an installation token; Actions' `GITHUB_TOKEN`) | installation | Per job: never renewed, never warned about |
-| `ghu_…`, `gho_…` | user-to-server | Per job (eight hours, and no refresh token here) |
-| `ghp_…`, `github_pat_…` | classic, fine-grained | Long-lived |
-| `CI_JOB_TOKEN`, `glcbt-…` | GitLab job | Per job |
-| `glpat-…` | GitLab personal, project or group access token | Long-lived. A prefix cannot tell the three apart |
-| anything else | unrecognised | Long-lived |
+Taken by the exact prefix and the shape that follows it (its characters and length), never by how it
+begins. ADR 0128 D9.
+
+| Token | From `GH_TOKEN`, `GITLAB_TOKEN` and the other CLI variables | From `PURLIS_FORGE_TOKEN__<HEX>` | Lifetime |
+|---|---|---|---|
+| `ghs_…` (an installation token; Actions' `GITHUB_TOKEN`) | taken | taken | Per job: never renewed, never warned about |
+| `github_pat_…` fine-grained | taken | taken | Long-lived |
+| `ghu_…`, `gho_…` | **refused** | taken | Per job (eight hours, and no refresh token here) |
+| `ghp_…` classic | **refused** | **refused** | A classic token reaches every repository its owner can; use a fine-grained one |
+| `ghr_…` refresh token | **refused** | **refused** | Not a credential for the API |
+| `CI_JOB_TOKEN`, `glcbt-…` | taken | taken | Per job |
+| `glpat-…` | taken | taken | Long-lived. A prefix cannot tell a personal, project and group access token apart |
+| anything else | **refused** | refused unless `PURLIS_FORGE_ACCEPT__<HEX>` is `unrecognised` | Long-lived |
 
 A host that is not github.com or gitlab.com, with a token of no known shape, needs
-`PURLIS_FORGE_KIND_<HOST>` (`github` or `gitlab`). Where the variable, the hint, the shape and the
+`PURLIS_FORGE_KIND__<HEX>` (`github` or `gitlab`). Where the variable, the hint, the shape and the
 host name different forges the token is refused, never guessed at.
 
-A long-lived token's expiry is not in the token. Give it as `PURLIS_FORGE_TOKEN_<HOST>_EXPIRES_AT`
+A long-lived token's expiry is not in the token. Give it as `PURLIS_FORGE_TOKEN_EXPIRES_AT__<HEX>`
 (unix seconds, or like `2027-03-01T00:00:00Z`): within 14 days of it there is a warning
 (`Expiry::Soon`), and after it there is no credential.
 
@@ -59,11 +79,22 @@ A long-lived token's expiry is not in the token. Give it as `PURLIS_FORGE_TOKEN_
 ## Renewal and the Notice
 
 `Renewal::sweep` renews every signed-in grant with less than 15 minutes left (a request renews at
-5), through the same refresher and the same lock as a request, so one process rotates a single-use
-refresh token. A forge that **refuses** ends the sign-in: the account is marked signed out, its
-keyring item is deleted, and the window is told once, which draws "Sign in again to `<host>`". A
-forge that cannot be reached ends nothing; the token is kept while it has time. `Renewal::keep` runs
-the sweep on its own thread.
+5), through the same refresher and the same locks as a request: one refresh at a time in a
+process, and one at a time on the machine (`forge-refresh.lock`), so the window and a session host
+never spend the same single-use refresh token. The rotated pair is written to the keyring **before**
+the new token is used; if the keyring refuses, both pairs are held in memory, the write is tried
+again first, and the spent refresh token is never sent.
+
+**Only the forge's word that the grant is over ends a sign-in**: `invalid_grant`, and GitHub's
+`bad_refresh_token`. The account is marked signed out, its keyring item is deleted, and the window
+is told once, which draws "Sign in again to `<host>`". Anything else (`invalid_client`,
+`unauthorized_client`, a 5xx, a rate limit, a proxy, a network that is down) ends nothing: the
+keyring item is kept, the token is used while it has time, the next try waits 30 seconds, then
+longer, to 15 minutes, and after three failures in a row the window is told once.
+
+**A renewal uses the client id the account signed in through**, never what the registrations say
+now. If the host's pin is another application, or none, renewal stops, the item is kept, and the
+window is told once; signing in again is the person's press.
 
 ## What is kept, and where
 
