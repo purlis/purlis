@@ -51,6 +51,7 @@ mod personas;
 mod plane;
 mod plugin;
 mod profiles;
+mod readiness;
 mod remote;
 mod repos_folder;
 mod rules;
@@ -584,6 +585,7 @@ impl Doctor {
         rows.push(git::plane_root(self));
         rows.push(git::index_lock(self));
         rows.extend(remote::project_remote(self));
+        rows.extend(readiness::project_readiness(self));
         rows.extend(capabilities::forge_capabilities(self));
         rows.extend(budget::budgets(self));
         rows.push(session::session_root(self));

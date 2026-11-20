@@ -609,6 +609,7 @@ macro_rules! app_commands {
                 live::workspace_live_preview,
                 live::workspace_live,
                 live::plane_remote_readers,
+                readiness::plane_readiness,
                 workspaces::workspace_at_risk,
                 workspaces::workspace_remove,
                 workspaces::workspace_rename,

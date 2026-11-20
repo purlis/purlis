@@ -181,6 +181,7 @@ mod portal;
 mod projectready;
 mod projectsettings;
 mod proposals;
+mod readiness;
 mod readonly;
 mod rebrief;
 mod reconnecting;

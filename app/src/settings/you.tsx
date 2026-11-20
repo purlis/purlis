@@ -26,6 +26,7 @@ import { browserLimitsGroup } from "./browserLimits";
 import { previewsGroup } from "./previews";
 import { poolsGroup } from "./pools";
 import { accountsGroup } from "./accounts";
+import { readinessGroup } from "./readiness";
 import { notificationsGroup } from "./notifications";
 import { reportsGroup } from "./reports";
 import { profilesGroup } from "./profiles";
@@ -95,6 +96,7 @@ export function youGroups(plane?: string): SettingsGroup[] {
     browserLimitsGroup(),
     poolsGroup(plane),
     accountsGroup(),
+    ...(plane === undefined ? [] : [readinessGroup(plane)]),
     profilesGroup(plane),
     previewsGroup(),
   ];

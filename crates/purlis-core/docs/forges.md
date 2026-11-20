@@ -747,3 +747,27 @@ guessing wrong would mean two unrelated repos could clone over each other.
 
 See `docs/control-plane.md` for the full `charter.toml` reference, including a worked
 mixed-forge example.
+
+## Project readiness (one login, slice D)
+
+`forge::readiness` answers, per project, whether the forge would let *everyone else* with access
+sign in to purlis and work. It is not part of `ForgeBackend`: its forge-specific reads are a
+separate trait, `readiness::Probe`, implemented in `github/readiness.rs` and `gitlab/readiness.rs`
+(so no request is built outside those two), and the default branch's protection is read through
+the seam's own `Requests::ruleset_protects`, the reading the hold on landing a change uses.
+Nothing is stored (a report is derived on each ask), so there is no tier to name.
+
+| Check | GitHub | GitLab | Applies to |
+|---|---|---|---|
+| Role | `GET repos/{o}/{r}`: `permissions` (`admin`, `push`, `pull`) | `GET projects/{path}`: `permissions.project_access` and `group_access` levels (Developer 30 pushes, Maintainer 40 administers) | every connection |
+| Organization approval | the same read: a 403 naming "OAuth App access restrictions" is blocked; a private organization repo that reads is approved; a public one proves nothing, so unknown | none (GitLab has no approval of an OAuth app) | GitHub, signed in, organization repo |
+| purlis on the server | `registration::on` is `None` (anything but github.com): blocked, the server's admin registers an OAuth app with the device flow on | the same (anything but gitlab.com) | signed in |
+| Server allows OAuth applications | none | `GET application/settings`: `user_oauth_applications` (administrators only; anyone else is unknown) | GitLab, self-hosted, signed in |
+| Default branch protected | `ruleset_protects` | `ruleset_protects` | every connection |
+| CI token may push | `GET repos/{o}/{r}/actions/permissions/workflow` (admins only; else unknown) | `ci_push_repository_for_job_token_allowed` on the project | token (`CI` set) |
+
+A check is **ready**, **blocked** (with who can fix it: you, owner, admin) or **unknown**, and an
+unknown is never ready: a report is ready for all users only when every check that applies is.
+`purlis doctor` shows the `project readiness` row (not in the preflight, which asks no network),
+and the app's Settings › You › Ready for all users shows the same checks with their steps and
+request texts.
