@@ -11,6 +11,14 @@ use purlis_core::forge::proxy::{
 #[cfg(unix)]
 mod unix {
     use super::*;
+
+    /// A temporary folder that only its owner can enter: a temp folder's own mode is the
+    /// platform's to choose, and the endpoint refuses one that others can.
+    fn private_dir() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        dir
+    }
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::UnixStream;
 
@@ -19,7 +27,7 @@ mod unix {
     #[test]
     fn a_unix_socket_is_private_to_the_app_and_names_its_chat_by_the_endpoint() {
         purlis_core::unsteered!();
-        let dir = tempfile::tempdir().unwrap();
+        let dir = private_dir();
         let sockets = dir.path().join("s");
         let a = UnixEndpoint::bind(&ChatId::new("chat-a"), &sockets).unwrap();
         let b = UnixEndpoint::bind(&ChatId::new("chat-b"), &sockets).unwrap();
@@ -47,9 +55,21 @@ mod unix {
     }
 
     #[test]
-    fn a_socket_is_removed_with_its_endpoint() {
+    fn a_folder_that_others_can_enter_is_refused() {
         purlis_core::unsteered!();
         let dir = tempfile::tempdir().unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let err = UnixEndpoint::bind(&ChatId::new("c"), dir.path())
+            .err()
+            .unwrap();
+        assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_socket_is_removed_with_its_endpoint() {
+        purlis_core::unsteered!();
+        let dir = private_dir();
         let endpoint = UnixEndpoint::bind(&ChatId::new("c"), dir.path()).unwrap();
         let EndpointKind::UnixSocket(path) = endpoint.kind() else {
             panic!()
@@ -62,7 +82,7 @@ mod unix {
     #[test]
     fn a_unix_socket_is_picked_where_the_client_can_use_one() {
         purlis_core::unsteered!();
-        let dir = tempfile::tempdir().unwrap();
+        let dir = private_dir();
         let endpoint = pick_endpoint(&ChatId::new("c"), dir.path(), true).unwrap();
         assert!(matches!(endpoint.kind(), EndpointKind::UnixSocket(_)));
     }

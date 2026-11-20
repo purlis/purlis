@@ -121,7 +121,7 @@ pub use unix::UnixEndpoint;
 #[cfg(unix)]
 mod unix {
     use super::*;
-    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
     use std::os::unix::net::{UnixListener, UnixStream};
 
     /// A unix socket in a folder of mode 0700, for one chat. The socket's name is random, so it
@@ -140,11 +140,32 @@ mod unix {
                 .recursive(true)
                 .mode(0o700)
                 .create(dir)?;
+            // A folder that others can enter or list is not private to the app, whatever the
+            // socket's own mode: refused, not repaired.
+            let folder = std::fs::metadata(dir)?;
+            if folder.permissions().mode() & 0o077 != 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    format!(
+                        "the folder for a chat's socket is open to others (mode {:o})",
+                        folder.permissions().mode() & 0o7777
+                    ),
+                ));
+            }
             let mut name = [0u8; 8];
             getrandom::fill(&mut name).map_err(|e| io::Error::other(e.to_string()))?;
             let path = dir.join(format!("fp-{}.sock", data_encoding::HEXLOWER.encode(&name)));
             let listener = UnixListener::bind(&path)?;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+            // The socket is ours, so its owner is who we are: the folder must be the same one's,
+            // or someone else made it and may swap what is in it.
+            if std::fs::metadata(&path)?.uid() != folder.uid() {
+                let _ = std::fs::remove_file(&path);
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "the folder for a chat's socket is not the app's",
+                ));
+            }
             Ok(Self {
                 chat: chat.clone(),
                 listener,

@@ -80,6 +80,7 @@ pub use policy::{
 };
 pub use repo::{AddressError, AllowedRepo, Kind};
 pub use request::RequestHead;
+use request::host as policy_host;
 pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
 
 use std::collections::HashMap;
@@ -170,6 +171,11 @@ pub struct Forwarded {
     pub class: Class,
     /// Whether `headers` carry the person's credential. A public read has none.
     pub credentialed: bool,
+    /// The body to send in place of the chat's, when the chat's was read: the canonical
+    /// re-serialisation of what was checked. `headers` already carry its `Content-Length`.
+    pub body: Option<Vec<u8>>,
+    /// Branches a push makes, for [`ForgeProxy::confirm_push`].
+    pub(crate) created: Vec<(String, String, String)>,
 }
 
 impl std::fmt::Debug for Forwarded {
@@ -181,6 +187,7 @@ impl std::fmt::Debug for Forwarded {
             .field("header_names", &names)
             .field("class", &self.class)
             .field("credentialed", &self.credentialed)
+            .field("body_bytes", &self.body.as_ref().map(Vec::len))
             .finish()
     }
 }
@@ -214,6 +221,50 @@ impl ForgeProxy {
             .unwrap_or_else(PoisonError::into_inner)
             .insert(chat.clone(), Arc::new(ChatPolicy::new(repos)));
         self.sentinels.issue(chat)
+    }
+
+    /// How long a chat that guessed wrong ten times in a row is locked out. A minute by default
+    /// (ADR 0128), and a chat that starts again is not locked at all.
+    #[must_use]
+    pub fn with_lockout(mut self, lockout: std::time::Duration) -> Self {
+        self.sentinels = SentinelRegistry::with_lockout(lockout);
+        self
+    }
+
+    /// The listener read the ref advertisement of a push to `repo_path` on `host`: these are its
+    /// branches. A push that makes a branch is decided against the latest one, and is refused if
+    /// none was given or the branch is in it.
+    pub fn note_advertised(
+        &self,
+        chat: &ChatId,
+        host: &str,
+        repo_path: &str,
+        branches: Vec<String>,
+    ) {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        if let Some(policy) = policy {
+            policy.note_advertised(host, repo_path, branches);
+        }
+    }
+
+    /// The forge's report of a push `forwarded` says it made its branches: only now are they the
+    /// chat's own to move. A push the forge refused, or one never sent, makes no branch the chat
+    /// owns, so a branch cannot be claimed by asking for it.
+    pub fn confirm_push(&self, chat: &ChatId, forwarded: &Forwarded) {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        if let Some(policy) = policy {
+            policy.confirm_created(&forwarded.created);
+        }
     }
 
     /// A chat ends: its sentinel stops working at once, and its policy goes. Its audit stays.
@@ -254,15 +305,24 @@ impl ForgeProxy {
         if let Err(refusal @ (Refusal::Locked | Refusal::UnknownChat)) = sentinel {
             return self.refuse(chat, inbound, None, refusal);
         }
-        if !framing_is_unambiguous(inbound.headers) {
+        if !framing_is_unambiguous(inbound.headers) || !host_agrees(inbound) {
             return self.refuse(chat, inbound, None, Refusal::MalformedRequest);
         }
-        let allowed = match policy.decide(inbound.head, inbound.body, self.objects.as_ref()) {
+        let head = inbound
+            .head
+            .clone()
+            .with_content_type(header_value(inbound.headers, "content-type"));
+        let allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => return self.refuse(chat, inbound, None, refusal),
         };
         if let (true, Err(refusal)) = (allowed.credentialed(), sentinel) {
             return self.refuse(chat, inbound, None, refusal);
+        }
+        // A request body arrives encoded only for a fetch (git compresses its own request); on
+        // anything else it is a body that was not read as it is sent.
+        if has_header(inbound.headers, "content-encoding") && allowed.class != Class::GitFetch {
+            return self.refuse(chat, inbound, None, Refusal::MalformedRequest);
         }
         if !allowed.credentialed() {
             // A public read: the chat's own headers without any credential, and none added.
@@ -273,6 +333,8 @@ impl ForgeProxy {
                 headers: without_credentials(inbound.headers),
                 class: allowed.class,
                 credentialed: false,
+                body: None,
+                created: Vec::new(),
             });
         }
         let request = CredentialRequest {
@@ -287,11 +349,21 @@ impl ForgeProxy {
         };
         self.audit
             .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
+        let mut headers = headers;
+        if let Some(body) = &allowed.canonical_body {
+            headers.retain(|(n, _)| {
+                !["content-length", "transfer-encoding", "content-encoding"]
+                    .contains(&normal(n).as_str())
+            });
+            headers.push(("Content-Length".to_string(), body.len().to_string()));
+        }
         Outcome::Forward(Forwarded {
             upstream: allowed.upstream,
             headers,
             class: allowed.class,
             credentialed: true,
+            body: allowed.canonical_body,
+            created: allowed.created,
         })
     }
 
@@ -308,6 +380,12 @@ impl ForgeProxy {
     }
 }
 
+/// A header's name as the forge's front end reads it: lower case, with `_` taken as `-`, since a
+/// server that treats the two alike makes `private_token` the same header as `private-token`.
+pub(crate) fn normal(name: &str) -> String {
+    name.to_ascii_lowercase().replace('_', "-")
+}
+
 /// Every header a forge or a proxy reads a credential from, or that carries a session: removed
 /// from what a chat sent, whatever it held.
 pub(crate) fn is_credential_header(name: &str) -> bool {
@@ -321,7 +399,47 @@ pub(crate) fn is_credential_header(name: &str) -> bool {
         "x-gitlab-token",
         "cookie",
     ];
-    NAMES.iter().any(|known| name.eq_ignore_ascii_case(known))
+    NAMES.contains(&normal(name).as_str())
+}
+
+fn has_header(headers: &[(String, String)], wanted: &str) -> bool {
+    headers.iter().any(|(n, _)| normal(n) == wanted)
+}
+
+fn header_value<'a>(headers: &'a [(String, String)], wanted: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(n, _)| normal(n) == wanted)
+        .map(|(_, v)| v.as_str())
+}
+
+/// A `Host` the request line does not agree with is a request for two places: refused. Without a
+/// `Host` there is nothing to disagree with, and the address is the line's alone.
+fn host_agrees(inbound: &Inbound<'_>) -> bool {
+    let hosts: Vec<&str> = inbound
+        .headers
+        .iter()
+        .filter(|(n, _)| normal(n) == "host")
+        .map(|(_, v)| v.trim())
+        .collect();
+    if hosts.is_empty() {
+        return true;
+    }
+    let Ok(want) = request_host(inbound.head) else {
+        return false;
+    };
+    hosts.iter().all(|value| {
+        let (host, port) = match value.rsplit_once(':') {
+            Some((h, p)) => (h, p.parse::<u16>().ok()),
+            None => (*value, Some(443)),
+        };
+        port == Some(inbound.head.port)
+            && request_host(&RequestHead::new("GET", host, 0, "/")).is_ok_and(|h| h == want)
+    })
+}
+
+fn request_host(head: &RequestHead) -> Result<String, ()> {
+    policy_host(head).map_err(|_| ())
 }
 
 /// The chat's headers with the credential headers removed and the real credential set. `None` when
@@ -356,14 +474,19 @@ fn swap_credential(
 /// Headers that name where a request goes or which method it is, which the proxy decides itself:
 /// the upstream is [`Forwarded::upstream`], and the method is the request line's.
 fn is_routing_header(name: &str) -> bool {
-    [
-        "host",
-        "x-http-method-override",
-        "x-method-override",
-        "x-http-method",
-    ]
-    .iter()
-    .any(|known| name.eq_ignore_ascii_case(known))
+    let name = normal(name);
+    name.starts_with("x-forwarded-")
+        || [
+            "host",
+            "forwarded",
+            "x-original-url",
+            "x-rewrite-url",
+            "x-real-ip",
+            "x-http-method-override",
+            "x-method-override",
+            "x-http-method",
+        ]
+        .contains(&name.as_str())
 }
 
 /// What the chat sent, less every credential and every header that routes.
@@ -375,19 +498,22 @@ fn without_credentials(sent: &[(String, String)]) -> Vec<(String, String)> {
 }
 
 /// A request whose body length is told once, or not at all, and never also as `chunked`: two
-/// readers (this one's and the forge's) that frame it differently are a smuggled request.
+/// readers (this one's and the forge's) that frame it differently are a smuggled request. The only
+/// transfer coding is exactly `chunked`.
 fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
     let named = |wanted: &'static str| {
         headers
             .iter()
-            .filter(move |(n, _)| n.eq_ignore_ascii_case(wanted))
+            .filter(move |(n, _)| normal(n) == wanted)
             .map(|(_, v)| v.trim())
     };
     let lengths: Vec<&str> = named("content-length").collect();
-    let encodings = named("transfer-encoding").count();
+    let encodings: Vec<&str> = named("transfer-encoding").collect();
     let lengths_ok = lengths
         .iter()
         .all(|l| !l.is_empty() && l.bytes().all(|b| b.is_ascii_digit()))
         && lengths.windows(2).all(|w| w[0] == w[1]);
-    lengths_ok && encodings <= 1 && !(encodings == 1 && !lengths.is_empty())
+    let encodings_ok =
+        encodings.len() <= 1 && encodings.iter().all(|e| e.eq_ignore_ascii_case("chunked"));
+    lengths_ok && encodings_ok && !(encodings.len() == 1 && !lengths.is_empty())
 }

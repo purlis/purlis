@@ -15,7 +15,7 @@ fn an_allowed_and_a_refused_request_are_each_recorded_with_their_verdict() {
     let _ = s.send(
         "GET",
         "api.github.com",
-        "/repos/acme/app/pulls?access_token=SECRETQUERY",
+        "/repos/acme/app/pulls?state=SECRETQUERY",
         b"",
     );
     let _ = s.send(
@@ -66,7 +66,7 @@ fn a_record_holds_neither_a_token_a_path_nor_a_query() {
     let _ = s.send(
         "GET",
         "api.github.com",
-        "/repos/acme/app/pulls?access_token=SECRETQUERY",
+        "/repos/acme/app/pulls?state=SECRETQUERY",
         b"",
     );
     let _ = s.send(

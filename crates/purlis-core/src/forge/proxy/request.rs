@@ -17,6 +17,8 @@ pub struct RequestHead {
     pub port: u16,
     /// Path and query, as sent: `/owner/repo.git/info/refs?service=git-upload-pack`.
     pub target: String,
+    /// The request's `Content-Type`, which a body is read by.
+    pub content_type: Option<String>,
 }
 
 impl RequestHead {
@@ -26,7 +28,14 @@ impl RequestHead {
             host: host.to_string(),
             port,
             target: target.to_string(),
+            content_type: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_content_type(mut self, content_type: Option<&str>) -> Self {
+        self.content_type = content_type.map(str::to_string);
+        self
     }
 }
 
@@ -101,6 +110,14 @@ pub(crate) fn parse_target(target: &str) -> Result<Target, Refusal> {
             if bad {
                 return Err(Refusal::MalformedRequest);
             }
+            // A decoded `/` is a break the forge may read: its parts are checked as segments.
+            if decoded.contains('/')
+                && decoded
+                    .split('/')
+                    .any(|part| part.is_empty() || part == "." || part == "..")
+            {
+                return Err(Refusal::MalformedRequest);
+            }
             segments.push(decoded.into_owned());
         }
     }
@@ -113,4 +130,28 @@ pub(crate) fn parse_target(target: &str) -> Result<Target, Refusal> {
 /// A `CONNECT` host as the policy reads it.
 pub(crate) fn normalise_connect_host(host: &str) -> Result<String, Refusal> {
     normalise_host(host).map_err(|_| Refusal::MalformedRequest)
+}
+
+/// Query parameters that carry a credential. The forge reads them as the chat's own login, so the
+/// proxy never lets one through, on any route.
+pub(crate) fn has_credential_param(target: &Target) -> bool {
+    const NAMES: &[&str] = &[
+        "access_token",
+        "private_token",
+        "job_token",
+        "deploy_token",
+        "oauth_token",
+        "auth_token",
+        "api_key",
+        "apikey",
+        "token",
+        "password",
+        "client_secret",
+        "secret",
+        "key",
+    ];
+    target.query.iter().any(|(k, _)| {
+        let k = k.to_ascii_lowercase().replace('-', "_");
+        NAMES.contains(&k.as_str())
+    })
 }

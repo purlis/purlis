@@ -111,7 +111,15 @@ impl Scene {
         if ghes {
             a_repos.push(AllowedRepo::new(Kind::GitHub, GHES, 443, "acme/app", "trunk").unwrap());
         }
+        let advertised: Vec<(String, String)> = a_repos
+            .iter()
+            .map(|r| (r.host().to_string(), r.path().to_string()))
+            .collect();
         let a_sentinel = proxy.enrol(&a, a_repos);
+        // Every repo advertised no branch but the ones that cannot be pushed to.
+        for (host, path) in &advertised {
+            proxy.note_advertised(&a, host, path, vec![]);
+        }
         let b_sentinel = proxy.enrol(
             &b,
             vec![AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/other", "main").unwrap()],
@@ -123,6 +131,19 @@ impl Scene {
             a_sentinel,
             b_sentinel,
             asked,
+        }
+    }
+
+    /// The listener read a repo's advertisement for a push: these are its branches.
+    pub fn advertise(&self, host: &str, path: &str, branches: &[&str]) {
+        let branches = branches.iter().map(|b| b.to_string()).collect();
+        self.proxy.note_advertised(&self.a, host, path, branches);
+    }
+
+    /// The forge said the push `out` was made: its branches are the chat's own now.
+    pub fn confirm(&self, out: &Outcome) {
+        if let Outcome::Forward(f) = out {
+            self.proxy.confirm_push(&self.a, f);
         }
     }
 
@@ -163,7 +184,10 @@ impl Scene {
         body: &[u8],
     ) -> Outcome {
         let head = RequestHead::new(method, host, port, target);
-        let headers = headers(auth);
+        let mut headers = headers(auth);
+        if let Some(ct) = content_type_for(target, body) {
+            headers.push(("Content-Type".into(), ct.into()));
+        }
         self.proxy.handle(
             chat,
             &Inbound {
@@ -201,13 +225,17 @@ pub fn graphql(query: &str, variables: serde_json::Value) -> Vec<u8> {
 /// The pkt-lines of a push's commands, then the flush and a stand-in for the pack.
 pub fn push_body(commands: &[(&str, &str)]) -> Vec<u8> {
     let zero = "0".repeat(40);
-    let new = "1".repeat(40);
     let mut out = Vec::new();
-    for (i, (old_is_zero, name)) in commands.iter().enumerate() {
-        let old = if *old_is_zero == "create" {
+    for (i, (kind, name)) in commands.iter().enumerate() {
+        let old = if *kind == "create" {
             zero.clone()
         } else {
             "2".repeat(40)
+        };
+        let new = if *kind == "delete" {
+            zero.clone()
+        } else {
+            "1".repeat(40)
         };
         let mut line = format!("{old} {new} {name}");
         if i == 0 {
@@ -222,4 +250,19 @@ pub fn push_body(commands: &[(&str, &str)]) -> Vec<u8> {
 
 pub fn is_refused(outcome: &Outcome, reason: purlis_core::forge::proxy::Refusal) -> bool {
     matches!(outcome, Outcome::Refused(r) if *r == reason)
+}
+
+/// The `Content-Type` a client would send with `body`: JSON, a form, or git's own for a push.
+fn content_type_for(target: &str, body: &[u8]) -> Option<&'static str> {
+    if body.is_empty() {
+        None
+    } else if target.contains("git-receive-pack") || target.contains("git-upload-pack") {
+        Some("application/x-git-receive-pack-request")
+    } else if body.first().is_some_and(|b| *b == b'{' || *b == b'[') {
+        Some("application/json")
+    } else if body.contains(&b'=') && !body.contains(&b'{') {
+        Some("application/x-www-form-urlencoded")
+    } else {
+        Some("application/json")
+    }
 }

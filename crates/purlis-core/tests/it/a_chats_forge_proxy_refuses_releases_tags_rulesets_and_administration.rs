@@ -204,6 +204,20 @@ fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_
         (vec![("update", "refs/heads/MAIN")], Refusal::ProtectedRef),
         (vec![("delete", "refs/heads/main")], Refusal::ProtectedRef),
         (
+            vec![("create", "refs/heads/release/1.0")],
+            Refusal::ProtectedRef,
+        ),
+        (
+            vec![("create", "refs/heads/deploy/prod")],
+            Refusal::ProtectedRef,
+        ),
+        (vec![("create", "refs/heads/prod/x")], Refusal::ProtectedRef),
+        (vec![("create", "refs/heads/master")], Refusal::ProtectedRef),
+        (
+            vec![("create", "refs/heads/production")],
+            Refusal::ProtectedRef,
+        ),
+        (
             vec![("update", "refs/heads/release")],
             Refusal::ProtectedRef,
         ),
@@ -238,7 +252,7 @@ fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_
         push(
             "ghe.corp.example",
             "/acme/app",
-            &[("create", "refs/heads/main")]
+            &[("create", "refs/heads/feature-x")]
         ),
         Outcome::Forward(_)
     ));

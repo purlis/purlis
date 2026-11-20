@@ -232,6 +232,17 @@ const DENIED_FIELDS: &[&str] = &[
     "mirrorUrl",
     "headRepository",
     "headRepositoryOwner",
+    "ruleset",
+    "environment",
+    "environments",
+    "branchProtectionRule",
+    "sourceProject",
+    "targetProject",
+    "securityVulnerabilities",
+    "vulnerabilityAlerts",
+    "autoMergeRequest",
+    "mergeQueue",
+    "mergeQueueEntries",
 ];
 
 /// Decide a GraphQL request body. `repos` are the chat's repos that this host serves.
@@ -445,6 +456,8 @@ impl Context<'_> {
                 }
             }
             self.check_scoped(&ids)?;
+            // What a mutation asks back is read like any query: it may not walk out of the repo.
+            self.check_fields(&field.selection_set, vars)?;
             class = Some(Class::GraphqlMutation(field.name.clone()));
         }
         class.ok_or(Refusal::GraphqlUnknownMutation)

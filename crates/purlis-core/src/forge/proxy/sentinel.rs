@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use subtle::ConstantTimeEq;
 
@@ -57,15 +58,24 @@ impl std::fmt::Debug for Sentinel {
 }
 
 /// Every chat's current sentinel.
-#[derive(Default)]
 pub struct SentinelRegistry {
     by_chat: Mutex<HashMap<ChatId, Entry>>,
+    lockout: Duration,
+}
+
+impl Default for SentinelRegistry {
+    /// A minute of lockout, as ADR 0128 has it.
+    fn default() -> Self {
+        Self::with_lockout(Duration::from_secs(60))
+    }
 }
 
 /// A chat's sentinel and how many wrong ones in a row it has presented.
 struct Entry {
     sentinel: Sentinel,
     misses: u32,
+    /// When the chat reached [`MAX_MISSES`].
+    locked_at: Option<Instant>,
 }
 
 /// Wrong sentinels in a row after which a chat is locked until it starts again: far above a
@@ -73,6 +83,13 @@ struct Entry {
 const MAX_MISSES: u32 = 10;
 
 impl SentinelRegistry {
+    pub(crate) fn with_lockout(lockout: Duration) -> Self {
+        Self {
+            by_chat: Mutex::new(HashMap::new()),
+            lockout,
+        }
+    }
+
     /// A new sentinel for `chat`; the one it had stops working.
     pub fn issue(&self, chat: &ChatId) -> Sentinel {
         let sentinel = Sentinel::random();
@@ -84,6 +101,7 @@ impl SentinelRegistry {
                 Entry {
                     sentinel: sentinel.clone(),
                     misses: 0,
+                    locked_at: None,
                 },
             );
         sentinel
@@ -106,8 +124,13 @@ impl SentinelRegistry {
         let Some(entry) = map.get_mut(chat) else {
             return Err(Refusal::UnknownChat);
         };
-        if entry.misses >= MAX_MISSES {
-            return Err(Refusal::Locked);
+        if let Some(at) = entry.locked_at {
+            if at.elapsed() < self.lockout {
+                return Err(Refusal::Locked);
+            }
+            // The lockout is over: the chat starts counting again.
+            entry.misses = 0;
+            entry.locked_at = None;
         }
         if presented.is_empty() {
             return Err(Refusal::NoSentinel);
@@ -122,6 +145,9 @@ impl SentinelRegistry {
             Ok(())
         } else {
             entry.misses += 1;
+            if entry.misses >= MAX_MISSES {
+                entry.locked_at = Some(Instant::now());
+            }
             Err(Refusal::WrongSentinel)
         }
     }
@@ -138,7 +164,7 @@ fn presented_credentials(headers: &[(String, String)]) -> Vec<String> {
         })
         .map(|(name, value)| {
             let value = value.trim();
-            if !name.to_ascii_lowercase().ends_with("authorization") {
+            if !super::normal(name).ends_with("authorization") {
                 return value.to_string();
             }
             let (scheme, rest) = value.split_once(' ').unwrap_or(("", value));

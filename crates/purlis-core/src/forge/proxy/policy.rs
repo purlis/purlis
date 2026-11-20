@@ -11,9 +11,10 @@
 //! host and port and the path as the policy read it: the chat's request-target, `Host` and
 //! encoding never reach the forge.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, PoisonError};
 
+use super::commands;
 use super::git::{self, GitOp, PushError};
 use super::graphql;
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
@@ -66,6 +67,11 @@ pub enum Refusal {
     GraphqlUnknownMutation,
     /// A GraphQL document that reaches a repo, or an object, that is not the chat's.
     GraphqlOtherRepo,
+    /// A credential in the query string, which the forge would read as the chat's own login.
+    CredentialInQuery,
+    /// A push makes a branch of a repo whose refs the proxy was not told: whether the branch exists
+    /// is not known, so it is not made.
+    NoAdvertisement,
     /// A sign-in at the forge: the device flow and OAuth endpoints.
     OAuthFlow,
     /// Git LFS, whose answers carry credentials for another host.
@@ -118,6 +124,11 @@ pub struct Allowed {
     pub class: Class,
     /// Where to send it: `https://host[:port]/path?query`, built by the proxy.
     pub upstream: String,
+    /// What to send as the body in place of the chat's: the body as it was read.
+    pub canonical_body: Option<Vec<u8>>,
+    /// Branches this push makes, as `(host, repo, branch)`. They become the chat's own only when
+    /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge made them.
+    pub(crate) created: Vec<(String, String, String)>,
     pub(crate) surface: Surface,
 }
 
@@ -202,8 +213,11 @@ pub enum ConnectVerdict {
 #[derive(Debug)]
 pub struct ChatPolicy {
     repos: Vec<AllowedRepo>,
-    /// `(host, repo path, branch)`, lower case: the branches the chat may move and delete.
+    /// `(host, repo path, branch)`, the branch's case exact: the branches the chat may move.
     own_branches: Mutex<HashSet<(String, String, String)>>,
+    /// The branches each repo's last advertisement for a push named, as the listener told the
+    /// proxy, keyed by `(host, repo path)`.
+    advertised: Mutex<HashMap<(String, String), HashSet<String>>>,
 }
 
 /// What of the body a request needs, from its line alone.
@@ -227,13 +241,34 @@ impl ChatPolicy {
             .flat_map(|r| {
                 r.own_branches
                     .iter()
-                    .map(|b| (r.host.clone(), r.path.clone(), b.to_ascii_lowercase()))
+                    .map(|b| (r.host.clone(), r.path.clone(), b.clone()))
             })
             .collect();
         Self {
             repos,
             own_branches: Mutex::new(own),
+            advertised: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The listener read a repo's ref advertisement for a push, and these are its branches (short
+    /// names). A push that makes a branch is decided against the latest one.
+    pub fn note_advertised(&self, host: &str, repo_path: &str, branches: Vec<String>) {
+        self.advertised
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(
+                (host.to_ascii_lowercase(), repo_path.to_ascii_lowercase()),
+                branches.into_iter().collect(),
+            );
+    }
+
+    /// The forge made these branches (a push's report said so): they are the chat's own now.
+    pub(crate) fn confirm_created(&self, created: &[(String, String, String)]) {
+        self.own_branches
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(created.iter().cloned());
     }
 
     /// Decide a `CONNECT`: only a host and port one of the chat's repos is on is terminated, so a
@@ -307,6 +342,10 @@ impl ChatPolicy {
         if target.has_query_key("_method") {
             return Err(Refusal::MalformedRequest);
         }
+        // A credential in the query is the forge reading the chat's own login: never, on any route.
+        if request::has_credential_param(&target) {
+            return Err(Refusal::CredentialInQuery);
+        }
         let candidates: Vec<&AllowedRepo> = self
             .repos
             .iter()
@@ -364,6 +403,8 @@ impl ChatPolicy {
                     repo: String::new(),
                     class: Class::ApiRead,
                     upstream: upstream(first, Surface::Api, segments, &target),
+                    canonical_body: None,
+                    created: Vec::new(),
                     surface: Surface::Api,
                 });
             }
@@ -381,7 +422,16 @@ impl ChatPolicy {
             if kind == Kind::GitHub && !self.has_one_host(Kind::GitHub) {
                 return Err(Refusal::AmbiguousHost);
             }
-            let class = graphql::decide(kind, &candidates, body, objects)?;
+            // The document is the whole request: a query string is a second one.
+            if !target.query.is_empty() {
+                return Err(Refusal::MalformedRequest);
+            }
+            let document = commands::parse(body, head.content_type.as_deref())?
+                .ok_or(Refusal::GraphqlParse)?;
+            if document.json.is_none() {
+                return Err(Refusal::GraphqlParse);
+            }
+            let class = graphql::decide(kind, &candidates, &document.canonical, objects)?;
             // Every id in the document was tied to one of the chat's repos.
             return Ok(Allowed {
                 kind,
@@ -389,6 +439,8 @@ impl ChatPolicy {
                 repo: first.path.clone(),
                 class,
                 upstream: upstream(first, Surface::Api, segments, &target),
+                canonical_body: Some(document.canonical),
+                created: Vec::new(),
                 surface: Surface::Api,
             });
         }
@@ -404,8 +456,16 @@ impl ChatPolicy {
             if kind == Kind::GitHub && rel.iter().any(|s| s.contains('/')) {
                 return Err(Refusal::MalformedRequest);
             }
-            let class = rest::decide(kind, method, &rel, &target, body, repo)?;
-            return Ok(allowed(repo, class, Surface::Api, segments, &target));
+            let read = method == "GET" || method == "HEAD";
+            let parsed = if read {
+                None
+            } else {
+                commands::parse(body, head.content_type.as_deref())?
+            };
+            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo)?;
+            let mut answer = allowed(repo, class, Surface::Api, segments, &target);
+            answer.canonical_body = parsed.map(|b| b.canonical);
+            return Ok(answer);
         }
 
         // Git over HTTP, and a repo's public downloads.
@@ -420,12 +480,13 @@ impl ChatPolicy {
                     let class = match op {
                         GitOp::Advertise => Class::GitRefs,
                         GitOp::UploadPack => Class::GitFetch,
-                        GitOp::ReceivePack => {
-                            self.check_push(repo, body)?;
-                            Class::GitPush
-                        }
+                        GitOp::ReceivePack => Class::GitPush,
                     };
-                    Ok(allowed(repo, class, Surface::Git, segments, &target))
+                    let mut answer = allowed(repo, class, Surface::Git, segments, &target);
+                    if op == GitOp::ReceivePack {
+                        answer.created = self.check_push(repo, body)?;
+                    }
+                    Ok(answer)
                 }
                 None => {
                     // Not the chat's: a fetch of a public repo, with no credential; never a push.
@@ -455,23 +516,34 @@ impl ChatPolicy {
         Err(Refusal::NotOnList)
     }
 
-    /// A push's commands against the repo: every ref a branch, none the default, a protected one
-    /// or a pages branch; a branch may be created, and only one the chat created may be moved or
-    /// deleted. That refuses a force-push and a non-fast-forward anywhere else: the proxy sees
-    /// old and new ids, never history. Push options are refused. Branches this push creates are
-    /// recorded only if every command in it is allowed.
-    fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<(), Refusal> {
+    /// A push's commands against the repo: every ref a branch, none the default, a protected one,
+    /// a deploy trigger or a pages branch; no ref deleted; a branch may be made if the proxy knows
+    /// from the repo's advertisement that it does not exist, and a branch may be moved only if it
+    /// is one the chat made (or was given). That refuses a force-push and a non-fast-forward on
+    /// anyone else's branch: the proxy sees old and new ids, never history. Push options are
+    /// refused. The branches this push makes are **returned, not recorded**: they are the chat's
+    /// own once the forge says it made them ([`Self::confirm_created`]).
+    fn check_push(
+        &self,
+        repo: &AllowedRepo,
+        body: &[u8],
+    ) -> Result<Vec<(String, String, String)>, Refusal> {
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
         })?;
         if pushed.push_options {
             return Err(Refusal::PushOption);
         }
-        let mut own = self
+        let own = self
             .own_branches
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        let mut created = Vec::new();
+        let advertised = self
+            .advertised
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let known = advertised.get(&(repo.host.clone(), repo.path.clone()));
+        let mut created: Vec<(String, String, String)> = Vec::new();
         for command in &pushed.commands {
             let name = &command.name;
             if name.starts_with("refs/tags/") {
@@ -480,22 +552,22 @@ impl ChatPolicy {
             let Some(branch) = name.strip_prefix("refs/heads/") else {
                 return Err(Refusal::ProtectedRef);
             };
-            if branch.is_empty() || repo.protects(branch) {
+            if branch.is_empty() || repo.protects(branch) || command.delete {
                 return Err(Refusal::ProtectedRef);
             }
-            let key = (
-                repo.host.clone(),
-                repo.path.clone(),
-                branch.to_ascii_lowercase(),
-            );
+            let key = (repo.host.clone(), repo.path.clone(), branch.to_string());
             if command.create {
+                let known = known.ok_or(Refusal::NoAdvertisement)?;
+                // Exact, and case-folded too: a `Fix` beside a colleague's `fix` is not made.
+                if known.iter().any(|b| b.eq_ignore_ascii_case(branch)) {
+                    return Err(Refusal::ProtectedRef);
+                }
                 created.push(key);
-            } else if !own.contains(&key) && !created.contains(&key) {
+            } else if !own.contains(&key) {
                 return Err(Refusal::ProtectedRef);
             }
         }
-        own.extend(created);
-        Ok(())
+        Ok(created)
     }
 }
 
@@ -512,6 +584,8 @@ fn allowed(
         repo: repo.path.clone(),
         class,
         upstream: upstream(repo, surface, segments, target),
+        canonical_body: None,
+        created: Vec::new(),
         surface,
     }
 }
@@ -524,6 +598,8 @@ fn public(host_of: &AllowedRepo, class: Class, segments: &[String], target: &Tar
         repo: String::new(),
         class,
         upstream: upstream(host_of, Surface::Anonymous, segments, target),
+        canonical_body: None,
+        created: Vec::new(),
         surface: Surface::Anonymous,
     }
 }

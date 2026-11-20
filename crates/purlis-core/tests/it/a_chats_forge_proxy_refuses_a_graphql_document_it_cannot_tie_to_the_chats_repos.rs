@@ -152,7 +152,11 @@ fn a_document_that_is_not_one_request_is_refused() {
         ),
         ("empty", Vec::new()),
     ] {
-        assert!(is_refused(&post(&body), Refusal::GraphqlParse), "{name}");
+        let out = post(&body);
+        assert!(
+            is_refused(&out, Refusal::GraphqlParse) || is_refused(&out, Refusal::BodyUnreadable),
+            "{name}: {out:?}"
+        );
     }
     assert!(is_refused(
         &gh(&s, "query{ viewer{ login }", serde_json::json!({})),

@@ -26,6 +26,9 @@ pub(crate) fn classify(
     target: &Target,
 ) -> Option<(Vec<String>, GitOp)> {
     let n = segments.len();
+    if target.query.iter().any(|(k, _)| k != "service") {
+        return None;
+    }
     let (op, tail) = match segments {
         [.., a, b] if a == "info" && b == "refs" && method == "GET" => {
             match target.query_value("service") {
@@ -94,6 +97,8 @@ pub(crate) enum PushError {
 pub(crate) struct RefCommand {
     /// The old id is all zeros: the ref is made.
     pub(crate) create: bool,
+    /// The new id is all zeros: the ref is removed.
+    pub(crate) delete: bool,
     pub(crate) name: String,
 }
 
@@ -153,6 +158,7 @@ pub(crate) fn pushed_commands(body: &[u8]) -> Result<PushCommands, PushError> {
         }
         commands.push(RefCommand {
             create: old.bytes().all(|b| b == b'0'),
+            delete: new.bytes().all(|b| b == b'0'),
             name: name.to_string(),
         });
     }

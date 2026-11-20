@@ -134,14 +134,19 @@ impl AllowedRepo {
         self.port == port && (host == self.host || host == self.api_host())
     }
 
-    /// Whether `branch` (a short name) may not be pushed to.
+    /// Whether `branch` (a short name) may not be pushed to: the default, a protected one, a pages
+    /// branch, and the names a deploy or a release is triggered from (ADR 0128 D3h.8).
     pub(crate) fn protects(&self, branch: &str) -> bool {
-        branch.eq_ignore_ascii_case(&self.default_branch)
-            || branch.eq_ignore_ascii_case("gh-pages")
+        let lower = branch.to_ascii_lowercase();
+        const NAMES: &[&str] = &["main", "master", "prod", "production", "gh-pages"];
+        const PREFIXES: &[&str] = &["release/", "deploy/", "prod/", "production/"];
+        lower == self.default_branch.to_ascii_lowercase()
+            || NAMES.contains(&lower.as_str())
+            || PREFIXES.iter().any(|p| lower.starts_with(p))
             || self
                 .protected_branches
                 .iter()
-                .any(|p| branch.eq_ignore_ascii_case(p))
+                .any(|p| lower == p.to_ascii_lowercase())
     }
 }
 

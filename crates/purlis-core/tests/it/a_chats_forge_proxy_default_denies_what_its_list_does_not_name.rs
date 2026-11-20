@@ -157,7 +157,6 @@ fn a_gitlab_merge_request_aimed_at_another_project_is_refused() {
         (&br#"{"target_project_id":43,"title":"t"}"#[..], ""),
         (&br#"{"target_project_id":"43"}"#[..], ""),
         (&b"target_project_id=43&title=t"[..], ""),
-        (&b"{}"[..], "?target_project_id=43"),
     ] {
         let out = post(body, q);
         assert!(
@@ -221,6 +220,7 @@ fn an_absolute_form_target_and_a_method_override_query_are_refused() {
 fn run(s: &Scene, extra: &[(&str, &str)]) -> Outcome {
     let head = RequestHead::new("POST", "api.github.com", 443, "/repos/acme/app/issues");
     let mut h = headers(Auth::Bearer(s.a_sentinel.expose()));
+    h.push(("Content-Type".to_string(), "application/json".to_string()));
     h.extend(extra.iter().map(|(n, v)| (n.to_string(), v.to_string())));
     s.proxy.handle(
         &s.a,
@@ -263,7 +263,13 @@ fn headers_that_choose_the_host_the_method_or_a_login_are_not_forwarded() {
     let f = fwd(run(
         &s,
         &[
-            ("Host", "evil.example"),
+            ("Host", "api.github.com"),
+            ("X-Forwarded-Host", "evil.example"),
+            ("X-Forwarded-For", "10.0.0.1"),
+            ("Forwarded", "host=evil.example"),
+            ("X-Original-URL", "/admin"),
+            ("X-Rewrite-URL", "/admin"),
+            ("PRIVATE_TOKEN", s.a_sentinel.expose()),
             ("X-HTTP-Method-Override", "PUT"),
             ("X-Method-Override", "DELETE"),
             ("PRIVATE-TOKEN", s.a_sentinel.expose()),

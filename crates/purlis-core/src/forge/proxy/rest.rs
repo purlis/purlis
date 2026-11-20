@@ -9,7 +9,7 @@
 //! are an allowlist: a route not named below is refused, whatever it would do. The names exist so
 //! the refusal says why; they are never what lets a request through.
 
-use super::commands;
+use super::commands::{self, Body};
 use super::policy::{Class, Refusal};
 use super::repo::{AllowedRepo, Kind};
 use super::request::{Target, is_read};
@@ -219,41 +219,86 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
     }
 }
 
-/// What a write's body may not say: a merge command in any text, and, on GitLab, a merge request
-/// aimed at another project.
+/// The reads a chat may make under its repo: an allowlist, per forge, of the families it works
+/// with. Anything else (secret scanning, traffic, exports, triggers…) is not on it.
+fn read_allowed(kind: Kind, rel: &[String]) -> bool {
+    let first = rel.first().map(|s| s.to_ascii_lowercase());
+    let Some(first) = first else {
+        // The repo itself: its name, default branch and visibility.
+        return true;
+    };
+    let second = rel.get(1).map(|s| s.to_ascii_lowercase());
+    match kind {
+        Kind::GitHub => match first.as_str() {
+            "pulls" | "issues" | "commits" | "branches" | "contents" | "compare" | "readme"
+            | "languages" | "contributors" | "labels" | "milestones" | "tags" | "releases"
+            | "check-runs" | "check-suites" | "statuses" | "status" => true,
+            "git" => matches!(
+                second.as_deref(),
+                Some("refs" | "trees" | "blobs" | "commits" | "matching-refs" | "ref")
+            ),
+            "actions" => matches!(
+                second.as_deref(),
+                Some("runs" | "jobs" | "artifacts" | "workflows")
+            ),
+            _ => false,
+        },
+        Kind::GitLab => match first.as_str() {
+            "merge_requests" | "issues" | "pipelines" | "jobs" | "labels" | "milestones"
+            | "languages" | "commits" | "releases" => true,
+            "repository" => matches!(
+                second.as_deref(),
+                Some(
+                    "tree"
+                        | "files"
+                        | "blobs"
+                        | "commits"
+                        | "branches"
+                        | "compare"
+                        | "tags"
+                        | "contributors"
+                )
+            ),
+            _ => false,
+        },
+    }
+}
+
+/// What a write's request may not say: a query at all, a merge command in any text, and, on
+/// GitLab, a merge request aimed at another project.
 fn check_body(
     kind: Kind,
     rel: &[String],
     target: &Target,
-    body: &[u8],
+    body: Option<&Body>,
     repo: &AllowedRepo,
 ) -> Result<(), Refusal> {
-    if commands::body_strings(body)
+    // No write carries a query: an unknown parameter is the forge reading something the proxy
+    // did not.
+    if !target.query.is_empty() {
+        return Err(Refusal::MalformedRequest);
+    }
+    let Some(body) = body else {
+        return Ok(());
+    };
+    if body
+        .strings
         .iter()
         .any(|text| commands::has_merge_command(text))
     {
         return Err(Refusal::MergeCommand);
     }
     if kind == Kind::GitLab && rel.first().is_some_and(|f| f == "merge_requests") {
-        let mut named: Vec<String> = target
-            .query
-            .iter()
-            .filter(|(k, _)| k.eq_ignore_ascii_case("target_project_id"))
-            .map(|(_, v)| v.clone())
-            .collect();
-        match serde_json::from_slice::<serde_json::Value>(body) {
-            Ok(serde_json::Value::Object(map)) => {
-                if let Some(v) = map.get("target_project_id") {
-                    named.push(v.as_str().map_or_else(|| v.to_string(), str::to_string));
-                }
-            }
-            Ok(_) => {}
-            Err(_) => named.extend(
-                url::form_urlencoded::parse(body)
-                    .filter(|(k, _)| k == "target_project_id")
-                    .map(|(_, v)| v.into_owned()),
-            ),
+        let mut named: Vec<String> = Vec::new();
+        if let Some(v) = body.json.as_ref().and_then(|j| j.get("target_project_id")) {
+            named.push(v.as_str().map_or_else(|| v.to_string(), str::to_string));
         }
+        named.extend(
+            body.form
+                .iter()
+                .filter(|(k, _)| k == "target_project_id")
+                .map(|(_, v)| v.clone()),
+        );
         let own = repo.project_id.map(|id| id.to_string());
         if named.iter().any(|n| Some(n) != own.as_ref()) {
             return Err(Refusal::OtherRepo);
@@ -268,14 +313,18 @@ pub(crate) fn decide(
     method: &str,
     rel: &[String],
     target: &Target,
-    body: &[u8],
+    body: Option<&Body>,
     repo: &AllowedRepo,
 ) -> Result<Class, Refusal> {
     if let Some(refusal) = named_refusal(method, rel, target) {
         return Err(refusal);
     }
     if is_read(method) {
-        return Ok(Class::ApiRead);
+        return if read_allowed(kind, rel) {
+            Ok(Class::ApiRead)
+        } else {
+            Err(Refusal::NotOnList)
+        };
     }
     let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
     check_body(kind, rel, target, body, repo)?;
