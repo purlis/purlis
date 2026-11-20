@@ -15,6 +15,14 @@ tried is said where each claim is made. **Slices A (proxy core), C (credential s
 (readiness) and E (the `gh`/`glab`/`git` spike) build against this record; its section numbers
 (D1 to D10) are the ones they were given.**
 
+**Round 8 adopts spike E's results** (PR #7270, `tests/one-login-spike/spike.mjs`: a fake forge and
+a stand-in proxy, a real `gh`, `glab`, `git`, `cargo`, `npm` and `pip`, on Linux and macOS CI, 66
+cases each, **no real forge and no real token**). It **rewrites D3b and D3c**, changes D3a's "not
+a TLS interceptor" (scoped, with its security consequence named in D3h.10), amends D3g and D3i,
+and moves the requirement row for `gh`/`glab`/`git` from "conditional" to "condition met on both
+systems for the mechanisms below, with the gates that remain named". **What the spike proved is
+marked *(spike E)*; what it did not is marked *not proven* and stays a gate.**
+
 ## The requirement
 
 Someone has a personal repo, an organization repo, a repo on GitHub Enterprise Server (GHES), on
@@ -220,8 +228,14 @@ A chat holds **no token**. Three tools reach the forge for it, and all three rea
 
 **A real HTTP reverse proxy that terminates in the app**, where the keyring is. It is **a route
 inside each chat's own per-chat HTTP egress port** (ADR 0067 amended 2026-10-10-01: the port is the
-chat), not a second port and not a TLS interceptor. It speaks plain HTTP on that loopback port to
-the chat and TLS to the forge, with the system's roots. **An egress proxy held elsewhere** (a session host's,
+chat), not a second port. It speaks to the chat three ways, all the chat's own: **plain HTTP over
+a per-chat unix socket** (`gh`, D3c), **`CONNECT` on the chat's loopback port, with TLS terminated
+under a per-chat purlis CA for the recorded forge hosts only** (`git`, `glab`, and the
+tarball tools: D3c), and the existing tunnel for every other host, host and port only, **never
+opened up**. It speaks TLS to the forge, with the system's roots. **This changes round 3's "no TLS
+interception", and the change is scoped**: only the forge hosts of D3g and D3i's closed list, only
+for a client the chat's environment told to trust that CA, **never added to the system or the
+keychain trust**; the security consequence is D3h.10. **An egress proxy held elsewhere** (a session host's,
 a runner's) does not hold the credential: it **forwards the forge calls to the app's proxy**, and
 the app answers them. So a chat in a container, over SSH or on a runner reaches the same proxy
 with the same rules (D9 says what a runner with no desktop does).
@@ -236,11 +250,14 @@ amendment list below, never edited in place):
 - **Item 4** (the local-address check): unchanged. The forge route is **served by the proxy
   itself**, which dials the forge's public address; a chat's request to its own port is not a
   connection to "this machine" in the sense the check refuses, and the exception is **that exact
-  port, for that chat**, listed.
+  port, and that chat's own unix socket, for that chat**, listed. **The sandbox profile gains one
+  allowed unix socket per chat (its own), and no other** *(spike E: `gh` connects to it; the
+  socket must be in the chat's allowed unix sockets)*.
 - **Item 5** (*"host and port only … no path rules"*): **amended for the forge route only.** A
-  tunnel (`CONNECT`) is still host and port only. A plain-HTTP **origin-form** request on the
-  chat's own port, for the forge route, is read: method, canonical path, headers and, for GraphQL
-  and a push, the body.
+  tunnel (`CONNECT`) to any host the proxy does not terminate is still host and port only. A
+  request on the forge route (**plain HTTP over the chat's unix socket, or inside a `CONNECT` to a
+  recorded forge host that the proxy terminates**) is read: method, canonical path, headers and, for
+  GraphQL and a push, the body.
 - **Item 7** (*"no buffer past a fixed size"*): the forge route **streams** (clone and fetch packs,
   release assets, artifacts) with a bounded window; **the one exception is a push whose changed
   paths are read (D8.3)**, which is held up to a size limit (Open item 5).
@@ -276,12 +293,13 @@ path, verdict).
 2026-10-10-01 item 1: one pair of ports per chat, opened when it starts and closed when it ends).
 Round 4's "one port for every chat on the machine" is **withdrawn**: ADR 0067's rule is that the
 port is the chat, and a shared port would have needed the chat to say who it is. The route
-extends that port to **origin-form** requests (a request line `GET /acme/app.git/info/refs`, not
-only `CONNECT` and absolute-form) and to **streaming** (D3a).
+extends that port to **a `CONNECT` the proxy terminates for a recorded forge host** and to
+**streaming** (D3a); `gh` uses **the chat's own unix socket** beside it (D3c).
 
-**Identity is that port plus a per-chat secret.** The port names the chat; the secret is the
-second factor that makes a process that merely reaches the port (the harness, a hook: D3h.1) not
-enough:
+**Identity is that port, or that socket's path, plus a per-chat secret.** The port or the
+socket path names the chat (**only that chat's sandbox may connect to it**); the secret, called
+**the sentinel** where a tool sends it, is the second factor that makes a process that merely
+reaches the port (the harness, a hook: D3h.1) not enough:
 
 - **The secret is at least 128 bits from the operating system's random source**, minted **at every
   chat start and at a resume** and never reused, held in the app's memory and the chat's
@@ -290,26 +308,27 @@ enough:
   few wrong secrets in a minute answers nothing for the next minute and raises one Notice naming
   the chat. A wrong secret is refused as IN_DOUBT and audited.
 - **Each tool carries it where it already sends a credential**, and the proxy reads it from only
-  these places, **strips them all** and injects the person's (D3a): git, in a
-  `Proxy-Authorization: Basic` header set by `http.extraHeader`; `gh`, as its token
-  (`Authorization: token …`, from `GH_TOKEN`); **`glab`, as its token (`PRIVATE-TOKEN` or
-  `Authorization: Bearer …`, from `GITLAB_TOKEN`)**. Round 4 said the host and secret travel as
-  `Proxy-Authorization` for all three and that `GITLAB_TOKEN` was that secret; **`glab` does not
-  send `GITLAB_TOKEN` as `Proxy-Authorization`, so that did not work and is corrected here**: the
-  secret is the same value, in the header each tool really sends, and **the host is not in the
-  credential**: it is the next bullet.
-- **The host is named by the request and checked, never trusted.** The chat's URL begins with the
-  forge host's name as its first path segment (git, `glab`) or is the virtual host `gh` is given
-  (D3c). The proxy requires that name to be **one of the host names this chat's recorded repos
-  are on** (D4), and **builds the upstream from its own recorded value, not from the request's
-  text**: a request that names another host, or whose `Host`, `X-Forwarded-Host`, `Forwarded`,
-  `X-Original-URL` or similar header disagrees, is refused. **So no path segment chooses an
-  upstream**: it selects among the hosts the chat already has, and the upstream is the proxy's own
-  string. (The unrecorded-repo read route has a fixed list of hosts and no credential: D3i.)
+  these places, **strips them all** and injects the person's (D3a). **Each tool sends it as its
+  own credential** *(spike E: each reached the proxy as below on both systems; the proxy swapped
+  it for the real token, decoding Basic first, and the forge saw the real token and never the
+  sentinel)*: git, as the **password of Basic `Authorization`**, answered by the credential
+  helper (`username=x-access-token`); `gh`, as `Authorization: token …` from `GH_TOKEN` and
+  `GH_ENTERPRISE_TOKEN`; `glab`, as `GITLAB_TOKEN`. Rounds 4 to 7 put git's in
+  `Proxy-Authorization` through `http.extraHeader`; **that is replaced** by the helper, so git
+  needs no header configuration.
+- **The host is the request's own, and it is checked, never trusted.** With the rewrite gone
+  (D3c) a request names its forge by **the host it was sent to**: `github.localhost`'s API host
+  for `gh`, the `CONNECT` target for git and `glab`. The proxy requires that host to be **one of
+  the host names this chat's recorded repos are on** (D4), and **builds the upstream from its own
+  recorded value, not from the request's text**: a request whose `Host`, `X-Forwarded-Host`,
+  `Forwarded`, `X-Original-URL` or similar header disagrees with the host the connection was
+  made to is refused. **No path segment chooses an upstream.** (A repo that is not recorded takes
+  the anonymous route, chosen by the proxy from the sentinel's absence on that repo, and carries
+  no credential: D3i.)
 
-Why not a kernel read of the connecting process (a TCP loopback socket has no peer credential; the
-unix-socket forms are not spoken by `git` and `glab`), is round 3's weighing, unchanged (research
-7.3).
+Why not a kernel read of the connecting process (a TCP loopback socket has no peer credential;
+`git` and `glab` do not speak a unix socket, though `gh` does and uses one), is round 3's weighing,
+unchanged (research 7.3).
 
 **The one exception: a chat the person chose to run with no sandbox** (ADR 0124's No sandbox; the
 person decided to run it unconfined). Such a chat **gets the same proxy route and the same
@@ -327,55 +346,96 @@ clone's `.git/config` is not touched. **One carve-out, headless only (D9):** a C
 its own authentication (`actions/checkout`'s `http.<host>.extraheader` token) in the clone's
 `.git/config` on disk, where a chat could read it, so **the runner removes that entry, and any
 include that carries it, from the clone's config before a chat starts** (D9). It is the CI's
-credential in a checkout the runner owns, not the person's configuration. Every route is **to the
-chat's own port** (D3b).
+credential in a checkout the runner owns, not the person's configuration.
 
-- **git.** **One `url.<proxy>/<host>/<owner>/<repo>.git.insteadOf` per recorded repo**, plus one
-  broader `url.<proxy>/anon/<host>/.insteadOf https://<host>/` for the **anonymous read route**
-  (D3i), so an unrecorded public repo's dependency fetch has a way and **no credential**. git
-  takes the **longest matching prefix**, so a recorded repo always takes the credentialed route
-  and every other path on a forge host takes the anonymous one. Requests are **origin-form** to
-  the chat's port with the secret in `http.extraHeader`. **No credential helper at all**: the list
-  stays empty as #7241 makes it, so `git credential fill` yields nothing. **Reconciling the
-  rewrite with "no path segment names an upstream" (D3b):** the first segment `<host>` is a
-  **lookup key into the chat's recorded hosts**, and the upstream string is the proxy's own;
-  `/anon/<host>/` is a lookup into a **closed list** (the forge hosts the app knows), never an
-  open host; storage hosts are not on it (D3i).
-- **glab.** `GITLAB_HOST` is the real host name, `GITLAB_API_HOST` is the loopback address and
-  port, `GLAB_API_PROTOCOL=http`, `GITLAB_TOKEN` is the chat's secret (a value glab will not run
-  without; it is sent as `PRIVATE-TOKEN` or a bearer and the proxy accepts it there, D3b).
-  Origin-form requests to the port, like git.
-- **gh.** **Through a wrapper purlis writes for each chat that clears `NO_PROXY` and `no_proxy`**
-  and sets `HTTP_PROXY` to the chat's port, and sets `GH_HOST=github.localhost` (`GH_TOKEN` the
-  chat's secret, sent as `Authorization: token …`, D3b). Go never proxies `localhost` and loopback
-  hosts while `NO_PROXY` can name them, which would send the call straight to nowhere; the wrapper
-  removes that case. The wrapper picks the host from the working directory. **A risk the spike
-measures first (Open item 1):** the clone's remotes still say `github.com`, and `gh` matches a
-remote to its host, so with `GH_HOST=github.localhost` **`gh pr create` and the commands that
-infer the repo from a remote may not find a matching remote**. **Fallback, and what it gives
-up:** the wrapper also sets `GH_REPO=<host>/<owner>/<name>` from the recorded repo of the working
-directory, and passes `--repo` where a command needs it, so `gh` is told the repo and does not
-infer it. That gives up `gh`'s inference from the working directory's remotes and branch (`gh pr
-status`, a bare `gh pr view` of the current branch), and a chat that works across repos sets the
-repo itself. If that also fails, **`gh` is the gap** (below) and `git` and `glab` ship. For GHES, the same
-  virtual host maps to `https://<host>/api/v3/` and `/api/graphql`: `gh` has no plain-HTTP mode for
-  an enterprise host, and this gives it one.
+Every tool's route is **to the chat's own port or socket** (D3b), set **in the environment** and
+**in the chat's own config directory**, and each is spike E's, on both systems *(spike E)*.
+**One per-chat CA** (a key held in the app's memory only, and a certificate written to the chat's
+folder) serves every `CONNECT` the proxy terminates (D3a). It is **named in the tool's own
+variable, never in the system or the keychain trust.**
+
+- **git: the environment alone** *(spike E: `git ls-remote` and a full `git clone` reached the
+  forge with the real token on both systems)*. `HTTPS_PROXY` is the chat's port,
+  `GIT_SSL_CAINFO` is the per-chat CA, and **a credential helper, scoped to the recorded forge
+  hosts, answers the sentinel** (`username=x-access-token`, `password=<sentinel>`; purlis's own
+  small command, holding no token), all through `GIT_CONFIG_*` as #7241 does. **`git remote -v`
+  is unchanged (`github.com`), and there is no `insteadOf`, no `/anon/` prefix and no change to the
+  person's clone's `.git/config`.** The proxy decides the route from the repo in the request:
+  **a recorded repo takes the credentialed route, and every other repo on a forge host takes the
+  anonymous one with no credential** (D3i), which replaces round 7's longest-prefix rewrite. The
+  helper list is **purlis's one helper, not empty**: D3g says what that changes.
+- **gh: `GH_HOST=github.localhost` and a unix socket** *(spike E: `gh api user`, `gh api graphql`,
+  `gh api repos/o/r` and `gh repo view o/r --json name,url` reached the proxy with
+  `Authorization: token <sentinel>`, plain HTTP over the socket, on both systems; no CA, port or
+  DNS)*. Per chat, a **`GH_CONFIG_DIR`** (empty of any login; D3g) whose `config.yml` sets
+  **`http_unix_socket`** to the chat's socket, `GH_HOST=github.localhost`, and
+  `GH_TOKEN` and `GH_ENTERPRISE_TOKEN` the sentinel. **The socket's path is the chat's identity:
+  only that chat's sandbox may connect to it (D3a), plus the sentinel (D3b).** Paths are
+  github.com's shape (`/user`, `/graphql`), not `/api/v3`, so the proxy builds the upstream from
+  its own recorded host (D3b). **`NO_PROXY` no longer matters to `gh`**: the round-7 wrapper that
+  cleared it is dropped (*spike E: with the chat's own `NO_PROXY=localhost,…`, `gh` over
+  `HTTP_PROXY` bypassed the proxy and failed on macOS*; the socket does not use it).
+  **Remote matching, ruled:** with `GH_HOST=github.localhost` and a clone whose remote is
+  `github.com`, `gh pr view`, `pr checks` and `pr create` fail before any request with *"none of
+  the git remotes configured for this repository correspond to the GH_HOST environment
+  variable"* on both systems *(spike E)*. **The gh wrapper purlis writes for each chat therefore
+  passes `-R github.localhost/<owner>/<repo>`**, from the recorded repo of the working directory,
+  to every subcommand that takes it and when the chat gave no `-R` of its own *(spike E: `gh pr view
+  1 -R github.localhost/o/r` reached the proxy with the remote left at `github.com`)*. **Not an
+  alias of the remote**: that needs a rewrite of the clone's config or an `insteadOf`, which D3c
+  has just dropped. **What it gives up:** `gh`'s inference of the repo from the remotes, and
+  `-R` is a per-call flag that **needs the pull request argument**, so a bare `gh pr view` or
+  `gh pr status` of the current branch is not offered (the chat passes the number or the branch);
+  a chat that works across repos passes its own `-R`. **The wrapper never reads `gh`'s output**
+  (a table of the subcommands that take `-R` is the whole mechanism), and **the sentence above
+  must not reach the person**: if it appears, a subcommand is missing from the table, which is a
+  test failure, not a message to show. `GH_REPO` was **not run** and is not relied on. For GHES,
+  the virtual host maps to `https://<host>/api/v3/` and `/api/graphql` at the proxy: **not
+  proven** *(spike E ran only a github.com-shaped fake)*.
+- **glab: `HTTPS_PROXY`, `GLAB_CA_CERT` and `GITLAB_TOKEN`** *(spike E: `glab api user` and
+  `glab api projects/o%2Fr` reached the forge with the real token on both systems;
+  `GLAB_CA_CERT` is glab's own setting and was honoured on macOS too)*. `HTTPS_PROXY` is the
+  chat's port, `GLAB_CA_CERT` the per-chat CA, `GITLAB_TOKEN` the sentinel, and **`GITLAB_HOST`
+  stays the real host**. **Chosen over `GITLAB_HOST=127.0.0.1:<port>` with `GLAB_API_PROTOCOL=http`**
+  (which also worked, with no CA), because the real host keeps `glab`'s own repo inference from
+  the remotes and the one CA and one `CONNECT` mechanism git already uses, so there is no second
+  port-per-host route or a plain-HTTP mode to keep, and `glab`'s remote matching never has a host
+  that disagrees with the remote. **The `GITLAB_API_HOST` and `GLAB_API_PROTOCOL` settings of
+  rounds 4 to 7 are dropped.**
+- **cargo.** **`net.git-fetch-with-cli=true` is set for every chat** (`CARGO_NET_GIT_FETCH_WITH_CLI`),
+  so cargo's git dependencies go through `git` and the route above *(spike E: works on both
+  systems)*. **libgit2, cargo's default, is a named gap: it got 401 on both systems in every
+  variant tried** (including a single-entry helper config in `$HOME/.gitconfig`), cause unknown.
+  A chat that unsets the setting, or a tool that links libgit2 itself, gets the Notice (one
+  sentence, with *"Set `net.git-fetch-with-cli`"* as its fix). Cargo also asks `api.github.com`
+  for `GET /repos/o/r/commits/HEAD` **with no credential** before it falls back to git: the proxy
+  sees an unauthenticated API call and serves it on the anonymous route (D3i).
+- **npm and pip: tarballs through the proxy, on the anonymous route** *(spike E)*: npm
+  `install https://codeload.github.com/o/r/tar.gz/<ref>` through `HTTPS_PROXY` with
+  `NODE_EXTRA_CA_CERTS` reached the forge and installed on both systems; pip with `HTTPS_PROXY`
+  and `PIP_CERT` reached it on both. **These are on the anonymous route and carry no credential**
+  (D3i); that the spike's npm line set an `_authToken` and its pip URL carried user info is the
+  spike's fake forge's way of checking the swap, and **purlis sets neither**.
 - **The proxy re-emits canonical URLs.** It never forwards the chat's own request line: it parses,
   validates against D3d and builds the upstream URL itself. `Link` response headers are rewritten
   to the chat-side address, or `--paginate` would leave the proxy.
-- **Pinned versions.** purlis names the **proven `gh` and `glab` versions** (the spike's, E:
-  `gh` 2.69.0 and `glab` 1.119.0 are what was read) and a chat whose `gh` is another version gets
-  the wrapper's one sentence naming the proven one. An unproven version is not blocked from
-  `git`, only from the `gh` route.
-
-**Not proven.** git's proxying of a `*.localhost` name, that a live `gh` or `glab` completes
-`pr create`, `pr checks`, `run view`, a paginated list or a GraphQL query through the proxy, **and
-that `glab` sends `GITLAB_TOKEN` in the header D3b says**, were **not run** (the sandbox of the
-session that wrote this record refused every loopback bind and connect, and it was not worked
-around). That run is **slice E's** and gates the build. **Fallback** for git, with no dependence on
-proxy variables: rewrite straight to `http://127.0.0.1:<port>/<host>/<owner>/<repo>.git`. If `gh`
-fails the run, **the gap is named as `gh`'s, and `git` and `glab` still ship**; no purlis CA, no
-shim that reimplements the API and no token in an environment is acceptable.
+- **Pinned versions** *(spike E ran: Linux `gh` 2.103.3, `glab` 1.119.0 and `git` 2.56.1; macOS
+  `gh` 2.105.0, `glab` 1.131.0 and `git` 2.56.1)*. purlis records the proven versions **per
+  system and tool in code beside `forgelock::PROBED`**, as the probe records a route, and **a chat
+  whose `gh`, `glab` or `git` is another version gets the Notice** (the version it found, the
+  one proven, the fix: install it, or Dismiss). **The route is still set up**; the Notice says it
+  is not one purlis has run. `GH_HOST=github.localhost` and `http_unix_socket` are
+  **undocumented or lightly documented**, so a `gh` bump re-runs the spike's job before the list
+  changes. (Round 7's `gh` 2.69.0 was a reading, not a run, and is withdrawn.)
+- **Not proven, and still gates** *(spike E)*: **`gh repo clone`** (by `o/r` and by URL: the fake
+  forge's answer did not satisfy `gh`'s `RepositoryInfo` query, so what it writes to `git remote
+  -v` is not recorded), **`gh pr create`, `pr checks` and `pr checkout` end to end** (only
+  remote matching and reach are proven; the fake has no PR endpoints), a **paginated list** and
+  **`run view`**, **a real github.com or gitlab.com** (everything above is a fake on loopback; the
+  proxy was a stand-in; no real token was used), and **GHES**. Those need a fuller fake or the
+  real proxy, and are **slice A's and the live check's** (Open item 1). **If `gh` fails them,
+  the gap is named as `gh`'s, and `git` and `glab` still ship**; no shim that reimplements the
+  API and no token in an environment is acceptable. **No system-wide CA is acceptable.**
 
 ### D3d. The REST allowlist: default-deny, by (method, canonical path)
 
@@ -539,11 +599,16 @@ fragments are expanded**, and then:
   connection between requests, so a second request cannot ride the first's verdict.
 - **One approach for every chat, locked or not, at every floor** (the one exception, a person's
   own No-sandbox chat, is D3b's). A chat **never uses the person's own `gh` or git login**:
-  `GH_CONFIG_DIR` is an empty folder, the credential helper list is empty, `GIT_CONFIG_*` is
-  purlis's, at the watch floor and the full sandbox alike, and **the egress proxy denies the forge
-  hosts directly** (`github.com`, `api.github.com`, `uploads.github.com`, the GHES host,
-  `gitlab.com`, the self-hosted host; **the download-only hosts `codeload.github.com` and
-  `objects.githubusercontent.com` are the one carve-out, D3i**), **so the only route to a forge is the one this section describes**, which is
+  `GH_CONFIG_DIR` is the chat's own folder (no login in it, only the `http_unix_socket` setting,
+  D3c), **the credential helper list holds only purlis's one helper, which answers the sentinel
+  and holds no token (D3c; round 7's "empty" is replaced, and #7241's emptied list is kept
+  except for that one entry)**, `GIT_CONFIG_*` is purlis's, at the watch floor and the full
+  sandbox alike, and **the egress proxy denies the forge hosts directly** (`github.com`,
+  `api.github.com`, `uploads.github.com`, the GHES host, `gitlab.com`, the self-hosted host;
+  **"denies" means the `CONNECT` is answered by the forge route's own termination (D3a), not
+  tunnelled to the forge**; **the download-only hosts `codeload.github.com`,
+  `release-assets.githubusercontent.com` and `objects.githubusercontent.com` are the one
+  carve-out, D3i**), **so the only route to a forge is the one this section describes**, which is
   why D3i exists: a denied host with no anonymous way would break every dependency fetch. **This
   amends ADR 0067's amendment of 2026-11-19**: its *"under the shipped `watch` floor the person's
   `gh` and git over https keep working in a chat, on purpose"* (the keep) is withdrawn, and
@@ -595,6 +660,25 @@ person's access beyond the proxy:
    exfiltration is not**: the chat can send it to a host the person allowed. Closing it is the
    full sandbox's class-6 denial, not this record's.
 
+10. **The per-chat CA, and a proxy that reads the forge's TLS.** For the recorded forge hosts the
+    proxy terminates TLS under a CA the app minted for the chat (D3a), so **the proxy holds the
+    plaintext of every forge call of that chat**: the sentinel on the way in, the person's token
+    on the way out, and every pack and body. It already did on the plain-HTTP side; the new fact
+    is the key. **The consequence:** a process that obtains the CA's **private key** can present
+    a certificate for a forge host to any client that trusts that CA, which is **only a client
+    this chat's environment pointed at it** (`GIT_SSL_CAINFO`, `GLAB_CA_CERT`,
+    `NODE_EXTRA_CA_CERTS`, `PIP_CERT`), never the system, the keychain or the person's browser.
+    So: **the key stays in the app's memory and is never written** (the certificate is public);
+    **a new CA at every chat start and resume, dropped when the chat ends**, with the leaf
+    certificates short-lived; **the CA's certificate carries a name constraint to the forge hosts
+    of D3g and D3i** where the clients honour one (to be confirmed per client; **not proven**).
+    **A client that does not name the CA fails with a certificate error**, which is the intended
+    way for a tool outside the list to find that it has no route. **A chat that copies the CA
+    file into its own trust** has gained nothing the proxy does not already see. **The CA is never
+    added to the system or keychain trust**, because that would make the key a machine-wide
+    interceptor *(spike E also ran the OS-store form on both systems, as a comparison; it is not
+    used)*.
+
 ### D3i. The anonymous read route: dependency fetches with the forge hosts denied
 
 With the forge hosts denied at egress (D3g), a `git clone` of a **public repo the person has not
@@ -605,14 +689,17 @@ anything that runs it with the environment's git configuration: `go get` with `G
 and `GOPROXY=direct`, `pip install git+https://…`, `npm install github:…`, which call `git`), `gh`
 and `glab` (D3c), and the download-only hosts below. **What is not claimed:** that every tool a
 chat might run fetches this way. A tool with **its own HTTPS client** (`curl`, `wget`, a package
-manager's tarball fetch, an installer pulling a release binary) does not read git's rewrite and
-goes to `CONNECT`, which is ruled in the last bullet; **`cargo`'s built-in git client
-(`net.git-fetch-with-cli = false`, the default) may ignore the environment's git configuration**
-and dial the forge directly, which is **spike E's** to measure (Open item 1), with
-`net.git-fetch-with-cli = true` the fallback that sends cargo through the rewrite.
+manager's tarball fetch, an installer pulling a release binary) does not read git's configuration
+and goes to `CONNECT`, which is ruled in the last bullet (**`npm` and `pip` tarballs from
+`codeload.github.com` reach the proxy through `HTTPS_PROXY` and their own CA variable, and are on
+this anonymous route with no credential**: D3c *(spike E)*); **`cargo`'s built-in git client
+(libgit2, `net.git-fetch-with-cli = false`, the default) got 401 through this route on both
+systems in every variant** *(spike E)*, so **`net.git-fetch-with-cli = true` is set for every chat**
+(D3c) and libgit2 is a named gap.
 
 - **Unrecorded public repos only.** A recorded repo (D4) keeps the credentialed route; the
-  anonymous route is chosen by `/anon/<host>/` (D3c), serves a repo that is not recorded, and
+  anonymous route is **chosen by the proxy, from the repo in the request** (D3c: no path prefix
+  and no rewrite), serves a repo that is not recorded, and
   **sends the upstream no `Authorization` of any kind**. A repo that is not public answers 404 from
   the forge and the chat sees that.
 - **What it carries, and only reads:** git `info/refs` and `git-upload-pack` (never
@@ -627,7 +714,7 @@ and dial the forge directly, which is **spike E's** to measure (Open item 1), wi
   turned on the person's network.
 - **Storage hosts are dialed only for an exact URL the proxy was handed, never one the chat
   chose.** The storage hosts (GitLab's GCS or S3 buckets, `objects.githubusercontent.com`) are not
-  addressable through `/anon/<host>/` at all. The proxy dials one **only for the exact URL it
+  addressable as a request's own target at all. The proxy dials one **only for the exact URL it
   received in a forge's redirect `Location` or in an LFS batch `href`** on this request chain, once,
   with the credential dropped, and holds the URL in memory for that fetch. A chat that names a
   storage URL itself gets a refusal. For GitLab's buckets that keeps a signed URL of another repo
@@ -643,16 +730,19 @@ and dial the forge directly, which is **spike E's** to measure (Open item 1), wi
 - **Tools with their own HTTPS client: the `CONNECT` ruling.** The egress proxy still denies
   `CONNECT` to the forge hosts that take a credential or serve the API, but **allows `CONNECT` to
   download-only hosts that never take a credential**: **`codeload.github.com`,
-  `objects.githubusercontent.com`** (and **`release-assets.githubusercontent.com`**, to which
-  GitHub may redirect release assets: **added to this list pending spike E's probe** of where a
-  release download lands) and GitLab's archive and package download paths **where they
+  `release-assets.githubusercontent.com` and `objects.githubusercontent.com`**. *(Spike E, `curl
+  -I`, 2026-11-20: a release download at `github.com/<o>/<r>/releases/download/…` answers `302` to
+  **`release-assets.githubusercontent.com`**, not `objects.githubusercontent.com`; an archive at
+  `github.com/<o>/<r>/archive/…tar.gz` answers `302` to **`codeload.github.com`**. Both are on the
+  list; `objects.githubusercontent.com` stays, as older assets and other flows still name it, and
+  is not in either redirect today.)* The list also covers GitLab's archive and package download paths **where they
   are on separate hosts** (a GitLab archive on the instance's own host cannot be separated and
   stays on the route above). That serves `curl` and `npm`, `pip`, `go` tarball fetches and an
   installer's release binary **when the URL names such a host**. **`CONNECT` to `github.com`,
-  `api.github.com`, `uploads.github.com` and the GitLab hosts stays denied**, so **`curl
+  `api.github.com`, `uploads.github.com` and the GitLab hosts stays denied as a tunnel**, so **`curl
   https://github.com/<o>/<r>/releases/download/…` is a named exception**: it is refused with a
   Notice whose one sentence says *"Use `gh release download`, which goes through purlis, or the
-  `objects.githubusercontent.com` address the release redirects to."* (`gh release download` goes
+  `release-assets.githubusercontent.com` address the release redirects to."* (`gh release download` goes
   through the proxy and the redirect rule of D3g.) A download-only host takes no credential and
   an arbitrary path, so a `CONNECT` to it carries no person's access; **it is also not a way to
   read a private repo**, for the host serves only what a signed or public URL names.
@@ -1143,8 +1233,9 @@ nothing for an agent; "mints nothing" no longer says what the record is for.) AD
 
 **ADR 0067's amendments 2026-10-10-01 items 2, 4, 5 and 7 and 2026-10-10-02 item 4** (D3a lists
 each, with what stands): item 2 gains *"For the forge route the port is joined by a per-chat secret
-(ADR 0128 D3b)"*; item 4's exception names **a chat's own port**; item 5 gains *"except the forge
-route's origin-form requests on the chat's own port, which are read"*; item 7 gains *"except the
+(ADR 0128 D3b)"*; item 4's exception names **a chat's own port and its own unix socket**; item 5 gains *"except
+the forge route's requests (over the chat's own unix socket, or inside a `CONNECT` the proxy
+terminates for a recorded forge host), which are read"*; item 7 gains *"except the
 forge route's streaming and a push held up to a size limit"*; 2026-10-10-02 item 4 is **unchanged**
 and D3h.2 names a managed policy that turns it on. **No other 0067 text changes.**
 
@@ -1164,12 +1255,12 @@ quoted there with what it now says. **No "decision 20"** is cited: this checkout
 | **Committed `mint = "github-app"` lines** | in project files; **teammates on older builds** still read them | On the new build the line is **ignored and a Notice says so once** (*"This project asks for a GitHub App token that purlis no longer mints; chats use your sign-in"*); the line is not rewritten on the person's behalf, but a window action deletes it from the project file. A **teammate on an older build** keeps working as before (the line still mints there); the two builds do not disagree about the repo, only about the credential. The line is removed from `purlis init` templates now and from the docs; support of the key is dropped one release after this record's feature ships |
 | **Forge lock slices #7205–#7216** | #7205, #7206 closed; #7207–#7216 open | See the next table |
 | **Design PR #7171** (the merge and release lock is the forge credential) | open | **Closed as superseded** by this record: its premise (the forge locks merges for a bot) is gone (D6). Its facts on rulesets and bypass actors move to the research note as the advisory backstop (D6), not a design |
-| **#7241** (a chat on a locked repo holds no path to the person's forge login) and **`forgelock::claimed` without the mint** | merged | **Kept and generalised**: its routes (empty `GH_CONFIG_DIR`, the helper list emptied, `GIT_CONFIG_*`, no SSH agent, the connector denies) become the every-chat baseline (D3g); `claimed`'s *claim* test is removed, so every chat is on it, **with the 0067 amendment above**. The "Not closed" rows of that amendment (a chat's own `-c credential.helper`, keychain) are what the egress denial of the forge hosts (D3g) closes, and what D3h names where it does not |
+| **#7241** (a chat on a locked repo holds no path to the person's forge login) and **`forgelock::claimed` without the mint** | merged | **Kept and generalised**: its routes (empty `GH_CONFIG_DIR`, the helper list emptied (**round 8: but for purlis's one sentinel helper**, D3g), `GIT_CONFIG_*`, no SSH agent, the connector denies) become the every-chat baseline (D3g); `claimed`'s *claim* test is removed, so every chat is on it, **with the 0067 amendment above**. The "Not closed" rows of that amendment (a chat's own `-c credential.helper`, keychain) are what the egress denial of the forge hosts (D3g) closes, and what D3h names where it does not |
 | **#7230** (GitLab works under the credentials class through a brokered `glab` route) | **open, not merged, not in the merge queue** (no auto-merge set, merge state unknown, checked 2026-11-20) | **Held, then folded**: it must not land as written, since its vault token handed to a chat is what D3 removes. Its **fallback condition is aligned with D1.3**: a vault `GITLAB_TOKEN` is read **only** where no OAuth application can be registered for the host (D1.3), then **moved to a token connection** (D9) in the keyring and the vault item offered for deletion; where OAuth is available, the window signs in instead |
 | **#2053** (Runners: agent forge identity for `gh` and `glab`; SD-7a/b) | open | **Replaced** by desktop forwarding and token connections (D9). Closed as superseded; the pool and operator path is D9.2's Secret |
 | **#3882** (mint a chat's GitHub App token on a GHES) | open | **Not marked met on paper.** It is met by D1.3 (a GHES registration) and D3 **only once proven**: a live sign-in against a GHES, through the proxy, with the readiness check, passes slice E's spike on that host. It stays open until then, with the proof named |
 | **#7133** (the merge and release lock is the forge credential) | open | Closed as moot (D6), after its useful slices are re-parented (next table) |
-| **#1351** (purlis answers git's HTTPS credential requests for sandboxed chats) | open | Closed as moot: there is no helper, nothing to answer (D3c) |
+| **#1351** (purlis answers git's HTTPS credential requests for sandboxed chats) | open | Closed as superseded: purlis answers no credential request. **Round 8's helper answers only the sentinel, a value worth nothing outside the proxy (D3b, D3c)**, so the issue's own design, a helper that returns the person's token, is not built |
 | **#7196, #7210** (a CLI clone left out of the token; refuse a mint for an unlocked repo) | open | #7196 becomes **D4's trust list** with "Trust this clone"; #7210 closes as moot (no mint) |
 | **ADR 0077 amended 2026-10-12-04** (CLI login import), **2026-10-29-01** (App-minted token) | in force | Superseded (D1.2, amendments above) |
 
@@ -1232,9 +1323,9 @@ a restart drops it and the chat re-asks); the per-chat secret (memory only, not 
 | **One login** | Once per forge host (and account, D2) | **SAML** reauthorization, **revocation**, **GitHub's one-year-unused revocation**, and a GitLab refresh token unused past its limit (D2) |
 | **Auto renewal, no interaction** | D2: **GitHub's OAuth-app token does not expire (from documentation, a gating probe), so there is nothing to renew there**; the app refreshes GitLab's | a token connection (none); revocation; the same SAML case; the one-year rule |
 | **Runners and CI** | D9: desktop forwarding over the runner's authenticated connection, else a token connection; repos recorded from the token's own config; chat environment scrubbed and token types checked by prefix | a runner with no desktop cannot approve a held act (D8.4); **`CI_JOB_TOKEN` reaches only a short list of GitLab endpoints** (D9.4), so most `glab` writes are refused by GitLab, not by purlis; `GITHUB_TOKEN`'s limits (D9.4) apply |
-| **The chat does `gh`/`glab` and native git fetch, pull and push, pull and merge requests, comments and CI reads, nothing typed** | D3c: `gh` and `glab` pointed at the proxy, git through the environment's rewrite, no helper and nothing to type. **Conditional on spike E for `gh pr create`**: if `GH_HOST=github.localhost` cannot match a `github.com` remote, the fallback is `GH_REPO` and `--repo` set by the wrapper (D3c), which gives up `gh`'s inference of the repo from the remotes; if that fails too, `gh` is the named gap on GitHub and the pull request is opened by the app on the person's press, as ADR 0078's V9 amendment says. | what the fallback gives up: `gh`'s inference of the repo from the remotes (`GH_REPO`), or, if that fails too, `gh pr create` on GitHub |
+| **The chat does `gh`/`glab` and native git fetch, pull and push, pull and merge requests, comments and CI reads, nothing typed** | D3c: **`gh` through `GH_HOST=github.localhost` and a per-chat `http_unix_socket`, with the wrapper passing `-R github.localhost/<owner>/<repo>`; git through `HTTPS_PROXY`, a per-chat CA and a helper that answers the sentinel; `glab` through `HTTPS_PROXY`, `GLAB_CA_CERT` and `GITLAB_TOKEN`; no rewrite, `git remote -v` unchanged. Condition met on Linux and macOS for these mechanisms, against a fake forge and a stand-in proxy** *(spike E, #7270: `gh` 2.103.3 and 2.105.0, `glab` 1.119.0 and 1.131.0, `git` 2.56.1; 52 and 50 of 66 cases work, the rest listed as not proven)*. **Gates that remain:** `gh repo clone` and a full `pr create`, `pr checks`, `pr checkout`, `run view` and a paginated list, **against the real proxy and a real forge**; GHES; the name constraint on the CA (D3h.10) | what the wrapper gives up: `gh`'s inference of the repo from the remotes and a bare `gh pr view` or `pr status` (`-R` needs the pull request argument); **cargo's libgit2 (401 in every variant), a named gap with its Notice**; a `gh`, `glab` or `git` version spike E did not run gets a Notice; if `gh` fails the gates above, `gh pr create` on GitHub is the named gap and the pull request is opened by the app on the person's press, as ADR 0078's V9 amendment says |
 | **A chat can merge, tag, release, change CI, fork** | D8: asks that show exactly what will happen, approved in Asks, performed by the app with the SHA bound; a CI-file push on GitHub uses a **second, `workflow`-scoped token** the chat's routes never see | none held dead. **Not closed:** what an existing workflow runs on the chat's branch push, merge-bot labels and comments the proxy was not told, deploy-trigger branch names it was not told, the keychain `gh` token at the watch floor (use stopped, exfiltration not), and a chat's own words asking the person to open a sign-in page (D3h.6 to D3h.9, D3j). **A CI-file push on GitHub is not offered if GitHub folds the second token's scope into the first** (D1.1) |
-| **Dependencies still fetch** | D3i: an anonymous read-only route for unrecorded public repos, release and asset downloads and public LFS, with no credential ever injected; recorded repos keep the credentialed route | a private unrecorded repo is refused, as it would be to anyone. **Two exceptions (D3i):** `curl https://github.com/<o>/<r>/releases/download/…` is refused with a Notice (use `gh release download`), and **`cargo`'s built-in git client** may dial the forge directly, pending spike E (`net.git-fetch-with-cli = true` is the fallback) |
+| **Dependencies still fetch** | D3i: an anonymous read-only route for unrecorded public repos, release and asset downloads and public LFS, with no credential ever injected; recorded repos keep the credentialed route. **npm and pip tarballs from `codeload.github.com` reach it** through `HTTPS_PROXY` and their own CA variable *(spike E)*; **cargo git dependencies** go through git with `net.git-fetch-with-cli=true` *(spike E)*; the download-only hosts are `codeload.github.com`, `release-assets.githubusercontent.com` and `objects.githubusercontent.com` | a private unrecorded repo is refused, as it would be to anyone. **Exceptions (D3i):** `curl https://github.com/<o>/<r>/releases/download/…` is refused with a Notice (use `gh release download`), and **cargo's libgit2** (401) is a named gap with its Notice. A live LFS clone is not proven |
 
 ## Consequences
 
@@ -1254,15 +1345,13 @@ a restart drops it and the chat re-asks); the per-chat secret (memory only, not 
 
 ## Open items (nothing here is proven live)
 
-1. **`gh` and `glab` through the proxy** (D3c), slice E's spike, gates the build: one real `gh`
-   and one real `glab`, on macOS and Linux, each through `pr create`, `pr checks`, `run view`, a
-   paginated list and a GraphQL query, with the wrapper clearing `NO_PROXY`. If `gh` fails, the gap
-   is named as `gh`'s alone. **The spike's first check is remote matching:** with
-   `GH_HOST=github.localhost` and a clone whose remotes are on `github.com`, does `gh pr create`
-   find its remote? If not, the `GH_REPO` fallback of D3c is measured next, and everything below
-   waits on that. **Then:** a live LFS download clone through the route (D3f, D3i), and **`cargo`'s
-   built-in git** (`cargo fetch` of a git dependency, with and without `net.git-fetch-with-cli`)
-   to see whether it honours the environment's rewrite or dials the forge directly (D3i).
+1. **What spike E did not prove, and still gates the build** (D3c): against the **real proxy**
+   and then a **real forge**, `gh repo clone` (by `o/r` and by URL, and what it writes to `git
+   remote -v`), `pr create`, `pr checks`, `pr checkout`, `run view`, a paginated list and a
+   GraphQL query through the wrapper's `-R`; GHES; **a live LFS download clone** (D3f, D3i); and
+   **libgit2** (401 in every variant: a named gap, its cause open). **Proven by spike E on both
+   systems, and no longer open:** remote matching (ruled: `-R`), reach and the sentinel swap for
+   `gh`, `glab` and git, and cargo with `net.git-fetch-with-cli`.
 2. **The Linux sandbox's per-chat port pair** (D3b): confirm it is #1664's mechanism.
 3. **GitHub, a gating probe (slice C): what the live sign-in's reply says of expiry (the record
    expects no `expires_in` and no `refresh_token` for an OAuth app, from documentation; "Expire
@@ -1276,8 +1365,9 @@ a restart drops it and the chat re-asks); the per-chat secret (memory only, not 
 5. **The CI-file hold buffers a pack** (D8.3): a size limit and a latency, to be set.
 6. **The GraphQL allowlist** (D3e) is a list someone keeps; its first list is slice A's.
 7. **Token-connection limits** (D9.4): each row is confirmed by slice C's probe.
-8. **Two forge hosts in one chat** works for git and `glab`; for `gh` the wrapper picks the host
-   from the working directory (D3c), and is the first thing the spike measures.
+8. **Two forge hosts in one chat** works for git and `glab` by the request's own host; for `gh`
+   the wrapper picks the host from the working directory (D3c), and a second virtual host beside
+   `github.localhost` was **not run** by spike E.
 9. **ADR 0124 has no "decision 20"** in this checkout; D8.5 names the items (§7 items 3, 4, 5, 9
    and §7.2) and the amendment file cites those.
 10. **LFS upload and locks** are refused (D3f); **LFS download is served** (D3f, D3i), and whether
@@ -1286,8 +1376,9 @@ a restart drops it and the chat re-asks); the per-chat secret (memory only, not 
 11. **Desktop forwarding's channel** (D9): the runner's existing authenticated connection is named
     from ADR 0078 by reading, not by running; slice A confirms the key, the pairing and that no
     new listener is needed before the forwarding ships.
-12. **`glab`'s credential header, `gh`'s and git's** (D3b) are read from their documentation and
-    sources, and slice E's spike confirms each reaches the proxy as D3b says.
+12. **`glab`'s credential header, `gh`'s and git's** (D3b): **confirmed by spike E** for each on
+    both systems, against a fake forge; **a re-run on each `gh`, `glab` or `git` bump** is the
+    pin's rule (D3c), and the proxy's own tests confirm the swap against the real proxy.
 13. **The anonymous route's closed host list** (D3i) and **the merge-bot and label lists** (D3e)
     are lists someone keeps; their first versions are slice A's.
 14. **The headless chat's `/proc` denial** (D9): the profile that denies a chat the proxy's
