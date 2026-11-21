@@ -171,8 +171,9 @@ impl Plane {
         self.hook("sessionstart", &self.home, chat, &payload.to_string())
     }
 
-    /// The chat's briefing from inside workspace `alpha`, where it is pinned and no gate speaks:
-    /// its stdout.
+    /// The chat's briefing from inside workspace `alpha`: the text of its `additionalContext`,
+    /// decoded (the hook's stdout is JSON, which writes `⬢` as `\u2b22`), or empty where the
+    /// hook said nothing.
     fn briefing_in_a_workspace(&self, chat: &[(String, String)], mode: &str) -> String {
         let payload = serde_json::json!({
             "session_id": "fixture-session-1",
@@ -181,7 +182,15 @@ impl Plane {
             "permission_mode": mode,
         });
         let at = self.root.join("workspaces").join("alpha");
-        self.hook("sessionstart", &at, chat, &payload.to_string())
+        let stdout = self.hook("sessionstart", &at, chat, &payload.to_string());
+        if stdout.trim().is_empty() {
+            return String::new();
+        }
+        let doc: serde_json::Value = serde_json::from_str(stdout.trim()).expect("one line of JSON");
+        doc["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .expect("context")
+            .to_owned()
     }
 
     /// What the chat's first prompt, [`FORKED`], is told: its stdout.
