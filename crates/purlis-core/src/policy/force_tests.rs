@@ -642,6 +642,41 @@ fn denied_past_the_cap(kept: Vec<Entry>) -> Standing {
     }
 }
 
+/// A verified store whose old nevers are not all imported: its entries are set aside in `kept`.
+fn denied_by_a_late_never(kept: Vec<Entry>) -> Standing {
+    Standing {
+        state: State::Deny(vec![Deny::NeversNotImported]),
+        kept,
+        store_verified: true,
+        ..Standing::fresh()
+    }
+}
+
+#[test]
+fn a_start_with_a_never_not_imported_is_held_to_the_accepted_copy() {
+    let m = machine();
+    let ban = forbid_start();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing = denied_by_a_late_never(vec![accepted(&version(STRICT, Some(&ban)))]);
+    assert!(!standing.is_unverified_by_a_reachable_cause());
+    let said = by(&root, &standing, &start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["trust-no-start"], "{said:?}");
+}
+
+#[test]
+fn a_never_not_imported_beside_a_verified_empty_store_is_not_a_reachable_cause() {
+    // A genuine first-run upgrade: the store verified and holds nothing yet.
+    assert!(!denied_by_a_late_never(Vec::new()).is_unverified_by_a_reachable_cause());
+    // No verified store behind it: a chat could have written the file, so a start is downgraded.
+    let unbacked = Standing {
+        state: State::Deny(vec![Deny::NeversNotImported]),
+        ..Standing::fresh()
+    };
+    assert!(unbacked.is_unverified_by_a_reachable_cause());
+}
+
 #[test]
 fn a_start_past_the_cap_is_held_to_the_forbid_only_the_accepted_copy_holds() {
     let m = machine();
@@ -979,7 +1014,6 @@ fn a_plane_with_no_store_or_a_keyring_at_fault_starts_with_gaps_as_it_always_did
         State::Unverifiable,
         State::Deny(vec![Deny::KeyringDidNotStart]),
         State::Deny(vec![Deny::SealKeyLocked]),
-        State::Deny(vec![Deny::NeversNotImported]),
     ] {
         let said = by(&root, &standing_of(state.clone()), &gappy_start());
         assert_eq!(said.after_mode, fresh.after_mode, "{state:?}: {said:?}");

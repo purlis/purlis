@@ -26,5 +26,6 @@
   held, since no accepted copy can be read, and the chat that does start runs under the strict
   deny-state sandbox. That refusal is for a cause a chat can reach (the project's `.git`, the
   store's files, the registry); where only your keyring is at fault (it did not start, it stays
-  locked, older nevers are not imported yet) or the project is not under git at all, a start is
-  judged as it was before.
+  locked) or the project is not under git at all, a start is
+  judged as it was before. Older nevers still in their files are no cause of their own: a verified
+  store keeps judging a start while they wait for your press.
