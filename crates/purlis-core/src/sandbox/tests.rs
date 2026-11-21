@@ -1989,7 +1989,7 @@ fn args_and_seal_keys_of_every_device_are_held(os: Os) {
     let machine = Machine {
         env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, named.as_str())]),
         home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
-        os: os,
+        os,
     };
     let plane = tempfile::tempdir().expect("a plane");
     let denied = Denied::of(plane.path(), &machine);
