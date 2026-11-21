@@ -15,6 +15,7 @@ fn repo(host: &str, owner: &str, name: &str, kind: ForgeKind) -> Repo {
 }
 
 fn route(dir: &Path, repos: Vec<Repo>) -> Route {
+    std::fs::write(dir.join("ca.pem"), "-----BEGIN CERTIFICATE-----\n").expect("a CA");
     Route {
         egress_url: "http://127.0.0.1:43001".to_owned(),
         gh_socket: dir.join("sock/gh.sock"),
@@ -163,7 +164,7 @@ fn the_composed_environment_is_exactly_what_the_design_names() {
         ("GITLAB_TOKEN", SENTINEL.to_owned()),
         (
             "GLAB_CA_CERT",
-            dir.path().join("ca.pem").display().to_string(),
+            gh.parent().unwrap().join(CA_COPY).display().to_string(),
         ),
         ("HTTPS_PROXY", "http://127.0.0.1:43001".to_owned()),
         ("https_proxy", "http://127.0.0.1:43001".to_owned()),
@@ -240,7 +241,14 @@ fn gits_pairs_name_the_reset_first_then_a_helper_and_a_ca_for_each_recorded_host
         ],
     );
     let wiring = compose(&route, dir.path()).unwrap();
-    let ca = dir.path().join("ca.pem").display().to_string();
+    // The chat's own copy, in its wire folder: the route folder is held from the chat.
+    let ca = wiring
+        .bin
+        .parent()
+        .unwrap()
+        .join(CA_COPY)
+        .display()
+        .to_string();
     let helper = |_host: &str| {
         "!'/opt/purlis/purlis' purlis-git-sentinel --host git.example.org --host github.com"
             .to_owned()
@@ -989,4 +997,36 @@ fn a_route_git_cannot_use_is_refused_and_nothing_is_composed() {
     let mut bad_sentinel = route(dir, vec![]);
     bad_sentinel.sentinel = SecretString::from("has a space");
     assert!(git_network(&bad_sentinel).is_err());
+}
+
+#[test]
+fn the_ca_is_copied_into_the_chat_s_own_wire_folder_so_git_and_glab_never_read_the_held_route_folder()
+ {
+    let dir = tempfile::tempdir().unwrap();
+    let route = route(
+        dir.path(),
+        vec![repo("github.com", "acme", "app", ForgeKind::GitHub)],
+    );
+    let wiring = compose(&route, dir.path()).unwrap();
+    let copy = wiring.bin.parent().unwrap().join(CA_COPY);
+    assert_eq!(
+        std::fs::read_to_string(&copy).unwrap(),
+        std::fs::read_to_string(&route.ca_cert).unwrap()
+    );
+    assert_eq!(get(&wiring.env, "GLAB_CA_CERT"), copy.to_str());
+    assert!(
+        wiring
+            .git_pairs
+            .iter()
+            .filter(|(k, _)| k.ends_with(".sslCAInfo"))
+            .all(|(_, v)| v == copy.to_str().unwrap()),
+        "{:?}",
+        wiring.git_pairs
+    );
+    assert!(
+        !wiring
+            .env
+            .iter()
+            .any(|(_, v)| v == route.ca_cert.to_str().unwrap())
+    );
 }

@@ -27,9 +27,9 @@ use purlis_core::forge::proxy::{EndpointKind, Verdict};
 use crate::support::forge_listener::{REAL, World};
 
 /// A fake forge that answers what the tools ask, with git served by `git` itself from a bare repo.
-struct Forge {
+pub(crate) struct Forge {
     bare: PathBuf,
-    seen: Mutex<Vec<UpstreamRequest>>,
+    pub(crate) seen: Mutex<Vec<UpstreamRequest>>,
     captured: AtomicUsize,
 }
 
@@ -222,7 +222,7 @@ impl Upstream for Forge {
     }
 }
 
-fn tool(name: &str) -> bool {
+pub(crate) fn tool(name: &str) -> bool {
     let present = purlis_core::forklock::status(
         Command::new(name)
             .arg("--version")
@@ -241,11 +241,11 @@ fn tool(name: &str) -> bool {
 }
 
 /// A synthetic address for the commits a test makes.
-fn author_email() -> String {
+pub(crate) fn author_email() -> String {
     format!("user.email=t{}example.invalid", '@')
 }
 
-fn git_ok(dir: &Path, args: &[&str]) {
+pub(crate) fn git_ok(dir: &Path, args: &[&str]) {
     let out = purlis_core::forklock::output(
         Command::new("git")
             .args(["-c", "user.name=t", "-c", &author_email()])
@@ -284,6 +284,35 @@ impl purlis_core::forge::proxy::listener::Observe for Seen {
     }
 }
 
+/// A fake forge serving `acme/app` from a bare repo made in `dir`: one commit on `main`.
+pub(crate) fn make_forge(dir: &Path) -> Arc<Forge> {
+    // A repo to serve: one commit on `main`.
+    let work = dir.join("work");
+    std::fs::create_dir(&work).unwrap();
+    git_ok(&work, &["init", "-q", "-b", "main"]);
+    std::fs::write(work.join("README.md"), "hello\n").unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "one"]);
+    let bare = dir.join("forge.git");
+    git_ok(
+        dir,
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            work.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+    git_ok(&bare, &["config", "http.receivepack", "true"]);
+
+    Arc::new(Forge {
+        bare,
+        seen: Mutex::new(Vec::new()),
+        captured: AtomicUsize::new(0),
+    })
+}
+
 /// The listeners are dropped before the folder the socket is in: a listener woken through a
 /// socket that is gone is a listener that is not woken.
 struct Setup {
@@ -310,31 +339,7 @@ fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     }
-    // A repo to serve: one commit on `main`.
-    let work = dir.path().join("work");
-    std::fs::create_dir(&work).unwrap();
-    git_ok(&work, &["init", "-q", "-b", "main"]);
-    std::fs::write(work.join("README.md"), "hello\n").unwrap();
-    git_ok(&work, &["add", "-A"]);
-    git_ok(&work, &["commit", "-q", "-m", "one"]);
-    let bare = dir.path().join("forge.git");
-    git_ok(
-        dir.path(),
-        &[
-            "clone",
-            "-q",
-            "--bare",
-            work.to_str().unwrap(),
-            bare.to_str().unwrap(),
-        ],
-    );
-    git_ok(&bare, &["config", "http.receivepack", "true"]);
-
-    let forge = Arc::new(Forge {
-        bare,
-        seen: Mutex::new(Vec::new()),
-        captured: AtomicUsize::new(0),
-    });
+    let forge = make_forge(dir.path());
     let mut world = World::new();
     world.wiring.upstream = forge.clone();
     let seen = Arc::new(Seen::default());
@@ -356,7 +361,7 @@ fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
     }
 }
 
-fn clean(command: &mut Command, home: &Path) {
+pub(crate) fn clean(command: &mut Command, home: &Path) {
     command
         .env_clear()
         .env("PATH", std::env::var_os("PATH").unwrap_or_default())
@@ -371,7 +376,7 @@ fn clean(command: &mut Command, home: &Path) {
 /// that never comes is a finding, not a hung job.
 const TOOL_TIME: std::time::Duration = std::time::Duration::from_secs(60);
 
-fn run(mut command: Command) -> (bool, String) {
+pub(crate) fn run(mut command: Command) -> (bool, String) {
     use std::io::Read;
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
     let mut child = purlis_core::forklock::spawn(&mut command).expect("the tool ran");
