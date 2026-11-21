@@ -425,3 +425,54 @@ fn a_line_the_host_took_late_while_the_window_heard_it_and_its_hook_spooled_is_r
         "the host's drain knows the copy of a line it recorded live"
     );
 }
+
+/// Chats 681 and 682 spooled hook lines while an ask was held (#6678): a hook waits
+/// [`A_NOTICE_TAKES_AT_MOST`] for its receipt, so a line the listener answers later than that is
+/// spooled, and the spool is for a host that is away, never one that is busy with an ask.
+#[test]
+fn the_hook_listener_answers_within_its_receipt_budget_while_an_ask_is_held() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let path = dir.path().join(".charter/app/hooks.sock");
+    let listener = Listener::bind(dir.path(), &path).expect("a socket");
+    let token = listener.tokens().issue_to_this_process(8).expect("a token");
+    let (release, held) = std::sync::mpsc::channel::<()>();
+    let asked = Arc::new(AtomicBool::new(false));
+    let _reading = listener.hear({
+        let asked = Arc::clone(&asked);
+        let held = Mutex::new(held);
+        let mut hearing = hearing(Box::new(|_| Ok(())));
+        hearing.answer = Box::new(move |_, _| {
+            asked.store(true, Ordering::SeqCst);
+            let _ = held.lock().expect("the hold").recv();
+            Answer::No { why: String::new() }
+        });
+        hearing
+    });
+    let asking = {
+        let (path, token) = (path.clone(), token.clone());
+        std::thread::spawn(move || {
+            Asking::on(&path, Some(token))
+                .expect("connected")
+                .ask(&Ask::Ticket { chat: 8 }, Duration::from_secs(30))
+        })
+    };
+    while !asked.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    let mut slowest = Duration::ZERO;
+    for n in 0..20 {
+        let began = std::time::Instant::now();
+        let delivered = deliver_tool(&path, Some(&token), &call(8, &format!("during-{n}")));
+        slowest = slowest.max(began.elapsed());
+        assert_eq!(delivered.expect("delivered"), Delivered::Taken, "line {n}");
+    }
+    let _ = release.send(());
+    let _ = asking.join();
+
+    assert!(
+        slowest < A_NOTICE_TAKES_AT_MOST,
+        "the slowest receipt took {slowest:?} while an ask was held"
+    );
+    assert_eq!(spooled_calls(&path), Vec::<String>::new());
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B16b",
+  "title": "tasks: a guard loop in a task runner's own chat (matrix §3.11)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {},
+  "cells": [{
+    "id": "M-UNA-02",
+    "dialects": ["claude"],
+    "steps": [
+      {
+        "calls": [{"tool": "Bash", "client": "M-GRD-01", "input": {"n": 13, "turn": 1, "of": 3}}],
+        "outcome": "denied",
+        "refusal_expected": true,
+        "require": [{"kind": "stop.block", "source": "guard", "count": "≥1"}]
+      },
+      {
+        "calls": [{"tool": "Bash", "client": "M-GRD-01", "input": {"n": 13, "turn": 2, "of": 3}}],
+        "outcome": "denied",
+        "refusal_expected": true,
+        "require": [{"kind": "stop.block", "source": "guard", "count": "≥1"}]
+      },
+      {
+        "calls": [{"tool": "Bash", "client": "M-GRD-01", "input": {"n": 13, "turn": 3, "of": 3}}],
+        "press": "stop_chat",
+        "outcome": "denied",
+        "refusal_expected": true,
+        "require": [
+          {"kind": "stop.loop_pause", "rule": "blocked"},
+          {"kind": "ask.raised", "ask": "loop_pause"}
+        ],
+        "window": [{"query": "asks.row_for_loop_pause"}],
+        "transcript": [
+          {"says": "PLACEHOLDER: the matrix states no sentence for what the orchestrator's dispatch_wait reports for a pause (R-216, R-003); the orchestrator fixes it"}
+        ]
+      }
+    ]
+  }]
+}

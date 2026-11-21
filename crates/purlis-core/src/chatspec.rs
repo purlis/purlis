@@ -38,6 +38,8 @@ pub struct Terminal<'a> {
 pub struct Reporting<'a> {
     pub socket: &'a Path,
     pub token: &'a str,
+    /// The public key the chat's spooled argument digests are sealed to (#6880), if it has one.
+    pub seal: Option<&'a str>,
 }
 
 /// The spec a chat's terminal is started from, with `app` the starter's own environment.
@@ -67,6 +69,13 @@ pub fn spec(app: impl IntoIterator<Item = (OsString, OsString)>, chat: &Terminal
         ));
         spec.env
             .push((crate::hookwire::TOKEN_ENV.into(), reporting.token.into()));
+        // The public half of the key the chat's spooled digests are sealed to (#6880); the
+        // private half stays in the machine store, and a chat without one spools without them.
+        #[cfg(unix)]
+        if let Some(public) = reporting.seal {
+            spec.env
+                .push((crate::hookwire::seal::SEAL_ENV.into(), public.into()));
+        }
     }
     if let Some(key) = chat.prompt_key {
         spec.env
@@ -179,6 +188,7 @@ pub fn launched(
             reporting: launch.reporting.as_ref().map(|reporting| Reporting {
                 socket: reporting.socket,
                 token: reporting.token,
+                seal: reporting.seal,
             }),
             prompt_key: launch.prompt_key,
         },
@@ -210,6 +220,7 @@ pub fn from_launch(
             reporting: launch.reporting.as_ref().map(|reporting| Reporting {
                 socket: Path::new(&reporting.socket),
                 token: &reporting.token,
+                seal: reporting.seal.as_deref(),
             }),
             prompt_key: launch
                 .prompt_key

@@ -1,0 +1,22 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B15b",
+  "title": "attendance: a mode purlis did not set (matrix §3.11)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {},
+  "cells": [{
+    "id": "M-ATT-05",
+    "dialects": ["claude"],
+    "steps": [{
+      "press": "send_input_bytes",
+      "calls": [{"tool": "Bash", "input": {"command": "echo x"}}],
+      "outcome": "came_back",
+      "window": [
+        {"query": "notice_shown mode-differs: names the harness and the mode it reports"},
+        {"query": "asks.row_for_mode_differs", "forbid": true},
+        {"query": "notice_text_has_harness_word", "forbid": true}
+      ]
+    }]
+  }]
+}
