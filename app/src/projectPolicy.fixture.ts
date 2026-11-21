@@ -18,6 +18,7 @@ export const WATCH: PolicyState = {
   template_default: true,
   overrides: [],
   locked: [],
+  press: null,
 };
 
 /** Two lines of the enforcement log as the app writes them: a known rule each, and a host:port. */
