@@ -764,7 +764,7 @@ pub fn refusal(
     declared: &Declared,
     floor: &Resolved,
 ) -> Option<Ruling> {
-    use crate::policy::decide::{Asker, Outcome, in_plane};
+    use crate::policy::decide::{Asker, Outcome, in_plane_held_to};
     let gaps = declared.context_gaps();
     let harness = facts.harness.map_or("unknown", Harness::name);
     let asker = Asker {
@@ -785,9 +785,16 @@ pub fn refusal(
     };
     // A start is judged by the rules whatever the plane's standing: the deny state only adds
     // refusals to the other actions (M75-07b, review round 5, SEC5-SF2).
-    let sealed = crate::policy::decide::Sealed::for_start();
-    let decision =
-        in_plane(judged.root, &asker, "start", ("Harness", harness), &sealed).held_to(floor);
+    let sealed = crate::policy::decide::Sealed::for_start(judged.root);
+    let decision = in_plane_held_to(
+        judged.root,
+        &asker,
+        "start",
+        ("Harness", harness),
+        &sealed,
+        Some(floor),
+    )
+    .held_to(floor);
     let affecting: Vec<String> = declared
         .entries()
         .iter()

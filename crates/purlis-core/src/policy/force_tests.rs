@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::enforcement::Resolved;
 use crate::policy::decide::Outcome;
 use crate::policy::levels::Chat;
 use crate::sandbox::local::OwnConfigHome;
@@ -176,12 +177,18 @@ fn read(path: &'static str) -> Request<'static> {
 /// What the host does for one request: the policy in force over the store as it stands, then what
 /// it saw sealed.
 fn host(root: &Path, request: &Request<'_>) -> Decision {
-    in_force(root, &sources(root), &answers::standing(root), request)
+    in_force(
+        root,
+        &sources(root),
+        &answers::standing(root),
+        request,
+        None,
+    )
 }
 
 /// One decision with a standing built by hand, and nothing sealed.
 fn by(root: &Path, standing: &Standing, request: &Request<'_>) -> Decision {
-    judge(root, &sources(root), standing, request).0
+    judge(root, &sources(root), standing, request, None).0
 }
 
 fn forbid_merge(id: &str, when: &str) -> String {
@@ -589,4 +596,232 @@ fn removing_a_local_tightening_waits_for_the_press() {
     // The person takes the line out: the sealed tightening stays in force.
     std::fs::remove_file(&local).expect("removed");
     assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Ask);
+}
+
+// ---- review round 2: start, broken sides, one read of HEAD ------------------------------------
+
+fn start() -> Request<'static> {
+    let mut context = base(true);
+    context["profile"] = "p".into();
+    context["gaps"] = serde_json::json!([]);
+    request("start", ("Harness", "claude"), context)
+}
+
+fn forbid_start() -> String {
+    format!(
+        "{HEADER}@id(\"trust-no-start\")\nforbid (principal, action == Action::\"start\", resource);\n"
+    )
+}
+
+#[test]
+fn a_start_is_held_to_the_accepted_copy_and_the_floor() {
+    let m = machine();
+    let ban = forbid_start();
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &ban)]);
+    let standing = holding(vec![accepted(&version(STRICT, Some(&ban)))]);
+    assert_eq!(by(&root, &standing, &start()).after_mode, Outcome::Deny);
+    // A commit drops the forbid on `start`: the accepted copy still holds it.
+    commit(&root, &[("policy.cedar", "-")]);
+    let said = by(&root, &standing, &start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["trust-no-start"], "{said:?}");
+    // And a start judged the way the host judges it reads the store, not a fresh one.
+    assert_eq!(
+        crate::policy::decide::Sealed::for_start(&root).standing,
+        answers::standing(&root)
+    );
+}
+
+#[test]
+fn a_start_in_the_deny_state_is_judged_under_the_shipped_strict_policy() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let denied = Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        ..Standing::fresh()
+    };
+    let strict = undecidable_strict(&start());
+    let said = by(&root, &denied, &start());
+    assert_eq!(said.after_mode, strict.after_mode, "{said:?}");
+}
+
+/// The plane's folders as the disk holds them now: what the app lists for every decision.
+fn disk_sources_host(root: &Path, request: &Request<'_>) -> Decision {
+    let list = |parent: &str| -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(root.join(parent))
+            .into_iter()
+            .flatten()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| !n.starts_with('.'))
+            .collect();
+        names.sort();
+        names
+    };
+    let (workspaces, personas) = (list("workspaces"), list("personas"));
+    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
+    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
+    let sources = Sources {
+        root,
+        workspaces: &workspaces,
+        personas: &personas,
+        organisation: None,
+        accepted: None,
+    };
+    in_force(root, &sources, &answers::standing(root), request, None)
+}
+
+const TABLES: &str =
+    "[policy]\ntemplate = \"strict\"\n[policy.persona.reviewer]\n[policy.workspace.web]\n";
+
+fn plane_with_tables(m: &Machine) -> PathBuf {
+    let ban = forbid_merge("guards-merge-ban", "");
+    plane(
+        m,
+        &[
+            ("purlis.toml", TABLES),
+            ("policy.cedar", &ban),
+            ("personas/reviewer/persona.md", "r\n"),
+            ("workspaces/web/README.md", "web\n"),
+        ],
+    )
+}
+
+#[test]
+fn an_uncommitted_persona_rename_drops_no_forbid() {
+    let m = machine();
+    let root = plane_with_tables(&m);
+    assert_eq!(
+        disk_sources_host(&root, &merge(true)).after_mode,
+        Outcome::Deny
+    );
+    std::fs::rename(
+        root.join("personas/reviewer"),
+        root.join("personas/_reviewer"),
+    )
+    .expect("a rename, uncommitted");
+    let said = disk_sources_host(&root, &merge(true));
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["guards-merge-ban"], "{said:?}");
+}
+
+#[test]
+fn an_uncommitted_workspace_removal_drops_no_forbid() {
+    let m = machine();
+    let root = plane_with_tables(&m);
+    assert_eq!(
+        disk_sources_host(&root, &merge(true)).after_mode,
+        Outcome::Deny
+    );
+    std::fs::remove_dir_all(root.join("workspaces/web")).expect("removed, uncommitted");
+    let said = disk_sources_host(&root, &merge(true));
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["guards-merge-ban"], "{said:?}");
+}
+
+#[test]
+fn a_head_that_moves_between_reads_never_skips_a_sealed_version() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    commit(
+        &root,
+        &[("policy.cedar", &forbid_merge("guards-merge-ban", ""))],
+    );
+    let strict_commit = git(&root, &["rev-parse", "HEAD"]);
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+    commit(&root, &[("policy.cedar", "-")]);
+    assert_eq!(
+        host(&root, &merge(true)).after_mode,
+        Outcome::Deny,
+        "sealed"
+    );
+    // HEAD is on the loose version, and moves to the strict one once, between the reads.
+    let (at, moved) = (root.clone(), std::rc::Rc::new(std::cell::Cell::new(false)));
+    seam::set(Some(Box::new(move || {
+        if !moved.replace(true) {
+            git(&at, &["update-ref", "HEAD", &strict_commit]);
+        }
+    })));
+    let said = host(&root, &merge(true));
+    seam::set(None);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["guards-merge-ban"], "{said:?}");
+}
+
+#[test]
+fn a_head_that_never_holds_still_has_no_version_of_two_commits() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let first = git(&root, &["rev-parse", "HEAD"]);
+    commit(
+        &root,
+        &[("policy.cedar", &forbid_merge("guards-merge-ban", ""))],
+    );
+    let second = git(&root, &["rev-parse", "HEAD"]);
+    let (at, turn) = (root.clone(), std::rc::Rc::new(std::cell::Cell::new(false)));
+    seam::set(Some(Box::new(move || {
+        let to = if turn.replace(!turn.get()) {
+            &second
+        } else {
+            &first
+        };
+        git(&at, &["update-ref", "HEAD", to]);
+    })));
+    let read = Version::at_head(&root);
+    seam::set(None);
+    assert_eq!(read, None, "a HEAD that keeps moving is no version");
+}
+
+#[test]
+fn each_side_is_held_to_the_floor_before_the_stricter_wins() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    let watch = "[policy]\ntemplate = \"watch\"\n";
+    let root = plane(&m, &[("purlis.toml", watch), ("policy.cedar", &ban)]);
+    let standing = holding(vec![accepted(&version(STRICT, None))]);
+    let floor = Resolved::strict();
+    let said = judge(
+        &root,
+        &sources(&root),
+        &standing,
+        &merge(true),
+        Some(&floor),
+    )
+    .0;
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["guards-merge-ban"], "{said:?}");
+}
+
+#[test]
+fn an_unreadable_accepted_copy_is_the_deny_state() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing = holding(vec![Entry::new(answers::ACCEPTED, "not json")]);
+    let said = by(&root, &standing, &merge(true));
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert!(said.deny_state.is_some(), "{said:?}");
+    let floored = holding(vec![Entry::new(answers::FLOOR, "not json")]);
+    let said = by(&root, &floored, &merge(true));
+    assert!(said.deny_state.is_some(), "{said:?}");
+}
+
+#[test]
+fn the_local_files_sealed_versions_are_capped_too() {
+    let m = machine();
+    let hold = "[policy]\ntemplate = \"hold\"\n";
+    let root = plane(&m, &[("purlis.toml", hold)]);
+    let local = root.join(crate::settings::Which::Local.file_at(&root));
+    for i in 0..cap() + 2 {
+        std::fs::write(
+            &local,
+            format!("[policy]\ntemplate = \"strict\"\n# tightening {i}\n"),
+        )
+        .expect("the local file");
+        host(&root, &merge(false));
+    }
+    assert!(
+        past_the_cap(&root),
+        "local versions past the cap are recorded"
+    );
 }

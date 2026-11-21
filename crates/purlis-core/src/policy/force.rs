@@ -31,7 +31,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::enforcement::{Committed, committed_files};
+use crate::enforcement::{Committed, Resolved, committed_files};
 use crate::secrets::answers::{self, Standing, State};
 
 use super::decide::{Decision, Request, decide};
@@ -64,6 +64,10 @@ pub struct Version {
     /// The plane's workspaces at `HEAD`: a Path's owning workspace is one of them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<String>,
+    /// The plane's personas at `HEAD`, as the workspaces are: a Persona table names one of them,
+    /// and a working-tree rename of a folder never makes a side read as broken.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub personas: Vec<String>,
     /// The You level's local file's text, which only tightens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<String>,
@@ -73,6 +77,18 @@ impl Version {
     /// What the plane root's `HEAD` holds now, and the local file: `None` where `HEAD` cannot be
     /// read (no commit, a git that did not answer), which is no version to keep.
     pub fn at_head(root: &Path) -> Option<Self> {
+        // Everything is read from one commit: where `HEAD` moves between the reads, again, and
+        // after three tries there is no version to keep rather than one of two commits mixed.
+        (0..3).find_map(|_| {
+            let before = head_commit(root)?;
+            let version = Self::read_head(root)?;
+            #[cfg(test)]
+            seam::between_reads();
+            (head_commit(root)? == before).then_some(version)
+        })
+    }
+
+    fn read_head(root: &Path) -> Option<Self> {
         let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
         let mut read = committed_files(root, &[&names, &[RULES_FILE], &[VAULTS_FILE]]);
         let vaults = text_of(read.pop()?)?;
@@ -88,7 +104,8 @@ impl Version {
             settings: settings.map(|(_, text)| text),
             rules: rules.map(|(_, text)| text),
             vaults: vaults.map(|(_, text)| text),
-            workspaces: workspaces_at_head(root),
+            workspaces: folders_at_head(root, "workspaces"),
+            personas: folders_at_head(root, "personas"),
             local,
         })
     }
@@ -123,12 +140,44 @@ fn text_of(committed: Committed) -> Option<Option<(&'static str, String)>> {
     }
 }
 
-/// The folders of `workspaces/` at `HEAD`, as git wrote them: not the working tree's, which an
+/// The commit `HEAD` names now, `None` where it names none.
+fn head_commit(root: &Path) -> Option<String> {
+    let run = crate::worktree::git::run_as_written(root, &["rev-parse", "HEAD"], GIT_WAIT).ok()?;
+    run.ok().then(|| run.out.trim().to_owned())
+}
+
+/// A test's seam between the reads of `HEAD`.
+#[cfg(test)]
+pub(super) mod seam {
+    use std::cell::RefCell;
+
+    type Hook = Box<dyn FnMut()>;
+
+    thread_local! {
+        static BETWEEN: RefCell<Option<Hook>> = const { RefCell::new(None) };
+    }
+
+    /// Runs `hook` after each read of the files at `HEAD`, before the check that it did not move.
+    pub fn set(hook: Option<Hook>) {
+        BETWEEN.with(|b| *b.borrow_mut() = hook);
+    }
+
+    pub fn between_reads() {
+        BETWEEN.with(|b| {
+            if let Some(hook) = b.borrow_mut().as_mut() {
+                hook();
+            }
+        });
+    }
+}
+
+/// The folders of `<parent>/` at `HEAD`, as git wrote them: not the working tree's, which an
 /// uncommitted edit changes.
-fn workspaces_at_head(root: &Path) -> Vec<String> {
+fn folders_at_head(root: &Path, parent: &str) -> Vec<String> {
+    let tree = format!("{parent}/");
     let run = crate::worktree::git::run_as_written(
         root,
-        &["ls-tree", "-d", "--name-only", "HEAD", "workspaces/"],
+        &["ls-tree", "-d", "--name-only", "HEAD", &tree],
         GIT_WAIT,
     );
     let Ok(run) = run else {
@@ -140,7 +189,7 @@ fn workspaces_at_head(root: &Path) -> Vec<String> {
     let mut names: Vec<String> = run
         .out
         .lines()
-        .filter_map(|line| line.strip_prefix("workspaces/"))
+        .filter_map(|line| line.strip_prefix(tree.as_str()))
         .filter(|name| !name.starts_with('.') && !name.contains('/'))
         .map(str::to_owned)
         .collect();
@@ -179,14 +228,14 @@ fn names(kind: &str, member: &str, id: &str) -> bool {
 /// **The world one side decides over**: the request's resource, in the named sets *this side's*
 /// policy holds it in, with the attributes *this side's* version read at `HEAD` (spec §3.2): a
 /// Vault's tags and Persona from the committed `vaults.json`, a Path's owning workspace. Nothing a
-/// working file says reaches it. Where the world does not fit the schema it is empty, and a rule
-/// that reads an attribute errs, which is a deny.
+/// working file says reaches it. `Err` where the world does not fit the schema: an empty world
+/// would stop every set-scoped forbid matching, so the side is refused instead ([`undecidable`]).
 fn world_of(
     loaded: &levels::Loaded,
     version: &Version,
     root: &Path,
     request: &Request<'_>,
-) -> World {
+) -> Result<World, ()> {
     let (kind, id) = request.resource;
     let id = if kind == "Host" {
         crate::sandbox::hosts::Host::parse(id).map_or_else(|_| id.to_owned(), |h| h.to_string())
@@ -240,9 +289,16 @@ fn world_of(
             ],
         }));
     }
-    World::from_json(serde_json::Value::Array(entities))
-        .or_else(|_| World::from_json(serde_json::json!([])))
-        .expect("an empty world fits any schema")
+    World::from_json(serde_json::Value::Array(entities)).map_err(|_| ())
+}
+
+/// **What a side that cannot be judged decides** (spec §9.4): the deny state's refusal for every
+/// action but `start`, which is judged under the shipped strict policy, as a deny state's start is.
+fn undecidable(request: &Request<'_>, what: &str) -> Decision {
+    if request.action == "start" {
+        return undecidable_strict(request);
+    }
+    super::deny_state::unreadable(request.action, what)
 }
 
 /// The workspace of this version that holds the path `id`, from the plane root: the first folder
@@ -313,15 +369,45 @@ fn floor_in(standing: &Standing) -> Vec<Result<Version, ()>> {
         .collect()
 }
 
-/// The sources a held version is judged with: the Organisation as it is, and the workspaces of the
-/// plane now and of that version, so a table naming one deleted since still reads.
-fn sources_for<'a>(sources: &Sources<'a>, workspaces: &'a [&'a str]) -> Sources<'a> {
-    Sources {
+/// What a held version loads as: its own files over the workspaces and personas of the plane now
+/// and of that version, so a table naming one deleted or renamed since still reads, whatever the
+/// working tree holds (spec §4.7: a side is never looser for an edit not yet committed).
+fn loaded_for(sources: &Sources<'_>, version: &Version) -> levels::Loaded {
+    let mut workspaces: Vec<&str> = sources.workspaces.to_vec();
+    workspaces.extend(version.workspaces.iter().map(String::as_str));
+    let mut personas: Vec<&str> = sources.personas.to_vec();
+    personas.extend(version.personas.iter().map(String::as_str));
+    let held = Sources {
         root: sources.root,
-        workspaces,
-        personas: sources.personas,
+        workspaces: &workspaces,
+        personas: &personas,
         organisation: sources.organisation,
         accepted: None,
+    };
+    levels::load_held(&held, &version.held())
+}
+
+/// One loaded policy decided over its version's world, held to the floor where there is one.
+fn decided(
+    loaded: &levels::Loaded,
+    version: &Version,
+    root: &Path,
+    request: &Request<'_>,
+    floor: Option<&Resolved>,
+) -> Decision {
+    let decision = match world_of(loaded, version, root, request) {
+        Ok(world) => decide(loaded, request, &world),
+        Err(()) => undecidable(request, "a policy version's world does not fit the schema"),
+    };
+    held(decision, floor)
+}
+
+/// Each side is held to the floor before the stricter is chosen, so a mode that lifts a deny on
+/// one side cannot beat the ask another side stands on.
+fn held(decision: Decision, floor: Option<&Resolved>) -> Decision {
+    match floor {
+        Some(floor) => decision.held_to(floor),
+        None => decision,
     }
 }
 
@@ -331,18 +417,24 @@ fn side(
     version: &Version,
     root: &Path,
     request: &Request<'_>,
-    strict: bool,
+    floor: Option<&Resolved>,
 ) -> Decision {
-    let mut workspaces: Vec<&str> = sources.workspaces.to_vec();
-    workspaces.extend(version.workspaces.iter().map(String::as_str));
-    let held = sources_for(sources, &workspaces);
-    let loaded = if strict {
-        levels::Loaded::shipped_strict()
-    } else {
-        levels::load_held(&held, &version.held())
-    };
-    let world = world_of(&loaded, version, root, request);
-    decide(&loaded, request, &world)
+    decided(&loaded_for(sources, version), version, root, request, floor)
+}
+
+/// The shipped strict policy's decision.
+fn undecidable_strict(request: &Request<'_>) -> Decision {
+    let strict = levels::Loaded::shipped_strict();
+    let empty = World::from_json(serde_json::json!([])).expect("an empty world fits any schema");
+    decide(&strict, request, &empty)
+}
+
+/// A side that does not read: the deny state's refusal.
+fn unread(request: &Request<'_>, floor: Option<&Resolved>) -> Decision {
+    held(
+        undecidable(request, "a sealed answer of this project does not read"),
+        floor,
+    )
 }
 
 /// The narrower of two `@keep` scopes.
@@ -397,8 +489,9 @@ pub fn in_force(
     sources: &Sources<'_>,
     standing: &Standing,
     request: &Request<'_>,
+    floor: Option<&Resolved>,
 ) -> Decision {
-    let (decision, seen) = judge(root, sources, standing, request);
+    let (decision, seen) = judge(root, sources, standing, request, floor);
     if let Some(seen) = seen {
         seal(root, &seen);
     }
@@ -413,13 +506,28 @@ pub fn judge(
     sources: &Sources<'_>,
     standing: &Standing,
     request: &Request<'_>,
+    floor: Option<&Resolved>,
 ) -> (Decision, Option<Seen>) {
-    let current = levels::load(sources);
+    // HEAD is read once, and the current side is built from that one read.
     let here = Version::at_head(root);
     let none = Version::default();
-    let world = world_of(&current, here.as_ref().unwrap_or(&none), root, request);
-    let mut decisions = vec![decide(&current, request, &world)];
+    let current = match &here {
+        Some(version) => loaded_for(sources, version),
+        None => levels::load(sources),
+    };
+    let mut decisions = vec![decided(
+        &current,
+        here.as_ref().unwrap_or(&none),
+        root,
+        request,
+        floor,
+    )];
 
+    // The deny state: nothing sealed counts, so a start (which it does not refuse) is judged by
+    // the shipped strict policy as well.
+    if standing.is_deny() {
+        decisions.push(held(undecidable_strict(request), floor));
+    }
     let accepted = accepted_in(standing);
     match &accepted {
         Ok(version) => decisions.push(side(
@@ -427,19 +535,21 @@ pub fn judge(
             version.as_ref().unwrap_or(&none),
             root,
             request,
-            false,
+            floor,
         )),
-        Err(()) => decisions.push(side(sources, &none, root, request, true)),
+        Err(()) => decisions.push(unread(request, floor)),
     }
+    // Every version the floor holds decides, the one `HEAD` holds too: no version is skipped for
+    // being equal to a read, only a repeat of one already judged.
     let mut seen: Vec<Version> = Vec::new();
     for held in floor_in(standing) {
         match held {
-            Ok(version) if here.as_ref() == Some(&version) || seen.contains(&version) => {}
+            Ok(version) if seen.contains(&version) => {}
             Ok(version) => {
-                decisions.push(side(sources, &version, root, request, false));
+                decisions.push(side(sources, &version, root, request, floor));
                 seen.push(version);
             }
-            Err(()) => decisions.push(side(sources, &none, root, request, true)),
+            Err(()) => decisions.push(unread(request, floor)),
         }
     }
 
@@ -519,7 +629,7 @@ pub fn cap() -> usize {
 }
 
 /// How many committed versions the floor holds, **not** counting the accepted copy's own nor the
-/// local file's sealed tightenings (review round 8).
+/// local file's sealed tightenings (review round 8), which [`seal`] bounds apart.
 fn counted(standing: &Standing, accepted: &Result<Option<Version>, ()>) -> BTreeSet<String> {
     let base = accepted
         .as_ref()
@@ -561,7 +671,13 @@ pub fn seal(root: &Path, seen: &Seen) {
         if own != base.committed() {
             committed.insert(serde_json::to_string(&own).expect("a version is JSON"));
         }
-        committed.len() > cap()
+        // The local file's sealed versions are bounded too, apart from the committed ones.
+        let locals = floor_in(standing)
+            .into_iter()
+            .flatten()
+            .filter(|v| v.local.is_some())
+            .count();
+        committed.len() > cap() || (version.local.is_some() && locals + 1 > cap())
     };
     let text = serde_json::to_string(version).expect("a version is JSON");
     let sealed = answers::commit(root, |draft| {

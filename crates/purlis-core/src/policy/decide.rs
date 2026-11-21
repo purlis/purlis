@@ -628,13 +628,12 @@ impl Sealed {
         }
     }
 
-    /// What a `start` is judged with: the device id alone, since no deny state refuses a start
-    /// (review round 5, SEC5-SF2: the rules still judge it), so the standing is not read.
-    pub fn for_start() -> Self {
-        Self {
-            standing: Standing::fresh(),
-            machine: answers::context_machine(),
-        }
+    /// What a `start` is judged with: the store as it stands, like any other action, so a start
+    /// is held to the accepted copy and the floor too. No deny state *refuses* a start (review
+    /// round 5, SEC5-SF2: the rules still judge it), but in one the policy in force judges it under
+    /// the shipped strict policy as well ([`force::judge`]).
+    pub fn for_start(root: &std::path::Path) -> Self {
+        Self::of(root)
     }
 
     /// Nothing sealed: a fresh install's standing and no device id. For a caller that names no
@@ -663,6 +662,20 @@ pub fn in_plane(
     resource: (&str, &str),
     sealed: &Sealed,
 ) -> Decision {
+    in_plane_held_to(root, asker, action, resource, sealed, None)
+}
+
+/// [`in_plane`], each side held to `floor` ([`Decision::held_to`]) before the stricter is chosen:
+/// a committed `log` or `off` mode that lifts a deny cannot beat the ask the accepted copy stands
+/// on.
+pub fn in_plane_held_to(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+) -> Decision {
     if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
         return refusal;
     }
@@ -689,7 +702,7 @@ pub fn in_plane(
     };
     // The policy in force: the project as committed now and what the person accepted, the
     // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
-    force::in_force(root, &sources, &sealed.standing, &request)
+    force::in_force(root, &sources, &sealed.standing, &request, floor)
 }
 
 /// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only
@@ -743,7 +756,8 @@ pub fn for_chat(
         via: "hook",
         start: None,
     };
-    let decision = in_plane(root, &asker, action, resource, sealed).held_to(floor);
+    let decision =
+        in_plane_held_to(root, &asker, action, resource, sealed, Some(floor)).held_to(floor);
     // A rule the project set `off` is not in its policy at all, so no mode brings it back: where
     // the floor enforces the merge hold and the project's rules let the merge through, the
     // shipped default under `strict`, which is the hold as it always ran, answers instead.
