@@ -991,7 +991,7 @@ export function useProjectLevel(plane: PlaneId): ProjectLevel {
           ? { refused: said.data.reasons }
           : {
               saved: { ...both, [which]: said.data.file },
-              ...(said.data.warning === undefined ? {} : { warned: said.data.warning }),
+              ...(said.data.warning == null ? {} : { warned: said.data.warning }),
             },
     );
 
