@@ -5447,12 +5447,23 @@ impl Chats {
             // Nothing starts here, so nothing changes for this machine's audit or its count.
             (None, None)
         } else {
-            purlis_core::sandbox::at_start(
+            let (change, counted) = purlis_core::sandbox::at_start(
                 unsandboxed,
                 sandbox.is_some(),
                 chat.unsandboxed,
                 why == Why::New,
+            );
+            // A sandboxed run of a chat that has run before, at another level than its last
+            // (R-228): full to basic or basic to full, said once, by who made the start. A
+            // chat that was unsandboxed has its own `trust.sandbox.on`.
+            let level = purlis_core::sandbox::level_change(
+                chat.last_level
+                    .filter(|_| why != Why::New && !chat.unsandboxed && !chat.no_sandbox),
+                sandbox.map_or(purlis_core::sandbox::Level::Full, |applied| applied.level()),
+                &made_of(chat, why),
             )
+            .filter(|_| sandbox.is_some());
+            (change.or(level), counted)
         };
         let mut late: Vec<String> = Vec::new();
         // An older Claude Code keeps its own proxy, and its first chat says so (#1665), marked
@@ -5603,6 +5614,9 @@ impl Chats {
                 // Back on: the chat is sandboxed, and the record that it is can be missing.
                 Change::On => tracing::warn!(
                     "purlis: a chat's sandbox came back on and was not recorded ({why})"
+                ),
+                Change::Level { .. } => tracing::warn!(
+                    "purlis: a chat's sandbox level changed and was not recorded ({why})"
                 ),
             }
         }
@@ -6372,6 +6386,12 @@ impl Chats {
             // on a reattach: a runner's chat has no sandbox of this window's, and is confined.
             no_sandbox: matches!(ran, Some(purlis_session_protocol::session::RunSandbox::Off))
                 && !opted_out,
+            // And the level a sandboxed run had, for the next start to say if it changes.
+            last_level: if reattaching {
+                chat.last_level
+            } else {
+                sandbox.map(|applied| applied.level())
+            },
             identity,
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
             // a later reattach of it takes.
