@@ -801,6 +801,10 @@ pub(crate) struct Scenario {
     /// The Claude Code leg at Full owes its canary ([`Self::for_claude_code`]): its teardown
     /// fails if it never ran ([`canary_owed`]).
     owes_the_canary: bool,
+    /// Its chats run the real Claude Code, whose shell commands report no process group to
+    /// `FAKE_HARNESS_GROUPS` (only the fake harness writes it): [`tool_groups_lost`] has nothing to
+    /// count there, and the canary and the cells' own results are what watch a command.
+    real_harness: bool,
     /// The leg's canary ran to its end ([`Self::the_canary_ran`]).
     canary_ran: std::sync::atomic::AtomicBool,
 }
@@ -865,6 +869,7 @@ impl Scenario {
             DEFAULT_TEMPLATE,
             false,
         )?;
+        scenario.real_harness = true;
         if protection == Protection::Full {
             scenario.owes_the_canary = true;
             super::claude_leg::canary(&scenario, model);
@@ -976,6 +981,7 @@ impl Scenario {
             runtime: Some(runtime),
             ledger: super::checks::Ledger::default(),
             owes_the_canary: false,
+            real_harness: false,
             canary_ran: std::sync::atomic::AtomicBool::new(false),
         };
         scenario.ledger.begins(&scenario);
@@ -1877,7 +1883,9 @@ impl Drop for Scenario {
             }
         }
         // A tool command whose group never reached the file is said, never skipped (#7197).
-        if let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len()) {
+        if !self.real_harness
+            && let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len())
+        {
             left.unwatched.push(lost);
         }
         // Read while they run: a group the quit left can be #7103's only if it is one of these.

@@ -1035,10 +1035,16 @@ mod tests {
         allowed.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
         scenario.until_played(chat, &["allowed-fetch"]);
 
-        let kinds = kinds_once(&scenario, since, "hook.pretooluse-web");
+        // An allowed call's line is recorded with its call's end, which a web tool has no hook
+        // for: the proof it ran is the tool's own result, which is not a refusal of purlis's.
+        let kinds = super::super::report::kinds_since(&scenario.events(), since);
+        let result = scenario
+            .result_of(chat, "allowed-fetch")
+            .map(|line| line.to_string())
+            .unwrap_or_default();
         assert!(
-            kinds.iter().any(|kind| kind == "hook.pretooluse-web"),
-            "{kinds:?}\n{}",
+            !result.is_empty() && !result.contains("was refused"),
+            "the allowed fetch was refused or left no result: {result}\n{}",
             scenario.said()
         );
         assert!(
