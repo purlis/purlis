@@ -990,6 +990,99 @@ fn a_start_that_does_not_say_its_gaps_is_refused_where_nothing_was_verified() {
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
 }
 
+// ---- the deny state judges a start with every level (M75-07b part 2) -------------------------------
+
+const FORBID_START: &str = "// purlis-policy 1\n@id(\"trust-no-start\")\nforbid (principal, action == Action::\"start\", resource);\n";
+/// The project commits a forbid on `start` and switches it off; the You level's file turns it on.
+const START_OFF: &str =
+    "[policy]\ntemplate = \"strict\"\n\n[policy.rules]\n\"trust-no-start\" = \"off\"\n";
+const START_ON: &str = "[policy.rules]\n\"trust-no-start\" = \"enforce\"\n";
+
+fn in_the_deny_state(entries: Vec<Entry>) -> Standing {
+    Standing {
+        state: State::Deny(vec![Deny::CloneKeySwapped]),
+        entries,
+        ..Standing::fresh()
+    }
+}
+
+/// A `start`, as the app asks it, in the plane at `root` with `standing`.
+fn start_in(root: &Path, standing: Standing) -> Decision {
+    let gaps: Vec<String> = Vec::new();
+    let asker = crate::policy::decide::Asker {
+        chat: 1,
+        of: Chat {
+            workspace: None,
+            persona: None,
+        },
+        sandbox: "full",
+        attended: true,
+        harness_mode: "default",
+        depth: 0,
+        via: "start",
+        start: Some(crate::policy::decide::StartFacts {
+            profile: "default",
+            gaps: &gaps,
+        }),
+    };
+    crate::policy::decide::in_plane(
+        root,
+        &asker,
+        "start",
+        ("Harness", "claude-code"),
+        &crate::policy::decide::Sealed {
+            standing,
+            machine: None,
+        },
+    )
+}
+
+fn local_file(root: &Path) -> PathBuf {
+    root.join(crate::settings::Which::Local.file_at(root))
+}
+
+#[test]
+fn in_the_deny_state_a_you_level_local_forbid_on_start_still_refuses_the_chat() {
+    let m = machine();
+    let root = plane(
+        &m,
+        &[("purlis.toml", START_OFF), ("policy.cedar", FORBID_START)],
+    );
+    // Nothing forbids it while the rule is off.
+    let said = start_in(&root, in_the_deny_state(Vec::new()));
+    assert_ne!(said.after_mode, Outcome::Deny, "{said:?}");
+    // The person's own file turns it on: the chat is refused, with the deny state beside it.
+    std::fs::write(local_file(&root), START_ON).expect("the local file");
+    let said = start_in(&root, in_the_deny_state(Vec::new()));
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["trust-no-start"], "{said:?}");
+}
+
+#[test]
+fn in_the_deny_state_a_sealed_local_forbid_on_start_removed_from_the_file_still_refuses_the_chat() {
+    let m = machine();
+    let root = plane(
+        &m,
+        &[("purlis.toml", START_OFF), ("policy.cedar", FORBID_START)],
+    );
+    // The accepted floor holds the project as it was with the local file's tightening in it.
+    let held = Version {
+        local: Some(START_ON.to_owned()),
+        ..version(START_OFF, Some(FORBID_START))
+    };
+    // Past the cap the store verified, so what it held still judges a start (the entries a deny
+    // state sets aside are `kept`).
+    let standing = denied_past_the_cap(vec![floor(&held)]);
+    // The live local file has none of it: not there at all.
+    assert!(!local_file(&root).exists());
+    let said = start_in(&root, standing);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["trust-no-start"], "{said:?}");
+    // Without the sealed floor, the same live files let the chat start.
+    let said = start_in(&root, in_the_deny_state(Vec::new()));
+    assert_ne!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
 #[test]
 fn a_raised_cap_stays_held_by_the_floor_until_the_press() {
     let m = machine();

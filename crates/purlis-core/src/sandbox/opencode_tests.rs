@@ -1970,6 +1970,44 @@ fn no_harness_lets_a_sandboxed_chat_write_this_machine_s_sandbox_grants() {
     assert_eq!(held, 3, "Claude Code, Codex and opencode");
 }
 
+/// The app's list of anchored planes (`app/anchored-planes/`, M75-07b) is what the merge hook reads
+/// to know which folders are a plane's, where it cannot read the sealed registry: a chat that
+/// could write it could take its plane off the list, so no harness lets a sandboxed chat write it.
+#[test]
+fn no_harness_lets_a_sandboxed_chat_write_the_apps_list_of_anchored_planes() {
+    let plane = plane_saying(ON);
+    let root = real(plane.path());
+    let home = tempfile::tempdir().expect("a home");
+    let home_dir = real(home.path());
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[]),
+        home: Some(home_dir.clone()),
+        os: Os::MacOs,
+    };
+    let config_root = home_dir.join(".config");
+    let listed = crate::machine::dir(&config_root)
+        .join("app")
+        .join("anchored-planes")
+        .join("0123456789abcdef");
+    let mut held = 0;
+    for harness in Harness::ALL {
+        let Some(_) = compiler(harness) else { continue };
+        let stated = stated(harness, &root, &root, &machine);
+        let denied: Vec<PathBuf> = crate::machine::dirs_spelled(&config_root)
+            .into_iter()
+            .filter(|folder| listed.starts_with(folder))
+            .filter(|folder| (stated.denies_write)(&folder.display().to_string()))
+            .collect();
+        assert!(
+            !denied.is_empty(),
+            "{harness:?} lets a chat write {}",
+            listed.display()
+        );
+        held += 1;
+    }
+    assert_eq!(held, 3, "Claude Code, Codex and opencode");
+}
+
 /// SK-9 (#2772): a Try it's scratch chat starts in its throwaway folder, and that is the one
 /// folder of the project it writes; what it would write anywhere else in the project is refused,
 /// so nothing it does reaches a save.

@@ -5066,6 +5066,24 @@ write into this folder cannot make its own text arrive as the person's.
 - **Tier:** Machine, device-bound — never synced. Not rebuildable: deleting it where the
   keyring did not start reads as nothing kept.
 
+### `~/.config/purlis/app/anchored-planes/` — the list of anchored planes (outside the plane)
+- **What:** one small file per plane the [registry](#configpurlisappanswerssealed-here--the-planes-sealed-marker-outside-the-plane)
+  holds, named by the plane's anchor key (a digest of its path), whose whole text is the plane's
+  real path. **No secret**: a path the registry holds too. It exists because `purlis hook
+  pretooluse` and every other process that is not the app has no seal key, so the registry reads
+  as unreadable there: this list is how such a process learns a plane is anchored (slice 07b), so
+  that a merge it is asked about in one is refused, never judged by the shipped default. A
+  process reads the union of the two (`answers::anchored_roots`); a plane the list does not hold,
+  and the registry cannot be read to confirm, is judged as one found on disk. It lives beside
+  `answers/`, not inside it, because anything inside that folder counts as "something is kept".
+  A chat's sandbox keeps it from writing here; an unsandboxed chat is not kept from deleting it,
+  which is the weakness of every file a process outside the app must trust.
+- **Status:** **internal** — **purlis only**.
+- **Tier:** Machine, device-bound, rebuildable — never synced; the app writes the plane's file
+  again at the next commit or open that registers it.
+- **Written by:** `purlis_core::secrets::answers::register`, in the app's own process alone,
+  after the registry holds the plane. **Read by:** `answers::anchored_roots`, by the hook.
+
 ### The answer store's anchors — keyring accounts of `purlis-seal`
 - **What:** what keeps the [answer store](#configpurlisappanswersclone-key--the-sealed-answer-store-outside-the-plane)
   from being taken away or put back from before. Three kinds of generic password under the

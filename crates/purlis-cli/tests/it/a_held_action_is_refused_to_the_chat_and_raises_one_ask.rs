@@ -479,7 +479,8 @@ fn a_held_merge_is_refused_where_no_app_answers() {
     assert!(reason.contains("could not be asked"), "{reason}");
     assert!(reason.contains("nobody was asked"), "{reason}");
     assert!(!reason.contains("the person is asked in Asks"), "{reason}");
-    // Outside a chat the app started, an attended merge is the person's own: A4's ground.
+    // Outside a chat the app started, an attended merge is the person's own: A4's ground. The
+    // shipped default's ask is theirs to answer in their terminal (M75-07b).
     let mut outside = Chat::without_an_app();
     outside.socket = PathBuf::new();
     assert_eq!(outside.denial_outside_a_chat("gh pr merge 12"), None);

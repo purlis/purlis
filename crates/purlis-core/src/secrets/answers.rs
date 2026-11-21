@@ -321,6 +321,59 @@ fn sealed_here_marker(root: &Path) -> Option<PathBuf> {
     Some(answers_folder()?.join("sealed-here").join(anchor_key(root)))
 }
 
+/// **The list of anchored planes a process without the keyring can read** (M75-07b, review F1):
+/// one small file per plane the registry holds, named by its anchor key, whose text is the plane's
+/// real path, in a folder of its own beside the answers' (never inside it: [`something_kept`]
+/// counts what is in that one). **No secret**: a path the registry holds as well. Written
+/// wherever the registry gains a plane ([`register_unlocked`]), so it is the registry's shadow,
+/// and read by `purlis hook pretooluse`, which cannot read the sealed registry
+/// ([`anchored_root_containing`]).
+fn anchored_folder() -> Option<PathBuf> {
+    let home = crate::sandbox::local::config_home()?;
+    Some(
+        crate::machine::dir(&home)
+            .join("app")
+            .join("anchored-planes"),
+    )
+}
+
+/// **The roots of every plane anchored on this machine**, as this process can tell: the
+/// registry's where it reads, and the app's list ([`anchored_folder`]) where it does not. The
+/// union, so a list the registry confirms is no weaker and one it cannot be read to confirm still
+/// counts. A list taken away is what a process outside the app cannot tell: the sandbox keeps a
+/// chat from writing it, and a plane the list does not hold is judged as one found on disk.
+pub fn anchored_roots() -> Vec<PathBuf> {
+    let mut roots: Vec<PathBuf> = match read_registry() {
+        Read::Value(registry) => registry.planes.into_iter().map(|p| p.real).collect(),
+        _ => Vec::new(),
+    };
+    if let Some(dir) = anchored_folder().and_then(|dir| std::fs::read_dir(dir).ok()) {
+        for item in dir.flatten() {
+            if let Ok(text) = std::fs::read_to_string(item.path()) {
+                let root = PathBuf::from(text.trim());
+                if root.is_absolute() && !roots.contains(&root) {
+                    roots.push(root);
+                }
+            }
+        }
+    }
+    roots
+}
+
+/// **The anchored plane whose folder holds `path`**, by the real path or the path as given, from
+/// [`anchored_roots`]: the question a process that cannot read the registry asks.
+pub fn anchored_root_containing(path: &Path) -> Option<PathBuf> {
+    let real = crate::sandbox::real(path);
+    anchored_roots()
+        .into_iter()
+        .find(|root| real.starts_with(root) || path.starts_with(root))
+}
+
+/// Whether the plane at `root` is anchored, as [`anchored_roots`] tells.
+pub fn plane_is_anchored(root: &Path) -> bool {
+    anchored_root_containing(root).is_some()
+}
+
 /// Whether the marker for `root` is there.
 fn sealed_here(root: &Path) -> bool {
     sealed_here_marker(root).is_some_and(|marker| marker.exists())
@@ -585,6 +638,20 @@ fn register_unlocked(root: &Path) -> io::Result<Registration> {
     };
     if changed {
         write_registry(&mut registry)?;
+    }
+    // The shadow a process outside the app reads (F1): on every open, so a registry that
+    // already held the plane gets its marker too.
+    if let Some(folder) = anchored_folder() {
+        let marker = folder.join(anchor_key(root));
+        let real = crate::sandbox::real(root);
+        if std::fs::read_to_string(&marker)
+            .ok()
+            .as_deref()
+            .map(str::trim)
+            != Some(real.to_string_lossy().as_ref())
+        {
+            write_file(&marker, &real.to_string_lossy())?;
+        }
     }
     Ok(Registration::Registered(id))
 }
@@ -956,6 +1023,11 @@ impl Standing {
     /// Whether the plane is in the deny state.
     pub fn is_deny(&self) -> bool {
         matches!(self.state, State::Deny(_))
+    }
+
+    /// Whether this process could not verify the plane at all (it is not the app, [`State::Unverifiable`]).
+    pub fn is_unverifiable(&self) -> bool {
+        matches!(self.state, State::Unverifiable)
     }
 
     /// Whether a start is judged as if nothing were verified and no gap accepted: the plane is in

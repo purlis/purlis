@@ -30,6 +30,13 @@ use crate::enforcement::Mode;
 /// plane's state, not a policy's.
 pub const RULE_ID: &str = "answers-deny-state";
 
+/// What a chat started in the deny state is told, in its tab: it runs, in the full sandbox with
+/// only the minimum permits, and everything but a start is refused until the person presses
+/// (`docs/ui-copy.md`: what happened, what to do).
+pub const STARTED_NOTICE: &str = "Purlis can no longer vouch for what you answered in this \
+     project, so this chat runs in the full sandbox with only what its harness needs, and \
+     everything it tries is refused. Press to start again to mend it.";
+
 /// What the harness needs to run in a deny state, and nothing else (review round 3, SEC3-SF4;
 /// **proposed**, until slice 22 compiles the sandbox from the policy). Everything else a project,
 /// a persona or the person granted is left out: the chat is compiled at `full` with these.

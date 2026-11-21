@@ -299,6 +299,40 @@ pub fn ready_on(
     })
 }
 
+/// **What a chat starts under where `standing` is the deny state** (M75-07b): the full sandbox with
+/// the minimum permits ([`crate::sandbox::for_start_in_deny_state`]), or why it cannot be
+/// applied. `None` where the plane is not in the deny state, so the person's own level decides.
+///
+/// **A start composed where nothing can be verified** (a host or runner that is not the app, so
+/// the standing is [`State::Unverifiable`](crate::secrets::answers::State::Unverifiable), review
+/// F5) **fails closed on an anchored plane**: the list of anchored planes
+/// ([`crate::secrets::answers::plane_is_anchored`]) is what such a process can read, and a plane
+/// it holds is started as one in the deny state, with its notice. A plane it does not hold is
+/// one nothing was ever sealed for, and the person's own level decides, as for a fresh install.
+pub fn deny_state_sandbox(
+    harness: Harness,
+    root: &Path,
+    machine: &crate::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+    standing: &crate::secrets::answers::Standing,
+) -> Option<Result<crate::sandbox::Applied, crate::sandbox::NotStarted>> {
+    starts_in_the_deny_state(root, standing)
+        .then(|| crate::sandbox::for_start_in_deny_state(harness, root, machine, has))
+}
+
+/// Whether a start at `root` is made as in the deny state: the standing says so, or it cannot be
+/// verified here and the plane is anchored ([`deny_state_sandbox`]).
+fn starts_in_the_deny_state(root: &Path, standing: &crate::secrets::answers::Standing) -> bool {
+    standing.is_deny()
+        || (standing.is_unverifiable() && crate::secrets::answers::plane_is_anchored(root))
+}
+
+/// What a start of a harness the project declares (no adapter, so no sandbox compiled for it) is
+/// told in the deny state: refused, since the deny state's sandbox is never none (review F4).
+pub const DECLARED_HARNESS_IN_THE_DENY_STATE: &str = "Purlis can no longer vouch for what you \
+     answered in this project, and a harness this project declares has no sandbox purlis can \
+     compile, so nothing was started. Press to start again to mend it, then start it.";
+
 /// **[`ready`] for a chat its pool's runner composes** (#2446): the window readies it only to
 /// start it there, and the runner composes it by its names, with the sandbox it compiles. A
 /// profile rule that holds for a chat run on this machine and not on a runner is the runner's
@@ -502,7 +536,30 @@ fn ready_given_on(
     // chat that cannot be confined never reaches the program. A person's opt-out, or a system
     // with no backend, starts it unsandboxed instead, and the tab says so for the chat's whole
     // life (§7).
+    // The plane's sealed answers in the deny state: the full sandbox with the minimum permits,
+    // whatever an opt-out, the persona or the person's level say, and never none (M75-07b). The
+    // chat starts, and says why it is held.
+    let in_the_deny_state = match harness {
+        Some(harness) => deny_state_sandbox(
+            harness,
+            root,
+            machine,
+            has,
+            &crate::secrets::answers::standing(root),
+        )
+        .transpose()
+        .map_err(|refused| refused.to_string())?,
+        // A declared harness has no adapter to confine (F4): refused, never started bare.
+        None if starts_in_the_deny_state(root, &crate::secrets::answers::standing(root)) => {
+            return Err(DECLARED_HARNESS_IN_THE_DENY_STATE.to_owned());
+        }
+        None => None,
+    };
     let (mut sandbox, unsandboxed) = match harness {
+        Some(_) if in_the_deny_state.is_some() => {
+            notices.push(crate::policy::deny_state::STARTED_NOTICE.to_owned());
+            (in_the_deny_state, None)
+        }
         Some(harness) => match crate::sandbox::decide_granted(
             harness,
             root,
