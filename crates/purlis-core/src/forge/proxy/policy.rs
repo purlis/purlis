@@ -603,30 +603,70 @@ impl ChatPolicy {
             .unwrap_or_else(PoisonError::into_inner);
         let known = advertised.get(&(repo.host.clone(), repo.path.clone()));
         let mut created: Vec<(String, String, String)> = Vec::new();
+        // Every command is examined before the push is classified: a push is refused as the most
+        // severe class among its commands, never as the first one met, so a tag beside a delete
+        // of `main` is a protected ref and not a "release or tag" that could be held and allowed.
+        let mut worst: Option<Refusal> = None;
         for command in &pushed.commands {
-            let name = &command.name;
-            if name.starts_with("refs/tags/") {
-                return Err(Refusal::ReleaseOrTag);
-            }
-            let Some(branch) = name.strip_prefix("refs/heads/") else {
-                return Err(Refusal::ProtectedRef);
-            };
-            if branch.is_empty() || repo.protects(branch) || command.delete {
-                return Err(Refusal::ProtectedRef);
-            }
-            let key = (repo.host.clone(), repo.path.clone(), branch.to_string());
-            if command.create {
-                let known = known.ok_or(Refusal::NoAdvertisement)?;
-                // Exact, and case-folded too: a `Fix` beside a colleague's `fix` is not made.
-                if known.iter().any(|b| b.eq_ignore_ascii_case(branch)) {
-                    return Err(Refusal::ProtectedRef);
+            match self.check_command(repo, command, known, &own) {
+                Ok(Some(key)) => created.push(key),
+                Ok(None) => {}
+                Err(refusal) => {
+                    if worst.is_none_or(|w| push_severity(refusal) > push_severity(w)) {
+                        worst = Some(refusal);
+                    }
                 }
-                created.push(key);
-            } else if !own.contains(&key) {
-                return Err(Refusal::ProtectedRef);
             }
         }
+        if let Some(refusal) = worst {
+            return Err(refusal);
+        }
         Ok(created)
+    }
+
+    /// One push command against the repo: the branch it makes (if it makes one), or why it is
+    /// refused.
+    fn check_command(
+        &self,
+        repo: &AllowedRepo,
+        command: &git::RefCommand,
+        known: Option<&HashSet<String>>,
+        own: &HashSet<(String, String, String)>,
+    ) -> Result<Option<(String, String, String)>, Refusal> {
+        let name = &command.name;
+        if name.starts_with("refs/tags/") {
+            return Err(Refusal::ReleaseOrTag);
+        }
+        let Some(branch) = name.strip_prefix("refs/heads/") else {
+            return Err(Refusal::ProtectedRef);
+        };
+        if branch.is_empty() || repo.protects(branch) || command.delete {
+            return Err(Refusal::ProtectedRef);
+        }
+        let key = (repo.host.clone(), repo.path.clone(), branch.to_string());
+        if command.create {
+            let known = known.ok_or(Refusal::NoAdvertisement)?;
+            // Exact, and case-folded too: a `Fix` beside a colleague's `fix` is not made.
+            if known.iter().any(|b| b.eq_ignore_ascii_case(branch)) {
+                return Err(Refusal::ProtectedRef);
+            }
+            Ok(Some(key))
+        } else if !own.contains(&key) {
+            Err(Refusal::ProtectedRef)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+/// How severe a push command's refusal is; a push is refused as its most severe. A tag is the
+/// least (an act the person could be asked about), a missing advertisement next, and any
+/// protected, deleted or non-branch ref the most.
+fn push_severity(refusal: Refusal) -> u8 {
+    match refusal {
+        Refusal::ReleaseOrTag => 1,
+        Refusal::NoAdvertisement => 2,
+        _ => 3,
     }
 }
 

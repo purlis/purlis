@@ -96,6 +96,33 @@ mod firstrun;
 mod firsttask;
 mod forgeaccounts;
 mod forgepkce;
+#[cfg(feature = "forge-wiring")]
+mod forgeroute;
+
+/// `main` ships the forge route off (one login, ADR 0128 J): the feature exists, and no default
+/// turns it on. The one-login train turns it on in CI (`FORGE_WIRING`, `ci.yml`), never in the
+/// manifest. Ungated, so the off build runs it too.
+#[cfg(test)]
+mod forge_wiring_is_off_by_default {
+    #[test]
+    fn the_apps_manifest_declares_the_feature_and_no_default_turns_it_on() {
+        let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+            .expect("the app's manifest");
+        assert!(
+            manifest.contains("\nforge-wiring = ["),
+            "the feature is declared"
+        );
+        let defaults: Vec<&str> = manifest
+            .lines()
+            .filter(|line| line.trim_start().starts_with("default"))
+            .filter(|line| line.contains('='))
+            .collect();
+        assert!(
+            defaults.iter().all(|line| !line.contains("forge-wiring")),
+            "a default feature turns the forge route on: {defaults:?}"
+        );
+    }
+}
 mod getproject;
 mod gitbroker;
 mod goingaway;
@@ -4122,6 +4149,11 @@ pub fn run() {
             // when it is stale on the promise that no second app is running.
             #[cfg(target_os = "linux")]
             instance::one_per_user(app);
+            // The forge proxy's routes (ADR 0128 J): after the one-per-user lock, so the sweep of
+            // a crashed app's folders never meets a second app's; it removes only those whose
+            // app is gone.
+            #[cfg(feature = "forge-wiring")]
+            forgeroute::install();
             // This machine's local state moves to the purlis names (RN-5, V93f): after the
             // single-instance handoff and the one-per-user lock, so a second launch never
             // migrates, and before any project, chat or watch opens a file under one. Anything
@@ -5163,6 +5195,9 @@ pub fn run() {
                 // group, so that nothing an extension was asked to run outlives the window
                 // that asked (`purlis_core::executor`).
                 app.state::<views::Views>().stop_all();
+                // No forge socket or CA outlives the app (ADR 0128 J).
+                #[cfg(feature = "forge-wiring")]
+                forgeroute::stop_all();
                 app.state::<heard::Heard>().stop_all();
                 // Every plane, not "the" plane: each one writes its own record into itself
                 // and ends its own sessions. A failure is not worth refusing to exit over —

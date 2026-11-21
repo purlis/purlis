@@ -104,6 +104,14 @@ notify = "8.2"
 # The theme specimen's picture (#2330, `specimen.rs`): WebKit's own snapshot of the hidden
 # window's webview, as a PNG. The crates and versions wry already brings in on macOS, with the
 # few more of their features the snapshot and the PNG need, so nothing new is in the tree.
+# The forge route's private folder and its sweep (`forgeroute`): this user's directory made and
+# checked on one descriptor, and whether a pid is a running process. A workspace crate already.
+[target.'cfg(unix)'.dependencies]
+purlis-same-user.workspace = true
+# Whether a pid is a running process (`kill(pid, 0)`, in safe code): the sweep of a crashed app's
+# route folders. The version purlis-core already uses.
+rustix = { version = "1", features = ["process"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 # The crash handler, on macOS alone for now (#5691; `nativecrash.rs` says why it is not started yet).
 purlis-crash-handler.workspace = true
@@ -128,9 +136,7 @@ objc2-user-notifications = { version = "0.3.2", default-features = false, featur
 # rfd's GTK backend on Linux, as the dialog plugin enables it.
 rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
 zbus = "5.19"
-# Whose charter the instance lock is (`instance.rs`), by user id. The version purlis-core
-# already uses.
-rustix = { version = "1", features = ["process"] }
+# Whose charter the instance lock is (`instance.rs`), by user id: rustix, under unix above.
 # The theme specimen's picture (#2330, `specimen.rs`): WebKitGTK's snapshot of the hidden
 # window's webview, written as a PNG by cairo. The versions wry and GTK already bring in.
 webkit2gtk = "=2.0.2"
@@ -140,6 +146,13 @@ cairo-rs = { version = "0.18", features = ["png"] }
 workspace = true
 
 [features]
+# **The forge route** (one login, slice J; ADR 0128): the app runs the forge proxy per chat. Off
+# by default, so `main`'s build never has it until the train lands. The `one-login` branch turns
+# it on in CI alone (`FORGE_WIRING` in `.github/workflows/ci.yml`), never here, so nothing in this
+# file has to be reverted when the train lands. This is the app's own feature: the core's
+# `forge-wiring` is slice I's test-only flag and is not forwarded from here.
+forge-wiring = []
+
 # What a scenario test needs inside the app: WebdriverIO's embedded WebDriver server, and its
 # plugin for running code in the window. Never in a build anyone is given.
 #
