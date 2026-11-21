@@ -78,6 +78,9 @@ impl std::fmt::Display for Malformed {
 /// | `settings.grant_listed` | `settings`: the Granted list holds a grant |
 ///
 /// A `window` entry with `forbid: true` asks for the word not to hold.
+///
+/// **And the counted words** ([`Counted`]), written `word == N` as #7318's cells do: the number the
+/// window shows for the chat, equal to `N`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Window {
     AskListed,
@@ -117,23 +120,79 @@ impl Window {
     }
 }
 
+/// **The closed list of counted window expectations**, each a number the window shows for the
+/// chat (`word == N`):
+///
+/// | Word | The query |
+/// |---|---|
+/// | `blocks.marker_blocked` | `blocks`: the marker's verified blocks |
+/// | `blocks.marker_unverified` | `blocks`: the marker's unverified blocks |
+/// | `finishes.rows_for_turn` | `finishes`: how many finish rows the chat has |
+/// | `finishes.blocked` | `finishes`: the blocks its latest finish row counts |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Counted {
+    MarkerBlocked,
+    MarkerUnverified,
+    FinishRows,
+    FinishBlocked,
+}
+
+impl Counted {
+    pub const ALL: [Counted; 4] = [
+        Counted::MarkerBlocked,
+        Counted::MarkerUnverified,
+        Counted::FinishRows,
+        Counted::FinishBlocked,
+    ];
+
+    pub fn word(self) -> &'static str {
+        match self {
+            Counted::MarkerBlocked => "blocks.marker_blocked",
+            Counted::MarkerUnverified => "blocks.marker_unverified",
+            Counted::FinishRows => "finishes.rows_for_turn",
+            Counted::FinishBlocked => "finishes.blocked",
+        }
+    }
+}
+
+/// **What a `window` entry asks**: a word that holds, or a number that equals.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Query {
+    Holds(Window),
+    Equals(Counted, u64),
+}
+
 /// **A `window` entry, as the runner plays it**: a word of the list, and whether it must not hold.
-pub fn window_of(query: &WindowQuery) -> Result<(Window, bool), Malformed> {
+pub fn window_of(query: &WindowQuery) -> Result<(Query, bool), Malformed> {
     if query.at.is_some() {
         return Err(Malformed(format!(
             "window `{}`: `at` is not played: a window entry is read when its step ends",
             query.query
         )));
     }
-    Window::parse(&query.query)
-        .map(|word| (word, query.forbid))
-        .ok_or_else(|| {
-            Malformed(format!(
-                "window `{}` is no word of the window list: {}",
-                query.query,
-                Window::ALL.map(Window::word).join(", ")
-            ))
-        })
+    let words = || {
+        Window::ALL
+            .map(Window::word)
+            .into_iter()
+            .chain(Counted::ALL.map(|c| c.word()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let text = query.query.as_str();
+    let parsed = match text.split_once("==") {
+        Some((word, n)) => Counted::ALL
+            .into_iter()
+            .find(|c| c.word() == word.trim())
+            .zip(n.trim().parse::<u64>().ok())
+            .map(|(word, n)| Query::Equals(word, n)),
+        None => Window::parse(text).map(Query::Holds),
+    };
+    parsed.map(|q| (q, query.forbid)).ok_or_else(|| {
+        Malformed(format!(
+            "window `{text}` is no word of the window list ({}; a counted word is `word == N`)",
+            words()
+        ))
+    })
 }
 
 /// **Every batch in `dir`**, read, checked against the schema and put through the [`Validator`].
@@ -570,7 +629,28 @@ mod tests {
                 forbid: true,
                 at: None,
             };
-            assert_eq!(window_of(&q), Ok((word, true)));
+            assert_eq!(window_of(&q), Ok((Query::Holds(word), true)));
+        }
+        for word in Counted::ALL {
+            let q = WindowQuery {
+                query: format!("{} == 2", word.word()),
+                forbid: false,
+                at: None,
+            };
+            assert_eq!(window_of(&q), Ok((Query::Equals(word, 2), false)));
+        }
+        for bad in [
+            "blocks.marker_blocked",
+            "blocks.marker_blocked == two",
+            "ask.listed == 1",
+            "nothing == 1",
+        ] {
+            let q = WindowQuery {
+                query: bad.to_owned(),
+                forbid: false,
+                at: None,
+            };
+            assert!(window_of(&q).is_err(), "`{bad}` is no word");
         }
         let prose = WindowQuery {
             query: "blocks: marker +1".to_owned(),

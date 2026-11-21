@@ -30,12 +30,14 @@ use crate::timings::{Expr, TimingsCatalogue};
 
 /// The global checks a mark may name (matrix-check's, ticket 7 runs them in the suite): the
 /// runner leaving the sandbox, a refused call with no block or hold, an ask never answered or
-/// withdrawn, and a block with no source.
-pub const GLOBAL_CHECKS: [&str; 4] = [
+/// withdrawn, a block with no source, and an ask raised twice with nothing between (#7322:
+/// #6674's duplicate raise is a global check's, so a cell that pins it names it).
+pub const GLOBAL_CHECKS: [&str; 5] = [
     "sandbox_left",
     "refusal_black_hole",
     "ask_black_hole",
     "block_without_source",
+    "one_ask_one_raise",
 ];
 
 const OSES: [Os; 2] = [Os::Linux, Os::Macos];

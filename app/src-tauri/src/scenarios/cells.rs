@@ -13,8 +13,9 @@
 //! - **One press map** ([`press_of`]): a cell's `press` label is the window's own wording
 //!   (`asking::allow_said`, `asking::KEEP_SAID`) or one of a few window actions, mapped to the
 //!   scripted person's driver ([`super::person`]). A label not in the map is malformed.
-//! - **One window map** ([`holds`]): each word of `play::Window` is one of the window's queries
-//!   ([`super::queries`]), an exhaustive match, so a new word cannot be added without its query.
+//! - **One window map** ([`shows`]): each word of `play::Window` and `play::Counted` is one of the
+//!   window's queries ([`super::queries`]), an exhaustive match, so a new word cannot be added
+//!   without its query.
 //! - **One script per batch and dialect**: the batch's steps are the turns of one chat, as the
 //!   batch format says (cells run in order in one chat), so a later cell sees the earlier cells'
 //!   state. Each shell call runs for real under the wrap, as every scenario's does.
@@ -35,7 +36,7 @@ use purlis_scenarios::model::{
 };
 use purlis_scenarios::net::{Origin, Scheme, TestCa, Variant};
 use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
-use purlis_scenarios::play::{self, Hosts, Malformed, Seen, Window};
+use purlis_scenarios::play::{self, Counted, Hosts, Malformed, Query, Seen, Window};
 use purlis_scenarios::timings::{CoreTimings, catalogue};
 
 use super::checks::{Check, StepResult};
@@ -72,6 +73,8 @@ pub(crate) enum Pressing {
     StopChat,
     /// Ignore the chat's needs-you item.
     Ignore,
+    /// Esc, into the pane.
+    Esc,
     /// Kill the harness's process.
     KillHarness,
 }
@@ -98,8 +101,10 @@ pub(crate) fn press_of(label: &str) -> Result<Pressing, Malformed> {
         crate::asking::KEEP_SAID => Pressing::OnAsk(Press::Keep(None)),
         "Merge" => Pressing::OnAsk(Press::Option(crate::asking::MERGE.to_owned())),
         "Don't merge" => Pressing::OnAsk(Press::Option(crate::asking::DONT_MERGE.to_owned())),
-        "Stop chat" => Pressing::StopChat,
-        "Ignore the ask" => Pressing::Ignore,
+        // A window action is named by its label or by its command (ticket 7's list).
+        "Stop chat" | "stop_chat" => Pressing::StopChat,
+        "Ignore the ask" | "ignore_needs_you" => Pressing::Ignore,
+        "send_input_bytes" => Pressing::Esc,
         "Kill the harness process from the person's terminal" => Pressing::KillHarness,
         other => {
             return Err(Malformed(format!(
@@ -170,6 +175,27 @@ fn holds(scenario: &Scenario, word: Window, chat: u32) -> bool {
     }
 }
 
+/// **Whether `query` is what the window shows** for `chat`: a word that holds ([`holds`]), or a
+/// number the window's own query gives that equals the cell's.
+fn shows(scenario: &Scenario, query: Query, chat: u32) -> bool {
+    match query {
+        Query::Holds(word) => holds(scenario, word, chat),
+        Query::Equals(word, n) => {
+            let queries = scenario.queries();
+            let seen = match word {
+                Counted::MarkerBlocked => u64::from(queries.blocks(chat, None).blocks),
+                Counted::MarkerUnverified => u64::from(queries.blocks(chat, None).unverified),
+                Counted::FinishRows => queries.finishes(chat).len() as u64,
+                Counted::FinishBlocked => queries
+                    .finishes(chat)
+                    .last()
+                    .map_or(0, |finish| u64::from(finish.blocked)),
+            };
+            seen == n
+        }
+    }
+}
+
 // ---- the batch -------------------------------------------------------------------------------
 
 /// The host protection a batch's `protection` is.
@@ -196,6 +222,7 @@ fn check_of(word: &str) -> Option<Check> {
         "refusal_black_hole" => Some(Check::NoBlackHole),
         "ask_black_hole" => Some(Check::NoUnansweredAsk),
         "block_without_source" => Some(Check::EveryBlockHasASource),
+        "one_ask_one_raise" => Some(Check::OneAskOneRaise),
         _ => None,
     }
 }
@@ -212,6 +239,7 @@ fn script_of(
     hosts: &Hosts,
     client: &std::path::Path,
     trust: &str,
+    tag: &str,
 ) -> serde_json::Value {
     let mut turns = Vec::new();
     for cell in cells {
@@ -226,7 +254,7 @@ fn script_of(
                         let command = call.input["command"].as_str().unwrap_or_default();
                         serde_json::json!({
                             "step": name, "tool": "bash",
-                            "run": format!("{trust}{}", bound(command, hosts, client)),
+                            "run": format!("{trust}{}", bound(command, hosts, client, tag)),
                         })
                     } else {
                         serde_json::json!({
@@ -255,9 +283,13 @@ fn script_of(
     serde_json::json!({ "turns": turns })
 }
 
-/// `command` with the cell's hosts (`$h1`) and the matrix's client bound.
-fn bound(command: &str, hosts: &Hosts, client: &std::path::Path) -> String {
-    let mut out = command.replace(CLIENT_PATH, &client.display().to_string());
+/// `command` with the cell's hosts (`$h1`), the matrix's client and the chat's tag (`<chat>`,
+/// `<c>`: what the matrix names a chat's own files by) bound.
+fn bound(command: &str, hosts: &Hosts, client: &std::path::Path, tag: &str) -> String {
+    let mut out = command
+        .replace(CLIENT_PATH, &client.display().to_string())
+        .replace("<chat>", tag)
+        .replace("<c>", tag);
     // Longest names first, so `$h10` is never read as `$h1` and a zero.
     let mut names: Vec<_> = hosts.iter().collect();
     names.sort_by_key(|(key, _)| std::cmp::Reverse(key.len()));
@@ -394,12 +426,13 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         }
     }
 
-    let script = script_of(&playable, &hosts, &client, &trust);
+    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch);
     let mut chat = None;
     let mut played: Vec<Played> = Vec::new();
     for cell in &playable {
         for (n, step) in cell.steps.iter().enumerate() {
             let since = scenario.latest_seq();
+            let transcript_from = scenario.transcript().len();
             let id = match chat {
                 None => {
                     let id = scenario.starts(&script);
@@ -423,6 +456,11 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
             }
             let wanted: Vec<&str> = names.iter().map(String::as_str).collect();
             scenario.until_played(id, &wanted);
+            // The step has ended when its log has gone quiet: a hook line spooled by the wrap is
+            // written into the log after the call returns, and a later step's events must not
+            // be taken for it.
+            super::checks::quiesce(&scenario)
+                .unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
             if step.refusal_expected {
                 let target = host_of_step(step, &hosts);
                 scenario.refused(id, &format!("step {}", n + 1), target.as_deref());
@@ -432,24 +470,26 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
                 .window
                 .iter()
                 .map(|q| {
-                    let (word, forbid) = play::window_of(q).expect("checked before the run");
-                    holds(&scenario, word, id) != forbid
+                    let (query, forbid) = play::window_of(q).expect("checked before the run");
+                    shows(&scenario, query, id) != forbid
                 })
                 .collect();
-            let said = scenario.transcript();
             played.push(Played {
                 cell: cell.id.clone(),
                 step: n,
                 since,
                 outcome,
                 window,
-                transcript: said.len(),
+                transcript_from,
             });
         }
     }
 
     // Every step's events, once the log is quiet: a step's are those from its start to the next
     // step's, the last one's to the end.
+    // Whatever ask nobody answered (a client that gave up, a hold that ended) the person now
+    // keeps blocked, as every scenario that leaves one does.
+    scenario.keeps_listed_asks_blocked();
     super::checks::quiesce(&scenario).unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
     let events = scenario.events();
     let all = scenario.transcript();
@@ -458,6 +498,12 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         .skip(1)
         .map(|p| p.since)
         .chain([u64::MAX])
+        .collect();
+    let transcript_ends: Vec<usize> = played
+        .iter()
+        .skip(1)
+        .map(|p| p.transcript_from)
+        .chain([all.len()])
         .collect();
     let checks = super::checks::at_the_end(&scenario)
         .unwrap_or_else(|why| panic!("the global checks could not run: {why}"));
@@ -470,7 +516,12 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
     };
     for cell in &playable {
         let mut assertions: Vec<Assertion> = Vec::new();
-        for (p, end) in played.iter().zip(&ends).filter(|(p, _)| p.cell == cell.id) {
+        for ((p, end), transcript_end) in played
+            .iter()
+            .zip(&ends)
+            .zip(&transcript_ends)
+            .filter(|((p, _), _)| p.cell == cell.id)
+        {
             let step = &cell.steps[p.step];
             let number = u32::try_from(p.step + 1).expect("a step number");
             let seen: Vec<Seen> = events
@@ -499,8 +550,9 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
                 });
             }
             for (i, line) in step.transcript.iter().enumerate() {
-                let from = p.transcript.min(all.len());
-                let said = all[from..]
+                let to = (*transcript_end).min(all.len());
+                let from = p.transcript_from.min(to);
+                let said = all[from..to]
                     .iter()
                     .any(|entry| entry.to_string().contains(&line.says));
                 assertions.push(Assertion {
@@ -556,7 +608,8 @@ struct Played {
     since: u64,
     outcome: Option<Outcome>,
     window: Vec<bool>,
-    transcript: usize,
+    /// How many lines the chats' transcripts held when the step began.
+    transcript_from: usize,
 }
 
 fn applies(mark: &purlis_scenarios::model::Mark, dialect: CellDialect) -> bool {
@@ -594,6 +647,10 @@ fn press_it(
             .person()
             .ignores(chat)
             .unwrap_or_else(|why| panic!("{why}")),
+        Pressing::Esc => scenario
+            .person()
+            .esc(chat)
+            .unwrap_or_else(|why| panic!("{why}")),
         Pressing::KillHarness => {
             scenario
                 .person()
@@ -627,6 +684,15 @@ fn malformed_cell(
                     "a press on an ask needs a call that names a host (`$h1`)".to_owned(),
                 )),
                 Ok(_) => {}
+            }
+        }
+        for call in &step.calls {
+            if call.tool.eq_ignore_ascii_case("bash") && call.input["command"].as_str().is_none() {
+                why.push(at(format!(
+                    "a Bash call with no `command` (client `{}`) has no script here: only a \
+                     `command` is run",
+                    call.client.as_deref().unwrap_or("none")
+                )));
             }
         }
         if let Some(restart) = step.restart {

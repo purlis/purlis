@@ -62,13 +62,17 @@ reason, so the run-result gate goes red on it. The words are closed lists, one p
 
 - `window[].query` is a word of `play::Window`, each one of the window's own queries:
   `ask.listed`, `notice.standing`, `blocked_log.lists`, `chat_log.block_row`,
-  `needs_you.queued`, `merge_row.listed`, `settings.grant_listed`. `forbid: true` asks for it not
-  to hold. Prose is not a word.
+  `needs_you.queued`, `merge_row.listed`, `settings.grant_listed`, and the counted words,
+  written `word == N`: `blocks.marker_blocked`, `blocks.marker_unverified`,
+  `finishes.rows_for_turn`, `finishes.blocked`. `forbid: true` asks for it not to hold. Prose is
+  not a word. A word that needs a query the window has no function for yet is added with it, in
+  `play.rs` and `cells.rs` together.
 - `press` is a label in `press_of` (`cells.rs`): the ask's buttons by the window's own wording
-  (`allow_said`, `KEEP_SAID`), `Merge`, `Don't merge`, `Stop chat`, `Ignore the ask`, and
+  (`allow_said`, `KEEP_SAID`), `Merge`, `Don't merge`, `Stop chat`, `Ignore the ask` (or their window commands, `stop_chat`, `ignore_needs_you`, `send_input_bytes` for Esc), and
   `Kill the harness process from the person's terminal`. A button's `target` is `ask` and its
   `when` is `ask.raised`.
-- `restart` and a second `chat` are not played yet: a cell with either is malformed.
+- `restart` and a second `chat` are not played yet: a cell with either is malformed, and so is a
+  Bash call with no `command` (a named client's parameters, which have no script here).
 - A mark's `check` is one the suite runs: `refusal_black_hole`, `ask_black_hole` or
   `block_without_source`.
 
