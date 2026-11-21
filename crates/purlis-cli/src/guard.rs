@@ -414,8 +414,7 @@ fn judged_without_a_chat(
                 mergehold::REASON_UNDECIDED,
                 mergehold::undecided(&format!(
                     "this process is no chat the app started, and where it acts cannot be read \
-                     from its command ({why}). Run the merge from the plane's own folder, or \
-                     from the window"
+                     from its command ({why}). Run the merge from the plane's own folder"
                 )),
             );
         }
