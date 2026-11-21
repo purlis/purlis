@@ -135,6 +135,7 @@ is harness agnostic: a dialect is only the key to the hook words it is armed wit
   a cell failed live or nothing was compared, and 2 when a file, an option or an extra argument is
   wrong. It does not check that the live report covers every cell the brief asked for: the cells
   files given to `report` decide that, and a cell they leave out is not in the report at all.
-  The scenario host writes `events` (`report::ran`, `Scenario::report_cell`) into the record of
-  each cell it reports as run, so those pairs compare event sequences; a suite record with none
-  (a skipped-for-timing cell, a fixture) still compares verdicts only.
+  The scenario host can write `events` (`report::ran`, `Scenario::report_cell`) into the record of
+  a cell it reports as run, so those pairs would compare event sequences; no cell is reported as
+  run yet, until the cells-format runner calls `report_cell`. A suite record with none (a
+  skipped-for-timing cell, a fixture) compares verdicts only.

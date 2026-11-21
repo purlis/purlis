@@ -70,9 +70,11 @@ pub(crate) fn skipped_for_timing(
 }
 
 /// **The record of a cell that ran** (#7224, #7229): a cell's, or an escape's when the cell is
-/// one, with the event kinds the device's log wrote for it, ordered by `seq` whatever order they
-/// were read in. `tools/live-pass diff` compares them with a live report's, and a comparison of
-/// runs reads `refusal_expected` from it rather than from the cells.
+/// one, with the kinds of the events the device's log wrote for it: those after `since` (the
+/// log's newest `seq` when the cell began, so the canary's and earlier cells' events are left
+/// out), ordered by `seq` whatever order they were read in. `tools/live-pass diff` compares them
+/// with a live report's, and a comparison of runs reads `refusal_expected` from it rather than
+/// from the cells.
 pub(crate) fn ran(
     cell: &Cell,
     dialect: Dialect,
@@ -81,8 +83,10 @@ pub(crate) fn ran(
     verdict: ReportVerdict,
     reason: Option<String>,
     events: &[purlis_core::eventlog::Event],
+    since: u64,
 ) -> Recorded {
-    let mut ordered: Vec<&purlis_core::eventlog::Event> = events.iter().collect();
+    let mut ordered: Vec<&purlis_core::eventlog::Event> =
+        events.iter().filter(|event| event.seq > since).collect();
     ordered.sort_by_key(|event| event.seq);
     Recorded {
         leg: LegRecord {
@@ -372,10 +376,14 @@ fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
         {"id": "M-PLAIN", "steps": [{"calls": [call]}]},
         {"id": "M-ESC", "escape": true, "steps": [{"calls": [call]}]},
     ]));
+    // The log holds the canary's and an earlier cell's events (seq 1 and 2) before this cell began
+    // at seq 3: none of them is the cell's.
     let read_back = [
-        an_event(2, "stop.block"),
-        an_event(1, "hook.pretooluse"),
-        an_event(3, "run.end"),
+        an_event(5, "stop.block"),
+        an_event(1, "canary.start"),
+        an_event(2, "earlier.cell"),
+        an_event(4, "hook.pretooluse"),
+        an_event(6, "run.end"),
     ];
     let record = |cell: &Cell| {
         ran(
@@ -386,6 +394,7 @@ fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
             ReportVerdict::Pass,
             None,
             &read_back,
+            3,
         )
     };
 
@@ -417,8 +426,8 @@ fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
         serde_json::json!(["hook.pretooluse", "stop.block", "run.end"])
     );
     assert_eq!(
-        serde_json::from_str::<Recorded>(line.trim()).unwrap(),
-        plain
+        purlis_scenarios::livepass::read_report("linux-fake.jsonl", &line).expect("a valid report"),
+        [plain.clone()]
     );
 
     // The diff compares them.

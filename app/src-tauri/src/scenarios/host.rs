@@ -114,7 +114,7 @@ impl Protection {
         }
     }
 
-    /// The same, as a leg report's record holds it. Named by [`Self::report_cell`].
+    /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
     #[allow(dead_code)]
     pub(crate) fn in_report(self) -> purlis_scenarios::model::Protection {
         use purlis_scenarios::model::Protection as Report;
@@ -146,7 +146,7 @@ impl Dialect {
         }
     }
 
-    /// The same, as a leg report's record holds it. Named by [`Self::report_cell`].
+    /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
     #[allow(dead_code)]
     pub(crate) fn in_report(self) -> purlis_scenarios::model::Dialect {
         use purlis_scenarios::model::Dialect as Report;
@@ -1416,15 +1416,17 @@ impl Scenario {
     }
 
     /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
-    /// report with the event kinds its log holds. A log that cannot be read is an error, never a
-    /// record with no events. Named by the runner of the cells format, which no scenario has yet:
+    /// report with the kinds of the events its log gained after `since`, the [`Self::latest_seq`]
+    /// taken when the cell began: the canary's and earlier cells' events are not the cell's. A log
+    /// that cannot be read is an error, never a record with no events. Named by the runner of the cells format, which no scenario has yet:
     /// the cells that run today are Rust tests that name no cell.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub(crate) fn report_cell(
         &self,
         cell: &purlis_scenarios::model::Cell,
         verdict: purlis_scenarios::model::ReportVerdict,
         reason: Option<String>,
+        since: u64,
     ) -> Result<(), String> {
         let record = super::report::ran(
             cell,
@@ -1434,6 +1436,7 @@ impl Scenario {
             verdict,
             reason,
             &self.try_events()?,
+            since,
         );
         super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
         Ok(())
