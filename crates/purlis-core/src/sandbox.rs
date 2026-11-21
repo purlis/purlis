@@ -2015,20 +2015,6 @@ impl Denied {
             any_case: false,
         });
 
-        // …and the folder every run's forge route is made in (ADR 0128 D3a): no chat reads or
-        // writes it, and none lists it. A chat with a route is given back its own socket, and
-        // nothing else in it ([`Applied::with_forge_route`]); every other chat reaches none.
-        if let Some(route_root) = crate::forgewire::route_root(machine) {
-            paths.push(Denial {
-                class: Class::Integrity,
-                path: route_root,
-                access: Access::ReadWrite,
-                named: None,
-                reach: Reach::AndBelow,
-                any_case: machine.os == Os::MacOs,
-            });
-        }
-
         // 5. Later code: the project root's manifests, under every name (#1336); those between
         // the root and the chat's folder are added where the folder is known
         // ([`Applied::form_in`]).
@@ -2997,6 +2983,21 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
                 denial.any_case = true;
             }
         }
+    }
+    // ...and the folder every run's forge route is made in (ADR 0128 D3a): no chat reads or writes
+    // it, and none lists it, and the window's own file reads leave it out by the same line. A chat
+    // with a route is given back its own socket, and nothing else in it
+    // ([`Applied::with_forge_route`]); every other chat reaches none. Held before the app makes
+    // the folder, so a chat that starts first finds it held once it is there.
+    if let Some(route_root) = crate::forgewire::route_root(machine) {
+        paths.push(Denial {
+            class: Class::Integrity,
+            path: route_root,
+            access: Access::ReadWrite,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: machine.os == Os::MacOs,
+        });
     }
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();

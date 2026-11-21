@@ -140,7 +140,16 @@ fn every_harness_is_given_exactly_the_wiring_the_design_names() {
         assert_eq!(at("GH_ENTERPRISE_TOKEN"), SENTINEL);
         // glab.
         assert_eq!(at("GITLAB_TOKEN"), SENTINEL);
-        assert_eq!(at("GLAB_CA_CERT"), s.join("ca.pem").to_str().unwrap());
+        // The chat reads its own copy of the authority, made in its wire folder (K2): never the
+        // held route folder's.
+        let copy = PathBuf::from(at("GLAB_CA_CERT"));
+        assert!(copy.starts_with(forgewire::wire_folder(s)), "{harness:?}");
+        assert!(copy.ends_with("ca.pem"), "{harness:?}");
+        assert_eq!(
+            std::fs::read_to_string(&copy).unwrap(),
+            std::fs::read_to_string(s.join("ca.pem")).unwrap(),
+            "{harness:?}"
+        );
         assert_eq!(get(&env, "GITLAB_HOST"), None);
         // git and everything else that goes through the chat's egress port.
         assert_eq!(at("HTTPS_PROXY"), "http://127.0.0.1:44123");
@@ -177,7 +186,8 @@ fn every_harnesss_git_pairs_reset_the_helper_list_before_purlis_s_helper_and_not
     for harness in Harness::ALL {
         let scratch = tempfile::tempdir().unwrap();
         let env = chat_env(harness, scratch.path());
-        let ca = scratch.path().join("ca.pem").display().to_string();
+        // Each harness's git trusts the chat's own copy of the authority.
+        let ca = get(&env, "GLAB_CA_CERT").expect("a CA copy").to_owned();
         let got = pairs(&env);
         // The profile's own pair first; then the window's composition's (hooks), wherever it put
         // them; then purlis's wiring last of all.

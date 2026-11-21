@@ -317,8 +317,13 @@ fn what_git_stores_or_erases_never_reaches_a_helper_of_the_persons_or_a_file() {
 fn the_chats_ca_is_named_for_each_recorded_host_alone_and_never_for_another() {
     let person = Person::new();
     let scratch = tempfile::tempdir().unwrap();
-    let ca = scratch.path().join("ca.pem").display().to_string();
     for (name, env) in compositions(&person, scratch.path()) {
+        // The chat's git trusts its own copy of the authority, made in its wire folder.
+        let ca = env
+            .iter()
+            .find(|(k, _)| k == "GLAB_CA_CERT")
+            .map(|(_, v)| v.clone())
+            .expect("a CA copy");
         let matched = |url: &str| {
             let out = git(
                 &env,
