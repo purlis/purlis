@@ -142,7 +142,7 @@ fn gh_and_git_work_under_the_generated_profile_and_another_run_s_socket_is_refus
         helper_exe: helper,
         repos: vec![Repo::new("github.com", "acme", "app", ForgeKind::GitHub).expect("a repo")],
         door,
-        handoff: purlis_core::sandbox::egress::handoff::Secret::random().expect("a secret"),
+        handoff: world.wiring.handoff.clone(),
         hosts: vec!["github.com".to_owned()],
         root: root.clone(),
     };
@@ -153,20 +153,18 @@ fn gh_and_git_work_under_the_generated_profile_and_another_run_s_socket_is_refus
     let Form::Codex(wrap) = applied.form_in(Some(&cwd)) else {
         panic!("a wrapped Codex");
     };
-    // The chat's tmp, and its egress port: the door itself, which takes `CONNECT` as the chat's
-    // own egress proxy hands a forge connection to it.
+    // The chat's tmp, and its egress port: a relay that opens the door as the chat's egress proxy
+    // does, proving the run's hand-off secret, since the door takes nothing else.
+    let relay = crate::support::forge_listener::relay_to_door(door, world.wiring.handoff.clone());
     let tmp = tempfile::Builder::new()
         .prefix("k2tmp")
         .tempdir_in("/tmp")
         .expect("the chat's tmp");
-    let profile = sandbox::codex::profile(&wrap, &cwd, &real(tmp.path()), &[door.port()], None)
-        .expect("a profile");
+    let profile =
+        sandbox::codex::profile(&wrap, &cwd, &real(tmp.path()), &[relay], None).expect("a profile");
 
-    let wired = forgewire::compose(
-        &inputs.route(format!("http://127.0.0.1:{}", door.port())),
-        &project,
-    )
-    .expect("the wiring");
+    let wired = forgewire::compose(&inputs.route(format!("http://127.0.0.1:{relay}")), &project)
+        .expect("the wiring");
     let mut env = wired.env.clone();
     env.push((
         "PATH".to_owned(),
