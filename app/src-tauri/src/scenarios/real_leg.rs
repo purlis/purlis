@@ -845,15 +845,25 @@ const TAMPER: &str = "written-by-the-chat-into-the-transcript";
 /// and its group window are covered with room.
 const POLLS: usize = 24;
 
-/// **A command the proxy holds, run in the background**, its result written to `file` as its own
-/// words and its exit (`net-exit=N`), and the call itself gone at once (no `rm`: purlis's guard
-/// asks the person about a command that deletes, which Codex then waits on; the file is new): with no stdin, so a
-/// harness that waits on its terminal's last holder (Codex's tool did, for 300 s) has none to wait on.
-fn in_the_background(command: &str, file: &Path) -> String {
+/// **A command the proxy holds, run in the background**: the script `command` (a file the host
+/// wrote, so no quote of it matters) in a session of its own (`setsid` through perl, which both
+/// OSes have), so a harness that ends its tool's
+/// process group when the call returns does not end it (Codex's does: the file stayed empty), its
+/// result written to `file` as its own words and its exit (`net-exit=N`), and the call itself gone
+/// at once. No `rm` in it (purlis's guard asks the person about a command that deletes, which
+/// Codex then waits on), and no stdin, the terminal's last holder.
+fn in_the_background(script: &Path, file: &Path) -> String {
     format!(
-        "( {command}; echo \"net-exit=$?\" ) > '{file}' 2>&1 < /dev/null & echo started",
+        "perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' sh '{script}' > '{file}' 2>&1 < /dev/null & \\
+         echo started",
+        script = script.display(),
         file = file.display(),
     )
+}
+
+/// The script [`in_the_background`] runs: `command`, and its exit said last.
+fn script_of_the_held(command: &str) -> String {
+    format!("{command}\necho \"net-exit=$?\"\n")
 }
 
 /// **One poll for what [`in_the_background`] wrote**: up to seven seconds, then whatever the
@@ -993,10 +1003,10 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
             // harness may give a command's result back before it ends (Codex's tool does after
             // ten seconds, "Process running"): the command runs in the background and the result
             // is polled, each poll short.
-            steps.push((
-                "network-start",
-                in_the_background(&super::reaches(host), &network),
-            ));
+            let script = scenario.root.join("network.sh");
+            std::fs::write(&script, script_of_the_held(&super::reaches(host)))
+                .expect("the held connection's script");
+            steps.push(("network-start", in_the_background(&script, &network)));
             for name in &polls {
                 steps.push((name.as_str(), poll_for(&network)));
             }
@@ -1778,10 +1788,13 @@ mod tests {
             .expect("a shell")
         };
         let started = Instant::now();
-        let said = sh(&in_the_background(
-            "echo refused; sleep 9; sh -c 'exit 56'",
-            &file,
-        ));
+        let script = dir.join("held.sh");
+        std::fs::write(
+            &script,
+            script_of_the_held("echo refused; sleep 9; sh -c 'exit 56'"),
+        )
+        .expect("a script");
+        let said = sh(&in_the_background(&script, &file));
         assert!(
             said.trim() == "started" && started.elapsed() < Duration::from_secs(2),
             "the starting call waited for its command ({:?}): {said:?}",
