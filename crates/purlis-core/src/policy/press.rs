@@ -352,12 +352,10 @@ fn diff_pair(before: &Loaded, after: &Loaded) -> Diff {
     let parts: std::collections::BTreeSet<&String> =
         was_parts.keys().chain(now_parts.keys()).collect();
     for part in parts {
-        let shown = part.strip_prefix("policy.rules.").is_some_and(|id| {
-            diff.modes
-                .iter()
-                .any(|row| row.key == format!("rules.{id}"))
-        });
-        if !shown && was_parts.get(part) != now_parts.get(part) {
+        // A `[policy.rules]` entry is always its own row, even where a mode row shows it too: that
+        // row's label reads the entry as its first action's family does, and a rule over two
+        // families' actions can loosen in the other.
+        if was_parts.get(part) != now_parts.get(part) {
             diff.other.push(OtherChange { part: part.clone() });
         }
     }

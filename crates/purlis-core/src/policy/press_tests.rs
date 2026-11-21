@@ -470,3 +470,27 @@ fn a_rule_mode_entry_that_goes_is_a_row_whatever_family_it_reads_as() {
     let press = press_of(&root, &standing).expect("a press");
     assert!(other(&press).contains(&"policy.rules.trust-x"), "{press:?}");
 }
+
+#[test]
+fn a_rule_mode_entry_that_appears_is_a_row_even_where_a_mode_row_shows_it_too() {
+    let m = machine();
+    let both = format!(
+        "{HEADER}@id(\"trust-x\")\nforbid (principal, action in [Action::\"start\", Action::\"merge\"], \
+         resource);\n"
+    );
+    let was = "[policy]\ntemplate = \"strict\"\nguards.merge = \"off\"\n";
+    let now = format!("{was}[policy.rules]\n\"trust-x\" = \"log\"\n");
+    let root = plane(&m, &[("purlis.toml", &now), ("policy.cedar", &both)]);
+    let standing = holding(vec![accepted(&version(was, Some(&both)))]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert!(
+        press
+            .diff
+            .modes
+            .iter()
+            .any(|row| row.key == "rules.trust-x"),
+        "{press:?}"
+    );
+    assert!(other(&press).contains(&"policy.rules.trust-x"), "{press:?}");
+    assert!(press.diff.waits());
+}
