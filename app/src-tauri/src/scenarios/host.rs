@@ -78,6 +78,12 @@ const HOME_VAR: &str = "PURLIS_SCENARIO_HOME";
 /// folder, where a scenario makes a folder no chat may write ([`Scenario::a_folder_outside`]).
 const OUTER_HOME_VAR: &str = "PURLIS_SCENARIO_OUTER_HOME";
 
+/// **Whether this process is the scenario's own child** (the re-run of the test that runs the
+/// scenario), as opposed to the parent that starts it: only the child has a home.
+pub(crate) fn in_the_scenarios_child() -> bool {
+    std::env::var_os(HOME_VAR).is_some()
+}
+
 /// **Whether this run is CI's**, where a scenario that cannot run fails rather than returns.
 pub(crate) fn on_ci() -> bool {
     std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| !v.is_empty())
@@ -168,6 +174,17 @@ impl Protection {
             Self::Full => "full",
         }
     }
+
+    /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
+    #[allow(dead_code)]
+    pub(crate) fn in_report(self) -> purlis_scenarios::model::Protection {
+        use purlis_scenarios::model::Protection as Report;
+        match self {
+            Self::Off => Report::None,
+            Self::Basic => Report::Basic,
+            Self::Full => Report::Full,
+        }
+    }
 }
 
 /// **A dialect of the fake harness** (T1.1-04), as the shim of its name in
@@ -187,6 +204,17 @@ impl Dialect {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
+        }
+    }
+
+    /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
+    #[allow(dead_code)]
+    pub(crate) fn in_report(self) -> purlis_scenarios::model::Dialect {
+        use purlis_scenarios::model::Dialect as Report;
+        match self {
+            Self::Claude => Report::Claude,
+            Self::Codex => Report::Codex,
+            Self::OpenCode => Report::Opencode,
         }
     }
 }
@@ -824,6 +852,26 @@ pub(crate) struct Scenario {
     runtime: Option<tokio::runtime::Runtime>,
     /// What the person, the queries and the global checks keep (T1.1-07).
     pub(crate) ledger: super::checks::Ledger,
+    /// A real-harness leg at Full owes its canary ([`Self::for_real_harness`]): its teardown
+    /// fails if it never ran ([`canary_owed`]).
+    owes_the_canary: bool,
+    /// The leg's canary ran to its end ([`Self::the_canary_ran`]).
+    canary_ran: std::sync::atomic::AtomicBool,
+}
+
+/// **The leg's canary is owed and was not run**: a real-harness scenario at Full whose canary
+/// never ran has said nothing about what holds the harness, so it fails.
+pub(crate) fn canary_owed(owes: bool, ran: bool) -> Result<(), String> {
+    if owes && !ran {
+        Err(
+            "the real harness leg's canary never ran: no cell of the leg may say what holds \
+             the harness without a refused write and a refused connect seen first \
+             (`real_leg::canary`)"
+                .to_owned(),
+        )
+    } else {
+        Ok(())
+    }
 }
 
 impl Scenario {
@@ -854,15 +902,30 @@ impl Scenario {
 
     /// **The scenario host for a real harness** (T1.1-10, T1.1-53): `protection`, under `strict`,
     /// with no canary of the fake's own. Claude Code on macOS runs its own sandbox, which the
-    /// fake harness does not play, and the others are wrapped by purlis, whose wrap the fake's
-    /// canary would prove of the fake alone, so the leg runs its own canary through the real
-    /// binary ([`super::real_leg::canary`]) before anything else.
+    /// fake harness does not play, so at Full this runs the leg's own canary through the real
+    /// binary and `model` ([`super::real_leg::canary`]) before it answers: no cell of the leg
+    /// starts without it, and a scenario at Full whose canary did not run fails its teardown
+    /// ([`canary_owed`]). The others are wrapped by purlis, whose wrap the fake's canary would
+    /// prove of the fake alone.
     pub(crate) fn for_real_harness(
         homes: &Homes,
         protection: Protection,
         dialect: Dialect,
+        model: &super::real_leg::Model,
     ) -> Option<Scenario> {
-        Scenario::built(homes, protection, None, dialect, DEFAULT_TEMPLATE, false)
+        let mut scenario =
+            Scenario::built(homes, protection, None, dialect, DEFAULT_TEMPLATE, false)?;
+        if protection == Protection::Full {
+            scenario.owes_the_canary = true;
+            super::real_leg::canary(&scenario, model);
+        }
+        Some(scenario)
+    }
+
+    /// The leg's canary ran to its end, its verdict judged.
+    pub(crate) fn the_canary_ran(&self) {
+        self.canary_ran
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     fn built(
@@ -962,6 +1025,8 @@ impl Scenario {
             began,
             runtime: Some(runtime),
             ledger: super::checks::Ledger::default(),
+            owes_the_canary: false,
+            canary_ran: std::sync::atomic::AtomicBool::new(false),
         };
         scenario.ledger.begins(&scenario);
         // The canary, in every scenario whose protection is Full, where the project's own wall is
@@ -1168,6 +1233,29 @@ fn tool_groups(root: &Path) -> Vec<u32> {
         .lines()
         .filter_map(|line| line.trim().parse().ok())
         .collect()
+}
+
+/// **Whether the tool-group channel lost a command** (#7197): every shell command a chat's fake
+/// harness ran says its process group in `FAKE_HARNESS_GROUPS` before the teardown reads it, so
+/// fewer `said` lines than shell results in the `transcript` means a group nobody watches (a
+/// variable not passed on, a failed write, an unreadable file). Answers what to say, or none.
+pub(crate) fn tool_groups_lost(transcript: &[serde_json::Value], said: usize) -> Option<String> {
+    let ran = transcript
+        .iter()
+        .filter(|line| line["kind"] == "tool_result" && line["exit"].is_number())
+        .filter(|line| {
+            !(line["exit"] == 127
+                && line["stderr"]
+                    .as_str()
+                    .is_some_and(|e| e.starts_with("cannot run the shell")))
+        })
+        .count();
+    (said < ran).then(|| {
+        format!(
+            "the tool-group channel (FAKE_HARNESS_GROUPS) holds {said} process groups for {ran} \
+             shell commands the chats ran: a tool command's group is not watched"
+        )
+    })
 }
 
 /// Whether any process of `group` runs.
@@ -1418,11 +1506,9 @@ impl Scenario {
         let own = own_folder(&self.root);
         std::fs::create_dir_all(&own).expect("the chat's own folder");
         // Outside the project, which a harness's sandbox may let a chat write: the transcript is
-        // the stand-in model's request log, and a chat must not be able to rewrite it.
-        let transcript = self.homes.scripts.join(format!(
-            "transcript-{}.jsonl",
-            self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
-        ));
+        // the stand-in model's request log, and a chat must not be able to rewrite it (the leg's
+        // canary tries, `real_leg::canary`).
+        let transcript = self.next_transcript();
         let name = format!("chat {number}");
         let mut ready = purlis_core::start::ready(
             &purlis_core::start::Start {
@@ -1625,6 +1711,15 @@ impl Scenario {
         lines[lines.len().saturating_sub(40)..].join("\n")
     }
 
+    /// Where the next chat's transcript is written: outside the project, in the run's scripts
+    /// folder ([`Self::starts_real`]).
+    pub(crate) fn next_transcript(&self) -> PathBuf {
+        self.homes.scripts.join(format!(
+            "transcript-{}.jsonl",
+            self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
+        ))
+    }
+
     /// **A folder of the person's own that no chat may write**: in the run's own home, outside
     /// the temp folder and the project, only this user's (`0700`). The teardown removes it, and
     /// the parent checks it is gone.
@@ -1771,6 +1866,32 @@ impl Scenario {
             ));
         }
         Ok(events)
+    }
+
+    /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
+    /// report with the kinds of the events its log gained after `since`, the [`Self::latest_seq`]
+    /// taken when the cell began: the canary's and earlier cells' events are not the cell's. A log
+    /// that cannot be read is an error, never a record with no events. Named by the runner of the cells format, which no scenario has yet:
+    /// the cells that run today are Rust tests that name no cell.
+    #[expect(dead_code)]
+    pub(crate) fn report_cell(
+        &self,
+        cell: &purlis_scenarios::model::Cell,
+        verdict: purlis_scenarios::model::ReportVerdict,
+        reason: Option<String>,
+        since: u64,
+    ) -> Result<(), String> {
+        let record = super::report::ran(
+            cell,
+            self.dialect.in_report(),
+            self.protection.in_report(),
+            purlis_scenarios::model::TimingsMode::Scaled,
+            verdict,
+            reason,
+            super::report::kinds_since(&self.try_events()?, since),
+        );
+        super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
+        Ok(())
     }
 
     /// [`Self::try_events`] where a scenario's own step reads the log: a log that cannot be read
@@ -1924,6 +2045,12 @@ impl Drop for Scenario {
         } else {
             Some(
                 super::checks::window_for_the_checks(self.window.is_some())
+                    .and_then(|()| {
+                        canary_owed(
+                            self.owes_the_canary,
+                            self.canary_ran.load(std::sync::atomic::Ordering::SeqCst),
+                        )
+                    })
                     .and_then(|()| super::checks::at_the_end(self)),
             )
         };
@@ -1994,6 +2121,10 @@ impl Drop for Scenario {
                 )),
                 _ => {}
             }
+        }
+        // A tool command whose group never reached the file is said, never skipped (#7197).
+        if let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len()) {
+            left.unwatched.push(lost);
         }
         // Read while they run: a group the quit left can be #7103's only if it is one of these.
         let background = process_groups(&self.background.lock().expect("background"));

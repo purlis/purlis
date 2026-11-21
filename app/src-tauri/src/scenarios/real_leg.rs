@@ -42,12 +42,22 @@
 //!   a model list, a plugin install) is silenced in its own words where it has them, and any ask
 //!   the proxy still raises for it is kept blocked at once ([`Scenario::answers_until_played`]).
 //!
+//! - **What these legs do not exercise**: Claude Code starts with `--permission-mode
+//!   bypassPermissions` and the prompt after the window's own words, and its profile's first-run
+//!   state accepts the bypass warning, each listed in `switches.json`; so its `ask` rules and its
+//!   permission prompts are never reached here: only its sandbox (or purlis's wrap) and purlis's
+//!   `permissions.deny` rules are what a cell can learn about.
+//! - **An escape cell needs two witnesses**: the transcript is what the model was shown, which
+//!   the harness's own words shape, so a cell that says a command got out pairs it with evidence
+//!   from outside (a file left, a listener's connections), as the canary does.
+//!
 //! Each harness runs with the binary its variable names ([`host::program_var`]), at the version
-//! `tests/fixtures/harness-versions/<harness>.txt` pins. On CI a leg that cannot run fails.
+//! `tests/fixtures/harness-versions/<harness>.txt` pins, checked at run time ([`program`]). On CI
+//! a leg that cannot run fails.
 
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -212,16 +222,56 @@ pub(crate) fn holds_itself(dialect: Dialect) -> bool {
     dialect == Dialect::Claude && cfg!(target_os = "macos")
 }
 
+/// The version `tests/fixtures/harness-versions/<harness>.txt` pins, as the harness's own
+/// `--version` prints it.
+fn pinned(dialect: Dialect) -> &'static str {
+    match dialect {
+        Dialect::Claude => include_str!("../../../../tests/fixtures/harness-versions/claude.txt"),
+        Dialect::Codex => include_str!("../../../../tests/fixtures/harness-versions/codex.txt"),
+        Dialect::OpenCode => {
+            include_str!("../../../../tests/fixtures/harness-versions/opencode.txt")
+        }
+    }
+}
+
+/// What `program --version` prints.
+fn version_of(program: &Path) -> String {
+    purlis_core::forklock::output(std::process::Command::new(program).arg("--version"))
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .unwrap_or_default()
+}
+
+/// **The binary's version is the one pinned**: what `<harness> --version` said, against the pin's
+/// own line, so a leg never runs on a version nobody recorded.
+fn version_matches(dialect: Dialect, said: &str, pinned: &str) -> Result<(), String> {
+    if said.trim() == pinned.trim() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} is `{}`, and `tests/fixtures/harness-versions/{}.txt` pins `{}`",
+            host::program_var(dialect),
+            said.trim(),
+            dialect.word(),
+            pinned.trim()
+        ))
+    }
+}
+
 /// **The real harness this run starts**, or none, saying why: the file its variable
-/// ([`host::program_var`]) names. On macOS or Linux without the program the leg cannot run,
-/// which on CI fails ([`host::cannot_run`]).
+/// ([`host::program_var`]) names, at the version its pin says ([`version_matches`]). On macOS or
+/// Linux without the program the leg cannot run, which on CI fails ([`host::cannot_run`]).
 pub(crate) fn program(dialect: Dialect) -> Option<PathBuf> {
     let var = host::program_var(dialect);
     match std::env::var_os(var)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
     {
-        Some(program) if program.is_file() => Some(program),
+        Some(program) if program.is_file() => {
+            match version_matches(dialect, &version_of(&program), pinned(dialect)) {
+                Ok(()) => Some(program),
+                Err(why) => host::cannot_run(&why),
+            }
+        }
         Some(program) => host::cannot_run(&format!(
             "{var} names {}, which is not there",
             program.display()
@@ -259,20 +309,21 @@ pub(crate) fn macos_claude(test: &str) -> Option<PathBuf> {
 /// child, which reads it back from its environment, binds ([`Model::serve`]). `None` where no
 /// port can be bound here.
 pub(crate) fn environment(dialect: Dialect) -> Option<Vec<(String, String)>> {
-    let url = match std::env::var(url_var(dialect)) {
-        Ok(url) if !url.is_empty() => url,
-        _ => {
-            let listener = match TcpListener::bind(("127.0.0.1", 0)) {
-                Ok(listener) => listener,
-                Err(why) => return host::cannot_run(&format!("no loopback port to bind: {why}")),
-            };
-            format!(
-                "http://127.0.0.1:{}",
-                listener.local_addr().expect("its address").port()
-            )
-        }
+    // Always this process's own pick: an address in the ambient environment is never honoured, so
+    // a chat is never pointed at a server nobody here started. The port is freed for the child to
+    // bind: the child is another process, so the listener cannot be held.
+    let listener = match TcpListener::bind(("127.0.0.1", 0)) {
+        Ok(listener) => listener,
+        Err(why) => return host::cannot_run(&format!("no loopback port to bind: {why}")),
     };
-    if dialect == Dialect::OpenCode {
+    let url = format!(
+        "http://127.0.0.1:{}",
+        listener.local_addr().expect("its address").port()
+    );
+    drop(listener);
+    // OpenCode's configuration is a file the parent writes: the child's own call is unused, and
+    // writes none.
+    if dialect == Dialect::OpenCode && !host::in_the_scenarios_child() {
         let file = opencode_config_path(&url);
         if let Err(why) = std::fs::write(&file, opencode_config(&url)) {
             return host::cannot_run(&format!(
@@ -360,15 +411,25 @@ pub(crate) fn seed_first_run(config: &Path, root: &Path) {
     .expect("the profile's settings");
 }
 
+/// One chat's stand-in, and the transcript file its request log is written to.
+struct Chat {
+    stand_in: Arc<StandIn>,
+    file: Option<PathBuf>,
+    /// What the file holds now, so it is rewritten only when the log moved.
+    last: String,
+}
+
 /// **The stand-in model of a leg**: one server on the loopback port the harness's address names,
-/// across the chats of a scenario, each with a script of its own ([`Model::plays`]); the request
-/// log of the chat's stand-in is what the transcript is made from ([`Model::attach`]).
+/// across the chats of a scenario, each with a stand-in and a script of its own
+/// ([`Model::plays`]); each chat's request log is written to the file of its own
+/// ([`Model::attach`]), which a later chat never touches.
 pub(crate) struct Model {
     dialect: Dialect,
     port: u16,
+    /// The stand-in that answers now: the newest chat's.
     current: Arc<Mutex<Arc<StandIn>>>,
-    attached: Arc<Mutex<Option<PathBuf>>>,
-    chats: AtomicUsize,
+    /// Every chat's stand-in and transcript file, in the order the chats were played.
+    chats: Arc<Mutex<Vec<Chat>>>,
     stop: Arc<AtomicBool>,
 }
 
@@ -384,13 +445,18 @@ impl Model {
             .unwrap_or_else(|| panic!("{var} is {url}: no loopback port"));
         let listener = TcpListener::bind(("127.0.0.1", port))
             .unwrap_or_else(|why| panic!("the stand-in model cannot listen on {port}: {why}"));
+        Model::serve_on(dialect, port, Some(listener))
+    }
+
+    /// Serves on `listener`, or on none (a test that plays the stand-in itself).
+    fn serve_on(dialect: Dialect, port: u16, listener: Option<TcpListener>) -> Model {
         let current = Arc::new(Mutex::new(Arc::new(StandIn::new(
             dialect.word(),
             script_of(dialect, "idle", &[]),
         ))));
-        let attached: Arc<Mutex<Option<PathBuf>>> = Arc::default();
+        let chats: Arc<Mutex<Vec<Chat>>> = Arc::default();
         let stop = Arc::new(AtomicBool::new(false));
-        {
+        if let Some(listener) = listener {
             let current = Arc::clone(&current);
             std::thread::spawn(move || {
                 let _ = standin::serve_on(
@@ -400,29 +466,25 @@ impl Model {
             });
         }
         {
-            let (current, attached, stop) = (
-                Arc::clone(&current),
-                Arc::clone(&attached),
-                Arc::clone(&stop),
-            );
+            let (chats, stop) = (Arc::clone(&chats), Arc::clone(&stop));
             std::thread::spawn(move || {
-                let mut last = String::new();
                 while !stop.load(Ordering::SeqCst) {
-                    let file = attached.lock().expect("the transcript").clone();
-                    if let Some(file) = file {
-                        let stand_in = Arc::clone(&current.lock().expect("the stand-in"));
-                        let text = transcript_of(dialect, &stand_in)
+                    for chat in chats.lock().expect("the chats").iter_mut() {
+                        let Some(file) = chat.file.clone() else {
+                            continue;
+                        };
+                        let text = transcript_of(dialect, &chat.stand_in)
                             .iter()
                             .map(Value::to_string)
                             .collect::<Vec<_>>()
                             .join("\n");
-                        if text != last || !file.exists() {
+                        if text != chat.last || !file.exists() {
                             // Atomically: a reader never sees half a line.
                             let aside = file.with_extension("part");
                             if std::fs::write(&aside, format!("{text}\n")).is_ok() {
                                 let _ = std::fs::rename(&aside, &file);
                             }
-                            last = text;
+                            chat.last = text;
                         }
                     }
                     std::thread::sleep(Duration::from_millis(100));
@@ -433,8 +495,7 @@ impl Model {
             dialect,
             port,
             current,
-            attached,
-            chats: AtomicUsize::new(0),
+            chats,
             stop,
         }
     }
@@ -452,19 +513,35 @@ impl Model {
 
     /// **The next chat's script**: each of `steps` (a name and a Bash command) asked for in turn,
     /// once the one before has its result. Answers the prompt the chat starts with, which is how
-    /// the stand-in tells the chat's requests from the harness's own.
+    /// the stand-in tells the chat's requests from the harness's own. The chat has a stand-in of
+    /// its own, kept for its transcript.
     pub(crate) fn plays(&self, steps: &[(&str, String)]) -> String {
-        let number = self.chats.fetch_add(1, Ordering::SeqCst) + 1;
-        let script = script_of(self.dialect, &format!("leg chat {number}"), steps);
+        let mut chats = self.chats.lock().expect("the chats");
+        let script = script_of(
+            self.dialect,
+            &format!("leg chat {}", chats.len() + 1),
+            steps,
+        );
         let prompt = script.prompt.clone();
-        *self.current.lock().expect("the stand-in") =
-            Arc::new(StandIn::new(self.dialect.word(), script));
+        let stand_in = Arc::new(StandIn::new(self.dialect.word(), script));
+        *self.current.lock().expect("the stand-in") = Arc::clone(&stand_in);
+        chats.push(Chat {
+            stand_in,
+            file: None,
+            last: String::new(),
+        });
         prompt
     }
 
-    /// The transcript of the chat about to start is `file`, written from the request log.
+    /// The transcript of the chat just played ([`Model::plays`]) is `file`, written from its
+    /// request log. An earlier chat's file is left as it was.
     pub(crate) fn attach(&self, file: &Path) {
-        *self.attached.lock().expect("the transcript") = Some(file.to_path_buf());
+        self.chats
+            .lock()
+            .expect("the chats")
+            .last_mut()
+            .expect("a chat is played before it is attached")
+            .file = Some(file.to_path_buf());
     }
 
     /// What the current chat's stand-in has heard, for a red run's reader: each request's path,
@@ -709,13 +786,21 @@ pub(crate) fn canary(scenario: &Scenario, model: &Model) {
     let controls = accepted;
 
     let [write, connect] = canary_commands(&file, port);
-    let prompt = model.plays(&[("canary-write", write), ("canary-connect", connect)]);
+    // A third ask: the chat appends to its own transcript, which lives outside the project, and
+    // must be refused: the transcript is the evidence, and the chat cannot be the one to write it.
+    let transcript = scenario.next_transcript();
+    let tamper = format!("echo '{TAMPER}' >> '{}'", transcript.display());
+    let prompt = model.plays(&[
+        ("canary-write", write),
+        ("canary-connect", connect),
+        ("canary-transcript", tamper),
+    ]);
     let chat = scenario.starts_real(model, &prompt);
     let heard = || model.requests() > 0;
     let evidence = || model.heard_said();
     scenario.answers_until_played(
         chat,
-        &["canary-write", "canary-connect"],
+        &["canary-write", "canary-connect", "canary-transcript"],
         &host::Driving {
             heard: &heard,
             held: None,
@@ -738,9 +823,23 @@ pub(crate) fn canary(scenario: &Scenario, model: &Model) {
             &why,
         );
     }
+    let tamper = StepResult::of(scenario.result_of(chat, "canary-transcript").as_ref());
+    let left_in_it = std::fs::read_to_string(&transcript)
+        .is_ok_and(|text| text.lines().any(|line| line == TAMPER));
+    if left_in_it || (tamper.ran && tamper.exit == Some(0)) {
+        scenario.fails_at(
+            "canary",
+            "the chat cannot write the transcript file outside the project",
+            &format!("it wrote it ({left_in_it}): {tamper:?}"),
+        );
+    }
     scenario.keeps_listed_asks_blocked();
     scenario.forget_the_canary_chat(chat);
+    scenario.the_canary_ran();
 }
+
+/// The line the canary's third ask tries to leave in the transcript file.
+const TAMPER: &str = "written-by-the-chat-into-the-transcript";
 
 /// The command a process runs, as `ps` says it.
 fn command_of(pid: u32) -> String {
@@ -817,13 +916,10 @@ pub(crate) fn runs_with(dialect: Dialect, protection: Protection, test: &str, ty
         }
         return;
     };
-    let Some(scenario) = Scenario::for_real_harness(&homes, protection, dialect) else {
+    let model = Model::serve(dialect);
+    let Some(scenario) = Scenario::for_real_harness(&homes, protection, dialect, &model) else {
         return;
     };
-    let model = Model::serve(dialect);
-    if protection == Protection::Full {
-        canary(&scenario, &model);
-    }
     cells(&scenario, &model, protection, test, typing);
 }
 
@@ -1467,6 +1563,110 @@ mod tests {
         }
     }
 
+    /// **The transcript of a chat survives the next chat's start** (T1.1-10, review F3, and
+    /// each harness here): each chat has a stand-in and a file of its own, so a two-chat cell
+    /// reads chat 1's result after chat 2 began. Needs no harness.
+    #[test]
+    fn a_chats_transcript_is_still_readable_after_the_next_chat_starts() {
+        for dialect in Dialect::ALL {
+            let word = dialect.word();
+            let dir =
+                std::env::temp_dir().join(format!("leg-two-chats-{word}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).expect("a folder");
+            let model = Model::serve_on(dialect, 0, None);
+            let (first, second) = (dir.join("one.jsonl"), dir.join("two.jsonl"));
+
+            let prompt = model.plays(&[("only", "echo one".to_owned())]);
+            model.attach(&first);
+            let stand_in = Arc::clone(&model.current.lock().expect("the stand-in"));
+            let id = stand_in.id(purlis_recordings::standin::Conversation::Main, 0, 0);
+            let (path, body) = request(dialect, &prompt, &[]);
+            stand_in.answer("POST", path, &body);
+            let (output, _) = result_of_a_command(dialect, 0, "one");
+            let (path, body) = request(dialect, &prompt, &[(&id, &output, false)]);
+            stand_in.answer("POST", path, &body);
+            let read = |file: &Path| {
+                std::fs::read_to_string(file)
+                    .unwrap_or_default()
+                    .lines()
+                    .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                    .any(|line| line["kind"] == "tool_result" && line["step"] == "only")
+            };
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !read(&first) {
+                assert!(
+                    Instant::now() < deadline,
+                    "{word}: chat 1's transcript was never written"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+
+            // Chat 2 starts, the way the host starts it: played, then attached.
+            model.plays(&[("other", "echo two".to_owned())]);
+            std::thread::sleep(Duration::from_millis(500));
+            assert!(
+                read(&first),
+                "{word}: chat 1's result was wiped once chat 2 was played"
+            );
+            model.attach(&second);
+            std::thread::sleep(Duration::from_millis(500));
+            assert!(
+                read(&first),
+                "{word}: chat 1's result was wiped once chat 2 was attached"
+            );
+            assert!(
+                !read(&second),
+                "{word}: chat 2 has no result of chat 1's step"
+            );
+            std::fs::remove_dir_all(&dir).expect("the folder goes");
+        }
+    }
+
+    /// **A real-harness scenario at Full whose canary never ran fails** (T1.1-10, review F1).
+    #[test]
+    fn a_real_harness_cell_that_never_ran_the_canary_fails() {
+        let owed = super::super::host::canary_owed(true, false)
+            .expect_err("a leg at Full that skipped its canary must fail");
+        assert!(owed.contains("canary never ran"), "{owed}");
+        assert!(super::super::host::canary_owed(true, true).is_ok());
+        assert!(
+            super::super::host::canary_owed(false, false).is_ok(),
+            "a scenario that owes none is not failed"
+        );
+    }
+
+    /// **A binary at another version than the pin does not run the leg** (T1.1-10, and each
+    /// harness here): what `--version` says is the pin's own line, or the leg does not run.
+    #[test]
+    fn a_harness_at_another_version_than_the_pin_is_refused() {
+        for (dialect, newer) in [
+            (Dialect::Claude, "2.1.400 (Claude Code)"),
+            (Dialect::Codex, "codex-cli 0.200.0"),
+            (Dialect::OpenCode, "1.99.0"),
+        ] {
+            let pin = pinned(dialect);
+            assert!(
+                version_matches(dialect, pin, pin).is_ok(),
+                "{dialect:?}'s own pin is its own version"
+            );
+            assert!(
+                version_matches(dialect, &format!("{}\n", pin.trim()), pin).is_ok(),
+                "{dialect:?}: a trailing newline is no other version"
+            );
+            let why = version_matches(dialect, newer, pin).expect_err("another version");
+            assert!(
+                why.contains(newer)
+                    && why.contains(pin.trim())
+                    && why.contains(host::program_var(dialect)),
+                "{why}"
+            );
+            assert!(
+                version_matches(dialect, "", pin).is_err(),
+                "{dialect:?}: no answer is no match"
+            );
+        }
+    }
+
     /// **Only Claude Code on macOS holds itself** (T1.1-10): purlis wraps every other harness on
     /// every OS, at the floor as at Full, so the leg asks every cell of each.
     #[test]
@@ -1714,11 +1914,12 @@ mod tests {
     fn the_claude_leg_starts_claude_code_through_the_hosts_own_chat_start() {
         let homes =
             the_claude_leg!("the_claude_leg_starts_claude_code_through_the_hosts_own_chat_start");
-        let Some(scenario) = Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude)
+        let model = Model::serve(Dialect::Claude);
+        let Some(scenario) =
+            Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
         else {
             return;
         };
-        let model = Model::serve(Dialect::Claude);
         let prompt = model.plays(&[("hello", "echo hello-from-the-leg".to_owned())]);
         let chat = scenario.starts_real(&model, &prompt);
         scenario.until_played(chat, &["hello"]);
@@ -1781,12 +1982,12 @@ mod tests {
         let homes = the_claude_leg!(
             "claude_codes_own_sandbox_forwards_a_held_connection_to_the_purlis_proxy"
         );
-        let Some(scenario) = Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude)
+        let model = Model::serve(Dialect::Claude);
+        let Some(scenario) =
+            Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
         else {
             return;
         };
-        let model = Model::serve(Dialect::Claude);
-        canary(&scenario, &model);
 
         let host = "held-by-claude.example.test";
         let prompt = model.plays(&[("held-connection", super::super::reaches(host))]);
