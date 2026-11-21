@@ -198,11 +198,10 @@ pub(crate) fn resolved_under(
     root: &Path,
 ) -> purlis_core::enforcement::Resolved {
     purlis_core::enforcement::Resolved::of(
-        &purlis_core::enforcement::Settings {
-            template,
-            template_said: true,
-            ..Default::default()
-        },
+        &purlis_core::enforcement::Settings::from_text(Some(&format!(
+            "[policy]\ntemplate = \"{}\"\n",
+            template.word()
+        ))),
         &purlis_core::sandbox::policy::Locks::of(root),
     )
 }
