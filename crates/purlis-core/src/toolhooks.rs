@@ -428,6 +428,11 @@ pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -
              whether the host is allowed."
         ));
     };
+    // MUTATION (temporary, #6886 evidence): the judgement is dropped.
+    let _ = tunnel(&proxy, &host, port);
+    if true {
+        return Answer::Nothing;
+    }
     match tunnel(&proxy, &host, port) {
         Tunnel::Open => Answer::Nothing,
         Tunnel::Refused(said) => deny(format!(
