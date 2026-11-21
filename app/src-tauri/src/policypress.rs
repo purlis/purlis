@@ -411,10 +411,6 @@ pub async fn project_policy_state(
     crate::off_the_window(READING_POLICY, move || Ok(state_of(&root))).await
 }
 
-/// **Your press: accept the project's `[policy]` as its committed file said it when it was
-/// shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
-/// machine by the app; refused where it cannot be sealed, or where the file changed since it was
-/// shown. The window's alone.
 /// The person's press, made here: the window's command layer is its one maker.
 #[allow(
     clippy::disallowed_methods,
@@ -424,6 +420,10 @@ fn the_persons_press() -> purlis_core::secrets::answers::Press {
     purlis_core::secrets::answers::Press::of_the_persons_press()
 }
 
+/// **Your press: accept the project's `[policy]` as its committed file said it when it was
+/// shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
+/// machine by the app; refused where it cannot be sealed, or where the file changed since it was
+/// shown. The window's alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn accept_project_policy(
@@ -447,12 +447,8 @@ pub async fn accept_project_policy(
             )));
         }
         if !shown_press.is_empty() {
-            purlis_core::policy::press::accept(
-                &root,
-                &the_persons_press(),
-                shown_press,
-            )
-            .map_err(kept)?;
+            purlis_core::policy::press::accept(&root, &the_persons_press(), shown_press)
+                .map_err(kept)?;
         }
         enforcement::press(&root, settings).map_err(kept)?;
         Ok(state_of(&root))
