@@ -297,6 +297,20 @@ pub struct HeldAsk {
     /// The SHA-256 of the whole act (method, host, target with its query, body), in hex: what
     /// makes two asks the same ask.
     pub digest: String,
+    /// The request's body, exactly as the chat sent it and as [`HeldAsk::digest`] covers it. What
+    /// is performed is this body and no other (a REST merge's `sha` pin is in it), and what slice
+    /// F shows the person is read from it ([`HeldAsk::body_text`]).
+    pub body: Vec<u8>,
+    /// The request's `Content-Type`, so a replay is the same kind of request.
+    pub content_type: Option<String>,
+}
+
+impl HeldAsk {
+    /// The body for display: its text, with anything that is not UTF-8 replaced. Never what is
+    /// performed ([`HeldAsk::body`] is).
+    pub fn body_text(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
 }
 
 /// **Slice F's** held acts: the ask the person sees, and the act made when they press.
@@ -410,6 +424,19 @@ pub enum RunnerForward {
 
 // ---- held asks ----------------------------------------------------------------------------
 
+/// How many asks one run may have outstanding. Past it a held act is refused outright, and the
+/// person is not asked again, until they answer one.
+pub const MAX_ASKS_PER_RUN: usize = 16;
+
+/// What registering an ask came to.
+enum Registered {
+    New(Box<HeldAsk>),
+    /// The same act is already waiting.
+    Duplicate,
+    /// The run has [`MAX_ASKS_PER_RUN`] waiting.
+    Full,
+}
+
 /// The asks raised and not yet performed or dropped. **F2's registry replaces this**; the
 /// contract is the same: an ask is made only here, performed once, and gone with its run.
 #[derive(Default)]
@@ -419,18 +446,21 @@ pub struct HeldAsks {
 }
 
 impl HeldAsks {
-    /// Registers an ask for a run, or returns `None` where the same act is already pending (a
-    /// chat that retries is one ask, not many). **The same act** is the same digest of the whole
-    /// request: a different body, query or method is another act and another ask.
-    fn register(&self, mut ask: HeldAsk) -> Option<HeldAsk> {
+    /// Registers an ask for a run. **The same act** is the same digest of the whole request: a
+    /// different body, query or method is another act and another ask, and a chat that retries
+    /// one is [`Registered::Duplicate`], not many. A run holds at most [`MAX_ASKS_PER_RUN`].
+    fn register(&self, mut ask: HeldAsk) -> Registered {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         let same = |a: &HeldAsk| a.run == ask.run && a.digest == ask.digest;
         if pending.values().any(same) {
-            return None;
+            return Registered::Duplicate;
+        }
+        if pending.values().filter(|a| a.run == ask.run).count() >= MAX_ASKS_PER_RUN {
+            return Registered::Full;
         }
         ask.id = self.next.fetch_add(1, Ordering::SeqCst) + 1;
         pending.insert(ask.id, ask.clone());
-        Some(ask)
+        Registered::New(Box::new(ask))
     }
 
     /// The ask `id`, removed: it can be performed once.
@@ -630,8 +660,10 @@ impl Handler for RunHandler {
                     repo: Some(repo),
                     act,
                     digest: act_digest(inbound),
+                    body: inbound.body.to_vec(),
+                    content_type: inbound.head.content_type.clone(),
                 });
-                if let Some(ask) = made {
+                if let Registered::New(ask) = made {
                     self.held.raise(&ask);
                 }
             }
@@ -944,20 +976,29 @@ impl ForgeRoutes {
             .asks
             .take(id)
             .ok_or_else(|| "That request is not waiting for you any more.".to_owned())?;
-        let (project, repos) = self
+        let (project, repos, dir) = self
             .live()
             .get(&ask.run)
-            .map(|live| (live.project.clone(), live.repos.clone()))
+            .map(|live| (live.project.clone(), live.repos.clone(), live.dir.clone()))
             .ok_or_else(|| "That chat has ended, so there is nothing to allow.".to_owned())?;
         let host = forge_host(&ask.host);
         // **Repo-bound**: the ask names a repo, and that repo, on that host, is still one the
-        // run's route records. An ask for anything else performs nothing.
-        let bound = ask.repo.as_deref().is_some_and(|repo| {
+        // run's route records, both as the run started and as the project records it now. An ask
+        // for anything else performs nothing.
+        let repo = ask.repo.as_deref().unwrap_or_default();
+        let named_by = |repos: &[(String, String)]| {
             repos
                 .iter()
                 .any(|(recorded_host, path)| *recorded_host == host && path == repo)
-        });
-        if !bound {
+        };
+        let now: Vec<(String, String)> = self
+            .seams
+            .recorded
+            .repos(&project)
+            .iter()
+            .map(|r| (forge_host(r.host()), r.path().to_ascii_lowercase()))
+            .collect();
+        if ask.repo.is_none() || !named_by(&repos) || !named_by(&now) {
             return Err(
                 "That request is not for a repo this chat was given, so purlis did not allow it."
                     .to_owned(),
@@ -970,6 +1011,15 @@ impl ForgeRoutes {
             .ok_or_else(|| SignInFailure::missing(&host))
             .and_then(|account| self.seams.credentials.credential(&host, &account))
             .map_err(|failure| failure.said)?;
+        // **Still the same run**: fetching the credential may have taken a while (a vault, the
+        // network), and the chat may have ended, or restarted, in it. Nothing lands after that.
+        let still_live = self
+            .live()
+            .get(&ask.run)
+            .is_some_and(|live| live.dir == dir);
+        if !still_live {
+            return Err("That chat has ended, so there is nothing to allow.".to_owned());
+        }
         self.seams.held.perform(&ask, credential)
     }
 
@@ -990,6 +1040,12 @@ impl ForgeRoutes {
                          Settings, then try again."
                         .to_owned(),
                 }
+            }
+            r if held_act(r).is_some() && self.asks.pending_for(run).len() >= MAX_ASKS_PER_RUN => {
+                "This chat already has too many requests waiting for the person's approval, so \
+                 purlis did not ask about this one. It goes ahead only after they answer the \
+                 others."
+                    .to_owned()
             }
             r if held_act(r).is_some() => "That needs the person's approval. purlis has asked \
                  them; it goes ahead only when they allow it."
@@ -1268,6 +1324,35 @@ fn make_private_dir(dir: &Path) -> io::Result<()> {
 /// (never a link, never followed) owned by this user, named `<pid>-<run>`, whose pid is not a
 /// running process. Anything else in `root` is left alone.
 fn sweep(root: &Path) {
+    sweep_with(root, &process_may_run);
+}
+
+/// Whether process `pid` may be running. **Only "no such process" says it is gone**: a process
+/// this one may not signal (`EPERM`), or any other answer, is taken as running, so an app that
+/// cannot see another's pid (another pid namespace, a sandbox) never removes a live app's folders.
+/// Where this process may not look at all, a folder is left, never removed.
+#[cfg(unix)]
+fn process_may_run(pid: u32) -> bool {
+    use rustix::process::{Pid, test_kill_process};
+    let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else {
+        return true;
+    };
+    probe_says_running(test_kill_process(pid))
+}
+
+#[cfg(not(unix))]
+fn process_may_run(_: u32) -> bool {
+    true
+}
+
+/// A `kill(pid, 0)` answer, read: gone only for `ESRCH`.
+#[cfg(unix)]
+fn probe_says_running(answer: Result<(), rustix::io::Errno>) -> bool {
+    !matches!(answer, Err(rustix::io::Errno::SRCH))
+}
+
+/// [`sweep`] with its liveness probe given, so a test can answer as another namespace would.
+fn sweep_with(root: &Path, may_run: &dyn Fn(u32) -> bool) {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -1282,7 +1367,7 @@ fn sweep(root: &Path) {
             let Some(pid) = pid_of_folder(&name) else {
                 continue;
             };
-            if pid == std::process::id() || purlis_same_user::Parents::started(pid).is_some() {
+            if pid == std::process::id() || may_run(pid) {
                 continue;
             }
             let path = entry.path();
@@ -1296,13 +1381,13 @@ fn sweep(root: &Path) {
     }
     #[cfg(not(unix))]
     {
-        let _ = root;
+        let _ = (root, may_run);
     }
 }
 
 /// Where the routes live: the app's private folder, short because a unix socket's path may not
 /// pass 104 bytes on macOS. This user's runtime directory where there is one (Linux); without it
-/// on Linux, this user's own machine folder (never `/tmp`, which anyone may write in); on macOS,
+/// on Linux, this user's own machine folder (not a shared directory); on macOS,
 /// the per-user temporary directory the system makes private. `None` where there is none of
 /// these, and then no chat has a route.
 pub fn route_dir() -> Option<PathBuf> {

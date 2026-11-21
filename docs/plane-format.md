@@ -362,7 +362,7 @@ prose under another heading, which is why every store gets a heading or a row.
   - [`app/chat-handed/<chat>.names` — what a chat was handed, by vault and key](#appchat-handedchatnames--what-a-chat-was-handed-by-vault-and-key)
   - [`app/hooks.sock`](#apphookssock)
   - [`app/slots.sock`](#appslotssock)
-  - [`forge-route/<chat>/` — a chat's forge socket and certificate authority](#forge-routechat--a-chats-forge-socket-and-certificate-authority)
+  - [`pf-<uid>/<pid>-<id>/` — a run's forge socket and certificate authority](#pf-uidpid-id--a-runs-forge-socket-and-certificate-authority)
   - [Top-level markers, gates and ledgers](#top-level-markers-gates-and-ledgers)
   - [`chat-turns/<chat>`](#chat-turnschat)
   - [`dispatch-inflight/<agent>.<random>.json`](#dispatch-inflightagentrandomjson)
@@ -8201,12 +8201,15 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   in `app/src-tauri/src/hooks.rs`); handed on to by `hookwire::serve::hand_on`.
 - **Git:** gitignored (under `/.charter/`).
 
-### `forge-route/<chat>/` — a chat's forge socket and certificate authority
-- **Format:** a folder per run of a chat that has a forge route, named `<pid>-<id>` (the pid of the
+### `pf-<uid>/<pid>-<id>/` — a run's forge socket and certificate authority
+- **Format:** a folder per run of a chat that has a forge route, `pf-<uid>/<pid>-<id>/`, named `<pid>-<id>` (the pid of the
   app that made it, and 8 random lower-case hex digits; the run's id is not in the name), inside
   the app's private root `pf-<uid>/` in this user's `$XDG_RUNTIME_DIR` on Linux, else this
-  user's machine folder (`forge-route/`, never `/tmp`), and on macOS in the per-user temporary
-  directory. Short, because a unix socket's path may not pass 104 bytes on macOS: a folder whose
+  user's machine folder (`forge-route/`), and on macOS in the temporary directory
+  (`$TMPDIR`, the per-user one the system makes). Either can name a shared place such as `/tmp`
+  (a `TMPDIR` or an `XDG_RUNTIME_DIR` someone set): that stays safe because the root is made and
+  checked on one descriptor, `0700`, a real directory and this user's own, and refused if it is
+  not. Short, because a unix socket's path may not pass 104 bytes on macOS: a folder whose
   socket path would pass 100 bytes is refused, by name, when it would be made. The root and each
   folder are mode 0700 and the user's own; a root that is a link or another user's is refused. A
   folder holds the socket (`proxy.sock`) the run's `gh` and `git` reach the forge
@@ -8215,7 +8218,7 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **Status:** **internal** — made when a run with recorded repos starts and removed when that run
   ends (its session closes, its program exits, its project closes, or its start fails). A
   restart is another run, with a folder of its own. At the app's next start, only the folders of
-  an app that is gone (a pid no process holds) are removed, never a link's target and never a
+  an app that is gone (`kill(pid, 0)` says no such process; a pid this process may not signal, or cannot see, counts as running) are removed, never a link's target and never a
   name this does not make. **purlis only.**
 - **Tier:** Machine, device-bound, transient — it lasts as long as the run; the app sweeps it.
 - **Written by:** `forgeroute::ForgeRoutes::start` makes the folder and removes it

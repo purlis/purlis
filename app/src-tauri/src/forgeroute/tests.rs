@@ -660,6 +660,59 @@ fn folder_names_are_pid_then_eight_hex_and_only_those_are_read_back() {
 
 #[cfg(unix)]
 #[test]
+fn a_pid_this_process_may_not_signal_is_a_running_process_and_only_no_such_process_is_gone() {
+    use rustix::io::Errno;
+    assert!(probe_says_running(Ok(())));
+    assert!(
+        probe_says_running(Err(Errno::PERM)),
+        "EPERM: another user's, or another namespace's, process is alive"
+    );
+    assert!(
+        probe_says_running(Err(Errno::INVAL)),
+        "anything else is alive"
+    );
+    assert!(!probe_says_running(Err(Errno::SRCH)), "only ESRCH is gone");
+    // And the real probe: this process runs, a reaped child does not, a pid past i32 is left.
+    assert!(process_may_run(std::process::id()));
+    let mut child =
+        purlis_core::forklock::spawn(&mut std::process::Command::new("true")).expect("true");
+    let gone = child.id();
+    child.wait().unwrap();
+    assert!(!process_may_run(gone));
+    assert!(process_may_run(u32::MAX));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_sweep_that_cannot_see_an_apps_pid_removes_nothing_of_it() {
+    let scene = Scene::new();
+    scene.start("chat-1", "run-1", "/p/one");
+    let root = scene.dir.clone();
+    // Folders of an app this process cannot see (another pid namespace): the probe answers EPERM.
+    let unseen = root.join("4242-0a0a0a0a");
+    std::fs::create_dir(&unseen).unwrap();
+    let gone = root.join("4343-0b0b0b0b");
+    std::fs::create_dir(&gone).unwrap();
+
+    sweep_with(&root, &|pid| {
+        probe_says_running(if pid == 4343 {
+            Err(rustix::io::Errno::SRCH)
+        } else {
+            Err(rustix::io::Errno::PERM)
+        })
+    });
+
+    assert!(unseen.exists(), "an unreadable pid is not a gone one");
+    assert!(!gone.exists(), "a pid that is gone still is swept");
+    assert_eq!(
+        scene.folders(),
+        2,
+        "this app's own route and the unseen app's"
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn a_root_that_is_a_link_is_refused_and_what_it_points_at_is_left_alone() {
     let scene = Scene::new();
     let target = tempfile::tempdir().unwrap();
@@ -1317,6 +1370,17 @@ fn an_ask(run: &str, host: &str, repo: Option<&str>, digest: &str) -> HeldAsk {
         repo: repo.map(str::to_owned),
         act: HeldAct::Merge,
         digest: digest.to_owned(),
+        body: Vec::new(),
+        content_type: None,
+    }
+}
+
+/// The ask [`HeldAsks::register`] made, or a failure of the test.
+fn registered(scene: &Scene, ask: HeldAsk) -> HeldAsk {
+    match scene.routes.asks.register(ask) {
+        Registered::New(ask) => *ask,
+        Registered::Duplicate => panic!("registered as a duplicate"),
+        Registered::Full => panic!("registered as full"),
     }
 }
 
@@ -1339,7 +1403,7 @@ fn an_ask_is_performed_only_for_a_repo_the_run_records_on_the_asks_host() {
             an_ask("run-1", "github.example", Some("acme/app"), "d"),
         ),
     ] {
-        let registered = scene.routes.asks.register(ask).expect("registered");
+        let registered = registered(&scene, ask);
         let said = scene.routes.perform_held(registered.id).expect_err(why);
         assert!(
             said.contains("not for a repo this chat was given"),
@@ -1353,11 +1417,7 @@ fn an_ask_is_performed_only_for_a_repo_the_run_records_on_the_asks_host() {
     assert!(lock(&scene.sign_ins.asked).is_empty());
 
     // The same ask for a recorded repo on its own host is performed.
-    let fine = scene
-        .routes
-        .asks
-        .register(an_ask("run-1", "github.com", Some("acme/app"), "e"))
-        .unwrap();
+    let fine = registered(&scene, an_ask("run-1", "github.com", Some("acme/app"), "e"));
     scene.routes.perform_held(fine.id).expect("performed");
     assert_eq!(lock(&scene.held.performed).len(), 1);
 }
@@ -1645,4 +1705,173 @@ fn without_a_runtime_directory_linux_uses_the_users_own_machine_folder_never_tmp
     }
     assert_eq!(nowhere, None, "no route rather than one in /tmp");
     assert_eq!(mac, Some(tmp.join("pf-501")));
+}
+
+// ---- held asks: body, cap, and the checks at the act ----
+
+#[test]
+fn an_ask_keeps_the_exact_body_the_chat_sent_for_the_person_to_read_and_for_the_act() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    merge(&scene, "run-1", &params.sentinel);
+
+    let asks = lock(&scene.held.asks).clone();
+    assert_eq!(asks[0].body, b"{\"body\":\"hello\"}");
+    assert_eq!(asks[0].body_text(), "{\"body\":\"hello\"}");
+    assert_eq!(asks[0].content_type.as_deref(), Some("application/json"));
+    scene.routes.perform_held(asks[0].id).expect("performed");
+    let performed = lock(&scene.held.performed);
+    assert_eq!(performed[0].0.body, asks[0].body, "that body, and no other");
+}
+
+#[test]
+fn the_same_act_with_another_body_is_another_ask_with_its_own_body() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let target = "/repos/acme/app/pulls/7/merge";
+    for body in ["{\"sha\":\"aaa\"}", "{\"sha\":\"bbb\"}"] {
+        let head = RequestHead::new("PUT", "api.github.com", 443, target)
+            .with_content_type(Some("application/json"));
+        let headers = vec![(
+            "Authorization".to_owned(),
+            format!("Bearer {}", params.sentinel),
+        )];
+        scene.listener.handler_of("run-1").handle(&Inbound {
+            head: &head,
+            headers: &headers,
+            body: body.as_bytes(),
+        });
+    }
+
+    let asks = scene.routes.pending_asks("run-1");
+    assert_eq!(asks.len(), 2);
+    assert_eq!(asks[0].body_text(), "{\"sha\":\"aaa\"}");
+    assert_eq!(asks[1].body_text(), "{\"sha\":\"bbb\"}");
+}
+
+#[test]
+fn a_run_holds_a_bounded_number_of_asks_and_the_refusal_says_so() {
+    let scene = Scene::new();
+    scene.start("chat-1", "run-1", "/p/one");
+    scene.start("chat-2", "run-2", "/p/one");
+    for n in 0..MAX_ASKS_PER_RUN {
+        registered(
+            &scene,
+            an_ask("run-1", "github.com", Some("acme/app"), &format!("d{n}")),
+        );
+    }
+    assert!(
+        !scene
+            .routes
+            .refusal_message("run-2", Refusal::Merge)
+            .contains("too many")
+    );
+    let at = scene.routes.refusal_message("run-1", Refusal::Merge);
+    assert!(at.contains("too many requests waiting"), "{at}");
+
+    assert!(matches!(
+        scene
+            .routes
+            .asks
+            .register(an_ask("run-1", "github.com", Some("acme/app"), "one-more")),
+        Registered::Full
+    ));
+    assert!(
+        matches!(
+            scene
+                .routes
+                .asks
+                .register(an_ask("run-1", "github.com", Some("acme/app"), "d0")),
+            Registered::Duplicate
+        ),
+        "a retry is still one ask"
+    );
+    // Another run has its own room, and answering one makes room.
+    registered(&scene, an_ask("run-2", "github.com", Some("acme/app"), "x"));
+    let first = scene.routes.pending_asks("run-1")[0].id;
+    scene.routes.perform_held(first).expect("performed");
+    registered(
+        &scene,
+        an_ask("run-1", "github.com", Some("acme/app"), "one-more"),
+    );
+}
+
+#[test]
+fn an_ask_is_not_performed_for_a_repo_the_project_no_longer_records() {
+    let scene = Scene::new();
+    scene.start("chat-1", "run-1", "/p/one");
+    let ask = registered(&scene, an_ask("run-1", "github.com", Some("acme/app"), "a"));
+    // The run's snapshot still has it; the project's record does not.
+    scene
+        .recorded
+        .record("/p/one", vec![(Kind::GitLab, "gitlab.com", "group/proj")]);
+
+    let said = scene
+        .routes
+        .perform_held(ask.id)
+        .expect_err("not performed");
+
+    assert!(
+        said.contains("not for a repo this chat was given"),
+        "{said}"
+    );
+    assert!(lock(&scene.held.performed).is_empty());
+    assert!(lock(&scene.sign_ins.asked).is_empty(), "no credential read");
+}
+
+/// Sign-ins that end a run while the person's credential is being fetched.
+struct EndsRunWhileFetching {
+    inner: Arc<FakeSignIns>,
+    routes: Arc<std::sync::OnceLock<Arc<ForgeRoutes>>>,
+}
+
+impl Credentials for EndsRunWhileFetching {
+    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInFailure> {
+        if let Some(routes) = self.routes.get() {
+            routes.stop("run-1");
+        }
+        self.inner.credential(host, account)
+    }
+    fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
+        self.inner.check(host, account)
+    }
+}
+
+#[test]
+fn an_act_does_not_land_when_the_chat_ended_while_the_credential_was_fetched() {
+    let scene = Scene::new();
+    let cell = Arc::new(std::sync::OnceLock::new());
+    let routes = Arc::new(ForgeRoutes::new(
+        scene.dir.join("second"),
+        PathBuf::new(),
+        Seams {
+            listener: scene.listener.clone(),
+            credentials: Arc::new(EndsRunWhileFetching {
+                inner: scene.sign_ins.clone(),
+                routes: cell.clone(),
+            }),
+            recorded: scene.recorded.clone(),
+            notices: scene.notices.clone(),
+            held: scene.held.clone(),
+            runner_link: scene.pairing.clone(),
+        },
+    ));
+    cell.set(routes.clone()).ok();
+    routes
+        .start("chat-1", "run-1", Path::new("/p/one"))
+        .unwrap()
+        .unwrap();
+    let ask = match routes
+        .asks
+        .register(an_ask("run-1", "github.com", Some("acme/app"), "a"))
+    {
+        Registered::New(ask) => *ask,
+        _ => panic!("registered"),
+    };
+
+    let said = routes.perform_held(ask.id).expect_err("not performed");
+
+    assert!(said.contains("chat has ended"), "{said}");
+    assert!(lock(&scene.held.performed).is_empty(), "nothing landed");
 }
