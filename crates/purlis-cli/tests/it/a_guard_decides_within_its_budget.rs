@@ -22,6 +22,15 @@ use std::time::{Duration, Instant};
 const BUDGET: Duration = Duration::from_secs(2);
 const SLACK: Duration = Duration::from_millis(2500);
 
+/// The deadline, in milliseconds, a test gives the hook when what it asks is whether a command
+/// *passes*, not how fast. The hook's real budget is two seconds of wall clock, and a shared CI
+/// runner can take that for a 64 KB body (merge-group run 44469327772 refused an ordinary one as
+/// "out of time"), so a test of the verdict must not be at the mercy of the machine's load. How
+/// long a verdict takes is held elsewhere, by work and by ratios between sizes, not by a clock:
+/// `lineartime` and purlis-core's `every_guard_reads_a_hostile_command_in_linear_time`, and the
+/// refusals above, which reach the budget on purpose.
+const UNHURRIED_MS: &str = "120000";
+
 /// What the sentence for a hook out of time says.
 const OUT_OF_TIME: &str = "could not check it in time";
 
@@ -72,6 +81,18 @@ impl Here {
             String::from_utf8_lossy(&out.stderr).into_owned(),
             began.elapsed(),
         )
+    }
+
+    /// [`Here::answer`] with the hook given [`UNHURRIED_MS`], so only its verdict is under test.
+    fn answer_unhurried(
+        &self,
+        word: &str,
+        payload: &serde_json::Value,
+        env: &[(&str, &str)],
+    ) -> (Option<i32>, String, String, Duration) {
+        let mut env = env.to_vec();
+        env.push(("PURLIS_TEST_GUARD_DEADLINE_MS", UNHURRIED_MS));
+        self.answer(word, payload, &env)
     }
 }
 
@@ -265,7 +286,8 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
     ] {
         for env in [&[][..], &chat[..]] {
             for mode in ["bypassPermissions", "default"] {
-                let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), env);
+                let (code, out, err, _) =
+                    here.answer_unhurried("pretooluse", &bash(&cmd, mode), env);
                 assert_eq!(code, Some(0), "{mode} chat={}: {err}", !env.is_empty());
                 assert!(
                     !out.contains("deny"),
@@ -313,7 +335,8 @@ fn a_large_commit_body_with_a_paren_and_a_quote_passes_and_a_merge_line_in_it_is
         ),
     ];
     for mode in ["bypassPermissions", "default"] {
-        let (code, out, err, _) = here.answer("pretooluse", &bash(&ordinary, mode), &chat);
+        let (code, out, err, _) =
+            here.answer_unhurried("pretooluse", &bash(&ordinary, mode), &chat);
         assert_eq!(code, Some(0), "{mode}: {err}");
         assert!(!out.contains("deny"), "{mode}: {out}");
         let (code, out, err, _) = here.answer("pretooluse", &bash(&merging, mode), &chat);
