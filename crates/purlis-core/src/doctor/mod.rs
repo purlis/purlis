@@ -629,6 +629,7 @@ impl Doctor {
         rows.extend(sandbox::local_ports(self));
         rows.extend(sandbox::grants_held(self));
         rows.extend(sandbox::relayed_internal(self));
+        rows.extend(sandbox::replaced_by_sign_in(self));
         rows.extend(sandbox::cache_home(self));
         rows.extend(host_log::host_log(self));
         rows.push(memory::memory_indexes(self));

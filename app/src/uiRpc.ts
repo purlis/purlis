@@ -7408,6 +7408,16 @@ export type ForgeOwners = {
 	owners: OwnerRow[],
 };
 
+/**
+ *  **What the window says once about a project's old forge token lines**
+ *  ([`sandbox::tools::replaced::Told`]): its text, and a cause key that moves only when the
+ *  lines do, so a dismissal stands until they change.
+ */
+export type ForgeReplaced = {
+	cause: string,
+	text: string,
+};
+
 /**  One forge's CLI, as the first-run screen lists it. */
 export type ForgeRow = {
 	/**  The program (`gh`, `glab`). Its own login is `<cli> auth login`. */
@@ -14340,6 +14350,13 @@ export type SandboxState = {
 	 *  allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
 	 */
 	expects?: ProjectExpects | null,
+	/**
+	 *  **Tool lines the person's sign-in replaces** (ADR 0128, "Migration"), with the one-login
+	 *  train's `forge-wiring` feature on: the project's `mint = "github-app"` and vault forge
+	 *  token lines, which still parse and run nothing. The window says it once, until the lines
+	 *  change. `null` where the project has none, and always without the feature.
+	 */
+	forge_replaced?: ForgeReplaced | null,
 	/**
 	 *  **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
 	 *  "off"`, where it came from as far as purlis verified it, and how the person on this

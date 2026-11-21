@@ -177,6 +177,7 @@ pub fn vault_ctx(root: &Path, state: &Path) -> crate::secrets::Ctx {
         chat_writes: Vec::new(),
         kept: crate::secrets::identity::Kept::default(),
         policy: None,
+        for_a_chat: false,
     }
 }
 

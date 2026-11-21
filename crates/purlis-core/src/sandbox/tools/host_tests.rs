@@ -32,6 +32,7 @@ fn runs(ready: &Ready, words: &[&str]) -> Result<Vec<String>, String> {
     run_words(ready, &said)
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_tool_s_host_is_read_lower_cased_and_named_on_its_line() {
     let (tools, refused) = read(
@@ -50,6 +51,7 @@ fn a_tool_s_host_is_read_lower_cased_and_named_on_its_line() {
     assert!(!plain[0].whole().contains(", on "), "{}", plain[0].whole());
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_host_that_is_not_a_host_s_name_leaves_the_tool_out() {
     for host in [

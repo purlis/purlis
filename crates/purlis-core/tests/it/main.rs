@@ -58,6 +58,7 @@ mod a_chat_in_its_own_worktree_gets_an_agents_md;
 mod a_chat_is_told_to_draft_purlis_bugs_only_with_agent_drafts_allowed;
 mod a_chat_is_wired_to_the_forge_proxy_the_same_way_for_every_harness_and_system;
 mod a_chat_keeps_to_its_own_terminal_under_seatbelt;
+#[cfg(not(feature = "forge-wiring"))]
 mod a_chat_mints_on_a_cluster_runner_with_its_desktop_away;
 mod a_chat_moves_to_a_docker_pools_runner_and_back;
 mod a_chat_on_a_profile_made_here_runs_in_its_folder;
@@ -274,6 +275,8 @@ mod no_tracked_file_is_one_a_sandboxed_chat_may_not_write;
 mod nothing_escapes;
 mod nothing_escapes_a_worktree;
 mod nothing_escapes_while_a_writer_races;
+#[cfg(feature = "forge-wiring")]
+mod old_forge_routes_are_replaced_by_the_sign_in;
 mod one_login_end_to_end;
 mod only_attendance_compares_permission_mode_with_bypass;
 mod only_the_resolver_builds_the_native_transport;

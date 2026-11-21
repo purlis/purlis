@@ -5472,7 +5472,9 @@ impl Chats {
                     &purlis_core::secrets::Ctx::new(
                         &self.project,
                         purlis_core::secrets::Env::from_process(),
-                    ),
+                    )
+                    // The read is for the chat being started, though the environment is the app's.
+                    .for_a_chat(),
                     runs_as.as_deref(),
                     &sign_in.credentials,
                     missing.as_ref(),

@@ -85,6 +85,7 @@ pub mod fill;
 pub mod host;
 pub mod login;
 pub mod mint;
+pub mod replaced;
 pub mod repo;
 
 /// The key in a persona's table that holds its tools.
@@ -813,6 +814,13 @@ pub fn keyed(
                 "{other} is not a key purlis reads — a tool holds vault, then as and key, or \
                  values"
             ));
+            continue;
+        }
+        // The person's sign-in replaces both old ways of handing a chat a forge token (ADR 0128,
+        // "Migration"): the line keeps parsing, and the tool is left out with what to do.
+        #[cfg(feature = "forge-wiring")]
+        if let Some(kind) = replaced::kind_named(name, tool) {
+            fault(replaced::sentence(kind).to_owned());
             continue;
         }
         // Its `args` (#3421), set on the tool once it is read whole, below.
@@ -1565,10 +1573,30 @@ pub(crate) fn resolve_beside(
             continue;
         }
         match found {
-            Some((_, program)) => ready.push(Ready {
-                tool: tool.clone(),
-                program,
-            }),
+            Some((_, program)) => {
+                // A forge CLI takes no value from a vault once the sign-in replaces it (ADR
+                // 0128), whatever the line names its variable: judged by the program as found.
+                #[cfg(feature = "forge-wiring")]
+                {
+                    let real = program.canonicalize().ok();
+                    let names: Vec<&Path> = [Path::new(&tool.name), program.as_path()]
+                        .into_iter()
+                        .chain(real.as_deref())
+                        .collect();
+                    if forge_of(&names).is_some() {
+                        left.push(format!(
+                            "{persona}'s tool {} {}",
+                            tool.name,
+                            replaced::FORGE_PROGRAM_SAID
+                        ));
+                        continue;
+                    }
+                }
+                ready.push(Ready {
+                    tool: tool.clone(),
+                    program,
+                });
+            }
             None => {
                 // Nowhere at all, as distinct from only where a chat could have put it.
                 if found_in(wanted, search, &[]).is_none() {
@@ -2997,6 +3025,10 @@ pub fn no_minted_token_said(name: &str, mints: bool) -> String {
 /// tool that is allowed here, and the chat never uses the person's own login, so it names the flow
 /// that sets one up and the Allow that follows it.
 pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = (persona, host);
+        return SIGN_IN_SAID.to_owned();
+    }
     format!(
         "glab has no token in this chat, and a chat never uses the person's own glab login. To \
          give it one, {}, and allow it ({ALLOW_IS_ASKED}). Or choose a sandbox template where \
@@ -3009,12 +3041,22 @@ pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
 /// is not allowed yet (or no program was found), and the chat never falls back to the person's
 /// own login.
 pub fn declared_glab_not_running_said(persona: &str) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = persona;
+        return SIGN_IN_SAID.to_owned();
+    }
     format!(
         "glab is {persona}'s tool but is not running in this chat, and a chat never uses the \
          person's own glab login. Allow it in Settings › GitLab access ({ALLOW_IS_ASKED}), make \
          sure glab is installed, then restart the chat."
     )
 }
+
+/// What a guarded `glab` says once the sign-in replaces the tokens a chat was handed (ADR 0128):
+/// the way on is the person's own sign-in, which a chat acts through, never a token of its own.
+const SIGN_IN_SAID: &str = "glab has no token in this chat, and a chat never uses the person's own \
+     glab login. Chats act through your sign-in: sign in to the host under Settings › Forges, \
+     then restart the chat.";
 
 /// **The forge programs a chat under the credentials class is guarded from running bare**
 /// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
@@ -3430,6 +3472,7 @@ mod fill_tests;
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]
+#[cfg(not(feature = "forge-wiring"))]
 mod mint_tests;
 #[cfg(test)]
 mod repo_tests;
