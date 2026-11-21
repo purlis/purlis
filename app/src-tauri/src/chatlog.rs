@@ -84,6 +84,9 @@ pub enum ChatLogRow {
     ProtectionChanged {
         at: Option<String>,
         change: String,
+        /// For a `level` change, the levels before and after: `on` (full) or `floor` (basic).
+        from: Option<String>,
+        to: Option<String>,
         actor_kind: String,
         actor: String,
     },
@@ -233,11 +236,15 @@ fn row_of(row: Row, reason: &dyn Fn(&str) -> Option<String>) -> ChatLogRow {
         Row::ProtectionChanged {
             at_ms,
             change,
+            from,
+            to,
             actor_kind,
             actor,
         } => ChatLogRow::ProtectionChanged {
             at: at(at_ms),
             change,
+            from,
+            to,
             actor_kind,
             actor,
         },

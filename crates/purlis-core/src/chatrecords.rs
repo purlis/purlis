@@ -206,6 +206,7 @@ pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
         runs_on,
         unsandboxed,
         no_sandbox,
+        at_floor,
         identity,
         pid: _,
         model,
@@ -249,6 +250,7 @@ pub fn for_a_reopen(chat: &crate::reopen::Chat) -> crate::reopen::Chat {
         runs_on,
         unsandboxed,
         no_sandbox,
+        at_floor,
         identity: crate::reopen::Identity {
             id,
             device,

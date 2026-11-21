@@ -267,6 +267,13 @@ pub struct Chat {
     /// the chat ([`chat_runs`]) and never by a start: it is not an opt-out, and no audit reads it
     /// as a sandbox that came back on.
     pub no_sandbox: bool,
+    /// Whether the chat's last run was sandboxed at the basic level, the floor. On disk as
+    /// `sandbox = "floor"`; a sandboxed run at the full level is the absent word.
+    ///
+    /// **A fact about the run that was**, like [`Self::unsandboxed`]: no start reads it as a
+    /// choice. A start reads it only to say that the level changed (`trust.sandbox.level`,
+    /// [`crate::sandbox::level_change`], R-228).
+    pub at_floor: bool,
     /// Who this chat is beyond this clone: its id, its origin device, its current run and the
     /// chat it was resumed from (ADR 0066). See [`Identity`].
     pub identity: Identity,
@@ -1844,8 +1851,8 @@ struct ChatOnDisk {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     runs_on: String,
     /// `"off"` where the chat's last run was unsandboxed — see [`Chat::unsandboxed`] — `"none"`
-    /// where it started with no sandbox and no opt-out — see [`Chat::no_sandbox`] — and absent
-    /// otherwise. Any other word reads as absent.
+    /// where it started with no sandbox and no opt-out — see [`Chat::no_sandbox`] — `"floor"`
+    /// where it ran at the basic level — see [`Chat::at_floor`] — and absent otherwise. Any other word reads as absent.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     sandbox: String,
     /// The chat's ids — see [`Identity`]. Each is a ULID, absent when not known: every record
@@ -1955,6 +1962,9 @@ const SANDBOX_OFF: &str = "off";
 
 /// What `sandbox` says for a run with no sandbox and no opt-out ([`Chat::no_sandbox`]).
 const SANDBOX_NONE: &str = "none";
+
+/// What `sandbox` says for a run sandboxed at the basic level ([`Chat::at_floor`]).
+const SANDBOX_FLOOR: &str = "floor";
 
 /// A new ULID: how the host mints a chat's id and each of its runs' (ADR 0066).
 pub fn mint() -> String {
@@ -2213,6 +2223,8 @@ impl From<&Chat> for ChatOnDisk {
                 SANDBOX_OFF.to_owned()
             } else if chat.no_sandbox {
                 SANDBOX_NONE.to_owned()
+            } else if chat.at_floor {
+                SANDBOX_FLOOR.to_owned()
             } else {
                 String::new()
             },
@@ -2301,6 +2313,7 @@ impl From<ChatOnDisk> for Chat {
             runs_on: crate::machine::StartChoice::read(&chat.runs_on),
             unsandboxed: chat.sandbox == SANDBOX_OFF,
             no_sandbox: chat.sandbox == SANDBOX_NONE,
+            at_floor: chat.sandbox == SANDBOX_FLOOR,
             identity: Identity {
                 id: a_ulid(&chat.id),
                 device: a_ulid(&chat.device),
