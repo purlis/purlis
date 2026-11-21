@@ -1369,9 +1369,14 @@ impl Scenario {
         // What the stand-in model needs of Claude Code's own words: no permission prompt, which
         // an auto mode would send to Anthropic's servers to judge (the recordings' conditions,
         // `tests/recordings/README.md`), and the prompt it starts with.
-        ready
-            .args
-            .extend(["--permission-mode", "bypassPermissions", prompt].map(str::to_owned));
+        ready.args.extend(
+            [
+                "--permission-mode",
+                purlis_recordings::PERMISSION_MODE,
+                prompt,
+            ]
+            .map(str::to_owned),
+        );
         model.attach(&transcript);
         let id = self.launches(&name, &ready, &transcript);
         self.note_running();

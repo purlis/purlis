@@ -26,6 +26,12 @@ pub mod turns;
 
 use std::path::PathBuf;
 
+/// **The permission mode every covering run is made under**: Claude Code's prompts off. Its
+/// default, auto mode, checks each call on Anthropic's servers, which a stand-in model is not, so
+/// the run stops to ask; its deny rules and purlis's hooks hold as they do in every mode
+/// (`tests/recordings/README.md`). The Claude Code leg (T1.1-10) runs under the same.
+pub const PERMISSION_MODE: &str = "bypassPermissions";
+
 /// This crate's folder: `tests/recordings` in the repo.
 pub fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
