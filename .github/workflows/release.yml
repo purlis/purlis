@@ -1330,7 +1330,7 @@ jobs:
       # The release's own pinned binary, checked against the digest install-action's manifest
       # holds for it, in place of compiling it with `cargo install`: one exact version, as
       # `build`'s, and moving to a new one is a reviewed change to this line.
-      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           tool: cargo-auditable@0.7.6
       - name: The purlis binary
