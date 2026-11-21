@@ -134,5 +134,7 @@ is harness agnostic: a dialect is only the key to the hook words it is armed wit
   It exits 0 only when it compared at least one pair and nothing differs, 1 when something differs,
   a cell failed live or nothing was compared, and 2 when a file, an option or an extra argument is
   wrong. It does not check that the live report covers every cell the brief asked for: the cells
-  files given to `report` decide that, and a cell they leave out is not in the report at all. The scenario host does not write `events`
-  yet, so until it does only the verdicts are compared against a suite report.
+  files given to `report` decide that, and a cell they leave out is not in the report at all.
+  The scenario host writes `events` (`report::ran`, `Scenario::report_cell`) into the record of
+  each cell it reports as run, so those pairs compare event sequences; a suite record with none
+  (a skipped-for-timing cell, a fixture) still compares verdicts only.

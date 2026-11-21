@@ -12,8 +12,10 @@
 
 use std::path::PathBuf;
 
+use purlis_scenarios::livepass::Recorded;
 use purlis_scenarios::model::{
-    Batch, Cell, EntryKind, LegRecord, Os, ReportLeg, ReportVerdict, TimingsMode,
+    Batch, Cell, Dialect, EntryKind, LegRecord, Os, Protection, ReportLeg, ReportVerdict,
+    TimingsMode,
 };
 use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
 use purlis_scenarios::timings::CoreTimings;
@@ -67,6 +69,43 @@ pub(crate) fn skipped_for_timing(
         .collect()
 }
 
+/// **The record of a cell that ran** (#7224, #7229): a cell's, or an escape's when the cell is
+/// one, with the event kinds the device's log wrote for it, ordered by `seq` whatever order they
+/// were read in. `tools/live-pass diff` compares them with a live report's, and a comparison of
+/// runs reads `refusal_expected` from it rather than from the cells.
+pub(crate) fn ran(
+    cell: &Cell,
+    dialect: Dialect,
+    protection: Protection,
+    timings: TimingsMode,
+    verdict: ReportVerdict,
+    reason: Option<String>,
+    events: &[purlis_core::eventlog::Event],
+) -> Recorded {
+    let mut ordered: Vec<&purlis_core::eventlog::Event> = events.iter().collect();
+    ordered.sort_by_key(|event| event.seq);
+    Recorded {
+        leg: LegRecord {
+            kind: if cell.escape {
+                EntryKind::Escape
+            } else {
+                EntryKind::Cell
+            },
+            row: cell.id.clone(),
+            test: None,
+            dialect: Some(dialect),
+            protection: Some(protection),
+            os: this_os(),
+            leg: ReportLeg::Fake,
+            timings: Some(timings),
+            verdict,
+            reason,
+            refusal_expected: cell.escape || cell.steps.iter().any(|s| s.refusal_expected),
+        },
+        events: Some(ordered.iter().map(|event| event.kind.clone()).collect()),
+    }
+}
+
 /// This machine's OS, as a file name says it.
 pub(crate) fn os_word() -> &'static str {
     match this_os() {
@@ -105,13 +144,14 @@ fn append(at: &std::path::Path, lines: &[String]) -> std::io::Result<()> {
     Ok(())
 }
 
-/// **Appends `records` to this leg's report**, one JSON object a line.
-pub(crate) fn write(records: &[LegRecord]) -> std::io::Result<PathBuf> {
+/// **Appends `records` to this leg's report**, one JSON object a line: [`LegRecord`]s, or
+/// [`Recorded`]s that carry the events a cell's log wrote.
+pub(crate) fn write<T: serde::Serialize>(records: &[T]) -> std::io::Result<PathBuf> {
     write_to(&report_path(), records)
 }
 
 /// [`write`], to the report at `at`.
-fn write_to(at: &std::path::Path, records: &[LegRecord]) -> std::io::Result<PathBuf> {
+fn write_to<T: serde::Serialize>(at: &std::path::Path, records: &[T]) -> std::io::Result<PathBuf> {
     let lines = records
         .iter()
         .map(serde_json::to_string)
@@ -304,4 +344,103 @@ fn every_cell_runs_under_strict_unless_it_names_a_template() {
             template.word()
         );
     }
+}
+
+/// An event of the device's log with `kind`, as the log reads it back at `seq`.
+#[cfg(test)]
+fn an_event(seq: u64, kind: &str) -> purlis_core::eventlog::Event {
+    serde_json::from_value(serde_json::json!({
+        "v": 1, "device_id": "d", "seq": seq, "ulid": format!("U{seq}"), "chat": null,
+        "run": null, "parent_run": null, "kind": kind, "body": {},
+    }))
+    .expect("an event")
+}
+
+/// **A cell that ran is reported with its event kinds in log order** (#7224, #7229): the record
+/// is a cell's (an escape's when the cell is one) with its dialect, protection and timings, says
+/// whether a refusal is expected of it, and holds the kinds the log wrote, ordered by `seq`
+/// whatever order they were read in. `tools/live-pass diff` then compares them with a live
+/// report's: equal sequences are one event comparison with no difference, and a differing one
+/// names the first position.
+#[test]
+fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
+    use purlis_scenarios::livepass::{Recorded, diff};
+    use purlis_scenarios::model::{Dialect, Protection};
+
+    let call = serde_json::json!({"tool": "bash", "input": {"command": "true"}});
+    let batch = a_batch(serde_json::json!([
+        {"id": "M-PLAIN", "steps": [{"calls": [call]}]},
+        {"id": "M-ESC", "escape": true, "steps": [{"calls": [call]}]},
+    ]));
+    let read_back = [
+        an_event(2, "stop.block"),
+        an_event(1, "hook.pretooluse"),
+        an_event(3, "run.end"),
+    ];
+    let record = |cell: &Cell| {
+        ran(
+            cell,
+            Dialect::Claude,
+            Protection::Full,
+            TimingsMode::Scaled,
+            ReportVerdict::Pass,
+            None,
+            &read_back,
+        )
+    };
+
+    let plain = record(&batch.cells[0]);
+    assert_eq!(plain.leg.kind, EntryKind::Cell);
+    assert_eq!(plain.leg.row, "M-PLAIN");
+    assert!(!plain.leg.refusal_expected);
+    assert_eq!(plain.leg.leg, ReportLeg::Fake);
+    assert_eq!(plain.leg.timings, Some(TimingsMode::Scaled));
+    assert_eq!(
+        plain.events.as_deref(),
+        Some(&["hook.pretooluse", "stop.block", "run.end"].map(str::to_owned)[..])
+    );
+    let escape = record(&batch.cells[1]);
+    assert_eq!(escape.leg.kind, EntryKind::Escape);
+    assert!(escape.leg.refusal_expected);
+
+    // Written as a line a reader of the schema takes back, `events` among its keys.
+    let folder = tempfile::tempdir().expect("a folder");
+    let at = write_to(
+        &folder.path().join("linux-fake.jsonl"),
+        std::slice::from_ref(&plain),
+    )
+    .expect("the report is written");
+    let line = std::fs::read_to_string(&at).expect("the report");
+    let value: serde_json::Value = serde_json::from_str(line.trim()).expect("a line");
+    assert_eq!(
+        value["events"],
+        serde_json::json!(["hook.pretooluse", "stop.block", "run.end"])
+    );
+    assert_eq!(
+        serde_json::from_str::<Recorded>(line.trim()).unwrap(),
+        plain
+    );
+
+    // The diff compares them.
+    let live = |kinds: &[&str]| Recorded {
+        leg: LegRecord {
+            leg: ReportLeg::Live,
+            ..plain.leg.clone()
+        },
+        events: Some(kinds.iter().map(|k| (*k).to_owned()).collect()),
+    };
+    let same = diff(
+        &[live(&["hook.pretooluse", "stop.block", "run.end"])],
+        std::slice::from_ref(&plain),
+    );
+    assert_eq!(same.events_compared, 1);
+    assert!(same.events.is_empty(), "{same:?}");
+    let differ = diff(
+        &[live(&["hook.pretooluse", "run.end"])],
+        std::slice::from_ref(&plain),
+    );
+    assert_eq!(differ.events_compared, 1);
+    assert_eq!(differ.events.len(), 1);
+    assert_eq!(differ.events[0].at, 1);
+    assert!(differ.events_one_side.is_empty());
 }

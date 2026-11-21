@@ -113,6 +113,17 @@ impl Protection {
             Self::Full => "full",
         }
     }
+
+    /// The same, as a leg report's record holds it. Named by [`Self::report_cell`].
+    #[allow(dead_code)]
+    pub(crate) fn in_report(self) -> purlis_scenarios::model::Protection {
+        use purlis_scenarios::model::Protection as Report;
+        match self {
+            Self::Off => Report::None,
+            Self::Basic => Report::Basic,
+            Self::Full => Report::Full,
+        }
+    }
 }
 
 /// **A dialect of the fake harness** (T1.1-04), as the shim of its name in
@@ -132,6 +143,17 @@ impl Dialect {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
+        }
+    }
+
+    /// The same, as a leg report's record holds it. Named by [`Self::report_cell`].
+    #[allow(dead_code)]
+    pub(crate) fn in_report(self) -> purlis_scenarios::model::Dialect {
+        use purlis_scenarios::model::Dialect as Report;
+        match self {
+            Self::Claude => Report::Claude,
+            Self::Codex => Report::Codex,
+            Self::OpenCode => Report::Opencode,
         }
     }
 }
@@ -1391,6 +1413,30 @@ impl Scenario {
             ));
         }
         Ok(events)
+    }
+
+    /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
+    /// report with the event kinds its log holds. A log that cannot be read is an error, never a
+    /// record with no events. Named by the runner of the cells format, which no scenario has yet:
+    /// the cells that run today are Rust tests that name no cell.
+    #[allow(dead_code)]
+    pub(crate) fn report_cell(
+        &self,
+        cell: &purlis_scenarios::model::Cell,
+        verdict: purlis_scenarios::model::ReportVerdict,
+        reason: Option<String>,
+    ) -> Result<(), String> {
+        let record = super::report::ran(
+            cell,
+            self.dialect.in_report(),
+            self.protection.in_report(),
+            purlis_scenarios::model::TimingsMode::Scaled,
+            verdict,
+            reason,
+            &self.try_events()?,
+        );
+        super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
+        Ok(())
     }
 
     /// [`Self::try_events`] where a scenario's own step reads the log: a log that cannot be read
