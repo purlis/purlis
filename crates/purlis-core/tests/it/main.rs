@@ -68,10 +68,22 @@ mod a_chat_runs_on_its_profiles_pinned_version;
 mod a_chat_s_finished_branch_folder_is_removed_by_the_app;
 mod a_chat_that_asks_in_a_loop_is_stopped_before_it_spends_the_persons_budget;
 mod a_chat_with_no_mint_has_no_forge_credential;
+#[cfg(all(unix, feature = "forge-wiring"))]
+mod a_chats_forge_listener_reads_one_request_and_never_hands_the_chat_a_credential;
+#[cfg(all(unix, feature = "forge-wiring"))]
+mod a_chats_forge_listener_serves_a_real_unix_socket_and_a_real_connect_port;
+#[cfg(all(unix, feature = "forge-wiring"))]
+mod a_chats_forge_listener_serves_the_real_gh_glab_and_git;
+#[cfg(all(unix, feature = "forge-wiring"))]
+mod a_chats_forge_listener_terminates_tls_only_for_the_chats_hosts_under_its_own_authority;
+mod a_chats_forge_proxy_acts_with_the_credential_slice_c_gives;
+mod a_chats_forge_proxy_answers_the_graphql_gh_and_glab_send;
 mod a_chats_forge_proxy_answers_the_work_it_does_on_its_own_repos;
 mod a_chats_forge_proxy_default_denies_what_its_list_does_not_name;
 mod a_chats_forge_proxy_endpoint_is_bound_for_that_chat_alone;
+mod a_chats_forge_proxy_maps_github_localhost_serves_public_lfs_and_takes_one_file_upload;
 mod a_chats_forge_proxy_pushes_only_to_the_chats_own_branches;
+mod a_chats_forge_proxy_reads_a_header_a_body_and_a_label_the_way_the_forge_does;
 mod a_chats_forge_proxy_reads_a_request_the_way_the_forge_will;
 mod a_chats_forge_proxy_reads_public_repos_anonymously_and_refuses_login_flows;
 mod a_chats_forge_proxy_records_each_answer_without_the_token;

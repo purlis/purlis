@@ -263,6 +263,13 @@ shell-words = "1"
 # The ids ADR 0066 gives devices, chats, runs and events: ULIDs, whose time part sorts them and
 # dates an event without a timestamp field. The standard crate for them.
 ulid = { version = "3", features = ["serde"] }
+# The per-chat certificate authority of the forge proxy's listener (ADR 0128 D3a): made in memory,
+# with a critical `nameConstraints` that permits the chat's recorded forge hosts and nothing else.
+# `rcgen` is the standard crate for making X.509; with `ring` (already here) and no other backend.
+rcgen = { version = "0.14", optional = true, default-features = false, features = ["ring", "pem"] }
+# The request line and headers a chat's client sends the listener, read strictly. The crate hyper
+# and ureq's `http` stack use, with no runtime of its own.
+httparse = { version = "1", optional = true }
 
 [features]
 # The plane fence (`src/fence.rs`): a build that carries it dies rather than act on a plane
@@ -274,14 +281,16 @@ fenced = []
 # What a test playing a chat's hook inside the host's own process needs and nothing else may
 # call (`hookwire::permission::ask_permission_of_an_admitted_host`, HP-6). Only tests turn it on.
 test-support = []
-# A chat's `gh`, git, `glab` and cargo are routed to the forge proxy (ADR 0128, "One login").
-# Off until slice A's proxy answers at the endpoint the wiring names: a chat wired with no proxy
-# behind it would find every forge call refused. The train turns it on with the proxy.
-#
-# The one-login end-to-end test (ADR 0128, slice I) turns it on too: `tests/it/one_login_end_to_end.rs`
-# runs the real `gh`, `glab` and `git` against a fake forge, so it needs those programs and is
-# off by default. Only a test turns it on, and no release build does.
-forge-wiring = []
+# One login (ADR 0128), on by default (slice K): a chat's `gh`, git and `glab` reach a forge only
+# through the person's own sign-in, brokered by the app's proxy.
+# - the forge proxy's listener (slice A2; D3a to D3c): the per-chat unix socket and `CONNECT`
+#   endpoint that read a chat's request, ask the proxy's core, and send what it allows to the forge;
+# - the end-to-end test (slice I): `tests/it/one_login_end_to_end.rs` runs the real `gh`, `glab`
+#   and `git` against a fake forge, so it needs those programs, which every CI runner that runs it
+#   has.
+# A build can leave it out with `--no-default-features`; the wiring then does nothing.
+default = ["forge-wiring"]
+forge-wiring = ["dep:rcgen", "dep:httparse"]
 
 [dev-dependencies]
 # The heap of a design-tokens import, counted, so its memory bound is a measured one (#2926).

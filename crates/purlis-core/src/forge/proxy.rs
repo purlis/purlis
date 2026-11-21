@@ -66,10 +66,13 @@ mod endpoint;
 mod git;
 mod graphql;
 mod held;
+#[cfg(feature = "forge-wiring")]
+pub mod listener;
 mod policy;
 mod repo;
 mod request;
 mod rest;
+mod schema;
 mod sentinel;
 
 pub use audit::{AuditLog, AuditRecord, Verdict};
@@ -80,8 +83,8 @@ pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use graphql::mutation_repo;
 pub use held::{Held, HeldSink};
 pub use policy::{
-    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, NoObjects, ObjectRepo, Refusal,
-    TouchedRepo,
+    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GithubAlias, NoObjects,
+    ObjectRepo, Refusal, TouchedRepo, is_download_host,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -151,6 +154,52 @@ impl CredentialSource for NoCredentials {
     }
 }
 
+/// The person's credential as slice C holds it ([`crate::forge::credential`]: the browser sign-in,
+/// renewed, or a token connection), given to the proxy as the one it asks for. It asks the source
+/// for each request, so a renewal that happened since is the token that is used.
+///
+/// A credential that is not the host's forge, or a CI job's GitLab token (which the forge reads
+/// from a header the proxy does not set), is no credential here: the request is refused.
+pub struct BrokeredCredentials {
+    source: Arc<dyn crate::forge::credential::CredentialSource>,
+}
+
+impl BrokeredCredentials {
+    pub fn new(source: Arc<dyn crate::forge::credential::CredentialSource>) -> Self {
+        Self { source }
+    }
+}
+
+impl CredentialSource for BrokeredCredentials {
+    fn credential_for(&self, request: &CredentialRequest) -> Result<Credential, CredentialError> {
+        use crate::forge::credential::TokenKind as Held;
+        let held = self
+            .source
+            .credential_for(&request.host)
+            .map_err(|_| CredentialError::Unavailable)?;
+        let same_forge = matches!(
+            (held.kind(), request.kind),
+            (crate::forge::Kind::GitHub, Kind::GitHub) | (crate::forge::Kind::GitLab, Kind::GitLab)
+        );
+        let token_kind = match held.token_kind() {
+            Held::SignIn | Held::GitHubUser => TokenKind::Oauth,
+            Held::GitLabJob => return Err(CredentialError::Unavailable),
+            Held::Pasted
+            | Held::GitHubInstallation
+            | Held::GitHubFineGrained
+            | Held::GitLabAccess
+            | Held::Unrecognised => TokenKind::Pat,
+        };
+        if !same_forge {
+            return Err(CredentialError::Unavailable);
+        }
+        Ok(Credential {
+            token_kind,
+            secret: Secret::new(held.expose().to_string()),
+        })
+    }
+}
+
 /// One request as a chat's endpoint read it.
 #[derive(Debug)]
 pub struct Inbound<'a> {
@@ -196,6 +245,59 @@ pub struct Forwarded {
     pub body: Option<Vec<u8>>,
     /// Branches a push makes, for [`ForgeProxy::confirm_push`].
     pub(crate) created: Vec<(String, String, String)>,
+    /// What the answer must never hold: the real credential, as it is sent and in the other forms
+    /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
+    /// and zeroed with the request.
+    needles: Vec<zeroize::Zeroizing<Vec<u8>>>,
+    /// The host the request is for, and the allowed repo (empty for a public one): what the
+    /// listener tells the core of a push's advertisement and its outcome.
+    pub host: String,
+    pub repo: String,
+}
+
+impl Forwarded {
+    /// A fetch of an LFS object the listener holds the address of: no credential of the person's,
+    /// no header but the ones the listener adds, and nothing to look for in the answer.
+    #[cfg(feature = "forge-wiring")]
+    pub(crate) fn for_storage(host: &str, url: &str) -> Forwarded {
+        Forwarded {
+            upstream: url.to_string(),
+            headers: Vec::new(),
+            class: Class::PublicRead,
+            credentialed: false,
+            body: None,
+            created: Vec::new(),
+            needles: Vec::new(),
+            host: host.to_string(),
+            repo: String::new(),
+        }
+    }
+
+    /// The request that follows a redirect of this one, to `url`: **no credential, no header and
+    /// no body**, and the same needles, since what the storage host answers is read too.
+    #[cfg(feature = "forge-wiring")]
+    pub(crate) fn anonymous_follow(&self, url: &str) -> Forwarded {
+        Forwarded {
+            upstream: url.to_string(),
+            headers: Vec::new(),
+            class: self.class.clone(),
+            credentialed: false,
+            body: None,
+            created: Vec::new(),
+            needles: self
+                .needles
+                .iter()
+                .map(|n| zeroize::Zeroizing::new(n.to_vec()))
+                .collect(),
+            host: self.host.clone(),
+            repo: String::new(),
+        }
+    }
+
+    /// The byte strings the answer to this request may not contain.
+    pub fn leak_needles(&self) -> impl Iterator<Item = &[u8]> {
+        self.needles.iter().map(|n| n.as_slice())
+    }
 }
 
 impl std::fmt::Debug for Forwarded {
@@ -316,6 +418,68 @@ impl ForgeProxy {
         self.sentinels.revoke(chat);
     }
 
+    /// Where `github.localhost` leads for `chat` (`gh`'s `GH_HOST`, on its unix socket): the one
+    /// GitHub host its repos are on, and a refusal when it has two or none. `None` for any other
+    /// name. The listener rewrites the request to that host before it asks [`Self::handle`], so
+    /// the policy only ever sees a recorded host.
+    pub fn github_alias(&self, chat: &ChatId, host: &str) -> Option<Result<GithubAlias, Refusal>> {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        match policy {
+            Some(policy) => policy.github_alias(host),
+            None => Some(Err(Refusal::UnknownChat)),
+        }
+    }
+
+    /// Every host a leaf certificate may be made for, for `chat`: the chat's per-chat CA is
+    /// constrained to exactly these names.
+    pub fn terminable_hosts(&self, chat: &ChatId) -> Vec<String> {
+        self.policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .map(|policy| policy.terminable_hosts())
+            .unwrap_or_default()
+    }
+
+    /// Decide a `CONNECT host:port` that arrived on `chat`'s endpoint, and record it: a host of the
+    /// chat's repos is terminated, a download-only host is tunnelled, anything else is refused.
+    pub fn connect(&self, chat: &ChatId, host: &str, port: u16) -> ConnectVerdict {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        let verdict = match policy {
+            Some(policy) => policy.connect(host, port),
+            None => ConnectVerdict::Refuse(Refusal::UnknownChat),
+        };
+        let head = RequestHead::new("CONNECT", host, port, "/");
+        let recorded = match &verdict {
+            ConnectVerdict::Refuse(refusal) => Verdict::Refused(*refusal),
+            _ => Verdict::Allowed,
+        };
+        self.audit.record(chat, &head, None, recorded);
+        verdict
+    }
+
+    /// Record a request the listener answered itself, from an address the forge handed it.
+    pub fn note_allowed(&self, chat: &ChatId, head: &RequestHead) {
+        self.audit.record(chat, head, None, Verdict::Allowed);
+    }
+
+    /// Record a request the listener refused before the core could read it: a name it maps
+    /// (`github.localhost`) that has no one host to map to.
+    pub fn note_refused(&self, chat: &ChatId, head: &RequestHead, refusal: Refusal) {
+        self.audit
+            .record(chat, head, None, Verdict::Refused(refusal));
+    }
+
     /// What of the body the listener must read before [`Self::handle`] can decide.
     pub fn body_need(&self, head: &RequestHead) -> BodyNeed {
         policy::body_need(head)
@@ -345,14 +509,17 @@ impl ForgeProxy {
         if let Err(refusal @ (Refusal::Locked | Refusal::UnknownChat)) = sentinel {
             return self.refuse(chat, inbound, None, refusal);
         }
-        if !framing_is_unambiguous(inbound.headers) || !host_agrees(inbound) {
+        if !framing_is_unambiguous(inbound.headers)
+            || !header_names_are_plain(inbound.headers)
+            || !host_agrees(inbound)
+        {
             return self.refuse(chat, inbound, None, Refusal::MalformedRequest);
         }
         let head = inbound
             .head
             .clone()
             .with_content_type(header_value(inbound.headers, "content-type"));
-        let allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
+        let mut allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => {
                 // Only a chat that proved itself asks, and only for a held route.
@@ -370,6 +537,12 @@ impl ForgeProxy {
                 return self.refuse(chat, inbound, None, refusal);
             }
         };
+        // A read goes upstream with no body, whatever the chat sent and whatever its headers say
+        // of one: a body on a `GET` is read by a forge or a cache in front of it as it likes.
+        if request::method(inbound.head).is_some_and(request::is_read) {
+            allowed.canonical_body = Some(Vec::new());
+            allowed.canonical_media = None;
+        }
         if let (true, Err(refusal)) = (allowed.credentialed(), sentinel) {
             return self.refuse(chat, inbound, None, refusal);
         }
@@ -382,13 +555,18 @@ impl ForgeProxy {
             // A public read: the chat's own headers without any credential, and none added.
             self.audit
                 .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
+            let mut headers = without_credentials(inbound.headers);
+            apply_canonical(&mut headers, &allowed);
             return Outcome::Forward(Forwarded {
                 upstream: allowed.upstream,
-                headers: without_credentials(inbound.headers),
+                headers,
                 class: allowed.class,
                 credentialed: false,
-                body: None,
+                body: allowed.canonical_body,
                 created: Vec::new(),
+                needles: Vec::new(),
+                host: allowed.host,
+                repo: allowed.repo,
             });
         }
         let request = |repo_id: Option<u64>, repo: &str| CredentialRequest {
@@ -425,19 +603,13 @@ impl ForgeProxy {
         let Ok(credential) = credential else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
-        let Some(headers) = swap_credential(inbound.headers, &allowed, credential) else {
+        let Some((mut headers, needles)) = swap_credential(inbound.headers, &allowed, credential)
+        else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
         self.audit
             .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
-        let mut headers = headers;
-        if let Some(body) = &allowed.canonical_body {
-            headers.retain(|(n, _)| {
-                !["content-length", "transfer-encoding", "content-encoding"]
-                    .contains(&normal(n).as_str())
-            });
-            headers.push(("Content-Length".to_string(), body.len().to_string()));
-        }
+        apply_canonical(&mut headers, &allowed);
         Outcome::Forward(Forwarded {
             upstream: allowed.upstream,
             headers,
@@ -445,6 +617,9 @@ impl ForgeProxy {
             credentialed: true,
             body: allowed.canonical_body,
             created: allowed.created,
+            needles,
+            host: allowed.host,
+            repo: allowed.repo,
         })
     }
 
@@ -511,6 +686,46 @@ fn header_value<'a>(headers: &'a [(String, String)], wanted: &str) -> Option<&'a
         .map(|(_, v)| v.as_str())
 }
 
+/// When a body was read, it is sent in the chat's place with exactly one `Content-Type` (the type
+/// it was read by) and a `Content-Length` of its own: none of the chat's variants of those headers
+/// (case, `_` for `-`), its `Transfer-Encoding` or its `Content-Encoding` goes on.
+fn apply_canonical(headers: &mut Vec<(String, String)>, allowed: &Allowed) {
+    let Some(body) = &allowed.canonical_body else {
+        return;
+    };
+    headers.retain(|(n, _)| {
+        ![
+            "content-length",
+            "transfer-encoding",
+            "content-encoding",
+            "content-type",
+        ]
+        .contains(&normal(n).as_str())
+    });
+    if !body.is_empty() {
+        let media = allowed
+            .canonical_media
+            .clone()
+            .unwrap_or_else(|| "application/json".to_string());
+        headers.push(("Content-Type".to_string(), media));
+    }
+    headers.push(("Content-Length".to_string(), body.len().to_string()));
+}
+
+/// A header name is a token, and a forge's front end may read `Content_Type` as `Content-Type`
+/// while this reads it as another header: a name with an underscore is refused, as is a second
+/// `Content-Type` of any spelling (two readers pick two types).
+pub(crate) fn header_names_are_plain(headers: &[(String, String)]) -> bool {
+    headers
+        .iter()
+        .all(|(n, _)| !n.is_empty() && !n.contains('_'))
+        && headers
+            .iter()
+            .filter(|(n, _)| normal(n) == "content-type")
+            .count()
+            <= 1
+}
+
 /// A `Host` the request line does not agree with is a request for two places: refused. Without a
 /// `Host` there is nothing to disagree with, and the address is the line's alone.
 fn host_agrees(inbound: &Inbound<'_>) -> bool {
@@ -542,32 +757,81 @@ fn request_host(head: &RequestHead) -> Result<String, ()> {
 
 /// The chat's headers with the credential headers removed and the real credential set. `None` when
 /// the secret would break a header (a line break in it).
+#[allow(clippy::type_complexity)]
 fn swap_credential(
     sent: &[(String, String)],
     allowed: &Allowed,
     credential: Credential,
-) -> Option<Vec<(String, String)>> {
-    let secret = credential.secret.into_inner();
+) -> Option<(Vec<(String, String)>, Vec<zeroize::Zeroizing<Vec<u8>>>)> {
+    let secret = zeroize::Zeroizing::new(credential.secret.into_inner());
     if secret.is_empty() || secret.bytes().any(|b| b.is_ascii_control()) {
         return None;
     }
+    let needles = leak_needles_of(&secret);
     let mut headers = without_credentials(sent);
     let (name, value) = match (allowed.surface, allowed.kind, credential.token_kind) {
         (policy::Surface::Git, kind, _) => {
             let user = match kind {
-                Kind::GitHub => "x-access-token",
-                Kind::GitLab => "oauth2",
+                Kind::GitHub => GIT_LOGINS[0],
+                Kind::GitLab => GIT_LOGINS[1],
             };
-            let basic = data_encoding::BASE64.encode(format!("{user}:{secret}").as_bytes());
+            let basic =
+                data_encoding::BASE64.encode(format!("{user}:{}", secret.as_str()).as_bytes());
             ("Authorization", format!("Basic {basic}"))
         }
         (policy::Surface::Anonymous, _, _) => return None,
-        (policy::Surface::Api, Kind::GitLab, TokenKind::Pat) => ("PRIVATE-TOKEN", secret),
-        (policy::Surface::Api, _, _) => ("Authorization", format!("Bearer {secret}")),
+        (policy::Surface::Api, Kind::GitLab, TokenKind::Pat) => {
+            ("PRIVATE-TOKEN", secret.to_string())
+        }
+        (policy::Surface::Api, _, _) => ("Authorization", format!("Bearer {}", secret.as_str())),
     };
     headers.push((name.to_string(), value));
-    Some(headers)
+    Some((headers, needles))
 }
+
+/// The forms of a credential an answer must not hold: as it is, percent-encoded, in Base64
+/// (standard and URL alphabets), and the Base64 of the whole `Basic` pair it is sent in.
+fn leak_needles_of(secret: &str) -> Vec<zeroize::Zeroizing<Vec<u8>>> {
+    use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
+    let mut forms: Vec<Vec<u8>> = vec![secret.as_bytes().to_vec()];
+    let encoded = utf8_percent_encode(secret, NON_ALPHANUMERIC).to_string();
+    if encoded != secret {
+        forms.push(encoded.into_bytes());
+    }
+    forms.push(data_encoding::BASE64.encode(secret.as_bytes()).into_bytes());
+    forms.push(
+        data_encoding::BASE64URL_NOPAD
+            .encode(secret.as_bytes())
+            .into_bytes(),
+    );
+    // The `Basic` pair the proxy sends git, as a whole: Base64 of `login:secret` is not Base64 of
+    // the secret, and inside a longer Base64 text it is spelled one of three ways, by where its
+    // first byte falls in a group of three.
+    for login in GIT_LOGINS {
+        let pair = format!("{login}:{secret}");
+        for encoding in [data_encoding::BASE64, data_encoding::BASE64URL_NOPAD] {
+            for pad in 0..3 {
+                let mut bytes = vec![0u8; pad];
+                bytes.extend_from_slice(pair.as_bytes());
+                let text = encoding.encode(&bytes);
+                // Only the characters whose six bits all come from the pair: after the first one
+                // that holds a padding byte's bits and before the last that holds a byte after it.
+                let first = (pad * 8).div_ceil(6);
+                let last = (bytes.len() * 8) / 6;
+                let kept = text.get(first..last).unwrap_or_default();
+                if !kept.is_empty() {
+                    forms.push(kept.as_bytes().to_vec());
+                }
+            }
+        }
+    }
+    forms.sort();
+    forms.dedup();
+    forms.into_iter().map(zeroize::Zeroizing::new).collect()
+}
+
+/// The logins the proxy sends a git request's `Basic` pair under, one per forge.
+const GIT_LOGINS: [&str; 2] = ["x-access-token", "oauth2"];
 
 /// Headers that name where a request goes or which method it is, which the proxy decides itself:
 /// the upstream is [`Forwarded::upstream`], and the method is the request line's.
@@ -583,6 +847,8 @@ fn is_routing_header(name: &str) -> bool {
             "x-http-method-override",
             "x-method-override",
             "x-http-method",
+            // GitLab: act as another user.
+            "sudo",
         ]
         .contains(&name.as_str())
 }
@@ -598,7 +864,7 @@ fn without_credentials(sent: &[(String, String)]) -> Vec<(String, String)> {
 /// A request whose body length is told once, or not at all, and never also as `chunked`: two
 /// readers (this one's and the forge's) that frame it differently are a smuggled request. The only
 /// transfer coding is exactly `chunked`.
-fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
+pub(crate) fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
     let named = |wanted: &'static str| {
         headers
             .iter()
@@ -614,4 +880,39 @@ fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
     let encodings_ok =
         encodings.len() <= 1 && encodings.iter().all(|e| e.eq_ignore_ascii_case("chunked"));
     lengths_ok && encodings_ok && !(encodings.len() == 1 && !lengths.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Base64 of the whole `login:secret` pair, in a longer Base64 text at each of the three
+    /// alignments and in both alphabets, is found; a different secret's is not.
+    #[test]
+    fn the_base64_of_a_whole_basic_pair_is_a_needle_at_every_alignment() {
+        let secret = ["tok", "en-for-the-test-0123"].concat();
+        let needles = leak_needles_of(&secret);
+        let found = |text: &str| {
+            needles
+                .iter()
+                .any(|n| memchr::memmem::find(text.as_bytes(), n).is_some())
+        };
+        for login in GIT_LOGINS {
+            let pair = format!("{login}:{secret}");
+            for encoding in [data_encoding::BASE64, data_encoding::BASE64URL_NOPAD] {
+                for pad in 0..3 {
+                    for tail in 0..3 {
+                        let mut bytes = vec![b'q'; pad + 5];
+                        bytes.extend_from_slice(pair.as_bytes());
+                        bytes.extend(std::iter::repeat_n(b'z', tail));
+                        let text = format!("x{}y", encoding.encode(&bytes));
+                        assert!(found(&text), "{login} pad {pad} tail {tail}: {text}");
+                    }
+                }
+            }
+        }
+        let other = format!("x-access-token:{secret}x");
+        let unrelated = data_encoding::BASE64.encode(other.replace("test", "tset").as_bytes());
+        assert!(!found(&unrelated), "{unrelated}");
+    }
 }
