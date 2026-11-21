@@ -77,6 +77,12 @@ pub const SANDBOXED_ENV: &str = "PURLIS_SANDBOXED";
 /// ([`crate::sandbox::wrapped_whole_in`]).
 pub const WRAPPED_ENV: &str = "PURLIS_CHAT_WRAPPED";
 
+/// **The chat's own egress proxy, as a URL** (`http://127.0.0.1:<port>`), set at the launch of a
+/// Claude Code chat that has one (T1.1-39). The hook that judges a web tool's host asks it for a
+/// tunnel to that host, so the proxy decides, asks and records as it does for a command's
+/// connection. Never inherited ([`NOT_INHERITED`]); where it is missing, the hook refuses.
+pub const PROXY_ENV: &str = "PURLIS_CHAT_PROXY";
+
 /// Where Claude Code puts the conversation a hook is running in.
 ///
 /// ADR 0024, C7, measured again on claude 2.1.276: it always equals the payload's
@@ -129,6 +135,7 @@ pub const NOT_INHERITED: &[&str] = &[
     crate::noterminal::RELAUNCHED_ENV,
     SANDBOXED_ENV,
     WRAPPED_ENV,
+    PROXY_ENV,
     crate::sandboxblock::CHAT_DIR_ENV,
     CHAT_ID_ENV,
     crate::enforcement::ENV,

@@ -1546,3 +1546,209 @@ fn a_proposed_change_or_a_draft_writes_no_block() {
         "the leak guard on Read names its arm"
     );
 }
+
+// ---- the web tools' judge (T1.1-39) --------------------------------------------------------
+
+mod web {
+    use std::cell::RefCell;
+
+    use super::*;
+
+    const PROXY: &str = "http://127.0.0.1:41000";
+
+    fn sandboxed() -> Plane {
+        Plane::without_a_vault()
+            .with_env(crate::hookwire::SANDBOXED_ENV, "1")
+            .with_env(crate::hookwire::PROXY_ENV, PROXY)
+    }
+
+    fn fetch(url: &str) -> Value {
+        serde_json::json!({"tool_name": "WebFetch", "tool_input": {"url": url, "prompt": "p"}})
+    }
+
+    /// What the judge asked the proxy, and its answer to each.
+    fn judged(
+        plane: &Plane,
+        payload: Value,
+        answer: Tunnel,
+    ) -> (Answer, Vec<(String, String, u16)>) {
+        let asked = RefCell::new(Vec::new());
+        let said = plane.ask(payload, |hook| {
+            pretooluse_web(hook, &|proxy, host, port| {
+                asked
+                    .borrow_mut()
+                    .push((proxy.to_owned(), host.to_owned(), port));
+                answer.clone()
+            })
+        });
+        (said, asked.into_inner())
+    }
+
+    fn denial(answer: &Answer) -> &str {
+        match answer {
+            Answer::Deny(verdict) => &verdict.denial,
+            other => panic!("not refused: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_web_fetch_of_a_host_the_proxy_carries_runs_and_the_proxy_was_asked_for_that_host() {
+        let (said, asked) = judged(
+            &sandboxed(),
+            fetch("https://Docs.Example.com/a?b=c"),
+            Tunnel::Open,
+        );
+        assert_eq!(said, Answer::Nothing);
+        assert_eq!(asked, [(PROXY.into(), "docs.example.com".into(), 443)]);
+    }
+
+    #[test]
+    fn a_web_fetch_of_a_host_the_proxy_refuses_is_denied_naming_the_host() {
+        let (said, _) = judged(
+            &sandboxed(),
+            fetch("https://never.example.com/"),
+            Tunnel::Refused("HTTP/1.1 403 Forbidden".into()),
+        );
+        let said = denial(&said);
+        assert!(
+            said.starts_with("WebFetch of never.example.com was refused"),
+            "{said}"
+        );
+    }
+
+    #[test]
+    fn a_web_fetch_names_its_own_port_and_an_http_scheme_is_judged_as_https_is() {
+        let (_, asked) = judged(
+            &sandboxed(),
+            fetch("http://host.example.com:8443/x"),
+            Tunnel::Open,
+        );
+        assert_eq!(asked[0].1, "host.example.com");
+        assert_eq!(asked[0].2, 8443);
+        let (_, asked) = judged(
+            &sandboxed(),
+            fetch("http://host.example.com/x"),
+            Tunnel::Open,
+        );
+        assert_eq!(asked[0].2, 443);
+    }
+
+    #[test]
+    fn a_web_fetch_with_no_url_or_one_that_is_no_web_address_is_refused_unasked() {
+        for payload in [
+            serde_json::json!({"tool_name": "WebFetch", "tool_input": {}}),
+            fetch(""),
+            fetch("not a url"),
+            fetch("file:///etc/passwd"),
+            fetch("ftp://example.com/x"),
+            fetch("https://"),
+        ] {
+            let (said, asked) = judged(&sandboxed(), payload.clone(), Tunnel::Open);
+            let said = denial(&said);
+            assert!(
+                said.starts_with("WebFetch was refused"),
+                "{payload}: {said}"
+            );
+            assert!(asked.is_empty(), "{payload}: the proxy was asked");
+        }
+    }
+
+    #[test]
+    fn a_sandboxed_chat_with_no_proxy_named_has_its_web_fetch_refused() {
+        let plane = Plane::without_a_vault().with_env(crate::hookwire::SANDBOXED_ENV, "1");
+        let (said, asked) = judged(&plane, fetch("https://example.com/"), Tunnel::Open);
+        assert!(denial(&said).starts_with("WebFetch of example.com was refused"));
+        assert!(asked.is_empty());
+        let empty = sandboxed().with_env(crate::hookwire::PROXY_ENV, "");
+        let (said, _) = judged(&empty, fetch("https://example.com/"), Tunnel::Open);
+        assert!(denial(&said).starts_with("WebFetch of example.com was refused"));
+    }
+
+    #[test]
+    fn a_web_search_runs_without_asking_the_proxy() {
+        let payload = serde_json::json!({"tool_name": "WebSearch", "tool_input": {"query": "q"}});
+        let (said, asked) = judged(&sandboxed(), payload, Tunnel::Refused("no".into()));
+        assert_eq!(said, Answer::Nothing);
+        assert!(asked.is_empty());
+    }
+
+    #[test]
+    fn a_chat_the_app_did_not_sandbox_is_not_judged() {
+        let plane = Plane::without_a_vault();
+        let (said, asked) = judged(
+            &plane,
+            fetch("https://example.com/"),
+            Tunnel::Refused("no".into()),
+        );
+        assert_eq!(said, Answer::Nothing);
+        assert!(asked.is_empty());
+    }
+
+    /// A redirect to another host comes back to the model as that URL: its next fetch is a call
+    /// like any other, judged by its own host.
+    #[test]
+    fn the_url_a_cross_host_redirect_sends_the_model_to_is_judged_by_its_own_host() {
+        let plane = sandboxed();
+        let (first, _) = judged(
+            &plane,
+            fetch("https://allowed.example.com/go"),
+            Tunnel::Open,
+        );
+        assert_eq!(first, Answer::Nothing);
+        let (second, asked) = judged(
+            &plane,
+            fetch("https://elsewhere.example.net/landing"),
+            Tunnel::Refused("HTTP/1.1 403 Forbidden".into()),
+        );
+        assert!(denial(&second).starts_with("WebFetch of elsewhere.example.net was refused"));
+        assert_eq!(asked[0].1, "elsewhere.example.net");
+    }
+
+    #[test]
+    fn the_proxy_client_reads_a_200_as_open_and_anything_else_as_refused() {
+        use std::io::{Read, Write};
+        let answer = |reply: &'static str| {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut seen = [0u8; 512];
+                let read = socket.read(&mut seen).unwrap();
+                let _ = socket.write_all(reply.as_bytes());
+                String::from_utf8_lossy(&seen[..read]).into_owned()
+            });
+            let said = ask_proxy(
+                &format!("http://127.0.0.1:{port}"),
+                "example.com",
+                443,
+                std::time::Duration::from_secs(5),
+            );
+            (said, server.join().unwrap())
+        };
+        let (said, request) = answer("HTTP/1.1 200 Connection established\r\n\r\n");
+        assert_eq!(said, Tunnel::Open);
+        assert!(
+            request.starts_with("CONNECT example.com:443 HTTP/1.1\r\n"),
+            "{request}"
+        );
+        let (said, _) = answer("HTTP/1.1 403 Forbidden\r\n\r\n");
+        assert_eq!(said, Tunnel::Refused("HTTP/1.1 403 Forbidden".into()));
+        // Nothing listening is a refusal, never a pass.
+        let gone = ask_proxy(
+            "http://127.0.0.1:1",
+            "example.com",
+            443,
+            std::time::Duration::from_secs(1),
+        );
+        assert!(matches!(gone, Tunnel::Refused(_)), "{gone:?}");
+        assert!(matches!(
+            ask_proxy(
+                "socks5://x",
+                "example.com",
+                443,
+                std::time::Duration::from_secs(1)
+            ),
+            Tunnel::Refused(_)
+        ));
+    }
+}

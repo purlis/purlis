@@ -10,8 +10,8 @@ the app extends with its bundle's directory.
 The app ships a Claude Code plugin in its bundle and loads it into each chat it starts, with
 `claude --plugin-dir`, so the hooks arrive with the chat and there is nothing to install per
 project or per machine. Its hooks name the app's `purlis` through `$CHARTER_HOOK_BINARY`,
-which the app sets in the chat's environment. The four guards before a tool runs
-(`pretooluse`, `pretooluse-read`, `pretooluse-edit`, `pretooluse-dispatch`) are not in that
+which the app sets in the chat's environment. The five guards before a tool runs
+(`pretooluse`, `pretooluse-read`, `pretooluse-edit`, `pretooluse-web`, `pretooluse-dispatch`) are not in that
 plugin: they ride on the chat's `--settings`, by the binary's path, beside the permission hook
 (#7067). A Codex chat is armed with the state hooks, the
 Bash guard and the block word after a command as `-c hooks.<Event>=…` flags. Both are for that session alone; see
@@ -31,6 +31,7 @@ each is wired to.
 | `pretooluse` on `Bash` | the guards below, then the persona tool gate |
 | `pretooluse-read` on `Read`/`Grep` | the vault guard on those tools (*Vault read*, below) |
 | `pretooluse-edit` on `Write`/`Edit`/`MultiEdit` | the state-directory guard (*A hand-written state file*, below); in a sandboxed Claude Code chat, an edit of purlis's own configuration handed to the app as a proposed change, and the tool refused (#1975, `toolhooks::pretooluse_edit_proposing`); in any Claude Code chat, an edit of a plane skill's file handed over the same way and kept as a draft skill (#2772) |
+| `pretooluse-web` on `WebFetch`/`WebSearch`, Claude Code only | in a sandboxed chat, `WebFetch`'s host (from its `url`) is put to the chat's own proxy as a tunnel request, so the proxy decides, asks the person and records as for a command's connection; a refusal is a deny, and the call fails closed (no `url`, a scheme other than http and https, no proxy named, no answer, or the hook dead). `WebSearch` is allowed. Waits on an ask, so its timeout is 120 s (T1.1-39, `toolhooks::pretooluse_web`) |
 | `pretooluse-dispatch` on `Task`/`Agent` and on purlis's `dispatch` tools | refuses a sub-agent call whose type is a persona, and names the dispatch route (*A sub-agent named for a persona*, below), and refuses purlis's `dispatch` and `dispatch_report` tools to a sub-agent (*A dispatch from a sub-agent*, below) |
 | `posttooluse` on `Write`/`Edit`/`MultiEdit`, in a plane | warns when a memory or ref just written looks like it holds a secret; says what the workspace flow expects on the first edit in a LIVE workspace's clone; and every twelfth change without a memory, reminds the session to record one |
 | `posttooluse-skill`, in a plane | logs which skill the active persona used |
