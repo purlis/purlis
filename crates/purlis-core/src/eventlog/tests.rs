@@ -4682,7 +4682,7 @@ fn a_spooled_call_after_drain_carries_args_equal_to_the_live_digest() {
     let dir = tempfile::tempdir().unwrap();
     let plane = Path::new("/plane");
     let mut recorder = recorder_keeping_seals(dir.path());
-    let public = crate::hookwire::seal::public_for(dir.path(), 3).unwrap();
+    let public = crate::hookwire::seal::public_for(dir.path(), plane, 3).unwrap();
     let live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
 
     recorder.tool(plane, &live, Instant::now()).unwrap();
@@ -4709,7 +4709,7 @@ fn a_spool_from_before_a_restart_still_decrypts() {
     let dir = tempfile::tempdir().unwrap();
     let plane = Path::new("/plane");
     let live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
-    let public = crate::hookwire::seal::public_for(dir.path(), 3).unwrap();
+    let public = crate::hookwire::seal::public_for(dir.path(), plane, 3).unwrap();
     let spooled = spooled_sealed(&live, &public);
 
     // The host that started the chat is gone; the next one makes a recorder of its own.
@@ -4732,7 +4732,7 @@ fn a_spooled_call_whose_seal_key_is_gone_is_recorded_without_args_and_says_so() 
     let plane = Path::new("/plane");
     let live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
     let elsewhere = tempfile::tempdir().unwrap();
-    let public = crate::hookwire::seal::public_for(elsewhere.path(), 3).unwrap();
+    let public = crate::hookwire::seal::public_for(elsewhere.path(), plane, 3).unwrap();
     let mut recorder = recorder_keeping_seals(dir.path());
 
     recorder
@@ -4746,4 +4746,39 @@ fn a_spooled_call_whose_seal_key_is_gone_is_recorded_without_args_and_says_so() 
     assert!(events[1].body.get("args").is_none(), "{:?}", events[1]);
     let log = std::fs::read_to_string(dir.path().join("events.jsonl")).unwrap_or_default();
     assert!(!log.contains("sealed:"));
+}
+
+/// #6880: a sealed blob too short to be a sealed box (32 bytes or fewer) is no digest either:
+/// the same record, and nothing of the blob in the log.
+#[cfg(unix)]
+#[test]
+fn a_truncated_sealed_blob_is_recorded_without_args_and_says_so() {
+    use base64::Engine as _;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/plane");
+    let mut recorder = recorder_keeping_seals(dir.path());
+    crate::hookwire::seal::public_for(dir.path(), plane, 3).unwrap();
+    let mut live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
+    for length in [0usize, 32] {
+        let blob = base64::engine::general_purpose::STANDARD.encode(vec![9u8; length]);
+        live.args = Some(format!("sealed:{blob}"));
+        recorder.spooled(plane, drained_line(live.clone())).unwrap();
+    }
+    let events = read(dir.path()).unwrap();
+    let rejected: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "hook.spool.rejected")
+        .collect();
+    assert_eq!(rejected.len(), 2, "{events:?}");
+    assert!(
+        rejected
+            .iter()
+            .all(|event| event.body["why"] == "args_unreadable")
+    );
+    assert!(
+        events
+            .iter()
+            .filter(|event| event.kind == "hook.pretooluse")
+            .all(|event| event.body.get("args").is_none())
+    );
 }

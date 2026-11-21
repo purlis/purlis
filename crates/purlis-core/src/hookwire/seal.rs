@@ -9,8 +9,12 @@
 //! again, so the plain hash has to come back at the drain: sealed until then, so the chat
 //! itself cannot read it back.
 //!
-//! - The app keeps one **private** key per chat number in the machine store, beside `args.key`
-//!   ([`public_for`]), and puts only the **public** key in the chat's environment ([`SEAL_ENV`]).
+//! - The app keeps one **private** key per chat of a plane in the machine store, beside
+//!   `args.key` ([`public_for`]), and puts only the **public** key in the chat's environment
+//!   ([`SEAL_ENV`]). The key is named for the plane as well as the chat number, so one key never
+//!   covers the same number in two projects. A chat's sandbox neither reads nor writes the key
+//!   files (`sandbox::event_keys_held`); the key goes when its chat has ended and its spool is
+//!   drained ([`forget`], [`forget_ended`]), and the folder is left out of backups.
 //! - The hook seals the hash in a libsodium sealed box ([`seal`]): a fresh ephemeral key per
 //!   line, so equal hashes never give equal ciphertext, and only the private key opens it.
 //! - The drain opens it ([`open`]) and the host keys the hash. A key that is missing or
@@ -34,15 +38,38 @@ fn encode(bytes: &[u8]) -> String {
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
-fn key_path(dir: &Path, chat: u32) -> PathBuf {
-    dir.join("seal").join(format!("{chat}.key"))
+/// The folder of the seal keys, in the device's events folder.
+pub const DIR: &str = crate::eventlog::SEAL_DIR;
+
+/// What names `plane` in a key's file name: the first 16 bytes of the SHA-256 of its path, in hex.
+fn plane_id(plane: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(plane.to_string_lossy().as_bytes());
+    digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
-/// The public key of chat `chat`'s seal, whose private key is kept in `dir` (the device's
-/// events folder), made on first use. The same chat number has the same key on every start, so
-/// a spool from before a restart still opens.
-pub fn public_for(dir: &Path, chat: u32) -> io::Result<String> {
-    let bytes = crate::secrets::key_file(dir, &key_path(dir, chat), crypto_box::KEY_SIZE)?;
+fn key_path(dir: &Path, plane: &Path, chat: u32) -> PathBuf {
+    dir.join(DIR)
+        .join(format!("{}-{chat}.key", plane_id(plane)))
+}
+
+/// The public key of chat `chat`'s seal in the project at `plane`, whose private key is kept in
+/// `dir` (the device's events folder), made on first use. The same chat has the same key on
+/// every start, so a spool from before a restart still opens.
+pub fn public_for(dir: &Path, plane: &Path, chat: u32) -> io::Result<String> {
+    // The folder is made, and left out of this device's backups, before a key is put in it.
+    let folder = dir.join(DIR);
+    crate::contain::no_link_on_the_way(dir, &folder)?;
+    crate::secrets::make_private_dir(&folder)?;
+    crate::browserlogins::exclude_from_backups(&folder).map_err(io::Error::other)?;
+    let bytes = zeroize::Zeroizing::new(crate::secrets::key_file(
+        dir,
+        &key_path(dir, plane, chat),
+        crypto_box::KEY_SIZE,
+    )?);
     let secret = SecretKey::from_slice(&bytes).map_err(io::Error::other)?;
     Ok(encode(secret.public_key().as_bytes()))
 }
@@ -65,16 +92,58 @@ pub fn is_sealed(args: &str) -> bool {
     args.starts_with(SEALED)
 }
 
-/// The hash a sealed `args` of chat `chat` holds, opened with the key kept in `dir`. `None` for
-/// a key that is missing, unreadable or not the one it was sealed to, and for anything not
-/// sealed: the key is never made here.
-pub fn open(dir: &Path, chat: u32, args: &str) -> Option<String> {
+/// A sealed box is the sender's ephemeral public key (this many bytes) and then the encrypted
+/// text, so a blob of no more than this holds none.
+const EPHEMERAL: usize = crypto_box::KEY_SIZE;
+
+/// The hash a sealed `args` of chat `chat` in the project at `plane` holds, opened with the key
+/// kept in `dir`. `None` for a key that is missing, unreadable or not the one it was sealed to,
+/// for a blob too short to be a sealed box, and for anything not sealed: the key is never made
+/// here.
+pub fn open(dir: &Path, plane: &Path, chat: u32, args: &str) -> Option<String> {
     let sealed = base64::engine::general_purpose::STANDARD
         .decode(args.strip_prefix(SEALED)?)
         .ok()?;
-    let key = crate::contain::read_no_link(dir, &key_path(dir, chat)).ok()?;
+    if sealed.len() <= EPHEMERAL {
+        return None;
+    }
+    let key = zeroize::Zeroizing::new(
+        crate::contain::read_no_link(dir, &key_path(dir, plane, chat)).ok()?,
+    );
     let plain = SecretKey::from_slice(&key).ok()?.unseal(&sealed).ok()?;
     String::from_utf8(plain).ok()
+}
+
+/// Deletes chat `chat`'s seal key in the project at `plane`, once the chat has ended and its
+/// spool is drained: a key that is not there is done.
+pub fn forget(dir: &Path, plane: &Path, chat: u32) -> io::Result<()> {
+    match std::fs::remove_file(key_path(dir, plane, chat)) {
+        Err(why) if why.kind() != io::ErrorKind::NotFound => Err(why),
+        _ => Ok(()),
+    }
+}
+
+/// Deletes the seal key of every chat of the project at `plane` that `ended` says has ended.
+/// The caller says so only for a chat that is not coming back and whose spool holds no line.
+pub fn forget_ended(dir: &Path, plane: &Path, ended: impl Fn(u32) -> bool) -> io::Result<()> {
+    let prefix = format!("{}-", plane_id(plane));
+    let Ok(names) = std::fs::read_dir(dir.join(DIR)) else {
+        return Ok(());
+    };
+    for name in names.filter_map(Result::ok) {
+        let name = name.file_name();
+        let chat = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(&prefix))
+            .and_then(|rest| rest.strip_suffix(".key"))
+            .and_then(|number| number.parse::<u32>().ok());
+        if let Some(chat) = chat
+            && ended(chat)
+        {
+            forget(dir, plane, chat)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

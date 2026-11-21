@@ -2519,7 +2519,8 @@ fn nothing_at_rest_in_the_spool_matches_an_unkeyed_digest() {
     let keys = tempfile::tempdir().expect("a directory");
     let spool = dir.path().join(".charter/app").join(DIR);
     let token = issued(&spool, 11);
-    let public = crate::hookwire::seal::public_for(keys.path(), 11).expect("a key");
+    let plane = dir.path();
+    let public = crate::hookwire::seal::public_for(keys.path(), plane, 11).expect("a key");
     let digest = crate::eventlog::args_hash(&serde_json::json!({"command": "ls -la"}));
     let mut with_args = call(11, "digested");
     with_args.args = Some(digest.clone());
@@ -2558,7 +2559,7 @@ fn nothing_at_rest_in_the_spool_matches_an_unkeyed_digest() {
     assert_ne!(sealed[0], sealed[1], "equal hashes must not seal alike");
     for each in &sealed {
         assert_eq!(
-            crate::hookwire::seal::open(keys.path(), 11, each).as_deref(),
+            crate::hookwire::seal::open(keys.path(), plane, 11, each).as_deref(),
             Some(digest.as_str())
         );
     }

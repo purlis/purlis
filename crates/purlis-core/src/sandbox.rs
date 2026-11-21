@@ -1567,6 +1567,40 @@ pub fn app_state_held(data: &Path) -> Vec<Denial> {
     .collect()
 }
 
+/// **The keys in each device's folder of the event log** (T1.1-33): `args.key`, which the args
+/// digests are made with, and `seal/`, the private keys spooled digests are sealed to. A chat
+/// neither reads nor writes either, or it could unseal its own spooled digests, or match a
+/// digest it was never meant to read. Each device's folder (`<data>/events/<device>`) there is
+/// in `data`, as the folder is spelled and as the kernel names it, under every spelling a
+/// case-folding disk takes for it.
+pub fn event_keys_held(data: &Path) -> Vec<Denial> {
+    let mut out: Vec<Denial> = Vec::new();
+    for spelled in [real(data), data.to_path_buf()] {
+        let Ok(devices) = std::fs::read_dir(spelled.join(crate::eventlog::EVENTS)) else {
+            continue;
+        };
+        for device in devices.filter_map(Result::ok) {
+            if !device.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            for name in [crate::eventlog::ARGS_KEY, crate::eventlog::SEAL_DIR] {
+                let denial = Denial {
+                    class: Class::HumanPowers,
+                    path: device.path().join(name),
+                    access: Access::ReadWrite,
+                    named: None,
+                    reach: Reach::AndBelow,
+                    any_case: true,
+                };
+                if !out.contains(&denial) {
+                    out.push(denial);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// **A part of a denied path that stands for any one name** (SK-9): `workspaces/*/skills` holds
 /// the skills of every workspace, made now or later. Only [`skills_held`] writes one.
 pub const ANY_NAME: &str = "*";
@@ -2914,6 +2948,7 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
     // the data home where only purlis writes it.
     for data in Homes::data_homes(machine) {
         paths.extend(app_state_held(&data));
+        paths.extend(event_keys_held(&data));
     }
     // A vault's file is kept under the other names purlis finds for it in the project.
     let mut vaults: Vec<PathBuf> = Vec::new();

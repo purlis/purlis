@@ -1976,6 +1976,81 @@ fn no_chat_reads_or_writes_the_folders_of_this_machines_profiles() {
     }
 }
 
+/// **No chat reads or writes the keys in a device's folder of the event log** (T1.1-33): the
+/// args key and the seal keys, for every device there is, in the data home as it is spelled and
+/// as the kernel names it, and in each harness's profile.
+#[test]
+fn no_chat_reads_or_writes_the_args_key_or_the_seal_keys_of_any_device() {
+    let data = tempfile::tempdir().expect("a data home");
+    let events = data.path().join(crate::eventlog::EVENTS);
+    for device in ["one", "two"] {
+        std::fs::create_dir_all(events.join(device)).expect("a device folder");
+    }
+    let named = data.path().display().to_string();
+    let machine = Machine {
+        env: crate::secrets::Env::of(&[(crate::datahome::HOME_VAR, named.as_str())]),
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
+        os: Os::MacOs,
+    };
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine);
+    let held = paths(&denied, Class::HumanPowers, Access::ReadWrite);
+    let mut keys = Vec::new();
+    for spelled in [super::real(data.path()), data.path().to_path_buf()] {
+        for device in ["one", "two"] {
+            for name in [crate::eventlog::ARGS_KEY, crate::eventlog::SEAL_DIR] {
+                keys.push(
+                    spelled
+                        .join(crate::eventlog::EVENTS)
+                        .join(device)
+                        .join(name),
+                );
+            }
+        }
+    }
+    for key in &keys {
+        assert!(
+            held.contains(key),
+            "{key:?} is not held: {:?}",
+            denied.paths
+        );
+    }
+    let settings = claude::settings(&compiled(denied.clone(), Os::MacOs)).expect("compiles");
+    for key in &keys {
+        for list in ["denyRead", "denyWrite"] {
+            assert!(
+                settings.sandbox["filesystem"][list]
+                    .as_array()
+                    .is_some_and(|all| all.iter().any(|p| p == key.display().to_string().as_str())),
+                "claude {list}: {key:?}"
+            );
+        }
+    }
+    for (harness, wrapped) in [
+        (
+            "codex",
+            codex::wrap(&compiled(denied.clone(), Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+        (
+            "opencode",
+            opencode::wrap(&compiled(denied, Os::MacOs))
+                .expect("compiles")
+                .denied,
+        ),
+    ] {
+        for key in &keys {
+            assert!(
+                wrapped
+                    .iter()
+                    .any(|it| &it.path == key && it.access == Access::ReadWrite),
+                "{harness}: {key:?} in {wrapped:?}"
+            );
+        }
+    }
+}
+
 #[test]
 fn no_chat_writes_the_browser_engines_purlis_downloads_under_either_name_of_the_data_home() {
     // The AppArmor profile the `.deb` installs lets a program at the pinned engine's path make
