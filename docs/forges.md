@@ -70,6 +70,12 @@ are purlis's, and why they err toward no:
 - **Direct routes to the forge.** The chat's network refuses the forge's own hosts and their
   addresses, so the only way to a forge is the one above. Download-only hosts for release and
   archive downloads stay open.
+- **A forge your administrator has pinned as never allowed.** If your organization's policy pins
+  a forge host (github.com, a GitHub Enterprise Server host or a GitLab host) as never allowed for
+  chats, chats are refused that forge entirely: `gh`, `git` and the proxy's route included. The pin
+  is checked first, before purlis hands a request to your sign-in, and the refusal names the pin
+  and who set it. Your own sign-in does not override it; ask the administrator to lift the pin.
+  Your own terminal, which is not a chat, still works.
 
 A refusal tells the chat why and what it can do. If a tool you run fails with a certificate error
 on a forge host, it does not know the chat's proxy; use `gh` or `git`.

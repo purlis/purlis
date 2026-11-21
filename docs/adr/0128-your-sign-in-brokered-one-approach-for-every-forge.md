@@ -772,6 +772,21 @@ fragments are expanded**, and then:
   `gh` and git over https keep working in a chat, on purpose"* (the keep) is withdrawn, and
   `forgelock::claimed` no longer decides whether a chat is on the lock: every chat is. The class-6
   credential files are denied at the full sandbox as before.
+- **An administrator's never-allow pin wins over the route** (the person's ruling, 2026-11-21).
+  Where the project's administrator policy pins a forge host (`github.com`, a GHES host,
+  `gitlab.com` or a self-hosted GitLab host) as never allowed for chats (`never-hosts`, ADR 0067),
+  **a chat is refused that forge entirely, the forge route's listener included.** The hand-off to
+  the route (D3a) happens **only after the administrator's never-allow pins are checked**: a
+  `CONNECT` or request for a pinned forge host is answered by a refusal and never reaches the
+  route's termination, its credential or any layer below it, so no repo list, held act or anonymous
+  read (D3i) is ever asked about it. The refusal is **one sentence that names the pin and who set
+  it** (as the egress refusal of any pinned host does, ADR 0067) and says that the person's own
+  sign-in does not change it. **The person's sign-in does not override an administrator's pin**:
+  being signed in, having the repo recorded or trusting the clone grants a chat nothing on a host
+  policy has pinned, and the person's own terminal, which is not a chat, is untouched. A host the
+  policy does not pin is served by the route as this section says. This order is a fact of the
+  proxy's decision, not of the route: the pin is read at every connection, so a pin added while a
+  chat runs refuses that chat's next one.
 - **What the egress denial is, as built** (B #7292, `sandbox/forgedeny.rs`). It holds a forge **three
   ways, and each is checked on every connection**: **by name** (every name under a forge host:
   `*.github.com`, `*.githubusercontent.com`, `*.gitlab.com`, `*.<a recorded host>`, less the three
