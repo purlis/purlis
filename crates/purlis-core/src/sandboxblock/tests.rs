@@ -2254,6 +2254,50 @@ fn a_refusal_read_back_from_a_background_commands_output_is_no_block() {
     assert_eq!(detect_with_targets(&payload, &place), Vec::new());
 }
 
+/// T1.1-41 (#6888), cell M-TOOL-09: a Read that failed is on the record as a failure, and is
+/// never a block: Claude Code's Read runs in the harness process, not under the Bash profile,
+/// so no recording shows a violation block appended to its error, and a refusal by the file's
+/// own permissions is not purlis's.
+#[test]
+fn a_failed_read_is_no_block_and_never_a_read_back() {
+    let place = Place {
+        root: Path::new("/Users/dev/plane"),
+        chat: Path::new("/Users/dev/plane/workspaces/a/repo"),
+        cwd: Path::new("/Users/dev/plane/workspaces/a/repo"),
+        home: Some(Path::new("/Users/dev")),
+    };
+    for error in [
+        "EACCES: permission denied, open '/etc/master.passwd'",
+        "EPERM: operation not permitted, open '/Users/dev/.ssh/id_ed25519'",
+        "File does not exist.",
+        // Even with the words a violation block has: nothing reads a failed Read's error.
+        "EPERM: operation not permitted, open '/Users/dev/.ssh/id_ed25519'\n\
+         <sandbox_violations>\n\
+         Claude(48211) deny(1) file-read-data /Users/dev/.ssh/id_ed25519\n\
+         </sandbox_violations>",
+    ] {
+        let failed = json!({
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/etc/master.passwd"},
+            "error": error,
+        });
+        assert_eq!(detect(&failed, &place), Vec::new(), "{error}");
+        assert!(
+            !read_back(&failed),
+            "a failed call is no read-back: {error}"
+        );
+    }
+    // The control: a Read that came back is one, as before.
+    let came_back = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/t/tasks/a.output"},
+        "tool_response": {"file": {"content": "x"}},
+    });
+    assert!(read_back(&came_back));
+}
+
 // ---- the certificate check, whose one service is purlis's own word (qw353) ----------------------
 
 /// What `gh` and `glab` say of a certificate check the sandbox refused them.

@@ -274,6 +274,15 @@ pub fn drain_at_open(socket: &Path, root: &Path, log: Option<&Mutex<Recorder>>) 
         tracing::warn!(
             "purlis: the hook spool was not drained ({why}); it is drained at the next start"
         );
+        return;
+    }
+    // The seal key of a chat that is not coming back goes with its spool keys, once what it
+    // spooled is drained: not while a line of it is still waiting, which only that key opens.
+    let gone = log.forget_seals(root, |chat| {
+        !back.contains(&chat) && !crate::hookwire::spool::holds_lines(&dir, chat)
+    });
+    if let Err(why) = gone {
+        tracing::warn!("purlis: the ended chats' seal keys were not dropped ({why})");
     }
 }
 
@@ -284,7 +293,13 @@ pub fn spool_ended(socket: &Path, root: &Path, log: Option<&Mutex<Recorder>>, ch
     use crate::hookwire::spool;
     let dir = spool::dir_for(socket);
     let ended = match log {
-        Some(log) => spool::end_chat(&dir, chat, &mut into_the_log(log, root)),
+        // The chat's seal key goes only once its spool is drained: a drain `end_chat` could not
+        // finish leaves the key with the lines it opens.
+        Some(log) => spool::end_chat(&dir, chat, &mut into_the_log(log, root)).and_then(|()| {
+            log.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .forget_seal(root, chat)
+        }),
         None => spool::forget_chat(&dir, chat),
     };
     if let Err(why) = ended {
@@ -715,6 +730,13 @@ impl purlis_host::Channel for HookChannel {
         Ok(session::Reporting {
             socket: self.socket.display().to_string(),
             token: token.expose().to_owned(),
+            // The key this chat's spooled digests are sealed to, whose private half stays in
+            // this host's event log folder (#6880).
+            seal: self.log.recorder().and_then(|log| {
+                log.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .seal_public(&self.root, number)
+            }),
         })
     }
 
