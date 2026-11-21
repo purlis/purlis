@@ -224,7 +224,9 @@ impl Scene {
         struct Pins(&'static [&'static str]);
         impl purlis_core::forge::pin::Pin for Pins {
             fn pinned(&self, host: &str, _: u16) -> Option<String> {
-                self.0.contains(&host).then(|| format!("Policy never allows {host}."))
+                self.0
+                    .contains(&host)
+                    .then(|| format!("Policy never allows {host}."))
             }
         }
         Self::with_gate_and_pin(None, Arc::new(move |_| Arc::new(Pins(hosts))))
@@ -1525,7 +1527,13 @@ fn a_repo_on_a_pinned_forge_is_not_enrolled_and_a_project_with_only_pinned_repos
         params.repos,
         [("gitlab.com".to_owned(), "group/proj".to_owned())]
     );
-    assert!(params.inputs.repos.iter().all(|repo| repo.host() != "github.com"));
+    assert!(
+        params
+            .inputs
+            .repos
+            .iter()
+            .all(|repo| repo.host() != "github.com")
+    );
     // Both pinned: no route at all, and nothing is left running for the run.
     let scene = Scene::pinning(&["github.com", "gitlab.com"]);
     assert!(

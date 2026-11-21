@@ -71,7 +71,6 @@ mod a_chat_that_asks_in_a_loop_is_stopped_before_it_spends_the_persons_budget;
 mod a_chat_with_no_mint_has_no_forge_credential;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_reads_one_request_and_never_hands_the_chat_a_credential;
-mod a_pinned_forge_is_refused_on_every_door_of_a_chats_route;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_serves_a_real_unix_socket_and_a_real_connect_port;
 #[cfg(all(unix, feature = "forge-wiring"))]
@@ -175,6 +174,7 @@ mod a_per_device_log_is_named_by_the_device_id;
 mod a_persona_brings_its_skills_into_every_workspace;
 mod a_persona_on_a_profile_made_here_keeps_the_rules_that_stay;
 mod a_persona_store_is_reached_with_no_link_on_the_way;
+mod a_pinned_forge_is_refused_on_every_door_of_a_chats_route;
 mod a_planted_repo_config_runs_nothing;
 mod a_pool_container_is_checked_on_this_host;
 mod a_pr_is_opened_or_updated_and_set_to_auto_merge;

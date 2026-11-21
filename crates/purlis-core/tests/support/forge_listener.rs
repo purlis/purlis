@@ -153,9 +153,7 @@ impl World {
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
     ) -> Self {
-        let proxy = Arc::new(
-            ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin),
-        );
+        let proxy = Arc::new(ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin));
         let chat = ChatId::new("chat-listener");
         let advertised: Vec<(String, String)> = repos
             .iter()

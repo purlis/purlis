@@ -18,11 +18,11 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use purlis_core::forge::pin::{NoPin, Pin};
 use purlis_core::forge::proxy::listener::{
     ForgeListener, PushGate, PushRead, PushVerdict, Upstream, UpstreamError, UpstreamRequest,
     UpstreamResponse,
 };
-use purlis_core::forge::pin::{NoPin, Pin};
 use purlis_core::forge::proxy::{EndpointKind, Verdict};
 use purlis_core::sandbox::egress::ForgeRoute;
 use purlis_core::sandbox::egress::relay::DoorRelay;
@@ -340,11 +340,7 @@ fn setup() -> Setup {
 }
 
 /// The relay the app's git is given for a run, as the app makes it (`forgeroute`), for `door`.
-fn app_relay(
-    door: std::net::SocketAddr,
-    world: &World,
-    pin: Arc<dyn Pin>,
-) -> DoorRelay {
+fn app_relay(door: std::net::SocketAddr, world: &World, pin: Arc<dyn Pin>) -> DoorRelay {
     DoorRelay::start(
         ForgeRoute {
             addr: door,
@@ -980,7 +976,11 @@ fn the_apps_own_git_for_a_chat_is_refused_a_pinned_forge_and_the_door_is_never_d
     let work = s.dir.path().join("clone");
     let (ok, text) = s.git(
         s.dir.path(),
-        &["clone", "https://github.com/acme/app.git", work.to_str().unwrap()],
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
     );
     assert!(ok, "{text}");
     std::fs::write(work.join("a.txt"), "a\n").unwrap();
@@ -1048,13 +1048,23 @@ fn the_apps_relay_answers_a_pinned_forge_and_its_api_host_with_the_pin_and_dials
         client
             .set_read_timeout(Some(std::time::Duration::from_secs(10)))
             .unwrap();
-        write!(client, "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n").unwrap();
+        write!(
+            client,
+            "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"
+        )
+        .unwrap();
         let mut said = String::new();
         let _ = client.read_to_string(&mut said);
         assert!(said.starts_with("HTTP/1.1 403"), "{host}: {said}");
-        assert!(said.contains("signing in does not change"), "{host}: {said}");
+        assert!(
+            said.contains("signing in does not change"),
+            "{host}: {said}"
+        );
     }
-    assert!(door.accept().is_err(), "the door was dialled for a pinned forge");
+    assert!(
+        door.accept().is_err(),
+        "the door was dialled for a pinned forge"
+    );
 }
 
 /// The pin as the policy answers it: `github.com` pinned, so its forge's other names are too.

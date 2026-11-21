@@ -96,7 +96,12 @@ fn the_pin_is_read_on_every_request_so_one_set_while_a_chat_is_open_reaches_it()
 fn a_connect_to_a_pinned_forge_or_its_api_host_is_refused_and_a_gitlab_by_its_own_name() {
     purlis_core::unsteered!();
     let (w, pin) = pinned(&["github.com", "gitlab.com"]);
-    for host in ["github.com", "api.github.com", "codeload.github.com", "gitlab.com"] {
+    for host in [
+        "github.com",
+        "api.github.com",
+        "codeload.github.com",
+        "gitlab.com",
+    ] {
         assert_eq!(
             w.proxy.connect(&w.chat, host, 443),
             ConnectVerdict::Refuse(Refusal::Pinned),

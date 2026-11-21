@@ -949,15 +949,12 @@ impl ForgeRoutes {
         session: u32,
     ) -> Option<std::io::Result<purlis_core::worktree::git::NetworkRoute>> {
         let run = self.sessions().of_run.get(&session).cloned()?;
-        let (inputs, relay) = self
-            .live()
-            .get(&run)
-            .map(|live| {
-                (
-                    live.inputs.clone(),
-                    live.relay.as_ref().map(|relay| relay.addr()),
-                )
-            })?;
+        let (inputs, relay) = self.live().get(&run).map(|live| {
+            (
+                live.inputs.clone(),
+                live.relay.as_ref().map(|relay| relay.addr()),
+            )
+        })?;
         // **Never the bare door**: it answers 407 to a CONNECT that lacks the hand-off proof, which
         // git cannot send. The relay proves it, and asks the administrator's pin on each connection.
         let Some(relay) = relay else {
@@ -1339,9 +1336,8 @@ pub fn install(held: Arc<dyn HeldSinks>) {
             )));
             seams.listener = Arc::new(prod::CoreListener);
             // Read from policy on each ask: a pin set while a chat is open reaches it at once.
-            seams.pin = Arc::new(|project| {
-                Arc::new(purlis_core::forge::pin::PolicyPin::of(project))
-            });
+            seams.pin =
+                Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
         }
         ForgeRoutes::new(root, std::env::current_exe().unwrap_or_default(), seams)
     });

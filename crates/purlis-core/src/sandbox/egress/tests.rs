@@ -2680,7 +2680,10 @@ fn a_pin_on_a_forge_covers_every_name_the_route_serves_for_it_and_its_door_is_ne
             &mut client,
             &format!("CONNECT {served}:443 HTTP/1.1\r\nHost: {served}:443\r\n\r\n"),
         );
-        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{pinned} pinned, {served} asked");
+        assert_eq!(
+            said, "HTTP/1.1 403 Forbidden",
+            "{pinned} pinned, {served} asked"
+        );
         assert!(
             door.accept().is_err(),
             "the door was dialled for {served} with {pinned} pinned"

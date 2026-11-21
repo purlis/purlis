@@ -68,9 +68,11 @@ impl Pin for PolicyPin {
         // A refused policy file locks everything it could lock, so it pins every forge: the
         // route is handed over before the egress layers that would otherwise lock the host.
         if locks.refused_because().is_some() {
-            return Some(locks.led_by(
-                "This forge is refused while the administrator's policy file is refused",
-            ));
+            return Some(
+                locks.led_by(
+                    "This forge is refused while the administrator's policy file is refused",
+                ),
+            );
         }
         let host = host.strip_suffix('.').unwrap_or(host);
         let parsed = Host::parse(&host_and_port(host, port)).ok()?;
@@ -162,7 +164,12 @@ mod tests {
             pin.pinned("github.com", 443).is_some(),
             "a refused file must not read as no pin"
         );
-        for host in ["github.com", "api.github.com", "gitlab.com", "ghe.corp.example"] {
+        for host in [
+            "github.com",
+            "api.github.com",
+            "gitlab.com",
+            "ghe.corp.example",
+        ] {
             assert!(pinned_forge(&pin, host, 443).is_some(), "{host}");
         }
     }

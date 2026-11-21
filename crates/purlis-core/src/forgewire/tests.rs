@@ -1051,20 +1051,10 @@ fn the_route_folder_is_one_answer_for_a_stale_runtime_directory_and_an_unset_tmp
         crate::sandbox::Os::Linux,
         &[("XDG_RUNTIME_DIR", "/run/user/not-a-folder-4417")],
     );
-    let config = crate::machine::rooted(
-        None,
-        None,
-        Some(home.path().to_path_buf()),
-    );
+    let config = crate::machine::rooted(None, None, Some(home.path().to_path_buf()));
     assert_eq!(
         route_root(&stale),
-        route_dir_in(
-            None,
-            config,
-            PathBuf::from("/tmp"),
-            &who,
-            true
-        )
+        route_dir_in(None, config, PathBuf::from("/tmp"), &who, true)
     );
     // macOS with TMPDIR unset: `/tmp`, never a folder one side invented.
     let mac = machine(crate::sandbox::Os::MacOs, &[]);
