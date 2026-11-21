@@ -1,0 +1,513 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B21",
+  "title": "restart: quit and window (§3.17)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {
+    "h1": "example.com",
+    "h2": "www.iana.org",
+    "h3": "example.net",
+    "h4": "example.org"
+  },
+  "cells": [
+    {
+      "id": "M-RST-01",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 3"
+              }
+            }
+          ],
+          "press": {
+            "label": "Allow once",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "outcome": "came_back",
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            },
+            {
+              "kind": "ask.answered",
+              "ask": "sandbox",
+              "answer": "allowed",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "quit"
+        },
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 3"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h1",
+              "count": 1
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "trust.sandbox.revoke"
+            }
+          ],
+          "window": [
+            {
+              "query": "asks.entry for $h1 is gone after the restart, then listed again by the fresh ask"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-02",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "purlis merge hold PR3 head"
+              }
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.hold",
+              "count": 1
+            }
+          ],
+          "window": [
+            {
+              "query": "merge_row for PR3 is listed"
+            }
+          ]
+        },
+        {
+          "restart": "quit",
+          "require": [
+            {
+              "kind": "stop.hold",
+              "count": "≥1"
+            }
+          ],
+          "window": [
+            {
+              "query": "merge_row for PR3 is back, or the chat's retry raises it again (Raised::Already refreshes the head)"
+            },
+            {
+              "query": "merge_row's viewed SHA is gone"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-03",
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "N=33 x3 refused call"
+              }
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.loop_pause",
+              "count": 1
+            },
+            {
+              "kind": "ask.raised",
+              "ask": "loop_pause",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "quit",
+          "window": [
+            {
+              "query": "asks lists the loop pause ask, or the chat is released; never paused with no row"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-06",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 110"
+              }
+            }
+          ],
+          "wait": "hold+1",
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "press": "Change protection in the throwaway project",
+          "require": [
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h2",
+              "count": 1
+            }
+          ],
+          "window": [
+            {
+              "query": "finishes: the end row reads 'superseded', not 'stopped as you closed it' (Q247)"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-07",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"
+              }
+            }
+          ],
+          "wait": "hold+1",
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "quit",
+          "require": [
+            {
+              "either": [
+                {
+                  "kind": "ask.answered",
+                  "ask": "sandbox"
+                },
+                {
+                  "kind": "stop.block",
+                  "source": "sandbox",
+                  "target.host": "$h1",
+                  "count": 1
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-08",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 110"
+              }
+            }
+          ],
+          "wait": "hold+1",
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "window",
+          "press": {
+            "label": "Allow only for this chat",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "outcome": "came_back",
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            },
+            {
+              "kind": "trust.sandbox.grant",
+              "level": "chat",
+              "what": "host",
+              "target": "$h2",
+              "count": 1
+            },
+            {
+              "kind": "ask.answered",
+              "ask": "sandbox",
+              "answer": "allowed",
+              "window": true,
+              "count": 1
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "stop.block"
+            },
+            {
+              "kind": "run.ended"
+            }
+          ],
+          "window": [
+            {
+              "query": "asks shows the same ask again after the reattach, still answerable, not raised again (Q262, Q240)"
+            }
+          ],
+          "transcript": [
+            {
+              "says": "[the Allowed sentence, M-RST-08: wording to be copied from purlis's source]"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-09",
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "N=35 x3 refused call"
+              }
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.loop_pause",
+              "count": 1
+            },
+            {
+              "kind": "ask.raised",
+              "ask": "loop_pause",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "window",
+          "press": {
+            "label": "Tell it to stop trying",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "require": [
+            {
+              "kind": "stop.loop_pause",
+              "count": 1
+            },
+            {
+              "kind": "ask.raised",
+              "ask": "loop_pause",
+              "count": 1
+            },
+            {
+              "order": [
+                {
+                  "kind": "ask.raised",
+                  "ask": "loop_pause"
+                },
+                {
+                  "kind": "ask.answered",
+                  "ask": "loop_pause",
+                  "answer": "refused"
+                }
+              ]
+            }
+          ],
+          "window": [
+            {
+              "query": "asks shows the pause ask after the reattach"
+            }
+          ],
+          "transcript": [
+            {
+              "says": "purlis: the person asks you to stop trying what was blocked again and again. It stays blocked. Don't try it again, in these words or others: go on without it, or say what you needed it for and stop."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-10",
+      "steps": [
+        {
+          "restart": "window",
+          "calls": [
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "N=36 guard block"
+              }
+            },
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "M-FILE-02 form, path -r10"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "require": [
+            {
+              "kind": "stop.block",
+              "source": "guard",
+              "count": 1
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "press": "Reattach the window",
+          "window": [
+            {
+              "query": "blocks: the marker counts both blocks (+2)"
+            },
+            {
+              "query": "rows: the Chat log lists both blocks (R-004, R-174, R-230)"
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.block",
+              "source": "guard",
+              "count": 1
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "count": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-11",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "merge hold PR4 head"
+              }
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.hold",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "window"
+        },
+        {
+          "press": "Merge",
+          "require": [
+            {
+              "kind": "stop.hold",
+              "count": 1
+            }
+          ],
+          "window": [
+            {
+              "query": "merge_row is back and asks for a look again, not 'viewed' (R-122, Q210)"
+            }
+          ]
+        },
+        {
+          "press": "Merge",
+          "require": [
+            {
+              "kind": "ask.answered",
+              "ask": "hold",
+              "answer": "allowed",
+              "count": 1
+            }
+          ],
+          "transcript": [
+            {
+              "says": "[the told-it-merged sentence: wording to be copied from purlis's source]"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
