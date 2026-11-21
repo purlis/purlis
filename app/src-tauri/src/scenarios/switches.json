@@ -55,8 +55,20 @@
       }
     },
     {
-      "name": "the first-run state seeded for Claude Code on macOS",
-      "reason": "purlis seeds a Claude Code profile's first-run state (onboarding, the trusted folder, the approved key) for the Linux wrap alone (`claude_wrap.rs`); the Claude Code leg writes it itself in the sandbox-only profile's own folder (`scenarios::claude_leg::seed_first_run`), as a person who had answered the questions would have, so an interactive start does not stop at them.",
+      "name": "the first-run state seeded for Claude Code on macOS, with the bypass-permissions warning accepted",
+      "reason": "purlis seeds a Claude Code profile's first-run state (onboarding, the trusted folder, the approved key and the accepted bypass-permissions warning: `bypassPermissionsModeAccepted` in `.claude.json` and `skipDangerousModePermissionPrompt` in the profile's `settings.json`) for the Linux wrap alone (`claude_wrap.rs`); the Claude Code leg writes it itself in the sandbox-only profile's own folder (`scenarios::claude_leg::seed_first_run`), as a person who had answered the questions would have, so an interactive start does not stop at them. The two bypass entries are there because the leg starts under `--permission-mode bypassPermissions` (the next entry); without them the start stops at the warning.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "`--permission-mode bypassPermissions` and the prompt, appended to the Claude Code leg's launch line",
+      "reason": "`purlis_core::start::ready` composes the launch line the window uses; the leg appends `--permission-mode bypassPermissions` and the chat's prompt after it (`scenarios::host::Scenario::starts_claude_code`). Bypass is for the stand-in model's sake: an auto mode would send its permission judgements to Anthropic's servers, and the recordings were made under it (`tests/recordings/README.md`). The cost: Claude Code's `ask` rules and its permission prompts are never reached on this leg, so it says nothing of them; what it can show is Claude Code's own sandbox and purlis's `permissions.deny` rules. A person's chat is started in whatever mode they chose.",
       "covers": {
         "linux": [
           "linux-release-profile"
