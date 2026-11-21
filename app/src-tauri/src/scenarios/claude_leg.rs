@@ -679,7 +679,10 @@ mod tests {
                 && !scenario.confines.started().is_empty(),
             "the host's own Confine started the chat's confinement\n{said}"
         );
-        for word in ["claude", "--settings", "--plugin-dir", "bypassPermissions"] {
+        // What the window composes (`start::ready`): the harness, its session and its mode. The
+        // settings and the plugin are armed at the host's compose, so they are read off the
+        // process below.
+        for word in ["claude", "--session-id", "bypassPermissions"] {
             assert!(said.contains(word), "the launch line lacks {word}\n{said}");
         }
         assert!(
@@ -696,9 +699,12 @@ mod tests {
         // The process is the real binary, and the stand-in model answered it.
         let commands: Vec<String> = scenario.pids().into_iter().map(command_of).collect();
         assert!(
-            commands.iter().any(|command| command.contains("claude"))
+            commands.iter().any(|command| command.contains("claude")
+                && command.contains("--settings")
+                && command.contains("--plugin-dir"))
                 && !commands.iter().any(|c| c.contains("fake-harness")),
-            "the chat's process is not the real Claude Code: {commands:?}\n{said}"
+            "the chat's process is not the real Claude Code, armed with purlis's settings and \
+             plugin: {commands:?}\n{said}"
         );
         assert!(
             model.requests() > 0,
