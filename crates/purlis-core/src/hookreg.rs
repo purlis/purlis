@@ -208,7 +208,8 @@ pub const HANDLERS: [Handler; 20] = [
     },
     // A sandbox block in what a Bash command came back with (#1338): read in the hook, which
     // runs outside the chat's sandbox, and told to the app as an operation and a kind only
-    // (`sandboxblock`). On both ends of a call: a command that failed is a `PostToolUseFailure`.
+    // (`sandboxblock`). On both ends of a call: a command that failed is a `PostToolUseFailure`,
+    // and so is a file tool's read the sandbox refused (#6888).
     // A background command's output is read back by other tools too (#1683): the harness's own
     // tool for it, and its file tool, whose read is taken only of a background output file.
     Handler {
@@ -230,7 +231,7 @@ pub const HANDLERS: [Handler; 20] = [
     Handler {
         name: "posttoolusefailure-blocked",
         event: "PostToolUseFailure",
-        matcher: Some("Bash"),
+        matcher: Some("Bash|Read"),
         timeout: 5,
     },
     // A purlis tool that failed (#5697): one whose error says it failed inside purlis is

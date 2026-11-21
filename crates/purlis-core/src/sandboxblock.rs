@@ -655,6 +655,10 @@ pub fn detect_with_record(
         {
             found.extend(on_stdout(content, place, Said::Failed));
         }
+        // A read the sandbox refused fails: the harness's own error is the refusal (#6888).
+        if let Some(error) = payload["error"].as_str() {
+            found.extend(violations(error, place));
+        }
         return at_most(found);
     }
     match &payload["tool_response"] {

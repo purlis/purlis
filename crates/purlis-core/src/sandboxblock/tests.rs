@@ -2253,6 +2253,50 @@ fn a_refusal_read_back_from_a_background_commands_output_is_no_block() {
     assert_eq!(detect_with_targets(&payload, &place), Vec::new());
 }
 
+/// T1.1-41 (#6888), cell M-TOOL-09: a file tool's read the sandbox refused fails, and its
+/// failure is a `PostToolUseFailure`, which was heard on Bash alone, so nothing was written.
+#[test]
+fn a_failed_read_writes_a_post_line_and_its_block_if_refused() {
+    let heard = crate::hookreg::find("posttoolusefailure-blocked").expect("the word is wired");
+    assert!(
+        heard
+            .matcher
+            .unwrap_or_default()
+            .split('|')
+            .any(|tool| tool == "Read"),
+        "a failed Read is heard by the block word: {:?}",
+        heard.matcher
+    );
+    let refused = json!({
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/Users/dev/.ssh/id_ed25519"},
+        "error": "EPERM: operation not permitted, open '/Users/dev/.ssh/id_ed25519'\n\
+                  <sandbox_violations>\n\
+                  Claude(48211) deny(1) file-read-data /Users/dev/.ssh/id_ed25519\n\
+                  </sandbox_violations>",
+    });
+    let place = Place {
+        root: Path::new("/Users/dev/plane"),
+        chat: Path::new("/Users/dev/plane/workspaces/a/repo"),
+        cwd: Path::new("/Users/dev/plane/workspaces/a/repo"),
+        home: Some(Path::new("/Users/dev")),
+    };
+    let found = detect(&refused, &place);
+    assert_eq!(
+        found.iter().map(|block| block.operation).collect::<Vec<_>>(),
+        [Operation::Read],
+        "{found:?}"
+    );
+    // A read that failed for any other reason is no block.
+    let missing = json!({
+        "tool_name": "Read",
+        "tool_input": {"file_path": "/Users/dev/plane/workspaces/a/repo/none.txt"},
+        "error": "File does not exist.",
+    });
+    assert_eq!(detect(&missing, &place), Vec::new());
+}
+
 // ---- the certificate check, whose one service is purlis's own word (qw353) ----------------------
 
 /// What `gh` and `glab` say of a certificate check the sandbox refused them.

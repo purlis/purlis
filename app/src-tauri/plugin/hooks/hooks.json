@@ -88,7 +88,7 @@
     ],
     "PostToolUseFailure": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|Read",
         "hooks": [
           {
             "type": "command",
