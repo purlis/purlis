@@ -10,12 +10,14 @@
 // first week: runs a day, how many went green, how many only on a rerun, the merge queue's wait,
 // each job's p50 and p90, every flaky test by name, and the slowest tests.
 
-import { appendFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { requiredDrift } from "./ci-push-jobs.mjs";
 import { conflicted, requiredNames } from "./land.mjs";
+import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
 /** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
 export function percentile(values, p) {
@@ -174,6 +176,16 @@ const safe = (test) => test.replace(/-->/g, "--&gt;");
 const marked = (test, ids) => `<!-- flake-test: ${safe(test)} -->\n<!-- flake-runs: ${ids.join(",")} -->`;
 const runList = (runs) => runs.map((run) => `- ${run.url}`).join("\n");
 
+const ticketTitle = (test) => `${TICKET_TITLE}${test}`.slice(0, 200);
+
+/** The issue of `issues` that is `test`'s flake ticket: by the test id in its body, then by its title. */
+export function ticketFor(test, issues) {
+  return (
+    issues.find((issue) => TEST_MARKER.exec(issue.body ?? "")?.[1] === safe(test)) ??
+    issues.find((issue) => issue.title === ticketTitle(test))
+  );
+}
+
 /**
  * What to do with the flakes `flakes` (`flakeEvidence`) against the `area:ci` issues `issues` (any
  * state): one new ticket for a test with none, and a comment, naming only the runs the ticket does
@@ -184,14 +196,9 @@ const runList = (runs) => runs.map((run) => `- ${run.url}`).join("\n");
 export function planFlakeTickets(flakes, issues) {
   const create = [];
   const comment = [];
-  const byTest = new Map();
-  for (const issue of issues) {
-    const test = TEST_MARKER.exec(issue.body ?? "")?.[1];
-    if (test) byTest.set(test, issue);
-  }
   for (const flake of flakes) {
-    const title = `${TICKET_TITLE}${flake.test}`.slice(0, 200);
-    const ticket = byTest.get(safe(flake.test)) ?? issues.find((issue) => issue.title === title);
+    const title = ticketTitle(flake.test);
+    const ticket = ticketFor(flake.test, issues);
     if (!ticket) {
       create.push({
         title,
@@ -269,6 +276,75 @@ export function queueDrops(prs, { from, to } = {}) {
     }
   }
   return { entries, drops, rate: entries === 0 ? null : drops / entries };
+}
+
+/** Flakes in this many runs of the week put a test in quarantine (spec #7324). */
+export const QUARANTINE_AFTER = 3;
+
+/** A quarantined test's ticket gets this label once the test has waited this many days. */
+export const PRIORITY_LABEL = "priority:p1";
+export const PRIORITY_AFTER_DAYS = 14;
+
+const wholeDays = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+
+/**
+ * The pull requests to open that add flaky tests to the quarantine: a test that flaked in
+ * `QUARANTINE_AFTER` runs of the week, with its ticket filed (`issues`), not in `entries` already,
+ * and with no such pull request open (`openBranches`). `{ id, ticket, added, branch, title, body }`.
+ * A test flaking in as many runs as it takes is read from the `--sample` of the week's runs, so a
+ * test flaking less often than that can still reach it: the proposal is a PR the steward reviews.
+ */
+export function planQuarantine({ flakes, entries, issues, openBranches, today }) {
+  const listed = new Set(entries.map((entry) => entry.id));
+  const proposals = [];
+  for (const flake of flakes) {
+    if (flake.runs.length < QUARANTINE_AFTER || listed.has(flake.test)) continue;
+    const ticket = ticketFor(flake.test, issues);
+    if (!ticket) continue;
+    const branch = `ci-health/quarantine-${createHash("sha256").update(flake.test).digest("hex").slice(0, 12)}`;
+    if (openBranches.includes(branch)) continue;
+    proposals.push({
+      id: flake.test,
+      ticket: ticket.number,
+      added: today,
+      branch,
+      title: `Quarantine ${flake.test}`.slice(0, 200),
+      body: [
+        `\`${flake.test}\` passed on a retry in ${flake.runs.length} runs of the last seven days (#${ticket.number}), ` +
+          `which is a flake three times over (ADR 0127). Until its fix lands, only the nightly run runs it.`,
+        "",
+        "Runs:",
+        runList(flake.runs),
+        "",
+        `The pull request that fixes it removes this entry from \`ci/quarantine.toml\`. Opened by \`ci-health\`; review and enqueue it.`,
+      ].join("\n"),
+    });
+  }
+  return proposals;
+}
+
+/** `text` (the quarantine file) with one more entry at its end. */
+export function appendEntry(text, { id, ticket, added }) {
+  const quoted = id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `${text.replace(/\n*$/, "\n")}\n[[test]]\nid = "${quoted}"\nticket = ${ticket}\nadded = "${added}"\n`;
+}
+
+/**
+ * The quarantine's verdict: `red` when more than `CAP` tests are in it, so it cannot become a
+ * graveyard, with the sentence that pings the operator; and `prioritise`, the ticket of each
+ * entry `PRIORITY_AFTER_DAYS` old or more, for the priority label.
+ */
+export function quarantineVerdict(entries, { today }) {
+  const red = entries.length > CAP;
+  return {
+    red,
+    message: red
+      ? `${entries.length} tests are quarantined, more than the ${CAP} the quarantine allows (ci/quarantine.toml): fix some before more are added.`
+      : "",
+    prioritise: entries
+      .map((entry) => ({ ticket: entry.ticket, label: PRIORITY_LABEL, days: wholeDays(entry.added, today) }))
+      .filter((entry) => entry.days >= PRIORITY_AFTER_DAYS),
+  };
 }
 
 /** How many tests, flaky tests and jobs the report lists. */
@@ -698,8 +774,9 @@ async function fileFlakes({ repo, token, flakes, issues }) {
     flakes,
     issues.filter((issue) => !findIssue([issue])),
   );
+  const created = [];
   for (const ticket of create) {
-    await call(`/repos/${repo}/issues`, { method: "POST", body: ticket, token });
+    created.push(await call(`/repos/${repo}/issues`, { method: "POST", body: ticket, token }));
   }
   for (const one of comment) {
     await call(`/repos/${repo}/issues/${one.number}/comments`, { method: "POST", body: { body: one.body }, token });
@@ -709,7 +786,68 @@ async function fileFlakes({ repo, token, flakes, issues }) {
       token,
     });
   }
-  return { filed: create.length, commented: comment.length };
+  return { filed: create.length, commented: comment.length, created };
+}
+
+/**
+ * Quarantine, kept up (`planQuarantine`, `quarantineVerdict`): a pull request for each test that
+ * flaked three times this week, the priority label on a ticket 14 days quarantined, and the
+ * verdict, which is red past ten. The pull requests are made through the API (a branch off the
+ * default branch, one commit to `ci/quarantine.toml`), so the run needs no checkout it can push.
+ */
+async function keepQuarantine({ repo, token, flakes, issues, reportIssue, today }) {
+  const entries = parseQuarantine(readFileSync(QUARANTINE_FILE, "utf8"));
+  const verdict = quarantineVerdict(entries, { today });
+  for (const one of verdict.prioritise) {
+    await call(`/repos/${repo}/issues/${one.ticket}/labels`, { method: "POST", body: { labels: [one.label] }, token });
+  }
+  const pulls = await call(`/repos/${repo}/pulls?state=open&per_page=100`, { token });
+  const proposals = planQuarantine({
+    flakes,
+    entries,
+    issues,
+    openBranches: pulls.map((pull) => pull.head.ref),
+    today,
+  });
+  if (proposals.length > 0) {
+    const { default_branch: base } = await call(`/repos/${repo}`, { token });
+    for (const proposal of proposals) {
+      const { object } = await call(`/repos/${repo}/git/ref/heads/${base}`, { token });
+      const file = await call(`/repos/${repo}/contents/ci/quarantine.toml?ref=${base}`, { token });
+      const text = appendEntry(Buffer.from(file.content, "base64").toString("utf8"), proposal);
+      await call(`/repos/${repo}/git/refs`, {
+        method: "POST",
+        body: { ref: `refs/heads/${proposal.branch}`, sha: object.sha },
+        token,
+      });
+      await call(`/repos/${repo}/contents/ci/quarantine.toml`, {
+        method: "PUT",
+        body: {
+          message: `${proposal.title} (#${proposal.ticket})`,
+          content: Buffer.from(text).toString("base64"),
+          sha: file.sha,
+          branch: proposal.branch,
+        },
+        token,
+      });
+      const pull = await call(`/repos/${repo}/pulls`, {
+        method: "POST",
+        body: { title: proposal.title, head: proposal.branch, base, body: proposal.body },
+        token,
+      });
+      await call(`/repos/${repo}/issues/${pull.number}/labels`, { method: "POST", body: { labels: [ISSUE_LABEL] }, token });
+    }
+  }
+  if (verdict.red) {
+    const operator = process.env.OPERATOR ? `@${process.env.OPERATOR.replace(/^@/, "")} ` : "";
+    await call(`/repos/${repo}/issues/${reportIssue}/comments`, {
+      method: "POST",
+      body: { body: `${operator}${verdict.message}` },
+      token,
+    });
+    process.exitCode = 1;
+  }
+  return { proposed: proposals.length, prioritised: verdict.prioritise.length, red: verdict.red };
 }
 
 async function main(argv) {
@@ -738,8 +876,17 @@ async function main(argv) {
     const issues = await ciIssues({ repo, token });
     const number = await keepIssue({ repo, token, body, issues, line: `${week.from} to ${week.to}: ${headline(week)}${run}` });
     console.log(`the report is in #${number}`);
-    const { filed, commented } = await fileFlakes({ repo, token, flakes: week.flakes, issues });
+    const { filed, commented, created } = await fileFlakes({ repo, token, flakes: week.flakes, issues });
     console.log(`flake tickets: ${filed} filed, ${commented} commented on`);
+    const kept = await keepQuarantine({
+      repo,
+      token,
+      flakes: week.flakes,
+      issues: [...issues, ...created],
+      reportIssue: number,
+      today: isoDay(Date.now()),
+    });
+    console.log(`quarantine: ${kept.proposed} proposed, ${kept.prioritised} labelled for priority${kept.red ? ", RED" : ""}`);
   }
 }
 

@@ -11,6 +11,13 @@ name: ci-health
 # queue drop rate, the week's runs) so whoever watches the issue hears of it. It also files one
 # `area:ci` ticket for each flaky test, and comments on the ticket a test already has.
 #
+# It keeps the quarantine (`ci/quarantine.toml`, #7333): a test that flaked in three runs of the
+# week gets a pull request adding it (the steward reviews and enqueues it); the ticket of a test
+# quarantined 14 days gets a priority label; and more than 10 quarantined tests turns this run
+# red and pings the operator on the report's issue (the `CI_OPERATOR` repository variable, a
+# login: unset, the comment pings no one). A pull request opened with the workflow's own token
+# starts no workflows, so one that must run `ci` is opened with `CI_HEALTH_TOKEN`, a secret.
+#
 # What it reports, and how many calls each costs, is written in `tools/ci-health.mjs`; its
 # numbers are tested on recorded API answers in `tools/ci-health.test.mjs`, run with the other
 # tools' tests in `ci`.
@@ -48,13 +55,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Read the repository (the tool), its workflow runs and its pull requests' merge-queue
-    # events; write the report's issue and the flake tickets. Without `pull-requests: read` the merged pull requests come
-    # back from GraphQL's search with no fields, and the queue's wait reads as none (seen on
-    # this workflow's first run, 2026-10-28).
+    # events; write the report's issue and the flake tickets, and open the quarantine's pull
+    # requests (a branch and one commit by the API, so `contents: write`).
+    # Without pull-request access the merged pull requests come back from GraphQL's search with
+    # no fields, and the queue's wait reads as none (seen on this workflow's first run, 2026-10-28).
     permissions:
-      contents: read
+      contents: write
       actions: read
-      pull-requests: read
+      pull-requests: write
       issues: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -62,6 +70,7 @@ jobs:
           persist-credentials: false
           sparse-checkout: |
             /tools/
+            /ci/quarantine.toml
             /.nvmrc
           sparse-checkout-cone-mode: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -70,7 +79,8 @@ jobs:
           node-version-file: .nvmrc
       - name: Report the last seven days
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.CI_HEALTH_TOKEN || github.token }}
+          OPERATOR: ${{ vars.CI_OPERATOR }}
           SAMPLE: ${{ inputs.sample || '600' }}
           # A scheduled run has no inputs: it writes the issue.
           ISSUE: ${{ github.event_name == 'schedule' || inputs.issue }}

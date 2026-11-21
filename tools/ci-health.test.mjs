@@ -7,13 +7,20 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { parseQuarantine, problemsWith } from "./quarantine.mjs";
+
 import {
   ISSUE_TITLE,
   evidenceRed,
   findIssue,
   flakeEvidence,
   flakyTests,
+  PRIORITY_LABEL,
+  appendEntry,
   planFlakeTickets,
+  planQuarantine,
+  quarantineVerdict,
+  ticketFor,
   queueDrops,
   readyToMerged,
   headline,
@@ -384,4 +391,65 @@ test("no entries is no rate", () => {
 test("the daily headline leads with ready to merged and the queue drop rate", () => {
   const text = headline({ ...week, ready: { n: 173, p50: 291 * 60, p90: 1655 * 60 }, drops: { entries: 131, drops: 20, rate: 20 / 131 } });
   assert.match(text, /^ready to merged p50 291\.0 min \/ p90 1655\.0 min, queue drop rate 15% \(20 of 131 entries\), 6 runs/);
+});
+
+// ---- quarantine: proposals, the cap, and the 14-day escalation (#7333) ----
+
+const flakedIn = (test, ...runIds) =>
+  flakeEvidence(runIds.map((id) => flakeSuite(id, "web (part 1/4)", test))).find((one) => one.test === test);
+const ticketed = (...tests) => tests.map((test, i) => ({ number: 100 + i, state: "open", title: `Flaky test: ${test}`, body: "", labels: [{ name: "area:ci" }] }));
+const TODAY = "2026-11-22";
+
+test("a test that flaked in three runs of the week is proposed for quarantine, one that flaked in two is not", () => {
+  const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3), flakedIn("src/b.test.ts > b", 4, 5)];
+  const proposals = planQuarantine({ flakes: flaky, entries: [], issues: ticketed("src/a.test.ts > a", "src/b.test.ts > b"), openBranches: [], today: TODAY });
+  assert.equal(proposals.length, 1);
+  assert.deepEqual(
+    { id: proposals[0].id, ticket: proposals[0].ticket, added: proposals[0].added },
+    { id: "src/a.test.ts > a", ticket: 100, added: TODAY },
+  );
+  assert.match(proposals[0].branch, /^ci-health\/quarantine-[0-9a-f]{12}$/);
+  assert.match(proposals[0].title, /Quarantine src\/a\.test\.ts > a/);
+  assert.match(proposals[0].body, /#100/);
+});
+
+test("a flake already in the quarantine, or with its proposal already open, is not proposed again", () => {
+  const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3)];
+  const issues = ticketed("src/a.test.ts > a");
+  const entries = [{ id: "src/a.test.ts > a", ticket: 100, added: "2026-11-01" }];
+  assert.deepEqual(planQuarantine({ flakes: flaky, entries, issues, openBranches: [], today: TODAY }), []);
+  const [open] = planQuarantine({ flakes: flaky, entries: [], issues, openBranches: [], today: TODAY });
+  assert.deepEqual(planQuarantine({ flakes: flaky, entries: [], issues, openBranches: [open.branch], today: TODAY }), []);
+});
+
+test("a flake whose ticket is not filed yet waits for the next run", () => {
+  assert.deepEqual(planQuarantine({ flakes: [flakedIn("src/a.test.ts > a", 1, 2, 3)], entries: [], issues: [], openBranches: [], today: TODAY }), []);
+});
+
+test("a ticket is found for a flake by its test id, as the flake tickets are", () => {
+  assert.equal(ticketFor("src/a.test.ts > a", ticketed("src/a.test.ts > a"))?.number, 100);
+  assert.equal(ticketFor("src/zzz.test.ts > z", ticketed("src/a.test.ts > a")), undefined);
+});
+
+test("a proposal's entry is added to the list in a form the quarantine reads back", () => {
+  const text = appendEntry("# the list\n", { id: 'src/a.test.ts > says "hi"', ticket: 100, added: TODAY });
+  const [entry] = parseQuarantine(text);
+  assert.deepEqual(entry, { id: 'src/a.test.ts > says "hi"', ticket: 100, added: TODAY });
+  assert.deepEqual(problemsWith(parseQuarantine(appendEntry(text, { id: "b c", ticket: 101, added: TODAY }))), []);
+});
+
+const entriesOf = (n, added = "2026-11-20") => Array.from({ length: n }, (_, i) => ({ id: `t${i} x`, ticket: 200 + i, added }));
+
+test("more than ten quarantined tests is a red verdict, and ten is not", () => {
+  assert.equal(quarantineVerdict(entriesOf(11), { today: TODAY }).red, true);
+  assert.match(quarantineVerdict(entriesOf(11), { today: TODAY }).message, /11 tests are quarantined/);
+  assert.equal(quarantineVerdict(entriesOf(10), { today: TODAY }).red, false);
+});
+
+test("an entry 14 days old has its ticket labelled for priority, one 13 days old does not", () => {
+  const entries = [
+    { id: "old x", ticket: 300, added: "2026-11-08" },
+    { id: "young x", ticket: 301, added: "2026-11-09" },
+  ];
+  assert.deepEqual(quarantineVerdict(entries, { today: TODAY }).prioritise, [{ ticket: 300, label: PRIORITY_LABEL, days: 14 }]);
 });
