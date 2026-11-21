@@ -174,8 +174,12 @@ fn what_is_sent_upstream_is_the_proxys_own_address_never_the_chats() {
     let up =
         |host: &str, port: u16, target: &str| fwd(s.send_port("GET", host, port, target)).upstream;
     assert_eq!(
-        up("API.GitHub.com.", 443, "/repos/ACME/App/pulls?b=1&a=2%203"),
-        "https://api.github.com/repos/ACME/App/pulls?b=1&a=2+3"
+        up(
+            "API.GitHub.com.",
+            443,
+            "/repos/ACME/App/pulls?state=1&base=2%203"
+        ),
+        "https://api.github.com/repos/ACME/App/pulls?state=1&base=2+3"
     );
     assert_eq!(
         up("gitlab.com", 443, "/api/v4/projects/group%2Fproj/pipelines"),

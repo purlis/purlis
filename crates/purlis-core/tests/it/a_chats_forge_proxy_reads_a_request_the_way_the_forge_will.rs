@@ -624,3 +624,177 @@ fn a_read_that_follows_a_cross_reference_into_another_project_is_refused_on_gitl
         assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
     }
 }
+
+fn post_gitlab(s: &Scene, target: &str, body: &str) -> Outcome {
+    let head = RequestHead::new("POST", "gitlab.com", 443, target)
+        .with_content_type(Some("application/json"));
+    let mut h = headers(Auth::Bearer(s.a_sentinel.expose()));
+    h.push(("Content-Type".into(), "application/json".into()));
+    s.proxy.handle(
+        &s.a,
+        &Inbound {
+            head: &head,
+            headers: &h,
+            body: body.as_bytes(),
+        },
+    )
+}
+
+#[test]
+fn gitlab_rendered_html_and_an_unknown_read_query_key_are_not_readable() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for target in [
+        "/api/v4/projects/42/issues/5?render_html=true",
+        "/api/v4/projects/42/merge_requests/3?render_html=true",
+        "/api/v4/projects/42/issues/5/notes?render_html=1",
+        "/api/v4/projects/42/issues/5?sudo=root",
+        "/api/v4/projects/42/repository/commits/abc?unknown=1",
+        "/api/v4/projects/42/pipelines/9/bridges",
+        "/api/v4/projects/42/pipelines/9/variables",
+        "/api/v4/projects/42/commits/abc",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Refused(_)), "{target}: {out:?}");
+    }
+    for target in [
+        "/api/v4/projects/42/issues?state=opened&per_page=100",
+        "/api/v4/projects/42/merge_requests?source_branch=work&state=all&per_page=100",
+        "/api/v4/projects/42/merge_requests/3/pipelines?per_page=100",
+        "/api/v4/projects/42/pipelines/9",
+        "/api/v4/projects/42/pipelines/9/jobs",
+        "/api/v4/projects/42/repository/commits/abc123",
+        "/api/v4/projects/42/repository/commits/abc123/statuses",
+        "/api/v4/projects/42/repository/files/a.md/raw?ref=main",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
+    }
+    let out = s.send(
+        "GET",
+        "api.github.com",
+        "/repos/acme/app/issues/5?render_html=1",
+        b"",
+    );
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn a_gitlab_quick_action_in_any_text_is_refused_on_rest_and_graphql() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for text in [
+        "/move other/repo",
+        "hello\\n/relate other/repo#5",
+        "x\\n  /clone group/other",
+        "/blocks #3",
+        "/duplicate #3",
+        "/promote",
+        "/epic &1",
+        "/set_parent #4",
+        "/create_merge_request branch",
+        "/relate\\r\\n",
+    ] {
+        for (target, key) in [
+            ("/api/v4/projects/42/issues", "description"),
+            ("/api/v4/projects/42/issues", "title"),
+            ("/api/v4/projects/42/issues/5/notes", "body"),
+            ("/api/v4/projects/42/merge_requests", "description"),
+        ] {
+            let out = post_gitlab(&s, target, &format!("{{\"{key}\":\"{text}\"}}"));
+            assert!(is_refused(&out, Refusal::QuickAction), "{text}: {out:?}");
+        }
+    }
+    for body in [
+        r#"{"title":"t","description":"see /docs/path and 1/2 done"}"#,
+        r#"{"body":"a/b"}"#,
+    ] {
+        let out = post_gitlab(&s, "/api/v4/projects/42/issues/5/notes", body);
+        assert!(matches!(out, Outcome::Forward(_)), "{body}: {out:?}");
+    }
+    for key in ["epic_id", "epic_iid", "parent_id"] {
+        let out = post_gitlab(
+            &s,
+            "/api/v4/projects/42/issues",
+            &format!("{{\"title\":\"t\",\"{key}\":3}}"),
+        );
+        assert!(is_refused(&out, Refusal::OtherRepo), "{key}: {out:?}");
+    }
+    let q = "mutation{ createNote(input:{noteableId:\"gid://gitlab/Issue/5\", body:\"/move other/repo\"}){ errors } }";
+    let out = s.send(
+        "POST",
+        "gitlab.com",
+        "/api/graphql",
+        &graphql(q, serde_json::json!({})),
+    );
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn a_github_pull_request_head_is_the_recorded_repos_on_rest_and_graphql() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let pulls = "/repos/acme/app/pulls";
+    for body in [
+        r#"{"title":"t","head":"evil:topic","base":"main"}"#,
+        r#"{"title":"t","head":"evil/app:topic","base":"main"}"#,
+        r#"{"title":"t","head":"acme:a:b","base":"main"}"#,
+        r#"{"title":"t","head":"topic","head_repo":"evil/app","base":"main"}"#,
+    ] {
+        let out = post(&s, pulls, Some("application/json"), body.as_bytes());
+        assert!(is_refused(&out, Refusal::OtherRepo), "{body}: {out:?}");
+    }
+    for body in [
+        r#"{"title":"t","head":"topic","base":"main"}"#,
+        r#"{"title":"t","head":"acme:topic","base":"main"}"#,
+        r#"{"title":"t","head":"topic","head_repo":"acme/app","base":"main"}"#,
+    ] {
+        let out = post(&s, pulls, Some("application/json"), body.as_bytes());
+        assert!(matches!(out, Outcome::Forward(_)), "{body}: {out:?}");
+    }
+    for (head, ok) in [
+        ("evil:topic", false),
+        ("acme:a:b", false),
+        ("topic", true),
+        ("acme:topic", true),
+    ] {
+        let q = format!(
+            "mutation{{ createPullRequest(input:{{repositoryId:\"R_acme_app\", baseRefName:\"main\", headRefName:\"{head}\", title:\"t\"}}){{ pullRequest{{ number }} }} }}"
+        );
+        let out = s.send(
+            "POST",
+            "api.github.com",
+            "/graphql",
+            &graphql(&q, serde_json::json!({})),
+        );
+        assert_eq!(matches!(out, Outcome::Forward(_)), ok, "{head}: {out:?}");
+    }
+}
+
+#[test]
+fn a_compare_side_with_more_than_one_colon_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let out = s.send(
+        "GET",
+        "api.github.com",
+        "/repos/acme/app/compare/main...acme:x:y",
+        b"",
+    );
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn a_sudo_header_is_not_passed_to_the_forge() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let out = with_header(&s, &[("Sudo", "root")]);
+    if let Outcome::Forward(f) = out {
+        assert!(
+            !f.headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("sudo")),
+            "{f:?}"
+        );
+    }
+}

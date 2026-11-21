@@ -119,6 +119,30 @@ pub(crate) fn has_merge_command(text: &str) -> bool {
     })
 }
 
+/// The quick actions that touch only the labels of the item written to, so they reach nothing
+/// outside the recorded repo. A merge label in one is refused by [`has_merge_command`].
+const LABEL_ONLY_ACTIONS: &[&str] = &["label", "unlabel", "relabel"];
+
+/// Whether any line of `text` is a GitLab quick action: a `/` and a lower-case word at the start
+/// of a line. GitLab ignores one in a code block, but the proxy refuses it there too: a fence is
+/// not worth reading to be right about.
+pub(crate) fn has_quick_action(text: &str) -> bool {
+    text.split(LINE_BREAKS).any(|line| {
+        line.trim_start().strip_prefix('/').is_some_and(|rest| {
+            let word_len = rest
+                .bytes()
+                .take_while(|b| b.is_ascii_alphabetic() || *b == b'_')
+                .count();
+            word_len > 0
+                && !LABEL_ONLY_ACTIONS.contains(&rest[..word_len].to_ascii_lowercase().as_str())
+                && rest[word_len..]
+                    .chars()
+                    .next()
+                    .is_none_or(char::is_whitespace)
+        })
+    })
+}
+
 /// A body that was read.
 #[derive(Debug)]
 pub(crate) struct Body {

@@ -46,6 +46,9 @@ pub enum Refusal {
     Merge,
     /// Text that tells the forge or a merge bot to merge or approve: `/merge`, `bors r+`…
     MergeCommand,
+    /// Text a GitLab quick action would act on (`/move`, `/relate`, `/clone`…): each writes
+    /// outside the recorded repo or makes what the proxy has not seen.
+    QuickAction,
     /// Approving or reviewing in a way that counts toward a merge.
     Approval,
     /// A release, or a tag.

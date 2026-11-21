@@ -36,6 +36,7 @@ use serde_json::Value as Json;
 use super::commands;
 use super::policy::{Class, ObjectRepo, Refusal};
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
+use super::rest;
 use super::schema::{self, Ty};
 
 /// How deep a selection (fragments included) may go. A document deeper than a person writes by
@@ -583,6 +584,24 @@ impl<'d> Context<'_, 'd> {
                 {
                     return Err(Refusal::MergeCommand);
                 }
+                if self.kind == Kind::GitLab
+                    && strings(&val)
+                        .iter()
+                        .any(|text| commands::has_quick_action(text))
+                {
+                    return Err(Refusal::QuickAction);
+                }
+                // A pull request's head read from a fork reaches that fork's objects.
+                if field.name == "createPullRequest" {
+                    let mut heads = Vec::new();
+                    collect_named("headRefName", &val, &mut heads);
+                    if heads
+                        .iter()
+                        .any(|head| !self.repos.iter().any(|r| rest::side_is_own(head, r)))
+                    {
+                        return Err(Refusal::GraphqlOtherRepo);
+                    }
+                }
             }
             self.check_scoped(&ids)?;
             // What a mutation asks back is read like any query: it may not walk out of the repo.
@@ -622,6 +641,18 @@ impl<'d> Context<'_, 'd> {
             }
         }
         Ok(())
+    }
+}
+
+/// Every string under a key called `name`, at any depth.
+fn collect_named(name: &str, val: &Val, out: &mut Vec<String>) {
+    match val {
+        Val::List(items) => items.iter().for_each(|v| collect_named(name, v, out)),
+        Val::Obj(fields) => fields.iter().for_each(|(k, v)| match v {
+            Val::Str(s) if k == name => out.push(s.clone()),
+            _ => collect_named(name, v, out),
+        }),
+        _ => {}
     }
 }
 

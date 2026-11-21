@@ -750,6 +750,8 @@ fn is_routing_header(name: &str) -> bool {
             "x-http-method-override",
             "x-method-override",
             "x-http-method",
+            // GitLab: act as another user.
+            "sudo",
         ]
         .contains(&name.as_str())
 }
