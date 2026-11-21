@@ -173,6 +173,10 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   `scenarios/window_person.rs` need no wrap and run here:
   `cargo test -p purlis-app --lib --locked -- scenarios::window_person::<name>` (a cold build is
   about 8 minutes; `cargo clippy -p purlis-app --tests --locked -- -D warnings` about 5).
+- `cargo clippy -p purlis-app --tests --locked -j 4 -- -D warnings` is the quick local check for
+  the scenarios code (clippy's `too_many_arguments` is 7; a lib-test build is about 8 minutes cold,
+  so run `cargo test` in the background with `run_in_background`, not under a 600 s timeout).
+  A CI job ending "runner has received a shutdown signal" (exit 143) is a lost runner: re-run it.
 - To undo a probe's mutations in a sandboxed chat, save them with `git diff > patch` and take them
   out with `git apply -R patch`: `git checkout` and `git restore` write the index, which is outside
   what the chat may write.
