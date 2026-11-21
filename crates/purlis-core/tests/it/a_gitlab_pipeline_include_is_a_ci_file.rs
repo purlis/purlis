@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use purlis_core::forge::Kind;
-use purlis_core::heldact::{GitTrees, PushCheck, check_push};
+use purlis_core::heldact::{GitTrees, PushCheck, check_push, check_push_in};
 use purlis_core::mergehold::HeadSha;
 
 use crate::support::git;
@@ -230,4 +230,89 @@ fn a_pipeline_file_past_the_read_bound_refuses_the_push_instead_of_being_read_wh
         panic!("a pipeline file of 2 MiB is not read")
     };
     assert!(why.contains("more than 1024 KiB"), "{why}");
+}
+
+#[test]
+fn a_pipeline_file_that_is_not_utf8_refuses_the_push_and_is_never_read_lossily() {
+    purlis_core::unsteered!();
+    let dir = clone(ROOT);
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    // UTF-16 with its byte order mark: a reader that decodes it sees `include:`, a lossy UTF-8
+    // reading sees none.
+    let utf16: Vec<u8> = std::iter::once(0xFEFFu16)
+        .chain("include: [evil.yml]\n".encode_utf16())
+        .flat_map(u16::to_le_bytes)
+        .collect();
+    git(&root, &["checkout", "-q", "-b", "work", "main"]);
+    std::fs::write(root.join(".gitlab-ci.yml"), utf16).unwrap();
+    git(&root, &["add", "-A"]);
+    git(&root, &["commit", "-q", "-m", "utf-16 pipeline"]);
+    let tip = sha(&root, "HEAD");
+    git(&root, &["checkout", "-q", "main"]);
+    let PushCheck::Refuse(why) = check(&root, None, &tip) else {
+        panic!("refused")
+    };
+    assert!(why.contains("not valid UTF-8"), "{why}");
+}
+
+#[test]
+fn a_file_outside_the_strict_subset_makes_every_yaml_file_of_the_push_a_ci_file() {
+    purlis_core::unsteered!();
+    for root_file in [
+        "\u{feff}\u{feff}include: [ci/build.yml]\n",
+        "!!null include: [ci/build.yml]\n",
+        ":include: [ci/build.yml]\n",
+        "a: 1\n---\u{c}\ninclude: [ci/build.yml]\n",
+        "$[[ inputs.x ]]: [ci/build.yml]\n",
+    ] {
+        let dir = clone(root_file);
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let tip = change(&root, "anything/else.yml", "x: 1\n");
+        let PushCheck::Hold(diff) = check(&root, None, &tip) else {
+            panic!("held: {root_file:?}")
+        };
+        assert_eq!(diff.files, vec!["anything/else.yml".to_owned()]);
+    }
+}
+
+#[test]
+fn a_byte_order_mark_before_include_does_not_hide_it() {
+    purlis_core::unsteered!();
+    let dir = clone("\u{feff}include: ci/build.yml\n");
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let tip = change(&root, "ci/build.yml", "build:\n  script: [evil]\n");
+    let PushCheck::Hold(diff) = check(&root, None, &tip) else {
+        panic!("held")
+    };
+    assert_eq!(diff.files, vec!["ci/build.yml".to_owned()]);
+}
+
+#[test]
+fn an_include_of_this_same_project_is_a_file_of_this_repository() {
+    purlis_core::unsteered!();
+    let own = "include:\n  - project: group/app\n    file: /ci/build.yml\n  - component: gitlab.example.com/group/app/child@1\n  - remote: https://gitlab.example.com/group/app/-/raw/main/ci/jobs/test.yml\n";
+    for (file, text) in [
+        ("ci/build.yml", "build:\n  script: [evil]\n"),
+        ("templates/child.yml", "child:\n  script: [evil]\n"),
+        ("ci/jobs/test.yml", "test:\n  script: [evil]\n"),
+    ] {
+        let dir = clone(own);
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        write(&root, "templates/child.yml", "child:\n  script: [x]\n");
+        git(&root, &["add", "-A"]);
+        git(&root, &["commit", "-q", "-m", "a component"]);
+        let tip = change(&root, file, text);
+        let PushCheck::Hold(diff) = check_push_in(
+            Kind::GitLab,
+            None,
+            Some("group/app"),
+            &GitTrees::of_trusted_store(&root),
+            &sha(&root, "main"),
+            &tip,
+        ) else {
+            panic!("{file} is a file of this project's pipeline")
+        };
+        assert_eq!(diff.files, vec![file.to_owned()]);
+        assert!(diff.outside.is_empty(), "{:?}", diff.outside);
+    }
 }
