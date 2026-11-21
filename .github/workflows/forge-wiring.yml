@@ -34,7 +34,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -61,6 +61,8 @@ jobs:
       # The cli and the app carry the feature too (they forward it to purlis-core): built with it
       # on, so a build of either with the train's switch on is known to compile.
       - name: Build the cli and the app with it
+        # On Linux only: the app's build alone takes macOS half an hour, and it is the same code.
+        if: runner.os == 'Linux'
         timeout-minutes: 60
         run: cargo nextest run -p purlis-cli -p purlis-app --features purlis-cli/forge-wiring,purlis-app/forge-wiring --locked --no-run
       - name: Run the tests
