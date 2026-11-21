@@ -845,28 +845,28 @@ const TAMPER: &str = "written-by-the-chat-into-the-transcript";
 /// and its group window are covered with room.
 const POLLS: usize = 24;
 
-/// **A command the proxy holds, run in the background**: the script `command` (a file the host
-/// wrote, so no quote of it matters) in a session of its own (`setsid` through perl, which both
-/// OSes have), so a harness that ends its tool's
-/// process group when the call returns does not end it (Codex's does: the file stayed empty), its
-/// result written to `file` as its own words and its exit (`net-exit=N`), and the call itself gone
-/// at once. No `rm` in it (purlis's guard asks the person about a command that deletes, which
-/// Codex then waits on), and no stdin, the terminal's last holder.
-fn in_the_background(script: &Path, file: &Path) -> String {
+/// **A command the proxy holds, run from a script**: the script `script` (a file the host wrote,
+/// so no quote of it matters), its result written to `file` as its own words and its exit
+/// (`net-exit=N`), with no stdin. A harness that gives a long command's result back early (Codex's
+/// tool does after ten seconds, "Process running") leaves it running in its session, which
+/// finishes it and the file; one that waits (Claude Code's, OpenCode's) returns when it ends. The
+/// result is read by [`poll_for`] either way. It is not run in the background: Codex ends every
+/// process its call left behind, in a session of its own too (CI run 11). No `rm` in it:
+/// purlis's guard asks the person about a command that deletes, which Codex then waits on.
+fn held_command(script: &Path, file: &Path) -> String {
     format!(
-        "perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' sh '{script}' > '{file}' 2>&1 < /dev/null & \\
-         echo started",
+        "sh '{script}' > '{file}' 2>&1 < /dev/null; echo ended",
         script = script.display(),
         file = file.display(),
     )
 }
 
-/// The script [`in_the_background`] runs: `command`, and its exit said last.
+/// The script [`held_command`] runs: `command`, and its exit said last.
 fn script_of_the_held(command: &str) -> String {
     format!("{command}\necho \"net-exit=$?\"\n")
 }
 
-/// **One poll for what [`in_the_background`] wrote**: up to seven seconds, then whatever the
+/// **One poll for what [`held_command`] wrote**: up to seven seconds, then whatever the
 /// file holds.
 fn poll_for(file: &Path) -> String {
     format!(
@@ -1007,7 +1007,7 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
             let script = scenario.root.join("network.sh");
             std::fs::write(&script, script_of_the_held(&super::reaches(host)))
                 .expect("the held connection's script");
-            steps.push(("network-start", in_the_background(&script, &network)));
+            steps.push(("network-start", held_command(&script, &network)));
             for name in &polls {
                 steps.push((name.as_str(), poll_for(&network)));
             }
@@ -1777,15 +1777,21 @@ mod tests {
         assert_eq!(reply_to(offer, true, &spent), Some(Reply::Enter));
     }
 
-    /// **A held connection's command returns at once and its result is polled** (T1.1-53): the
-    /// call that starts it is gone before the command ends (a harness may give a long command's
-    /// result back after ten seconds, as Codex's tool does), the polls are short, and what they
-    /// read says the command's own exit. Needs no harness.
+    /// **A held connection's result is read by short polls** (T1.1-53): whether the call that runs
+    /// the command waits for it or gives its result back early (Codex's tool, after ten seconds,
+    /// leaves it running), the file the command writes says its own exit, and a poll before then
+    /// returns within seven seconds saying nothing of one. Needs no harness.
     #[test]
-    fn a_held_commands_result_is_polled_not_waited_for() {
+    fn a_held_commands_result_is_read_by_short_polls() {
         let dir = std::env::temp_dir().join(format!("leg-held-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a folder");
         let file = dir.join("network-result");
+        let script = dir.join("held.sh");
+        std::fs::write(
+            &script,
+            script_of_the_held("echo refused; sleep 9; sh -c 'exit 56'"),
+        )
+        .expect("a script");
         let sh = |command: &str| {
             purlis_core::forklock::output(
                 std::process::Command::new("/bin/sh").args(["-c", command]),
@@ -1793,23 +1799,20 @@ mod tests {
             .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
             .expect("a shell")
         };
+        // The harness's call returns at once here, as Codex's does at its yield: the command goes
+        // on beside it.
+        let call = held_command(&script, &file);
+        let mut running =
+            purlis_core::forklock::spawn(std::process::Command::new("/bin/sh").args(["-c", &call]))
+                .expect("the call");
         let started = Instant::now();
-        let script = dir.join("held.sh");
-        std::fs::write(
-            &script,
-            script_of_the_held("echo refused; sleep 9; sh -c 'exit 56'"),
-        )
-        .expect("a script");
-        let said = sh(&in_the_background(&script, &file));
-        assert!(
-            said.trim() == "started" && started.elapsed() < Duration::from_secs(2),
-            "the starting call waited for its command ({:?}): {said:?}",
-            started.elapsed()
-        );
-        // A poll before the command ends says nothing of its exit; one after says it.
         let early = sh(&poll_for(&file));
         assert!(!early.contains("net-exit="), "{early}");
-        assert!(early.trim_end().ends_with("polled"), "{early}");
+        assert!(
+            early.trim_end().ends_with("polled") && started.elapsed() < Duration::from_secs(9),
+            "a poll waited past its seven seconds ({:?}): {early}",
+            started.elapsed()
+        );
         let mut late = String::new();
         let deadline = Instant::now() + Duration::from_secs(20);
         while !late.contains("net-exit=") && Instant::now() < deadline {
@@ -1817,6 +1820,7 @@ mod tests {
         }
         assert_eq!(number_after(&late, "net-exit=", false), Some(56), "{late}");
         assert!(late.contains("refused"), "{late}");
+        running.wait().expect("the call ends");
         std::fs::remove_dir_all(&dir).expect("the folder goes");
     }
 
