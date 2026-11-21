@@ -158,11 +158,21 @@ pub struct SettingsEdit {
 }
 
 /// What a save answered: the file as it now stands, or every reason nothing was written.
+///
+/// `warning` is something the save did not finish after the file was written (a change of the
+/// project's level that could not be recorded): the window takes the new text and says it.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, specta::Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum SettingsSaved {
-    Saved { file: SettingsFile },
-    Refused { reasons: Vec<String> },
+    Saved {
+        file: SettingsFile,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        #[specta(optional)]
+        warning: Option<String>,
+    },
+    Refused {
+        reasons: Vec<String>,
+    },
 }
 
 /// Both of this plane's settings files, and what charter says about each.
@@ -206,8 +216,35 @@ pub async fn save_project_settings(
     .map_err(|err| format!("saving the settings did not finish: {err}"))?
 }
 
+/// Runs `change`, which may move the project's level, and records the move (`trust.sandbox.level`,
+/// R-228) through `hooks`, under no chat, where `effective(root)` differs after it. Every path
+/// that can move the level goes through here: a save of either file, form or raw, and a Confirm.
+///
+/// The record is made whatever `change` answered, because a level may have moved before it
+/// failed. The second answer is the warning for a move that could not be recorded: the change
+/// itself stands, so it is told, not an error.
+pub(crate) fn with_level_recorded<T>(
+    root: &std::path::Path,
+    hooks: &crate::hooks::Hooks,
+    change: impl FnOnce() -> Result<T, String>,
+) -> (Result<T, String>, Option<String>) {
+    use purlis_core::sandbox::personal::{LevelChanged, effective};
+    let was = effective(root);
+    let done = change();
+    let warning = LevelChanged::of(was, effective(root)).and_then(|changed| {
+        hooks.record_level_changed(root, &changed).err().map(|why| {
+            format!(
+                "Your level was saved, but purlis couldn't record the change from {} to {}: {why}",
+                changed.from.said(),
+                changed.to.said()
+            )
+        })
+    });
+    (done, warning)
+}
+
 /// The command above, without a runtime. A change to the project's level is recorded through
-/// `hooks`, under no chat (R-228): it is the one place the person changes it.
+/// `hooks`, under no chat (R-228), by whichever path moved it ([`with_level_recorded`]).
 pub(crate) fn save(
     root: &std::path::Path,
     hooks: &crate::hooks::Hooks,
@@ -244,46 +281,33 @@ pub(crate) fn save(
     // A preset turned on or off here, by you, is one this machine has seen (#1385), unless
     // another change was already waiting to be told: recorded as written (#1550).
     let shared = matches!(which, SettingsWhich::Shared);
-    // The project's level as it stands before this save, where the save sets or clears it.
-    let level_was = levels
-        .iter()
-        .any(|(persona, _)| persona.is_none())
-        .then(|| purlis_core::sandbox::personal::effective(root));
     let pending = shared.then(|| Pending::now(root));
-    match settings::save(root, which.into(), base, &text) {
-        Ok(()) if shared => {
-            if let Some(pending) = pending {
-                pending.seen_by_you(root, &text);
+    let (done, warning) = with_level_recorded(root, hooks, || {
+        match settings::save(root, which.into(), base, &text) {
+            Ok(()) if shared => {
+                if let Some(pending) = pending {
+                    pending.seen_by_you(root, &text);
+                }
             }
-            Ok(SettingsSaved::Saved {
-                file: file_of(root, which)?,
-            })
+            Ok(()) => {
+                for (persona, level) in &levels {
+                    purlis_core::sandbox::personal::set_by_you(root, persona.as_deref(), *level)?;
+                }
+            }
+            Err(reasons) => return Ok(SettingsSaved::Refused { reasons }),
         }
-        Ok(()) => {
-            for (persona, level) in &levels {
-                purlis_core::sandbox::personal::set_by_you(root, persona.as_deref(), *level)?;
-            }
-            // Said once, by the person, where the project's level actually moved. The file is
-            // saved by now, so a record that cannot be written is told, not hidden.
-            if let Some(changed) = level_was.and_then(|was| {
-                purlis_core::sandbox::personal::LevelChanged::of(
-                    was,
-                    purlis_core::sandbox::personal::effective(root),
-                )
-            }) {
-                hooks.record_level_changed(root, &changed).map_err(|why| {
-                    format!(
-                        "Your level was saved, but the change from {} to {} was not recorded: {why}",
-                        changed.from.said(),
-                        changed.to.said()
-                    )
-                })?;
-            }
-            Ok(SettingsSaved::Saved {
-                file: file_of(root, which)?,
-            })
+        Ok(SettingsSaved::Saved {
+            file: file_of(root, which)?,
+            warning: None,
+        })
+    });
+    match (done, warning) {
+        (Ok(SettingsSaved::Saved { file, .. }), warning) => {
+            Ok(SettingsSaved::Saved { file, warning })
         }
-        Err(reasons) => Ok(SettingsSaved::Refused { reasons }),
+        (Ok(refused), _) => Ok(refused),
+        (Err(why), Some(warning)) => Err(format!("{why} {warning}")),
+        (Err(why), None) => Err(why),
     }
 }
 
@@ -1484,20 +1508,156 @@ mod tests {
         );
     }
 
-    /// A level saved while the event log cannot take the record is told as a save that was not
-    /// recorded, not only warned about in a log.
+    /// A save of a whole file's text, as the raw editor makes it.
+    fn save_raw(
+        root: &std::path::Path,
+        hooks: &crate::hooks::Hooks,
+        which: SettingsWhich,
+        text: &str,
+    ) -> Result<SettingsSaved, String> {
+        let file = match which {
+            SettingsWhich::Local => purlis_core::profiles::LOCAL_FILE,
+            SettingsWhich::Shared => "charter.toml",
+        };
+        let base = std::fs::read_to_string(root.join(file)).ok();
+        let saved = save(
+            root,
+            hooks,
+            which,
+            base.as_deref(),
+            SettingsChange::Raw {
+                text: text.to_owned(),
+            },
+        );
+        assert!(
+            matches!(saved, Ok(SettingsSaved::Saved { .. })),
+            "{saved:?}"
+        );
+        saved
+    }
+
+    /// The `(from, to)` words of each `trust.sandbox.level` event in the log at `logs`.
+    fn moves(logs: &std::path::Path) -> Vec<(String, String)> {
+        level_events(logs)
+            .iter()
+            .map(|event| {
+                let said = |field: &str| event.body[field].as_str().unwrap_or_default().to_owned();
+                (said("from"), said("to"))
+            })
+            .collect()
+    }
+
+    fn words(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(from, to)| ((*from).to_owned(), (*to).to_owned()))
+            .collect()
+    }
+
+    /// N1, path 2: **a raw save of the Local file that deletes the level line** drops the level
+    /// from Full to Basic, and writes one event. Its mutation, red here: `with_level_recorded`
+    /// made to record nothing.
     #[test]
-    fn a_level_saved_with_no_event_log_open_says_it_was_not_recorded() {
+    fn a_raw_save_that_deletes_the_level_line_writes_one_event() {
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let (hooks, logs) = recording(root);
+        save_level(root, &hooks, "on").unwrap();
+        save_raw(root, &hooks, SettingsWhich::Local, "# no level now\n").unwrap();
+        assert_eq!(moves(&logs), words(&[("floor", "on"), ("on", "floor")]));
+    }
+
+    /// N1, path 2: **a raw save that writes a stricter word** raises the level at once.
+    #[test]
+    fn a_raw_save_of_a_stricter_word_writes_one_event() {
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let (hooks, logs) = recording(root);
+        save_raw(
+            root,
+            &hooks,
+            SettingsWhich::Local,
+            "[sandbox]\nlevel = \"on\"\n",
+        )
+        .unwrap();
+        assert_eq!(moves(&logs), words(&[("floor", "on")]));
+    }
+
+    /// N1, path 3: **turning the project's sandbox on in the shared file** moves the effective
+    /// level, and writes one event.
+    #[test]
+    fn turning_the_sandbox_on_in_the_shared_file_writes_one_event() {
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let (hooks, logs) = recording(root);
+        save_raw(
+            root,
+            &hooks,
+            SettingsWhich::Shared,
+            "schema = 1\n[sandbox]\nmode = \"on\"\n",
+        )
+        .unwrap();
+        assert_eq!(moves(&logs), words(&[("floor", "on")]));
+    }
+
+    /// N1, path 1: **a Confirm that lowers the level** writes one event, and one that confirms
+    /// what is already in force writes none.
+    #[test]
+    fn a_confirm_that_lowers_the_level_writes_one_event() {
+        use purlis_core::sandbox::personal::Choice;
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let (hooks, logs) = recording(root);
+        save_level(root, &hooks, "on").unwrap();
+        // Written by hand, not by this window: it waits for the Confirm.
+        std::fs::write(
+            root.join(purlis_core::profiles::LOCAL_FILE),
+            "[sandbox]\nlevel = \"off\"\n",
+        )
+        .unwrap();
+        assert_eq!(moves(&logs), words(&[("floor", "on")]));
+        crate::yoursandbox::confirm_recorded(root, &hooks, None, Choice::Off).unwrap();
+        assert_eq!(moves(&logs), words(&[("floor", "on"), ("on", "off")]));
+        crate::yoursandbox::confirm_recorded(root, &hooks, None, Choice::Off).unwrap();
+        assert_eq!(
+            moves(&logs).len(),
+            2,
+            "confirming the same level moves nothing"
+        );
+    }
+
+    /// **A save that leaves the level where it was writes nothing**, by any of the paths.
+    #[test]
+    fn a_save_that_does_not_move_the_level_writes_no_event() {
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let (hooks, logs) = recording(root);
+        save_raw(root, &hooks, SettingsWhich::Local, "# mine\n").unwrap();
+        save_raw(root, &hooks, SettingsWhich::Shared, "schema = 1\n# ours\n").unwrap();
+        save_level(root, &hooks, "floor").unwrap();
+        assert!(moves(&logs).is_empty());
+    }
+
+    /// A level saved while the event log cannot take the record is still saved: the window takes
+    /// the new text, and the answer carries one sentence saying what was not recorded.
+    #[test]
+    fn a_level_saved_with_no_event_log_open_saves_and_warns() {
         let dir = plane("schema = 1\n");
         let root = dir.path();
         let hooks = crate::hooks::Hooks::deaf(
             PlaneId::saved_in_the_host(root),
             purlis_core::sandbox::timings::Timings::production(),
         );
-        let why = save_level(root, &hooks, "on").unwrap_err();
+        let SettingsSaved::Saved { file, warning } = save_level(root, &hooks, "on").unwrap() else {
+            panic!("the level is saved");
+        };
+        assert!(file.text.contains("level = \"on\""), "{}", file.text);
+        let warning = warning.expect("the record failed, so it is told");
         assert!(
-            why.starts_with("Your level was saved, but the change from basic sandbox to full sandbox was not recorded"),
-            "{why}"
+            warning.starts_with(
+                "Your level was saved, but purlis couldn't record the change from basic sandbox to full sandbox: "
+            ),
+            "{warning}"
         );
         assert_eq!(
             purlis_core::sandbox::personal::in_force(root).level,
@@ -1645,7 +1805,7 @@ mod tests {
             },
         )
         .unwrap();
-        let SettingsSaved::Saved { file } = saved else {
+        let SettingsSaved::Saved { file, .. } = saved else {
             panic!("saved: {saved:?}")
         };
         assert_eq!(file.text, "# keep me\n[memory]\nshare = \"push\" # why\n");

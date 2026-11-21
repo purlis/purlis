@@ -14726,8 +14726,11 @@ export type SettingsRefusal = {
 	key: string[] | null,
 };
 
-/**  What a save answered: the file as it now stands, or every reason nothing was written. */
-export type SettingsSaved = { kind: "saved"; file: SettingsFile } | { kind: "refused"; reasons: string[] };
+/**  What a save answered: the file as it now stands, or every reason nothing was written.
+ * 
+ * `warning` is something the save did not finish after the file was written (a change of the
+ * project's level that could not be recorded): the window takes the new text and says it. */
+export type SettingsSaved = { kind: "saved"; file: SettingsFile; warning?: string } | { kind: "refused"; reasons: string[] };
 
 /**  One step of the way to a key: a table's key, or a block's place in `[[forge]]`. */
 export type SettingsStep = ({ key: string }) & { index?: never } | ({ index: number }) & { key?: never };

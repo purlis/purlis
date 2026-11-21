@@ -984,15 +984,16 @@ export function useProjectLevel(plane: PlaneId): ProjectLevel {
     change: SettingsChange,
     both: ProjectFiles,
   ): Promise<Wrote<ProjectFiles>> =>
-    commands
-      .saveProjectSettings(plane, which as SettingsWhich, base, change)
-      .then((said) =>
-        said.status === "error"
-          ? { refused: [said.error] }
-          : said.data.kind === "refused"
-            ? { refused: said.data.reasons }
-            : { saved: { ...both, [which]: said.data.file } },
-      );
+    commands.saveProjectSettings(plane, which as SettingsWhich, base, change).then((said) =>
+      said.status === "error"
+        ? { refused: [said.error] }
+        : said.data.kind === "refused"
+          ? { refused: said.data.reasons }
+          : {
+              saved: { ...both, [which]: said.data.file },
+              ...(said.data.warning === undefined ? {} : { warned: said.data.warning }),
+            },
+    );
 
   /**
    * An add, a remove or a rename in one of the level's collections, through the core's function
