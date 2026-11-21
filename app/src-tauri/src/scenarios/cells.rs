@@ -26,7 +26,7 @@
 //! so an event written late, at the next prompt, lands in the next step, which is what `at:
 //! next_prompt` and the marks that pin it are about.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use purlis_scenarios::judge::{Assertion, GlobalFailure, Observed, Run};
@@ -344,63 +344,64 @@ fn unplayable(cell: &Cell, dialect: CellDialect, batch: &Batch, why: &str) {
     super::report::write(&[record.leg]).expect("the leg's report");
 }
 
-/// **Plays `batch` as `dialect`** and reports each cell it takes. `Err` is a batch that is
-/// malformed as a whole; a cell the runner cannot play is its own `fail` record.
-pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
+/// The hosts a batch binds, by key: each a `.test` name of its own.
+fn hosts_of(batch: &Batch) -> Hosts {
+    batch
+        .hosts
+        .keys()
+        .map(|key| (key.clone(), format!("{key}.cells.test")))
+        .collect()
+}
+
+/// **The cells of `batch` this run takes as `dialect`, sorted**: those a `scenario` cover names
+/// ([`play::covered`]), less those a scaled run skips for their timing (reported as such by
+/// `report::skipped_for_timing`, never as passed). The first list is what plays, the second what
+/// cannot, with why.
+fn classified<'a>(
+    batch: &'a Batch,
+    file: &str,
+    covered: &BTreeSet<(String, String)>,
+    dialect: CellDialect,
+) -> (Vec<&'a Cell>, Vec<(&'a Cell, String)>) {
     let seconds = catalogue().seconds_at(SCALE);
     let pins = purlis_scenarios::validate::Validator::repo()
         .expect("the pins")
         .pins;
-    let hosts: Hosts = batch
-        .hosts
-        .keys()
-        .map(|key| (key.clone(), format!("{key}.cells.test")))
-        .collect();
-
-    // The cells this run plays: this dialect's, and not those a scaled run skips for timing
-    // (reported as such by `report::skipped_for_timing`, never as passed).
-    let mine: Vec<&Cell> = batch
-        .cells
-        .iter()
-        .filter(|cell| cell.dialects.contains(&dialect))
-        .collect();
-    let (playable, malformed): (Vec<&Cell>, Vec<(&Cell, String)>) = {
-        let mut playable = Vec::new();
-        let mut malformed = Vec::new();
-        for cell in mine {
-            if schedule(
+    let hosts = hosts_of(batch);
+    let mut playable = Vec::new();
+    let mut malformed = Vec::new();
+    for cell in &batch.cells {
+        if !cell.dialects.contains(&dialect)
+            || !covered.contains(&(file.to_owned(), cell.id.clone()))
+            || schedule(
                 cell,
                 &CoreTimings,
                 TimingsMode::Scaled,
                 Trigger::PullRequest,
             ) == Scheduled::SkippedForTiming
-            {
-                continue;
-            }
-            match malformed_cell(cell, dialect, &hosts, &seconds, &pins) {
-                Some(why) => malformed.push((cell, why)),
-                None => playable.push(cell),
-            }
+        {
+            continue;
         }
-        (playable, malformed)
-    };
-    for (cell, why) in &malformed {
-        unplayable(cell, dialect, batch, why);
+        match malformed_cell(cell, dialect, &hosts, &seconds, &pins) {
+            Some(why) => malformed.push((cell, why)),
+            None => playable.push(cell),
+        }
     }
+    (playable, malformed)
+}
+
+/// **Plays `playable`, cells of `batch`, as `dialect`** in a scenario of its own, and reports
+/// each. The scenario's global checks are judged on its device's log, which every scenario of a
+/// process shares: so the test runs each batch and dialect in a child process with homes of its
+/// own ([`Homes::of_this_scenario_with`]).
+pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, playable: &[&Cell]) {
+    let seconds = catalogue().seconds_at(SCALE);
+    let hosts = hosts_of(batch);
     said(&format!(
-        "{} as {}: {} to play, {} malformed",
+        "{} as {}: starting its scenario for {} cells",
         batch.batch,
         dialect.word(),
-        playable.len(),
-        malformed.len()
-    ));
-    if playable.is_empty() {
-        return;
-    }
-    said(&format!(
-        "{} as {}: starting its scenario",
-        batch.batch,
-        dialect.word()
+        playable.len()
     ));
     let Some(scenario) = Scenario::new(
         homes,
@@ -439,7 +440,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
 
     // The cells' own marks of a global check, which the teardown judges once for the batch.
     let mut marked = std::collections::BTreeSet::new();
-    for cell in &playable {
+    for cell in playable {
         for mark in &cell.expected_fail {
             if let Some(check) = mark.check.as_deref().and_then(check_of)
                 && applies(mark, dialect)
@@ -454,10 +455,10 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         }
     }
 
-    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch);
+    let script = script_of(playable, &hosts, &client, &trust, &batch.batch);
     let mut chat = None;
     let mut played: Vec<Played> = Vec::new();
-    for cell in &playable {
+    for cell in playable {
         for (n, step) in cell.steps.iter().enumerate() {
             let since = scenario.latest_seq();
             let transcript_from = scenario.transcript().len();
@@ -561,7 +562,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         timings: TimingsMode::Scaled,
         seconds: seconds.clone(),
     };
-    for cell in &playable {
+    for cell in playable {
         let mut assertions: Vec<Assertion> = Vec::new();
         for ((p, end), transcript_end) in played
             .iter()
@@ -803,32 +804,77 @@ fn malformed_cell(
     (!why.is_empty()).then(|| format!("{}: malformed: {}", cell.id, why.join("; ")))
 }
 
-/// **Every cell in `tests/scenarios/cells` plays here, and is reported** (#7322): each batch, as
-/// each dialect any of its cells names, in a scenario of its own. The legs' run-result gate then
-/// holds a row to a record of this run.
+/// The variable that tells a child which batch and dialect it plays (`B0:claude`).
+const ONLY: &str = "PURLIS_CELLS_ONLY";
+
+/// **Every cell a `scenario` cover names plays here, and is reported** (#7322): each batch and
+/// dialect in a child process of its own, with homes and a device log of its own, so one batch's
+/// refusals are never another's global checks. The legs' run-result gate then holds a row to a
+/// record of this run. A cell no cover names is data only until the pull request that covers it.
+///
+/// The parent classifies the cells, writes the records of those it cannot play (malformed: a
+/// `fail`) and of those a scaled run skips for timing (`not_run`), and starts a child for each
+/// batch and dialect with something to play. A child that fails does not stop the others, and the
+/// parent fails at the end naming each.
 ///
 /// Claude on macOS is ticket 10's leg (Claude Code's own sandbox, which the fake does not play),
 /// so the fake leg plays no Claude cell there and owes none.
 #[test]
 fn every_cell_plays_and_is_reported() {
-    let Some(homes) = Homes::of_this_scenario() else {
-        return;
-    };
     let validator = purlis_scenarios::validate::Validator::repo().expect("the pins");
     let batches = play::load(&purlis_scenarios::root().join("cells"), &validator)
         .unwrap_or_else(|why| panic!("the cells are malformed: {why}"));
-    // A batch's cells that the run skips for their timing are reported as such.
-    for batch in &batches {
-        let skipped =
-            super::report::skipped_for_timing(batch, TimingsMode::Scaled, Trigger::PullRequest);
-        super::report::write(&skipped).expect("the leg's report");
+    let covered =
+        play::covered(&purlis_scenarios::coverage::Coverage::read().expect("coverage.json"));
+    let only = std::env::var(ONLY).ok();
+    let mut red = Vec::new();
+    for (file, batch) in &batches {
+        if only.is_none() {
+            let skipped =
+                super::report::skipped_for_timing(batch, TimingsMode::Scaled, Trigger::PullRequest);
+            super::report::write(&skipped).expect("the leg's report");
+        }
         for dialect in CellDialect::ALL {
             if dialect == CellDialect::Claude && cfg!(target_os = "macos") {
                 continue;
             }
-            if batch.cells.iter().any(|c| c.dialects.contains(&dialect)) {
-                play_batch(&homes, batch, dialect);
+            let (playable, malformed) = classified(batch, file, &covered, dialect);
+            let this = format!("{}:{}", batch.batch, dialect.word());
+            if only.as_deref().is_some_and(|want| want != this) {
+                continue;
+            }
+            if only.is_none() {
+                for (cell, why) in &malformed {
+                    unplayable(cell, dialect, batch, why);
+                }
+                said(&format!(
+                    "{this}: {} to play, {} malformed",
+                    playable.len(),
+                    malformed.len()
+                ));
+            }
+            if playable.is_empty() {
+                continue;
+            }
+            let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if let Some(homes) = Homes::of_this_scenario_with(&[(ONLY, &this)]) {
+                    play_batch(&homes, batch, dialect, &playable);
+                }
+            }));
+            // In the child a failure is the test's own; in the parent it is one batch's, and the
+            // others still run.
+            if let Err(why) = ran {
+                if only.is_some() {
+                    std::panic::resume_unwind(why);
+                }
+                let said = why
+                    .downcast_ref::<String>()
+                    .cloned()
+                    .or_else(|| why.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+                    .unwrap_or_default();
+                red.push(format!("{this}: {said}"));
             }
         }
     }
+    assert!(red.is_empty(), "{}", red.join("\n\n"));
 }

@@ -50,9 +50,13 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
 
 ## The runner (#7322)
 
-`app/src-tauri/src/scenarios/cells.rs` plays every cell in `cells/` in the scenario host, one chat
-per batch and dialect, and reports each through `report_cell`, so a cell that ran is a cell record
-(kind, row, `refusal_expected`, events) and not only a JUnit row (#7229). What a cell means is
+`app/src-tauri/src/scenarios/cells.rs` plays every cell that a `scenario` cover in `coverage.json`
+names, one chat per batch and dialect, each in a child process with homes and a device log of its
+own (every scenario of a process shares one log, so one batch's refusals would be another's global
+checks). It reports each cell through `report_cell`, so a cell that ran is a cell record (kind,
+row, `refusal_expected`, events) and not only a JUnit row (#7229). A cell no cover names is data
+only until the pull request that covers it, which is also where a real finding in it is pinned.
+What a cell means is
 decided in `src/play.rs`, which has no chat and is tested on its own: a step's `require` and
 `forbid` read against the events its chat wrote (`step_assertions`; the file's docs say what
 `count`, `before`, `at`, `within` and `args` mean), and the verdict (`verdict`).

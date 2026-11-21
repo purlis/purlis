@@ -42,11 +42,12 @@
 //!
 //! Any other word in `before`, `at` or `args` is [`Malformed`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde_json::Value;
 
+use crate::coverage::{Cover, Coverage};
 use crate::judge::{Assertion, GlobalFailure, Observed, Run, Verdict, judge};
 use crate::model::{
     Batch, Cell, EntryKind, Expect, Outcome, ReportVerdict, Require, Step, WindowQuery,
@@ -195,10 +196,10 @@ pub fn window_of(query: &WindowQuery) -> Result<(Query, bool), Malformed> {
     })
 }
 
-/// **Every batch in `dir`**, read, checked against the schema and put through the [`Validator`].
-/// A file that fails any is `Err` with each problem, so a malformed file never reads as a batch
-/// with fewer cells.
-pub fn load(dir: &Path, validator: &Validator) -> Result<Vec<Batch>, Malformed> {
+/// **Every batch in `dir`**, read, checked against the schema and put through the [`Validator`],
+/// each with its file as a cover names it (`cells/B0.json`). A file that fails any is `Err` with
+/// each problem, so a malformed file never reads as a batch with fewer cells.
+pub fn load(dir: &Path, validator: &Validator) -> Result<Vec<(String, Batch)>, Malformed> {
     let mut paths: Vec<_> = std::fs::read_dir(dir)
         .map_err(|why| Malformed(format!("{}: {why}", dir.display())))?
         .flatten()
@@ -216,13 +217,42 @@ pub fn load(dir: &Path, validator: &Validator) -> Result<Vec<Batch>, Malformed> 
             let batch = Batch::from_value(value)
                 .map_err(|why| Malformed(format!("{}: {why}", path.display())))?;
             match validator.check(&batch) {
-                problems if problems.is_empty() => Ok(batch),
+                problems if problems.is_empty() => Ok((
+                    format!(
+                        "cells/{}",
+                        path.file_name().unwrap_or_default().to_string_lossy()
+                    ),
+                    batch,
+                )),
                 problems => Err(Malformed(format!(
                     "{}: {}",
                     path.display(),
                     problems.join("; ")
                 ))),
             }
+        })
+        .collect()
+}
+
+/// **The cells a `scenario` cover names**, as (cells file, cell id): the cells the fake leg owes
+/// a verdict for, and so the cells the runner plays. A cell no cover names yet is data only, so a
+/// finding in it (a real bug the cell is the first to see) is pinned in the pull request that
+/// covers it, never in every other pull request's run.
+pub fn covered(list: &Coverage) -> BTreeSet<(String, String)> {
+    let named = list
+        .rows
+        .iter()
+        .map(|r| r.cover.as_str())
+        .chain(list.escapes.iter().flat_map(|e| {
+            e.covers
+                .values()
+                .map(String::as_str)
+                .chain([e.control.as_str()])
+        }));
+    named
+        .filter_map(|text| match Cover::parse(text) {
+            Ok(Cover::Scenario { file, cell }) => Some((file, cell)),
+            _ => None,
         })
         .collect()
 }
@@ -824,6 +854,43 @@ mod tests {
         ];
         let got = step_assertions(1, &s, &backwards, &[], &hosts(), &seconds());
         assert_eq!(got[1].observed, Observed::Fail(0.into()));
+    }
+
+    #[test]
+    fn only_the_cells_a_scenario_cover_names_are_covered() {
+        let list = Coverage::from_value(json!({
+            "rows": [
+                {"row": "M-A", "dialect": "claude", "os": "linux", "log": true, "window": false,
+                 "chat": false, "carried": "scenario", "kind": "scenario",
+                 "cover": "scenario: cells/B0.json#M-A"},
+                {"row": "M-B", "dialect": "claude", "os": "linux", "log": true, "window": false,
+                 "chat": false, "carried": "scenario", "kind": "scenario", "cover": "pending: 11"},
+                {"row": "M-C", "dialect": "claude", "os": "linux", "log": true, "window": false,
+                 "chat": false, "carried": "e2e", "kind": "e2e",
+                 "cover": "e2e: app/e2e/specs/x.e2e.ts#a title"},
+            ],
+            "escapes": [{"id": "E-1", "control": "scenario: cells/B9.json#E-1-CTL",
+                         "covers": {"full": "scenario: cells/B9.json#E-1-FULL", "basic": "pending: 11"}}],
+        }))
+        .expect("a list");
+        let named: Vec<(&str, &str)> = [
+            ("cells/B0.json", "M-A"),
+            ("cells/B9.json", "E-1-CTL"),
+            ("cells/B9.json", "E-1-FULL"),
+        ]
+        .into();
+        let got = covered(&list);
+        assert_eq!(got.len(), 3, "{got:?}");
+        for (file, cell) in named {
+            assert!(
+                got.contains(&(file.to_owned(), cell.to_owned())),
+                "{file}#{cell}"
+            );
+        }
+        assert!(
+            !covered(&Coverage::default()).iter().any(|_| true),
+            "an empty list covers nothing"
+        );
     }
 
     #[test]
