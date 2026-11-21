@@ -553,7 +553,7 @@ fn each_gitlab_token_kind_is_read_from_its_shape_and_its_variable() {
 
     // A CI job's token, whatever it looks like, on the host CI says it is.
     let job = [
-        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_JOB_TOKEN", LEGACY_JOB),
         ("CI_SERVER_HOST", "git.example.com"),
     ];
     let c = got(&job, "git.example.com");
@@ -661,27 +661,27 @@ fn github_token_on_a_ghes_job_is_never_offered_to_github_com() {
 #[test]
 fn gitlab_tokens_are_offered_only_to_the_host_gitlab_names_and_to_none_when_it_names_none() {
     // No host named: neither is offered, gitlab.com included.
-    let bare = [("GITLAB_TOKEN", GLPAT_A), ("CI_JOB_TOKEN", "abcdef012345")];
+    let bare = [("GITLAB_TOKEN", GLPAT_A), ("CI_JOB_TOKEN", LEGACY_JOB)];
     for host in ["gitlab.com", "git.example.com"] {
         assert!(refused(&bare, host).is_none_given(), "{host}");
     }
     // GitLab.com's own CI names it.
     let on_gitlab_com = [
         ("GITLAB_TOKEN", GLPAT_A),
-        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_JOB_TOKEN", LEGACY_JOB),
         ("CI_SERVER_HOST", "gitlab.com"),
     ];
     assert_eq!(got(&on_gitlab_com, "gitlab.com").expose(), GLPAT_A);
     // A self-managed job's token, and its GITLAB_TOKEN, are that server's and nobody else's.
     let on_self_managed = [
         ("GITLAB_TOKEN", GLPAT_A),
-        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_JOB_TOKEN", LEGACY_JOB),
         ("CI_SERVER_HOST", "git.example.com"),
     ];
     assert!(refused(&on_self_managed, "gitlab.com").is_none_given());
     assert_eq!(got(&on_self_managed, "git.example.com").expose(), GLPAT_A);
     let job_only = [
-        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_JOB_TOKEN", LEGACY_JOB),
         ("CI_SERVER_HOST", "git.example.com"),
     ];
     assert!(refused(&job_only, "gitlab.com").is_none_given());
@@ -689,11 +689,11 @@ fn gitlab_tokens_are_offered_only_to_the_host_gitlab_names_and_to_none_when_it_n
     let both = [
         ("GITLAB_TOKEN", GLPAT_A),
         ("GITLAB_HOST", "other.example.com"),
-        ("CI_JOB_TOKEN", "abcdef012345"),
+        ("CI_JOB_TOKEN", LEGACY_JOB),
         ("CI_SERVER_HOST", "git.example.com"),
     ];
     assert_eq!(got(&both, "other.example.com").expose(), GLPAT_A);
-    assert_eq!(got(&both, "git.example.com").expose(), "abcdef012345");
+    assert_eq!(got(&both, "git.example.com").expose(), LEGACY_JOB);
     // A host variable that is not a host names none.
     let bad = [("GITLAB_TOKEN", GLPAT_A), ("GITLAB_HOST", "not a host")];
     assert!(refused(&bad, "gitlab.com").is_none_given());
@@ -1509,8 +1509,11 @@ fn a_variable_that_is_not_text_is_an_error_and_never_unset() {
     );
 }
 
+/// GitLab's original job token: 20 characters of letters, digits and `-` or `_`.
+const LEGACY_JOB: &str = "abcdef0123456789_-ab";
+
 #[test]
-fn a_job_token_is_taken_whatever_its_length_or_characters() {
+fn a_job_token_is_exempt_from_the_shapes_only_in_the_forms_gitlab_issues() {
     let job = |token: &str| {
         got(
             &[
@@ -1520,23 +1523,63 @@ fn a_job_token_is_taken_whatever_its_length_or_characters() {
             "git.example.com",
         )
     };
-    // A JWT-shaped `glcbt-` value, longer than any shape, with dots and a long body.
-    let jwt = format!(
+    // A `glcbt-` value of any length, characters or shape: longer than any shape here, too
+    // short for it, or with a character outside it.
+    let long = format!(
         "glcbt-{}.{}.{}",
         "a".repeat(300),
         "b".repeat(200),
         "c".repeat(200)
     );
+    let c = job(&long);
+    assert_eq!(c.token_kind(), TokenKind::GitLabJob);
+    assert_eq!(c.expose(), long);
+    assert_eq!(job("glcbt-ab").token_kind(), TokenKind::GitLabJob);
+    assert_eq!(job("glcbt-a~b+c/d=").token_kind(), TokenKind::GitLabJob);
+    // A JWT, GitLab's newer job token: three base64url parts.
+    let jwt = format!(
+        "eyJ{}.{}.{}",
+        "a".repeat(80),
+        "B".repeat(120),
+        "c-_".repeat(30)
+    );
     let c = job(&jwt);
     assert_eq!(c.token_kind(), TokenKind::GitLabJob);
     assert_eq!(c.expose(), jwt);
-    // One that is too short for the shape, and one with a character outside it.
-    assert_eq!(job("glcbt-ab").token_kind(), TokenKind::GitLabJob);
-    assert_eq!(job("glcbt-a~b+c/d=").token_kind(), TokenKind::GitLabJob);
+    // And the original opaque 20 characters.
+    assert_eq!(job(LEGACY_JOB).token_kind(), TokenKind::GitLabJob);
+    // Nothing else in that variable is a job's token: a short value, a long one with no shape, a
+    // JWT with a part missing or a character outside base64url, and a token of another forge.
+    let not_a_job = [
+        "abc".to_string(),
+        "job".to_string(),
+        format!("{LEGACY_JOB}x"),
+        LEGACY_JOB[..19].to_string(),
+        "ab cdef0123456789_-a".to_string(),
+        "eyJhbGciOi.eyJzdWIiOi".to_string(),
+        "eyJhbGciOi.eyJzdWIiOi.sig+nature".to_string(),
+        "eyJhbGciOi..c2ln".to_string(),
+        "x".repeat(300),
+    ];
+    for token in &not_a_job {
+        assert!(
+            matches!(
+                refused(
+                    &[
+                        ("CI_JOB_TOKEN", token.as_str()),
+                        ("CI_SERVER_HOST", "git.example.com")
+                    ],
+                    "git.example.com"
+                ),
+                CredentialError::Unusable { .. }
+            ),
+            "{token}"
+        );
+    }
     // The exemption is the job variable's own: a named variable still holds the shape.
     let named = format!("PURLIS_FORGE_TOKEN__{GIT_EXAMPLE_COM}");
     assert!(matches!(
-        refused(&[(named.as_str(), jwt.as_str())], "git.example.com"),
+        refused(&[(named.as_str(), long.as_str())], "git.example.com"),
         CredentialError::Unusable { .. }
     ));
 }

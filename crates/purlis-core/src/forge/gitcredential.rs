@@ -468,16 +468,100 @@ fn quoted(path: &Path) -> Option<String> {
 /// Started again by git as the credential helper: answer git and exit, before anything of the
 /// app starts. `None` when this process was not started as one.
 pub fn serve_if_asked() -> Option<i32> {
+    if let Some(code) = serve_sentinel_if_asked() {
+        return Some(code);
+    }
     let mut args = std::env::args_os().skip(1);
-    if args.next()? != HELPER_ARG {
+    let first = args.next()?;
+    let rest: Vec<String> = args.map(|a| a.to_string_lossy().into_owned()).collect();
+    if first != HELPER_ARG {
         return None;
     }
-    let rest: Vec<String> = args.map(|a| a.to_string_lossy().into_owned()).collect();
     Some(serve(
         &rest,
         &mut std::io::stdin().lock(),
         &mut std::io::stdout().lock(),
         &mut std::io::stderr().lock(),
+        &crate::envvar::var,
+    ))
+}
+
+/// The argument that starts the app's binary as **a chat's** credential helper (ADR 0128 D3c):
+/// the one that answers a chat's git with its sentinel.
+pub const SENTINEL_HELPER_ARG: &str = "purlis-git-sentinel";
+
+/// The environment variable a chat carries its sentinel in, which [`serve_sentinel`] reads. The
+/// sentinel is worth nothing outside the chat's own proxy (ADR 0128 D3b).
+pub const SENTINEL_ENV: &str = "PURLIS_FORGE_SENTINEL";
+
+/// The user name git sends with the sentinel; the proxy decodes the Basic header and swaps the
+/// pair for the person's token.
+pub const SENTINEL_USER: &str = "x-access-token";
+
+/// **A chat's credential helper** (ADR 0128 D3c): `args` are the recorded hosts it answers for
+/// (`--host <name>`, repeated) and git's operation last; `input` is what git sends.
+///
+/// It holds no token. On `get` over HTTPS for a recorded host it answers
+/// `username=x-access-token` and the sentinel it reads from the environment ([`SENTINEL_ENV`]),
+/// and nothing for any other host or protocol. **On `store` and `erase` (and any operation a
+/// later git adds) it does nothing**, so the sentinel is never written anywhere: not into
+/// `osxkeychain`, not into a file. Everything git sent is read first so git never writes into a
+/// closed pipe.
+pub fn serve_sentinel(
+    args: &[String],
+    input: &mut dyn Read,
+    output: &mut dyn Write,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> i32 {
+    let mut sent = Vec::new();
+    if input.take(MOST_INPUT).read_to_end(&mut sent).is_err() {
+        return 1;
+    }
+    let Some((operation, flags)) = args.split_last() else {
+        return 1;
+    };
+    if operation != "get" {
+        return 0;
+    }
+    let mut hosts = Vec::new();
+    let mut flags = flags.iter();
+    while let Some(flag) = flags.next() {
+        match (flag.as_str(), flags.next()) {
+            ("--host", Some(host)) => hosts.push(host.to_ascii_lowercase()),
+            _ => return 1,
+        }
+    }
+    let asked = Asked::from(&sent);
+    if asked.protocol != "https" || !hosts.contains(&asked.host) {
+        return 0;
+    }
+    let Some(sentinel) = env(SENTINEL_ENV) else {
+        return 0;
+    };
+    // A value git would split is not a sentinel: nothing rather than a broken answer.
+    if sentinel.is_empty() || sentinel.contains(['\n', '\r', '\0']) {
+        return 0;
+    }
+    let said = format!("username={SENTINEL_USER}\npassword={sentinel}\n");
+    if output.write_all(said.as_bytes()).is_err() || output.flush().is_err() {
+        return 1;
+    }
+    0
+}
+
+/// Started again by git as **a chat's** credential helper ([`SENTINEL_HELPER_ARG`]): answer git
+/// and exit. `None` when this process was not started as one. This is the only helper the `purlis`
+/// command line serves: the one that answers the person's account ([`HELPER_ARG`]) is the app's.
+pub fn serve_sentinel_if_asked() -> Option<i32> {
+    let mut args = std::env::args_os().skip(1);
+    if args.next()? != SENTINEL_HELPER_ARG {
+        return None;
+    }
+    let rest: Vec<String> = args.map(|a| a.to_string_lossy().into_owned()).collect();
+    Some(serve_sentinel(
+        &rest,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout().lock(),
         &crate::envvar::var,
     ))
 }

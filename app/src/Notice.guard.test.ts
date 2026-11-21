@@ -828,6 +828,13 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "key Remove refused, beside its row; and what Replace key or Remove signing came to, with " +
       "a refusal's keys page (#5632). Set up signing, Remove and Open its keys page are the ways on",
   },
+  "settings/readiness.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". The Ready for all users group's lines (one login, slice D): the read's refusal, why " +
+      "nothing was checked, and the verdict of what was; its Check again is the way on",
+  },
   "settings/profiles.tsx": {
     count: 2,
     why:

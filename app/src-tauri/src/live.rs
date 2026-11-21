@@ -155,7 +155,7 @@ pub struct LiveSwitched {
 }
 
 /// `origin` as git has it, whichever host it is on.
-fn origin_of(root: &Path) -> Option<String> {
+pub(crate) fn origin_of(root: &Path) -> Option<String> {
     purlis_core::worktree::git::run(
         root,
         &["remote", "get-url", "origin"],

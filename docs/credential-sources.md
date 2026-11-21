@@ -83,12 +83,20 @@ A long-lived token's expiry is not in the token. Give it as `PURLIS_FORGE_TOKEN_
 process, and one at a time on the machine (`forge-refresh.lock`), so the window and a session host
 never spend the same single-use refresh token. The rotated pair is written to the keyring **before**
 the new token is used; if the keyring refuses, both pairs are held in memory, the write is tried
-again first, and the spent refresh token is never sent. A renewal that cannot take the machine lock
-is not made (it fails closed: the token in hand serves while it lasts). A pair the keyring refused
-also leaves a marker in the lock folder (`forge-refresh-held-<hex>`: the account id and the process
-id, written under the lock), so another process does not send the refresh token the forge has spent;
-and a pair is written only over the refresh token it was made from, so a stale one never overwrites a
-fresh sign-in or makes an item again that another process ended.
+again first, and the spent refresh token is never sent. Sign-in and sign-out take the same lock, so
+a renewal never writes the item back between their change and its own check. A renewal that cannot
+take the machine lock is not made on macOS and Linux (it fails closed: the token in hand serves
+while it lasts). **On Windows there is no machine lock**: purlis keeps no machine-level store there
+(ADR 0031), so a renewal is one at a time within its process only, and the window and a session
+host can spend the same refresh token. A renewal leaves a marker in the lock folder
+(`forge-refresh-held-<hex>`: the account id and the process id), written under the lock before the
+refresh token is sent and removed once the pair is in the keyring, so another process does not send
+a refresh token the forge has spent. A renewal whose marker cannot be written is not made, and a
+marker that cannot be read, or is not an account id and a process id, holds like a live one. A
+marker is cleared when its process is gone, when it is older than 30 minutes (a reused process id,
+or a host that went idle, never blocks renewal for good), and by a fresh sign-in or sign-out of its
+account. A pair is written only over the refresh token it was made from, so a stale one never
+overwrites a fresh sign-in or makes an item again that another process ended.
 
 **Only the forge's word that the grant is over ends a sign-in**: `invalid_grant`, and GitHub's
 `bad_refresh_token`. The account is marked signed out, its keyring item is deleted, and the window
@@ -104,7 +112,10 @@ the person's press.
 
 A token variable that is not text is an error, never unset; `GH_TOKEN` and `GITHUB_TOKEN` (and the
 two enterprise variables) set to different tokens are refused, not ordered. `CI_JOB_TOKEN` is taken
-whatever its length or characters (GitLab's job token is a JWT in newer versions). A chat is given
+without the length and character shapes only when it is `glcbt-` (any length), a JWT (GitLab's job
+token in newer versions) or the original opaque 20-character token; any other value is held to the
+shapes above like any token. The 4096-byte limit and the printable-characters check apply to every
+token, a job's included. A chat is given
 none of the connection variables, under `PURLIS_` or its old `CHARTER_` name.
 
 ## What is kept, and where
@@ -123,3 +134,43 @@ to a file, an argument or an environment a chat reads.
 - **The operator** (`operator/`) is a workspace of its own that links nothing of `purlis-core`. It
   mints an installation token from the organisation's App Secret for a vouched runner and holds no
   person's credential. What it mints is a `ghs_` token, which a token connection reads as per-job.
+
+## What a chat's egress denial does not hold
+
+The text of an amendment to ADR 0128 D3g (the ADR is #7269's, so the amendment file moves to
+`docs/adr/0128/` when it lands). The denial in `sandbox/forgedeny.rs` holds a forge by name, by
+address and by the name inside a tunnel. It does not hold:
+
+- **A server that ignores SNI.** The pin reads the server name in the TLS ClientHello; a GHES or
+  self-hosted GitLab that answers whatever name it is sent is held only by its address. A hello that
+  hides its name (ECH) or has none is therefore refused on a tunnel to an address literal while a
+  forge is denied; to a named host it is carried, so browsers' GREASE ECH keeps working. An ECH
+  hello keeps its outer name: a forge name beside it is refused as a named hello is, since a server
+  that does not speak ECH serves the outer name. A hello's record version is not read (RFC 8446
+  ignores it), so any record of content type `0x14` to `0x18` must parse as a ClientHello or is
+  refused, as is an SSLv2-compatible hello.
+- **The literal-tunnel rule does not hold servers that ignore SNI.** A tunnel to an address literal
+  is refused for a hello with no name or an ECH one, but a server that ignores SNI and gets a
+  non-forge name inside is held only by the address lists, never by this rule.
+- **Sibling holds on shared CDN addresses.** A forge host's sibling names (`altssh`, `ssh`,
+  `registry`, `uploads`, `gist`, `raw`, `www`) are resolved and their addresses held. Where one
+  resolves to an address shared with unrelated sites (a CDN), those sites are refused too, for
+  the hold's 20 minutes. A sibling that does not exist is asked again every 10 minutes, not 10
+  seconds.
+- **A PROXY-protocol preamble on a self-hosted front end.** A front end that reads a PROXY
+  protocol header before the TLS hello would see the tunnel's first bytes as that header, not a
+  record; those bytes are no TLS record, so they are carried (to a name that is not exempt). A
+  forge reached that way is held by its address lists only, and the port inside the preamble is
+  not read.
+- **A server that tolerates a changed SNI in the second ClientHello.** After a HelloRetryRequest
+  the client sends a second ClientHello. Only the first record of a tunnel is read, so a server
+  that accepts a different server name in the second hello is pinned to the first one's name and
+  nothing later.
+- **An arbitrary non-forge name said inside a tunnel to an address of a forge that no list holds.**
+  The pin refuses a forge's own names; a tunnel to an unlisted address that says `example.org`
+  inside is carried by design, and held only by the address lists (GitHub's published ranges, and
+  what each forge host and its sibling names resolve to).
+- **A server-first protocol on port 443.** Its first bytes are no TLS record, so the wait for a
+  hello ends after the proxy's head timeout, recorded as such, not as the forge route.
+- **GitHub Pages and `ghcr.io`,** which share GitHub's ranges: refused by name while a forge is
+  denied, with a sentence that names the forge's addresses.
