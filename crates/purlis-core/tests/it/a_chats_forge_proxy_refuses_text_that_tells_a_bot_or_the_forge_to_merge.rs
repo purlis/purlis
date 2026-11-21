@@ -94,6 +94,65 @@ fn a_label_that_is_a_merge_command_is_refused() {
 }
 
 #[test]
+fn a_label_with_a_control_character_is_refused_whatever_it_spells() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    // A trailing NUL is stripped by a Ruby forge or bot: `automerge` by another name.
+    for label in [
+        "automerge\u{0}",
+        "auto\u{0}merge",
+        "bug\u{7}",
+        "\u{1b}[0mbug",
+        "ok\u{0}",
+    ] {
+        let out = s.send(
+            "POST",
+            "api.github.com",
+            "/repos/acme/app/issues/7/labels",
+            &json(serde_json::json!({ "labels": [label] })),
+        );
+        assert!(
+            is_refused(&out, Refusal::MergeCommand),
+            "{label:?}: {out:?}"
+        );
+    }
+    // The same through a comma list, which a forge splits.
+    let out = s.send(
+        "POST",
+        "api.github.com",
+        "/repos/acme/app/issues/7/labels",
+        &json(serde_json::json!({ "labels": ["bug,automerge\u{0}"] })),
+    );
+    assert!(is_refused(&out, Refusal::MergeCommand), "{out:?}");
+}
+
+#[test]
+fn a_graphql_label_is_split_at_commas_and_read_as_a_rest_body_is() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    let q = "mutation($i:CreateIssueInput!){ createIssue(input:$i){ clientMutationId } }";
+    for labels in [
+        serde_json::json!(["bug,automerge"]),
+        serde_json::json!("bug, ready-to-merge"),
+        serde_json::json!(["automerge\u{0}"]),
+    ] {
+        let bad = graphql(
+            q,
+            serde_json::json!({"i": {"projectPath": "group/proj", "title": "t", "labels": labels}}),
+        );
+        let out = s.send("POST", "gitlab.com", "/api/graphql", &bad);
+        assert!(is_refused(&out, Refusal::MergeCommand), "{labels}: {out:?}");
+    }
+    // Ordinary names are not merge labels.
+    let fine = graphql(
+        q,
+        serde_json::json!({"i": {"projectPath": "group/proj", "title": "t", "labels": ["bug,docs"]}}),
+    );
+    let out = s.send("POST", "gitlab.com", "/api/graphql", &fine);
+    assert!(!is_refused(&out, Refusal::MergeCommand), "{out:?}");
+}
+
+#[test]
 fn ordinary_words_about_merging_are_not_commands() {
     purlis_core::unsteered!();
     let s = Scene::new();

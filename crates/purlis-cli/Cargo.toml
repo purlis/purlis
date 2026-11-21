@@ -48,7 +48,8 @@ serde_json.workspace = true
 tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
 
 [features]
-# The one-login train's switch (ADR 0128), forwarded to purlis-core. Off until the train turns it on.
+# One login (ADR 0128), forwarded to purlis-core, on by default as it is there.
+default = ["forge-wiring"]
 forge-wiring = ["purlis-core/forge-wiring"]
 
 [dev-dependencies]

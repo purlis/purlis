@@ -208,7 +208,15 @@ fn json_has_credential_key(json: &Json) -> bool {
     }
 }
 
-fn push_labels(value: &str, out: &mut Vec<String>) {
+/// Whether a label holds a control character. A forge or a bot may strip one (Ruby's `strip` takes a
+/// trailing NUL off), so `automerge\u{0}` can resolve to the label a bot merges on, and no label of
+/// a real repo has one: it is refused whatever it spells.
+pub(crate) fn label_has_control(label: &str) -> bool {
+    label.chars().any(char::is_control)
+}
+
+/// The names in a comma-separated list of labels, as the forge splits them.
+pub(crate) fn push_labels(value: &str, out: &mut Vec<String>) {
     out.extend(
         value
             .split(',')

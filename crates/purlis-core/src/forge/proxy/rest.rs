@@ -500,7 +500,7 @@ fn check_body(
         || body
             .labels
             .iter()
-            .any(|label| commands::is_merge_label(label))
+            .any(|label| commands::is_merge_label(label) || commands::label_has_control(label))
     {
         return Err(Refusal::MergeCommand);
     }

@@ -613,6 +613,15 @@ impl<'d> Context<'_, 'd> {
                     return Err(Refusal::LabelById);
                 }
                 collect_ids("", &val, &mut ids);
+                // A label named in a document is read as a REST body's is: split at commas, and
+                // refused when it is one a bot merges on or holds a control character.
+                let mut labels = Vec::new();
+                collect_label_names(name, &val, &mut labels);
+                if labels.iter().any(|label| {
+                    commands::is_merge_label(label) || commands::label_has_control(label)
+                }) {
+                    return Err(Refusal::MergeCommand);
+                }
                 if strings(&val)
                     .iter()
                     .any(|text| commands::has_merge_command(text))
@@ -758,6 +767,38 @@ fn repo_of_id(
                 .repo_of(r.kind, &r.host, value)
                 .filter(|path| *path == r.path)
         }),
+    }
+}
+
+/// The label names a value holds: every string under a key that names labels (`labels`,
+/// `addLabels`, `removeLabels`, `labelNames`, `label`), at any depth, each split at commas
+/// ([`commands::push_labels`]). `key` is the key `val` is the value of.
+fn collect_label_names(key: &str, val: &Val, out: &mut Vec<String>) {
+    fn names_labels(key: &str) -> bool {
+        let key = key.to_ascii_lowercase().replace('_', "");
+        matches!(
+            key.as_str(),
+            "labels" | "addlabels" | "removelabels" | "labelnames" | "label"
+        )
+    }
+    fn every_string(val: &Val, out: &mut Vec<String>) {
+        match val {
+            Val::Str(s) => commands::push_labels(s, out),
+            Val::List(items) => items.iter().for_each(|v| every_string(v, out)),
+            Val::Obj(fields) => fields.iter().for_each(|(_, v)| every_string(v, out)),
+            _ => {}
+        }
+    }
+    if names_labels(key) {
+        every_string(val, out);
+        return;
+    }
+    match val {
+        Val::List(items) => items.iter().for_each(|v| collect_label_names(key, v, out)),
+        Val::Obj(fields) => fields
+            .iter()
+            .for_each(|(k, v)| collect_label_names(k, v, out)),
+        _ => {}
     }
 }
 
