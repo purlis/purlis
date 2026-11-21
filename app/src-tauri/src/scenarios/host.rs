@@ -239,11 +239,15 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
         purlis_core::enforcement::denies_in_force(root)
     );
     if template == Template::Strict {
-        assert_eq!(
-            at_start,
-            purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Enforce),
-            "under strict every family is enforced"
-        );
+        // Every family, by its mode: the sandbox's level is the scenario's protection, which
+        // `Resolved::all` does not know (#7105).
+        for family in purlis_core::enforcement::Family::ALL {
+            assert_eq!(
+                at_start.mode(family),
+                purlis_core::enforcement::Mode::Enforce,
+                "under strict every family is enforced: {family:?} is not"
+            );
+        }
     }
 }
 
