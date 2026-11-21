@@ -180,6 +180,21 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
 - To undo a probe's mutations in a sandboxed chat, save them with `git diff > patch` and take them
   out with `git apply -R patch`: `git checkout` and `git restore` write the index, which is outside
   what the chat may write.
+- The cells runner (`app/src-tauri/src/scenarios/cells.rs`) plays only the cells a `scenario` cover
+  in `coverage.json` names, each batch and dialect in a child process of its own (scenarios of one
+  process share one device log, so a second batch is judged on the first's events). What a cell
+  means is `tests/scenarios/src/play.rs`, which needs no chat:
+  `cargo test -p purlis-scenarios --lib --locked -j 4 play::`. CI tests the merge with the current
+  base, so cells other pull requests landed run under yours.
+- The base-anchored gate tests run here, since they only read git:
+  `SCENARIOS_BASE=$(git rev-parse origin/phase-1-proven) cargo test -p purlis-scenarios --locked --test coverage -- --ignored the_marks_keep the_list_keeps`.
+  The ratchet allows no issue on an existing cell's marks that its base marks do not already name.
+- A red `sandbox-scenarios-linux` says why in its `sandbox-scenarios-report-linux` artifact: a
+  failing cell's `reason` lists what each step's window and the chat held. Download with
+  `gh api repos/purlis/purlis/actions/artifacts/<id>/zip` into a directory made by `mktemp -d`
+  (clearing a directory with `rm -rf *` is refused).
+- `gh api -X PATCH repos/purlis/purlis/pulls/<n> -F body=@<file>` edits a pull request's body;
+  `gh pr edit` fails on the classic-projects deprecation.
 
 ## Agent skills
 
