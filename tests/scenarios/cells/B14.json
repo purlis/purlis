@@ -1,0 +1,97 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B14",
+  "title": "window walk: the finish row, the marker and Asks (matrix §3.13)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {},
+  "cells": [
+    {
+      "id": "M-FIN-01",
+      "steps": [
+        {
+          "calls": [{"tool": "Bash", "client": "M-GRD-01", "input": {"n": 30}}],
+          "outcome": "denied",
+          "refusal_expected": true,
+          "require": [
+            {"kind": "stop.block", "source": "guard", "count": 1},
+            {"kind": "hook.stop", "count": 1, "at": "next_prompt"}
+          ],
+          "window": [
+            {"query": "finishes.row_suffix == \"· 1 blocked this turn\""},
+            {"query": "finishes.rows_for_turn == 1"},
+            {"query": "failure_notification", "forbid": true}
+          ]
+        },
+        {
+          "calls": [{"tool": "Bash", "client": "M-FILE-02", "input": {"path": "-f1"}}],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "require": [
+            {"kind": "stop.block", "source": "sandbox", "count": 1},
+            {"kind": "hook.stop", "count": 1, "at": "next_prompt"}
+          ],
+          "window": [
+            {"query": "finishes.row_suffix == \"· 1 blocked this turn\""},
+            {"query": "finishes.rows_for_turn == 1"},
+            {"query": "failure_notification", "forbid": true}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-FIN-03",
+      "steps": [{
+        "calls": [
+          {"tool": "Bash", "client": "M-GRD-01", "input": {"n": 31}},
+          {"tool": "Bash", "client": "M-FILE-02", "input": {"path": "-f3"}}
+        ],
+        "outcome": "failed",
+        "refusal_expected": true,
+        "window": [
+          {"query": "finishes.blocked == 2"},
+          {"query": "finishes.unverified == 1"},
+          {"query": "blocks.marker_blocked == 2"},
+          {"query": "blocks.marker_unverified == 1"}
+        ]
+      }],
+      "expected_fail": [
+        {"issue": 6878, "step": 1, "assertion": "window[1]", "observed": null,
+         "note": "§4.2 and chatlog.rs:494-497, read from the code, not yet from a run record: the finish row states no unverified count today"},
+        {"issue": 6878, "step": 1, "assertion": "window[2]", "observed": 1,
+         "note": "§4.2 and chatlog.rs:494-497, read from the code, not yet from a run record: the marker counts verified blocks only, so 1 of the 2"},
+        {"issue": 6878, "step": 1, "assertion": "window[3]", "observed": null,
+         "note": "§4.2 and chatlog.rs:494-497, read from the code, not yet from a run record: the marker states no unverified count today"}
+      ]
+    },
+    {
+      "id": "M-FIN-06",
+      "steps": [{
+        "calls": [
+          {"tool": "Bash", "client": "M-GRD-01", "input": {"n": 32}},
+          {"tool": "Bash", "input": {"command": "sleep 60"}, "timeout": "90s"}
+        ],
+        "press": {"label": "Stop", "target": "chat", "when": "stop.block", "delay": "5s"},
+        "outcome": "no_post",
+        "require": [{"kind": "stop.block", "count": 1}],
+        "forbid": [{"kind": "hook.stop"}]
+      }]
+    },
+    {
+      "id": "M-FIN-07",
+      "steps": [{
+        "calls": [{"tool": "Bash", "client": "M-GRD-01", "input": {"n": 33}}],
+        "outcome": "denied",
+        "refusal_expected": true,
+        "require": [{"kind": "hook.pretooluse", "decision": "deny"}],
+        "forbid": [
+          {"kind": "stop.hold"},
+          {"kind": "ask.raised", "ask": "sandbox"},
+          {"kind": "ask.raised", "ask": "harness_prompt"},
+          {"kind": "ask.raised", "ask": "hold"}
+        ],
+        "window": [{"query": "asks.row_from_a_block", "forbid": true}]
+      }]
+    }
+  ]
+}
