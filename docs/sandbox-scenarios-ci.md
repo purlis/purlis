@@ -44,27 +44,52 @@ decisions; this page says what runs when, and what each job is allowed to cost.
 - **The Linux release-profile job** builds the bundle as `release.yml` does and runs one check for
   each Linux entry of `switches.json` (`tools/release-profile-checks.mjs`).
 
-## The Claude Code leg (T1.1-10)
+## The real-harness legs (T1.1-10, T1.1-53)
 
-On macOS purlis does not wrap Claude Code: it hands the chat the `sandbox` object and the
-`permissions.deny` rules of `sandbox::claude` in `--settings`, and Claude Code builds its own
-seatbelt, with its Bash tool's network going through purlis's proxy. The fake harness cannot play
-that, so `app/src-tauri/src/scenarios/claude_leg.rs` runs the real binary in the scenario host.
-It is part of the suite on macOS (`scenarios::claude_leg::`), so it runs where the suite does: on
-a pull request with `macos-scenarios`, in the merge queue and in the nightly. On Linux its tests
-report `not_run`: purlis wraps Claude Code there (ticket 53's leg).
+The fake harness cannot play what a real harness does, so `app/src-tauri/src/scenarios/real_leg.rs`
+starts the real binaries in the scenario host. Who holds each differs by OS, and every report
+says which:
 
-- **The binary** is the version `tests/fixtures/harness-versions/claude.txt` pins, installed by a
-  step of `.github/actions/sandbox-scenarios` from the committed lockfile with no install scripts
-  and named by `PURLIS_CLAUDE_CODE`. On macOS CI a leg without it fails; it never skips.
-- **Started by the host's own chat start**, never by hand (`Scenario::starts_claude_code`).
-- **A stand-in model** (T1.1-03's, on a loopback port the scenario's child binds) asks for each
-  step's Bash call. No model is called and no credential is used. Claude Code's keep-list gains
-  four variables, named in the test plane's `[chat_env] pass` (`claude_leg::ADDED`) and listed
-  as substitutions in `switches.json`.
-- **The transcript is the stand-in's request log**: what the real harness showed the model.
-- **The canary** runs first: one write outside the project and one direct connect, both of which
-  Claude Code's own sandbox must refuse. A command that gets through fails the leg.
+| Harness | macOS | Linux |
+|---|---|---|
+| Claude Code | its own sandbox, built from the `sandbox` object and `permissions.deny` rules purlis hands it in `--settings`, its Bash tool's network going through purlis's proxy (T1.1-10) | wrapped whole by purlis, its own sandbox off (`claude_wrap.rs`) (T1.1-53) |
+| Codex | wrapped by purlis (Seatbelt) | wrapped by purlis; the floor cannot be applied, so at Basic it runs with no sandbox and the leg reports its file and network cells `not_run` |
+| OpenCode | wrapped by purlis (Seatbelt) | the same as Codex |
+
+The legs are part of the suite (`scenarios::real_leg::`), so they run where the suite does: on every
+pull request into `phase-1-proven` on Linux, on a pull request with `macos-scenarios`, in the merge
+queue and in the nightly's `sandbox-scenarios` entries. A test that is not for an OS reports
+`not_run` there.
+
+- **The binaries** are the versions `tests/fixtures/harness-versions/*.txt` pin, installed by a step
+  of `.github/actions/sandbox-scenarios` through `tools/harness-install.sh` from each committed
+  lockfile (`npm ci`, which checks every tarball against the lockfile's SHA-512 integrity, with no
+  install scripts and no secret), and named by `PURLIS_CLAUDE_CODE`, `PURLIS_CODEX` and
+  `PURLIS_OPENCODE`. `every_real_harness_is_pinned_by_version_and_checksum_for_each_os_it_runs_on`
+  holds the lockfiles to the pins for both OSes and both CPUs. A leg without its binary fails on
+  CI; it never skips.
+- **Started by the host's own chat start**, never by hand (`Scenario::starts_real`).
+- **A stand-in model** (T1.1-03's, on a loopback port the scenario's child binds) answers in each
+  harness's own API (Messages, Responses, Chat Completions) and asks for each step's Bash call. No
+  model is called and no credential is used. What each harness is given to reach it is a
+  substitution listed in `switches.json`: Claude Code's four variables, Codex's key and its `-c`
+  model-provider words, OpenCode's inline configuration, each named in the test plane's
+  `[chat_env] pass` (`real_leg::added`), and the stand-in's port granted to a wrapped chat.
+- **The transcript is the stand-in's request log**: what the real harness showed the model. Each
+  harness says an exit status in its own words (`real_leg::exit_of`); OpenCode says none, so the
+  leg's commands to it end by saying their own.
+- **The canary** runs first at Full: one write outside the project and one direct connect, both of
+  which the harness's holder must refuse. A command that gets through fails the leg.
+- **The cells**, at Full and at Basic: the probe (the real binary, not the fake, answered by the
+  stand-in and played, under the sandbox its protection names), one file cell (a plain file reads,
+  the project is written, the project's vault is refused) and one network cell (at Full a held
+  connection raises an ask the person keeps blocked; at Basic, where no host is asked about, a
+  link-local address is refused by purlis's proxy in its own words). Tickets 20 to 22 and 13 add
+  their cells to this leg.
+
+Not in this leg yet: `the_fake_reproduces_recordings_made_on_the_hosts_own_chat_start` (ticket 53's
+last test) and the recorder as `Kit.binary`; it needs ticket 3's recorder run through
+`Scenario::starts_real`, and is its own change.
 
 ## A nightly entry that fails or is cancelled
 

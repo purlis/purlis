@@ -54,6 +54,15 @@ filter = "package(purlis-app) & test(/^behaviour::pool_journey::in_a_docker_pool
 slow-timeout = { period = "60s", terminate-after = 15 }
 retries = 0
 
+# The real harnesses under purlis's wrap (T1.1-10, T1.1-53): each starts a cold binary and its
+# terminal interface, runs a canary chat of its own and then the leg's cells, each wait given up to
+# five minutes (`scenarios::host::REAL_PLAYS_WITHIN`). Not retried: a leg that passes only on a
+# second try is red (`tools/sandbox-scenarios.sh`).
+[[profile.ci.overrides]]
+filter = "package(purlis-app) & test(/^scenarios::real_leg::tests::(a_real_|claude_codes_own|the_claude_leg)/)"
+slow-timeout = { period = "60s", terminate-after = 15 }
+retries = 0
+
 # A runner's host kept by systemd, through a restart of its machine and then beside newer versions:
 # an old version's host waits its minute idle before it stops itself, and the one with a live chat
 # is watched past that minute to see that it does not (#6704). About four minutes of waiting that

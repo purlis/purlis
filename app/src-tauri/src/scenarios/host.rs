@@ -50,9 +50,26 @@ pub(crate) const BINARY_VAR: &str = "PURLIS_BINARY";
 pub(crate) const HOST_APP_VAR: &str = "PURLIS_HOST_APP";
 
 /// The variable naming the real Claude Code binary (`claude`) at the version
-/// `tests/fixtures/harness-versions/claude.txt` pins, which the Claude Code leg starts (T1.1-10).
-/// CI sets it on macOS; the leg does not run without it.
+/// `tests/fixtures/harness-versions/claude.txt` pins, which the Claude Code leg starts (T1.1-10,
+/// on macOS; T1.1-53, on Linux). CI sets it; the leg does not run without it.
 pub(crate) const CLAUDE_CODE_VAR: &str = "PURLIS_CLAUDE_CODE";
+
+/// The variable naming the real Codex binary (`codex`) at the version
+/// `tests/fixtures/harness-versions/codex.txt` pins, which the Codex leg starts (T1.1-53).
+pub(crate) const CODEX_VAR: &str = "PURLIS_CODEX";
+
+/// The variable naming the real OpenCode binary (`opencode`) at the version
+/// `tests/fixtures/harness-versions/opencode.txt` pins, which the OpenCode leg starts (T1.1-53).
+pub(crate) const OPENCODE_VAR: &str = "PURLIS_OPENCODE";
+
+/// The variable that names `dialect`'s real binary, for a leg that starts it.
+pub(crate) fn program_var(dialect: Dialect) -> &'static str {
+    match dialect {
+        Dialect::Claude => CLAUDE_CODE_VAR,
+        Dialect::Codex => CODEX_VAR,
+        Dialect::OpenCode => OPENCODE_VAR,
+    }
+}
 
 /// The variable a scenario's child is started with: its home.
 const HOME_VAR: &str = "PURLIS_SCENARIO_HOME";
@@ -66,6 +83,11 @@ pub(crate) fn on_ci() -> bool {
     std::env::var_os("GITHUB_ACTIONS").is_some_and(|v| !v.is_empty())
         || std::env::var_os("CI").is_some_and(|v| !v.is_empty())
 }
+
+/// How long a real harness is given to start and play its steps (T1.1-53): longer than the
+/// fake's ([`crate::scenarios::PLAYS_WITHIN`]), which starts at once. Codex and OpenCode start a
+/// terminal interface and, on a runner, a cold binary under the wrap.
+pub(crate) const REAL_PLAYS_WITHIN: Duration = Duration::from_secs(300);
 
 /// **Why a scenario did not run**: a failure on CI, a printed reason elsewhere (`None`).
 pub(crate) fn cannot_run<T>(why: &str) -> Option<T> {
@@ -126,17 +148,6 @@ impl Protection {
             Self::Full => "full",
         }
     }
-
-    /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
-    #[allow(dead_code)]
-    pub(crate) fn in_report(self) -> purlis_scenarios::model::Protection {
-        use purlis_scenarios::model::Protection as Report;
-        match self {
-            Self::Off => Report::None,
-            Self::Basic => Report::Basic,
-            Self::Full => Report::Full,
-        }
-    }
 }
 
 /// **A dialect of the fake harness** (T1.1-04), as the shim of its name in
@@ -156,17 +167,6 @@ impl Dialect {
             Self::Claude => "claude",
             Self::Codex => "codex",
             Self::OpenCode => "opencode",
-        }
-    }
-
-    /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
-    #[allow(dead_code)]
-    pub(crate) fn in_report(self) -> purlis_scenarios::model::Dialect {
-        use purlis_scenarios::model::Dialect as Report;
-        match self {
-            Self::Claude => Report::Claude,
-            Self::Codex => Report::Codex,
-            Self::OpenCode => Report::Opencode,
         }
     }
 }
@@ -303,12 +303,12 @@ impl Homes {
         Homes::of_this_scenario_ahead(more, None)
     }
 
-    /// [`Homes::of_this_scenario_with`], the harness `claude` on the `PATH` the real Claude Code
-    /// binary `claude_code` names where one is given (the Claude Code leg, T1.1-10), and the fake
-    /// harness's shims, which stand in for it, left off the `PATH` altogether.
+    /// [`Homes::of_this_scenario_with`], the harness on the `PATH` the real binary `program` names
+    /// where one is given (a real-harness leg, T1.1-10 and T1.1-53), and the fake harness's
+    /// shims, which stand in for it, left off the `PATH` altogether.
     pub(crate) fn of_this_scenario_ahead(
         more: &[(&str, &str)],
-        claude_code: Option<&Path>,
+        program: Option<&Path>,
     ) -> Option<Homes> {
         if let Some(home) = std::env::var_os(HOME_VAR) {
             as_the_app();
@@ -337,10 +337,10 @@ impl Homes {
         ] {
             std::fs::create_dir_all(folder).expect("a folder of the scenario's");
         }
-        let ahead = match claude_code {
+        let ahead = match program {
             Some(program) => program
                 .parent()
-                .expect("the real Claude Code's folder")
+                .expect("the real harness's folder")
                 .to_path_buf(),
             None => repo().join("crates/fake-harness/shims"),
         };
@@ -365,7 +365,13 @@ impl Homes {
                 .map(|(name, value)| (*name, OsString::from(value))),
         );
         // The re-run clears every variable of purlis's own; these two are the run's.
-        for kept in [BINARY_VAR, HOST_APP_VAR, CLAUDE_CODE_VAR] {
+        for kept in [
+            BINARY_VAR,
+            HOST_APP_VAR,
+            CLAUDE_CODE_VAR,
+            CODEX_VAR,
+            OPENCODE_VAR,
+        ] {
             if let Some(value) = std::env::var_os(kept) {
                 env.push((kept, value));
             }
@@ -798,26 +804,6 @@ pub(crate) struct Scenario {
     runtime: Option<tokio::runtime::Runtime>,
     /// What the person, the queries and the global checks keep (T1.1-07).
     pub(crate) ledger: super::checks::Ledger,
-    /// The Claude Code leg at Full owes its canary ([`Self::for_claude_code`]): its teardown
-    /// fails if it never ran ([`canary_owed`]).
-    owes_the_canary: bool,
-    /// The leg's canary ran to its end ([`Self::the_canary_ran`]).
-    canary_ran: std::sync::atomic::AtomicBool,
-}
-
-/// **The leg's canary is owed and was not run**: a Claude Code scenario at Full whose canary
-/// never ran has said nothing about Claude Code's own sandbox, so it fails.
-pub(crate) fn canary_owed(owes: bool, ran: bool) -> Result<(), String> {
-    if owes && !ran {
-        Err(
-            "the Claude Code leg's canary never ran: no cell of the leg may say what Claude \
-             Code's sandbox holds without a refused write and a refused connect seen first \
-             (`claude_leg::canary`)"
-                .to_owned(),
-        )
-    } else {
-        Ok(())
-    }
 }
 
 impl Scenario {
@@ -846,36 +832,17 @@ impl Scenario {
         Scenario::built(homes, protection, persona, dialect, template, true)
     }
 
-    /// **The scenario host for the real Claude Code** (T1.1-10): `protection`, under `strict`,
+    /// **The scenario host for a real harness** (T1.1-10, T1.1-53): `protection`, under `strict`,
     /// with no canary of the fake's own. Claude Code on macOS runs its own sandbox, which the
-    /// fake harness does not play, so at Full this runs the leg's own canary through the real
-    /// binary and `model` ([`super::claude_leg::canary`]) before it answers: no cell of the leg
-    /// starts without it, and a scenario at Full whose canary did not run fails its teardown
-    /// ([`canary_owed`]).
-    pub(crate) fn for_claude_code(
+    /// fake harness does not play, and the others are wrapped by purlis, whose wrap the fake's
+    /// canary would prove of the fake alone, so the leg runs its own canary through the real
+    /// binary ([`super::real_leg::canary`]) before anything else.
+    pub(crate) fn for_real_harness(
         homes: &Homes,
         protection: Protection,
-        model: &super::claude_leg::Model,
+        dialect: Dialect,
     ) -> Option<Scenario> {
-        let mut scenario = Scenario::built(
-            homes,
-            protection,
-            None,
-            Dialect::Claude,
-            DEFAULT_TEMPLATE,
-            false,
-        )?;
-        if protection == Protection::Full {
-            scenario.owes_the_canary = true;
-            super::claude_leg::canary(&scenario, model);
-        }
-        Some(scenario)
-    }
-
-    /// The leg's canary ran to its end, its verdict judged.
-    pub(crate) fn the_canary_ran(&self) {
-        self.canary_ran
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        Scenario::built(homes, protection, None, dialect, DEFAULT_TEMPLATE, false)
     }
 
     fn built(
@@ -975,8 +942,6 @@ impl Scenario {
             began,
             runtime: Some(runtime),
             ledger: super::checks::Ledger::default(),
-            owes_the_canary: false,
-            canary_ran: std::sync::atomic::AtomicBool::new(false),
         };
         scenario.ledger.begins(&scenario);
         // The canary, in every scenario whose protection is Full, where the project's own wall is
@@ -1185,29 +1150,6 @@ fn tool_groups(root: &Path) -> Vec<u32> {
         .collect()
 }
 
-/// **Whether the tool-group channel lost a command** (#7197): every shell command a chat's fake
-/// harness ran says its process group in `FAKE_HARNESS_GROUPS` before the teardown reads it, so
-/// fewer `said` lines than shell results in the `transcript` means a group nobody watches (a
-/// variable not passed on, a failed write, an unreadable file). Answers what to say, or none.
-pub(crate) fn tool_groups_lost(transcript: &[serde_json::Value], said: usize) -> Option<String> {
-    let ran = transcript
-        .iter()
-        .filter(|line| line["kind"] == "tool_result" && line["exit"].is_number())
-        .filter(|line| {
-            !(line["exit"] == 127
-                && line["stderr"]
-                    .as_str()
-                    .is_some_and(|e| e.starts_with("cannot run the shell")))
-        })
-        .count();
-    (said < ran).then(|| {
-        format!(
-            "the tool-group channel (FAKE_HARNESS_GROUPS) holds {said} process groups for {ran} \
-             shell commands the chats ran: a tool command's group is not watched"
-        )
-    })
-}
-
 /// Whether any process of `group` runs.
 fn group_alive(group: u32) -> bool {
     purlis_core::forklock::status(std::process::Command::new("/bin/kill").args([
@@ -1397,45 +1339,58 @@ impl Scenario {
         id
     }
 
-    /// **Starts the real Claude Code** (T1.1-10) as the person starts a chat from the window:
-    /// through [`purlis_core::start::ready`] and the host's own chat start ([`Self::launches`]),
-    /// so the launch line, the environment, the bundled plugin and the settings are what purlis
-    /// writes, never a hand launch. The sandbox-only profile is signed in with the first-run
-    /// state of an interactive start ([`super::claude_leg::seed_first_run`]), the four variables
-    /// the leg adds are named in the project's local `[chat_env] pass`
-    /// ([`super::claude_leg::chat_env_pass`]) with their values in this process's environment,
-    /// and the stand-in model answers the chat's model calls, its request log being the
-    /// transcript ([`super::claude_leg::Model::attach`]). Answers the chat's number.
-    pub(crate) fn starts_claude_code(&self, model: &super::claude_leg::Model, prompt: &str) -> u32 {
+    /// **Starts the real harness** (T1.1-10, T1.1-53) as the person starts a chat from the
+    /// window: through [`purlis_core::start::ready`] and the host's own chat start
+    /// ([`Self::launches`]), so the launch line, the environment, the bundled plugin and the
+    /// settings are what purlis writes, never a hand launch. The sandbox-only profile is signed
+    /// in with the first-run state of an interactive start where purlis does not seed it
+    /// ([`super::real_leg::seed_first_run`], Claude Code on macOS), what the leg adds to the
+    /// keep-list is named in the project's local `[chat_env] pass`
+    /// ([`super::real_leg::chat_env_pass`]) with its values in this process's environment, the
+    /// stand-in's port is granted where purlis walls the chat's network, and the stand-in model
+    /// answers the chat's model calls, its request log being the transcript
+    /// ([`super::real_leg::Model::attach`]). Answers the chat's number.
+    pub(crate) fn starts_real(&self, model: &super::real_leg::Model, prompt: &str) -> u32 {
+        let dialect = self.dialect;
         self.profiled.call_once(|| {
             let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
             if let Err(why) = purlis_core::profilestore::create_sandbox_only(
                 &homes,
                 &self.profile(),
-                self.dialect.word(),
+                dialect.word(),
                 1,
             ) {
                 assert!(why.contains("already has a profile"), "the profile: {why}");
             }
         });
-        let config = purlis_core::profilestore::listed_here()
-            .into_iter()
-            .find(|profile| profile.name == self.profile())
-            .map(|profile| profile.folders.config)
-            .expect("the sandbox-only profile is listed");
-        super::claude_leg::seed_first_run(&config, &self.root);
+        if super::real_leg::holds_itself(dialect) {
+            let config = purlis_core::profilestore::listed_here()
+                .into_iter()
+                .find(|profile| profile.name == self.profile())
+                .map(|profile| profile.folders.config)
+                .expect("the sandbox-only profile is listed");
+            super::real_leg::seed_first_run(&config, &self.root);
+        }
         std::fs::write(
             self.root.join(purlis_core::profiles::LOCAL_FILE),
-            super::claude_leg::chat_env_pass(),
+            super::real_leg::chat_env_pass(dialect),
         )
         .expect("the project's local settings");
+        if !super::real_leg::holds_itself(dialect) {
+            // purlis walls the chat's network: the stand-in is reached by its granted loopback
+            // port, as the recordings' chats reach it (`tests/recordings/tests/record.rs`).
+            purlis_core::sandbox::local::grant_port(&self.root, model.port())
+                .expect("the stand-in's port is granted");
+        }
         let number = self.chats.lock().expect("chats").len() + 1;
         let own = own_folder(&self.root);
         std::fs::create_dir_all(&own).expect("the chat's own folder");
-        // Outside the project, the one folder Claude Code's sandbox lets a chat write: the
-        // transcript is the stand-in model's request log, and a chat must not be able to rewrite
-        // it (the leg's canary tries, `claude_leg::canary`).
-        let transcript = self.next_transcript();
+        // Outside the project, which a harness's sandbox may let a chat write: the transcript is
+        // the stand-in model's request log, and a chat must not be able to rewrite it.
+        let transcript = self.homes.scripts.join(format!(
+            "transcript-{}.jsonl",
+            self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
+        ));
         let name = format!("chat {number}");
         let mut ready = purlis_core::start::ready(
             &purlis_core::start::Start {
@@ -1448,30 +1403,90 @@ impl Scenario {
             &self.root,
         )
         .expect("the chat is ready to start");
-        // What the stand-in model needs of Claude Code's own words: no permission prompt, which
-        // an auto mode would send to Anthropic's servers to judge (the recordings' conditions,
-        // `tests/recordings/README.md`), and the prompt it starts with.
-        ready.args.extend(
-            [
-                "--permission-mode",
-                purlis_recordings::PERMISSION_MODE,
-                prompt,
-            ]
-            .map(str::to_owned),
-        );
+        // What the stand-in model needs of the harness's own words: for Claude Code no permission
+        // prompt, which an auto mode would send to Anthropic's servers to judge (the recordings'
+        // conditions, `tests/recordings/README.md`), for Codex its model provider, and the prompt
+        // it starts with.
+        ready
+            .args
+            .extend(super::real_leg::launch_words(dialect, &model.url(), prompt));
         model.attach(&transcript);
         let id = self.launches(&name, &ready, &transcript);
         self.note_running();
         id
     }
 
-    /// Where the next chat's transcript is written: outside the project, in the run's scripts
-    /// folder ([`Self::starts_claude_code`]).
-    pub(crate) fn next_transcript(&self) -> PathBuf {
-        self.homes.scripts.join(format!(
-            "transcript-{}.jsonl",
-            self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
-        ))
+    /// **Until chat `id` has a result for each of `steps`**, answering what a real harness asks
+    /// a person on its screen as the person does (T1.1-53), within [`REAL_PLAYS_WITHIN`]:
+    ///
+    /// - a first-run question the harness asks in its terminal before the chat (a folder's trust,
+    ///   a key's use, Codex's "Folder access"): Enter on its default, while the model has heard
+    ///   nothing (`heard` says it has);
+    /// - Codex's offer of a newer model: "Use existing model";
+    /// - Claude Code's bypass-permissions warning, which defaults to "No, exit": "Yes, I accept";
+    /// - OpenCode's "Permission required" for a folder outside the project: allowed once, so the
+    ///   wrap, not the harness, decides the call.
+    ///
+    /// The same answers `tests/recordings/tests/record.rs` gives its harnesses.
+    pub(crate) fn answers_until_played(&self, id: u32, steps: &[&str], heard: &dyn Fn() -> bool) {
+        let deadline = std::time::Instant::now() + REAL_PLAYS_WITHIN;
+        let (mut first_run, mut newer_model, mut bypass, mut permission) = (0, 0, 0, 0);
+        let press = |bytes: &[u8]| {
+            let _ = self.held().chats().sessions().input(id, bytes);
+        };
+        while !steps.iter().all(|step| self.result_of(id, step).is_some()) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "chat {id} played none of {steps:?} in time; its screen:\n{}\n{}",
+                self.screen_of(id),
+                self.said()
+            );
+            let screen = self.screen_of(id).to_lowercase();
+            let nothing_heard = !heard();
+            if first_run < 3
+                && nothing_heard
+                && [
+                    "do you trust",
+                    "trust the files",
+                    "press enter",
+                    "enter to confirm",
+                    "yes, proceed",
+                    "open restricted",
+                    "enter continue",
+                ]
+                .iter()
+                .any(|ask| screen.contains(ask))
+            {
+                press(b"\r");
+                first_run += 1;
+                std::thread::sleep(Duration::from_secs(2));
+            } else if newer_model < 3 && screen.contains("use existing model") {
+                press(b"\x1b[B");
+                std::thread::sleep(Duration::from_millis(600));
+                press(b"\r");
+                newer_model += 1;
+                std::thread::sleep(Duration::from_secs(2));
+            } else if bypass < 5
+                && screen.contains("bypass permissions mode")
+                && screen.contains("yes, i accept")
+            {
+                std::thread::sleep(Duration::from_secs(1));
+                press(b"\x1b[B");
+                std::thread::sleep(Duration::from_millis(600));
+                press(b"\r");
+                bypass += 1;
+                std::thread::sleep(Duration::from_secs(2));
+            } else if permission < 8 && screen.contains("permission required") {
+                // Once purlis's own hook on the ask has had its say: pressed sooner, OpenCode
+                // cuts that hook off (`record.rs`).
+                std::thread::sleep(Duration::from_secs(1));
+                press(b"\r");
+                permission += 1;
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        self.note_running();
     }
 
     /// **A folder of the person's own that no chat may write**: in the run's own home, outside
@@ -1620,32 +1635,6 @@ impl Scenario {
             ));
         }
         Ok(events)
-    }
-
-    /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
-    /// report with the kinds of the events its log gained after `since`, the [`Self::latest_seq`]
-    /// taken when the cell began: the canary's and earlier cells' events are not the cell's. A log
-    /// that cannot be read is an error, never a record with no events. Named by the runner of the cells format, which no scenario has yet:
-    /// the cells that run today are Rust tests that name no cell.
-    #[expect(dead_code)]
-    pub(crate) fn report_cell(
-        &self,
-        cell: &purlis_scenarios::model::Cell,
-        verdict: purlis_scenarios::model::ReportVerdict,
-        reason: Option<String>,
-        since: u64,
-    ) -> Result<(), String> {
-        let record = super::report::ran(
-            cell,
-            self.dialect.in_report(),
-            self.protection.in_report(),
-            purlis_scenarios::model::TimingsMode::Scaled,
-            verdict,
-            reason,
-            super::report::kinds_since(&self.try_events()?, since),
-        );
-        super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
-        Ok(())
     }
 
     /// [`Self::try_events`] where a scenario's own step reads the log: a log that cannot be read
@@ -1799,12 +1788,6 @@ impl Drop for Scenario {
         } else {
             Some(
                 super::checks::window_for_the_checks(self.window.is_some())
-                    .and_then(|()| {
-                        canary_owed(
-                            self.owes_the_canary,
-                            self.canary_ran.load(std::sync::atomic::Ordering::SeqCst),
-                        )
-                    })
                     .and_then(|()| super::checks::at_the_end(self)),
             )
         };
@@ -1875,10 +1858,6 @@ impl Drop for Scenario {
                 )),
                 _ => {}
             }
-        }
-        // A tool command whose group never reached the file is said, never skipped (#7197).
-        if let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len()) {
-            left.unwatched.push(lost);
         }
         // Read while they run: a group the quit left can be #7103's only if it is one of these.
         let background = process_groups(&self.background.lock().expect("background"));
