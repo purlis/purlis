@@ -20,11 +20,17 @@
 //!   batch format says (cells run in order in one chat), so a later cell sees the earlier cells'
 //!   state. Each shell call runs for real under the wrap, as every scenario's does.
 //!
-//! A cell the runner cannot play (an unknown word, a press or a restart with no driver here) is
-//! reported `fail` with the reason, never `not_run` and never `pass`: the gate must go red on
-//! it. A step's events are those the log gained from the step's start to the next step's start,
-//! so an event written late, at the next prompt, lands in the next step, which is what `at:
-//! next_prompt` and the marks that pin it are about.
+//! A cell the runner cannot play (an unknown word, a press or a restart with no driver here, a
+//! `template` or a batch's `deny_exempt_rules`) is reported `fail` with the reason, never
+//! `not_run` and never `pass`: the gate must go red on it. The steps it plays are the steps it
+//! validated (a dialect's and an OS's patches and the pins applied).
+//!
+//! **A step has one window, and every event and chat line is in exactly one.** Its events are
+//! those the log gained from the step's start to the next step's start, its chat lines those the
+//! transcript gained over the same time; the last step's end is taken before the runner's own
+//! teardown presses. An event or a sentence written late, at the next prompt, lands in the next
+//! step's window: the step that expected it carries the mark that pins it, and `at: next_prompt`
+//! reads past the window for what the next prompt wrote (`purlis_scenarios::play`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -39,7 +45,7 @@ use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
 use purlis_scenarios::play::{self, Counted, Hosts, Malformed, Query, Seen, Window};
 use purlis_scenarios::timings::{CoreTimings, catalogue};
 
-use super::checks::{Check, StepResult};
+use super::checks::{Check, Position, Scope, StepResult};
 use super::host::{Dialect, Homes, Protection, SCALE, Scenario};
 use super::person::Press;
 use crate::sandboxing::GrantLevel;
@@ -190,18 +196,49 @@ fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
                 )
             })
         }),
+        Query::Equals(word, n) => counted_of(scenario, *word, chat) == *n,
+    }
+}
+
+/// **The number the window shows** for `word`, for `chat`.
+fn counted_of(scenario: &Scenario, word: Counted, chat: u32) -> u64 {
+    let queries = scenario.queries();
+    match word {
+        Counted::MarkerBlocked => u64::from(queries.blocks(chat, None).blocks),
+        Counted::MarkerUnverified => u64::from(queries.blocks(chat, None).unverified),
+        Counted::FinishRows => queries.finishes(chat).len() as u64,
+        Counted::FinishBlocked => queries
+            .finishes(chat)
+            .last()
+            .map_or(0, |finish| u64::from(finish.blocked)),
+    }
+}
+
+/// **How a `window` entry came out**: a pass, or what the window showed (the number a counted
+/// word gave, or whether a word held), so a mark pins what was seen.
+fn window_observed(
+    scenario: &Scenario,
+    query: &Query,
+    forbid: bool,
+    chat: u32,
+    hosts: &Hosts,
+) -> Observed {
+    match query {
         Query::Equals(word, n) => {
-            let queries = scenario.queries();
-            let seen = match word {
-                Counted::MarkerBlocked => u64::from(queries.blocks(chat, None).blocks),
-                Counted::MarkerUnverified => u64::from(queries.blocks(chat, None).unverified),
-                Counted::FinishRows => queries.finishes(chat).len() as u64,
-                Counted::FinishBlocked => queries
-                    .finishes(chat)
-                    .last()
-                    .map_or(0, |finish| u64::from(finish.blocked)),
-            };
-            seen == *n
+            let seen = counted_of(scenario, *word, chat);
+            if (seen == *n) != forbid {
+                Observed::Pass
+            } else {
+                Observed::Fail(seen.into())
+            }
+        }
+        _ => {
+            let shown = shows(scenario, query, chat, hosts);
+            if shown != forbid {
+                Observed::Pass
+            } else {
+                Observed::Fail(shown.into())
+            }
         }
     }
 }
@@ -392,7 +429,7 @@ fn classified<'a>(
         {
             continue;
         }
-        match malformed_cell(cell, dialect, &hosts, &seconds, &pins) {
+        match malformed_cell(cell, batch, dialect, &hosts, &seconds, &pins) {
             Some(why) => malformed.push((cell, why)),
             None => playable.push(cell),
         }
@@ -407,6 +444,21 @@ fn classified<'a>(
 pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, playable: &[&Cell]) {
     let seconds = catalogue().seconds_at(SCALE);
     let hosts = hosts_of(batch);
+    // What is played is what was validated: each cell's steps with its dialect's and OS's
+    // patches and the pins' shows applied (`classified` checked these), never the raw steps.
+    let pins = purlis_scenarios::validate::Validator::repo()
+        .expect("the pins")
+        .pins;
+    let resolved: Vec<Cell> = playable
+        .iter()
+        .map(|cell| {
+            let mut one = (*cell).clone();
+            one.steps =
+                purlis_scenarios::validate::resolve(cell, dialect, super::report::this_os(), &pins);
+            one
+        })
+        .collect();
+    let playable: Vec<&Cell> = resolved.iter().collect();
     said(&format!(
         "{} as {}: starting its scenario for {} cells",
         batch.batch,
@@ -448,27 +500,10 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         .map(|(name, value)| format!("export {name}='{}'; ", value.to_string_lossy()))
         .collect();
 
-    // The cells' own marks of a global check, which the teardown judges once for the batch.
-    let mut marked = std::collections::BTreeSet::new();
-    for cell in playable {
-        for mark in &cell.expected_fail {
-            if let Some(check) = mark.check.as_deref().and_then(check_of)
-                && applies(mark, dialect)
-                && marked.insert(check)
-            {
-                scenario.expected_fail(
-                    check,
-                    u32::try_from(mark.issue).expect("an issue number"),
-                    mark.note.as_deref().unwrap_or("a cell's mark"),
-                );
-            }
-        }
-    }
-
-    let script = script_of(playable, &hosts, &client, &trust, &batch.batch);
+    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch);
     let mut chat = None;
     let mut played: Vec<Played> = Vec::new();
-    for cell in playable {
+    for cell in &playable {
         for (n, step) in cell.steps.iter().enumerate() {
             let since = scenario.latest_seq();
             let transcript_from = scenario.transcript().len();
@@ -501,8 +536,15 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
             super::checks::quiesce(&scenario)
                 .unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
             if step.refusal_expected {
+                // Answered only by what this step wrote (an earlier step's ask or block for the
+                // same target never answers a repeat), named by its cell so a mark can scope to it.
                 let target = host_of_step(step, &hosts);
-                scenario.refused(id, &format!("step {}", n + 1), target.as_deref());
+                scenario.refused_since(
+                    id,
+                    &format!("{} step {}", cell.id, n + 1),
+                    target.as_deref(),
+                    since,
+                );
             }
             let outcome = names.first().map(|name| outcome_of(&scenario, id, name));
             let window = step
@@ -510,7 +552,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 .iter()
                 .map(|q| {
                     let (query, forbid) = play::window_of(q).expect("checked before the run");
-                    shows(&scenario, &query, id, &hosts) != forbid
+                    window_observed(&scenario, &query, forbid, id, &hosts)
                 })
                 .collect();
             played.push(Played {
@@ -524,8 +566,10 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         }
     }
 
-    // Every step's events, once the log is quiet: a step's are those from its start to the next
-    // step's, the last one's to the end.
+    // The last step's window closes here, before the runner's own presses: what it does at the
+    // end (keeping every ask nobody answered blocked) is not the last step's.
+    let end_seq = scenario.latest_seq();
+    let end_transcript = scenario.transcript().len();
     // Whatever ask nobody answered (a client that gave up, a hold that ended) the person now
     // keeps blocked, as every scenario that leaves one does.
     // A block written late lists its ask again after the first press, so it is repeated until
@@ -544,27 +588,88 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
     }
     let events = scenario.events();
     let all = scenario.transcript();
+    // Each step's window, events and chat lines, from its start to the next step's start: the
+    // windows partition the run, so no event or line is in two steps.
     let ends: Vec<u64> = played
         .iter()
         .skip(1)
         .map(|p| p.since)
-        .chain([u64::MAX])
+        .chain([end_seq])
         .collect();
-    // A step's transcript runs to the first tool result of the next step: the model is shown a
-    // call's hook feedback (a block's sentence, an allow's "retry") with the next prompt, so the
-    // next step's own prompt and context lines belong to the step that made the call.
     let transcript_ends: Vec<usize> = played
         .iter()
         .skip(1)
-        .map(|p| {
-            let from = p.transcript_from.min(all.len());
-            all[from..]
-                .iter()
-                .position(|line| line["kind"] == "tool_result")
-                .map_or(all.len(), |at| from + at)
-        })
-        .chain([all.len()])
+        .map(|p| p.transcript_from)
+        .chain([end_transcript])
         .collect();
+    // Where a global check's failure belongs to a step: the same windows, but the last one runs
+    // to the log's end, since what the last step caused late is written after its quiet.
+    let scope_ends: Vec<u64> = ends
+        .iter()
+        .take(ends.len() - 1)
+        .copied()
+        .chain([u64::MAX])
+        .collect();
+    // A cell's range in the log, or one of its steps': (after, up to and including).
+    let range_of = |cell_id: &str, step: Option<usize>, scoped: bool| -> (u64, u64) {
+        let ours: Vec<usize> = played
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.cell == cell_id && step.is_none_or(|n| p.step == n))
+            .map(|(i, _)| i)
+            .collect();
+        match (ours.first(), ours.last()) {
+            (Some(first), Some(last)) => (
+                played[*first].since,
+                if scoped {
+                    scope_ends[*last]
+                } else {
+                    ends[*last]
+                },
+            ),
+            _ => (0, 0),
+        }
+    };
+
+    // The cells' own marks of a global check, each excusing only the step or refusal it names
+    // and never the batch's check: a refusal by its cell's label, any other by the events of the
+    // step (`"refusal": "step N"`) or of the cell. The teardown judges them once more, on the
+    // same log.
+    let mut registered: Vec<(String, usize, &purlis_scenarios::model::Mark)> = Vec::new();
+    for cell in &playable {
+        for mark in &cell.expected_fail {
+            let Some(check) = mark.check.as_deref().and_then(check_of) else {
+                continue;
+            };
+            if !applies(mark, dialect) {
+                continue;
+            }
+            let scope = match check {
+                Check::NoBlackHole => Scope::Refusal(format!(
+                    "{} {}",
+                    cell.id,
+                    mark.refusal.as_deref().unwrap_or_default()
+                )),
+                _ => {
+                    let step = mark
+                        .refusal
+                        .as_deref()
+                        .and_then(|text| text.strip_prefix("step "))
+                        .and_then(|n| n.parse::<usize>().ok())
+                        .map(|n| n.saturating_sub(1));
+                    let (after, upto) = range_of(&cell.id, step, true);
+                    Scope::Events { after, upto }
+                }
+            };
+            let at = scenario.expected_fail_in(
+                check,
+                u32::try_from(mark.issue).expect("an issue number"),
+                mark.note.as_deref().unwrap_or("a cell's mark"),
+                scope,
+            );
+            registered.push((cell.id.clone(), at, mark));
+        }
+    }
     let checks = super::checks::at_the_end(&scenario)
         .unwrap_or_else(|why| panic!("the global checks could not run: {why}"));
     said(&format!(
@@ -581,7 +686,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         timings: TimingsMode::Scaled,
         seconds: seconds.clone(),
     };
-    for cell in playable {
+    for cell in &playable {
         let mut assertions: Vec<Assertion> = Vec::new();
         for ((p, end), transcript_end) in played
             .iter()
@@ -614,15 +719,11 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
             assertions.extend(play::step_assertions(
                 number, step, &seen, &later, &hosts, &seconds,
             ));
-            for (i, ok) in p.window.iter().enumerate() {
+            for (i, observed) in p.window.iter().enumerate() {
                 assertions.push(Assertion {
                     step: number,
                     assertion: format!("window[{i}]"),
-                    observed: if *ok {
-                        Observed::Pass
-                    } else {
-                        Observed::Fail(false.into())
-                    },
+                    observed: observed.clone(),
                 });
             }
             for (i, line) in step.transcript.iter().enumerate() {
@@ -642,28 +743,44 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 });
             }
         }
-        let globals: Vec<GlobalFailure> = cell
-            .expected_fail
+        // The marks of this cell that excused a failure of a check, and only those.
+        let own_marks: BTreeSet<usize> = registered
             .iter()
-            .filter(|m| applies(m, dialect))
-            .filter_map(|m| {
-                let check = m.check.as_deref()?;
-                checks
-                    .expected
-                    .iter()
-                    .any(|(fired, issue, _)| {
-                        Some(*fired) == check_of(check) && u64::from(*issue) == m.issue
-                    })
-                    .then(|| GlobalFailure {
-                        check: check.to_owned(),
-                        refusal: m.refusal.clone().unwrap_or_default(),
-                    })
+            .filter(|(id, _, _)| *id == cell.id)
+            .map(|(_, at, _)| *at)
+            .collect();
+        let globals: Vec<GlobalFailure> = registered
+            .iter()
+            .filter(|(id, at, _)| *id == cell.id && checks.fired.contains(at))
+            .filter_map(|(_, _, m)| {
+                Some(GlobalFailure {
+                    check: m.check.clone()?,
+                    refusal: m.refusal.clone().unwrap_or_default(),
+                })
             })
             .collect();
-        let (verdict, mut reason) = play::verdict(cell, &run, &assertions, &globals);
+        let (mut verdict, mut reason) = play::verdict(cell, &run, &assertions, &globals);
+        // A global check that failed with no mark is written to the record of the cell it
+        // happened in before the run panics (#7229), never only to the panic.
+        let (after, upto) = range_of(&cell.id, None, true);
+        let unmarked: Vec<&str> = checks
+            .failures
+            .iter()
+            .zip(&checks.failure_at)
+            .filter(|(_, at)| owns(&cell.id, (after, upto), &own_marks, at))
+            .map(|(text, _)| text.as_str())
+            .collect();
+        if !unmarked.is_empty() {
+            let said = format!("a global check failed: {}", unmarked.join("; "));
+            verdict = ReportVerdict::Fail;
+            reason = Some(match reason {
+                Some(why) => format!("{why}; {said}"),
+                None => said,
+            });
+        }
         if verdict == ReportVerdict::Fail {
-            // What each step's window held (its events, and the chat's lines to the next step's
-            // first tool result), so a mark is pinned from the record and not guessed.
+            // What each step's window held (its events, and the chat's lines over the same time),
+            // so a mark is pinned from the record and not guessed.
             let seen = played
                 .iter()
                 .zip(&ends)
@@ -701,12 +818,11 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 .join("; ");
             reason = reason.map(|why| format!("{why} | {seen}"));
         }
-        let first = played
-            .iter()
-            .find(|p| p.cell == cell.id)
-            .map_or(0, |p| p.since);
+        // The record's events are the cell's own: from its first step's start to its last
+        // step's end.
+        let (first, last) = range_of(&cell.id, None, false);
         scenario
-            .report_cell(cell, verdict, reason, first)
+            .report_cell(cell, verdict, reason, first, last)
             .unwrap_or_else(|why| panic!("{}: {why}", cell.id));
     }
     assert!(
@@ -723,9 +839,26 @@ struct Played {
     step: usize,
     since: u64,
     outcome: Option<Outcome>,
-    window: Vec<bool>,
+    window: Vec<Observed>,
     /// How many lines the chats' transcripts held when the step began.
     transcript_from: usize,
+}
+
+/// **Whether a failure of a global check is `cell`'s**: its own refusal (by label), an event in
+/// its range, a mark of its own that did not fire, or a failure of the batch as a whole (an ask
+/// left listed), which is every cell's.
+fn owns(cell: &str, range: (u64, u64), marks: &BTreeSet<usize>, at: &Position) -> bool {
+    match (at.mark, at.seq, &at.refusal) {
+        (Some(mark), _, _) => marks.contains(&mark),
+        (None, None, None) => true,
+        _ => {
+            at.seq.is_some_and(|seq| seq > range.0 && seq <= range.1)
+                || at
+                    .refusal
+                    .as_deref()
+                    .is_some_and(|label| label.starts_with(&format!("{cell} step ")))
+        }
+    }
 }
 
 fn applies(mark: &purlis_scenarios::model::Mark, dialect: CellDialect) -> bool {
@@ -779,13 +912,17 @@ fn press_it(
 /// **Why `cell` cannot be played as `dialect`**, everything at once, or `None` when it can.
 fn malformed_cell(
     cell: &Cell,
+    batch: &Batch,
     dialect: CellDialect,
     hosts: &Hosts,
     seconds: &BTreeMap<&'static str, f64>,
     pins: &purlis_scenarios::validate::Pins,
 ) -> Option<String> {
     let steps = purlis_scenarios::validate::resolve(cell, dialect, super::report::this_os(), pins);
-    let mut why: Vec<String> = Vec::new();
+    let mut why: Vec<String> = play::malformed_cell(cell, batch)
+        .into_iter()
+        .map(|m| m.0)
+        .collect();
     for (n, step) in steps.iter().enumerate() {
         let at = |text: String| format!("step {}: {text}", n + 1);
         why.extend(
@@ -834,12 +971,26 @@ fn malformed_cell(
         }
     }
     for mark in &cell.expected_fail {
-        if let Some(check) = &mark.check
-            && check_of(check).is_none()
-        {
-            why.push(format!(
-                "the mark's check `{check}` has no check in the suite"
-            ));
+        if let Some(check) = &mark.check {
+            match check_of(check) {
+                None => why.push(format!(
+                    "the mark's check `{check}` has no check in the suite"
+                )),
+                // A refusal is excused by the step that was refused, so a mark names it.
+                Some(Check::NoBlackHole)
+                    if mark
+                        .refusal
+                        .as_deref()
+                        .and_then(|text| text.strip_prefix("step "))
+                        .and_then(|n| n.parse::<usize>().ok())
+                        .is_none_or(|n| n == 0 || n > steps.len()) =>
+                {
+                    why.push(format!(
+                        "the mark's check `{check}` names no refusal (`\"refusal\": \"step N\"`)"
+                    ));
+                }
+                Some(_) => {}
+            }
         }
     }
     (!why.is_empty()).then(|| format!("{}: malformed: {}", cell.id, why.join("; ")))

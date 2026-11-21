@@ -33,7 +33,11 @@
 //!   and a `forbid` wants none, whatever it says.
 //! - `before: "post"` keeps the events written before the step's first `hook.posttooluse*`;
 //!   `at: "next_prompt"` keeps the events written after the step's first `hook.stop`, the turn's
-//!   end, which is when the next prompt is what comes next.
+//!   end, up to the next `hook.pretooluse`: what the next prompt triggers, even when it was
+//!   written after the step's window closed (it reads past the window, never into the next
+//!   call). **An anchor the step did not write fails the assertion**, a `forbid` too: no post
+//!   line for `before`, no `hook.stop` for `at`, no `hook.pretooluse` for `within` observes
+//!   `"no hook.posttooluse"`, `"no hook.stop"` or `"no hook.pretooluse"`, never a pass.
 //! - `within` is a Timings expression: the event must come that long or less after the step's
 //!   first `hook.pretooluse` (the ULIDs' own time), and a miss observes the seconds it took.
 //!   `before`, `at` and `within` keep or drop events, so a count is of the events that remain.
@@ -290,6 +294,11 @@ pub fn malformed_step(
     seconds: &BTreeMap<&'static str, f64>,
 ) -> Vec<Malformed> {
     let mut found = Vec::new();
+    if step.outcome.is_some() && step.calls.is_empty() {
+        found.push(Malformed(
+            "an `outcome` on a step with no calls: there is no call to name it of".to_owned(),
+        ));
+    }
     let expects = step
         .require
         .iter()
@@ -359,6 +368,26 @@ pub fn malformed_step(
     found
 }
 
+/// **What a cell or its batch says that the runner does not play**: a `template` (every chat of a
+/// batch starts under one `[policy]`) and a batch's `deny_exempt_rules` (the live checker's own
+/// exemption). Ignoring either silently would judge the cell under a protection it did not ask
+/// for, so each makes the cell malformed.
+pub fn malformed_cell(cell: &Cell, batch: &Batch) -> Vec<Malformed> {
+    let mut found = Vec::new();
+    if let Some(template) = &cell.template {
+        found.push(Malformed(format!(
+            "`template: {template}` is not played: a batch's chats all start under one policy"
+        )));
+    }
+    if !batch.deny_exempt_rules.is_empty() {
+        found.push(Malformed(format!(
+            "the batch's `deny_exempt_rules` ({}) are not played: the runner exempts no refusal",
+            batch.deny_exempt_rules.join(", ")
+        )));
+    }
+    found
+}
+
 /// How a step's `require` and `forbid` came out against `events`, one [`Assertion`] each, named
 /// `require[i]` and `forbid[i]`. `step_no` is the step's number from 1. `later` holds the events
 /// written after the step's window, which are never counted for it but say how long a `within`
@@ -395,8 +424,9 @@ pub fn step_assertions(
             Require::Order { order: [a, b] } => {
                 let first = frame.matching(a, hosts, seconds).first().map(|s| s.seq);
                 let last = frame.matching(b, hosts, seconds).last().map(|s| s.seq);
-                match (first, last) {
-                    (Some(a), Some(b)) if a < b => Observed::Pass,
+                match (frame.missing(a).or_else(|| frame.missing(b)), first, last) {
+                    (Some(why), _, _) => Observed::Fail(why.into()),
+                    (None, Some(a), Some(b)) if a < b => Observed::Pass,
                     _ => Observed::Fail(0.into()),
                 }
             }
@@ -405,9 +435,10 @@ pub fn step_assertions(
     }
     for (i, e) in step.forbid.iter().enumerate() {
         let n = frame.matching(e, hosts, seconds).len();
-        let observed = match n {
-            0 => Observed::Pass,
-            n => Observed::Fail(n.into()),
+        let observed = match (frame.missing(e), n) {
+            (Some(why), _) => Observed::Fail(why.into()),
+            (None, 0) => Observed::Pass,
+            (None, n) => Observed::Fail(n.into()),
         };
         out.push(one(format!("forbid[{i}]"), observed));
     }
@@ -420,6 +451,9 @@ struct Frame<'a> {
     later: &'a [Seen],
     first_post: Option<u64>,
     first_stop: Option<u64>,
+    /// The first call written after the step's `hook.stop`, in the step or after it: where the
+    /// next prompt's own events end and the next call's begin.
+    next_call: Option<u64>,
     started_ms: Option<u64>,
     this_call: Option<&'a Value>,
 }
@@ -428,11 +462,20 @@ impl<'a> Frame<'a> {
     fn of(events: &'a [Seen], later: &'a [Seen]) -> Self {
         let first = |pred: &dyn Fn(&Seen) -> bool| events.iter().find(|s| pred(s));
         let pre = first(&|s| s.kind == "hook.pretooluse");
+        let first_stop = first(&|s| s.kind == "hook.stop").map(|s| s.seq);
         Frame {
             events,
             later,
             first_post: first(&|s| s.kind.starts_with("hook.posttooluse")).map(|s| s.seq),
-            first_stop: first(&|s| s.kind == "hook.stop").map(|s| s.seq),
+            first_stop,
+            next_call: first_stop.and_then(|stop| {
+                events
+                    .iter()
+                    .chain(later)
+                    .filter(|s| s.kind == "hook.pretooluse" && s.seq > stop)
+                    .map(|s| s.seq)
+                    .min()
+            }),
             started_ms: pre.map(|s| s.at_ms),
             this_call: pre
                 .and_then(|s| s.body.get("args"))
@@ -452,24 +495,45 @@ impl<'a> Frame<'a> {
             .as_deref()
             .and_then(|w| Expr::parse(w).ok())
             .and_then(|x| x.seconds(seconds));
+        // `at: next_prompt` reads what the next prompt triggers, which may be written after the
+        // step's window closed: it looks past it, up to the next call.
+        let later: &[Seen] = if e.at.is_some() { self.later } else { &[] };
         self.events
             .iter()
+            .chain(later)
             .filter(|s| s.kind == e.kind)
             .filter(|s| e.fields.iter().all(|(k, want)| self.has(s, k, want, hosts)))
             .filter(|s| match (&e.before, self.first_post) {
                 (Some(_), Some(post)) => s.seq < post,
+                (Some(_), None) => false,
                 _ => true,
             })
             .filter(|s| match (&e.at, self.first_stop) {
-                (Some(_), Some(stop)) => s.seq > stop,
+                (Some(_), Some(stop)) => s.seq > stop && self.next_call.is_none_or(|n| s.seq < n),
                 (Some(_), None) => false,
                 _ => true,
             })
             .filter(|s| match (limit, self.started_ms) {
                 (Some(limit), Some(start)) => took(s, start) <= limit,
+                (Some(_), None) => false,
                 _ => true,
             })
             .collect()
+    }
+
+    /// **The anchor `e` is read against that the step did not write**: a `before: post` with no
+    /// post line, an `at: next_prompt` with no `hook.stop`, a `within` with no `hook.pretooluse`.
+    /// An assertion with no anchor fails, whatever it asks, and says which line was missing.
+    fn missing(&self, e: &Expect) -> Option<&'static str> {
+        if e.before.is_some() && self.first_post.is_none() {
+            Some("no hook.posttooluse")
+        } else if e.at.is_some() && self.first_stop.is_none() {
+            Some("no hook.stop")
+        } else if e.within.is_some() && self.started_ms.is_none() {
+            Some("no hook.pretooluse")
+        } else {
+            None
+        }
     }
 
     /// How `e` came out as a `require`: its count, or for a `within` miss the seconds the nearest
@@ -481,6 +545,9 @@ impl<'a> Frame<'a> {
         seconds: &BTreeMap<&'static str, f64>,
         required: bool,
     ) -> Observed {
+        if let Some(why) = self.missing(e) {
+            return Observed::Fail(why.into());
+        }
         let n = self.matching(e, hosts, seconds).len() as u64;
         let (lo, hi) = e
             .count
@@ -936,6 +1003,94 @@ mod tests {
         // Never written at all: a count of none, which no range can pin.
         let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Fail(0.into()));
+    }
+
+    #[test]
+    fn an_assertion_whose_anchor_is_missing_fails_and_says_which() {
+        let s = step(json!({
+            "require": [
+                {"kind": "ask.raised", "within": "group+1"},
+                {"kind": "ask.raised", "before": "post"},
+                {"order": [{"kind": "ask.raised", "before": "post"}, {"kind": "hook.stop"}]},
+            ],
+            "forbid": [{"kind": "stop.block", "at": "next_prompt"}],
+        }));
+        // An ask and nothing else: no call, no post line, no stop.
+        let log = [seen(1, 1000, "ask.raised", json!({}))];
+        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let said: Vec<&Observed> = got.iter().map(|a| &a.observed).collect();
+        assert_eq!(
+            said,
+            [
+                &Observed::Fail(json!("no hook.pretooluse")),
+                &Observed::Fail(json!("no hook.posttooluse")),
+                &Observed::Fail(json!("no hook.posttooluse")),
+                &Observed::Fail(json!("no hook.stop")),
+            ]
+        );
+        // With every anchor written, the same step passes where its events hold.
+        let log = [
+            seen(1, 1000, "hook.pretooluse", json!({})),
+            seen(2, 1100, "ask.raised", json!({})),
+            seen(3, 1200, "hook.posttoolusefailure-blocked", json!({})),
+            seen(4, 1300, "hook.stop", json!({})),
+        ];
+        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        assert!(got.iter().all(|a| a.observed == Observed::Pass), "{got:#?}");
+    }
+
+    #[test]
+    fn next_prompt_reads_what_the_next_prompt_wrote_up_to_the_next_call() {
+        let s = step(json!({"forbid": [{"kind": "stop.block", "at": "next_prompt"}]}));
+        let log = [
+            seen(1, 1000, "hook.pretooluse", json!({})),
+            seen(2, 1100, "hook.stop", json!({})),
+        ];
+        // Written after the window closed, before the next step's call: the next prompt's.
+        let later = [
+            seen(3, 1200, "hook.userpromptsubmit", json!({})),
+            seen(4, 1300, "stop.block", json!({})),
+            seen(5, 1400, "hook.pretooluse", json!({})),
+            // The next step's own block is not this step's.
+            seen(6, 1500, "stop.block", json!({})),
+        ];
+        let got = step_assertions(1, &s, &log, &later, &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Fail(1.into()));
+        // Nothing before the next call: the forbid holds.
+        let later = [
+            seen(5, 1400, "hook.pretooluse", json!({})),
+            seen(6, 1500, "stop.block", json!({})),
+        ];
+        let got = step_assertions(1, &s, &log, &later, &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Pass);
+    }
+
+    #[test]
+    fn an_outcome_on_a_step_with_no_calls_and_a_template_make_a_cell_malformed() {
+        let bare = step(json!({"outcome": "failed"}));
+        assert_eq!(malformed_step(&bare, &hosts(), &seconds()).len(), 1);
+        let called = step(
+            json!({"calls": [{"tool": "Bash", "input": {"command": "true"}}],
+                                 "outcome": "failed"}),
+        );
+        assert_eq!(malformed_step(&called, &hosts(), &seconds()), vec![]);
+        let batch = |cell: Value, rules: Value| {
+            let mut value = json!({
+                "batch": "T", "protection": "full", "persona": "steward", "hosts": {},
+                "cells": [cell], "deny_exempt_rules": rules,
+            });
+            value["cells"][0]["dialects"] = json!(["claude"]);
+            Batch::from_value(value).expect("a batch")
+        };
+        let plain = batch(json!({"id": "M-A", "steps": []}), json!([]));
+        assert_eq!(malformed_cell(&plain.cells[0], &plain), vec![]);
+        let templated = batch(
+            json!({"id": "M-A", "template": "open", "steps": []}),
+            json!([]),
+        );
+        assert_eq!(malformed_cell(&templated.cells[0], &templated).len(), 1);
+        let exempt = batch(json!({"id": "M-A", "steps": []}), json!(["R-1"]));
+        assert_eq!(malformed_cell(&exempt.cells[0], &exempt).len(), 1);
     }
 
     fn escape_cell(marked: bool) -> Cell {

@@ -1623,7 +1623,8 @@ impl Scenario {
     /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
     /// report with the kinds of the events its log gained after `since`, the [`Self::latest_seq`]
     /// taken when the cell began: the canary's and earlier cells' events are not the cell's. A log
-    /// that cannot be read is an error, never a record with no events. Called by the runner of
+    /// that cannot be read is an error, never a record with no events. The events end at `until`,
+    /// the cell's own last: the next cell's are not the cell's. Called by the runner of
     /// the cells format (`cells.rs`).
     pub(crate) fn report_cell(
         &self,
@@ -1631,6 +1632,7 @@ impl Scenario {
         verdict: purlis_scenarios::model::ReportVerdict,
         reason: Option<String>,
         since: u64,
+        until: u64,
     ) -> Result<(), String> {
         let record = super::report::ran(
             cell,
@@ -1639,7 +1641,7 @@ impl Scenario {
             purlis_scenarios::model::TimingsMode::Scaled,
             verdict,
             reason,
-            super::report::kinds_since(&self.try_events()?, since),
+            super::report::kinds_between(&self.try_events()?, since, until),
         );
         super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
         Ok(())

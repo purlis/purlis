@@ -108,11 +108,31 @@ pub(crate) struct Observed<'a> {
     pub hook_budget: Duration,
 }
 
+/// **Where a failure is**, so a mark can excuse it and nothing else: the log's event number, the
+/// refusal's label, or neither for a failure of the scenario as a whole (an ask left listed).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Position {
+    pub seq: Option<u64>,
+    pub refusal: Option<String>,
+    /// The mark that did not fire, by its place in the ledger.
+    pub mark: Option<usize>,
+}
+
+impl Position {
+    fn seq(seq: u64) -> Self {
+        Position {
+            seq: Some(seq),
+            ..Position::default()
+        }
+    }
+}
+
 /// One check's failure.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Violation {
     pub check: Check,
     pub what: String,
+    pub at: Position,
 }
 
 fn kind_is_a_stop(kind: &str) -> bool {
@@ -133,7 +153,9 @@ fn target_in(body: &serde_json::Value) -> Option<String> {
 /// events written by hand.
 pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
     let mut found = Vec::new();
-    let mut fail = |check: Check, what: String| found.push(Violation { check, what });
+    let mut fail = |check: Check, what: String, at: Position| {
+        found.push(Violation { check, what, at });
+    };
 
     // No black hole (R-004): every refusal has an ask, a block or a hold. The refusals are the
     // ones the scenario declared and every hook `deny`.
@@ -190,6 +212,14 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                         .map(|target| format!(" (aimed at {target})"))
                         .unwrap_or_default()
                 ),
+                Position {
+                    seq: refusal
+                        .step
+                        .strip_prefix("a hook's deny, event ")
+                        .and_then(|n| n.parse().ok()),
+                    refusal: Some(refusal.step.clone()),
+                    mark: None,
+                },
             );
         }
     }
@@ -199,6 +229,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
         fail(
             Check::NoUnansweredAsk,
             format!("the window still lists {ask}"),
+            Position::default(),
         );
     }
 
@@ -212,10 +243,12 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
             None => fail(
                 Check::NoLeftoverGrant,
                 format!("Settings lists a {kind} grant for {target} ({level}) nobody made"),
+                Position::default(),
             ),
             Some((_, _, made_at)) if made_at == "once" => fail(
                 Check::NoLeftoverGrant,
                 format!("a once-grant of {kind} {target} outlived its use: Settings lists it"),
+                Position::default(),
             ),
             Some(_) => {}
         }
@@ -234,6 +267,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                     "event {} ({}) took a hook {took} ms, over its {budget_ms} ms budget",
                     event.seq, event.kind
                 ),
+                Position::seq(event.seq),
             ),
             Some(_) => {}
             None => fail(
@@ -243,6 +277,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                      milliseconds: the hook's time is not measured",
                     event.seq, event.kind
                 ),
+                Position::seq(event.seq),
             ),
         }
     }
@@ -265,6 +300,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                     event.seq,
                     source.unwrap_or("none")
                 ),
+                Position::seq(event.seq),
             );
         }
     }
@@ -289,6 +325,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
                          answer since the first",
                         event.seq
                     ),
+                    Position::seq(event.seq),
                 );
             }
         } else if kind.starts_with("hook.pretool")
@@ -302,12 +339,37 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
     found
 }
 
+/// **Where a mark excuses its check**: never for the whole suite. A scenario's own mark holds for
+/// the scenario (`Anywhere`); a cell's holds for the events it wrote (`Events`: after the first
+/// number, up to and including the second) or for one refusal it declared (`Refusal`, by label).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) enum Scope {
+    #[default]
+    Anywhere,
+    Events {
+        after: u64,
+        upto: u64,
+    },
+    Refusal(String),
+}
+
+impl Scope {
+    fn holds(&self, at: &Position) -> bool {
+        match self {
+            Scope::Anywhere => true,
+            Scope::Events { after, upto } => at.seq.is_some_and(|seq| seq > *after && seq <= *upto),
+            Scope::Refusal(label) => at.refusal.as_deref() == Some(label.as_str()),
+        }
+    }
+}
+
 /// A check a scenario knowingly fails, with the issue that says why.
 #[derive(Debug, Clone)]
 pub(crate) struct Mark {
     pub check: Check,
     pub issue: u32,
     pub why: String,
+    pub scope: Scope,
 }
 
 /// **What came of a scenario's checks**: each failure that is not marked, and each marked check
@@ -315,7 +377,11 @@ pub(crate) struct Mark {
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Outcome {
     pub failures: Vec<String>,
+    /// Where each of `failures` is, in the same order.
+    pub failure_at: Vec<Position>,
     pub expected: Vec<(Check, u32, String)>,
+    /// The marks that excused a failure, by their place in the ledger.
+    pub fired: std::collections::BTreeSet<usize>,
 }
 
 /// **Applies `marks` to what [`judge`] found**: a failure of a marked check is an expected fail;
@@ -323,17 +389,25 @@ pub(crate) struct Outcome {
 pub(crate) fn outcome(found: Vec<Violation>, marks: &[Mark]) -> Outcome {
     let mut out = Outcome::default();
     for violation in &found {
-        match marks.iter().find(|mark| mark.check == violation.check) {
-            Some(mark) => out
-                .expected
-                .push((violation.check, mark.issue, violation.what.clone())),
-            None => out
-                .failures
-                .push(format!("{}: {}", violation.check.word(), violation.what)),
+        let mark = marks
+            .iter()
+            .enumerate()
+            .find(|(_, mark)| mark.check == violation.check && mark.scope.holds(&violation.at));
+        match mark {
+            Some((i, mark)) => {
+                out.fired.insert(i);
+                out.expected
+                    .push((violation.check, mark.issue, violation.what.clone()));
+            }
+            None => {
+                out.failures
+                    .push(format!("{}: {}", violation.check.word(), violation.what));
+                out.failure_at.push(violation.at.clone());
+            }
         }
     }
-    for mark in marks {
-        if !found.iter().any(|one| one.check == mark.check) {
+    for (i, mark) in marks.iter().enumerate() {
+        if !out.fired.contains(&i) {
             out.failures.push(format!(
                 "{}: unexpected pass: #{} ({}) is marked as failing here, and the check passed: \
                  remove the mark",
@@ -341,6 +415,10 @@ pub(crate) fn outcome(found: Vec<Violation>, marks: &[Mark]) -> Outcome {
                 mark.issue,
                 mark.why
             ));
+            out.failure_at.push(Position {
+                mark: Some(i),
+                ..Position::default()
+            });
         }
     }
     out
@@ -504,6 +582,13 @@ impl Scenario {
         self.declares(session, step, target, 0);
     }
 
+    /// **[`Self::refused`], for a step that began after the log's event `since`**: only what is
+    /// written after it answers the refusal, so an ask or a block an earlier step wrote for the
+    /// same target never does (a repeat's refusal is held to its own answer).
+    pub(crate) fn refused_since(&self, session: u32, step: &str, target: Option<&str>, since: u64) {
+        self.declares(session, step, target, since);
+    }
+
     /// **[`Self::refused`], for a refusal that has not happened yet**: what answers it must be
     /// written after the log's latest event now, so an ask an earlier call raised answers nothing.
     pub(crate) fn refused_after_now(&self, session: u32, step: &str, target: Option<&str>) {
@@ -531,12 +616,27 @@ impl Scenario {
     /// **Marks `check` as failing here, for `issue`**: per scenario and check, never for the
     /// suite. A mark whose check passes is a failure at the end.
     pub(crate) fn expected_fail(&self, check: Check, issue: u32, why: &str) {
+        self.expected_fail_in(check, issue, why, Scope::Anywhere);
+    }
+
+    /// **[`Self::expected_fail`], excusing only what `scope` holds** (a cell's step, a cell's
+    /// refusal). Answers the mark's place in the ledger, which [`Outcome::fired`] names.
+    pub(crate) fn expected_fail_in(
+        &self,
+        check: Check,
+        issue: u32,
+        why: &str,
+        scope: Scope,
+    ) -> usize {
         assert!(issue > 0, "an expected fail names its issue");
-        self.ledger.marks.lock().expect("marks").push(Mark {
+        let mut marks = self.ledger.marks.lock().expect("marks");
+        marks.push(Mark {
             check,
             issue,
             why: why.to_owned(),
+            scope,
         });
+        marks.len() - 1
     }
 }
 
