@@ -69,7 +69,7 @@ impl Pin for PolicyPin {
         // route is handed over before the egress layers that would otherwise lock the host.
         if locks.refused_because().is_some() {
             return Some(locks.led_by(
-                "This forge is refused while the administrator's policy file is refused.",
+                "This forge is refused while the administrator's policy file is refused",
             ));
         }
         let host = host.strip_suffix('.').unwrap_or(host);
