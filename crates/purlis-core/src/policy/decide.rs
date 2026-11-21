@@ -41,6 +41,7 @@ use crate::enforcement::Mode;
 use crate::secrets::answers::{self, Standing};
 
 use super::deny_state::{self, DenyState};
+use super::force;
 use super::levels::{self, Chat, Loaded, Named};
 use super::organisation;
 use super::{EVERYTHING_ELSE, File, Level, Question, World, family_of, read_file};
@@ -150,6 +151,11 @@ pub struct Decision {
     /// [`Decision::held_to`] names when a floor puts the deny back. Empty otherwise.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lifted: Vec<Deciding>,
+    /// The `@ask` forbids on `read`, `write`, `connect` or `dial` that the `asks` family's mode
+    /// lifted: what [`Decision::held_to`] names when a floor enforces `asks` and puts the ask back
+    /// where the action's own family did not hold it. Empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub asked: Vec<Deciding>,
     /// Who locks the family or the action, where a level does: the mode was then `enforce`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<String>,
@@ -159,6 +165,15 @@ pub struct Decision {
     /// Why nothing could be asked, for a request that does not fit the schema.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unasked: Option<String>,
+    /// The widest grant scope the deciding rules offer (`@keep`), the narrowest of them where
+    /// several write one. Under the policy in force it is the narrowest of every side that decided
+    /// as strictly: a `@keep` widened in a commit offers only the accepted scope until the press.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<String>,
+    /// The longest timed grant the deciding rules offer (`@timed`), the stricter where several
+    /// write one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timed: Option<String>,
     /// Set where the plane's sealed answers are in the deny state and this is its refusal of an
     /// action but `start` (M75-07b): the causes, and the re-press that ends it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -172,22 +187,48 @@ impl Decision {
     }
 
     /// **This decision, held to what the person accepted and the machine locks** (M75-04 round 2,
-    /// M75-10 round 3): where `floor` enforces this decision's family and the project's own mode
-    /// loosened it, to an ask or to an allow, it is enforced all the same, as the merge hold has
-    /// always run: the stricter of the project's `HEAD` and what was accepted, with a lock on top.
-    /// Until the accepted copy and the Organisation's files are read by [`levels::load`] (slices 06
-    /// and 14), a commit reaching `HEAD` that sets the family `off` or `log` must not make the next
-    /// action run unasked, or a deny run as an ask. Where a deny stood as an ask because its plain
-    /// forbids were lifted, those forbids are the deciding rules again.
+    /// M75-10 round 3, #7222): where `floor` enforces the family whose mode loosened this decision
+    /// and the project's own mode loosened it, to an ask or to an allow, it is enforced all the
+    /// same, as the merge hold has always run: the stricter of the project's `HEAD` and what was
+    /// accepted, with a lock on top. Until the accepted copy and the Organisation's files are read
+    /// by [`levels::load`] (slices 06 and 14), a commit reaching `HEAD` that sets the family `off`
+    /// or `log` must not make the next action run unasked, or a deny run as an ask. Where a deny
+    /// stood as an ask because its plain forbids were lifted, those forbids are the deciding rules
+    /// again.
+    ///
+    /// **Two restore targets, each with its own gate.** A deny or an ask is put back to what Cedar
+    /// said where the floor enforces the family whose mode lifted it: the action's own for a deny,
+    /// and for an ask the one whose mode applied (`asks` for an `@ask` forbid on `read`, `write`,
+    /// `connect` or `dial`), so a floor with `asks` off holds no ask the person did not accept. And
+    /// where the floor enforces `asks` and not the action's family, the `@ask` forbids the `asks`
+    /// mode lifted are put back as an ask, even beside plain forbids the family's own mode legitimately
+    /// lifted (#7222).
     #[must_use]
     pub fn held_to(mut self, floor: &crate::enforcement::Resolved) -> Self {
         let loosened = self.after_mode < self.outcome;
-        if loosened && floor_enforces(floor, &self.family) {
+        let gate = if self.outcome == Outcome::Ask {
+            &self.mode_family
+        } else {
+            &self.family
+        };
+        if loosened && floor_enforces(floor, gate) {
             if self.outcome == Outcome::Deny && !self.lifted.is_empty() {
                 self.deciding = std::mem::take(&mut self.lifted);
+                // The plain forbids that decide it run at their own family's mode, not `asks`'.
+                self.mode_family.clone_from(&self.family);
             }
             self.mode = Mode::Enforce;
             self.after_mode = self.outcome;
+        }
+        if self.after_mode < Outcome::Ask
+            && !self.asked.is_empty()
+            && floor_enforces(floor, "asks")
+            && !floor_enforces(floor, &self.family)
+        {
+            self.deciding = std::mem::take(&mut self.asked);
+            self.mode_family = "asks".to_owned();
+            self.mode = Mode::Enforce;
+            self.after_mode = Outcome::Ask;
         }
         self
     }
@@ -293,18 +334,32 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
             .map(|id| deciding(loaded, id))
             .collect::<Vec<_>>()
     };
-    let bare = |outcome: Outcome, rules: Vec<Deciding>, unasked: Option<String>| Decision {
-        outcome,
-        deciding: rules,
-        family: family.clone(),
-        mode_family: family.clone(),
-        mode: loaded.mode_for(&family, request.of),
-        after_mode: outcome,
-        lifted: Vec::new(),
-        lock: loaded.lock_on(&family, request.action),
-        grant: None,
-        unasked,
-        deny_state: None,
+    let bare = |outcome: Outcome, rules: Vec<Deciding>, unasked: Option<String>| {
+        let rules_name_the_catch_all = rules.iter().any(|r| r.id == EVERYTHING_ELSE);
+        scoped(
+            loaded,
+            Decision {
+                outcome,
+                deciding: rules,
+                family: family.clone(),
+                mode_family: family.clone(),
+                // A deny by the catch-all is no mode's doing, so it reads `enforce` where the
+                // family logs, as a deny by the catch-all after a forbid does (#7222).
+                mode: match loaded.mode_for(&family, request.of) {
+                    Mode::Log if rules_name_the_catch_all => Mode::Enforce,
+                    mode => mode,
+                },
+                after_mode: outcome,
+                lifted: Vec::new(),
+                asked: Vec::new(),
+                lock: loaded.lock_on(&family, request.action),
+                grant: None,
+                unasked,
+                keep: None,
+                timed: None,
+                deny_state: None,
+            },
+        )
     };
     let full = match evaluated {
         Ok(full) => full,
@@ -348,6 +403,13 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
     } else {
         Vec::new()
     };
+    // The asks the `asks` family's mode lifted, which a floor that enforces `asks` puts back
+    // (M75-10 round 3, #7222).
+    let asked: Vec<Deciding> = runs
+        .iter()
+        .filter(|r| r.ask && !r.enforced() && r.mode_family == "asks")
+        .map(|r| r.rule.clone())
+        .collect();
     let (after_mode, rules, reference): (Outcome, Vec<Deciding>, Vec<&Run>) = if !plain.is_empty() {
         let rules = plain.iter().map(|r| r.rule.clone()).collect();
         (Outcome::Deny, rules, plain)
@@ -371,22 +433,53 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
     // only. A `log` would read as a would-have-blocked line over an allow, which it is not, so
     // `policy why` reads `enforce` for it; an `off` family stays `off`, as it says (Q319 C2).
     let by_no_permit = rules.iter().any(|r| r.id == EVERYTHING_ELSE);
-    Decision {
-        outcome,
-        deciding: rules,
-        family,
-        mode_family: strictest.map_or_else(String::new, |r| r.mode_family.clone()),
-        mode: match strictest.map_or(Mode::Enforce, |r| r.mode) {
-            Mode::Log if by_no_permit => Mode::Enforce,
-            mode => mode,
+    scoped(
+        loaded,
+        Decision {
+            outcome,
+            deciding: rules,
+            family,
+            mode_family: strictest.map_or_else(String::new, |r| r.mode_family.clone()),
+            mode: match strictest.map_or(Mode::Enforce, |r| r.mode) {
+                Mode::Log if by_no_permit => Mode::Enforce,
+                mode => mode,
+            },
+            after_mode,
+            lifted,
+            asked,
+            lock: reference.iter().find_map(|r| r.lock.clone()),
+            grant: None,
+            unasked: None,
+            keep: None,
+            timed: None,
+            deny_state: None,
         },
-        after_mode,
-        lifted,
-        lock: reference.iter().find_map(|r| r.lock.clone()),
-        grant: None,
-        unasked: None,
-        deny_state: None,
-    }
+    )
+}
+
+/// `decision` with the grant scopes its deciding rules write: the narrowest `@keep` and the
+/// stricter `@timed` of them.
+fn scoped(loaded: &Loaded, mut decision: Decision) -> Decision {
+    let rules: Vec<&super::Rule> = decision
+        .deciding
+        .iter()
+        .filter_map(|d| loaded.policy.rule(&d.id))
+        .collect();
+    let at = |w: &String| super::KEEPS.iter().position(|k| k == w).unwrap_or(0);
+    decision.keep = rules
+        .iter()
+        .filter_map(|r| r.keep.clone())
+        .min_by_key(|w| at(w));
+    let rank = |w: &String| match super::TIMEDS.iter().position(|t| t == w).unwrap_or(0) {
+        2 => 0,
+        0 => 1,
+        _ => 2,
+    };
+    decision.timed = rules
+        .iter()
+        .filter_map(|r| r.timed.clone())
+        .min_by_key(|w| rank(w));
+    decision
 }
 
 /// The families whose rules take `off` or `enforce` only, or `enforce` only: a `log` there reads
@@ -535,13 +628,12 @@ impl Sealed {
         }
     }
 
-    /// What a `start` is judged with: the device id alone, since no deny state refuses a start
-    /// (review round 5, SEC5-SF2: the rules still judge it), so the standing is not read.
-    pub fn for_start() -> Self {
-        Self {
-            standing: Standing::fresh(),
-            machine: answers::context_machine(),
-        }
+    /// What a `start` is judged with: the store as it stands, like any other action, so a start
+    /// is held to the accepted copy and the floor too. No deny state *refuses* a start (review
+    /// round 5, SEC5-SF2: the rules still judge it), but in one the policy in force judges it under
+    /// the shipped strict policy as well ([`force::judge`]).
+    pub fn for_start(root: &std::path::Path) -> Self {
+        Self::of(root)
     }
 
     /// Nothing sealed: a fresh install's standing and no device id. For a caller that names no
@@ -555,10 +647,10 @@ impl Sealed {
 }
 
 /// **The session host's decision for a chat in the plane at `root`** ([`crate::hookwire::Ask::Decide`]):
-/// the policy every level wrote, the project's as committed at the plane root's `HEAD`
-/// ([`levels::load`]), judges `action` on `resource` for `asker`. The Organisation's files are
-/// slice 06's and the accepted copy slice 14's; the world is empty until slice 14 reads entity
-/// attributes at `HEAD`, so a rule that reads one errs, and denies.
+/// the policy in force ([`force::judge`]) judges `action` on `resource` for `asker`: the project as
+/// committed at the plane root's `HEAD` ([`levels::load`]) and what the person accepted, each over
+/// its own world (the named sets it holds and the entity attributes read at `HEAD`), the stricter
+/// winning. What the app sees tighten is sealed into the accepted floor on the way.
 ///
 /// **In the deny state every action but `start` is refused here, before any rule is read** (M75-07b,
 /// [`deny_state::refused`]); a `start` is judged by the rules all the same, so a forbid on it still
@@ -570,6 +662,20 @@ pub fn in_plane(
     resource: (&str, &str),
     sealed: &Sealed,
 ) -> Decision {
+    in_plane_held_to(root, asker, action, resource, sealed, None)
+}
+
+/// [`in_plane`], each side held to `floor` ([`Decision::held_to`]) before the stricter is chosen:
+/// a committed `log` or `off` mode that lifts a deny cannot beat the ask the accepted copy stands
+/// on.
+pub fn in_plane_held_to(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+) -> Decision {
     if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
         return refusal;
     }
@@ -579,25 +685,24 @@ pub fn in_plane(
     let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
     let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
     let organisation = organisation::in_force();
-    let loaded = levels::load(&levels::Sources {
+    let sources = levels::Sources {
         root,
         workspaces: &workspaces,
         personas: &personas,
         organisation: organisation.as_ref().map(organisation::Found::as_sources),
         accepted: None,
-    });
+    };
     let chat = asker.chat.to_string();
-    decide(
-        &loaded,
-        &Request {
-            chat: &chat,
-            of: asker.of,
-            action,
-            resource,
-            context: asker.context(action, sealed.machine.as_deref()),
-        },
-        empty_world(),
-    )
+    let request = Request {
+        chat: &chat,
+        of: asker.of,
+        action,
+        resource,
+        context: asker.context(action, sealed.machine.as_deref()),
+    };
+    // The policy in force: the project as committed now and what the person accepted, the
+    // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
+    force::in_force(root, &sources, &sealed.standing, &request, floor)
 }
 
 /// **Whether an enforcement point asks the host about `action` on a `kind` of resource**: only
@@ -651,7 +756,8 @@ pub fn for_chat(
         via: "hook",
         start: None,
     };
-    let decision = in_plane(root, &asker, action, resource, sealed).held_to(floor);
+    let decision =
+        in_plane_held_to(root, &asker, action, resource, sealed, Some(floor)).held_to(floor);
     // A rule the project set `off` is not in its policy at all, so no mode brings it back: where
     // the floor enforces the merge hold and the project's rules let the merge through, the
     // shipped default under `strict`, which is the hold as it always ran, answers instead.

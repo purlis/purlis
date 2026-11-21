@@ -163,9 +163,25 @@ pub fn refused(action: &str, standing: &Standing) -> Option<Decision> {
     if action == "start" {
         return None;
     }
-    let state = DenyState::of(standing)?;
+    Some(refusal(action, DenyState::of(standing)?))
+}
+
+/// **The refusal of `action` for a sealed answer that does not read** (spec §9.4): the deny state
+/// as the plane's own refusal, never the shipped default in its place. The policy in force makes
+/// it for one side, so the stricter-wins rule carries it.
+pub fn unreadable(action: &str, what: &str) -> Decision {
+    refusal(
+        action,
+        DenyState {
+            causes: vec![what.to_owned()],
+            re_press: RePress::default().said(),
+        },
+    )
+}
+
+fn refusal(action: &str, state: DenyState) -> Decision {
     let family = family_of(action).unwrap_or("").to_owned();
-    Some(Decision {
+    Decision {
         outcome: Outcome::Deny,
         deciding: vec![Deciding {
             id: RULE_ID.to_owned(),
@@ -181,11 +197,14 @@ pub fn refused(action: &str, standing: &Standing) -> Option<Decision> {
         mode: Mode::Enforce,
         after_mode: Outcome::Deny,
         lifted: Vec::new(),
+        asked: Vec::new(),
         lock: None,
         grant: None,
         unasked: None,
+        keep: None,
+        timed: None,
         deny_state: Some(state),
-    })
+    }
 }
 
 #[cfg(test)]

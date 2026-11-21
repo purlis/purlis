@@ -646,6 +646,9 @@ pub struct Entry {
     pub in_force: Vec<Family>,
     /// Of those, the ones whose mode is `enforce`: what `context.gaps` carries.
     pub enforced: Vec<Family>,
+    /// Every family it affects, whatever its mode: what `context.gaps` would carry were every
+    /// family enforced.
+    pub affected: Vec<Family>,
 }
 
 /// **The known gaps of one start**: every gap that holds there and affects a family whose mode is
@@ -691,6 +694,7 @@ impl Declared {
                     gap,
                     in_force,
                     enforced,
+                    affected: affected(gap, facts),
                 })
             })
             .collect();
@@ -719,6 +723,20 @@ impl Declared {
             .0
             .iter()
             .flat_map(|entry| entry.enforced.iter().map(|family| family.key().to_owned()))
+            .collect();
+        families.sort();
+        families.dedup();
+        families
+    }
+
+    /// **`context.gaps` as if every family were enforced**: the keys of every family a gap affects
+    /// here, sorted. What a start is judged by where the sealed answers are in a deny state with
+    /// nothing verified, since no accepted copy can say a family set to `log` or `off` is meant to be.
+    pub fn context_gaps_if_all_enforced(&self) -> Vec<String> {
+        let mut families: Vec<String> = self
+            .0
+            .iter()
+            .flat_map(|entry| entry.affected.iter().map(|family| family.key().to_owned()))
             .collect();
         families.sort();
         families.dedup();
@@ -764,8 +782,15 @@ pub fn refusal(
     declared: &Declared,
     floor: &Resolved,
 ) -> Option<Ruling> {
-    use crate::policy::decide::{Asker, Outcome, in_plane};
-    let gaps = declared.context_gaps();
+    use crate::policy::decide::{Asker, Outcome, in_plane_held_to};
+    // A start in a deny state with nothing verified is judged by no accepted copy, so a gap of any
+    // family counts, whatever mode the floor gives it (M75-14, #7305 round 4).
+    let sealed = crate::policy::decide::Sealed::for_start(judged.root);
+    let gaps = if sealed.standing.is_unverified_by_a_reachable_cause() {
+        declared.context_gaps_if_all_enforced()
+    } else {
+        declared.context_gaps()
+    };
     let harness = facts.harness.map_or("unknown", Harness::name);
     let asker = Asker {
         // A start is decided before the board numbers its chat; no rule reads the number.
@@ -785,9 +810,15 @@ pub fn refusal(
     };
     // A start is judged by the rules whatever the plane's standing: the deny state only adds
     // refusals to the other actions (M75-07b, review round 5, SEC5-SF2).
-    let sealed = crate::policy::decide::Sealed::for_start();
-    let decision =
-        in_plane(judged.root, &asker, "start", ("Harness", harness), &sealed).held_to(floor);
+    let decision = in_plane_held_to(
+        judged.root,
+        &asker,
+        "start",
+        ("Harness", harness),
+        &sealed,
+        Some(floor),
+    )
+    .held_to(floor);
     let affecting: Vec<String> = declared
         .entries()
         .iter()
@@ -833,5 +864,23 @@ pub fn refusal(
             )))
         }
         Outcome::Allow => None,
+    }
+}
+
+#[cfg(test)]
+mod all_enforced_tests {
+    use super::*;
+
+    #[test]
+    fn a_family_at_log_is_a_gap_only_where_every_family_is_taken_as_enforced() {
+        let floor = Resolved::all(Mode::Log);
+        let declared = Declared::on(Harness::ClaudeCode, Os::this(), &floor);
+        let enforced = declared.context_gaps();
+        let all = declared.context_gaps_if_all_enforced();
+        assert!(
+            all.len() > enforced.len(),
+            "log families are left out of context.gaps: {enforced:?} against {all:?}"
+        );
+        assert!(enforced.iter().all(|family| all.contains(family)));
     }
 }

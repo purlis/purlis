@@ -44,6 +44,7 @@ use super::{FAMILIES, File, KEEPS, Level, Policy, Problem, Rule, TIMEDS, assembl
 pub const RULES_FILE: &str = "policy.cedar";
 
 /// What [`load`] reads.
+#[derive(Clone)]
 pub struct Sources<'a> {
     /// The plane root. Its `HEAD` is read, never a branch folder's.
     pub root: &'a Path,
@@ -58,6 +59,7 @@ pub struct Sources<'a> {
 }
 
 /// The Organisation's two files.
+#[derive(Clone, Copy)]
 pub struct Organisation<'a> {
     /// Its folder, which names its files in a Notice (`/etc/purlis`).
     pub folder: &'a str,
@@ -85,6 +87,7 @@ pub struct Translated<'a> {
 }
 
 /// The project's files as the person last accepted them.
+#[derive(Clone, Copy)]
 pub struct Accepted<'a> {
     /// The project file's text.
     pub settings: Option<&'a str>,
@@ -378,8 +381,10 @@ impl Loaded {
         {
             mode = Mode::Enforce;
         }
-        match self.you.modes.get(family) {
-            Some(mine) => mode.max(mine.value),
+        // Your own file's template counts as much as its family modes: a tightening of either
+        // applies at once (M75-14).
+        match self.you.mode(family) {
+            Some(mine) => mode.max(mine),
             None => mode,
         }
     }
@@ -1370,8 +1375,60 @@ impl Loaded {
     }
 }
 
-/// **Loads every level's files** (spec §4, §5).
+/// **A project as one version of it held it** (M75-14): the files [`load`] reads from `HEAD` and
+/// from the person's local file, as text. What the accepted copy and each version of the accepted
+/// floor keep, so each is judged by [`load_held`] with nothing of what is committed or on disk now.
+#[derive(Debug, Clone, Copy)]
+pub struct Held<'a> {
+    /// The project file, under the name it was committed by, and its text.
+    pub settings: Option<(&'a str, &'a str)>,
+    /// `policy.cedar`'s text.
+    pub rules: Option<&'a str>,
+    /// The You level's local file's text, which only tightens.
+    pub local: Option<&'a str>,
+}
+
+/// **Loads every level's files** (spec §4, §5): the project as committed at the plane root's
+/// `HEAD`, and the person's local file as it is on disk.
 pub fn load(sources: &Sources<'_>) -> Loaded {
+    let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
+    let committed = committed_files(sources.root, &[&names, &[RULES_FILE]]);
+    load_with(sources, committed, None)
+}
+
+/// **Loads the policy of one version a project was held at** ([`Held`]): its own text for the
+/// project's files and the local file, never `HEAD` or the disk. The Organisation's files are
+/// `sources`', as they are now.
+pub fn load_held(sources: &Sources<'_>, held: &Held<'_>) -> Loaded {
+    let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
+    let settings = match held.settings {
+        Some((file, text)) => Committed::Text {
+            file: names
+                .iter()
+                .copied()
+                .find(|n| *n == file)
+                .unwrap_or(names[0]),
+            text: text.to_owned(),
+        },
+        None => Committed::Absent,
+    };
+    let rules = match held.rules {
+        Some(text) => Committed::Text {
+            file: RULES_FILE,
+            text: text.to_owned(),
+        },
+        None => Committed::Absent,
+    };
+    load_with(sources, vec![settings, rules], Some(held.local))
+}
+
+/// [`load`], the project's two files as `committed` says them and the local file as `held_local`
+/// does (`None`: read it from the disk).
+fn load_with(
+    sources: &Sources<'_>,
+    mut committed: Vec<Committed>,
+    held_local: Option<Option<&str>>,
+) -> Loaded {
     let mut notices = Vec::new();
     let mut broken = false;
     let org_owner = sources
@@ -1393,7 +1450,6 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
 
     // ── the Project, at the plane root's HEAD, both files of one commit ──────────────────
     let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
-    let mut committed = committed_files(sources.root, &[&names, &[RULES_FILE]]);
     let committed_rules = committed.pop().expect("an answer for the rules");
     let committed_settings = committed.pop().expect("an answer for the project file");
     let accepted = sources.accepted.as_ref();
@@ -1693,7 +1749,11 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
     let mut tightenings = Vec::new();
     let mut you = Defaults::default();
     let local_name = crate::settings::Which::Local.file_at(sources.root);
-    let local = crate::settings::layer_text(sources.root, crate::settings::Which::Local);
+    let local = match held_local {
+        Some(Some(text)) => crate::settings::LayerText::Text(text.to_owned()),
+        Some(None) => crate::settings::LayerText::Nothing,
+        None => crate::settings::layer_text(sources.root, crate::settings::Which::Local),
+    };
     let mut you_tables = Tables::default();
     let local_text = match &local {
         crate::settings::LayerText::Text(text) => Some(text.as_str()),
@@ -1709,11 +1769,12 @@ pub fn load(sources: &Sources<'_>) -> Loaded {
             Some(text.as_str())
         }
         crate::settings::LayerText::Nothing => {
-            if let Err(e) = sources
-                .root
-                .join(local_name)
-                .symlink_metadata()
-                .and_then(|_| std::fs::read_to_string(sources.root.join(local_name)))
+            if held_local.is_none()
+                && let Err(e) = sources
+                    .root
+                    .join(local_name)
+                    .symlink_metadata()
+                    .and_then(|_| std::fs::read_to_string(sources.root.join(local_name)))
                 && e.kind() != std::io::ErrorKind::NotFound
             {
                 notices.push(Notice {

@@ -4987,7 +4987,24 @@ write into this folder cannot make its own text arrive as the person's.
   (empty for Everywhere), `bind` the clone key (`everywhere`) it was sealed for, `counter` one
   past the last write's, rising on **every** write (a grant's removal and a Once grant's use
   included), `imported_nevers` the mark that the person's existing nevers were imported once
-  (Q320). Kinds: `accepted`, `acceptance`, `grant`, `never`, `never-marker`, `pass`, `floor`.
+  (Q320). Kinds: `accepted`, `acceptance`, `grant`, `never`, `never-marker`, `pass`, `floor`,
+  `past-the-cap`.
+- **The accepted copy and the accepted floor** (M75 slice 14, #7023; spec §9.1): the `accepted`
+  entry's text and each `floor` entry's is **one JSON object, a version of the project as it was
+  held**: `settings_file` and `settings` (the project file's name and text as `HEAD` held them),
+  `rules` (`policy.cedar`), `vaults` (the shared `vaults.json`, from which a Vault's tags and
+  Persona are read, never the local half), `workspaces` (the folders of `workspaces/` at `HEAD`,
+  from which a Path's owning workspace is read) and `local` (the You level's local file's text,
+  whose tightenings are sealed with the version); each key is left out where it holds nothing.
+  Every decision is judged by the project as committed now and by the accepted copy (the shipped
+  default until there is one) and by every `floor` version, each with its own named sets and its
+  own attributes, the stricter result winning. **The app seals a `floor` version, with no
+  press, whenever it sees a committed version no entry holds, or the local file tightening**
+  (`policy::force::seal`); a version that does not read is not sealed. The floor is the
+  conjunction of every version seen since the last press, which starts it again (`recommit`). The
+  number of committed versions is capped by `trust.accepted-floor-max-versions` (32 until slice 12
+  reads the limit), the local file's versions not counted; a commit past it adds a
+  `past-the-cap` entry instead of a version, and that is the deny state until the press.
 - **Which state a plane is in:** the **deny state** where the anchor is present and the manifest
   is missing or older than the counter; the anchored path's clone key has no manifest (a swapped
   `.git`); an entry other than a grant is missing or fails its seal or the manifest's digest;
@@ -5013,7 +5030,7 @@ write into this folder cannot make its own text arrive as the person's.
   short after the anchor leaves the store older than its anchor: the deny state, mended by the
   person's next press (`recommit`, `recommit_everywhere`), which starts past the highest counter
   the manifest and anchor claim **even where their seals fail**, and which replaces a registry
-  that does not hold its seal. A kind that is not one of the seven is refused.
+  that does not hold its seal. A kind that is not one of the eight is refused.
 - **Read by:** `answers::standing`, in the app alone.
 - **Replaces:** `app/sandbox.json`'s "Keep blocked" hosts, `app/dispatch-never.json`,
   `sandbox-grants/` and `inbox/rules.json`, which doctor names as safe to delete.
