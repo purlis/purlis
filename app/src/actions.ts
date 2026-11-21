@@ -138,6 +138,8 @@ import {
   SHORTCUTS_VIEW,
   AGENT_IDENTITY_TITLE,
   AGENT_IDENTITY_VIEW,
+  GITLAB_ACCESS_TITLE,
+  GITLAB_ACCESS_VIEW,
   DEVICES_TITLE,
   DEVICES_VIEW,
   type AskedBy,
@@ -1882,6 +1884,7 @@ export const SHORTCUTS_ID = "shortcuts.show";
 /** The Devices view's row (#2052). */
 export const DEVICES_ID = "devices.show";
 export const AGENT_IDENTITY_ID = "agent-identity.show";
+export const GITLAB_ACCESS_ID = "gitlab-access.show";
 /** The right sidebar's own views, as the region's palette row names them: "Inbox, Personas and
  *  Vaults" (#1738). */
 const RIGHT_VIEWS_SAID = ((names: string[]) =>
@@ -2778,6 +2781,15 @@ export function catalogue(now: Now): Offer[] {
     }),
     note: "What chats act as on GitHub. Your own sign-in never reaches a chat.",
     plus: PLUS_VIEWS,
+  });
+  // **GitLab access** (#1349): the token a chat's glab is handed, where your own sign-in is held back.
+  offers.push({
+    ...can(GITLAB_ACCESS_ID, GITLAB_ACCESS_TITLE, {
+      verb: "openView",
+      view: GITLAB_ACCESS_VIEW,
+      title: GITLAB_ACCESS_TITLE,
+    }),
+    note: "What chats use on GitLab. Your own glab sign-in never reaches a chat.",
   });
   // **Devices** (#2052): this machine and every runner it keeps, offered once it keeps a pool,
   // so nothing about runners shows before the first is added (spec #2041 story 6).

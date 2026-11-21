@@ -31,6 +31,7 @@ pub(crate) fn about(what: GrantWhat, target: &str) -> Option<About> {
         GrantWhat::PersonaHosts
         | GrantWhat::Browser
         | GrantWhat::BrowserSite
+        | GrantWhat::PoolLogin
         | GrantWhat::RunGrant => None,
     }
 }

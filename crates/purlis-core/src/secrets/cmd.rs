@@ -611,7 +611,12 @@ impl std::fmt::Debug for SetFrom {
 
 /// `_read_value`: a file, an inline value (warned), a pipe on stdin, or — with a terminal on
 /// stdin and no `--stdin` — a hidden prompt. Never argv unless the operator insists.
-fn read_value(ctx: &Ctx, key: &str, from: &SetFrom, io: &mut dyn Io) -> Result<String, VaultError> {
+pub fn read_value(
+    ctx: &Ctx,
+    key: &str,
+    from: &SetFrom,
+    io: &mut dyn Io,
+) -> Result<String, VaultError> {
     if let Some(file) = &from.from_file {
         let p = super::expanduser(file, &ctx.env);
         return std::fs::read_to_string(&p)

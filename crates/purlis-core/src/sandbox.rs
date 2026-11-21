@@ -12,6 +12,7 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use crate::forgelock;
 use crate::harness::Harness;
 
 /// The table in `charter.toml` that holds the policy.
@@ -1198,9 +1199,11 @@ pub fn is_credential(path: &Path, machine: &Machine) -> bool {
     let Some(home) = &machine.home else {
         return false;
     };
-    let path = compared(path);
+    // Spelled as a program opens it: `.`, `//` and `..` are words (as `grant::liftable` reads
+    // them), so `…/.config/gh/./hosts.yml` is the file `…/.config/gh/hosts.yml` is.
+    let path = compared(&lexically(path));
     let below = |held: &Path| {
-        let held = compared(held);
+        let held = compared(&lexically(held));
         path == held || path.starts_with(&format!("{}/", held.trim_end_matches('/')))
     };
     credential_paths(home, &machine.env).iter().any(|held| {
@@ -1210,7 +1213,7 @@ pub fn is_credential(path: &Path, machine: &Machine) -> bool {
         if held.file_name() != Some(std::ffi::OsStr::new(SSH_FOLDER)) {
             return true;
         }
-        let ssh = compared(held);
+        let ssh = compared(&lexically(held));
         match path.strip_prefix(&format!("{ssh}/")) {
             Some(rest) if !rest.contains('/') => !ssh_open(rest),
             Some(_) => true,
@@ -1694,8 +1697,10 @@ pub fn writes_are_sandboxed_in(env: &dyn Fn(&str) -> Option<String>, started: St
 
 /// **Whether this chat is one purlis wraps whole although its harness has a sandbox of its own**
 /// (#4083), as the chat's line said ([`crate::hookwire::WRAPPED_ENV`]): what its hooks and its
-/// `purlis` commands read, for how a refusal or a block is told and reported. No decision that
-/// holds anything reads it, so a chat that set it itself only changes how it is told.
+/// `purlis` commands read, for how a refusal or a block is told and reported, and for whether a
+/// hook may spool a line or take a report ([`writes_are_sandboxed`], #7178). A chat that sets it
+/// itself only makes purlis do less (spool nothing, take nothing, say "not checked"): it never
+/// grants a chat anything.
 pub fn wrapped_whole_in(env: &dyn Fn(&str) -> Option<String>) -> bool {
     env(crate::hookwire::WRAPPED_ENV).as_deref() == Some("1")
 }
@@ -5467,6 +5472,21 @@ impl Applied {
                 .retain(|(key, _)| !gained.iter().any(|(set, _)| set == key));
             line.env.extend(gained);
         }
+        // The forge credential lock (#7205): a chat on a repo that claims it holds no path to the
+        // person's own forge login, so its `gh`, git and ssh are handed none.
+        if self.forge_locked() {
+            let scratch = at.confinement.and_then(Confinement::tmp);
+            let home = Machine::this().home;
+            // Claude Code's own sandbox sets git's ssh for each command (#1667), so it gets none
+            // here: its harness's line never names one ([`forgelock::apply_to_line`]).
+            line.env = forgelock::apply_to_line(
+                std::mem::take(&mut line.env),
+                scratch,
+                home.as_deref(),
+                matches!(*self.form, Form::ClaudeCode(_)),
+            )
+            .map_err(|why| under(format!("the forge credential lock was not made: {why}")))?;
+        }
         // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
         // first on each command's `PATH` through the one file Claude Code reads before each
         // command, never on the harness's own `PATH`. The persona's tools go before it there.
@@ -5623,6 +5643,17 @@ impl Applied {
             return None;
         }
         confinement.and_then(Confinement::ssh_route)
+    }
+
+    /// **Whether this chat is on a repo that claims the forge lock** ([`forgelock::claimed`]): its
+    /// sandbox holds the person's own credentials back, or one of its tools mints it a token.
+    pub fn forge_locked(&self) -> bool {
+        forgelock::claimed(
+            holds_credentials(&self.denied),
+            self.tools
+                .as_ref()
+                .is_some_and(|tools| tools.ready.iter().any(|ready| ready.tool.mint.is_some())),
+        )
     }
 
     /// **A Claude Code chat's ssh route** (#1667), from `confinement`: only one written in this
@@ -7769,8 +7800,38 @@ fn for_start_at(
             applied.confines.tools = resolved.ready.clone();
             applied.tools = Some(Box::new(resolved));
         }
+        guard_forges_in(&mut applied, root, name, &policy.personas);
     }
     Ok(Some(applied))
+}
+
+/// **The shim of an undeclared `glab`** (#1349): where this chat's sandbox holds the person's own
+/// credentials back, `glab` in it says which flow gives it a token, and fails, in place of failing
+/// on a login it was never to read ([`tools::guard_forges`]).
+fn guard_forges_in(
+    applied: &mut Applied,
+    root: &Path,
+    persona: &str,
+    personas: &std::collections::BTreeMap<String, persona::Grants>,
+) {
+    if !applied
+        .confines
+        .denied
+        .iter()
+        .any(|denial| denial.class == Class::Credentials)
+    {
+        return;
+    }
+    let hosts: Vec<String> = crate::forge::agentidentity::hosts_of_the_project(root)
+        .into_iter()
+        .filter(|found| found.kind == Some(crate::forge::Kind::GitLab))
+        .map(|found| found.host)
+        .collect();
+    let resolved = applied.tools.take().map(|boxed| *boxed);
+    let declared: Vec<String> = persona::of(personas, Some(persona))
+        .map(|grants| grants.tools.iter().map(|tool| tool.name.clone()).collect())
+        .unwrap_or_default();
+    applied.tools = tools::guard_forges(resolved, root, persona, &hosts, &declared).map(Box::new);
 }
 
 /// **The floor for a chat of `harness`** in a project that has not turned the sandbox on
@@ -7825,6 +7886,7 @@ fn floor_for_start(
                 applied.hold_programs(&[program.display().to_string()]);
             }
         }
+        guard_forges_in(&mut applied, root, name, &personas);
     }
     Ok(applied)
 }
@@ -8104,6 +8166,23 @@ pub struct Confines {
     /// this one started and for one it takes back from the session host alike, so a pool added
     /// since is told as the chat's sandbox not holding it yet.
     pub pools_held: Vec<PathBuf>,
+}
+
+impl Confines {
+    /// **Whether the chat is on a repo that claims the forge lock** ([`forgelock::claimed`]).
+    pub fn forge_locked(&self) -> bool {
+        forgelock::claimed(
+            holds_credentials(&self.denied),
+            self.tools.iter().any(|ready| ready.tool.mint.is_some()),
+        )
+    }
+}
+
+/// Whether `denied` holds the person's own credentials (ADR 0067 §5 class 6).
+fn holds_credentials(denied: &[Denial]) -> bool {
+    denied
+        .iter()
+        .any(|denial| denial.class == Class::Credentials)
 }
 
 /// **What of every pool's programs and files `denied` holds**, of those the pools on `machine`

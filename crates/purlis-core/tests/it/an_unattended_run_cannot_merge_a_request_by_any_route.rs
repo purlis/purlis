@@ -91,8 +91,8 @@ fn an_api_call_whose_effect_on_a_merge_endpoint_cannot_be_read_is_refused() {
         "gh api -X \"$M\" repos/o/r/pulls/12/merge",
         "gh api \"$EP\" -f sha=abc",
         "glab api -X PUT `cat ep`",
-        // The body is a file or stdin, on a request.
-        "glab api -X PUT projects/1/merge_requests/5 --input body.json",
+        // The body is a file or stdin, on a merge. (A request's own path is held unless its body
+        // is read and sets only what an edit may: #7176, #7195.)
         "gh api -X PUT repos/o/r/pulls/12/merge --input -",
         // A flag the reader does not know could be anything.
         "gh api --frobnicate PUT repos/o/r/pulls/12/merge",
@@ -491,9 +491,20 @@ fn a_push_option_value_and_a_requests_sub_paths_are_not_over_read() {
         "gh api -X POST repos/o/r/pulls/12/reviews --input review.json",
         "gh api -X POST repos/o/r/pulls/12/comments -F \"$K=x\"",
     ]);
+    // Editing a request's title or description is no merge, but only a body purlis reads says so:
+    // a file it cannot open is held (#7195; the passing forms are in
+    // `a_call_that_merges_nothing_passes_the_merge_hold`).
     refused_unattended_only(&[
-        "glab api -X PUT projects/1/merge_requests/5 --input body.json",
         "git push -o \"$OPT\" origin feat",
+        "glab api -X PUT projects/1/merge_requests/5 --input body.json",
+    ]);
+}
+
+#[test]
+fn a_variable_in_a_writing_path_is_held_unless_bound_to_digits_on_the_line() {
+    purlis_core::unsteered!();
+    refused_unattended_only(&[
+        "glab api --method PUT projects/$ID/merge_requests/$MR --input body.json",
     ]);
 }
 
@@ -649,11 +660,14 @@ fn an_unreadable_api_call_names_the_part_it_could_not_read_and_how_to_split_it()
     assert!(said.contains("`projects/$ID/jobs`"), "{said}");
     assert!(said.contains("-X GET"), "{said}");
     let said = release_floor_reason(
-        "glab api projects/$ID/pipelines | head; glab api -X PUT projects/$ID/merge_requests/$MR",
+        "glab api projects/$ID/pipelines | head; glab api -X PUT projects/$ID/merge_requests/5/$V",
         true,
     )
     .expect("a refusal");
-    assert!(said.contains("`projects/$ID/merge_requests/$MR`"), "{said}");
+    assert!(
+        said.contains("`projects/$ID/merge_requests/5/$V`"),
+        "{said}"
+    );
     assert!(said.contains("`PUT`"), "{said}");
     assert!(said.contains("on its own"), "{said}");
     let said = release_floor_reason("glab api -X \"$M\" projects/1/jobs", true).expect("a refusal");

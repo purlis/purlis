@@ -4008,6 +4008,12 @@ impl Planes {
                             &strong,
                             block.line.chat,
                             block.line.sandbox_blocked,
+                            // Checked again in the draft: a chat can send any words.
+                            block
+                                .line
+                                .purlis_command
+                                .as_deref()
+                                .and_then(purlis_core::sandboxblock::command::known),
                         );
                     }
                     // A folder or socket ask the project's `[policy]` answers itself (the Q308
@@ -5606,6 +5612,7 @@ impl Planes {
             removal_asks: crate::removalasks::Asked::default(),
             merge_holds: crate::mergeholds::MergeHolds::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .keeping_answers(&browsers_root, self.config())
                 .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),

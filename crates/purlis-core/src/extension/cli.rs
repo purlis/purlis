@@ -48,6 +48,7 @@ pub const CORE_WORDS: [&str; 55] = [
     "doctor",
     "git-hook",
     "git-policy",
+    "gitlab",
     "gl-refresh",
     "guard",
     "handoff",

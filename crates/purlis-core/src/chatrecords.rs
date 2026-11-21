@@ -422,6 +422,16 @@ pub fn every(root: &Path) -> Vec<ChatRecord> {
         .collect()
 }
 
+/// **[`every`], where the store reads**: `None` for a file that is not one this purlis writes
+/// ([`Read::Foreign`]), which [`every`] reads as no chat at all. For a caller that removes what
+/// a chat needs (#7190's kept browser answers): "unreadable" is never "no chat has closed".
+pub fn every_strictly(root: &Path) -> Option<Vec<ChatRecord>> {
+    match read_values(root) {
+        Read::Foreign => None,
+        read => Some(read.entries().into_iter().filter_map(sound).collect()),
+    }
+}
+
 /// **The highest number a closed chat in the project at `root` answers to** (#6740): the one it
 /// closed under or one it had before a restart, or 0 where none closed. A launch holds the
 /// counter of numbers dealt (`reopen::Record::dealt`) at or above it, so a number a closed
