@@ -253,7 +253,8 @@ fn connect_terminates_a_recorded_host_tunnels_a_download_host_and_refuses_the_re
             // The chat has a repo there: a recorded host is terminated.
             assert_eq!(status, "200", "{line}: {head}");
         } else {
-            assert!(status == "403" || status == "400", "{line}: {head}");
+            // 407: a target the door cannot read is a target no proof was made for.
+            assert!(matches!(status, "403" | "400" | "407"), "{line}: {head}");
         }
     }
     let refused = w
