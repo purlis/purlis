@@ -83,6 +83,7 @@ fn inputs(root: &Path, socket: PathBuf, ca_cert: PathBuf) -> crate::forgewire::I
             .expect("a repo"),
         ],
         door: "127.0.0.1:43001".parse().expect("an address"),
+        handoff: crate::sandbox::egress::handoff::Secret::random().expect("a secret"),
         hosts: vec!["github.com".to_owned()],
         root: root.to_path_buf(),
     }

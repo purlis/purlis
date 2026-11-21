@@ -319,6 +319,8 @@ struct Setup {
     world: World,
     forge: Arc<Forge>,
     socket: ForgeListener,
+    /// Held so the `CONNECT` door stays open for as long as the setup does.
+    #[allow(dead_code, reason = "held for its drop")]
     connect: ForgeListener,
     /// The relay a chat's egress proxy stands for: git's `HTTPS_PROXY`, in front of the door.
     relay: u16,
@@ -346,7 +348,9 @@ fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
     world.wiring.upstream = forge.clone();
     let seen = Arc::new(Seen::default());
     world.wiring.observe = Some(seen.clone());
-    world.wiring.push = gate;
+    if let Some(gate) = gate {
+        world.wiring.push = gate;
+    }
     let socket =
         ForgeListener::serve_socket(world.wiring.clone(), &dir.path().join("sock")).unwrap();
     let connect = ForgeListener::serve_connect(world.wiring.clone()).unwrap();

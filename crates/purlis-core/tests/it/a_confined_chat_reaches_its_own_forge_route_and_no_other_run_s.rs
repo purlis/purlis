@@ -142,6 +142,7 @@ fn gh_and_git_work_under_the_generated_profile_and_another_run_s_socket_is_refus
         helper_exe: helper,
         repos: vec![Repo::new("github.com", "acme", "app", ForgeKind::GitHub).expect("a repo")],
         door,
+        handoff: purlis_core::sandbox::egress::handoff::Secret::random().expect("a secret"),
         hosts: vec!["github.com".to_owned()],
         root: root.clone(),
     };

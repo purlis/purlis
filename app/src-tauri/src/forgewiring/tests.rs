@@ -59,7 +59,7 @@ fn a_path_confirmed_on_two_forges_is_refused_for_a_path_cannot_tell_them_apart()
         entry("gitlab.com", "acme/app"),
     ];
 
-    let refused = pick(both, "acme/app").err().expect("refused");
+    let refused = pick(both, "acme/app").expect_err("refused");
 
     assert!(refused.contains("more than one forge"), "{refused}");
 }
@@ -76,9 +76,7 @@ fn a_path_confirmed_for_two_clones_of_one_host_is_one_repo() {
 
 #[test]
 fn a_path_nothing_confirms_is_refused() {
-    let refused = pick(vec![entry("github.com", "acme/app")], "acme/other")
-        .err()
-        .expect("refused");
+    let refused = pick(vec![entry("github.com", "acme/app")], "acme/other").expect_err("refused");
 
     assert!(refused.contains("not a repo confirmed"), "{refused}");
 }

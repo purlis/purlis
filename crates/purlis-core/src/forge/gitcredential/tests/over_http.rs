@@ -371,12 +371,13 @@ fn files_holding(root: &Path, needle: &str) -> Vec<PathBuf> {
             let path = entry.path();
             match entry.file_type() {
                 Ok(kind) if kind.is_dir() => more.push(path),
-                Ok(kind) if kind.is_file() => {
-                    if std::fs::read(&path).is_ok_and(|bytes| {
-                        bytes.windows(needle.len()).any(|w| w == needle.as_bytes())
-                    }) {
-                        found.push(path);
-                    }
+                Ok(kind)
+                    if kind.is_file()
+                        && std::fs::read(&path).is_ok_and(|bytes| {
+                            bytes.windows(needle.len()).any(|w| w == needle.as_bytes())
+                        }) =>
+                {
+                    found.push(path);
                 }
                 _ => {}
             }
