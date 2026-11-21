@@ -2632,7 +2632,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
     );
     // One rule a tool: Claude Code holds what is below a path its rule names (#6961).
     assert_eq!(
-        by_path(&settings.deny)[3..],
+        by_path(&settings.deny)[1..],
         ["Read(//p/.charter/vaults)", "Edit(//p/.charter/vaults)"]
     );
 }

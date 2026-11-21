@@ -949,6 +949,20 @@ mod tests {
         )]);
     }
 
+    /// The kinds of the events the log gained after `since`, once one of `kind` is among them (the
+    /// judge's line reaches the host after the call's result is in, and the proxy's own block
+    /// before it), or when 20 seconds have passed.
+    fn kinds_once(scenario: &Scenario, since: u64, kind: &str) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let kinds = super::super::report::kinds_since(&scenario.events(), since);
+            if kinds.iter().any(|one| one == kind) || Instant::now() > deadline {
+                return kinds;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
     /// **M-ASK-13, M-TOOL-08** (T1.1-39, #6886; R-094, R-353): a `WebFetch` of a host nothing lists
     /// is judged by `pretooluse-web`, which asks the chat's proxy. The proxy holds it and the
     /// window asks; the person keeps it blocked; the hook refuses, and the log says so: a
@@ -975,14 +989,7 @@ mod tests {
         kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
         scenario.until_played(chat, &["denied-fetch"]);
 
-        let deadline = Instant::now() + Duration::from_secs(20);
-        let kinds = loop {
-            let kinds = super::super::report::kinds_since(&scenario.events(), since);
-            if kinds.iter().any(|kind| kind == "stop.block") || Instant::now() > deadline {
-                break kinds;
-            }
-            std::thread::sleep(Duration::from_millis(200));
-        };
+        let kinds = kinds_once(&scenario, since, "hook.pretooluse-web");
         assert!(
             kinds.iter().any(|kind| kind == "hook.pretooluse-web"),
             "the fetch left no line of the web judge: {kinds:?}\n{}",
@@ -1028,7 +1035,7 @@ mod tests {
         allowed.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
         scenario.until_played(chat, &["allowed-fetch"]);
 
-        let kinds = super::super::report::kinds_since(&scenario.events(), since);
+        let kinds = kinds_once(&scenario, since, "hook.pretooluse-web");
         assert!(
             kinds.iter().any(|kind| kind == "hook.pretooluse-web"),
             "{kinds:?}\n{}",

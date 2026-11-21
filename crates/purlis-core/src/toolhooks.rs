@@ -432,7 +432,7 @@ pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -
         Tunnel::Open => Answer::Nothing,
         Tunnel::Refused(said) => deny(format!(
             "WebFetch of {host} was refused: this chat may not reach it ({said}). The person \
-             can allow the host from the window."
+             can allow the host if it is needed."
         )),
     }
 }

@@ -150,6 +150,7 @@ fn claude_code_is_started_with_every_guard_failing_closed() {
             block("pretooluse"),
             block("pretooluse-read"),
             block("pretooluse-edit"),
+            block("pretooluse-web"),
             block("pretooluse-dispatch"),
         ],
         "{settings}"
