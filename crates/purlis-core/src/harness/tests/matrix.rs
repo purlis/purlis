@@ -515,6 +515,9 @@ fn purlis_s_own(tool: &str) -> bool {
 /// - opencode's default route ([`crate::opencode::DEFAULT_PRE`]), where a tool with no route of
 ///   its own goes, MCP tools included: the Bash guard, which can block a call carrying a
 ///   `command` and never holds one (R-164's shipped exception, Q225).
+/// - Claude Code's `PostToolUseFailure` to `posttoolusefailure-blocked`, on every tool (T1.1-41,
+///   #6888): it runs after the call has already failed, so it can hold nothing, and writes the
+///   call's failure line. It reads a block of a failed `Bash` alone, never another tool's error.
 fn holds_nothing(group: &Group) -> bool {
     let only = |word: &str| !group.words.is_empty() && group.words.iter().all(|w| w == word);
     (group.event == "PermissionRequest" && only(crate::harness::hooked::WORD))
@@ -523,6 +526,9 @@ fn holds_nothing(group: &Group) -> bool {
             && group.matcher.is_none()
             && crate::opencode::DEFAULT_PRE == "pretooluse"
             && only(crate::opencode::DEFAULT_PRE))
+        || (group.harness == Harness::ClaudeCode
+            && group.event == "PostToolUseFailure"
+            && only(crate::caught::COMMAND_WORD))
 }
 
 /// The non-purlis MCP tools `groups` hold, one line each. A group on a tool-call event with no
@@ -696,4 +702,16 @@ fn no_purlis_hook_holds_non_purlis_mcp_tools_before_phase_3() {
             "Codex PreToolUse: mcp__github__x",
         ]
     );
+    // The failure line's exception is that word alone: any other word on that event holds.
+    let after = |word: &str| Group {
+        harness: Harness::ClaudeCode,
+        event: "PostToolUseFailure".to_owned(),
+        matcher: Some(".*".to_owned()),
+        words: vec![word.to_owned()],
+    };
+    assert_eq!(
+        held_mcp_tools(&[after("posttoolusefailure-blocked")]),
+        Vec::<String>::new()
+    );
+    assert_eq!(held_mcp_tools(&[after("pretooluse")]).len(), 1);
 }
