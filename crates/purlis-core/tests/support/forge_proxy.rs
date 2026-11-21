@@ -104,7 +104,7 @@ impl Scene {
                 .with_protected_branches(&["release"]),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
-                .with_project_id(42)
+                .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(42))
                 .with_own_branches(&["work"]),
             AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
         ];

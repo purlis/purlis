@@ -1265,7 +1265,9 @@ impl crate::forge::transport::Transport for Who {
             out: format!(r#"{{"login": "{0}", "username": "{0}"}}"#, self.0),
             err: String::new(),
             status: Some(200),
-            headers: Vec::new(),
+            // A classic token's scopes: one that says nothing of them is a chat's route's to
+            // refuse (it may hold `workflow`).
+            headers: vec![("x-oauth-scopes".to_string(), "repo, read:org".to_string())],
         })
     }
 

@@ -53,6 +53,7 @@ use crate::names::KEYCHAIN_PREFIX;
 use crate::secrets::keyring::{FileStore, OsStore, Presence, STUB_FILE, Store};
 
 mod memory;
+pub mod workflow;
 use memory::Remembering;
 
 /// The accounts file, in purlis's directory of the config home (ADR 0077 §8).
@@ -165,6 +166,8 @@ fn granted_by(kind: Kind, scope: &str) -> &'static [&'static str] {
     match (kind, scope) {
         (Kind::GitHub, "read:org") => &["read:org", "write:org", "admin:org"],
         (Kind::GitHub, "repo") => &["repo"],
+        // The second token's scope (ADR 0128 D1.1): held by itself and no other.
+        (Kind::GitHub, "workflow") => &["workflow"],
         (Kind::GitHub, "user:email") => &["user:email", "user"],
         (Kind::GitHub, "admin:ssh_signing_key") => &["admin:ssh_signing_key"],
         (Kind::GitLab, "api") => &["api"],
@@ -1011,6 +1014,53 @@ pub fn holds(account: &ForgeAccount, scopes: &[&str]) -> bool {
         .is_some_and(|held| scopes.iter().all(|scope| grants(account.kind, held, scope)))
 }
 
+/// Whether `account`'s everyday token holds `workflow`, the permission to push CI files (ADR 0128
+/// D1.1 and D8.3). **Such a token is never served to a chat's route**: the CI-file protection on
+/// GitHub is that the token a chat's route carries cannot push a workflow file. It holds it when
+/// GitHub folded the scope in from a second sign-in, when it was signed in again after that, or
+/// when a pasted token was made with it. The person's own press is the only way out: sign in again
+/// through a grant that lacks it ([`workflow::needs_narrower_sign_in`] says what to do).
+pub fn everyday_holds_workflow(account: &ForgeAccount) -> bool {
+    account.kind == Kind::GitHub && holds(account, &[workflow::SCOPE])
+}
+
+/// `account` with its scopes recorded as not known, for a test of what an account that is not
+/// known to be free of `workflow` is served.
+#[cfg(any(test, feature = "fenced"))]
+#[doc(hidden)]
+pub fn forget_scopes_for_a_test(
+    config_root: &Path,
+    account: &ForgeAccount,
+) -> Result<ForgeAccount, String> {
+    workflow::clear_scopes(config_root, account)
+}
+
+/// What is known of whether `account`'s everyday token can push CI files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowDoubt {
+    /// The forge says what the token holds, and `workflow` is not among it (or the forge has no
+    /// such scope, as on GitLab).
+    No,
+    /// The token holds `workflow`.
+    Holds,
+    /// The forge never said what the token holds (a fine-grained token has no scopes header), or
+    /// a read-back after a second grant could not say: it **may** hold `workflow`.
+    Unknown,
+}
+
+/// [`WorkflowDoubt`] of `account`. A chat's route is given the token only when this is
+/// [`WorkflowDoubt::No`] (ADR 0128 D1.1): unknown scopes fail closed.
+pub fn workflow_doubt(account: &ForgeAccount) -> WorkflowDoubt {
+    if account.kind != Kind::GitHub {
+        return WorkflowDoubt::No;
+    }
+    match &account.scopes {
+        None => WorkflowDoubt::Unknown,
+        Some(held) if grants(account.kind, held, workflow::SCOPE) => WorkflowDoubt::Holds,
+        Some(_) => WorkflowDoubt::No,
+    }
+}
+
 /// **`account`'s token and scopes replaced with what a step-up `granted`** (#5627, ADR 0116 §5):
 /// the device flow asked for the scopes it holds and `more` ([`widened_scopes`]), and the forge
 /// granted a new token. Kept only on a GitHub account, where the grant holds every one of `more`
@@ -1101,14 +1151,42 @@ fn keep(
         .map_err(|e| e.to_string())
         .and_then(|transport| check(transport.as_ref(), &forge, granted))
         .map_err(|why| unechoed(why, &secret))?;
-    if let Held::Grant(Granted {
-        scopes: Some(scopes),
-        ..
-    }) = &held
-    {
-        // The grant's own word on its scopes, where the forge gave one.
-        checked.scopes = Some(scopes.clone());
-    }
+    // Two decisions, kept apart. **Whether the sign-in holds what purlis needs** asks every source
+    // that spoke: the grant's own word, and on GitHub the token's `X-OAuth-Scopes` read back as
+    // well, so a scope only one of them names is never taken as granted. **What is recorded** is,
+    // on GitHub, the union of the two, so `workflow` named by either stays in view of the check
+    // that keeps such a token from a chat's route.
+    let said: Option<Vec<String>> = match &held {
+        Held::Grant(Granted {
+            scopes: Some(scopes),
+            ..
+        }) => Some(scopes.clone()),
+        _ => None,
+    };
+    let back = checked.scopes.take();
+    let sources: Vec<Vec<String>> = match (kind, said, back) {
+        (Kind::GitHub, Some(said), Some(back)) => {
+            checked.scopes = Some(said.iter().chain(&back).fold(Vec::new(), |mut all, scope| {
+                if !all.contains(scope) {
+                    all.push(scope.clone());
+                }
+                all
+            }));
+            vec![said, back]
+        }
+        (_, Some(said), _) => {
+            checked.scopes = Some(said.clone());
+            vec![said]
+        }
+        (_, None, Some(back)) => {
+            checked.scopes = Some(back.clone());
+            vec![back]
+        }
+        (_, None, None) => Vec::new(),
+    };
+    // No source that spoke is no evidence: nothing is held, so a step-up is never waved through.
+    let held_by_all =
+        |want: &str| !sources.is_empty() && sources.iter().all(|scopes| grants(kind, scopes, want));
     if let Some(StepUp { account, more }) = &step_up {
         if account.login != checked.login {
             let login = &account.login;
@@ -1120,12 +1198,11 @@ fn keep(
                 forge.kind.display()
             ));
         }
-        // What the grant holds, as it says or the forge read it back: every scope asked for.
-        let held = checked.scopes.as_deref().unwrap_or_default();
+        // What the grant holds, as it says and the forge read it back: every scope asked for.
         let short: Vec<&str> = more
             .iter()
             .copied()
-            .filter(|want| !grants(kind, held, want))
+            .filter(|want| !held_by_all(want))
             .collect();
         if !short.is_empty() {
             return Err(format!(
@@ -1136,8 +1213,12 @@ fn keep(
             ));
         }
     }
-    if let Some(scopes) = &checked.scopes {
-        let missing = missing(kind, scopes);
+    if !sources.is_empty() {
+        let missing: Vec<&'static str> = needed(kind)
+            .iter()
+            .copied()
+            .filter(|want| !held_by_all(want))
+            .collect();
         if !missing.is_empty() {
             return Err(if granted {
                 lacks_granted(kind, &host, &missing)
@@ -1239,6 +1320,8 @@ pub fn sign_out(
                 e.message
             )
         })?;
+    // The second token (ADR 0128 D1.1) goes with the first: a signed-out account leaves none.
+    workflow::remove(keyring, &account)?;
     file.accounts.remove(at);
     write(config_root, file)?;
     Ok(account)
@@ -1322,6 +1405,7 @@ pub(super) fn signed_out_by_the_forge(
     // The item first: an account listed signed in must never be left with a token that the
     // forge has ended.
     let _ = keyring.delete(&service(&account), ITEM_ACCOUNT);
+    let _ = workflow::remove(keyring, &account);
     if let Some(Value::Object(fields)) = file.accounts.get_mut(at) {
         fields.insert(
             "state".to_string(),

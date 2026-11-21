@@ -46,6 +46,9 @@ use super::registration::{self, Flow, Registration};
 use super::route::HostScope;
 use super::{Kind, host_ok};
 
+mod owner;
+pub use owner::{OwnerPinned, consent_check, owner_of, owner_request, pin_with_owner};
+
 /// The registrations file, in purlis's directory of the config home.
 pub const FILE: &str = "forge-registrations.json";
 
@@ -198,11 +201,24 @@ pub struct Pinned {
 /// press calls this** (the scope is the proof that it is not a chat). The host is normalised as a
 /// sign-in's is ([`host_named`]); a host purlis ships a registration on is refused.
 pub fn pin(
+    host: &HostScope,
+    config_root: &Path,
+    kind: Kind,
+    typed_host: &str,
+    client_id: &str,
+) -> Result<Pinned, String> {
+    pin_entry(host, config_root, kind, typed_host, client_id, None)
+}
+
+/// [`pin`], with the owner the person expects in the same entry: **one write**, so a failure
+/// leaves the pin as it was and never a new client id beside the old owner.
+pub(super) fn pin_entry(
     _host: &HostScope,
     config_root: &Path,
     kind: Kind,
     typed_host: &str,
     client_id: &str,
+    owner: Option<&str>,
 ) -> Result<Pinned, String> {
     let host = host_named(kind, typed_host)?;
     if registration::on(kind, &host).is_some() {
@@ -221,11 +237,14 @@ pub fn pin(
     }
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
-    let entry = serde_json::json!({
+    let mut entry = serde_json::json!({
         "kind": kind.word(),
         "host": host,
         "client_id": client_id,
     });
+    if let (Some(owner), Some(fields)) = (owner, entry.as_object_mut()) {
+        fields.insert("owner".to_string(), Value::String(owner.to_string()));
+    }
     let same = |value: &Value| {
         serde_json::from_value::<Entry>(value.clone())
             .is_ok_and(|e| Kind::parse(&e.kind) == Some(kind) && e.host == host)

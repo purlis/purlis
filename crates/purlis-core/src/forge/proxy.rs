@@ -77,8 +77,9 @@ pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, NoObjects, ObjectRepo, Refusal,
+    TouchedRepo,
 };
-pub use repo::{AddressError, AllowedRepo, Kind};
+pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
 use request::host as policy_host;
 pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
@@ -102,6 +103,17 @@ pub enum TokenKind {
 pub struct CredentialRequest {
     pub kind: Kind,
     pub host: String,
+    /// The port the request goes to: a token confirmed for `host:443` is not for `host:8443`.
+    pub port: u16,
+    /// The forge-read numeric id of the repo (the recorded [`AllowedRepo`]'s, never the request's
+    /// own words), or `None` outside a repo. A source that serves by id refuses without it.
+    pub repo_id: Option<u64>,
+    /// The chat the request is for: the endpoint's, never the request's own. A source that
+    /// serves only what the person confirmed answers for this chat's clones alone.
+    pub chat: ChatId,
+    /// The allowed repo the request is for (`owner/repo`), or empty for the few credentialed
+    /// reads outside a repo.
+    pub repo: String,
 }
 
 /// The real credential, held for one request.
@@ -337,11 +349,38 @@ impl ForgeProxy {
                 created: Vec::new(),
             });
         }
-        let request = CredentialRequest {
+        let request = |repo_id: Option<u64>, repo: &str| CredentialRequest {
             kind: allowed.kind,
             host: allowed.host.clone(),
+            port: allowed.port,
+            repo_id,
+            chat: chat.clone(),
+            repo: repo.to_string(),
         };
-        let Ok(credential) = self.credentials.credential_for(&request) else {
+        // A GraphQL document may name several of the chat's repos: each must be served, and by the
+        // same account (the same token), or the request is refused. Anything else is one request.
+        let credential = if allowed.touched.is_empty() {
+            self.credentials
+                .credential_for(&request(allowed.repo_id, &allowed.repo))
+        } else {
+            let mut first: Option<Credential> = None;
+            let mut outcome = Ok(());
+            for repo in &allowed.touched {
+                match self
+                    .credentials
+                    .credential_for(&request(repo.repo_id, &repo.repo))
+                {
+                    Ok(next) => match &first {
+                        None => first = Some(next),
+                        Some(held) if held.secret.expose() == next.secret.expose() => {}
+                        Some(_) => outcome = Err(CredentialError::Unavailable),
+                    },
+                    Err(why) => outcome = Err(why),
+                }
+            }
+            outcome.and_then(|()| first.ok_or(CredentialError::Unavailable))
+        };
+        let Ok(credential) = credential else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
         let Some(headers) = swap_credential(inbound.headers, &allowed, credential) else {

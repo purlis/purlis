@@ -123,3 +123,59 @@ to a file, an argument or an environment a chat reads.
 - **The operator** (`operator/`) is a workspace of its own that links nothing of `purlis-core`. It
   mints an installation token from the organisation's App Secret for a vouched runner and holds no
   person's credential. What it mints is a `ghs_` token, which a token connection reads as per-job.
+
+## Which account, which repo, and the second token (slice G)
+
+The signed-in source answers for a host. With more than one account on a host (a personal and an
+enterprise-managed one), **a chat's route is for one repo and one account**, so it asks
+`SignedIn::credential_of` (host and account id), never the first account on the host:
+
+- **The repo is recorded by a press** (`forge::confirmed`, D4): a clone from the window, and *Trust
+  this clone*, read the repo from the forge as the person and record its host, `owner/name` and
+  numeric id in `forge-repos.json` beside the trust list (`push-remotes.json`). A repo is served only
+  if both name it, by the forge's number: the number the proxy recorded for the chat's repo (never the
+  entry's own, never the request's words) must be the confirmed one, so a repo that was renamed away
+  and replaced under its old name by a new one with another number is not served, and a request
+  with no number is refused. The address the trust list holds must still be the entry's. The port is
+  part of the address: a token confirmed for `host:443` is not sent to `host:8443`, nor the other
+  way. A clone made from the command line is outside both until it is trusted.
+- **The account is the person's choice**, made on that press or after it in Settings › You › Accounts
+  (*Account for each project*). One account on a host is the default and asks nothing. If the chosen
+  account is signed out or gone, **no other account serves in its place**: the repo says so and the
+  person signs it in again or chooses.
+- **A headless runner has no press.** `forge::confirmed::headless_repos` reads the repos from the
+  token connection's own configuration at start (`PURLIS_FORGE_REPOS`, a comma-separated list of
+  `host/owner/name`, else the checkout's `origin`), in memory only, and fails closed on a list it
+  cannot read. `forge::confirmed::reconcile` is the intersection with what a desktop confirmed, for a
+  runner whose calls are forwarded.
+
+**What a chat's route is given** is `forge::credential::chatroute::ChatRoute`, the credential source the
+forge proxy asks. For a request it takes the chat's own clones (named when the chat starts), asks
+`confirmed::serves` (the clone is trusted, the repo is in the list by numeric id, the application it
+was recorded under is still the host's pin), then `confirmed::account_for` (one chosen account, signed
+in, not holding `workflow`, **and with scopes the forge has said**, signed in through the host's
+pinned application), then
+`SignedIn::credential_of`. Every other case is `Unavailable`, which the proxy answers as a refusal.
+Wiring it into the app's proxy listener is the listener slices' (A2, B); until then the app records
+and lists, and nothing serves a chat. A GitHub account whose everyday token holds `workflow` (GitHub
+folded it in) is refused by `SignedIn` itself, and the window draws a Notice from the account list.
+**Unknown scopes fail closed**: a token whose scopes the forge never said (a fine-grained token has no
+scopes header), and an everyday token whose read-back after a second grant failed or said nothing,
+may hold `workflow`, so the account is served to no chat and a Notice says why, until a read-back
+says what it holds.
+
+**The second token** (`forge::accounts::workflow`, D1.1 and D8.3) is the only credential that may
+push a CI file on GitHub. The everyday sign-in never asks for `workflow`. On the person's press, the
+first time a held CI-file push needs it, a second device sign-in asks for what the account holds and
+`workflow`, and the result is its own keyring item (`purlis/@forge/<host>/<id>`, account
+`workflow`). It is read only by `workflow::for_ci_push`, for a push the person approved, in the
+app's own process; no chat's route reads it. **Its caller is slice F2's held push** (the seam is the
+ask's approval, which is not built yet): `for_ci_push` has no caller until then, and a scan
+(`tests/it/provisioning_is_the_persons_press_in_the_window_only.rs`) fails if any source but the app
+names it. If GitHub folds the scope into the everyday token, the
+push is not offered. GitLab has no second token: its one `api` scope covers CI files, and the hold
+and its Ask are the protection.
+
+**Provisioning is the person's press, in the window** (D5): signing in, pinning an owner's
+application, choosing an account, trusting a clone and the second token's sign-in all take a
+`HostScope`, which a chat's process tree is refused, and their commands are in the window-only list.

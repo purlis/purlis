@@ -327,6 +327,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       READING +
       ": reading which forge tools this machine has, or that it could not",
   },
+  "ForgeCiPermission.tsx": {
+    count: 4,
+    why:
+      ACTION +
+      ". The second sign-in's own lines (ADR 0128 D1.1), inside its dialog: asking, the code and " +
+      "the wait for the person to allow it on the forge's page, the answer, and the core's " +
+      "sentence for how it ended; Try again and Cancel are the way out",
+  },
   "ForgeDeviceSignIn.tsx": {
     count: 4,
     why:
@@ -812,6 +820,14 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "as it changes, and the one line of what went wrong, in the core's or the runner's words; " +
       "its Try again, Cancel and Open in terminal are the way out; and whether Copy code put the " +
       "device code on the clipboard (#4045), beside the button",
+  },
+  "settings/oneLogin.tsx": {
+    count: 3,
+    why:
+      ACTION +
+      ". The Accounts group's one-login rows (ADR 0128): what Use this application, Copy a request " +
+      "and Remove just did, and a refusal said in the dialog that asked, beside the press that " +
+      "retries it",
   },
   "settings/accounts.tsx": {
     count: 2,
