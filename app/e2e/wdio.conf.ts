@@ -36,6 +36,7 @@ import { type Evidence, coreLogTail, recordFailure } from "./failures.js";
 import { whatTheWindowShows } from "./windowShows.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 import { specsOfPart } from "./parts.js";
+import { SPEC_FILE_RETRIES, flakesOfWorker } from "./flaky.js";
 
 /**
  * The scenario tests: WebdriverIO driving the real app, with the fake harness standing in for
@@ -198,6 +199,9 @@ export const config: WebdriverIO.Config = {
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
   ],
   maxInstances: 1,
+  // A spec file that fails is started once more in CI, and a pass on that retry is a flake: named
+  // as a warning, never silently green (ADR 0127, `flaky.ts`). Every config spreads this one.
+  specFileRetries: SPEC_FILE_RETRIES,
   framework: "mocha",
   reporters: ["spec"],
   logLevel: "warn",
@@ -215,6 +219,10 @@ export const config: WebdriverIO.Config = {
   beforeSession() {
     aSessionBegins();
     anEmptyRecord(plane);
+  },
+
+  onWorkerEnd(_cid, exitCode, specs, retriesLeft) {
+    for (const line of flakesOfWorker(exitCode, specs, retriesLeft)) console.log(line);
   },
 
   // Each spec file's whole time, for the run's notice of the slowest ones (`timings.ts`).
