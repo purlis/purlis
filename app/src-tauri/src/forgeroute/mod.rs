@@ -294,8 +294,8 @@ pub struct HeldAsk {
     /// The recorded repo the path names, where it names one.
     pub repo: Option<String>,
     pub act: HeldAct,
-    /// The SHA-256 of the whole act (method, host, target with its query, body), in hex: what
-    /// makes two asks the same ask.
+    /// The SHA-256 of the whole act (method, host, target, body), in hex; an ask never carries a
+    /// query, so there is none to cover: what makes two asks the same ask.
     pub digest: String,
     /// The request's body, exactly as the chat sent it and as [`HeldAsk::digest`] covers it. What
     /// is performed is this body and no other (a REST merge's `sha` pin is in it), and what slice
@@ -455,8 +455,10 @@ enum AskState {
     Asked,
     /// The run is full, so the person was not asked.
     Full,
-    /// A merge with no `sha` pinning the head: not asked.
+    /// A merge or approval that does not pin the head: not asked.
     NeedsSha,
+    /// A body with a merge-bot command in its text: not asked.
+    MergeCommand,
     /// Not the act's own request, so a plain refusal.
     NotAsked,
 }
@@ -667,31 +669,121 @@ fn content_type_of(inbound: &Inbound<'_>) -> Option<String> {
         .map(|(_, value)| value.clone())
 }
 
-/// Whether a merge request body pins the head it merges: a non-empty `sha` (GitHub's and
-/// GitLab's own field), in a JSON object or a form. Without one the merge is of whatever the
-/// head is when the person allows it, which is not the thing they were shown.
-fn pins_head(content_type: Option<&str>, body: &[u8]) -> bool {
-    let is_form = content_type
+/// Whether `content_type` is a form.
+fn is_form(content_type: Option<&str>) -> bool {
+    content_type
         .and_then(|t| t.split(';').next())
         .is_some_and(|m| {
             m.trim()
                 .eq_ignore_ascii_case("application/x-www-form-urlencoded")
-        });
-    if is_form {
-        let decode = |s: &str| {
-            percent_encoding::percent_decode_str(&s.replace('+', " "))
-                .decode_utf8_lossy()
-                .into_owned()
-        };
-        return String::from_utf8_lossy(body).split('&').any(|pair| {
+        })
+}
+
+/// A form's pairs, percent-decoded.
+fn form_pairs(body: &[u8]) -> Vec<(String, String)> {
+    let decode = |s: &str| {
+        percent_encoding::percent_decode_str(&s.replace('+', " "))
+            .decode_utf8_lossy()
+            .into_owned()
+    };
+    String::from_utf8_lossy(body)
+        .split('&')
+        .map(|pair| {
             let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-            decode(key) == "sha" && !decode(value).is_empty()
-        });
+            (decode(key), decode(value))
+        })
+        .collect()
+}
+
+/// Whether a request body pins the head it acts on: exactly one non-empty `field` (a string in
+/// a JSON object, or, when `form_ok`, one pair of a form). Without one the act is of whatever
+/// the head is when the person allows it, which is not the thing they were shown. A form is
+/// accepted only where the forge reads one (GitLab); `sha=abc&sha=` is no pin.
+fn pins(field: &str, form_ok: bool, content_type: Option<&str>, body: &[u8]) -> bool {
+    if is_form(content_type) {
+        let values: Vec<String> = form_pairs(body)
+            .into_iter()
+            .filter(|(key, _)| key == field)
+            .map(|(_, value)| value)
+            .collect();
+        return form_ok && matches!(values.as_slice(), [only] if !only.is_empty());
     }
     serde_json::from_slice::<serde_json::Value>(body)
         .ok()
-        .and_then(|v| v.get("sha").and_then(|s| s.as_str().map(|s| !s.is_empty())))
+        .and_then(|v| v.get(field).and_then(|s| s.as_str().map(|s| !s.is_empty())))
         .unwrap_or(false)
+}
+
+/// Every string a body holds (JSON keys and values at any depth, form keys and values, or, when
+/// it is neither, its text), for the merge-command check.
+fn body_strings(content_type: Option<&str>, body: &[u8]) -> Vec<String> {
+    fn walk(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Array(items) => items.iter().for_each(|v| walk(v, out)),
+            serde_json::Value::Object(map) => {
+                for (key, value) in map {
+                    out.push(key.clone());
+                    walk(value, out);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut out = Vec::new();
+    if is_form(content_type) {
+        for (key, value) in form_pairs(body) {
+            out.push(key);
+            out.push(value);
+        }
+    } else if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) {
+        walk(&value, &mut out);
+    }
+    // Always the text itself too: a body that is neither, or a command a parse hid.
+    out.push(String::from_utf8_lossy(body).into_owned());
+    out
+}
+
+/// Whether any string of a body is a command a merge bot acts on (`bors r+`, `/merge`, a merge
+/// label). Core refuses a review or a release as its own class before it reads the text, so the
+/// text is read here, before any ask: replayed under the person's login it would merge.
+fn body_has_merge_command(content_type: Option<&str>, body: &[u8]) -> bool {
+    body_strings(content_type, body)
+        .iter()
+        .any(|s| purlis_core::forge::proxy::has_merge_command(s))
+}
+
+/// The decoded, lower-cased segments of a forge path, or `None` for no path or an empty segment
+/// (`//`, a trailing `/`).
+fn decoded_segments(path: &str) -> Option<Vec<String>> {
+    let rest = path.strip_prefix('/')?;
+    if rest.split('/').any(str::is_empty) {
+        return None;
+    }
+    Some(
+        rest.split('/')
+            .map(|segment| {
+                percent_encoding::percent_decode_str(segment)
+                    .decode_utf8_lossy()
+                    .to_ascii_lowercase()
+            })
+            .collect(),
+    )
+}
+
+/// What an act's body must pin before it is asked: the field, and whether a form may carry it
+/// (GitLab only). A merge pins `sha`; an approval pins the head too (GitHub's review
+/// `commit_id`, GitLab's approve `sha`); an unapprove, a release and a tag have no head to pin.
+fn pin_for(act: HeldAct, path: &str) -> Option<(&'static str, bool)> {
+    let segments = decoded_segments(path)?;
+    let gitlab =
+        matches!(segments.get(..3), Some([a, b, c]) if a == "api" && b == "v4" && c == "projects");
+    match (act, segments.last().map(String::as_str)) {
+        (HeldAct::Merge, _) => Some(("sha", gitlab)),
+        (HeldAct::Approval, Some("reviews")) => Some(("commit_id", false)),
+        (HeldAct::Approval, Some("approve")) => Some(("sha", gitlab)),
+        _ => None,
+    }
 }
 
 /// The segments of a forge path after the repo it names (GitHub `repos/<o>/<r>`, enterprise
@@ -717,20 +809,9 @@ fn after_repo(segments: &[String]) -> Option<&[String]> {
 /// An empty segment (`//`, a trailing `/`) is no shape.
 fn has_act_shape(act: HeldAct, method: &str, path: &str) -> bool {
     let post = method.eq_ignore_ascii_case("POST");
-    let Some(rest) = path.strip_prefix('/') else {
+    let Some(segments) = decoded_segments(path) else {
         return false;
     };
-    if rest.split('/').any(str::is_empty) {
-        return false;
-    }
-    let segments: Vec<String> = rest
-        .split('/')
-        .map(|segment| {
-            percent_encoding::percent_decode_str(segment)
-                .decode_utf8_lossy()
-                .to_ascii_lowercase()
-        })
-        .collect();
     let Some(tail) = after_repo(&segments) else {
         return false;
     };
@@ -789,10 +870,21 @@ impl Handler for RunHandler {
             let content_type = content_type_of(inbound);
             match repo {
                 None => self.asks.note(&self.run, AskState::NotAsked),
-                // A merge is asked only when it pins the head it was shown against.
+                // An ask is never raised for a body that carries a merge-bot command: core
+                // refuses a review or release before reading its text, and replayed it would
+                // merge under the person's login.
+                // (A merge's own body is core's to read, and `merge_method: merge` is no command.)
                 Some(_)
-                    if act == HeldAct::Merge
-                        && !pins_head(content_type.as_deref(), inbound.body) =>
+                    if act != HeldAct::Merge
+                        && body_has_merge_command(content_type.as_deref(), inbound.body) =>
+                {
+                    self.asks.note(&self.run, AskState::MergeCommand);
+                }
+                // A merge or an approval is asked only when it pins the head it was shown.
+                Some(_)
+                    if pin_for(act, &path).is_some_and(|(field, form_ok)| {
+                        !pins(field, form_ok, content_type.as_deref(), inbound.body)
+                    }) =>
                 {
                     self.asks.note(&self.run, AskState::NeedsSha);
                 }
@@ -1204,9 +1296,13 @@ impl ForgeRoutes {
                 Some(AskState::Asked) => "That needs the person's approval. purlis has asked \
                      them; it goes ahead only when they allow it."
                     .to_owned(),
-                Some(AskState::NeedsSha) => "purlis did not ask the person to allow this merge: \
-                     it has no `sha`. Send the merge again with the `sha` of the head you mean \
-                     to merge."
+                Some(AskState::NeedsSha) => "purlis did not ask the person to allow this: it \
+                     does not pin the head. Send it again with the head's `sha` (a merge, or a \
+                     GitLab approval) or `commit_id` (a GitHub review) that you mean."
+                    .to_owned(),
+                Some(AskState::MergeCommand) => "purlis did not ask the person to allow this: \
+                     its text holds a merge command, which a merge bot would act on. Send it \
+                     again without the command."
                     .to_owned(),
                 Some(AskState::NotAsked) | None => {
                     "purlis does not let a chat do that on this forge.".to_owned()

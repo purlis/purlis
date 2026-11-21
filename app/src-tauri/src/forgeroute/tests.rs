@@ -1619,6 +1619,8 @@ fn a_merge_is_asked_only_when_its_body_pins_the_head_with_a_sha() {
         ("application/json", "{\"merge_method\":\"squash\"}"),
         ("application/x-www-form-urlencoded", "merge_method=squash"),
         ("application/x-www-form-urlencoded", "sha="),
+        // A form is read only by GitLab: on GitHub it is no pin.
+        ("application/x-www-form-urlencoded", "sha=def456"),
     ] {
         let outcome = put(content_type, body);
         assert!(
@@ -1632,7 +1634,18 @@ fn a_merge_is_asked_only_when_its_body_pins_the_head_with_a_sha() {
 
     put("application/json", "{\"sha\":\"abc123\"}");
     assert_eq!(lock(&scene.held.asks).len(), 1);
-    put("application/x-www-form-urlencoded", "sha=def456");
+    send_raw(
+        &scene,
+        "run-1",
+        &params.sentinel,
+        (
+            "PUT",
+            "gitlab.com",
+            "/api/v4/projects/group%2Fproj/merge_requests/3/merge",
+        ),
+        "application/x-www-form-urlencoded",
+        b"sha=def456",
+    );
     assert_eq!(lock(&scene.held.asks).len(), 2);
     let said = scene.routes.refusal_message("run-1", Refusal::Merge);
     assert!(said.contains("approval"), "{said}");
@@ -2166,21 +2179,189 @@ fn the_registry_says_full_only_for_the_request_that_was_full_and_dismiss_makes_r
 }
 
 #[test]
-fn a_body_pins_the_head_only_with_a_non_empty_sha_string() {
+fn a_body_pins_the_head_only_with_one_non_empty_field_and_a_form_only_where_allowed() {
     let json = Some("application/json");
     let form = Some("application/x-www-form-urlencoded; charset=utf-8");
-    for (content_type, body, pins) in [
-        (json, "{\"sha\":\"abc\"}", true),
-        (json, "{\"sha\":\"\"}", false),
-        (json, "{\"sha\":7}", false),
-        (json, "{\"merge_method\":\"squash\"}", false),
-        (json, "not json", false),
-        (json, "", false),
-        (form, "merge_method=squash&sha=abc", true),
-        (form, "sha=", false),
-        (form, "xsha=abc", false),
-        (None, "{\"sha\":\"abc\"}", true),
+    for (content_type, body, form_ok, pins_it) in [
+        (json, "{\"sha\":\"abc\"}", false, true),
+        (json, "{\"sha\":\"\"}", false, false),
+        (json, "{\"sha\":7}", false, false),
+        (json, "{\"merge_method\":\"squash\"}", false, false),
+        (json, "not json", false, false),
+        (json, "", false, false),
+        (form, "merge_method=squash&sha=abc", true, true),
+        (form, "merge_method=squash&sha=abc", false, false),
+        (form, "sha=", true, false),
+        (form, "xsha=abc", true, false),
+        (form, "sha=abc&sha=", true, false),
+        (form, "sha=&sha=abc", true, false),
+        (form, "sha=abc&sha=abc", true, false),
+        (None, "{\"sha\":\"abc\"}", false, true),
     ] {
-        assert_eq!(pins_head(content_type, body.as_bytes()), pins, "{body}");
+        assert_eq!(
+            pins("sha", form_ok, content_type, body.as_bytes()),
+            pins_it,
+            "{body} (form allowed: {form_ok})"
+        );
+    }
+}
+
+#[test]
+fn an_approval_is_asked_only_when_it_pins_the_head_and_carries_no_merge_command() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let post = |host: &str, target: &str, content_type: &str, body: &str| {
+        send_raw(
+            &scene,
+            "run-1",
+            &params.sentinel,
+            ("POST", host, target),
+            content_type,
+            body.as_bytes(),
+        )
+    };
+    let review = "/repos/acme/app/pulls/7/reviews";
+    let approve = "/api/v4/projects/group%2Fproj/merge_requests/3/approve";
+
+    // Not pinned: no ask, and the chat is told to send the head.
+    for (host, target, ct, body) in [
+        (
+            "api.github.com",
+            review,
+            "application/json",
+            "{\"event\":\"APPROVE\"}",
+        ),
+        (
+            "api.github.com",
+            review,
+            "application/json",
+            "{\"commit_id\":\"\"}",
+        ),
+        ("gitlab.com", approve, "application/json", "{}"),
+        (
+            "gitlab.com",
+            approve,
+            "application/x-www-form-urlencoded",
+            "sha=a&sha=",
+        ),
+        (
+            "gitlab.com",
+            approve,
+            "application/x-www-form-urlencoded",
+            "",
+        ),
+    ] {
+        post(host, target, ct, body);
+        assert!(lock(&scene.held.asks).is_empty(), "asked for: {body}");
+        let said = scene.routes.refusal_message("run-1", Refusal::Approval);
+        assert!(said.contains("commit_id"), "{said}");
+    }
+
+    // A merge command in the text of a pinned review or approval: plain refusal, no ask.
+    for (host, target, ct, body) in [
+        (
+            "api.github.com",
+            review,
+            "application/json",
+            "{\"event\":\"COMMENT\",\"commit_id\":\"abc\",\"body\":\"bors r+\"}",
+        ),
+        (
+            "api.github.com",
+            review,
+            "application/json",
+            "{\"commit_id\":\"abc\",\"comments\":[{\"body\":\"ok\\n/merge\"}]}",
+        ),
+        (
+            "gitlab.com",
+            approve,
+            "application/x-www-form-urlencoded",
+            "sha=abc&note=%2Fmerge",
+        ),
+    ] {
+        post(host, target, ct, body);
+        assert!(lock(&scene.held.asks).is_empty(), "asked for: {body}");
+        let said = scene.routes.refusal_message("run-1", Refusal::Approval);
+        assert!(said.contains("merge command"), "{said}");
+    }
+
+    // Pinned and clean: asked.
+    post(
+        "api.github.com",
+        review,
+        "application/json",
+        "{\"event\":\"APPROVE\",\"commit_id\":\"abc\"}",
+    );
+    post(
+        "gitlab.com",
+        approve,
+        "application/x-www-form-urlencoded",
+        "sha=abc",
+    );
+    assert_eq!(lock(&scene.held.asks).len(), 2);
+}
+
+#[test]
+fn a_release_whose_text_holds_a_merge_command_is_not_asked() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let release = |body: &str| {
+        send_raw(
+            &scene,
+            "run-1",
+            &params.sentinel,
+            ("POST", "api.github.com", "/repos/acme/app/releases"),
+            "application/json",
+            body.as_bytes(),
+        )
+    };
+
+    release("{\"tag_name\":\"v1\",\"body\":\"notes\\nbors r+\"}");
+    assert!(lock(&scene.held.asks).is_empty());
+    let said = scene.routes.refusal_message("run-1", Refusal::ReleaseOrTag);
+    assert!(said.contains("merge command"), "{said}");
+
+    release("{\"tag_name\":\"v1\",\"body\":\"notes\"}");
+    assert_eq!(lock(&scene.held.asks).len(), 1);
+}
+
+#[test]
+fn a_merge_command_is_found_in_any_string_of_a_body() {
+    let json = Some("application/json");
+    let form = Some("application/x-www-form-urlencoded");
+    for (content_type, body, found) in [
+        (json, "{\"event\":\"COMMENT\",\"body\":\"bors r+\"}", true),
+        (json, "{\"body\":\"ok\\n/merge\"}", true),
+        (json, "{\"comments\":[{\"body\":\"@bors r+\"}]}", true),
+        (json, "{\"event\":\"APPROVE\",\"commit_id\":\"abc\"}", false),
+        (json, "{\"tag_name\":\"v1\",\"body\":\"notes\"}", false),
+        (form, "sha=abc&note=%2Fmerge", true),
+        (form, "sha=abc", false),
+        (None, "bors r+", true),
+    ] {
+        assert_eq!(
+            body_has_merge_command(content_type, body.as_bytes()),
+            found,
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn what_an_act_must_pin_is_its_head_field_and_a_form_only_on_gitlab() {
+    use HeldAct::{Approval, Merge, ReleaseOrTag};
+    let gitlab = "/api/v4/projects/group%2Fproj/merge_requests/3";
+    for (act, path, pin) in [
+        (Merge, "/repos/acme/app/pulls/7/merge", Some(("sha", false))),
+        (Merge, &format!("{gitlab}/merge"), Some(("sha", true))),
+        (
+            Approval,
+            "/repos/acme/app/pulls/7/reviews",
+            Some(("commit_id", false)),
+        ),
+        (Approval, &format!("{gitlab}/approve"), Some(("sha", true))),
+        (Approval, &format!("{gitlab}/unapprove"), None),
+        (ReleaseOrTag, "/repos/acme/app/releases", None),
+    ] {
+        assert_eq!(pin_for(act, path), pin, "{path}");
     }
 }
