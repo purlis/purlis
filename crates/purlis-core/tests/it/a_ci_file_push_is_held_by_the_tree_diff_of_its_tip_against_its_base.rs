@@ -421,3 +421,51 @@ fn a_ci_push_is_never_remembered_and_each_one_asks() {
     assert!(new);
     assert_eq!(forge.log().len(), 1, "asking again pushed nothing");
 }
+
+#[test]
+fn a_branch_name_that_walks_out_of_the_refs_route_is_refused_before_anything_is_read() {
+    purlis_core::unsteered!();
+    let clone = Clone::new();
+    let tip = evil_workflow(&clone, "feature");
+    let (forge, held) = (forge_at(&clone), HeldActs::default());
+    let (second, rec) = (Second::there(), Rec::acme());
+    let trees = clone.trees();
+    let world = world(&forge, &trees, &second, &rec);
+    for name in [
+        "x/../../../../../repos/other/repo/git/refs/heads/main",
+        "a//b",
+        "./x",
+    ] {
+        assert!(
+            matches!(
+                held.ask(&world, 1, true, &push(name, &tip), 10),
+                Asked::Refused(Refused::Text(_))
+            ),
+            "{name}"
+        );
+    }
+    assert!(forge.log().is_empty());
+}
+
+#[test]
+fn a_commit_message_too_long_for_its_row_refuses_the_push_instead_of_hiding_its_tail() {
+    purlis_core::unsteered!();
+    let clone = Clone::new();
+    git(&clone.path, &["checkout", "-q", "-b", "feature", "main"]);
+    write(
+        &clone.path,
+        WORKFLOW,
+        "name: ci\non: push\njobs: {}\n# more\n",
+    );
+    commit(&clone.path, &vec!["x".repeat(18); 100].join("\n"));
+    let tip = clone.sha("HEAD");
+    git(&clone.path, &["checkout", "-q", "main"]);
+    let (forge, held) = (forge_at(&clone), HeldActs::default());
+    let (second, rec) = (Second::there(), Rec::acme());
+    let trees = clone.trees();
+    let world = world(&forge, &trees, &second, &rec);
+    assert!(matches!(
+        held.ask(&world, 1, true, &push("feature", &tip), 10),
+        Asked::Refused(Refused::Text(_))
+    ));
+}

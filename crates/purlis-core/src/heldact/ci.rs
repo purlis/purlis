@@ -321,12 +321,19 @@ fn gitlab_matcher(
 /// A `local:` path with a variable in it cannot be resolved, and is an error.
 fn includes_of(text: &str) -> Result<Includes, String> {
     use yaml_rust2::{Yaml, YamlLoader};
+    // Audited first: the loader copies an anchor at every alias.
+    let audit = audit(text)?;
     let docs = YamlLoader::load_from_str(text).map_err(|why| why.to_string())?;
     let mut found = Includes::default();
-    // A `!reference [job, key]` tag copies another job's keys in, and the loader drops the tag
-    // (it reads `[job, key]` as a plain list), so it is read from the text: anywhere in a file,
-    // it is as unresolvable as a merge key.
-    if text.contains("!reference") {
+    // The loader drops a tag, and GitLab's reader (libyaml) resolves some spellings this parser
+    // reads as another tag (`!ref%65rence`, or `!e!ence` under a `%TAG` directive) to
+    // `!reference`, which copies another job's keys in. So **any tag that is not a core YAML tag,
+    // and any `%TAG` directive, makes the file as unresolvable as a merge key**; the tags are
+    // read from the parser's events, and the text is read for a directive and for `!reference`.
+    if audit.foreign_tag
+        || text.contains("!reference")
+        || text.lines().any(|line| line.starts_with("%TAG"))
+    {
         found.unresolved = true;
     }
     for doc in &docs {
@@ -348,6 +355,107 @@ fn includes_of(text: &str) -> Result<Includes, String> {
         }
     }
     Ok(found)
+}
+
+/// The most nodes a pipeline file may expand to once its aliases are resolved, and the most bytes
+/// of one file read: past either, the push is refused.
+const MOST_NODES: usize = 200_000;
+pub(super) const MOST_FILE: usize = 1024 * 1024;
+/// The most bytes of a listing of a tree's files, or of the paths a diff changes.
+pub(super) const MOST_LISTING: usize = 16 * 1024 * 1024;
+
+#[derive(Default)]
+struct Audit {
+    /// Per open collection: its anchor (0 for none) and the nodes it holds so far.
+    open: Vec<(usize, usize)>,
+    /// The nodes each anchored node expands to.
+    sizes: std::collections::HashMap<usize, usize>,
+    foreign_tag: bool,
+    over: bool,
+}
+
+impl Audit {
+    fn add(&mut self, nodes: usize) {
+        if let Some(top) = self.open.last_mut() {
+            top.1 = top.1.saturating_add(nodes);
+            self.over |= top.1 > MOST_NODES;
+        } else {
+            self.over |= nodes > MOST_NODES;
+        }
+    }
+
+    fn tag(&mut self, tag: &Option<yaml_rust2::parser::Tag>) {
+        const CORE: &[&str] = &[
+            "str",
+            "int",
+            "float",
+            "bool",
+            "null",
+            "seq",
+            "map",
+            "set",
+            "omap",
+            "pairs",
+            "binary",
+            "timestamp",
+        ];
+        if let Some(tag) = tag
+            && !(tag.handle == "tag:yaml.org,2002:" && CORE.contains(&tag.suffix.as_str()))
+        {
+            self.foreign_tag = true;
+        }
+    }
+}
+
+impl yaml_rust2::parser::EventReceiver for Audit {
+    fn on_event(&mut self, event: yaml_rust2::parser::Event) {
+        use yaml_rust2::parser::Event;
+        if self.over {
+            return;
+        }
+        match event {
+            Event::Scalar(_, _, anchor, tag) => {
+                self.tag(&tag);
+                if anchor > 0 {
+                    self.sizes.insert(anchor, 1);
+                }
+                self.add(1);
+            }
+            Event::SequenceStart(anchor, tag) | Event::MappingStart(anchor, tag) => {
+                self.tag(&tag);
+                self.open.push((anchor, 1));
+            }
+            Event::SequenceEnd | Event::MappingEnd => {
+                if let Some((anchor, size)) = self.open.pop() {
+                    if anchor > 0 {
+                        self.sizes.insert(anchor, size);
+                    }
+                    self.add(size);
+                }
+            }
+            Event::Alias(anchor) => {
+                let size = self.sizes.get(&anchor).copied().unwrap_or(1);
+                self.add(size);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// **A pipeline file read once without expanding anything**: its tags, and how large its aliases
+/// would make it (a chat writes the file, and the loader copies an anchor at every alias, so a
+/// few nested ones are a billion nodes).
+fn audit(text: &str) -> Result<Audit, String> {
+    let mut audit = Audit::default();
+    yaml_rust2::parser::Parser::new_from_str(text)
+        .load(&mut audit, true)
+        .map_err(|why| why.to_string())?;
+    if audit.over {
+        return Err(format!(
+            "its anchors and aliases expand to more than {MOST_NODES} nodes"
+        ));
+    }
+    Ok(audit)
 }
 
 /// Whether a YAML merge key (`<<`) appears anywhere in `yaml`.
@@ -498,38 +606,17 @@ impl GitTrees {
             clone: clone.into(),
         }
     }
+}
 
+impl GitTrees {
     /// git, read with nothing of the clone's own to say about what it shows: **replace refs are
     /// not followed** (a `refs/replace/<sha>` makes git read another object for a commit's id, so
     /// a tree diff of the real commits would be empty), and every call that shows a patch is
     /// `--text` (a `-diff` attribute in `.git/info/attributes` or a `.gitattributes` makes git
     /// print "Binary files differ" for a file whose lines are the change).
-    pub(super) fn git(&self, args: &[&str]) -> Result<String, String> {
-        use crate::worktree::git;
-        let mut argv = vec![
-            "--no-replace-objects",
-            "-c",
-            "core.attributesFile=/dev/null",
-        ];
-        argv.extend_from_slice(args);
-        let done = git::run(&self.clone, &argv, git::READ).map_err(|why| why.to_string())?;
-        if done.ok() {
-            Ok(done.out)
-        } else {
-            Err(done
-                .err
-                .trim()
-                .lines()
-                .next()
-                .unwrap_or("git failed")
-                .to_owned())
-        }
-    }
-}
-
-impl GitTrees {
-    /// [`GitTrees::git`], its output held to `most` bytes: past them git is stopped and the answer
-    /// is an error, so a huge patch or blob is never held whole.
+    ///
+    /// Its output is held to `most` bytes: past them git is stopped and the answer is an error, so
+    /// a huge patch, listing or blob is never held whole.
     pub(super) fn git_capped(&self, args: &[&str], most: usize) -> Result<String, String> {
         use crate::worktree::git;
         let mut argv = vec![
@@ -562,21 +649,27 @@ impl Trees for GitTrees {
     fn changed(&self, against: &HeadSha, tip: &HeadSha) -> Result<Vec<String>, String> {
         // Both objects must be here: a commit the clone lacks has no tree to compare.
         for sha in [against, tip] {
-            self.git(&["cat-file", "-e", &format!("{}^{{commit}}", sha.as_str())])
-                .map_err(|why| format!("the clone has no commit {}: {why}", short(sha)))?;
+            self.git_capped(
+                &["cat-file", "-e", &format!("{}^{{commit}}", sha.as_str())],
+                1024,
+            )
+            .map_err(|why| format!("the clone has no commit {}: {why}", short(sha)))?;
         }
-        let out = self.git(&[
-            "diff-tree",
-            "-r",
-            "-z",
-            "--raw",
-            "--text",
-            "--no-renames",
-            "--no-textconv",
-            "--no-ext-diff",
-            against.as_str(),
-            tip.as_str(),
-        ])?;
+        let out = self.git_capped(
+            &[
+                "diff-tree",
+                "-r",
+                "-z",
+                "--raw",
+                "--text",
+                "--no-renames",
+                "--no-textconv",
+                "--no-ext-diff",
+                against.as_str(),
+                tip.as_str(),
+            ],
+            MOST_LISTING,
+        )?;
         let mut paths = Vec::new();
         let mut tokens = out.split('\0').filter(|token| !token.is_empty());
         while let Some(meta) = tokens.next() {
@@ -629,7 +722,10 @@ impl Trees for GitTrees {
     }
 
     fn files(&self, commit: &HeadSha) -> Result<Vec<String>, String> {
-        let out = self.git(&["ls-tree", "-r", "-z", "--name-only", commit.as_str()])?;
+        let out = self.git_capped(
+            &["ls-tree", "-r", "-z", "--name-only", commit.as_str()],
+            MOST_LISTING,
+        )?;
         Ok(out
             .split('\0')
             .filter(|path| !path.is_empty())
@@ -639,18 +735,30 @@ impl Trees for GitTrees {
 
     fn read(&self, commit: &HeadSha, path: &str) -> Result<Option<String>, String> {
         let at = format!("{}:{path}", commit.as_str());
-        let listed = self.git(&[
-            "--literal-pathspecs",
-            "ls-tree",
-            "-z",
-            commit.as_str(),
-            "--",
-            path,
-        ])?;
+        let listed = self.git_capped(
+            &[
+                "--literal-pathspecs",
+                "ls-tree",
+                "-z",
+                commit.as_str(),
+                "--",
+                path,
+            ],
+            64 * 1024,
+        )?;
         if listed.is_empty() {
             return Ok(None);
         }
-        self.git(&["cat-file", "blob", &at]).map(Some)
+        // A pipeline file is what a chat writes: never read past a bound, never held whole.
+        self.git_capped(&["cat-file", "blob", &at], MOST_FILE)
+            .map(Some)
+            .map_err(|why| {
+                if why.contains("more than") {
+                    format!("{path} is more than {} KiB", MOST_FILE / 1024)
+                } else {
+                    why
+                }
+            })
     }
 }
 
@@ -689,5 +797,36 @@ mod tests {
                 .unwrap()
                 .unresolved
         );
+    }
+
+    #[test]
+    fn an_encoded_or_redirected_reference_tag_is_as_unresolvable_as_the_plain_one() {
+        // libyaml resolves each of these to `!reference`; this parser reads them as other tags.
+        for text in [
+            "build:\n  trigger:\n    include: !ref%65rence [x, y]\n",
+            "%TAG !e! !refer\n---\nbuild:\n  trigger:\n    include: !e!ence [x, y]\n",
+            "%TAG ! !refer\n---\nbuild:\n  trigger:\n    include: !ence [x, y]\n",
+            "build:\n  trigger:\n    include: !custom [x, y]\n",
+        ] {
+            assert!(includes_of(text).unwrap().unresolved, "{text}");
+        }
+        assert!(
+            !includes_of("build:\n  retry: !!int 2\n  script: [make]\n")
+                .unwrap()
+                .unresolved
+        );
+    }
+
+    #[test]
+    fn aliases_that_expand_past_a_bound_refuse_the_file_before_anything_is_built() {
+        let mut text = String::from("a0: &a0 [x, x, x, x, x, x, x, x, x, x]\n");
+        for level in 1..9 {
+            let before = level - 1;
+            let refs = vec![format!("*a{before}"); 10].join(", ");
+            text.push_str(&format!("a{level}: &a{level} [{refs}]\n"));
+        }
+        let why = includes_of(&text).unwrap_err();
+        assert!(why.contains("expand"), "{why}");
+        assert!(includes_of("a: &a [x]\nb: *a\n").is_ok());
     }
 }

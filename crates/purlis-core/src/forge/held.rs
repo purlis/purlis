@@ -168,7 +168,19 @@ fn sha_in(value: &Value, what: &str) -> Result<HeadSha, String> {
     HeadSha::try_from(said).map_err(|_| format!("the forge gave no commit for {what}"))
 }
 
-/// A path's segments, each quoted: a branch's slashes stay slashes.
+/// **A ref name that is safe in a path**, by `git check-ref-format`'s rules: a branch is a chat's
+/// words, `quoted_path` keeps its slashes, and a `..` segment would walk the request out of the
+/// repository's `git/refs` to another route.
+fn ref_name(name: &str) -> Result<(), String> {
+    if valid_rev(name) {
+        Ok(())
+    } else {
+        Err("the branch's name is not a name git allows, so nothing was sent".to_owned())
+    }
+}
+
+/// A path's segments, each quoted: a branch's slashes stay slashes. Only for a name [`ref_name`]
+/// has passed.
 fn quoted_path(name: &str) -> String {
     name.split('/').map(quote).collect::<Vec<_>>().join("/")
 }
@@ -201,6 +213,7 @@ impl GitHubHeld {
         kind: &str,
         name: &str,
     ) -> Result<Option<HeadSha>, String> {
+        ref_name(name)?;
         let path = format!(
             "{}/git/ref/{kind}/{}",
             Self::repo_path(repo),
@@ -232,6 +245,7 @@ impl GitHubHeld {
         base: &HeadSha,
         new_branch: bool,
     ) -> Result<(), String> {
+        ref_name(branch.as_str())?;
         let path = Self::repo_path(repo);
         // The lease, read before anything is sent: the branch must be where the ask showed it (or
         // not be there at all). A forge's non-forced update accepts any fast-forward of the
@@ -403,6 +417,7 @@ impl HeldForge for GitHubHeld {
     fn on_branch(&self, repo: &Repo, branch: &Base, commit: &HeadSha) -> Result<bool, String> {
         // Compared as the commit then the branch: the branch is ahead of, or at, the commit
         // exactly where the commit is reachable from it.
+        ref_name(branch.as_str())?;
         let path = format!(
             "{}/compare/{}...{}?per_page=1",
             Self::repo_path(repo),
@@ -589,6 +604,7 @@ impl HeldForge for GitLabHeld {
     }
 
     fn branch_tip(&self, repo: &Repo, branch: &Base) -> Result<Option<HeadSha>, String> {
+        ref_name(branch.as_str())?;
         let path = format!(
             "{}/repository/branches/{}",
             Self::project(repo),
@@ -602,6 +618,7 @@ impl HeldForge for GitLabHeld {
 
     fn on_branch(&self, repo: &Repo, branch: &Base, commit: &HeadSha) -> Result<bool, String> {
         // The merge base of the two is the commit itself exactly where the branch contains it.
+        ref_name(branch.as_str())?;
         let path = format!(
             "{}/repository/merge_base?refs[]={}&refs[]={}",
             Self::project(repo),
@@ -730,6 +747,7 @@ impl HeldForge for GitLabHeld {
         new_branch: bool,
         _: Option<&Secret>,
     ) -> Result<(), String> {
+        ref_name(branch.as_str())?;
         // The lease: the branch is read right before, and must be where the ask said.
         let now = self.branch_tip(repo, branch)?;
         match (new_branch, &now) {

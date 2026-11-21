@@ -10,6 +10,7 @@
 //! gives **now**, and only while it is the act the person was shown.
 
 use super::ci::{PushCheck, check_push};
+use super::recognise::valid_rev;
 use super::{Act, Against, Body, CiDiff, Prepared, Refused, Requested, Row, Shown, TagName, World};
 use crate::mergehold::{Base, HeadSha, Repo};
 
@@ -92,6 +93,11 @@ pub fn pinned(requested: &Requested, prepared: &Prepared) -> Requested {
 /// The most a release's title and notes are, in characters.
 const MOST_TITLE: usize = 200;
 const MOST_NOTES: usize = 60_000;
+/// The most bytes of a title's or notes' raw text, checked before anything is walked: the bound
+/// in characters counts only what is left once the unseen are filtered, so it is no bound on
+/// what is stored.
+const MOST_TITLE_BYTES: usize = 4 * MOST_TITLE;
+const MOST_NOTES_BYTES: usize = 4 * MOST_NOTES;
 
 /// Whether `c` draws nothing or changes how the text around it reads: a control character other
 /// than a tab or a line break, a zero-width or direction mark, a line or paragraph separator.
@@ -105,6 +111,20 @@ pub(super) fn unseen(c: char) -> bool {
                 | '\u{2060}'..='\u{2064}'
                 | '\u{2066}'..='\u{206F}'
                 | '\u{FEFF}'
+                // Fillers and soft hyphens that draw nothing, the tag characters (an invisible
+                // copy of ASCII), and the variation selectors.
+                | '\u{00AD}'
+                | '\u{034F}'
+                | '\u{115F}'
+                | '\u{1160}'
+                | '\u{17B4}'
+                | '\u{17B5}'
+                | '\u{180B}'..='\u{180F}'
+                | '\u{3164}'
+                | '\u{FE00}'..='\u{FE0F}'
+                | '\u{FFA0}'
+                | '\u{E0000}'..='\u{E007F}'
+                | '\u{E0100}'..='\u{E01EF}'
         )
 }
 
@@ -119,6 +139,11 @@ pub(super) fn within_title_and_notes(title: &str, notes: &str) -> Result<(), Ref
 /// **A release's title as it is shown and made**: one line, nothing unseen in it. Text a chat
 /// wrote is read as the person will read it, so what is shown is what is published.
 fn title_of(text: &str) -> Result<String, Refused> {
+    if text.len() > MOST_TITLE_BYTES {
+        return Err(Refused::Text(
+            "a release's title is longer than purlis shows",
+        ));
+    }
     let one: String = text
         .chars()
         .filter(|c| !unseen(*c))
@@ -135,6 +160,11 @@ fn title_of(text: &str) -> Result<String, Refused> {
 
 /// **A release's notes as they are shown and made**: line breaks kept, nothing unseen in them.
 fn notes_of(text: &str) -> Result<String, Refused> {
+    if text.len() > MOST_NOTES_BYTES {
+        return Err(Refused::Text(
+            "a release's notes are longer than purlis shows",
+        ));
+    }
     let notes: String = text
         .replace("\r\n", "\n")
         .replace('\r', "\n")
@@ -190,14 +220,21 @@ fn escaped_lines(text: &str) -> String {
     out
 }
 
-/// A commit message as one row shows it: its lines joined, nothing unseen, bounded.
-fn message_row(message: &str) -> String {
+/// A commit message as one row shows it: its lines joined, nothing unseen. **A message that does
+/// not fit the row is refused**, never cut: the message is sent whole, so a tail the row hid
+/// would be sent unseen.
+fn message_row(message: &str) -> Result<String, Refused> {
     let joined = message
         .lines()
         .map(str::trim_end)
         .collect::<Vec<_>>()
         .join(" ⏎ ");
-    shown_text(&joined, MOST_ROW)
+    if joined.chars().count() > MOST_ROW {
+        return Err(Refused::Text(
+            "the commit message is longer than purlis shows, so it is not held and not allowed",
+        ));
+    }
+    Ok(shown_text(&joined, MOST_ROW))
 }
 
 fn row(label: &str, value: impl Into<String>) -> Row {
@@ -376,6 +413,9 @@ fn ci_push(
     tip: &HeadSha,
 ) -> Result<Prepared, Refused> {
     let forge = world.forge;
+    if !valid_rev(branch.as_str()) {
+        return Err(Refused::Text("a branch whose name git does not allow"));
+    }
     // GitHub's `workflow` scope is the second credential's; GitLab has none, so a pipeline file
     // is pushed with the everyday sign-in and the act is offered without it.
     let second = forge.kind() == crate::forge::Kind::GitHub;
@@ -432,7 +472,7 @@ fn ci_push(
         row("New tip", tip.as_str()),
         row("Compared with", format!("{compared} ({})", base.as_str())),
         row("CI files", diff.files.join(", ")),
-        row("Commit message", message_row(&diff.message)),
+        row("Commit message", message_row(&diff.message)?),
         row(
             "Other files in this commit",
             match diff.others {
@@ -518,4 +558,27 @@ fn fork(world: &World<'_>, source: &Repo) -> Result<Prepared, Refused> {
             body: None,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unseen;
+
+    #[test]
+    fn characters_that_draw_nothing_are_unseen() {
+        for c in [
+            '\u{00AD}',
+            '\u{115F}',
+            '\u{1160}',
+            '\u{3164}',
+            '\u{E0041}',
+            '\u{E007F}',
+            '\u{FE0F}',
+            '\u{E0100}',
+            '\u{200B}',
+        ] {
+            assert!(unseen(c), "{:04x}", c as u32);
+        }
+        assert!(!unseen('a') && !unseen('é') && !unseen('\n'));
+    }
 }

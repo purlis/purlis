@@ -123,6 +123,10 @@ struct State {
 /// person's API budget, and a try again of an ask that changed resets the press's nonce.
 pub const RATE_LIMIT: usize = 20;
 
+/// The most asks all chats together may have read in [`RATE_WINDOW`] seconds: many chats, each
+/// under [`RATE_LIMIT`], are still one person's API budget.
+pub const RATE_LIMIT_ALL: usize = 60;
+
 /// The window [`RATE_LIMIT`] counts in, in seconds.
 pub const RATE_WINDOW: u64 = 600;
 
@@ -136,6 +140,15 @@ pub struct HeldActs {
 pub fn holds_limits() -> (usize, u64) {
     (RATE_LIMIT, RATE_WINDOW)
 }
+
+/// [`RATE_LIMIT_ALL`], for a test to count against.
+pub fn holds_global_limit() -> usize {
+    RATE_LIMIT_ALL
+}
+
+/// What a chat is told when every chat together has asked too often.
+const RATE_LIMITED_ALL: &str = "Chats have asked for held acts 60 times in the last 10 minutes, \
+    which is the most all chats may, so this ask was not read. Wait, then ask once";
 
 /// What a chat is told when it has asked too often.
 const RATE_LIMITED: &str = "This chat has asked for held acts 20 times in the last 10 minutes, \
@@ -208,6 +221,9 @@ impl HeldActs {
                 .retain(|(_, at)| at.saturating_add(RATE_WINDOW) > now);
             if state.asked.iter().filter(|(of, _)| *of == session).count() >= RATE_LIMIT {
                 return Asked::Refused(Refused::Text(RATE_LIMITED));
+            }
+            if state.asked.len() >= RATE_LIMIT_ALL {
+                return Asked::Refused(Refused::Text(RATE_LIMITED_ALL));
             }
             state.asked.push((session, now));
         }

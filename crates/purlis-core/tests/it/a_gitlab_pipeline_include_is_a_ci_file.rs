@@ -215,3 +215,19 @@ fn an_include_a_yaml_merge_key_builds_makes_every_yaml_file_one() {
     let tip = change(&root, "README.md", "changed\n");
     assert_eq!(check(&root, None, &tip), PushCheck::NoCiFiles);
 }
+
+#[test]
+fn a_pipeline_file_past_the_read_bound_refuses_the_push_instead_of_being_read_whole() {
+    purlis_core::unsteered!();
+    let dir = clone(ROOT);
+    let root = std::fs::canonicalize(dir.path()).unwrap();
+    let big = format!(
+        "# {}\nbuild:\n  script: [make]\n",
+        "x".repeat(2 * 1024 * 1024)
+    );
+    let tip = change(&root, "ci/build.yml", &big);
+    let PushCheck::Refuse(why) = check(&root, None, &tip) else {
+        panic!("a pipeline file of 2 MiB is not read")
+    };
+    assert!(why.contains("more than 1024 KiB"), "{why}");
+}

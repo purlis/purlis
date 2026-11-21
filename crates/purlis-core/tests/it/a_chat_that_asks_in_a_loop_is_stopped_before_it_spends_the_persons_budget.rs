@@ -5,7 +5,7 @@
 //! F2, round 2): a chat that asks in a loop is refused with a sentence naming the limit before
 //! anything is read from the forge, and a closed chat leaves nothing queued.
 
-use purlis_core::heldact::{Asked, HeldActs, Refused, Requested, holds_limits};
+use purlis_core::heldact::{Asked, HeldActs, Refused, Requested, holds_global_limit, holds_limits};
 
 use crate::support::held_acts::{Fake, NoTrees, Rec, Second, repo, sha, tag, world};
 
@@ -94,4 +94,50 @@ fn a_release_with_notes_longer_than_shown_is_not_queued() {
         Asked::Refused(Refused::Text(_))
     ));
     assert!(held.take_queued().is_empty());
+}
+
+#[test]
+fn notes_of_invisible_characters_are_bounded_by_their_raw_size_not_what_is_left_of_them() {
+    purlis_core::unsteered!();
+    let (forge, held) = (forge(), HeldActs::default());
+    let (second, rec) = (Second::there(), Rec::acme());
+    let world = world(&forge, &NoTrees, &second, &rec);
+    let zero_width = Requested::Release {
+        repo: repo("acme/app"),
+        tag: tag("v9.0.0"),
+        rev: None,
+        title: String::new(),
+        notes: "\u{200B}".repeat(2_000_000),
+        draft: false,
+        prerelease: false,
+    };
+    assert!(matches!(
+        held.ask(&world, 1, false, &zero_width, 10),
+        Asked::Refused(Refused::Text(_))
+    ));
+    assert!(held.take_queued().is_empty());
+}
+
+#[test]
+fn many_chats_each_under_their_own_limit_are_stopped_by_the_ceiling_across_them() {
+    purlis_core::unsteered!();
+    let (forge, held) = (forge(), HeldActs::default());
+    let (second, rec) = (Second::there(), Rec::acme());
+    let world = world(&forge, &NoTrees, &second, &rec);
+    let ceiling = holds_global_limit();
+    assert!(ceiling > holds_limits().0);
+    for chat in 0..ceiling {
+        assert!(
+            matches!(
+                held.ask(&world, chat as u32 + 100, true, &tag_of("v1.0.0"), 10),
+                Asked::Held { .. }
+            ),
+            "chat {chat}"
+        );
+    }
+    let Asked::Refused(Refused::Text(said)) = held.ask(&world, 9_999, true, &tag_of("v1.0.0"), 11)
+    else {
+        panic!("refused")
+    };
+    assert!(said.contains("all chats"), "{said}");
 }

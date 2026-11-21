@@ -79,7 +79,9 @@ mod tip;
 
 pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push};
 pub use handoff::{Handoff, HeldContext, OwnedWorld};
-pub use holds::{Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_limits};
+pub use holds::{
+    Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
+};
 pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FromForge, Quarantine};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};
