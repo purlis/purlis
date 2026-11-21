@@ -380,7 +380,7 @@ fn merge(scene: &Scene, run: &str, sentinel: &str) -> Outcome {
         sentinel,
         "PUT",
         "api.github.com",
-        "/repos/acme/app/pulls/7/merge?sha=zzz",
+        "/repos/acme/app/pulls/7/merge",
     )
 }
 
@@ -688,7 +688,9 @@ fn a_sweep_that_cannot_see_an_apps_pid_removes_nothing_of_it() {
     let scene = Scene::new();
     scene.start("chat-1", "run-1", "/p/one");
     let root = scene.dir.clone();
-    // Folders of an app this process cannot see (another pid namespace): the probe answers EPERM.
+    // Folders of an app this process may not signal (another user's, or the macOS sandbox): the
+    // probe answers EPERM. (Another pid namespace answers ESRCH; the one-per-user instance lock
+    // is what protects there.)
     let unseen = root.join("4242-0a0a0a0a");
     std::fs::create_dir(&unseen).unwrap();
     let gone = root.join("4343-0b0b0b0b");
@@ -1556,23 +1558,32 @@ fn different_acts_are_different_asks_and_only_the_same_act_is_one() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "run-1", "/p/one");
     let sentinel = &params.sentinel;
-    let merge_with = |query: &str| {
-        send(
-            &scene,
-            "run-1",
-            sentinel,
+    let merge_with = |body: &str| {
+        let head = RequestHead::new(
             "PUT",
             "api.github.com",
-            &format!("/repos/acme/app/pulls/7/merge{query}"),
+            443,
+            "/repos/acme/app/pulls/7/merge",
         )
+        .with_content_type(Some("application/json"));
+        let headers = vec![
+            ("Host".to_owned(), "api.github.com".to_owned()),
+            ("Authorization".to_owned(), format!("Bearer {sentinel}")),
+            ("Content-Type".to_owned(), "application/json".to_owned()),
+        ];
+        scene.listener.handler_of("run-1").handle(&Inbound {
+            head: &head,
+            headers: &headers,
+            body: body.as_bytes(),
+        })
     };
 
     // The same act, twice.
-    merge_with("?sha=aaa");
-    merge_with("?sha=aaa");
+    merge_with("{\"sha\":\"aaa\"}");
+    merge_with("{\"sha\":\"aaa\"}");
     assert_eq!(lock(&scene.held.asks).len(), 1);
-    // The same path with another query is another act.
-    merge_with("?sha=bbb");
+    // The same path with another body is another act.
+    merge_with("{\"sha\":\"bbb\"}");
     assert_eq!(lock(&scene.held.asks).len(), 2);
     // The same GraphQL endpoint with another mutation is another act, though method, host and
     // path are the same.
@@ -1756,19 +1767,18 @@ fn a_run_holds_a_bounded_number_of_asks_and_the_refusal_says_so() {
     scene.start("chat-1", "run-1", "/p/one");
     scene.start("chat-2", "run-2", "/p/one");
     for n in 0..MAX_ASKS_PER_RUN {
-        registered(
+        let ask = registered(
             &scene,
             an_ask("run-1", "github.com", Some("acme/app"), &format!("d{n}")),
         );
+        assert!(
+            !scene
+                .routes
+                .refusal_message("run-1", Refusal::Merge)
+                .contains("too many"),
+            "the 16th ask was raised, so the person was asked: {ask:?}"
+        );
     }
-    assert!(
-        !scene
-            .routes
-            .refusal_message("run-2", Refusal::Merge)
-            .contains("too many")
-    );
-    let at = scene.routes.refusal_message("run-1", Refusal::Merge);
-    assert!(at.contains("too many requests waiting"), "{at}");
 
     assert!(matches!(
         scene
@@ -1777,6 +1787,14 @@ fn a_run_holds_a_bounded_number_of_asks_and_the_refusal_says_so() {
             .register(an_ask("run-1", "github.com", Some("acme/app"), "one-more")),
         Registered::Full
     ));
+    let at = scene.routes.refusal_message("run-1", Refusal::Merge);
+    assert!(at.contains("too many requests waiting"), "{at}");
+    assert!(
+        !scene
+            .routes
+            .refusal_message("run-2", Refusal::Merge)
+            .contains("too many")
+    );
     assert!(
         matches!(
             scene
@@ -1787,6 +1805,13 @@ fn a_run_holds_a_bounded_number_of_asks_and_the_refusal_says_so() {
         ),
         "a retry is still one ask"
     );
+    assert!(
+        !scene
+            .routes
+            .refusal_message("run-1", Refusal::Merge)
+            .contains("too many"),
+        "a duplicate retry was asked about"
+    );
     // Another run has its own room, and answering one makes room.
     registered(&scene, an_ask("run-2", "github.com", Some("acme/app"), "x"));
     let first = scene.routes.pending_asks("run-1")[0].id;
@@ -1795,6 +1820,96 @@ fn a_run_holds_a_bounded_number_of_asks_and_the_refusal_says_so() {
         &scene,
         an_ask("run-1", "github.com", Some("acme/app"), "one-more"),
     );
+}
+
+#[test]
+fn a_dismissed_ask_is_removed_without_performing_and_makes_room() {
+    let scene = Scene::new();
+    scene.start("chat-1", "run-1", "/p/one");
+    for n in 0..MAX_ASKS_PER_RUN {
+        registered(
+            &scene,
+            an_ask("run-1", "github.com", Some("acme/app"), &format!("d{n}")),
+        );
+    }
+
+    assert!(scene.routes.dismiss("run-1", "d3"));
+    assert!(!scene.routes.dismiss("run-1", "d3"), "gone once");
+    assert!(!scene.routes.dismiss("run-2", "d4"), "only its own run's");
+    assert_eq!(
+        scene.routes.pending_asks("run-1").len(),
+        MAX_ASKS_PER_RUN - 1
+    );
+    assert!(
+        lock(&scene.held.performed).is_empty(),
+        "dismissing performs nothing"
+    );
+    registered(
+        &scene,
+        an_ask("run-1", "github.com", Some("acme/app"), "one-more"),
+    );
+}
+
+#[test]
+fn a_refusal_with_a_query_that_is_not_the_acts_own_request_raises_no_ask() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    // The proxy refuses these as a merge because of the query, but replayed as method, path and
+    // body they would be a repo deletion or another write.
+    for (method, host, target) in [
+        ("DELETE", "api.github.com", "/repos/acme/app?auto_merge=1"),
+        ("PATCH", "api.github.com", "/repos/acme/app?auto_merge=1"),
+        (
+            "PUT",
+            "gitlab.com",
+            "/api/v4/projects/group%2Fproj/merge_requests/3/merge?merge_when_pipeline_succeeds=true",
+        ),
+        (
+            "PUT",
+            "api.github.com",
+            "/repos/acme/app/contents/pulls/7/merge",
+        ),
+        ("POST", "api.github.com", "/repos/acme/app/pulls/7/merge"),
+    ] {
+        let outcome = send(&scene, "run-1", &params.sentinel, method, host, target);
+        assert!(
+            matches!(outcome, Outcome::Refused(_)),
+            "{method} {target}: {outcome:?}"
+        );
+    }
+
+    assert!(lock(&scene.held.asks).is_empty());
+    assert!(scene.routes.pending_asks("run-1").is_empty());
+}
+
+#[test]
+fn a_content_type_only_in_the_header_is_kept_on_the_ask() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let head = RequestHead::new(
+        "PUT",
+        "api.github.com",
+        443,
+        "/repos/acme/app/pulls/7/merge",
+    );
+    let headers = vec![
+        ("Host".to_owned(), "api.github.com".to_owned()),
+        (
+            "Authorization".to_owned(),
+            format!("Bearer {}", params.sentinel),
+        ),
+        ("content-type".to_owned(), "application/json".to_owned()),
+    ];
+    scene.listener.handler_of("run-1").handle(&Inbound {
+        head: &head,
+        headers: &headers,
+        body: b"{}",
+    });
+
+    let asks = scene.routes.pending_asks("run-1");
+    assert_eq!(asks.len(), 1, "{asks:?}");
+    assert_eq!(asks[0].content_type.as_deref(), Some("application/json"));
 }
 
 #[test]
@@ -1874,4 +1989,96 @@ fn an_act_does_not_land_when_the_chat_ended_while_the_credential_was_fetched() {
 
     assert!(said.contains("chat has ended"), "{said}");
     assert!(lock(&scene.held.performed).is_empty(), "nothing landed");
+}
+
+// ---- no socket needed ----
+
+#[test]
+fn an_act_has_the_shape_of_its_own_request_and_no_other() {
+    use HeldAct::{Approval, Merge, ReleaseOrTag};
+    for (act, method, path) in [
+        (Merge, "PUT", "/repos/acme/app/pulls/7/merge"),
+        (Merge, "PUT", "/api/v3/repos/acme/app/pulls/7/merge"),
+        (
+            Merge,
+            "PUT",
+            "/api/v4/projects/group%2Fproj/merge_requests/3/merge",
+        ),
+        (Merge, "POST", "/graphql"),
+        (Approval, "POST", "/repos/acme/app/pulls/7/reviews"),
+        (
+            Approval,
+            "POST",
+            "/api/v4/projects/group%2Fproj/merge_requests/3/approve",
+        ),
+        (ReleaseOrTag, "POST", "/repos/acme/app/releases"),
+        (ReleaseOrTag, "POST", "/repos/acme/app/git/tags"),
+        (
+            ReleaseOrTag,
+            "POST",
+            "/api/v4/projects/group%2Fproj/repository/tags",
+        ),
+        (ReleaseOrTag, "POST", "/acme/app.git/git-receive-pack"),
+    ] {
+        assert!(has_act_shape(act, method, path), "{act:?} {method} {path}");
+    }
+    for (act, method, path) in [
+        (Merge, "DELETE", "/repos/acme/app"),
+        (Merge, "PATCH", "/repos/acme/app"),
+        (Merge, "POST", "/repos/acme/app/pulls/7/merge"),
+        (Merge, "PUT", "/repos/acme/app/contents/pulls/7/merge"),
+        (Merge, "PUT", "/repos/acme/app/pulls/x/merge"),
+        (Merge, "PUT", "/repos/acme/app/pulls/7/merge/extra"),
+        (Approval, "PUT", "/repos/acme/app/pulls/7/reviews"),
+        (ReleaseOrTag, "DELETE", "/repos/acme/app/releases"),
+        (ReleaseOrTag, "GET", "/graphql"),
+    ] {
+        assert!(!has_act_shape(act, method, path), "{act:?} {method} {path}");
+    }
+}
+
+#[test]
+fn a_content_type_comes_from_the_head_else_the_header() {
+    let headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    let bare = RequestHead::new("PUT", "api.github.com", 443, "/x");
+    let with_head =
+        RequestHead::new("PUT", "api.github.com", 443, "/x").with_content_type(Some("text/plain"));
+    let of = |head: &RequestHead, headers: &[(String, String)]| {
+        content_type_of(&Inbound {
+            head,
+            headers,
+            body: b"",
+        })
+    };
+    assert_eq!(of(&bare, &headers).as_deref(), Some("application/json"));
+    assert_eq!(of(&with_head, &headers).as_deref(), Some("text/plain"));
+    assert_eq!(of(&bare, &[]), None);
+}
+
+#[test]
+fn the_registry_says_unasked_only_for_a_full_run_and_dismiss_makes_room() {
+    let asks = HeldAsks::default();
+    let ask = |digest: &str| an_ask("run-1", "github.com", Some("acme/app"), digest);
+    for n in 0..MAX_ASKS_PER_RUN {
+        assert!(matches!(
+            asks.register(ask(&format!("d{n}"))),
+            Registered::New(_)
+        ));
+        assert!(!asks.was_unasked("run-1"), "the 16th was raised");
+    }
+    assert!(matches!(asks.register(ask("more")), Registered::Full));
+    assert!(asks.was_unasked("run-1"));
+    assert!(!asks.was_unasked("run-2"));
+    assert!(matches!(asks.register(ask("d0")), Registered::Duplicate));
+    assert!(
+        !asks.was_unasked("run-1"),
+        "a duplicate retry was asked about"
+    );
+
+    assert!(matches!(asks.register(ask("more")), Registered::Full));
+    assert!(asks.dismiss("run-1", "d3"));
+    assert!(!asks.dismiss("run-1", "d3"), "gone once");
+    assert!(!asks.dismiss("run-2", "d4"), "only its own run's");
+    assert_eq!(asks.pending_for("run-1").len(), MAX_ASKS_PER_RUN - 1);
+    assert!(matches!(asks.register(ask("more")), Registered::New(_)));
 }

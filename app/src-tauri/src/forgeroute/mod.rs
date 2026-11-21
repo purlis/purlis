@@ -443,6 +443,9 @@ enum Registered {
 pub struct HeldAsks {
     next: AtomicU64,
     pending: Mutex<HashMap<u64, HeldAsk>>,
+    /// The runs whose latest held act was refused for want of room, so the person was not asked
+    /// ([`Registered::Full`]). Read only for the words of the refusal.
+    unasked: Mutex<HashSet<String>>,
 }
 
 impl HeldAsks {
@@ -452,15 +455,40 @@ impl HeldAsks {
     fn register(&self, mut ask: HeldAsk) -> Registered {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         let same = |a: &HeldAsk| a.run == ask.run && a.digest == ask.digest;
-        if pending.values().any(same) {
-            return Registered::Duplicate;
+        let made = if pending.values().any(same) {
+            Registered::Duplicate
+        } else if pending.values().filter(|a| a.run == ask.run).count() >= MAX_ASKS_PER_RUN {
+            Registered::Full
+        } else {
+            ask.id = self.next.fetch_add(1, Ordering::SeqCst) + 1;
+            pending.insert(ask.id, ask.clone());
+            Registered::New(Box::new(ask.clone()))
+        };
+        drop(pending);
+        let mut unasked = self.unasked.lock().unwrap_or_else(PoisonError::into_inner);
+        if matches!(made, Registered::Full) {
+            unasked.insert(ask.run);
+        } else {
+            unasked.remove(&ask.run);
         }
-        if pending.values().filter(|a| a.run == ask.run).count() >= MAX_ASKS_PER_RUN {
-            return Registered::Full;
-        }
-        ask.id = self.next.fetch_add(1, Ordering::SeqCst) + 1;
-        pending.insert(ask.id, ask.clone());
-        Registered::New(Box::new(ask))
+        made
+    }
+
+    /// Whether `run`'s latest held act was refused with no ask raised, for want of room.
+    fn was_unasked(&self, run: &str) -> bool {
+        self.unasked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(run)
+    }
+
+    /// Removes `run`'s ask with `digest` **without performing it**, so a full run can be cleared
+    /// of asks the person does not want, without allowing them. Whether one was there.
+    pub fn dismiss(&self, run: &str, digest: &str) -> bool {
+        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        let before = pending.len();
+        pending.retain(|_, ask| !(ask.run == run && ask.digest == digest));
+        pending.len() != before
     }
 
     /// The ask `id`, removed: it can be performed once.
@@ -472,6 +500,10 @@ impl HeldAsks {
     }
 
     fn drop_run(&self, run: &str) {
+        self.unasked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(run);
         self.pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -568,14 +600,9 @@ impl RunHandler {
         {
             // The resolver of object ids is the proxy's own, which knows none yet (`NoObjects`),
             // so a mutation on an object is tied to a repo only by an id that names the repo.
-            let from_header = inbound
-                .headers
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
-                .map(|(_, value)| value.as_str());
             return purlis_core::forge::proxy::mutation_repo(
                 &here,
-                inbound.head.content_type.as_deref().or(from_header),
+                content_type_of(inbound).as_deref(),
                 inbound.body,
                 &NoObjects,
             );
@@ -620,6 +647,73 @@ fn rest_repo(segments: &[String]) -> Option<String> {
     Some(parts.join("/"))
 }
 
+/// The request's `Content-Type`: the head's, else the header's, as the proxy reads it.
+fn content_type_of(inbound: &Inbound<'_>) -> Option<String> {
+    inbound.head.content_type.clone().or_else(|| {
+        inbound
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+            .map(|(_, value)| value.clone())
+    })
+}
+
+/// The segments of a forge path after the repo it names (GitHub `repos/<o>/<r>`, enterprise
+/// `api/v3/repos/<o>/<r>`, GitLab `api/v4/projects/<encoded>`, a clone `<path>.git`).
+fn after_repo(segments: &[String]) -> Option<&[String]> {
+    let at = |i: usize| segments.get(i).map(String::as_str);
+    match (at(0), at(1), at(2)) {
+        (Some("repos"), Some(_), Some(_)) => return segments.get(3..),
+        (Some("api"), Some("v3"), Some("repos")) => return segments.get(5..),
+        (Some("api"), Some("v4"), Some("projects")) => return segments.get(4..),
+        _ => {}
+    }
+    let at_git = segments.iter().position(|s| s.ends_with(".git"))?;
+    segments.get(at_git + 1..)
+}
+
+/// Whether a request has the shape of the act it was held as. **An ask is raised only for the
+/// act's own request**: the person is shown it and, allowed, it is replayed as method, path and
+/// body, so a refusal that the proxy gave for another reason (a `DELETE` of the repo with
+/// `?auto_merge=1`) must never become an ask. The shapes: a REST merge (`PUT` pulls or
+/// merge_requests `/<n>/merge`), an approval (`POST` a review, or a merge request's
+/// `approve`/`unapprove`), a release or tag (`POST` releases, git tags, repository tags, or a
+/// push's `git-receive-pack`), and a GraphQL `POST` (whose repo the ids in the body name).
+fn has_act_shape(act: HeldAct, method: &str, path: &str) -> bool {
+    let post = method.eq_ignore_ascii_case("POST");
+    if post && matches!(path, "/graphql" | "/api/graphql") {
+        return true;
+    }
+    let segments: Vec<String> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            percent_encoding::percent_decode_str(segment)
+                .decode_utf8_lossy()
+                .to_ascii_lowercase()
+        })
+        .collect();
+    let Some(tail) = after_repo(&segments) else {
+        return false;
+    };
+    let tail: Vec<&str> = tail.iter().map(String::as_str).collect();
+    let number = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    match (act, tail.as_slice()) {
+        (HeldAct::Merge, ["pulls" | "merge_requests", n, "merge"]) => {
+            method.eq_ignore_ascii_case("PUT") && number(n)
+        }
+        (
+            HeldAct::Approval,
+            ["pulls", n, "reviews"] | ["merge_requests", n, "approve" | "unapprove"],
+        ) => post && number(n),
+        (
+            HeldAct::ReleaseOrTag,
+            ["releases"] | ["git", "tags"] | ["repository", "tags"] | ["git-receive-pack"],
+        ) => post,
+        _ => false,
+    }
+}
+
 /// The digest of a whole act: its method, host, target with the query, and body.
 fn act_digest(inbound: &Inbound<'_>) -> String {
     let mut hash = Sha256::new();
@@ -648,9 +742,14 @@ impl Handler for RunHandler {
                 .next()
                 .unwrap_or_default()
                 .to_owned();
-            // An act that cannot be tied to one of the run's repos is a plain refusal: nobody is
-            // asked to allow a thing whose place is unknown.
-            if let Some(repo) = self.repo_of(inbound, &path) {
+            // An act that cannot be tied to one of the run's repos, that carries a query (which
+            // the ask does not show and the replay would not send), or that is not the act's own
+            // request is a plain refusal: nobody is asked to allow a thing that is not it.
+            let has_query = inbound.head.target.contains(['?', '#']);
+            if !has_query
+                && has_act_shape(act, &inbound.head.method, &path)
+                && let Some(repo) = self.repo_of(inbound, &path)
+            {
                 let made = self.asks.register(HeldAsk {
                     id: 0,
                     run: self.run.clone(),
@@ -661,7 +760,7 @@ impl Handler for RunHandler {
                     act,
                     digest: act_digest(inbound),
                     body: inbound.body.to_vec(),
-                    content_type: inbound.head.content_type.clone(),
+                    content_type: content_type_of(inbound),
                 });
                 if let Registered::New(ask) = made {
                     self.held.raise(&ask);
@@ -1023,6 +1122,12 @@ impl ForgeRoutes {
         self.seams.held.perform(&ask, credential)
     }
 
+    /// Removes `run`'s ask with `digest` without performing it ([`HeldAsks::dismiss`]). **For the
+    /// window only**: a chat never calls it. Whether an ask was there.
+    pub fn dismiss(&self, run: &str, digest: &str) -> bool {
+        self.asks.dismiss(run, digest)
+    }
+
     /// What to tell the chat for `refusal`. A missing or ended sign-in names the step.
     pub fn refusal_message(&self, run: &str, refusal: Refusal) -> String {
         match refusal {
@@ -1041,7 +1146,7 @@ impl ForgeRoutes {
                         .to_owned(),
                 }
             }
-            r if held_act(r).is_some() && self.asks.pending_for(run).len() >= MAX_ASKS_PER_RUN => {
+            r if held_act(r).is_some() && self.asks.was_unasked(run) => {
                 "This chat already has too many requests waiting for the person's approval, so \
                  purlis did not ask about this one. It goes ahead only after they answer the \
                  others."
@@ -1328,9 +1433,12 @@ fn sweep(root: &Path) {
 }
 
 /// Whether process `pid` may be running. **Only "no such process" says it is gone**: a process
-/// this one may not signal (`EPERM`), or any other answer, is taken as running, so an app that
-/// cannot see another's pid (another pid namespace, a sandbox) never removes a live app's folders.
-/// Where this process may not look at all, a folder is left, never removed.
+/// this one may not signal (`EPERM`: another user's process, or the macOS sandbox), or any other
+/// answer, is taken as running, so a live app's folders are never removed on a guess. Another pid
+/// namespace answers `ESRCH`, not `EPERM`, so there the one-per-user instance lock is what keeps
+/// two apps from sweeping each other. A dead app's folder stays until its pid is free again, and
+/// a reused pid keeps it longer: it fails closed. Where this process may not look at all, a
+/// folder is left, never removed.
 #[cfg(unix)]
 fn process_may_run(pid: u32) -> bool {
     use rustix::process::{Pid, test_kill_process};
