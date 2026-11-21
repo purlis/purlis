@@ -70,11 +70,9 @@ pub(crate) fn skipped_for_timing(
 }
 
 /// **The record of a cell that ran** (#7224, #7229): a cell's, or an escape's when the cell is
-/// one, with the kinds of the events the device's log wrote for it: those after `since` (the
-/// log's newest `seq` when the cell began, so the canary's and earlier cells' events are left
-/// out), ordered by `seq` whatever order they were read in. `tools/live-pass diff` compares them
-/// with a live report's, and a comparison of runs reads `refusal_expected` from it rather than
-/// from the cells.
+/// one, with the kinds of the events the device's log wrote for it ([`kinds_since`]).
+/// `tools/live-pass diff` compares them with a live report's, and a comparison of runs reads
+/// `refusal_expected` from it rather than from the cells.
 pub(crate) fn ran(
     cell: &Cell,
     dialect: Dialect,
@@ -82,12 +80,8 @@ pub(crate) fn ran(
     timings: TimingsMode,
     verdict: ReportVerdict,
     reason: Option<String>,
-    events: &[purlis_core::eventlog::Event],
-    since: u64,
+    events: Vec<String>,
 ) -> Recorded {
-    let mut ordered: Vec<&purlis_core::eventlog::Event> =
-        events.iter().filter(|event| event.seq > since).collect();
-    ordered.sort_by_key(|event| event.seq);
     Recorded {
         leg: LegRecord {
             kind: if cell.escape {
@@ -106,8 +100,18 @@ pub(crate) fn ran(
             reason,
             refusal_expected: cell.escape || cell.steps.iter().any(|s| s.refusal_expected),
         },
-        events: Some(ordered.iter().map(|event| event.kind.clone()).collect()),
+        events: Some(events),
     }
+}
+
+/// The kinds of the `events` after `since` (the log's newest `seq` when the cell began, so the
+/// canary's and earlier cells' events are left out), ordered by `seq` whatever order they were
+/// read in.
+pub(crate) fn kinds_since(events: &[purlis_core::eventlog::Event], since: u64) -> Vec<String> {
+    let mut ordered: Vec<&purlis_core::eventlog::Event> =
+        events.iter().filter(|event| event.seq > since).collect();
+    ordered.sort_by_key(|event| event.seq);
+    ordered.iter().map(|event| event.kind.clone()).collect()
 }
 
 /// This machine's OS, as a file name says it.
@@ -393,8 +397,7 @@ fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
             TimingsMode::Scaled,
             ReportVerdict::Pass,
             None,
-            &read_back,
-            3,
+            kinds_since(&read_back, 3),
         )
     };
 
@@ -427,7 +430,7 @@ fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
     );
     assert_eq!(
         purlis_scenarios::livepass::read_report("linux-fake.jsonl", &line).expect("a valid report"),
-        [plain.clone()]
+        std::slice::from_ref(&plain)
     );
 
     // The diff compares them.

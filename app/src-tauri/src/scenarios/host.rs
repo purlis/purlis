@@ -1435,8 +1435,7 @@ impl Scenario {
             purlis_scenarios::model::TimingsMode::Scaled,
             verdict,
             reason,
-            &self.try_events()?,
-            since,
+            super::report::kinds_since(&self.try_events()?, since),
         );
         super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
         Ok(())
