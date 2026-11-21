@@ -14,6 +14,8 @@
                    "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"}}],
         "outcome": "failed",
         "refusal_expected": true,
+        "window": [{"query": "notice.standing", "forbid": true}, {"query": "blocked_log.lists"}, {"query": "chat_log.block_row"}],
+        "transcript": [{"says": "Tunnel connection failed"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h1", "qualifier": null, "count": 1},
@@ -38,6 +40,8 @@
                    "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 110"}}],
         "press": {"label": "Allow only for this chat", "target": "ask", "when": "ask.raised"},
         "outcome": "came_back",
+        "window": [{"query": "ask.listed", "forbid": true}],
+        "transcript": [{"says": "Allowed"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1},
           {"kind": "trust.sandbox.grant", "level": "chat", "what": "host", "target": "$h2", "count": 1},
@@ -61,6 +65,8 @@
         "press": {"label": "Keep blocked", "target": "ask", "when": "ask.raised"},
         "outcome": "failed",
         "refusal_expected": true,
+        "window": [{"query": "ask.listed", "forbid": true}, {"query": "chat_log.block_row"}],
+        "transcript": [{"says": "Kept blocked by the person"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1},
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "qualifier": null, "args": null, "count": 1},
@@ -81,6 +87,8 @@
                    "input": {"command": "/usr/bin/curl -sS -m 10 https://$h3 -o /dev/null"}}],
         "outcome": "failed",
         "refusal_expected": true,
+        "window": [{"query": "chat_log.block_row"}, {"query": "notice.standing", "forbid": true}, {"query": "ask.listed", "forbid": true}],
+        "transcript": [{"says": "Kept blocked by the person"}, {"says": "wait for their answer", "forbid": true}],
         "require": [
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "count": 1}
         ],
@@ -102,6 +110,8 @@
         "outcome": "failed",
         "refusal_expected": true,
         "repeat_of": {"cell": "M-PRB-04", "step": 1},
+        "window": [{"query": "chat_log.block_row"}],
+        "transcript": [{"says": "Kept blocked by the person"}, {"says": "wait for their answer", "forbid": true}],
         "require": [
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "count": 1}
         ]
@@ -121,6 +131,8 @@
                    "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 10"}}],
         "outcome": "failed",
         "refusal_expected": true,
+        "window": [{"query": "chat_log.block_row"}],
+        "transcript": [{"says": "Kept blocked by the person"}],
         "require": [{"kind": "stop.block", "source": "sandbox"}]
       }],
       "expected_fail": [
@@ -139,6 +151,7 @@
            "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h6 3"}},
           {"tool": "Bash", "input": {"command": "echo moved-on"}}
         ],
+        "window": [{"query": "ask.listed", "forbid": true}, {"query": "chat_log.block_row"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "args": "this_call", "count": 1},
