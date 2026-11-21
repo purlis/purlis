@@ -976,6 +976,16 @@ export const commands = {
 	gitlabAccessRemove: __WINDOW_ONLY_RESULT,
 	forgePkceSignIn: __WINDOW_ONLY_RESULT,
 	forgePkceSignInCancel: __WINDOW_ONLY,
+	forgeApplications: __WINDOW_ONLY_RESULT,
+	forgeUseApplication: __WINDOW_ONLY_RESULT,
+	forgeRemoveApplication: __WINDOW_ONLY_RESULT,
+	forgeApplicationRequest: __WINDOW_ONLY_RESULT,
+	forgeProjectAccounts: __WINDOW_ONLY_RESULT,
+	forgeChooseProjectAccount: __WINDOW_ONLY_RESULT,
+	forgeTrustCloneRepo: __WINDOW_ONLY_RESULT,
+	forgeCiPermissionStart: __WINDOW_ONLY_RESULT,
+	forgeCiPermissionWait: __WINDOW_ONLY_RESULT,
+	forgeCiPermissionCancel: __WINDOW_ONLY,
 	machineProfiles: __WINDOW_ONLY_RESULT,
 	machineProfileCreate: __WINDOW_ONLY_RESULT,
 	machineProfileImport: __WINDOW_ONLY_RESULT,
@@ -5298,6 +5308,16 @@ export type ChosenInstruction = {
 	text: string,
 };
 
+/**  How a second sign-in ended. */
+export type CiPermissionAnswer = {
+	/**
+	 *  `ready` (the second token is kept) or `not-offered` (GitHub folded the permission into
+	 *  the everyday sign-in, so a CI-file push is not offered).
+	 */
+	state: string,
+	says: string,
+};
+
 /**  What came of a clash. */
 export type ClashOutcome = 
 /**  Both copies load. */
@@ -5467,6 +5487,15 @@ export type CommandDoes =
 { kind: "open"; view: string; title: string } | 
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
+
+/**  What a recording found, for the window to say. */
+export type ConfirmedAnswer = {
+	/**  `recorded`, `choose` (several accounts on the host: the person picks) or `sign-in` (none). */
+	state: string,
+	/**  The repo as recorded, `owner/name`. */
+	path: string | null,
+	host: string | null,
+};
 
 /**  The crash Notice's state (#5700), as the window names it. */
 export type CrashNoticeSaid = 
@@ -7295,6 +7324,29 @@ export type ForgeAccountRow = {
 	scopes: string[] | null,
 	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
 	wider: string[],
+};
+
+/**  What a press of *Use this application* changed. */
+export type ForgeApplicationPinned = {
+	host: string,
+	/**  `pinned`, `client-id` (another application replaced the pinned one) or `owner`. */
+	change: string,
+	/**  The client id (or owner) this replaced, for the Notice a changed pin raises. */
+	replaced: string | null,
+	consent: string,
+};
+
+/**  A host's pinned application, as Settings lists it. */
+export type ForgeApplicationRow = {
+	kind: string,
+	host: string,
+	client_id: string,
+	/**  The owner the person expects the forge's page to show. */
+	owner: string,
+	/**  What to read before signing in: *check that the application is owned by …*. */
+	consent: string,
+	/**  Accounts signed in on the host now. */
+	signed_in: number,
 };
 
 /**
@@ -12020,6 +12072,39 @@ export type ProfileRow = {
 	 *  sent; optional for the same reason.
 	 */
 	icon?: HarnessIconRow | null,
+};
+
+/**  One account the person may choose for a repo. */
+export type ProjectAccountChoice = {
+	id: string,
+	login: string,
+};
+
+/**  A confirmed repo, and the account that serves it. */
+export type ProjectAccountRow = {
+	/**  What the choice names the clone by. */
+	clone_key: string,
+	/**  `github` or `gitlab`: with the host and the repo number, what names the repo. */
+	kind: string,
+	/**
+	 *  The forge's own number for the repo, as text (a repo number can outgrow what the window's
+	 *  numbers hold).
+	 */
+	repo_id: string,
+	host: string,
+	path: string,
+	/**  The account serving it, or null when it is signed out or gone. */
+	serving: ProjectAccountChoice | null,
+	/**
+	 *  `serving`; `signed-out` (the chosen account is signed out, or holds CI-file permission:
+	 *  the person signs it in again, or chooses another; **no other account serves in its
+	 *  place**); `unchosen` (several accounts are signed in, and none was chosen); or
+	 *  `application-changed` (the chosen account signed in through an application the host no
+	 *  longer pins).
+	 */
+	state: string,
+	/**  The signed-in accounts on this repo's host, for the choice. */
+	choices: ProjectAccountChoice[],
 };
 
 /**

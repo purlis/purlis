@@ -9,13 +9,15 @@
 //! answers [`CredentialError::SignInAgain`]. **It never answers with another account's token**,
 //! another host's, or a forge CLI's login (ADR 0070 §5): where a host has more than one account
 //! and none is chosen for the project it refuses, and an account the forge ended is not replaced by
-//! another that is signed in.
+//! another that is signed in. **An account whose token holds `workflow`** (GitHub folded the CI-file
+//! permission into it) **is refused the same way** until the person signs in again without it: that
+//! token is never on a chat's route.
 
 use std::path::{Path, PathBuf};
 
 use super::{Credential, CredentialError, CredentialSource, Source, TokenKind};
 use crate::forge::accounts::{self, ForgeAccount, State};
-use crate::forge::refresh::{Refresher, ended_said};
+use crate::forge::refresh::{Refresher, Trouble, ended_said};
 use crate::forge::route::HostScope;
 use crate::forge::signin::SIGN_IN_AT;
 use crate::forge::{Failure, ForgeError};
@@ -58,7 +60,7 @@ impl SignedIn {
                 how: super::no_account_how(super::Mode::Interactive, &host),
                 host,
             }),
-            [only] => self.credential_for_account(&host, only, now),
+            [only] => self.credential_for_account(&host, only, now, false),
             several => {
                 let logins: Vec<&str> = several.iter().map(|a| a.login.as_str()).collect();
                 Err(unusable(
@@ -84,7 +86,7 @@ impl SignedIn {
         let host = host.trim().to_ascii_lowercase();
         let on_host = self.on(&host)?;
         match on_host.iter().find(|a| a.id == account_id) {
-            Some(account) => self.credential_for_account(&host, account, now),
+            Some(account) => self.credential_for_account(&host, account, now, true),
             None => Err(unusable(
                 &host,
                 format!(
@@ -104,11 +106,15 @@ impl SignedIn {
             .collect())
     }
 
+    /// `for_chat`: the token goes to a chat's route, which is given an account only when the forge
+    /// has said it does not hold `workflow` (an account whose scopes are unknown may). The
+    /// person's own use of an account does not wait on that.
     fn credential_for_account(
         &self,
         host: &str,
         account: &ForgeAccount,
         now: u64,
+        for_chat: bool,
     ) -> Result<Credential, CredentialError> {
         if account.state != State::SignedIn {
             // Listed and signed out: the forge ended it, or the person signed out.
@@ -116,6 +122,26 @@ impl SignedIn {
                 host: host.to_string(),
                 said: ended_said(account),
             });
+        }
+        // A token that holds `workflow` is never a chat route's (ADR 0128 D1.1): checked before
+        // the keyring is read, so nothing of it is even fetched.
+        match accounts::workflow_doubt(account) {
+            accounts::WorkflowDoubt::No => {}
+            accounts::WorkflowDoubt::Holds => {
+                crate::forge::refresh::raise_once(account, &Trouble::EverydayHoldsWorkflow);
+                return Err(CredentialError::SignInAgain {
+                    host: host.to_string(),
+                    said: accounts::workflow::needs_narrower_sign_in(account),
+                });
+            }
+            accounts::WorkflowDoubt::Unknown if for_chat => {
+                crate::forge::refresh::raise_once(account, &Trouble::ScopesUnknown);
+                return Err(CredentialError::SignInAgain {
+                    host: host.to_string(),
+                    said: accounts::workflow::scopes_unknown_said(account),
+                });
+            }
+            accounts::WorkflowDoubt::Unknown => {}
         }
         let token = self
             .refresher

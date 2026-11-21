@@ -107,6 +107,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod mainwatch;
+mod onelogin;
 mod personaskills;
 mod policypress;
 mod regenerate;

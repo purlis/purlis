@@ -245,13 +245,22 @@ const DENIED_FIELDS: &[&str] = &[
     "mergeQueueEntries",
 ];
 
+/// What a GraphQL document was decided to be, and the chat's repos it touched.
+pub(crate) struct Decided<'a> {
+    pub class: Class,
+    /// Every repo of the chat the document names (a `repository(...)`, a `repositoryId`, a path, an
+    /// object id tied to one), each once. Empty for a document that touches none (`viewer`). The
+    /// credential is requested for each of these, never for a repo the document does not name.
+    pub touched: Vec<&'a AllowedRepo>,
+}
+
 /// Decide a GraphQL request body. `repos` are the chat's repos that this host serves.
-pub(crate) fn decide(
+pub(crate) fn decide<'a>(
     kind: Kind,
-    repos: &[&AllowedRepo],
+    repos: &[&'a AllowedRepo],
     body: &[u8],
     objects: &dyn ObjectRepo,
-) -> Result<Class, Refusal> {
+) -> Result<Decided<'a>, Refusal> {
     if body.len() > MAX_BODY {
         return Err(Refusal::BodyUnreadable);
     }
@@ -274,6 +283,7 @@ pub(crate) fn decide(
         kind,
         repos,
         objects,
+        touched: std::cell::RefCell::new(Vec::new()),
     };
     let mut class = Class::GraphqlQuery;
     for definition in &document.definitions {
@@ -308,7 +318,13 @@ pub(crate) fn decide(
             }
         }
     }
-    Ok(class)
+    let touched = ctx
+        .touched
+        .into_inner()
+        .into_iter()
+        .map(|at| repos[at])
+        .collect();
+    Ok(Decided { class, touched })
 }
 
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
@@ -321,6 +337,8 @@ struct Context<'a> {
     kind: Kind,
     repos: &'a [&'a AllowedRepo],
     objects: &'a dyn ObjectRepo,
+    /// Indexes into `repos` of each repo the document named, once each, in the order met.
+    touched: std::cell::RefCell<Vec<usize>>,
 }
 
 impl Context<'_> {
@@ -417,12 +435,21 @@ impl Context<'_> {
         self.in_repos(&path)
     }
 
+    fn touch(&self, at: usize) {
+        let mut touched = self.touched.borrow_mut();
+        if !touched.contains(&at) {
+            touched.push(at);
+        }
+    }
+
     fn in_repos(&self, path: &str) -> Result<(), Refusal> {
         let path = normalise_repo_path(self.kind, path).map_err(|_| Refusal::GraphqlOtherRepo)?;
-        if self.repos.iter().any(|r| r.path == path) {
-            Ok(())
-        } else {
-            Err(Refusal::GraphqlOtherRepo)
+        match self.repos.iter().position(|r| r.path == path) {
+            Some(at) => {
+                self.touch(at);
+                Ok(())
+            }
+            None => Err(Refusal::GraphqlOtherRepo),
         }
     }
 
@@ -471,24 +498,25 @@ impl Context<'_> {
         for (key, value) in ids {
             match key.as_str() {
                 "repositoryId" => {
-                    if !self
+                    let at = self
                         .repos
                         .iter()
-                        .any(|r| r.node_ids.iter().any(|id| id == value))
-                    {
-                        return Err(Refusal::GraphqlOtherRepo);
-                    }
+                        .position(|r| r.node_ids.iter().any(|id| id == value))
+                        .ok_or(Refusal::GraphqlOtherRepo)?;
+                    self.touch(at);
                 }
                 "projectPath" | "fullPath" => self.in_repos(value)?,
                 _ => {
-                    let host_ok = self.repos.iter().any(|r| {
-                        self.objects
-                            .repo_of(r.kind, &r.host, value)
-                            .is_some_and(|path| r.path == path)
-                    });
-                    if !host_ok {
-                        return Err(Refusal::GraphqlOtherRepo);
-                    }
+                    let at = self
+                        .repos
+                        .iter()
+                        .position(|r| {
+                            self.objects
+                                .repo_of(r.kind, &r.host, value)
+                                .is_some_and(|path| r.path == path)
+                        })
+                        .ok_or(Refusal::GraphqlOtherRepo)?;
+                    self.touch(at);
                 }
             }
         }

@@ -118,6 +118,10 @@ pub struct Allowed {
     pub kind: Kind,
     /// The host the credential is looked up by.
     pub host: String,
+    /// The port the request goes to; with `host`, the address the credential is looked up by.
+    pub port: u16,
+    /// The forge-read numeric id of the repo (`None` for a request outside a repo).
+    pub repo_id: Option<u64>,
     /// The allowed repo the request is for: `owner/repo`. Empty for the few reads outside a repo
     /// and for a public repo that is not the chat's.
     pub repo: String,
@@ -130,6 +134,18 @@ pub struct Allowed {
     /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge made them.
     pub(crate) created: Vec<(String, String, String)>,
     pub(crate) surface: Surface,
+    /// Every repo a GraphQL document named (empty for any other request): the credential is asked
+    /// for each, and the request is served only if one account serves them all.
+    pub touched: Vec<TouchedRepo>,
+}
+
+/// A repo a GraphQL document named: what a credential is asked for it by.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TouchedRepo {
+    /// The forge-read numeric id.
+    pub repo_id: Option<u64>,
+    /// `owner/repo`.
+    pub repo: String,
 }
 
 impl Allowed {
@@ -400,12 +416,15 @@ impl ChatPolicy {
                 return Ok(Allowed {
                     kind,
                     host: first.host.clone(),
+                    port: first.port,
+                    repo_id: None,
                     repo: String::new(),
                     class: Class::ApiRead,
                     upstream: upstream(first, Surface::Api, segments, &target),
                     canonical_body: None,
                     created: Vec::new(),
                     surface: Surface::Api,
+                    touched: Vec::new(),
                 });
             }
         }
@@ -431,17 +450,34 @@ impl ChatPolicy {
             if document.json.is_none() {
                 return Err(Refusal::GraphqlParse);
             }
-            let class = graphql::decide(kind, &candidates, &document.canonical, objects)?;
-            // Every id in the document was tied to one of the chat's repos.
+            let decided = graphql::decide(kind, &candidates, &document.canonical, objects)?;
+            // Every id in the document was tied to one of the chat's repos, and the credential is
+            // asked for each of them, not for the first: a document naming repo B is never sent
+            // with repo A's token. One that touches none is a request outside a repo.
+            let touched: Vec<TouchedRepo> = decided
+                .touched
+                .iter()
+                .map(|r| TouchedRepo {
+                    repo_id: r.project_id,
+                    repo: r.path.clone(),
+                })
+                .collect();
+            let (repo_id, repo) = match touched.first() {
+                Some(one) => (one.repo_id, one.repo.clone()),
+                None => (None, String::new()),
+            };
             return Ok(Allowed {
                 kind,
                 host: first.host.clone(),
-                repo: first.path.clone(),
-                class,
+                port: first.port,
+                repo_id,
+                repo,
+                class: decided.class,
                 upstream: upstream(first, Surface::Api, segments, &target),
                 canonical_body: Some(document.canonical),
                 created: Vec::new(),
                 surface: Surface::Api,
+                touched,
             });
         }
 
@@ -581,12 +617,15 @@ fn allowed(
     Allowed {
         kind: repo.kind,
         host: repo.host.clone(),
+        port: repo.port,
+        repo_id: repo.project_id,
         repo: repo.path.clone(),
         class,
         upstream: upstream(repo, surface, segments, target),
         canonical_body: None,
         created: Vec::new(),
         surface,
+        touched: Vec::new(),
     }
 }
 
@@ -595,12 +634,15 @@ fn public(host_of: &AllowedRepo, class: Class, segments: &[String], target: &Tar
     Allowed {
         kind: host_of.kind,
         host: host_of.host.clone(),
+        port: host_of.port,
+        repo_id: None,
         repo: String::new(),
         class,
         upstream: upstream(host_of, Surface::Anonymous, segments, target),
         canonical_body: None,
         created: Vec::new(),
         surface: Surface::Anonymous,
+        touched: Vec::new(),
     }
 }
 

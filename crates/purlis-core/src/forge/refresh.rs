@@ -99,6 +99,14 @@ pub enum Trouble {
     PinChanged,
     /// [`NOTICE_AFTER`] renewals in a row did not get an answer the sign-in could use.
     RenewalFailing { failures: u32 },
+    /// GitHub added `workflow`, the permission to push CI files, to the account's everyday token
+    /// (ADR 0128 D1.1): purlis stopped serving that token to any chat until the person signs in
+    /// again without it.
+    EverydayHoldsWorkflow,
+    /// The forge never said what the account's everyday token may do (or a read-back after a second
+    /// grant could not): it may hold `workflow`, so purlis serves it to no chat until a check
+    /// succeeds. Signing in again makes one.
+    ScopesUnknown,
 }
 
 type TroubleTold = Box<dyn Fn(&ForgeAccount, &Trouble) + Send + Sync>;
@@ -162,6 +170,32 @@ fn copy_of(granted: &super::oauth::Granted) -> super::oauth::Granted {
 fn raise(account: &ForgeAccount, trouble: &Trouble) {
     if let Some(told) = TROUBLE.get() {
         told(account, trouble);
+    }
+}
+
+/// [`raise`] for the troubles that a request, not a renewal, finds: told once per account and kind
+/// of trouble in this process, so a chat that asks again and again does not tell the window
+/// again. The Notice itself is derived from the account list, so it survives a restart.
+pub(crate) fn raise_once(account: &ForgeAccount, trouble: &Trouble) {
+    let key = format!("{}:{trouble:?}", account.id);
+    let first = {
+        let mut told = ONCE.lock().unwrap_or_else(|e| e.into_inner());
+        told.get_or_insert_with(Default::default).insert(key)
+    };
+    if first {
+        raise(account, trouble);
+    }
+}
+
+static ONCE: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+
+/// What was told of `account_id` is forgotten, so the next trouble of any kind is told again: the
+/// account's scopes were just read afresh, and what it was told before is no longer so. Without
+/// this a second fold in one run of the app would never raise a Notice.
+pub(crate) fn forget_raised(account_id: &str) {
+    let prefix = format!("{account_id}:");
+    if let Some(told) = ONCE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        told.retain(|key| !key.starts_with(&prefix));
     }
 }
 
