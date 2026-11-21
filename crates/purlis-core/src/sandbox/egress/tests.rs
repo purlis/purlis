@@ -2129,7 +2129,11 @@ fn with_network_not_enforced_a_host_nothing_lists_is_carried_and_told_once() {
     }
     assert_eq!(*told.lock().unwrap(), ["unlisted.invalid:443"]);
     // Enforced, as before: refused without a try.
-    let enforced = Proxy::serving(super::Serving::of(none(), &crate::sandbox::timings::Timings::production())).expect("a proxy");
+    let enforced = Proxy::serving(super::Serving::of(
+        none(),
+        &crate::sandbox::timings::Timings::production(),
+    ))
+    .expect("a proxy");
     let said = status(
         &mut to(&enforced),
         "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
