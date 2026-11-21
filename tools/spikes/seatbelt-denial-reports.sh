@@ -64,7 +64,7 @@ case_run() {
   pred=${pred//@TAG@/$tag}; pred=${pred//@DIRTAG@/chat-$tag}
   mod=${mod//@TAG@/$tag}
   local prof="(version 1)(allow default)(deny file-write* $mod (subpath \"$dir\"))"
-  local oprof="(version 1)(allow default)(deny file-write* (with message \"other-$tag\") (subpath \"$other\"))"
+  local oprof="(version 1)(allow default)(deny file-write* (with message \"$tag-other\") (subpath \"$other\"))"
   echo "== case $name${load:+ (under load)}: profile modifier [${mod:-none}], predicate [$pred]"
   local pids=()
   if [ -n "$load" ]; then
@@ -86,12 +86,16 @@ case_run() {
   [ -s "$WORK/child.err" ] && echo "  child stderr: $(head -c 200 "$WORK/child.err")"
   echo "  child exit $rc; child stamps: $(grep -c '^D' "$WORK/child.out")"
   echo "  receiver lines: $(wc -l <"$WORK/recv.out" | tr -d ' '); sample: $(head -n1 "$WORK/recv.out" | cut -c1-240)"
-  echo "  other chat's reports on this stream (tag other-$tag or its dir): $(grep -c -e "other-$tag" "$WORK/recv.out")"
+  echo "  other chat's reports on this stream (tag $tag-other): $(grep -c -e "$tag-other" "$WORK/recv.out")"
+  echo "  a deny line: $(grep -m1 " deny" "$WORK/recv.out" | cut -c1-300)"
+  if [ "$(id -Gn | grep -c -w admin)" = 0 ]; then
+    echo "  log show as this user: $(log show --last 3m --style compact --predicate "$pred" 2>&1 | head -c 200 | tr "\n" "|")"
+  fi
   perl "$WORK/judge.pl" "$WORK/child.out" "$WORK/recv.out" "$dir" "$N"
 }
 
-case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"'
-case_run B_default_report_path_tag '' 'eventMessage CONTAINS "@DIRTAG@"'
+for _ in 1 2 3; do case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"'; done
+for _ in 1 2 3; do case_run B_default_report_path_tag '' 'eventMessage CONTAINS "@DIRTAG@"'; done
 case_run C_with_report_path_tag '(with report)' 'eventMessage CONTAINS "@DIRTAG@"'
 case_run D_no_report_control '(with no-report)' 'eventMessage CONTAINS "@DIRTAG@"'
 case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"' load
