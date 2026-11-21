@@ -830,14 +830,24 @@ fn chat(model: &str, stream: bool, calls: &[NativeCall], words: Option<&str>) ->
 pub fn serve(stand_in: Arc<StandIn>, port: impl FnOnce(u16)) -> std::io::Result<()> {
     let server = TcpListener::bind(("127.0.0.1", 0))?;
     port(server.local_addr()?.port());
+    serve_on(server, Arc::new(move || Arc::clone(&stand_in)))
+}
+
+/// Serves on `server`, an address its caller chose, until [`AT_MOST`] has passed, each request
+/// answered by the stand-in `current` names when it arrives: one server across the chats of a
+/// run, each with a script of its own (T1.1-10).
+pub fn serve_on(
+    server: TcpListener,
+    current: Arc<dyn Fn() -> Arc<StandIn> + Send + Sync>,
+) -> std::io::Result<()> {
     server.set_nonblocking(true)?;
     let ends = Instant::now() + AT_MOST;
     while Instant::now() < ends {
         match server.accept() {
             Ok((stream, _)) => {
-                let stand_in = Arc::clone(&stand_in);
+                let current = Arc::clone(&current);
                 std::thread::spawn(move || {
-                    let _ = connection(stream, &stand_in);
+                    let _ = connection(stream, &*current);
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
@@ -850,7 +860,10 @@ pub fn serve(stand_in: Arc<StandIn>, port: impl FnOnce(u16)) -> std::io::Result<
 }
 
 /// Answers every request one connection carries.
-fn connection(stream: TcpStream, stand_in: &StandIn) -> std::io::Result<()> {
+fn connection(
+    stream: TcpStream,
+    current: &(dyn Fn() -> Arc<StandIn> + Send + Sync),
+) -> std::io::Result<()> {
     stream.set_nonblocking(false)?;
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut stream = stream;
@@ -889,7 +902,7 @@ fn connection(stream: TcpStream, stand_in: &StandIn) -> std::io::Result<()> {
             reader.read_exact(&mut body)?;
             body
         };
-        let answer = stand_in.answer(&method, &path, &body);
+        let answer = current().answer(&method, &path, &body);
         let head = format!(
             "HTTP/1.1 {} {}\r\ncontent-type: {}\r\ncontent-length: {}\r\ncache-control: no-cache\r\n\r\n",
             answer.status,

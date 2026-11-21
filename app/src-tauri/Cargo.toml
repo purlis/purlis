@@ -184,6 +184,9 @@ tempfile.workspace = true
 # The cells' format (T1.1-05): the production-timing plan and the leg-report record the scenario
 # host writes (T1.1-06).
 purlis-scenarios = { path = "../../tests/scenarios" }
+# The stand-in model T1.1-03 serves the real harnesses (Messages, Responses, Chat Completions) and
+# the projection of what its requests showed: the Claude Code leg's model (T1.1-10).
+purlis-recordings = { path = "../../tests/recordings" }
 # A screenshot's pixels, read to tell a value kept out was painted over (#2243): the version
 # purlis-browser-engine's tests read them with.
 png = "0.18"

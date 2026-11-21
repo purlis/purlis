@@ -49,6 +49,11 @@ pub(crate) const BINARY_VAR: &str = "PURLIS_BINARY";
 /// `in_a_host_process_at` runs as the session host's process (Linux).
 pub(crate) const HOST_APP_VAR: &str = "PURLIS_HOST_APP";
 
+/// The variable naming the real Claude Code binary (`claude`) at the version
+/// `tests/fixtures/harness-versions/claude.txt` pins, which the Claude Code leg starts (T1.1-10).
+/// CI sets it on macOS; the leg does not run without it.
+pub(crate) const CLAUDE_CODE_VAR: &str = "PURLIS_CLAUDE_CODE";
+
 /// The variable a scenario's child is started with: its home.
 const HOME_VAR: &str = "PURLIS_SCENARIO_HOME";
 
@@ -65,6 +70,14 @@ pub(crate) fn on_ci() -> bool {
 /// **Why a scenario did not run**: a failure on CI, a printed reason elsewhere (`None`).
 pub(crate) fn cannot_run<T>(why: &str) -> Option<T> {
     assert!(!on_ci(), "the scenario cannot run on CI: {why}");
+    let _ = writeln!(std::io::stderr(), "skipped: {why}");
+    None
+}
+
+/// **A leg that does not apply on this OS** is not a scenario that could not run: it says why and
+/// answers `None`, on CI too (the Claude Code leg on Linux, where purlis wraps Claude Code
+/// itself).
+pub(crate) fn does_not_apply<T>(why: &str) -> Option<T> {
     let _ = writeln!(std::io::stderr(), "skipped: {why}");
     None
 }
@@ -287,6 +300,16 @@ impl Homes {
     /// [`Homes::of_this_scenario`] with `more` in the child's environment: a cell's own
     /// variables, such as the decoy token of a person's login a chat must never present.
     pub(crate) fn of_this_scenario_with(more: &[(&str, &str)]) -> Option<Homes> {
+        Homes::of_this_scenario_ahead(more, None)
+    }
+
+    /// [`Homes::of_this_scenario_with`], the harness `claude` on the `PATH` the real Claude Code
+    /// binary `claude_code` names where one is given (the Claude Code leg, T1.1-10), and the fake
+    /// harness's shims, which stand in for it, left off the `PATH` altogether.
+    pub(crate) fn of_this_scenario_ahead(
+        more: &[(&str, &str)],
+        claude_code: Option<&Path>,
+    ) -> Option<Homes> {
         if let Some(home) = std::env::var_os(HOME_VAR) {
             as_the_app();
             return Some(Homes::at(PathBuf::from(home)));
@@ -314,8 +337,14 @@ impl Homes {
         ] {
             std::fs::create_dir_all(folder).expect("a folder of the scenario's");
         }
-        let shims = repo().join("crates/fake-harness/shims");
-        let path = std::env::join_paths(std::iter::once(shims).chain(std::env::split_paths(
+        let ahead = match claude_code {
+            Some(program) => program
+                .parent()
+                .expect("the real Claude Code's folder")
+                .to_path_buf(),
+            None => repo().join("crates/fake-harness/shims"),
+        };
+        let path = std::env::join_paths(std::iter::once(ahead).chain(std::env::split_paths(
             &std::env::var_os("PATH").unwrap_or_default(),
         )))
         .expect("a PATH");
@@ -336,7 +365,7 @@ impl Homes {
                 .map(|(name, value)| (*name, OsString::from(value))),
         );
         // The re-run clears every variable of purlis's own; these two are the run's.
-        for kept in [BINARY_VAR, HOST_APP_VAR] {
+        for kept in [BINARY_VAR, HOST_APP_VAR, CLAUDE_CODE_VAR] {
             if let Some(value) = std::env::var_os(kept) {
                 env.push((kept, value));
             }
@@ -769,6 +798,26 @@ pub(crate) struct Scenario {
     runtime: Option<tokio::runtime::Runtime>,
     /// What the person, the queries and the global checks keep (T1.1-07).
     pub(crate) ledger: super::checks::Ledger,
+    /// The Claude Code leg at Full owes its canary ([`Self::for_claude_code`]): its teardown
+    /// fails if it never ran ([`canary_owed`]).
+    owes_the_canary: bool,
+    /// The leg's canary ran to its end ([`Self::the_canary_ran`]).
+    canary_ran: std::sync::atomic::AtomicBool,
+}
+
+/// **The leg's canary is owed and was not run**: a Claude Code scenario at Full whose canary
+/// never ran has said nothing about Claude Code's own sandbox, so it fails.
+pub(crate) fn canary_owed(owes: bool, ran: bool) -> Result<(), String> {
+    if owes && !ran {
+        Err(
+            "the Claude Code leg's canary never ran: no cell of the leg may say what Claude \
+             Code's sandbox holds without a refused write and a refused connect seen first \
+             (`claude_leg::canary`)"
+                .to_owned(),
+        )
+    } else {
+        Ok(())
+    }
 }
 
 impl Scenario {
@@ -793,6 +842,49 @@ impl Scenario {
         persona: Option<&str>,
         dialect: Dialect,
         template: Template,
+    ) -> Option<Scenario> {
+        Scenario::built(homes, protection, persona, dialect, template, true)
+    }
+
+    /// **The scenario host for the real Claude Code** (T1.1-10): `protection`, under `strict`,
+    /// with no canary of the fake's own. Claude Code on macOS runs its own sandbox, which the
+    /// fake harness does not play, so at Full this runs the leg's own canary through the real
+    /// binary and `model` ([`super::claude_leg::canary`]) before it answers: no cell of the leg
+    /// starts without it, and a scenario at Full whose canary did not run fails its teardown
+    /// ([`canary_owed`]).
+    pub(crate) fn for_claude_code(
+        homes: &Homes,
+        protection: Protection,
+        model: &super::claude_leg::Model,
+    ) -> Option<Scenario> {
+        let mut scenario = Scenario::built(
+            homes,
+            protection,
+            None,
+            Dialect::Claude,
+            DEFAULT_TEMPLATE,
+            false,
+        )?;
+        if protection == Protection::Full {
+            scenario.owes_the_canary = true;
+            super::claude_leg::canary(&scenario, model);
+        }
+        Some(scenario)
+    }
+
+    /// The leg's canary ran to its end, its verdict judged.
+    pub(crate) fn the_canary_ran(&self) {
+        self.canary_ran
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn built(
+        homes: &Homes,
+        protection: Protection,
+        persona: Option<&str>,
+        dialect: Dialect,
+        template: Template,
+        with_the_fakes_canary: bool,
     ) -> Option<Scenario> {
         if let Err(why) = the_wrap_applies() {
             return cannot_run(&why);
@@ -883,6 +975,8 @@ impl Scenario {
             began,
             runtime: Some(runtime),
             ledger: super::checks::Ledger::default(),
+            owes_the_canary: false,
+            canary_ran: std::sync::atomic::AtomicBool::new(false),
         };
         scenario.ledger.begins(&scenario);
         // The canary, in every scenario whose protection is Full, where the project's own wall is
@@ -893,7 +987,7 @@ impl Scenario {
         // refused there and the canary is not asked of it. Claude Code on macOS runs its own
         // sandbox, which the fake harness does not play (ticket 10, #6900): the canary is not
         // run there, and the report says so.
-        if protection == Protection::Full {
+        if protection == Protection::Full && with_the_fakes_canary {
             if dialect == Dialect::Claude && cfg!(target_os = "macos") {
                 super::report::write(&[super::a_fixture_record(
                     "the canary",
@@ -1202,10 +1296,39 @@ impl Scenario {
             ]
             .map(|(k, v)| (k.to_owned(), v)),
         );
+        let id = self.launches(&name, &ready, &transcript);
+        if let Some(prompt) = script["turns"][0]["prompt"].as_str() {
+            // Typed once the harness says its session, as a person types at a harness that is
+            // ready: a harness that takes the terminal raw drops what came before.
+            let said = format!("{} session ", self.dialect.word());
+            let deadline = std::time::Instant::now() + crate::scenarios::PLAYS_WITHIN;
+            while !self.screen_of(id).contains(&said) {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "chat {id} never said its session\n{}",
+                    self.said()
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            self.types(id, prompt);
+        }
+        self.note_running();
+        id
+    }
+
+    /// **Starts the chat `ready` composed for, as the window does**, and keeps what the scenario
+    /// reads of it: how it was launched, its transcript file, its sandbox and its pane. Answers
+    /// the chat's number.
+    fn launches(
+        &self,
+        name: &str,
+        ready: &purlis_core::start::Ready,
+        transcript: &std::path::Path,
+    ) -> u32 {
         let chat = purlis_core::reopen::Chat {
             program: ready.program.clone(),
             cwd: ready.cwd.clone(),
-            name: name.clone(),
+            name: name.to_owned(),
             resume: ready.session.clone(),
             profile: Some(self.profile()),
             persona: self.persona.clone(),
@@ -1253,13 +1376,13 @@ impl Scenario {
         let held = self.held();
         let id = held
             .chats()
-            .start_ready(&chat, &ready, SIZE)
+            .start_ready(&chat, ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
         self.transcripts
             .lock()
             .expect("transcripts")
-            .push((id, transcript.clone()));
+            .push((id, transcript.to_path_buf()));
         self.started
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.applied
@@ -1271,23 +1394,84 @@ impl Scenario {
         })) {
             self.panes.lock().expect("panes").push((id, pane));
         }
-        if let Some(prompt) = script["turns"][0]["prompt"].as_str() {
-            // Typed once the harness says its session, as a person types at a harness that is
-            // ready: a harness that takes the terminal raw drops what came before.
-            let said = format!("{} session ", self.dialect.word());
-            let deadline = std::time::Instant::now() + crate::scenarios::PLAYS_WITHIN;
-            while !self.screen_of(id).contains(&said) {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "chat {id} never said its session\n{}",
-                    self.said()
-                );
-                std::thread::sleep(Duration::from_millis(100));
+        id
+    }
+
+    /// **Starts the real Claude Code** (T1.1-10) as the person starts a chat from the window:
+    /// through [`purlis_core::start::ready`] and the host's own chat start ([`Self::launches`]),
+    /// so the launch line, the environment, the bundled plugin and the settings are what purlis
+    /// writes, never a hand launch. The sandbox-only profile is signed in with the first-run
+    /// state of an interactive start ([`super::claude_leg::seed_first_run`]), the four variables
+    /// the leg adds are named in the project's local `[chat_env] pass`
+    /// ([`super::claude_leg::chat_env_pass`]) with their values in this process's environment,
+    /// and the stand-in model answers the chat's model calls, its request log being the
+    /// transcript ([`super::claude_leg::Model::attach`]). Answers the chat's number.
+    pub(crate) fn starts_claude_code(&self, model: &super::claude_leg::Model, prompt: &str) -> u32 {
+        self.profiled.call_once(|| {
+            let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
+            if let Err(why) = purlis_core::profilestore::create_sandbox_only(
+                &homes,
+                &self.profile(),
+                self.dialect.word(),
+                1,
+            ) {
+                assert!(why.contains("already has a profile"), "the profile: {why}");
             }
-            self.types(id, prompt);
-        }
+        });
+        let config = purlis_core::profilestore::listed_here()
+            .into_iter()
+            .find(|profile| profile.name == self.profile())
+            .map(|profile| profile.folders.config)
+            .expect("the sandbox-only profile is listed");
+        super::claude_leg::seed_first_run(&config, &self.root);
+        std::fs::write(
+            self.root.join(purlis_core::profiles::LOCAL_FILE),
+            super::claude_leg::chat_env_pass(),
+        )
+        .expect("the project's local settings");
+        let number = self.chats.lock().expect("chats").len() + 1;
+        let own = own_folder(&self.root);
+        std::fs::create_dir_all(&own).expect("the chat's own folder");
+        // Outside the project, the one folder Claude Code's sandbox lets a chat write: the
+        // transcript is the stand-in model's request log, and a chat must not be able to rewrite
+        // it (the leg's canary tries, `claude_leg::canary`).
+        let transcript = self.next_transcript();
+        let name = format!("chat {number}");
+        let mut ready = purlis_core::start::ready(
+            &purlis_core::start::Start {
+                profile: Some(self.profile()),
+                name: name.clone(),
+                cwd: Some(self.root.clone()),
+                made: purlis_core::sandbox::Made::Window,
+                ..Default::default()
+            },
+            &self.root,
+        )
+        .expect("the chat is ready to start");
+        // What the stand-in model needs of Claude Code's own words: no permission prompt, which
+        // an auto mode would send to Anthropic's servers to judge (the recordings' conditions,
+        // `tests/recordings/README.md`), and the prompt it starts with.
+        ready.args.extend(
+            [
+                "--permission-mode",
+                purlis_recordings::PERMISSION_MODE,
+                prompt,
+            ]
+            .map(str::to_owned),
+        );
+        model.attach(&transcript);
+        let id = self.launches(&name, &ready, &transcript);
         self.note_running();
         id
+    }
+
+    /// Where the next chat's transcript is written: outside the project, in the run's scripts
+    /// folder ([`Self::starts_claude_code`]).
+    pub(crate) fn next_transcript(&self) -> PathBuf {
+        self.homes.scripts.join(format!(
+            "transcript-{}.jsonl",
+            self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
+        ))
     }
 
     /// **A folder of the person's own that no chat may write**: in the run's own home, outside
@@ -1615,6 +1799,12 @@ impl Drop for Scenario {
         } else {
             Some(
                 super::checks::window_for_the_checks(self.window.is_some())
+                    .and_then(|()| {
+                        canary_owed(
+                            self.owes_the_canary,
+                            self.canary_ran.load(std::sync::atomic::Ordering::SeqCst),
+                        )
+                    })
                     .and_then(|()| super::checks::at_the_end(self)),
             )
         };
