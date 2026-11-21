@@ -837,6 +837,54 @@ fn a_group_no_chat_was_seen_in_is_a_leak_unless_registered_as_background() {
     );
 }
 
+/// **A shell command whose group never reached the tool-group channel fails the teardown**
+/// (#7197): a missing `FAKE_HARNESS_GROUPS`, a failed write and an unreadable file each read as "no
+/// groups", so a leaked tool command passed unseen. The teardown now holds one group line per shell
+/// result of the transcript.
+#[cfg(unix)]
+#[test]
+fn a_shell_command_whose_group_was_never_said_is_a_watch_that_failed() {
+    let shell = |step: &str| serde_json::json!({"kind": "tool_result", "step": step, "exit": 0});
+    let transcript = [
+        serde_json::json!({"kind": "prompt"}),
+        shell("a"),
+        serde_json::json!({"kind": "tool_result", "step": "write"}),
+        shell("b"),
+    ];
+    assert!(
+        host::tool_groups_lost(&transcript, 0)
+            .is_some_and(|m| m.contains("0 process groups for 2")),
+        "no group line at all: the channel failed open"
+    );
+    assert!(
+        host::tool_groups_lost(&transcript, 1).is_some(),
+        "one line short: one command is unwatched"
+    );
+    assert_eq!(
+        host::tool_groups_lost(&transcript, 2),
+        None,
+        "every command said its group"
+    );
+    assert_eq!(
+        host::tool_groups_lost(&transcript, 3),
+        None,
+        "a relaunch or an interrupted command may say more, never fewer"
+    );
+    let unspawned = [serde_json::json!({
+        "kind": "tool_result", "exit": 127, "stderr": "cannot run the shell: no such file"
+    })];
+    assert_eq!(
+        host::tool_groups_lost(&unspawned, 0),
+        None,
+        "a shell that never started has no group to say"
+    );
+    assert_eq!(
+        host::tool_groups_lost(&[], 0),
+        None,
+        "no shell commands, no lines owed"
+    );
+}
+
 /// **A held connection in a scenario raises an ask and blocks at the hold** (T1.1-06): the first
 /// end-to-end smoke, in every dialect at Full. A chat asks for a host nothing lists; its proxy in
 /// the session host holds the connection and the window is asked (the chat is held on the host

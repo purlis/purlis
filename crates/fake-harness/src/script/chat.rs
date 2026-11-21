@@ -89,17 +89,25 @@ struct Agent {
 /// **Says the process group of a tool command it started**, `group`, as a line appended to the
 /// file `$FAKE_HARNESS_GROUPS` names, where one is named: a tool's command runs in a group of its
 /// own, which no chat's process is in, so a scenario's teardown reads them here to watch what a
-/// tool left running. Best effort: a line not written leaves that group unwatched.
+/// tool left running. Where the variable is set, a line not written is an error, never a group
+/// quietly left unwatched: the caller fails the tool call with it.
 #[cfg(unix)]
-fn say_tool_group(group: u32) {
+fn say_tool_group(group: u32) -> Result<(), String> {
     let Some(file) = std::env::var_os("FAKE_HARNESS_GROUPS") else {
-        return;
+        return Ok(());
     };
-    let _ = std::fs::OpenOptions::new()
+    std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(file)
-        .and_then(|mut file| std::io::Write::write_all(&mut file, format!("{group}\n").as_bytes()));
+        .open(&file)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, format!("{group}\n").as_bytes()))
+        .map_err(|e| {
+            format!(
+                "fake-harness cannot say the tool's process group {group} in \
+                 FAKE_HARNESS_GROUPS ({}): {e}",
+                std::path::Path::new(&file).display()
+            )
+        })
 }
 
 /// The cursor a relaunch continues from: `$FAKE_HARNESS_STATE/<session id>.json`.
@@ -935,7 +943,28 @@ impl Chat {
             }
         };
         #[cfg(unix)]
-        say_tool_group(child.id());
+        if let Err(why) = say_tool_group(child.id()) {
+            // A command nobody watches fails the call: the scenario's teardown could not see it.
+            // The shell leads its own group (`process_group(0)` above), and the group is the one
+            // nobody watches: signal it in-process, never through an external `kill`.
+            if let Some(leader) = i32::try_from(child.id())
+                .ok()
+                .and_then(rustix::process::Pid::from_raw)
+            {
+                let _ = rustix::process::kill_process_group(leader, rustix::process::Signal::KILL);
+            }
+            let _ = child.kill();
+            let _ = child.wait();
+            drop((child.stdout.take(), child.stderr.take()));
+            return Outcome::Shell(
+                Ran {
+                    stdout: String::new(),
+                    stderr: why,
+                    exit: Some(70),
+                },
+                started.elapsed(),
+            );
+        }
         let read = |r: Option<Box<dyn std::io::Read + Send>>| {
             std::thread::spawn(move || {
                 let mut s = String::new();

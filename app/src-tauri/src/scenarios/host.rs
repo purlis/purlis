@@ -1091,6 +1091,29 @@ fn tool_groups(root: &Path) -> Vec<u32> {
         .collect()
 }
 
+/// **Whether the tool-group channel lost a command** (#7197): every shell command a chat's fake
+/// harness ran says its process group in `FAKE_HARNESS_GROUPS` before the teardown reads it, so
+/// fewer `said` lines than shell results in the `transcript` means a group nobody watches (a
+/// variable not passed on, a failed write, an unreadable file). Answers what to say, or none.
+pub(crate) fn tool_groups_lost(transcript: &[serde_json::Value], said: usize) -> Option<String> {
+    let ran = transcript
+        .iter()
+        .filter(|line| line["kind"] == "tool_result" && line["exit"].is_number())
+        .filter(|line| {
+            !(line["exit"] == 127
+                && line["stderr"]
+                    .as_str()
+                    .is_some_and(|e| e.starts_with("cannot run the shell")))
+        })
+        .count();
+    (said < ran).then(|| {
+        format!(
+            "the tool-group channel (FAKE_HARNESS_GROUPS) holds {said} process groups for {ran} \
+             shell commands the chats ran: a tool command's group is not watched"
+        )
+    })
+}
+
 /// Whether any process of `group` runs.
 fn group_alive(group: u32) -> bool {
     purlis_core::forklock::status(std::process::Command::new("/bin/kill").args([
@@ -1662,6 +1685,10 @@ impl Drop for Scenario {
                 )),
                 _ => {}
             }
+        }
+        // A tool command whose group never reached the file is said, never skipped (#7197).
+        if let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len()) {
+            left.unwatched.push(lost);
         }
         // Read while they run: a group the quit left can be #7103's only if it is one of these.
         let background = process_groups(&self.background.lock().expect("background"));
