@@ -120,6 +120,10 @@ serde_json = { workspace = true, features = ["preserve_order", "arbitrary_precis
 # from unicode-rs, the authors of the unicode-* crates the tree already has.
 unicode-properties = { version = "0.1", default-features = false, features = ["general-category"] }
 sha2 = "0.11"
+# A GitLab pipeline file's `include:` read as the YAML it is, so a push that changes a file the
+# pipeline runs is held for the person's press (one login, slice F; ADR 0128 D8.3). The parser
+# purlis-skills already uses: pure Rust, no new crate in the lockfile.
+yaml-rust2 = { version = "0.13", default-features = false }
 # A native crash leaves the device as its crashing thread's stack alone (#5691, ruling (b) of
 # 2026-11-10): rust-minidump's reader takes that thread out of the minidump, and its own
 # unwinder walks it, with no symbols, to modules and offsets. Not `minidump-processor`, which

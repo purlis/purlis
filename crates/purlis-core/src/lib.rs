@@ -141,6 +141,7 @@ pub mod harness_icon;
 pub mod harness_plugin;
 #[cfg(unix)]
 pub(crate) mod held;
+pub mod heldact;
 pub mod heredoc;
 #[cfg(unix)]
 pub mod hookchannel;
