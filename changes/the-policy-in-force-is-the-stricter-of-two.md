@@ -11,3 +11,12 @@
 - **`asks` is held on its own.** Where you accepted `asks` on and a commit turns it off, an ask on
   a read, write, connect or dial is still asked, even where the action's own family is not
   enforced (#7222).
+- **A start is refused where its policy cannot be judged, and held to what was accepted even
+  after a commit past the floor's cap.** In that state, a start is still judged by the accepted
+  copy and every kept version, so a forbid that only they hold is not dropped; an entry that does
+  not read, or a start with known gaps where nothing could be verified, is refused rather than
+  let through by the shipped default. A last commit that git could not read steadily is refused
+  too, instead of being read again without the plane's workspaces. Kept versions sealed by an
+  earlier build do not read until you press again. Where there is no keyring there is no floor at
+  all: the policy in force is the project's last commit and the shipped default. The project
+  template `strict` is not stricter than the forbids it drops, which an accepted copy still holds.

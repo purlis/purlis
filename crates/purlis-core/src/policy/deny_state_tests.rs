@@ -44,6 +44,7 @@ fn denied(causes: Vec<Deny>) -> Standing {
     Standing {
         state: State::Deny(causes),
         entries: Vec::new(),
+        kept: Vec::new(),
         everywhere: Vec::new(),
         no_answer: Vec::new(),
         notices: Vec::new(),

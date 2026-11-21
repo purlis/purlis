@@ -906,6 +906,9 @@ pub struct Standing {
     pub state: State,
     /// The plane's answers that count (empty unless [`State::Holds`]).
     pub entries: Vec<Entry>,
+    /// The entries a **verified** store held, set aside where a commit went past the floor's cap
+    /// (the deny state, where none counts): a start is still judged by what they say.
+    pub kept: Vec<Entry>,
     /// The Everywhere nevers that count: whatever the plane's state.
     pub everywhere: Vec<Entry>,
     /// Grants that are missing or fail their seal: "no answer", each as kind and digest.
@@ -919,6 +922,7 @@ impl Standing {
         Self {
             state,
             entries: Vec::new(),
+            kept: Vec::new(),
             everywhere: Vec::new(),
             no_answer: Vec::new(),
             notices: Vec::new(),
@@ -956,7 +960,7 @@ impl Standing {
                 }
                 _ => State::Deny(vec![Deny::PastTheFloorCap]),
             };
-            self.entries.clear();
+            self.kept = std::mem::take(&mut self.entries);
         }
         self
     }

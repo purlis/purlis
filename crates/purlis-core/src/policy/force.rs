@@ -31,7 +31,7 @@ use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
-use crate::enforcement::{Committed, Resolved, committed_files};
+use crate::enforcement::{Committed, Resolved, committed_files_at};
 use crate::secrets::answers::{self, Standing, State};
 
 use super::decide::{Decision, Request, decide};
@@ -44,10 +44,18 @@ const VAULTS_FILE: &str = "vaults.json";
 /// How long git may take to list the workspaces at `HEAD`.
 const GIT_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// The layout a version is sealed in. A version sealed before `personas` was kept reads as `0`
+/// and does not read at all ([`parse`]): the deny state until the person's press, since the folders
+/// it was judged with are not known.
+const FORMAT: u32 = 1;
+
 /// **A project as one moment held it** (see the module's words).
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Version {
+    /// The layout this was sealed in ([`FORMAT`]); `0` where the entry predates the stamp.
+    #[serde(default)]
+    pub format: u32,
     /// The name the project file is committed by.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub settings_file: Option<String>,
@@ -73,24 +81,67 @@ pub struct Version {
     pub local: Option<String>,
 }
 
+impl Default for Version {
+    fn default() -> Self {
+        Self {
+            format: FORMAT,
+            settings_file: None,
+            settings: None,
+            rules: None,
+            vaults: None,
+            workspaces: Vec::new(),
+            personas: Vec::new(),
+            local: None,
+        }
+    }
+}
+
+/// A sealed version's text, `Err` where it does not read or is of an older layout.
+fn parse(text: &str) -> Result<Version, ()> {
+    serde_json::from_str::<Version>(text)
+        .map_err(|_| ())
+        .and_then(|v| (v.format == FORMAT).then_some(v).ok_or(()))
+}
+
+/// **What `HEAD` gave** ([`Version::at_head`]).
+#[derive(Debug)]
+pub enum Head {
+    /// The project as `HEAD` holds it, and the local file.
+    Read(Version),
+    /// A plane with no commit yet: no version to keep, the working files stand in.
+    NoCommit,
+    /// There is a commit but no stable read of it (git did not answer, or `HEAD` kept moving):
+    /// the current side cannot be judged.
+    Unread,
+}
+
 impl Version {
-    /// What the plane root's `HEAD` holds now, and the local file: `None` where `HEAD` cannot be
-    /// read (no commit, a git that did not answer), which is no version to keep.
-    pub fn at_head(root: &Path) -> Option<Self> {
-        // Everything is read from one commit: where `HEAD` moves between the reads, again, and
-        // after three tries there is no version to keep rather than one of two commits mixed.
-        (0..3).find_map(|_| {
-            let before = head_commit(root)?;
-            let version = Self::read_head(root)?;
+    /// What the plane root's `HEAD` holds now, and the local file.
+    pub fn at_head(root: &Path) -> Head {
+        // Everything is read from the one commit `HEAD` names first, by its sha: where `HEAD`
+        // moves between the reads, again, and after three tries there is no read rather than one
+        // of two commits mixed.
+        for _ in 0..3 {
+            let before = match head_commit(root) {
+                Tip::Commit(sha) => sha,
+                Tip::None => return Head::NoCommit,
+                Tip::Unread => return Head::Unread,
+            };
+            let Some(version) = Self::read_head(root, &before) else {
+                continue;
+            };
             #[cfg(test)]
             seam::between_reads();
-            (head_commit(root)? == before).then_some(version)
-        })
+            if matches!(head_commit(root), Tip::Commit(now) if now == before) {
+                return Head::Read(version);
+            }
+        }
+        Head::Unread
     }
 
-    fn read_head(root: &Path) -> Option<Self> {
+    fn read_head(root: &Path, sha: &str) -> Option<Self> {
         let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
-        let mut read = committed_files(root, &[&names, &[RULES_FILE], &[VAULTS_FILE]]);
+        let mut read = committed_files_at(root, sha, &[&names, &[RULES_FILE], &[VAULTS_FILE]]);
         let vaults = text_of(read.pop()?)?;
         let rules = text_of(read.pop()?)?;
         let settings = text_of(read.pop()?)?;
@@ -100,12 +151,13 @@ impl Version {
             crate::settings::LayerText::Nothing => None,
         };
         Some(Self {
+            format: FORMAT,
             settings_file: settings.as_ref().map(|(file, _)| (*file).to_owned()),
             settings: settings.map(|(_, text)| text),
             rules: rules.map(|(_, text)| text),
             vaults: vaults.map(|(_, text)| text),
-            workspaces: folders_at_head(root, "workspaces"),
-            personas: folders_at_head(root, "personas"),
+            workspaces: folders_at(root, sha, "workspaces")?,
+            personas: folders_at(root, sha, "personas")?,
             local,
         })
     }
@@ -140,10 +192,26 @@ fn text_of(committed: Committed) -> Option<Option<(&'static str, String)>> {
     }
 }
 
-/// The commit `HEAD` names now, `None` where it names none.
-fn head_commit(root: &Path) -> Option<String> {
-    let run = crate::worktree::git::run_as_written(root, &["rev-parse", "HEAD"], GIT_WAIT).ok()?;
-    run.ok().then(|| run.out.trim().to_owned())
+/// What `HEAD` names now.
+enum Tip {
+    Commit(String),
+    /// No commit yet: `--verify --quiet` exits 1 and says nothing.
+    None,
+    /// Git did not say.
+    Unread,
+}
+
+fn head_commit(root: &Path) -> Tip {
+    let run = crate::worktree::git::run_as_written(
+        root,
+        &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+        GIT_WAIT,
+    );
+    match run {
+        Ok(run) if run.ok() => Tip::Commit(run.out.trim().to_owned()),
+        Ok(run) if run.code == Some(1) && run.err.trim().is_empty() => Tip::None,
+        _ => Tip::Unread,
+    }
 }
 
 /// A test's seam between the reads of `HEAD`.
@@ -171,20 +239,19 @@ pub(super) mod seam {
     }
 }
 
-/// The folders of `<parent>/` at `HEAD`, as git wrote them: not the working tree's, which an
-/// uncommitted edit changes.
-fn folders_at_head(root: &Path, parent: &str) -> Vec<String> {
+/// The folders of `<parent>/` at the commit `sha`, as git wrote them: not the working tree's,
+/// which an uncommitted edit changes. `None` where git did not answer, so a version with empty
+/// lists is never judged or sealed.
+fn folders_at(root: &Path, sha: &str, parent: &str) -> Option<Vec<String>> {
     let tree = format!("{parent}/");
     let run = crate::worktree::git::run_as_written(
         root,
-        &["ls-tree", "-d", "--name-only", "HEAD", &tree],
+        &["ls-tree", "-d", "--name-only", sha, &tree],
         GIT_WAIT,
-    );
-    let Ok(run) = run else {
-        return Vec::new();
-    };
+    )
+    .ok()?;
     if !run.ok() {
-        return Vec::new();
+        return None;
     }
     let mut names: Vec<String> = run
         .out
@@ -194,7 +261,7 @@ fn folders_at_head(root: &Path, parent: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect();
     names.sort();
-    names
+    Some(names)
 }
 
 // ---- the world a side decides over ------------------------------------------------------------
@@ -292,13 +359,21 @@ fn world_of(
     World::from_json(serde_json::Value::Array(entities)).map_err(|_| ())
 }
 
-/// **What a side that cannot be judged decides** (spec §9.4): the deny state's refusal for every
-/// action but `start`, which is judged under the shipped strict policy, as a deny state's start is.
+/// **What a side that cannot be judged decides** (spec §9.4): the deny state's refusal, for a
+/// `start` too. A start is judged under the shipped strict policy only where nothing at all was
+/// verified ([`judge`]); a side that is there and cannot be read never lets it through.
 fn undecidable(request: &Request<'_>, what: &str) -> Decision {
-    if request.action == "start" {
-        return undecidable_strict(request);
-    }
     super::deny_state::unreadable(request.action, what)
+}
+
+/// Whether the start `request` runs where the harness has known gaps, or does not say.
+fn has_gaps(request: &Request<'_>) -> bool {
+    request.action == "start"
+        && request
+            .context
+            .get("gaps")
+            .and_then(|g| g.as_array())
+            .is_none_or(|gaps| !gaps.is_empty())
 }
 
 /// The workspace of this version that holds the path `id`, from the plane root: the first folder
@@ -350,22 +425,20 @@ fn vault_in(version: &Version, name: &str) -> (serde_json::Value, Option<String>
 
 /// The accepted copy the store holds, if any: `Err` where it does not read, which counts as the
 /// strictest policy there is, never as none.
-fn accepted_in(standing: &Standing) -> Result<Option<Version>, ()> {
-    standing
-        .entries
+fn accepted_in(entries: &[answers::Entry]) -> Result<Option<Version>, ()> {
+    entries
         .iter()
         .find(|e| e.kind == answers::ACCEPTED)
-        .map(|e| serde_json::from_str(&e.text).map_err(|_| ()))
+        .map(|e| parse(&e.text))
         .transpose()
 }
 
 /// Every version of the accepted floor the store holds; `Err` for one that does not read.
-fn floor_in(standing: &Standing) -> Vec<Result<Version, ()>> {
-    standing
-        .entries
+fn floor_in(entries: &[answers::Entry]) -> Vec<Result<Version, ()>> {
+    entries
         .iter()
         .filter(|e| e.kind == answers::FLOOR)
-        .map(|e| serde_json::from_str(&e.text).map_err(|_| ()))
+        .map(|e| parse(&e.text))
         .collect()
 }
 
@@ -509,40 +582,70 @@ pub fn judge(
     floor: Option<&Resolved>,
 ) -> (Decision, Option<Seen>) {
     // HEAD is read once, and the current side is built from that one read.
-    let here = Version::at_head(root);
     let none = Version::default();
-    let current = match &here {
-        Some(version) => loaded_for(sources, version),
-        None => levels::load(sources),
+    let (here, current, first) = match Version::at_head(root) {
+        Head::Read(version) => {
+            let loaded = loaded_for(sources, &version);
+            let first = decided(&loaded, &version, root, request, floor);
+            (Some(version), loaded, first)
+        }
+        // No commit at all: the working files are all there is.
+        Head::NoCommit => {
+            let loaded = levels::load(sources);
+            let first = decided(&loaded, &none, root, request, floor);
+            (None, loaded, first)
+        }
+        // A commit that was not read stably: the current side cannot be judged, and a world
+        // without the workspaces and vaults must not stand in for it.
+        Head::Unread => (
+            None,
+            levels::load(sources),
+            held(
+                undecidable(request, "the project's last commit could not be read"),
+                floor,
+            ),
+        ),
     };
-    let mut decisions = vec![decided(
-        &current,
-        here.as_ref().unwrap_or(&none),
-        root,
-        request,
-        floor,
-    )];
+    let mut decisions = vec![first];
 
-    // The deny state: nothing sealed counts, so a start (which it does not refuse) is judged by
-    // the shipped strict policy as well.
-    if standing.is_deny() {
+    // What the store verified: the answers that count, or, where a commit went past the cap, the
+    // ones it held, which still judge a start.
+    let denied = standing.is_deny();
+    let entries: &[answers::Entry] = if denied {
+        &standing.kept
+    } else {
+        &standing.entries
+    };
+    // Nothing verified (a deny state of any other cause): a start, which the deny state does not
+    // refuse, is judged by the shipped strict policy, and is refused where the harness has known
+    // gaps, since no accepted copy can say they are fine.
+    let verified = !denied || !standing.kept.is_empty();
+    if !verified {
         decisions.push(held(undecidable_strict(request), floor));
+        if has_gaps(request) {
+            decisions.push(held(
+                undecidable(request, "no sealed answer can say a known gap is accepted"),
+                floor,
+            ));
+        }
     }
-    let accepted = accepted_in(standing);
-    match &accepted {
-        Ok(version) => decisions.push(side(
-            sources,
-            version.as_ref().unwrap_or(&none),
-            root,
-            request,
-            floor,
-        )),
-        Err(()) => decisions.push(unread(request, floor)),
+    let accepted = accepted_in(entries);
+    if verified {
+        match &accepted {
+            Ok(version) => decisions.push(side(
+                sources,
+                version.as_ref().unwrap_or(&none),
+                root,
+                request,
+                floor,
+            )),
+            Err(()) => decisions.push(unread(request, floor)),
+        }
     }
     // Every version the floor holds decides, the one `HEAD` holds too: no version is skipped for
     // being equal to a read, only a repeat of one already judged.
     let mut seen: Vec<Version> = Vec::new();
-    for held in floor_in(standing) {
+    for held in floor_in(entries) {
         match held {
             Ok(version) if seen.contains(&version) => {}
             Ok(version) => {
@@ -553,12 +656,22 @@ pub fn judge(
         }
     }
 
+    // A local file that does not tighten is no part of what is sealed: it cannot change a decision,
+    // and an edit of it (a comment, say) must not make a version or burn a slot of the cap.
     let local_tightens = !current.tightenings.is_empty();
-    let to_seal = here.filter(|version| {
-        sealable(standing)
-            && current.sandbox_at_least.is_none()
-            && is_new(version, standing, &accepted, local_tightens)
-    });
+    let to_seal = here
+        .map(|version| {
+            if local_tightens {
+                version
+            } else {
+                version.committed()
+            }
+        })
+        .filter(|version| {
+            sealable(standing)
+                && current.sandbox_at_least.is_none()
+                && is_new(version, &standing.entries, &accepted, local_tightens)
+        });
     (
         stricter(decisions),
         to_seal.map(|version| Seen {
@@ -587,7 +700,7 @@ fn sealable(standing: &Standing) -> bool {
 /// either a committed version none holds, or the local file tightens.
 fn is_new(
     version: &Version,
-    standing: &Standing,
+    entries: &[answers::Entry],
     accepted: &Result<Option<Version>, ()>,
     local_tightens: bool,
 ) -> bool {
@@ -597,7 +710,7 @@ fn is_new(
         .cloned()
         .flatten()
         .unwrap_or_default();
-    let floor: Vec<Version> = floor_in(standing).into_iter().flatten().collect();
+    let floor: Vec<Version> = floor_in(entries).into_iter().flatten().collect();
     if floor.contains(version) || *version == base {
         return false;
     }
@@ -630,14 +743,14 @@ pub fn cap() -> usize {
 
 /// How many committed versions the floor holds, **not** counting the accepted copy's own nor the
 /// local file's sealed tightenings (review round 8), which [`seal`] bounds apart.
-fn counted(standing: &Standing, accepted: &Result<Option<Version>, ()>) -> BTreeSet<String> {
+fn counted(entries: &[answers::Entry], accepted: &Result<Option<Version>, ()>) -> BTreeSet<String> {
     let base = accepted
         .as_ref()
         .ok()
         .cloned()
         .flatten()
         .unwrap_or_default();
-    floor_in(standing)
+    floor_in(entries)
         .into_iter()
         .flatten()
         .map(|v| v.committed())
@@ -655,11 +768,11 @@ pub fn seal(root: &Path, seen: &Seen) {
     // store at all (a `start` is judged with none).
     let standing = &answers::standing(root);
     let version = &seen.version;
-    let accepted = accepted_in(standing);
-    if !sealable(standing) || !is_new(version, standing, &accepted, seen.local_tightens) {
+    let accepted = accepted_in(&standing.entries);
+    if !sealable(standing) || !is_new(version, &standing.entries, &accepted, seen.local_tightens) {
         return;
     }
-    let mut committed = counted(standing, &accepted);
+    let mut committed = counted(&standing.entries, &accepted);
     let base = accepted
         .as_ref()
         .ok()
@@ -672,7 +785,7 @@ pub fn seal(root: &Path, seen: &Seen) {
             committed.insert(serde_json::to_string(&own).expect("a version is JSON"));
         }
         // The local file's sealed versions are bounded too, apart from the committed ones.
-        let locals = floor_in(standing)
+        let locals = floor_in(&standing.entries)
             .into_iter()
             .flatten()
             .filter(|v| v.local.is_some())

@@ -632,18 +632,77 @@ fn a_start_is_held_to_the_accepted_copy_and_the_floor() {
     );
 }
 
+/// A standing in the deny state where a commit went past the cap: the store verified, and its
+/// entries are set aside in `kept`.
+fn denied_past_the_cap(kept: Vec<Entry>) -> Standing {
+    Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        kept,
+        ..Standing::fresh()
+    }
+}
+
 #[test]
-fn a_start_in_the_deny_state_is_judged_under_the_shipped_strict_policy() {
+fn a_start_past_the_cap_is_held_to_the_forbid_only_the_accepted_copy_holds() {
+    let m = machine();
+    let ban = forbid_start();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    // The commit dropped the forbid; the accepted copy still holds it.
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing = denied_past_the_cap(vec![accepted(&version(STRICT, Some(&ban)))]);
+    let said = by(&root, &standing, &start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["trust-no-start"], "{said:?}");
+}
+
+#[test]
+fn a_start_past_the_cap_is_held_to_a_forbid_only_a_floor_version_holds() {
+    let m = machine();
+    let ban = forbid_start();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing = denied_past_the_cap(vec![floor(&version(STRICT, Some(&ban)))]);
+    let said = by(&root, &standing, &start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+#[test]
+fn a_start_with_an_entry_that_does_not_read_is_refused() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    for entry in [
+        Entry::new(answers::ACCEPTED, "not json"),
+        Entry::new(answers::FLOOR, "{\"settings\": 3}"),
+        // A version sealed before the format stamp: its personas are not known.
+        Entry::new(answers::FLOOR, "{\"settings_file\":\"purlis.toml\"}"),
+    ] {
+        for standing in [holding(vec![entry.clone()]), denied_past_the_cap(vec![entry.clone()])] {
+            let said = by(&root, &standing, &start());
+            assert_eq!(said.after_mode, Outcome::Deny, "{entry:?} {said:?}");
+        }
+    }
+}
+
+#[test]
+fn a_start_with_known_gaps_is_refused_where_nothing_was_verified() {
     let m = machine();
     let open = "[policy]\ntemplate = \"open\"\n";
     let root = plane(&m, &[("purlis.toml", open)]);
     let denied = Standing {
-        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        state: State::Deny(vec![Deny::CloneKeySwapped]),
         ..Standing::fresh()
     };
-    let strict = undecidable_strict(&start());
     let said = by(&root, &denied, &start());
-    assert_eq!(said.after_mode, strict.after_mode, "{said:?}");
+    assert_eq!(said.after_mode, strict_of_start(), "no gaps: the shipped strict policy");
+    let mut gappy = start();
+    gappy.context["gaps"] = serde_json::json!(["processes"]);
+    let said = by(&root, &denied, &gappy);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+fn strict_of_start() -> Outcome {
+    undecidable_strict(&start()).after_mode
 }
 
 /// The plane's folders as the disk holds them now: what the app lists for every decision.
@@ -768,8 +827,11 @@ fn a_head_that_never_holds_still_has_no_version_of_two_commits() {
         git(&at, &["update-ref", "HEAD", to]);
     })));
     let read = Version::at_head(&root);
+    assert!(matches!(read, Head::Unread), "a HEAD that keeps moving is no read: {read:?}");
+    // The current side is then undecidable, never a fresh read over a world with no workspaces.
+    let said = host(&root, &merge(true));
     seam::set(None);
-    assert_eq!(read, None, "a HEAD that keeps moving is no version");
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
 }
 
 #[test]

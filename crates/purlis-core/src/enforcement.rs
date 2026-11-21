@@ -848,9 +848,15 @@ pub fn committed_files(root: &Path, files: &[&[&'static str]]) -> Vec<Committed>
             });
         }
     };
-    match at_commit(root, &head, files) {
+    committed_files_at(root, &head, files)
+}
+
+/// [`committed_files`] at the commit `head` the caller already resolved, so a caller that reads
+/// more from the same commit never meets a `HEAD` that moved in between.
+pub fn committed_files_at(root: &Path, head: &str, files: &[&[&'static str]]) -> Vec<Committed> {
+    match at_commit(root, head, files) {
         Ok(answers) => answers,
-        Err(why) => every(Committed::Unread { file: None, why }),
+        Err(why) => vec![Committed::Unread { file: None, why }; files.len()],
     }
 }
 
