@@ -1310,9 +1310,15 @@ impl Chat {
                             json!({"filePath": path, "type": "update"}),
                         ));
                     }
+                    // A refused write fails, and a failed call of any tool is a
+                    // `PostToolUseFailure` (T1.1-41, #6888): 2.1.325's `asks` recording shows the
+                    // hook run for a Write the wrap refused, with the error and no response.
                     (Dialect::Claude, Err((e, path))) => {
                         f.text = node_error(e, path);
                         f.is_error = Some(true);
+                        f.post = Some(("PostToolUseFailure", "error", f.text.clone().into()));
+                        f.post_extra = Some(vec![("is_interrupt".to_owned(), false.into())]);
+                        f.push_duration(Duration::ZERO);
                     }
                     (Dialect::Codex, Ok(path)) => {
                         let mark = if is_write { "A" } else { "M" };
