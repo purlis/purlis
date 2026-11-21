@@ -9681,6 +9681,26 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   moving what it could have made to `unaccepted.json` first (`skills::levels::sweep`).
 - **Git:** outside every project, in the data home.
 
+### `<socket folder>/fp-<random>.sock` and the chat's forge-proxy authority certificate
+- **Format:** the forge proxy's listener (one login, slice A2; ADR 0128 D3a to D3c) makes, for each
+  chat that has a recorded forge repo, **a unix socket** `fp-<16 hex>.sock` in a folder the caller
+  names, mode `0700` and owned by the app (an existing folder that is open to others, owned by
+  another user or a link is refused, never repaired), the socket `0600`, bound with the umask held
+  at `0077`. `gh`'s `http_unix_socket` setting names it. The chat's **authority certificate** (PEM,
+  public) is the one part of the per-chat authority that leaves memory: [`ChatCa::certificate_pem`]
+  gives it to the caller, who writes it to the chat's own folder for `git`'s
+  `http.<host>.sslCAInfo` and `glab`'s `GLAB_CA_CERT` to name. The authority's **private key is
+  never written**: it is made when the listener starts and is gone with it.
+- **Status:** **internal**, behind the `forge-wiring` feature; nothing starts a listener until
+  slice B's wiring does.
+- **Tier:** Machine, device-bound, transient, rebuildable — the socket lasts as long as its
+  listener, and the certificate is made again, with a new key, at every start and resume of its chat.
+- **Written by:** the listener (`purlis_core::forge::proxy::listener`) for the socket; the caller
+  for the certificate file.
+- **Removed by:** the socket, when its listener is dropped (and on any exit that runs destructors);
+  a socket a crash leaves is a name no one is listening on, in a folder only the app can enter.
+- **Git:** outside every project.
+
 ### Environment variables that move or key this state
 
 | Variable | Effect | Source |

@@ -13,24 +13,35 @@
 //!   tied to is refused. A mutation not on the list is [`Refusal::GraphqlUnknownMutation`], unless
 //!   its name says what it is (a merge, a ruleset, a release…), when the refusal says that;
 //! - **a query** may start only at the fields in [`root_allowed`], and `repository(owner:, name:)`
-//!   (GitHub) or `project(fullPath:)` (GitLab) must name an allowed repo. Fields that lead out of
-//!   the repo or into its administration ([`DENIED_FIELDS`]) are refused wherever they appear,
-//!   fragments included. A variable's value is read from the request's `variables`; a variable
-//!   with no value is refused.
+//!   (GitHub) or `project(fullPath:)` (GitLab) must name an allowed repo. **Every selected field
+//!   on every type is checked against that type's table** ([`super::schema`]): a field that is not
+//!   on it is refused, however deep, through fragments too (each spread is read where it is used,
+//!   as the type it is spread on). `node(id:)` and `nodes(ids:)` are allowed, and only for ids
+//!   the proxy can tie to one of the chat's repos, and then only as the types the tables name. A
+//!   variable's value is read from the request's `variables`; a variable with no value is
+//!   refused.
 //!
-//! A query can still follow a link from an allowed repo to what the person may read, through a
-//! field not on [`DENIED_FIELDS`]. That is a read, and the list is the one that someone keeps
-//! (ADR 0128 Open item 6). Writes cannot do it: every mutation is tied to an allowed repo.
+//! Where the tables stop is where the list is kept (ADR 0128 Open item 6): a field GitHub adds
+//! tomorrow is refused until it is read and added. Writes cannot walk out of the repo at all:
+//! every mutation is tied to an allowed repo, and what it asks back is read like any query.
+
+use std::collections::HashMap;
 
 use graphql_parser::query::{
-    Definition, Document, Field, OperationDefinition, Selection, SelectionSet, Value,
-    VariableDefinition, parse_query,
+    Definition, Document, Field, FragmentDefinition, OperationDefinition, Selection, SelectionSet,
+    TypeCondition, Value, VariableDefinition, parse_query,
 };
 use serde_json::Value as Json;
 
 use super::commands;
 use super::policy::{Class, ObjectRepo, Refusal};
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
+use super::rest;
+use super::schema::{self, Ty};
+
+/// How deep a selection (fragments included) may go. A document deeper than a person writes by
+/// hand, or one whose fragments spread each other, is refused.
+const MAX_DEPTH: usize = 16;
 
 /// The largest document read.
 const MAX_BODY: usize = 1 << 20;
@@ -88,6 +99,8 @@ impl Vars<'_> {
 
 /// The mutations a chat may make, per forge. Everything else is refused.
 fn mutation_allowed(kind: Kind, name: &str) -> bool {
+    // The mutations that take only label ids (`addLabelsToLabelable`, `mergeRequestSetLabels`,
+    // `issueSetLabels`…) are not on the list: the proxy cannot read a label's name from its id.
     const GITHUB: &[&str] = &[
         "createPullRequest",
         "updatePullRequest",
@@ -108,14 +121,11 @@ fn mutation_allowed(kind: Kind, name: &str) -> bool {
         "updateIssue",
         "closeIssue",
         "reopenIssue",
-        "addLabelsToLabelable",
-        "removeLabelsFromLabelable",
     ];
     const GITLAB: &[&str] = &[
         "mergeRequestCreate",
         "mergeRequestUpdate",
         "mergeRequestSetDraft",
-        "mergeRequestSetLabels",
         "mergeRequestSetAssignees",
         "createNote",
         "updateNote",
@@ -124,7 +134,6 @@ fn mutation_allowed(kind: Kind, name: &str) -> bool {
         "discussionToggleResolve",
         "createIssue",
         "updateIssue",
-        "issueSetLabels",
     ];
     match kind {
         Kind::GitHub => GITHUB.contains(&name),
@@ -179,71 +188,24 @@ fn named_mutation_refusal(name: &str) -> Refusal {
 /// The fields a query may start at.
 fn root_allowed(kind: Kind, name: &str) -> bool {
     match kind {
-        Kind::GitHub => matches!(name, "repository" | "viewer" | "rateLimit" | "__typename"),
-        Kind::GitLab => matches!(name, "project" | "currentUser" | "metadata" | "__typename"),
+        Kind::GitHub => matches!(
+            name,
+            "repository"
+                | "viewer"
+                | "rateLimit"
+                | "node"
+                | "nodes"
+                | "search"
+                | "__type"
+                | "__schema"
+                | "__typename"
+        ),
+        Kind::GitLab => matches!(
+            name,
+            "project" | "currentUser" | "metadata" | "__type" | "__schema" | "__typename"
+        ),
     }
 }
-
-/// What `viewer` and `currentUser` may be asked for: who the person is, and nothing they own.
-const WHO: &[&str] = &[
-    "login",
-    "username",
-    "name",
-    "id",
-    "databaseId",
-    "url",
-    "webUrl",
-    "__typename",
-];
-
-/// Fields that lead out of the repo or into its administration, refused wherever they appear.
-const DENIED_FIELDS: &[&str] = &[
-    "node",
-    "nodes",
-    "search",
-    "organization",
-    "user",
-    "users",
-    "enterprise",
-    "topic",
-    "resource",
-    "parent",
-    "forks",
-    "templateRepository",
-    "repositories",
-    "pinnedRepositories",
-    "projects",
-    "group",
-    "groups",
-    "namespace",
-    "collaborators",
-    "invitations",
-    "branchProtectionRules",
-    "rulesets",
-    "deployKeys",
-    "webhooks",
-    "secrets",
-    "variables",
-    "ciVariables",
-    "members",
-    "projectMembers",
-    "pushRules",
-    "runners",
-    "mirrorUrl",
-    "headRepository",
-    "headRepositoryOwner",
-    "ruleset",
-    "environment",
-    "environments",
-    "branchProtectionRule",
-    "sourceProject",
-    "targetProject",
-    "securityVulnerabilities",
-    "vulnerabilityAlerts",
-    "autoMergeRequest",
-    "mergeQueue",
-    "mergeQueueEntries",
-];
 
 /// Decide a GraphQL request body. `repos` are the chat's repos that this host serves.
 pub(crate) fn decide(
@@ -270,21 +232,27 @@ pub(crate) fn decide(
     };
     let document: Document<'_, String> = parse_query(query).map_err(|_| Refusal::GraphqlParse)?;
 
+    let mut fragments = HashMap::new();
+    for definition in &document.definitions {
+        if let Definition::Fragment(fragment) = definition {
+            // Two fragments of a name is a document a server refuses and a reader may pick
+            // either of: refused here.
+            if fragments.insert(fragment.name.as_str(), fragment).is_some() {
+                return Err(Refusal::GraphqlParse);
+            }
+        }
+    }
     let ctx = Context {
         kind,
         repos,
         objects,
+        fragments,
     };
     let mut class = Class::GraphqlQuery;
     for definition in &document.definitions {
         match definition {
-            Definition::Fragment(fragment) => {
-                let vars = Vars {
-                    given,
-                    defaults: Vec::new(),
-                };
-                ctx.check_fields(&fragment.selection_set, &vars)?;
-            }
+            // A fragment is read where it is spread, as the type it is spread on.
+            Definition::Fragment(_) => {}
             Definition::Operation(operation) => {
                 let (defs, selection_set, is_mutation) = match operation {
                     OperationDefinition::SelectionSet(set) => (&[][..], set, false),
@@ -317,48 +285,61 @@ fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'
         .collect()
 }
 
-struct Context<'a> {
+struct Context<'a, 'd> {
     kind: Kind,
     repos: &'a [&'a AllowedRepo],
     objects: &'a dyn ObjectRepo,
+    fragments: HashMap<&'d str, &'d FragmentDefinition<'d, String>>,
 }
 
-impl Context<'_> {
-    /// Refuse a denied field anywhere in a selection set. A `repository(owner:, name:)` or `project(fullPath:)` met below the root names an allowed
-    /// repo too.
-    fn check_fields(&self, set: &SelectionSet<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
+impl<'d> Context<'_, 'd> {
+    /// Walk a selection set of type `parent`: every field must be on its type's table, and what
+    /// it selects is walked as the type it returns.
+    fn walk(
+        &self,
+        parent: &Ty,
+        set: &SelectionSet<'d, String>,
+        depth: usize,
+    ) -> Result<(), Refusal> {
+        if depth > MAX_DEPTH {
+            return Err(Refusal::GraphqlOtherRepo);
+        }
         for selection in &set.items {
             match selection {
                 Selection::Field(field) => {
-                    if DENIED_FIELDS
-                        .iter()
-                        .any(|d| field.name.eq_ignore_ascii_case(d))
-                    {
-                        return Err(Refusal::GraphqlOtherRepo);
+                    let ty = schema::field(self.kind, parent, &field.name)
+                        .ok_or(Refusal::GraphqlOtherRepo)?;
+                    let selects = !field.selection_set.items.is_empty();
+                    match (ty, selects) {
+                        (Ty::Leaf, false) => {}
+                        (Ty::Leaf, true) | (_, false) => return Err(Refusal::GraphqlOtherRepo),
+                        (ty, true) => self.walk(&ty, &field.selection_set, depth + 1)?,
                     }
-                    if !field.arguments.is_empty() {
-                        match (self.kind, field.name.as_str()) {
-                            (Kind::GitHub, "repository") => {
-                                self.check_named(field, vars, "owner", Some("name"))?
-                            }
-                            (Kind::GitLab, "project") => {
-                                self.check_named(field, vars, "fullPath", None)?
-                            }
-                            _ => {}
-                        }
-                    }
-                    self.check_fields(&field.selection_set, vars)?;
                 }
                 Selection::InlineFragment(fragment) => {
-                    self.check_fields(&fragment.selection_set, vars)?
+                    let ty = match &fragment.type_condition {
+                        Some(TypeCondition::On(name)) => schema::narrow(self.kind, parent, name)
+                            .ok_or(Refusal::GraphqlOtherRepo)?,
+                        None => *parent,
+                    };
+                    self.walk(&ty, &fragment.selection_set, depth + 1)?;
                 }
-                Selection::FragmentSpread(_) => {}
+                Selection::FragmentSpread(spread) => {
+                    let fragment = self
+                        .fragments
+                        .get(spread.fragment_name.as_str())
+                        .ok_or(Refusal::GraphqlOtherRepo)?;
+                    let TypeCondition::On(name) = &fragment.type_condition;
+                    let ty =
+                        schema::narrow(self.kind, parent, name).ok_or(Refusal::GraphqlOtherRepo)?;
+                    self.walk(&ty, &fragment.selection_set, depth + 1)?;
+                }
             }
         }
         Ok(())
     }
 
-    fn check_query(&self, set: &SelectionSet<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
+    fn check_query(&self, set: &SelectionSet<'d, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
         for selection in &set.items {
             // A root made of fragments is not read through: refuse it.
             let Selection::Field(field) = selection else {
@@ -367,25 +348,172 @@ impl Context<'_> {
             if !root_allowed(self.kind, &field.name) {
                 return Err(Refusal::GraphqlOtherRepo);
             }
-            match field.name.as_str() {
-                "viewer" | "currentUser" => self.check_who(&field.selection_set)?,
-                "repository" => self.check_named(field, vars, "owner", Some("name"))?,
-                "project" => self.check_named(field, vars, "fullPath", None)?,
-                _ => {}
+            let ty = match field.name.as_str() {
+                "viewer" => Ty::Obj("User"),
+                "currentUser" => Ty::Obj("UserCore"),
+                "repository" => {
+                    self.check_named(field, vars, "owner", Some("name"))?;
+                    Ty::Obj("Repository")
+                }
+                "project" => {
+                    self.check_named(field, vars, "fullPath", None)?;
+                    Ty::Obj("Project")
+                }
+                "rateLimit" => Ty::Obj("RateLimit"),
+                "__type" => Ty::Obj("__Type"),
+                "__schema" => Ty::Obj("__Schema"),
+                "search" => {
+                    self.check_search(field, vars)?;
+                    Ty::Conn("SearchResultItem")
+                }
+                "metadata" => Ty::Obj("Metadata"),
+                "node" => {
+                    self.check_node_ids(field, vars, "id", false)?;
+                    Ty::Obj("Node")
+                }
+                "nodes" => {
+                    self.check_node_ids(field, vars, "ids", true)?;
+                    Ty::Obj("Node")
+                }
+                // `__typename` of the root: a leaf.
+                _ => {
+                    if field.selection_set.items.is_empty() {
+                        continue;
+                    }
+                    return Err(Refusal::GraphqlOtherRepo);
+                }
+            };
+            if field.selection_set.items.is_empty() {
+                return Err(Refusal::GraphqlOtherRepo);
             }
-            self.check_fields(&field.selection_set, vars)?;
+            self.walk(&ty, &field.selection_set, 0)?;
         }
         Ok(())
     }
 
-    fn check_who(&self, set: &SelectionSet<'_, String>) -> Result<(), Refusal> {
-        for selection in &set.items {
-            match selection {
-                Selection::Field(f) if WHO.contains(&f.name.as_str()) => {}
-                _ => return Err(Refusal::GraphqlOtherRepo),
+    /// `search(query:, type: ISSUE)`, which `gh pr status` and a filtered `gh pr list` use: only
+    /// issues and pull requests, and only of the chat's repos. The query must name **exactly one**
+    /// `repo:` and it must be one of the chat's, and it may not name an organisation, a user, an
+    /// owner, a team or an enterprise, or negate any of them: search says which repos by those
+    /// qualifiers alone, so a query with none of them but the one is a search of that repo. No
+    /// boolean operator (`OR`, `AND`, `NOT`, any case) and no parenthesis is read: `gh` sends
+    /// neither for `pr status` or a filtered `pr list`, which join their terms by spaces.
+    fn check_search(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
+        let refuse = Refusal::GraphqlOtherRepo;
+        // An argument given twice is read by the server by its own rule, which this reading does
+        // not know.
+        for name in ["query", "type"] {
+            if field.arguments.iter().filter(|(n, _)| n == name).count() > 1 {
+                return Err(refuse);
             }
         }
+        let is_issue = field
+            .arguments
+            .iter()
+            .any(|(n, v)| n == "type" && matches!(v, Value::Enum(e) if e == "ISSUE"));
+        if !is_issue {
+            return Err(refuse);
+        }
+        let query = field
+            .arguments
+            .iter()
+            .find(|(n, _)| n == "query")
+            .and_then(|(_, v)| vars.resolve(v).ok())
+            .and_then(|v| match v {
+                Val::Str(s) => Some(s),
+                _ => None,
+            })
+            .ok_or(refuse)?;
+        // A zero-width space or a control character is a separator or nothing to the forge and a
+        // letter of a word to this reading: only printable ASCII and the space are read.
+        if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
+            return Err(refuse);
+        }
+        // A quote hides a qualifier from this reading and not from the forge's.
+        if query.contains(['"', '\'', '\\', '`']) {
+            return Err(refuse);
+        }
+        // Without a boolean operator or a group, every other term only narrows the one repo's
+        // results; with one, `repo:a OR is:issue` widens them to the whole forge.
+        if query.contains(['(', ')']) {
+            return Err(refuse);
+        }
+        let mut repos = Vec::new();
+        for token in query.split_whitespace() {
+            if ["or", "and", "not"]
+                .iter()
+                .any(|op| token.eq_ignore_ascii_case(op))
+            {
+                return Err(refuse);
+            }
+            let lower = token
+                .trim_start_matches(['(', '-', '+', '!'])
+                .to_ascii_lowercase();
+            if let Some(path) = lower.strip_prefix("repo:") {
+                if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
+                    return Err(refuse);
+                }
+                repos.push(path.to_string());
+            } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
+                .iter()
+                .any(|q| lower.starts_with(q))
+            {
+                return Err(refuse);
+            }
+        }
+        let [path] = repos.as_slice() else {
+            return Err(refuse);
+        };
+        // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+        // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+        if self.repos.iter().any(|r| r.path.eq_ignore_ascii_case(path)) {
+            Ok(())
+        } else {
+            Err(refuse)
+        }
+    }
+
+    /// `node(id:)` and `nodes(ids:)`: every id must be one of the chat's repos' own, or resolve
+    /// to an object in one (the forge alone knows, and the proxy asks). One that does not is
+    /// another repo's, or nobody's we can say, and the whole document is refused.
+    fn check_node_ids(
+        &self,
+        field: &Field<'_, String>,
+        vars: &Vars<'_>,
+        argument: &str,
+        list: bool,
+    ) -> Result<(), Refusal> {
+        let value = field
+            .arguments
+            .iter()
+            .find(|(n, _)| n == argument)
+            .and_then(|(_, v)| vars.resolve(v).ok())
+            .ok_or(Refusal::GraphqlOtherRepo)?;
+        let ids: Vec<String> = match (value, list) {
+            (Val::Str(id), false) => vec![id],
+            (Val::List(items), true) => items
+                .into_iter()
+                .map(|item| match item {
+                    Val::Str(id) => Ok(id),
+                    _ => Err(Refusal::GraphqlOtherRepo),
+                })
+                .collect::<Result<_, _>>()?,
+            _ => return Err(Refusal::GraphqlOtherRepo),
+        };
+        if ids.is_empty() || ids.len() > 100 || !ids.iter().all(|id| self.id_in_repos(id)) {
+            return Err(Refusal::GraphqlOtherRepo);
+        }
         Ok(())
+    }
+
+    fn id_in_repos(&self, id: &str) -> bool {
+        self.repos.iter().any(|r| {
+            r.node_ids.iter().any(|own| own == id)
+                || self
+                    .objects
+                    .repo_of(r.kind, &r.host, id)
+                    .is_some_and(|path| r.path == path)
+        })
     }
 
     /// `repository(owner:, name:)` or `project(fullPath:)` must name an allowed repo.
@@ -428,7 +556,7 @@ impl Context<'_> {
 
     fn check_mutation(
         &self,
-        set: &SelectionSet<'_, String>,
+        set: &SelectionSet<'d, String>,
         vars: &Vars<'_>,
     ) -> Result<Class, Refusal> {
         let mut class = None;
@@ -443,10 +571,13 @@ impl Context<'_> {
                 return Err(named_mutation_refusal(&field.name));
             }
             let mut ids = Vec::new();
-            for (_, value) in &field.arguments {
+            for (name, value) in &field.arguments {
                 let val = vars
                     .resolve(value)
                     .map_err(|()| Refusal::GraphqlOtherRepo)?;
+                if commands::is_label_id_key(name) || has_label_id_key(&val) {
+                    return Err(Refusal::LabelById);
+                }
                 collect_ids("", &val, &mut ids);
                 if strings(&val)
                     .iter()
@@ -454,10 +585,28 @@ impl Context<'_> {
                 {
                     return Err(Refusal::MergeCommand);
                 }
+                if self.kind == Kind::GitLab
+                    && strings(&val)
+                        .iter()
+                        .any(|text| commands::has_quick_action(text))
+                {
+                    return Err(Refusal::QuickAction);
+                }
+                // A pull request's head read from a fork reaches that fork's objects.
+                if field.name == "createPullRequest" {
+                    let mut heads = Vec::new();
+                    collect_named("headRefName", &val, &mut heads);
+                    if heads
+                        .iter()
+                        .any(|head| !self.repos.iter().any(|r| rest::side_is_own(head, r)))
+                    {
+                        return Err(Refusal::GraphqlOtherRepo);
+                    }
+                }
             }
             self.check_scoped(&ids)?;
             // What a mutation asks back is read like any query: it may not walk out of the repo.
-            self.check_fields(&field.selection_set, vars)?;
+            self.walk(&Ty::Obj("Payload"), &field.selection_set, 0)?;
             class = Some(Class::GraphqlMutation(field.name.clone()));
         }
         class.ok_or(Refusal::GraphqlUnknownMutation)
@@ -496,6 +645,18 @@ impl Context<'_> {
     }
 }
 
+/// Every string under a key called `name`, at any depth.
+fn collect_named(name: &str, val: &Val, out: &mut Vec<String>) {
+    match val {
+        Val::List(items) => items.iter().for_each(|v| collect_named(name, v, out)),
+        Val::Obj(fields) => fields.iter().for_each(|(k, v)| match v {
+            Val::Str(s) if k == name => out.push(s.clone()),
+            _ => collect_named(name, v, out),
+        }),
+        _ => {}
+    }
+}
+
 /// The ids in a mutation's arguments: strings under a key that names an id or a path.
 fn collect_ids(key: &str, val: &Val, out: &mut Vec<(String, String)>) {
     match val {
@@ -513,6 +674,17 @@ fn names_an_id(key: &str) -> bool {
             || key.ends_with("Ids")
             || key == "projectPath"
             || key == "fullPath")
+}
+
+/// Whether any key of a value, at any depth, names labels by id (`labelIds`, `addLabelIds`).
+fn has_label_id_key(val: &Val) -> bool {
+    match val {
+        Val::List(items) => items.iter().any(has_label_id_key),
+        Val::Obj(fields) => fields
+            .iter()
+            .any(|(k, v)| commands::is_label_id_key(k) || has_label_id_key(v)),
+        _ => false,
+    }
 }
 
 /// Every string in a value.

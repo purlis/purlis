@@ -132,38 +132,91 @@ mod unix {
         path: PathBuf,
     }
 
+    /// The process-wide umask is held at `0o077` only while a socket is bound, and one bind at a
+    /// time sets it: the socket is made for its owner alone by the bind itself, with no moment at
+    /// which it is wider. **Not `0o177`**: a mask that takes the owner's own bits would make a folder
+    /// another thread creates in that moment one its owner cannot enter, and the process has other
+    /// threads. This one only ever takes from group and others.
+    static UMASK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct Umask {
+        _held: std::sync::MutexGuard<'static, ()>,
+        before: rustix::fs::Mode,
+    }
+
+    impl Umask {
+        fn restrict() -> Self {
+            let held = UMASK
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let before = rustix::process::umask(rustix::fs::Mode::from_bits_truncate(0o077));
+            Self {
+                _held: held,
+                before,
+            }
+        }
+    }
+
+    impl Drop for Umask {
+        fn drop(&mut self) {
+            rustix::process::umask(self.before);
+        }
+    }
+
+    fn denied(why: String) -> io::Error {
+        io::Error::new(io::ErrorKind::PermissionDenied, why)
+    }
+
+    /// A folder that is the app's alone: a real folder (not a link to one), owned by this
+    /// process's user, closed to everyone else. One that is not is refused, never repaired: it
+    /// may have been made by someone who can still swap what is in it.
+    fn verify_private_folder(dir: &Path) -> io::Result<()> {
+        let folder = std::fs::symlink_metadata(dir)?;
+        if !folder.is_dir() {
+            return Err(denied(
+                "the folder for a chat's socket is not a folder".into(),
+            ));
+        }
+        let owner = purlis_same_user::Uid::effective().as_raw();
+        if folder.uid() != owner {
+            return Err(denied(format!(
+                "the folder for a chat's socket is owned by uid {}, not the app's {owner}",
+                folder.uid()
+            )));
+        }
+        let mode = folder.permissions().mode() & 0o7777;
+        if mode & 0o077 != 0 {
+            return Err(denied(format!(
+                "the folder for a chat's socket is open to others (mode {mode:o})"
+            )));
+        }
+        Ok(())
+    }
+
     impl UnixEndpoint {
-        /// Bind in `dir` (made, mode 0700, if it is not there). A socket path is short on macOS
-        /// (104 bytes): keep `dir` short.
+        /// Bind in `dir` (made, mode 0700, if it is not there; one that is must already be the
+        /// app's alone). A socket path is short on macOS (104 bytes): keep `dir` short.
         pub fn bind(chat: &ChatId, dir: &Path) -> io::Result<Self> {
             std::fs::DirBuilder::new()
                 .recursive(true)
                 .mode(0o700)
                 .create(dir)?;
-            // A folder that others can enter or list is not private to the app, whatever the
-            // socket's own mode: refused, not repaired.
-            let folder = std::fs::metadata(dir)?;
-            if folder.permissions().mode() & 0o077 != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    format!(
-                        "the folder for a chat's socket is open to others (mode {:o})",
-                        folder.permissions().mode() & 0o7777
-                    ),
-                ));
-            }
+            verify_private_folder(dir)?;
             let mut name = [0u8; 8];
             getrandom::fill(&mut name).map_err(|e| io::Error::other(e.to_string()))?;
             let path = dir.join(format!("fp-{}.sock", data_encoding::HEXLOWER.encode(&name)));
-            let listener = UnixListener::bind(&path)?;
+            let listener = {
+                let _restricted = Umask::restrict();
+                UnixListener::bind(&path)?
+            };
+            // Whatever the umask was, the socket is 0600 and ours.
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
-            // The socket is ours, so its owner is who we are: the folder must be the same one's,
-            // or someone else made it and may swap what is in it.
-            if std::fs::metadata(&path)?.uid() != folder.uid() {
+            let socket = std::fs::symlink_metadata(&path)?;
+            let own = purlis_same_user::Uid::effective().as_raw();
+            if socket.uid() != own || socket.permissions().mode() & 0o077 != 0 {
                 let _ = std::fs::remove_file(&path);
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "the folder for a chat's socket is not the app's",
+                return Err(denied(
+                    "the socket for a chat is not the app's alone".into(),
                 ));
             }
             Ok(Self {
@@ -173,10 +226,29 @@ mod unix {
             })
         }
 
+        /// The folder the socket is in.
+        pub fn path(&self) -> &Path {
+            &self.path
+        }
+
         /// The next connection, and the chat it is for: this endpoint's.
         pub fn accept(&self) -> io::Result<(ChatId, UnixStream)> {
             let (stream, _) = self.listener.accept()?;
             Ok((self.chat.clone(), stream))
+        }
+
+        /// The next connection **from this user**: where the platform gives a socket's peer
+        /// credentials they are one more check (a process of another user is closed unread), and
+        /// never the identity, which is the endpoint's and the sentinel's. A connection whose peer
+        /// cannot be identified is refused too.
+        pub fn accept_same_user(&self) -> io::Result<(ChatId, UnixStream)> {
+            loop {
+                let (chat, stream) = self.accept()?;
+                let peer = purlis_same_user::peer_of(&stream);
+                if purlis_same_user::admit_peer(peer, purlis_same_user::Uid::effective()).is_ok() {
+                    return Ok((chat, stream));
+                }
+            }
         }
     }
 

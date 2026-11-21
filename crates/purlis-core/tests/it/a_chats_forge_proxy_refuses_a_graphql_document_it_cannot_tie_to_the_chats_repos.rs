@@ -59,11 +59,16 @@ fn a_mutation_naming_another_repo_or_nothing_it_can_be_tied_to_is_refused() {
         "mutation{ createIssue(input:{repositoryId:\"R_someone_elses\", title:\"t\"}){ clientMutationId } }",
         "mutation{ createIssue(input:{title:\"t\"}){ clientMutationId } }",
         "mutation{ addComment(input:{subjectId:\"PR_unknown\", body:\"x\"}){ clientMutationId } }",
-        "mutation{ createIssue(input:{repositoryId:\"R_acme_app\", labelIds:[\"L_1\"], title:\"t\"}){ clientMutationId } }",
     ] {
         let out = gh(&s, q, serde_json::json!({}));
         assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{q}: {out:?}");
     }
+    let out = gh(
+        &s,
+        "mutation{ createIssue(input:{repositoryId:\"R_acme_app\", labelIds:[\"L_1\"], title:\"t\"}){ clientMutationId } }",
+        serde_json::json!({}),
+    );
+    assert!(is_refused(&out, Refusal::LabelById), "{out:?}");
     let out = s.send(
         "POST",
         "gitlab.com",
@@ -95,10 +100,9 @@ fn a_query_that_reaches_another_repo_or_a_way_out_of_the_repo_is_refused() {
         "query{ search(query:\"x\", type:REPOSITORY, first:5){ repositoryCount } }",
         "query{ viewer{ repositories(first:100){ totalCount } } }",
         "query{ viewer{ login ...F } } fragment F on User{ email }",
-        "query{ repository(owner:\"acme\", name:\"app\"){ parent{ name } } }",
+        "query{ repository(owner:\"acme\", name:\"app\"){ parent{ pullRequests(first:1){ totalCount } } } }",
         "query{ repository(owner:\"acme\", name:\"app\"){ ...F } } fragment F on Repository{ forks(first:1){ totalCount } }",
-        "query{ repository(owner:\"acme\", name:\"app\"){ pullRequest(number:1){ commits(last:1){ nodes{ commit{ oid } } } } } }",
-        "query{ __schema{ types{ name } } }",
+        "query{ repository(owner:\"acme\", name:\"app\"){ pullRequest(number:1){ headRepository{ collaborators(first:5){ totalCount } } } } }",
         "query{ ...F } fragment F on Query{ viewer{ login } }",
     ] {
         let out = gh(&s, q, serde_json::json!({}));

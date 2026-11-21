@@ -174,8 +174,12 @@ fn what_is_sent_upstream_is_the_proxys_own_address_never_the_chats() {
     let up =
         |host: &str, port: u16, target: &str| fwd(s.send_port("GET", host, port, target)).upstream;
     assert_eq!(
-        up("API.GitHub.com.", 443, "/repos/ACME/App/pulls?b=1&a=2%203"),
-        "https://api.github.com/repos/ACME/App/pulls?b=1&a=2+3"
+        up(
+            "API.GitHub.com.",
+            443,
+            "/repos/ACME/App/pulls?state=1&base=2%203"
+        ),
+        "https://api.github.com/repos/ACME/App/pulls?state=1&base=2+3"
     );
     assert_eq!(
         up("gitlab.com", 443, "/api/v4/projects/group%2Fproj/pipelines"),
@@ -269,7 +273,6 @@ fn headers_that_choose_the_host_the_method_or_a_login_are_not_forwarded() {
             ("Forwarded", "host=evil.example"),
             ("X-Original-URL", "/admin"),
             ("X-Rewrite-URL", "/admin"),
-            ("PRIVATE_TOKEN", s.a_sentinel.expose()),
             ("X-HTTP-Method-Override", "PUT"),
             ("X-Method-Override", "DELETE"),
             ("PRIVATE-TOKEN", s.a_sentinel.expose()),

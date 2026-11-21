@@ -126,16 +126,20 @@ fn a_write_body_is_read_by_its_content_type_and_nothing_else_is_read() {
     for (ct, body) in [
         (None, &br#"{"title":"t"}"#[..]),
         (Some("text/plain"), &br#"{"title":"t"}"#[..]),
-        (
-            Some("multipart/form-data; boundary=x"),
-            &b"--x\r\n\r\n--x--"[..],
-        ),
         (Some("application/octet-stream"), &b"x"[..]),
         (Some("application/json"), &b"{not json"[..]),
     ] {
         let out = post(&s, ISSUES, ct, body);
         assert!(is_refused(&out, Refusal::BodyUnreadable), "{ct:?}: {out:?}");
     }
+    // A multipart body is named for what it is, and is carried only as one file to an upload.
+    let out = post(
+        &s,
+        ISSUES,
+        Some("multipart/form-data; boundary=x"),
+        b"--x\r\n\r\n--x--",
+    );
+    assert!(is_refused(&out, Refusal::Multipart), "{out:?}");
 }
 
 #[test]
@@ -384,12 +388,27 @@ fn only_a_plain_chunked_transfer_coding_is_carried_and_a_request_body_is_never_e
 fn a_credential_header_is_one_whichever_way_its_name_is_spelled() {
     purlis_core::unsteered!();
     let s = Scene::single();
+    // A name with an underscore is refused whole (slice A2, F1): a forge's front end that reads
+    // `_` as `-` and this reading it as another header are two readers.
     for name in [
         "Private_Token",
-        "PRIVATE-TOKEN",
         "private_token",
         "Job_Token",
         "X_GitHub_Token",
+    ] {
+        for value in [REAL, s.a_sentinel.expose()] {
+            let out = with_header(&s, &[(name, value)]);
+            assert!(
+                is_refused(&out, Refusal::MalformedRequest),
+                "{name}: {out:?}"
+            );
+        }
+    }
+    for name in [
+        "PRIVATE-TOKEN",
+        "private-token",
+        "Job-Token",
+        "X-GitHub-Token",
     ] {
         let out = with_header(&s, &[(name, REAL)]);
         assert!(is_refused(&out, Refusal::WrongSentinel), "{name}: {out:?}");
@@ -541,4 +560,304 @@ fn a_chat_locked_out_by_guessing_is_let_back_in_when_the_lockout_ends() {
     assert!(is_refused(&send(sentinel.expose()), Refusal::Locked));
     std::thread::sleep(Duration::from_millis(250));
     assert!(matches!(send(sentinel.expose()), Outcome::Forward(_)));
+}
+
+#[test]
+fn a_read_that_follows_a_cross_reference_into_another_repo_is_refused_on_github() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for target in [
+        "/repos/acme/app/issues/5/timeline",
+        "/repos/acme/app/issues/5/sub_issues",
+        "/repos/acme/app/issues/5/parent",
+        "/repos/acme/app/issues/5/dependencies/blocked_by",
+        "/repos/acme/app/issues/5/dependencies/blocking",
+        "/repos/acme/app/issues/5/events",
+        "/repos/acme/app/commits/abc123/pulls",
+        "/repos/acme/app/commits/abc123/branches-where-head",
+        "/repos/acme/app/compare/main...other:topic",
+        "/repos/acme/app/compare/other/app:main...topic",
+    ] {
+        let out = s.send("GET", "api.github.com", target, b"");
+        assert!(matches!(out, Outcome::Refused(_)), "{target}: {out:?}");
+    }
+    for target in [
+        "/repos/acme/app/issues/5",
+        "/repos/acme/app/issues/5/comments",
+        "/repos/acme/app/pulls/7/files",
+        "/repos/acme/app/pulls/7/reviews",
+        "/repos/acme/app/commits/abc123",
+        "/repos/acme/app/commits/abc123/check-runs",
+        "/repos/acme/app/compare/main...acme:topic",
+        "/repos/acme/app/compare/main...topic",
+    ] {
+        let out = s.send("GET", "api.github.com", target, b"");
+        assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
+    }
+}
+
+#[test]
+fn a_read_that_follows_a_cross_reference_into_another_project_is_refused_on_gitlab() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for target in [
+        "/api/v4/projects/42/issues/5/links",
+        "/api/v4/projects/42/issues/5/related_merge_requests",
+        "/api/v4/projects/42/issues/5/closed_by",
+        "/api/v4/projects/42/merge_requests/3/closes_issues",
+        "/api/v4/projects/42/merge_requests/3/related_issues",
+        "/api/v4/projects/42/merge_requests/3/related_merge_requests",
+        "/api/v4/projects/42/repository/compare?from=a&to=b&from_project_id=99",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Refused(_)), "{target}: {out:?}");
+    }
+    for target in [
+        "/api/v4/projects/42/issues/5",
+        "/api/v4/projects/42/issues/5/notes",
+        "/api/v4/projects/42/merge_requests/3/changes",
+        "/api/v4/projects/42/merge_requests/3/discussions",
+        "/api/v4/projects/42/repository/compare?from=a&to=b",
+        "/api/v4/projects/42/repository/compare?from=a&to=b&from_project_id=42",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
+    }
+}
+
+fn post_gitlab(s: &Scene, target: &str, body: &str) -> Outcome {
+    let head = RequestHead::new("POST", "gitlab.com", 443, target)
+        .with_content_type(Some("application/json"));
+    let mut h = headers(Auth::Bearer(s.a_sentinel.expose()));
+    h.push(("Content-Type".into(), "application/json".into()));
+    s.proxy.handle(
+        &s.a,
+        &Inbound {
+            head: &head,
+            headers: &h,
+            body: body.as_bytes(),
+        },
+    )
+}
+
+#[test]
+fn gitlab_rendered_html_and_an_unknown_read_query_key_are_not_readable() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for target in [
+        "/api/v4/projects/42/issues/5?render_html=true",
+        "/api/v4/projects/42/merge_requests/3?render_html=true",
+        "/api/v4/projects/42/issues/5/notes?render_html=1",
+        "/api/v4/projects/42/issues/5?sudo=root",
+        "/api/v4/projects/42/repository/commits/abc?unknown=1",
+        "/api/v4/projects/42/pipelines/9/bridges",
+        "/api/v4/projects/42/pipelines/9/variables",
+        "/api/v4/projects/42/commits/abc",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Refused(_)), "{target}: {out:?}");
+    }
+    for target in [
+        "/api/v4/projects/42/issues?state=opened&per_page=100",
+        "/api/v4/projects/42/merge_requests?source_branch=work&state=all&per_page=100",
+        "/api/v4/projects/42/merge_requests/3/pipelines?per_page=100",
+        "/api/v4/projects/42/pipelines/9",
+        "/api/v4/projects/42/pipelines/9/jobs",
+        "/api/v4/projects/42/repository/commits/abc123",
+        "/api/v4/projects/42/repository/commits/abc123/statuses",
+        "/api/v4/projects/42/repository/files/a.md/raw?ref=main",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
+    }
+    let out = s.send(
+        "GET",
+        "api.github.com",
+        "/repos/acme/app/issues/5?render_html=1",
+        b"",
+    );
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn a_gitlab_quick_action_in_any_text_is_refused_on_rest_and_graphql() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for text in [
+        "/move other/repo",
+        "hello\\n/relate other/repo#5",
+        "x\\n  /clone group/other",
+        "/blocks #3",
+        "/duplicate #3",
+        "/promote",
+        "/epic &1",
+        "/set_parent #4",
+        "/create_merge_request branch",
+        "/relate\\r\\n",
+    ] {
+        for (target, key) in [
+            ("/api/v4/projects/42/issues", "description"),
+            ("/api/v4/projects/42/issues", "title"),
+            ("/api/v4/projects/42/issues/5/notes", "body"),
+            ("/api/v4/projects/42/merge_requests", "description"),
+        ] {
+            let out = post_gitlab(&s, target, &format!("{{\"{key}\":\"{text}\"}}"));
+            assert!(is_refused(&out, Refusal::QuickAction), "{text}: {out:?}");
+        }
+    }
+    for body in [
+        r#"{"title":"t","description":"see /docs/path and 1/2 done"}"#,
+        r#"{"body":"a/b"}"#,
+    ] {
+        let out = post_gitlab(&s, "/api/v4/projects/42/issues/5/notes", body);
+        assert!(matches!(out, Outcome::Forward(_)), "{body}: {out:?}");
+    }
+    for key in ["epic_id", "epic_iid", "parent_id"] {
+        let out = post_gitlab(
+            &s,
+            "/api/v4/projects/42/issues",
+            &format!("{{\"title\":\"t\",\"{key}\":3}}"),
+        );
+        assert!(is_refused(&out, Refusal::OtherRepo), "{key}: {out:?}");
+    }
+    let q = "mutation{ createNote(input:{noteableId:\"gid://gitlab/Issue/5\", body:\"/move other/repo\"}){ errors } }";
+    let out = s.send(
+        "POST",
+        "gitlab.com",
+        "/api/graphql",
+        &graphql(q, serde_json::json!({})),
+    );
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn a_github_pull_request_head_is_the_recorded_repos_on_rest_and_graphql() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let pulls = "/repos/acme/app/pulls";
+    for body in [
+        r#"{"title":"t","head":"evil:topic","base":"main"}"#,
+        r#"{"title":"t","head":"evil/app:topic","base":"main"}"#,
+        r#"{"title":"t","head":"acme:a:b","base":"main"}"#,
+        r#"{"title":"t","head":"topic","head_repo":"evil/app","base":"main"}"#,
+    ] {
+        let out = post(&s, pulls, Some("application/json"), body.as_bytes());
+        assert!(is_refused(&out, Refusal::OtherRepo), "{body}: {out:?}");
+    }
+    for body in [
+        r#"{"title":"t","head":"topic","base":"main"}"#,
+        r#"{"title":"t","head":"acme:topic","base":"main"}"#,
+        r#"{"title":"t","head":"topic","head_repo":"acme/app","base":"main"}"#,
+    ] {
+        let out = post(&s, pulls, Some("application/json"), body.as_bytes());
+        assert!(matches!(out, Outcome::Forward(_)), "{body}: {out:?}");
+    }
+    for (head, ok) in [
+        ("evil:topic", false),
+        ("acme:a:b", false),
+        ("topic", true),
+        ("acme:topic", true),
+    ] {
+        let q = format!(
+            "mutation{{ createPullRequest(input:{{repositoryId:\"R_acme_app\", baseRefName:\"main\", headRefName:\"{head}\", title:\"t\"}}){{ pullRequest{{ number }} }} }}"
+        );
+        let out = s.send(
+            "POST",
+            "api.github.com",
+            "/graphql",
+            &graphql(&q, serde_json::json!({})),
+        );
+        assert_eq!(matches!(out, Outcome::Forward(_)), ok, "{head}: {out:?}");
+    }
+}
+
+#[test]
+fn a_compare_side_with_more_than_one_colon_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let out = s.send(
+        "GET",
+        "api.github.com",
+        "/repos/acme/app/compare/main...acme:x:y",
+        b"",
+    );
+    assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn a_sudo_header_is_not_passed_to_the_forge() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let out = with_header(&s, &[("Sudo", "root")]);
+    if let Outcome::Forward(f) = out {
+        assert!(
+            !f.headers
+                .iter()
+                .any(|(n, _)| n.eq_ignore_ascii_case("sudo")),
+            "{f:?}"
+        );
+    }
+}
+
+#[test]
+fn a_quick_action_hidden_by_a_carriage_return_is_read_the_way_gitlab_reads_it() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    // GitLab deletes every `\r` before it matches, so each of these is a command to it.
+    for (text, refusal) in [
+        ("/\rmerge", Refusal::MergeCommand),
+        ("ok\n/me\rrge", Refusal::MergeCommand),
+        ("/label ~auto\rmerge", Refusal::QuickAction),
+        ("/\rmove grp/other", Refusal::QuickAction),
+    ] {
+        let target = "/api/v4/projects/42/issues/5/notes";
+        let out = post_gitlab(&s, target, &serde_json::json!({ "body": text }).to_string());
+        assert!(is_refused(&out, refusal), "json {text:?}: {out:?}");
+        let form = format!("body={}", text.replace('\r', "%0D").replace('/', "%2F"));
+        let out = s.send("POST", "gitlab.com", target, form.as_bytes());
+        assert!(is_refused(&out, refusal), "form {text:?}: {out:?}");
+        let q = "mutation($b:String!){ createNote(input:{noteableId:\"gid://gitlab/Issue/5\", body:$b}){ errors } }";
+        let out = s.send(
+            "POST",
+            "gitlab.com",
+            "/api/graphql",
+            &graphql(q, serde_json::json!({ "b": text })),
+        );
+        assert!(
+            matches!(out, Outcome::Refused(_)),
+            "graphql {text:?}: {out:?}"
+        );
+    }
+}
+
+#[test]
+fn a_quick_action_whose_word_gitlab_folds_to_ascii_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    // U+212A (Kelvin sign) and U+017F (long s) fold to `k` and `s` under Unicode case folding.
+    for text in [
+        "/bloc\u{212a}s grp/other#3",
+        "/unlin\u{212a} #4",
+        "/\u{17f}ubscribe",
+        "/\u{17f}et_parent #4",
+    ] {
+        let out = post_gitlab(
+            &s,
+            "/api/v4/projects/42/issues/5/notes",
+            &serde_json::json!({ "body": text }).to_string(),
+        );
+        assert!(is_refused(&out, Refusal::QuickAction), "{text:?}: {out:?}");
+    }
+}
+
+#[test]
+fn a_carriage_return_inside_ordinary_text_is_still_forwarded() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let out = post_gitlab(
+        &s,
+        "/api/v4/projects/42/issues/5/notes",
+        &serde_json::json!({ "body": "line one\r\nsee a/b\r\n" }).to_string(),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
 }

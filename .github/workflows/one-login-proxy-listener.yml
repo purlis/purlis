@@ -1,0 +1,102 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: one-login-proxy-listener
+
+# **One login, slice A2: the forge proxy's listener, on a runner of each OS.** The listener is behind
+# the `forge-wiring` feature, which the workspace's own jobs do not turn on, so this builds, lints
+# and tests it with the feature on. What it adds to a green `ci` is what a sandbox cannot do:
+#
+# - the unix socket and the `CONNECT` port, on real sockets (`a_chats_forge_listener_serves_a_real_…`);
+# - the real `gh`, `glab` and `git`, with the environment a chat is given, through the real
+#   listener to a fake forge (`a_chats_forge_listener_serves_the_real_gh_glab_and_git`): every one
+#   must be installed (`PURLIS_PROXY_REAL_CLIENTS`), the proxy must refuse nothing they send, and
+#   the forge must be sent the real token and never the sentinel.
+#
+# Linux and macOS, where Go's trust (glab) and git's TLS differ. The GraphQL documents the tools sent
+# are kept as an artifact: that is how `tests/fixtures/one-login-graphql/` is re-captured.
+
+on:
+  pull_request:
+    paths:
+      - crates/purlis-core/src/forge/proxy.rs
+      - crates/purlis-core/src/forge/proxy/**
+      - crates/purlis-core/tests/it/a_chats_forge_*
+      - crates/purlis-core/tests/it/main.rs
+      - crates/purlis-core/tests/support/**
+      - crates/purlis-core/Cargo.toml
+      - tests/fixtures/one-login-graphql/**
+      - .github/workflows/one-login-proxy-listener.yml
+  workflow_dispatch:
+
+# Nothing by default: the job names what it needs.
+permissions: {}
+
+concurrency:
+  group: one-login-proxy-listener-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  listener:
+    name: listener (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    env:
+      # Every tool the real-clients test drives must be there: a missing one is a failure.
+      PURLIS_PROXY_REAL_CLIENTS: "1"
+      PURLIS_CAPTURE_GRAPHQL: ${{ github.workspace }}/captured-graphql
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `gh` is on both images; `glab` is on neither (as in the spike's job).
+      - name: glab
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install glab
+          else
+            go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
+            echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          fi
+      - name: Tauri's Linux build dependencies
+        if: runner.os == 'Linux'
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          tauri: true
+      - uses: ./.github/actions/rust-toolchain
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: tools
+        shell: bash
+        run: |
+          gh --version | head -1
+          glab --version | head -1
+          git --version
+      # Fast and without the tools: the pipeline on socket pairs, the real sockets.
+      - name: the proxy and its listener, on socket pairs and real sockets
+        timeout-minutes: 25
+        run: cargo test -p purlis-core --features forge-wiring --locked --test it a_chats_forge -- --skip serves_the_real
+      # Each tool is ended after a minute and says what it printed, so a tool that waits for
+      # something that never comes is a failure with its output, not a job that ends at its limit.
+      - name: the real gh, glab and git through the listener
+        timeout-minutes: 15
+        run: cargo test -p purlis-core --features forge-wiring --locked --test it serves_the_real -- --nocapture --test-threads=1
+      - name: clippy, with the listener
+        run: cargo clippy -p purlis-core --all-targets --features forge-wiring --locked -- -D warnings
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: captured-graphql-${{ matrix.os }}
+          path: ${{ github.workspace }}/captured-graphql
+          if-no-files-found: ignore
