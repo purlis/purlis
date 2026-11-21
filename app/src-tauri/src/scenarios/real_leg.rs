@@ -120,7 +120,7 @@ pub(crate) fn added(dialect: Dialect) -> &'static [&'static str] {
         ],
         Dialect::Codex => &["OPENAI_API_KEY"],
         Dialect::OpenCode => &[
-            "OPENCODE_CONFIG_CONTENT",
+            "OPENCODE_CONFIG",
             "OPENCODE_DISABLE_AUTOUPDATE",
             "OPENCODE_DISABLE_MODELS_FETCH",
             "OPENCODE_DISABLE_DEFAULT_PLUGINS",
@@ -138,9 +138,11 @@ pub(crate) fn chat_env_pass(dialect: Dialect) -> String {
     format!("[chat_env]\npass = [{}]\n", names.join(", "))
 }
 
-/// **OpenCode's configuration**, inline (`OPENCODE_CONFIG_CONTENT`): the stand-in as its one
-/// provider, over Chat Completions, for the model and the small model alike, with no update and
-/// no sharing. What `tests/recordings/tests/record.rs` writes to a file for the recordings.
+/// **OpenCode's configuration**: the stand-in as its one provider, over Chat Completions, for the
+/// model and the small model alike, with no update and no sharing. What
+/// `tests/recordings/tests/record.rs` writes to a file for the recordings, and the file
+/// `OPENCODE_CONFIG` names ([`opencode_config_path`]): not `OPENCODE_CONFIG_CONTENT`, which
+/// purlis sets itself, for the plugin that carries its hooks.
 pub(crate) fn opencode_config(url: &str) -> String {
     json!({
         "$schema": "https://opencode.ai/config.json",
@@ -157,6 +159,19 @@ pub(crate) fn opencode_config(url: &str) -> String {
         "share": "disabled"
     })
     .to_string()
+}
+
+/// Where OpenCode's configuration for the stand-in at `url` is kept: a file in the temp folder
+/// named for the stand-in's port, outside every project, which the scenario's parent writes
+/// ([`environment`]) and removes ([`runs`]), and which the child, which has the same port,
+/// finds where the parent put it.
+pub(crate) fn opencode_config_path(url: &str) -> PathBuf {
+    let port = url
+        .rsplit(':')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches('/');
+    std::env::temp_dir().join(format!("purlis-leg-opencode-{port}.json"))
 }
 
 /// **The words a harness is started with beside what purlis composes**, ending with its first
@@ -176,10 +191,6 @@ pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: &str) -> Vec<Str
             "model_providers.standin.wire_api=\"responses\"".to_owned(),
             "model_providers.standin.request_max_retries=0".to_owned(),
             "model_providers.standin.stream_max_retries=0".to_owned(),
-            // Its own start-up traffic, which would go to GitHub and OpenAI and be held for the
-            // person: no update check, no analytics.
-            "check_for_update_on_startup=false".to_owned(),
-            "analytics.enabled=false".to_owned(),
         ]
         .into_iter()
         .flat_map(|setting| ["-c".to_owned(), setting])
@@ -259,6 +270,15 @@ pub(crate) fn environment(dialect: Dialect) -> Option<Vec<(String, String)>> {
             )
         }
     };
+    if dialect == Dialect::OpenCode {
+        let file = opencode_config_path(&url);
+        if let Err(why) = std::fs::write(&file, opencode_config(&url)) {
+            return host::cannot_run(&format!(
+                "OpenCode's configuration at {}: {why}",
+                file.display()
+            ));
+        }
+    }
     Some(environment_at(dialect, &url))
 }
 
@@ -276,7 +296,10 @@ pub(crate) fn environment_at(dialect: Dialect, url: &str) -> Vec<(String, String
             ("OPENAI_API_KEY", NOT_A_CREDENTIAL.to_owned()),
         ],
         Dialect::OpenCode => vec![
-            ("OPENCODE_CONFIG_CONTENT", opencode_config(url)),
+            (
+                "OPENCODE_CONFIG",
+                opencode_config_path(url).display().to_string(),
+            ),
             (STAND_IN_URL, url.to_owned()),
             ("OPENCODE_DISABLE_AUTOUPDATE", "1".to_owned()),
             ("OPENCODE_DISABLE_MODELS_FETCH", "1".to_owned()),
@@ -776,6 +799,12 @@ pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
         .map(|(name, value)| (name.as_str(), value.as_str()))
         .collect();
     let Some(homes) = Homes::of_this_scenario_ahead(&pairs, Some(&program)) else {
+        // The parent, once its child has run the scenario: OpenCode's configuration is its own.
+        if dialect == Dialect::OpenCode
+            && let Some((_, url)) = env.iter().find(|(name, _)| name == STAND_IN_URL)
+        {
+            let _ = std::fs::remove_file(opencode_config_path(url));
+        }
         return;
     };
     let Some(scenario) = Scenario::for_real_harness(&homes, protection, dialect) else {
@@ -803,8 +832,11 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
     let dialect = scenario.dialect;
     let vaults = scenario.root.join(".purlis").join("vaults");
     std::fs::create_dir_all(&vaults).expect("the vaults");
-    let vault = vaults.join("covering.json");
-    std::fs::write(&vault, "{\"covering\": \"VAULT-HELD\"}\n").expect("a vault");
+    std::fs::write(
+        vaults.join("covering.json"),
+        "{\"covering\": \"VAULT-HELD\"}\n",
+    )
+    .expect("a vault");
     let plain = scenario.root.join("plain.txt");
     std::fs::write(&plain, "PLAIN-READS\n").expect("a plain file");
     let made = scenario.root.join("made-by-the-chat");
@@ -813,7 +845,13 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
     let mut steps: Vec<(&str, String)> = vec![
         ("hello", "echo hello-from-the-leg".to_owned()),
         ("reads-plain", format!("cat {}", plain.display())),
-        ("reads-the-vault", format!("cat {}", vault.display())),
+        (
+            "reads-the-vault",
+            format!(
+                "d='{}/.pur'; d=\"${{d}}lis\"; cat \"$d/vaults/covering.json\" 2>&1; echo exit=$?",
+                scenario.root.display()
+            ),
+        ),
         (
             "writes-inside",
             format!("echo wrote-by-the-chat > {0} && cat {0}", made.display()),
@@ -863,9 +901,14 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         "the real {} read the project's vault, so it ran outside its wrap: {vault_said}\n{said}",
         dialect.word()
     );
+    let refused = StepResult::of(scenario.result_of(chat, "reads-the-vault").as_ref());
     assert!(
-        StepResult::of(scenario.result_of(chat, "reads-the-vault").as_ref()).ran,
-        "the vault read never ran, so nothing refused it: {vault_said}\n{said}"
+        ["operation not permitted", "permission denied"]
+            .iter()
+            .any(|words| refused.said.contains(words))
+            && !refused.said.contains("exit=0"),
+        "the vault read was not refused by the wrap (no guard reads its path: it is put together \
+         in the shell): {vault_said}\n{said}"
     );
 
     // The network cell.
@@ -1256,8 +1299,6 @@ mod tests {
             "model_providers.standin.base_url=\"http://127.0.0.1:4321/v1\"",
             "model_providers.standin.wire_api=\"responses\"",
             "model_providers.standin.request_max_retries=0",
-            "check_for_update_on_startup=false",
-            "analytics.enabled=false",
         ] {
             assert!(settings.contains(&wanted), "{wanted} is missing: {codex:?}");
         }
@@ -1268,7 +1309,7 @@ mod tests {
 
     /// **What the leg adds to a chat names no credential** (T1.1-53): each variable it names is a
     /// literal that is no credential, a switch, or the stand-in's loopback address, the host-only
-    /// variable is in no chat's list, and OpenCode's inline configuration names the stand-in as
+    /// variable is in no chat's list, and OpenCode's configuration file names the stand-in as
     /// its one provider.
     #[test]
     fn what_the_leg_adds_to_a_chat_names_no_credential_and_only_the_stand_in() {
@@ -1286,7 +1327,7 @@ mod tests {
                     value == NOT_A_CREDENTIAL
                         || value == "1"
                         || value == url
-                        || value.contains(NOT_A_CREDENTIAL),
+                        || *value == opencode_config_path(url).display().to_string(),
                     "{name} is given {value}, which is no literal the leg owns"
                 );
                 assert!(
@@ -1309,6 +1350,14 @@ mod tests {
                 );
             }
         }
+        // The file OpenCode is told of holds that configuration, and is not the inline variable
+        // purlis sets for its own plugin.
+        assert!(!added(Dialect::OpenCode).contains(&"OPENCODE_CONFIG_CONTENT"));
+        assert!(
+            opencode_config_path(url)
+                .file_name()
+                .is_some_and(|name| name == "purlis-leg-opencode-4321.json")
+        );
         let config: Value = serde_json::from_str(&opencode_config(url)).expect("JSON");
         assert_eq!(
             config["provider"]["standin"]["options"]["baseURL"],

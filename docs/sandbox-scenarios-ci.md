@@ -73,7 +73,7 @@ queue and in the nightly's `sandbox-scenarios` entries. A test that is not for a
   harness's own API (Messages, Responses, Chat Completions) and asks for each step's Bash call. No
   model is called and no credential is used. What each harness is given to reach it is a
   substitution listed in `switches.json`: Claude Code's four variables, Codex's key and its `-c`
-  model-provider words, OpenCode's inline configuration, each named in the test plane's
+  model-provider words, OpenCode's configuration file, each named in the test plane's
   `[chat_env] pass` (`real_leg::added`), and the stand-in's port granted to a wrapped chat.
 - **The transcript is the stand-in's request log**: what the real harness showed the model. Each
   harness says an exit status in its own words (`real_leg::exit_of`); OpenCode says none, so the
