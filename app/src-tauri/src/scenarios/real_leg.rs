@@ -802,6 +802,7 @@ pub(crate) fn canary(scenario: &Scenario, model: &Model) {
         &host::Driving {
             heard: &heard,
             held: None,
+            kept: &std::cell::Cell::new(false),
             evidence: &evidence,
         },
     );
@@ -838,6 +839,30 @@ pub(crate) fn canary(scenario: &Scenario, model: &Model) {
 
 /// The line the canary's third ask tries to leave in the transcript file.
 const TAMPER: &str = "written-by-the-chat-into-the-transcript";
+
+/// How many short polls a held connection's result is waited for: each is at most seven seconds
+/// (a harness may give a command's result back after ten), so the proxy's hold of thirty seconds
+/// and its group window are covered with room.
+const POLLS: usize = 24;
+
+/// **A command the proxy holds, run in the background**, its result written to `file` as its own
+/// words and its exit (`net-exit=N`), and the call itself gone at once.
+fn in_the_background(command: &str, file: &Path) -> String {
+    format!(
+        "rm -f '{file}'; ( {command}; echo \"net-exit=$?\" ) > '{file}' 2>&1 & echo started",
+        file = file.display(),
+    )
+}
+
+/// **One poll for what [`in_the_background`] wrote**: up to seven seconds, then whatever the
+/// file holds.
+fn poll_for(file: &Path) -> String {
+    format!(
+        "for i in 1 2 3 4 5 6 7; do grep -q net-exit '{file}' 2>/dev/null && break; sleep 1; done; \
+         cat '{file}' 2>/dev/null; echo polled",
+        file = file.display(),
+    )
+}
 
 /// The command a process runs, as `ps` says it.
 fn command_of(pid: u32) -> String {
@@ -956,20 +981,35 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
             format!("echo wrote-by-the-chat > {0} && cat {0}", made.display()),
         ),
     ];
-    steps.push((
-        "network",
-        match protection {
-            Protection::Full => super::reaches(host),
-            _ => REFUSED_CLASS.to_owned(),
-        },
-    ));
+    let network = scenario.root.join("network-result");
+    let polls: Vec<String> = (1..=POLLS)
+        .map(|n| format!("network-poll-{n:02}"))
+        .collect();
+    match protection {
+        Protection::Full => {
+            // The connection is held for the person for the proxy's hold (30 s here), and a
+            // harness may give a command's result back before it ends (Codex's tool does after
+            // ten seconds, "Process running"): the command runs in the background and the result
+            // is polled, each poll short.
+            steps.push((
+                "network-start",
+                in_the_background(&super::reaches(host), &network),
+            ));
+            for name in &polls {
+                steps.push((name.as_str(), poll_for(&network)));
+            }
+        }
+        _ => steps.push(("network", REFUSED_CLASS.to_owned())),
+    }
     let prompt = model.plays(&steps);
     let chat = scenario.starts_real(model, &prompt);
     let heard = || model.requests() > 0;
     let evidence = || model.heard_said();
+    let kept = std::cell::Cell::new(false);
     let driving = host::Driving {
         heard: &heard,
         held: (protection == Protection::Full).then_some(host),
+        kept: &kept,
         evidence: &evidence,
     };
     scenario.answers_until_played(
@@ -1011,32 +1051,51 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
     );
 
     // The network cell.
-    if protection == Protection::Full {
-        // The proxy holds the connection and the window lists its ask: the connection reached
-        // purlis's proxy.
-        let (_, kept) = scenario.person().when_listed(
-            chat,
-            host,
-            &Press::Keep(None),
-            Duration::from_millis(50),
-        );
-        kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
-    }
-    scenario.answers_until_played(chat, &["network"], &driving);
-    let result = StepResult::of(scenario.result_of(chat, "network").as_ref());
-    let said = scenario.said();
-    if protection == Protection::Full {
+    let how = if protection == Protection::Full {
+        let last = polls.last().expect("polls").as_str();
+        scenario.answers_until_played(chat, &[last], &driving);
+        // The command's own word: curl's exit, said into the file the polls read.
+        let said_by_polls: Vec<String> = polls
+            .iter()
+            .filter_map(|name| scenario.result_of(chat, name))
+            .map(|line| line["text"].as_str().unwrap_or_default().to_owned())
+            .collect();
+        let exit = said_by_polls
+            .iter()
+            .find_map(|text| number_after(text, "net-exit=", false));
+        let said = scenario.said();
         assert!(
-            result.ran && result.exit.is_some_and(|code| code != 0 && code != 127),
-            "the held connection was not refused once the person kept it blocked: \
-             {result:?}\n{said}"
+            exit.is_some_and(|code| code != 0 && code != 127),
+            "the connection to a host the project does not list was not refused at Full \
+             (curl's exit: {exit:?}): {said_by_polls:?}\n{said}"
         );
+        // And the refusal is recorded against the host: a block of it in the log, which a
+        // connection that never reached purlis's proxy would not leave.
+        let events = scenario.try_events().unwrap_or_default();
+        assert!(
+            events.iter().any(|event| {
+                event.kind == "stop.block"
+                    && event.body["target"]["host"] == host
+                    && event.body["source"] == "sandbox"
+            }),
+            "no block of {host} is in the event log: the connection did not reach purlis's \
+             proxy\n{said}"
+        );
+        if kept.get() {
+            "the window listed its ask and the person kept it blocked"
+        } else {
+            "its hold ended unanswered, and the proxy refused it"
+        }
     } else {
+        scenario.answers_until_played(chat, &["network"], &driving);
+        let result = StepResult::of(scenario.result_of(chat, "network").as_ref());
+        let said = scenario.said();
         assert!(
             result.said.contains(PROXY_REFUSAL),
             "the link-local address was not refused by purlis's proxy: {result:?}\n{said}"
         );
-    }
+        "a link-local address was refused by purlis's proxy in its own words"
+    };
     scenario.keeps_listed_asks_blocked();
     record(
         test,
@@ -1044,7 +1103,7 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         protection,
         ReportVerdict::Pass,
         &format!(
-            "the real {} under {}: the probe, a file cell and a network cell",
+            "the real {} under {}: the probe, a file cell and a network cell ({how})",
             dialect.word(),
             holder(dialect)
         ),
@@ -1698,6 +1757,46 @@ mod tests {
             ..Answered::default()
         };
         assert_eq!(reply_to(offer, true, &spent), Some(Reply::Enter));
+    }
+
+    /// **A held connection's command returns at once and its result is polled** (T1.1-53): the
+    /// call that starts it is gone before the command ends (a harness may give a long command's
+    /// result back after ten seconds, as Codex's tool does), the polls are short, and what they
+    /// read says the command's own exit. Needs no harness.
+    #[test]
+    fn a_held_commands_result_is_polled_not_waited_for() {
+        let dir = std::env::temp_dir().join(format!("leg-held-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let file = dir.join("network-result");
+        let sh = |command: &str| {
+            purlis_core::forklock::output(
+                std::process::Command::new("/bin/sh").args(["-c", command]),
+            )
+            .map(|out| String::from_utf8_lossy(&out.stdout).into_owned())
+            .expect("a shell")
+        };
+        let started = Instant::now();
+        let said = sh(&in_the_background(
+            "echo refused; sleep 9; sh -c 'exit 56'",
+            &file,
+        ));
+        assert!(
+            said.trim() == "started" && started.elapsed() < Duration::from_secs(2),
+            "the starting call waited for its command ({:?}): {said:?}",
+            started.elapsed()
+        );
+        // A poll before the command ends says nothing of its exit; one after says it.
+        let early = sh(&poll_for(&file));
+        assert!(!early.contains("net-exit="), "{early}");
+        assert!(early.trim_end().ends_with("polled"), "{early}");
+        let mut late = String::new();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !late.contains("net-exit=") && Instant::now() < deadline {
+            late = sh(&poll_for(&file));
+        }
+        assert_eq!(number_after(&late, "net-exit=", false), Some(56), "{late}");
+        assert!(late.contains("refused"), "{late}");
+        std::fs::remove_dir_all(&dir).expect("the folder goes");
     }
 
     /// **Only Claude Code on macOS holds itself** (T1.1-10): purlis wraps every other harness on

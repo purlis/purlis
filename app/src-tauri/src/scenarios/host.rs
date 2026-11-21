@@ -164,9 +164,14 @@ pub(crate) fn reply_to(screen: &str, nothing_heard: bool, answered: &Answered) -
 pub(crate) struct Driving<'a> {
     /// Whether the stand-in model has heard the harness yet.
     pub heard: &'a dyn Fn() -> bool,
-    /// The one host the leg itself asks about, whose ask is the person's to press and is left to
-    /// the cell; every other ask the chat raises is kept blocked.
+    /// The one host the leg itself asks about, whose ask the person keeps blocked when the
+    /// window lists it, once ([`Driving::kept`]); every other ask the chat raises is kept blocked
+    /// at once, the first time it is listed.
     pub held: Option<&'a str>,
+    /// Whether the held host's ask was listed and kept blocked: the person's own press, the
+    /// strongest evidence the connection was held for them. It is set by the driver, and the cell
+    /// says in its record which way the refusal came.
+    pub kept: &'a std::cell::Cell<bool>,
     /// What the stand-in model heard, for a red run's reader.
     pub evidence: &'a dyn Fn() -> String,
 }
@@ -1615,11 +1620,24 @@ impl Scenario {
             );
             for ask in self.queries().counted().asks {
                 let target = super::person::shown_target(&ask);
-                if ask.session == id
-                    && !target.is_empty()
-                    && driving.held != Some(target.as_str())
-                    && ask.options.iter().any(|one| one.id == crate::asking::KEEP)
+                if ask.session != id
+                    || target.is_empty()
+                    || !ask.options.iter().any(|one| one.id == crate::asking::KEEP)
                 {
+                    continue;
+                }
+                if driving.held == Some(target.as_str()) {
+                    if !driving.kept.get() {
+                        std::thread::sleep(Duration::from_millis(50));
+                        if self
+                            .person()
+                            .presses_on(&ask, &super::person::Press::Keep(None))
+                            .is_ok()
+                        {
+                            driving.kept.set(true);
+                        }
+                    }
+                } else {
                     let _ = self
                         .person()
                         .presses_on(&ask, &super::person::Press::Keep(None));
