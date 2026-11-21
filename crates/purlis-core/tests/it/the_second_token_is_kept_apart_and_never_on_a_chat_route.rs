@@ -390,8 +390,8 @@ fn starting_the_second_sign_in_marks_the_account_unknown_so_a_flow_that_never_en
 #[cfg(unix)]
 #[test]
 fn a_flow_does_not_start_when_the_account_cannot_be_marked_and_nothing_is_served_wrongly() {
-    use std::os::unix::fs::PermissionsExt;
     purlis_core::unsteered!();
+    use std::os::unix::fs::PermissionsExt;
     let scene = scene();
     // The accounts file cannot be read, so the record of "not known" cannot be made (the write
     // re-modes its folder, so an unreadable file is the failure a test can arrange).

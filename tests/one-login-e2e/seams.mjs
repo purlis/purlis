@@ -522,7 +522,7 @@ export async function createApp({ work, ca, clock, forges }) {
         }
         record('refuse', reply.refusal, reply.refusal.startsWith('Graphql') ? { detail: body.toString().replace(/\s+/g, ' ').slice(0, 700) } : {});
         // The document is shown in a GraphQL refusal so a failing run says which query the policy read as another repo's.
-        const why = reply.refusal.startsWith('Graphql') ? `; the request: ${body.toString().replace(/\s+/g, ' ').slice(0, 700)}` : '';
+        const why = reply.refusal.startsWith('Graphql') ? `; the request: ${body.toString().replace(/\s+/g, ' ').slice(0, 700)}` : `; the request: ${req.method} ${req.url}`;
         return send(403, { message: `${REFUSED} (${reply.refusal}${why})` });
       }
       const target = new URL(reply.upstream);

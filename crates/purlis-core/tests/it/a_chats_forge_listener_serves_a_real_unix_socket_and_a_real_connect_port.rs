@@ -135,6 +135,8 @@ impl Dial for ToEcho {
 fn target_of(line: &str) -> (String, u16) {
     let target = line.split_whitespace().nth(1).expect("a target");
     let (host, port) = target.rsplit_once(':').expect("a port");
+    // As the door reads an address literal: without its brackets.
+    let host = host.trim_start_matches('[').trim_end_matches(']');
     (host.to_owned(), port.parse().expect("a number"))
 }
 

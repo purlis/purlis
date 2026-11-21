@@ -108,6 +108,8 @@ impl Person {
 }
 
 fn wiring(scratch: &Path) -> Wiring {
+    // The chat's own copy of the authority is made from it, so the file is there.
+    std::fs::write(scratch.join("ca.pem"), "-----BEGIN CERTIFICATE-----\n").expect("a CA");
     forgewire::compose(
         &Route {
             egress_url: "http://127.0.0.1:44123".to_owned(),
