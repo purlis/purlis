@@ -955,7 +955,8 @@ fn every_subcommand_in_the_table_takes_a_repo_flag_in_the_gh_on_this_machine() {
 #[test]
 fn the_apps_git_for_a_chat_goes_through_the_chats_proxy_with_its_sentinel_and_no_login_of_the_persons()
  {
-    let dir = Path::new("/synthetic/route");
+    let held = tempfile::tempdir().unwrap();
+    let dir = held.path();
     let github = repo("github.com", "acme", "app", ForgeKind::GitHub);
     let network = git_network(&route(dir, vec![github])).expect("a route for git");
     let held = |network: &crate::worktree::git::NetworkRoute| format!("{network:?}");
@@ -975,7 +976,10 @@ fn the_apps_git_for_a_chat_goes_through_the_chats_proxy_with_its_sentinel_and_no
     );
     assert!(shown.contains(&SENTINEL_HELPER_ARG.to_string()), "{shown}");
     assert!(
-        shown.contains("http.https://github.com/.sslCAInfo=/synthetic/route/ca.pem"),
+        shown.contains(&format!(
+            "http.https://github.com/.sslCAInfo={}",
+            dir.join("ca.pem").display()
+        )),
         "{shown}"
     );
     assert!(
@@ -990,7 +994,8 @@ fn the_apps_git_for_a_chat_goes_through_the_chats_proxy_with_its_sentinel_and_no
 
 #[test]
 fn a_route_git_cannot_use_is_refused_and_nothing_is_composed() {
-    let dir = Path::new("/synthetic/route");
+    let held = tempfile::tempdir().unwrap();
+    let dir = held.path();
     let mut off_loopback = route(dir, vec![]);
     off_loopback.egress_url = "http://10.0.0.1:43001".to_owned();
     assert!(git_network(&off_loopback).is_err());

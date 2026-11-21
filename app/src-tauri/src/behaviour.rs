@@ -1856,6 +1856,15 @@ impl Pane {
     }
 }
 
+/// What a chat's `glab` says when the person's own login is held back (#1349). With the one login
+/// (ADR 0128) there is no GitLab-access flow to name: the shim is replaced and `glab` says what
+/// purlis's own tells it, whose first word is `purlis`.
+const GLAB_SHIM_SAYS: &str = if cfg!(feature = "forge-wiring") {
+    "purl ANSWERED."
+} else {
+    "glab GUARDED."
+};
+
 /// `seen` as text, its escape sequences left out: a control sequence (`ESC [` to its final
 /// byte), a string (`ESC ]`, `P`, `^` or `_` to BEL or ST), or an escape with its intermediate
 /// bytes and final byte, such as saving the cursor (`ESC 7`).
@@ -4683,7 +4692,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     pane.shows("gh ANSWERED.");
     // #1349: a chat that holds the person's own login back has no glab of its own, and its
     // shim says which flow gives it a token (and fails) in place of running on a login it never reads.
-    pane.shows("glab GUARDED.");
+    pane.shows(GLAB_SHIM_SAYS);
     pane.shows("TOKEN none.");
     // The home the runner's user keeps it in, so the refusals below are of that file.
     pane.shows(&format!(
@@ -4708,7 +4717,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     let (id, pane) = chat_says(None);
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
-    pane.shows("glab GUARDED.");
+    pane.shows(GLAB_SHIM_SAYS);
     pane.shows("KEPT held.");
     pane.shows("SETTINGS kept.");
     target.sessions.close(id).expect("it closes");
@@ -4753,7 +4762,7 @@ fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Targ
     pane.shows("TRIED.");
     pane.shows("gh ANSWERED.");
     // The persona declares gh and kubectl, not glab, so glab is still guarded (#1349).
-    pane.shows("glab GUARDED.");
+    pane.shows(GLAB_SHIM_SAYS);
     // `auth` is refused a declared tool (`tools::args`), so the token is never read back.
     pane.shows("TOKEN none.");
     pane.shows("KUBECTL named the image, ended 127.");

@@ -237,7 +237,12 @@ fn a_person_signs_in_once_and_a_chat_works_the_forge_through_the_real_policy() {
     for name in ["node", "gh", "glab", "git", "openssl"] {
         let present = purlis_core::forklock::status(
             Command::new(name)
-                .arg("--version")
+                // `openssl` answers `version`, and not always `--version`.
+                .arg(if name == "openssl" {
+                    "version"
+                } else {
+                    "--version"
+                })
                 .stdout(std::process::Stdio::null())
                 .stderr(std::process::Stdio::null()),
         )
