@@ -1,3 +1,6 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
 //! **A spooled tool line carries its argument digest sealed** (#6880, Q290).
 //!
 //! A hook sends the host the arguments' *unkeyed* SHA-256, which anyone who reads it can match
