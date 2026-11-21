@@ -254,3 +254,35 @@ fn a_chat_cannot_confirm_the_device_id() {
     answers::confirm_device(&press(), &id).expect("the person's press");
     assert_eq!(Sealed::of(&root).machine.as_deref(), Some(id.as_str()));
 }
+
+/// A start where the standing is the deny state is compiled at `full` with the minimum permits,
+/// and where it is not, the person's own level decides: the start says nothing of its own.
+#[cfg(unix)]
+#[test]
+fn a_start_in_the_deny_state_gets_the_deny_sandbox_and_a_start_outside_it_gets_none_of_its_own() {
+    let (_home, planes) = machine();
+    let root = std::fs::canonicalize(planes.path()).unwrap().join("p");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("purlis.toml"), "schema = 1\n").unwrap();
+    let machine = crate::sandbox::Machine::this();
+    let has = |_: &str| true;
+    let harness = crate::harness::Harness::ClaudeCode;
+    let fresh = Standing::fresh();
+    assert!(
+        crate::start::deny_state_sandbox(harness, &root, &machine, &has, &fresh).is_none(),
+        "no deny state, no word of its own"
+    );
+    let held = crate::start::deny_state_sandbox(
+        harness,
+        &root,
+        &machine,
+        &has,
+        &denied(vec![Deny::CloneKeySwapped]),
+    );
+    // Where this machine has a backend the chat is sandboxed; where it has none the start is
+    // refused, never started bare.
+    match held.expect("the deny state decides the start") {
+        Ok(applied) => assert_eq!(applied.level(), crate::sandbox::Level::Full, "{applied:?}"),
+        Err(refused) => assert!(!refused.to_string().is_empty()),
+    }
+}

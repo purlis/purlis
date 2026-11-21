@@ -479,10 +479,17 @@ fn a_held_merge_is_refused_where_no_app_answers() {
     assert!(reason.contains("could not be asked"), "{reason}");
     assert!(reason.contains("nobody was asked"), "{reason}");
     assert!(!reason.contains("the person is asked in Asks"), "{reason}");
-    // Outside a chat the app started, an attended merge is the person's own: A4's ground.
+    // Outside a chat the app started, there is no host to ask and no window to ask in: the
+    // shipped default under `strict` judges the merge in the hook's own process, and its ask is
+    // refused (M75-07b; #7012). Nothing was asked, and nothing is merged.
     let mut outside = Chat::without_an_app();
     outside.socket = PathBuf::new();
-    assert_eq!(outside.denial_outside_a_chat("gh pr merge 12"), None);
+    assert_eq!(
+        outside.denial_outside_a_chat("gh pr merge 12").as_deref(),
+        Some("deny")
+    );
+    // What is no merge is still no business of the hold's.
+    assert_eq!(outside.denial_outside_a_chat("git status"), None);
 }
 
 /// Q239 (S3): a merge the app raises no ask for, here one more than a chat may have waiting, is

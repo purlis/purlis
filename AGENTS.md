@@ -199,3 +199,7 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   committed project, the accepted copy and every sealed floor version, and its tests are unit
   tests (`force_tests.rs`) because they need the sealed store's test seam. A test that needs the
   accepted copy hands `judge` a hand-built `Standing`, so it never names the person's press.
+- The deny state's slice (M75-07b) keeps what is outside any plane in `policy/locality.rs`
+  (`locate`, `judge`, `target_of`), read by `purlis-cli`'s `guard::judged_merge` for a process the
+  app did not start. `purlis-cli`'s hook tests bind a socket, so they cannot run in the sandbox:
+  CI is their first run. Edition 2024 here, but keep `if let` out of match guards.

@@ -299,6 +299,21 @@ pub fn ready_on(
     })
 }
 
+/// **What a chat starts under where `standing` is the deny state** (M75-07b): the full sandbox with
+/// the minimum permits ([`crate::sandbox::for_start_in_deny_state`]), or why it cannot be
+/// applied. `None` where the plane is not in the deny state, so the person's own level decides.
+pub fn deny_state_sandbox(
+    harness: Harness,
+    root: &Path,
+    machine: &crate::sandbox::Machine,
+    has: &dyn Fn(&str) -> bool,
+    standing: &crate::secrets::answers::Standing,
+) -> Option<Result<crate::sandbox::Applied, crate::sandbox::NotStarted>> {
+    standing
+        .is_deny()
+        .then(|| crate::sandbox::for_start_in_deny_state(harness, root, machine, has))
+}
+
 /// **[`ready`] for a chat its pool's runner composes** (#2446): the window readies it only to
 /// start it there, and the runner composes it by its names, with the sandbox it compiles. A
 /// profile rule that holds for a chat run on this machine and not on a runner is the runner's
@@ -502,7 +517,26 @@ fn ready_given_on(
     // chat that cannot be confined never reaches the program. A person's opt-out, or a system
     // with no backend, starts it unsandboxed instead, and the tab says so for the chat's whole
     // life (§7).
+    // The plane's sealed answers in the deny state: the full sandbox with the minimum permits,
+    // whatever an opt-out, the persona or the person's level say, and never none (M75-07b). The
+    // chat starts, and says why it is held.
+    let in_the_deny_state = match harness {
+        Some(harness) => deny_state_sandbox(
+            harness,
+            root,
+            machine,
+            has,
+            &crate::secrets::answers::standing(root),
+        )
+        .transpose()
+        .map_err(|refused| refused.to_string())?,
+        None => None,
+    };
     let (mut sandbox, unsandboxed) = match harness {
+        Some(_) if in_the_deny_state.is_some() => {
+            notices.push(crate::policy::deny_state::STARTED_NOTICE.to_owned());
+            (in_the_deny_state, None)
+        }
         Some(harness) => match crate::sandbox::decide_granted(
             harness,
             root,

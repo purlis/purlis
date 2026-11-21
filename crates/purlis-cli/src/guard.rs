@@ -257,10 +257,8 @@ enum MergeJudged {
 /// nothing, and one the policy lets run.
 ///
 /// **No host is a refusal**: a chat inside a plane whose host cannot be asked, or does not
-/// answer, is refused, and never decides here (§6). Asked only of a chat the app started, as
-/// before: a process the app did not start keeps today's guards until slice 07b says which
-/// processes are outside any plane (Q327; the shipped `strict` such a process gets is
-/// [`purlis_core::policy::decide::decide_locally`]).
+/// answer, is refused, and never decides here (§6). Asked only of a chat the app started: a
+/// process it did not start is judged by where it is ([`judged_without_a_chat`], slice 07b).
 fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
     use purlis_core::hookwire::{Answer, Ask, DecideAsk, UNKNOWN_LINE};
     use purlis_core::mergehold;
@@ -324,8 +322,10 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
             ));
         }
         // Whether this is a chat's is the app's to say, by its ancestry, as well as its
-        // environment's (#6995): a process that is no chat's keeps today's guards (Q327).
-        Err(crate::brokered::NotTaken::NotAChat) => return None,
+        // environment's (#6995): a process that is no chat's is judged by where it is (07b).
+        Err(crate::brokered::NotTaken::NotAChat) => {
+            return judged_without_a_chat(&held, command, cwd);
+        }
         Err(_) => {
             return Some(refused(
                 mergehold::REASON_UNDECIDED,
@@ -348,6 +348,65 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
             mergehold::denied(&decision),
         )),
         Outcome::Ask => Some(MergeJudged::Refused(held_merge(&held, cwd, &decision))),
+    }
+}
+
+/// **A merge asked by a process the app did not start** (M75-07b, spec §6; #7012): where the
+/// process is decides who judges it ([`purlis_core::policy::locality`]). Outside every plane, or in
+/// a plane found only on disk, the shipped default under `strict` decides here, in this process.
+/// Inside a plane the registry anchors, its host is the one to ask, and a process the app did not
+/// start has no host to ask: it is refused, never judged by the local default.
+///
+/// An ask, which needs a window, is refused: nobody is there to answer it. Whether the process runs
+/// under a chat the app started is the app's to say by its ancestry (see [`judged_merge`]); a
+/// descendant of a chat never gets here, so the ancestry is not part of what is read.
+fn judged_without_a_chat(
+    held: &purlis_core::mergehold::Held,
+    command: &str,
+    cwd: &str,
+) -> Option<MergeJudged> {
+    use purlis_core::mergehold;
+    use purlis_core::policy::decide::Outcome;
+    use purlis_core::policy::locality::{self, Judged, Whereabouts};
+    let refused = |reason: &str, denial: String| {
+        Some(MergeJudged::Refused(toolgate::Verdict {
+            arm: None,
+            reason: reason.to_owned(),
+            shape: None,
+            denial,
+        }))
+    };
+    let (action, kind, id) = mergehold::policy_request(held);
+    let cwd_path = std::path::Path::new(cwd);
+    let target = locality::target_of(command, cwd_path);
+    let whereabouts = Whereabouts {
+        cwd: cwd_path,
+        target: target.as_deref(),
+        ancestry: &[],
+    };
+    let request = locality::process_request(action, (kind, &id));
+    let decision = match locality::judge(&whereabouts, &request) {
+        Judged::Locally(decision) | Judged::FoundPlane { decision, .. } => decision,
+        Judged::AskTheHost { .. } => {
+            return refused(
+                mergehold::REASON_UNDECIDED,
+                mergehold::undecided(
+                    "this process runs in a plane but is no chat the app started, so there is \
+                     no session host to ask",
+                ),
+            );
+        }
+    };
+    match decision.after_mode {
+        Outcome::Allow => None,
+        Outcome::Deny => refused(mergehold::REASON_DENIED, mergehold::denied(&decision)),
+        Outcome::Ask => refused(
+            mergehold::REASON_UNDECIDED,
+            mergehold::undecided(
+                "the shipped default holds a merge for the person, and a process the app did \
+                 not start has no window to ask them in",
+            ),
+        ),
     }
 }
 
