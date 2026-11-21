@@ -2656,11 +2656,14 @@ impl Hooks {
                     gave_up,
                 );
                 let skill_runs = Arc::clone(&skill_runs);
+                let stall_board = Arc::clone(&board);
                 Box::new(move |asked| {
                     // A grade's chat ends here, and its grade says what it asked for (SK-55).
                     if let Some(what) = asked.asks_for() {
                         skill_runs.asks_for(asked.chat, what);
                     }
+                    // MUTATION (to be reverted): the board's lock is held across the held wait.
+                    let _stall = held_board(&stall_board);
                     held(asked)
                 })
             },
