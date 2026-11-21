@@ -42,6 +42,13 @@ const A4_SAYS: &str = "Publishing is on purlis's floor";
 /// What the briefing tells a chat nobody is at, with no workspace (ADR 0046's recorded words).
 const THE_STOP_SAYS: &str = "this run has no workspace and nobody to ask";
 
+/// What the briefing says of a chat the app says is attended, and of one it says nobody is at
+/// (R-111, T1.1-40, #6887): the words follow the fact the hook asked for.
+const THE_BRIEFING_SAYS_ATTENDED: &str =
+    "⬢ **Attended.** A person can answer this chat's prompts and asks.";
+const THE_BRIEFING_SAYS_UNATTENDED: &str = "⬢ **Unattended.** This chat runs with nobody there to \
+     answer. An ask may go unanswered, and what needs a person is blocked.";
+
 /// A prompt with a fork in it, on a session's first prompt: the commit gate fires on it in an
 /// attended chat.
 const FORKED: &str = "refactor the importer so it is maybe cleaner across every repo";
@@ -164,6 +171,19 @@ impl Plane {
         self.hook("sessionstart", &self.home, chat, &payload.to_string())
     }
 
+    /// The chat's briefing from inside workspace `alpha`, where it is pinned and no gate speaks:
+    /// its stdout.
+    fn briefing_in_a_workspace(&self, chat: &[(String, String)], mode: &str) -> String {
+        let payload = serde_json::json!({
+            "session_id": "fixture-session-1",
+            "cwd": ".",
+            "hook_event_name": "SessionStart",
+            "permission_mode": mode,
+        });
+        let at = self.root.join("workspaces").join("alpha");
+        self.hook("sessionstart", &at, chat, &payload.to_string())
+    }
+
     /// What the chat's first prompt, [`FORKED`], is told: its stdout.
     fn first_prompt(&self, chat: &[(String, String)], mode: &str) -> String {
         let payload = serde_json::json!({
@@ -266,4 +286,40 @@ fn a_chat_whose_app_does_not_answer_is_unattended_to_every_hook() {
     assert!(briefed.contains(THE_STOP_SAYS), "{briefed}");
     let prompted = plane.first_prompt(&gone, "default");
     assert!(!prompted.contains(THE_GATE_SAYS), "{prompted}");
+}
+
+/// **The briefing says what the app's fact says, in words of its own** (R-111, T1.1-40, #6887),
+/// through the real `sessionstart` hook: the line follows the answer the hook asked for,
+/// whatever mode the payload names. Red if the hook stops deriving the fact from the app (its
+/// `attendance`) or stops handing it to the briefing.
+#[test]
+fn the_briefing_says_attended_or_unattended_as_the_app_says_and_nothing_with_no_chat_number() {
+    purlis_core::unsteered!();
+    let plane = Plane::new();
+    for (attended, line, other) in [
+        (
+            true,
+            THE_BRIEFING_SAYS_ATTENDED,
+            THE_BRIEFING_SAYS_UNATTENDED,
+        ),
+        (
+            false,
+            THE_BRIEFING_SAYS_UNATTENDED,
+            THE_BRIEFING_SAYS_ATTENDED,
+        ),
+    ] {
+        let app = plane.app(attended);
+        for mode in ["default", ITS_PAYLOADS_SAY] {
+            let said = plane.briefing_in_a_workspace(&app.chat_env(), mode);
+            assert!(said.contains(line), "attended {attended}, {mode}: {said}");
+            assert!(!said.contains(other), "attended {attended}, {mode}: {said}");
+        }
+    }
+
+    // A hook whose env has no chat number holds no fact: it says nothing, never "Attended".
+    let said = plane.briefing_in_a_workspace(&[], "default");
+    assert!(
+        !said.contains("**Attended.**") && !said.contains("**Unattended.**"),
+        "{said}"
+    );
 }

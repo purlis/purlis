@@ -862,6 +862,9 @@ pub struct Chats {
     beginning: Mutex<Option<Beginning>>,
     /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
     replaced_told: Mutex<Option<Replaced>>,
+    /// Told the number of a chat whose attendance fact was just lowered
+    /// ([`Self::when_attendance_is_lowered`]).
+    lowered_told: Mutex<Option<Replaced>>,
     /// What asks a chat's router extension at its start (SK-15b): none until the app hands one,
     /// so a chat whose workspace or persona chose one is routed by the built-in router.
     router: Mutex<Option<Arc<dyn purlis_core::skills::router::AskRouter>>>,
@@ -1862,6 +1865,7 @@ impl Chats {
             reattached: Mutex::new(None),
             beginning: Mutex::new(None),
             replaced_told: Mutex::new(None),
+            lowered_told: Mutex::new(None),
             router: Mutex::new(None),
             routed: Mutex::new(None),
             prompt_fallback_moved: Mutex::new(None),
@@ -2005,6 +2009,12 @@ impl Chats {
     /// still runs, so the event log ends it `superseded` before its close is heard.
     pub fn when_a_run_is_replaced(&self, tell: Replaced) {
         *lock(&self.replaced_told) = Some(tell);
+    }
+
+    /// Calls `tell` with a chat's number as its attendance fact is lowered (R-107), so the event
+    /// log's recorder says `unattended` in the runs that follow (a clear's, a child's).
+    pub fn when_attendance_is_lowered(&self, tell: Replaced) {
+        *lock(&self.lowered_told) = Some(tell);
     }
 
     /// Asks a chat's router extension at its start with `router` (SK-15b, ADR 0102 §5).
@@ -7739,6 +7749,9 @@ impl Chats {
         };
         if lowered {
             self.lowered_on_its_record(report.chat);
+            if let Some(tell) = lock(&self.lowered_told).as_ref() {
+                tell(report.chat);
+            }
             self.write_it_down();
         }
     }

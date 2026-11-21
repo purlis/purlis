@@ -107,7 +107,7 @@
         "stdout": {
           "hookSpecificOutput": {
             "hookEventName": "SessionStart",
-            "additionalContext": "⬢ **This chat is at the plane root — in no workspace, on purpose.** purlis started it there (`$PURLIS_PLANE_ROOT_SESSION`), so do not ask the person which workspace to use and do not run `purlis workspace use`: this session stays at the root. From here you look after the plane itself — its personas, its settings, its memory — and its workspaces, which you may create, rename, curate or retire. Name the workspace on every command that acts on one, with `-w <name>` (`purlis ws todo -w <name> \"<what>\"`, `purlis workspace create <name> --vision \"<the goal>\"`); a command that needs a workspace and is not given one refuses rather than guess. Work inside a workspace's repos belongs in a chat started in that workspace.\n\n⬢ **Unattended.** purlis started this chat with nobody at it, so no one answers a prompt or an ask: what needs a person is refused, not waited for."
+            "additionalContext": "⬢ **This chat is at the plane root — in no workspace, on purpose.** purlis started it there (`$PURLIS_PLANE_ROOT_SESSION`), so do not ask the person which workspace to use and do not run `purlis workspace use`: this session stays at the root. From here you look after the plane itself — its personas, its settings, its memory — and its workspaces, which you may create, rename, curate or retire. Name the workspace on every command that acts on one, with `-w <name>` (`purlis ws todo -w <name> \"<what>\"`, `purlis workspace create <name> --vision \"<the goal>\"`); a command that needs a workspace and is not given one refuses rather than guess. Work inside a workspace's repos belongs in a chat started in that workspace."
           }
         },
         "stderr": ""
@@ -2120,7 +2120,7 @@
     },
     {
       "kind": "context",
-      "text": "⬢ **This chat is at the plane root — in no workspace, on purpose.** purlis started it there (`$PURLIS_PLANE_ROOT_SESSION`), so do not ask the person which workspace to use and do not run `purlis workspace use`: this session stays at the root. From here you look after the plane itself — its personas, its settings, its memory — and its workspaces, which you may create, rename, curate or retire. Name the workspace on every command that acts on one, with `-w <name>` (`purlis ws todo -w <name> \"<what>\"`, `purlis workspace create <name> --vision \"<the goal>\"`); a command that needs a workspace and is not given one refuses rather than guess. Work inside a workspace's repos belongs in a chat started in that workspace.\n\n⬢ **Unattended.** purlis started this chat with nobody at it, so no one answers a prompt or an ask: what needs a person is refused, not waited for."
+      "text": "⬢ **This chat is at the plane root — in no workspace, on purpose.** purlis started it there (`$PURLIS_PLANE_ROOT_SESSION`), so do not ask the person which workspace to use and do not run `purlis workspace use`: this session stays at the root. From here you look after the plane itself — its personas, its settings, its memory — and its workspaces, which you may create, rename, curate or retire. Name the workspace on every command that acts on one, with `-w <name>` (`purlis ws todo -w <name> \"<what>\"`, `purlis workspace create <name> --vision \"<the goal>\"`); a command that needs a workspace and is not given one refuses rather than guess. Work inside a workspace's repos belongs in a chat started in that workspace."
     },
     {
       "kind": "context",

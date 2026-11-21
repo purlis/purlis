@@ -12,6 +12,10 @@ use std::path::PathBuf;
 use purlis_core::briefing::{Ask, parts};
 use purlis_core::dispatchunattended::Attendance;
 
+const ATTENDED: &str = "⬢ **Attended.** A person can answer this chat's prompts and asks.";
+const UNATTENDED: &str = "⬢ **Unattended.** This chat runs with nobody there to answer. An ask \
+                          may go unanswered, and what needs a person is blocked.";
+
 /// A plane with one workspace the chat is pinned to, so the briefing has no gate to say.
 fn plane() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("a temporary folder");
@@ -26,9 +30,14 @@ fn plane() -> (tempfile::TempDir, PathBuf) {
 /// What a chat on `harness`, pinned to `alpha`, whose payload names `mode`, is told when its
 /// attendance is `attendance`.
 fn told(harness: &str, mode: &str, attendance: Attendance) -> Vec<String> {
+    told_as(harness, mode, attendance, Some("7"))
+}
+
+/// As [`told`], in a hook whose env names chat number `number`, or none.
+fn told_as(harness: &str, mode: &str, attendance: Attendance, number: Option<&str>) -> Vec<String> {
     let (_dir, root) = plane();
     let env: HashMap<&str, String> = [
-        ("PURLIS_SESSION_ID", "s1".to_owned()),
+        ("PURLIS_SESSION_ID", number.unwrap_or("s1").to_owned()),
         ("PURLIS_HARNESS", harness.to_owned()),
         ("PURLIS_WORKSPACE", "alpha".to_owned()),
     ]
@@ -66,7 +75,7 @@ fn the_briefing_says_attended_or_unattended() {
             let attended = told(harness, mode, Attendance::Attended);
             let blocks = attendance_blocks(&attended);
             assert_eq!(blocks.len(), 1, "{harness}/{mode} attended: {attended:?}");
-            assert!(blocks[0].starts_with("⬢ **Attended"), "{harness}/{mode}");
+            assert_eq!(blocks[0], ATTENDED, "{harness}/{mode}");
 
             let unattended = told(harness, mode, Attendance::Unattended);
             let blocks = attendance_blocks(&unattended);
@@ -75,7 +84,19 @@ fn the_briefing_says_attended_or_unattended() {
                 1,
                 "{harness}/{mode} unattended: {unattended:?}"
             );
-            assert!(blocks[0].starts_with("⬢ **Unattended"), "{harness}/{mode}");
+            assert_eq!(blocks[0], UNATTENDED, "{harness}/{mode}");
         }
+    }
+}
+
+#[test]
+fn a_hook_with_no_chat_number_says_nothing_of_attendance_and_never_attended() {
+    purlis_core::unsteered!();
+    for attendance in [Attendance::Attended, Attendance::Unattended] {
+        let told = told_as("claude-code", "default", attendance, None);
+        assert!(
+            attendance_blocks(&told).is_empty(),
+            "{attendance:?} with no chat number: {told:?}"
+        );
     }
 }

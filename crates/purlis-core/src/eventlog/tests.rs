@@ -4648,6 +4648,61 @@ fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_stil
     assert!(again.is_empty(), "{again:?}");
 }
 
+/// R-107, Q271 (T1.1-40, #6887): a fact lowered after the run began is said by the runs that
+/// carry the attributes on, a clear's and a child's: `unattended`, never the `attended` the
+/// first run began with.
+#[test]
+fn a_lowered_attendance_is_said_by_the_clear_and_the_child_run_that_follow() {
+    use crate::hookwire::Decision;
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane,
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes {
+            attendance: Some("attended".to_owned()),
+            ..Attributes::default()
+        },
+    )
+    .unwrap();
+    host.attendance_lowered(plane, 3, "unattended");
+
+    let mut by_agent = tool_call(3, "pretooluse", Decision::None);
+    by_agent.agent = Some("agent-1".to_owned());
+    host.tool(plane, &by_agent, std::time::Instant::now())
+        .unwrap();
+    host.report(plane, &report(3, SessionStart), Followed::Moved)
+        .unwrap();
+
+    let started = runs_started(dir.path());
+    let said: Vec<_> = started
+        .iter()
+        .map(|event| {
+            (
+                event.body["cause"].as_str().unwrap().to_owned(),
+                event.body["attendance"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let said: Vec<(&str, &str)> = said.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    assert_eq!(
+        said,
+        [
+            ("start", "attended"),
+            ("child", "unattended"),
+            ("clear", "unattended")
+        ],
+        "the first run said what it began as; the runs after the lowering say the lowered fact"
+    );
+}
+
 /// R-106, R-219 (T1.1-40, #6887): a run's `run.started` says whether anyone was at the chat when
 /// it began, as the attendance fact's word, and a start that holds no fact says so: the fact is
 /// in the event log, where a person and a reader find it, never only in the app's memory.
