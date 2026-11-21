@@ -945,10 +945,6 @@ impl Chat {
         #[cfg(unix)]
         if let Err(why) = say_tool_group(child.id()) {
             // A command nobody watches fails the call: the scenario's teardown could not see it.
-            let _ = Command::new("kill")
-                .args(["-9", &format!("-{}", child.id())])
-                .stderr(Stdio::null())
-                .status();
             let _ = child.kill();
             let _ = child.wait();
             drop((child.stdout.take(), child.stderr.take()));

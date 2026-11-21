@@ -936,15 +936,13 @@ fn a_tool_command_says_its_group_in_the_file_the_scenario_names() {
 }
 
 #[test]
-#[cfg_attr(target_os = "linux", ignore = "bisecting #7304")]
 fn a_tool_command_fails_loudly_where_its_group_cannot_be_said() {
     let run = Run::new();
     run.script(&covering_like(json!([
         {"step": "bash", "tool": "bash", "run": "echo hello"},
     ])));
-    // A folder where the file should be: opening it for append fails.
-    let groups = run.path("groups-is-a-folder");
-    std::fs::create_dir_all(&groups).expect("a folder");
+    // A file in a folder that is not there: opening it for append fails.
+    let groups = run.path("no-such-folder").join("groups");
     for dialect in DIALECTS {
         let words = first_message(dialect, "go");
         let played = run.play(
