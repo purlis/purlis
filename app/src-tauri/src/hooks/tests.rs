@@ -4011,3 +4011,118 @@ fn a_refused_read_or_write_of_a_credential_says_the_credentials_way_out() {
         )
     );
 }
+
+/// Chats 681 and 682 spooled hook lines while a permission ask was held (#6678): a hook waits
+/// for the app's receipt only so long (`hook_receipt`), and what it spools is for an app that is
+/// away. With the app's own hearers, its event log and a permission request held open on the
+/// window, every tool line and report a chat's hooks send is taken within that wait, never
+/// spooled.
+#[cfg(unix)]
+#[test]
+fn no_hook_line_spools_during_a_held_ask_scenario() {
+    use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+    use purlis_core::hookwire::{self, Delivered};
+    let dir = tempfile::tempdir().expect("a directory");
+    let at = Where {
+        within: dir.path().to_path_buf(),
+        socket: dir.path().join(".charter/app/hooks.sock"),
+    };
+    let plane: PlaneId = serde_json::from_str("\"/plane\"").expect("a plane id");
+    let hooks = Hooks::listening_on(
+        plane,
+        &at,
+        Arc::new(|_| {}),
+        Arc::new(|_| {}),
+        purlis_core::sandbox::timings::Timings::production(),
+    )
+    .expect("listening");
+    let logs = dir.path().join("events");
+    hooks.record_into(Events::here(Recorder::new(
+        Log::open(&logs, "DEVICE").expect("a log"),
+        ArgsKey::open(&logs).expect("a key"),
+    )));
+    hooks.board().opened(3, None, None);
+    let (tx, told) = std::sync::mpsc::channel();
+    let tx = Mutex::new(tx);
+    hooks.tell_asks_to(Arc::new(move |asking| {
+        tx.lock().unwrap().send(asking).unwrap()
+    }));
+    let token = hooks.token_for(3);
+    let socket = hooks.socket().expect("a socket").to_path_buf();
+    let hook = {
+        let (socket, token) = (socket.clone(), token.clone());
+        std::thread::spawn(move || {
+            purlis_core::hookwire::permission::ask_permission_of_an_admitted_host(
+                std::os::unix::net::UnixStream::connect(&socket).expect("connects"),
+                Some(&token),
+                &purlis_core::hookwire::PermissionAsked {
+                    chat: 3,
+                    permission_request: purlis_core::harness::hooked::Source::ClaudeCode,
+                    payload: serde_json::json!({"tool_name": "Bash",
+                            "tool_input": {"command": "npm test"}}),
+                    ran_for_ms: None,
+                    speaker: Default::default(),
+                },
+                std::time::Duration::from_secs(30),
+            )
+        })
+    };
+    let asking = told
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("the window is told");
+    let [shown] = asking.asks.as_slice() else {
+        panic!("one ask: {asking:?}");
+    };
+
+    let budget = purlis_core::sandbox::timings::OUT_OF_PROCESS
+        .iter()
+        .find(|(id, _, _)| *id == "hook_receipt")
+        .expect("the receipt's budget")
+        .2;
+    let mut slowest = std::time::Duration::ZERO;
+    let mut spooled = Vec::new();
+    for n in 0..20 {
+        let call = hookwire::ToolCall {
+            chat: 3,
+            tool_hook: "posttooluse".to_owned(),
+            tool: Some("Read".to_owned()),
+            call: Some(format!("toolu_{n}")),
+            args: None,
+            decision: hookwire::Decision::None,
+            rule: None,
+            arm: None,
+            hook_ms: 1,
+            agent: None,
+            at_ms: 0,
+            skill: None,
+        };
+        let began = std::time::Instant::now();
+        let by_tool = hookwire::deliver_tool(&socket, Some(&token), &call);
+        slowest = slowest.max(began.elapsed());
+        let began = std::time::Instant::now();
+        let by_report = hookwire::deliver_report(
+            &socket,
+            Some(&token),
+            &said(3, purlis_core::state::Event::Stop),
+        );
+        slowest = slowest.max(began.elapsed());
+        for (what, delivered) in [("tool", by_tool), ("report", by_report)] {
+            if !matches!(delivered, Ok(Delivered::Taken)) {
+                spooled.push(format!("{what} {n}: {delivered:?}"));
+            }
+        }
+    }
+    hooks
+        .answer(3, &shown.ask, "allow")
+        .expect("the window's answer applies");
+    hook.join().expect("the hook").expect("a reply");
+
+    assert!(
+        spooled.is_empty(),
+        "not taken while an ask was held: {spooled:#?}"
+    );
+    assert!(
+        slowest < budget,
+        "the slowest receipt took {slowest:?} of {budget:?} while an ask was held"
+    );
+}
