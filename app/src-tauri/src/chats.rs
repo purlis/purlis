@@ -5457,13 +5457,8 @@ impl Chats {
             // (R-228): full to basic or basic to full, said once, by who made the start. A
             // chat that was unsandboxed has its own `trust.sandbox.on`.
             let level = purlis_core::sandbox::level_change(
-                (why != Why::New && !chat.unsandboxed && !chat.no_sandbox).then_some(
-                    if chat.at_floor {
-                        purlis_core::sandbox::Level::Floor
-                    } else {
-                        purlis_core::sandbox::Level::Full
-                    },
-                ),
+                chat.last_level
+                    .filter(|_| why != Why::New && !chat.unsandboxed && !chat.no_sandbox),
                 sandbox.map_or(purlis_core::sandbox::Level::Full, |applied| applied.level()),
                 &made_of(chat, why),
             )
@@ -5619,6 +5614,9 @@ impl Chats {
                 // Back on: the chat is sandboxed, and the record that it is can be missing.
                 Change::On => tracing::warn!(
                     "purlis: a chat's sandbox came back on and was not recorded ({why})"
+                ),
+                Change::Level { .. } => tracing::warn!(
+                    "purlis: a chat's sandbox level changed and was not recorded ({why})"
                 ),
             }
         }
@@ -6389,10 +6387,10 @@ impl Chats {
             no_sandbox: matches!(ran, Some(purlis_session_protocol::session::RunSandbox::Off))
                 && !opted_out,
             // And the level a sandboxed run had, for the next start to say if it changes.
-            at_floor: if reattaching {
-                chat.at_floor
+            last_level: if reattaching {
+                chat.last_level
             } else {
-                sandbox.is_some_and(|applied| applied.level() == purlis_core::sandbox::Level::Floor)
+                sandbox.map(|applied| applied.level())
             },
             identity,
             // The Skill studio's flag this start took (#3466): what its record keeps, and what
