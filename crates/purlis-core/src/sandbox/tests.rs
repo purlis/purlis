@@ -2578,11 +2578,17 @@ fn a_sandboxed_claude_code_chat_offers_no_browser_tools_of_its_own() {
 }
 
 #[test]
-fn claude_codes_web_tools_are_denied_because_the_allowed_hosts_do_not_hold_them() {
+fn claude_codes_web_tools_are_judged_by_a_hook_not_denied_because_the_allowed_hosts_do_not_hold_them()
+ {
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
-    assert_eq!(settings.deny[..2], ["WebFetch", "WebSearch"]);
-    // Then its own browser's tools (#2013), and then the paths.
-    assert_eq!(settings.deny[2], "mcp__claude-in-chrome");
+    for tool in claude::WEB_TOOLS {
+        assert!(!settings.deny.iter().any(|rule| rule == tool), "{tool}");
+    }
+    // Its own browser's tools lead the list (#2013), and then the paths.
+    assert_eq!(settings.deny[0], "mcp__claude-in-chrome");
+    // The judge is armed on the tools by name (T1.1-39).
+    let judge = crate::hookreg::find(crate::hookreg::WEB_JUDGE).expect("a registered hook");
+    assert_eq!(judge.matcher, Some("WebFetch|WebSearch"));
 }
 
 /// `rules` without the later-code class's, which name a path at any depth (`**/`).

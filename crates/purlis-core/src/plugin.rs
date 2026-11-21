@@ -363,7 +363,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bundled_hooks_file_carries_no_guard_and_the_installed_copy_carries_all_four() {
+    fn the_bundled_hooks_file_carries_no_guard_and_the_installed_copy_carries_all_five() {
         let bundled: serde_json::Value = serde_json::from_str(&hooks_json()).expect("JSON");
         assert!(bundled["hooks"].get("PreToolUse").is_none());
         assert!(bundled["hooks"]["Stop"][0].get("matcher").is_none());
@@ -373,7 +373,7 @@ mod tests {
         ))
         .expect("JSON");
         let guards = installed["hooks"]["PreToolUse"].as_array().expect("guards");
-        assert_eq!(guards.len(), 4);
+        assert_eq!(guards.len(), 5);
         assert_eq!(guards[0]["matcher"], "Bash");
         assert_eq!(
             guards[0]["hooks"][0]["command"],

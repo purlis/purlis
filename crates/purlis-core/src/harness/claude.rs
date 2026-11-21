@@ -584,6 +584,14 @@ impl HarnessAdapter for ClaudeCode {
                         )
                     })
                     .into_iter()
+                    // The proxy the web tools' judge asks (T1.1-39): the hooks run under the chat's
+                    // own process, whose environment this is.
+                    .chain(at.confinement.map(|confinement| {
+                        (
+                            crate::hookwire::PROXY_ENV.to_owned(),
+                            confinement.proxy_url(),
+                        )
+                    }))
                     .collect(),
             }),
             _ => Err(super::adapter::not_compiled_for(Harness::ClaudeCode)),
@@ -642,6 +650,10 @@ fn wrapped_line(
         (claude_wrap::TMP_ENV.to_owned(), tmp.display().to_string()),
         (claude_wrap::QUIET_ENV.to_owned(), "1".to_owned()),
         (crate::hookwire::WRAPPED_ENV.to_owned(), "1".to_owned()),
+        (
+            crate::hookwire::PROXY_ENV.to_owned(),
+            confinement.proxy_url(),
+        ),
     ]);
     Ok(crate::sandbox::Line { program, args, env })
 }
