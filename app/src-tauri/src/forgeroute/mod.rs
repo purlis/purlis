@@ -1209,14 +1209,7 @@ fn route_dir_in(
     who: &str,
     linux: bool,
 ) -> Option<PathBuf> {
-    let name = format!("pf-{who}");
-    if !linux {
-        return Some(temporary.join(name));
-    }
-    match runtime.filter(|dir| dir.is_absolute() && dir.is_dir()) {
-        Some(dir) => Some(dir.join(name)),
-        None => machine.map(|dir| dir.join("forge-route")),
-    }
+    purlis_core::forgewire::route_dir_in(runtime, machine, temporary, who, linux)
 }
 
 // ---- the app's one ------------------------------------------------------------------------

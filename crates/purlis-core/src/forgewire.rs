@@ -217,6 +217,9 @@ pub const FETCH_WITH_CLI: &str = "net.git-fetch-with-cli";
 /// The variable cargo reads that setting from.
 const FETCH_WITH_CLI_ENV: &str = "CARGO_NET_GIT_FETCH_WITH_CLI";
 
+/// The name of the chat's copy of its CA, in its wire folder.
+pub const CA_COPY: &str = "ca.pem";
+
 /// **The advice for a tool whose version purlis has not run**, or none where `found` is the
 /// version run on `os`. The route is set up all the same: the advice says it is not one purlis
 /// has run, and never stops the chat.
@@ -489,6 +492,58 @@ pub fn wire_folder(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join("forge-wire")
 }
 
+/// **Where the forge routes live** (ADR 0128 D3a): the app's private folder, short because a unix
+/// socket's path may not pass 104 bytes on macOS. `runtime` is this user's runtime directory where
+/// there is one (Linux); without it on Linux, `machine` is this user's own machine folder (not a
+/// shared directory), and the folder is `forge-route` in it; on macOS, `temporary`, the per-user
+/// temporary directory the system makes private, holds `pf-<who>`. `None` where there is none of
+/// these, and then no chat has a route.
+pub fn route_dir_in(
+    runtime: Option<PathBuf>,
+    machine: Option<PathBuf>,
+    temporary: PathBuf,
+    who: &str,
+    linux: bool,
+) -> Option<PathBuf> {
+    let name = format!("pf-{who}");
+    if !linux {
+        return Some(temporary.join(name));
+    }
+    match runtime.filter(|dir| dir.is_absolute() && dir.is_dir()) {
+        Some(dir) => Some(dir.join(name)),
+        None => machine.map(|dir| dir.join("forge-route")),
+    }
+}
+
+/// [`route_dir_in`] for `machine`'s environment: the folder every chat of a user on it is held
+/// out of, so a chat reaches its own run's socket and no other's. The app makes the folder when it
+/// starts ([`route_dir_in`] is its one answer), so a folder that is not there holds no route.
+pub fn route_root(machine: &crate::sandbox::Machine) -> Option<PathBuf> {
+    let who = purlis_same_user::Uid::effective().as_raw().to_string();
+    let linux = machine.os == crate::sandbox::Os::Linux;
+    let temporary = machine
+        .env
+        .get("TMPDIR")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(|| PathBuf::from("/tmp"));
+    route_dir_in(
+        machine
+            .env
+            .get("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute()),
+        crate::machine::rooted(
+            machine.env.get(crate::machine::HOME_VAR).map(Into::into),
+            machine.env.get("XDG_CONFIG_HOME").map(Into::into),
+            machine.home.clone(),
+        ),
+        temporary,
+        &who,
+        linux,
+    )
+}
+
 /// **Composes and writes** the wiring for `route`, in a folder made new inside the project's
 /// [`wire_folder`], which must be a folder of its own with no link on the way to it from `root`
 /// ([`crate::contain::no_link_on_the_way`], [`crate::sandbox::tunnel::make_own_folder`]). The
@@ -528,7 +583,7 @@ pub fn compose_at(route: &Route, folder: &Path) -> io::Result<Wiring> {
         .gh_socket
         .to_str()
         .filter(|s| !s.contains(['\n', '\r']));
-    let (Some(socket), Some(ca)) = (
+    let (Some(socket), Some(_)) = (
         socket,
         route.ca_cert.to_str().filter(|s| !s.contains(['\n', '\r'])),
     ) else {
@@ -564,6 +619,13 @@ pub fn compose_at(route: &Route, folder: &Path) -> io::Result<Wiring> {
         0o600,
     )?;
     write_new(&bin.join("gh"), &gh_wrapper(&route.repos), 0o700)?;
+    // The CA, copied here: the folder it is made in is held from the chat ([`crate::sandbox`]
+    // denies the route folder whole, so only the chat's own socket is reached), and git and glab
+    // read it from the chat's own wire folder, which a chat reads and never writes.
+    let ca_copy = folder.join(CA_COPY);
+    write_new(&ca_copy, &std::fs::read_to_string(&route.ca_cert)?, 0o600)?;
+    let ca = shown(&ca_copy);
+    let ca = ca.as_str();
 
     let mut env = vec![
         ("GH_HOST".to_owned(), GH_HOST.to_owned()),

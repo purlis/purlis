@@ -2015,6 +2015,22 @@ impl Denied {
             any_case: false,
         });
 
+        // …and the folder every run's forge route is made in (ADR 0128 D3a): no chat reads or
+        // writes it, and none lists it. A chat with a route is given back its own socket, and
+        // nothing else in it ([`Applied::with_forge_route`]); every other chat reaches none.
+        // Held only where the app made the folder, so a sandbox that masks a path that is not
+        // there never makes one in the app's place.
+        if let Some(route_root) = crate::forgewire::route_root(machine).filter(|dir| dir.is_dir()) {
+            paths.push(Denial {
+                class: Class::Integrity,
+                path: route_root,
+                access: Access::ReadWrite,
+                named: None,
+                reach: Reach::AndBelow,
+                any_case: machine.os == Os::MacOs,
+            });
+        }
+
         // 5. Later code: the project root's manifests, under every name (#1336); those between
         // the root and the chat's folder are added where the folder is known
         // ([`Applied::form_in`]).
@@ -4225,6 +4241,10 @@ pub struct Widened {
     /// `None` holds them as before. Off only, never `log` ([`crate::enforcement::Family::logs`]),
     /// and only where the app resolved it: every other process compiles it enforced.
     pub every_local: Option<Vec<u16>>,
+    /// **The one socket of this chat's forge route** (ADR 0128 D3a): its `gh` connects to it, and
+    /// it is read and connected to inside the route folder every chat is denied
+    /// ([`Applied::with_forge_route`]). Never another run's, and never a person's grant.
+    pub forge_socket: Option<PathBuf>,
 }
 
 /// [`Widened::every_local`] for a chat starting in the project at `root`: purlis's own ports
@@ -4257,6 +4277,7 @@ impl Widened {
             unserved: Vec::new(),
             lifted: Vec::new(),
             every_local: every_local(root),
+            forge_socket: None,
         }
     }
 
@@ -5631,21 +5652,17 @@ impl Applied {
     /// own socket is reached, by the network rule that names it, never by listing the folder).
     #[must_use]
     pub fn with_forge_route(mut self, inputs: crate::forgewire::Inputs) -> Self {
-        let held = Denial {
-            class: Class::Integrity,
-            path: inputs.root.clone(),
-            access: Access::ReadWrite,
-            named: None,
-            reach: Reach::AndBelow,
-            any_case: false,
-        };
-        // Held on macOS, whose rule for a socket is the network's and not the file's. Elsewhere a
-        // socket is reached by access to its file, so the folder cannot be held without holding
-        // the chat's own socket; the folder is the app's (0700), its socket is 0600 and its peer
-        // is checked, and no request is served without the run's sentinel.
-        if self.os == Os::MacOs && !self.denied.contains(&held) {
-            self.denied.push(held.clone());
-            self.confines.denied.push(held);
+        // The folder is denied to every chat already ([`Denied::of`], on both systems). This chat
+        // is given back its own socket and no other path in it: its CA is a copy in its wire
+        // folder ([`crate::forgewire::CA_COPY`]), so nothing else is read there.
+        let socket = inputs.gh_socket.clone();
+        match &mut *self.form {
+            Form::ClaudeCode(settings) => *settings = settings.reaching_socket(&socket),
+            Form::ClaudeWrapped(claude_wrap::Wrap { widened, .. })
+            | Form::Codex(codex::Wrap { widened, .. })
+            | Form::Opencode(opencode::Wrap { widened, .. }) => {
+                widened.forge_socket = Some(socket);
+            }
         }
         self.forge = Some(Box::new(inputs));
         self
@@ -8973,6 +8990,8 @@ mod enforced_tests;
 mod floor_tests;
 #[cfg(test)]
 mod forge_moved_tests;
+#[cfg(test)]
+mod forge_route_tests;
 #[cfg(all(test, unix))]
 mod git_held_tests;
 #[cfg(test)]

@@ -430,6 +430,18 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
             string(&socket.display().to_string())?
         ));
     }
+    // This chat's forge route's one socket (ADR 0128 D3a), given back after the denial of the
+    // folder every run's route is made in: read, written and connected to by its exact path, so
+    // no other run's socket in that folder is.
+    if let Some(socket) = &widened.forge_socket {
+        for name in kernel_strings_itself(socket)? {
+            own.after
+                .push(format!("(allow file-read* file-write* (literal {name}))"));
+            own.after.push(format!(
+                "(allow network-outbound (remote unix-socket (path-literal {name})))"
+            ));
+        }
+    }
     for service in &widened.services {
         own.after.push(format!(
             "(allow mach-lookup (global-name {}))",
