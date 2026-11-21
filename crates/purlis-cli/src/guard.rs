@@ -357,7 +357,7 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
 /// Inside a plane the registry anchors, its host is the one to ask, and a process the app did not
 /// start has no host to ask: it is refused, never judged by the local default.
 ///
-/// An ask, which needs a window, is refused: nobody is there to answer it. Whether the process runs
+/// An ask is the person's own to answer in their terminal, so it runs; a deny is refused. Whether the process runs
 /// under a chat the app started is the app's to say by its ancestry (see [`judged_merge`]); a
 /// descendant of a chat never gets here, so the ancestry is not part of what is read.
 fn judged_without_a_chat(
@@ -400,13 +400,10 @@ fn judged_without_a_chat(
     match decision.after_mode {
         Outcome::Allow => None,
         Outcome::Deny => refused(mergehold::REASON_DENIED, mergehold::denied(&decision)),
-        Outcome::Ask => refused(
-            mergehold::REASON_UNDECIDED,
-            mergehold::undecided(
-                "the shipped default holds a merge for the person, and a process the app did \
-                 not start has no window to ask them in",
-            ),
-        ),
+        // The default holds a merge for the person, and the person is here: it is their own
+        // terminal, and the harness's own prompt asks them (A4's ground). No window of purlis's
+        // is asked, and a deny above is refused all the same.
+        Outcome::Ask => None,
     }
 }
 
