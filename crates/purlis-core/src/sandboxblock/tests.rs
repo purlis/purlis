@@ -2284,7 +2284,10 @@ fn a_failed_read_writes_a_post_line_and_its_block_if_refused() {
     };
     let found = detect(&refused, &place);
     assert_eq!(
-        found.iter().map(|block| block.operation).collect::<Vec<_>>(),
+        found
+            .iter()
+            .map(|block| block.operation)
+            .collect::<Vec<_>>(),
         [Operation::Read],
         "{found:?}"
     );
