@@ -188,7 +188,7 @@ pub(crate) fn opencode_config_path(url: &str) -> PathBuf {
 /// message as the harness takes one (`purlis_core::handoff::first_message_argv`): Claude Code's
 /// permission mode (the recordings' conditions: a mode that sends no call to Anthropic's servers
 /// to judge, `tests/recordings/README.md`), and Codex's model provider, which is the stand-in.
-pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: Option<&str>) -> Vec<String> {
+pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: &str) -> Vec<String> {
     let mut words: Vec<String> = match dialect {
         Dialect::Claude => ["--permission-mode", purlis_recordings::PERMISSION_MODE]
             .map(str::to_owned)
@@ -207,12 +207,10 @@ pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: Option<&str>) ->
         .collect(),
         Dialect::OpenCode => Vec::new(),
     };
-    if let Some(prompt) = prompt {
-        words.extend(
-            purlis_core::handoff::first_message_argv(dialect.word(), prompt)
-                .expect("the harness takes a first message"),
-        );
-    }
+    words.extend(
+        purlis_core::handoff::first_message_argv(dialect.word(), prompt)
+            .expect("the harness takes a first message"),
+    );
     words
 }
 
@@ -892,11 +890,6 @@ fn record(
 /// canary first where the sandbox is full, and then the leg's cells ([`cells`]). The test ends,
 /// saying why, where the leg cannot be set up here.
 pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
-    runs_with(dialect, protection, test, false);
-}
-
-/// [`runs`], with the first message typed once the harness has begun its session where `typing`.
-pub(crate) fn runs_with(dialect: Dialect, protection: Protection, test: &str, typing: bool) {
     let Some(program) = program(dialect) else {
         return;
     };
@@ -920,7 +913,7 @@ pub(crate) fn runs_with(dialect: Dialect, protection: Protection, test: &str, ty
     let Some(scenario) = Scenario::for_real_harness(&homes, protection, dialect, &model) else {
         return;
     };
-    cells(&scenario, &model, protection, test, typing);
+    cells(&scenario, &model, protection, test);
 }
 
 /// **The leg's cells**, in one chat: the probe, one file cell and one network cell.
@@ -933,7 +926,7 @@ pub(crate) fn runs_with(dialect: Dialect, protection: Protection, test: &str, ty
 ///   the window lists its ask, the person keeps it blocked, and the command is refused by the
 ///   proxy; at the floor, where no host is asked about, a link-local address is refused by
 ///   purlis's proxy in its own words.
-fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str, typing: bool) {
+fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str) {
     use purlis_scenarios::model::ReportVerdict;
     let dialect = scenario.dialect;
     let vaults = scenario.root.join(".purlis").join("vaults");
@@ -971,11 +964,7 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str,
         },
     ));
     let prompt = model.plays(&steps);
-    let chat = if typing {
-        scenario.starts_real_typing(model, &prompt)
-    } else {
-        scenario.starts_real(model, &prompt)
-    };
+    let chat = scenario.starts_real(model, &prompt);
     let heard = || model.requests() > 0;
     let evidence = || model.heard_said();
     let driving = host::Driving {
@@ -1393,10 +1382,10 @@ mod tests {
     #[test]
     fn each_harness_is_started_with_the_words_that_reach_the_stand_in() {
         let url = "http://127.0.0.1:4321";
-        let claude = launch_words(Dialect::Claude, url, Some("go on"));
+        let claude = launch_words(Dialect::Claude, url, "go on");
         assert_eq!(claude, ["--permission-mode", "bypassPermissions", "go on"]);
 
-        let codex = launch_words(Dialect::Codex, url, Some("go on"));
+        let codex = launch_words(Dialect::Codex, url, "go on");
         assert_eq!(codex.last().map(String::as_str), Some("go on"));
         let settings: Vec<&str> = codex
             .iter()
@@ -1413,19 +1402,8 @@ mod tests {
             assert!(settings.contains(&wanted), "{wanted} is missing: {codex:?}");
         }
 
-        let opencode = launch_words(Dialect::OpenCode, url, Some("go on"));
+        let opencode = launch_words(Dialect::OpenCode, url, "go on");
         assert_eq!(opencode, ["--prompt", "go on"]);
-        // Typed instead of given: no first message at all, and the rest as before.
-        assert_eq!(
-            launch_words(Dialect::Claude, url, None),
-            ["--permission-mode", "bypassPermissions"]
-        );
-        assert!(launch_words(Dialect::OpenCode, url, None).is_empty());
-        assert_eq!(
-            launch_words(Dialect::Codex, url, None).len() + 1,
-            codex.len(),
-            "the first message is the one word Codex's line gains"
-        );
     }
 
     /// **What the leg adds to a chat names no credential** (T1.1-53): each variable it names is a
@@ -1667,6 +1645,61 @@ mod tests {
         }
     }
 
+    /// **A person answers what a real harness's screen asks** (T1.1-53): Codex's offer of a newer
+    /// model is answered with "Use existing model" even though its words also say "press enter to
+    /// confirm" (taking that for a first-run question and pressing Enter chose the new model,
+    /// which Codex offers no tool: CI run 44919252197), and each other screen is answered as the
+    /// recordings' driver answers it, within its bounds. Needs no harness.
+    #[test]
+    fn a_person_answers_each_screen_a_real_harness_puts_to_them() {
+        use host::{Answered, Reply, reply_to};
+        let offer = "Introducing gpt-6-sol\n  1. Try new model\n> 2. Use existing model\n\
+                     Press enter to confirm or esc to go back";
+        let fresh = Answered::default();
+        assert_eq!(reply_to(offer, true, &fresh), Some(Reply::UseExistingModel));
+        assert_eq!(
+            reply_to(offer, false, &fresh),
+            Some(Reply::UseExistingModel),
+            "the offer is answered whether or not the model has been heard"
+        );
+        assert_eq!(
+            reply_to(
+                "Do you trust the files in this folder?\nEnter to continue",
+                true,
+                &fresh
+            ),
+            Some(Reply::Enter)
+        );
+        assert_eq!(
+            reply_to("Do you trust the files in this folder?", false, &fresh),
+            None,
+            "a first-run question is answered only before the model has heard anything"
+        );
+        assert_eq!(
+            reply_to(
+                "WARNING: Bypass Permissions mode\n1. No, exit\n2. Yes, I accept",
+                false,
+                &fresh
+            ),
+            Some(Reply::AcceptTheWarning)
+        );
+        assert_eq!(
+            reply_to(
+                "Permission required\nAllow once  Allow always  Reject",
+                false,
+                &fresh
+            ),
+            Some(Reply::AllowOnce)
+        );
+        assert_eq!(reply_to("Run the steps of leg chat 1.", true, &fresh), None);
+        // Bounded: a screen that does not go away is not answered for ever.
+        let spent = Answered {
+            newer_model: 3,
+            ..Answered::default()
+        };
+        assert_eq!(reply_to(offer, true, &spent), Some(Reply::Enter));
+    }
+
     /// **Only Claude Code on macOS holds itself** (T1.1-10): purlis wraps every other harness on
     /// every OS, at the floor as at Full, so the leg asks every cell of each.
     #[test]
@@ -1850,19 +1883,6 @@ mod tests {
             Dialect::Codex,
             Protection::Basic,
             "a_real_codex_at_the_floor_is_held_in_the_host",
-        );
-    }
-
-    /// **Codex with its first message typed, not given** (T1.1-53, an experiment of the run that
-    /// found Codex offered no tool when its message was on its command line): the same cells at
-    /// the floor, with the message typed once Codex has begun its session.
-    #[test]
-    fn a_real_codex_with_its_prompt_typed_is_held_at_the_floor() {
-        runs_with(
-            Dialect::Codex,
-            Protection::Basic,
-            "a_real_codex_with_its_prompt_typed_is_held_at_the_floor",
-            true,
         );
     }
 

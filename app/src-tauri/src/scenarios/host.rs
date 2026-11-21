@@ -97,11 +97,67 @@ pub(crate) const REAL_PLAYS_WITHIN: Duration = Duration::from_secs(300);
 
 /// How many of each screen a real harness's driver has answered ([`Scenario::answers_a_screen`]).
 #[derive(Default)]
-struct Answered {
-    first_run: u32,
-    newer_model: u32,
-    bypass: u32,
-    permission: u32,
+pub(crate) struct Answered {
+    pub(crate) first_run: u32,
+    pub(crate) newer_model: u32,
+    pub(crate) bypass: u32,
+    pub(crate) permission: u32,
+}
+
+/// What a real harness's driver presses for a screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reply {
+    /// Down, then Enter: Codex's "Use existing model".
+    UseExistingModel,
+    /// Enter, on a first-run question's default.
+    Enter,
+    /// Down, then Enter: Claude Code's "Yes, I accept".
+    AcceptTheWarning,
+    /// Enter: OpenCode's "Allow once".
+    AllowOnce,
+}
+
+/// **What a person presses for what a real harness's screen asks** (T1.1-53), if it asks anything
+/// this driver answers, within the bounds of `answered`:
+///
+/// - Codex's offer of a newer model: "Use existing model". **First**, before any Enter: the
+///   offer's default is the new model, which the stand-in's chat does not run on (Codex offers
+///   it no tool), and its own words say "press enter to confirm", which the first-run answer
+///   would take for a question to say yes to (CI run 44919252197).
+/// - a first-run question the harness asks in its terminal before the chat (a folder's trust, a
+///   key's use, Codex's "Folder access"): Enter on its default, while the model has heard
+///   nothing (`nothing_heard`);
+/// - Claude Code's bypass-permissions warning, which defaults to "No, exit": "Yes, I accept";
+/// - OpenCode's "Permission required" for a folder outside the project: allowed once.
+pub(crate) fn reply_to(screen: &str, nothing_heard: bool, answered: &Answered) -> Option<Reply> {
+    let screen = screen.to_lowercase();
+    if answered.newer_model < 3 && screen.contains("use existing model") {
+        Some(Reply::UseExistingModel)
+    } else if answered.first_run < 3
+        && nothing_heard
+        && [
+            "do you trust",
+            "trust the files",
+            "press enter",
+            "enter to confirm",
+            "yes, proceed",
+            "open restricted",
+            "enter continue",
+        ]
+        .iter()
+        .any(|ask| screen.contains(ask))
+    {
+        Some(Reply::Enter)
+    } else if answered.bypass < 5
+        && screen.contains("bypass permissions mode")
+        && screen.contains("yes, i accept")
+    {
+        Some(Reply::AcceptTheWarning)
+    } else if answered.permission < 8 && screen.contains("permission required") {
+        Some(Reply::AllowOnce)
+    } else {
+        None
+    }
 }
 
 /// **What a real harness's driver reads and says** ([`Scenario::answers_until_played`]).
@@ -855,6 +911,11 @@ pub(crate) struct Scenario {
     /// A real-harness leg at Full owes its canary ([`Self::for_real_harness`]): its teardown
     /// fails if it never ran ([`canary_owed`]).
     owes_the_canary: bool,
+    /// Whether this scenario runs a real harness binary, not the fake ([`Self::for_real_harness`]):
+    /// the two things only the fake gives the teardown, a process group written for every tool
+    /// command (`FAKE_HARNESS_GROUPS`) and a sandbox that raises no ask but for a call, are not
+    /// asked of it (see [`super::checks::judge`] and `Drop`), where each is said.
+    pub(crate) real_harness: bool,
     /// The leg's canary ran to its end ([`Self::the_canary_ran`]).
     canary_ran: std::sync::atomic::AtomicBool,
 }
@@ -915,6 +976,7 @@ impl Scenario {
     ) -> Option<Scenario> {
         let mut scenario =
             Scenario::built(homes, protection, None, dialect, DEFAULT_TEMPLATE, false)?;
+        scenario.real_harness = true;
         if protection == Protection::Full {
             scenario.owes_the_canary = true;
             super::real_leg::canary(&scenario, model);
@@ -1026,6 +1088,7 @@ impl Scenario {
             runtime: Some(runtime),
             ledger: super::checks::Ledger::default(),
             owes_the_canary: false,
+            real_harness: false,
             canary_ran: std::sync::atomic::AtomicBool::new(false),
         };
         scenario.ledger.begins(&scenario);
@@ -1459,17 +1522,6 @@ impl Scenario {
     /// answers the chat's model calls, its request log being the transcript
     /// ([`super::real_leg::Model::attach`]). Answers the chat's number.
     pub(crate) fn starts_real(&self, model: &super::real_leg::Model, prompt: &str) -> u32 {
-        self.start_real(model, prompt, false)
-    }
-
-    /// [`Self::starts_real`] with the first message typed once the harness has begun its session
-    /// (its SessionStart hook has answered), as a person types at a harness that is ready,
-    /// instead of given on its command line.
-    pub(crate) fn starts_real_typing(&self, model: &super::real_leg::Model, prompt: &str) -> u32 {
-        self.start_real(model, prompt, true)
-    }
-
-    fn start_real(&self, model: &super::real_leg::Model, prompt: &str, typing: bool) -> u32 {
         let dialect = self.dialect;
         self.profiled.call_once(|| {
             let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
@@ -1525,41 +1577,13 @@ impl Scenario {
         // prompt, which an auto mode would send to Anthropic's servers to judge (the recordings'
         // conditions, `tests/recordings/README.md`), for Codex its model provider, and the prompt
         // it starts with.
-        ready.args.extend(super::real_leg::launch_words(
-            dialect,
-            &model.url(),
-            (!typing).then_some(prompt),
-        ));
+        ready
+            .args
+            .extend(super::real_leg::launch_words(dialect, &model.url(), prompt));
         model.attach(&transcript);
-        let sessions_before = self.sessions_begun();
         let id = self.launches(&name, &ready, &transcript);
-        if typing {
-            let deadline = std::time::Instant::now() + REAL_PLAYS_WITHIN;
-            let mut answered = Answered::default();
-            while self.sessions_begun() <= sessions_before {
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "chat {id} never began its session; its screen:\n{}\n{}",
-                    self.screen_tail_of(id),
-                    self.said()
-                );
-                self.answers_a_screen(id, true, &mut answered);
-                std::thread::sleep(Duration::from_millis(250));
-            }
-            self.types(id, prompt);
-        }
         self.note_running();
         id
-    }
-
-    /// How many sessions the event log says harnesses have begun (their SessionStart hook).
-    fn sessions_begun(&self) -> usize {
-        self.try_events().map_or(0, |events| {
-            events
-                .iter()
-                .filter(|event| event.kind == "hook.sessionstart")
-                .count()
-        })
     }
 
     /// **Until chat `id` has a result for each of `steps`**, answering what a real harness asks
@@ -1608,55 +1632,42 @@ impl Scenario {
     }
 
     /// **Answers what chat `id`'s screen asks of a person**, once if it asks anything: see
-    /// [`Self::answers_until_played`] for the questions. `nothing_heard` is whether the stand-in
-    /// model has heard nothing from the harness yet, which a first-run question is answered
-    /// only while.
+    /// [`reply_to`] for the questions. `nothing_heard` is whether the stand-in model has heard
+    /// nothing from the harness yet, which a first-run question is answered only while.
     fn answers_a_screen(&self, id: u32, nothing_heard: bool, answered: &mut Answered) {
         let press = |bytes: &[u8]| {
             let _ = self.held().chats().sessions().input(id, bytes);
         };
-        let screen = self.screen_of(id).to_lowercase();
-        if answered.first_run < 3
-            && nothing_heard
-            && [
-                "do you trust",
-                "trust the files",
-                "press enter",
-                "enter to confirm",
-                "yes, proceed",
-                "open restricted",
-                "enter continue",
-            ]
-            .iter()
-            .any(|ask| screen.contains(ask))
-        {
-            press(b"\r");
-            answered.first_run += 1;
-            std::thread::sleep(Duration::from_secs(2));
-        } else if answered.newer_model < 3 && screen.contains("use existing model") {
-            press(b"\x1b[B");
-            std::thread::sleep(Duration::from_millis(600));
-            press(b"\r");
-            answered.newer_model += 1;
-            std::thread::sleep(Duration::from_secs(2));
-        } else if answered.bypass < 5
-            && screen.contains("bypass permissions mode")
-            && screen.contains("yes, i accept")
-        {
-            std::thread::sleep(Duration::from_secs(1));
-            press(b"\x1b[B");
-            std::thread::sleep(Duration::from_millis(600));
-            press(b"\r");
-            answered.bypass += 1;
-            std::thread::sleep(Duration::from_secs(2));
-        } else if answered.permission < 8 && screen.contains("permission required") {
-            // Once purlis's own hook on the ask has had its say: pressed sooner, OpenCode cuts
-            // that hook off (`record.rs`).
-            std::thread::sleep(Duration::from_secs(1));
-            press(b"\r");
-            answered.permission += 1;
-            std::thread::sleep(Duration::from_secs(2));
+        let Some(reply) = reply_to(&self.screen_of(id), nothing_heard, answered) else {
+            return;
+        };
+        match reply {
+            Reply::UseExistingModel => {
+                press(b"\x1b[B");
+                std::thread::sleep(Duration::from_millis(600));
+                press(b"\r");
+                answered.newer_model += 1;
+            }
+            Reply::Enter => {
+                press(b"\r");
+                answered.first_run += 1;
+            }
+            Reply::AcceptTheWarning => {
+                std::thread::sleep(Duration::from_secs(1));
+                press(b"\x1b[B");
+                std::thread::sleep(Duration::from_millis(600));
+                press(b"\r");
+                answered.bypass += 1;
+            }
+            Reply::AllowOnce => {
+                // Once purlis's own hook on the ask has had its say: pressed sooner, OpenCode cuts
+                // that hook off (`record.rs`).
+                std::thread::sleep(Duration::from_secs(1));
+                press(b"\r");
+                answered.permission += 1;
+            }
         }
+        std::thread::sleep(Duration::from_secs(2));
     }
 
     /// **What the harness's profile folder says in its logs**, for a red run's reader: the tail of
@@ -2122,8 +2133,12 @@ impl Drop for Scenario {
                 _ => {}
             }
         }
-        // A tool command whose group never reached the file is said, never skipped (#7197).
-        if let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len()) {
+        // A tool command whose group never reached the file is said, never skipped (#7197). A
+        // real harness writes no such file, so its tool commands' groups are not in it: the chat
+        // process's own group, and every process the scenario saw run, are what is watched.
+        if !self.real_harness
+            && let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len())
+        {
             left.unwatched.push(lost);
         }
         // Read while they run: a group the quit left can be #7103's only if it is one of these.
