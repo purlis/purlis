@@ -344,3 +344,51 @@ fn a_chat_serves_only_where_its_profile_names_a_socket_to_serve_on() {
     ));
     assert!(!held.serves_at(Path::new(own)));
 }
+
+/// **`ports = "off"`, as purlis writes it** (#7105): every local socket and loopback port
+/// allowed, then purlis's own sockets denied by a `path-regex`, after them so they win.
+const PORTS_OFF: &str = r#"(version 1)
+(allow default)
+(deny network-outbound (remote unix-socket))
+(deny network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote unix-socket))
+(allow network-outbound (remote ip "localhost:*"))
+(deny network-outbound (remote unix-socket (path-regex #"/\.([pP][uU][rR][lL][iI][sS]|[cC][hH][aA][rR][tT][eE][rR])/")))
+(deny network-outbound (remote unix-socket (path-regex #"/([hH][oO][oO][kK][sS]|purlisd[^/]*)\.[sS][oO][cC][kK]$")))
+(deny network-outbound (remote ip "localhost:4100"))
+"#;
+
+#[test]
+fn with_ports_off_a_chat_reads_the_profile_and_reaches_other_sockets_but_not_purlis_own() {
+    let profile = read(PORTS_OFF);
+    let unix = |path: Option<&'static str>| Op::Connect(Remote::Unix(path.map(Path::new)));
+    // Another program's socket, an abstract one and a loopback port are reached.
+    assert!(profile.allows(&unix(Some("/var/run/docker.sock"))));
+    assert!(profile.allows(&unix(None)));
+    assert!(profile.allows(&tcp("127.0.0.1", 5432)));
+    // Purlis's own stay denied, by folder and by name, in any case.
+    for held in [
+        "/work/p/.purlis/hooks.sock",
+        "/work/p/.CHARTER/x/y.sock",
+        "/run/user/1000/hooks.sock",
+        "/run/user/1000/Hooks.SOCK",
+        "/run/user/1000/purlisd-7.sock",
+    ] {
+        assert!(!profile.allows(&unix(Some(held))), "{held}");
+    }
+    assert!(!profile.allows(&tcp("127.0.0.1", 4100)));
+    // A name that only looks like one is not held.
+    assert!(profile.allows(&unix(Some("/run/user/1000/purlisd-7.sock.bak"))));
+}
+
+#[test]
+fn a_socket_pattern_that_does_not_compile_is_refused_never_allowed() {
+    let why = Profile::parse(
+        r#"(version 1)
+(allow default)
+(deny network-outbound (remote unix-socket (path-regex #"/(unclosed")))
+"#,
+    )
+    .expect_err("a pattern that does not compile is not read");
+    assert!(why.to_string().contains("the socket pattern"), "{why}");
+}
