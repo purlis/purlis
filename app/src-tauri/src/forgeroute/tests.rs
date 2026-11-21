@@ -1473,3 +1473,28 @@ fn a_run_is_handed_what_its_sandbox_is_wired_from_and_never_shows_the_sentinel()
         "the sentinel is never printed"
     );
 }
+
+#[test]
+fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_other() {
+    let scene = Scene::new();
+    // No run is committed to the session yet.
+    assert!(scene.routes.git_route(7).is_none());
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    assert!(guard.params().is_some());
+    guard.commit(7);
+    let route = scene
+        .routes
+        .git_route(7)
+        .expect("a route for the session")
+        .expect("one git can use");
+    let shown = format!("{route:?}");
+    assert!(shown.contains("HTTPS_PROXY"), "{shown}");
+    assert!(
+        shown.contains("credential.https://github.com.helper="),
+        "{shown}"
+    );
+    // Another session has none, and neither has one whose route stopped.
+    assert!(scene.routes.git_route(8).is_none());
+    scene.routes.stop("run-1");
+    assert!(scene.routes.git_route(7).is_none());
+}

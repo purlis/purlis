@@ -1,6 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
+#[cfg(not(feature = "forge-wiring"))]
 use std::io::{Read as _, Write as _};
 use std::sync::Mutex;
 
@@ -64,6 +65,7 @@ impl Endpoint for Conversions {
     }
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// A request head to `port`, answered with status line and body.
 fn get(port: u16, target: &str) -> String {
     let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).expect("connects");
@@ -77,6 +79,7 @@ fn get(port: u16, target: &str) -> String {
     answer
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// The value of `name=` in a page, up to its closing quote.
 fn after<'a>(text: &'a str, name: &str) -> &'a str {
     let from = text.find(name).expect("in the page") + name.len();
@@ -751,6 +754,7 @@ fn the_project_s_forge_hosts_are_read_from_its_clones_with_a_host_it_knows_no_fo
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// **A browser through the whole flow, with no socket** (the report of 2026-11-17): it loads the start
 /// page, reads the `state` its form posts to GitHub, and comes back as `back` says, given that
 /// state. The clock moves only while the listener rests, so a flow that keeps waiting runs out its
@@ -811,6 +815,7 @@ fn through_a_browser(back: &dyn Fn(&str) -> String) -> (Result<Created, String>,
     (said, shown)
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// A browser's `GET` of `target`, with `more` header lines, as Chromium sends it.
 fn browser_get(target: &str, more: &str) -> String {
     format!(

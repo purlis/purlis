@@ -5,8 +5,11 @@
 
 use std::path::PathBuf;
 
-use super::{Handed, Ready, Tool, forge_env, keyed, run_words};
+#[cfg(not(feature = "forge-wiring"))]
+use super::keyed;
+use super::{Handed, Ready, Tool, forge_env, run_words};
 
+#[cfg(not(feature = "forge-wiring"))]
 fn read(text: &str) -> (Vec<Tool>, Vec<String>) {
     let value: toml::Value = toml::from_str(text).expect("TOML");
     let (tools, refused) = keyed(

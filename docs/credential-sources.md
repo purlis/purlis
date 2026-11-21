@@ -135,46 +135,6 @@ to a file, an argument or an environment a chat reads.
   mints an installation token from the organisation's App Secret for a vouched runner and holds no
   person's credential. What it mints is a `ghs_` token, which a token connection reads as per-job.
 
-## What a chat's egress denial does not hold
-
-The text of an amendment to ADR 0128 D3g (the ADR is #7269's, so the amendment file moves to
-`docs/adr/0128/` when it lands). The denial in `sandbox/forgedeny.rs` holds a forge by name, by
-address and by the name inside a tunnel. It does not hold:
-
-- **A server that ignores SNI.** The pin reads the server name in the TLS ClientHello; a GHES or
-  self-hosted GitLab that answers whatever name it is sent is held only by its address. A hello that
-  hides its name (ECH) or has none is therefore refused on a tunnel to an address literal while a
-  forge is denied; to a named host it is carried, so browsers' GREASE ECH keeps working. An ECH
-  hello keeps its outer name: a forge name beside it is refused as a named hello is, since a server
-  that does not speak ECH serves the outer name. A hello's record version is not read (RFC 8446
-  ignores it), so any record of content type `0x14` to `0x18` must parse as a ClientHello or is
-  refused, as is an SSLv2-compatible hello.
-- **The literal-tunnel rule does not hold servers that ignore SNI.** A tunnel to an address literal
-  is refused for a hello with no name or an ECH one, but a server that ignores SNI and gets a
-  non-forge name inside is held only by the address lists, never by this rule.
-- **Sibling holds on shared CDN addresses.** A forge host's sibling names (`altssh`, `ssh`,
-  `registry`, `uploads`, `gist`, `raw`, `www`) are resolved and their addresses held. Where one
-  resolves to an address shared with unrelated sites (a CDN), those sites are refused too, for
-  the hold's 20 minutes. A sibling that does not exist is asked again every 10 minutes, not 10
-  seconds.
-- **A PROXY-protocol preamble on a self-hosted front end.** A front end that reads a PROXY
-  protocol header before the TLS hello would see the tunnel's first bytes as that header, not a
-  record; those bytes are no TLS record, so they are carried (to a name that is not exempt). A
-  forge reached that way is held by its address lists only, and the port inside the preamble is
-  not read.
-- **A server that tolerates a changed SNI in the second ClientHello.** After a HelloRetryRequest
-  the client sends a second ClientHello. Only the first record of a tunnel is read, so a server
-  that accepts a different server name in the second hello is pinned to the first one's name and
-  nothing later.
-- **An arbitrary non-forge name said inside a tunnel to an address of a forge that no list holds.**
-  The pin refuses a forge's own names; a tunnel to an unlisted address that says `example.org`
-  inside is carried by design, and held only by the address lists (GitHub's published ranges, and
-  what each forge host and its sibling names resolve to).
-- **A server-first protocol on port 443.** Its first bytes are no TLS record, so the wait for a
-  hello ends after the proxy's head timeout, recorded as such, not as the forge route.
-- **GitHub Pages and `ghcr.io`,** which share GitHub's ranges: refused by name while a forge is
-  denied, with a sentence that names the forge's addresses.
-
 ## Which account, which repo, and the second token (slice G)
 
 The signed-in source answers for a host. With more than one account on a host (a personal and an

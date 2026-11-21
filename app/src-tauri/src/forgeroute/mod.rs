@@ -525,6 +525,9 @@ struct Live {
     peer: Option<String>,
     /// Dropped before the folder goes.
     bound: Option<Bound>,
+    /// What the run's sandbox was wired from: the app's own git for this chat ([`ForgeRoutes::git_route`])
+    /// goes through the same door.
+    inputs: Box<purlis_core::forgewire::Inputs>,
 }
 
 /// Which session each committed run is, and the sessions whose program ended while a start was
@@ -671,6 +674,7 @@ impl ForgeRoutes {
                 root: self.root.clone(),
             }),
         };
+        let inputs = params.inputs.clone();
         self.live().insert(
             run.to_owned(),
             Live {
@@ -681,6 +685,7 @@ impl ForgeRoutes {
                 dir: run_dir,
                 peer,
                 bound: Some(bound),
+                inputs,
             },
         );
         Ok(Some(params))
@@ -863,6 +868,22 @@ impl ForgeRoutes {
             Ok(Some(params)) => RunnerForward::Desktop(params),
             Ok(None) | Err(_) => RunnerForward::TokenConnections,
         }
+    }
+
+    /// **The route the app's own git takes for chat `session`** (one login, slice K): what `purlis
+    /// worktree push` and `update` run for a chat through, so the git the app runs for it reaches
+    /// the forge through this run's proxy with its sentinel, as the chat's own git does, and holds
+    /// none of the person's credentials. `None` where the session has no live route: a chat with
+    /// no recorded repo, one put back from the session host, one whose route stopped.
+    pub fn git_route(
+        &self,
+        session: u32,
+    ) -> Option<std::io::Result<purlis_core::worktree::git::NetworkRoute>> {
+        let run = self.sessions().of_run.get(&session).cloned()?;
+        let inputs = self.live().get(&run).map(|live| live.inputs.clone())?;
+        // The door itself, not the chat's egress port: the app's git is not in the chat's sandbox.
+        let route = inputs.route(format!("http://{}", inputs.door));
+        Some(purlis_core::forgewire::git_network(&route))
     }
 
     /// The run's audit, a line per request: method, host, repo, class and verdict. The audit
@@ -1271,6 +1292,11 @@ pub fn routes() -> Option<&'static ForgeRoutes> {
 /// **Slice B puts the params in the run's environment**; until it merges nothing is handed over.
 pub fn guard(chat: &str, run: &str, project: &Path) -> Option<RouteGuard<'static>> {
     Some(routes()?.guard(chat, run, project))
+}
+
+/// The route the app's own git takes for chat `session` ([`ForgeRoutes::git_route`]).
+pub fn git_route(session: u32) -> Option<io::Result<purlis_core::worktree::git::NetworkRoute>> {
+    routes()?.git_route(session)
 }
 
 /// A chat's session closes, or its program ends on its own (`chats.rs`).

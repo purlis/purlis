@@ -19,7 +19,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use purlis_core::forge::proxy::listener::{
-    ForgeListener, Upstream, UpstreamError, UpstreamRequest, UpstreamResponse,
+    ForgeListener, PushGate, PushRead, PushVerdict, Upstream, UpstreamError, UpstreamRequest,
+    UpstreamResponse,
 };
 use purlis_core::forge::proxy::{EndpointKind, Verdict};
 
@@ -296,6 +297,11 @@ struct Setup {
 }
 
 fn setup() -> Setup {
+    setup_with(None)
+}
+
+/// [`setup`], its listeners checking every push with `gate`.
+fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
     let dir = tempfile::Builder::new()
         .prefix("fp")
         .tempdir_in("/tmp")
@@ -333,6 +339,7 @@ fn setup() -> Setup {
     world.wiring.upstream = forge.clone();
     let seen = Arc::new(Seen::default());
     world.wiring.observe = Some(seen.clone());
+    world.wiring.push = gate;
     let socket =
         ForgeListener::serve_socket(world.wiring.clone(), &dir.path().join("sock")).unwrap();
     let connect = ForgeListener::serve_connect(world.wiring.clone()).unwrap();
@@ -791,4 +798,112 @@ fn git_clones_fetches_and_pushes_a_branch_it_made_but_not_the_default_branch() {
         .filter(|r| r.method == "POST")
         .count();
     assert_eq!(posts, 0, "a refused push reached the forge");
+}
+
+/// A gate that holds a push of a branch named `ci-…`, as the app's holds a push that changes CI
+/// files, and lets every other through. The app's own gate reads the push's objects in a
+/// quarantine; this is the listener's side of it: a held push is answered and sent nowhere.
+struct HoldsCiBranches;
+
+impl PushGate for HoldsCiBranches {
+    fn check(&self, _: &purlis_core::forge::proxy::ChatId, push: &PushRead) -> PushVerdict {
+        if push
+            .updates
+            .iter()
+            .any(|u| u.name.starts_with("refs/heads/ci-"))
+        {
+            PushVerdict::Held("Held: Ask 1, a CI-file push in acme/app.".to_owned())
+        } else {
+            PushVerdict::Forward
+        }
+    }
+}
+
+#[test]
+fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reaches_the_forge_never()
+{
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    use purlis_core::worktree::git::{Isolated, NetworkRoute, isolated, run_network};
+    let s = setup_with(Some(Arc::new(HoldsCiBranches)));
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    std::fs::write(work.join("a.txt"), "a\n").unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "a"]);
+
+    // What the app's git is given for the chat (`forgewire::git_network`), with the test's own
+    // sentinel helper in place of purlis's binary: the proxy, the chat's authority, no login.
+    let proxy = format!("http://127.0.0.1:{}", s.port());
+    let sentinel = s.world.sentinel.expose().to_owned();
+    let route = NetworkRoute::new(
+        vec![
+            "credential.helper=".to_owned(),
+            format!(
+                "credential.https://github.com.helper=!f() {{ echo username=x-access-token; echo password={sentinel}; }}; f"
+            ),
+            format!("http.https://github.com/.sslCAInfo={}", s.ca_file.display()),
+            format!("http.https://github.com/.proxy={proxy}"),
+        ],
+        vec![
+            ("HTTPS_PROXY".into(), proxy.clone().into()),
+            ("https_proxy".into(), proxy.into()),
+        ],
+    );
+    let isolation = Isolated::default().through_route(route);
+    let push = |to: &str| {
+        isolated(&isolation, || {
+            // The helper a caller names is ignored under a route: the CLI's login is never asked.
+            run_network(
+                &work,
+                Some("!'/nonexistent/gh' auth git-credential"),
+                &["push", "origin", &format!("HEAD:refs/heads/{to}")],
+            )
+        })
+        .expect("git ran")
+    };
+    let sent = push("brokered");
+    assert!(sent.ok(), "{}", sent.err);
+    assert!(
+        s.forge_saw_the_real_token(),
+        "the forge was not sent the real token"
+    );
+    let refs = purlis_core::forklock::output(
+        Command::new("git")
+            .args(["branch", "--list"])
+            .current_dir(&s.forge.bare),
+    )
+    .unwrap();
+    assert!(String::from_utf8_lossy(&refs.stdout).contains("brokered"));
+
+    // A push the gate holds is answered by the listener and reaches the forge never.
+    let before = s
+        .forge
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|r| r.method == "POST")
+        .count();
+    let held = push("ci-workflow");
+    assert!(!held.ok(), "a held push was sent");
+    let after = s
+        .forge
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|r| r.method == "POST")
+        .count();
+    assert_eq!(before, after, "a held push reached the forge");
 }

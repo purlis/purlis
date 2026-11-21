@@ -881,6 +881,7 @@ fn a_credential_is_one_under_every_spelling_a_program_opens_it_by() {
     }
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// What each entry of [`CREDENTIAL_FILES`] is, said by a row here and never guessed from its name.
 enum Entry {
     /// A forge's own login file: the program that reads it, the kind of forge, the variable the

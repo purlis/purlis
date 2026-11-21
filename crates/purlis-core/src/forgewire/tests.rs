@@ -943,3 +943,50 @@ fn every_subcommand_in_the_table_takes_a_repo_flag_in_the_gh_on_this_machine() {
         }
     }
 }
+
+#[test]
+fn the_apps_git_for_a_chat_goes_through_the_chats_proxy_with_its_sentinel_and_no_login_of_the_persons()
+ {
+    let dir = Path::new("/synthetic/route");
+    let github = repo("github.com", "acme", "app", ForgeKind::GitHub);
+    let network = git_network(&route(dir, vec![github])).expect("a route for git");
+    let held = |network: &crate::worktree::git::NetworkRoute| format!("{network:?}");
+    let shown = held(&network);
+    // The proxy and the sentinel are handed by name, the sentinel to the helper alone.
+    assert!(
+        shown.contains("HTTPS_PROXY") && shown.contains("http://127.0.0.1:43001"),
+        "{shown}"
+    );
+    assert!(shown.contains(SENTINEL_ENV), "{shown}");
+    // The helper is purlis's own, named for the recorded host, after a reset; the chat's authority
+    // is the one trusted for it; and the forge hosts are each proxied.
+    assert!(shown.contains("credential.helper="), "{shown}");
+    assert!(
+        shown.contains("credential.https://github.com.helper="),
+        "{shown}"
+    );
+    assert!(shown.contains(&SENTINEL_HELPER_ARG.to_string()), "{shown}");
+    assert!(
+        shown.contains("http.https://github.com/.sslCAInfo=/synthetic/route/ca.pem"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains("http.https://github.com/.proxy=http://127.0.0.1:43001"),
+        "{shown}"
+    );
+    // No forge CLI login is named anywhere.
+    for cli in ["gh auth", "glab auth", "git-credential"] {
+        assert!(!shown.contains(cli), "{cli} is named: {shown}");
+    }
+}
+
+#[test]
+fn a_route_git_cannot_use_is_refused_and_nothing_is_composed() {
+    let dir = Path::new("/synthetic/route");
+    let mut off_loopback = route(dir, vec![]);
+    off_loopback.egress_url = "http://10.0.0.1:43001".to_owned();
+    assert!(git_network(&off_loopback).is_err());
+    let mut bad_sentinel = route(dir, vec![]);
+    bad_sentinel.sentinel = SecretString::from("has a space");
+    assert!(git_network(&bad_sentinel).is_err());
+}
