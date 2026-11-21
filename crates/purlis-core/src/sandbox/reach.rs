@@ -72,6 +72,10 @@ pub enum Refused {
     LocalAddress,
     /// A host an administrator's policy pins as never allowed (#1666): never asked about.
     Policy,
+    /// A forge host, reached only through purlis's forge route (ADR 0128 D3g): never asked
+    /// about, and never listed by a layer. Made by a proxy's [`super::egress::Serving`], never
+    /// by a [`Reach`].
+    ForgeRoute,
 }
 
 /// What a chat's connection to a host and port is answered with.

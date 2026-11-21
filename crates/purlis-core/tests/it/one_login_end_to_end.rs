@@ -237,12 +237,13 @@ fn a_person_signs_in_once_and_a_chat_works_the_forge_through_the_real_policy() {
     std::thread::spawn(move || serve(&listener, &serving));
 
     let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let out = Command::new("node")
-        .arg("tests/one-login-e2e/run.mjs")
-        .env("PURLIS_DECIDE_ADDR", addr.to_string())
-        .current_dir(&repo)
-        .output()
-        .expect("node runs the scenario");
+    let out = purlis_core::forklock::output(
+        Command::new("node")
+            .arg("tests/one-login-e2e/run.mjs")
+            .env("PURLIS_DECIDE_ADDR", addr.to_string())
+            .current_dir(&repo),
+    )
+    .expect("node runs the scenario");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
