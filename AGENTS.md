@@ -190,3 +190,12 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
 - Clippy's `disallowed-methods` has one `clippy.toml` per crate (core and the app here), so a rule
   that must hold across crates also needs a test that reads the workspace's files, as
   `the_press_is_made_only_by_the_windows_command_layer` does.
+- In a sandboxed chat sccache cannot start (`Operation not permitted`), so `cargo` fails at
+  `rustc -vV`: run it with `RUSTC_WRAPPER=` (empty) and `CARGO_INCREMENTAL=0`. A cold
+  `purlis-core` test build is 5 to 7 minutes: batch the filters into one `cargo test --lib --test it`.
+- A shell command whose heredoc body is prose about merging is held by the merge guard: write
+  files with the Write or Edit tool, not `cat <<EOF` or `python3 - <<EOF`.
+- The policy in force (M75-14) is `policy/force.rs`: a decision is `force::judge` over the
+  committed project, the accepted copy and every sealed floor version, and its tests are unit
+  tests (`force_tests.rs`) because they need the sealed store's test seam. A test that needs the
+  accepted copy hands `judge` a hand-built `Standing`, so it never names the person's press.

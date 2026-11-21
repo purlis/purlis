@@ -1035,6 +1035,58 @@ fn a_floor_that_enforces_the_family_puts_back_a_deny_a_mode_lowered_to_an_ask() 
     }
 }
 
+/// `asks` lifted by the project, and `network` as the test names it.
+fn asks_off(network: &str) -> String {
+    format!("[policy]\ntemplate = \"strict\"\nnetwork = \"{network}\"\nasks = \"off\"\n")
+}
+
+/// #7222: where the floor enforces `asks` and not `network`, the `@ask` forbid on a connect that
+/// the project's `asks = "off"` lifted is put back as an ask, with or without a plain forbid that
+/// `network` legitimately lifted beside it.
+#[test]
+fn a_floor_that_enforces_asks_puts_an_ask_back_on_a_connect_the_family_does_not_hold() {
+    purlis_core::unsteered!();
+    use purlis_core::enforcement::Resolved;
+    let floor = Resolved::parse("network=off,asks=enforce");
+
+    // (Ask, Allow): the shipped ask on an unknown host, lifted by `asks = "off"`.
+    let loaded_ask = loaded(&asks_off("enforce"), None);
+    let decided = decide::decide(&loaded_ask, &unknown_host(), &empty_world());
+    assert_eq!(
+        (decided.outcome, decided.after_mode),
+        (Outcome::Ask, Outcome::Allow),
+        "{decided:?}"
+    );
+    let held = decided.held_to(&floor);
+    assert_eq!(
+        (held.after_mode, held.mode, held.mode_family.as_str()),
+        (Outcome::Ask, Mode::Enforce, "asks"),
+        "{held:?}"
+    );
+    assert_eq!(ids(&held), ["network-unknown-host"], "{held:?}");
+
+    // (Deny, Allow): a plain forbid `network = "log"` lifted, beside the ask `asks` lifted.
+    let loaded_plain = loaded(&asks_off("log"), Some(SHADOW));
+    let decided = decide::decide(&loaded_plain, &unknown_host(), &empty_world());
+    assert_eq!(
+        (decided.outcome, decided.after_mode),
+        (Outcome::Deny, Outcome::Allow),
+        "{decided:?}"
+    );
+    let held = decided.held_to(&floor);
+    assert_eq!(held.after_mode, Outcome::Ask, "{held:?}");
+    assert_eq!(ids(&held), ["network-unknown-host"], "{held:?}");
+
+    // A floor with `asks` off holds no ask the person did not accept, whatever `network` says.
+    let exact = Resolved::parse("network=enforce,asks=off");
+    let decided = decide::decide(&loaded_ask, &unknown_host(), &empty_world());
+    assert_eq!(
+        decided.held_to(&exact).after_mode,
+        Outcome::Allow,
+        "the mirror case is exact"
+    );
+}
+
 #[test]
 fn a_known_host_and_an_unknown_one_are_held_alike_by_a_floor() {
     purlis_core::unsteered!();

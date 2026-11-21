@@ -72,9 +72,12 @@ pub const NEVER_MARKER: &str = "never-marker";
 pub const PASS: &str = "pass";
 /// A version of the accepted floor.
 pub const FLOOR: &str = "floor";
+/// **A commit went past the accepted floor's cap** (M75-14): present until the person's press
+/// ([`recommit`]), which is the deny state's cause [`Deny::PastTheFloorCap`] while it is.
+pub const PAST_THE_CAP: &str = "past-the-cap";
 
 /// The kinds a store holds.
-pub const KINDS: [&str; 7] = [
+pub const KINDS: [&str; 8] = [
     ACCEPTED,
     ACCEPTANCE,
     GRANT,
@@ -82,6 +85,7 @@ pub const KINDS: [&str; 7] = [
     NEVER_MARKER,
     PASS,
     FLOOR,
+    PAST_THE_CAP,
 ];
 
 /// What `bind` an Everywhere entry is sealed to: neither a plane nor a clone.
@@ -1320,6 +1324,9 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
     } else if found.manifest.is_some() {
         standing.state = State::Holds;
         standing.entries = found.entries;
+        // A commit past the accepted floor's cap was recorded: the deny state, until a press.
+        let past = standing.entries.iter().any(|e| e.kind == PAST_THE_CAP);
+        standing = standing.with_commit_past_the_floor_cap(past);
     }
     standing
 }
@@ -1379,6 +1386,26 @@ impl Draft {
         if !KINDS.contains(&kind) {
             self.refused = Some(format!(
                 "{kind:?} is not a kind of answer the store keeps, so nothing was changed"
+            ));
+            return;
+        }
+        if !self
+            .entries
+            .iter()
+            .any(|e| e.kind == kind && e.text == text)
+        {
+            self.entries.push(Entry::new(kind, text));
+        }
+    }
+
+    /// **Seals what the app saw tighten the policy**, with no press (M75-14): a version of the
+    /// accepted floor ([`FLOOR`]), or the record that a commit went past its cap
+    /// ([`PAST_THE_CAP`]). Each only narrows what a chat may do, so neither needs the person; any
+    /// other kind widens or is the person's to give, and adds nothing and refuses the commit.
+    pub fn add_narrowing(&mut self, kind: &str, text: &str) {
+        if ![FLOOR, PAST_THE_CAP].contains(&kind) {
+            self.refused = Some(format!(
+                "{kind:?} is not something the app seals on its own, so nothing was changed"
             ));
             return;
         }

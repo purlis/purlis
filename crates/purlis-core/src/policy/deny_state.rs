@@ -181,9 +181,12 @@ pub fn refused(action: &str, standing: &Standing) -> Option<Decision> {
         mode: Mode::Enforce,
         after_mode: Outcome::Deny,
         lifted: Vec::new(),
+        asked: Vec::new(),
         lock: None,
         grant: None,
         unasked: None,
+        keep: None,
+        timed: None,
         deny_state: Some(state),
     })
 }
