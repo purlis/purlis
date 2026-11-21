@@ -349,6 +349,8 @@ const READ_QUERY_KEYS: &[&str] = &[
     "source",
     "event",
     "pagination",
+    // GitLab's `glab mr view` sends it; it is taken out of what is sent on ([`read_allowed`]).
+    "render_html",
 ];
 
 fn read_query_ok(target: &Target) -> bool {
@@ -395,8 +397,12 @@ fn compare_is_own(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRep
 /// with. Anything else (secret scanning, traffic, exports, triggers…) is not on it.
 fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo) -> bool {
     // No read impersonates, on any route.
+    // `render_html` is not refused on GitLab, whose own `glab mr view` and `issue view` send it: it
+    // is taken out of what is sent on instead ([`super::policy`]'s `upstream`), so the forge never
+    // renders references (which can name another project's titles) for a chat. GitHub has no such
+    // switch on a read: one there is refused.
     if target.has_query_key("sudo")
-        || target.has_query_key("render_html")
+        || (kind == Kind::GitHub && target.has_query_key("render_html"))
         || target.has_query_key("include_html_description")
     {
         return false;

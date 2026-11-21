@@ -905,9 +905,16 @@ fn upstream(repo: &AllowedRepo, surface: Surface, segments: &[String], target: &
         url.push('/');
         url.extend(utf8_percent_encode(segment, KEEP));
     }
-    if !target.query.is_empty() {
+    // `render_html` is never sent on: where a route lets it by (GitLab's reads), the forge is not
+    // asked to render references into the answer.
+    let sent: Vec<&(String, String)> = target
+        .query
+        .iter()
+        .filter(|(k, _)| !k.eq_ignore_ascii_case("render_html"))
+        .collect();
+    if !sent.is_empty() {
         let mut query = url::form_urlencoded::Serializer::new(String::new());
-        for (k, v) in &target.query {
+        for (k, v) in sent {
             query.append_pair(k, v);
         }
         url.push('?');

@@ -64,7 +64,9 @@ impl Secret {
     fn bound(nonce: &str, host: &str, port: u16) -> String {
         format!(
             "{nonce}:{}:{port}",
-            host.trim_end_matches('.').to_ascii_lowercase()
+            host.trim_matches(['[', ']'])
+                .trim_end_matches('.')
+                .to_ascii_lowercase()
         )
     }
 

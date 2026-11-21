@@ -645,10 +645,8 @@ fn gitlab_rendered_html_and_an_unknown_read_query_key_are_not_readable() {
     purlis_core::unsteered!();
     let s = Scene::single();
     for target in [
-        "/api/v4/projects/42/issues/5?render_html=true",
-        "/api/v4/projects/42/merge_requests/3?render_html=true",
-        "/api/v4/projects/42/issues/5/notes?render_html=1",
         "/api/v4/projects/42/issues/5?sudo=root",
+        "/api/v4/projects/42/issues/5?include_html_description=true",
         "/api/v4/projects/42/repository/commits/abc?unknown=1",
         "/api/v4/projects/42/pipelines/9/bridges",
         "/api/v4/projects/42/pipelines/9/variables",
@@ -677,6 +675,29 @@ fn gitlab_rendered_html_and_an_unknown_read_query_key_are_not_readable() {
         b"",
     );
     assert!(matches!(out, Outcome::Refused(_)), "{out:?}");
+}
+
+#[test]
+fn gitlabs_render_html_is_read_but_never_sent_on() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    // `glab mr view` sends it. The forge is not asked to render references into the answer, which
+    // can carry the titles of other projects the person can see.
+    for (target, upstream) in [
+        (
+            "/api/v4/projects/42/merge_requests/3?render_html=true",
+            "https://gitlab.com/api/v4/projects/42/merge_requests/3",
+        ),
+        (
+            "/api/v4/projects/42/merge_requests/3?include_rebase_in_progress=true&render_html=true&page=2",
+            "https://gitlab.com/api/v4/projects/42/merge_requests/3?include_rebase_in_progress=true&page=2",
+        ),
+    ] {
+        match s.send("GET", "gitlab.com", target, b"") {
+            Outcome::Forward(forwarded) => assert_eq!(forwarded.upstream, upstream, "{target}"),
+            other => panic!("{target}: {other:?}"),
+        }
+    }
 }
 
 #[test]
