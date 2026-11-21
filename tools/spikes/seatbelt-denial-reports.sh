@@ -124,8 +124,10 @@ case_run C_with_report_path_tag '(with report)' 'eventMessage CONTAINS "@DIRTAG@
 case_run D_no_report_control '(with no-report)' 'eventMessage CONTAINS "@DIRTAG@"'
 case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"' load
 case_run B_default_report_path_tag '' 'eventMessage CONTAINS "@DIRTAG@"' load
+if id -Gn | grep -q -w admin; then  # a standard user cannot read the log at all, so the case would only wait
 echo "== folded summary lines: does 'N duplicate reports' carry the tag? (waits 60 s: a fold came about 25 s after its process ended)"
 for _ in 1 2; do case_run F_folded_summary_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@" OR eventMessage CONTAINS "duplicate report"' '' 60; done
+fi
 echo "== broad-predicate comparison (what 'log stream over everything' would show): sender Sandbox"
 case_run E_message_tag_broad_predicate '(with message "@TAG@")' 'sender == "Sandbox" OR process == "kernel"'
 echo "== trace directive: does a profile with (trace) compile?"
