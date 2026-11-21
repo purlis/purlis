@@ -207,3 +207,44 @@ fn a_merge_naming_an_anchored_planes_repo_is_refused_from_outside_it() {
         None
     );
 }
+
+/// Review round 3: where the reach of a held command cannot be read, an anchored plane anywhere on
+/// the machine refuses it, with the way out in the refusal's own words.
+#[test]
+fn a_merge_whose_reach_cannot_be_read_is_refused_wherever_a_plane_is_anchored() {
+    let machine = Machine::new();
+    machine.anchored().remote("https://github.com/acme/web.git");
+    let outside = machine.elsewhere.display().to_string();
+    let plane = machine.root.display().to_string();
+    for command in [
+        format!("sh -c 'cd {plane} && gh pr merge 5'"),
+        "bash -c 'gh pr merge 5 -R acme/web'".to_owned(),
+        "eval 'gh pr merge 5'".to_owned(),
+        "echo 5 | xargs gh pr merge".to_owned(),
+        "gh pr merge 5 -R git@github.com:acme/web.git".to_owned(),
+        "gh api repos/acme/web/pulls/5/merge -X PUT".to_owned(),
+    ] {
+        let reason = machine
+            .denial(&machine.elsewhere, &outside, &command)
+            .unwrap_or_else(|| panic!("not refused: {command}"));
+        // Read where it can be (an address, an API path), it is the plane's and has no host.
+        assert!(
+            reason.contains("cannot be read") || reason.contains("no session host to ask"),
+            "{command}: {reason}"
+        );
+    }
+    let reason = machine
+        .denial(&machine.elsewhere, &outside, "bash -c 'gh pr merge 5'")
+        .expect("refused");
+    assert!(reason.contains("from the plane's own folder"), "{reason}");
+}
+
+#[test]
+fn a_merge_whose_reach_cannot_be_read_runs_where_no_plane_is_anchored() {
+    let machine = Machine::new();
+    let outside = machine.elsewhere.display().to_string();
+    assert_eq!(
+        machine.denial(&machine.elsewhere, &outside, "bash -c 'gh pr merge 5'"),
+        None
+    );
+}

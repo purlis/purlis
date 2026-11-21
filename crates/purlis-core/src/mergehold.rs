@@ -350,7 +350,7 @@ fn lands(toks: &[String]) -> bool {
 
 /// The flags of `gh pr merge` and `glab mr merge` that take a value, which is never the
 /// request's number.
-const VALUE_FLAGS: &[&str] = &[
+pub(crate) const VALUE_FLAGS: &[&str] = &[
     "-b",
     "--body",
     "-F",
@@ -365,6 +365,13 @@ const VALUE_FLAGS: &[&str] = &[
     "--sha",
     "--squash-message",
 ];
+
+/// Whether one segment is itself a merge of the release floor's reading: a `gh pr merge`, a `glab
+/// mr merge` or `accept`, or `purlis change land`. Read by [`crate::policy::locality::reach_of`],
+/// which fails closed for a held command no segment of its own words is.
+pub(crate) fn segment_merges(toks: &[String]) -> bool {
+    merge_of(toks).is_some() || lands(toks)
+}
 
 /// One segment's merge: `None` where it is no `gh pr merge`, `glab mr merge` or `glab mr
 /// accept`; the request it merges where that can be read, or `Some(None)`. A flag's value is

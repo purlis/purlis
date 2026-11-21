@@ -465,6 +465,223 @@ fn the_repo_a_forge_command_names_is_read_from_its_own_words() {
     assert!(reach("rsync -R a b").unwrap().repos.is_empty());
 }
 
+/// R2-4: the floor follows `sh -c`, `eval`, substitutions and wrappers to a merge; this reader does
+/// not, so where the merge is not a top-level command of its own, nothing is said of where it goes.
+#[test]
+fn a_merge_that_is_not_a_top_level_command_is_unreadable() {
+    for command in [
+        "sh -c 'cd /anchored && gh pr merge 5'",
+        "bash -c 'gh pr merge 5 -R o/planerepo'",
+        "zsh -c \"gh pr merge 5\"",
+        "eval 'gh pr merge 5 -R o/planerepo'",
+        "echo 5 | xargs gh pr merge",
+        "env -S 'gh pr merge 5'",
+        "bash <<< 'gh pr merge 5'",
+        "bash <<EOF\ngh pr merge 5\nEOF",
+        "echo $(gh pr merge 5)",
+        "echo `gh pr merge 5`",
+        "bash ./merge-it.sh",
+        "source ./merge-it.sh",
+    ] {
+        assert!(reach(command).is_err(), "{command} must not be read");
+    }
+    // The same merges, spelled out as a command of their own, are read.
+    assert!(reach("gh pr merge 5").is_ok());
+    assert!(reach("cd /anchored && gh pr merge 5 -R o/planerepo").is_ok());
+    assert!(reach("env GH_REPO=o/r gh pr merge 5").is_ok());
+}
+
+/// R2-3: `-R` is read as pflag reads it, and its value as a remote's address would be.
+#[test]
+fn a_repo_flag_is_read_in_every_spelling_pflag_has() {
+    for flag in [
+        "-R o/r",
+        "-Ro/r",
+        "-R=o/r",
+        "-dR o/r",
+        "-dRo/r",
+        "-dR=o/r",
+        "--repo o/r",
+        "--repo=o/r",
+        "-R O/R",
+        "-R github.com/o/r",
+        "-R git@github.com:o/r.git",
+        "-R https://github.com/o/r.git",
+        "-R ssh://git@github.com/o/r",
+        "--repo=https://github.com/o/r/pull/5",
+    ] {
+        let command = format!("gh pr merge 5 {flag}");
+        assert_eq!(
+            reach(&command)
+                .unwrap_or_else(|why| panic!("{command}: {why}"))
+                .repos,
+            ["o/r"],
+            "{command}"
+        );
+    }
+    // A value another flag takes is not a repo, even where it looks like the flag.
+    assert!(reach("gh pr merge 5 -b -Rx").unwrap().repos.is_empty());
+}
+
+#[test]
+fn a_forge_command_whose_repo_cannot_be_named_is_unreadable() {
+    for command in [
+        "gh pr merge 5 -R justonename",
+        "gh pr merge 5 -R",
+        "gh pr merge 5 --repo=",
+        "gh pr merge 5 -dR $REPO",
+        "GH_REPO=nothing gh pr merge 5",
+        "gh api graphql -f query=@merge.graphql",
+        "gh api user",
+        "gh api repos/{owner}/{repo}/pulls/5/merge -X PUT",
+        "glab api projects/12/merge_requests/5/merge -X PUT",
+    ] {
+        assert!(reach(command).is_err(), "{command} must not be read");
+    }
+}
+
+#[test]
+fn a_gh_api_call_is_read_where_its_repo_path_is_plain() {
+    assert_eq!(
+        reach("gh api -X PUT repos/Acme/Web/pulls/5/merge")
+            .unwrap()
+            .repos,
+        ["acme/web"]
+    );
+    assert_eq!(
+        reach("gh api /repos/acme/web/pulls/5/merge --method PUT")
+            .unwrap()
+            .repos,
+        ["acme/web"]
+    );
+}
+
+/// R2-2: every `GH_REPO` the command and the process hold is a repo it reaches, never the last.
+#[test]
+fn every_gh_repo_seen_is_a_repo_the_command_reaches() {
+    let env = |name: &str| (name == "GH_REPO").then(|| "env/one".to_owned());
+    let read = reach_of(
+        "GH_REPO=a/b; GH_REPO=c/d gh pr merge 5",
+        Path::new("/w"),
+        &env,
+    )
+    .unwrap();
+    let mut repos = read.repos;
+    repos.sort();
+    assert_eq!(repos, ["a/b", "c/d", "env/one"]);
+}
+
+/// R2-5: a wrapper's own chdir, an exported variable and `CDPATH` all move where a command acts.
+#[test]
+fn a_wrapper_s_chdir_and_an_exported_variable_are_what_the_command_reaches() {
+    assert_eq!(
+        reach("env -C /plane gh pr merge 5").unwrap().targets,
+        [PathBuf::from("/plane")]
+    );
+    assert_eq!(
+        reach("sudo -D /plane gh pr merge 5").unwrap().targets,
+        [PathBuf::from("/plane")]
+    );
+    assert_eq!(
+        reach("export GH_REPO=a/b && gh pr merge 5").unwrap().repos,
+        ["a/b"]
+    );
+    assert_eq!(
+        reach("declare -x GIT_DIR=/plane/.git; gh pr merge 5")
+            .unwrap()
+            .targets,
+        [PathBuf::from("/plane/.git")]
+    );
+    assert_eq!(
+        reach("export GIT_WORK_TREE=/plane; gh pr merge 5")
+            .unwrap()
+            .targets,
+        [PathBuf::from("/plane")]
+    );
+    assert!(reach("export GIT_DIR=$X; gh pr merge 5").is_err());
+    // `cd` is read against the folder it runs in, except where CDPATH could send it elsewhere.
+    assert!(reach("CDPATH=/anchored cd plane && gh pr merge 5").is_err());
+    assert!(reach("export CDPATH=/anchored; cd plane; gh pr merge 5").is_err());
+    let env = |name: &str| (name == "CDPATH").then(|| "/anchored".to_owned());
+    assert!(reach_of("cd plane && gh pr merge 5", Path::new("/w"), &env).is_err());
+    assert!(reach_of("gh pr merge 5", Path::new("/w"), &env).is_ok());
+}
+
+/// R2-1: a repo is a plane's by the remotes of every repo the plane owns, not its root's alone.
+#[test]
+fn a_repo_a_planes_workspace_owns_is_the_planes_by_that_repo_s_remote() {
+    let (_home, planes) = machine();
+    let root = plane(planes.path(), "p");
+    let remote = |url: &str| format!("[remote \"origin\"]\n\turl = {url}\n");
+    std::fs::write(
+        root.join(".git").join("config"),
+        remote("https://github.com/acme/purlis-plane.git"),
+    )
+    .unwrap();
+    let repo = root.join("workspaces/ws/purlis");
+    std::fs::create_dir_all(repo.join(".git")).unwrap();
+    std::fs::write(
+        repo.join(".git").join("config"),
+        remote("git@github.com:acme/purlis.git"),
+    )
+    .unwrap();
+    let guest = root.join("workspaces/ws/repos/other");
+    std::fs::create_dir_all(guest.join(".git")).unwrap();
+    std::fs::write(
+        guest.join(".git").join("config"),
+        remote("https://gitlab.com/grp/other.git"),
+    )
+    .unwrap();
+    answers::register(&root).expect("registered");
+    outside_the_app();
+    let elsewhere = outside(planes.path());
+    for named in ["acme/purlis", "acme/purlis-plane", "grp/other"] {
+        let repos = [named.to_owned()];
+        let whereabouts = Whereabouts {
+            repos: &repos,
+            ..at(&elsewhere)
+        };
+        assert_eq!(
+            locate(&whereabouts),
+            Locality::InPlane {
+                root: root.clone(),
+                anchored: true
+            },
+            "{named}"
+        );
+    }
+    let repos = ["acme/unrelated".to_owned()];
+    let whereabouts = Whereabouts {
+        repos: &repos,
+        ..at(&elsewhere)
+    };
+    assert_eq!(locate(&whereabouts), Locality::PlaneLess);
+}
+
+/// R2-5: the remotes of every folder a command names are read, not the working directory's alone.
+#[test]
+fn the_remote_of_a_folder_the_command_names_is_the_anchored_planes_too() {
+    let (_home, planes) = machine();
+    let root = plane(planes.path(), "p");
+    let config = "[remote \"origin\"]\n\turl = https://github.com/acme/web.git\n";
+    std::fs::write(root.join(".git").join("config"), config).unwrap();
+    answers::register(&root).expect("registered");
+    outside_the_app();
+    let clone = outside(planes.path()).join("clone");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::write(clone.join(".git").join("config"), config).unwrap();
+    let elsewhere = outside(planes.path());
+    let named = [clone];
+    let whereabouts = Whereabouts {
+        targets: &named,
+        ..at(&elsewhere)
+    };
+    assert!(matches!(
+        locate(&whereabouts),
+        Locality::InPlane { anchored: true, .. }
+    ));
+}
+
 /// A merge asked by a process the app did not start is decided by the shipped default under
 /// `strict`, in unattended terms: there is no window to ask, and the policy's answer is its own.
 #[test]

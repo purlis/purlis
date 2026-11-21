@@ -368,6 +368,15 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
 /// on disk is said on stderr, and in a refusal's words. **Ancestry is not implemented in the
 /// hook:** whether the process runs under a chat the app started is the app's to say by its
 /// ancestry (see [`judged_merge`]); a descendant of a chat never gets here, so it is not read.
+///
+/// **A reach that cannot be read fails closed** (review round 3): where [`locality::reach_of`]
+/// cannot say where the merge goes (a merge inside `sh -c`, `eval`, a substitution or `xargs`, a
+/// repo that cannot be named, a `gh api` call), the process is refused whenever any plane is
+/// anchored on this machine, and judged by its own folder only where none is. **What the merge
+/// floor does not see, this does not either, and that is a limit it had before:** a script file
+/// the command runs, a function or alias an rc file defines, and `python -c` or another
+/// interpreter's string are not followed by the floor, so a merge spelled there is neither held
+/// nor reached.
 fn judged_without_a_chat(
     held: &purlis_core::mergehold::Held,
     command: &str,
@@ -394,11 +403,19 @@ fn judged_without_a_chat(
         std::env::var(name).ok().filter(|value| !value.is_empty())
     }) {
         Ok(reach) => reach,
+        // Where the reach cannot be read, it may be a plane's: refused wherever an anchored plane
+        // exists on this machine. With none, there is no plane for it to reach, and the process
+        // is judged by its own folder.
+        Err(_) if purlis_core::secrets::answers::anchored_roots().is_empty() => {
+            locality::Reach::default()
+        }
         Err(why) => {
             return refused(
                 mergehold::REASON_UNDECIDED,
                 mergehold::undecided(&format!(
-                    "this process is no chat the app started, and where it acts cannot be read                      from its command: {why}"
+                    "this process is no chat the app started, and where it acts cannot be read \
+                     from its command ({why}). Run the merge from the plane's own folder, or \
+                     from the window"
                 )),
             );
         }

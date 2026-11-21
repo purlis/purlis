@@ -209,6 +209,17 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   first run). Filter by module path (`policy::`, `secrets::answers`, `start::tests`), not `start::`,
   which also matches `didnotstart` and `dispatchrestart`; those, `secrets::keyring` and
   `sandbox::policy` fail inside a dispatched sandboxed chat for environment reasons.
+- A hand-written edit script whose text mentions merging is also held when it is a heredoc in a
+  Bash call: Write the script to the scratchpad and run `python3 -I <file>`. In a sandboxed chat
+  the `purlis-cli` integration tests (`a_merge_from_no_chat…` among them) and the
+  `sandbox::opencode_tests` confine tests fail for environment reasons (`Operation not
+  permitted`): CI is their first run. `cargo clippy -j 4 -p purlis-core -p purlis-cli
+  --all-targets -- -D warnings` takes about 5 minutes cold, and a cold `cargo test -p purlis-core
+  --lib` about 9.
+- `locality::reach_of` fails closed (review round 3): a merge that is not a top-level `gh`/`glab`
+  segment, a shell or string runner, a substitution or here-document, an unnameable repo or any
+  `gh api` without a `repos/o/r` path is `Unreadable`, and `guard::judged_without_a_chat` refuses it
+  wherever `answers::anchored_roots()` is not empty.
 - The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
   registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
   unreadable outside the app.

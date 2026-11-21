@@ -101,8 +101,11 @@ pub fn locate(whereabouts: &Whereabouts<'_>) -> Locality {
             anchored: true,
         };
     }
+    // The remotes of every folder it is in or names, never the working directory's alone (R2-5).
     let mut repos: Vec<String> = whereabouts.repos.to_vec();
-    repos.extend(remotes_of(whereabouts.cwd));
+    for path in whereabouts.paths() {
+        repos.extend(remotes_of(path));
+    }
     if !repos.is_empty()
         && let Some(root) = anchored_plane_of_a_repo(&repos)
     {
@@ -120,11 +123,51 @@ pub fn locate(whereabouts: &Whereabouts<'_>) -> Locality {
     }
 }
 
-/// The anchored plane whose remote is one of `repos` (`owner/name`, lower case).
+/// The anchored plane that owns a repo among `repos` (`owner/name`, lower case): by the remotes of
+/// the plane's own folder and of every repo it owns ([`owned_repo_folders`]), never the root's
+/// alone (R2-1).
 fn anchored_plane_of_a_repo(repos: &[String]) -> Option<PathBuf> {
-    answers::anchored_roots()
-        .into_iter()
-        .find(|root| remotes_of(root).iter().any(|remote| repos.contains(remote)))
+    answers::anchored_roots().into_iter().find(|root| {
+        std::iter::once(root.clone())
+            .chain(owned_repo_folders(root))
+            .any(|folder| {
+                remotes_of(&folder)
+                    .iter()
+                    .any(|remote| repos.contains(remote))
+            })
+    })
+}
+
+/// The git folders a plane owns, under `workspaces/<ws>/`: a workspace's repo folders, its guest
+/// checkouts (`repos/<repo>`) and its branch folders (`.worktrees/<repo>/<piece>`).
+fn owned_repo_folders(root: &Path) -> Vec<PathBuf> {
+    let children = |dir: &Path| -> Vec<PathBuf> {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .filter(|path| path.is_dir())
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut folders = Vec::new();
+    for workspace in children(&root.join("workspaces")) {
+        for child in children(&workspace) {
+            match child.file_name().and_then(|name| name.to_str()) {
+                Some("repos") => folders.extend(children(&child)),
+                Some(".worktrees") => {
+                    for repo in children(&child) {
+                        folders.extend(children(&repo));
+                    }
+                }
+                _ if child.join(".git").exists() => folders.push(child),
+                _ => {}
+            }
+        }
+    }
+    folders
 }
 
 /// The repos (`owner/name`, lower case) that the remotes of the git folder at or above `folder`
@@ -242,8 +285,9 @@ pub struct Reach {
     pub repos: Vec<String>,
 }
 
-/// What [`reach_of`] could not read: a folder or repo the shell would expand, or a command it
-/// could not tokenize. Never read as outside every plane: a caller refuses.
+/// What [`reach_of`] could not read: a folder or repo the shell would expand, a command it could
+/// not tokenize, or a merge it could not find in a command of its own. Never read as outside every
+/// plane: a caller refuses where any anchored plane exists.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
 pub struct Unreadable(pub String);
@@ -254,15 +298,67 @@ const EXPANDED: [char; 14] = [
     '$', '{', '}', '*', '?', '[', ']', '`', '\\', '(', ')', '<', '>', '~',
 ];
 
+/// The shells: a program that runs a string or a script file the reader does not follow.
+const SHELLS: [&str; 9] = [
+    "sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh",
+];
+
+/// What a word can only be to the shell that runs it, in a command's own text: a substitution, a
+/// process substitution or a here-document or here-string, whose words are not top-level segments.
+const SUBSTITUTIONS: [&str; 5] = ["$(", "`", "<(", ">(", "<<"];
+
+/// The builtins that put a variable in the environment of what runs after, by name and value.
+const DECLARERS: [&str; 5] = ["export", "declare", "typeset", "readonly", "local"];
+
+/// The short options of `gh` and `glab`'s merge that take a value: pflag gives the rest of a
+/// cluster, or else the next word, to the first of them it meets.
+const VALUE_SHORTS: [char; 5] = ['b', 't', 'A', 'F', 'm'];
+
+/// What [`reach_of`] has read so far.
+#[derive(Default)]
+struct Read {
+    reach: Reach,
+    /// Every `GH_REPO` seen, the process's and each assignment's, never the last alone (R2-2).
+    gh_repos: Vec<String>,
+    /// A `cd` was seen, and `CDPATH` is set somewhere.
+    cd: bool,
+    cdpath: bool,
+    /// A segment is a merge the release floor reads, or a forge call whose repo was parsed.
+    merge_found: bool,
+}
+
+impl Read {
+    /// A variable set for what runs: the ones that move where a command acts.
+    fn assigned(&mut self, name: &str, value: &str, here: &Path) -> Result<(), Unreadable> {
+        match name {
+            "GH_REPO" => self.gh_repos.push(value.to_owned()),
+            "GIT_DIR" | "GIT_WORK_TREE" => {
+                literal(value, name)?;
+                self.reach.targets.push(here.join(value));
+            }
+            "CDPATH" if !value.is_empty() => self.cdpath = true,
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
 /// **What a command reaches** (review F2): read per segment with the tokenizer the merge hold
 /// uses ([`crate::shellseg::segment_argv_parsed`]), never by whitespace. A folder comes from
 /// `git`'s own global options (`-C`, `--git-dir`, `--work-tree`, as git composes them), from
-/// `GIT_DIR` and `GIT_WORK_TREE`, and from `cd` and `pushd`, never from another tool's `-C`; a
-/// repo from `gh` and `glab`'s `-R` and `--repo`, a request's URL, and `GH_REPO` (in the
-/// segment's assignments or in `env`, the process's own).
+/// `GIT_DIR` and `GIT_WORK_TREE` (an assignment, `export` or `declare -x`, or the process's own),
+/// from `cd` and `pushd`, and from a wrapper's own chdir (`env -C`, `sudo -D`), never from another
+/// tool's `-C`; a repo from `gh` and `glab`'s `-R` and `--repo` (read as pflag reads them), a
+/// request's URL, an API path, and every `GH_REPO` (in an assignment, in `env`, or the process's
+/// own).
 ///
-/// **Fails closed**: a word the shell would expand, a `cd` with no folder or to `-`, or a command
-/// that would not tokenize is [`Unreadable`].
+/// **Fails closed** (R2-3, R2-4): a word the shell would expand, a `cd` with no folder or to `-`
+/// or with `CDPATH` set, a repo that cannot be named, a command that would not tokenize, **a
+/// command text with a substitution or a here-document in it, a segment that is a shell, `eval`,
+/// `xargs` or another string runner, and a held command that no top-level segment merges** are all
+/// [`Unreadable`]: the floor ([`crate::floorguard`]) follows `sh -c`, `eval`, substitutions and
+/// aliases to what it holds, and this reader follows none of them, so where it cannot see the
+/// command it does not say where the command goes.
 pub fn reach_of(
     command: &str,
     cwd: &Path,
@@ -274,33 +370,43 @@ pub fn reach_of(
             "the command could not be read word by word".to_owned(),
         ));
     }
-    let mut reach = Reach::default();
+    if SUBSTITUTIONS.iter().any(|mark| command.contains(mark)) {
+        return Err(Unreadable(
+            "the command has a substitution or a here-document, whose words are not read"
+                .to_owned(),
+        ));
+    }
+    let mut read = Read::default();
     let mut here = cwd.to_path_buf();
     // The process's own environment names a target as an assignment in front would.
-    for var in ["GIT_DIR", "GIT_WORK_TREE"] {
+    for var in ["GIT_DIR", "GIT_WORK_TREE", "GH_REPO", "CDPATH"] {
         if let Some(value) = env(var).filter(|value| !value.is_empty()) {
-            literal(&value, var)?;
-            reach.targets.push(here.join(value));
+            read.assigned(var, &value, &here)?;
         }
     }
-    let mut gh_repo = env("GH_REPO").filter(|value| !value.is_empty());
     for toks in &segments {
         let invocation = crate::shellwrap::split_env_chdir(toks);
+        let base = crate::shellwrap::base_lower(&invocation.prog);
+        if runs_a_string(&invocation, &base) {
+            return Err(Unreadable(format!(
+                "`{}` runs a string or a script whose words are not read",
+                invocation.prog
+            )));
+        }
         for assignment in &invocation.env {
-            let Some((name, value)) = assignment.split_once('=') else {
-                continue;
-            };
-            match name {
-                "GH_REPO" => gh_repo = Some(value.to_owned()),
-                "GIT_DIR" | "GIT_WORK_TREE" => {
-                    literal(value, name)?;
-                    reach.targets.push(here.join(value));
-                }
-                _ => {}
+            if let Some((name, value)) = assignment.split_once('=') {
+                read.assigned(name, value, &here)?;
             }
         }
+        if !invocation.chdir.is_empty() {
+            literal(
+                &invocation.chdir,
+                "the folder a wrapper moves the command to",
+            )?;
+            read.reach.targets.push(here.join(&invocation.chdir));
+        }
         let args = invocation.argv.get(1..).unwrap_or(&[]);
-        match crate::shellwrap::base_lower(&invocation.prog).as_str() {
+        match base.as_str() {
             "cd" | "pushd" => {
                 let folder = args
                     .iter()
@@ -311,19 +417,59 @@ pub fn reach_of(
                 if folder == "-" {
                     return Err(Unreadable("`cd -` goes to a folder not named".to_owned()));
                 }
+                read.cd = true;
                 here = here.join(folder);
-                reach.targets.push(here.clone());
+                read.reach.targets.push(here.clone());
             }
-            "git" => git_options(args, &here, &mut reach)?,
-            "gh" | "glab" => forge_options(args, &mut reach)?,
+            name if DECLARERS.contains(&name) => {
+                for arg in args {
+                    if let Some((name, value)) = arg.split_once('=') {
+                        read.assigned(name, value, &here)?;
+                    }
+                }
+            }
+            "git" => git_options(args, &here, &mut read.reach)?,
+            "gh" | "glab" => read.merge_found |= forge_options(&base, args, &mut read.reach)?,
             _ => {}
         }
+        if crate::mergehold::segment_merges(toks) {
+            read.merge_found = true;
+        }
     }
-    if let Some(named) = gh_repo {
-        literal(&named, "GH_REPO")?;
-        reach.repos.push(repo_named(&named));
+    if read.cd && read.cdpath {
+        return Err(Unreadable(
+            "`cd` with CDPATH set goes to a folder not named".to_owned(),
+        ));
     }
-    Ok(reach)
+    if !read.merge_found && crate::mergehold::held(command).is_some() {
+        return Err(Unreadable(
+            "the held command is not in a command of its own that can be read".to_owned(),
+        ));
+    }
+    for named in &read.gh_repos {
+        literal(named, "GH_REPO")?;
+        let repo = repo_named(named)
+            .ok_or_else(|| Unreadable("GH_REPO does not name an owner and a repo".to_owned()))?;
+        read.reach.repos.push(repo);
+    }
+    Ok(read.reach)
+}
+
+/// Whether a segment runs words this reader does not follow: a shell, `eval`, `source`, a wrapper
+/// that builds its command from input (`xargs`, `watch`, `flock`, `script`, `parallel`) or from a
+/// string (`env -S`), or anything the shell wrappers read a script out of.
+fn runs_a_string(invocation: &crate::shellwrap::Invocation, base: &str) -> bool {
+    SHELLS.contains(&base)
+        || matches!(base, "eval" | "source" | ".")
+        || invocation.taken.iter().any(|word| {
+            matches!(
+                crate::shellwrap::base_lower(word).as_str(),
+                "xargs" | "watch" | "flock" | "script" | "parallel" | "busybox"
+            ) || word.starts_with("-S")
+                || word.starts_with("--split-string")
+        })
+        || !crate::shellwrap::shell_scripts_of(&invocation.prog, &invocation.argv).is_empty()
+        || crate::shellwrap::here_string_script_of(&invocation.prog, &invocation.argv).is_some()
 }
 
 /// `Ok` for a plain word; the refusal naming `what` for one the shell would expand, or none.
@@ -373,34 +519,100 @@ fn git_options(args: &[String], here: &Path, reach: &mut Reach) -> Result<(), Un
     Ok(())
 }
 
-/// The repos `gh` and `glab` name in `args`: `-R`, `--repo`, and a request's address.
-fn forge_options(args: &[String], reach: &mut Reach) -> Result<(), Unreadable> {
+/// The repos `gh` and `glab` name in `args`, read as pflag reads options: `-R owner/repo`,
+/// `-Rowner/repo`, `-R=owner/repo`, a cluster (`-dR owner/repo`, `-dRowner/repo`), `--repo
+/// owner/repo`, `--repo=owner/repo`, and a request's address. A repo that cannot be named is
+/// [`Unreadable`]. `true` for an `api` call whose `repos/owner/name` path was read; any other
+/// `api` call (graphql, a path with no repo) is [`Unreadable`], as is every `glab api`.
+fn forge_options(base: &str, args: &[String], reach: &mut Reach) -> Result<bool, Unreadable> {
+    let name = |word: &str, what: &str, reach: &mut Reach| -> Result<(), Unreadable> {
+        literal(word, what)?;
+        let repo = repo_named(word)
+            .ok_or_else(|| Unreadable(format!("{what} does not name an owner and a repo")))?;
+        reach.repos.push(repo);
+        Ok(())
+    };
+    let mut words: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         let arg = args[i].as_str();
-        if arg == "-R" || arg == "--repo" {
-            let named = args.get(i + 1).map(String::as_str).unwrap_or_default();
-            literal(named, "the repo `-R` names")?;
-            reach.repos.push(repo_named(named));
-            i += 1;
-        } else if let Some(named) = arg.strip_prefix("--repo=") {
-            literal(named, "the repo `--repo` names")?;
-            reach.repos.push(repo_named(named));
+        if arg == "--" {
+            words.extend(args[i + 1..].iter().map(String::as_str));
+            break;
+        } else if let Some(long) = arg.strip_prefix("--") {
+            match long.split_once('=') {
+                Some(("repo", value)) => name(value, "the repo `--repo` names", reach)?,
+                Some(_) => {}
+                None if long == "repo" => {
+                    i += 1;
+                    let value = args.get(i).map(String::as_str).unwrap_or_default();
+                    name(value, "the repo `--repo` names", reach)?;
+                }
+                None if crate::mergehold::VALUE_FLAGS.contains(&arg) => i += 1,
+                None => {}
+            }
+        } else if arg.len() > 1 && arg.starts_with('-') {
+            let letters = &arg[1..];
+            for (at, letter) in letters.char_indices() {
+                let rest = &letters[at + letter.len_utf8()..];
+                if letter == 'R' {
+                    let value = if rest.is_empty() {
+                        i += 1;
+                        args.get(i).map(String::as_str).unwrap_or_default()
+                    } else {
+                        rest.strip_prefix('=').unwrap_or(rest)
+                    };
+                    name(value, "the repo `-R` names", reach)?;
+                    break;
+                }
+                if VALUE_SHORTS.contains(&letter) {
+                    if rest.is_empty() {
+                        i += 1;
+                    }
+                    break;
+                }
+            }
         } else if arg.contains("://") {
-            reach.repos.push(repo_named(arg));
+            name(arg, "the repo a request's address names", reach)?;
+            words.push(arg);
+        } else {
+            words.push(arg);
         }
         i += 1;
     }
-    Ok(())
+    if words.first() != Some(&"api") {
+        return Ok(false);
+    }
+    if base == "glab" {
+        return Err(Unreadable(
+            "`glab api` names a project by its path or id, which is not read".to_owned(),
+        ));
+    }
+    let endpoint = words[1..].iter().find_map(|word| {
+        let path = word.trim_start_matches('/');
+        path.strip_prefix("repos/")
+            .map(|rest| rest.split('/').take(2).collect::<Vec<_>>().join("/"))
+            .filter(|repo| repo.split('/').all(|part| !part.is_empty()) && repo.contains('/'))
+    });
+    let Some(repo) = endpoint else {
+        return Err(Unreadable(
+            "`gh api` is not a `repos/owner/name` path, so the repo it reaches is not read"
+                .to_owned(),
+        ));
+    };
+    name(&repo, "the repo an API path names", reach)?;
+    Ok(true)
 }
 
 /// `owner/name` (lower case) of a repo as a command spells it: `owner/name`, `host/owner/name`,
-/// or a request's address (`https://host/owner/name/pull/5`; a GitLab one's `/-/merge_requests/5`).
-fn repo_named(word: &str) -> String {
-    let word = word.trim().trim_end_matches(".git");
-    let path = word.split_once("://").map_or(word, |(_, rest)| {
-        rest.split_once('/').map_or("", |(_, path)| path)
-    });
+/// `git@host:owner/name.git`, or a request's address (`https://host/owner/name/pull/5`; a GitLab
+/// one's `/-/merge_requests/5`), by [`crate::forge::namespace_of`] for a URL. `None` where it does
+/// not name at least an owner and a name.
+fn repo_named(word: &str) -> Option<String> {
+    let word = word.trim();
+    let from_a_url = word.contains("://");
+    let path = crate::forge::namespace_of(word)
+        .unwrap_or_else(|| word.trim_end_matches(".git").to_owned());
     let mut parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
     if let Some(cut) = parts
         .iter()
@@ -409,10 +621,10 @@ fn repo_named(word: &str) -> String {
         parts.truncate(cut);
     }
     // `host/owner/name`, as `GH_REPO` and `-R` allow: a host has a dot, and is first of three.
-    if !word.contains("://") && parts.len() == 3 && parts[0].contains('.') {
+    if !from_a_url && parts.len() == 3 && parts[0].contains('.') {
         parts.remove(0);
     }
-    parts.join("/").to_ascii_lowercase()
+    (parts.len() >= 2).then(|| parts.join("/").to_ascii_lowercase())
 }
 
 #[cfg(test)]
