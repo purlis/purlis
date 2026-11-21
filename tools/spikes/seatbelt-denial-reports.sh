@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 # Spike T1.1-51 (#6898, Q295): can purlis read seatbelt's violation reports for only a chat's own
 # processes, reliably and promptly, without broad log access? macOS only; it needs a runner where
 # `sandbox-exec` can apply a profile (CI's macOS runner, not a sandboxed chat). Findings:

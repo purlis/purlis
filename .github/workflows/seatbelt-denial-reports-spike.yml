@@ -1,3 +1,5 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
 # Spike T1.1-51 (#6898): runs tools/spikes/seatbelt-denial-reports.sh on a macOS runner, once as the
 # runner's admin user and once as a freshly made standard user. Findings: docs/spikes/seatbelt-denial-reports.md.
 name: seatbelt-denial-reports-spike
