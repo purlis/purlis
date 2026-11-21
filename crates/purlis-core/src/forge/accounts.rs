@@ -1184,7 +1184,9 @@ fn keep(
         }
         (_, None, None) => Vec::new(),
     };
-    let held_by_all = |want: &str| sources.iter().all(|scopes| grants(kind, scopes, want));
+    // No source that spoke is no evidence: nothing is held, so a step-up is never waved through.
+    let held_by_all =
+        |want: &str| !sources.is_empty() && sources.iter().all(|scopes| grants(kind, scopes, want));
     if let Some(StepUp { account, more }) = &step_up {
         if account.login != checked.login {
             let login = &account.login;
