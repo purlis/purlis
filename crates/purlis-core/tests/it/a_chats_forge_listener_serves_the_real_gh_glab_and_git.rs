@@ -22,7 +22,10 @@ use purlis_core::forge::proxy::listener::{
     ForgeListener, PushGate, PushRead, PushVerdict, Upstream, UpstreamError, UpstreamRequest,
     UpstreamResponse,
 };
+use purlis_core::forge::pin::{NoPin, Pin};
 use purlis_core::forge::proxy::{EndpointKind, Verdict};
+use purlis_core::sandbox::egress::ForgeRoute;
+use purlis_core::sandbox::egress::relay::DoorRelay;
 
 use crate::support::forge_listener::{REAL, World};
 
@@ -324,6 +327,9 @@ struct Setup {
     connect: ForgeListener,
     /// The relay a chat's egress proxy stands for: git's `HTTPS_PROXY`, in front of the door.
     relay: u16,
+    /// **The production relay the app's own git is pointed at** ([`DoorRelay`]), in front of the
+    /// same door. Never the test-support relay above: that one is the chat's egress proxy.
+    app_relay: DoorRelay,
     seen: Arc<Seen>,
     ca_file: PathBuf,
     dir: tempfile::TempDir,
@@ -331,6 +337,24 @@ struct Setup {
 
 fn setup() -> Setup {
     setup_with(None)
+}
+
+/// The relay the app's git is given for a run, as the app makes it (`forgeroute`), for `door`.
+fn app_relay(
+    door: std::net::SocketAddr,
+    world: &World,
+    pin: Arc<dyn Pin>,
+) -> DoorRelay {
+    DoorRelay::start(
+        ForgeRoute {
+            addr: door,
+            handoff: world.wiring.handoff.clone(),
+            hosts: vec!["github.com".to_owned(), "gitlab.com".to_owned()],
+        },
+        pin,
+        std::time::Duration::from_secs(30),
+    )
+    .expect("the app's relay")
 }
 
 /// [`setup`], its listeners checking every push with `gate`.
@@ -360,12 +384,14 @@ fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
         unreachable!()
     };
     let relay = crate::support::forge_listener::relay_to_door(door, world.wiring.handoff.clone());
+    let app_relay = app_relay(door, &world, Arc::new(NoPin));
     Setup {
         world,
         forge,
         socket,
         connect,
         relay,
+        app_relay,
         seen,
         ca_file,
         dir,
@@ -438,6 +464,11 @@ pub(crate) fn run(mut command: Command) -> (bool, String) {
 }
 
 impl Setup {
+    /// The port the app's own git is pointed at: the production relay's.
+    fn app_port(&self) -> u16 {
+        self.app_relay.addr().port()
+    }
+
     fn port(&self) -> u16 {
         self.relay
     }
@@ -857,7 +888,7 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
 
     // What the app's git is given for the chat (`forgewire::git_network`), with the test's own
     // sentinel helper in place of purlis's binary: the proxy, the chat's authority, no login.
-    let proxy = format!("http://127.0.0.1:{}", s.port());
+    let proxy = format!("http://127.0.0.1:{}", s.app_port());
     let sentinel = s.world.sentinel.expose().to_owned();
     let route = NetworkRoute::new(
         vec![
@@ -919,4 +950,123 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
         .filter(|r| r.method == "POST")
         .count();
     assert_eq!(before, after, "a held push reached the forge");
+}
+
+/// A pin on `github.com`, as policy would set it.
+struct PinsGithub;
+
+impl Pin for PinsGithub {
+    fn pinned(&self, host: &str, _: u16) -> Option<String> {
+        (host == "github.com").then(|| {
+            "Policy never allows github.com. Locked by policy, set by root in /etc/purlis/policy.toml."
+                .to_owned()
+        })
+    }
+}
+
+#[test]
+fn the_apps_own_git_for_a_chat_is_refused_a_pinned_forge_and_the_door_is_never_dialled() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    use purlis_core::worktree::git::{Isolated, NetworkRoute, isolated, run_network};
+    let mut s = setup();
+    let EndpointKind::Loopback(door) = s.connect.kind().clone() else {
+        unreachable!()
+    };
+    // The production relay, with the administrator's pin on github.com.
+    s.app_relay = app_relay(door, &s.world, Arc::new(PinsGithub));
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &["clone", "https://github.com/acme/app.git", work.to_str().unwrap()],
+    );
+    assert!(ok, "{text}");
+    std::fs::write(work.join("a.txt"), "a\n").unwrap();
+    git_ok(&work, &["add", "-A"]);
+    git_ok(&work, &["commit", "-q", "-m", "a"]);
+    let proxy = format!("http://127.0.0.1:{}", s.app_port());
+    let sentinel = s.world.sentinel.expose().to_owned();
+    let route = NetworkRoute::new(
+        vec![
+            "credential.helper=".to_owned(),
+            format!(
+                "credential.https://github.com.helper=!f() {{ echo username=x-access-token; echo password={sentinel}; }}; f"
+            ),
+            format!("http.https://github.com/.sslCAInfo={}", s.ca_file.display()),
+            format!("http.https://github.com/.proxy={proxy}"),
+        ],
+        vec![
+            ("HTTPS_PROXY".into(), proxy.clone().into()),
+            ("https_proxy".into(), proxy.into()),
+        ],
+    );
+    let isolation = Isolated::default().through_route(route);
+    let before = s.forge.seen.lock().unwrap().len();
+    let pushed = isolated(&isolation, || {
+        run_network(
+            &work,
+            Some("!'/nonexistent/gh' auth git-credential"),
+            &["push", "origin", "HEAD:refs/heads/pinned"],
+        )
+    })
+    .expect("git ran");
+    assert!(!pushed.ok(), "a push to a pinned forge was carried");
+    assert!(
+        pushed.err.contains("403"),
+        "refused by the relay's pin, not by something else: {}",
+        pushed.err
+    );
+    assert_eq!(
+        before,
+        s.forge.seen.lock().unwrap().len(),
+        "the forge saw a request for a pinned forge"
+    );
+}
+
+#[test]
+fn the_apps_relay_answers_a_pinned_forge_and_its_api_host_with_the_pin_and_dials_no_door() {
+    purlis_core::unsteered!();
+    // A door that notes every connection.
+    let door = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    door.set_nonblocking(true).unwrap();
+    let world = World::new();
+    let relay = DoorRelay::start(
+        ForgeRoute {
+            addr: door.local_addr().unwrap(),
+            handoff: world.wiring.handoff.clone(),
+            hosts: vec!["github.com".to_owned(), "api.github.com".to_owned()],
+        },
+        Arc::new(PinsAllOfGithub),
+        std::time::Duration::from_secs(5),
+    )
+    .unwrap();
+    for host in ["github.com", "api.github.com"] {
+        use std::io::Read;
+        let mut client = std::net::TcpStream::connect(relay.addr()).unwrap();
+        client
+            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .unwrap();
+        write!(client, "CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n").unwrap();
+        let mut said = String::new();
+        let _ = client.read_to_string(&mut said);
+        assert!(said.starts_with("HTTP/1.1 403"), "{host}: {said}");
+        assert!(said.contains("signing in does not change"), "{host}: {said}");
+    }
+    assert!(door.accept().is_err(), "the door was dialled for a pinned forge");
+}
+
+/// The pin as the policy answers it: `github.com` pinned, so its forge's other names are too.
+struct PinsAllOfGithub;
+
+impl Pin for PinsAllOfGithub {
+    fn pinned(&self, host: &str, _: u16) -> Option<String> {
+        (host == "github.com").then(|| {
+            "Policy never allows github.com. Locked by policy, set by root in x. \
+             An administrator pinned this forge, so no chat reaches it and signing in does not \
+             change that."
+                .to_owned()
+        })
+    }
 }

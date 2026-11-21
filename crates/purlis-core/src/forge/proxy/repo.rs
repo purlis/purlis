@@ -122,6 +122,10 @@ impl AllowedRepo {
         &self.path
     }
 
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
     /// The host this repo's API answers on: `api.github.com` for github.com, the same host
     /// elsewhere (GHES serves `/api/v3`, GitLab `/api/v4`).
     pub(crate) fn api_host(&self) -> &str {

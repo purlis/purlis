@@ -347,9 +347,13 @@ impl Reach {
     /// carry the connection for a host a layer lists: an administrator's pin outranks a listing.
     pub fn pinned_never(&self, host: &str, port: u16) -> bool {
         let host = host.strip_suffix('.').unwrap_or(host);
-        let named = super::egress::host_and_port(host, port);
-        Host::parse(&named)
-            .is_ok_and(|parsed| self.never.iter().any(|pinned| pinned.covers(&parsed)))
+        // The pin names a forge, not a spelling (D3g): `github.com` pinned covers the API host and
+        // the download hosts the route also serves ([`crate::forge::pin::forge_host_of`]).
+        let forge = crate::forge::pin::forge_host_of(host);
+        [host, forge.as_str()].into_iter().any(|name| {
+            Host::parse(&super::egress::host_and_port(name, port))
+                .is_ok_and(|parsed| self.never.iter().any(|pinned| pinned.covers(&parsed)))
+        })
     }
 
     /// **The decision** for a connection to `host` on `port`, where a host listed without a

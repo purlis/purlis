@@ -126,18 +126,36 @@ pub struct World {
 impl World {
     /// One chat with a repo on github.com and one on gitlab.com.
     pub fn new() -> Self {
-        Self::with_repos(vec![
+        Self::with_repos(Self::default_repos())
+    }
+
+    pub fn with_repos(repos: Vec<AllowedRepo>) -> Self {
+        Self::with_repos_and_pin(repos, Arc::new(purlis_core::forge::pin::NoPin))
+    }
+
+    /// [`Self::new`]'s repos, the proxy asking `pin` on every request.
+    pub fn with_pin(pin: Arc<dyn purlis_core::forge::pin::Pin>) -> Self {
+        Self::with_repos_and_pin(Self::default_repos(), pin)
+    }
+
+    fn default_repos() -> Vec<AllowedRepo> {
+        vec![
             AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "main")
                 .unwrap()
                 .with_node_id("R_acme_app"),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(ForgeRepoId::for_a_test(42)),
-        ])
+        ]
     }
 
-    pub fn with_repos(repos: Vec<AllowedRepo>) -> Self {
-        let proxy = Arc::new(ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)));
+    pub fn with_repos_and_pin(
+        repos: Vec<AllowedRepo>,
+        pin: Arc<dyn purlis_core::forge::pin::Pin>,
+    ) -> Self {
+        let proxy = Arc::new(
+            ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin),
+        );
         let chat = ChatId::new("chat-listener");
         let advertised: Vec<(String, String)> = repos
             .iter()

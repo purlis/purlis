@@ -632,6 +632,7 @@ pub struct Serving {
 }
 
 pub mod handoff;
+pub mod relay;
 
 /// A chat's forge route as its egress proxy sees it: the loopback address of the listener that
 /// terminates a forge connection, and the hosts it serves.
@@ -1500,7 +1501,7 @@ fn refusal_said(host: &str, port: u16, decision: &Decision) -> String {
     match decision {
         Decision::Refused(Refused::Policy) => format!(
             "purlis's sandbox does not allow {host}:{port}: an administrator's policy pins it as \
-             never allowed"
+             never allowed, and signing in does not change that"
         ),
         Decision::Refused(Refused::ForgeRoute) => format!(
             "purlis's sandbox does not allow {host}:{port}: a forge is reached only through \

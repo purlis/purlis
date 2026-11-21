@@ -562,12 +562,12 @@ pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
     };
     match wiring.proxy.connect(&wiring.chat, &host, port) {
         ConnectVerdict::Refuse(refusal) => {
-            let _ = answer_proving(
-                &mut client,
-                403,
-                &message(&format!("purlis refused this connection: {refusal:?}")),
-                &proof,
-            );
+            let said = if refusal == super::Refusal::Pinned {
+                wiring.proxy.pin_said(&host, port)
+            } else {
+                format!("purlis refused this connection: {refusal:?}")
+            };
+            let _ = answer_proving(&mut client, 403, &message(&said), &proof);
         }
         ConnectVerdict::Terminate { host } => {
             if established(&mut client, &proof).is_err() {

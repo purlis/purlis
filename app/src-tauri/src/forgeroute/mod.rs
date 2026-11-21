@@ -372,7 +372,13 @@ pub struct Seams {
     pub runner_link: Arc<dyn RunnerLink>,
     /// Slice G's gate, where there is one ([`Gate`]).
     pub gate: Option<Arc<dyn Gate>>,
+    /// The administrator's never-allow pin for a project's chats (ADR 0128 D3g), made for each
+    /// run and asked by its proxy, its door, its socket and the app's own git on every request.
+    pub pin: PinOf,
 }
+
+/// What makes the pin a run is held to, from its project.
+pub type PinOf = Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::pin::Pin> + Send + Sync>;
 
 impl Seams {
     /// Every seam as its stub: a build with `forge-wiring` and none of the other slices.
@@ -385,6 +391,7 @@ impl Seams {
             held: Arc::new(NoHeldSinks),
             runner_link: Arc::new(NoRunnerLink),
             gate: None,
+            pin: Arc::new(|_| Arc::new(purlis_core::forge::pin::NoPin)),
         }
     }
 }
@@ -540,6 +547,10 @@ struct Live {
     /// What the run's sandbox was wired from: the app's own git for this chat ([`ForgeRoutes::git_route`])
     /// goes through the same door.
     inputs: Box<purlis_core::forgewire::Inputs>,
+    /// The app's own git's way to the door: a proxy that proves the hand-off and asks the pin
+    /// (the git cannot prove it itself). `None` where it could not start, and then the app's git
+    /// has no route for this chat.
+    relay: Option<purlis_core::sandbox::egress::relay::DoorRelay>,
 }
 
 /// Which session each committed run is, and the sessions whose program ended while a start was
@@ -551,6 +562,9 @@ struct Sessions {
     /// Sessions that ended with an uncommitted route pending; kept only while one is.
     exited: HashSet<u32>,
 }
+
+/// How long the app's git may sit idle on a relayed connection.
+const RELAY_IDLE: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Every run's route, in this app.
 pub struct ForgeRoutes {
@@ -579,6 +593,19 @@ impl ForgeRoutes {
         }
     }
 
+    /// The project's recorded repos that are not on a forge the pin pins.
+    fn unpinned(
+        &self,
+        project: &Path,
+        pin: &dyn purlis_core::forge::pin::Pin,
+    ) -> Vec<purlis_core::forge::proxy::AllowedRepo> {
+        let mut repos = self.seams.recorded.repos(project);
+        repos.retain(|repo| {
+            purlis_core::forge::pin::pinned_forge(pin, repo.host(), repo.port()).is_none()
+        });
+        repos
+    }
+
     /// A run starts. `None` when its project records no repo: there is nothing to proxy, and
     /// nothing else is stopped for it. An error leaves nothing behind.
     pub fn start(&self, chat: &str, run: &str, project: &Path) -> io::Result<Option<RouteParams>> {
@@ -595,7 +622,10 @@ impl ForgeRoutes {
         // The same run starting again replaces its route, or ends it where nothing is recorded
         // now: the old sentinel stops working either way.
         self.stop(run);
-        let repos = self.seams.recorded.repos(project);
+        let pin = (self.seams.pin)(project);
+        // **No repo on a pinned forge is enrolled** (D3g): a chat has no route to a forge an
+        // administrator pinned, and its authority is made for no name of it.
+        let repos = self.unpinned(project, pin.as_ref());
         if repos.is_empty() {
             return Ok(None);
         }
@@ -611,7 +641,8 @@ impl ForgeRoutes {
                 told: self.told.clone(),
             }),
             Box::new(NoObjects),
-        );
+        )
+        .with_pin(pin.clone());
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(
@@ -688,6 +719,22 @@ impl ForgeRoutes {
             }),
         };
         let inputs = params.inputs.clone();
+        // The app's own git reaches the door through a relay that proves the hand-off (the door
+        // answers 407 to a CONNECT without it) and asks the pin on each connection.
+        let relay = purlis_core::sandbox::egress::relay::DoorRelay::start(
+            purlis_core::sandbox::egress::ForgeRoute {
+                addr: inputs.door,
+                handoff: inputs.handoff.clone(),
+                hosts: inputs.hosts.clone(),
+            },
+            pin,
+            RELAY_IDLE,
+        )
+        .map_err(|why| {
+            tracing::warn!("purlis: the app's git has no route for a chat ({why})");
+            why
+        })
+        .ok();
         self.live().insert(
             run.to_owned(),
             Live {
@@ -699,6 +746,7 @@ impl ForgeRoutes {
                 peer,
                 bound: Some(bound),
                 inputs,
+                relay,
             },
         );
         Ok(Some(params))
@@ -877,6 +925,14 @@ impl ForgeRoutes {
         let Some(project) = self.seams.runner_link.project_of(peer, run) else {
             return RunnerForward::Refused;
         };
+        // A project whose every repo is on a pinned forge keeps no token connection either: the
+        // pin is the administrator's, and the runner's chat is refused, not left to its tokens.
+        let pin = (self.seams.pin)(&project);
+        if !self.seams.recorded.repos(&project).is_empty()
+            && self.unpinned(&project, pin.as_ref()).is_empty()
+        {
+            return RunnerForward::Refused;
+        }
         match self.start_for(chat, run, &project, Some(peer.device.clone())) {
             Ok(Some(params)) => RunnerForward::Desktop(params),
             Ok(None) | Err(_) => RunnerForward::TokenConnections,
@@ -893,9 +949,23 @@ impl ForgeRoutes {
         session: u32,
     ) -> Option<std::io::Result<purlis_core::worktree::git::NetworkRoute>> {
         let run = self.sessions().of_run.get(&session).cloned()?;
-        let inputs = self.live().get(&run).map(|live| live.inputs.clone())?;
-        // The door itself, not the chat's egress port: the app's git is not in the chat's sandbox.
-        let route = inputs.route(format!("http://{}", inputs.door));
+        let (inputs, relay) = self
+            .live()
+            .get(&run)
+            .map(|live| {
+                (
+                    live.inputs.clone(),
+                    live.relay.as_ref().map(|relay| relay.addr()),
+                )
+            })?;
+        // **Never the bare door**: it answers 407 to a CONNECT that lacks the hand-off proof, which
+        // git cannot send. The relay proves it, and asks the administrator's pin on each connection.
+        let Some(relay) = relay else {
+            return Some(Err(io::Error::other(
+                "purlis's own git has no route to this chat's forge: its relay did not start",
+            )));
+        };
+        let route = inputs.route(format!("http://{relay}"));
         Some(purlis_core::forgewire::git_network(&route))
     }
 
@@ -1222,17 +1292,10 @@ fn sweep_with(root: &Path, may_run: &dyn Fn(u32) -> bool) {
 /// the per-user temporary directory the system makes private. `None` where there is none of
 /// these, and then no chat has a route.
 pub fn route_dir() -> Option<PathBuf> {
-    #[cfg(unix)]
-    let who = purlis_same_user::Uid::effective().as_raw().to_string();
-    #[cfg(not(unix))]
-    let who = "user".to_owned();
-    route_dir_in(
-        std::env::var_os("XDG_RUNTIME_DIR").map(PathBuf::from),
-        purlis_core::machine::config_root(),
-        std::env::temp_dir(),
-        &who,
-        cfg!(target_os = "linux"),
-    )
+    // **One resolver** with the sandbox's, which holds every chat out of this folder
+    // ([`purlis_core::forgewire::route_root`]): the folder the app makes and the folder a chat is
+    // denied are the same one, whatever `XDG_RUNTIME_DIR` or `TMPDIR` say.
+    purlis_core::forgewire::route_root(&purlis_core::sandbox::Machine::this())
 }
 
 /// [`route_dir`] for the directories it was given.
@@ -1275,6 +1338,10 @@ pub fn install(held: Arc<dyn HeldSinks>) {
                 purlis_core::forge::credential::chatroute::ChatRoute::new(&scope, &config),
             )));
             seams.listener = Arc::new(prod::CoreListener);
+            // Read from policy on each ask: a pin set while a chat is open reaches it at once.
+            seams.pin = Arc::new(|project| {
+                Arc::new(purlis_core::forge::pin::PolicyPin::of(project))
+            });
         }
         ForgeRoutes::new(root, std::env::current_exe().unwrap_or_default(), seams)
     });

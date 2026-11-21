@@ -91,6 +91,9 @@ pub enum Refusal {
     NotOnList,
     /// The request was allowed, and the person's credential could not be had.
     NoCredential,
+    /// An administrator's policy pins this forge as never allowed (ADR 0128 D3g): refused for
+    /// the chat entirely, whatever its repos and whoever is signed in.
+    Pinned,
 }
 
 impl Refusal {

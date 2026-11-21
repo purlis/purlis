@@ -94,6 +94,7 @@ pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use crate::forge::pin;
 use crate::secrets::keyring::Secret;
 
 /// What a credential is, which decides the header the forge reads it from.
@@ -322,6 +323,8 @@ pub struct ForgeProxy {
     objects: Box<dyn ObjectRepo>,
     audit: AuditLog,
     held: Option<Box<dyn HeldSink>>,
+    /// The administrator's never-allow pin, asked on every request and connection (D3g).
+    pin: Arc<dyn pin::Pin>,
 }
 
 impl ForgeProxy {
@@ -333,7 +336,44 @@ impl ForgeProxy {
             objects,
             audit: AuditLog::default(),
             held: None,
+            pin: Arc::new(pin::NoPin),
         }
+    }
+
+    /// Refuse every request, connection and alias that names a forge `pin` pins as never allowed
+    /// ([`pin::pinned_forge`]), whatever the chat's repos, asked each time and never kept.
+    #[must_use]
+    pub fn with_pin(mut self, pin: Arc<dyn pin::Pin>) -> Self {
+        self.pin = pin;
+        self
+    }
+
+    /// The sentence for a pin refusal of `host:port`.
+    pub fn pin_said(&self, host: &str, port: u16) -> String {
+        pin::pinned_forge(self.pin.as_ref(), host, port).unwrap_or_else(|| {
+            "An administrator's policy pins this forge as never allowed, and signing in does \
+             not change that."
+                .to_owned()
+        })
+    }
+
+    /// The sentence for a pin refusal of the alias `host` (`github.localhost`) of `chat`: the
+    /// forge it leads to is the one named.
+    pub fn alias_pin_said(&self, chat: &ChatId, host: &str) -> String {
+        let policy = self
+            .policies
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(chat)
+            .cloned();
+        match policy.and_then(|policy| policy.github_alias(host)) {
+            Some(Ok(alias)) => self.pin_said(&alias.host, alias.port),
+            _ => self.pin_said(host, 443),
+        }
+    }
+
+    fn pinned(&self, host: &str, port: u16) -> bool {
+        pin::pinned_forge(self.pin.as_ref(), host, port).is_some()
     }
 
     /// Hand the acts that are held (a merge, a tag, a release, a fork) to `sink`, which asks the
@@ -357,6 +397,10 @@ impl ForgeProxy {
     /// A chat starts: its repos are the ones the person confirmed, and it gets a fresh sentinel
     /// (any it had is replaced). The sentinel is for the chat's environment; it is the only thing
     /// of the credential a chat ever holds.
+    ///
+    /// **The caller enrols no repo on a pinned forge** (the app's `forgeroute` filters them, D3g).
+    /// Whatever it enrols, the pin is read on every request and connection all the same, so a pin
+    /// set later reaches the chat at once.
     pub fn enrol(&self, chat: &ChatId, repos: Vec<AllowedRepo>) -> Sentinel {
         self.policies
             .lock()
@@ -430,7 +474,11 @@ impl ForgeProxy {
             .get(chat)
             .cloned();
         match policy {
-            Some(policy) => policy.github_alias(host),
+            // The pin is read on this connection, for the host the alias leads to.
+            Some(policy) => match policy.github_alias(host)? {
+                Ok(alias) if self.pinned(&alias.host, alias.port) => Some(Err(Refusal::Pinned)),
+                other => Some(other),
+            },
             None => Some(Err(Refusal::UnknownChat)),
         }
     }
@@ -456,6 +504,7 @@ impl ForgeProxy {
             .get(chat)
             .cloned();
         let verdict = match policy {
+            _ if self.pinned(host, port) => ConnectVerdict::Refuse(Refusal::Pinned),
             Some(policy) => policy.connect(host, port),
             None => ConnectVerdict::Refuse(Refusal::UnknownChat),
         };
@@ -502,6 +551,11 @@ impl ForgeProxy {
         let Some(policy) = policy else {
             return self.refuse(chat, inbound, None, Refusal::UnknownChat);
         };
+        // An administrator's pin wins over everything the chat's repos allow (D3g): read for this
+        // request, for the name asked and for the forge it belongs to, before any credential is.
+        if self.pinned(&inbound.head.host, inbound.head.port) {
+            return self.refuse(chat, inbound, None, Refusal::Pinned);
+        }
         // Credentialed means a recorded repo and a valid sentinel. A request without one may still
         // take the anonymous route, which carries no authorization of any kind; a chat that is
         // locked out, or unknown, takes none.

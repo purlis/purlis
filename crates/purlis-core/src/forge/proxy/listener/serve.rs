@@ -116,7 +116,9 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
                 Some(Err(refusal)) => {
                     let asked = RequestHead::new(&method, &host, port.unwrap_or(80), &target);
                     w.proxy.note_refused(&w.chat, &asked, refusal);
-                    return refused(&mut framed.stream, refusal);
+                    let said = (refusal == Refusal::Pinned)
+                        .then(|| w.proxy.alias_pin_said(&w.chat, &host));
+                    return refused_saying(&mut framed.stream, refusal, said);
                 }
                 None => (
                     RequestHead::new(&method, &host, port.unwrap_or(80), &target),
@@ -169,7 +171,10 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
         },
     );
     match outcome {
-        Outcome::Refused(refusal) => refused(&mut framed.stream, refusal),
+        Outcome::Refused(refusal) => {
+            let said = (refusal == Refusal::Pinned).then(|| w.proxy.pin_said(&rh.host, rh.port));
+            refused_saying(&mut framed.stream, refusal, said)
+        }
         // A held act (slice F2): the ask is raised, and the chat is told its number and that
         // nothing was sent. The act itself waits for the person's press.
         Outcome::Held(held) => write_answer(&mut framed.stream, 403, &message(&held.said)),
@@ -261,6 +266,15 @@ fn is_object_id(word: &str) -> bool {
 }
 
 fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
+    refused_saying(out, refusal, None)
+}
+
+/// [`refused`], with the pin's own sentence where the refusal is the pin's (who set it, and that
+/// signing in does not change it): `said` is [`ForgeProxy::pin_said`]'s.
+fn refused_saying<W: Write>(out: &mut W, refusal: Refusal, said: Option<String>) -> io::Result<()> {
+    if let (Refusal::Pinned, Some(said)) = (refusal, &said) {
+        return write_answer(out, 403, &message(said));
+    }
     // A request with no credential at all is **challenged**, not refused outright: `git` sends its
     // first request with none and asks its credential helper (which answers the sentinel) only when
     // it is told to by a `401`. A wrong credential, or any other refusal, stays `403`.

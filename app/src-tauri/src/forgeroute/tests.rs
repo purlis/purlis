@@ -216,6 +216,21 @@ impl Scene {
     }
 
     fn with_gate(gate: Option<Arc<dyn Gate>>) -> Self {
+        Self::with_gate_and_pin(gate, Seams::stubs().pin)
+    }
+
+    /// A scene where policy pins `hosts` as never allowed.
+    fn pinning(hosts: &'static [&'static str]) -> Self {
+        struct Pins(&'static [&'static str]);
+        impl purlis_core::forge::pin::Pin for Pins {
+            fn pinned(&self, host: &str, _: u16) -> Option<String> {
+                self.0.contains(&host).then(|| format!("Policy never allows {host}."))
+            }
+        }
+        Self::with_gate_and_pin(None, Arc::new(move |_| Arc::new(Pins(hosts))))
+    }
+
+    fn with_gate_and_pin(gate: Option<Arc<dyn Gate>>, pin: PinOf) -> Self {
         let root = tempfile::tempdir().expect("a temp dir");
         let dir = root.path().join("purlis-forge");
         let listener = Arc::new(FakeListener::default());
@@ -248,6 +263,7 @@ impl Scene {
                 held: Arc::new(NoHeldSinks),
                 runner_link: pairing.clone(),
                 gate,
+                pin,
             },
         );
         Self {
@@ -1498,4 +1514,60 @@ fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_othe
     assert!(scene.routes.git_route(8).is_none());
     scene.routes.stop("run-1");
     assert!(scene.routes.git_route(7).is_none());
+}
+
+#[test]
+fn a_repo_on_a_pinned_forge_is_not_enrolled_and_a_project_with_only_pinned_repos_has_no_route() {
+    // github.com pinned: the chat's route holds the GitLab repo and none of GitHub's.
+    let scene = Scene::pinning(&["github.com"]);
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    assert_eq!(
+        params.repos,
+        [("gitlab.com".to_owned(), "group/proj".to_owned())]
+    );
+    assert!(params.inputs.repos.iter().all(|repo| repo.host() != "github.com"));
+    // Both pinned: no route at all, and nothing is left running for the run.
+    let scene = Scene::pinning(&["github.com", "gitlab.com"]);
+    assert!(
+        scene
+            .routes
+            .start("chat-1", "run-1", Path::new("/p/one"))
+            .expect("no error")
+            .is_none()
+    );
+    assert!(!scene.routes.is_live("run-1"));
+}
+
+#[test]
+fn a_runner_whose_every_repo_is_pinned_is_refused_and_does_not_keep_its_token_connections() {
+    let scene = Scene::pinning(&["github.com", "gitlab.com"]);
+    lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+    assert!(matches!(
+        scene.routes.for_runner(&runner(), "chat-9", "job-1"),
+        RunnerForward::Refused
+    ));
+}
+
+#[test]
+fn the_apps_git_for_a_chat_goes_to_the_relay_that_proves_the_hand_off_and_never_the_bare_door() {
+    let scene = Scene::new();
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    guard.commit(7);
+    let (relay, door) = {
+        let live = scene.routes.live();
+        let run = live.get("run-1").expect("a live route");
+        (
+            run.relay.as_ref().expect("the relay started").addr(),
+            run.inputs.door,
+        )
+    };
+    assert_ne!(relay, door, "the relay is not the door");
+    let route = scene
+        .routes
+        .git_route(7)
+        .expect("a route for the session")
+        .expect("one git can use");
+    let shown = format!("{route:?}");
+    assert!(shown.contains(&format!("http://{relay}")), "{shown}");
+    assert!(!shown.contains(&format!("http://{door}")), "{shown}");
 }

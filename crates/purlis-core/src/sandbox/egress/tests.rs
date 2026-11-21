@@ -2650,3 +2650,40 @@ fn a_forge_host_policy_pins_is_refused_for_the_route_and_its_door_is_never_diall
         "{said}"
     );
 }
+
+#[test]
+fn a_pin_on_a_forge_covers_every_name_the_route_serves_for_it_and_its_door_is_never_dialled() {
+    // github.com pinned covers the API host; a server and a GitLab are pinned by their one host.
+    for (pinned, served) in [
+        ("github.com", "api.github.com"),
+        ("github.com", "github.com"),
+        ("ghe.corp.example", "ghe.corp.example"),
+        ("gitlab.example", "gitlab.example"),
+    ] {
+        let door = std::net::TcpListener::bind("127.0.0.1:0").expect("a door");
+        let addr = door.local_addr().expect("its address");
+        door.set_nonblocking(true).expect("nonblocking");
+        let heard = Heard::default();
+        let proxy = Proxy::serving(super::Serving {
+            forge_route: Some(super::ForgeRoute {
+                addr,
+                hosts: vec![served.to_owned()],
+                handoff: super::handoff::Secret::random().expect("a secret"),
+            }),
+            ..heard.serving(Reach::open(vec![served.to_owned()]).never(vec![
+                crate::sandbox::hosts::Host::parse(pinned).expect("a host"),
+            ]))
+        })
+        .expect("a proxy");
+        let mut client = to(&proxy);
+        let said = status(
+            &mut client,
+            &format!("CONNECT {served}:443 HTTP/1.1\r\nHost: {served}:443\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{pinned} pinned, {served} asked");
+        assert!(
+            door.accept().is_err(),
+            "the door was dialled for {served} with {pinned} pinned"
+        );
+    }
+}

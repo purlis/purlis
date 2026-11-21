@@ -59,6 +59,7 @@ pub mod loopback;
 #[cfg(unix)]
 pub mod mintport;
 pub mod oauth;
+pub mod pin;
 pub mod pkce;
 pub mod poll;
 pub mod pr;

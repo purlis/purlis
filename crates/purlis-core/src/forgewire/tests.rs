@@ -1035,3 +1035,41 @@ fn the_ca_is_copied_into_the_chat_s_own_wire_folder_so_git_and_glab_never_read_t
             .any(|(_, v)| v == route.ca_cert.to_str().unwrap())
     );
 }
+
+#[test]
+fn the_route_folder_is_one_answer_for_a_stale_runtime_directory_and_an_unset_tmpdir() {
+    let who = purlis_same_user::Uid::effective().as_raw().to_string();
+    let home = tempfile::tempdir().expect("a home");
+    let machine = |os, vars: &[(&str, &str)]| crate::sandbox::Machine {
+        env: crate::secrets::Env::of(vars),
+        home: Some(home.path().to_path_buf()),
+        os,
+    };
+    // A stale XDG_RUNTIME_DIR (a folder that is not there) is the machine's own folder, as
+    // `route_dir_in` answers it for the same inputs: the app and the sandbox cannot differ.
+    let stale = machine(
+        crate::sandbox::Os::Linux,
+        &[("XDG_RUNTIME_DIR", "/run/user/not-a-folder-4417")],
+    );
+    let config = crate::machine::rooted(
+        None,
+        None,
+        Some(home.path().to_path_buf()),
+    );
+    assert_eq!(
+        route_root(&stale),
+        route_dir_in(
+            None,
+            config,
+            PathBuf::from("/tmp"),
+            &who,
+            true
+        )
+    );
+    // macOS with TMPDIR unset: `/tmp`, never a folder one side invented.
+    let mac = machine(crate::sandbox::Os::MacOs, &[]);
+    assert_eq!(
+        route_root(&mac),
+        Some(PathBuf::from("/tmp").join(format!("pf-{who}")))
+    );
+}

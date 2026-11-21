@@ -71,6 +71,7 @@ mod a_chat_that_asks_in_a_loop_is_stopped_before_it_spends_the_persons_budget;
 mod a_chat_with_no_mint_has_no_forge_credential;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_reads_one_request_and_never_hands_the_chat_a_credential;
+mod a_pinned_forge_is_refused_on_every_door_of_a_chats_route;
 #[cfg(all(unix, feature = "forge-wiring"))]
 mod a_chats_forge_listener_serves_a_real_unix_socket_and_a_real_connect_port;
 #[cfg(all(unix, feature = "forge-wiring"))]
