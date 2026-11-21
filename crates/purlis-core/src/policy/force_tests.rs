@@ -642,6 +642,41 @@ fn denied_past_the_cap(kept: Vec<Entry>) -> Standing {
     }
 }
 
+/// A verified store whose old nevers are not all imported: its entries are set aside in `kept`.
+fn denied_by_a_late_never(kept: Vec<Entry>) -> Standing {
+    Standing {
+        state: State::Deny(vec![Deny::NeversNotImported]),
+        kept,
+        store_verified: true,
+        ..Standing::fresh()
+    }
+}
+
+#[test]
+fn a_start_with_a_never_not_imported_is_held_to_the_accepted_copy() {
+    let m = machine();
+    let ban = forbid_start();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing = denied_by_a_late_never(vec![accepted(&version(STRICT, Some(&ban)))]);
+    assert!(!standing.is_unverified_by_a_reachable_cause());
+    let said = by(&root, &standing, &start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["trust-no-start"], "{said:?}");
+}
+
+#[test]
+fn a_never_not_imported_beside_a_verified_empty_store_is_not_a_reachable_cause() {
+    // A genuine first-run upgrade: the store verified and holds nothing yet.
+    assert!(!denied_by_a_late_never(Vec::new()).is_unverified_by_a_reachable_cause());
+    // No verified store behind it: a chat could have written the file, so a start is downgraded.
+    let unbacked = Standing {
+        state: State::Deny(vec![Deny::NeversNotImported]),
+        ..Standing::fresh()
+    };
+    assert!(unbacked.is_unverified_by_a_reachable_cause());
+}
+
 #[test]
 fn a_start_past_the_cap_is_held_to_the_forbid_only_the_accepted_copy_holds() {
     let m = machine();
@@ -990,4 +1025,69 @@ fn a_floor_version_that_does_not_read_says_nothing_of_a_limit() {
         limit(&sources(&root), &holding(vec![broken]), "trust.unread-max"),
         Some(1024)
     );
+}
+
+// ---- review round 5: a start no chat can have brought to a refusal --------------------------
+
+fn gappy_start() -> Request<'static> {
+    let mut gappy = start();
+    gappy.context["gaps"] = serde_json::json!(["sandbox", "network"]);
+    gappy
+}
+
+#[test]
+fn a_plane_with_no_store_or_a_keyring_at_fault_starts_with_gaps_as_it_always_did() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing_of = |state: State| Standing {
+        state,
+        ..Standing::fresh()
+    };
+    let fresh = by(&root, &Standing::fresh(), &gappy_start());
+    assert_ne!(fresh.after_mode, Outcome::Deny, "{fresh:?}");
+    for state in [
+        State::NoKeyring,
+        State::Unverifiable,
+        State::Deny(vec![Deny::KeyringDidNotStart]),
+        State::Deny(vec![Deny::SealKeyLocked]),
+    ] {
+        let said = by(&root, &standing_of(state.clone()), &gappy_start());
+        assert_eq!(said.after_mode, fresh.after_mode, "{state:?}: {said:?}");
+        assert!(said.deny_state.is_none(), "{state:?}: {said:?}");
+    }
+}
+
+#[test]
+fn a_keyring_cause_beside_a_cause_a_chat_reaches_still_refuses_a_start_with_gaps() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let both = Standing {
+        state: State::Deny(vec![Deny::KeyringDidNotStart, Deny::CloneKeySwapped]),
+        ..Standing::fresh()
+    };
+    let said = by(&root, &both, &gappy_start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+#[test]
+fn a_folder_that_is_no_repository_starts_with_gaps_where_a_broken_git_does_not() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let bare = m.dir.path().join("not-a-repository");
+    std::fs::create_dir_all(&bare).expect("a folder");
+    let bare = std::fs::canonicalize(&bare).expect("a real path");
+    std::fs::write(bare.join("purlis.toml"), open).expect("a file");
+    let said = by(&bare, &Standing::fresh(), &gappy_start());
+    assert_ne!(
+        said.after_mode,
+        Outcome::Deny,
+        "no commit is no refusal: {said:?}"
+    );
+    // A `.git` that git cannot read is a repository that failed, never one that is not there.
+    let broken = m.dir.path().join("broken");
+    std::fs::create_dir_all(broken.join(".git")).expect("a broken .git");
+    let said = by(&broken, &Standing::fresh(), &gappy_start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
 }
