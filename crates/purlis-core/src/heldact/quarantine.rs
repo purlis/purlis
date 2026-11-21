@@ -117,7 +117,8 @@ impl Quarantine {
         }
         self.has(tip)?;
         // Every object of the push is here: a tip whose tree or blobs are missing has no diff.
-        let walked = git::run(
+        // Capped: a pack of millions of objects lists far more than memory holds.
+        let walked = git::run_capped_bytes(
             &self.path,
             &[
                 "rev-list",
@@ -128,12 +129,19 @@ impl Quarantine {
                 base.as_str(),
             ],
             TAKING_IN,
+            super::ci::MOST_LISTING,
         )
         .map_err(|why| why.to_string())?;
-        if walked.ok() {
+        let Some(walked) = walked else {
+            return Err("the pushed objects are more than purlis walks".to_owned());
+        };
+        if walked.code == Some(0) {
             Ok(())
         } else {
-            Err(first_line(&walked.err, "the pushed objects are not whole"))
+            Err(first_line(
+                &String::from_utf8_lossy(&walked.err),
+                "the pushed objects are not whole",
+            ))
         }
     }
 

@@ -330,7 +330,10 @@ fn includes_of(text: &str) -> Result<Includes, String> {
     // `!reference`, which copies another job's keys in. So **any tag that is not a core YAML tag,
     // and any `%TAG` directive, makes the file as unresolvable as a merge key**; the tags are
     // read from the parser's events, and the text is read for a directive and for `!reference`.
+    // U+0085, U+2028 and U+2029 end a line for libyaml and not for this parser, so a comment or a
+    // block scalar can hide a key from one reader and not the other.
     if audit.foreign_tag
+        || text.contains(['\u{85}', '\u{2028}', '\u{2029}'])
         || text.contains("!reference")
         || text.lines().any(|line| line.starts_with("%TAG"))
     {
@@ -360,47 +363,40 @@ fn includes_of(text: &str) -> Result<Includes, String> {
 /// The most nodes a pipeline file may expand to once its aliases are resolved, and the most bytes
 /// of one file read: past either, the push is refused.
 const MOST_NODES: usize = 200_000;
+/// The most bytes the scalars of a file may expand to once aliases are resolved.
+const MOST_BYTES: usize = 4 * 1024 * 1024;
 pub(super) const MOST_FILE: usize = 1024 * 1024;
 /// The most bytes of a listing of a tree's files, or of the paths a diff changes.
 pub(super) const MOST_LISTING: usize = 16 * 1024 * 1024;
 
 #[derive(Default)]
 struct Audit {
-    /// Per open collection: its anchor (0 for none) and the nodes it holds so far.
-    open: Vec<(usize, usize)>,
-    /// The nodes each anchored node expands to.
-    sizes: std::collections::HashMap<usize, usize>,
+    /// Per open collection: its anchor (0 for none), and the nodes and scalar bytes it holds so far.
+    open: Vec<(usize, usize, usize)>,
+    /// The nodes and scalar bytes each anchored node expands to.
+    sizes: std::collections::HashMap<usize, (usize, usize)>,
     foreign_tag: bool,
     over: bool,
 }
 
 impl Audit {
-    fn add(&mut self, nodes: usize) {
+    fn add(&mut self, nodes: usize, bytes: usize) {
         if let Some(top) = self.open.last_mut() {
             top.1 = top.1.saturating_add(nodes);
-            self.over |= top.1 > MOST_NODES;
+            top.2 = top.2.saturating_add(bytes);
+            self.over |= top.1 > MOST_NODES || top.2 > MOST_BYTES;
         } else {
-            self.over |= nodes > MOST_NODES;
+            self.over |= nodes > MOST_NODES || bytes > MOST_BYTES;
         }
     }
 
+    /// Any explicit tag but a core one whose meaning is the same in both readers is foreign:
+    /// GitLab's reader decodes `!!binary`, `!!omap`, `!!pairs` and `!!set` (a key written
+    /// `!!binary aW5jbHVkZQ==` is `include`), which this parser reads as plain text.
     fn tag(&mut self, tag: &Option<yaml_rust2::parser::Tag>) {
-        const CORE: &[&str] = &[
-            "str",
-            "int",
-            "float",
-            "bool",
-            "null",
-            "seq",
-            "map",
-            "set",
-            "omap",
-            "pairs",
-            "binary",
-            "timestamp",
-        ];
+        const SAME: &[&str] = &["str", "int", "float", "bool", "null", "seq", "map"];
         if let Some(tag) = tag
-            && !(tag.handle == "tag:yaml.org,2002:" && CORE.contains(&tag.suffix.as_str()))
+            && !(tag.handle == "tag:yaml.org,2002:" && SAME.contains(&tag.suffix.as_str()))
         {
             self.foreign_tag = true;
         }
@@ -414,28 +410,29 @@ impl yaml_rust2::parser::EventReceiver for Audit {
             return;
         }
         match event {
-            Event::Scalar(_, _, anchor, tag) => {
+            Event::Scalar(value, _, anchor, tag) => {
                 self.tag(&tag);
+                let bytes = value.len();
                 if anchor > 0 {
-                    self.sizes.insert(anchor, 1);
+                    self.sizes.insert(anchor, (1, bytes));
                 }
-                self.add(1);
+                self.add(1, bytes);
             }
             Event::SequenceStart(anchor, tag) | Event::MappingStart(anchor, tag) => {
                 self.tag(&tag);
-                self.open.push((anchor, 1));
+                self.open.push((anchor, 1, 0));
             }
             Event::SequenceEnd | Event::MappingEnd => {
-                if let Some((anchor, size)) = self.open.pop() {
+                if let Some((anchor, nodes, bytes)) = self.open.pop() {
                     if anchor > 0 {
-                        self.sizes.insert(anchor, size);
+                        self.sizes.insert(anchor, (nodes, bytes));
                     }
-                    self.add(size);
+                    self.add(nodes, bytes);
                 }
             }
             Event::Alias(anchor) => {
-                let size = self.sizes.get(&anchor).copied().unwrap_or(1);
-                self.add(size);
+                let (nodes, bytes) = self.sizes.get(&anchor).copied().unwrap_or((1, 0));
+                self.add(nodes, bytes);
             }
             _ => {}
         }
@@ -452,7 +449,7 @@ fn audit(text: &str) -> Result<Audit, String> {
         .map_err(|why| why.to_string())?;
     if audit.over {
         return Err(format!(
-            "its anchors and aliases expand to more than {MOST_NODES} nodes"
+            "its anchors and aliases expand to more than {MOST_NODES} nodes or {MOST_BYTES} bytes"
         ));
     }
     Ok(audit)
@@ -828,5 +825,48 @@ mod tests {
         let why = includes_of(&text).unwrap_err();
         assert!(why.contains("expand"), "{why}");
         assert!(includes_of("a: &a [x]\nb: *a\n").is_ok());
+    }
+
+    #[test]
+    fn a_decoded_core_tag_hides_nothing_from_the_reader() {
+        for text in [
+            "!!binary aW5jbHVkZQ==: [evil.yml]\n",
+            "build:\n  !!binary dHJpZ2dlcg==:\n    include: [evil.yml]\n",
+            "include: !!binary ZXZpbC55bWw=\n",
+            "a: &x {k: v}\nb:\n  !!binary PDw=: *x\n",
+            "--- !!omap\n- include: evil.yml\n",
+            "build:\n  trigger: !!omap\n    - include: evil.yml\n",
+            "a: !!set {x}\n",
+            "a: !!pairs [[x, y]]\n",
+        ] {
+            assert!(includes_of(text).unwrap().unresolved, "{text}");
+        }
+        assert!(
+            !includes_of("a: !!str 1\nb: !!int 2\nc: !!float 1\nd: !!bool true\ne: !!null ~\nf: !!seq [x]\ng: !!map {k: v}\n")
+                .unwrap()
+                .unresolved
+        );
+    }
+
+    #[test]
+    fn aliases_that_expand_past_a_bound_of_bytes_refuse_the_file() {
+        let big = "x".repeat(300_000);
+        let refs = vec!["*a"; 1000].join(", ");
+        let text = format!("a: &a \"{big}\"\nb: [{refs}]\n");
+        let why = includes_of(&text).unwrap_err();
+        assert!(why.contains("bytes"), "{why}");
+        assert!(includes_of("a: &a \"xxx\"\nb: [*a, *a]\n").is_ok());
+    }
+
+    #[test]
+    fn a_line_break_only_libyaml_knows_makes_the_file_unresolved() {
+        for mark in ['\u{85}', '\u{2028}', '\u{2029}'] {
+            for text in [
+                format!("a: 1 # c{mark}include: [evil.yml]\n"),
+                format!("a: >\n  one{mark}include: [evil.yml]\n"),
+            ] {
+                assert!(includes_of(&text).unwrap().unresolved, "{text:?}");
+            }
+        }
     }
 }
