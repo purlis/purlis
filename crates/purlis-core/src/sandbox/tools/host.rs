@@ -215,10 +215,14 @@ fn host_named(value: &str, read: Read) -> Option<String> {
     None
 }
 
-/// Whether `named` is `host`: the same name, and the same port where `host` has one.
+/// Whether `named` is `host`: the same name and the same port. A host that names no port is the
+/// default port's, which an explicit `:443` (https) or `:22` (ssh) spells; any other port
+/// (`host:9999`) is another service and is never the tool's (#1349).
 fn same_host(named: &str, host: &str) -> bool {
-    if host.contains(':') {
-        return named == host;
-    }
-    named.split(':').next() == Some(host)
+    named == host
+        || (!host.contains(':')
+            && named
+                .strip_suffix(":443")
+                .or_else(|| named.strip_suffix(":22"))
+                == Some(host))
 }

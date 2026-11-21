@@ -1083,6 +1083,11 @@ pub struct Chats {
     /// The chats being started again in their place right now (#1342): one restart at a time
     /// per chat, whichever asked for it.
     restarting: Mutex<std::collections::HashSet<u32>>,
+    /// The chats being started again on their conversation right now, by their ULIDs (#7145): a
+    /// closed chat's Reopen (#6485) and a just-ended chat's Resume both hold it here, so one of
+    /// either, never both, starts it at a time (#7149's review). Never by number, which two
+    /// closed chats may share (#6740) and which a chat open now may have been dealt again.
+    reopening: Mutex<std::collections::HashSet<String>>,
     /// What each chat was last told of where it is working (#1450), by its number: who its
     /// siblings and its persona's other chats were then, so a later turn is told only what
     /// changed ([`Self::working`]). **Here, beside the app's record of the chat, and in
@@ -1928,6 +1933,7 @@ impl Chats {
             stops_below: Mutex::new(std::collections::HashSet::new()),
             owed: Mutex::new(HashMap::new()),
             restarting: Mutex::new(std::collections::HashSet::new()),
+            reopening: Mutex::new(std::collections::HashSet::new()),
             told: Mutex::new(HashMap::new()),
             models: Mutex::new(HashMap::new()),
             attendance: Mutex::new(HashMap::new()),
@@ -4348,6 +4354,23 @@ impl Chats {
         lock(&self.restarting).remove(&session);
     }
 
+    /// Marks the chat whose ULID is `id`, numbered `number`, as starting again on its
+    /// conversation, or refuses: Reopen and Resume both hold it so, so the two pressed at once
+    /// start it once (#7149's review).
+    fn claim_conversation(&self, id: &str, number: u32) -> Result<(), String> {
+        if lock(&self.reopening).insert(id.to_owned()) {
+            Ok(())
+        } else {
+            Err(format!(
+                "purlis is already starting chat {number} again, so it was not started twice."
+            ))
+        }
+    }
+
+    fn unclaim_conversation(&self, id: &str) {
+        lock(&self.reopening).remove(id);
+    }
+
     /// What follows a restart of chat `session` as `started`: if the chat was closed while it
     /// restarted, the new run is ended (nobody asked for it any more, and it would keep the
     /// chat's grants alive unseen); otherwise the new run takes its place, and what was queued
@@ -4392,7 +4415,25 @@ impl Chats {
         }
         self.claim(session)?;
         let was = lock(&self.let_go).get(&session).cloned();
+        // Held by its ULID too, as Reopen on its card holds it (#7149's review): the two pressed
+        // at once start it once, and the one that comes second is refused.
+        let id = was.as_ref().and_then(|was| was.identity.id.clone());
+        if let Some(id) = &id
+            && let Err(why) = self.claim_conversation(id, session)
+        {
+            self.unclaim(session);
+            return Err(why);
+        }
+        let open_again = id.as_deref().is_some_and(|id| {
+            lock(&self.open)
+                .values()
+                .any(|one| one.chat.identity.id.as_deref() == Some(id))
+        });
         let started = match was {
+            // Reopened from its card already: it runs again, under another number.
+            Some(_) if open_again => Err(format!(
+                "purlis did not resume chat {session}: it is open again under another number."
+            )),
             None => Err(format!(
                 "purlis did not resume chat {session}: there is nothing to resume, as it is not \
                  a chat purlis ended here."
@@ -4411,6 +4452,9 @@ impl Chats {
         if started.is_ok() {
             lock(&self.let_go).remove(&session);
         }
+        if let Some(id) = &id {
+            self.unclaim_conversation(id);
+        }
         self.unclaim(session);
         started
     }
@@ -4419,7 +4463,8 @@ impl Chats {
     /// on its conversation, the same chat under its id in a new run and under a new number, as
     /// [`Self::resume_ended`] starts one ended here ([`ChatRecord::reopened`]). Refused where it
     /// is open again, where nothing was kept, and where its harness named no conversation. Once
-    /// at a time: a second press while it starts is refused.
+    /// at a time, by its ULID: a second press while it starts is refused, and another chat that
+    /// had its number is not held back (#7145).
     ///
     /// [`ChatRecord::reopened`]: purlis_core::chatrecords::ChatRecord::reopened
     pub fn reopen_closed(
@@ -4438,7 +4483,8 @@ impl Chats {
         })?;
         // Claimed before it is asked whether it is open, so a second press while the first
         // starts it is refused by the claim, and one after finds it open: never started twice.
-        self.claim(number)?;
+        // By its ULID (#7145): another closed chat, or a chat open now, may have its number.
+        self.claim_conversation(&record.id, record.number)?;
         let started = if lock(&self.open)
             .values()
             .any(|one| one.chat.identity.id.as_deref() == Some(record.id.as_str()))
@@ -4449,7 +4495,7 @@ impl Chats {
         } else {
             self.start_recorded_told(&again, size, Why::Relaunch, None, None)
         };
-        self.unclaim(number);
+        self.unclaim_conversation(&record.id);
         started
     }
 
@@ -5432,8 +5478,12 @@ impl Chats {
             };
         // Known to mask the chat's kept screen with once it has its number, as it is announced
         // (#6309): the values themselves go to its start.
-        let signed_in_with =
-            (!handed.is_empty()).then(|| (handed.named(&self.project), handed.known()));
+        let signed_in_with = (!handed.is_empty()).then(|| {
+            (
+                handed.named(&self.project, identity.id.as_deref()),
+                handed.known(),
+            )
+        });
         let cause = match why {
             Why::New => Began::Start,
             Why::Relaunch => Began::at_relaunch(&how, harness.is_some()),
@@ -5469,6 +5519,15 @@ impl Chats {
                 &self.project,
                 &purlis_core::sandbox::Machine::this(),
                 &applied.confines().widened,
+            )
+        }));
+        // Where the class that holds the person's own forge login back is on and nothing mints
+        // the chat a token, said from its start (#1349), not first by a `gh` that failed.
+        late.extend(sandbox.and_then(|applied| {
+            purlis_core::forge::agentidentity::start_note(
+                &self.project,
+                applied.confines(),
+                runs_as.as_deref(),
             )
         }));
         // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
@@ -5816,6 +5875,17 @@ impl Chats {
             reached: Some(reached),
             asks,
             timings: self.timings,
+            // Never for a grade's chat, which reaches only what it was given (ADR 0105 §3).
+            network: (!chat.graded)
+                .then(|| {
+                    lifted_by_the_policy(
+                        &self.project,
+                        identity.id.clone(),
+                        purlis_core::enforcement::Family::Network,
+                        NETWORK_LIFTED_RULE,
+                    )
+                })
+                .flatten(),
         };
         // On a runner, the runner confines it, and its proxy is heard as the one it names.
         let (hearing, composed_hearing) = if on_the_runner {
@@ -6101,12 +6171,18 @@ impl Chats {
             // what masks its screen, and where that fails the chat is ended below.
             if let Some((named, known)) = &signed_in_with {
                 let remembered = match named {
-                    Ok(named) => purlis_core::secrets::handedto::remember_known(
-                        &self.project,
-                        session,
-                        named,
-                        known.clone(),
-                    ),
+                    // Named for its id, which `named` was sealed with: one it had none for
+                    // failed above.
+                    Ok(named) => match identity.id.as_deref() {
+                        Some(id) => purlis_core::secrets::handedto::remember_known(
+                            &self.project,
+                            session,
+                            id,
+                            named,
+                            known.clone(),
+                        ),
+                        None => Err(purlis_core::secrets::handedto::no_chat_id()),
+                    },
                     Err(why) => Err(std::io::Error::new(why.kind(), why.to_string())),
                 };
                 if let Err(why) = remembered {
@@ -8174,6 +8250,7 @@ impl Chats {
                 root: root.to_path_buf(),
                 env: purlis_core::secrets::Env::from_process(),
                 chat: session,
+                id: running.chat.identity.id.clone(),
                 // Whose vaults it may use, as `secret exec` judges them (#2599, #2691).
                 persona: running.persona().started_as,
                 folder: running.chat.cwd.clone(),
@@ -9576,6 +9653,29 @@ impl Chats {
         }
     }
 
+    /// **Starts keeping the screens of the finished task chats the session host left, where the
+    /// record of what was open was refused** (#6737): each proven a task's by its run
+    /// ([`crate::chatcard::finished_tasks_left_by_run`]), since no record says which chats were
+    /// tasks. Waited for and closed as [`Self::start_keeping_screens_left`]'s are.
+    pub(crate) fn start_keeping_screens_proven_left(&self) -> KeepingLeft {
+        let by = crate::chatcard::screens_by_from_now();
+        let events = match crate::EVENT_LOG.get() {
+            Some(Ok(dir)) => Some(dir.as_path()),
+            _ => None,
+        };
+        let left =
+            crate::chatcard::finished_tasks_left_by_run(&self.project, &*self.sessions, events);
+        KeepingLeft {
+            screens: crate::chatcard::start_keeping_screens_left(
+                &self.project,
+                &self.sessions,
+                &left,
+            ),
+            by,
+            chats: left.into_iter().map(|chat| chat.chat).collect(),
+        }
+    }
+
     /// **Waits for the screens `keeping` is keeping, until its deadline, and closes their chats**
     /// (#6504), each where the session host holds it: a pool the settings no longer route among
     /// them, which the sweep would leave running with no tab (#6504's review).
@@ -9783,6 +9883,7 @@ fn refused_by_the_proxy(
                 target: Some(purlis_core::sandbox::egress::host_and_port(host, port)),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             };
             let _ = std::thread::Builder::new()
                 .name("purlis-refused".into())
@@ -9825,6 +9926,7 @@ fn refused_by_the_proxy(
                         target: local.map(|port| port.to_string()),
                         read_back: false,
                         suggested: None,
+                        purlis_command: None,
                     };
                     told(block);
                 });
@@ -10017,6 +10119,7 @@ fn asked_by_the_proxy(
                         target: Some(target),
                         read_back: false,
                         suggested: None,
+                        purlis_command: None,
                     };
                     told(Box::new(move || raise(block)));
                 }
@@ -10063,8 +10166,30 @@ fn answered_by_the_policy(
     root: &std::path::Path,
     chat: Option<String>,
 ) -> Option<purlis_core::sandbox::asks::Answered> {
-    use purlis_core::enforcement::{self, Family, Mode};
-    let mode = enforcement::mode(root, Family::Asks);
+    lifted_by_the_policy(
+        root,
+        chat,
+        purlis_core::enforcement::Family::Asks,
+        purlis_core::enforcement::RULE_HOST_ASK,
+    )
+}
+
+/// The rule a host a chat's proxy carried only because `network` is not enforced is logged by.
+pub(crate) const NETWORK_LIFTED_RULE: &str = purlis_core::enforcement::RULE_NETWORK_UNLISTED;
+
+/// **What a chat's proxy, or its board, tells of a host it let through only because the
+/// project's `[policy]` does not enforce `family`** for chat `chat`, whose start resolved it:
+/// nothing where the family is enforced (it refuses or asks as before), a line of its log,
+/// by `rule` and the host, where it logs. The same wherever the proxy runs: a confinement in the
+/// session host tells the window, which tells this (1.93).
+fn lifted_by_the_policy(
+    root: &std::path::Path,
+    chat: Option<String>,
+    family: purlis_core::enforcement::Family,
+    rule: &'static str,
+) -> Option<purlis_core::sandbox::asks::Answered> {
+    use purlis_core::enforcement::{self, Mode};
+    let mode = enforcement::mode(root, family);
     if mode == Mode::Enforce {
         return None;
     }
@@ -10074,9 +10199,9 @@ fn answered_by_the_policy(
             enforcement::record(
                 &root,
                 chat,
-                Family::Asks,
-                enforcement::RULE_HOST_ASK,
-                Some(&format!("{host}:{port}")),
+                family,
+                rule,
+                Some(&purlis_core::sandbox::egress::host_and_port(host, port)),
             );
         }
     }))

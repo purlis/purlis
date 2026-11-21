@@ -670,6 +670,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
                     target: None,
                     read_back: false,
                     suggested: None,
+                    purlis_command: None,
                 }
                 .into(),
             )
@@ -708,6 +709,7 @@ fn recorded_violation_lines_reach_the_window_as_the_notice_says_them() {
             target: None,
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -733,6 +735,7 @@ fn a_heard_block_is_told_once_and_a_flood_is_held_back() {
         target: None,
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     for _ in 0..50 {
         heard_block(
@@ -777,6 +780,7 @@ fn the_repeats_held_back_are_told_once_their_minute_is_over() {
         target: None,
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     for _ in 0..4 {
         heard_block(&throttle, &slot, &repeated, line.clone().into(), now);
@@ -878,6 +882,7 @@ fn a_host_a_brokered_run_was_refused_is_the_asking_chats_block_to_allow() {
         target: Some("api.cluster.example-k8s.com:6443".to_owned()),
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     let with = |line: &purlis_core::hookwire::SandboxBlocked, vault: &str| RunBlocked {
         block: line.clone(),
@@ -943,6 +948,7 @@ fn a_vault_s_name_on_a_notice_is_drawn_inertly() {
         target: Some("api.example.com:443".to_owned()),
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     let said = |vault: &str| {
         blocked(
@@ -984,6 +990,7 @@ fn an_address_dialled_past_the_proxy_is_a_quiet_line_that_names_it_and_offers_no
             target: Some("93.184.216.34:443".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -1007,6 +1014,7 @@ fn an_address_dialled_past_the_proxy_is_a_quiet_line_that_names_it_and_offers_no
             target: Some("example.com:443".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -1034,6 +1042,7 @@ fn a_block_s_notice_offers_allow_only_for_a_host_or_a_folder_and_the_way_out_oth
                 target: target.map(str::to_owned),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         );
@@ -1179,6 +1188,7 @@ fn a_held_folder_is_offered_to_a_claude_code_chat_for_itself_and_says_it_goes_by
                 target: Some(folder.join("config.yml").display().to_string()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         )
@@ -3155,6 +3165,7 @@ fn a_printed_port_is_only_ever_a_suggestion_on_a_notice_that_asks_for_one() {
             target: target.map(str::to_owned),
             read_back: false,
             suggested: suggested.map(str::to_owned),
+            purlis_command: None,
         },
         vault: None,
     };
@@ -3336,6 +3347,7 @@ fn a_lookup_past_the_proxy_says_what_reaching_the_system_s_name_lookup_would_mea
                 target: target.map(str::to_owned),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         );
@@ -3470,6 +3482,7 @@ fn a_notice_for_the_systems_name_lookup_offers_no_allow() {
                 target: Some(target.to_owned()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         )
@@ -4010,4 +4023,135 @@ fn a_refused_read_or_write_of_a_credential_says_the_credentials_way_out() {
             Some(grant::brokered_route(Class::LaterCode).to_owned())
         )
     );
+}
+
+/// #1349: a `gh` call that fails on its own config load, which a harness hands back as the
+/// failure's `error`, raises the credentials Notice through the real path, detection and then the
+/// Notice's offer: the person's way out, not silence. Run against a path in the person's own home
+/// as a string, so no real credential file is read.
+#[test]
+fn a_gh_call_that_fails_on_its_config_load_raises_the_credentials_notice() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Place, detect_with_targets};
+    let project = tempfile::tempdir().expect("a project");
+    let home = purlis_core::sandbox::Machine::this().home.expect("a home");
+    let place = Place {
+        root: project.path(),
+        chat: project.path(),
+        cwd: project.path(),
+        home: Some(&home),
+    };
+    let hosts = home.join(".config/gh/hosts.yml");
+    let payload = serde_json::json!({
+        "hook_event_name": "PostToolUseFailure",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "error": format!(
+            "Exit code 1\nfailed to read configuration: open {}: operation not permitted",
+            hosts.display()
+        ),
+    });
+    let found = detect_with_targets(&payload, &place);
+    assert_eq!(found.len(), 1, "{found:?}");
+    let (block, target) = &found[0];
+    let plane: PlaneId = serde_json::from_value(serde_json::json!(
+        project
+            .path()
+            .canonicalize()
+            .expect("real")
+            .display()
+            .to_string()
+    ))
+    .expect("an id");
+    let told = blocked_on(
+        &plane,
+        7,
+        block,
+        None,
+        target.as_deref(),
+        false,
+        Some(false),
+    );
+    assert_eq!(
+        (told.offer, told.target, told.route),
+        (
+            BlockOffer::Brokered,
+            None,
+            Some(grant::brokered_route(Class::Credentials).to_owned())
+        )
+    );
+}
+
+/// #1349 round 2: through the real path, [`blocked_on`], a refused `~/.config/gh/hosts.yml` is the
+/// credentials Notice for every harness, never the lift's "Allow this chat to write .config/gh",
+/// which would fix nothing: gh's folder is one a person may lift, and the class is enforced.
+#[test]
+fn a_refused_forge_login_file_is_the_credentials_notice_and_never_a_lift() {
+    use purlis_core::harness::Harness;
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let root = project.path().canonicalize().expect("real");
+    let plane: PlaneId =
+        serde_json::from_value(serde_json::json!(root.display().to_string())).expect("an id");
+    let home = purlis_core::sandbox::Machine::this().home.expect("a home");
+    for file in [".config/gh/hosts.yml", ".config/glab-cli/config.yml"] {
+        let target = home.join(file).display().to_string();
+        for harness in Harness::ALL {
+            for operation in [Operation::File, Operation::Write] {
+                let refused = Block {
+                    operation,
+                    kind: Kind::ProtectedFile,
+                    ours: false,
+                };
+                let told = blocked_on(
+                    &plane,
+                    7,
+                    &refused,
+                    Some(harness),
+                    Some(&target),
+                    false,
+                    Some(false),
+                );
+                assert_eq!(told.offer, BlockOffer::Brokered, "{file} {harness:?}");
+                assert_eq!(told.target, None, "{file} {harness:?}");
+                assert_eq!(
+                    told.route.as_deref(),
+                    Some(grant::brokered_route(Class::Credentials)),
+                    "{file} {harness:?}"
+                );
+            }
+        }
+    }
+}
+
+/// #1349 round 3: a program-printed credential path arrives as the credentials kind, which the
+/// app answers with the person's own way out and no grant, whatever its own judgement of the
+/// path: a hook whose environment moved a file (`NETRC` set only there) still never reaches
+/// [`purlis_core::sandbox::grant::write`].
+#[test]
+fn a_credentials_kind_from_the_hook_never_offers_a_grant_whatever_the_path() {
+    use purlis_core::sandbox::{Class, grant};
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let project = tempfile::tempdir().expect("a project");
+    let credentials = Some(grant::brokered_route(Class::Credentials).to_owned());
+    // Under the project's own folder, which this app judges no credential and a write there
+    // would otherwise be offered.
+    let elsewhere = project.path().join("moved/netrc").display().to_string();
+    for operation in [Operation::Read, Operation::Write, Operation::File] {
+        let block = Block {
+            operation,
+            kind: Kind::Credentials,
+            ours: false,
+        };
+        assert!(
+            names_a_credential(&block, Some(&elsewhere)),
+            "{operation:?}"
+        );
+        assert_eq!(
+            offered_to(project.path(), &block, Some(&elsewhere), false),
+            (BlockOffer::Brokered, None, credentials.clone()),
+            "{operation:?}"
+        );
+    }
 }

@@ -80,6 +80,7 @@ struct Heard_ {
 fn hearing(heard: &Arc<Heard_>) -> Hearing {
     Hearing {
         timings: purlis_core::sandbox::timings::Timings::production(),
+        network: None,
         refusals: Refusals::telling({
             let heard = Arc::clone(heard);
             Arc::new(move |host: &str, port: u16| {
@@ -308,6 +309,7 @@ fn a_chats_proxy_in_the_host_still_reaches_its_hosts_once_the_windows_link_is_go
                     project: PROJECT.into(),
                     plan: plan.clone(),
                     asks: false,
+                    lifted: Vec::new(),
                 })))
                 .await
             {
@@ -442,6 +444,7 @@ fn a_runner_starts_a_relayed_plan_only_where_it_fits_the_runner() {
             project: PROJECT.into(),
             plan: plan.clone(),
             asks: false,
+            lifted: Vec::new(),
         }))
     };
     runtime.block_on(async {
@@ -526,6 +529,7 @@ fn a_runner_starts_a_relayed_plan_without_a_service_allowed_for_this_chat_alone(
                 project: PROJECT.into(),
                 plan: plan.clone(),
                 asks: true,
+                lifted: Vec::new(),
             })))
             .await
         {
@@ -623,6 +627,7 @@ fn the_windows_allow_of_a_service_a_runner_left_out_lets_the_chat_reach_it_there
         project: PROJECT.into(),
         plan,
         asks: true,
+        lifted: Vec::new(),
     }))) {
         Ok(Answer::Confined(confined)) => confined,
         other => panic!("not confined: {other:?}"),
@@ -666,4 +671,35 @@ fn the_windows_allow_of_a_service_a_runner_left_out_lets_the_chat_reach_it_there
     let _ = reached.read(&mut nothing);
     drop(held);
     hosting.end_all();
+}
+
+/// **A host the host's proxy let through only because a family is not enforced is told to the
+/// window's own closure for that family** (1.93, the Q308 follow-up, items 3 and 5), which logs
+/// it under the chat; and the window names to the host exactly the families its hearing lifts.
+#[test]
+fn a_host_let_through_by_a_lifted_family_is_told_to_that_familys_closure() {
+    let told = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let closure = |tag: &'static str| -> purlis_core::sandbox::asks::Answered {
+        let told = Arc::clone(&told);
+        Arc::new(move |host: &str, port: u16| {
+            told.lock().unwrap().push(format!("{tag} {host} {port}"));
+        })
+    };
+    let hearing = purlis_core::sandbox::plan::Hearing {
+        network: Some(closure("network")),
+        ..purlis_core::sandbox::plan::Hearing::default()
+    };
+    assert_eq!(Hears::lifted(&hearing), ["network"]);
+    let hears = Hears::of(hearing);
+    hears.told(SandboxTold::Lifted {
+        family: "network".into(),
+        target: "[2001:db8::1]:443".into(),
+    });
+    // The window's hearing lifts no asks, so nothing hears an asks line.
+    hears.told(SandboxTold::Lifted {
+        family: "asks".into(),
+        target: "example.com:443".into(),
+    });
+    assert_eq!(*told.lock().unwrap(), ["network 2001:db8::1 443"]);
+    assert!(Hears::lifted(&purlis_core::sandbox::plan::Hearing::default()).is_empty());
 }

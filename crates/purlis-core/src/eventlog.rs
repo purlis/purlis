@@ -940,6 +940,32 @@ pub fn read_back(
     Ok(())
 }
 
+/// **The chat each of `runs` is a run of**, by the `run.started` the log holds of it, read
+/// newest first and only until each is found (#6737): what a launch whose record of what was open
+/// was refused proves a program the session host left belongs to a chat by, the host saying
+/// only its number and its run. A run with no `run.started` in the log is left out.
+pub fn chats_of_runs(dir: &Path, runs: &[&str]) -> io::Result<HashMap<String, String>> {
+    let mut found = HashMap::new();
+    let wanted: std::collections::HashSet<&str> = runs.iter().copied().collect();
+    if wanted.is_empty() {
+        return Ok(found);
+    }
+    read_back(dir, |event| {
+        if event.kind == "run.started"
+            && let (Some(run), Some(chat)) = (event.run, event.chat)
+            && wanted.contains(run.as_str())
+        {
+            found.entry(run).or_insert(chat);
+        }
+        if found.len() == wanted.len() {
+            std::ops::ControlFlow::Break(())
+        } else {
+            std::ops::ControlFlow::Continue(())
+        }
+    })?;
+    Ok(found)
+}
+
 /// What a subscription hands its client: an event, or word that some were missed.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(

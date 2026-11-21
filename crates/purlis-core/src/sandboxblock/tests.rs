@@ -294,9 +294,10 @@ fn a_programs_operation_not_permitted_names_its_path_and_is_sorted() {
             Operation::File,
             Kind::ProjectFiles,
         ),
-        // Go, and so gh: lower case, no program in front.
+        // Go, and so gh: lower case, no program in front. (A credential file is the credentials
+        // kind: `a_refusal_on_the_stderr_of_a_succeeded_command_is_the_credentials_block`.)
         (
-            "open /Users/dev/.config/gh/hosts.yml: operation not permitted",
+            "open /Users/dev/.config/gh/config.yml: operation not permitted",
             Operation::File,
             Kind::ProtectedFile,
         ),
@@ -2749,4 +2750,295 @@ fn a_block_in_the_chats_own_branch_folders_git_record_is_its_own_to_retry() {
     for never in ["Notice", "Nobody", "wait"] {
         assert!(!told.contains(never), "{never}: {told}");
     }
+}
+
+/// #1349: gh's config load at start fails with its own words, and a failed command hands them
+/// back in the failure's `error`. A refusal of one of the person's credential files raises a
+/// block there, naming the path, as it does in a result that came back.
+#[test]
+fn a_failed_gh_config_load_on_a_credential_file_is_a_block_naming_it() {
+    for line in [
+        "failed to read configuration: open /Users/dev/.config/gh/hosts.yml: operation not permitted",
+        "open /Users/dev/.config/glab-cli/config.yml: operation not permitted",
+    ] {
+        let path = line
+            .split_whitespace()
+            .rev()
+            .nth(3)
+            .unwrap()
+            .trim_end_matches(':');
+        assert_eq!(
+            detect_with_targets(
+                &failed("gh pr list", &format!("Exit code 1\n{line}")),
+                &place()
+            ),
+            vec![(
+                block(Operation::File, Kind::Credentials, false),
+                Some(path.to_owned())
+            )],
+            "{line}"
+        );
+    }
+}
+
+/// A failed command's own refusal of a path that is no credential stays unread there (its
+/// words could name any path): only the credentials class is read from a failure's `error`.
+#[test]
+fn a_failed_commands_refusal_of_no_credential_is_still_not_read_from_its_error() {
+    for line in [
+        "open /Users/dev/notes/todo.md: operation not permitted",
+        "open /Users/dev/.config/gh/config.yml: operation not permitted",
+    ] {
+        assert!(
+            detect(
+                &failed("gh pr list", &format!("Exit code 1\n{line}")),
+                &place()
+            )
+            .is_empty(),
+            "{line}"
+        );
+    }
+}
+
+const GH_HOSTS: &str = "/Users/dev/.config/gh/hosts.yml";
+
+fn gh_refusal() -> (Block, Option<String>) {
+    (
+        block(Operation::File, Kind::Credentials, false),
+        Some(GH_HOSTS.to_owned()),
+    )
+}
+
+/// #1349, Codex: every result is one string, so a gh config load's own refusal in it raises the
+/// credentials block, naming the file.
+#[test]
+fn a_gh_config_refusal_in_a_one_string_result_is_a_block_naming_it() {
+    let payload = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "tool_response":
+            format!("failed to read configuration: open {GH_HOSTS}: operation not permitted"),
+    });
+    assert_eq!(detect_with_targets(&payload, &place()), vec![gh_refusal()]);
+}
+
+/// #1349, opencode: a failed command's one `mixed` stream keeps the credential file as the
+/// target, so the Notice is the credentials one and not the later-code sentence.
+#[test]
+fn a_gh_config_refusal_in_a_mixed_stream_keeps_its_target() {
+    let text = format!("failed to read configuration: open {GH_HOSTS}: operation not permitted");
+    assert_eq!(
+        detect_with_targets(&mixed(&text), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// What stays unread outside the failure's `error` (a program's words could name any path):
+/// a path that is no credential, in either shape.
+#[test]
+fn a_refusal_of_no_credential_in_a_one_string_or_mixed_result_names_no_target() {
+    let line = "open /Users/dev/.config/gh/config.yml: operation not permitted";
+    let one = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "tool_response": line,
+    });
+    for payload in [one, mixed(line)] {
+        assert!(
+            detect_with_targets(&payload, &place())
+                .iter()
+                .all(|(_, target)| target.is_none()),
+            "{payload}"
+        );
+    }
+}
+
+/// S6: Linux's supervisor refuses with EACCES, so "permission denied" is the refusal too, for a
+/// credential file and only there.
+#[test]
+fn a_permission_denied_on_a_credential_file_is_a_block_naming_it() {
+    for line in [
+        format!("failed to read configuration: open {GH_HOSTS}: permission denied"),
+        format!("EACCES: permission denied, open '{GH_HOSTS}'"),
+    ] {
+        let found = detect_with_targets(
+            &failed("gh pr list", &format!("Exit code 1\n{line}")),
+            &place(),
+        );
+        assert!(
+            found
+                .iter()
+                .any(|(_, target)| target.as_deref() == Some(GH_HOSTS)),
+            "{line}: {found:?}"
+        );
+    }
+    assert!(
+        detect(
+            &failed(
+                "cat x",
+                "Exit code 1\nopen /Users/dev/notes/todo.md: permission denied"
+            ),
+            &place()
+        )
+        .is_empty()
+    );
+}
+
+/// #1349 round 3: `gh pr list 2>&1 | head` exits 0 with gh's own line in standard output, and no
+/// failure beside it: the refusal is read from `stdout` too, or the chat fails silently.
+#[test]
+fn a_gh_config_refusal_in_a_piped_commands_stdout_is_a_block_naming_it() {
+    let line = format!("failed to read configuration: open {GH_HOSTS}: operation not permitted");
+    assert_eq!(
+        detect_with_targets(&came_back("gh pr list 2>&1 | head", &line, ""), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// #1972: what a command merely printed is no refusal it met. `cat old.log` in a Codex or
+/// opencode chat, whose result is one string, raises no credentials block, nor does its stdout.
+#[test]
+fn a_credential_refusal_a_command_only_printed_is_no_block() {
+    let line = format!("open {GH_HOSTS}: operation not permitted");
+    let one = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "cat old.log"},
+        "tool_response": line,
+    });
+    for payload in [one, came_back("cat old.log", &line, "")] {
+        assert!(
+            detect_with_targets(&payload, &place()).is_empty(),
+            "{payload}"
+        );
+    }
+    // A `mixed` stream keeps its older rule (printed text raises an unnamed block), but never
+    // the credentials kind.
+    let mixed_log = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "cat old.log"},
+        "tool_response": {"stderr": line, "mixed": true},
+    });
+    assert!(
+        detect(&mixed_log, &place())
+            .iter()
+            .all(|block| block.kind != Kind::Credentials)
+    );
+}
+
+/// One Notice, not two, where the sandbox's own violation line and gh's line both name the file.
+#[test]
+fn the_sandbox_line_and_gh_naming_one_credential_raise_one_block() {
+    let text = format!(
+        "failed to read configuration: open {GH_HOSTS}: operation not permitted\n\
+         gh(7) deny(1) file-read-data {GH_HOSTS}"
+    );
+    let payload = json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": {"command": "gh pr list"},
+        "tool_response": text,
+    });
+    assert_eq!(detect_with_targets(&payload, &place()), vec![gh_refusal()]);
+}
+
+/// Python's `[Errno 13]` and Rust's `(os error 13)` are the refusal too, for a credential file.
+#[test]
+fn errno_13_spellings_on_a_credential_file_are_a_block_and_on_no_other_file_are_not() {
+    for line in [
+        format!("PermissionError: [Errno 13] Permission denied: '{GH_HOSTS}'"),
+        format!("Error: failed to read {GH_HOSTS}: Permission denied (os error 13)"),
+    ] {
+        let found = detect_with_targets(&failed("x", &format!("Exit code 1\n{line}")), &place());
+        assert_eq!(found, vec![gh_refusal()], "{line}");
+    }
+    for line in [
+        "PermissionError: [Errno 13] Permission denied: '/Users/dev/notes/todo.md'",
+        "Error: failed to read /Users/dev/notes/todo.md: Permission denied (os error 13)",
+    ] {
+        assert!(detect(&failed("x", &format!("Exit code 1\n{line}")), &place()).is_empty());
+    }
+}
+
+const GLAB_CONFIG: &str = "/Users/dev/.config/glab-cli/config.yml";
+
+/// #1349 round 4: `gh pr list || true` succeeds, with gh's refusal on a separate standard error
+/// and no `mixed` flag: it is the credentials block, naming the file, on macOS's wording and
+/// Linux's, for gh and for glab.
+#[test]
+fn a_refusal_on_the_stderr_of_a_succeeded_command_is_the_credentials_block() {
+    for (command, file) in [
+        ("gh pr list || true", GH_HOSTS),
+        ("glab mr list || true", GLAB_CONFIG),
+    ] {
+        for wording in ["operation not permitted", "permission denied"] {
+            let line = format!("failed to read configuration: open {file}: {wording}");
+            assert_eq!(
+                detect_with_targets(&came_back(command, "", &line), &place()),
+                vec![(
+                    block(Operation::File, Kind::Credentials, false),
+                    Some(file.to_owned())
+                )],
+                "{command}: {line}"
+            );
+        }
+    }
+}
+
+/// The same line, said again by the sandbox's own violation line, is still one Notice.
+#[test]
+fn the_sandbox_line_beside_gh_on_a_succeeded_commands_stderr_is_one_block() {
+    let stderr = format!(
+        "failed to read configuration: open {GH_HOSTS}: operation not permitted\n\
+         gh(7) deny(1) file-read-data {GH_HOSTS}"
+    );
+    assert_eq!(
+        detect_with_targets(&came_back("gh pr list || true", "", &stderr), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// What a line that only reads merely printed is no refusal, on a separate stderr too.
+#[test]
+fn a_credential_refusal_a_reader_printed_on_stderr_is_no_block() {
+    let line = format!("open {GH_HOSTS}: operation not permitted");
+    assert!(
+        detect(&came_back("cat old.log", "", &line), &place())
+            .iter()
+            .all(|block| block.kind != Kind::Credentials)
+    );
+}
+
+/// Rust's io error on a line of its own, the path on the line before.
+#[test]
+fn rusts_two_line_permission_denied_on_a_credential_file_is_a_block() {
+    let error =
+        format!("Exit code 1\nError: failed to read `{GH_HOSTS}`\nPermission denied (os error 13)");
+    assert_eq!(
+        detect_with_targets(&failed("x", &error), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// One Notice where the program and the sandbox spell the same file differently.
+#[test]
+fn differently_spelled_twins_of_one_credential_are_one_block() {
+    let stderr = format!(
+        "failed to read configuration: open {GH_HOSTS}: operation not permitted\n\
+         gh(7) deny(1) file-read-data /Users/dev/.config/gh/./hosts.yml"
+    );
+    assert_eq!(
+        detect_with_targets(&came_back("gh pr list || true", "", &stderr), &place()),
+        vec![gh_refusal()]
+    );
+}
+
+/// A reader line that failed (`cat old.log; false`) printed the refusal; it did not meet it.
+#[test]
+fn a_failed_reader_line_printing_a_credential_refusal_is_no_block() {
+    let error = format!("Exit code 1\nopen {GH_HOSTS}: operation not permitted");
+    assert!(detect_with_targets(&failed("cat old.log; false", &error), &place()).is_empty());
 }

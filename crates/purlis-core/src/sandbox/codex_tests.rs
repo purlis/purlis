@@ -224,8 +224,14 @@ fn the_wrapped_line_runs_codex_whole_under_sandbox_exec_with_its_own_sandbox_off
     );
     // git over ssh through the chat's own SOCKS port (#1667).
     let route = confinement.ssh_route().expect("an ssh route");
-    for pair in route.env() {
-        assert!(line.env.contains(&pair), "{pair:?}");
+    for (key, value) in route.env() {
+        // A chat that claims the forge lock keeps the route's ssh and adds the no-agent options
+        // to it (#7205).
+        assert!(
+            line.env.iter().any(|(set, got)| *set == key
+                && (*got == value || got.starts_with(&format!("{value} ")))),
+            "{key}"
+        );
     }
     let config = std::fs::read_to_string(route.config()).expect("its config");
     assert!(
