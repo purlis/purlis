@@ -325,6 +325,29 @@ impl Model {
         prompt
     }
 
+    /// **The next chat's script, one `WebFetch` call** of `url`: the tool a `permissions.deny`
+    /// rule takes away at Full, asked for as its own step ([`Model::plays`] asks for Bash only).
+    pub(crate) fn plays_a_fetch(&self, step: &str, url: &str) -> String {
+        let mut chats = self.chats.lock().expect("the chats");
+        let mut script = script_of(
+            &format!("leg chat {}", chats.len() + 1),
+            &[(step, String::new())],
+        );
+        let call = &mut script.responses[0].calls[0];
+        call.kind = "web".to_owned();
+        call.command = None;
+        call.url = Some(url.to_owned());
+        let prompt = script.prompt.clone();
+        let stand_in = Arc::new(StandIn::new("claude", script));
+        *self.current.lock().expect("the stand-in") = Arc::clone(&stand_in);
+        chats.push(Chat {
+            stand_in,
+            file: None,
+            last: String::new(),
+        });
+        prompt
+    }
+
     /// The transcript of the chat just played ([`Model::plays`]) is `file`, written from its
     /// request log. An earlier chat's file is left as it was.
     pub(crate) fn attach(&self, file: &Path) {
@@ -924,5 +947,49 @@ mod tests {
             purlis_scenarios::model::ReportVerdict::Pass,
             "the real Claude Code's own sandbox forwarded a held connection to purlis's proxy",
         )]);
+    }
+
+    /// **M-ASK-13, M-TOOL-08** (T1.1-39, #6886; R-094, R-353): a tool a `permissions.deny` rule
+    /// takes away at Full (`WebFetch`) is refused by the real Claude Code, and the log says so:
+    /// a `hook.permissiondenied` line and a block by the harness's own check, and the call
+    /// never ran. The log is read from outside, after the call's result is in.
+    #[test]
+    fn a_deny_rule_tool_call_writes_hook_permissiondenied_and_a_block() {
+        let homes = the_leg!("a_deny_rule_tool_call_writes_hook_permissiondenied_and_a_block");
+        let model = Model::serve();
+        let Some(scenario) = Scenario::for_claude_code(&homes, Protection::Full, &model) else {
+            return;
+        };
+        let since = scenario.latest_seq();
+        let prompt = model.plays_a_fetch("denied-fetch", "https://denied-fetch.example.test/");
+        let chat = scenario.starts_claude_code(&model, &prompt);
+        scenario.until_played(chat, &["denied-fetch"]);
+
+        // The hook's line reaches the host after the call's result is in: wait for it.
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let kinds = loop {
+            let kinds = super::super::report::kinds_since(&scenario.events(), since);
+            if kinds.iter().any(|kind| kind == "hook.permissiondenied") || Instant::now() > deadline
+            {
+                break kinds;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        };
+        assert!(
+            kinds.iter().any(|kind| kind == "hook.permissiondenied"),
+            "the deny rule refused WebFetch and the log has no hook.permissiondenied: {kinds:?}\n{}",
+            scenario.said()
+        );
+        assert!(
+            kinds.iter().any(|kind| kind == "stop.block"),
+            "the refusal was not recorded as a block: {kinds:?}\n{}",
+            scenario.said()
+        );
+        let result = StepResult::of(scenario.result_of(chat, "denied-fetch").as_ref());
+        assert!(
+            !result.ran,
+            "the denied fetch ran: {result:?}\n{}",
+            scenario.said()
+        );
     }
 }
