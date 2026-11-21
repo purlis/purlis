@@ -151,11 +151,10 @@ const ACTOR_SAID: Readonly<Record<string, string>> = {
   agent: "asked for by a chat",
 };
 
-/** A sandbox level's name, by the word the log keeps. */
-const LEVEL_SAID: Readonly<Record<string, string>> = {
-  on: "full sandbox",
-  floor: "basic sandbox",
-};
+/** A sandbox level as a sentence names it, by the word the log keeps. */
+function levelSaid(word: string | null) {
+  return (LEVEL_SAID[word as keyof typeof LEVEL_SAID] ?? "another level").toLowerCase();
+}
 
 /**
  * **A protection change's line, and who made it** (R-228): in phase 1, the sandbox lifted for a
@@ -164,7 +163,7 @@ const LEVEL_SAID: Readonly<Record<string, string>> = {
 export function protectionChangeSaid(row: Extract<ChatLogRow, { kind: "protection_changed" }>) {
   const what =
     row.change === "level"
-      ? `Protection changed from ${LEVEL_SAID[row.from ?? ""] ?? "another level"} to ${LEVEL_SAID[row.to ?? ""] ?? "another level"}`
+      ? `Protection changed from ${levelSaid(row.from)} to ${levelSaid(row.to)}`
       : row.change === "on"
         ? "The sandbox is back on"
         : "No sandbox for this run";
