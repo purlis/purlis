@@ -2662,9 +2662,18 @@ impl Hooks {
                     if let Some(what) = asked.asks_for() {
                         skill_runs.asks_for(asked.chat, what);
                     }
-                    // MUTATION (to be reverted): the board's lock is held across the held wait.
-                    let _stall = held_board(&stall_board);
-                    held(asked)
+                    // MUTATION (to be reverted): the board's lock is held while the ask is held
+                    // (the wait itself is core's, after this returns, so a thread holds it).
+                    let waiting = held(asked);
+                    if let Some(waiting) = &waiting {
+                        let board = Arc::clone(&stall_board);
+                        let until = waiting.until.min(std::time::Duration::from_secs(5));
+                        std::thread::spawn(move || {
+                            let _stall = held_board(&board);
+                            std::thread::sleep(until);
+                        });
+                    }
+                    waiting
                 })
             },
             // What a chat's tool hook says the chat is doing (#1493): kept in memory for the
