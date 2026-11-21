@@ -386,6 +386,48 @@ pub fn set_by_you(
         .map_err(|why| format!("purlis could not keep your level on this machine: {why}"))
 }
 
+/// What a project's level is now, for a chat that starts there with no persona: your level
+/// where it is in force ([`in_force`]), else the one the project starts its chats at ([`base`]).
+pub fn effective(root: &Path) -> Choice {
+    in_force(root).level.unwrap_or_else(|| base(root))
+}
+
+/// The kind of the event that records a change of a project's level.
+pub const LEVEL_CHANGED_KIND: &str = "trust.sandbox.level";
+
+/// **A change of the project's level, as the audit records it** (`trust.sandbox.level`, R-228,
+/// ADR 0075 §4): who (the person, by scope, never a login) and the levels before and after, as
+/// their words (`on`, `floor`, `off`). It is written where the person changes the level,
+/// Settings › Project › Sandbox, and under no chat: it is the project's, not a chat's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LevelChanged {
+    pub from: Choice,
+    pub to: Choice,
+}
+
+impl LevelChanged {
+    /// The change from `from` to `to`, or `None` where the level is the same.
+    pub fn of(from: Choice, to: Choice) -> Option<Self> {
+        (from != to).then_some(Self { from, to })
+    }
+
+    /// The event's kind.
+    pub fn kind(&self) -> &'static str {
+        LEVEL_CHANGED_KIND
+    }
+
+    /// The event's body.
+    pub fn body(&self) -> serde_json::Value {
+        serde_json::json!({
+            "actor_kind": "human",
+            "actor": "operator",
+            "scope": "local-ui",
+            "from": self.from.word(),
+            "to": self.to.word(),
+        })
+    }
+}
+
 /// **The Protection row's answer at setup** (T1-24, R-010; Q236): `choice` written as this
 /// project's `[sandbox] level` in this machine's file and recorded as yours, so it is the very
 /// value Settings › Project › Sandbox › Your level reads and changes, a chat's start honours it,

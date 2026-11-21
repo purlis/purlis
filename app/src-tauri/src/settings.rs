@@ -198,15 +198,19 @@ pub async fn save_project_settings(
     base: Option<String>,
     change: SettingsChange,
 ) -> Result<SettingsSaved, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
-    tauri::async_runtime::spawn_blocking(move || save(&root, which, base.as_deref(), change))
-        .await
-        .map_err(|err| format!("saving the settings did not finish: {err}"))?
+    let held = planes.held(&plane)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        save(held.root(), held.hooks(), which, base.as_deref(), change)
+    })
+    .await
+    .map_err(|err| format!("saving the settings did not finish: {err}"))?
 }
 
-/// The command above, without a runtime.
+/// The command above, without a runtime. A change to the project's level is recorded through
+/// `hooks`, under no chat (R-228): it is the one place the person changes it.
 pub(crate) fn save(
     root: &std::path::Path,
+    hooks: &crate::hooks::Hooks,
     which: SettingsWhich,
     base: Option<&str>,
     change: SettingsChange,
@@ -240,6 +244,11 @@ pub(crate) fn save(
     // A preset turned on or off here, by you, is one this machine has seen (#1385), unless
     // another change was already waiting to be told: recorded as written (#1550).
     let shared = matches!(which, SettingsWhich::Shared);
+    // The project's level as it stands before this save, where the save sets or clears it.
+    let level_was = levels
+        .iter()
+        .any(|(persona, _)| persona.is_none())
+        .then(|| purlis_core::sandbox::personal::effective(root));
     let pending = shared.then(|| Pending::now(root));
     match settings::save(root, which.into(), base, &text) {
         Ok(()) if shared => {
@@ -253,6 +262,22 @@ pub(crate) fn save(
         Ok(()) => {
             for (persona, level) in &levels {
                 purlis_core::sandbox::personal::set_by_you(root, persona.as_deref(), *level)?;
+            }
+            // Said once, by the person, where the project's level actually moved. The file is
+            // saved by now, so a record that cannot be written is told, not hidden.
+            if let Some(changed) = level_was.and_then(|was| {
+                purlis_core::sandbox::personal::LevelChanged::of(
+                    was,
+                    purlis_core::sandbox::personal::effective(root),
+                )
+            }) {
+                hooks.record_level_changed(root, &changed).map_err(|why| {
+                    format!(
+                        "Your level was saved, but the change from {} to {} was not recorded: {why}",
+                        changed.from.said(),
+                        changed.to.said()
+                    )
+                })?;
             }
             Ok(SettingsSaved::Saved {
                 file: file_of(root, which)?,
@@ -1304,10 +1329,12 @@ mod tests {
         use purlis_core::sandbox::personal::{self, Choice};
         let dir = plane("schema = 1\n");
         let root = dir.path();
+        let (hooks, _log) = recording(root);
         let text = |word: &str| Some(SettingsValue::Text(word.to_owned()));
         let key = |k: &str| SettingsStep::Key(k.to_owned());
         let saved = save(
             root,
+            &hooks,
             SettingsWhich::Local,
             None,
             SettingsChange::Edits {
@@ -1325,6 +1352,7 @@ mod tests {
         let raw = format!("{now}\n[sandbox.personas]\nqa = \"off\"\n");
         let saved = save(
             root,
+            &hooks,
             SettingsWhich::Local,
             Some(&now),
             SettingsChange::Raw { text: raw },
@@ -1359,6 +1387,123 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("charter.toml"), shared).unwrap();
         dir
+    }
+
+    /// Hooks that write into a real event log under `root`, and where it is.
+    fn recording(root: &std::path::Path) -> (crate::hooks::Hooks, std::path::PathBuf) {
+        use purlis_core::eventlog::{ArgsKey, Log, Recorder};
+        let logs = root.join("events-for-the-test");
+        std::fs::create_dir_all(&logs).unwrap();
+        let hooks = crate::hooks::Hooks::deaf(
+            PlaneId::saved_in_the_host(root),
+            purlis_core::sandbox::timings::Timings::production(),
+        );
+        hooks.record_into(crate::hooks::Events::here(Recorder::new(
+            Log::open(&logs, "DEVICE").unwrap(),
+            ArgsKey::open(&logs).unwrap(),
+        )));
+        (hooks, logs)
+    }
+
+    /// The `trust.sandbox.level` events in the log at `logs`.
+    fn level_events(logs: &std::path::Path) -> Vec<purlis_core::eventlog::Event> {
+        purlis_core::eventlog::read(logs)
+            .unwrap()
+            .into_iter()
+            .filter(|event| event.kind == "trust.sandbox.level")
+            .collect()
+    }
+
+    /// A save of `[sandbox] level` in the Local file, as the window's form makes it.
+    fn save_level(
+        root: &std::path::Path,
+        hooks: &crate::hooks::Hooks,
+        word: &str,
+    ) -> Result<SettingsSaved, String> {
+        let base = std::fs::read_to_string(root.join(purlis_core::profiles::LOCAL_FILE)).ok();
+        save(
+            root,
+            hooks,
+            SettingsWhich::Local,
+            base.as_deref(),
+            SettingsChange::Edits {
+                edits: vec![SettingsEdit {
+                    path: vec![
+                        SettingsStep::Key("sandbox".into()),
+                        SettingsStep::Key("level".into()),
+                    ],
+                    value: Some(SettingsValue::Text(word.to_owned())),
+                }],
+            },
+        )
+    }
+
+    /// R-228, M-SET-02, M-OBS-05: **saving the project's level Basic to Full writes one event**
+    /// naming both levels and the person, under no chat; saving the same level writes none.
+    ///
+    /// Its mutation, red here: the `record_level_changed` call in `save` deleted.
+    #[test]
+    fn saving_the_level_from_basic_to_full_writes_one_event_naming_both_levels_and_the_person() {
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let (hooks, logs) = recording(root);
+        save_level(root, &hooks, "floor").unwrap();
+        assert!(
+            level_events(&logs).is_empty(),
+            "the default is Basic already"
+        );
+
+        save_level(root, &hooks, "on").unwrap();
+        let events = level_events(&logs);
+        assert_eq!(events.len(), 1, "one event for one change");
+        let event = &events[0];
+        assert_eq!(
+            event.chat, None,
+            "the project's, read outside any chat's filter"
+        );
+        assert_eq!(event.run, None);
+        let said = |field: &str| event.body[field].as_str().unwrap_or_default().to_owned();
+        assert_eq!(
+            (said("from"), said("to")),
+            ("floor".to_owned(), "on".to_owned())
+        );
+        assert_eq!(
+            (said("actor_kind"), said("actor"), said("scope")),
+            (
+                "human".to_owned(),
+                "operator".to_owned(),
+                "local-ui".to_owned()
+            )
+        );
+
+        save_level(root, &hooks, "on").unwrap();
+        assert_eq!(
+            level_events(&logs).len(),
+            1,
+            "the same level writes nothing"
+        );
+    }
+
+    /// A level saved while the event log cannot take the record is told as a save that was not
+    /// recorded, not only warned about in a log.
+    #[test]
+    fn a_level_saved_with_no_event_log_open_says_it_was_not_recorded() {
+        let dir = plane("schema = 1\n");
+        let root = dir.path();
+        let hooks = crate::hooks::Hooks::deaf(
+            PlaneId::saved_in_the_host(root),
+            purlis_core::sandbox::timings::Timings::production(),
+        );
+        let why = save_level(root, &hooks, "on").unwrap_err();
+        assert!(
+            why.starts_with("Your level was saved, but the change from basic sandbox to full sandbox was not recorded"),
+            "{why}"
+        );
+        assert_eq!(
+            purlis_core::sandbox::personal::in_force(root).level,
+            Some(purlis_core::sandbox::personal::Choice::On),
+            "the save itself stands"
+        );
     }
 
     #[test]
@@ -1483,8 +1628,10 @@ mod tests {
     fn a_form_edit_is_saved_through_the_cores_writer_and_answers_the_new_file() {
         let body = "# keep me\n[memory]\nshare = \"local\" # why\n";
         let dir = plane(body);
+        let hooks = recording(dir.path()).0;
         let saved = save(
             dir.path(),
+            &hooks,
             SettingsWhich::Shared,
             Some(body),
             SettingsChange::Edits {
@@ -1509,8 +1656,10 @@ mod tests {
         // #1241: the per-key row is held to the collection's rule, and nothing is written.
         let body = "[[forge]]\nkind = \"github\"\n\n[[forge]]\nkind = \"gitlab\"\nhost = \"git.acme.dev\"\n";
         let dir = plane(body);
+        let hooks = recording(dir.path()).0;
         let saved = save(
             dir.path(),
+            &hooks,
             SettingsWhich::Shared,
             Some(body),
             SettingsChange::Edits {
@@ -1910,8 +2059,10 @@ mod tests {
     #[test]
     fn a_refused_save_answers_the_cores_sentences_and_writes_nothing() {
         let dir = plane("schema = 1\n");
+        let hooks = recording(dir.path()).0;
         let saved = save(
             dir.path(),
+            &hooks,
             SettingsWhich::Shared,
             Some("schema = 1\n"),
             SettingsChange::Raw {

@@ -88,11 +88,8 @@ pub enum Row {
     /// sandbox lifted for a run (`trust.sandbox.off`) or put back on (`trust.sandbox.on`).
     ProtectionChanged {
         at_ms: Option<u64>,
-        /// `off`, `on` or `level`.
+        /// `off` or `on`.
         change: String,
-        /// For a `level` change, the levels before and after (`on` full, `floor` basic).
-        from: Option<String>,
-        to: Option<String>,
         /// Who made it, as its trust event names them: `human`, `host` or `agent`.
         actor_kind: String,
         /// The actor's own word under that kind (`operator`, `purlis`, `a chat`, ...).
@@ -245,16 +242,9 @@ pub fn rows(events: &[Event], chat: &str) -> Vec<Row> {
             }),
             // The protection changes the shipped paths write (R-228): the sandbox lifted
             // for a run, or put back on. A grant is no change of protection.
-            kind @ (SANDBOX_OFF | SANDBOX_ON | SANDBOX_LEVEL) => Some(Row::ProtectionChanged {
+            kind @ (SANDBOX_OFF | SANDBOX_ON) => Some(Row::ProtectionChanged {
                 at_ms,
-                change: match kind {
-                    SANDBOX_OFF => "off",
-                    SANDBOX_ON => "on",
-                    _ => "level",
-                }
-                .to_owned(),
-                from: (kind == SANDBOX_LEVEL).then(|| word("from")),
-                to: (kind == SANDBOX_LEVEL).then(|| word("to")),
+                change: (if kind == SANDBOX_OFF { "off" } else { "on" }).to_owned(),
                 actor_kind: word("actor_kind"),
                 actor: word("actor"),
             }),
@@ -304,7 +294,6 @@ fn read<T: serde::de::DeserializeOwned>(event: &Event) -> Option<T> {
 /// ([`crate::sandbox::Change::kind`]).
 const SANDBOX_OFF: &str = "trust.sandbox.off";
 const SANDBOX_ON: &str = "trust.sandbox.on";
-const SANDBOX_LEVEL: &str = "trust.sandbox.level";
 
 /// **What heads a chat's Chat log** (R-234, R-235): its allowed calls, collapsed into one
 /// count with those allowed by the person's rules, and the honesty lines over the whole chat.

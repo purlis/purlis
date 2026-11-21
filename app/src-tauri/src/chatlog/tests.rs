@@ -141,8 +141,6 @@ fn the_chat_log_hands_the_window_its_rows_and_what_heads_it() {
             } => ChatLogRow::ProtectionChanged {
                 at: None,
                 change,
-                from: None,
-                to: None,
                 actor_kind,
                 actor,
             },
@@ -181,8 +179,6 @@ fn the_chat_log_hands_the_window_its_rows_and_what_heads_it() {
             ChatLogRow::ProtectionChanged {
                 at: None,
                 change: word("off"),
-                from: None,
-                to: None,
                 actor_kind: word("human"),
                 actor: word("operator"),
             },

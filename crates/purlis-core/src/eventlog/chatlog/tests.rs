@@ -868,8 +868,6 @@ fn a_protection_change_a_hold_and_a_loop_pause_are_rows() {
             } => Row::ProtectionChanged {
                 at_ms: None,
                 change,
-                from: None,
-                to: None,
                 actor_kind,
                 actor,
             },
@@ -891,16 +889,12 @@ fn a_protection_change_a_hold_and_a_loop_pause_are_rows() {
             Row::ProtectionChanged {
                 at_ms: None,
                 change: "off".to_owned(),
-                from: None,
-                to: None,
                 actor_kind: "human".to_owned(),
                 actor: "operator".to_owned(),
             },
             Row::ProtectionChanged {
                 at_ms: None,
                 change: "on".to_owned(),
-                from: None,
-                to: None,
                 actor_kind: "host".to_owned(),
                 actor: "charter".to_owned(),
             },
@@ -1245,65 +1239,5 @@ fn an_opencode_chats_summary_cant_tell_its_mode() {
         harness,
         Some(crate::harness::Harness::ClaudeCode),
         "its latest start's"
-    );
-}
-
-/// R-228 (core): **a level change between two runs of a chat is a row** naming both levels and
-/// who made it, read from the one `trust.sandbox.level` event the start wrote.
-#[test]
-fn a_protection_level_change_writes_one_event_naming_both_levels_and_who_made_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let log = dir.path();
-    let mut written = Log::open(log, DEVICE).unwrap();
-    run_started(&mut written, ONE, RUN_ONE, None);
-    drop(written);
-    let mut host = recorder(log);
-    let change = crate::sandbox::level_change(
-        Some(crate::sandbox::Level::Floor),
-        crate::sandbox::Level::Full,
-        &crate::sandbox::Made::Window,
-    )
-    .expect("Basic to Full is a change");
-    host.trust(
-        RunOf {
-            chat: ONE,
-            run: RUN_ONE,
-        },
-        &change,
-        None,
-        Some("steward"),
-    )
-    .unwrap();
-    drop(host);
-    let events = crate::eventlog::read(log).unwrap();
-
-    let levels: Vec<&Event> = events
-        .iter()
-        .filter(|event| event.kind == "trust.sandbox.level")
-        .collect();
-    assert_eq!(levels.len(), 1, "one event for one change");
-    let drawn: Vec<_> = rows(&events, ONE)
-        .into_iter()
-        .filter_map(|row| match row {
-            Row::ProtectionChanged {
-                change,
-                from,
-                to,
-                actor_kind,
-                actor,
-                ..
-            } => Some((change, from, to, actor_kind, actor)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(
-        drawn,
-        [(
-            "level".to_owned(),
-            Some("floor".to_owned()),
-            Some("on".to_owned()),
-            "human".to_owned(),
-            "operator".to_owned()
-        )]
     );
 }

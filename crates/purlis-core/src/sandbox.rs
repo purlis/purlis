@@ -8166,31 +8166,6 @@ pub enum Change {
     /// A chat whose last run was unsandboxed starts this run sandboxed: an opt-out lasts one
     /// run and is never inherited, so it is charter that puts it back on.
     On,
-    /// The chat starts at a different sandbox level than its last run had: full to basic or
-    /// basic to full (R-228). `via` is how the start was made, and so who made the change.
-    Level { from: Level, to: Level, via: Via },
-}
-
-/// A level's word in a trust event: `on` for the full sandbox, `floor` for the basic one, as the
-/// start's `protection` says it.
-fn level_word(level: Level) -> &'static str {
-    match level {
-        Level::Full => "on",
-        Level::Floor => "floor",
-    }
-}
-
-/// **The change of level a start makes**, where the chat's last run was at another sandbox level
-/// than this one (R-228). `None` where the levels are the same, or the last run's is not known
-/// (a chat that has not run, or one whose last run was unsandboxed, which `trust.sandbox.on`
-/// and `.off` already say).
-pub fn level_change(was: Option<Level>, now: Level, made: &Made) -> Option<Change> {
-    was.filter(|was| *was != now).map(|from| Change::Level {
-        from,
-        to: now,
-        // A start that names no way it was made is the host's own.
-        via: made.via().unwrap_or(Via::Relaunch),
-    })
 }
 
 impl Change {
@@ -8199,7 +8174,6 @@ impl Change {
         match self {
             Self::Off(_) => "trust.sandbox.off",
             Self::On => "trust.sandbox.on",
-            Self::Level { .. } => "trust.sandbox.level",
         }
     }
 
@@ -8267,18 +8241,6 @@ impl Change {
                 "persona": persona,
                 "restored": classes,
             }),
-            Self::Level { from, to, via } => {
-                let (actor_kind, actor, scope) = via.actor();
-                serde_json::json!({
-                    "actor_kind": actor_kind,
-                    "actor": actor,
-                    "scope": scope,
-                    "from": level_word(*from),
-                    "to": level_word(*to),
-                    "harness": harness,
-                    "persona": persona,
-                })
-            }
         }
     }
 }
