@@ -2420,6 +2420,13 @@ pub const SEALS_UNREAD: &str = "purlis could not read the key it seals your disp
      on this machine just now. Quit and open purlis again, and allow it to use its key when \
      macOS asks.";
 
+/// What the window says where the keyring did not start as purlis opened but a seal was kept on
+/// this machine before (#7164): purlis looks for it once, so only opening it again mends it.
+pub const KEYRING_DID_NOT_START: &str = "purlis could not reach your keyring as it opened, and \
+     it kept grants here before, so none counts on this machine just now. Quit purlis and open \
+     it again once your keyring (Secret Service, Keychain) is up; nothing you change in the \
+     window mends it.";
+
 /// What the window says on a machine with no keyring purlis can use (the review of #7113): a
 /// declared gap, said, never read as a keyring that failed.
 pub const NO_KEYRING: &str = "This machine has no keyring purlis can use, so purlis cannot keep \
@@ -2578,6 +2585,8 @@ fn standing_of(root: &Path) -> DispatchStanding {
             .collect(),
         seals_unread: if purlis_core::sandbox::local::no_keyring_at(root) {
             Some(NO_KEYRING.to_owned())
+        } else if purlis_core::secrets::seal::no_keyring() {
+            Some(KEYRING_DID_NOT_START.to_owned())
         } else {
             purlis_core::sandbox::local::dispatch_seals_unread(root)
                 .then(|| SEALS_UNREAD.to_owned())

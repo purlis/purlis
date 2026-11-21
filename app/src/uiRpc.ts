@@ -970,6 +970,10 @@ export const commands = {
 	agentIdentityLines: __WINDOW_ONLY_RESULT,
 	agentIdentityFinish: __WINDOW_ONLY_RESULT,
 	agentIdentityRemove: __WINDOW_ONLY_RESULT,
+	gitlabAccessList: __WINDOW_ONLY_RESULT,
+	gitlabAccessLines: __WINDOW_ONLY_RESULT,
+	gitlabAccessSet: __WINDOW_ONLY_RESULT,
+	gitlabAccessRemove: __WINDOW_ONLY_RESULT,
 	forgePkceSignIn: __WINDOW_ONLY_RESULT,
 	forgePkceSignInCancel: __WINDOW_ONLY,
 	machineProfiles: __WINDOW_ONLY_RESULT,
@@ -7595,6 +7599,27 @@ export type GitPresence = { kind: "present" } |
 /**  No git. `install` is how this machine gets one. */
 { kind: "missing"; install: GitInstall };
 
+/**  What setting up did. */
+export type GitlabFinished = {
+	/**  Personas with an Allow of their own still to give. */
+	to_allow: string[],
+};
+
+/**  One GitLab host of the project's clones. */
+export type GitlabRow = {
+	host: string,
+	/**  Personas whose `glab` line this flow wrote for the host. */
+	personas: string[],
+	/**  Personas with a `glab` line of their own for the host: shown, never replaced. */
+	by_hand: string[],
+};
+
+/**  What the tab draws. */
+export type GitlabShown = {
+	rows: GitlabRow[],
+	personas: string[],
+};
+
 /**
  *  A remembered project that is no longer a project where it was (NO-5, #1237): what the
  *  window offers **Locate…** and **Forget** for. Never acted on by charter itself, because a
@@ -7889,7 +7914,13 @@ export type GrantWhat =
  *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
  *  memory only.
  */
-"run-grant";
+"run-grant" | 
+/**
+ *  A persona's browser logins on a pool's runner (#7190): the opt-in the person gave once,
+ *  kept on this machine across a restart and bound to the pool's definition and image. Given
+ *  from its own Ask (`answer_pool_login`), never from a block's Allow.
+ */
+"pool-login";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -11921,6 +11952,13 @@ export type PoolVersion = {
 	 *  each by name with what is left of it: the Pools group names each in a line of its own.
 	 */
 	not_checked: PoolNotChecked[],
+	/**
+	 *  **How many runners on its engine belong to another desktop** (#7192), as a line ("2
+	 *  runners belong to another desktop"): two desktops can share one remote engine, each with
+	 *  its own runner of a pool. Only said, never acted on. Left out where there are none or the
+	 *  engine could not be asked.
+	 */
+	other_desktops?: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */

@@ -22,6 +22,7 @@ fn on_a_pool(runner: Runner, sign_ins: SignIns) -> Facts {
             name: "dev-box".into(),
             runner,
             sign_ins,
+            others: None,
             cluster: None,
         }),
         ..facts(Engine::Ready)
@@ -104,6 +105,21 @@ fn a_later_step_says_nothing_yet() {
     let later = setup.step(StepId::Identity).unwrap();
     assert!(later.findings.is_empty());
     assert!(later.next.is_none());
+}
+
+/// **Pool setup says how many runners on the pool's engine belong to another desktop** (#7192),
+/// under the Pool step and still done: it only says it.
+#[test]
+fn the_pool_step_says_how_many_runners_belong_to_another_desktop_and_stays_done() {
+    let mut facts = on_a_pool(Runner::Running, SignIns::Read(Vec::new()));
+    facts.pool.as_mut().unwrap().others = Some("2 runners belong to another desktop".to_owned());
+    let setup = answer(&facts);
+    let step = setup.step(StepId::Pool).unwrap();
+    assert_eq!(step.line.as_deref(), Some("dev-box"));
+    assert_eq!(step.findings, ["2 runners belong to another desktop"]);
+    assert!(step.next.is_none());
+    let none = answer(&on_a_pool(Runner::Running, SignIns::Read(Vec::new())));
+    assert!(none.step(StepId::Pool).unwrap().findings.is_empty());
 }
 
 #[test]

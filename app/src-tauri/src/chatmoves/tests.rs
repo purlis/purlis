@@ -189,6 +189,7 @@ fn bound() -> purlis_core::poollogins::Bound {
         runner_image: "ri".into(),
         pod: String::new(),
         engine: "this machine's Docker".into(),
+        marked: false,
     }
 }
 

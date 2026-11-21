@@ -423,6 +423,7 @@ fn a_sandbox_block_is_told_to_the_window_before_it_is_kept_in_the_network_record
             target: Some("example.com".to_owned()),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         }
         .into(),
     );
@@ -526,6 +527,7 @@ fn each_sandbox_refusal_a_hook_reports_is_one_block_in_the_event_log_by_its_road
                 target,
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }
             .into(),
         );

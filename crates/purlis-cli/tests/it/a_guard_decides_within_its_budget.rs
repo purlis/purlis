@@ -249,14 +249,107 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
                      `<(sort a)` and `${x:-y}` are read as substitutions.\n\n\
                      - 1) the reader (shellseg)\n- 2) the floor's \"eval\" walk\n\n";
     let body = paragraph.repeat(65_536 / paragraph.len());
+    // The merge hold is a chat's, and so is the reader that finds a substitution's close, so the
+    // body is sent from a chat as well as from a runner that is none (#7245, round 5).
+    let socket = here.dir.path().join("app").join("hooks.sock");
+    let chat = [
+        (purlis_core::hookwire::CHAT_ENV, "1"),
+        (
+            purlis_core::hookwire::SOCKET_ENV,
+            socket.to_str().expect("a path"),
+        ),
+    ];
     for cmd in [
         format!("gh pr create --title t --body-file - <<'EOF'\n{body}EOF"),
         format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\""),
     ] {
-        for mode in ["bypassPermissions", "default"] {
-            let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), &[]);
-            assert_eq!(code, Some(0), "{mode}: {err}");
-            assert!(!out.contains("deny"), "{mode}: {out}");
+        for env in [&[][..], &chat[..]] {
+            for mode in ["bypassPermissions", "default"] {
+                let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), env);
+                assert_eq!(code, Some(0), "{mode} chat={}: {err}", !env.is_empty());
+                assert!(
+                    !out.contains("deny"),
+                    "{mode} chat={}: {out}",
+                    !env.is_empty()
+                );
+            }
         }
+    }
+    // The same body with a merge line in it is held in a chat, and one that can't be closed (a
+    // heredoc with no delimiter line) is refused there, not let through.
+    let merging = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+    let unclosed = format!("git commit -m \"$(cat <<'EOF'\n{body}\n)\"");
+    for (what, cmd) in [("a merge line", merging), ("an unclosed heredoc", unclosed)] {
+        for mode in ["bypassPermissions", "default"] {
+            let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), &chat);
+            assert!(
+                out.contains("deny") || code == Some(2),
+                "{mode}: {what} was not held: {code:?} {out} {err}"
+            );
+        }
+    }
+}
+
+/// A commit message whose body holds a `)` and an odd `"` is read as commands as bash 3.2's
+/// hedge, and is still an ordinary one: it passes, but a literal merge on a line of it is held
+/// (#7131).
+#[test]
+fn a_large_commit_body_with_a_paren_and_a_quote_passes_and_a_merge_line_in_it_is_held() {
+    let here = Here::new();
+    let paragraph = "The guard didn't read `\"$(cat <<'EOF'` (see #917)\n- 1) the reader\n\n";
+    let body = paragraph.repeat(65_536 / paragraph.len());
+    let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+    let merging = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+    // The merge hold is a chat's: outside one, a merge is the person's own and nothing holds it,
+    // so the hook runs as a chat the app started whose app is not there (it is refused all the
+    // same, never let through). Without this the line passed on a CI runner, which is no chat,
+    // and was held only where the test happened to run inside one (#7245, round 4).
+    let socket = here.dir.path().join("app").join("hooks.sock");
+    let chat = [
+        (purlis_core::hookwire::CHAT_ENV, "1"),
+        (
+            purlis_core::hookwire::SOCKET_ENV,
+            socket.to_str().expect("a path"),
+        ),
+    ];
+    for mode in ["bypassPermissions", "default"] {
+        let (code, out, err, _) = here.answer("pretooluse", &bash(&ordinary, mode), &chat);
+        assert_eq!(code, Some(0), "{mode}: {err}");
+        assert!(!out.contains("deny"), "{mode}: {out}");
+        let (code, out, err, _) = here.answer("pretooluse", &bash(&merging, mode), &chat);
+        assert!(
+            out.contains("deny") || code == Some(2),
+            "{mode}: a merge line was not held: {code:?} {out} {err}"
+        );
+        // A program the shell builds, on a line nothing hedges, is still refused.
+        let (code, out, err, _) =
+            here.answer("pretooluse", &bash("\"$(echo gh)\" pr view 7", mode), &chat);
+        assert!(
+            out.contains("deny") || code == Some(2),
+            "{mode}: a built program was not refused: {code:?} {out} {err}"
+        );
+    }
+}
+
+/// **A hook that runs out of its budget while reading a large body with a merge line in it
+/// refuses, and never lets it through** (#7245, round 4): the budget forced tiny, and the
+/// judging thread stalled, in a chat and out of one.
+#[test]
+fn a_large_body_with_a_merge_line_that_runs_out_of_budget_is_refused() {
+    let here = Here::new();
+    let paragraph = "The guard didn't read `\"$(cat <<'EOF'` (see #917)\n- 1) the reader\n\n";
+    let body = paragraph.repeat(65_536 / paragraph.len());
+    let merging = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+    for mode in ["bypassPermissions", "default"] {
+        let (code, out, err, _) = here.answer(
+            "pretooluse",
+            &bash(&merging, mode),
+            &[
+                ("PURLIS_TEST_GUARD_DEADLINE_MS", "300"),
+                ("PURLIS_TEST_GUARD_STALLS", "1"),
+            ],
+        );
+        assert_eq!(code, Some(2), "{mode}: {out} {err}");
+        assert!(err.contains(OUT_OF_TIME), "{mode}: {err}");
     }
 }

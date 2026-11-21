@@ -253,7 +253,12 @@ fn the_quoted_hook_is_the_one_that_may_pass_the_cut_and_ends_on_the_last_report_
         };
         handback::leave(&plane, For::Place(&alpha), &report).expect("a kept report");
     }
-    let codex = [(purlis_core::hookwire::HARNESS_ENV, "codex")];
+    // With no app, the hook takes these reports itself, which a real sandbox holds from it
+    // (#7178: it then takes none, and they wait for the app). So this chat has no sandbox.
+    let codex = [
+        (purlis_core::hookwire::HARNESS_ENV, "codex"),
+        (purlis_core::hookwire::SANDBOXED_ENV, "0"),
+    ];
 
     let briefing = told(&plane, "sessionstart", &codex);
     assert!(briefing.len() < HOOK_OUTPUT_CUT, "{}", briefing.len());
