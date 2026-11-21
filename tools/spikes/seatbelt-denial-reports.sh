@@ -123,7 +123,7 @@ case_run() {
     echo "  log show as this user: $(log show --last 3m --style compact --predicate "$pred" 2>&1 | head -c 200 | tr "\n" "|")"
   fi
   perl "$WORK/judge.pl" "$WORK/child.out" "$WORK/recv.out" "$dir" "$N"
-  case "$name" in F_*)
+  case "$name" in F_*|A_*)
     perl "$WORK/folded.pl" "$WORK/recv.out" "$dir" "$tag" "$wait_s"
     echo "  first folded line and the two physical lines after it, as received (dir redacted):"
     grep -m1 -A2 "duplicate report" "$WORK/recv.out" | sed "s#$dir#<chat dir>#g" | cut -c1-300 ;;
