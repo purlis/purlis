@@ -2018,9 +2018,7 @@ impl Denied {
         // …and the folder every run's forge route is made in (ADR 0128 D3a): no chat reads or
         // writes it, and none lists it. A chat with a route is given back its own socket, and
         // nothing else in it ([`Applied::with_forge_route`]); every other chat reaches none.
-        // Held only where the app made the folder, so a sandbox that masks a path that is not
-        // there never makes one in the app's place.
-        if let Some(route_root) = crate::forgewire::route_root(machine).filter(|dir| dir.is_dir()) {
+        if let Some(route_root) = crate::forgewire::route_root(machine) {
             paths.push(Denial {
                 class: Class::Integrity,
                 path: route_root,
@@ -4245,6 +4243,10 @@ pub struct Widened {
     /// it is read and connected to inside the route folder every chat is denied
     /// ([`Applied::with_forge_route`]). Never another run's, and never a person's grant.
     pub forge_socket: Option<PathBuf>,
+    /// The folder every run's forge route is made in, as this machine names it: held after the
+    /// `ports` family off lets every local socket by ([`seatbelt::widen`]), so a chat reaches its
+    /// own run's socket and no other's whatever `ports` says.
+    pub forge_root: Option<PathBuf>,
 }
 
 /// [`Widened::every_local`] for a chat starting in the project at `root`: purlis's own ports
@@ -4278,6 +4280,7 @@ impl Widened {
             lifted: Vec::new(),
             every_local: every_local(root),
             forge_socket: None,
+            forge_root: crate::forgewire::route_root(machine),
         }
     }
 
@@ -4557,6 +4560,7 @@ impl Compiled {
             trust: written.certificate_checks,
             own_terminal_only: written.own_terminal_only,
             every_local: every_local(root),
+            forge_root: crate::forgewire::route_root(machine),
             ..Widened::default()
         }
         .lifting(grant::still_lifted(

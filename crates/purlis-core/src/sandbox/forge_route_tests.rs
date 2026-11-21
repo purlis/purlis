@@ -256,7 +256,7 @@ fn claude_code_on_linux_is_wrapped_and_holds_the_route_folder_but_for_its_own_so
 }
 
 #[test]
-fn a_chat_in_a_plane_where_the_app_made_no_route_folder_is_denied_none() {
+fn the_route_folder_is_denied_whether_or_not_the_app_has_made_it_yet() {
     let plane = tempfile::tempdir().expect("a plane");
     std::fs::write(plane.path().join("charter.toml"), "schema = 1\n").expect("charter.toml");
     let runtime = tempfile::tempdir().expect("a folder");
@@ -267,11 +267,57 @@ fn a_chat_in_a_plane_where_the_app_made_no_route_folder_is_denied_none() {
     };
     let root = crate::forgewire::route_root(&machine).expect("a route folder");
     let denied = Denied::of(&real(plane.path()), &machine);
-    assert!(!denied.paths.iter().any(|it| it.path == root));
+    // Held before the app has made it: a chat that starts first must not find it open once it is.
+    assert!(denied.paths.iter().any(|it| it.path == root));
     std::fs::create_dir_all(&root).expect("made");
     let denied = Denied::of(&real(plane.path()), &machine);
     let held: Vec<_> = denied.paths.iter().filter(|it| it.path == root).collect();
     assert_eq!(held.len(), 1);
     assert_eq!(held[0].access, Access::ReadWrite);
     assert_eq!(held[0].reach, Reach::AndBelow);
+}
+
+#[test]
+fn a_chat_with_ports_off_still_reaches_its_own_socket_and_no_other_runs() {
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let it = started(harness, Os::MacOs);
+        let (own, own_ca) = run_in(&it.root, "100-aaaaaaaa");
+        let (other, _) = run_in(&it.root, "100-bbbbbbbb");
+        let mut applied =
+            it.applied
+                .clone()
+                .with_forge_route(inputs(&it.root, own.clone(), own_ca.clone()));
+        match &mut *applied.form {
+            Form::Codex(codex::Wrap { widened, .. })
+            | Form::Opencode(opencode::Wrap { widened, .. }) => {
+                widened.every_local = Some(Vec::new());
+            }
+            other => panic!("not a wrap: {other:?}"),
+        }
+        let profile = profile_of(&applied, &it.cwd);
+        // Every local socket is let by (`ports = "off"`), then the route folder is held, then this
+        // chat's own socket is given back: the last word is the one that counts.
+        let every = profile.rfind("(allow network-outbound (remote unix-socket))");
+        let held = profile.rfind("(deny network-outbound (remote unix-socket (path-regex #\"^");
+        let own_rule = profile.rfind(&format!(
+            "(allow network-outbound (remote unix-socket (path-literal \"{}\")))",
+            own.display()
+        ));
+        let (every, held, own_rule) = (
+            every.expect("ports off lets every socket"),
+            held.expect("the route folder is held"),
+            own_rule.expect("its own socket is given back"),
+        );
+        assert!(
+            every < held && held < own_rule,
+            "{harness:?}: the order is wrong"
+        );
+        assert!(
+            !profile.contains(&format!(
+                "(allow network-outbound (remote unix-socket (path-literal \"{}\")))",
+                other.display()
+            )),
+            "{harness:?}: another run's socket is named"
+        );
+    }
 }
