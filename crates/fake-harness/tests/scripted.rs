@@ -870,3 +870,66 @@ fn claude_hooks_are_told_the_terminal_size_the_fake_runs_in_not_a_fixed_one() {
         assert!(line.ends_with(" 91 27"), "{line}");
     }
 }
+
+#[test]
+fn a_tool_command_says_its_group_in_the_file_the_scenario_names() {
+    let run = Run::new();
+    run.script(&covering_like(json!([
+        {"step": "bash", "tool": "bash", "run": "echo hello"},
+    ])));
+    for dialect in DIALECTS {
+        let groups = run.path("groups");
+        let _ = std::fs::remove_file(&groups);
+        let words = first_message(dialect, "go");
+        let played = run.play(
+            dialect,
+            &strs(&words),
+            &[],
+            &[("FAKE_HARNESS_GROUPS", groups.to_str().expect("utf-8"))],
+        );
+        let said = std::fs::read_to_string(&groups).unwrap_or_default();
+        let lines: Vec<&str> = said.lines().collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "{dialect}: {said:?} {:#?}",
+            played.transcript
+        );
+        assert!(
+            lines[0].parse::<u32>().is_ok_and(|g| g > 1),
+            "{dialect}: {said:?}"
+        );
+    }
+}
+
+#[test]
+fn a_tool_command_fails_loudly_where_its_group_cannot_be_said() {
+    let run = Run::new();
+    run.script(&covering_like(json!([
+        {"step": "bash", "tool": "bash", "run": "echo hello"},
+    ])));
+    // A folder where the file should be: opening it for append fails.
+    let groups = run.path("groups-is-a-folder");
+    std::fs::create_dir_all(&groups).expect("a folder");
+    for dialect in DIALECTS {
+        let words = first_message(dialect, "go");
+        let played = run.play(
+            dialect,
+            &strs(&words),
+            &[],
+            &[("FAKE_HARNESS_GROUPS", groups.to_str().expect("utf-8"))],
+        );
+        let result = played
+            .transcript
+            .iter()
+            .find(|l| l["kind"] == "tool_result" && l["step"] == "bash")
+            .unwrap_or_else(|| panic!("{dialect}: no result {:#?}", played.transcript));
+        assert!(
+            result["stderr"]
+                .as_str()
+                .is_some_and(|e| e.contains("FAKE_HARNESS_GROUPS")),
+            "{dialect}: {result}"
+        );
+        assert_eq!(result["exit"], 70, "{dialect}: {result}");
+    }
+}
