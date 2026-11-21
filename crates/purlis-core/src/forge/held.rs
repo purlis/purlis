@@ -35,7 +35,7 @@ use super::credential::CredentialSource;
 use super::http::TokenSource;
 use super::transport::{Call, Field, Method, Reply, Transport};
 use super::{Forge, ForgeError, Kind, LIST_TIMEOUT, quote};
-use crate::heldact::{Forked, HeldForge, TagName, TipChange, TipFiles};
+use crate::heldact::{Forked, HeldForge, TagName, TipChange, TipFiles, valid_rev};
 use crate::mergehold::{Base, HeadSha, Repo};
 use crate::secrets::keyring::Secret;
 
@@ -229,19 +229,29 @@ impl GitHubHeld {
         repo: &Repo,
         branch: &Base,
         tip: &HeadSha,
-        existing: Option<&HeadSha>,
+        base: &HeadSha,
+        new_branch: bool,
     ) -> Result<(), String> {
         let path = Self::repo_path(repo);
-        let parent = match existing {
-            Some(base) => base.clone(),
-            None => {
-                let record = self.0.get(over, &path, "reading the repo")?;
-                let default = text(&record, "default_branch")
-                    .ok_or_else(|| "the forge named no default branch".to_owned())?;
-                self.ref_commit(over, repo, "heads", default)?
-                    .ok_or_else(|| "the default branch has no tip".to_owned())?
+        // The lease, read before anything is sent: the branch must be where the ask showed it (or
+        // not be there at all). A forge's non-forced update accepts any fast-forward of the
+        // branch's *current* tip, so a branch rewound to an ancestor of the base would take the
+        // commit, and this refuses that.
+        let now = self.ref_commit(over, repo, "heads", branch.as_str())?;
+        match (new_branch, &now) {
+            (false, Some(at)) if at == base => {}
+            (false, _) => {
+                return Err(format!(
+                    "the branch is no longer at {}, so nothing was pushed",
+                    &base.as_str()[..12]
+                ));
             }
-        };
+            (true, Some(_)) => {
+                return Err("the branch exists now, so nothing was pushed".to_owned());
+            }
+            (true, None) => {}
+        }
+        let parent = base.clone();
         let changes = self.0.files.changes(&parent, tip)?;
         if changes.is_empty() {
             return Err("the tip changes nothing against the base".to_owned());
@@ -284,9 +294,9 @@ impl GitHubHeld {
         let commit = commit["sha"]
             .as_str()
             .ok_or_else(|| "the forge gave no commit".to_owned())?;
-        match existing {
+        match new_branch {
             // The lease: not forced, so a branch that is no longer at the base is no fast-forward.
-            Some(_) => self.0.write(
+            false => self.0.write(
                 over,
                 Method::Patch,
                 &format!("{path}/git/refs/heads/{}", quoted_path(branch.as_str())),
@@ -294,7 +304,7 @@ impl GitHubHeld {
                 "moving the branch",
             ),
             // A branch that was not there: creating it is refused if it is now.
-            None => self.0.write(
+            true => self.0.write(
                 over,
                 Method::Post,
                 &format!("{path}/git/refs"),
@@ -362,9 +372,13 @@ impl HeldForge for GitHubHeld {
     }
 
     fn rev_commit(&self, repo: &Repo, rev: &str) -> Result<HeadSha, String> {
+        if !valid_rev(rev) {
+            return Err("that is not a commit id or a ref name".to_owned());
+        }
+        // The whole rev is one path segment: a slash in it never becomes another route.
         let record = self.0.get(
             self.0.person(),
-            &format!("{}/commits/{}", Self::repo_path(repo), quoted_path(rev)),
+            &format!("{}/commits/{}", Self::repo_path(repo), quote(rev)),
             &format!("reading {rev}"),
         )?;
         sha_in(&record["sha"], rev)
@@ -475,7 +489,12 @@ impl HeldForge for GitHubHeld {
             .map(|_| ())
     }
 
-    fn make_fork(&self, source: &Repo, _: &str) -> Result<Forked, String> {
+    fn make_fork(&self, source: &Repo, source_id: &str) -> Result<Forked, String> {
+        // GitHub forks by name: the repo must still be the one the ask showed (a name can be
+        // renamed or taken over between the ask and the press).
+        if self.source_id(source)? != source_id {
+            return Err("the repo is not the one the ask showed (its id differs)".to_owned());
+        }
         let record = self.0.write(
             self.0.person(),
             Method::Post,
@@ -498,7 +517,8 @@ impl HeldForge for GitHubHeld {
         repo: &Repo,
         branch: &Base,
         tip: &HeadSha,
-        existing: Option<&HeadSha>,
+        base: &HeadSha,
+        new_branch: bool,
         workflow: Option<&Secret>,
     ) -> Result<(), String> {
         let Some(secret) = workflow else {
@@ -507,7 +527,7 @@ impl HeldForge for GitHubHeld {
             );
         };
         let over = self.0.workflow.with(&self.0.forge, secret)?;
-        self.push(over.as_ref(), repo, branch, tip, existing)
+        self.push(over.as_ref(), repo, branch, tip, base, new_branch)
     }
 }
 
@@ -545,6 +565,9 @@ impl HeldForge for GitLabHeld {
     }
 
     fn rev_commit(&self, repo: &Repo, rev: &str) -> Result<HeadSha, String> {
+        if !valid_rev(rev) {
+            return Err("that is not a commit id or a ref name".to_owned());
+        }
         let record = self.0.get(
             self.0.person(),
             &format!("{}/repository/commits/{}", Self::project(repo), quote(rev)),
@@ -674,11 +697,17 @@ impl HeldForge for GitLabHeld {
             .map(|_| ())
     }
 
-    fn make_fork(&self, source: &Repo, _: &str) -> Result<Forked, String> {
+    fn make_fork(&self, source: &Repo, source_id: &str) -> Result<Forked, String> {
+        // By numeric id where the ask has one, so a project renamed since is not forked instead.
+        let project = if !source_id.is_empty() && source_id.bytes().all(|b| b.is_ascii_digit()) {
+            format!("projects/{source_id}")
+        } else {
+            Self::project(source)
+        };
         let record = self.0.write(
             self.0.person(),
             Method::Post,
-            &format!("{}/fork", Self::project(source)),
+            &format!("{project}/fork"),
             Vec::new(),
             "making the fork",
         )?;
@@ -697,24 +726,27 @@ impl HeldForge for GitLabHeld {
         repo: &Repo,
         branch: &Base,
         tip: &HeadSha,
-        existing: Option<&HeadSha>,
+        base: &HeadSha,
+        new_branch: bool,
         _: Option<&Secret>,
     ) -> Result<(), String> {
         // The lease: the branch is read right before, and must be where the ask said.
         let now = self.branch_tip(repo, branch)?;
-        let parent = match (existing, &now) {
-            (Some(base), Some(at)) if at == base => base.clone(),
-            (Some(base), _) => {
+        match (new_branch, &now) {
+            (false, Some(at)) if at == base => {}
+            (false, _) => {
                 return Err(format!(
                     "the branch is no longer at {}, so nothing was pushed",
                     &base.as_str()[..12]
                 ));
             }
-            (None, Some(_)) => {
+            (true, Some(_)) => {
                 return Err("the branch exists now, so nothing was pushed".to_owned());
             }
-            (None, None) => self.default_branch(repo)?.1,
-        };
+            (true, None) => {}
+        }
+        // The commit's parent is the base the ask showed, never the default branch read again.
+        let parent = base.clone();
         let changes = self.0.files.changes(&parent, tip)?;
         if changes.is_empty() {
             return Err("the tip changes nothing against the base".to_owned());
@@ -723,7 +755,7 @@ impl HeldForge for GitLabHeld {
             Field::text("branch", branch.as_str()),
             Field::text("commit_message", &self.0.files.message(tip)?),
         ];
-        if existing.is_none() {
+        if new_branch {
             fields.push(Field::text("start_sha", parent.as_str()));
         }
         for change in &changes {

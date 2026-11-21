@@ -40,17 +40,21 @@ pub trait TipFiles: Send + Sync {
 
 impl TipFiles for GitTrees {
     fn changes(&self, base: &HeadSha, tip: &HeadSha) -> Result<Vec<TipChange>, String> {
-        let out = self.git(&[
-            "diff-tree",
-            "-r",
-            "-z",
-            "--raw",
-            "--no-renames",
-            "--no-textconv",
-            "--no-ext-diff",
-            base.as_str(),
-            tip.as_str(),
-        ])?;
+        // A listing past what a push may hold is never read whole.
+        let out = self.git_capped(
+            &[
+                "diff-tree",
+                "-r",
+                "-z",
+                "--raw",
+                "--no-renames",
+                "--no-textconv",
+                "--no-ext-diff",
+                base.as_str(),
+                tip.as_str(),
+            ],
+            MOST_BYTES,
+        )?;
         let mut changes = Vec::new();
         let mut bytes = 0usize;
         let mut tokens = out.split('\0').filter(|token| !token.is_empty());
@@ -77,7 +81,17 @@ impl TipFiles for GitTrees {
             let content = if removed {
                 None
             } else {
-                let text = self.git(&["cat-file", "blob", &format!("{}:{path}", tip.as_str())])?;
+                let left = MOST_BYTES.saturating_sub(bytes);
+                let blob = format!("{}:{path}", tip.as_str());
+                // Read to what is left of the budget and no further: git is stopped past it.
+                let text = self
+                    .git_capped(&["cat-file", "blob", &blob], left + 1)
+                    .map_err(|why| {
+                        format!("{path} cannot be read within the push's size: {why}")
+                    })?;
+                if text.len() > left {
+                    return Err(too_much());
+                }
                 if text.contains('\u{fffd}') || text.contains('\0') {
                     return Err(format!(
                         "{path} is not text, and purlis pushes only text through the forge's API"
@@ -93,23 +107,49 @@ impl TipFiles for GitTrees {
                 added: status.starts_with('A'),
             });
             if changes.len() > MOST_FILES || bytes > MOST_BYTES {
-                return Err(format!(
-                    "the push changes more than {MOST_FILES} files or {} MB, more than purlis \
-                     sends through the forge's API",
-                    MOST_BYTES / (1024 * 1024)
-                ));
+                return Err(too_much());
             }
         }
         Ok(changes)
     }
 
     fn message(&self, tip: &HeadSha) -> Result<String, String> {
-        let said = self.git(&["log", "-1", "--format=%B", tip.as_str()])?;
+        let said = self
+            .git_capped(
+                &["log", "-1", "--format=%B", tip.as_str()],
+                MOST_MESSAGE * 4,
+            )
+            .map_err(|why| {
+                format!("the commit message is too long to show or cannot be read: {why}")
+            })?;
+        // What is shown is what is sent: nothing that draws nothing or turns the text around.
+        let said: String = said
+            .replace("\r\n", "\n")
+            .chars()
+            .filter(|c| !super::prepare::unseen(*c))
+            .collect();
         let said = said.trim();
+        if said.chars().count() > MOST_MESSAGE {
+            return Err(format!(
+                "the commit message is longer than {MOST_MESSAGE} characters, more than purlis \
+                 shows"
+            ));
+        }
         Ok(if said.is_empty() {
             "Update".to_owned()
         } else {
             said.to_owned()
         })
     }
+}
+
+/// The most characters of a commit message a held push shows and sends.
+pub const MOST_MESSAGE: usize = 2_000;
+
+fn too_much() -> String {
+    format!(
+        "the push changes more than {MOST_FILES} files or {} MB, more than purlis sends through \
+         the forge's API",
+        MOST_BYTES / (1024 * 1024)
+    )
 }

@@ -105,8 +105,10 @@ impl Secret {
         self.0
     }
 
-    /// The value, for the one request it authorises.
-    pub fn expose(&self) -> &str {
+    /// The value, for a test to read what a transport was given. Never public: a caller outside
+    /// the core takes the value with [`Secret::into_inner`].
+    #[cfg(test)]
+    pub(crate) fn expose(&self) -> &str {
         &self.0
     }
 }

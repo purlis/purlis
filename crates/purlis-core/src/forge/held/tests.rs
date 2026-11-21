@@ -293,14 +293,18 @@ fn github_makes_the_release_against_the_tag_with_no_target_commitish() {
 fn github_forks_into_the_persons_account_with_no_organization_named() {
     let (forge, seen, _) = build(
         Kind::GitHub,
-        |_, _, _| Some((202, json!({"full_name": "ada/app", "id": 77}))),
+        |method, _, _| match method {
+            "GET" => Some((200, json!({"id": 4242}))),
+            _ => Some((202, json!({"full_name": "ada/app", "id": 77}))),
+        },
         vec![],
     );
     let made = forge.make_fork(&repo("acme/app"), "4242").unwrap();
     assert_eq!((made.path.as_str(), made.id.as_str()), ("ada/app", "77"));
     let log = seen.lock().unwrap();
-    assert!(log[0].3.fields.is_empty(), "{:?}", log[0].3.fields);
-    assert_eq!(log[0].2, "repos/acme/app/forks");
+    let fork = log.last().unwrap();
+    assert!(fork.3.fields.is_empty(), "{:?}", fork.3.fields);
+    assert_eq!(fork.2, "repos/acme/app/forks");
 }
 
 fn github_push_forge(branch_exists: bool) -> (Box<dyn HeldForge>, Seen, Arc<Mutex<Vec<String>>>) {
@@ -308,6 +312,10 @@ fn github_push_forge(branch_exists: bool) -> (Box<dyn HeldForge>, Seen, Arc<Mute
         Kind::GitHub,
         move |method, path, _| match (method, path) {
             ("GET", "repos/acme/app") => Some((200, json!({"default_branch": "main"}))),
+            ("GET", "repos/acme/app/git/ref/heads/ci") if branch_exists => Some((
+                200,
+                json!({"object": {"type": "commit", "sha": sha('1').as_str()}}),
+            )),
             ("GET", "repos/acme/app/git/ref/heads/main") => Some((
                 200,
                 json!({"object": {"type": "commit", "sha": sha('1').as_str()}}),
@@ -337,7 +345,8 @@ fn github_pushes_one_commit_on_the_base_with_the_second_credential_and_a_lease()
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            Some(&sha('1')),
+            &sha('1'),
+            false,
             Some(&secret),
         )
         .unwrap();
@@ -385,7 +394,8 @@ fn github_makes_a_branch_that_was_not_there_by_creating_the_ref_not_moving_one()
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            None,
+            &sha('1'),
+            true,
             Some(&secret),
         )
         .unwrap();
@@ -409,6 +419,10 @@ fn github_refuses_a_branch_that_moved_and_says_the_forges_words() {
     let (forge, _, _) = build(
         Kind::GitHub,
         |method, path, _| match (method, path) {
+            ("GET", "repos/acme/app/git/ref/heads/ci") => Some((
+                200,
+                json!({"object": {"type": "commit", "sha": sha('1').as_str()}}),
+            )),
             ("GET", p) if p.contains("git/commits/") => Some((200, json!({"tree": {"sha": "t0"}}))),
             ("POST", "repos/acme/app/git/blobs") => Some((201, json!({"sha": "b1"}))),
             ("POST", "repos/acme/app/git/trees") => Some((201, json!({"sha": "t1"}))),
@@ -424,7 +438,8 @@ fn github_refuses_a_branch_that_moved_and_says_the_forges_words() {
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            Some(&sha('1')),
+            &sha('1'),
+            false,
             Some(&secret),
         )
         .unwrap_err();
@@ -439,7 +454,8 @@ fn github_pushes_nothing_without_the_second_credential() {
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            Some(&sha('1')),
+            &sha('1'),
+            false,
             None,
         )
         .unwrap_err();
@@ -591,7 +607,8 @@ fn gitlab_pushes_the_changes_as_one_commit_with_the_everyday_sign_in() {
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            Some(&sha('1')),
+            &sha('1'),
+            false,
             None,
         )
         .unwrap();
@@ -619,7 +636,8 @@ fn gitlab_pushes_nothing_when_the_branch_is_no_longer_at_the_base() {
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            Some(&sha('5')),
+            &sha('5'),
+            false,
             None,
         )
         .unwrap_err();
@@ -635,7 +653,8 @@ fn gitlab_says_so_when_the_branch_moved_between_the_read_and_the_commit() {
             &repo("acme/app"),
             &Base::try_from("ci").unwrap(),
             &sha('9'),
-            Some(&sha('1')),
+            &sha('1'),
+            false,
             None,
         )
         .unwrap_err();
@@ -656,4 +675,169 @@ fn a_credential_source_is_the_only_token_the_person_transport_reads() {
     }
     let tokens = CredentialTokens::new("github.com", Arc::new(None_));
     assert!(tokens.token().is_err());
+}
+
+// Round 2 ---------------------------------------------------------------------------------
+
+const HOSTILE_REVS: [&str; 5] = [
+    "../../../other/private/commits/main",
+    "/etc/passwd",
+    "main@{1}",
+    "a b",
+    "x\u{0}y",
+];
+
+#[test]
+fn a_rev_that_walks_the_api_is_refused_before_any_call_on_both_adapters() {
+    for kind in [Kind::GitHub, Kind::GitLab] {
+        let (forge, seen, _) = build(kind, |_, _, _| Some((200, json!({}))), vec![]);
+        for rev in HOSTILE_REVS {
+            assert!(forge.rev_commit(&repo("acme/app"), rev).is_err(), "{rev}");
+        }
+        assert!(seen.lock().unwrap().is_empty(), "{kind:?}");
+    }
+}
+
+#[test]
+fn a_branch_name_with_a_slash_is_one_path_segment_of_the_commit_route() {
+    let (forge, seen, _) = build(
+        Kind::GitHub,
+        |_, _, _| Some((200, json!({"sha": sha('2').as_str()}))),
+        vec![],
+    );
+    forge.rev_commit(&repo("acme/app"), "feature/x").unwrap();
+    assert_eq!(
+        seen.lock().unwrap()[0].2,
+        "repos/acme/app/commits/feature%2Fx"
+    );
+}
+
+#[test]
+fn github_parents_a_new_branch_on_the_shown_base_though_the_default_branch_moved() {
+    let (forge, seen, _) = build(
+        Kind::GitHub,
+        |method, path, _| match (method, path) {
+            // The default branch is now at 5, not the 1 the ask showed.
+            ("GET", "repos/acme/app/git/ref/heads/main") => Some((
+                200,
+                json!({"object": {"type": "commit", "sha": sha('5').as_str()}}),
+            )),
+            ("GET", p) if p == format!("repos/acme/app/git/commits/{}", sha('1').as_str()) => {
+                Some((200, json!({"tree": {"sha": "t0"}})))
+            }
+            ("POST", "repos/acme/app/git/blobs") => Some((201, json!({"sha": "b1"}))),
+            ("POST", "repos/acme/app/git/trees") => Some((201, json!({"sha": "t1"}))),
+            ("POST", "repos/acme/app/git/commits") => Some((201, json!({"sha": "c1"}))),
+            ("POST", "repos/acme/app/git/refs") => Some((201, json!({}))),
+            _ => None,
+        },
+        workflow_file(),
+    );
+    let secret = Secret::new("wf".to_owned());
+    forge
+        .push_tip(
+            &repo("acme/app"),
+            &Base::try_from("ci").unwrap(),
+            &sha('9'),
+            &sha('1'),
+            true,
+            Some(&secret),
+        )
+        .unwrap();
+    let log = seen.lock().unwrap();
+    let commit = log
+        .iter()
+        .find(|(_, m, p, _)| m == "POST" && p == "repos/acme/app/git/commits")
+        .unwrap();
+    assert_eq!(all(&commit.3, "parents[]"), [sha('1').as_str()]);
+    assert!(log.iter().all(|(_, _, p, _)| !p.ends_with("heads/main")));
+}
+
+#[test]
+fn github_refuses_a_branch_rewound_to_an_ancestor_of_the_base() {
+    let (forge, seen, _) = build(
+        Kind::GitHub,
+        |method, path, _| match (method, path) {
+            ("GET", "repos/acme/app/git/ref/heads/ci") => Some((
+                200,
+                json!({"object": {"type": "commit", "sha": sha('0').as_str()}}),
+            )),
+            _ => Some((200, json!({"sha": "x", "tree": {"sha": "t"}}))),
+        },
+        workflow_file(),
+    );
+    let secret = Secret::new("wf".to_owned());
+    let said = forge
+        .push_tip(
+            &repo("acme/app"),
+            &Base::try_from("ci").unwrap(),
+            &sha('9'),
+            &sha('1'),
+            false,
+            Some(&secret),
+        )
+        .unwrap_err();
+    assert!(said.contains("no longer at"), "{said}");
+    assert!(seen.lock().unwrap().iter().all(|(_, m, ..)| m == "GET"));
+}
+
+#[test]
+fn gitlab_starts_a_new_branch_at_the_shown_base_though_the_default_branch_moved() {
+    let (forge, seen, _) = build(
+        Kind::GitLab,
+        |method, path, _| match (method, path) {
+            ("GET", "projects/acme%2Fapp") => Some((200, json!({"default_branch": "main"}))),
+            ("GET", "projects/acme%2Fapp/repository/branches/main") => {
+                Some((200, json!({"commit": {"id": sha('5').as_str()}})))
+            }
+            ("POST", "projects/acme%2Fapp/repository/commits") => {
+                Some((201, json!({"id": "new", "parent_ids": [sha('1').as_str()]})))
+            }
+            _ => None,
+        },
+        vec![TipChange {
+            path: ".gitlab-ci.yml".into(),
+            content: Some("a: 1\n".into()),
+            executable: false,
+            added: true,
+        }],
+    );
+    forge
+        .push_tip(
+            &repo("acme/app"),
+            &Base::try_from("ci").unwrap(),
+            &sha('9'),
+            &sha('1'),
+            true,
+            None,
+        )
+        .unwrap();
+    let log = seen.lock().unwrap();
+    let commit = log.last().unwrap();
+    assert_eq!(
+        field(&commit.3, "start_sha").as_deref(),
+        Some(sha('1').as_str())
+    );
+}
+
+#[test]
+fn gitlab_forks_by_the_numeric_id_the_ask_showed() {
+    let (forge, seen, _) = build(
+        Kind::GitLab,
+        |_, _, _| Some((201, json!({"path_with_namespace": "ada/app", "id": 12}))),
+        vec![],
+    );
+    forge.make_fork(&repo("acme/app"), "9").unwrap();
+    assert_eq!(seen.lock().unwrap()[0].2, "projects/9/fork");
+}
+
+#[test]
+fn github_forks_nothing_when_the_repo_is_not_the_one_the_ask_showed() {
+    let (forge, seen, _) = build(
+        Kind::GitHub,
+        |_, _, _| Some((200, json!({"id": 1}))),
+        vec![],
+    );
+    assert!(forge.make_fork(&repo("acme/app"), "4242").is_err());
+    assert!(seen.lock().unwrap().iter().all(|(_, m, ..)| m == "GET"));
 }

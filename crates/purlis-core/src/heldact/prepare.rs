@@ -108,6 +108,14 @@ pub(super) fn unseen(c: char) -> bool {
         )
 }
 
+/// Whether a release's words are within what is shown: checked before an ask is queued, so what
+/// waits in memory for a desktop is never longer than what a press could show.
+pub(super) fn within_title_and_notes(title: &str, notes: &str) -> Result<(), Refused> {
+    title_of(title)?;
+    notes_of(notes)?;
+    Ok(())
+}
+
 /// **A release's title as it is shown and made**: one line, nothing unseen in it. Text a chat
 /// wrote is read as the person will read it, so what is shown is what is published.
 fn title_of(text: &str) -> Result<String, Refused> {
@@ -165,6 +173,31 @@ fn shown_text(text: &str, most: usize) -> String {
         }
     }
     out
+}
+
+/// **A diff as the body shows it**: line breaks and tabs kept, every other character that draws
+/// nothing or turns the text around written out (`\u{202e}`), so a changed line cannot read as
+/// other text.
+fn escaped_lines(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        if unseen(c) {
+            out.push_str(&format!("\\u{{{:04x}}}", c as u32));
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// A commit message as one row shows it: its lines joined, nothing unseen, bounded.
+fn message_row(message: &str) -> String {
+    let joined = message
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join(" ⏎ ");
+    shown_text(&joined, MOST_ROW)
 }
 
 fn row(label: &str, value: impl Into<String>) -> Row {
@@ -399,6 +432,17 @@ fn ci_push(
         row("New tip", tip.as_str()),
         row("Compared with", format!("{compared} ({})", base.as_str())),
         row("CI files", diff.files.join(", ")),
+        row("Commit message", message_row(&diff.message)),
+        row(
+            "Other files in this commit",
+            match diff.others {
+                0 => "None: the commit changes only the CI files above".to_owned(),
+                n => format!(
+                    "{n}, which are not CI files and are not shown here. They are in the commit \
+                     that is pushed"
+                ),
+            },
+        ),
         row(
             "Sign-in used",
             if second {
@@ -414,7 +458,7 @@ fn ci_push(
             "Characters that do not show",
             format!(
                 "The changed lines hold {unseen_in_diff} control or direction characters that \
-                 draw nothing. Read the diff as text before you approve it"
+                 draw nothing. They are written out as \\u{{…}} in the diff below"
             ),
         ));
     }
@@ -430,7 +474,7 @@ fn ci_push(
     }
     let body = Some(Body {
         label: "Changed lines".to_owned(),
-        text: diff.diff.clone(),
+        text: escaped_lines(&diff.diff),
     });
     Ok(Prepared {
         act: Act::CiPush {

@@ -2308,6 +2308,33 @@ pub(crate) fn run_capped(
     timeout: Duration,
     most_records: usize,
 ) -> Result<Option<RawRun>, GitUnavailable> {
+    capped(dir, args, timeout, Cap::Records(most_records))
+}
+
+/// [`run_capped`], held to `most_bytes` of output instead of a count of records: past them git is
+/// stopped and the answer is `None`, so a patch or a blob is never buffered whole before its size
+/// is known.
+pub(crate) fn run_capped_bytes(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+    most_bytes: usize,
+) -> Result<Option<RawRun>, GitUnavailable> {
+    capped(dir, args, timeout, Cap::Bytes(most_bytes))
+}
+
+#[derive(Clone, Copy)]
+enum Cap {
+    Records(usize),
+    Bytes(usize),
+}
+
+fn capped(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+    cap: Cap,
+) -> Result<Option<RawRun>, GitUnavailable> {
     use std::sync::Arc;
     let extra = match held(dir, args, Extra::default())? {
         Ok(extra) => extra,
@@ -2334,8 +2361,14 @@ pub(crate) fn run_capped(
                     match before_read().and_then(|()| stdout.read(&mut chunk)) {
                         Ok(0) => break Ok(Some(kept)),
                         Ok(n) => {
-                            records += chunk[..n].iter().filter(|b| **b == 0).count();
-                            if records > most_records {
+                            let past = match cap {
+                                Cap::Records(most) => {
+                                    records += chunk[..n].iter().filter(|b| **b == 0).count();
+                                    records > most
+                                }
+                                Cap::Bytes(most) => kept.len() + n > most,
+                            };
+                            if past {
                                 over.store(true, Ordering::Relaxed);
                                 break Ok(None);
                             }

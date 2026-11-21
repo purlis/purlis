@@ -269,6 +269,34 @@ fn verb(kind: Kind, call: &Call<'_>, rest: &[&str]) -> Option<Verb> {
     }
 }
 
+/// **Whether `rev` is a name a forge may be asked to resolve**: a full object id (40 or 64 hex
+/// digits) or a valid git ref name by `git check-ref-format`'s rules. A chat's words become part of
+/// a request's path, so a `../` or a `@{` is never one.
+pub fn valid_rev(rev: &str) -> bool {
+    let hex = |n: usize| rev.len() == n && rev.bytes().all(|b| b.is_ascii_hexdigit());
+    if hex(40) || hex(64) {
+        return true;
+    }
+    if rev.is_empty()
+        || rev.len() > 255
+        || rev.starts_with('/')
+        || rev.ends_with('/')
+        || rev.ends_with('.')
+        || rev.starts_with('-')
+        || rev == "@"
+        || rev.contains("..")
+        || rev.contains("//")
+        || rev.contains("@{")
+        || rev
+            .chars()
+            .any(|c| c.is_control() || matches!(c, ' ' | '~' | '^' | ':' | '?' | '*' | '[' | '\\'))
+    {
+        return false;
+    }
+    rev.split('/')
+        .all(|part| !part.starts_with('.') && !part.ends_with(".lock"))
+}
+
 fn tag(repo: Repo, call: &Call<'_>) -> Recognised {
     let (name, rev) = match (call.param("tag_name"), call.param("ref")) {
         // GitLab: `tag_name` and `ref`.
@@ -283,6 +311,9 @@ fn tag(repo: Repo, call: &Call<'_>) -> Recognised {
         },
         _ => return Recognised::Refuse(Why::Unreadable("a tag with no name or no commit")),
     };
+    if !valid_rev(&rev) {
+        return Recognised::Refuse(Why::Unreadable("a commit that is not an id or a ref name"));
+    }
     match TagName::try_from(name) {
         Ok(name) => Recognised::Hold(Requested::Tag { repo, name, rev }),
         Err(_) => Recognised::Refuse(Why::Unreadable("a tag name git refuses")),
@@ -301,6 +332,9 @@ fn release(repo: Repo, call: &Call<'_>) -> Recognised {
         .param("target_commitish")
         .or_else(|| call.param("ref"))
         .filter(|rev| !rev.is_empty());
+    if rev.as_deref().is_some_and(|rev| !valid_rev(rev)) {
+        return Recognised::Refuse(Why::Unreadable("a commit that is not an id or a ref name"));
+    }
     Recognised::Hold(Requested::Release {
         repo,
         tag,
@@ -328,4 +362,77 @@ fn fork(repo: Repo, call: &Call<'_>) -> Recognised {
         return Recognised::Refuse(Why::ForkElsewhere);
     }
     Recognised::Hold(Requested::Fork { source: repo })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_rev_is_an_object_id_or_a_valid_ref_name_and_nothing_else() {
+        for ok in [
+            "main",
+            "feature/x",
+            "v1.2.3",
+            "HEAD",
+            &"a".repeat(40),
+            &"B".repeat(64),
+        ] {
+            assert!(valid_rev(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            "../../../other/private/commits/main",
+            "a/../b",
+            "/main",
+            "main/",
+            "a//b",
+            "main@{1}",
+            "a b",
+            "a~1",
+            "a^",
+            "a:b",
+            "a?b",
+            "a*b",
+            "a[b",
+            "a\\b",
+            "a\u{7}b",
+            "x.lock",
+            ".hidden",
+            "-rf",
+            "end.",
+        ] {
+            assert!(!valid_rev(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn a_tag_whose_commit_walks_the_api_is_refused_and_never_held() {
+        struct Everything;
+        impl Recorded for Everything {
+            fn resolve(&self, _: Kind, id: &str) -> Option<Repo> {
+                Repo::try_from(id).ok()
+            }
+            fn holds(&self, _: &Repo) -> bool {
+                true
+            }
+        }
+        let segments: Vec<String> = ["repos", "acme", "app", "git", "refs"]
+            .map(str::to_owned)
+            .to_vec();
+        let body = serde_json::json!({
+            "ref": "refs/tags/v1",
+            "sha": "../../../other/private/commits/main"
+        });
+        let call = Call {
+            method: "POST",
+            segments: &segments,
+            query: &[],
+            body: &body,
+        };
+        assert_eq!(
+            recognise(Kind::GitHub, &call, &Everything),
+            Recognised::Refuse(Why::Unreadable("a commit that is not an id or a ref name"))
+        );
+    }
 }

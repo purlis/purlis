@@ -115,12 +115,38 @@ struct State {
     next: u64,
     held: Vec<Waiting>,
     desk: Vec<(u32, Requested)>,
+    /// When each chat's reads were last made (seconds), within [`RATE_WINDOW`].
+    asked: Vec<(u32, u64)>,
 }
+
+/// The most asks one chat may have read in [`RATE_WINDOW`] seconds. Each read is calls on the
+/// person's API budget, and a try again of an ask that changed resets the press's nonce.
+pub const RATE_LIMIT: usize = 20;
+
+/// The window [`RATE_LIMIT`] counts in, in seconds.
+pub const RATE_WINDOW: u64 = 600;
 
 /// **The held acts the app holds.**
 #[derive(Debug, Default)]
 pub struct HeldActs {
     state: Mutex<State>,
+}
+
+/// [`RATE_LIMIT`] and [`RATE_WINDOW`], for a test to count against.
+pub fn holds_limits() -> (usize, u64) {
+    (RATE_LIMIT, RATE_WINDOW)
+}
+
+/// What a chat is told when it has asked too often.
+const RATE_LIMITED: &str = "This chat has asked for held acts 20 times in the last 10 minutes, \
+    which is the most one chat may, so this ask was not read. Wait, then ask once";
+
+/// A request whose words are longer than purlis shows is not queued.
+fn bounded(requested: &Requested) -> Result<(), Refused> {
+    if let Requested::Release { title, notes, .. } = requested {
+        super::prepare::within_title_and_notes(title, notes)?;
+    }
+    Ok(())
 }
 
 /// The key two asks of one chat share when they are the same act asked again.
@@ -157,6 +183,11 @@ impl HeldActs {
         now: u64,
     ) -> Asked {
         if !attended {
+            // What is queued is held in memory until a desktop connects: a release's words are
+            // bounded before they are, as they are before they are shown.
+            if let Err(why) = bounded(requested) {
+                return Asked::Refused(why);
+            }
             let mut state = locked(&self.state);
             let queued = state.desk.len() < MOST_QUEUED
                 && !state
@@ -167,6 +198,18 @@ impl HeldActs {
                 state.desk.push((session, requested.clone()));
             }
             return Asked::Refused(Refused::Unattended { queued });
+        }
+        {
+            // Counted before anything is read from the forge: a chat that asks in a loop spends
+            // no more of the person's API budget, and cannot keep resetting a nonce.
+            let mut state = locked(&self.state);
+            state
+                .asked
+                .retain(|(_, at)| at.saturating_add(RATE_WINDOW) > now);
+            if state.asked.iter().filter(|(of, _)| *of == session).count() >= RATE_LIMIT {
+                return Asked::Refused(Refused::Text(RATE_LIMITED));
+            }
+            state.asked.push((session, now));
         }
         let prepared = match prepare(world, requested) {
             Ok(prepared) => prepared,
@@ -370,9 +413,10 @@ impl HeldActs {
 
     /// Chat `session` has closed: none of its held acts waits.
     pub fn forget(&self, session: u32) {
-        locked(&self.state)
-            .held
-            .retain(|one| one.session != session);
+        let mut state = locked(&self.state);
+        state.held.retain(|one| one.session != session);
+        state.desk.retain(|(of, _)| *of != session);
+        state.asked.retain(|(of, _)| *of != session);
     }
 
     fn drop_ask(&self, id: u64) -> Option<Waiting> {
@@ -450,9 +494,9 @@ fn perform(world: &World<'_>, act: &Act) -> Result<Option<super::Forked>, NotDon
                 ),
                 crate::forge::Kind::GitLab => None,
             };
-            let existing = matches!(against, super::Against::BranchTip).then_some(base);
+            let new_branch = !matches!(against, super::Against::BranchTip);
             forge
-                .push_tip(repo, branch, tip, existing, secret.as_ref())
+                .push_tip(repo, branch, tip, base, new_branch, secret.as_ref())
                 .map_err(NotDone::Forge)?;
             Ok(None)
         }

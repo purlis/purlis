@@ -410,15 +410,19 @@ fn a_gitlab_ci_file_push_is_offered_and_made_without_the_github_workflow_credent
         "{shown:?}"
     );
     press(&held, &w, id, &digest).unwrap();
-    let Ok(Pressed::Done(_)) = press(&held, &w, id, &digest) else {
+    let Ok(Pressed::Done(done)) = press(&held, &w, id, &digest) else {
         panic!("made")
+    };
+    let purlis_core::heldact::Act::CiPush { base: shown, .. } = &done.act else {
+        panic!()
     };
     assert_eq!(second.reads(), 0);
     assert_eq!(
         forge.log(),
         vec![format!(
-            "push_tip acme/app work {} lease=none second_credential=false",
-            tip.as_str()
+            "push_tip acme/app work {} base={} new_branch=true second_credential=false",
+            tip.as_str(),
+            shown.as_str()
         )]
     );
 }
@@ -446,6 +450,33 @@ fn no_chat_clone_is_read_for_a_held_act() {
         sources(&root.join(dir), &mut files);
     }
     let allowed = ["heldact/quarantine.rs", "heldact/ci.rs"];
+    // Nor may anything else *implement* either trait outside tests: a new implementation over a
+    // clone is the same read by another name.
+    let implementers = ["heldact/ci.rs", "heldact/tip.rs"];
+    let mut implementing: Vec<String> = Vec::new();
+    for path in &files {
+        let name = path.to_string_lossy();
+        if name.contains("/tests/") || name.ends_with("tests.rs") {
+            continue;
+        }
+        if implementers.iter().any(|ok| path.ends_with(ok)) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        if text.lines().any(|line| {
+            let line = line.trim_start();
+            line.starts_with("impl")
+                && (line.contains("Trees for ") || line.contains("TipFiles for "))
+        }) {
+            implementing.push(name.into_owned());
+        }
+    }
+    assert!(
+        implementing.is_empty(),
+        "implements Trees or TipFiles outside the one place that reads a trusted store: {implementing:?}"
+    );
     let named: Vec<String> = files
         .iter()
         .filter(|path| !path.to_string_lossy().contains("/tests/"))

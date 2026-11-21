@@ -79,10 +79,10 @@ mod tip;
 
 pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push};
 pub use handoff::{Handoff, HeldContext, OwnedWorld};
-pub use holds::{Asked, HeldActs, NotDone, Performed, Pressed, Waiting};
+pub use holds::{Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_limits};
 pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FromForge, Quarantine};
-pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise};
+pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};
 pub use tag::{InvalidTag, TagName};
 pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles};
 
@@ -231,6 +231,11 @@ pub trait Trees: Send + Sync {
     fn files(&self, commit: &HeadSha) -> Result<Vec<String>, String>;
     /// The text of `path` at `commit`, or `None` where the commit has no such file.
     fn read(&self, commit: &HeadSha, path: &str) -> Result<Option<String>, String>;
+    /// The message of the commit `tip`, as a push of it sends it. A store that cannot say has no
+    /// push to show.
+    fn message(&self, _tip: &HeadSha) -> Result<String, String> {
+        Err("no clone".to_owned())
+    }
 }
 
 /// The person's own account on a forge, and what a fork of it made.
@@ -291,15 +296,17 @@ pub trait HeldForge: Send + Sync {
     fn make_fork(&self, source: &Repo, source_id: &str) -> Result<Forked, String>;
     /// Pushes `tip` to `branch` of `repo`: with `workflow`, the second credential, on GitHub, and
     /// with the everyday sign-in (`None`) on GitLab, which has no such scope. The app holds
-    /// the commit objects of `tip`; this sends exactly them, and updates only `branch`, which
-    /// where the forge has a tip for it must still be `base` (a lease), and where it has none
-    /// must still not exist.
+    /// the commit objects of `tip`; this sends exactly them as one commit **whose parent is
+    /// `base`**, the commit the ask showed (never a default branch's tip read again), and updates
+    /// only `branch`: with `new_branch` false it must still be at `base` (a lease), and with it
+    /// true it must still not exist.
     fn push_tip(
         &self,
         repo: &Repo,
         branch: &Base,
         tip: &HeadSha,
-        existing: Option<&HeadSha>,
+        base: &HeadSha,
+        new_branch: bool,
         workflow: Option<&Secret>,
     ) -> Result<(), String>;
 }

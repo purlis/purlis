@@ -101,7 +101,8 @@ impl HeldForge for Forge {
         _: &Repo,
         _: &Base,
         _: &HeadSha,
-        _: Option<&HeadSha>,
+        _: &HeadSha,
+        _: bool,
         _: Option<&Secret>,
     ) -> Result<(), String> {
         Ok(())

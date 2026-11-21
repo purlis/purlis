@@ -54,6 +54,10 @@ pub struct CiDiff {
     /// What the pipeline runs that this repository does not hold (an include of another project,
     /// a remote address, a template, a component), as the pipeline names it, sorted.
     pub outside: Vec<String>,
+    /// How many other files the same push changes, which are not CI files and are not shown.
+    pub others: usize,
+    /// The message of the commit the push makes, as it will be sent.
+    pub message: String,
 }
 
 /// What a push's tree diff says.
@@ -97,6 +101,7 @@ pub fn check_push(
             Err(why) => return PushCheck::Refuse(why),
         },
     };
+    let total = changed.len();
     let mut files: Vec<String> = changed
         .into_iter()
         .filter(|path| matcher.matches(path))
@@ -141,11 +146,23 @@ pub fn check_push(
             files.join(", ")
         ));
     }
+    let others = total.saturating_sub(files.len());
+    let message = match trees.message(tip) {
+        Ok(message) => message,
+        Err(why) => {
+            return PushCheck::Refuse(format!(
+                "purlis could not read the commit message of {}: {why}",
+                short(tip)
+            ));
+        }
+    };
     PushCheck::Hold(CiDiff {
         against: against.clone(),
         files,
         diff,
         outside,
+        others,
+        message,
     })
 }
 
@@ -262,8 +279,8 @@ fn gitlab_matcher(
             if found.unresolved {
                 matcher.any_yaml = true;
                 outside.push(
-                    "includes a YAML merge key builds, which purlis cannot resolve: every YAML \
-                     file of the push is read as a pipeline file"
+                    "includes a YAML merge key or a !reference builds, which purlis cannot \
+                     resolve: every YAML file of the push is read as a pipeline file"
                         .to_owned(),
                 );
             }
@@ -306,6 +323,12 @@ fn includes_of(text: &str) -> Result<Includes, String> {
     use yaml_rust2::{Yaml, YamlLoader};
     let docs = YamlLoader::load_from_str(text).map_err(|why| why.to_string())?;
     let mut found = Includes::default();
+    // A `!reference [job, key]` tag copies another job's keys in, and the loader drops the tag
+    // (it reads `[job, key]` as a plain list), so it is read from the text: anywhere in a file,
+    // it is as unresolvable as a merge key.
+    if text.contains("!reference") {
+        found.unresolved = true;
+    }
     for doc in &docs {
         let Yaml::Hash(top) = doc else { continue };
         // A merge key at **any depth**: `<<: *anchor` copies the anchor's keys into a job, so a
@@ -404,30 +427,58 @@ fn local_include(path: &str, found: &mut Includes) -> Result<(), String> {
 }
 
 /// GitLab's glob for a `local:` include: `*` is any run of characters within one folder, `**`
-/// any run across folders, `?` one character.
+/// any run across folders, `?` one character. **Linear in the glob times the path** (a table
+/// over the two, never a backtrack), so `**a**a**a**b` against a long path is no hang.
 fn glob_matches(glob: &str, path: &str) -> bool {
-    fn at(glob: &[u8], path: &[u8]) -> bool {
-        match glob.split_first() {
-            None => path.is_empty(),
-            Some((b'*', rest)) => {
-                if let Some(rest) = rest.strip_prefix(b"*") {
-                    let rest = rest.strip_prefix(b"/").unwrap_or(rest);
-                    (0..=path.len()).any(|skip| at(rest, &path[skip..]))
-                } else {
-                    (0..=path.len())
-                        .take_while(|skip| *skip == 0 || path[skip - 1] != b'/')
-                        .any(|skip| at(rest, &path[skip..]))
+    enum Token {
+        Lit(u8),
+        One,
+        Within,
+        Across,
+    }
+    let glob = glob.trim_start_matches('/').as_bytes();
+    let mut tokens = Vec::new();
+    let mut at = 0;
+    while at < glob.len() {
+        match glob[at] {
+            b'*' if glob.get(at + 1) == Some(&b'*') => {
+                at += 2;
+                if glob.get(at) == Some(&b'/') {
+                    at += 1;
                 }
+                tokens.push(Token::Across);
             }
-            Some((b'?', rest)) => path
-                .split_first()
-                .is_some_and(|(c, tail)| *c != b'/' && at(rest, tail)),
-            Some((c, rest)) => path
-                .split_first()
-                .is_some_and(|(d, tail)| c == d && at(rest, tail)),
+            b'*' => {
+                at += 1;
+                tokens.push(Token::Within);
+            }
+            b'?' => {
+                at += 1;
+                tokens.push(Token::One);
+            }
+            c => {
+                at += 1;
+                tokens.push(Token::Lit(c));
+            }
         }
     }
-    at(glob.trim_start_matches('/').as_bytes(), path.as_bytes())
+    let path = path.as_bytes();
+    // `next[j]`: the tokens after this one match `path[j..]`.
+    let mut next = vec![false; path.len() + 1];
+    next[path.len()] = true;
+    for token in tokens.iter().rev() {
+        let mut row = vec![false; path.len() + 1];
+        for j in (0..=path.len()).rev() {
+            row[j] = match token {
+                Token::Lit(c) => path.get(j) == Some(c) && next[j + 1],
+                Token::One => path.get(j).is_some_and(|d| *d != b'/') && next[j + 1],
+                Token::Within => next[j] || (path.get(j).is_some_and(|d| *d != b'/') && row[j + 1]),
+                Token::Across => next[j] || (j < path.len() && row[j + 1]),
+            };
+        }
+        next = row;
+    }
+    next[0]
 }
 
 /// **The trees of a clone, read by git** (the standard tool): the diff of two commits' trees, the
@@ -467,6 +518,37 @@ impl GitTrees {
         } else {
             Err(done
                 .err
+                .trim()
+                .lines()
+                .next()
+                .unwrap_or("git failed")
+                .to_owned())
+        }
+    }
+}
+
+impl GitTrees {
+    /// [`GitTrees::git`], its output held to `most` bytes: past them git is stopped and the answer
+    /// is an error, so a huge patch or blob is never held whole.
+    pub(super) fn git_capped(&self, args: &[&str], most: usize) -> Result<String, String> {
+        use crate::worktree::git;
+        let mut argv = vec![
+            "--no-replace-objects",
+            "-c",
+            "core.attributesFile=/dev/null",
+        ];
+        argv.extend_from_slice(args);
+        let done = git::run_capped_bytes(&self.clone, &argv, git::READ, most)
+            .map_err(|why| why.to_string())?;
+        let Some(done) = done else {
+            return Err(format!(
+                "git's answer is more than {most} bytes, more than purlis can show"
+            ));
+        };
+        if done.code == Some(0) {
+            Ok(String::from_utf8_lossy(&done.out).into_owned())
+        } else {
+            Err(String::from_utf8_lossy(&done.err)
                 .trim()
                 .lines()
                 .next()
@@ -529,7 +611,21 @@ impl Trees for GitTrees {
             "--",
         ];
         args.extend(paths.iter().map(String::as_str));
-        self.git(&args)
+        // Stopped past what can be shown, never buffered whole first.
+        self.git_capped(&args, MOST_DIFF + 1).and_then(|out| {
+            if out.len() > MOST_DIFF {
+                Err(format!(
+                    "the diff is more than purlis can show ({} KiB at most)",
+                    MOST_DIFF / 1024
+                ))
+            } else {
+                Ok(out)
+            }
+        })
+    }
+
+    fn message(&self, tip: &HeadSha) -> Result<String, String> {
+        super::TipFiles::message(self, tip)
     }
 
     fn files(&self, commit: &HeadSha) -> Result<Vec<String>, String> {
@@ -555,5 +651,43 @@ impl Trees for GitTrees {
             return Ok(None);
         }
         self.git(&["cat-file", "blob", &at]).map(Some)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_glob_with_many_double_stars_against_a_long_path_finishes_at_once() {
+        let path = format!("{}b", "a/".repeat(2_000));
+        let started = std::time::Instant::now();
+        assert!(!glob_matches("**a**a**a**a**a**c", &path));
+        assert!(glob_matches("**a**a**a**a**a**b", &path));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[test]
+    fn a_glob_keeps_gitlabs_meaning() {
+        assert!(glob_matches("ci/*.yml", "ci/a.yml"));
+        assert!(!glob_matches("ci/*.yml", "ci/sub/a.yml"));
+        assert!(glob_matches("ci/**/*.yml", "ci/sub/deep/a.yml"));
+        assert!(glob_matches("ci/**/*.yml", "ci/a.yml"));
+        assert!(glob_matches("a?c", "abc"));
+        assert!(!glob_matches("a?c", "a/c"));
+    }
+
+    #[test]
+    fn a_reference_tag_anywhere_makes_every_yaml_file_a_pipeline_file() {
+        let found = includes_of(
+            "build:\n  trigger:\n    include:\n      - !reference [.shared, include]\n",
+        )
+        .unwrap();
+        assert!(found.unresolved);
+        assert!(
+            !includes_of("build:\n  script: [make]\n")
+                .unwrap()
+                .unresolved
+        );
     }
 }
