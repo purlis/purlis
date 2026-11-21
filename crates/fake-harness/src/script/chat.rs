@@ -951,6 +951,7 @@ impl Chat {
                 .status();
             let _ = child.kill();
             let _ = child.wait();
+            drop((child.stdout.take(), child.stderr.take()));
             return Outcome::Shell(
                 Ran {
                     stdout: String::new(),

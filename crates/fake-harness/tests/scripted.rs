@@ -152,7 +152,40 @@ impl Run {
                 stdin.flush().expect("typed");
             }
         }
-        let out = child.wait_with_output().expect("the fake ends");
+        // A hard deadline: a fake that does not end fails this test with what it said, never
+        // holds the job to its own limit (#7304).
+        let (mut out_pipe, mut err_pipe) = (child.stdout.take(), child.stderr.take());
+        let read = |pipe: Option<Box<dyn std::io::Read + Send>>| {
+            std::thread::spawn(move || {
+                let mut bytes = Vec::new();
+                if let Some(mut pipe) = pipe {
+                    let _ = pipe.read_to_end(&mut bytes);
+                }
+                bytes
+            })
+        };
+        let out_reader = read(out_pipe.take().map(|p| Box::new(p) as _));
+        let err_reader = read(err_pipe.take().map(|p| Box::new(p) as _));
+        let since = std::time::Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("the fake's status") {
+                break status;
+            }
+            if since.elapsed() > std::time::Duration::from_secs(120) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "the fake did not end in 120 s ({dialect}, {words:?}); it said: {}",
+                    String::from_utf8_lossy(&err_reader.join().unwrap_or_default())
+                );
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        let out = std::process::Output {
+            status,
+            stdout: out_reader.join().unwrap_or_default(),
+            stderr: err_reader.join().unwrap_or_default(),
+        };
         assert!(
             out.status.success(),
             "the fake failed: {}",
@@ -872,7 +905,6 @@ fn claude_hooks_are_told_the_terminal_size_the_fake_runs_in_not_a_fixed_one() {
 }
 
 #[test]
-#[cfg_attr(target_os = "linux", ignore = "bisecting #7304")]
 fn a_tool_command_says_its_group_in_the_file_the_scenario_names() {
     let run = Run::new();
     run.script(&covering_like(json!([
@@ -904,7 +936,6 @@ fn a_tool_command_says_its_group_in_the_file_the_scenario_names() {
 }
 
 #[test]
-#[cfg_attr(target_os = "linux", ignore = "bisecting #7304")]
 fn a_tool_command_fails_loudly_where_its_group_cannot_be_said() {
     let run = Run::new();
     run.script(&covering_like(json!([
