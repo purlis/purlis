@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { percentile } from "./ci-health.mjs";
+import { percentile } from "./percentile.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -44,7 +44,7 @@ export function ciJobs(yml) {
       jobs.push({ id, name: id });
       continue;
     }
-    const name = /^ {4}name:\s*(.+?)\s*$/.exec(line)?.[1];
+    const name = /^ {4}name:\s*(.+?)\s*(?:\s#.*)?$/.exec(line)?.[1];
     if (name && jobs.length > 0 && jobs.at(-1).name === jobs.at(-1).id) {
       jobs.at(-1).name = name.replace(/^(["'])(.*)\1$/, "$2");
     }

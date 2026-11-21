@@ -375,14 +375,10 @@ test("ready to merged runs from the last time a pull request was marked ready, o
   assert.deepEqual(readyToMerged(prs), { n: 3, p50: 120 * 60, p90: 300 * 60 });
 });
 
-test("the queue drop rate is the entries the queue put out for a failed run, over every entry", () => {
-  const prs = [
-    prAt(1, "x", "2026-11-15T09:00:00Z", added("2026-11-15T01:00:00Z"), removed("2026-11-15T02:00:00Z", "failed_checks"), added("2026-11-15T03:00:00Z"), removed("2026-11-15T09:00:00Z", "merged")),
-    prAt(2, "x", "2026-11-15T09:30:00Z", added("2026-11-15T04:00:00Z"), removed("2026-11-15T05:00:00Z", "merge_conflict"), added("2026-11-15T06:00:00Z"), removed("2026-11-15T09:30:00Z", "merged")),
-    prAt(3, "x", "2026-11-15T10:00:00Z", added("2026-11-15T07:00:00Z"), removed("2026-11-15T10:00:00Z", "merged")),
-  ];
-  // five entries; a merge conflict builds no queue run, so only the first is a drop
-  assert.deepEqual(queueDrops(prs), { entries: 5, drops: 1, rate: 0.2 });
+test("the queue drop rate counts only failed_checks, over every entry, on recorded reasons", () => {
+  const recorded = fixture("queue-reasons.graphql.json").data.search.nodes;
+  // four entries; a merge conflict builds no queue run, so only the first removal is a drop
+  assert.deepEqual(queueDrops(recorded), { entries: 4, drops: 1, rate: 0.25 });
 });
 
 test("no entries is no rate", () => {
@@ -421,6 +417,12 @@ test("a flake already in the quarantine, or with its proposal already open, is n
   assert.deepEqual(planQuarantine({ flakes: flaky, entries, issues, openBranches: [], today: TODAY }), []);
   const [open] = planQuarantine({ flakes: flaky, entries: [], issues, openBranches: [], today: TODAY });
   assert.deepEqual(planQuarantine({ flakes: flaky, entries: [], issues, openBranches: [open.branch], today: TODAY }), []);
+});
+
+test("no proposal is made once the quarantine is full", () => {
+  const full = Array.from({ length: 10 }, (_, i) => ({ id: `t${i} x`, ticket: 400 + i, added: TODAY }));
+  const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3)];
+  assert.deepEqual(planQuarantine({ flakes: flaky, entries: full, issues: ticketed("src/a.test.ts > a"), openBranches: [], today: TODAY }), []);
 });
 
 test("a flake whose ticket is not filed yet waits for the next run", () => {

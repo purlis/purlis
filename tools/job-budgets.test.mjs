@@ -21,6 +21,8 @@ jobs:
     name: scenario tests (\${{ matrix.os }}, \${{ matrix.specs && 'part' || 'runs' }})
   scenario-checks:
     name: scenario tests (macos-latest)
+  commented:
+    name: a job # with a comment
   nameless:
     runs-on: x
 `;
@@ -31,6 +33,7 @@ test("a workflow's jobs are read with the names their check runs carry", () => {
     { id: "web", name: "web (part ${{ matrix.part }} of 4)" },
     { id: "scenario", name: "scenario tests (${{ matrix.os }}, ${{ matrix.specs && 'part' || 'runs' }})" },
     { id: "scenario-checks", name: "scenario tests (macos-latest)" },
+    { id: "commented", name: "a job" },
     { id: "nameless", name: "nameless" },
   ]);
 });

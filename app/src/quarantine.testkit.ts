@@ -28,6 +28,18 @@ export function isQuarantined(
   task: Running,
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  const skipped = skippedIds("vitest", env);
+  const skipped = skippedFor(env);
   return skipped.length > 0 && skipped.includes(quarantineIdOf(task));
+}
+
+/** The ids this run skips, read once per file and event: a global `beforeEach` asks for every test. */
+const read = new Map<string, string[]>();
+function skippedFor(env: Record<string, string | undefined>): string[] {
+  const key = [env.CI, env.GITHUB_EVENT_NAME, env.PURLIS_QUARANTINE_FILE].join("\0");
+  let ids = read.get(key);
+  if (ids === undefined) {
+    ids = skippedIds("vitest", env);
+    read.set(key, ids);
+  }
+  return ids;
 }

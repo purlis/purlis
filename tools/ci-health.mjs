@@ -16,16 +16,12 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { requiredDrift } from "./ci-push-jobs.mjs";
-import { conflicted, requiredNames } from "./land.mjs";
+import { requiredNames } from "./land.mjs";
+import { percentile } from "./percentile.mjs";
 import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, parseBudgets } from "./job-budgets.mjs";
 import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
-/** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
-export function percentile(values, p) {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
-}
+export { percentile };
 
 const seconds = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 1000);
 const spread = (values) => ({ n: values.length, p50: percentile(values, 0.5), p90: percentile(values, 0.9) });
@@ -254,13 +250,16 @@ export function readyToMerged(prs) {
   return spread(waits);
 }
 
-/** A removal from the queue that is no drop: the merge itself, and a pull request taken out by hand. */
-const NOT_A_DROP = /^(merged|already_merged)$|user|dequeue/i;
+/**
+ * The one reason GitHub gives for a queue drop, as read on 60 merged pull requests of purlis/purlis:
+ * `failed_checks` (13), beside `merge_conflict` (2, which builds no queue run) and `merged` (27).
+ */
+export const DROP_REASON = "failed_checks";
 
 /**
  * The queue drop rate over the week's merged pull requests: `{ entries, drops, rate }`. An entry is
- * each time a pull request entered the queue; a drop is a removal because its queue run failed.
- * A merge conflict is not one (it builds no queue run), nor is a merge or a removal by hand. As in
+ * each time a pull request entered the queue; a drop is a removal for `failed_checks`, because its
+ * queue run failed. A merge conflict is not one (it builds no queue run), nor is a merge. As in
  * `queueStats`, a pull request not merged by the week's end is not among `prs`.
  */
 export function queueDrops(prs, { from, to } = {}) {
@@ -271,7 +270,7 @@ export function queueDrops(prs, { from, to } = {}) {
     for (const event of pr.timelineItems?.nodes ?? []) {
       if (!inWeek(event.createdAt)) continue;
       if (event.__typename === "AddedToMergeQueueEvent") entries += 1;
-      if (event.__typename === "RemovedFromMergeQueueEvent" && !NOT_A_DROP.test(event.reason ?? "") && !conflicted(event.reason)) {
+      if (event.__typename === "RemovedFromMergeQueueEvent" && event.reason === DROP_REASON) {
         drops += 1;
       }
     }
@@ -291,7 +290,7 @@ const wholeDays = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) /
 /**
  * The pull requests to open that add flaky tests to the quarantine: a test that flaked in
  * `QUARANTINE_AFTER` runs of the week, with its ticket filed (`issues`), not in `entries` already,
- * and with no such pull request open (`openBranches`). `{ id, ticket, added, branch, title, body }`.
+ * and with no such pull request open (`openBranches`). None once the list is at the cap (`CAP`). `{ id, ticket, added, branch, title, body }`.
  * A test flaking in as many runs as it takes is read from the `--sample` of the week's runs, so a
  * test flaking less often than that can still reach it: the proposal is a PR the steward reviews.
  */
@@ -299,6 +298,7 @@ export function planQuarantine({ flakes, entries, issues, openBranches, today })
   const listed = new Set(entries.map((entry) => entry.id));
   const proposals = [];
   for (const flake of flakes) {
+    if (entries.length + proposals.length >= CAP) break;
     if (flake.runs.length < QUARANTINE_AFTER || listed.has(flake.test)) continue;
     const ticket = ticketFor(flake.test, issues);
     if (!ticket) continue;
@@ -843,6 +843,15 @@ async function fileFlakes({ repo, token, flakes, issues }) {
   return { filed: create.length, commented: comment.length, created };
 }
 
+/** Makes the label `name` if the repository has none (a 422 says it has): safe to ask every day. */
+async function ensureLabel({ repo, token, name }) {
+  try {
+    await call(`/repos/${repo}/labels`, { method: "POST", body: { name, color: "d93f0b", description: "a quarantined test waiting 14 days or more" }, token });
+  } catch (error) {
+    if (!/: 422 /.test(error.message)) throw error;
+  }
+}
+
 /**
  * Quarantine, kept up (`planQuarantine`, `quarantineVerdict`): a pull request for each test that
  * flaked three times this week, the priority label on a ticket 14 days quarantined, and the
@@ -852,45 +861,10 @@ async function fileFlakes({ repo, token, flakes, issues }) {
 async function keepQuarantine({ repo, token, flakes, issues, reportIssue, today }) {
   const entries = parseQuarantine(readFileSync(QUARANTINE_FILE, "utf8"));
   const verdict = quarantineVerdict(entries, { today });
+  // The verdict and the labels first: a pull request that cannot be opened must not hide them.
+  if (verdict.prioritise.length > 0) await ensureLabel({ repo, token, name: PRIORITY_LABEL });
   for (const one of verdict.prioritise) {
     await call(`/repos/${repo}/issues/${one.ticket}/labels`, { method: "POST", body: { labels: [one.label] }, token });
-  }
-  const pulls = await call(`/repos/${repo}/pulls?state=open&per_page=100`, { token });
-  const proposals = planQuarantine({
-    flakes,
-    entries,
-    issues,
-    openBranches: pulls.map((pull) => pull.head.ref),
-    today,
-  });
-  if (proposals.length > 0) {
-    const { default_branch: base } = await call(`/repos/${repo}`, { token });
-    for (const proposal of proposals) {
-      const { object } = await call(`/repos/${repo}/git/ref/heads/${base}`, { token });
-      const file = await call(`/repos/${repo}/contents/ci/quarantine.toml?ref=${base}`, { token });
-      const text = appendEntry(Buffer.from(file.content, "base64").toString("utf8"), proposal);
-      await call(`/repos/${repo}/git/refs`, {
-        method: "POST",
-        body: { ref: `refs/heads/${proposal.branch}`, sha: object.sha },
-        token,
-      });
-      await call(`/repos/${repo}/contents/ci/quarantine.toml`, {
-        method: "PUT",
-        body: {
-          message: `${proposal.title} (#${proposal.ticket})`,
-          content: Buffer.from(text).toString("base64"),
-          sha: file.sha,
-          branch: proposal.branch,
-        },
-        token,
-      });
-      const pull = await call(`/repos/${repo}/pulls`, {
-        method: "POST",
-        body: { title: proposal.title, head: proposal.branch, base, body: proposal.body },
-        token,
-      });
-      await call(`/repos/${repo}/issues/${pull.number}/labels`, { method: "POST", body: { labels: [ISSUE_LABEL] }, token });
-    }
   }
   if (verdict.red) {
     const operator = process.env.OPERATOR ? `@${process.env.OPERATOR.replace(/^@/, "")} ` : "";
@@ -901,7 +875,54 @@ async function keepQuarantine({ repo, token, flakes, issues, reportIssue, today 
     });
     process.exitCode = 1;
   }
-  return { proposed: proposals.length, prioritised: verdict.prioritise.length, red: verdict.red };
+  const pulls = await call(`/repos/${repo}/pulls?state=open&per_page=100`, { token });
+  const proposals = planQuarantine({
+    flakes,
+    entries,
+    issues,
+    openBranches: pulls.map((pull) => pull.head.ref),
+    today,
+  });
+  let opened = 0;
+  if (proposals.length > 0) {
+    const { default_branch: base } = await call(`/repos/${repo}`, { token });
+    for (const proposal of proposals) {
+      try {
+        const { object } = await call(`/repos/${repo}/git/ref/heads/${base}`, { token });
+        const file = await call(`/repos/${repo}/contents/ci/quarantine.toml?ref=${base}`, { token });
+        const text = appendEntry(Buffer.from(file.content, "base64").toString("utf8"), proposal);
+        await call(`/repos/${repo}/git/refs`, {
+          method: "POST",
+          body: { ref: `refs/heads/${proposal.branch}`, sha: object.sha },
+          token,
+        });
+        await call(`/repos/${repo}/contents/ci/quarantine.toml`, {
+          method: "PUT",
+          body: {
+            message: `${proposal.title} (#${proposal.ticket})`,
+            content: Buffer.from(text).toString("base64"),
+            sha: file.sha,
+            branch: proposal.branch,
+          },
+          token,
+        });
+        const pull = await call(`/repos/${repo}/pulls`, {
+          method: "POST",
+          body: { title: proposal.title, head: proposal.branch, base, body: proposal.body },
+          token,
+        });
+        await call(`/repos/${repo}/issues/${pull.number}/labels`, { method: "POST", body: { labels: [ISSUE_LABEL] }, token });
+        opened += 1;
+      } catch (error) {
+        // A branch left behind by a closed proposal answers 422 (it exists): that test waits for a
+        // person. Any other refusal (a token that cannot open pull requests) is named, and the rest go on.
+        const left = /git\/refs: 422 /.test(error.message);
+        console.log(`::${left ? "notice" : "warning"} title=ci-health quarantine::${proposal.id}: ${error.message.slice(0, 200)}`);
+        if (!left) process.exitCode = 1;
+      }
+    }
+  }
+  return { proposed: opened, prioritised: verdict.prioritise.length, red: verdict.red };
 }
 
 async function main(argv) {
