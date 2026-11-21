@@ -632,7 +632,10 @@ pub fn judge(
         decisions.push(held(undecidable_strict(request), floor));
         if has_gaps(request) || sandbox_is_off(request) {
             decisions.push(held(
-                undecidable(request, "no sealed answer can say a known gap, or no sandbox, is accepted"),
+                undecidable(
+                    request,
+                    "no sealed answer can say a known gap, or no sandbox, is accepted",
+                ),
                 floor,
             ));
         }
