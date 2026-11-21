@@ -540,10 +540,19 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         .map(|p| p.since)
         .chain([u64::MAX])
         .collect();
+    // A step's transcript runs to the first tool result of the next step: the model is shown a
+    // call's hook feedback (a block's sentence, an allow's "retry") with the next prompt, so the
+    // next step's own prompt and context lines belong to the step that made the call.
     let transcript_ends: Vec<usize> = played
         .iter()
         .skip(1)
-        .map(|p| p.transcript_from)
+        .map(|p| {
+            let from = p.transcript_from.min(all.len());
+            all[from..]
+                .iter()
+                .position(|line| line["kind"] == "tool_result")
+                .map_or(all.len(), |at| from + at)
+        })
         .chain([all.len()])
         .collect();
     let checks = super::checks::at_the_end(&scenario)
