@@ -625,9 +625,9 @@ fn a_project_cannot_name_a_set_like_a_wildcard_host() {
 }
 
 #[test]
-fn an_organisations_limits_are_kept_for_slice_12() {
+fn an_organisations_limits_bind_the_loaded_policy_and_depth_stays_a_ceiling() {
     purlis_core::unsteered!();
-    organisation(r#"{"dispatch": {"depth": 2}}"#);
+    organisation(r#"{"dispatch": {"running-per-chat": 2, "depth": 2}}"#);
     let found = purlis_core::policy::organisation::in_force().expect("an Organisation");
     let root = tempfile::tempdir().expect("a folder");
     let loaded = purlis_core::policy::levels::load(&purlis_core::policy::levels::Sources {
@@ -637,7 +637,17 @@ fn an_organisations_limits_are_kept_for_slice_12() {
         organisation: Some(found.as_sources()),
         accepted: None,
     });
-    assert_eq!(loaded.organisation_limits.get("dispatch.depth"), Some(&2));
+    assert!(
+        loaded.notices.iter().all(|n| !n.what.contains("broken")),
+        "depth is no key of the limits table, so it is not written: {:?}",
+        loaded.notices
+    );
+    assert_eq!(
+        loaded.organisation_limits.get("dispatch.running-per-chat"),
+        Some(&2)
+    );
+    assert_eq!(loaded.limit("dispatch.running-per-chat"), Some(2));
+    assert!(!loaded.organisation_limits.contains_key("dispatch.depth"));
 }
 
 /// A plane's decision on `request` where no family lock applies: the Organisation's locks are
