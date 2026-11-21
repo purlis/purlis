@@ -661,10 +661,12 @@ impl purlis_core::forge::proxy::listener::Upstream for Trickle {
 fn an_answer_that_keeps_moving_is_not_cut_at_the_total_the_request_had() {
     purlis_core::unsteered!();
     let mut w = World::new();
-    w.wiring.limits.total = std::time::Duration::from_millis(150);
+    // The total is well under what the answer takes (ten pieces, a tenth of a second apart) and
+    // well over what a busy runner takes to read a one-line request.
+    w.wiring.limits.total = std::time::Duration::from_millis(400);
     w.wiring.upstream = std::sync::Arc::new(Trickle {
         pieces: 10,
-        pause: std::time::Duration::from_millis(50),
+        pause: std::time::Duration::from_millis(100),
     });
     let reply = plain(&w, &gh_get(&w, "/user"));
     assert_eq!(reply.status, 200, "{}", reply.text());

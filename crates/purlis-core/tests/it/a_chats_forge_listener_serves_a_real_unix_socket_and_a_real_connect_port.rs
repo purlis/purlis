@@ -134,7 +134,8 @@ impl Dial for ToEcho {
 /// The host and port a `CONNECT` line names.
 fn target_of(line: &str) -> (String, u16) {
     let target = line.split_whitespace().nth(1).expect("a target");
-    let (host, port) = target.rsplit_once(':').expect("a port");
+    // A target with no port names none: the door reads no target from it either.
+    let (host, port) = target.rsplit_once(':').unwrap_or((target, "0"));
     // As the door reads an address literal: without its brackets.
     let host = host.trim_start_matches('[').trim_end_matches(']');
     (host.to_owned(), port.parse().expect("a number"))
