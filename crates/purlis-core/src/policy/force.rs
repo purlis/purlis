@@ -689,6 +689,38 @@ pub fn judge(
     )
 }
 
+/// **The value in force for the limit `key`** (spec §5.1; slice 12): the stricter, in the key's
+/// declared direction, of the Organisation's number, the project as committed now and the local
+/// file, the accepted copy (the shipped value until there is one) and every version of the
+/// accepted floor. A raised cap or a lowered retention therefore waits for the press, and moving
+/// `HEAD` back drops no tightening. A version that does not read says nothing, so the shipped
+/// value stands for it. `None` is no cap, or a key the limits table doesn't name.
+pub fn limit(sources: &Sources<'_>, standing: &Standing, key: &str) -> Option<i64> {
+    let spec = super::limits::spec(key)?;
+    let current = levels::load(sources);
+    let of = |version: &Version| {
+        let mut workspaces: Vec<&str> = sources.workspaces.to_vec();
+        workspaces.extend(version.workspaces.iter().map(String::as_str));
+        levels::load_held(&sources_for(sources, &workspaces), &version.held())
+            .project_limits
+            .get(key)
+            .copied()
+    };
+    let mut sides = vec![current.project_limits.get(key).copied()];
+    sides.push(
+        accepted_in(standing)
+            .ok()
+            .flatten()
+            .and_then(|version| of(&version)),
+    );
+    sides.extend(
+        floor_in(standing)
+            .into_iter()
+            .map(|held| held.ok().and_then(|version| of(&version))),
+    );
+    super::limits::in_force(spec, current.organisation_limits.get(key).copied(), sides)
+}
+
 /// **A version the app saw, to seal** ([`seal`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seen {

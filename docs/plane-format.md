@@ -690,7 +690,8 @@ The folders above `/etc/purlis` are not checked; they are root's on a stock syst
   `dispatch.locked` become forbids; **every Organisation forbid, translated or written in
   `policy.cedar`, is enforced whatever the project's mode or template** unless the Organisation's
   own `[policy.rules]` says otherwise (rounds 3 and 4 of #7170), and a translated
-  `[policy.limits]` is kept for slice 12; every key the legacy `enforcement` floor
+  `[policy.limits]` carries the dispatch ceilings the limits table names (`depth` and the note
+  and Stuck? timers stay with the legacy ceiling); every key the legacy `enforcement` floor
   (`sandbox::policy::enforcement_floor`) enforces a family for locks that family here too:
   `presets`, `hosts`, `never-hosts`, `personal-hosts`, `persona-hosts` and `live-asks` the
   `network`; `opt-out` and `write-grants` the `sandbox`; `socket-grants` the `ports`; `dispatch.allow`,
@@ -1889,7 +1890,11 @@ and its tab says so (#3787).
   widest grant scope for everything or a table of it per family; `timed`, `"15m"`, `"1h"` or
   `"off"`), and `[policy.workspace.<w>]` and `[policy.persona.<p>]`, each taking `[policy]`'s
   `template` and family keys for that workspace's or persona's chats. `[policy.limits]` (slice 12)
-  and `[policy] sandbox` (slice 11) are read by later slices.
+  is typed against the limits key table (`policy/limits.toml`): a key the table doesn't name, or a
+  value that is no whole number from 0, makes the file broken. Each key declares the direction
+  that loosens it, and the value in force is the stricter of the Organisation's, the committed
+  file's, the accepted copy's and the accepted floor's, so a raised cap or a lowered retention
+  waits for the press. `[policy] sandbox` (slice 11) is read by a later slice.
 - **Status:** **purlis only**, experimental (M75; ADR 0127 on its branch). Read by
   `purlis_core::policy::levels::load`, which nothing in the app calls yet.
 - **Tier:** Plane — committed, in the file whose tier it is; the local settings file is its You

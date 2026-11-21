@@ -940,3 +940,40 @@ fn a_start_that_does_not_say_its_gaps_is_refused_where_nothing_was_verified() {
     let said = by(&root, &clone_key_swapped(), &silent);
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
 }
+
+#[test]
+fn a_raised_cap_stays_held_by_the_floor_until_the_press() {
+    let m = machine();
+    let raised = "[policy.limits]\n\"dispatch.running-per-chat\" = 12\n";
+    let root = plane(&m, &[("purlis.toml", raised)]);
+    let key = "dispatch.running-per-chat";
+    // Nothing accepted and nothing floored: the shipped 6 stands for the accepted side.
+    assert_eq!(limit(&sources(&root), &holding(vec![]), key), Some(6));
+    // An earlier committed version, now on the floor, said 2: moving the cap up again drops
+    // nothing.
+    let tight = version("[policy.limits]\n\"dispatch.running-per-chat\" = 2\n", None);
+    assert_eq!(
+        limit(&sources(&root), &holding(vec![floor(&tight)]), key),
+        Some(2)
+    );
+    // The accepted copy's own number is what a raise waits on.
+    let ten = version(
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 10\n",
+        None,
+    );
+    assert_eq!(
+        limit(&sources(&root), &holding(vec![accepted(&ten)]), key),
+        Some(10)
+    );
+}
+
+#[test]
+fn a_floor_version_that_does_not_read_says_nothing_of_a_limit() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let broken = Entry::new(answers::FLOOR, "not json");
+    assert_eq!(
+        limit(&sources(&root), &holding(vec![broken]), "trust.unread-max"),
+        Some(1024)
+    );
+}
