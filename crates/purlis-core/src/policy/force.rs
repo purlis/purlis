@@ -210,6 +210,16 @@ fn head_commit(root: &Path) -> Tip {
     match run {
         Ok(run) if run.ok() => Tip::Commit(run.out.trim().to_owned()),
         Ok(run) if run.code == Some(1) && run.err.trim().is_empty() => Tip::None,
+        // A folder that is no repository (a plane never put under git, a test's) has no commit,
+        // as [`crate::enforcement::committed_files`] reads it. A `.git` that is there but does
+        // not read stays unread.
+        Ok(run)
+            if run.code == Some(128)
+                && run.err.contains("not a git repository")
+                && root.join(".git").symlink_metadata().is_err() =>
+        {
+            Tip::None
+        }
         _ => Tip::Unread,
     }
 }
@@ -627,7 +637,9 @@ pub fn judge(
     // gaps (the caller counts a gap of every family, enforced or not) or the sandbox is off, since
     // no accepted copy can say either is fine. The chat that does start runs under the deny-state
     // sandbox ([`crate::sandbox::for_start_in_deny_state`]), whatever its own level.
-    let verified = !denied || !standing.kept.is_empty();
+    // A deny state only the person's keyring can cause is no reason to refuse: a chat cannot reach
+    // it, so such a plane is judged as one with no store (#7305 round 5).
+    let verified = !standing.is_unverified_by_a_reachable_cause();
     if !verified {
         decisions.push(held(undecidable_strict(request), floor));
         if has_gaps(request) || sandbox_is_off(request) {

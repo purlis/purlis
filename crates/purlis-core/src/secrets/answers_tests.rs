@@ -1463,6 +1463,22 @@ fn a_never_the_old_file_gained_after_the_import_is_the_deny_state_until_it_is_se
 }
 
 #[test]
+fn a_never_pair_a_chat_appends_keeps_the_verified_answers_for_a_start() {
+    let m = machine();
+    let root = m.plane("p");
+    old_nevers(&root, &[("steward", "devops")]);
+    imported(import_nevers(&root).unwrap());
+    let before = standing(&root);
+    assert!(holds(&before), "{before:?}");
+    old_nevers(&root, &[("steward", "devops"), ("forged", "pair")]);
+    let after = standing(&root);
+    assert!(denied_by(&after, |c| matches!(c, Deny::NeversNotImported)));
+    assert!(after.store_verified, "{after:?}");
+    assert_eq!(after.kept, before.entries, "the verified answers are kept");
+    assert!(!after.is_unverified_by_a_reachable_cause());
+}
+
+#[test]
 fn existing_grants_are_not_imported() {
     let m = machine();
     let root = m.plane("p");

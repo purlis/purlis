@@ -24,4 +24,8 @@
   sandbox off, and a known gap counts whatever mode its family is set to. The limit that remains:
   there, a forbid you accepted on a start for a specific profile, persona or workspace is not
   held, since no accepted copy can be read, and the chat that does start runs under the strict
-  deny-state sandbox.
+  deny-state sandbox. That refusal is for a cause a chat can reach (the project's `.git`, the
+  store's files, the registry); where only your keyring is at fault (it did not start, it stays
+  locked) or the project is not under git at all, a start is
+  judged as it was before. Older nevers still in their files are no cause of their own: a verified
+  store keeps judging a start while they wait for your press.

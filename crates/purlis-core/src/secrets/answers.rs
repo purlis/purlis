@@ -902,6 +902,19 @@ pub enum Deny {
 }
 
 impl Deny {
+    /// Whether a chat can bring this cause about: one that writes the project's `.git`, the
+    /// store's files or the registry can, and one of the person's keyring (it did not start, it
+    /// stays locked) cannot. `NeversNotImported` is listed as unreachable but is raised from
+    /// files an unsandboxed chat can write (`dispatch-never.json`), so
+    /// [`Standing::is_unverified_by_a_reachable_cause`] counts it where no verified store backs
+    /// the plane. A start is refused for the reachable kind only (M75-14, #7305 rounds 5 and 6).
+    pub fn a_chat_can_reach(&self) -> bool {
+        !matches!(
+            self,
+            Self::SealKeyLocked | Self::KeyringDidNotStart | Self::NeversNotImported
+        )
+    }
+
     /// What this cause says, in words, for doctor and the window.
     pub fn said(&self) -> String {
         match self {
@@ -976,6 +989,9 @@ pub struct Standing {
     /// The entries a **verified** store held, set aside where a commit went past the floor's cap
     /// (the deny state, where none counts): a start is still judged by what they say.
     pub kept: Vec<Entry>,
+    /// Whether the plane's own store was read and verified (its manifest holds its seal and no
+    /// cause but a late import or the floor's cap is against it), whatever the state says.
+    pub store_verified: bool,
     /// The Everywhere nevers that count: whatever the plane's state.
     pub everywhere: Vec<Entry>,
     /// Grants that are missing or fail their seal: "no answer", each as kind and digest.
@@ -990,6 +1006,7 @@ impl Standing {
             state,
             entries: Vec::new(),
             kept: Vec::new(),
+            store_verified: false,
             everywhere: Vec::new(),
             no_answer: Vec::new(),
             notices: Vec::new(),
@@ -1011,6 +1028,19 @@ impl Standing {
     /// Whether this process could not verify the plane at all (it is not the app, [`State::Unverifiable`]).
     pub fn is_unverifiable(&self) -> bool {
         matches!(self.state, State::Unverifiable)
+    }
+
+    /// Whether a start is judged as if nothing were verified and no gap accepted: the plane is in
+    /// the deny state, no verified answer was kept, and a cause a chat can reach is among its
+    /// causes ([`Deny::a_chat_can_reach`]). Where only the keyring is at fault, or the plane has
+    /// no store (`Fresh`, `NoKeyring`, `Unverifiable`), a start is judged as it always was.
+    pub fn is_unverified_by_a_reachable_cause(&self) -> bool {
+        self.is_deny()
+            && self.kept.is_empty()
+            && self.causes().iter().any(|cause| {
+                cause.a_chat_can_reach()
+                    || (matches!(cause, Deny::NeversNotImported) && !self.store_verified)
+            })
     }
 
     /// The causes, empty unless denied.
@@ -1382,7 +1412,10 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
             },
         }
     }
-    if import_counts && import::nevers_unsettled(root, &found) {
+    // The store is verified when its manifest read and nothing but the old nevers is against it.
+    let store_verified = found.manifest.is_some() && denies.is_empty() && found.denies.is_empty();
+    let unsettled = import_counts && import::nevers_unsettled(root, &found);
+    if unsettled {
         found.denies.push(Deny::NeversNotImported);
     }
     denies.extend(found.denies.iter().cloned());
@@ -1395,7 +1428,8 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
     standing.no_answer = found.no_answer;
     standing.notices = found.notices;
     standing.notices.extend(everywhere.notices);
-    if !denies.is_empty() {
+    standing.store_verified = store_verified;
+    if !denies.is_empty() && !store_verified {
         standing.state = State::Deny(denies);
     } else if found.manifest.is_some() {
         standing.state = State::Holds;
@@ -1403,6 +1437,16 @@ fn standing_with(root: &Path, import_counts: bool) -> Standing {
         // A commit past the accepted floor's cap was recorded: the deny state, until a press.
         let past = standing.entries.iter().any(|e| e.kind == PAST_THE_CAP);
         standing = standing.with_commit_past_the_floor_cap(past);
+        if unsettled {
+            // The old files can be written by a chat, so a late import must not turn the verified
+            // answers into "nothing verified": they are kept, as the cap's are (#7305 round 6).
+            let mut causes = standing.causes().to_vec();
+            causes.push(Deny::NeversNotImported);
+            if standing.kept.is_empty() {
+                standing.kept = std::mem::take(&mut standing.entries);
+            }
+            standing.state = State::Deny(causes);
+        }
     }
     standing
 }
