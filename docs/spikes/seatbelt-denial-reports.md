@@ -4,11 +4,15 @@
 every measured run the other, cooperating sandboxed process's denials did not match the chat's tag
 (spoofing and cross-chat attribution were **not** measured, see "What was not measured"). No for a
 standard (non-admin) user: macOS refuses both `log stream` and `log show`. The first few refusals
-of a new process were sometimes not reported, and a rapid run of identical refusals is not reported
-in full: seatbelt folds identical refusals into a later "N duplicate reports" summary line, and
-that line carries **no** tag, so a tag-based receiver loses folded repeats for good. Ticket 52 can
-build the receiver for admin users; the standard-user case and the exactness of counts need the
-person's ruling.
+of a new process were sometimes not reported. A rapid run of identical refusals is not reported
+line by line: seatbelt folds identical refusals into a later "N duplicate report(s)" line. That
+line **does carry the tag** (on a second line of the same event, like every report), so
+`ENDSWITH "<tag>"` matches it, and a receiver that parses the "N" accounts for every identical
+refusal: in 11 of 12 runs of the burst, the lines that stood alone plus the refusals the folded
+lines stand for came to exactly 100 of 100 (the twelfth: 101). An earlier version of this
+document said the folded lines carried no tag; that was a fault in the probe, which looked only at
+the first physical line. Ticket 52 can build the receiver for admin users; the standard-user case
+needs the person's ruling.
 
 ## How it was measured
 
@@ -23,20 +27,23 @@ Also run: a CPU and `logger` flood (4 `yes` loops, two `logger` loops; cases A a
 broad predicate (`sender == "Sandbox" OR process == "kernel"`; case E, never under load) for
 comparison, and a folded-summary case (F, below, admin only). The refusals come at about 100 per
 second from one process, on a machine with that CPU and logger load: no denial storm (thousands per
-second, many processes) was measured. Final run:
-[44921998297](https://github.com/purlis/purlis/actions/runs/44921998297); the earlier runs
+second, many processes) was measured. Final run, on head `70b393f22`:
+[44926078905](https://github.com/purlis/purlis/actions/runs/44926078905) (the commits after it
+change this document only). Its folded-summary numbers are the only ones that count: its judge
+joins a record with its continuation line, and it runs on the ENDSWITH-only cases (A) as well as
+on F. The earlier runs
 [44915286114](https://github.com/purlis/purlis/actions/runs/44915286114),
-[44916069923](https://github.com/purlis/purlis/actions/runs/44916069923) and
-[44917131228](https://github.com/purlis/purlis/actions/runs/44917131228) agree, and
-[44920118675](https://github.com/purlis/purlis/actions/runs/44920118675) (admin legs only; the
-standard-user step hit the old 20-minute limit) also measured case F. The Claude Code
-profile was not probed here: that is ticket 10's leg.
+[44916069923](https://github.com/purlis/purlis/actions/runs/44916069923),
+[44917131228](https://github.com/purlis/purlis/actions/runs/44917131228) and
+[44921998297](https://github.com/purlis/purlis/actions/runs/44921998297) agree on latency,
+strays and missing reports; their "0 folded lines carried the tag" was the probe's artefact and is
+withdrawn. The Claude Code profile was not probed here: that is ticket 10's leg.
 
 ## Candidates
 
 | Candidate | Result |
 |---|---|
-| `(deny … (with message "<tag>"))` and `eventMessage ENDSWITH "<tag>"` | **Holds** (admin). Each report is `kernel (Sandbox) Sandbox: perl(pid) deny(1) file-write-create <path>` with the tag at the end. In the runs, the other process's reports never matched (0 of ~210 deny lines per case); that process cooperated, and its tag was built not to match (see "What was not measured"). |
+| `(deny … (with message "<tag>"))` and `eventMessage ENDSWITH "<tag>"` | **Holds** (admin). Each report is `kernel (Sandbox) Sandbox: perl(pid) deny(1) file-write-create <path>` with the tag at the end (on a second line of the event); so is a folded "N duplicate report(s)" line. In the runs, the other process's reports never matched (0 of ~210 deny lines per case); that process cooperated, and its tag was built not to match (see "What was not measured"). |
 | Plain deny, with the tag in a path component and `eventMessage CONTAINS "<tag-dir>"` | **Holds** (admin), same numbers. Needs no profile change, but only covers paths under the tagged directory. |
 | `(with report)` | **Not valid on a deny:** `sandbox compile: report modifier does not apply to deny action`. A deny already reports. |
 | `(with no-report)` (control) | Zero reports, so the harness sees what it should. |
@@ -60,31 +67,42 @@ profile was not probed here: that is ticket 10's leg.
 
 ## Repeated identical refusals (Q299)
 
-Seatbelt does **not** report a repeat only once. Of 100 identical refusals 10 ms apart, 73 to 99
-were reported (usually 82 to 99), in one run 100 of 100; the first of a run was always reported. Of
-20 identical refusals 0.5 s apart, 20 were reported in 15 of 18 cases and 19 in three (all on
-`macos-15`, two of them loaded). A repeat is seen,
-but a test that needs every one of a rapid run will fail. **This goes to the person**, as the ticket
-asks: ticket 52's repeat test should expect at least one report per burst, not one per refusal, unless
-the person rules otherwise.
+Seatbelt does **not** report each repeat as its own line. Of 100 identical refusals 10 ms apart,
+84 to 98 lines named the file in the final run (73 to 99 in the earlier runs), and the first of a
+run was always reported. The rest were folded: see below. Counting a folded line for the N
+refusals it stands for, the burst came to exactly 100 of 100 in 11 of the 12 runs of the final
+run's cases A and F (101 in one, cause not found), so no identical refusal went unreported. Of 20
+identical refusals 0.5 s apart, 20 were reported, as separate lines, in every case of the final
+run. A receiver that counts lines will see fewer than the refusals; one that adds the "N" of each
+"N duplicate report(s)" line sees all of them. **This goes to the person**, as the ticket asks:
+ticket 52's repeat test should expect the sum of the lines and their folded counts to equal the
+refusals made (after the last fold arrives), not one line per refusal.
 
 ### Folded summary lines
 
-Seatbelt (the kernel) folds identical refusals into a summary line such as
-`kernel (Sandbox) 3 duplicate reports for Sandbox: perl(34685) deny(1) file-write-create <path>`.
-It is not always deferred: in the later runs most folds arrived within a few seconds of the burst,
-and in run 44917131228 (macos-15, case E) one arrived about 25 s after its process ended, past the
-probe's 12 s wait.
+Seatbelt (the kernel) folds identical refusals into a summary line. As the stream prints it, the
+event is two physical lines, the second being the tag (the working directory is redacted; this is
+the first record of macos-15 case A in run 44926078905):
 
-**The folded line carries no `(with message …)` tag.** Case F waits 60 s after the child ends and
-uses the predicate `eventMessage ENDSWITH "<tag>" OR eventMessage CONTAINS "duplicate report"`. In
-the final run (44921998297, two cases on each of `macos-15` and `macos-26`) the kernel wrote 21 to
-28 summary lines for the chat's own directory per case, standing for 28 to 38 refusals, and **0 of
-them ended with the tag**. Run 44920118675 agrees (16 to 30 lines, 28 to 44 refusals, 0 tagged).
-A summary line therefore does not match `ENDSWITH "<tag>"`, so candidate
-A loses folded repeats for good. A receiver can still see them by also matching `duplicate report`
-and the chat's path, but then it is back to matching on the path (candidate B's weakness), a line
-that names a pid and a path but no tag, and it counts the refusals folded in, not their times.
+```
+2026-11-21 16:44:02.146 E  kernel[0:2324] (Sandbox) 1 duplicate report for Sandbox: perl(2027) deny(1) file-write-create <chat dir>/rep
+spk3169024862
+```
+
+**The folded line carries the tag, and `ENDSWITH "<tag>"` matches it.** Case A uses only that
+predicate. In its 8 runs (both macOS versions, 3 plain and 1 loaded each) the kernel wrote 16 to 28
+folded records for the chat's own directory, standing for 18 to 34 refusals, and **every record
+ended with the tag** (8 of 8 runs; the same in the 4 F runs, whose predicate also matches
+"duplicate report"). In those 12 runs the lines that stood alone plus the refusals the folded
+records stand for came to 100 in 11 and 101 in one. A folded record is one line whatever its N, so
+a line count undercounts, but the N is in the line.
+
+Timing: in the 8 A runs, which wait only 12 s after the child ends, the burst already summed to
+exactly 100 in all 8, so the folds arrived within that wait there. In earlier run 44917131228
+(macos-15, case E) one fold arrived about 25 s after its process ended, so a receiver should keep
+reading after the process ends and not close on the process's exit.
+
+What the folded line does not carry is a time per refusal: it gives a pid, a path and a count.
 
 ## Standard user
 
@@ -100,7 +118,7 @@ decides whether ticket 52 leaves that user unverified, asks for admin, or looks 
 Run `log stream --predicate 'eventMessage ENDSWITH "<per-chat tag>"'` from the host, put
 `(with message "<tag>")` on the deny rules of purlis's own profile, start the stream before the
 chat's process, and treat a report as evidence of a refusal and a missing one as unknown, not as
-allowed (a folded repeat is also unknown to this predicate). A filter on the pid would miss a
+allowed (a folded repeat arrives as an "N duplicate report(s)" line that ends in the same tag, so the predicate sees it: add the N to the count). A filter on the pid would miss a
 chat's children; a profile-wide tag should catch them (children were not measured here).
 
 Requirements for ticket 52, because the predicate filters on `eventMessage` only and any local
