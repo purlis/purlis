@@ -59,6 +59,7 @@ fn attendance_blocks(told: &[String]) -> Vec<&str> {
 
 #[test]
 fn the_briefing_says_attended_or_unattended() {
+    purlis_core::unsteered!();
     for harness in ["claude-code", "codex", "opencode"] {
         // The mode asks and bypasses in turn: the words never follow it.
         for mode in ["default", "bypassPermissions"] {
