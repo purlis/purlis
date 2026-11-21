@@ -331,7 +331,7 @@ fn starts_in_the_deny_state(root: &Path, standing: &crate::secrets::answers::Sta
 /// told in the deny state: refused, since the deny state's sandbox is never none (review F4).
 pub const DECLARED_HARNESS_IN_THE_DENY_STATE: &str = "Purlis can no longer vouch for what you \
      answered in this project, and a harness this project declares has no sandbox purlis can \
-     compile, so nothing was started. Press to start again to mend it, then start it.";
+     compile, so nothing was started. Press Accept on the project's policy to mend it, then start it.";
 
 /// **[`ready`] for a chat its pool's runner composes** (#2446): the window readies it only to
 /// start it there, and the runner composes it by its names, with the sandbox it compiles. A

@@ -3877,6 +3877,7 @@ fn a_sandbox_block_is_its_own_line_handed_to_the_app_with_its_chats_token() {
         target: None,
         read_back: false,
         suggested: None,
+        purlis_command: None,
     };
     let line = serde_json::to_string(&blocked).unwrap();
     assert_eq!(

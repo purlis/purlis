@@ -101,6 +101,7 @@ pub fn target_of(kind: Kind, named: Option<&str>, root: &Path) -> Option<Target>
         | Kind::Temp
         | Kind::SystemTemp
         | Kind::SystemCache
+        | Kind::Credentials
         | Kind::System => folder_in(Path::new(named?), root),
     }
 }

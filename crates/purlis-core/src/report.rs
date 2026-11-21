@@ -500,6 +500,7 @@ impl Draft {
     /// taken only in a version's shape (`a_version`), else it reads "not known".
     fn of_sandbox_block(
         block: &crate::sandboxblock::Block,
+        command: Option<&str>,
         ran_as: &RanAsSaid,
     ) -> Result<Draft, Refused> {
         let crate::sandboxblock::Block {
@@ -510,10 +511,17 @@ impl Draft {
             harness_version,
             ..
         } = ran_as;
+        // Fixed words only, checked here whoever handed them over (#7178).
+        let command = command.and_then(crate::sandboxblock::command::known);
+        let ran = command.as_deref().map_or_else(
+            || "not known: the call ran no `purlis` command the hook could name".to_owned(),
+            |said| format!("`{said}`"),
+        );
         let text = format!(
             "The sandbox blocked an operation purlis itself ran in a chat: {}.\n\n\
              - **operation:** {}\n\
              - **kind of path or host:** {} ({})\n\
+             - **purlis command:** {ran}\n\
              - **harness:** {harness}\n\
              - **harness version:** {harness_version}\n\
              - **purlis version:** {}\n\n\
@@ -525,8 +533,13 @@ impl Draft {
             kind.phrase(),
             crate::adopt::app_version(),
         );
+        // Named by its command, the title drops "purlis's own" (the command says it), to fit.
+        let (own, by) = match command.as_deref() {
+            Some(said) => ("", format!(" by {said}")),
+            None => ("purlis's own ", String::new()),
+        };
         let title = cut_title(&format!(
-            "Sandbox blocked purlis's own {} ({})",
+            "Sandbox blocked {own}{} ({}){by}",
             operation.word(),
             kind.word()
         ));
@@ -842,6 +855,10 @@ pub enum PurlisFailure {
     /// that ran as `ran_as` says (#1353).
     SandboxBlock {
         block: crate::sandboxblock::Block,
+        /// The `purlis` command the block was met by, in fixed words
+        /// ([`crate::sandboxblock::command`], #7178): checked again as a draft is made, and
+        /// `None` where the hook named none.
+        command: Option<String>,
         ran_as: RanAs,
     },
     /// A `purlis` command or a purlis tool that failed inside purlis in a chat (#5697), as its
@@ -952,14 +969,32 @@ impl PurlisFailure {
     pub fn call(&self) -> String {
         match self {
             Self::Internal { caught, .. } => caught.call.clone(),
-            Self::SandboxBlock { block, .. } => {
-                format!(
-                    "purlis's own {} ({})",
-                    block.operation.word(),
-                    block.kind.word()
-                )
+            Self::SandboxBlock { block, command, .. } => {
+                let by = command
+                    .as_deref()
+                    .and_then(crate::sandboxblock::command::known)
+                    .map(|said| format!(" by `{said}`"))
+                    .unwrap_or_default();
+                format!("{}{by}", Self::operation(block))
             }
         }
+    }
+
+    /// [`Self::call`] without the command a chat's line named, which is the chat's to choose: what
+    /// a report is told apart by, so that no wording of its line makes a new one (#7178).
+    pub fn kind_of_call(&self) -> String {
+        match self {
+            Self::Internal { caught, .. } => caught.call.clone(),
+            Self::SandboxBlock { block, .. } => Self::operation(block),
+        }
+    }
+
+    fn operation(block: &crate::sandboxblock::Block) -> String {
+        format!(
+            "purlis's own {} ({})",
+            block.operation.word(),
+            block.kind.word()
+        )
     }
 }
 
@@ -1383,9 +1418,11 @@ impl Reports {
             Evidence::Panic { record, words } => {
                 Draft::of_panic(&record, words.as_deref(), &self.known)
             }
-            Evidence::PurlisFailure(PurlisFailure::SandboxBlock { block, ran_as }) => {
-                Draft::of_sandbox_block(&block, &ran_as.said())
-            }
+            Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
+                block,
+                command,
+                ran_as,
+            }) => Draft::of_sandbox_block(&block, command.as_deref(), &ran_as.said()),
             Evidence::PurlisFailure(PurlisFailure::Internal { caught, ran_as }) => {
                 Draft::of_internal(&caught, &ran_as.said(), &self.known)
             }

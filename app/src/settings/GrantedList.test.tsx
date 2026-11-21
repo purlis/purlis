@@ -110,6 +110,59 @@ describe("the Allowed list's links (#1388)", () => {
   });
 });
 
+describe("a kept pool login opt-in on the Allowed list (#7190)", () => {
+  const OPT_IN: SandboxGrant = {
+    // The id carries the login's identity (a hash), which Remove names it by; the row's target
+    // is the name its persona declared it by, which is all the person reads.
+    id: "machine\u001fpool-login\u001fsteward\u001f3f9c1d2e7a4b\u001fbuilds",
+    what: "pool-login",
+    target: "shop on builds",
+    persona: "steward",
+    level: "machine",
+    by: null,
+    at: null,
+    chat: null,
+    locked: null,
+    waiting: null,
+    for_no_persona: false,
+    expected: false,
+  };
+
+  it("lists the opt-in beside the other Allows, with Show persona, and Remove takes it out", async () => {
+    const asked: Record<string, unknown>[] = [];
+    let held = [CHAT, OPT_IN];
+    mockIPC((cmd, args) => {
+      if (cmd === "sandbox_grants") return held;
+      if (cmd === "revoke_sandbox_grant") {
+        asked.push(args as Record<string, unknown>);
+        held = held.filter((one) => one.id !== (args as { id: string }).id);
+        return held;
+      }
+      return null;
+    });
+    render(<Granted />);
+
+    const list = await screen.findByRole("list", { name: "Allowed" });
+    const rows = within(list).getAllByRole("listitem");
+    expect(rows).toHaveLength(2);
+    expect(rows[1]).toHaveTextContent(
+      "Chats as steward may have their browser logins filled on the pool's runner: shop on builds",
+    );
+    expect(rows[1]).not.toHaveTextContent("3f9c1d2e7a4b");
+    expect(rows[1]).toHaveTextContent("Every project on this machine · allowed by you");
+    expect(within(rows[1]).getByRole("button", { name: "Show steward" })).toBeVisible();
+
+    await userEvent.click(
+      within(rows[1]).getByRole("button", {
+        name: "Remove steward's browser login shop on builds",
+      }),
+    );
+
+    await waitFor(() => expect(within(list).getAllByRole("listitem")).toHaveLength(1));
+    expect(asked).toEqual([{ plane: PLANE, id: OPT_IN.id }]);
+  });
+});
+
 describe("the Allowed list off the window (#1927)", () => {
   it("lists what is allowed and offers no Remove where the press could not work", async () => {
     // Remove is the window's alone: a page shown anywhere else cannot make that call, so it

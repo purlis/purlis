@@ -14,17 +14,15 @@ export const pressReasonSaid = (press: PolicyPress): string => {
     case "lost-store":
       return press.lost ?? "";
     default:
-      return "The project's policy loosens what you accepted.";
+      return "The project's policy differs from what you accepted, and some of it may be looser.";
   }
 };
 
-/** The commit's line: who wrote it only where purlis verified it on the upstream's own copy. */
-export const authorSaid = (press: PolicyPress): string | null => {
-  if (press.commit === null) return null;
-  return press.commit.author === null
-    ? "Author unverified: purlis names an author only for a commit it finds on the upstream branch, and a repository with a replace ref never has one. Purlis does not review commits; accepting is the review."
-    : `Author: ${inertly(press.commit.author)}.`;
-};
+/** The commit's line: the author as the commit claims it, which purlis cannot check. */
+export const authorSaid = (press: PolicyPress): string | null =>
+  press.commit === null
+    ? null
+    : `The commit names its author as ${inertly(press.commit.author)}. purlis can't check who wrote it.`;
 
 /**
  * **The diff at the loosening press** (M75-15; spec §9.2): each rule that differs as loosens,
@@ -76,6 +74,15 @@ export function LooseningPress({ press }: { press: PolicyPress }) {
               <span>
                 {one.kind}: {one.before} to {one.after}
               </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {press.other.length > 0 && (
+        <ul className="granted-list" aria-label="Other parts that differ">
+          {press.other.map((part) => (
+            <li key={part} data-kind="changes">
+              <code>{inertly(part)}</code> <span>changes</span>
             </li>
           ))}
         </ul>

@@ -137,6 +137,18 @@ pub struct Diff {
     pub limits: Vec<LimitChange>,
     /// Each tightening of the local file the press would let go.
     pub local: Vec<LocalLoosening>,
+    /// **Each other decision-relevant part that differs** (sets, workspace and persona tables,
+    /// locks, limits of the Organisation and your own file, the shared vault registry, the plane's
+    /// workspaces and personas, a sealed version that does not read): named, and waiting like any
+    /// change, so Accept never seals a difference no row shows.
+    pub other: Vec<OtherChange>,
+}
+
+/// One part of the policy no typed row covers, that differs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OtherChange {
+    /// What differs, as the window says it: `policy.sets.protected-branches`.
+    pub part: String,
 }
 
 impl Diff {
@@ -147,6 +159,7 @@ impl Diff {
         self.rules.iter().any(|one| waits(one.kind))
             || self.modes.iter().any(|one| waits(one.kind))
             || self.limits.iter().any(|one| waits(one.kind))
+            || !self.other.is_empty()
     }
 }
 
@@ -196,6 +209,19 @@ fn is_permit(rule: &Rule) -> bool {
     rule.policy.effect() == Effect::Permit
 }
 
+/// A rule's text without its `@ask` annotation, whitespace folded: however the text lays its
+/// annotations out, two rules that differ only in `@ask` read the same.
+fn without_ask(text: &str) -> String {
+    let mut rest = text.to_owned();
+    while let Some(at) = rest.find("@ask(") {
+        let end = rest[at..]
+            .find(')')
+            .map_or(rest.len(), |close| at + close + 1);
+        rest.replace_range(at..end, " ");
+    }
+    rest.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// What a rule's change does, `None` where it is the same rule. A forbid is a restriction and a
 /// permit a grant, so adding a forbid or taking out a permit tightens (spec §6.3).
 fn rule_change(before: Option<&Rule>, after: Option<&Rule>) -> Option<(Kind, &'static str)> {
@@ -213,7 +239,14 @@ fn rule_change(before: Option<&Rule>, after: Option<&Rule>) -> Option<(Kind, &'s
         (Some(was), Some(now)) => Some(match (is_permit(was), is_permit(now)) {
             (false, true) => (Kind::Loosens, "now permits"),
             (true, false) => (Kind::Tightens, "now forbids"),
-            (false, false) if was.ask != now.ask => {
+            // Dropping or adding `@ask` is a tightening or a loosening only where nothing else
+            // about the rule moved with it.
+            (false, false)
+                if was.ask != now.ask
+                    && was.level == now.level
+                    && without_ask(&was.policy.to_string())
+                        == without_ask(&now.policy.to_string()) =>
+            {
                 if now.ask {
                     (Kind::Loosens, "now asks")
                 } else {
@@ -225,8 +258,14 @@ fn rule_change(before: Option<&Rule>, after: Option<&Rule>) -> Option<(Kind, &'s
     }
 }
 
-/// The kind a mode moving from `before` to `after` is: a lower mode loosens.
-fn mode_kind(before: Mode, after: Mode) -> Option<Kind> {
+/// The kind a mode moving from `before` to `after` is: a lower mode loosens a family or a forbid,
+/// and a higher one loosens a permit, as [`levels`] counts it.
+fn mode_kind(before: Mode, after: Mode, permit: bool) -> Option<Kind> {
+    let (before, after) = if permit {
+        (after, before)
+    } else {
+        (before, after)
+    };
     match after.cmp(&before) {
         std::cmp::Ordering::Less => Some(Kind::Loosens),
         std::cmp::Ordering::Greater => Some(Kind::Tightens),
@@ -255,9 +294,13 @@ fn limit_of(loaded: &Loaded, spec: &limits::Spec) -> Option<i64> {
         })
 }
 
-/// A rule's mode: `enforce` where `[policy.rules]` says none.
-fn rule_mode(loaded: &Loaded, id: &str) -> Mode {
-    loaded.rule_modes.get(id).copied().unwrap_or(Mode::Enforce)
+/// A rule's mode as the decision reads it: its own `[policy.rules]` entry, else its family's, as
+/// [`super::decide`] does. A rule that names no family's action is `enforce`.
+fn rule_mode(loaded: &Loaded, id: &str, rule: Option<&Rule>) -> Mode {
+    loaded.rule_modes.get(id).copied().unwrap_or_else(|| {
+        rule.and_then(|rule| rule.actions().first().and_then(|a| super::family_of(a)))
+            .map_or(Mode::Enforce, |family| loaded.mode_for(family, NO_CHAT))
+    })
 }
 
 /// What `after` changes against one base, `before`: rules, modes and limits.
@@ -279,7 +322,7 @@ fn diff_pair(before: &Loaded, after: &Loaded) -> Diff {
             before.mode_for(family, NO_CHAT),
             after.mode_for(family, NO_CHAT),
         );
-        if let Some(kind) = mode_kind(was, now) {
+        if let Some(kind) = mode_kind(was, now, false) {
             diff.modes.push(ModeChange {
                 key: family.to_owned(),
                 before: was.word(),
@@ -294,14 +337,23 @@ fn diff_pair(before: &Loaded, after: &Loaded) -> Diff {
         .chain(after.rule_modes.keys())
         .collect();
     for id in named {
-        let (was, now) = (rule_mode(before, id), rule_mode(after, id));
-        if let Some(kind) = mode_kind(was, now) {
+        let rule = after.policy.rule(id).or_else(|| before.policy.rule(id));
+        let (was, now) = (rule_mode(before, id, rule), rule_mode(after, id, rule));
+        if let Some(kind) = mode_kind(was, now, rule.is_some_and(is_permit)) {
             diff.modes.push(ModeChange {
                 key: format!("rules.{id}"),
                 before: was.word(),
                 after: now.word(),
                 kind,
             });
+        }
+    }
+    let (was_parts, now_parts) = (before.other_parts(), after.other_parts());
+    let parts: std::collections::BTreeSet<&String> =
+        was_parts.keys().chain(now_parts.keys()).collect();
+    for part in parts {
+        if was_parts.get(part) != now_parts.get(part) {
+            diff.other.push(OtherChange { part: part.clone() });
         }
     }
     for spec in limits::table() {
@@ -341,7 +393,9 @@ fn local_loosenings(before: &Loaded, after: &Loaded) -> Vec<LocalLoosening> {
         let now = if key == "template" {
             after.template_for(NO_CHAT).word().to_owned()
         } else if let Some(id) = key.strip_prefix("rules.") {
-            rule_mode(after, id).word().to_owned()
+            rule_mode(after, id, after.policy.rule(id))
+                .word()
+                .to_owned()
         } else {
             after.mode_for(key, NO_CHAT).word().to_owned()
         };
@@ -374,6 +428,11 @@ pub fn diff(bases: &[Loaded], after: &Loaded) -> Diff {
         for row in one.limits {
             keep_worst(&mut all.limits, row);
         }
+        for row in one.other {
+            if !all.other.iter().any(|held| held.part == row.part) {
+                all.other.push(row);
+            }
+        }
         for row in local_loosenings(base, after) {
             if !all.local.iter().any(|held| held.key == row.key) {
                 all.local.push(row);
@@ -396,16 +455,16 @@ pub enum Reason {
     LostStore,
 }
 
-/// The commit `HEAD` names, and who wrote it where that can be said.
+/// The commit `HEAD` names, and the author it names itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Commit {
     /// Its full sha.
     pub sha: String,
     /// Its subject line.
     pub subject: String,
-    /// **Its author, only where verified** (Q309.5): the commit is held by the upstream branch as
-    /// last fetched and the repository holds no replace ref. `None` is "unverified".
-    pub author: Option<String>,
+    /// **The author the commit claims**, as written (`name <email>`). Purlis cannot check who
+    /// wrote a commit, so the window says only that the commit names this author (Q309.6).
+    pub author: String,
 }
 
 /// **The press the window shows**: why it is raised, what changes, the commit, and what was
@@ -431,35 +490,13 @@ fn git_out(root: &Path, args: &[&str]) -> Option<String> {
     run.ok().then(|| run.out.trim().to_owned())
 }
 
-/// Whether the commit `sha` is one the author can be named for (see [`Commit::author`]).
-fn author_is_verified(root: &Path, sha: &str) -> bool {
-    // A replace ref lets any object stand in for another, so no author can be vouched for. Where
-    // git cannot say, it is not verified.
-    let no_replace = git_out(root, &["for-each-ref", "--count=1", "refs/replace/"])
-        .is_some_and(|refs| refs.is_empty());
-    let Some(upstream) = git_out(
-        root,
-        &["rev-parse", "--verify", "--quiet", "@{upstream}^{commit}"],
-    ) else {
-        return false;
-    };
-    no_replace
-        && crate::worktree::git::run_as_written(
-            root,
-            &["merge-base", "--is-ancestor", sha, &upstream],
-            GIT_WAIT,
-        )
-        .is_ok_and(|run| run.ok())
-}
-
 /// The commit `HEAD` names, read as history was written.
 fn commit_of(root: &Path) -> Option<Commit> {
     let sha = git_out(root, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])?;
     let said = git_out(root, &["log", "-1", "--format=%an <%ae>%x1f%s", &sha])?;
     let (author, subject) = said.split_once('\u{1f}')?;
-    let verified = author_is_verified(root, &sha);
     Some(Commit {
-        author: verified.then(|| author.to_owned()),
+        author: author.to_owned(),
         sha,
         subject: subject.to_owned(),
     })
@@ -500,29 +537,31 @@ pub fn of_head(
     let none = Version::default();
     let entries = entries_of(standing);
     let mut held: Vec<Version> = Vec::new();
+    // What does not read is a row, never a silent removal: the shipped default stands in for an
+    // accepted copy that does not read, and the press is the way out.
+    let mut unread: Vec<&'static str> = Vec::new();
     if lost_store {
         held.push(none);
     } else {
-        // An accepted copy that does not read: the shipped default stands in, and the press is
-        // the way out.
-        held.push(force::accepted_in(entries).ok().flatten().unwrap_or(none));
-        held.extend(force::floor_in(entries).into_iter().flatten());
+        match force::accepted_in(entries) {
+            Ok(accepted) => held.push(accepted.unwrap_or(none)),
+            Err(()) => {
+                unread.push("the accepted copy does not read");
+                held.push(none);
+            }
+        }
+        for one in force::floor_in(entries) {
+            match one {
+                Ok(version) => held.push(version),
+                Err(()) => unread.push("a sealed version of the accepted floor does not read"),
+            }
+        }
     }
-    let loaded = |versions: &[Version]| -> Vec<Loaded> {
-        versions
-            .iter()
-            .map(|one| force::loaded_for(sources, one))
-            .collect()
-    };
-    let diff = diff(&loaded(&held), &force::loaded_for(sources, version));
+    let diff = diff_all(sources, &held, &unread, version);
     // What the commit itself loosens, the local file left out of both sides: a commit's loosening
     // and a local file's removal are different presses (Q322).
     let committed: Vec<Version> = held.iter().map(Version::committed).collect();
-    let commit_waits = self::diff(
-        &loaded(&committed),
-        &force::loaded_for(sources, &version.committed()),
-    )
-    .waits();
+    let commit_waits = diff_all(sources, &committed, &unread, &version.committed()).waits();
     let reason = if lost_store {
         Reason::LostStore
     } else if past_the_cap {
@@ -543,20 +582,67 @@ pub fn of_head(
         lost: (reason == Reason::LostStore)
             .then(|| RePress::of(standing))
             .flatten(),
-        digest: digest_of(version, reason),
+        digest: digest_of(version, reason, &held, &diff, commit.as_ref()),
         commit,
         diff,
     })
 }
 
-/// What Accept names: the project as shown, and why the press was raised.
-fn digest_of(version: &Version, reason: Reason) -> String {
+/// What Accept names: the project as shown, why the press was raised, what it was diffed against
+/// (every base), the rows it shows and the commit, so a press on anything that changed since it
+/// was shown accepts nothing.
+fn digest_of(
+    version: &Version,
+    reason: Reason,
+    bases: &[Version],
+    diff: &Diff,
+    commit: Option<&Commit>,
+) -> String {
     use sha2::Digest;
     let text = format!(
-        "{reason:?}\n{}",
-        serde_json::to_string(version).expect("a version is JSON")
+        "{reason:?}\n{}\n{}\n{diff:?}\n{}",
+        serde_json::to_string(version).expect("a version is JSON"),
+        serde_json::to_string(bases).expect("versions are JSON"),
+        commit.map_or("", |one| one.sha.as_str()),
     );
     crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
+}
+
+/// **The diff of `after` against every base**: the typed rows, then every other part of the
+/// loaded policy and of the version that differs, then what did not read.
+fn diff_all(
+    sources: &Sources<'_>,
+    bases: &[Version],
+    unread: &[&'static str],
+    after: &Version,
+) -> Diff {
+    let loaded: Vec<Loaded> = bases
+        .iter()
+        .map(|one| force::loaded_for(sources, one))
+        .collect();
+    let mut all = diff(&loaded, &force::loaded_for(sources, after));
+    let mut part = |name: &str| {
+        if !all.other.iter().any(|held| held.part == name) {
+            all.other.push(OtherChange {
+                part: name.to_owned(),
+            });
+        }
+    };
+    for base in bases {
+        if base.vaults != after.vaults {
+            part("the shared vault registry (vaults.json)");
+        }
+        if base.workspaces != after.workspaces {
+            part("the plane's workspaces");
+        }
+        if base.personas != after.personas {
+            part("the plane's personas");
+        }
+    }
+    for what in unread {
+        part(what);
+    }
+    all
 }
 
 /// The sources the window judges the project with: its own files and the plane's workspaces and

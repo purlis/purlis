@@ -263,7 +263,8 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
     use purlis_core::hookwire::{Answer, Ask, DecideAsk, UNKNOWN_LINE};
     use purlis_core::mergehold;
     use purlis_core::policy::decide::Outcome;
-    let held = mergehold::held(command)?;
+    // A relative path in the line is read against the payload's directory (#7195).
+    let held = purlis_core::floorguard::in_directory(cwd, || mergehold::held(command))?;
     let (action, kind, id) = mergehold::policy_request(&held);
     let asked = crate::brokered::asked(
         |chat| {
@@ -347,7 +348,9 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
             mergehold::REASON_DENIED,
             mergehold::denied(&decision),
         )),
-        Outcome::Ask => Some(MergeJudged::Refused(held_merge(&held, cwd, &decision))),
+        Outcome::Ask => Some(MergeJudged::Refused(held_merge(
+            &held, command, cwd, &decision,
+        ))),
     }
 }
 
@@ -487,6 +490,7 @@ const A_MERGE_IS_TAKEN_WITHIN: Duration = Duration::from_millis(1_000);
 /// which the event log records.
 fn held_merge(
     held: &purlis_core::mergehold::Held,
+    command: &str,
     cwd: &str,
     decision: &purlis_core::policy::decide::Decision,
 ) -> toolgate::Verdict {
@@ -526,7 +530,9 @@ fn held_merge(
         shape: None,
         denial: format!(
             "{} {}",
-            mergehold::refusal(held, &app),
+            purlis_core::floorguard::in_directory(cwd, || mergehold::refusal_for(
+                command, held, &app
+            )),
             mergehold::held_by(decision)
         ),
     }

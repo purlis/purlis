@@ -79,9 +79,8 @@ pub struct PressCommit {
     pub sha: String,
     /// Its subject line.
     pub subject: String,
-    /// Its author, **only where purlis verified it** on the commit as fetched from the upstream;
-    /// `null` is unverified.
-    pub author: Option<String>,
+    /// The author the commit names itself, as written. Purlis cannot check who wrote it.
+    pub author: String,
 }
 
 /// **The loosening press** (M75-15): what Accept would accept, against the policy in force.
@@ -97,6 +96,9 @@ pub struct PolicyPress {
     pub limits: Vec<PressLimit>,
     /// Each tightening of your own file the press lets go: listed in every press.
     pub local: Vec<PressLocal>,
+    /// Each other part that differs and no typed row covers, said by name: they wait like any
+    /// change.
+    pub other: Vec<String>,
     /// The commit, none for the removal of a tightening from your own file.
     pub commit: Option<PressCommit>,
     /// After a lost store, what was lost, in one sentence.
@@ -160,6 +162,7 @@ fn press_of(root: &std::path::Path) -> Option<(PolicyPress, String)> {
                 now: one.now.clone(),
             })
             .collect(),
+        other: held.diff.other.iter().map(|one| one.part.clone()).collect(),
         commit: held.commit.map(|one| PressCommit {
             sha: one.sha,
             subject: one.subject,
@@ -446,11 +449,22 @@ pub async fn accept_project_policy(
                  at it again",
             )));
         }
-        if !shown_press.is_empty() {
+        let press_kept = !shown_press.is_empty();
+        if press_kept {
             purlis_core::policy::press::accept(&root, &the_persons_press(), shown_press)
                 .map_err(kept)?;
         }
-        enforcement::press(&root, settings).map_err(kept)?;
+        // The second half can fail after the first was kept: said as it is, never as nothing kept.
+        enforcement::press(&root, settings).map_err(|why| {
+            if press_kept {
+                format!(
+                    "purlis kept your acceptance of the project's rules and limits, but could not \
+                     keep the rest of it on this machine: {why}. Accept again to finish."
+                )
+            } else {
+                kept(why)
+            }
+        })?;
         Ok(state_of(&root))
     })
     .await

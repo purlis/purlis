@@ -1106,3 +1106,34 @@ fn purlis_doctor_names_a_clone_whose_origin_names_several_addresses_with_the_fix
         "the row says the fix: {unrecorded}"
     );
 }
+
+#[test]
+fn a_doctor_run_in_a_chats_sandbox_says_json_which_checks_it_did_not_run() {
+    // #7178: the doctor learns it is in a chat's sandbox from the environment the chat gave its
+    // command, and the rows it then skips are not green in `--json`.
+    let (_d, root) = plane();
+    let home = root.join("home");
+    let skipped = ["vaults", "credential paths", "hook spool", "vault files"];
+
+    let outside = rows(&doctor(&root, &home, &["--json"]));
+    for name in ["vaults", "credential paths"] {
+        assert_eq!(row(&outside, name)["status"], "ok", "{name}");
+    }
+
+    let inside = rows(&doctor_with(
+        &root,
+        &home,
+        &["--json"],
+        &[(purlis_core::hookwire::SANDBOXED_ENV, "1")],
+    ));
+    for name in skipped {
+        let said = row(&inside, name);
+        assert_eq!(said["status"], "warn", "{name}: {said}");
+        assert!(
+            said["detail"]
+                .as_str()
+                .is_some_and(|d| d.starts_with("not checked (inside a chat's sandbox")),
+            "{name}: {said}"
+        );
+    }
+}

@@ -49,7 +49,8 @@ const PRESS: PolicyPress = {
   modes: [{ key: "guards.merge", before: "enforce", after: "log", kind: "loosens" }],
   limits: [{ key: "dispatch.running-per-chat", before: "3", after: "9", kind: "loosens" }],
   local: [{ key: "template", was: "strict", now: "open" }],
-  commit: { sha: "0123abcd".repeat(5), subject: "Drop the merge ban", author: null },
+  other: ["policy.sets.protected-branches"],
+  commit: { sha: "0123abcd".repeat(5), subject: "Drop the merge ban", author: "Ada <ada@x>" },
   lost: null,
 };
 const PRESSED: PolicyState = { ...QUIET, press: PRESS };
@@ -170,18 +171,27 @@ describe("the project's policy (Q308a)", () => {
 
   it("an_unverified_author_is_shown_as_unverified_at_the_press", async () => {
     core(PRESSED);
-    const { unmount } = render(<ProjectPolicyNotice plane={PLANE} canAccept />);
-    await waitFor(() => expect(screen.getByText(/Author unverified/)).toBeTruthy());
-    expect(screen.queryByText(/Ada/)).toBeNull();
-    unmount();
-    cleanup();
-    core({
-      ...PRESSED,
-      press: { ...PRESS, commit: { sha: "0123abcd", subject: "c", author: "Ada <ada@x>" } },
-    });
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
-    await waitFor(() => expect(screen.getByText(/Author: Ada <ada@x>\./)).toBeTruthy());
-    expect(screen.queryByText(/Author unverified/)).toBeNull();
+    // The author is the commit's own claim, and the window says it cannot be checked.
+    await waitFor(() =>
+      expect(screen.getByText(/The commit names its author as Ada <ada@x>\./)).toBeTruthy(),
+    );
+    expect(screen.getByText(/purlis can't check who wrote it/)).toBeTruthy();
+    expect(screen.queryByText(/verified on/)).toBeNull();
+  });
+
+  it("names a part no typed row covers as a change that waits", async () => {
+    core(PRESSED);
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText("policy.sets.protected-branches")).toBeTruthy());
+    expect(screen.getAllByText("changes").length).toBeGreaterThan(0);
+  });
+
+  it("says Accept starts the policy afresh, not that earlier acceptances hold, where nothing is allowed until it", async () => {
+    core({ ...QUIET, press: { ...PRESS, reason: "past-the-cap" } });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/A commit went past the most/)).toBeTruthy());
+    expect(screen.queryByText(/they keep what you accepted before/)).toBeNull();
   });
 
   it("raises the press for a removal from your own file, with no commit and no author", async () => {
@@ -193,6 +203,7 @@ describe("the project's policy (Q308a)", () => {
         modes: [],
         limits: [],
         local: [{ key: "template", was: "strict", now: "open" }],
+        other: [],
         commit: null,
         lost: null,
       },

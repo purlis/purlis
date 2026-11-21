@@ -4,7 +4,7 @@
 /**
  * **The loosening press** (M75-15; spec §9.2): the project's policy notice with its diff against
  * the policy in force: each rule as loosens, tightens or changes, each mode and limit before and
- * after, the commit with its author unverified, and a tightening of your own file that goes.
+ * after, the commit with its author as the commit claims it, and a tightening of your own file that goes.
  * Accept and Not now are reached by the keyboard. The core is faked at its command boundary.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -30,10 +30,11 @@ const PRESSED: PolicyState = {
     modes: [{ key: "guards.merge", before: "enforce", after: "log", kind: "loosens" }],
     limits: [{ key: "dispatch.running-per-chat", before: "3", after: "9", kind: "loosens" }],
     local: [{ key: "template", was: "strict", now: "open" }],
+    other: ["policy.sets.protected-branches"],
     commit: {
       sha: "0123abcd0123abcd0123abcd0123abcd0123abcd",
       subject: "Drop the merge ban",
-      author: null,
+      author: "Ada <ada@x>",
     },
     lost: null,
   },
@@ -58,7 +59,7 @@ type Story = StoryObj<typeof meta>;
 export const LooseningPress: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByText("loosens: removed");
-    await canvas.findByText(/Author unverified/);
+    await canvas.findByText(/purlis can't check who wrote it/);
     await canvas.findByText("your own file loosens: strict to open");
     await userEvent.tab();
     await untilFocused(() => canvas.getByRole("button", { name: "Accept" }), "Tab reaches Accept");

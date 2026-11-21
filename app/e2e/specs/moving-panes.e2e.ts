@@ -48,7 +48,8 @@ async function panesNow(): Promise<Record<number, Pane>> {
       out[Number(pane.getAttribute("data-session"))] = {
         frame: { left: frame.left, top: frame.top, width: frame.width, height: frame.height },
         grid: {
-          width: screen?.width ?? 0,
+          // Whole pixels: a layout's width is a float, and 504 and 504.00003 are the same grid (#7266).
+          width: Math.round(screen?.width ?? 0),
           columns: cell > 0 && screen !== undefined ? Math.round(screen.width / cell) : 0,
           rows: pane.querySelector(".xterm-rows")?.children.length ?? 0,
         },

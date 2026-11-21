@@ -13,7 +13,7 @@ use super::force::tests::{
 };
 use super::*;
 use crate::policy::decide::Outcome;
-use crate::secrets::answers::{Deny, State};
+use crate::secrets::answers::{Deny, Entry, State};
 
 const WHEN_ATTENDED: &str = " when { context.attended }";
 const WHEN_UNATTENDED: &str = " when { !context.attended }";
@@ -162,51 +162,41 @@ fn the_press_shows_mode_and_limit_changes() {
 fn an_unverified_author_is_shown_as_unverified_at_the_press() {
     let m = machine();
     let (root, standing) = dropped_the_ban(&m);
-    // No upstream at all: nobody fetched this commit from anywhere.
+    // The commit names its author, and purlis does not vouch for it: nothing it fetched, nothing
+    // it signed, so the author is always the commit's own claim, pushed or not.
     let said = press_of(&root, &standing)
         .expect("a press")
         .commit
         .expect("a commit");
-    assert_eq!(said.author, None, "{said:?}");
-    // An upstream that holds the plane's history, but not this commit: still unverified.
-    git(&root, &["reset", "-q", "--hard", "HEAD~1"]);
-    push_to_an_upstream(&m, &root);
-    git(&root, &["reset", "-q", "--hard", "HEAD@{1}"]);
-    let said = press_of(&root, &standing)
-        .expect("a press")
-        .commit
-        .expect("a commit");
-    assert_eq!(said.author, None, "{said:?}");
-    // Once the upstream holds it, the author is named.
-    git(&root, &["push", "-q"]);
-    let said = press_of(&root, &standing)
-        .expect("a press")
-        .commit
-        .expect("a commit");
-    assert_eq!(said.author.as_deref(), Some("t <nobody>"), "{said:?}");
+    assert_eq!(said.author, "t <nobody>", "{said:?}");
     assert_eq!(said.subject, "c");
     assert_eq!(said.sha.len(), 40);
+    push_to_an_upstream(&m, &root);
+    let pushed = press_of(&root, &standing)
+        .expect("a press")
+        .commit
+        .expect("a commit");
+    assert_eq!(
+        pushed.author, said.author,
+        "pushing proves nothing about who wrote it"
+    );
 }
 
 #[test]
 fn a_replace_ref_in_the_repo_shows_the_author_as_unverified() {
     let m = machine();
     let (root, standing) = dropped_the_ban(&m);
-    push_to_an_upstream(&m, &root);
-    let verified = press_of(&root, &standing)
-        .expect("a press")
-        .commit
-        .expect("a commit");
-    assert_eq!(verified.author.as_deref(), Some("t <nobody>"));
-    // One replace ref anywhere in the repo, whatever it replaces: no author can be vouched for.
     let first = git(&root, &["rev-list", "--max-parents=0", "HEAD"]);
     let head = git(&root, &["rev-parse", "HEAD"]);
+    // A replace ref anywhere in the repo changes nothing the press shows: history is read as it
+    // was written, so the author is the commit's own claim, never another object's.
     git(&root, &["replace", &first, &head]);
     let said = press_of(&root, &standing)
         .expect("a press")
         .commit
         .expect("a commit");
-    assert_eq!(said.author, None, "{said:?}");
+    assert_eq!(said.author, "t <nobody>", "{said:?}");
+    assert_eq!(said.sha, head);
 }
 
 #[test]
@@ -323,4 +313,144 @@ fn an_unrelated_press_lists_a_pending_local_file_loosening() {
         press.diff.local.iter().any(|one| one.key == "template"),
         "the local loosening is listed in the commit's press: {press:?}"
     );
+}
+
+fn other(press: &Press) -> Vec<&str> {
+    press
+        .diff
+        .other
+        .iter()
+        .map(|one| one.part.as_str())
+        .collect()
+}
+
+#[test]
+fn a_commit_that_only_shrinks_a_set_raises_a_press_with_a_row() {
+    let m = machine();
+    let sets = |hosts: &str| format!("{STRICT}[policy.sets]\nknown-hosts = [{hosts}]\n");
+    let root = plane(&m, &[("purlis.toml", &sets("\"a.com\""))]);
+    let standing = holding(vec![accepted(&version(
+        &sets("\"a.com\", \"b.com\""),
+        None,
+    ))]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert_eq!(other(&press), ["policy.sets.known-hosts"], "{press:?}");
+    assert_eq!(press.reason, Reason::Loosening);
+}
+
+#[test]
+fn a_commit_that_only_adds_a_workspace_mode_raises_a_press_with_a_row() {
+    let m = machine();
+    let now = format!("{STRICT}[policy.workspace.web]\nguards.merge = \"log\"\n");
+    let root = plane(&m, &[("purlis.toml", &now)]);
+    let standing = holding(vec![accepted(&version(STRICT, None))]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert_eq!(other(&press), ["policy.workspace.web"], "{press:?}");
+}
+
+#[test]
+fn a_changed_vault_registry_or_an_unreadable_floor_version_is_a_row() {
+    let m = machine();
+    let root = plane(
+        &m,
+        &[("purlis.toml", STRICT), ("vaults.json", "{\"vaults\":{}}")],
+    );
+    let held = Version {
+        vaults: Some("{\"vaults\":{\"v\":{\"env\":\"prod\"}}}".to_owned()),
+        ..version(STRICT, None)
+    };
+    let standing = holding(vec![
+        accepted(&held),
+        Entry::new(answers::FLOOR, "not a version"),
+    ]);
+    let press = press_of(&root, &standing).expect("a press");
+    let rows = other(&press);
+    assert!(
+        rows.contains(&"the shared vault registry (vaults.json)"),
+        "{rows:?}"
+    );
+    assert!(
+        rows.contains(&"a sealed version of the accepted floor does not read"),
+        "{rows:?}"
+    );
+}
+
+#[test]
+fn an_absent_rule_mode_is_the_families_mode_not_enforce() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    let was = "[policy]\ntemplate = \"strict\"\nguards.merge = \"log\"\n[policy.rules]\n\"guards-merge-ban\" = \"enforce\"\n";
+    let now = "[policy]\ntemplate = \"strict\"\nguards.merge = \"log\"\n";
+    let root = plane(&m, &[("purlis.toml", now), ("policy.cedar", &ban)]);
+    let standing = holding(vec![accepted(&version(was, Some(&ban)))]);
+    let press = press_of(&root, &standing).expect("a press");
+    let row = press
+        .diff
+        .modes
+        .iter()
+        .find(|one| one.key == "rules.guards-merge-ban")
+        .unwrap_or_else(|| panic!("{press:?}"));
+    assert_eq!(
+        (row.before, row.after, row.kind),
+        ("enforce", "log", Kind::Loosens)
+    );
+}
+
+#[test]
+fn a_permit_going_off_to_enforce_loosens_and_a_dropped_ask_with_other_edits_only_changes() {
+    let m = machine();
+    let grant = permit_merge("guards-merge-grant");
+    let off = format!("{STRICT}[policy.rules]\n\"guards-merge-grant\" = \"off\"\n");
+    let on = format!("{STRICT}[policy.rules]\n\"guards-merge-grant\" = \"enforce\"\n");
+    let rules = format!("{HEADER}{grant}");
+    let root = plane(&m, &[("purlis.toml", &on), ("policy.cedar", &rules)]);
+    let standing = holding(vec![accepted(&version(&off, Some(&rules)))]);
+    let press = press_of(&root, &standing).expect("a press");
+    let row = press
+        .diff
+        .modes
+        .iter()
+        .find(|one| one.key == "rules.guards-merge-grant")
+        .unwrap_or_else(|| panic!("{press:?}"));
+    assert_eq!(row.kind, Kind::Loosens, "{row:?}");
+    // An `@ask` dropped together with another edit is not a tightening.
+    let asking = format!(
+        "{HEADER}@id(\"guards-merge-x\") @ask(\"you\")\nforbid (principal, action == Action::\"merge\", \
+         resource) when {{ context.attended }};\n"
+    );
+    let plain = forbid_merge("guards-merge-x", WHEN_UNATTENDED);
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &plain)]);
+    let standing = holding(vec![accepted(&version(STRICT, Some(&asking)))]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert_eq!(
+        rule(&press, "guards-merge-x").kind,
+        Kind::Changes,
+        "{press:?}"
+    );
+}
+
+#[test]
+fn the_digest_binds_the_bases_the_rows_and_the_commit() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let one = holding(vec![
+        accepted(&version(STRICT, None)),
+        floor(&version(STRICT, Some(&ban))),
+    ]);
+    let other_floor = holding(vec![
+        accepted(&version(STRICT, None)),
+        floor(&version(
+            STRICT,
+            Some(&format!("{ban}// the same rules, another version\n")),
+        )),
+    ]);
+    let first = press_of(&root, &one).expect("a press").digest;
+    assert_ne!(
+        first,
+        press_of(&root, &other_floor).expect("a press").digest
+    );
+    // A new commit with the same project text is a different press.
+    commit(&root, &[]);
+    assert_ne!(first, press_of(&root, &one).expect("a press").digest);
 }

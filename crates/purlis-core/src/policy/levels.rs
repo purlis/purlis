@@ -293,6 +293,60 @@ impl Defaults {
     }
 }
 
+impl Defaults {
+    /// What this level says, without its lines: its template and each family's mode.
+    fn said(&self) -> String {
+        let modes: Vec<(&String, &str)> = self
+            .modes
+            .iter()
+            .map(|(family, said)| (family, said.value.word()))
+            .collect();
+        format!(
+            "template {:?}, modes {modes:?}",
+            self.template.map(|said| said.value.word())
+        )
+    }
+}
+
+impl Loaded {
+    /// **Every decision-relevant part of this policy that no typed diff row covers** (M75-15):
+    /// each named set's members, each workspace's and persona's template and modes, both levels'
+    /// locks, the Organisation's and your own file's limits. A part is named as the press says it
+    /// (`policy.sets.protected-branches`), with what it holds, so two policies that differ in any
+    /// of them differ here, and a press never seals a difference no row shows.
+    pub fn other_parts(&self) -> BTreeMap<String, String> {
+        let mut parts = BTreeMap::new();
+        for (name, members) in &self.sets {
+            let mut members = members.clone();
+            members.sort();
+            parts.insert(format!("policy.sets.{name}"), format!("{members:?}"));
+        }
+        for (name, level) in &self.workspaces {
+            parts.insert(format!("policy.workspace.{name}"), level.said());
+        }
+        for (name, level) in &self.personas {
+            parts.insert(format!("policy.persona.{name}"), level.said());
+        }
+        parts.insert(
+            "policy.locks of the organisation".to_owned(),
+            format!("{:?}", self.organisation_locks),
+        );
+        parts.insert(
+            "policy.locks".to_owned(),
+            format!("{:?}", self.project_locks),
+        );
+        parts.insert(
+            "policy.limits of the organisation".to_owned(),
+            format!("{:?}", self.organisation_limits),
+        );
+        parts.insert(
+            "policy.limits in your own file".to_owned(),
+            format!("{:?}", self.local_limits),
+        );
+        parts
+    }
+}
+
 impl Loaded {
     /// **The shipped default under `strict`, and nothing else** (spec §6, review round 3,
     /// SEC3-SF3): what a process outside any plane is judged by, evaluated where it runs. There is

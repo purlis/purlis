@@ -95,7 +95,9 @@ fn in_the_deny_state_every_action_but_start_is_refused_and_a_re_press_is_raised(
         );
         // A re-press is raised, and says what it does.
         assert!(
-            state.re_press.contains("press to start again"),
+            state
+                .re_press
+                .contains("press Accept on the project's policy"),
             "{}",
             state.re_press
         );
@@ -144,7 +146,10 @@ fn the_re_press_after_a_lost_store_diffs_against_the_shipped_default() {
         said.contains("shipped default holds no nevers and no accepted floor"),
         "{said}"
     );
-    assert!(said.contains("press to start again"), "{said}");
+    assert!(
+        said.contains("press Accept on the project's policy"),
+        "{said}"
+    );
 }
 
 #[test]

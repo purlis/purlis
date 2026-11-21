@@ -50,7 +50,7 @@ fn in_a_remote_docker_pool() {
     assert_eq!(bound.runner, runner.pinned.device);
     assert_eq!(bound.engine, remote.pinned_said());
     let logins = OptIns::default();
-    logins.allow("steward", "forge", bound.clone());
+    logins.allow("steward", "forge", "forge", bound.clone());
     assert_eq!(
         logins.standing("steward", "forge", &bound),
         Standing::Allowed

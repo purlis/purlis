@@ -2599,6 +2599,7 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
             runner_image: "a".repeat(64),
             pod: String::new(),
             engine: "this machine's Docker".into(),
+            marked: false,
         },
         login: "shop-login".into(),
         identity: "id-shop-login".into(),
@@ -2644,6 +2645,7 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
             runner_image: "a".repeat(64),
             pod: String::new(),
             engine: "this machine's Docker".into(),
+            marked: false,
         },
         tool: "kubectl".into(),
         vault: "team".into(),
@@ -3762,6 +3764,7 @@ fn a_runner_chats_login_and_tool_are_vault_uses_naming_the_pool() {
         runner_image: "a".repeat(64),
         pod: String::new(),
         engine: "this machine's Docker".into(),
+        marked: false,
     };
     world.pool_logins = vec![crate::chatbrowsers::PoolLoginWaits {
         session: 6,
