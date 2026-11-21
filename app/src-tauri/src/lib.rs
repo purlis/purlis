@@ -61,6 +61,7 @@ mod gitlabaccess;
 mod finishedturns;
 // A block's Tell the chat… (T1-33, Q267): purlis's own line, typed through T1-36's way in.
 mod blockways;
+mod heldacts;
 mod layout;
 mod mergeholds;
 mod pane_links;

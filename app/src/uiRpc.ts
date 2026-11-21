@@ -508,6 +508,9 @@ export const commands = {
 	viewHeldMerge: __WINDOW_ONLY_RESULT,
 	mergeHeldRequest: __WINDOW_ONLY_RESULT,
 	dontMergeHeldRequest: __WINDOW_ONLY_RESULT,
+	heldActsWaiting: __WINDOW_ONLY_RESULT,
+	pressHeldAct: __WINDOW_ONLY_RESULT,
+	dontHeldAct: __WINDOW_ONLY_RESULT,
 	allowChatBrowser: __WINDOW_ONLY_RESULT,
 	keepChatBrowserOff: __WINDOW_ONLY_RESULT,
 	answerPoolLogin: __WINDOW_ONLY_RESULT,
@@ -8107,10 +8110,49 @@ export type HarnessSetupFound = {
 	local_models: LocalModelRow[],
 };
 
+/**
+ *  **A held act the person is asked about**: exactly what the core read, and the digest of it
+ *  that a press hands back.
+ */
+export type HeldActShown = {
+	ask: number,
+	/**  The chat that asked. */
+	session: number,
+	/**  `tag`, `release`, `CI-file push` or `fork`. */
+	kind: string,
+	repo: string,
+	rows: HeldRowShown[],
+	body: HeldBodyShown | null,
+	/**  What a press names, so it performs only what was drawn. */
+	digest: string,
+};
+
+/**  **A long text an ask shows whole**: a release's notes, a CI file's diff. */
+export type HeldBodyShown = {
+	label: string,
+	text: string,
+};
+
+/**  **What a press did.** */
+export type HeldPress = 
+/**
+ *  The first press: the forge was read again and the ask is as shown. Press again, naming
+ *  `nonce`, to perform it.
+ */
+{ step: "asks-once-more"; shown: HeldActShown; nonce: string } | 
+/**  The second press: the act was performed. `said` is what was made. */
+{ step: "done"; said: string };
+
 /**  One change Remove held: its proposal's id, and the file it changes. */
 export type HeldRemoval = {
 	id: number,
 	file: string,
+};
+
+/**  **One line of an ask**, as the window draws it. */
+export type HeldRowShown = {
+	label: string,
+	value: string,
 };
 
 /**

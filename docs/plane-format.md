@@ -1866,6 +1866,21 @@ and its tab says so (#3787).
   handed to its one credential helper by variable, never on a command line.
 - **Read by:** the same call, alone.
 
+### `quarantine-<random>/` — where a held CI-file push is read
+
+- **Format:** a git repository with nothing checked out, in a folder of the app's own that no chat
+  can write. It holds the forge's base commit and its history, fetched with the person's
+  credential, and the pack a chat pushed, taken in by `git index-pack --stdin --fix-thin
+  --strict` so that git hashes every object itself. The diff of a held push, and the files its
+  commit is made from, are read here and never from a chat's clone, whose loose objects a chat can
+  overwrite (one login F2, ADR 0128 D8.3).
+- **Status:** **purlis only**.
+- **Tier:** Machine, device-bound, rebuildable, transient — made for one held push and removed with
+  the ask it was made for. Nothing in it is not on the forge or in the chat's own pack.
+- **Written by:** `purlis_core::heldact::Quarantine`.
+- **Read by:** `purlis_core::heldact::GitTrees`, only through `Quarantine::trees`; a test fails
+  on any other use of `GitTrees::of_trusted_store` in the source.
+
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 
 - **Format:** as [`skills/`](#skills--the-projects-skills), one folder per skill, with a

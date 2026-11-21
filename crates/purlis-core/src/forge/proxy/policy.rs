@@ -236,6 +236,9 @@ pub struct ChatPolicy {
     advertised: Mutex<HashMap<(String, String), HashSet<String>>>,
 }
 
+/// The kind, path segments, query and host of a request, for the hand-off of a held act.
+pub(super) type HeldRoute = (Kind, Vec<String>, Vec<(String, String)>, String);
+
 /// What of the body a request needs, from its line alone.
 pub(crate) fn body_need(head: &RequestHead) -> BodyNeed {
     let path = head.target.split(['?', '#']).next().unwrap_or_default();
@@ -265,6 +268,26 @@ impl ChatPolicy {
             own_branches: Mutex::new(own),
             advertised: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// The forge kind, path segments, query and host a request of this chat is for, where one of
+    /// the chat's repos is served at its host. For the hand-off of a held act.
+    pub(super) fn route_of(&self, head: &RequestHead) -> Option<HeldRoute> {
+        let host = request::host(head).ok()?;
+        let target = request::parse_target(&head.target).ok()?;
+        let first = self.repos.iter().find(|r| r.serves(&host, head.port))?;
+        Some((first.kind, target.segments, target.query, host))
+    }
+
+    /// The chat's repos on `host:port`, as the recogniser asks about them.
+    pub(super) fn recorded_on(&self, host: &str, port: u16) -> RecordedRepos {
+        RecordedRepos(
+            self.repos
+                .iter()
+                .filter(|r| r.serves(host, port))
+                .cloned()
+                .collect(),
+        )
     }
 
     /// The listener read a repo's ref advertisement for a push, and these are its branches (short
@@ -745,4 +768,32 @@ fn github_path(owner: &str, repo: &str) -> Result<String, Refusal> {
         return Err(Refusal::OtherRepo);
     }
     normalise_repo_path(Kind::GitHub, &format!("{owner}/{repo}")).map_err(|_| Refusal::OtherRepo)
+}
+
+/// The repos of one chat on one host, as [`crate::heldact::Recorded`].
+pub(super) struct RecordedRepos(Vec<AllowedRepo>);
+
+impl crate::heldact::Recorded for RecordedRepos {
+    fn resolve(&self, kind: crate::forge::Kind, id: &str) -> Option<crate::mergehold::Repo> {
+        let kind = match kind {
+            crate::forge::Kind::GitHub => Kind::GitHub,
+            crate::forge::Kind::GitLab => Kind::GitLab,
+        };
+        let wanted = id.to_ascii_lowercase();
+        self.0
+            .iter()
+            .find(|r| {
+                r.kind == kind
+                    && (r.path == wanted
+                        || (kind == Kind::GitLab
+                            && id.parse::<u64>().is_ok_and(|n| r.project_id == Some(n))))
+            })
+            .and_then(|r| crate::mergehold::Repo::try_from(r.path.clone()).ok())
+    }
+
+    fn holds(&self, repo: &crate::mergehold::Repo) -> bool {
+        self.0
+            .iter()
+            .any(|r| r.path.eq_ignore_ascii_case(repo.as_str()))
+    }
 }

@@ -1025,6 +1025,17 @@ export const commands = {
 	 *  merged.
 	 */
 	dontMergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<null, string>(__TAURI_INVOKE("dont_merge_held_request", { plane, session, repo, number, head })),
+	/**  **The held acts a project's chats asked for**, for Asks. */
+	heldActsWaiting: (plane: PlaneId) => typedError<HeldActShown[], string>(__TAURI_INVOKE("held_acts_waiting", { plane })),
+	/**
+	 *  **The person's press** of a held act, as the window: the first press asks once more, the second
+	 *  (naming the nonce the first returned) performs, with the person's own sign-in, exactly the act
+	 *  the row showed (`digest`). Where the forge refuses, the ask waits again and the refusal is
+	 *  said.
+	 */
+	pressHeldAct: (plane: PlaneId, ask: number, digest: string, nonce: string | null) => typedError<HeldPress, string>(__TAURI_INVOKE("press_held_act", { plane, ask, digest, nonce })),
+	/**  **Don't**, on a held act: the ask is put away and nothing is done. */
+	dontHeldAct: (plane: PlaneId, ask: number) => typedError<boolean, string>(__TAURI_INVOKE("dont_held_act", { plane, ask })),
 	/**
 	 *  **This project's sites, or also the open web**, on chat `session`'s browser Ask (#2013): its
 	 *  browser starts at its next browser call, reaching that; the chat is told on its next turn.
@@ -11485,10 +11496,49 @@ export type HarnessSetupFound = {
 	local_models: LocalModelRow[],
 };
 
+/**
+ *  **A held act the person is asked about**: exactly what the core read, and the digest of it
+ *  that a press hands back.
+ */
+export type HeldActShown = {
+	ask: number,
+	/**  The chat that asked. */
+	session: number,
+	/**  `tag`, `release`, `CI-file push` or `fork`. */
+	kind: string,
+	repo: string,
+	rows: HeldRowShown[],
+	body: HeldBodyShown | null,
+	/**  What a press names, so it performs only what was drawn. */
+	digest: string,
+};
+
+/**  **A long text an ask shows whole**: a release's notes, a CI file's diff. */
+export type HeldBodyShown = {
+	label: string,
+	text: string,
+};
+
+/**  **What a press did.** */
+export type HeldPress = 
+/**
+ *  The first press: the forge was read again and the ask is as shown. Press again, naming
+ *  `nonce`, to perform it.
+ */
+{ step: "asks-once-more"; shown: HeldActShown; nonce: string } | 
+/**  The second press: the act was performed. `said` is what was made. */
+{ step: "done"; said: string };
+
 /**  One change Remove held: its proposal's id, and the file it changes. */
 export type HeldRemoval = {
 	id: number,
 	file: string,
+};
+
+/**  **One line of an ask**, as the window draws it. */
+export type HeldRowShown = {
+	label: string,
+	value: string,
 };
 
 /**

@@ -65,6 +65,7 @@ mod commands;
 mod endpoint;
 mod git;
 mod graphql;
+mod held;
 mod policy;
 mod repo;
 mod request;
@@ -75,6 +76,7 @@ pub use audit::{AuditLog, AuditRecord, Verdict};
 #[cfg(unix)]
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
+pub use held::{Held, HeldSink};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, NoObjects, ObjectRepo, Refusal,
     TouchedRepo,
@@ -163,6 +165,9 @@ pub enum Outcome {
     Forward(Forwarded),
     /// Answer the chat with a refusal, and send nothing.
     Refused(Refusal),
+    /// A held act: answer the chat with this sentence, and send nothing. An ask was raised (or
+    /// the sentence says why not), and the person's press in Asks is what performs it.
+    Held(Held),
 }
 
 impl std::fmt::Debug for Outcome {
@@ -170,6 +175,7 @@ impl std::fmt::Debug for Outcome {
         match self {
             Self::Forward(forwarded) => forwarded.fmt(f),
             Self::Refused(refusal) => f.debug_tuple("Refused").field(refusal).finish(),
+            Self::Held(held) => f.debug_tuple("Held").field(held).finish(),
         }
     }
 }
@@ -211,6 +217,7 @@ pub struct ForgeProxy {
     credentials: Box<dyn CredentialSource>,
     objects: Box<dyn ObjectRepo>,
     audit: AuditLog,
+    held: Option<Box<dyn HeldSink>>,
 }
 
 impl ForgeProxy {
@@ -221,7 +228,26 @@ impl ForgeProxy {
             credentials,
             objects,
             audit: AuditLog::default(),
+            held: None,
         }
+    }
+
+    /// Hand the acts that are held (a merge, a tag, a release, a fork) to `sink`, which asks the
+    /// person, instead of refusing them dead. Without one they are refused, as before.
+    #[must_use]
+    pub fn with_held(mut self, sink: Box<dyn HeldSink>) -> Self {
+        self.held = Some(sink);
+        self
+    }
+
+    /// The listener read a push that changes CI files (from its objects, on a quarantined tree):
+    /// hand it over. What the chat is told, or `None` where nothing is held here.
+    pub fn hand_over(
+        &self,
+        chat: &ChatId,
+        requested: &crate::heldact::Requested,
+    ) -> Option<String> {
+        Some(self.held.as_ref()?.ask(chat, requested))
     }
 
     /// A chat starts: its repos are the ones the person confirmed, and it gets a fresh sentinel
@@ -326,7 +352,21 @@ impl ForgeProxy {
             .with_content_type(header_value(inbound.headers, "content-type"));
         let allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
             Decision::Allow(allowed) => allowed,
-            Decision::Refuse(refusal) => return self.refuse(chat, inbound, None, refusal),
+            Decision::Refuse(refusal) => {
+                // Only a chat that proved itself asks, and only for a held route.
+                if sentinel.is_ok()
+                    && held::is_a_held_route(refusal)
+                    && let Some(told) = self.held_answer(chat, &policy, &head, inbound.body)
+                {
+                    self.audit
+                        .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                    return Outcome::Held(Held {
+                        refusal,
+                        said: told,
+                    });
+                }
+                return self.refuse(chat, inbound, None, refusal);
+            }
         };
         if let (true, Err(refusal)) = (allowed.credentialed(), sentinel) {
             return self.refuse(chat, inbound, None, refusal);
@@ -404,6 +444,23 @@ impl ForgeProxy {
             body: allowed.canonical_body,
             created: allowed.created,
         })
+    }
+
+    /// What a chat is told for a request that is a held act or one refused whole.
+    fn held_answer(
+        &self,
+        chat: &ChatId,
+        policy: &ChatPolicy,
+        head: &RequestHead,
+        body: &[u8],
+    ) -> Option<String> {
+        use crate::heldact::{Recognised, said};
+        let sink = self.held.as_ref()?;
+        match policy.held_reading(head, body)? {
+            Recognised::Hold(requested) => Some(sink.ask(chat, &requested)),
+            Recognised::Refuse(why) => Some(said::refused_request(&why)),
+            Recognised::Other => None,
+        }
     }
 
     fn refuse(
