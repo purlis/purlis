@@ -11,7 +11,11 @@ import {
   ISSUE_TITLE,
   evidenceRed,
   findIssue,
+  flakeEvidence,
   flakyTests,
+  planFlakeTickets,
+  queueDrops,
+  readyToMerged,
   headline,
   jobStats,
   locateIssue,
@@ -264,4 +268,120 @@ test("the report's one issue is found by its title and its label, open or not", 
   ];
   assert.equal(findIssue(issues).number, 3);
   assert.equal(findIssue(issues.slice(0, 2)), undefined);
+});
+
+// ---- the daily run: flake tickets, and the headline it is judged by (spec #7324) ----
+
+const flakeSuite = (runId, job, ...tests) => ({
+  workflowRun: { databaseId: runId, url: `https://github.com/purlis/purlis/actions/runs/${runId}` },
+  checkRuns: {
+    nodes: [
+      {
+        name: job,
+        conclusion: "SUCCESS",
+        annotations: { nodes: tests.map((test) => ({ title: `Flaky (passed on retry 1): ${test}` })) },
+      },
+    ],
+  },
+});
+
+test("a flake's evidence names the suite that ran it and each run it flaked in, once each", () => {
+  const found = flakeEvidence([
+    flakeSuite(11, "web (part 2/4)", "src/a.test.ts > a"),
+    flakeSuite(12, "web (part 2/4)", "src/a.test.ts > a", "src/b.test.ts > b"),
+  ]);
+  assert.deepEqual(found, [
+    {
+      test: "src/a.test.ts > a",
+      count: 2,
+      jobs: ["web (part 2/4)"],
+      runs: [
+        { id: 11, url: "https://github.com/purlis/purlis/actions/runs/11" },
+        { id: 12, url: "https://github.com/purlis/purlis/actions/runs/12" },
+      ],
+    },
+    {
+      test: "src/b.test.ts > b",
+      count: 1,
+      jobs: ["web (part 2/4)"],
+      runs: [{ id: 12, url: "https://github.com/purlis/purlis/actions/runs/12" }],
+    },
+  ]);
+});
+
+const flakes = flakeEvidence([flakeSuite(11, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+
+test("a new flake is filed as one area:ci ticket naming its test, its suite and its runs", () => {
+  const { create, comment } = planFlakeTickets(flakes, []);
+  assert.equal(comment.length, 0);
+  assert.equal(create.length, 1);
+  assert.equal(create[0].title, "Flaky test: purlis-core::it a_test");
+  assert.deepEqual(create[0].labels, ["area:ci"]);
+  assert.match(create[0].body, /purlis-core::it a_test/);
+  assert.match(create[0].body, /rust tests \(part 1 of 4\)/);
+  assert.match(create[0].body, /actions\/runs\/11/);
+});
+
+test("a flake already filed gets a comment on its ticket, never a second ticket", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const again = flakeEvidence([flakeSuite(13, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+  const plan = planFlakeTickets(again, [{ number: 42, state: "open", title: filed.title, body: filed.body, labels: [{ name: "area:ci" }] }]);
+  assert.equal(plan.create.length, 0);
+  assert.equal(plan.comment.length, 1);
+  assert.equal(plan.comment[0].number, 42);
+  assert.match(plan.comment[0].body, /actions\/runs\/13/);
+  assert.match(plan.comment[0].update, /11,13/);
+});
+
+test("a run a ticket already names is not said again", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const plan = planFlakeTickets(flakes, [{ number: 42, state: "open", title: filed.title, body: filed.body, labels: [{ name: "area:ci" }] }]);
+  assert.deepEqual(plan, { create: [], comment: [] });
+});
+
+test("a ticket is found by its test even when its title was edited, and a closed one is reopened", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const again = flakeEvidence([flakeSuite(13, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+  const plan = planFlakeTickets(again, [{ number: 9, state: "closed", title: "renamed by hand", body: filed.body, labels: [{ name: "area:ci" }] }]);
+  assert.equal(plan.create.length, 0);
+  assert.equal(plan.comment[0].number, 9);
+  assert.equal(plan.comment[0].reopen, true);
+});
+
+const prAt = (number, createdAt, mergedAt, ...events) => ({
+  number,
+  createdAt,
+  mergedAt,
+  timelineItems: { nodes: events.map(([type, at, reason]) => ({ __typename: type, createdAt: at, reason })) },
+});
+const ready = (at) => ["ReadyForReviewEvent", at];
+const added = (at) => ["AddedToMergeQueueEvent", at];
+const removed = (at, reason) => ["RemovedFromMergeQueueEvent", at, reason];
+
+test("ready to merged runs from the last time a pull request was marked ready, or from its opening", () => {
+  const prs = [
+    prAt(1, "2026-11-15T00:00:00Z", "2026-11-15T01:00:00Z"), // never a draft: 60 min
+    prAt(2, "2026-11-15T00:00:00Z", "2026-11-15T10:00:00Z", ready("2026-11-15T05:00:00Z"), ready("2026-11-15T08:00:00Z")), // 120 min
+    prAt(3, "2026-11-15T00:00:00Z", "2026-11-15T05:00:00Z", ready("2026-11-15T00:00:00Z")), // 300 min
+  ];
+  assert.deepEqual(readyToMerged(prs), { n: 3, p50: 120 * 60, p90: 300 * 60 });
+});
+
+test("the queue drop rate is the entries the queue put out for a failed run, over every entry", () => {
+  const prs = [
+    prAt(1, "x", "2026-11-15T09:00:00Z", added("2026-11-15T01:00:00Z"), removed("2026-11-15T02:00:00Z", "failed_checks"), added("2026-11-15T03:00:00Z"), removed("2026-11-15T09:00:00Z", "merged")),
+    prAt(2, "x", "2026-11-15T09:30:00Z", added("2026-11-15T04:00:00Z"), removed("2026-11-15T05:00:00Z", "merge_conflict"), added("2026-11-15T06:00:00Z"), removed("2026-11-15T09:30:00Z", "merged")),
+    prAt(3, "x", "2026-11-15T10:00:00Z", added("2026-11-15T07:00:00Z"), removed("2026-11-15T10:00:00Z", "merged")),
+  ];
+  // five entries; a merge conflict builds no queue run, so only the first is a drop
+  assert.deepEqual(queueDrops(prs), { entries: 5, drops: 1, rate: 0.2 });
+});
+
+test("no entries is no rate", () => {
+  assert.deepEqual(queueDrops([]), { entries: 0, drops: 0, rate: null });
+});
+
+test("the daily headline leads with ready to merged and the queue drop rate", () => {
+  const text = headline({ ...week, ready: { n: 173, p50: 291 * 60, p90: 1655 * 60 }, drops: { entries: 131, drops: 20, rate: 20 / 131 } });
+  assert.match(text, /^ready to merged p50 291\.0 min \/ p90 1655\.0 min, queue drop rate 15% \(20 of 131 entries\), 6 runs/);
 });

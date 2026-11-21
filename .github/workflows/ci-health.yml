@@ -3,23 +3,25 @@
 
 name: ci-health
 
-# A weekly report on the `ci` workflow (#3598). Between 2026-10-14 and 10-27 CI got twice as
-# slow and three times as flaky, and nobody saw it for two weeks: the numbers were all in the
-# API, but nothing read them. This reads the last seven whole days every Monday, writes them as
-# the run's job summary, and keeps them in one issue labelled `area:ci` (made the first time),
-# with a comment of the week's headline so whoever watches the issue hears of it.
+# A daily report on the `ci` workflow (#3598, daily and acting since #7331, ADR 0127). Between
+# 2026-10-14 and 10-27 CI got twice as slow and three times as flaky, and nobody saw it for two
+# weeks: the numbers were all in the API, but nothing read them. This reads the last seven whole
+# days every day, writes them as the run's job summary, and keeps them in one issue labelled
+# `area:ci` (made the first time), with a comment of the day's headline (ready to merged, the
+# queue drop rate, the week's runs) so whoever watches the issue hears of it. It also files one
+# `area:ci` ticket for each flaky test, and comments on the ticket a test already has.
 #
 # What it reports, and how many calls each costs, is written in `tools/ci-health.mjs`; its
 # numbers are tested on recorded API answers in `tools/ci-health.test.mjs`, run with the other
 # tools' tests in `ci`.
 #
-# **Evidence only (V70).** It reads the API and writes one issue. It never runs on a pull
-# request and no branch protection names it.
+# **Evidence only (V70).** It reads the API and writes issues. It never runs on a pull request
+# and no branch protection names it.
 
 on:
   schedule:
-    # Monday 05:17 UTC: after the week's last day has ended everywhere the team works.
-    - cron: "17 5 * * 1"
+    # 05:17 UTC every day: after the previous day has ended everywhere the team works.
+    - cron: "17 5 * * *"
   workflow_dispatch:
     inputs:
       sample:
@@ -42,11 +44,11 @@ concurrency:
 
 jobs:
   report:
-    name: ci health (weekly report, evidence only)
+    name: ci health (daily report, evidence only)
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Read the repository (the tool), its workflow runs and its pull requests' merge-queue
-    # events; write the one issue. Without `pull-requests: read` the merged pull requests come
+    # events; write the report's issue and the flake tickets. Without `pull-requests: read` the merged pull requests come
     # back from GraphQL's search with no fields, and the queue's wait reads as none (seen on
     # this workflow's first run, 2026-10-28).
     permissions:
@@ -66,7 +68,7 @@ jobs:
         with:
           package-manager-cache: false
           node-version-file: .nvmrc
-      - name: Report the week
+      - name: Report the last seven days
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SAMPLE: ${{ inputs.sample || '600' }}

@@ -1,10 +1,11 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// The weekly CI health report (#3598): how the `ci` workflow did over the last seven days.
+// The daily CI health report (#3598, daily and acting from spec #7324): how the `ci` workflow did
+// over the last seven days, and a ticket for each flaky test it finds.
 //
 // CI got twice as slow and three times as flaky between 2026-10-14 and 10-27, and nobody saw it
-// for two weeks. The `ci-health` workflow runs this every Monday and writes the week's numbers
+// for two weeks. The `ci-health` workflow runs this every day and writes the week's numbers
 // into its job summary and into one issue labelled `area:ci`, so the next slowdown shows on its
 // first week: runs a day, how many went green, how many only on a rerun, the merge queue's wait,
 // each job's p50 and p90, every flaky test by name, and the slowest tests.
@@ -14,7 +15,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { requiredDrift } from "./ci-push-jobs.mjs";
-import { requiredNames } from "./land.mjs";
+import { conflicted, requiredNames } from "./land.mjs";
 
 /** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
 export function percentile(values, p) {
@@ -140,6 +141,136 @@ export function flakyTests(suites) {
     .sort((a, b) => b.count - a.count || a.test.localeCompare(b.test));
 }
 
+/**
+ * Every flaky test of `suites` with where it flaked, for its ticket: `{ test, count, jobs, runs }`,
+ * the most often first. `jobs` are the suites (the job names) that ran it, `runs` the workflow runs
+ * it flaked in (`{ id, url }`, each once), read from each suite's `workflowRun`.
+ */
+export function flakeEvidence(suites) {
+  const found = new Map();
+  for (const suite of suites) {
+    for (const job of suite?.checkRuns?.nodes ?? []) {
+      for (const annotation of job.annotations?.nodes ?? []) {
+        const flaky = FLAKY.exec(annotation.title ?? "");
+        if (!flaky) continue;
+        const one = found.get(flaky[1]) ?? { test: flaky[1], count: 0, jobs: [], runs: [] };
+        one.count += 1;
+        if (!one.jobs.includes(job.name)) one.jobs.push(job.name);
+        const run = suite.workflowRun;
+        if (run && !one.runs.some((seen) => seen.id === run.databaseId)) {
+          one.runs.push({ id: run.databaseId, url: run.url });
+        }
+        found.set(flaky[1], one);
+      }
+    }
+  }
+  return [...found.values()].sort((a, b) => b.count - a.count || a.test.localeCompare(b.test));
+}
+
+const TICKET_TITLE = "Flaky test: ";
+const TEST_MARKER = /<!-- flake-test: (.*?) -->/;
+const RUNS_MARKER = /<!-- flake-runs: ([\d,]*) -->/;
+const safe = (test) => test.replace(/-->/g, "--&gt;");
+const marked = (test, ids) => `<!-- flake-test: ${safe(test)} -->\n<!-- flake-runs: ${ids.join(",")} -->`;
+const runList = (runs) => runs.map((run) => `- ${run.url}`).join("\n");
+
+/**
+ * What to do with the flakes `flakes` (`flakeEvidence`) against the `area:ci` issues `issues` (any
+ * state): one new ticket for a test with none, and a comment, naming only the runs the ticket does
+ * not name yet, on the ticket it has. A ticket is found by the test id in its body (the title may
+ * be edited by hand), then by its title. `create` is `{ title, body, labels }`; `comment` is
+ * `{ number, body, update, reopen }`, `update` being the ticket's body with the new runs added.
+ */
+export function planFlakeTickets(flakes, issues) {
+  const create = [];
+  const comment = [];
+  const byTest = new Map();
+  for (const issue of issues) {
+    const test = TEST_MARKER.exec(issue.body ?? "")?.[1];
+    if (test) byTest.set(test, issue);
+  }
+  for (const flake of flakes) {
+    const title = `${TICKET_TITLE}${flake.test}`.slice(0, 200);
+    const ticket = byTest.get(safe(flake.test)) ?? issues.find((issue) => issue.title === title);
+    if (!ticket) {
+      create.push({
+        title,
+        labels: [ISSUE_LABEL],
+        body: [
+          marked(flake.test, flake.runs.map((run) => run.id)),
+          `\`${flake.test}\` passed on a retry in ${plural(flake.runs.length, "run")}, in ${flake.jobs.map((job) => `\`${job}\``).join(", ")}.`,
+          "",
+          "A test that fails and then passes on its one retry is a flake (ADR 0127): green, and never silent. " +
+            "Three flakes in seven days put it in `ci/quarantine.toml`.",
+          "",
+          "Runs:",
+          runList(flake.runs),
+          "",
+          "Filed by `ci-health`. It adds each new run of this flake as a comment here.",
+        ].join("\n"),
+      });
+      continue;
+    }
+    const known = (RUNS_MARKER.exec(ticket.body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
+    const fresh = flake.runs.filter((run) => !known.includes(run.id));
+    if (fresh.length === 0) continue;
+    const ids = [...known, ...fresh.map((run) => run.id)];
+    const body = ticket.body ?? "";
+    comment.push({
+      number: ticket.number,
+      reopen: ticket.state === "closed",
+      body: `Flaked again in ${plural(fresh.length, "run")}, in ${flake.jobs.map((job) => `\`${job}\``).join(", ")}:\n${runList(fresh)}`,
+      update: RUNS_MARKER.test(body)
+        ? body.replace(RUNS_MARKER, `<!-- flake-runs: ${ids.join(",")} -->`)
+        : `${marked(flake.test, ids)}\n${body}`,
+    });
+  }
+  return { create, comment };
+}
+
+/**
+ * Ready to merged over the week's merged pull requests, as `{ n, p50, p90 }` in seconds: from the
+ * last time the pull request was marked ready for review (`ReadyForReviewEvent`), or from its
+ * opening when it never was a draft, to its merge. The number the spec #7324 is judged by.
+ */
+export function readyToMerged(prs) {
+  const waits = [];
+  for (const pr of prs) {
+    if (!pr.mergedAt) continue;
+    const readies = (pr.timelineItems?.nodes ?? [])
+      .filter((event) => event.__typename === "ReadyForReviewEvent" && event.createdAt <= pr.mergedAt)
+      .map((event) => event.createdAt)
+      .sort();
+    waits.push(seconds(readies.at(-1) ?? pr.createdAt, pr.mergedAt));
+  }
+  return spread(waits);
+}
+
+/** A removal from the queue that is no drop: the merge itself, and a pull request taken out by hand. */
+const NOT_A_DROP = /^(merged|already_merged)$|user|dequeue/i;
+
+/**
+ * The queue drop rate over the week's merged pull requests: `{ entries, drops, rate }`. An entry is
+ * each time a pull request entered the queue; a drop is a removal because its queue run failed.
+ * A merge conflict is not one (it builds no queue run), nor is a merge or a removal by hand. As in
+ * `queueStats`, a pull request not merged by the week's end is not among `prs`.
+ */
+export function queueDrops(prs, { from, to } = {}) {
+  const inWeek = (at) => (!from || at.slice(0, 10) >= from) && (!to || at.slice(0, 10) <= to);
+  let entries = 0;
+  let drops = 0;
+  for (const pr of prs) {
+    for (const event of pr.timelineItems?.nodes ?? []) {
+      if (!inWeek(event.createdAt)) continue;
+      if (event.__typename === "AddedToMergeQueueEvent") entries += 1;
+      if (event.__typename === "RemovedFromMergeQueueEvent" && !NOT_A_DROP.test(event.reason ?? "") && !conflicted(event.reason)) {
+        drops += 1;
+      }
+    }
+  }
+  return { entries, drops, rate: entries === 0 ? null : drops / entries };
+}
+
 /** How many tests, flaky tests and jobs the report lists. */
 export const LIMIT = 20;
 
@@ -220,13 +351,15 @@ export function sample(items, max) {
 }
 
 /** The issue the report is kept in: one, found by this title and the `area:ci` label. */
-export const ISSUE_TITLE = "CI health: the weekly report";
+export const ISSUE_TITLE = "CI health: the daily report";
+/** What the issue was called while the report was weekly: found, and renamed, never filed twice. */
+export const LEGACY_ISSUE_TITLE = "CI health: the weekly report";
 export const ISSUE_LABEL = "area:ci";
 
 /** The report's issue among `issues` (`GET /issues`), or undefined when there is none yet. */
 export function findIssue(issues) {
   return issues.find(
-    (issue) => issue.title === ISSUE_TITLE && issue.labels.some((label) => (label.name ?? label) === ISSUE_LABEL),
+    (issue) => [ISSUE_TITLE, LEGACY_ISSUE_TITLE].includes(issue.title) && issue.labels.some((label) => (label.name ?? label) === ISSUE_LABEL),
   );
 }
 
@@ -240,6 +373,12 @@ const days = (week) => Math.max(1, Math.round((Date.parse(week.to) - Date.parse(
 export function headline(week) {
   const { runs, queue, flaky } = week;
   return [
+    ...(week.ready && week.drops
+      ? [
+          `ready to merged p50 ${minutes(week.ready.p50)} min / p90 ${minutes(week.ready.p90)} min`,
+          `queue drop rate ${percent(week.drops.rate)} (${week.drops.drops} of ${week.drops.entries} entries)`,
+        ]
+      : []),
     `${runs.runs} runs (${(runs.runs / days(week)).toFixed(1)}/day)`,
     `${percent(runs.successRate)} green`,
     `${runs.greenOnRerun} green only on a rerun`,
@@ -393,6 +532,7 @@ async function graphql(query, variables, token) {
 
 const SUITES = `query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on CheckSuite {
+    workflowRun { databaseId url }
     checkRuns(first: 100, filterBy: { checkType: LATEST }) { nodes {
       databaseId name conclusion startedAt completedAt
       annotations(first: 50) { nodes { annotationLevel title } }
@@ -404,9 +544,10 @@ const MERGED = `query($q: String!, $after: String) {
   search(type: ISSUE, query: $q, first: 50, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes { ... on PullRequest {
-      number mergedAt
-      timelineItems(last: 20, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes {
+      number createdAt mergedAt
+      timelineItems(last: 30, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, READY_FOR_REVIEW_EVENT]) { nodes {
         __typename
+        ... on ReadyForReviewEvent { createdAt }
         ... on AddedToMergeQueueEvent { createdAt }
         ... on RemovedFromMergeQueueEvent { createdAt reason }
       } }
@@ -502,10 +643,13 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     to: dayList.at(-1),
     runs: runStats(runs),
     queue: queueStats(prs, { from: dayList[0], to: dayList.at(-1) }),
+    ready: readyToMerged(prs),
+    drops: queueDrops(prs, { from: dayList[0], to: dayList.at(-1) }),
     unread,
     sampled: { runs: sampled.length, of: runs.length },
     jobs: jobStats(suites),
     flaky: flakyTests(suites),
+    flakes: flakeEvidence(suites),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
     red: { runs: greenRuns.length, jobs: evidenceRed(greenSuites) },
@@ -514,15 +658,29 @@ async function measure({ repo, token, dayCount, sampleSize }) {
   };
 }
 
+/** Every `area:ci` issue, any state, page by page: the report's own and the flake tickets. */
+async function ciIssues({ repo, token }) {
+  const all = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const issues = await call(
+      `/repos/${repo}/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=all&per_page=100&page=${page}`,
+      { token },
+    );
+    all.push(...issues.filter((issue) => !issue.pull_request));
+    if (issues.length < 100) break;
+  }
+  return all;
+}
+
 /** Writes `body` into the report's one issue, made the first time, and comments `line` on it. */
-async function keepIssue({ repo, token, body, line }) {
-  let issue = await locateIssue((page) =>
-    call(`/repos/${repo}/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=all&per_page=100&page=${page}`, {
-      token,
-    }),
-  );
+async function keepIssue({ repo, token, body, line, issues }) {
+  let issue = findIssue(issues);
   if (issue) {
-    await call(`/repos/${repo}/issues/${issue.number}`, { method: "PATCH", body: { body, state: "open" }, token });
+    await call(`/repos/${repo}/issues/${issue.number}`, {
+      method: "PATCH",
+      body: { title: ISSUE_TITLE, body, state: "open" },
+      token,
+    });
   } else {
     issue = await call(`/repos/${repo}/issues`, {
       method: "POST",
@@ -532,6 +690,26 @@ async function keepIssue({ repo, token, body, line }) {
   }
   await call(`/repos/${repo}/issues/${issue.number}/comments`, { method: "POST", body: { body: line }, token });
   return issue.number;
+}
+
+/** One ticket per flaky test, and a comment on the ticket a test already has (`planFlakeTickets`). */
+async function fileFlakes({ repo, token, flakes, issues }) {
+  const { create, comment } = planFlakeTickets(
+    flakes,
+    issues.filter((issue) => !findIssue([issue])),
+  );
+  for (const ticket of create) {
+    await call(`/repos/${repo}/issues`, { method: "POST", body: ticket, token });
+  }
+  for (const one of comment) {
+    await call(`/repos/${repo}/issues/${one.number}/comments`, { method: "POST", body: { body: one.body }, token });
+    await call(`/repos/${repo}/issues/${one.number}`, {
+      method: "PATCH",
+      body: { body: one.update, ...(one.reopen ? { state: "open" } : {}) },
+      token,
+    });
+  }
+  return { filed: create.length, commented: comment.length };
 }
 
 async function main(argv) {
@@ -557,8 +735,11 @@ async function main(argv) {
   if (args.issue) {
     const server = process.env.GITHUB_SERVER_URL ?? "https://github.com";
     const run = process.env.GITHUB_RUN_ID ? ` ([run](${server}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}))` : "";
-    const number = await keepIssue({ repo, token, body, line: `${week.from} to ${week.to}: ${headline(week)}${run}` });
+    const issues = await ciIssues({ repo, token });
+    const number = await keepIssue({ repo, token, body, issues, line: `${week.from} to ${week.to}: ${headline(week)}${run}` });
     console.log(`the report is in #${number}`);
+    const { filed, commented } = await fileFlakes({ repo, token, flakes: week.flakes, issues });
+    console.log(`flake tickets: ${filed} filed, ${commented} commented on`);
   }
 }
 
