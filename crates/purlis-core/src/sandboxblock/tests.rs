@@ -2253,51 +2253,48 @@ fn a_refusal_read_back_from_a_background_commands_output_is_no_block() {
     assert_eq!(detect_with_targets(&payload, &place), Vec::new());
 }
 
-/// T1.1-41 (#6888), cell M-TOOL-09: a file tool's read the sandbox refused fails, and its
-/// failure is a `PostToolUseFailure`, which was heard on Bash alone, so nothing was written.
+/// T1.1-41 (#6888), cell M-TOOL-09: a Read that failed is on the record as a failure, and is
+/// never a block: Claude Code's Read runs in the harness process, not under the Bash profile,
+/// so no recording shows a violation block appended to its error, and a refusal by the file's
+/// own permissions is not purlis's.
 #[test]
-fn a_failed_read_writes_a_post_line_and_its_block_if_refused() {
-    let heard = crate::hookreg::find("posttoolusefailure-blocked").expect("the word is wired");
-    assert!(
-        heard
-            .matcher
-            .unwrap_or_default()
-            .split('|')
-            .any(|tool| tool == "Read"),
-        "a failed Read is heard by the block word: {:?}",
-        heard.matcher
-    );
-    let refused = json!({
-        "hook_event_name": "PostToolUseFailure",
-        "tool_name": "Read",
-        "tool_input": {"file_path": "/Users/dev/.ssh/id_ed25519"},
-        "error": "EPERM: operation not permitted, open '/Users/dev/.ssh/id_ed25519'\n\
-                  <sandbox_violations>\n\
-                  Claude(48211) deny(1) file-read-data /Users/dev/.ssh/id_ed25519\n\
-                  </sandbox_violations>",
-    });
+fn a_failed_read_is_no_block_and_never_a_read_back() {
     let place = Place {
         root: Path::new("/Users/dev/plane"),
         chat: Path::new("/Users/dev/plane/workspaces/a/repo"),
         cwd: Path::new("/Users/dev/plane/workspaces/a/repo"),
         home: Some(Path::new("/Users/dev")),
     };
-    let found = detect(&refused, &place);
-    assert_eq!(
-        found
-            .iter()
-            .map(|block| block.operation)
-            .collect::<Vec<_>>(),
-        [Operation::Read],
-        "{found:?}"
-    );
-    // A read that failed for any other reason is no block.
-    let missing = json!({
+    for error in [
+        "EACCES: permission denied, open '/etc/master.passwd'",
+        "EPERM: operation not permitted, open '/Users/dev/.ssh/id_ed25519'",
+        "File does not exist.",
+        // Even with the words a violation block has: nothing reads a failed Read's error.
+        "EPERM: operation not permitted, open '/Users/dev/.ssh/id_ed25519'\n\
+         <sandbox_violations>\n\
+         Claude(48211) deny(1) file-read-data /Users/dev/.ssh/id_ed25519\n\
+         </sandbox_violations>",
+    ] {
+        let failed = json!({
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Read",
+            "tool_input": {"file_path": "/etc/master.passwd"},
+            "error": error,
+        });
+        assert_eq!(detect(&failed, &place), Vec::new(), "{error}");
+        assert!(
+            !read_back(&failed),
+            "a failed call is no read-back: {error}"
+        );
+    }
+    // The control: a Read that came back is one, as before.
+    let came_back = json!({
+        "hook_event_name": "PostToolUse",
         "tool_name": "Read",
-        "tool_input": {"file_path": "/Users/dev/plane/workspaces/a/repo/none.txt"},
-        "error": "File does not exist.",
+        "tool_input": {"file_path": "/t/tasks/a.output"},
+        "tool_response": {"file": {"content": "x"}},
     });
-    assert_eq!(detect(&missing, &place), Vec::new());
+    assert!(read_back(&came_back));
 }
 
 // ---- the certificate check, whose one service is purlis's own word (qw353) ----------------------

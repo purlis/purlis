@@ -1,0 +1,22 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B13",
+  "title": "a failed tool call is on the record: M-TOOL-09, a Read the file permissions refuse",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {},
+  "cells": [
+    {
+      "id": "M-TOOL-09",
+      "dialects": ["claude"],
+      "steps": [{
+        "calls": [{"tool": "Read", "input": {"file_path": "/etc/master.passwd"}}],
+        "outcome": "failed",
+        "require": [
+          {"kind": "hook.posttoolusefailure-blocked", "args": "this_call", "count": 1}
+        ],
+        "forbid": [{"kind": "stop.block"}]
+      }]
+    }
+  ]
+}
