@@ -80,7 +80,7 @@ jobs:
       - name: Run the app's and the cli's tests with it
         if: runner.os == 'Linux'
         timeout-minutes: 60
-        run: cargo nextest run -p purlis-cli -p purlis-app --features purlis-cli/forge-wiring,purlis-app/forge-wiring --locked --profile ci -E 'test(/sandboxing::/) | test(/recorded_behaviour/)'
+        run: cargo nextest run -p purlis-cli -p purlis-app --features purlis-cli/forge-wiring,purlis-app/forge-wiring --locked --profile ci -E 'test(/sandboxing::/) | test(/pooltools::/) | test(/chain_policy_checks::/) | test(/recorded_behaviour/)'
       - name: Run the tests
         # The end-to-end test (`one_login_end_to_end`) needs the real gh, glab and git and its own
         # node harness: `one-login-e2e` runs it, with those, on every one-login pull request.

@@ -123,6 +123,8 @@ fn a_forge_token_is_known_by_its_prefix_bare_after_bearer_or_in_a_url() {
     let url = format!("https://{user}:{}{}@{host}/o/r", "glpat-", "synthetic");
     assert!(super::forge_token_value(&url));
     assert!(!super::forge_token_value("plain-value"));
+    // Only at the start of a word: a name that merely ends in a prefix is no token.
+    assert!(!super::forge_token_value("highs_and_lows"));
     for var in [
         "GITLAB_PRIVATE_TOKEN",
         "GITHUB_PAT",

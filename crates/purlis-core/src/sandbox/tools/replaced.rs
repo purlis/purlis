@@ -59,7 +59,15 @@ const TOKEN_PREFIXES: [&str; 13] = [
 /// **Whether `value` holds a forge token**, by its documented prefix, anywhere in it: a bare
 /// token, one after `Bearer `, or one inside a URL's userinfo.
 pub fn forge_token_value(value: &str) -> bool {
-    TOKEN_PREFIXES.iter().any(|prefix| value.contains(prefix))
+    // A prefix counts at the start of a word only: `highs_` ends in `ghs_` and is no token.
+    TOKEN_PREFIXES.iter().any(|prefix| {
+        value.match_indices(prefix).any(|(at, _)| {
+            value[..at]
+                .chars()
+                .next_back()
+                .is_none_or(|before| !before.is_alphanumeric())
+        })
+    })
 }
 
 /// **Whether a vault item called `key` is one purlis recorded as a forge token**: what Agent

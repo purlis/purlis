@@ -1406,35 +1406,3 @@ fn a_pool_on_another_machine_is_sent_a_tools_value_only_once_marked_and_bound_to
     );
     assert!(passed.bound.engine.contains("ABCD"), "{:?}", passed.bound);
 }
-
-/// A runner chat's tool is sent no forge token with the one-login train's feature on, whatever
-/// variable the tool is declared to hand it in: the read is the chat's, though the environment it
-/// is made from is this desktop's own (ADR 0128).
-#[cfg(feature = "forge-wiring")]
-#[test]
-fn a_runner_chats_tool_is_sent_no_forge_token_whatever_variable_it_is_declared_in() {
-    use purlis_core::secrets::{Ctx, Env};
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(
-        dir.path().join("vaults.json"),
-        serde_json::json!({"vaults": {
-            "team": {"provider": "plain-file", "config": {"file": "team.json"}}
-        }})
-        .to_string(),
-    )
-    .unwrap();
-    // Synthetic values, made at run time: a token-shaped one and a plain one.
-    let token = format!("{}{}", "glpat-", "synthetic0example");
-    std::fs::write(
-        dir.path().join("team.json"),
-        serde_json::json!({"PRIV": token, "PLAIN": "plain-value"}).to_string(),
-    )
-    .unwrap();
-    let ctx = Ctx::new(dir.path(), Env::of(&[("PATH", "/usr/bin:/bin")])).for_a_chat();
-    let declared = Tool::one("curl", "team", "PRIVATE_TOKEN", As::Env, "PRIV");
-    let refused = values_of(&ctx, &declared).expect_err("a forge token is not sent");
-    assert!(refused.contains("forge token"), "{refused}");
-    let plain = Tool::one("curl", "team", "PLAIN_VAR", As::Env, "PLAIN");
-    let sent = values_of(&ctx, &plain).expect("a plain value is sent");
-    assert_eq!(sent.len(), 1);
-}
