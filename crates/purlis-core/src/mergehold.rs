@@ -667,6 +667,10 @@ pub struct Facts {
     /// nor an app or a bot, by login ([`approves`], R-122). A review the forge did not give in
     /// time, or could not give whole, is no approval.
     pub approved_by: Option<String>,
+    /// **The merge method the row shows** (ADR 0128 D8.1): whether the repo's own method squashes
+    /// the request, as the forge said at this read. A press merges by it and only while the forge
+    /// still says it ([`NotMerged::MethodMoved`]); a read that says otherwise asks once more.
+    pub squash: bool,
     /// When the forge was read for these facts, in seconds since 1970: a try again at the same
     /// head reads it again, and the newer read replaces these ([`Holds::raise`]).
     pub read_at: u64,
@@ -761,6 +765,7 @@ pub fn read(
             checks,
             ruleset,
             approved_by,
+            squash: at.squash,
             read_at: now,
         },
         at,
@@ -903,6 +908,15 @@ impl MergeForge for ByForge<'_> {
     }
 }
 
+/// The merge method a squash flag names, as an ask says it.
+fn method_word(squash: bool) -> &'static str {
+    if squash {
+        "squashing"
+    } else {
+        "a merge commit"
+    }
+}
+
 /// One merge ask that waits: the chat it holds, its key, what the forge said of the request
 /// when it was raised, and since when, in seconds since 1970.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -942,6 +956,7 @@ impl Facts {
                 Some(by) => by.as_str(),
                 None => "\u{1f}not approved",
             },
+            method_word(self.squash),
         ]
         .join("\u{1e}");
         sha2::Sha256::digest(shown.as_bytes())
@@ -1026,6 +1041,16 @@ pub enum NotMerged {
          was merged"
     )]
     BaseMoved { was: String, now: String },
+    /// The repo's merge method is not the one the person was shown (ADR 0128 D8.1): the ask
+    /// bound the method as well as the head and the base. The ask waits, showing the method now.
+    #[error(
+        "the repo now merges by {now}, not by {was} as it did when you were asked, so nothing was \
+         merged. Press Merge again"
+    )]
+    MethodMoved {
+        was: &'static str,
+        now: &'static str,
+    },
     /// Whether a ruleset protects the base is not what the person was shown (R-150). The ask
     /// still waits, showing what purlis read last.
     #[error(
@@ -1344,7 +1369,7 @@ impl Holds {
         by: Answerer,
         forge: &dyn MergeForge,
     ) -> Result<(HumanScope, Merged), NotMerged> {
-        let taken = {
+        let mut taken = {
             let mut held = self.lock();
             let at = held
                 .iter()
@@ -1358,6 +1383,7 @@ impl Holds {
             }
             held.remove(at)
         };
+        let shown = taken.facts.squash;
         let merged = forge
             .at(key)
             .map_err(NotMerged::Forge)
@@ -1368,6 +1394,19 @@ impl Holds {
                     Err(NotMerged::BaseMoved {
                         was: key.base.as_str().to_owned(),
                         now: at.base.as_str().to_owned(),
+                    })
+                }
+            })
+            .and_then(|at| {
+                // The method the row showed is the one the merge is made by, or none is made.
+                if at.squash == shown {
+                    Ok(at)
+                } else {
+                    taken.facts.squash = at.squash;
+                    taken.asked = false;
+                    Err(NotMerged::MethodMoved {
+                        was: method_word(shown),
+                        now: method_word(at.squash),
                     })
                 }
             })

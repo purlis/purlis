@@ -411,6 +411,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "view_held_merge",
     "merge_held_request",
     "dont_merge_held_request",
+    // Press and Don't on a tag, release, CI-file push or fork a chat asked for (ADR 0128 D8): the
+    // app performs it with the person's own sign-in on the press of the window alone, twice. No
+    // chat answers its own ask.
+    "held_acts_waiting",
+    "press_held_act",
+    "dont_held_act",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",

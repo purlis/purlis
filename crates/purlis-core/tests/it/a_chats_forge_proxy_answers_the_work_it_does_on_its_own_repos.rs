@@ -17,6 +17,7 @@ fn class(outcome: Outcome) -> Class {
     match outcome {
         Outcome::Forward(f) => f.class,
         Outcome::Refused(r) => panic!("refused: {r:?}"),
+        Outcome::Held(h) => panic!("held: {h:?}"),
     }
 }
 
@@ -297,6 +298,7 @@ fn the_credential_takes_the_form_each_surface_reads() {
             .find(|(n, _)| n.eq_ignore_ascii_case(name))
             .map(|(_, v)| v),
         Outcome::Refused(r) => panic!("refused: {r:?}"),
+        Outcome::Held(h) => panic!("held: {h:?}"),
     };
     let basic = |user: &str| {
         format!(

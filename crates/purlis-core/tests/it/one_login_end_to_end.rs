@@ -127,6 +127,13 @@ impl Bridge {
                 "outcome": "refused",
                 "refusal": format!("{refusal:?}"),
             }),
+            // This proxy is built with no hand-off, so a held act never arises here; where one
+            // does it is a refusal with the sentence the chat is told.
+            Outcome::Held(held) => json!({
+                "outcome": "refused",
+                "refusal": format!("{:?}", held.refusal),
+                "said": held.said,
+            }),
             Outcome::Forward(forwarded) => {
                 let id = self.next.fetch_add(1, Ordering::SeqCst);
                 let reply = json!({

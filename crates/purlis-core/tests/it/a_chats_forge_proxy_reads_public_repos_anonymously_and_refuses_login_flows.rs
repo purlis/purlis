@@ -14,6 +14,7 @@ fn anon(o: Outcome) -> Forwarded {
     match o {
         Outcome::Forward(f) => f,
         Outcome::Refused(r) => panic!("refused: {r:?}"),
+        Outcome::Held(h) => panic!("held: {h:?}"),
     }
 }
 
