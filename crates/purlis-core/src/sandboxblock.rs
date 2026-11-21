@@ -1241,11 +1241,14 @@ const READING_TOOLS: [&str; 2] = [READ_TOOL, "BashOutput"];
 /// words read, not of a command this call ran: the app shows it as a quiet line nobody has to
 /// answer, and the chat is not told to wait on it ([`told_the_chat_of_a_read`]). A command a
 /// chat runs (`Bash`, and Codex's and opencode's shells, which are `Bash` to a hook) is never
-/// one, whatever it prints.
+/// one, whatever it prints. **A call that failed is never one** (#6888): a `PostToolUseFailure`
+/// carries an `error` where a read that came back carries none, and a refused or failed read is
+/// no words read back, so the chat is never told to carry on after it.
 pub fn read_back(payload: &serde_json::Value) -> bool {
-    payload["tool_name"]
-        .as_str()
-        .is_some_and(|tool| READING_TOOLS.contains(&tool))
+    payload.get("error").is_none()
+        && payload["tool_name"]
+            .as_str()
+            .is_some_and(|tool| READING_TOOLS.contains(&tool))
 }
 
 /// `found`, each block once ([`is_the_same`]) and at most [`AT_MOST_PER_RESULT`]. **A block

@@ -227,10 +227,14 @@ pub const HANDLERS: [Handler; 20] = [
         matcher: Some("Monitor|Workflow|CronCreate|ScheduleWakeup"),
         timeout: 5,
     },
+    // Every tool that failed leaves its failure line (#6888, T1.1-41): a pattern that matches
+    // every tool, as the purlis tools' below is one that matches a prefix, so a failed `Write`,
+    // `Edit`, `Grep`, `WebFetch`, `Skill`, `Task` or MCP tool is on the record as a failed
+    // `Bash` is. Only a `Bash` failure is read for a sandbox block, in the hook itself.
     Handler {
         name: "posttoolusefailure-blocked",
         event: "PostToolUseFailure",
-        matcher: Some("Bash"),
+        matcher: Some(".*"),
         timeout: 5,
     },
     // A purlis tool that failed (#5697): one whose error says it failed inside purlis is

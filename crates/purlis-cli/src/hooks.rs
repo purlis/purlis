@@ -308,6 +308,13 @@ pub fn is_a_block_word(word: &str) -> bool {
     word == BLOCKED || word == BLOCKED_ON_FAILURE
 }
 
+/// Whether block word `word` reads `payload` for a sandbox block. `posttoolusefailure-blocked` is
+/// heard on every tool, so a call's failure leaves its line (#6888), but a block is read of a
+/// shell command's failure alone: a failed `Write`, `Read` or MCP tool is never one.
+pub fn reads_for_blocks(word: &str, payload: &serde_json::Value) -> bool {
+    word != BLOCKED_ON_FAILURE || payload["tool_name"].as_str() == Some("Bash")
+}
+
 /// The sandbox blocks in a block word's `payload` ([`purlis_core::sandboxblock`]), read through
 /// `env`: none unless the app started this chat sandboxed
 /// ([`purlis_core::sandbox::chat_is_sandboxed`]), since a refusal in any other chat is not the

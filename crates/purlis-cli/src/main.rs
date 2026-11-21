@@ -2570,6 +2570,11 @@ fn tell_the_host_about_blocks(word: &str, payload: &str) -> hooks::Blocked {
         return taken;
     };
     let data: serde_json::Value = serde_json::from_str(payload).unwrap_or_default();
+    // A failed call of any tool but a shell command is heard for its line alone (#6888): a block
+    // is read of a command's result, never of another tool's error.
+    if !hooks::reads_for_blocks(word, &data) {
+        return taken;
+    }
     let token = hookwire::ChatToken::from_env();
     let harness = hookwire::chat_harness(&purlis_core::envvar::var);
     // A tool that ran nothing (a read of a background command's output): a quiet line (#1884).
