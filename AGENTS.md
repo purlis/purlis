@@ -193,6 +193,15 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   failing cell's `reason` lists what each step's window and the chat held. Download with
   `gh api repos/purlis/purlis/actions/artifacts/<id>/zip` into a directory made by `mktemp -d`
   (clearing a directory with `rm -rf *` is refused).
+- `purlis worktree push` pushes the branch under its own name only. The scenario workflows run on
+  pull requests into `phase-1-proven` or main, so a round branch with no pull request of its own
+  gets no CI: the pull request's head branch has to be moved to the round's commit (or a draft
+  pull request opened) before the cells can be played.
+- The scenario crate's tests need local port binding, which a sandboxed chat lacks: `fake_forge`
+  and `resolver_seam` fail there for that reason alone. `cargo test -p purlis-scenarios --locked
+  -j 4 --no-fail-fast` shows the rest, and `cargo fmt -p purlis-app -p purlis-scenarios` is quick.
+  `cargo test -p purlis-app --lib --locked -j 4 -- scenarios::window_person scenarios::report`
+  (about 8 minutes cold) runs the checks' planted-fault tests.
 - `gh api -X PATCH repos/purlis/purlis/pulls/<n> -F body=@<file>` edits a pull request's body;
   `gh pr edit` fails on the classic-projects deprecation.
 
