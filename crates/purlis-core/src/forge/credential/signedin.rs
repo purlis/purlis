@@ -60,7 +60,7 @@ impl SignedIn {
                 how: super::no_account_how(super::Mode::Interactive, &host),
                 host,
             }),
-            [only] => self.credential_for_account(&host, only, now),
+            [only] => self.credential_for_account(&host, only, now, false),
             several => {
                 let logins: Vec<&str> = several.iter().map(|a| a.login.as_str()).collect();
                 Err(unusable(
@@ -86,7 +86,7 @@ impl SignedIn {
         let host = host.trim().to_ascii_lowercase();
         let on_host = self.on(&host)?;
         match on_host.iter().find(|a| a.id == account_id) {
-            Some(account) => self.credential_for_account(&host, account, now),
+            Some(account) => self.credential_for_account(&host, account, now, true),
             None => Err(unusable(
                 &host,
                 format!(
@@ -106,11 +106,15 @@ impl SignedIn {
             .collect())
     }
 
+    /// `for_chat`: the token goes to a chat's route, which is given an account only when the forge
+    /// has said it does not hold `workflow` (an account whose scopes are unknown may). The
+    /// person's own use of an account does not wait on that.
     fn credential_for_account(
         &self,
         host: &str,
         account: &ForgeAccount,
         now: u64,
+        for_chat: bool,
     ) -> Result<Credential, CredentialError> {
         if account.state != State::SignedIn {
             // Listed and signed out: the forge ended it, or the person signed out.
@@ -121,12 +125,23 @@ impl SignedIn {
         }
         // A token that holds `workflow` is never a chat route's (ADR 0128 D1.1): checked before
         // the keyring is read, so nothing of it is even fetched.
-        if accounts::everyday_holds_workflow(account) {
-            crate::forge::refresh::raise_once(account, &Trouble::EverydayHoldsWorkflow);
-            return Err(CredentialError::SignInAgain {
-                host: host.to_string(),
-                said: accounts::workflow::needs_narrower_sign_in(account),
-            });
+        match accounts::workflow_doubt(account) {
+            accounts::WorkflowDoubt::No => {}
+            accounts::WorkflowDoubt::Holds => {
+                crate::forge::refresh::raise_once(account, &Trouble::EverydayHoldsWorkflow);
+                return Err(CredentialError::SignInAgain {
+                    host: host.to_string(),
+                    said: accounts::workflow::needs_narrower_sign_in(account),
+                });
+            }
+            accounts::WorkflowDoubt::Unknown if for_chat => {
+                crate::forge::refresh::raise_once(account, &Trouble::ScopesUnknown);
+                return Err(CredentialError::SignInAgain {
+                    host: host.to_string(),
+                    said: accounts::workflow::scopes_unknown_said(account),
+                });
+            }
+            accounts::WorkflowDoubt::Unknown => {}
         }
         let token = self
             .refresher

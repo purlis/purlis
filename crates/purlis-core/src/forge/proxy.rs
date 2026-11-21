@@ -102,6 +102,11 @@ pub enum TokenKind {
 pub struct CredentialRequest {
     pub kind: Kind,
     pub host: String,
+    /// The port the request goes to: a token confirmed for `host:443` is not for `host:8443`.
+    pub port: u16,
+    /// The forge-read numeric id of the repo (the recorded [`AllowedRepo`]'s, never the request's
+    /// own words), or `None` outside a repo. A source that serves by id refuses without it.
+    pub repo_id: Option<u64>,
     /// The chat the request is for: the endpoint's, never the request's own. A source that
     /// serves only what the person confirmed answers for this chat's clones alone.
     pub chat: ChatId,
@@ -346,6 +351,8 @@ impl ForgeProxy {
         let request = CredentialRequest {
             kind: allowed.kind,
             host: allowed.host.clone(),
+            port: allowed.port,
+            repo_id: allowed.repo_id,
             chat: chat.clone(),
             repo: allowed.repo.clone(),
         };

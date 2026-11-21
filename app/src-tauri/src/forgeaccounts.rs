@@ -223,6 +223,7 @@ pub fn trouble_said(id: &str, trouble: &purlis_core::forge::refresh::Trouble) ->
             Trouble::PinChanged => "pin-changed",
             Trouble::RenewalFailing { .. } => "renewal-failing",
             Trouble::EverydayHoldsWorkflow => "everyday-holds-workflow",
+            Trouble::ScopesUnknown => "scopes-unknown",
         },
     }
 }

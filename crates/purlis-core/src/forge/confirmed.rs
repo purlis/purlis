@@ -509,6 +509,19 @@ fn host_port_of(url: &str) -> String {
     host
 }
 
+/// A confirmed host as the address the proxy reaches: the bare host and its port, with the
+/// default `https` port (443) written out for an entry that names none (an `ssh` or scp-style
+/// remote, whose port is not the forge's web one).
+pub fn address_of(host: &str) -> (String, u16) {
+    if let Some((bare, port)) = host.rsplit_once(':')
+        && !bare.is_empty()
+        && let Ok(port) = port.parse::<u16>()
+    {
+        return (bare.to_string(), port);
+    }
+    (host.to_string(), 443)
+}
+
 /// Every repo confirmed for `clone`.
 pub fn repos_of_clone(config_root: &Path, clone: &Path) -> Result<Vec<ConfirmedRepo>, String> {
     let key = clone_key(clone);
@@ -576,6 +589,18 @@ pub fn serves(
     let (Admission::Confirmed(repo) | Admission::Alias(repo)) = &admitted else {
         return Ok(admitted);
     };
+    // The address the person trusted the clone at must still be the entry's: a remote that was
+    // recorded again or moved since (`remote::record`, `remote::moved`) is another repo's address,
+    // and what was read from the forge for the old one says nothing of it.
+    let recorded = super::gitcredential::vouch::recorded_remote(config_root, clone);
+    let same = recorded.as_deref().is_some_and(|place| {
+        let place = place.trim_end_matches('/').to_ascii_lowercase();
+        let place = place.strip_suffix(".git").unwrap_or(&place);
+        place == format!("{}/{}", repo.host, repo.path)
+    });
+    if !same {
+        return Ok(Admission::NotConfirmed);
+    }
     // The application the repo was recorded under must still be the host's pin (D1.3 rule 2): a
     // pin changed since means the account that serves it is another application's.
     if !repo.client_id.is_empty() {
@@ -772,9 +797,16 @@ pub fn account_for(config_root: &Path, repo: &ConfirmedRepo, accounts: &[ForgeAc
     }) else {
         return signed_out();
     };
-    if super::accounts::everyday_holds_workflow(account) {
-        raise_once(account, &Trouble::EverydayHoldsWorkflow);
-        return signed_out();
+    match super::accounts::workflow_doubt(account) {
+        super::accounts::WorkflowDoubt::No => {}
+        super::accounts::WorkflowDoubt::Holds => {
+            raise_once(account, &Trouble::EverydayHoldsWorkflow);
+            return signed_out();
+        }
+        super::accounts::WorkflowDoubt::Unknown => {
+            raise_once(account, &Trouble::ScopesUnknown);
+            return signed_out();
+        }
     }
     match application_of(config_root, account) {
         Ok(now) if now == repo.client_id => Serving::Account(account.clone()),

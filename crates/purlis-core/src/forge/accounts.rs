@@ -1024,6 +1024,43 @@ pub fn everyday_holds_workflow(account: &ForgeAccount) -> bool {
     account.kind == Kind::GitHub && holds(account, &[workflow::SCOPE])
 }
 
+/// `account` with its scopes recorded as not known, for a test of what an account that is not
+/// known to be free of `workflow` is served.
+#[cfg(any(test, feature = "fenced"))]
+#[doc(hidden)]
+pub fn forget_scopes_for_a_test(
+    config_root: &Path,
+    account: &ForgeAccount,
+) -> Result<ForgeAccount, String> {
+    workflow::clear_scopes(config_root, account)
+}
+
+/// What is known of whether `account`'s everyday token can push CI files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowDoubt {
+    /// The forge says what the token holds, and `workflow` is not among it (or the forge has no
+    /// such scope, as on GitLab).
+    No,
+    /// The token holds `workflow`.
+    Holds,
+    /// The forge never said what the token holds (a fine-grained token has no scopes header), or
+    /// a read-back after a second grant could not say: it **may** hold `workflow`.
+    Unknown,
+}
+
+/// [`WorkflowDoubt`] of `account`. A chat's route is given the token only when this is
+/// [`WorkflowDoubt::No`] (ADR 0128 D1.1): unknown scopes fail closed.
+pub fn workflow_doubt(account: &ForgeAccount) -> WorkflowDoubt {
+    if account.kind != Kind::GitHub {
+        return WorkflowDoubt::No;
+    }
+    match &account.scopes {
+        None => WorkflowDoubt::Unknown,
+        Some(held) if grants(account.kind, held, workflow::SCOPE) => WorkflowDoubt::Holds,
+        Some(_) => WorkflowDoubt::No,
+    }
+}
+
 /// **`account`'s token and scopes replaced with what a step-up `granted`** (#5627, ADR 0116 §5):
 /// the device flow asked for the scopes it holds and `more` ([`widened_scopes`]), and the forge
 /// granted a new token. Kept only on a GitHub account, where the grant holds every one of `more`

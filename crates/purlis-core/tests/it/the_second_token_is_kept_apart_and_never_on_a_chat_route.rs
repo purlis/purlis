@@ -309,6 +309,59 @@ fn an_everyday_read_back_that_says_nothing_of_scopes_is_a_refusal_and_keeps_noth
         Availability::NeedsPress,
         "a push that changes a CI file is still held for a press"
     );
+    // GitHub may have folded `workflow` in all the same: the everyday token is served to no chat
+    // until a read-back says what it holds.
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown
+    );
+    let source = source_of(&scene);
+    assert!(
+        source
+            .credential_of("github.com", &scene.account.id, now())
+            .unwrap_err()
+            .is_sign_in_again()
+    );
+}
+
+#[test]
+fn an_everyday_read_back_that_fails_leaves_the_account_served_to_no_chat() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    // The read-back of the everyday token fails (the forge answers nothing for it).
+    scene.tokens.forget(EVERYDAY);
+    assert!(
+        scene
+            .second_sign_in(SECOND, "repo,read:org,workflow")
+            .is_err()
+    );
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown
+    );
+    let source = source_of(&scene);
+    assert!(
+        source
+            .credential_of("github.com", &scene.account.id, now())
+            .unwrap_err()
+            .is_sign_in_again()
+    );
+}
+
+fn source_of(scene: &Scene) -> SignedIn {
+    let github = registration::on(Kind::GitHub, "github.com").unwrap();
+    SignedIn::through(
+        Refresher::through(
+            &scope(),
+            scene.home.path(),
+            Arc::new(Never),
+            Endpoints::of(github),
+        ),
+        scene.home.path(),
+    )
 }
 
 #[test]

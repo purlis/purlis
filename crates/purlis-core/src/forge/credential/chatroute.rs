@@ -96,29 +96,32 @@ impl ChatRoute {
             .then(|| confirmed::normalised_path(kind, &request.repo))
             .map(|path| path.ok_or_else(|| "That is not a repo path.".to_string()))
             .transpose()?;
+        // A named repo is served by id: the forge-read id the proxy recorded for it, never the
+        // entry's own. Absent, it is refused; only a request outside a repo has none.
+        if wanted.is_some() && request.repo_id.is_none() {
+            return Err("The forge's id for that repo is not known.".to_string());
+        }
         let mut found = Vec::new();
         for clone in &clones {
             for repo in confirmed::repos_of_clone(&self.config_root, clone)? {
-                let same_host = repo.host.eq_ignore_ascii_case(&request.host)
-                    || repo
-                        .host
-                        .split(':')
-                        .next()
-                        .is_some_and(|bare| bare.eq_ignore_ascii_case(&request.host));
+                let (bare, port) = confirmed::address_of(&repo.host);
                 if repo.kind != kind
-                    || !same_host
+                    || !bare.eq_ignore_ascii_case(&request.host)
+                    || port != request.port
                     || wanted.as_ref().is_some_and(|path| *path != repo.path)
                 {
                     continue;
                 }
-                // Trust and the numeric id and the pin, as the list holds them now.
+                // Trust and the numeric id and the pin, as the list holds them now. A request
+                // outside a repo has no id of its own to compare: the entry's is the one it names.
+                let id = request.repo_id.unwrap_or(repo.repo_id);
                 let admitted = confirmed::serves(
                     &self.config_root,
                     clone,
                     repo.kind,
                     &repo.host,
                     &repo.path,
-                    repo.repo_id,
+                    id,
                 )?;
                 if let Admission::Confirmed(repo) = admitted {
                     found.push(repo);

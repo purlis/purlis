@@ -84,25 +84,48 @@ fn every_provisioning_command_is_the_windows_alone_and_no_link_serves_one() {
     }
 }
 
-/// Every `.rs` file under `dir`, but not a test's.
+/// Whether `module_file` declares `mod <name>;` right after a `#[cfg(test)]`.
+fn declares_cfg_test_mod(module_file: &Path, name: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(module_file) else {
+        return false;
+    };
+    let wanted = format!("mod {name};");
+    let lines: Vec<&str> = text.lines().map(str::trim).collect();
+    lines.iter().enumerate().any(|(at, line)| {
+        (*line == wanted || (line.starts_with("pub") && line.ends_with(&wanted)))
+            && at > 0
+            && lines[at - 1].contains("cfg(test)")
+    })
+}
+
+/// Whether the module `name` that lives in `dir` (as `dir/name.rs` or `dir/name/`) is declared as
+/// a test module (`#[cfg(test)] mod name;`) by the module that owns `dir`. A file that is merely
+/// *named* with "tests" is not a test module and is scanned.
+fn is_cfg_test_module(dir: &Path, name: &str) -> bool {
+    let mut owners = vec![dir.join("mod.rs"), dir.join("lib.rs"), dir.join("main.rs")];
+    if let (Some(parent), Some(dir_name)) = (dir.parent(), dir.file_name()) {
+        owners.push(parent.join(format!("{}.rs", dir_name.to_string_lossy())));
+    }
+    owners
+        .iter()
+        .any(|owner| declares_cfg_test_mod(owner, name))
+}
+
+/// Every `.rs` file under `dir`, but not a `#[cfg(test)]` module's.
 fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
         if path.is_dir() {
-            if path
-                .file_name()
-                .is_some_and(|n| n == "tests" || n == "target")
-            {
+            if name == "target" || is_cfg_test_module(dir, &name) {
                 continue;
             }
             sources(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs")
-            && !path
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().contains("tests"))
+        } else if let Some(stem) = name.strip_suffix(".rs")
+            && !is_cfg_test_module(dir, stem)
         {
             out.push(path);
         }
@@ -115,9 +138,10 @@ fn code(text: &str) -> impl Iterator<Item = &str> {
 }
 
 /// The sources of one directory, which must exist and hold at least `at_least` of them: a scan
-/// of a folder that was renamed or moved reads nothing and must not pass for a clean one.
-fn scanned(crates: &Path, dir: &str, at_least: usize) -> Vec<PathBuf> {
-    let at = crates.join(dir);
+/// of a folder that was renamed or moved reads nothing and must not pass for a clean one. The
+/// floor sits just under the real count, so a folder that lost files fails too.
+fn scanned(root: &Path, dir: &str, at_least: usize) -> Vec<PathBuf> {
+    let at = root.join(dir);
     assert!(
         at.is_dir(),
         "the scanned directory {} is missing",
@@ -133,9 +157,9 @@ fn scanned(crates: &Path, dir: &str, at_least: usize) -> Vec<PathBuf> {
     found
 }
 
-/// The core's own files that may hold a provisioning entry point's name: the forge's modules that
-/// define or use one, **each named** (a new file in `src/forge/` is not exempt until it is added
-/// here, with the reason it calls one), and the window's helpers.
+/// The core's own files that name a provisioning entry point, **each named, by exact path** (a new
+/// file in `src/` is not exempt until it is added here, with the reason it calls one). Every one
+/// must still name one: [`allowed_files_still_name_an_entry_point`].
 const ALLOWED_IN_CORE: &[&str] = &[
     "src/forge/accounts.rs",
     "src/forge/accounts/workflow.rs",
@@ -147,45 +171,92 @@ const ALLOWED_IN_CORE: &[&str] = &[
     "src/forge/registered/owner.rs",
     "src/forge/signin.rs",
     "src/windowonly.rs",
-    "src/signingsetup.rs",
-    "src/repolist.rs",
-    "src/testrun.rs",
-    "src/applog.rs",
 ];
 
-fn is_allowed_in_core(path: &Path) -> bool {
-    let shown = path.to_string_lossy().replace('\\', "/");
-    ALLOWED_IN_CORE.iter().any(|ok| shown.ends_with(ok))
+/// The window's own files, under `app/src-tauri/src`, that call a provisioning entry point: the
+/// presses. Any other file of the app naming one is a source that is not the window's press.
+const ALLOWED_IN_APP: &[&str] = &[
+    "clonevouch.rs",
+    "createproject.rs",
+    "forgeaccounts.rs",
+    "forgepkce.rs",
+    "onelogin.rs",
+    "remotequestion.rs",
+    "staleclones.rs",
+];
+
+/// The entries the scan reads: `(root, directory, floor)`. The floor is just under the number of
+/// non-test sources there today.
+const SCANNED: &[(&str, &str, usize)] = &[
+    ("crates", "purlis-cli/src", 45),
+    ("crates", "host/src", 20),
+    ("crates", "session-protocol/src", 19),
+    ("crates", "purlis-core/src", 1070),
+    ("app", "src-tauri/src", 275),
+];
+
+fn roots() -> (PathBuf, PathBuf) {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    (manifest.join(".."), manifest.join("../../app"))
+}
+
+/// Whether `line` names the entry point `entry` (as [`PROVISIONING_ENTRY_POINTS`] spells it), by
+/// its symbol: a bare name is matched as an identifier, never as part of a longer one; a path
+/// (`registered::pin(`) is matched as that path, or as an import of its last segment from its
+/// module. A substring of another name is not a hit.
+fn names_entry(line: &str, entry: &str) -> bool {
+    let entry = entry.trim_end_matches('(');
+    match entry.rsplit_once("::") {
+        // A bare name is a call, or an import (a string that holds the name is neither).
+        None => {
+            line.match_indices(entry).any(|(at, _)| {
+                names_symbol(line, entry) && line[at + entry.len()..].trim_start().starts_with('(')
+            }) || (line.trim_start().starts_with("use ") && names_symbol(line, entry))
+        }
+        Some((module, symbol)) => {
+            names_symbol(line, entry)
+                || (line.trim_start().starts_with("use ")
+                    && names_symbol(line, module)
+                    && names_symbol(line, symbol))
+        }
+    }
+}
+
+/// Every entry point a file names in its code, as `(entry, line)`.
+fn entry_points_named(path: &Path) -> Vec<String> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    PROVISIONING_ENTRY_POINTS
+        .iter()
+        .filter(|entry| code(&text).any(|line| names_entry(line, entry)))
+        .map(|entry| (*entry).to_string())
+        .collect()
+}
+
+fn allowed(path: &Path, root: &Path, allowed: &[&str]) -> bool {
+    allowed.iter().any(|ok| path == root.join(ok))
 }
 
 #[test]
-fn no_source_but_the_windows_and_the_named_forge_files_calls_a_provisioning_entry_point() {
+fn no_source_but_the_windows_and_the_named_files_calls_a_provisioning_entry_point() {
     purlis_core::unsteered!();
-    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    // Each directory is held to its own count, so one that emptied cannot hide behind the others.
-    let mut found = Vec::new();
-    for (dir, at_least) in [
-        ("purlis-cli/src", 30),
-        ("host/src", 15),
-        ("session-protocol/src", 12),
-        ("purlis-core/src", 600),
-    ] {
-        let all = scanned(&crates, dir, at_least);
-        found.extend(all.into_iter().filter(|path| !is_allowed_in_core(path)));
-    }
-    for ok in ALLOWED_IN_CORE {
-        assert!(
-            crates.join("purlis-core").join(ok).is_file(),
-            "{ok} is allowed to call a provisioning entry point and is not a file"
-        );
-    }
+    let (crates, app) = roots();
+    let core = crates.join("purlis-core");
+    let app_src = app.join("src-tauri/src");
     let mut calls = Vec::new();
-    for path in &found {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        for name in PROVISIONING_ENTRY_POINTS {
-            if code(&text).any(|line| line.contains(name)) {
+    // Each directory is held to its own count, so one that emptied cannot hide behind the others.
+    for (root, dir, at_least) in SCANNED {
+        let base = if *root == "crates" { &crates } else { &app };
+        for path in scanned(base, dir, *at_least) {
+            let permitted = match *root {
+                "crates" => allowed(&path, &core, ALLOWED_IN_CORE),
+                _ => allowed(&path, &app_src, ALLOWED_IN_APP),
+            };
+            if permitted {
+                continue;
+            }
+            for name in entry_points_named(&path) {
                 calls.push(format!("{} calls {name}", path.display()));
             }
         }
@@ -195,6 +266,26 @@ fn no_source_but_the_windows_and_the_named_forge_files_calls_a_provisioning_entr
         "a source that is not the window's provisions:\n{}",
         calls.join("\n")
     );
+}
+
+#[test]
+fn every_file_allowed_to_call_a_provisioning_entry_point_still_does() {
+    purlis_core::unsteered!();
+    let (crates, app) = roots();
+    for (root, files) in [
+        (crates.join("purlis-core"), ALLOWED_IN_CORE),
+        (app.join("src-tauri/src"), ALLOWED_IN_APP),
+    ] {
+        for ok in files {
+            let path = root.join(ok);
+            assert!(path.is_file(), "{ok} is allowed and is not a file");
+            assert!(
+                !entry_points_named(&path).is_empty(),
+                "{ok} is allowed to call a provisioning entry point and names none: take it off \
+                 the list"
+            );
+        }
+    }
 }
 
 /// Whether `line` names `symbol` as an identifier (an import, a path or a call), however it is
@@ -211,37 +302,39 @@ fn names_symbol(line: &str, symbol: &str) -> bool {
 #[test]
 fn only_the_window_names_the_ci_push_credential_and_nothing_reads_the_second_token_by_name() {
     purlis_core::unsteered!();
-    let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let mut found = Vec::new();
-    for (dir, at_least) in [
-        ("purlis-cli/src", 30),
-        ("host/src", 15),
-        ("session-protocol/src", 12),
-        ("purlis-core/src", 600),
-    ] {
-        found.extend(scanned(&crates, dir, at_least));
-    }
+    let (crates, app) = roots();
+    let core = crates.join("purlis-core");
+    let owners = [
+        core.join("src/forge/accounts/workflow.rs"),
+        core.join("src/forge/provision.rs"),
+    ];
     let mut bad = Vec::new();
-    for path in &found {
-        let Ok(text) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let shown = path.to_string_lossy().replace('\\', "/");
-        // `for_ci_push` is defined in `workflow.rs` and listed in `provision.rs`; the window and
-        // slice F2's held push call it, from the app, which is not scanned here.
-        let owns_it = shown.ends_with("src/forge/accounts/workflow.rs")
-            || shown.ends_with("src/forge/provision.rs");
-        for line in code(&text) {
-            if !owns_it && names_symbol(line, "for_ci_push") {
-                bad.push(format!("{shown} names for_ci_push: {}", line.trim()));
-            }
-            // The keyring item of the second token is read by its name in `workflow.rs` alone.
-            let reads_item = ["get(", "exists(", "delete(", "set("]
-                .iter()
-                .any(|call| line.contains(call))
-                && line.contains("\"workflow\"");
-            if !shown.ends_with("src/forge/accounts/workflow.rs") && reads_item {
-                bad.push(format!("{shown} reads the workflow item: {}", line.trim()));
+    for (root, dir, at_least) in SCANNED {
+        let base = if *root == "crates" { &crates } else { &app };
+        for path in scanned(base, dir, *at_least) {
+            let Ok(text) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let shown = path.display();
+            // `for_ci_push` is defined in `workflow.rs` and listed in `provision.rs`; the window and
+            // slice F2's held push call it, from the app.
+            let owns_it = owners.contains(&path);
+            let in_app = *root == "app";
+            for line in code(&text) {
+                if !owns_it && !in_app && names_symbol(line, "for_ci_push") {
+                    bad.push(format!("{shown} names for_ci_push: {}", line.trim()));
+                }
+                // The keyring item of the second token is read by its name in `workflow.rs` alone,
+                // whether it is spelled as the literal or as the scope or item constant.
+                let calls_keyring = ["get(", "exists(", "delete(", "set("]
+                    .iter()
+                    .any(|call| line.contains(call));
+                let names_item = line.contains("\"workflow\"")
+                    || line.contains("workflow::SCOPE")
+                    || line.contains("workflow::ITEM");
+                if path != owners[0] && calls_keyring && names_item {
+                    bad.push(format!("{shown} reads the workflow item: {}", line.trim()));
+                }
             }
         }
     }
@@ -265,15 +358,64 @@ fn the_symbol_scan_sees_an_import_a_rename_and_a_call_and_not_a_longer_name() {
 }
 
 #[test]
+fn an_entry_is_matched_by_its_symbol_and_not_by_a_substring_of_another_name() {
+    purlis_core::unsteered!();
+    for hit in [
+        "let r = confirmed::confirm(&s, h, c, &cand, &a, id);",
+        "use purlis_core::forge::confirmed::{confirm, Candidate};",
+        "forget_by_key(&scope, &root, key)",
+        "let f = registered::unpin;",
+    ] {
+        let entry = PROVISIONING_ENTRY_POINTS
+            .iter()
+            .find(|entry| names_entry(hit, entry));
+        assert!(entry.is_some(), "{hit}");
+    }
+    for miss in [
+        "let r = confirmed::confirm_trusted_later(1);",
+        "let my_forget_by_key = 1;",
+        "unregistered::pin_it(1)",
+        "xconfirmed::confirm(1)",
+    ] {
+        assert!(
+            PROVISIONING_ENTRY_POINTS
+                .iter()
+                .all(|entry| !names_entry(miss, entry)),
+            "{miss}"
+        );
+    }
+}
+
+#[test]
+fn a_file_named_with_tests_is_scanned_unless_its_module_is_declared_cfg_test() {
+    purlis_core::unsteered!();
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("mod.rs"),
+        "#[cfg(test)]\nmod tests;\nmod testsupport;\n",
+    )
+    .unwrap();
+    for name in ["tests.rs", "testsupport.rs", "tests_helpers.rs"] {
+        std::fs::write(dir.path().join(name), "fn f() {}\n").unwrap();
+    }
+    let mut found = Vec::new();
+    sources(dir.path(), &mut found);
+    let names: Vec<String> = found
+        .iter()
+        .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+        .collect();
+    assert!(!names.contains(&"tests.rs".to_string()), "{names:?}");
+    assert!(names.contains(&"testsupport.rs".to_string()), "{names:?}");
+    assert!(names.contains(&"tests_helpers.rs".to_string()), "{names:?}");
+}
+
+#[test]
 fn the_scan_finds_a_provisioning_call_where_there_is_one() {
     purlis_core::unsteered!();
     // The control: the window's own file, which the scan skips, does call them.
     let app = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/src-tauri/src/onelogin.rs");
-    let text = std::fs::read_to_string(app).expect("the app's file");
     assert!(
-        PROVISIONING_ENTRY_POINTS
-            .iter()
-            .any(|name| code(&text).any(|line| line.contains(name))),
+        !entry_points_named(&app).is_empty(),
         "the window's file calls a provisioning entry point"
     );
 }

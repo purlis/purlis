@@ -169,6 +169,25 @@ struct Chat {
 
 /// A chat whose one repo is `host`'s `path`, with `clones` in its workspace.
 fn chat(route: &Arc<ChatRoute>, host: &str, path: &str, clones: Vec<&Path>) -> Chat {
+    chat_at(route, host, 443, path, 0, clones)
+}
+
+/// [`chat`] on `host:port`, where the forge says the repo's id is `repo_id` (`0`: the id is
+/// looked up from the entry's own, as the helper's callers of a repo they confirmed as 1001 or 77).
+fn chat_at(
+    route: &Arc<ChatRoute>,
+    host: &str,
+    port: u16,
+    path: &str,
+    repo_id: u64,
+    clones: Vec<&Path>,
+) -> Chat {
+    let repo_id = match (repo_id, path) {
+        (0, "octocat/hello") => 1001,
+        (0, "acme/app") => 77,
+        (0, _) => 1,
+        (id, _) => id,
+    };
     let proxy = ForgeProxy::new(Box::new(Shared(route.clone())), Box::new(NoObjects));
     let chat = ChatId::new("chat-a");
     let sentinel = proxy.enrol(
@@ -177,11 +196,12 @@ fn chat(route: &Arc<ChatRoute>, host: &str, path: &str, clones: Vec<&Path>) -> C
             AllowedRepo::new(
                 purlis_core::forge::proxy::Kind::GitHub,
                 host,
-                443,
+                port,
                 path,
                 "main",
             )
-            .unwrap(),
+            .unwrap()
+            .with_project_id(repo_id),
         ],
     );
     route.enrol(&chat, clones.into_iter().map(Path::to_path_buf).collect());
@@ -516,6 +536,8 @@ fn another_chat_is_given_nothing_for_a_clone_it_was_not_given() {
     let request = |chat: &ChatId| CredentialRequest {
         kind: purlis_core::forge::proxy::Kind::GitHub,
         host: "github.com".into(),
+        port: 443,
+        repo_id: Some(1001),
         chat: chat.clone(),
         repo: "octocat/hello".into(),
     };
@@ -532,4 +554,172 @@ fn another_chat_is_given_nothing_for_a_clone_it_was_not_given() {
         route.credential_for(&request(&owner.chat)),
         Err(CredentialError::Unavailable)
     ));
+}
+
+#[test]
+fn a_repo_replaced_under_the_same_name_by_another_id_is_given_no_credential() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let route = github(scene.home.path());
+    let hello = tempfile::tempdir().unwrap();
+    confirm(
+        scene.home.path(),
+        hello.path(),
+        "github.com",
+        "octocat/hello",
+        1001,
+        &scene.personal,
+    );
+    let same = chat_at(
+        &route,
+        "github.com",
+        443,
+        "octocat/hello",
+        1001,
+        vec![hello.path()],
+    );
+    assert!(same.token_sent("api.github.com", HELLO).is_ok());
+    // The repo was renamed away and a new one took the name: the forge now says id 2002.
+    let replaced = chat_at(
+        &route,
+        "github.com",
+        443,
+        "octocat/hello",
+        2002,
+        vec![hello.path()],
+    );
+    assert_eq!(
+        replaced.token_sent("api.github.com", HELLO).unwrap_err(),
+        Refusal::NoCredential
+    );
+}
+
+#[test]
+fn a_request_that_names_a_repo_without_the_forges_id_is_given_no_credential() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let route = github(scene.home.path());
+    let hello = tempfile::tempdir().unwrap();
+    confirm(
+        scene.home.path(),
+        hello.path(),
+        "github.com",
+        "octocat/hello",
+        1001,
+        &scene.personal,
+    );
+    let owner = chat(&route, "github.com", "octocat/hello", vec![hello.path()]);
+    assert!(owner.token_sent("api.github.com", HELLO).is_ok());
+    let request = CredentialRequest {
+        kind: purlis_core::forge::proxy::Kind::GitHub,
+        host: "github.com".into(),
+        port: 443,
+        repo_id: None,
+        chat: owner.chat.clone(),
+        repo: "octocat/hello".into(),
+    };
+    assert!(matches!(
+        route.credential_for(&request),
+        Err(CredentialError::Unavailable)
+    ));
+}
+
+#[test]
+fn a_token_confirmed_for_one_port_is_not_sent_to_another_in_either_direction() {
+    purlis_core::unsteered!();
+    let home = tempfile::tempdir().unwrap();
+    let tokens = Tokens::default();
+    const GHES: &str = "git.corp";
+    const ODD: &str = "git.corp:8443";
+    const ORG_APP: &str = "Iv1.orgapp0123456789";
+    const TOKEN: &str = "canaryPORTroute5d2";
+    const TOKEN_ODD: &str = "canaryPORTodd5d3";
+    tokens.know(TOKEN, "octocat", "repo, read:org");
+    tokens.know(TOKEN_ODD, "octocat_odd", "repo, read:org");
+    for host in [GHES, ODD] {
+        registered::pin_with_owner(&scope(), home.path(), Kind::GitHub, host, ORG_APP, "acme")
+            .unwrap();
+    }
+    let account = sign_in(home.path(), &tokens, GHES, TOKEN, "repo,read:org", ORG_APP);
+    let account_odd = sign_in(
+        home.path(),
+        &tokens,
+        ODD,
+        TOKEN_ODD,
+        "repo,read:org",
+        ORG_APP,
+    );
+    let pinned = registered::pinned(home.path(), Kind::GitHub, GHES)
+        .unwrap()
+        .unwrap();
+    let route = route(home.path(), pinned);
+    // One clone confirmed at the default port, another at 8443.
+    let plain = tempfile::tempdir().unwrap();
+    let odd = tempfile::tempdir().unwrap();
+    confirm(home.path(), plain.path(), GHES, "acme/app", 77, &account);
+    confirm(home.path(), odd.path(), ODD, "acme/app", 77, &account_odd);
+    let target = "/api/v3/repos/acme/app";
+    // Confirmed for `git.corp` (443): served there, refused on `git.corp:8443`.
+    let at_443 = chat_at(&route, GHES, 443, "acme/app", 77, vec![plain.path()]);
+    assert_eq!(
+        at_443.token_sent(GHES, target).unwrap(),
+        format!("Bearer {TOKEN}")
+    );
+    // The proxy's own policy reads the port too; the route is asked directly, as the second wall.
+    let ask = |chat: &Chat, host: &str, port: u16| {
+        route.credential_for(&CredentialRequest {
+            kind: purlis_core::forge::proxy::Kind::GitHub,
+            host: host.into(),
+            port,
+            repo_id: Some(77),
+            chat: chat.chat.clone(),
+            repo: "acme/app".into(),
+        })
+    };
+    assert!(
+        matches!(ask(&at_443, GHES, 8443), Err(CredentialError::Unavailable)),
+        "a token confirmed for git.corp:443 is not sent to git.corp:8443"
+    );
+    // Confirmed for `git.corp:8443`: served there, refused on 443.
+    let at_8443 = chat_at(&route, GHES, 8443, "acme/app", 77, vec![odd.path()]);
+    assert!(ask(&at_8443, GHES, 8443).is_ok());
+    assert!(
+        matches!(ask(&at_8443, GHES, 443), Err(CredentialError::Unavailable)),
+        "a token confirmed for git.corp:8443 is not sent to git.corp:443"
+    );
+}
+
+#[test]
+fn an_account_whose_scopes_the_forge_never_said_is_given_to_no_chat() {
+    purlis_core::unsteered!();
+    let home = tempfile::tempdir().unwrap();
+    let tokens = Tokens::default();
+    const FINE: &str = "canaryFINEgrained8e3";
+    tokens.know(FINE, "octocat", "repo, read:org");
+    let account = sign_in(
+        home.path(),
+        &tokens,
+        "github.com",
+        FINE,
+        "repo,read:org",
+        OWN_CLIENT,
+    );
+    let route = github(home.path());
+    let hello = tempfile::tempdir().unwrap();
+    confirm(
+        home.path(),
+        hello.path(),
+        "github.com",
+        "octocat/hello",
+        1001,
+        &account,
+    );
+    let chat = chat(&route, "github.com", "octocat/hello", vec![hello.path()]);
+    assert!(chat.token_sent("api.github.com", HELLO).is_ok());
+    // The forge's read-back no longer says what the token holds: it may hold `workflow`.
+    purlis_core::forge::accounts::forget_scopes_for_a_test(home.path(), &account).unwrap();
+    assert_eq!(
+        chat.token_sent("api.github.com", HELLO).unwrap_err(),
+        Refusal::NoCredential
+    );
 }

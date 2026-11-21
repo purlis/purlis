@@ -128,13 +128,17 @@ to a file, an argument or an environment a chat reads.
 
 The signed-in source answers for a host. With more than one account on a host (a personal and an
 enterprise-managed one), **a chat's route is for one repo and one account**, so it asks
-`SignedIn::credential_for_account`, never the first account on the host:
+`SignedIn::credential_of` (host and account id), never the first account on the host:
 
 - **The repo is recorded by a press** (`forge::confirmed`, D4): a clone from the window, and *Trust
   this clone*, read the repo from the forge as the person and record its host, `owner/name` and
   numeric id in `forge-repos.json` beside the trust list (`push-remotes.json`). A repo is served only
-  if both name it, by the forge's number: a rename is the same repo, a lookalike with another number
-  is not. A clone made from the command line is outside both until it is trusted.
+  if both name it, by the forge's number: the number the proxy recorded for the chat's repo (never the
+  entry's own, never the request's words) must be the confirmed one, so a repo that was renamed away
+  and replaced under its old name by a new one with another number is not served, and a request
+  with no number is refused. The address the trust list holds must still be the entry's. The port is
+  part of the address: a token confirmed for `host:443` is not sent to `host:8443`, nor the other
+  way. A clone made from the command line is outside both until it is trusted.
 - **The account is the person's choice**, made on that press or after it in Settings › You › Accounts
   (*Account for each project*). One account on a host is the default and asks nothing. If the chosen
   account is signed out or gone, **no other account serves in its place**: the repo says so and the
@@ -149,11 +153,16 @@ enterprise-managed one), **a chat's route is for one repo and one account**, so 
 forge proxy asks. For a request it takes the chat's own clones (named when the chat starts), asks
 `confirmed::serves` (the clone is trusted, the repo is in the list by numeric id, the application it
 was recorded under is still the host's pin), then `confirmed::account_for` (one chosen account, signed
-in, not holding `workflow`, signed in through the host's pinned application), then
+in, not holding `workflow`, **and with scopes the forge has said**, signed in through the host's
+pinned application), then
 `SignedIn::credential_of`. Every other case is `Unavailable`, which the proxy answers as a refusal.
 Wiring it into the app's proxy listener is the listener slices' (A2, B); until then the app records
 and lists, and nothing serves a chat. A GitHub account whose everyday token holds `workflow` (GitHub
 folded it in) is refused by `SignedIn` itself, and the window draws a Notice from the account list.
+**Unknown scopes fail closed**: a token whose scopes the forge never said (a fine-grained token has no
+scopes header), and an everyday token whose read-back after a second grant failed or said nothing,
+may hold `workflow`, so the account is served to no chat and a Notice says why, until a read-back
+says what it holds.
 
 **The second token** (`forge::accounts::workflow`, D1.1 and D8.3) is the only credential that may
 push a CI file on GitHub. The everyday sign-in never asks for `workflow`. On the person's press, the

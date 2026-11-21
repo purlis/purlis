@@ -212,12 +212,26 @@ pub fn keep(
             account.host, account.login
         )
     })?;
-    let everyday_now = reach(&forge, Arc::new(Checking(everyday.clone())))
+    let everyday_now = match reach(&forge, Arc::new(Checking(everyday.clone())))
         .map_err(|e| e.to_string())
         .and_then(|transport| check(transport.as_ref(), &forge, true))
-        .map_err(|why| unechoed(why, &everyday))?;
+    {
+        Ok(now) => now,
+        Err(why) => {
+            // GitHub may have folded `workflow` into the everyday token, and it cannot be read:
+            // the token is served to no chat until a read-back succeeds.
+            mark_unknown(config_root, account)?;
+            return Err(format!(
+                "{} Purlis cannot tell whether the everyday sign-in as {} now allows CI files, so \
+                 it gives that sign-in to no chat until it can. Nothing was kept. Try again later.",
+                unechoed(why, &everyday),
+                account.login
+            ));
+        }
+    };
     // The second token is dropped here, in memory, on every path that does not write it below.
     let Some(scopes) = &everyday_now.scopes else {
+        mark_unknown(config_root, account)?;
         return Err(format!(
             "{} did not say what purlis's everyday sign-in as {} may do, so purlis cannot tell \
              whether it now allows CI files too. Nothing was kept, and a push that changes a CI \
@@ -235,6 +249,23 @@ pub fn keep(
         .set(&service(account), ITEM, second.expose_secret())
         .map_err(|e| unechoed(e.message.to_string(), &second))?;
     Ok(Outcome::Kept)
+}
+
+/// What a sign-in's `account` is told when its scopes are not known.
+pub fn scopes_unknown_said(account: &ForgeAccount) -> String {
+    format!(
+        "{} did not say what purlis's sign-in as {} may do, so it may allow CI files ({SCOPE}) and \
+         purlis does not give it to your chats. Sign in again here to check it.",
+        account.host, account.login
+    )
+}
+
+/// Marks `account`'s scopes as not known, so it is served to no chat until a read-back says what
+/// it holds, and says so in a Notice.
+fn mark_unknown(config_root: &Path, account: &ForgeAccount) -> Result<(), String> {
+    let account = clear_scopes(config_root, account)?;
+    crate::forge::refresh::raise_once(&account, &Trouble::ScopesUnknown);
+    Ok(())
 }
 
 /// What the person does when `account`'s everyday token holds `workflow` and purlis therefore
@@ -268,6 +299,22 @@ fn set_scopes(
     account: &ForgeAccount,
     scopes: Vec<String>,
 ) -> Result<ForgeAccount, String> {
+    write_scopes(config_root, account, Some(scopes))
+}
+
+/// `account` with its scopes recorded as not known.
+pub(super) fn clear_scopes(
+    config_root: &Path,
+    account: &ForgeAccount,
+) -> Result<ForgeAccount, String> {
+    write_scopes(config_root, account, None)
+}
+
+fn write_scopes(
+    config_root: &Path,
+    account: &ForgeAccount,
+    scopes: Option<Vec<String>>,
+) -> Result<ForgeAccount, String> {
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let at = file
@@ -278,12 +325,21 @@ fn set_scopes(
     let Some(Value::Object(fields)) = file.accounts.get_mut(at) else {
         return Err("That account is not on this machine any more.".to_string());
     };
-    fields.insert(
-        "scopes".to_string(),
-        serde_json::to_value(&scopes).unwrap_or(Value::Null),
-    );
+    match scopes {
+        Some(scopes) => {
+            fields.insert(
+                "scopes".to_string(),
+                serde_json::to_value(&scopes).unwrap_or(Value::Null),
+            );
+        }
+        None => {
+            fields.remove("scopes");
+        }
+    }
     let updated = account_of(&file.accounts[at])
         .ok_or_else(|| "That account is not on this machine any more.".to_string())?;
     write(config_root, file)?;
+    // What it was told of this account was about the scopes before: told afresh if it holds again.
+    crate::forge::refresh::forget_raised(&account.id);
     Ok(updated)
 }

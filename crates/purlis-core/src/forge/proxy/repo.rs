@@ -41,7 +41,9 @@ pub struct AllowedRepo {
     pub(crate) protected_branches: Vec<String>,
     /// The repo's GraphQL node ids (GitHub's `repositoryId`), as the forge gave them.
     pub(crate) node_ids: Vec<String>,
-    /// GitLab's numeric project id, which a REST path may use instead of the path.
+    /// The forge's numeric id of the repo (GitHub's `id`, GitLab's project id): what a credential
+    /// source checks the person's confirmation against, and which a GitLab REST path may use
+    /// instead of the path.
     pub(crate) project_id: Option<u64>,
     /// Branches the chat may move and delete from the start: the ones purlis made for it.
     pub(crate) own_branches: Vec<String>,
@@ -92,7 +94,7 @@ impl AllowedRepo {
         self
     }
 
-    /// GitLab's numeric project id.
+    /// The forge-read numeric id (GitHub's repo `id`, GitLab's project id).
     #[must_use]
     pub fn with_project_id(mut self, id: u64) -> Self {
         self.project_id = Some(id);

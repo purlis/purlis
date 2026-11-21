@@ -162,11 +162,20 @@ fn tell_of_changed_pin(
 /// their tokens until they end; they can no longer be renewed.
 #[tauri::command]
 #[specta::specta]
-pub async fn forge_remove_application(kind: String, host: String) -> Result<(), String> {
+pub async fn forge_remove_application(
+    app: tauri::AppHandle,
+    kind: String,
+    host: String,
+) -> Result<(), String> {
     let kind = kind_of(&kind)?;
     blocking(move || {
         let scope = host_scope()?;
-        registered::unpin(&scope, &config_root()?, kind, &host)
+        let root = config_root()?;
+        registered::unpin(&scope, &root, kind, &host)?;
+        // Nothing is pinned now, so every account that signed in through an application is
+        // another's: told at once, each time, not once per run.
+        tell_of_changed_pin(&app, &root, kind, &host, "");
+        Ok(())
     })
     .await
 }
@@ -331,9 +340,33 @@ pub async fn forge_trust_clone_repo(
     let project = planes.held(&plane)?.root().to_path_buf();
     blocking(move || {
         let scope = host_scope()?;
-        confirm_clone(&scope, &project.join(&folder), account_id.as_deref())
+        let clone = clone_in_project(&project, &folder)?;
+        confirm_clone(&scope, &clone, account_id.as_deref())
     })
     .await
+}
+
+/// The clone at `folder` of `project`: a child of the project, named relative to it. Refused when
+/// `folder` is empty, absolute, holds `..`, or (by a link) leads out of the project, so a press
+/// can never confirm a repo outside the workspace.
+fn clone_in_project(project: &std::path::Path, folder: &str) -> Result<std::path::PathBuf, String> {
+    use std::path::Component;
+    let refused = || "That folder is not inside this project.".to_string();
+    let relative = std::path::Path::new(folder);
+    if folder.is_empty()
+        || !relative
+            .components()
+            .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return Err(refused());
+    }
+    let joined = project.join(relative);
+    let real = joined.canonicalize().map_err(|_| refused())?;
+    let root = project.canonicalize().map_err(|_| refused())?;
+    if real == root || !real.starts_with(&root) {
+        return Err(refused());
+    }
+    Ok(joined)
 }
 
 /// Confirms `clone`, which the trust list holds an address for, with the account named, or the
@@ -410,10 +443,16 @@ pub(crate) fn confirm_after_trust(clone: &std::path::Path) {
     if purlis_core::fence::FENCED {
         return;
     }
-    if let (Ok(scope), Ok(root)) = (host_scope(), config_root())
-        && let Err(why) = confirmed::forget_clone(&scope, &root, clone)
-    {
-        tracing::info!("purlis: an earlier confirmation of the clone was not taken away: {why}");
+    // A confirmation that was not taken away is not read afresh over: stop, and say so.
+    let (Ok(scope), Ok(root)) = (host_scope(), config_root()) else {
+        return;
+    };
+    if let Err(why) = confirmed::forget_clone(&scope, &root, clone) {
+        tracing::warn!(
+            "purlis: an earlier confirmation of the clone was not taken away, so it was not read \
+             again: {why}"
+        );
+        return;
     }
     confirm_after_clone(clone);
 }
@@ -610,5 +649,35 @@ pub async fn forge_ci_permission_cancel(flow: u32) {
     let mut held = CI_FLOW.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(flow) = held.take_if(|held| held.number == flow) {
         flow.cancelled.store(true, Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clone_in_project;
+
+    #[test]
+    fn a_folder_is_a_child_of_the_project_and_nothing_else() {
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(project.path().join("repos/app")).unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        assert!(clone_in_project(project.path(), "repos/app").is_ok());
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../x",
+            "repos/../..",
+            "/etc",
+            "repos/missing",
+        ] {
+            assert!(clone_in_project(project.path(), bad).is_err(), "{bad:?}");
+        }
+        assert!(clone_in_project(project.path(), outside.path().to_str().unwrap()).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.path(), project.path().join("link")).unwrap();
+            assert!(clone_in_project(project.path(), "link").is_err());
+        }
     }
 }

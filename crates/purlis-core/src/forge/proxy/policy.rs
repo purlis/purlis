@@ -118,6 +118,10 @@ pub struct Allowed {
     pub kind: Kind,
     /// The host the credential is looked up by.
     pub host: String,
+    /// The port the request goes to; with `host`, the address the credential is looked up by.
+    pub port: u16,
+    /// The forge-read numeric id of the repo (`None` for a request outside a repo).
+    pub repo_id: Option<u64>,
     /// The allowed repo the request is for: `owner/repo`. Empty for the few reads outside a repo
     /// and for a public repo that is not the chat's.
     pub repo: String,
@@ -400,6 +404,8 @@ impl ChatPolicy {
                 return Ok(Allowed {
                     kind,
                     host: first.host.clone(),
+                    port: first.port,
+                    repo_id: None,
                     repo: String::new(),
                     class: Class::ApiRead,
                     upstream: upstream(first, Surface::Api, segments, &target),
@@ -436,6 +442,8 @@ impl ChatPolicy {
             return Ok(Allowed {
                 kind,
                 host: first.host.clone(),
+                port: first.port,
+                repo_id: first.project_id,
                 repo: first.path.clone(),
                 class,
                 upstream: upstream(first, Surface::Api, segments, &target),
@@ -581,6 +589,8 @@ fn allowed(
     Allowed {
         kind: repo.kind,
         host: repo.host.clone(),
+        port: repo.port,
+        repo_id: repo.project_id,
         repo: repo.path.clone(),
         class,
         upstream: upstream(repo, surface, segments, target),
@@ -595,6 +605,8 @@ fn public(host_of: &AllowedRepo, class: Class, segments: &[String], target: &Tar
     Allowed {
         kind: host_of.kind,
         host: host_of.host.clone(),
+        port: host_of.port,
+        repo_id: None,
         repo: String::new(),
         class,
         upstream: upstream(host_of, Surface::Anonymous, segments, target),

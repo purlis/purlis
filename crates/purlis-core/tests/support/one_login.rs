@@ -40,6 +40,11 @@ impl Tokens {
         );
     }
 
+    /// The forge no longer knows `token` (a revoked token, or a read-back that fails).
+    pub fn forget(&self, token: &str) {
+        self.0.lock().unwrap().remove(token);
+    }
+
     /// A token the forge knows, and says nothing of the scopes of: no `X-OAuth-Scopes`.
     pub fn know_without_scopes(&self, token: &str, login: &'static str) {
         self.0.lock().unwrap().insert(

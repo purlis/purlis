@@ -103,6 +103,10 @@ pub enum Trouble {
     /// (ADR 0128 D1.1): purlis stopped serving that token to any chat until the person signs in
     /// again without it.
     EverydayHoldsWorkflow,
+    /// The forge never said what the account's everyday token may do (or a read-back after a second
+    /// grant could not): it may hold `workflow`, so purlis serves it to no chat until a check
+    /// succeeds. Signing in again makes one.
+    ScopesUnknown,
 }
 
 type TroubleTold = Box<dyn Fn(&ForgeAccount, &Trouble) + Send + Sync>;
@@ -184,6 +188,16 @@ pub(crate) fn raise_once(account: &ForgeAccount, trouble: &Trouble) {
 }
 
 static ONCE: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+
+/// What was told of `account_id` is forgotten, so the next trouble of any kind is told again: the
+/// account's scopes were just read afresh, and what it was told before is no longer so. Without
+/// this a second fold in one run of the app would never raise a Notice.
+pub(crate) fn forget_raised(account_id: &str) {
+    let prefix = format!("{account_id}:");
+    if let Some(told) = ONCE.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        told.retain(|key| !key.starts_with(&prefix));
+    }
+}
 
 /// Whom to tell when a forge ended a sign-in: the window, so it can say so at once.
 static TOLD: OnceLock<Told> = OnceLock::new();

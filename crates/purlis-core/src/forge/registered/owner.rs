@@ -86,22 +86,7 @@ pub fn pin_with_owner(
         ));
     }
     let was = owner_of(config_root, kind, &kept)?;
-    let pinned = pin(host, config_root, kind, typed_host, client_id)?;
-    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
-    let mut file = read(config_root)?;
-    let at = file.hosts.iter().position(|value| {
-        serde_json::from_value::<Entry>(value.clone())
-            .is_ok_and(|e| Kind::parse(&e.kind) == Some(kind) && e.host == pinned.host)
-    });
-    let Some(Value::Object(entry)) = at.and_then(|at| file.hosts.get_mut(at)) else {
-        return Err(format!(
-            "purlis pinned the application on {} but could not record its owner. Pin it again with \
-             its owner.",
-            pinned.host
-        ));
-    };
-    entry.insert("owner".to_string(), Value::String(owner.to_string()));
-    write(config_root, file)?;
+    let pinned = pin_entry(host, config_root, kind, typed_host, client_id, Some(owner))?;
     Ok(OwnerPinned {
         host: pinned.host,
         replaced: pinned.replaced,

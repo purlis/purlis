@@ -17,7 +17,7 @@ export const SIGN_IN_TROUBLE = "forge-sign-in-trouble";
 /** What {@link SIGN_IN_TROUBLE} carries: the account's id and the kind of trouble. */
 export type SignInTrouble = {
   account: string;
-  trouble: "pin-changed" | "renewal-failing" | "everyday-holds-workflow";
+  trouble: "pin-changed" | "renewal-failing" | "everyday-holds-workflow" | "scopes-unknown";
 };
 
 /** The event a surface sends this window when it signed an account in or out. */
@@ -165,6 +165,12 @@ export function ForgeSignInEnded() {
         >
           {trouble === "everyday-holds-workflow" ? (
             <WorkflowHeld account={account} />
+          ) : trouble === "scopes-unknown" ? (
+            <>
+              {account.host} did not say what purlis&apos;s sign-in as {account.login} may do, so it
+              may allow CI files (<code>workflow</code>) and purlis gives it to no chat. Sign in
+              again to check it.
+            </>
           ) : trouble === "pin-changed" ? (
             <>
               purlis stopped renewing its sign-in to {account.host} as {account.login}: the

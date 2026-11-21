@@ -19,7 +19,7 @@ fn account(id: &str, kind: Kind, host: &str, login: &str) -> ForgeAccount {
         login: login.to_string(),
         method: Method::Pat,
         state: State::SignedIn,
-        scopes: None,
+        scopes: Some(vec!["repo".to_string()]),
         client_id: None,
     }
 }
