@@ -88,4 +88,5 @@ file, a Helm values file, an OpenAPI document) asks for the person's press where
 That cost is accepted: an extra ask is visible and cheap, and a pipeline file read differently by
 two parsers is not. What the rule cannot name is a file a pipeline or workflow runs that is not YAML
 and not under `.github/` (a script a job calls, a local action's `index.js` outside `.github/`):
-those are not held by this rule, and are the forge credential's to bound (ADR 0128).
+those are not held by this rule. The remainder stays unheld, and only the forge's own settings
+(ADR 0128 D3h.6) close it.

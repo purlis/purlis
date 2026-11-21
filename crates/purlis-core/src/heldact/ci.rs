@@ -17,8 +17,7 @@
 //!   repository; a commit's own change from its parent says nothing of how its tree differs from
 //!   the base's.
 //! - **a diff that cannot be computed refuses the push** ([`PushCheck::Refuse`]): an object the
-//!   clone does not have, a diff too large to show, a path the app cannot read, a `local:` include
-//!   whose path is a variable. It is never allowed and never guessed.
+//!   clone does not have, a diff too large to show, a path the app cannot read. It is never allowed and never guessed.
 //!
 //! **Which paths are CI files is decided by the path alone, never by reading a file.** A push is
 //! held if it adds, changes, deletes or renames:
@@ -136,8 +135,9 @@ pub fn check_push(
         ));
     }
     if diff.trim().is_empty() {
-        // A change git shows no lines for (a mode change, a binary file): nothing to read, so
-        // nothing the person could approve knowingly.
+        // A change git shows no lines at all for (an empty file added, say): nothing to read, so
+        // nothing the person could approve knowingly. A chmod-only change to a `.yml` is not this
+        // case: git prints `old mode` / `new mode` header lines, so it is held and shown.
         return PushCheck::Refuse(format!(
             "the push changes {} in a way that has no lines to show, so it is not held and not \
              allowed",
@@ -190,14 +190,22 @@ const ALWAYS: &[&str] = &[
     ".renovaterc.json",
     ".renovaterc.json5",
     ".gitlab/renovate.json",
+    ".gitlab/renovate.json5",
     "CODEOWNERS",
     "docs/CODEOWNERS",
     ".gitlab/CODEOWNERS",
 ];
 
+/// GitLab checks `File.basename(location).match?(/.+\.(yml|yaml)$/i)`, and Ruby's `$` matches at
+/// any line end, so a basename is YAML if any `\n`-separated line of it ends in `.yml` or
+/// `.yaml` (`ci/a.yml\nb` is). A name with a line break is then refused by the control-character
+/// check at prepare time.
 fn has_yaml_name(path: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    lower.ends_with(".yml") || lower.ends_with(".yaml")
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.split('\n').any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.ends_with(".yml") || lower.ends_with(".yaml")
+    })
 }
 
 impl Matcher {
@@ -208,7 +216,12 @@ impl Matcher {
     fn github() -> Matcher {
         Matcher {
             prefixes: vec![".github/"],
-            exact: ALWAYS.iter().map(|path| (*path).to_owned()).collect(),
+            // `.github` itself (a symlink or a gitlink there) is an entry too.
+            exact: ALWAYS
+                .iter()
+                .chain(&[".github"])
+                .map(|path| (*path).to_owned())
+                .collect(),
             any_yaml: false,
             any_action: true,
         }
@@ -222,7 +235,9 @@ impl Matcher {
         matcher.any_yaml = true;
         matcher.exact.push(GITLAB_DEFAULT.to_owned());
         if let Some(path) = ci_config {
-            // `path@group/project` and an address are files this repository does not hold.
+            // Skipped: `path@group/project` and an address, files this repository does not
+            // hold. Every in-repo form of `ci_config_path` is YAML-named and so held by
+            // `any_yaml` anyway; the exact entry only keeps the intent visible.
             if !path.contains('@') && !path.contains("://") && !path.is_empty() {
                 matcher.exact.push(path.trim_start_matches('/').to_owned());
             }
@@ -231,8 +246,12 @@ impl Matcher {
     }
 
     fn matches(&self, path: &str) -> bool {
-        self.prefixes.iter().any(|prefix| path.starts_with(prefix))
-            || self.exact.iter().any(|exact| exact == path)
+        let lower = path.to_ascii_lowercase();
+        self.prefixes.iter().any(|prefix| lower.starts_with(prefix))
+            || self
+                .exact
+                .iter()
+                .any(|exact| exact.eq_ignore_ascii_case(path))
             || (self.any_yaml && has_yaml_name(path))
             || (self.any_action
                 && path.rsplit('/').next().is_some_and(|name| {
@@ -381,5 +400,49 @@ impl Trees for GitTrees {
 
     fn message(&self, tip: &HeadSha) -> Result<String, String> {
         super::TipFiles::message(self, tip)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Matcher;
+
+    #[test]
+    fn a_basename_with_a_line_ending_in_yaml_is_yaml_to_gitlab_whatever_follows_the_line_break() {
+        let gitlab = Matcher::gitlab(None);
+        for path in [
+            "ci/a.yml\nb",
+            "ci/a.YAML\nb\nc",
+            "ci/x\na.yml",
+            "ci/a.yml\n",
+        ] {
+            assert!(gitlab.matches(path), "{path:?}");
+        }
+        for path in ["ci/a.txt\nb", "ci.yml/b", "ci/yml\n", "ci/a.yml.txt"] {
+            assert!(!gitlab.matches(path), "{path:?}");
+        }
+    }
+
+    #[test]
+    fn dot_github_itself_and_the_always_list_match_in_any_case_on_both_forges() {
+        for matcher in [Matcher::github(), Matcher::gitlab(None)] {
+            for path in [
+                ".github",
+                ".GitHub",
+                ".GITHUB/workflows/x",
+                "codeowners",
+                "Docs/CodeOwners",
+                "RENOVATE.JSON5",
+                ".gitlab/Renovate.json5",
+                ".gitlab/renovate.json5",
+            ] {
+                assert!(matcher.matches(path), "{path}");
+            }
+            assert!(
+                !matcher.matches("docs/.github"),
+                "nested .github is not the entry"
+            );
+            assert!(!matcher.matches(".githubx"));
+        }
     }
 }

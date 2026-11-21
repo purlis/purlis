@@ -117,12 +117,6 @@ impl Trees for NoTrees {
     fn patch(&self, _: &HeadSha, _: &HeadSha, _: &[String]) -> Result<String, String> {
         Err("no clone".to_owned())
     }
-    fn files(&self, _: &HeadSha) -> Result<Vec<String>, String> {
-        Err("no clone".to_owned())
-    }
-    fn read(&self, _: &HeadSha, _: &str) -> Result<Option<String>, String> {
-        Err("no clone".to_owned())
-    }
 }
 
 struct NoSecond;
