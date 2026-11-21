@@ -14,6 +14,12 @@
 //! 2. **No link serves a provisioning command**, and each is in the list of the window's own.
 //! 3. **No source but the window's calls a provisioning entry point.** The `purlis` binary, the
 //!    session host and every module of the core outside the forge's own are read for the names.
+//!    **This third check is a lint, not the wall**: it reads text, so a spelling it does not
+//!    know (a macro, a re-export under another name, a path built by `concat!`) slips past it. It
+//!    does read a `use` group over several lines, an alias or a glob of the module, a function
+//!    named as a value (`.map(for_ci_push)`) and a method call (`route.enrol(`). What holds the
+//!    line whatever the spelling is the first check: every act takes a [`HostScope`], and a
+//!    chat's process tree cannot claim one.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -167,6 +173,10 @@ const ALLOWED_IN_CORE: &[&str] = &[
     "src/forge/device.rs",
     "src/forge/gitcredential/vouch.rs",
     "src/forge/provision.rs",
+    // Re-exports `pin_with_owner` from its own module.
+    "src/forge/registered.rs",
+    // Defines `with_forge_id`, the one way a repo's forge-read id enters the proxy.
+    "src/forge/proxy/repo.rs",
     "src/forge/refresh.rs",
     "src/forge/registered/owner.rs",
     "src/forge/signin.rs",
@@ -180,6 +190,8 @@ const ALLOWED_IN_APP: &[&str] = &[
     "createproject.rs",
     "forgeaccounts.rs",
     "forgepkce.rs",
+    // Lists the window's commands, `vouch_clone` among them, for the handler.
+    "ipc_commands.rs",
     "onelogin.rs",
     "remotequestion.rs",
     "staleclones.rs",
@@ -206,20 +218,72 @@ fn roots() -> (PathBuf, PathBuf) {
 /// module. A substring of another name is not a hit.
 fn names_entry(line: &str, entry: &str) -> bool {
     let entry = entry.trim_end_matches('(');
+    let is_use = {
+        let line = line.trim_start();
+        line.starts_with("use ") || line.starts_with("pub use ")
+    };
     match entry.rsplit_once("::") {
-        // A bare name is a call, or an import (a string that holds the name is neither).
-        None => {
-            line.match_indices(entry).any(|(at, _)| {
-                names_symbol(line, entry) && line[at + entry.len()..].trim_start().starts_with('(')
-            }) || (line.trim_start().starts_with("use ") && names_symbol(line, entry))
-        }
+        // A bare name is a call, an import or a function named as a value; a string that holds the
+        // name is none of them.
+        None => names_outside_a_string(line, entry),
         Some((module, symbol)) => {
             names_symbol(line, entry)
-                || (line.trim_start().starts_with("use ")
+                || (is_use
                     && names_symbol(line, module)
-                    && names_symbol(line, symbol))
+                    && (names_symbol(line, symbol)
+                        // A glob (`workflow::*`, `workflow::{*, x}`) or the module under another name
+                        // (`workflow as w`) brings the symbol in without spelling it.
+                        || line.contains('*')
+                        || line.contains(" as ")))
+                // A method call: `route.enrol(` is `ChatRoute::enrol(` on a value.
+                || (METHOD_ENTRIES.contains(&symbol)
+                    && module.starts_with(char::is_uppercase)
+                    && line.contains(&format!(".{symbol}(")))
         }
     }
+}
+
+/// The entries that are methods of a value, which a caller spells `value.name(`. An associated
+/// function (`HostScope::claim(`) is called by its path alone and is not in this list.
+const METHOD_ENTRIES: &[&str] = &["enrol"];
+
+/// Whether `line` names `symbol` as an identifier, not inside a string literal.
+fn names_outside_a_string(line: &str, symbol: &str) -> bool {
+    line.match_indices(symbol).any(|(at, _)| {
+        let before = line[..at].chars().next_back();
+        let after = line[at + symbol.len()..].chars().next();
+        let part = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+        !part(before) && !part(after) && before != Some('"') && after != Some('"')
+    })
+}
+
+/// The statements of `text` that are code, one string each: a `use` group that runs over several
+/// lines is one statement, so its names are read together with the module they come from.
+fn statements(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut open: Option<String> = None;
+    for line in code(text) {
+        match open.as_mut() {
+            Some(held) => {
+                held.push(' ');
+                held.push_str(line.trim());
+                if line.contains(';') {
+                    out.extend(open.take());
+                }
+            }
+            None => {
+                let trimmed = line.trim_start();
+                let starts = trimmed.starts_with("use ") || trimmed.starts_with("pub use ");
+                if starts && !line.contains(';') {
+                    open = Some(line.trim().to_string());
+                } else {
+                    out.push(line.to_string());
+                }
+            }
+        }
+    }
+    out.extend(open);
+    out
 }
 
 /// Every entry point a file names in its code, as `(entry, line)`.
@@ -229,7 +293,11 @@ fn entry_points_named(path: &Path) -> Vec<String> {
     };
     PROVISIONING_ENTRY_POINTS
         .iter()
-        .filter(|entry| code(&text).any(|line| names_entry(line, entry)))
+        .filter(|entry| {
+            statements(&text)
+                .iter()
+                .any(|line| names_entry(line, entry))
+        })
         .map(|entry| (*entry).to_string())
         .collect()
 }
@@ -383,6 +451,44 @@ fn an_entry_is_matched_by_its_symbol_and_not_by_a_substring_of_another_name() {
                 .all(|entry| !names_entry(miss, entry)),
             "{miss}"
         );
+    }
+}
+
+#[test]
+fn the_scan_reads_a_use_group_over_lines_an_alias_a_glob_a_function_value_and_a_method_call() {
+    purlis_core::unsteered!();
+    let hit = |text: &str| {
+        let found = statements(text).iter().any(|line| {
+            PROVISIONING_ENTRY_POINTS
+                .iter()
+                .any(|e| names_entry(line, e))
+        });
+        assert!(found, "{text}");
+    };
+    // A use group split over lines.
+    hit("use purlis_core::forge::accounts::workflow::{\n    SCOPE,\n    keep,\n};");
+    hit("use purlis_core::forge::accounts::workflow::{\n    SCOPE,\n    for_ci_push as push,\n};");
+    // The module under another name, and a glob of it.
+    hit("use purlis_core::forge::accounts::workflow as w;");
+    hit("use purlis_core::forge::confirmed::*;");
+    // A function named as a value.
+    hit("let f = items.iter().map(for_ci_push);");
+    // A method call on a value.
+    hit("route.enrol(&chat, clones);");
+    hit("let sentinel = proxy.enrol(&chat, repos);");
+    hit("let repo = repo.with_forge_id(id);");
+    // What is not one: a string, a longer name, a comment.
+    for miss in [
+        "const NAME: &str = \"vouch_clone\";",
+        "let x = other.enrolment(1);",
+        "// route.enrol(&chat, clones);",
+    ] {
+        let found = statements(miss).iter().any(|line| {
+            PROVISIONING_ENTRY_POINTS
+                .iter()
+                .any(|e| names_entry(line, e))
+        });
+        assert!(!found, "{miss}");
     }
 }
 

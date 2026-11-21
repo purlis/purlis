@@ -94,10 +94,11 @@ impl AllowedRepo {
         self
     }
 
-    /// The forge-read numeric id (GitHub's repo `id`, GitLab's project id).
+    /// The forge-read numeric id (GitHub's repo `id`, GitLab's project id), as only the forge's
+    /// own read can say it ([`ForgeRepoId`]): a bare number is never taken for it.
     #[must_use]
-    pub fn with_project_id(mut self, id: u64) -> Self {
-        self.project_id = Some(id);
+    pub fn with_forge_id(mut self, id: ForgeRepoId) -> Self {
+        self.project_id = Some(id.0);
         self
     }
 
@@ -149,6 +150,27 @@ impl AllowedRepo {
                 .protected_branches
                 .iter()
                 .any(|p| lower == p.to_ascii_lowercase())
+    }
+}
+
+/// **A repo's numeric id as the forge said it** when the person pressed (ADR 0128 D4): what a
+/// credential is looked up by, never a number a chat, a config file or a caller of the proxy
+/// supplies. Nothing outside this crate builds one from a bare number; the only source is a
+/// [`confirmed::ConfirmedRepo`](crate::forge::confirmed::ConfirmedRepo) the person's press
+/// recorded from the forge's read ([`ConfirmedRepo::forge_id`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ForgeRepoId(u64);
+
+impl ForgeRepoId {
+    pub(crate) fn from_forge_read(id: u64) -> Self {
+        Self(id)
+    }
+
+    /// An id for a test's repo, where no forge was read. Only a test build has it.
+    #[cfg(feature = "fenced")]
+    #[doc(hidden)]
+    pub fn for_a_test(id: u64) -> Self {
+        Self(id)
     }
 }
 

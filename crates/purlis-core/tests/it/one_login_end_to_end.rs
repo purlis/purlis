@@ -100,7 +100,7 @@ fn repo_of(r: &Value) -> AllowedRepo {
         repo = repo.with_node_id(id);
     }
     if let Some(id) = r["project_id"].as_u64() {
-        repo = repo.with_project_id(id);
+        repo = repo.with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(id));
     }
     repo
 }

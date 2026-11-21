@@ -364,6 +364,129 @@ fn source_of(scene: &Scene) -> SignedIn {
     )
 }
 
+/// The account is served to a chat's route now: `Ok` with the everyday token, or the refusal.
+fn served(scene: &Scene) -> bool {
+    source_of(scene)
+        .credential_of("github.com", &scene.account.id, now())
+        .is_ok()
+}
+
+#[test]
+fn starting_the_second_sign_in_marks_the_account_unknown_so_a_flow_that_never_ends_in_keep_serves_nothing()
+ {
+    purlis_core::unsteered!();
+    let scene = scene();
+    assert!(served(&scene));
+    // The press starts the flow; the person cancels, it expires, a poll fails or the app quits:
+    // `keep` is never reached.
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown
+    );
+    assert!(!served(&scene));
+}
+
+#[cfg(unix)]
+#[test]
+fn a_flow_does_not_start_when_the_account_cannot_be_marked_and_nothing_is_served_wrongly() {
+    use std::os::unix::fs::PermissionsExt;
+    purlis_core::unsteered!();
+    let scene = scene();
+    // The accounts file cannot be read, so the record of "not known" cannot be made (the write
+    // re-modes its folder, so an unreadable file is the failure a test can arrange).
+    let dir = accounts::path(scene.home.path());
+    let was = std::fs::metadata(&dir).unwrap().permissions();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let writable = std::fs::File::open(&dir).is_ok();
+    let begun = workflow::begin(&scope(), scene.home.path(), &scene.account);
+    let kept = scene.second_sign_in(SECOND, "repo,read:org,workflow");
+    std::fs::set_permissions(&dir, was).unwrap();
+    if writable {
+        // Running as a user who ignores modes: nothing to prove here.
+        return;
+    }
+    assert!(begun.is_err(), "the flow would have started");
+    assert!(kept.is_err());
+    // Nothing was kept either.
+    assert!(
+        scene
+            .keyring()
+            .get(&accounts::service(&scene.account), "workflow")
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn the_second_tokens_own_check_failing_leaves_the_account_unknown() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    // The forge does not know the second token.
+    assert!(
+        scene
+            .second_sign_in("canaryUNKNOWNsecond", "repo,read:org,workflow")
+            .is_err()
+    );
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown
+    );
+    assert!(!served(&scene));
+}
+
+#[test]
+fn the_everyday_tokens_keyring_read_failing_leaves_the_account_unknown() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .keyring()
+        .delete(&accounts::service(&scene.account), "token")
+        .unwrap();
+    assert!(
+        scene
+            .second_sign_in(SECOND, "repo,read:org,workflow")
+            .is_err()
+    );
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown
+    );
+}
+
+#[test]
+fn a_clean_read_back_after_an_unknown_outcome_records_the_scopes_and_serves_again() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    // First try: the everyday token cannot be read back.
+    scene.tokens.forget(EVERYDAY);
+    assert!(
+        scene
+            .second_sign_in(SECOND, "repo,read:org,workflow")
+            .is_err()
+    );
+    assert!(!served(&scene));
+    // Retry: the read-back works and says no `workflow`.
+    scene.tokens.know(EVERYDAY, "octocat", "repo, read:org");
+    assert!(matches!(
+        scene
+            .second_sign_in(SECOND, "repo,read:org,workflow")
+            .unwrap(),
+        Outcome::Kept
+    ));
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::No
+    );
+    assert!(served(&scene));
+}
+
 #[test]
 fn after_a_fold_the_everyday_token_is_served_to_no_chat_until_a_sign_in_without_workflow() {
     purlis_core::unsteered!();
@@ -438,6 +561,55 @@ fn after_a_fold_the_everyday_token_is_served_to_no_chat_until_a_sign_in_without_
             .unwrap()
             .expose(),
         NARROW
+    );
+}
+
+#[test]
+fn a_sign_in_records_workflow_when_either_the_header_or_the_grant_names_it() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let sign_in_again = |access: &'static str, header: &'static str, grant_scopes: &str| {
+        scene.tokens.know(access, "octocat", header);
+        let keyring = scene.keyring();
+        let reach = scene.tokens.reach();
+        accounts::sign_in_with_grant(
+            &scope(),
+            scene.home.path(),
+            keyring.as_ref(),
+            &reach,
+            Kind::GitHub,
+            "github.com",
+            grant_that_does_not_expire(access, grant_scopes),
+            Method::Device,
+            "Ov23litEn94I5HXrpdsX",
+        )
+        .unwrap();
+        scene.listed()
+    };
+    // The token's own header says `workflow`; the grant says less.
+    let listed = sign_in_again(
+        "canaryHEADERnames1",
+        "repo, read:org, workflow",
+        "repo,read:org",
+    );
+    assert!(accounts::everyday_holds_workflow(&listed));
+    assert_eq!(
+        accounts::workflow_doubt(&listed),
+        accounts::WorkflowDoubt::Holds
+    );
+    // The grant says `workflow`; the header does not.
+    let listed = sign_in_again(
+        "canaryGRANTnames2",
+        "repo, read:org",
+        "repo,read:org,workflow",
+    );
+    assert!(accounts::everyday_holds_workflow(&listed));
+    // Neither does.
+    let listed = sign_in_again("canaryNEITHERnames3", "repo, read:org", "repo,read:org");
+    assert!(!accounts::everyday_holds_workflow(&listed));
+    assert_eq!(
+        accounts::workflow_doubt(&listed),
+        accounts::WorkflowDoubt::No
     );
 }
 

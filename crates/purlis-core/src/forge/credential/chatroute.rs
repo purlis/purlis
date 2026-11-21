@@ -123,8 +123,18 @@ impl ChatRoute {
                     &repo.path,
                     id,
                 )?;
-                if let Admission::Confirmed(repo) = admitted {
-                    found.push(repo);
+                match admitted {
+                    Admission::Confirmed(repo) => found.push(repo),
+                    // A request outside a repo is served only when every repo of the chat on that
+                    // host is served: one that fails is a refusal, never one left out.
+                    _ if wanted.is_none() => {
+                        return Err(format!(
+                            "{} on {} is not confirmed for this chat, so a request outside a repo \
+                             is not served.",
+                            repo.path, repo.host
+                        ));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -147,8 +157,21 @@ impl CredentialSource for ChatRoute {
             return Err(unavailable("no single account is chosen for this"));
         }
         let listed = accounts::listed(&self.config_root).map_err(|why| unavailable(&why))?;
-        let Serving::Account(account) = confirmed::account_for(&self.config_root, first, &listed)
-        else {
+        // Every repo counts, not the first alone: each must be served now by the one account.
+        let mut serving = None;
+        for repo in &repos {
+            match confirmed::account_for(&self.config_root, repo, &listed) {
+                Serving::Account(account)
+                    if serving
+                        .as_ref()
+                        .is_none_or(|a: &accounts::ForgeAccount| a.id == account.id) =>
+                {
+                    serving = Some(account);
+                }
+                _ => return Err(unavailable("the chosen account cannot serve it now")),
+            }
+        }
+        let Some(account) = serving else {
             return Err(unavailable("the chosen account cannot serve it now"));
         };
         let credential = self

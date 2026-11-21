@@ -146,6 +146,36 @@ pub fn for_ci_push(
     Ok(CiPushCredential::Token(held))
 }
 
+/// **Starts the second sign-in's account out as not known to be free of `workflow`**, before any
+/// step that can fail or be abandoned. The second grant may widen the one the everyday token
+/// belongs to, and a flow can end in ways that never reach [`keep`] (cancelled, expired, a poll
+/// that failed, the app quit): from here on the everyday token is served to no chat until a
+/// successful read-back in [`keep`] records what it holds. If the record cannot be written this
+/// fails and the flow must not start.
+pub fn begin(_host: &HostScope, config_root: &Path, account: &ForgeAccount) -> Result<(), String> {
+    if account.kind != Kind::GitHub {
+        return Ok(());
+    }
+    if !scopes_recorded(config_root, account)? {
+        return Ok(());
+    }
+    mark_unknown(config_root, account)
+        .map_err(|why| format!("{why} Nothing was started, so nothing was changed."))
+}
+
+/// Whether the accounts file records scopes for `account` now (what a chat is served by).
+fn scopes_recorded(config_root: &Path, account: &ForgeAccount) -> Result<bool, String> {
+    let file = read(config_root)?;
+    Ok(file
+        .accounts
+        .iter()
+        .filter_map(account_of)
+        .find(|a| a.id == account.id)
+        .ok_or_else(|| "That account is not on this machine any more.".to_string())?
+        .scopes
+        .is_some())
+}
+
 /// **Keeps the second token** a second sign-in `granted` for `account`, on the person's press.
 ///
 /// Refused, with nothing kept, unless: the account is on GitHub, the grant is for the same login
@@ -154,7 +184,7 @@ pub fn for_ci_push(
 /// [`Outcome::Folded`] answers with nothing kept. Otherwise the token is written as its own
 /// keyring item and [`Outcome::Kept`] answers.
 pub fn keep(
-    _host: &HostScope,
+    host: &HostScope,
     config_root: &Path,
     keyring: &dyn Store,
     reach: Reach<'_>,
@@ -168,6 +198,9 @@ pub fn keep(
             account.host
         ));
     }
+    // Whatever the caller did, nothing below can leave the everyday token served on a path that
+    // ends early: the account is not known to be clean until the read-back at the end says so.
+    begin(host, config_root, account)?;
     let second = granted.access.clone();
     crate::applog::keep_out(&second);
     if second.expose_secret().is_empty() {
@@ -219,8 +252,8 @@ pub fn keep(
         Ok(now) => now,
         Err(why) => {
             // GitHub may have folded `workflow` into the everyday token, and it cannot be read:
-            // the token is served to no chat until a read-back succeeds.
-            mark_unknown(config_root, account)?;
+            // the account is already recorded as not known ([`begin`]), so it is served to no
+            // chat until a read-back succeeds.
             return Err(format!(
                 "{} Purlis cannot tell whether the everyday sign-in as {} now allows CI files, so \
                  it gives that sign-in to no chat until it can. Nothing was kept. Try again later.",
@@ -231,7 +264,6 @@ pub fn keep(
     };
     // The second token is dropped here, in memory, on every path that does not write it below.
     let Some(scopes) = &everyday_now.scopes else {
-        mark_unknown(config_root, account)?;
         return Err(format!(
             "{} did not say what purlis's everyday sign-in as {} may do, so purlis cannot tell \
              whether it now allows CI files too. Nothing was kept, and a push that changes a CI \
@@ -245,6 +277,9 @@ pub fn keep(
         return Ok(Outcome::Folded(account));
     }
 
+    // A clean read-back is the only thing that records what the everyday token holds again, so a
+    // retry after an unknown outcome serves it once more.
+    set_scopes(config_root, account, scopes.clone())?;
     keyring
         .set(&service(account), ITEM, second.expose_secret())
         .map_err(|e| unechoed(e.message.to_string(), &second))?;
@@ -253,6 +288,15 @@ pub fn keep(
 
 /// What a sign-in's `account` is told when its scopes are not known.
 pub fn scopes_unknown_said(account: &ForgeAccount) -> String {
+    if matches!(account.method, Method::Pat | Method::Import) {
+        // A pasted token (a fine-grained one never says) has no sign-in to repeat.
+        return format!(
+            "purlis cannot check what the token for {} on {} may do, so it may allow CI files \
+             ({SCOPE}) and purlis does not give it to your chats. Use a token or a sign-in that \
+             says what it may do.",
+            account.login, account.host
+        );
+    }
     format!(
         "{} did not say what purlis's sign-in as {} may do, so it may allow CI files ({SCOPE}) and \
          purlis does not give it to your chats. Sign in again here to check it.",

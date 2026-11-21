@@ -102,6 +102,11 @@ impl Secret {
         Self(zeroize::Zeroizing::new(value))
     }
 
+    /// The value, borrowed: for comparing two credentials, never for logging or storing.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
     pub fn into_inner(mut self) -> String {
         std::mem::take(&mut *self.0)
     }

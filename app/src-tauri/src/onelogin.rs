@@ -346,9 +346,10 @@ pub async fn forge_trust_clone_repo(
     .await
 }
 
-/// The clone at `folder` of `project`: a child of the project, named relative to it. Refused when
-/// `folder` is empty, absolute, holds `..`, or (by a link) leads out of the project, so a press
-/// can never confirm a repo outside the workspace.
+/// The clone at `folder` of `project`: a child of the project, named relative to it, **as the
+/// canonical path that was checked** (so a link swapped in after the check is never followed).
+/// Refused when `folder` is empty, absolute, holds `..`, or (by a link) leads out of the project,
+/// so a press can never confirm a repo outside the workspace.
 fn clone_in_project(project: &std::path::Path, folder: &str) -> Result<std::path::PathBuf, String> {
     use std::path::Component;
     let refused = || "That folder is not inside this project.".to_string();
@@ -366,7 +367,7 @@ fn clone_in_project(project: &std::path::Path, folder: &str) -> Result<std::path
     if real == root || !real.starts_with(&root) {
         return Err(refused());
     }
-    Ok(joined)
+    Ok(real)
 }
 
 /// Confirms `clone`, which the trust list holds an address for, with the account named, or the
@@ -501,7 +502,7 @@ pub struct CiPermissionAnswer {
 #[specta::specta]
 pub async fn forge_ci_permission_start(account_id: String) -> Result<ForgeDeviceCode, String> {
     blocking(move || {
-        host_scope()?;
+        let scope = host_scope()?;
         let root = config_root()?;
         let account = accounts::listed(&root)?
             .into_iter()
@@ -542,6 +543,10 @@ pub async fn forge_ci_permission_start(account_id: String) -> Result<ForgeDevice
                     .to_string(),
             );
         }
+        // The account is recorded as not known to be free of `workflow` before the flow starts:
+        // the flow can end (cancelled, expired, quit) without reaching `keep`, and GitHub may
+        // have widened the everyday grant by then. If this cannot be written, nothing starts.
+        workflow::begin(&scope, &root, &account)?;
         let scopes = workflow::scopes_to_ask(&account);
         let started = device::start_asking(
             &oauth::Https::new(),
@@ -661,7 +666,11 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(project.path().join("repos/app")).unwrap();
         let outside = tempfile::tempdir().unwrap();
-        assert!(clone_in_project(project.path(), "repos/app").is_ok());
+        // What it answers is the canonical path it checked, not the spelling it was given.
+        assert_eq!(
+            clone_in_project(project.path(), "repos/app").unwrap(),
+            project.path().join("repos/app").canonicalize().unwrap()
+        );
         for bad in [
             "",
             ".",

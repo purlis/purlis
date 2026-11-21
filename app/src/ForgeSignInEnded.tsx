@@ -20,6 +20,11 @@ export type SignInTrouble = {
   trouble: "pin-changed" | "renewal-failing" | "everyday-holds-workflow" | "scopes-unknown";
 };
 
+/** Whether `account` is a pasted token or an imported login: no sign-in of purlis's own to repeat. */
+function pasted(account: { method: string }): boolean {
+  return account.method === "token" || account.method === "imported";
+}
+
 /** The event a surface sends this window when it signed an account in or out. */
 export const ACCOUNTS_CHANGED = "purlis:forge-accounts-changed";
 
@@ -156,7 +161,12 @@ export function ForgeSignInEnded() {
           key={`${trouble}:${account.id}`}
           cause={`forge-sign-in-${trouble}:${account.id}`}
           tone="trouble"
-          fixes={[{ label: "Sign in again", onPress: () => setAgain(account.kind) }]}
+          fixes={
+            // A pasted token has no sign-in to repeat: signing in again does not make it checkable.
+            trouble === "scopes-unknown" && pasted(account)
+              ? undefined
+              : [{ label: "Sign in again", onPress: () => setAgain(account.kind) }]
+          }
           onDismiss={() =>
             setTroubles((was) =>
               was.filter((t) => !(t.account === account.id && t.trouble === trouble)),
@@ -165,6 +175,12 @@ export function ForgeSignInEnded() {
         >
           {trouble === "everyday-holds-workflow" ? (
             <WorkflowHeld account={account} />
+          ) : trouble === "scopes-unknown" && pasted(account) ? (
+            <>
+              purlis cannot check what the token for {account.login} on {account.host} may do (a
+              fine-grained token does not say), so it may allow CI files (<code>workflow</code>) and
+              purlis does not give it to chats. Use a token or a sign-in that says what it may do.
+            </>
           ) : trouble === "scopes-unknown" ? (
             <>
               {account.host} did not say what purlis&apos;s sign-in as {account.login} may do, so it

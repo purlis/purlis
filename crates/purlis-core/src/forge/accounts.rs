@@ -1156,8 +1156,21 @@ fn keep(
         ..
     }) = &held
     {
-        // The grant's own word on its scopes, where the forge gave one.
-        checked.scopes = Some(scopes.clone());
+        // The grant's own word on its scopes, where the forge gave one. On GitHub the token's own
+        // `X-OAuth-Scopes` is a second word, and **either naming `workflow` records it** (the
+        // union): a grant that says less than the token holds never hides it from the check that
+        // keeps such a token from a chat's route.
+        checked.scopes = Some(match (kind, checked.scopes.take()) {
+            (Kind::GitHub, Some(mut header)) => {
+                for scope in scopes {
+                    if !header.contains(scope) {
+                        header.push(scope.clone());
+                    }
+                }
+                header
+            }
+            _ => scopes.clone(),
+        });
     }
     if let Some(StepUp { account, more }) = &step_up {
         if account.login != checked.login {

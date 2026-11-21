@@ -201,7 +201,7 @@ fn chat_at(
                 "main",
             )
             .unwrap()
-            .with_project_id(repo_id),
+            .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(repo_id)),
         ],
     );
     route.enrol(&chat, clones.into_iter().map(Path::to_path_buf).collect());
@@ -406,6 +406,191 @@ fn a_chosen_account_that_is_signed_out_is_not_replaced_by_the_other_one() {
         chat.token_sent("api.github.com", HELLO).unwrap_err(),
         Refusal::NoCredential,
         "the personal account is signed in, and does not stand in"
+    );
+}
+
+/// A chat with two repos on github.com: `octocat/hello` (id 1001) first, `acme/app` (id 77)
+/// second, with the clone of each in its workspace.
+fn two_repo_chat(route: &Arc<ChatRoute>, clones: Vec<&Path>) -> Chat {
+    let proxy = ForgeProxy::new(Box::new(Shared(route.clone())), Box::new(NoObjects));
+    let chat = ChatId::new("chat-two");
+    let repo = |path: &str, id: u64| {
+        AllowedRepo::new(
+            purlis_core::forge::proxy::Kind::GitHub,
+            "github.com",
+            443,
+            path,
+            "main",
+        )
+        .unwrap()
+        .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(id))
+    };
+    let sentinel = proxy.enrol(
+        &chat,
+        vec![repo("octocat/hello", 1001), repo("acme/app", 77)],
+    );
+    route.enrol(&chat, clones.into_iter().map(Path::to_path_buf).collect());
+    Chat {
+        proxy,
+        chat,
+        sentinel: sentinel.expose().to_string(),
+    }
+}
+
+impl Chat {
+    /// The chat posts a GraphQL `query` to the host's API.
+    fn graphql(&self, query: &str) -> Result<String, Refusal> {
+        let body = serde_json::json!({ "query": query }).to_string();
+        let head = RequestHead::new("POST", "api.github.com", 443, "/graphql");
+        let headers = vec![
+            (
+                "Authorization".to_string(),
+                format!("Bearer {}", self.sentinel),
+            ),
+            ("Content-Type".to_string(), "application/json".to_string()),
+        ];
+        match self.proxy.handle(
+            &self.chat,
+            &Inbound {
+                head: &head,
+                headers: &headers,
+                body: body.as_bytes(),
+            },
+        ) {
+            Outcome::Forward(forwarded) => Ok(forwarded
+                .headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+                .map(|(_, value)| value.clone())
+                .expect("a credentialed request carries one")),
+            Outcome::Refused(refusal) => Err(refusal),
+        }
+    }
+}
+
+const HELLO_ONLY: &str = r#"{ repository(owner: "octocat", name: "hello") { id } }"#;
+const APP_ONLY: &str = r#"{ repository(owner: "acme", name: "app") { id } }"#;
+const BOTH: &str = r#"{ a: repository(owner: "octocat", name: "hello") { id }
+  b: repository(owner: "acme", name: "app") { id } }"#;
+
+#[test]
+fn a_graphql_document_is_credentialed_for_the_repo_it_names_and_for_all_of_them_or_none() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let route = github(scene.home.path());
+    let hello = tempfile::tempdir().unwrap();
+    let app = tempfile::tempdir().unwrap();
+    confirm(
+        scene.home.path(),
+        hello.path(),
+        "github.com",
+        "octocat/hello",
+        1001,
+        &scene.personal,
+    );
+    confirm(
+        scene.home.path(),
+        app.path(),
+        "github.com",
+        "acme/app",
+        77,
+        &scene.emu,
+    );
+    let chat = two_repo_chat(&route, vec![hello.path(), app.path()]);
+    // The first repo's own document gets the first repo's account; the second's gets the second's
+    // (never the first repo's token, as when the credential was asked for the first repo only).
+    assert_eq!(
+        chat.graphql(HELLO_ONLY).unwrap(),
+        format!("Bearer {PERSONAL}")
+    );
+    assert_eq!(chat.graphql(APP_ONLY).unwrap(), format!("Bearer {EMU}"));
+    // A document naming both, served by two accounts, is served by neither.
+    assert_eq!(chat.graphql(BOTH).unwrap_err(), Refusal::NoCredential);
+    // A document naming only the second repo, once the second is not served, is refused: the
+    // first repo's token does not stand in.
+    let keyring = accounts::keyring_at(scene.home.path());
+    accounts::sign_out(&scope(), scene.home.path(), keyring.as_ref(), &scene.emu.id).unwrap();
+    assert_eq!(chat.graphql(APP_ONLY).unwrap_err(), Refusal::NoCredential);
+    assert_eq!(chat.graphql(BOTH).unwrap_err(), Refusal::NoCredential);
+    assert_eq!(
+        chat.graphql(HELLO_ONLY).unwrap(),
+        format!("Bearer {PERSONAL}")
+    );
+}
+
+#[test]
+fn a_graphql_document_naming_two_repos_of_one_account_is_served_by_that_account() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let route = github(scene.home.path());
+    let hello = tempfile::tempdir().unwrap();
+    let app = tempfile::tempdir().unwrap();
+    for (clone, path, id) in [(&hello, "octocat/hello", 1001), (&app, "acme/app", 77)] {
+        confirm(
+            scene.home.path(),
+            clone.path(),
+            "github.com",
+            path,
+            id,
+            &scene.personal,
+        );
+    }
+    let chat = two_repo_chat(&route, vec![hello.path(), app.path()]);
+    assert_eq!(chat.graphql(BOTH).unwrap(), format!("Bearer {PERSONAL}"));
+}
+
+#[test]
+fn a_request_outside_a_repo_is_refused_when_any_repo_of_the_chat_on_the_host_is_not_served() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    let route = github(scene.home.path());
+    let hello = tempfile::tempdir().unwrap();
+    let app = tempfile::tempdir().unwrap();
+    confirm(
+        scene.home.path(),
+        hello.path(),
+        "github.com",
+        "octocat/hello",
+        1001,
+        &scene.personal,
+    );
+    confirm(
+        scene.home.path(),
+        app.path(),
+        "github.com",
+        "acme/app",
+        77,
+        &scene.personal,
+    );
+    let chat = two_repo_chat(&route, vec![hello.path(), app.path()]);
+    assert_eq!(
+        chat.token_sent("api.github.com", "/user").unwrap(),
+        format!("Bearer {PERSONAL}")
+    );
+    // The second clone's remote moves, so what was confirmed for it no longer serves: the entry
+    // that fails is a refusal for a request outside a repo, not left out.
+    record_for_a_test(scene.home.path(), app.path(), "github.com/other/thing").unwrap();
+    assert_eq!(
+        chat.token_sent("api.github.com", "/user").unwrap_err(),
+        Refusal::NoCredential
+    );
+    // The first repo is still served by name.
+    assert_eq!(
+        chat.token_sent("api.github.com", HELLO).unwrap(),
+        format!("Bearer {PERSONAL}")
+    );
+    // Once the second is confirmed for the same account, it is served.
+    confirm(
+        scene.home.path(),
+        app.path(),
+        "github.com",
+        "acme/app",
+        77,
+        &scene.personal,
+    );
+    assert_eq!(
+        chat.token_sent("api.github.com", "/user").unwrap(),
+        format!("Bearer {PERSONAL}")
     );
 }
 

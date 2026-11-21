@@ -99,6 +99,14 @@ pub struct ConfirmedRepo {
     pub client_id: String,
 }
 
+impl ConfirmedRepo {
+    /// The id the forge gave this repo when it was confirmed, for the proxy's [`AllowedRepo`]
+    /// ([`crate::forge::proxy::AllowedRepo::with_forge_id`]).
+    pub fn forge_id(&self) -> crate::forge::proxy::ForgeRepoId {
+        crate::forge::proxy::ForgeRepoId::from_forge_read(self.repo_id)
+    }
+}
+
 /// Asks the forge, **as the person**, which numeric id a repo has. The window's implementation
 /// calls the forge with the sign-in; a test's answers from a table.
 pub trait RepoLookup {
