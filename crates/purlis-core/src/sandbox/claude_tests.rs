@@ -1073,10 +1073,17 @@ fn a_claude_code_chat_at_the_floor_holds_purlis_socket_names_in_every_case() {
     ] {
         assert!(!held(path), "{path} is held");
     }
-    // Held from the Edit tool too, by the same rules.
-    for rule in ["Edit(//**/hooks.sock)", "Edit(//**/purlis-serve/**)"] {
+    // Held from the Edit tool too, by the same rules. The settings are written with the fewest
+    // rules (#6961, [`claude::fewest`]), so a folder's `/**` rule is not written where the rule on
+    // the folder itself is: it holds what is in the folder too.
+    for rule in ["Edit(//**/hooks.sock)", "Edit(//**/purlis-serve)"] {
         assert!(settings.deny.contains(&rule.to_owned()), "{rule}");
     }
+    assert!(
+        !settings
+            .deny
+            .contains(&"Edit(//**/purlis-serve/**)".to_owned())
+    );
     // Not held below the floor's own write rules at a lower level: the floor alone writes `/`.
     let full = claude::rules(&Compiled {
         level: Level::Full,
