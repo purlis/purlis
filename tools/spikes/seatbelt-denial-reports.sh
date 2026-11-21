@@ -60,20 +60,28 @@ printf "  identical refusals: %d; reports of that one file: %d\n", $n, $seen{rep
 printf "  deny lines on the stream not from this chat's dir: %d (of %d)\n", $stray // 0, $total // 0;
 PL
 
-# The folded-summary judge: the kernel's "N duplicate report(s) for Sandbox: ..." lines for this
-# chat's dir, how many refusals they stand for, and whether they carry the tag.
+# The folded-summary judge: the kernel's "N duplicate report(s) for Sandbox: ..." records for this
+# chat's dir, how many refusals they stand for, and whether they carry the tag. A record is a log
+# line plus its continuation lines: an event message carries its tag on a second physical line
+# (`... <path>\n<tag>`), so the record is joined before the tag is looked for (the stamper stamps
+# every physical line, and a new record starts at a line that begins with a date).
 cat >"$WORK/folded.pl" <<'PL'
 my ($recv, $dir, $tag, $wait) = @ARGV;
-my ($lines, $folded, $tagged, $tagged_n) = (0, 0, 0, 0);
+my @rec;
 open my $r, '<', $recv or die;
 while (<$r>) {
-  next unless /^(\d+\.\d+) (.*)/s; my ($arr, $line) = ($1, $2);
-  next unless $line =~ /duplicate reports? for/ && $line =~ m{\Q$dir\E};
-  my ($n) = $line =~ /(\d+) duplicate reports? for/; $lines++; $folded += $n;
-  if ($line =~ /\Q$tag\E\s*$/) { $tagged++; $tagged_n += $n }
-  print "  folded line: ", substr($line, 0, 300), "\n" if $lines <= 3;
+  next unless /^(\d+\.\d+) (.*)/s; my $text = $2;
+  if ($text =~ /^\d{4}-\d\d-\d\d /) { push @rec, $text } elsif (@rec) { $rec[-1] .= $text }
 }
-printf "  folded summary lines for this chat's dir: %d, standing for %d refusals; carrying the tag at the end: %d (%d refusals); waited %s s after the child ended\n", $lines, $folded, $tagged, $tagged_n, $wait;
+my ($lines, $folded, $tagged, $tagged_n, $first_line, $shown) = (0, 0, 0, 0, 0, 0);
+for my $rec (@rec) {
+  next unless $rec =~ /duplicate reports? for/ && $rec =~ m{\Q$dir\E};
+  my ($n) = $rec =~ /(\d+) duplicate reports? for/; $lines++; $folded += $n;
+  $first_line++ if $rec =~ /\n/;
+  if ($rec =~ /\Q$tag\E\s*\z/) { $tagged++; $tagged_n += $n }
+  if ($shown < 1) { (my $raw = $rec) =~ s/\Q$dir\E/<chat dir>/g; $raw =~ s/\n/\\n\n/g; print "  raw folded record (two physical lines, work dir redacted):\n$raw\n"; $shown++ }
+}
+printf "  folded summary records for this chat's dir: %d (%d with a continuation line), standing for %d refusals; ending with the tag once joined: %d (%d refusals); waited %s s after the child ended\n", $lines, $first_line, $folded, $tagged, $tagged_n, $wait;
 PL
 
 # case NAME MODIFIER PREDICATE-TEMPLATE [load] [wait-seconds after the child ends, default 12]
@@ -115,7 +123,11 @@ case_run() {
     echo "  log show as this user: $(log show --last 3m --style compact --predicate "$pred" 2>&1 | head -c 200 | tr "\n" "|")"
   fi
   perl "$WORK/judge.pl" "$WORK/child.out" "$WORK/recv.out" "$dir" "$N"
-  case "$name" in F_*) perl "$WORK/folded.pl" "$WORK/recv.out" "$dir" "$tag" "$wait_s" ;; esac
+  case "$name" in F_*)
+    perl "$WORK/folded.pl" "$WORK/recv.out" "$dir" "$tag" "$wait_s"
+    echo "  first folded line and the two physical lines after it, as received (dir redacted):"
+    grep -m1 -A2 "duplicate report" "$WORK/recv.out" | sed "s#$dir#<chat dir>#g" | cut -c1-300 ;;
+  esac
 }
 
 for _ in 1 2 3; do case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"'; done
