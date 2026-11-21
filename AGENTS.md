@@ -203,3 +203,12 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   (`locate`, `judge`, `target_of`), read by `purlis-cli`'s `guard::judged_merge` for a process the
   app did not start. `purlis-cli`'s hook tests bind a socket, so they cannot run in the sandbox:
   CI is their first run. Edition 2024 here, but keep `if let` out of match guards.
+- A sandboxed chat's `cargo test` of a hook test needs `CHARTER_PLANE_FENCE=$TMPDIR` (the build is
+  fenced to the machine's temp folder, not the sandbox's). Even then a merge-hook test that expects
+  "no chat" cannot pass in a chat: the process is sandboxed, so it reads as a chat's (CI is its
+  first run). Filter by module path (`policy::`, `secrets::answers`, `start::tests`), not `start::`,
+  which also matches `didnotstart` and `dispatchrestart`; those, `secrets::keyring` and
+  `sandbox::policy` fail inside a dispatched sandboxed chat for environment reasons.
+- The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
+  registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
+  unreadable outside the app.
