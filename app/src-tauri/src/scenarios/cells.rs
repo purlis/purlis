@@ -489,8 +489,20 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
     // step's, the last one's to the end.
     // Whatever ask nobody answered (a client that gave up, a hold that ended) the person now
     // keeps blocked, as every scenario that leaves one does.
-    scenario.keeps_listed_asks_blocked();
-    super::checks::quiesce(&scenario).unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
+    // A block written late lists its ask again after the first press, so it is repeated until
+    // none is left to keep (a few rounds, never for ever).
+    for _ in 0..5 {
+        scenario.keeps_listed_asks_blocked();
+        super::checks::quiesce(&scenario)
+            .unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
+        let asking = scenario.queries().counted().asks;
+        if asking
+            .iter()
+            .all(|ask| ask.options.iter().all(|one| one.id != crate::asking::KEEP))
+        {
+            break;
+        }
+    }
     let events = scenario.events();
     let all = scenario.transcript();
     let ends: Vec<u64> = played
@@ -524,20 +536,29 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         {
             let step = &cell.steps[p.step];
             let number = u32::try_from(p.step + 1).expect("a step number");
+            let as_seen = |e: &purlis_core::eventlog::Event| Seen {
+                seq: e.seq,
+                at_ms: purlis_core::eventlog::written_at_ms(&e.ulid).unwrap_or(0),
+                kind: e.kind.clone(),
+                body: e.body.clone(),
+            };
             let seen: Vec<Seen> = events
                 .iter()
                 .filter(|e| e.seq > p.since && e.seq <= *end)
-                .map(|e| Seen {
-                    seq: e.seq,
-                    at_ms: purlis_core::eventlog::written_at_ms(&e.ulid).unwrap_or(0),
-                    kind: e.kind.clone(),
-                    body: e.body.clone(),
-                })
+                .map(as_seen)
                 .collect();
-            if let (Some(want), Some(seen)) = (step.outcome, p.outcome) {
-                assertions.push(play::outcome_assertion(number, want, seen));
+            // What came after the step: never counted for it, but how long a late event took.
+            let later: Vec<Seen> = events
+                .iter()
+                .filter(|e| e.seq > *end)
+                .map(as_seen)
+                .collect();
+            if let (Some(want), Some(came)) = (step.outcome, p.outcome) {
+                assertions.push(play::outcome_assertion(number, want, came));
             }
-            assertions.extend(play::step_assertions(number, step, &seen, &hosts, &seconds));
+            assertions.extend(play::step_assertions(
+                number, step, &seen, &later, &hosts, &seconds,
+            ));
             for (i, ok) in p.window.iter().enumerate() {
                 assertions.push(Assertion {
                     step: number,
@@ -584,7 +605,25 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
                     })
             })
             .collect();
-        let (verdict, reason) = play::verdict(cell, &run, &assertions, &globals);
+        let (verdict, mut reason) = play::verdict(cell, &run, &assertions, &globals);
+        if verdict == ReportVerdict::Fail {
+            // What each step's window held, so a mark is pinned from the record and not guessed.
+            let seen = played
+                .iter()
+                .zip(&ends)
+                .filter(|(p, _)| p.cell == cell.id)
+                .map(|(p, end)| {
+                    let kinds: Vec<&str> = events
+                        .iter()
+                        .filter(|e| e.seq > p.since && e.seq <= *end)
+                        .map(|e| e.kind.as_str())
+                        .collect();
+                    format!("step {} saw [{}]", p.step + 1, kinds.join(" "))
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            reason = reason.map(|why| format!("{why} | {seen}"));
+        }
         let first = played
             .iter()
             .find(|p| p.cell == cell.id)

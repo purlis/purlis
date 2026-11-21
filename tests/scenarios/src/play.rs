@@ -312,16 +312,19 @@ pub fn malformed_step(
 }
 
 /// How a step's `require` and `forbid` came out against `events`, one [`Assertion`] each, named
-/// `require[i]` and `forbid[i]`. `step_no` is the step's number from 1. The step's words must
-/// have passed [`malformed_step`].
+/// `require[i]` and `forbid[i]`. `step_no` is the step's number from 1. `later` holds the events
+/// written after the step's window, which are never counted for it but say how long a `within`
+/// event took when it came late (a mark pins seconds, never "never"). The step's words must have
+/// passed [`malformed_step`].
 pub fn step_assertions(
     step_no: u32,
     step: &Step,
     events: &[Seen],
+    later: &[Seen],
     hosts: &Hosts,
     seconds: &BTreeMap<&'static str, f64>,
 ) -> Vec<Assertion> {
-    let frame = Frame::of(events);
+    let frame = Frame::of(events, later);
     let one = |name: String, observed: Observed| Assertion {
         step: step_no,
         assertion: name,
@@ -366,6 +369,7 @@ pub fn step_assertions(
 /// A step's events with the marks `before` and `at` are read against.
 struct Frame<'a> {
     events: &'a [Seen],
+    later: &'a [Seen],
     first_post: Option<u64>,
     first_stop: Option<u64>,
     started_ms: Option<u64>,
@@ -373,11 +377,12 @@ struct Frame<'a> {
 }
 
 impl<'a> Frame<'a> {
-    fn of(events: &'a [Seen]) -> Self {
+    fn of(events: &'a [Seen], later: &'a [Seen]) -> Self {
         let first = |pred: &dyn Fn(&Seen) -> bool| events.iter().find(|s| pred(s));
         let pre = first(&|s| s.kind == "hook.pretooluse");
         Frame {
             events,
+            later,
             first_post: first(&|s| s.kind.starts_with("hook.posttooluse")).map(|s| s.seq),
             first_stop: first(&|s| s.kind == "hook.stop").map(|s| s.seq),
             started_ms: pre.map(|s| s.at_ms),
@@ -437,20 +442,23 @@ impl<'a> Frame<'a> {
         if (lo..=hi).contains(&n) {
             return Observed::Pass;
         }
-        // Where only the time failed it, say how long the event took: a mark pins seconds.
-        if e.within.is_some() && n == 0 {
-            let loose = Expect {
-                within: None,
-                ..e.clone()
-            };
-            if let (Some(start), Some(late)) = (
-                self.started_ms,
-                self.matching(&loose, hosts, seconds).first(),
-            ) {
-                return Observed::Fail(serde_json::json!(took(late, start)));
-            }
+        // Where only the time failed it, say how long the event took, even if it came after the
+        // step: a mark pins seconds.
+        if e.within.is_some()
+            && n == 0
+            && let (Some(start), Some(late)) = (self.started_ms, self.first_anywhere(e, hosts))
+        {
+            return Observed::Fail(serde_json::json!(took(late, start)));
         }
         Observed::Fail(n.into())
+    }
+
+    /// The first event of `e`'s kind that holds its fields, in the step or after it.
+    fn first_anywhere(&self, e: &Expect, hosts: &Hosts) -> Option<&Seen> {
+        self.events
+            .iter()
+            .chain(self.later)
+            .find(|s| s.kind == e.kind && e.fields.iter().all(|(k, w)| self.has(s, k, w, hosts)))
     }
 
     fn has(&self, s: &Seen, field: &str, want: &Value, hosts: &Hosts) -> bool {
@@ -713,10 +721,9 @@ mod tests {
         .expect("a file");
         let why = load(dir.path(), &validator).expect_err("an unknown kind");
         assert!(why.0.contains("no.such.kind"), "{why}");
-        assert!(
-            load(&crate::root().join("cells"), &validator).is_ok(),
-            "the repo's cells load"
-        );
+        if let Err(why) = load(&crate::root().join("cells"), &validator) {
+            panic!("the repo's cells do not load: {why}");
+        }
     }
 
     #[test]
@@ -740,11 +747,11 @@ mod tests {
             seen(4, 1300, "hook.posttoolusefailure", json!({})),
             seen(5, 1400, "ask.raised", json!({"ask": "sandbox"})),
         ];
-        let got = step_assertions(1, &s, &log, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
         assert!(got.iter().all(|a| a.observed == Observed::Pass), "{got:#?}");
         // Without `before`, the late duplicate would be a second ask; with it, one.
         let twice = step(json!({"require": [{"kind": "ask.raised", "count": 1}]}));
-        let got = step_assertions(1, &twice, &log, &hosts(), &seconds());
+        let got = step_assertions(1, &twice, &log, &[], &hosts(), &seconds());
         assert_eq!(
             got[0].observed,
             Observed::Fail(2.into()),
@@ -753,7 +760,7 @@ mod tests {
         // A forbid that matched says how many.
         let mut loud = log.to_vec();
         loud.push(seen(6, 1500, "ask.answered", json!({})));
-        let got = step_assertions(1, &s, &loud, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &loud, &[], &hosts(), &seconds());
         assert_eq!(
             got[2],
             Assertion {
@@ -780,7 +787,7 @@ mod tests {
             seen(4, 46_000, "hook.stop", json!({})),
             seen(5, 76_000, "stop.block", json!({"args": "d2"})),
         ];
-        let got = step_assertions(1, &s, &log, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
         // 35 s after the call, not within 2 * 1 + 1 = 3 s: the seconds are the observation.
         assert_eq!(got[0].observed, Observed::Fail(json!(35.0)));
         assert_eq!(
@@ -807,7 +814,7 @@ mod tests {
             seen(3, 2, "stop.block", json!({})),
         ];
         assert!(
-            step_assertions(1, &s, &log, &hosts(), &seconds())
+            step_assertions(1, &s, &log, &[], &hosts(), &seconds())
                 .iter()
                 .all(|a| a.observed == Observed::Pass)
         );
@@ -815,8 +822,22 @@ mod tests {
             seen(1, 0, "stop.block", json!({})),
             seen(2, 1, "ask.raised", json!({})),
         ];
-        let got = step_assertions(1, &s, &backwards, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &backwards, &[], &hosts(), &seconds());
         assert_eq!(got[1].observed, Observed::Fail(0.into()));
+    }
+
+    #[test]
+    fn a_within_event_written_after_the_step_says_how_long_it_took() {
+        let s = step(json!({"require": [{"kind": "ask.raised", "within": "group+1"}]}));
+        let log = [seen(1, 10_000, "hook.pretooluse", json!({"args": "d1"}))];
+        // The ask came with the next prompt, 61 s after the call: not in this step, but its
+        // seconds are what a mark pins.
+        let later = [seen(9, 71_000, "ask.raised", json!({}))];
+        let got = step_assertions(1, &s, &log, &later, &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Fail(json!(61.0)));
+        // Never written at all: a count of none, which no range can pin.
+        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Fail(0.into()));
     }
 
     fn escape_cell(marked: bool) -> Cell {

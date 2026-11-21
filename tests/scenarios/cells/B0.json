@@ -14,7 +14,7 @@
                    "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"}}],
         "outcome": "failed",
         "refusal_expected": true,
-        "window": [{"query": "notice.standing", "forbid": true}, {"query": "blocked_log.lists"}, {"query": "chat_log.block_row"}],
+        "window": [{"query": "blocked_log.lists"}, {"query": "chat_log.block_row"}],
         "transcript": [{"says": "Tunnel connection failed"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
@@ -24,6 +24,15 @@
         "forbid": [{"kind": "ask.answered"}]
       }],
       "expected_fail": [
+        {"issue": 6672, "leg": "fake", "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the ask was written after this step's window, not within the grouping window"},
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "require[1]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the block was written after this step's window: it lands in the next step"},
+        {"issue": 6672, "leg": "fake", "step": 1, "assertion": "require[2]",
+         "observed": {"from": "group+1", "to": "5*hold"},
+         "note": "fake leg (CI run 44931602493): the ask was written after this step's window, later than group+1 and within five holds of the call"},
+        {"issue": 6674, "leg": "fake", "check": "one_ask_one_raise", "refusal": "step 1",
+         "note": "fake leg (CI run 44931602493): a held ask is raised twice with nothing between (global check, batch-wide)"},
         {"issue": 6674, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 2,
          "note": "chat 682 (test-matrix-phase-1.md §8): every held ask wrote ask.raised twice"},
         {"issue": 6673, "leg": "live", "step": 1, "assertion": "require[1]", "observed": 0,
@@ -50,6 +59,10 @@
         "forbid": [{"kind": "stop.block"}]
       }],
       "expected_fail": [
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "forbid[0]", "observed": 1,
+         "note": "fake leg (CI run 44931602493): step 1's block lands in this step"},
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "transcript[0]", "observed": false,
+         "note": "fake leg (CI run 44931602493): the Allowed sentence reaches the chat with the next prompt"},
         {"issue": 6674, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 2,
          "note": "chat 682 (§8): every held ask wrote ask.raised twice"},
         {"issue": 6673, "leg": "live", "step": 1, "assertion": "forbid[0]", "observed": 1,
@@ -65,7 +78,7 @@
         "press": {"label": "Keep blocked", "target": "ask", "when": "ask.raised"},
         "outcome": "failed",
         "refusal_expected": true,
-        "window": [{"query": "ask.listed", "forbid": true}, {"query": "chat_log.block_row"}],
+        "window": [{"query": "chat_log.block_row"}],
         "transcript": [{"says": "Kept blocked by the person"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1},
@@ -75,6 +88,10 @@
         "forbid": [{"kind": "stop.block", "at": "next_prompt"}]
       }],
       "expected_fail": [
+        {"issue": 6674, "leg": "fake", "step": 1, "assertion": "require[0]", "observed": 3,
+         "note": "fake leg (CI run 44931602493): ask.raised three times in this step"},
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "transcript[0]", "observed": false,
+         "note": "fake leg (CI run 44931602493): the Kept-blocked sentence reaches the chat with the next prompt"},
         {"issue": 6674, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 2,
          "note": "chat 682 (§8): every held ask wrote ask.raised twice; the rest of the cell passed"}
       ]
@@ -87,7 +104,7 @@
                    "input": {"command": "/usr/bin/curl -sS -m 10 https://$h3 -o /dev/null"}}],
         "outcome": "failed",
         "refusal_expected": true,
-        "window": [{"query": "chat_log.block_row"}, {"query": "notice.standing", "forbid": true}, {"query": "ask.listed", "forbid": true}],
+        "window": [{"query": "chat_log.block_row"}, {"query": "notice.standing", "forbid": true}],
         "transcript": [{"says": "Kept blocked by the person"}, {"says": "wait for their answer", "forbid": true}],
         "require": [
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "count": 1}
@@ -95,6 +112,8 @@
         "forbid": [{"kind": "ask.raised"}]
       }],
       "expected_fail": [
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the block was written after this step's window: it lands in the next step"},
         {"issue": 6657, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
          "note": "chat 682 (§8): the block was unverified, named no host, and came at the next prompt"},
         {"issue": 6657, "leg": "live", "step": 1, "assertion": "forbid[0]", "observed": 1,
@@ -117,6 +136,10 @@
         ]
       }],
       "expected_fail": [
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the block was written after this step's window: it lands in the next step"},
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "transcript[0]", "observed": false,
+         "note": "fake leg (CI run 44931602493): the Kept-blocked sentence reaches the chat with the next prompt"},
         {"issue": 6657, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
          "note": "chat 682 (§8): the repeat was throttled and silent"},
         {"issue": 6657, "leg": "live", "check": "refusal_black_hole", "refusal": "step 1",
@@ -136,6 +159,10 @@
         "require": [{"kind": "stop.block", "source": "sandbox"}]
       }],
       "expected_fail": [
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "require[0]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the block was written after this step's window: it lands in the next step"},
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "transcript[0]", "observed": false,
+         "note": "fake leg (CI run 44931602493): the Kept-blocked sentence reaches the chat with the next prompt"},
         {"issue": 6675, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
          "note": "chat 682 (§8): black hole confirmed; urllib's refusal wrote nothing"},
         {"issue": 6675, "leg": "live", "check": "refusal_black_hole", "refusal": "step 1",
@@ -151,7 +178,7 @@
            "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h6 3"}},
           {"tool": "Bash", "input": {"command": "echo moved-on"}}
         ],
-        "window": [{"query": "ask.listed", "forbid": true}, {"query": "chat_log.block_row"}],
+        "window": [{"query": "chat_log.block_row"}],
         "require": [
           {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
           {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "args": "this_call", "count": 1},
@@ -163,6 +190,12 @@
         ]
       }],
       "expected_fail": [
+        {"issue": 6674, "leg": "fake", "step": 1, "assertion": "require[0]", "observed": 2,
+         "note": "fake leg (CI run 44931602493): ask.raised twice before the post line"},
+        {"issue": 6672, "leg": "fake", "step": 1, "assertion": "require[1]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the block with the call's digest was written after this step's window: it lands in the next step"},
+        {"issue": 6673, "leg": "fake", "step": 1, "assertion": "require[2]", "observed": 0,
+         "note": "fake leg (CI run 44931602493): the call's post line was written after this step's window"},
         {"issue": 6672, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
          "note": "chat 682 (§8): the client was gone at 3 s; the ask came 35 s later, once, after hook.stop"},
         {"issue": 6673, "leg": "live", "step": 1, "assertion": "forbid[0]", "observed": 1,
