@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 use super::super::policy::Locks;
 use super::{
-    FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, keyed, loads_code,
-    refused_name, refused_program, resolve_beside, shim,
+    FIRST_ON_PATH, Handed, Ready, Tool, caution, first_on_path, general_purpose, guard_forges,
+    keyed, loads_code, refused_name, refused_program, resolve_beside, shim,
 };
 
 const HERE: &str = "sandbox.personas.devops";
@@ -1311,6 +1311,7 @@ fn a_program_nowhere_is_absent_and_one_only_where_a_chat_writes_is_not() {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn on_a_runner_the_tools_name_says_why_and_fails_as_a_missing_program() {
     let base = outside_temp("refusing");
@@ -1613,6 +1614,201 @@ fn a_chat_that_only_refuses_writes_its_shims_apart_from_another_chat_s() {
     let _ = std::fs::remove_dir_all(system);
 }
 
+/// **An undeclared `glab` in a chat under the credentials class says the flow and fails** (#1349
+/// part 2): its shim is written apart from another chat's, names the command that sets a token up
+/// on the project's one GitLab host and the persona, exits 1, and never runs the program.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let root = outside_temp("guard-root");
+    let system = outside_temp("guard-system");
+    let ran = system.join("ran");
+    let real = system.join("glab");
+    std::fs::write(&real, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+    program(&system, "kubectl");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    // Another chat of devops, whose kubectl is ready.
+    let another = resolve(
+        &root,
+        "devops",
+        &[kubectl()],
+        &Locks::none(),
+        std::slice::from_ref(&system),
+        &[],
+    )
+    .expect("a tool")
+    .write(purlis)
+    .expect("written")
+    .expect("its shim");
+
+    let guarded = guard_forges(
+        None,
+        &root,
+        "devops",
+        &["gitlab.example.com".to_owned()],
+        &[],
+    )
+    .expect("a guard");
+    assert!(guarded.only_refuses, "{guarded:?}");
+    let written = guarded.write(purlis).expect("written").expect("a shim");
+    assert!(
+        !written.bin.join("kubectl").exists(),
+        "another chat's shim is not first here"
+    );
+    assert!(another.bin.join("kubectl").exists());
+    let out = crate::forklock::output(
+        std::process::Command::new(written.bin.join("glab"))
+            .args(["mr", "list"])
+            .env(
+                "PATH",
+                format!("{}:{}", written.bin.display(), system.display()),
+            ),
+    )
+    .expect("the shim runs");
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let said = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        said.contains("purlis gitlab access gitlab.example.com --persona devops"),
+        "{said}"
+    );
+    assert!(
+        said.contains("never uses the person's own glab login"),
+        "{said}"
+    );
+    assert!(!ran.exists(), "the program ran");
+    // Two GitLab hosts: the sentence names none of them for the person, who picks.
+    let two = guard_forges(
+        None,
+        &root,
+        "devops",
+        &["a.example".to_owned(), "b.example".to_owned()],
+        &[],
+    )
+    .expect("a guard");
+    assert!(
+        two.guards[0].1.contains("<your GitLab host>"),
+        "{:?}",
+        two.guards
+    );
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
+/// A persona's declared `glab` has its own shim, which a guard never replaces; with another tool
+/// ready, the guard sits in the same folder and a start without it takes it away again.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_has_the_class() {
+    let root = outside_temp("declared-root");
+    let system = outside_temp("declared-system");
+    program(&system, "kubectl");
+    program(&system, "glab");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    let mut glab = Tool::one("glab", "forge", "GITLAB_TOKEN", Handed::Env, "token");
+    glab.host = Some("gitlab.example.com".to_owned());
+    let resolved = |tools: &[Tool]| {
+        resolve(
+            &root,
+            "devops",
+            tools,
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+        )
+    };
+    // Declared: a guard is not added.
+    let declared =
+        guard_forges(resolved(&[glab.clone()]), &root, "devops", &[], &[]).expect("tools");
+    assert!(declared.guards.is_empty(), "{:?}", declared.guards);
+    // Declared by the persona but not ready (waiting for the Allow, or no program found): the
+    // guard says to allow it, and never the flow that declares it.
+    let waiting = guard_forges(
+        resolved(&[kubectl()]),
+        &root,
+        "devops",
+        &[],
+        &["glab".to_owned()],
+    )
+    .expect("tools");
+    assert_eq!(waiting.guards.len(), 1, "{:?}", waiting.guards);
+    assert!(
+        waiting.guards[0]
+            .1
+            .contains("Allow it in Settings › GitLab access"),
+        "{:?}",
+        waiting.guards
+    );
+    assert!(
+        !waiting.guards[0].1.contains("purlis gitlab access"),
+        "{:?}",
+        waiting.guards
+    );
+    // Not declared, with kubectl ready: the guard sits beside kubectl's shim, in a folder of this
+    // chat's own.
+    let with_guard =
+        guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).expect("tools");
+    assert!(!with_guard.only_refuses);
+    let written = with_guard.write(purlis).unwrap().unwrap();
+    assert!(written.bin.join("glab").exists() && written.bin.join("kubectl").exists());
+    // A start of the same persona without a guard, as where the class is off, writes the
+    // persona's own folder and never takes this chat's guard away.
+    let plain = resolved(&[kubectl()]).unwrap();
+    assert_ne!(plain.folder, with_guard.folder);
+    let unguarded = plain.write(purlis).unwrap().unwrap();
+    assert!(!unguarded.bin.join("glab").exists());
+    assert!(written.bin.join("glab").exists());
+    // And the other way: this chat starting again leaves the plain chat's folder alone.
+    guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[])
+        .unwrap()
+        .write(purlis)
+        .unwrap();
+    assert!(unguarded.bin.join("kubectl").exists());
+    assert!(!unguarded.bin.join("glab").exists());
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
+/// **Two chats of one persona with the same guard and different ready tools get different
+/// folders** (#7230): the chat without the Allow never finds the other's shim first on its
+/// `PATH`, and its start never deletes the live chat's shim.
+#[test]
+fn chats_with_the_same_guard_and_different_ready_tools_have_folders_of_their_own() {
+    let root = outside_temp("ready-root");
+    let system = outside_temp("ready-system");
+    program(&system, "kubectl");
+    let purlis = Path::new("/usr/local/bin/purlis");
+    let resolved = |tools: &[Tool]| {
+        resolve(
+            &root,
+            "devops",
+            tools,
+            &Locks::none(),
+            std::slice::from_ref(&system),
+            &[],
+        )
+    };
+    let with_allow = guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).unwrap();
+    let without = guard_forges(None, &root, "devops", &[], &[]).unwrap();
+    assert_eq!(with_allow.guards, without.guards, "the same guard sentence");
+    assert_ne!(with_allow.folder, without.folder);
+    let live = with_allow.write(purlis).unwrap().unwrap();
+    let other = without.write(purlis).unwrap().unwrap();
+    assert!(live.bin.join("kubectl").exists() && live.bin.join("glab").exists());
+    assert!(!other.bin.join("kubectl").exists(), "not first on its PATH");
+    // Its start again, and a start of the first, take nothing from the other.
+    without.write(purlis).unwrap();
+    assert!(live.bin.join("kubectl").exists());
+    with_allow.write(purlis).unwrap();
+    assert!(live.bin.join("kubectl").exists() && live.bin.join("glab").exists());
+    // The same ready set is the same folder.
+    let again = guard_forges(resolved(&[kubectl()]), &root, "devops", &[], &[]).unwrap();
+    assert_eq!(again.folder, with_allow.folder);
+    let _ = std::fs::remove_dir_all(root);
+    let _ = std::fs::remove_dir_all(system);
+}
+
 #[test]
 fn the_forms_a_run_grant_refuses_by_name_leave_curl_and_the_usual_tools_offered() {
     for name in [
@@ -1708,4 +1904,16 @@ fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d
         &bin.join("rcjob"),
         &lib.join("upstart-job")
     ));
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_guarded_glab_says_to_sign_in_and_names_no_token_flow() {
+    let said = crate::sandbox::tools::undeclared_glab_said("dev", Some("gitlab.com"));
+    assert!(said.contains("Settings › Forges"), "{said}");
+    assert!(!said.contains("gitlab access"), "{said}");
+    assert_eq!(
+        crate::sandbox::tools::declared_glab_not_running_said("dev"),
+        said
+    );
 }

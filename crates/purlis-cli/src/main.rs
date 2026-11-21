@@ -44,6 +44,7 @@ mod extcmd;
 mod extensions;
 mod gitask;
 mod githook;
+mod gitlab;
 mod gradelink;
 mod guard;
 mod handoff;
@@ -384,6 +385,11 @@ enum Command {
     /// Read/write secrets in a vault; values stay out of the model.
     #[command(subcommand)]
     Secret(secret::SecretCommand),
+
+    /// GitLab access for the project's chats: a token in a persona's vault and the `glab` tool
+    /// that hands it on, where the person's own login is held back.
+    #[command(subcommand)]
+    Gitlab(gitlab::GitlabCommand),
 
     /// Manage secret vaults (provider + config + persona).
     #[command(subcommand)]
@@ -3927,6 +3933,7 @@ fn run(command: Command) -> Result<u8, clierror::CliError> {
         | Command::Workspace(WorkspaceCommand::Autosave)
         | Command::GitPolicy { .. }
         | Command::Secret(_)
+        | Command::Gitlab(_)
         | Command::Plugin(_)
         | Command::Profile(
             ProfileCommand::Create { .. }
@@ -5512,6 +5519,11 @@ fn main() -> ExitCode {
     if let Some(code) = purlis_core::files::serve_if_asked() {
         std::process::exit(code);
     }
+    // Started by a chat's git as its credential helper (ADR 0128 D3c): answer with the chat's
+    // sentinel and exit, before anything else of the command runs.
+    if let Some(code) = purlis_core::forgewire::serve_sentinel_if_asked() {
+        std::process::exit(code);
+    }
     // Started by a chat's ssh as its route's `ProxyCommand` (#3536): carry one connection
     // through the chat's SOCKS port and exit. Nothing else of the command runs.
     if let Some(code) = purlis_core::sandbox::sshproxy::proxy_if_asked() {
@@ -6114,6 +6126,7 @@ fn main() -> ExitCode {
     let command = match cli.command {
         Command::Secret(c) => return with_here(|here| secret::secret(here, c, graft)),
         Command::Vault(c) => return with_here(|here| secret::vault(here, c)),
+        Command::Gitlab(c) => return with_here(|here| gitlab::run(here, c)),
         Command::Persona(memory::PersonaCommand::Secret(c)) => {
             return with_here(|here| secret::persona_secret(here, c, graft));
         }

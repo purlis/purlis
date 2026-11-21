@@ -85,6 +85,7 @@ pub mod fill;
 pub mod host;
 pub mod login;
 pub mod mint;
+pub mod replaced;
 pub mod repo;
 
 /// The key in a persona's table that holds its tools.
@@ -815,6 +816,13 @@ pub fn keyed(
             ));
             continue;
         }
+        // The person's sign-in replaces both old ways of handing a chat a forge token (ADR 0128,
+        // "Migration"): the line keeps parsing, and the tool is left out with what to do.
+        #[cfg(feature = "forge-wiring")]
+        if let Some(kind) = replaced::kind_named(name, tool) {
+            fault(replaced::sentence(kind).to_owned());
+            continue;
+        }
         // Its `args` (#3421), set on the tool once it is read whole, below.
         match tool.get(args::KEY) {
             None => {}
@@ -1228,6 +1236,11 @@ pub struct Resolved {
     pub unallowed: Vec<String>,
     /// On a runner, each tool of [`Resolved::absent`] and what its name says in the chat (#4354).
     pub refusing: Vec<(String, String)>,
+    /// **A forge program no tool of this chat runs, under the class that holds the person's own
+    /// login back** (#1349): each with the sentence its shim answers with, and exit 1, so a chat
+    /// that runs it is told which flow sets it up and the program is never run bare
+    /// ([`guard_forges`]).
+    pub guards: Vec<(String, String)>,
     /// Nothing is allowed this chat, and it only says what is absent (#4373). Its shims go in a
     /// folder of their own, named by what they say ([`refusals_folder`]): the persona's folder
     /// holds the shims of another chat's Allow, which this chat is never to find first on its
@@ -1280,7 +1293,13 @@ pub fn neither_allowed_nor_in_the_image(persona: &str, name: &str, image: Option
 /// **The folder the shims of a chat that only refuses go in** (#4373), beside the persona's
 /// `folder`: named by the digest of what they say, so it holds those shims and nothing else, and
 /// two such chats that say the same share one.
-fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[String]) -> PathBuf {
+fn refusals_folder(
+    folder: &Path,
+    refusing: &[(String, String)],
+    unallowed: &[String],
+    guards: &[(String, String)],
+    ready: &[Ready],
+) -> PathBuf {
     use sha2::Digest as _;
     let mut digest = sha2::Sha256::new();
     for (name, said) in refusing {
@@ -1289,9 +1308,36 @@ fn refusals_folder(folder: &Path, refusing: &[(String, String)], unallowed: &[St
         digest.update(said.as_bytes());
         digest.update([0, u8::from(unallowed.contains(name)), 0]);
     }
+    // A guard is one chat's own (#1349): what it says is in the name, so a chat whose class is
+    // off, which has none, never finds or deletes this chat's. Nothing is added with no guard,
+    // so a folder named before guards existed keeps its name.
+    for (name, said) in guards {
+        digest.update(b"guard\0");
+        digest.update(name.as_bytes());
+        digest.update([0]);
+        digest.update(said.as_bytes());
+        digest.update([0]);
+    }
+    // The folder also holds the ready tools' shims, and where Allow is per chat (a runner's,
+    // `from_desktop`) two chats of one persona with the same guard have different ready sets:
+    // the set is in the name, so neither finds the other's shim first on its `PATH` (#4373) nor
+    // deletes it on a restart. Nothing is added with none ready, so such a folder keeps its name.
+    let mut names: Vec<&str> = ready.iter().map(|one| one.tool.name.as_str()).collect();
+    names.sort_unstable();
+    for name in names {
+        digest.update(b"ready\0");
+        digest.update(name.as_bytes());
+        digest.update([0]);
+    }
     let digest = digest.finalize();
+    // TODO(#7230): a `guarded/<digest>` folder is never removed once no chat uses it; nothing
+    // here knows which chats are live, so a sweep belongs to whatever ends a chat's sandbox.
     folder
-        .join("refusing")
+        .join(if guards.is_empty() {
+            "refusing"
+        } else {
+            "guarded"
+        })
         .join(crate::runnerlink::hex_of(&digest[..16]))
 }
 
@@ -1447,6 +1493,7 @@ pub(crate) fn for_chat_on(
             absent: Vec::new(),
             unallowed: Vec::new(),
             refusing: Vec::new(),
+            guards: Vec::new(),
             only_refuses: true,
         });
         into.absent.extend(unallowed.absent.iter().cloned());
@@ -1455,8 +1502,13 @@ pub(crate) fn for_chat_on(
     if let Some(resolved) = &mut resolved {
         resolved.refuse_what_is_absent(image);
         if resolved.only_refuses {
-            resolved.folder =
-                refusals_folder(&resolved.folder, &resolved.refusing, &resolved.unallowed);
+            resolved.folder = refusals_folder(
+                &resolved.folder,
+                &resolved.refusing,
+                &resolved.unallowed,
+                &[],
+                &resolved.ready,
+            );
         }
     }
     resolved
@@ -1521,10 +1573,30 @@ pub(crate) fn resolve_beside(
             continue;
         }
         match found {
-            Some((_, program)) => ready.push(Ready {
-                tool: tool.clone(),
-                program,
-            }),
+            Some((_, program)) => {
+                // A forge CLI takes no value from a vault once the sign-in replaces it (ADR
+                // 0128), whatever the line names its variable: judged by the program as found.
+                #[cfg(feature = "forge-wiring")]
+                {
+                    let real = program.canonicalize().ok();
+                    let names: Vec<&Path> = [Path::new(&tool.name), program.as_path()]
+                        .into_iter()
+                        .chain(real.as_deref())
+                        .collect();
+                    if forge_of(&names).is_some() {
+                        left.push(format!(
+                            "{persona}'s tool {} {}",
+                            tool.name,
+                            replaced::FORGE_PROGRAM_SAID
+                        ));
+                        continue;
+                    }
+                }
+                ready.push(Ready {
+                    tool: tool.clone(),
+                    program,
+                });
+            }
             None => {
                 // Nowhere at all, as distinct from only where a chat could have put it.
                 if found_in(wanted, search, &[]).is_none() {
@@ -1546,6 +1618,7 @@ pub(crate) fn resolve_beside(
         absent,
         unallowed: Vec::new(),
         refusing: Vec::new(),
+        guards: Vec::new(),
         only_refuses: false,
     })
 }
@@ -2520,7 +2593,12 @@ pub fn allows(ready: &Ready, args: &[String]) -> Result<(), String> {
         .into_iter()
         .chain(real.as_deref())
         .collect();
-    if let Some(why) = args::refused_forge(&names, args) {
+    let host = ready
+        .tool
+        .host
+        .as_deref()
+        .unwrap_or_else(|| host::default_of(forge_of(&names).unwrap_or(false)));
+    if let Some(why) = args::refused_forge(&names, host, args) {
         return Err(why);
     }
     // The forge host its run reaches (#3869).
@@ -2607,7 +2685,8 @@ fn forge_of(names: &[&Path]) -> Option<bool> {
 }
 
 /// **The variables a forge tool's run starts with** (#3869): its host, from its declaration
-/// or the forge's own, as the program reads it ([`host::env`]); none for any other program.
+/// or the forge's own, as the program reads it ([`host::env`]), and for glab its telemetry and
+/// update check turned off; none for any other program.
 pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
     let real = ready.program.canonicalize().ok();
     let names: Vec<&Path> = [Path::new(&ready.tool.name), ready.program.as_path()]
@@ -2617,7 +2696,15 @@ pub fn forge_env(ready: &Ready) -> Vec<(String, String)> {
     forge_of(&names)
         .map(|glab| {
             let host = ready.tool.host.as_deref().unwrap_or(host::default_of(glab));
-            vec![host::env(glab, host)]
+            let mut env = vec![host::env(glab, host)];
+            if glab {
+                // glab posts usage events, with the token, to the host's `usage_data` route
+                // unless told not to, and looks for a newer release: the token goes only to
+                // the calls the chat makes (#1349).
+                env.push(("GLAB_SEND_TELEMETRY".to_owned(), "false".to_owned()));
+                env.push(("GLAB_CHECK_UPDATE".to_owned(), "false".to_owned()));
+            }
+            env
         })
         .unwrap_or_default()
 }
@@ -2894,6 +2981,18 @@ pub fn refusing_shim(persona: &str, name: &str, said: &str, passes_on: Option<&P
     )
 }
 
+/// **The flow that gives a chat a GitLab token** (#1349), as a refusal names it: the command that
+/// does it from a terminal and the window's tab. `host` is the project's GitLab host where it has
+/// one, else a placeholder the person fills.
+pub fn gitlab_flow(persona: &str, host: Option<&str>) -> String {
+    format!(
+        "run `purlis gitlab access {host} --persona {persona}` (or Settings › GitLab access in the \
+         purlis window), which keeps a GitLab token in a vault and declares glab for {persona}, \
+         then restart the chat",
+        host = host.unwrap_or("<your GitLab host>"),
+    )
+}
+
 /// **What a minting tool's shim says when there is no token to run it with** (#1349): a chat that
 /// holds the credentials class cannot read the person's own login, and a tool declared with a
 /// `mint` line never runs without the token it mints (#7133), so it says why and the way on.
@@ -2909,15 +3008,159 @@ pub fn no_minted_token_said(name: &str, mints: bool) -> String {
         "The app could not be reached from this shell to mint one: run it from the chat's own \
          terminal, set up Agent identity in Settings › Agent identity if it is not, or choose a \
          sandbox template where the credentials class is off."
+            .to_owned()
     } else {
         "The app could not be reached from this shell to hand on the token the tool is declared \
          with: run it from the chat's own terminal (not under `env -i`), or choose a sandbox \
          template where the credentials class is off."
+            .to_owned()
     };
     format!(
         "{name} has no token in this chat, and a chat never uses the person's own {name} login. \
          {way}"
     )
+}
+
+/// **What the shim of an undeclared `glab` says** (#1349): this chat's persona declares no `glab`
+/// tool that is allowed here, and the chat never uses the person's own login, so it names the flow
+/// that sets one up and the Allow that follows it.
+pub fn undeclared_glab_said(persona: &str, host: Option<&str>) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = (persona, host);
+        return SIGN_IN_SAID.to_owned();
+    }
+    format!(
+        "glab has no token in this chat, and a chat never uses the person's own glab login. To \
+         give it one, {}, and allow it ({ALLOW_IS_ASKED}). Or choose a sandbox template where \
+         the credentials class is off.",
+        gitlab_flow(persona, host)
+    )
+}
+
+/// **What the shim of a `glab` the persona declares but that runs nothing here says** (#1349): it
+/// is not allowed yet (or no program was found), and the chat never falls back to the person's
+/// own login.
+pub fn declared_glab_not_running_said(persona: &str) -> String {
+    if cfg!(feature = "forge-wiring") {
+        let _ = persona;
+        return SIGN_IN_SAID.to_owned();
+    }
+    format!(
+        "glab is {persona}'s tool but is not running in this chat, and a chat never uses the \
+         person's own glab login. Allow it in Settings › GitLab access ({ALLOW_IS_ASKED}), make \
+         sure glab is installed, then restart the chat."
+    )
+}
+
+/// What a guarded `glab` says once the sign-in replaces the tokens a chat was handed (ADR 0128):
+/// the way on is the person's own sign-in, which a chat acts through, never a token of its own.
+const SIGN_IN_SAID: &str = "glab has no token in this chat, and a chat never uses the person's own \
+     glab login. Chats act through your sign-in: sign in to the host under Settings › Forges, \
+     then restart the chat.";
+
+/// **The forge programs a chat under the credentials class is guarded from running bare**
+/// (#1349): [`guard_forges`] writes a shim for each that no tool of the chat declares.
+pub const GUARDED_FORGES: [&str; 1] = ["glab"];
+
+/// **`resolved`, with a shim that says the way on for each of [`GUARDED_FORGES`] that no tool of
+/// this chat runs** (#1349): where the sandbox holds the person's own credentials back
+/// ([`crate::sandbox::Class::Credentials`]) the program would only fail on that refusal, so its
+/// name in the chat names the flow instead and exits 1. `gitlab_hosts` are the project's GitLab
+/// hosts, one of which the sentence names where there is exactly one. A tool the persona declares
+/// has its own shim, which is never replaced; a name the persona declares that is not ready (not
+/// allowed here yet, or not found) is guarded with a sentence that says to allow it. The shims go
+/// in a folder of this chat's own, named by what they say ([`refusals_folder`]).
+pub fn guard_forges(
+    resolved: Option<Resolved>,
+    root: &Path,
+    persona: &str,
+    gitlab_hosts: &[String],
+    declared: &[String],
+) -> Option<Resolved> {
+    let own = |name: &str| {
+        resolved.as_ref().is_some_and(|one| {
+            one.ready.iter().any(|ready| ready.tool.name == name)
+                || one.refusing.iter().any(|(tool, _)| tool == name)
+        })
+    };
+    let guards: Vec<(String, String)> = GUARDED_FORGES
+        .iter()
+        .filter(|name| !own(name))
+        .map(|name| {
+            let host = match gitlab_hosts {
+                [only] => Some(only.as_str()),
+                _ => None,
+            };
+            let said = if declared.iter().any(|tool| tool == name) {
+                declared_glab_not_running_said(persona)
+            } else {
+                undeclared_glab_said(persona, host)
+            };
+            ((*name).to_owned(), said)
+        })
+        .collect();
+    if guards.is_empty() {
+        return resolved;
+    }
+    let mut into = resolved.unwrap_or_else(|| Resolved {
+        persona: persona.to_owned(),
+        folder: folder(root, persona),
+        ready: Vec::new(),
+        left: Vec::new(),
+        absent: Vec::new(),
+        unallowed: Vec::new(),
+        refusing: Vec::new(),
+        guards: Vec::new(),
+        only_refuses: true,
+    });
+    into.guards = guards;
+    // The guard is this chat's alone: its shims go in a folder named by what they say, never in
+    // the persona's, which a chat of the same persona without a guard writes and cleans.
+    into.folder = refusals_folder(
+        &folder(root, persona),
+        &into.refusing,
+        &into.unallowed,
+        &into.guards,
+        &into.ready,
+    );
+    Some(into)
+}
+
+/// The shim of a guarded forge program ([`guard_forges`]): the sentence, and exit 1. It never
+/// runs the program, whatever is handed to it.
+pub fn guard_shim(persona: &str, name: &str, said: &str) -> String {
+    format!(
+        "#!/bin/sh\n# Written by purlis for a chat of {persona} (#1349). `{name}` has no token in \
+         this chat\n# and never falls back to the person's own login. Edits here are overwritten.\n\
+         echo {said} >&2\nexit 1\n",
+        said = quoted(&format!("purlis: {said}")),
+    )
+}
+
+/// **The forge routes the tools of a chat give it** (#1349): for each tool whose program is `gh`
+/// or `glab` (or that mints, which is a GitHub App's token), whether it is glab's and the host it
+/// reaches ([`host::default_of`] where it names none).
+pub fn forge_routes(ready: &[Ready]) -> Vec<(bool, String)> {
+    ready
+        .iter()
+        .filter_map(|one| {
+            let real = one.program.canonicalize().ok();
+            let names: Vec<&Path> = [Path::new(&one.tool.name), one.program.as_path()]
+                .into_iter()
+                .chain(real.as_deref())
+                .collect();
+            let glab = match forge_of(&names) {
+                Some(glab) => glab,
+                None if one.tool.mint.is_some() => false,
+                None => return None,
+            };
+            let host = one.tool.host.clone();
+            Some((
+                glab,
+                host.unwrap_or_else(|| host::default_of(glab).to_owned()),
+            ))
+        })
+        .collect()
 }
 
 /// The forge programs whose own login a chat never falls back to (ADR 0067 §5 class 6): each
@@ -3100,12 +3343,13 @@ impl Resolved {
                 .iter()
                 .map(|one| &one.tool.name)
                 .chain(self.refusing.iter().map(|(tool, _)| tool))
+                .chain(self.guards.iter().map(|(tool, _)| tool))
                 .any(|tool| std::ffi::OsStr::new(tool) == name);
             if !current {
                 std::fs::remove_file(entry.path()).map_err(refused(&entry.path()))?;
             }
         }
-        if self.ready.is_empty() && self.refusing.is_empty() {
+        if self.ready.is_empty() && self.refusing.is_empty() && self.guards.is_empty() {
             return Ok(None);
         }
         let put = |path: &Path, text: &str, mode: u32| -> std::io::Result<()> {
@@ -3135,6 +3379,13 @@ impl Resolved {
                     said,
                     self.unallowed.contains(name).then_some(bin.as_path()),
                 ),
+                0o700,
+            )?;
+        }
+        for (name, said) in &self.guards {
+            put(
+                &bin.join(name),
+                &guard_shim(&self.persona, name, said),
                 0o700,
             )?;
         }
@@ -3221,6 +3472,7 @@ mod fill_tests;
 #[cfg(test)]
 mod host_tests;
 #[cfg(test)]
+#[cfg(not(feature = "forge-wiring"))]
 mod mint_tests;
 #[cfg(test)]
 mod repo_tests;

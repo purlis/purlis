@@ -169,3 +169,10 @@ pub fn vouch_clone(
 pub fn trusted(config_root: &Path, clone: &Path) -> bool {
     super::read_push_remotes(config_root).contains_key(&crate::sandbox::local::clone_key(clone))
 }
+
+/// The remote recorded for `clone` when the person trusted it (`<host>/<owner>/<repo>`), or `None`
+/// when it has none. The trust list's own address, which a confirmed repo must still agree with
+/// ([`crate::forge::confirmed::serves`]).
+pub(crate) fn recorded_remote(config_root: &Path, clone: &Path) -> Option<String> {
+    super::read_push_remotes(config_root).remove(&crate::sandbox::local::clone_key(clone))
+}

@@ -165,6 +165,12 @@ pub struct SandboxState {
     /// allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
     #[specta(optional)]
     pub expects: Option<ProjectExpects>,
+    /// **Tool lines the person's sign-in replaces** (ADR 0128, "Migration"), with the one-login
+    /// train's `forge-wiring` feature on: the project's `mint = "github-app"` and vault forge
+    /// token lines, which still parse and run nothing. The window says it once, until the lines
+    /// change. `null` where the project has none, and always without the feature.
+    #[specta(optional)]
+    pub forge_replaced: Option<ForgeReplaced>,
     /// **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
     /// "off"`, where it came from as far as purlis verified it, and how the person on this
     /// machine answered it. `null` where the project does not turn the sandbox off in a commit.
@@ -265,6 +271,24 @@ pub struct ProjectExpects {
     /// Whether the person is still to be asked: something is declared that they have neither
     /// allowed nor said "Not now" to on this machine.
     pub asked: bool,
+}
+
+/// **What the window says once about a project's old forge token lines**
+/// ([`sandbox::tools::replaced::Told`]): its text, and a cause key that moves only when the
+/// lines do, so a dismissal stands until they change.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ForgeReplaced {
+    pub cause: String,
+    pub text: String,
+}
+
+impl From<sandbox::tools::replaced::Told> for ForgeReplaced {
+    fn from(told: sandbox::tools::replaced::Told) -> Self {
+        Self {
+            cause: told.cause,
+            text: told.text,
+        }
+    }
 }
 
 /// One local socket or system service a project expects ([`sandbox::services::Awaited`]).
@@ -629,6 +653,7 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
             CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
         }),
         expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
+        forge_replaced: sandbox::tools::replaced::told(root).map(Into::into),
         team_off: TeamOffState::of(sandbox::team::team_off(root)),
         level_held: sandbox::team::allowed_levels(root).why,
         yours: yours_of(root, &locks),
@@ -1405,6 +1430,9 @@ fn filed(
 /// How a Run grant is named in the Granted list's ids.
 const RUN_GRANT: &str = "run-grant";
 
+/// How a pool login opt-in is named in the Granted list's ids.
+const POOL_LOGIN: &str = "pool-login";
+
 /// What a grant names, as the window sends it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, specta::Type)]
 #[serde(rename_all = "kebab-case")]
@@ -1441,6 +1469,10 @@ pub enum GrantWhat {
     /// chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
     /// memory only.
     RunGrant,
+    /// A persona's browser logins on a pool's runner (#7190): the opt-in the person gave once,
+    /// kept on this machine across a restart and bound to the pool's definition and image. Given
+    /// from its own Ask (`answer_pool_login`), never from a block's Allow.
+    PoolLogin,
 }
 
 impl GrantWhat {
@@ -1467,6 +1499,7 @@ impl GrantWhat {
             Self::Browser => sandbox::local::BROWSER,
             Self::BrowserSite => sandbox::local::BROWSER_SITE,
             Self::RunGrant => RUN_GRANT,
+            Self::PoolLogin => POOL_LOGIN,
         }
     }
 
@@ -1483,6 +1516,7 @@ impl GrantWhat {
             Self::Browser,
             Self::BrowserSite,
             Self::RunGrant,
+            Self::PoolLogin,
         ]
         .into_iter()
         .find(|what| what.word() == word)
@@ -1735,6 +1769,13 @@ pub(crate) fn judged(
         );
     }
     let what = match what {
+        GrantWhat::PoolLogin => {
+            return refused(
+                "purlis allows a browser login on a pool from the ask it raises, not from a \
+                 block's."
+                    .to_owned(),
+            );
+        }
         GrantWhat::RunGrant => {
             return refused(
                 "purlis allows a program with a vault's keys from the ask it raises, not from a \
@@ -2601,6 +2642,83 @@ fn run_grant_target(bound: &purlis_core::secrets::ask::run::Bound) -> String {
     )
 }
 
+/// The opt-in a Granted list's `id` names, where it names one: the persona, the login by its
+/// identity and the pool ([`pool_login_id`]).
+fn pool_login_of(id: &str) -> Option<(&str, &str, &str)> {
+    match id.split(SEP).collect::<Vec<_>>().as_slice() {
+        ["machine", POOL_LOGIN, persona, login, pool] => Some((persona, login, pool)),
+        _ => None,
+    }
+}
+
+/// What Remove on the Granted list is sent by for a pool login opt-in.
+fn pool_login_id(one: &purlis_core::poollogins::Granted) -> String {
+    format!(
+        "machine{SEP}{POOL_LOGIN}{SEP}{}{SEP}{}{SEP}{}",
+        one.persona, one.login, one.pool
+    )
+}
+
+/// **The opt-ins kept for browser logins on a pool's runner** (#7190), as the Granted list shows
+/// them: this machine's alone, each with the persona it is for.
+fn pool_login_rows(browsers: &crate::chatbrowsers::ChatBrowsers) -> Vec<SandboxGrant> {
+    browsers
+        .pool_login_grants()
+        .into_iter()
+        .map(|one| SandboxGrant {
+            id: pool_login_id(&one),
+            what: GrantWhat::PoolLogin,
+            // The login as its persona declared it, never its identity hash.
+            target: format!("{} on {}", one.name, one.pool),
+            persona: Some(one.persona),
+            level: GrantLevel::Machine,
+            by: None,
+            at: None,
+            chat: None,
+            locked: None,
+            waiting: None,
+            for_no_persona: false,
+            expected: false,
+            cautions: None,
+        })
+        .collect()
+}
+
+/// **Takes back the pool login opt-in** of `persona`'s login `login` on `pool` (#7190): checked
+/// to be there, **audited first** as every grant's removal is (`trust.sandbox.revoke`, an audit
+/// that cannot be written takes nothing), then taken out; the next login there asks. Refused
+/// where it is no longer there.
+fn revoke_pool_login(
+    browsers: &crate::chatbrowsers::ChatBrowsers,
+    persona: &str,
+    login: &str,
+    pool: &str,
+    audit: Audit<'_>,
+) -> Result<(), String> {
+    let gone = || "purlis did not remove it: it is no longer there.".to_owned();
+    let Some(one) = browsers
+        .pool_login_grants()
+        .into_iter()
+        .find(|one| one.persona == persona && one.login == login && one.pool == pool)
+    else {
+        return Err(gone());
+    };
+    audit(
+        None,
+        &sandbox::grant::Audited {
+            granted: false,
+            what: POOL_LOGIN,
+            target: &format!("{persona}: {} on {pool}", one.name),
+            level: sandbox::grant::Level::Machine,
+        },
+    )?;
+    if browsers.remove_pool_login_grant(persona, login, pool)? {
+        Ok(())
+    } else {
+        Err(gone())
+    }
+}
+
 /// The number of the Run grant a Granted list's `id` names, where it names one.
 fn run_grant_of(id: &str) -> Option<u32> {
     let parts: Vec<&str> = id.split(SEP).collect();
@@ -2640,6 +2758,7 @@ pub(crate) fn all_grants_of(held: &crate::planes::Held) -> Vec<SandboxGrant> {
             }
         })
         .collect();
+    out.extend(pool_login_rows(held.browsers()));
     out.extend(grants_of(held.root(), held.chats(), held.browsers()));
     out
 }
@@ -2940,6 +3059,7 @@ fn grants_of(
             GrantWhat::Vault
             | GrantWhat::Browser
             | GrantWhat::BrowserSite
+            | GrantWhat::PoolLogin
             | GrantWhat::RunGrant => one.locked.take(),
             // Only hosts a chat would reach are listed for a persona (#1362).
             GrantWhat::PersonaHosts => None,
@@ -3036,6 +3156,7 @@ fn revoke(
         | GrantWhat::PersonaHosts
         | GrantWhat::Browser
         | GrantWhat::BrowserSite
+        | GrantWhat::PoolLogin
         | GrantWhat::RunGrant => return Err(gone()),
         GrantWhat::Host => What::Host(sandbox::hosts::Host::parse(target).map_err(|_| gone())?),
         GrantWhat::Write => What::Write(std::path::PathBuf::from(target)),
@@ -3291,6 +3412,9 @@ pub(crate) fn revoke_granted(
 ) -> Result<(), String> {
     let root = held.root();
     let audit = held.audit_then_record(network);
+    if let Some((persona, login, pool)) = pool_login_of(id) {
+        return revoke_pool_login(held.browsers(), persona, login, pool, &audit);
+    }
     if let Some(number) = run_grant_of(id) {
         return revoke_run_grant(held, number);
     }

@@ -241,6 +241,18 @@ pub(crate) fn finish(
             .filter_map(|chat| chat.identity.id.clone())
             .collect();
         crate::dispatched::only_these_came_back(held, &back);
+        // And a chat purlis no longer has any record of keeps no browser answer (#7190): not
+        // one that merely closed, which may be resumed, and never another window's live chat.
+        let open_here = |id: &str| held.chats().id_is_open(id);
+        match crate::chatbrowsers::chats_that_exist(held.root(), &back, &open_here) {
+            Some(exists) => held.browsers().prune_answers(
+                &exists,
+                crate::chatbrowsers::answers_spared_since(held.root()),
+            ),
+            None => tracing::warn!(
+                "purlis: a chat record did not read, so no kept browser answer was dropped"
+            ),
+        }
         // And a chat that did not come back waits on no Secret ask kept for it (#5079).
         let numbers: Vec<u32> = launch
             .back

@@ -15,6 +15,7 @@ fn bound(pool: &str, definition: &str, image: &str) -> Bound {
         runner_image: image.into(),
         pod: String::new(),
         engine: "this machine's Docker (/var/run/docker.sock)".into(),
+        marked: false,
     }
 }
 
@@ -30,7 +31,7 @@ fn nobody_is_opted_in_until_the_person_says() {
 #[test]
 fn an_opt_in_holds_for_its_personas_login_on_its_pool_as_it_was() {
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
 
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
@@ -56,7 +57,7 @@ fn an_opt_in_holds_for_its_personas_login_on_its_pool_as_it_was() {
 #[test]
 fn a_changed_image_definition_or_runner_asks_again() {
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
     let paired_again = Bound {
         runner: "01JB0OTHER00000000000000000".into(),
         runner_key: "cd".repeat(32),
@@ -79,9 +80,9 @@ fn a_changed_image_definition_or_runner_asks_again() {
 #[test]
 fn a_pools_answers_are_forgotten_with_its_mark() {
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "id-shop", bound("builds", "d1", "i1"));
-    opt_ins.allow("steward", "id-shop", bound("tests", "d1", "i1"));
-    opt_ins.forget_pool("builds");
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("tests", "d1", "i1"));
+    opt_ins.forget_pool("builds").unwrap();
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
         Standing::Unasked
@@ -95,7 +96,9 @@ fn a_pools_answers_are_forgotten_with_its_mark() {
 #[test]
 fn kept_off_stands_until_the_pool_changes() {
     let opt_ins = OptIns::default();
-    opt_ins.keep_off("steward", "id-shop", bound("builds", "d1", "i1"));
+    opt_ins
+        .keep_off("steward", "id-shop", "shop", bound("builds", "d1", "i1"))
+        .unwrap();
 
     assert_eq!(
         opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
@@ -492,7 +495,7 @@ fn a_pool_on_another_machine_pinned_again_is_another_bound() {
     assert_eq!(one.runner, two.runner);
     assert_ne!(one.engine, two.engine);
     let opt_ins = OptIns::default();
-    opt_ins.allow("steward", "forge", one);
+    opt_ins.allow("steward", "forge", "shop", one);
     assert_eq!(
         opt_ins.standing("steward", "forge", &two),
         Standing::Changed
@@ -621,4 +624,938 @@ fn a_local_pool_on_an_engine_elsewhere_is_refused_though_a_pool_on_another_machi
             "{host}: {sent:?}"
         );
     }
+}
+
+// An opt-in that survives a restart (#7190 item 2).
+
+fn after_a_restart(config: &Path) -> OptIns {
+    OptIns::stored_in(config)
+}
+
+#[test]
+fn an_opt_in_survives_a_restart_on_this_machine() {
+    let config = tempfile::tempdir().unwrap();
+    OptIns::stored_in(config.path()).allow(
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
+
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn every_binding_of_a_kept_opt_in_asks_again_when_it_changes() {
+    let config = tempfile::tempdir().unwrap();
+    let then = bound("builds", "d1", "i1");
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", "shop", then.clone());
+    let restarted = after_a_restart(config.path());
+
+    let changed: [(&str, Bound); 7] = [
+        (
+            "the pool's definition",
+            Bound {
+                definition: "d2".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the pool's image",
+            Bound {
+                image: "i2".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the runner's device",
+            Bound {
+                runner: "01JB0OTHERRUNNER00000000000".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the runner's pinned key",
+            Bound {
+                runner_key: "cd".repeat(32),
+                ..then.clone()
+            },
+        ),
+        (
+            "the runner's image",
+            Bound {
+                runner_image: "i9".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the engine, which is the pin with the person's mark",
+            Bound {
+                engine: "ssh://other, host key 99".into(),
+                ..then.clone()
+            },
+        ),
+        (
+            "the cluster pod",
+            Bound {
+                pod: "uid-2".into(),
+                ..then.clone()
+            },
+        ),
+    ];
+    for (what, now) in changed {
+        assert_eq!(
+            restarted.standing("steward", "id-shop", &now),
+            Standing::Changed,
+            "{what} changed: ask again"
+        );
+    }
+    // The persona, the login and the pool are the key: another is asked apart.
+    assert_eq!(
+        restarted.standing("reviewer", "id-shop", &then),
+        Standing::Unasked
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-bank", &then),
+        Standing::Unasked
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Unasked
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &then),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn taking_back_the_mark_or_forgetting_the_pool_takes_the_kept_opt_in_away() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("tests", "d1", "i1"));
+
+    opt_ins.forget_pool("builds").unwrap();
+
+    let restarted = after_a_restart(config.path());
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn the_granted_list_shows_each_opt_in_and_remove_takes_it_away_for_good() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+
+    assert_eq!(
+        after_a_restart(config.path()).granted(),
+        [Granted {
+            persona: "steward".into(),
+            login: "id-shop".into(),
+            name: "shop".into(),
+            pool: "builds".into()
+        }]
+    );
+    assert!(opt_ins.remove("steward", "id-shop", "builds").unwrap());
+    assert!(
+        !opt_ins.remove("steward", "id-shop", "builds").unwrap(),
+        "once"
+    );
+
+    let restarted = after_a_restart(config.path());
+    assert!(restarted.granted().is_empty());
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "the next login asks"
+    );
+    assert!(
+        !config.path().join(IN_CONFIG).exists(),
+        "nothing left to keep"
+    );
+}
+
+#[test]
+fn keeping_a_login_off_is_for_this_run_and_it_supersedes_a_kept_opt_in() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+
+    opt_ins
+        .keep_off("steward", "id-shop", "shop", bound("builds", "d1", "i1"))
+        .unwrap();
+
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::KeptOff
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "a refusal is not kept, and the opt-in it replaced is gone: the person is asked"
+    );
+}
+
+#[test]
+fn the_kept_file_is_this_machines_private_and_holds_no_value() {
+    let config = tempfile::tempdir().unwrap();
+    OptIns::stored_in(config.path()).allow(
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
+
+    let file = config.path().join(IN_CONFIG);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    let text = std::fs::read_to_string(&file).unwrap();
+    for field in ["persona", "login", "pool", "definition", "image", "engine"] {
+        assert!(text.contains(field), "{field} is bound: {text}");
+    }
+    for never in ["password", "secret", "token", "value"] {
+        assert!(!text.to_lowercase().contains(never), "{never} in {text}");
+    }
+    assert!(
+        !config.path().join("plane").exists() && file.starts_with(config.path()),
+        "this machine's config folder, never a plane"
+    );
+}
+
+#[test]
+fn a_file_that_does_not_read_asks_again_and_a_link_is_never_followed() {
+    let config = tempfile::tempdir().unwrap();
+    std::fs::write(config.path().join(IN_CONFIG), "not json").unwrap();
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+
+    #[cfg(unix)]
+    {
+        let elsewhere = tempfile::tempdir().unwrap();
+        OptIns::stored_in(elsewhere.path()).allow(
+            "steward",
+            "id-shop",
+            "shop",
+            bound("builds", "d1", "i1"),
+        );
+        let link = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(
+            elsewhere.path().join(IN_CONFIG),
+            link.path().join(IN_CONFIG),
+        )
+        .unwrap();
+        assert_eq!(
+            after_a_restart(link.path()).standing(
+                "steward",
+                "id-shop",
+                &bound("builds", "d1", "i1")
+            ),
+            Standing::Unasked
+        );
+    }
+}
+
+#[test]
+fn windows_writing_at_once_lose_none_of_each_others_opt_ins() {
+    let config = tempfile::tempdir().unwrap();
+    std::thread::scope(|scope| {
+        for n in 0..16 {
+            let config = config.path();
+            scope.spawn(move || {
+                // Each its own holder over the one file, as two windows are.
+                OptIns::stored_in(config).allow(
+                    "steward",
+                    &format!("id-{n}"),
+                    "shop",
+                    bound("builds", "d1", "i1"),
+                );
+            });
+        }
+    });
+
+    let restarted = after_a_restart(config.path());
+    for n in 0..16 {
+        assert_eq!(
+            restarted.standing("steward", &format!("id-{n}"), &bound("builds", "d1", "i1")),
+            Standing::Allowed,
+            "id-{n} was dropped by another writer"
+        );
+    }
+    let left: Vec<_> = std::fs::read_dir(config.path())
+        .unwrap()
+        .flatten()
+        .filter(|one| crate::rewrite::temp_of(&one.file_name().to_string_lossy()).is_some())
+        .collect();
+    assert!(left.is_empty(), "a temp file was left: {left:?}");
+}
+
+#[test]
+fn a_store_another_process_holds_is_never_written_unlocked() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-first", "shop", bound("builds", "d1", "i1"));
+    let before = std::fs::read(config.path().join(IN_CONFIG)).unwrap();
+    let other = crate::filelock::beside(
+        &config.path().join(IN_CONFIG),
+        std::time::Duration::from_secs(1),
+        "the test",
+    )
+    .unwrap();
+
+    let refused = opt_ins.update(std::time::Duration::from_millis(60), |_| true);
+
+    assert_eq!(refused.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+    assert_eq!(
+        std::fs::read(config.path().join(IN_CONFIG)).unwrap(),
+        before,
+        "nothing was written"
+    );
+    drop(other);
+}
+
+#[test]
+fn a_remove_the_store_could_not_take_is_answered_and_the_opt_in_no_longer_applies() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    let other = crate::filelock::beside(
+        &config.path().join(IN_CONFIG),
+        std::time::Duration::from_secs(1),
+        "the test",
+    )
+    .unwrap();
+
+    let busy = opt_ins.remove_within(
+        std::time::Duration::from_millis(60),
+        "steward",
+        "id-shop",
+        "builds",
+    );
+
+    let busy = busy.unwrap_err();
+
+    assert!(
+        !busy.lasting,
+        "the lock was not given: this run alone holds it, and says so"
+    );
+    drop(other);
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "and the opt-in no longer applies in this run"
+    );
+}
+
+// A removal the store could not take is answered, and the opt-in no longer applies (#7190).
+
+fn held_by_another_process(config: &Path) -> crate::filelock::Held {
+    crate::filelock::beside(
+        &config.join(IN_CONFIG),
+        std::time::Duration::from_secs(1),
+        "the test",
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_forgotten_pool_whose_store_was_busy_is_answered_and_its_opt_in_no_longer_applies() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    opt_ins.allow("steward", "id-shop", "shop", bound("tests", "d1", "i1"));
+    let other = held_by_another_process(config.path());
+
+    let busy = opt_ins.forget_pool_within(std::time::Duration::from_millis(60), "builds");
+
+    assert!(
+        !busy
+            .expect_err("the failure is answered, not swallowed")
+            .lasting,
+        "and it holds for this run only"
+    );
+    drop(other);
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "it no longer applies"
+    );
+    assert!(
+        opt_ins.granted().iter().all(|one| one.pool != "builds"),
+        "and the Granted list does not show it"
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("tests", "d1", "i1")),
+        Standing::Allowed,
+        "another pool's opt-in is untouched"
+    );
+}
+
+#[test]
+fn an_opt_in_given_again_after_a_failed_removal_applies() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    let other = held_by_another_process(config.path());
+    opt_ins
+        .forget_pool_within(std::time::Duration::from_millis(60), "builds")
+        .unwrap_err();
+    drop(other);
+
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Allowed,
+        "a new yes is a new opt-in, which the old removal does not name"
+    );
+}
+
+#[test]
+fn keeping_a_login_off_where_the_store_was_busy_is_answered_and_the_old_opt_in_does_not_return() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "id-shop", "shop", bound("builds", "d1", "i1"));
+    let other = held_by_another_process(config.path());
+
+    let busy = opt_ins.keep_off_within(
+        std::time::Duration::from_millis(60),
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
+
+    assert!(
+        !busy.unwrap_err().lasting,
+        "this run alone holds the removal"
+    );
+    drop(other);
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::KeptOff,
+        "the refusal stands for this run"
+    );
+    assert!(
+        opt_ins.granted().is_empty(),
+        "and the opt-in it replaced does not apply"
+    );
+}
+
+#[test]
+fn the_granted_list_shows_the_declared_name_and_names_the_identity_to_remove_by() {
+    let config = tempfile::tempdir().unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    opt_ins.allow("steward", "3f9c1d2e7a", "shop", bound("builds", "d1", "i1"));
+
+    let granted = after_a_restart(config.path()).granted();
+
+    assert_eq!(granted.len(), 1);
+    assert_eq!(granted[0].name, "shop", "what the person reads");
+    assert_eq!(granted[0].login, "3f9c1d2e7a", "what Remove names it by");
+}
+
+// The revoked list fails closed (#7190, the review of 0310d3c74c).
+
+fn revoked_file(config: &Path) -> std::path::PathBuf {
+    config.join(REVOKED_IN_CONFIG)
+}
+
+/// One kept opt-in, and the config folder it is kept in.
+fn one_kept_opt_in() -> tempfile::TempDir {
+    let config = tempfile::tempdir().unwrap();
+    OptIns::stored_in(config.path()).allow(
+        "steward",
+        "id-shop",
+        "shop",
+        bound("builds", "d1", "i1"),
+    );
+    config
+}
+
+fn nothing_applies(config: &Path) {
+    let restarted = after_a_restart(config);
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "a revoked list that cannot be read keeps every kept opt-in from applying"
+    );
+    assert!(restarted.granted().is_empty(), "and none is listed");
+}
+
+#[test]
+fn a_full_revoked_list_applies_no_kept_opt_in() {
+    let config = one_kept_opt_in();
+    let line = format!("{}\n", "A".repeat(26));
+    let fill = line.repeat(usize::try_from(MOST_REVOKED_BYTES).unwrap() / line.len());
+    std::fs::write(revoked_file(config.path()), fill).unwrap();
+
+    nothing_applies(config.path());
+}
+
+#[test]
+fn a_revoked_list_cut_short_applies_no_kept_opt_in() {
+    let config = one_kept_opt_in();
+    // A line with no end: an append that was cut off.
+    std::fs::write(revoked_file(config.path()), "01JB0ABC\n01JB0AB").unwrap();
+
+    nothing_applies(config.path());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_revoked_list_that_is_a_link_applies_no_kept_opt_in() {
+    let config = one_kept_opt_in();
+    let elsewhere = tempfile::tempdir().unwrap();
+    std::fs::write(elsewhere.path().join("list"), "").unwrap();
+    std::os::unix::fs::symlink(elsewhere.path().join("list"), revoked_file(config.path())).unwrap();
+
+    nothing_applies(config.path());
+}
+
+#[test]
+fn a_revoked_list_that_is_not_text_applies_no_kept_opt_in() {
+    let config = one_kept_opt_in();
+    std::fs::write(revoked_file(config.path()), [0xff, 0xfe, b'\n']).unwrap();
+
+    nothing_applies(config.path());
+}
+
+#[test]
+fn a_revoked_list_that_cannot_be_read_applies_no_kept_opt_in() {
+    let config = one_kept_opt_in();
+    // A folder in the file's place.
+    std::fs::create_dir(revoked_file(config.path())).unwrap();
+
+    nothing_applies(config.path());
+}
+
+#[test]
+fn a_revoked_list_that_reads_leaves_the_other_opt_ins_alone() {
+    let config = one_kept_opt_in();
+    std::fs::write(revoked_file(config.path()), "01JB0UNRELATED000000000000\n").unwrap();
+
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Allowed
+    );
+}
+
+fn nonce_of_the_kept_opt_in(config: &Path) -> String {
+    let stored: Vec<Stored> =
+        serde_json::from_str(&std::fs::read_to_string(config.join(IN_CONFIG)).unwrap()).unwrap();
+    stored[0].nonce.clone()
+}
+
+#[test]
+fn a_batch_the_list_has_no_room_for_is_refused_whole_and_says_it_is_not_lasting() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    let size = usize::try_from(MOST_REVOKED_BYTES).unwrap() - 5;
+    std::fs::write(revoked_file(config.path()), "\n".repeat(size)).unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+
+    let lasting = opt_ins.revoke_within(WAIT, vec![nonce]);
+
+    assert!(!lasting || nothing_applies_after(config.path()));
+    assert_eq!(
+        std::fs::metadata(revoked_file(config.path()))
+            .unwrap()
+            .len(),
+        size as u64,
+        "nothing of the batch was written"
+    );
+    // This run holds it all the same, and a restart reads a full list as one that holds nothing.
+    assert_eq!(
+        opt_ins.standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked
+    );
+    nothing_applies(config.path());
+}
+
+fn nothing_applies_after(config: &Path) -> bool {
+    after_a_restart(config).granted().is_empty()
+}
+
+#[test]
+fn a_removal_that_could_not_be_written_down_says_it_holds_for_this_run_only() {
+    let config = one_kept_opt_in();
+    // A list that reads (it is empty) and cannot be written to: no room for an append.
+    std::fs::write(revoked_file(config.path()), "").unwrap();
+    std::fs::set_permissions(
+        revoked_file(config.path()),
+        std::os::unix::fs::PermissionsExt::from_mode(0o400),
+    )
+    .unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    assert!(
+        !opt_ins.revoke_within(WAIT, vec!["01JB0X".to_owned()]),
+        "nothing could be written, and nothing fails closed"
+    );
+}
+
+#[test]
+fn a_removal_a_busy_store_could_not_take_says_whether_it_lasts() {
+    let config = one_kept_opt_in();
+    let opt_ins = OptIns::stored_in(config.path());
+    let other = held_by_another_process(config.path());
+
+    let busy = opt_ins
+        .forget_pool_within(std::time::Duration::from_millis(60), "builds")
+        .unwrap_err();
+
+    assert!(
+        !busy.lasting,
+        "the lock was not given, so nothing was written down: this run alone holds it"
+    );
+    drop(other);
+    assert!(
+        !revoked_file(config.path()).exists(),
+        "and nothing was appended unlocked"
+    );
+}
+
+#[test]
+fn a_removal_whose_list_cannot_be_written_but_fails_closed_lasts() {
+    let config = one_kept_opt_in();
+    let elsewhere = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(elsewhere.path().join("list"), revoked_file(config.path())).unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+    let other = held_by_another_process(config.path());
+
+    let busy = opt_ins
+        .forget_pool_within(std::time::Duration::from_millis(60), "builds")
+        .unwrap_err();
+
+    drop(other);
+    #[cfg(unix)]
+    assert!(
+        busy.lasting,
+        "a list that is a link holds nothing across a restart, so the removal does too"
+    );
+    #[cfg(not(unix))]
+    let _ = busy;
+}
+
+#[test]
+fn rewriting_the_store_drops_the_nonces_of_entries_that_are_gone() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    let opt_ins = OptIns::stored_in(config.path());
+    assert!(opt_ins.revoke_within(WAIT, vec![nonce.clone()]));
+    assert!(
+        std::fs::read_to_string(revoked_file(config.path()))
+            .unwrap()
+            .contains(&nonce)
+    );
+
+    // The next write the store takes drops the revoked entry, and its nonce with it.
+    opt_ins.allow("steward", "id-bank", "bank", bound("tests", "d1", "i1"));
+
+    let left = std::fs::read_to_string(revoked_file(config.path())).unwrap_or_default();
+    assert!(!left.contains(&nonce), "the list is compacted: {left:?}");
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-bank", &bound("tests", "d1", "i1")),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn a_store_rewritten_after_an_unreadable_list_starts_the_list_afresh() {
+    let config = one_kept_opt_in();
+    std::fs::write(revoked_file(config.path()), "01JB0AB").unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+
+    opt_ins.allow("steward", "id-bank", "bank", bound("tests", "d1", "i1"));
+
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-bank", &bound("tests", "d1", "i1")),
+        Standing::Allowed,
+        "a yes given now applies after a restart"
+    );
+    assert_eq!(
+        after_a_restart(config.path()).standing("steward", "id-shop", &bound("builds", "d1", "i1")),
+        Standing::Unasked,
+        "and the entry the unreadable list could not vouch for is gone"
+    );
+}
+
+// Another process's answer is seen without a restart (#7190).
+
+#[test]
+fn an_opt_in_another_process_removed_is_not_applied_by_this_one() {
+    let config = one_kept_opt_in();
+    let this = OptIns::stored_in(config.path());
+    let other = OptIns::stored_in(config.path());
+    let now = bound("builds", "d1", "i1");
+    assert_eq!(this.standing("steward", "id-shop", &now), Standing::Allowed);
+
+    other.remove("steward", "id-shop", "builds").unwrap();
+
+    assert_eq!(this.standing("steward", "id-shop", &now), Standing::Unasked);
+    assert!(this.granted().is_empty());
+}
+
+#[test]
+fn a_yes_another_process_gave_after_this_ones_refusal_is_seen() {
+    let config = tempfile::tempdir().unwrap();
+    let this = OptIns::stored_in(config.path());
+    let now = bound("builds", "d1", "i1");
+    this.keep_off("steward", "id-shop", "shop", now.clone())
+        .unwrap();
+    assert_eq!(this.standing("steward", "id-shop", &now), Standing::KeptOff);
+
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", "shop", now.clone());
+
+    assert_eq!(
+        this.standing("steward", "id-shop", &now),
+        Standing::Allowed,
+        "the store is looked at before this run's memory"
+    );
+}
+
+// The person's mark is bound to the opt-in (#7190: "the pin with the person's mark").
+
+#[test]
+fn taking_the_mark_back_or_changing_it_asks_again() {
+    let config = tempfile::tempdir().unwrap();
+    let then = Bound {
+        marked: true,
+        ..bound("builds", "d1", "i1")
+    };
+    OptIns::stored_in(config.path()).allow("steward", "id-shop", "shop", then.clone());
+    let restarted = after_a_restart(config.path());
+
+    let unmarked = Bound {
+        marked: false,
+        ..then.clone()
+    };
+
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &unmarked),
+        Standing::Changed
+    );
+    assert_eq!(
+        restarted.standing("steward", "id-shop", &then),
+        Standing::Allowed
+    );
+}
+
+#[test]
+fn a_pools_bound_names_its_mark_where_it_has_one() {
+    let config = a_pool_on_another_machine("marked-box", "ABCD", true);
+    let marked = Bound::over_the_link_with(
+        Err("purlis finds no Docker engine on this machine".to_owned()),
+        config.path(),
+        "marked-box",
+        Some("marked-box/marked-box"),
+    )
+    .unwrap();
+
+    assert!(marked.marked, "the person's mark is part of what is bound");
+}
+
+// The revoked list is written under the store's lock, never opened where it can block, and
+// never healed by an append (#7190, the re-review of 3738261cf0).
+
+/// Runs `work` on a thread of its own and gives it `secs` to finish: a hang is a failure here,
+/// not a test that never ends.
+fn within<T: Send + 'static>(secs: u64, work: impl FnOnce() -> T + Send + 'static) -> Option<T> {
+    let (tell, hear) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tell.send(work());
+    });
+    hear.recv_timeout(std::time::Duration::from_secs(secs)).ok()
+}
+
+#[test]
+fn an_append_waits_for_the_store_lock_and_lands_after_it() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    let holder = held_by_another_process(config.path());
+    let opt_ins = std::sync::Arc::new(OptIns::stored_in(config.path()));
+    let appending = {
+        let opt_ins = opt_ins.clone();
+        std::thread::spawn(move || {
+            opt_ins.revoke_within(std::time::Duration::from_secs(5), vec![nonce])
+        })
+    };
+
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    assert!(
+        !revoked_file(config.path()).exists(),
+        "a compaction holds the lock: nothing may be appended to a file it is about to replace"
+    );
+    drop(holder);
+
+    assert!(appending.join().unwrap(), "it lasts once it is written");
+    nothing_applies(config.path());
+}
+
+#[test]
+fn an_append_the_lock_was_not_given_for_holds_for_this_run_only() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    let opt_ins = OptIns::stored_in(config.path());
+    let _holder = held_by_another_process(config.path());
+
+    let lasting = opt_ins.revoke_within(std::time::Duration::from_millis(60), vec![nonce]);
+
+    assert!(!lasting, "nothing was written down");
+    assert!(
+        !revoked_file(config.path()).exists(),
+        "and nothing was written unlocked"
+    );
+    assert!(opt_ins.granted().is_empty(), "this run holds it removed");
+}
+
+#[test]
+fn appends_and_compactions_at_once_lose_no_removal() {
+    for round in 0..6 {
+        let config = tempfile::tempdir().unwrap();
+        let writer = std::sync::Arc::new(OptIns::stored_in(config.path()));
+        for n in 0..8 {
+            writer.allow(
+                "steward",
+                &format!("id-{n}"),
+                "shop",
+                bound("builds", "d1", "i1"),
+            );
+        }
+        let nonces: Vec<String> = serde_json::from_str::<Vec<serde_json::Value>>(
+            &std::fs::read_to_string(config.path().join(IN_CONFIG)).unwrap(),
+        )
+        .unwrap()
+        .iter()
+        .map(|one| one["nonce"].as_str().unwrap().to_owned())
+        .collect();
+        let compacting = {
+            let writer = writer.clone();
+            std::thread::spawn(move || {
+                for n in 0..8 {
+                    writer.allow(
+                        "tester",
+                        &format!("other-{round}-{n}"),
+                        "x",
+                        bound("tests", "d1", "i1"),
+                    );
+                }
+            })
+        };
+        let appends: Vec<_> = nonces
+            .iter()
+            .map(|nonce| {
+                let revoker = OptIns::stored_in(config.path());
+                let nonce = nonce.clone();
+                std::thread::spawn(move || {
+                    revoker.revoke_within(std::time::Duration::from_secs(10), vec![nonce])
+                })
+            })
+            .collect();
+        compacting.join().unwrap();
+        for append in appends {
+            assert!(append.join().unwrap());
+        }
+
+        let restarted = after_a_restart(config.path());
+        for n in 0..8 {
+            assert_eq!(
+                restarted.standing("steward", &format!("id-{n}"), &bound("builds", "d1", "i1")),
+                Standing::Unasked,
+                "round {round}: a removal made during a compaction still holds"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_removal_beside_a_list_cut_short_does_not_make_it_readable_again() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    std::fs::write(revoked_file(config.path()), "01JB0AB").unwrap();
+    let opt_ins = OptIns::stored_in(config.path());
+
+    let lasting = opt_ins.revoke_within(WAIT, vec![nonce]);
+
+    assert!(
+        lasting,
+        "an unreadable list already holds every kept opt-in back"
+    );
+    assert_eq!(
+        std::fs::read(revoked_file(config.path())).unwrap(),
+        b"01JB0AB",
+        "nothing was appended: the list is as unreadable as it was"
+    );
+    nothing_applies(config.path());
+}
+
+#[cfg(unix)]
+fn a_fifo_in_the_lists_place(config: &Path) {
+    let made =
+        crate::forklock::status(std::process::Command::new("mkfifo").arg(revoked_file(config)))
+            .unwrap();
+    assert!(made.success());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_fifo_in_the_lists_place_blocks_no_read_and_applies_no_opt_in() {
+    let config = one_kept_opt_in();
+    a_fifo_in_the_lists_place(config.path());
+    let path = config.path().to_path_buf();
+
+    let done = within(5, move || nothing_applies(&path));
+
+    assert!(done.is_some(), "reading the standing waited on a FIFO");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_removal_beside_a_fifo_in_the_lists_place_blocks_not_and_lasts() {
+    let config = one_kept_opt_in();
+    let nonce = nonce_of_the_kept_opt_in(config.path());
+    a_fifo_in_the_lists_place(config.path());
+    let path = config.path().to_path_buf();
+
+    let lasting = within(5, move || {
+        OptIns::stored_in(&path).revoke_within(WAIT, vec![nonce])
+    });
+
+    assert_eq!(lasting, Some(true), "the append waited on a FIFO");
+}
+
+#[cfg(unix)]
+#[test]
+fn what_opens_is_judged_by_the_file_opened_not_the_path() {
+    let config = one_kept_opt_in();
+    let path = revoked_file(config.path());
+    a_fifo_in_the_lists_place(config.path());
+
+    let read = within(5, {
+        let path = path.clone();
+        move || revoked_on_disk(&path)
+    });
+    let append = within(5, move || append_to_revoked(&path, b"\nA\n").is_err());
+
+    assert_eq!(read, Some(None), "a FIFO is no list");
+    assert_eq!(append, Some(true), "and no list to append to");
 }
