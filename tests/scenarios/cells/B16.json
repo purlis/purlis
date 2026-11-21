@@ -1,0 +1,62 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B16",
+  "title": "tasks: a task runner's stops show under the project (matrix §3.11)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {"h1": "www.cpan.org", "h2": "www.exim.org"},
+  "cells": [
+    {
+      "id": "M-UNA-01",
+      "steps": [{
+        "calls": [{"tool": "Bash", "client": "get", "timeout": "150s",
+                   "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"}}],
+        "wait": "hold+1",
+        "outcome": "failed",
+        "refusal_expected": true,
+        "require": [
+          {"kind": "ask.raised", "ask": "sandbox", "count": 1},
+          {"kind": "stop.block", "source": "sandbox", "target.host": "$h1", "count": 1}
+        ],
+        "window": [{"query": "asks.row_under_project"}],
+        "transcript": [
+          {"says": "nobody answered in time; this is now a block. Run the command again to ask again."}
+        ]
+      }]
+    },
+    {
+      "id": "M-UNA-03",
+      "steps": [
+        {
+          "calls": [{"tool": "Bash", "client": "M-FILE-02", "input": {"path": "-u3"}}],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "require": [{"kind": "stop.block", "source": "sandbox", "count": 1}],
+          "window": [{"query": "stops.row_under_project: file block"}]
+        },
+        {
+          "calls": [{"tool": "Bash", "client": "M-GRD-01", "input": {"n": 19}}],
+          "outcome": "denied",
+          "refusal_expected": true,
+          "require": [{"kind": "stop.block", "source": "guard", "count": 1}],
+          "window": [{"query": "stops.row_under_project: guard block"}]
+        },
+        {
+          "calls": [{"tool": "Bash", "client": "get", "timeout": "150s",
+                     "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 110"}}],
+          "press": {"label": "Keep blocked", "target": "ask", "when": "ask.raised"},
+          "outcome": "failed",
+          "refusal_expected": true,
+          "require": [
+            {"kind": "ask.raised", "ask": "sandbox", "count": 1},
+            {"kind": "stop.block", "source": "sandbox", "target.host": "$h2", "count": 1}
+          ],
+          "window": [
+            {"query": "stops.row_under_project: covered retry"},
+            {"query": "dispatch_wait.names_the_stops"}
+          ]
+        }
+      ]
+    }
+  ]
+}
