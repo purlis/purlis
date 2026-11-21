@@ -323,22 +323,30 @@ fn outcome_of(scenario: &Scenario, chat: u32, name: &str) -> Outcome {
     }
 }
 
-/// The record of a cell that could not be played.
-fn unplayable(scenario: &Scenario, cell: &Cell, why: &str) {
-    let _ = scenario.report_cell(cell, ReportVerdict::Fail, Some(why.to_owned()), u64::MAX);
+/// A line of what the runner is doing, in a red run's log.
+fn said(line: &str) {
+    let _ = std::io::Write::write_fmt(&mut std::io::stderr(), format_args!("cells: {line}\n"));
+}
+
+/// The record of a cell that could not be played: a `fail` with its reasons and no events. It
+/// needs no scenario, so a batch with nothing to play never starts one (whose teardown would
+/// judge the log a scenario before it left).
+fn unplayable(cell: &Cell, dialect: CellDialect, batch: &Batch, why: &str) {
+    let record = super::report::ran(
+        cell,
+        dialect,
+        batch.protection,
+        TimingsMode::Scaled,
+        ReportVerdict::Fail,
+        Some(why.to_owned()),
+        Vec::new(),
+    );
+    super::report::write(&[record.leg]).expect("the leg's report");
 }
 
 /// **Plays `batch` as `dialect`** and reports each cell it takes. `Err` is a batch that is
 /// malformed as a whole; a cell the runner cannot play is its own `fail` record.
 pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
-    let Some(scenario) = Scenario::new(
-        homes,
-        protection_of(batch.protection),
-        Some(batch.persona.as_str()),
-        host_dialect(dialect),
-    ) else {
-        return;
-    };
     let seconds = catalogue().seconds_at(SCALE);
     let pins = purlis_scenarios::validate::Validator::repo()
         .expect("the pins")
@@ -377,11 +385,31 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         (playable, malformed)
     };
     for (cell, why) in &malformed {
-        unplayable(&scenario, cell, why);
+        unplayable(cell, dialect, batch, why);
     }
+    said(&format!(
+        "{} as {}: {} to play, {} malformed",
+        batch.batch,
+        dialect.word(),
+        playable.len(),
+        malformed.len()
+    ));
     if playable.is_empty() {
         return;
     }
+    said(&format!(
+        "{} as {}: starting its scenario",
+        batch.batch,
+        dialect.word()
+    ));
+    let Some(scenario) = Scenario::new(
+        homes,
+        protection_of(batch.protection),
+        Some(batch.persona.as_str()),
+        host_dialect(dialect),
+    ) else {
+        return;
+    };
 
     // The hosts a cell names resolve to one HTTPS origin under the test CA, so a host the person
     // allows is carried and every other is held at the proxy, as in production.
@@ -519,6 +547,13 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect) {
         .collect();
     let checks = super::checks::at_the_end(&scenario)
         .unwrap_or_else(|why| panic!("the global checks could not run: {why}"));
+    said(&format!(
+        "{} as {}: the global checks held {} as expected and failed {}",
+        batch.batch,
+        dialect.word(),
+        checks.expected.len(),
+        checks.failures.len()
+    ));
     let run = Run {
         dialect,
         os: super::report::this_os(),
