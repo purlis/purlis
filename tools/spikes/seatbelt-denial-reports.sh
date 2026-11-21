@@ -24,6 +24,7 @@ use Time::HiRes qw(time sleep);
 my ($dir, $n, $gap) = @ARGV;
 for my $i (1 .. $n) { my $t = time; open(my $f, '>', "$dir/d$i") ; printf "D d$i %.6f\n", $t; sleep $gap; }
 for my $i (1 .. $n) { my $t = time; open(my $f, '>', "$dir/rep") ; printf "D rep%d %.6f\n", $i, $t; sleep $gap; }
+for my $i (1 .. 20) { my $t = time; open(my $f, '>', "$dir/slow") ; printf "D slow%d %.6f\n", $i, $t; sleep 0.5; }
 PL
 # The receiver stamps each line with its arrival time.
 cat >"$WORK/stamp.pl" <<'PL'
@@ -40,7 +41,7 @@ while (<$r>) {
   next unless /^(\d+\.\d+) (.*)/s; my ($arr, $line) = ($1, $2);
   next unless $line =~ /deny\(\d+\)\s+file-write/ || $line =~ /\bdeny\b/;
   $total++;
-  if ($line =~ m{\Q$dir\E/(d\d+|rep)\b}) { my $k = $1; $seen{$k}++; push @{$lat{$k}}, $arr - ($k eq 'rep' ? $at{rep1} : $at{$k}); }
+  if ($line =~ m{\Q$dir\E/(d\d+|rep|slow)\b}) { my $k = $1; $seen{$k}++; push @{$lat{$k}}, $arr - ($k eq 'rep' ? $at{rep1} : $at{$k}); }
   else { $stray++ }
 }
 my @first; my $missing = 0;
@@ -50,6 +51,8 @@ my $med = @first ? $first[int(@first / 2)] : -1; my $p95 = @first ? $first[int(@
 my $dups = 0; for my $i (1 .. $n) { $dups += $seen{"d$i"} - 1 if ($seen{"d$i"} // 0) > 1 }
 printf "  distinct refusals: %d; reported: %d; missing: %d; extra copies: %d\n", $n, $n - $missing, $missing, $dups;
 printf "  latency to first report (s): median %.3f p95 %.3f max %.3f\n", $med, $p95, $max;
+my @gone = grep { !$seen{"d$_"} } 1 .. $n; print "  missing distinct files: @gone\n";
+printf "  identical refusals 0.5 s apart: 20; reports of that one file: %d\n", $seen{slow} // 0;
 printf "  identical refusals: %d; reports of that one file: %d\n", $n, $seen{rep} // 0;
 printf "  deny lines on the stream not from this chat's dir: %d (of %d)\n", $stray // 0, $total // 0;
 PL
