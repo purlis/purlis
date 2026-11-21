@@ -14726,11 +14726,29 @@ export type SettingsRefusal = {
 	key: string[] | null,
 };
 
-/**  What a save answered: the file as it now stands, or every reason nothing was written.
+/**
+ *  What a save answered: the file as it now stands, or every reason nothing was written.
  * 
- * `warning` is something the save did not finish after the file was written (a change of the
- * project's level that could not be recorded): the window takes the new text and says it. */
-export type SettingsSaved = { kind: "saved"; file: SettingsFile; warning?: string } | { kind: "refused"; reasons: string[] };
+ *  `warning` is something the save did not finish after the file was written (a change of the
+ *  project's level that could not be recorded): the window takes the new text and says it.
+ */
+export type SettingsSaved = SettingsSaved_Serialize | SettingsSaved_Deserialize;
+
+/**
+ *  What a save answered: the file as it now stands, or every reason nothing was written.
+ * 
+ *  `warning` is something the save did not finish after the file was written (a change of the
+ *  project's level that could not be recorded): the window takes the new text and says it.
+ */
+export type SettingsSaved_Deserialize = ({ kind: "saved"; file: SettingsFile; warning?: string | null }) & { reasons?: never } | ({ kind: "refused"; reasons: string[] }) & { file?: never; warning?: never };
+
+/**
+ *  What a save answered: the file as it now stands, or every reason nothing was written.
+ * 
+ *  `warning` is something the save did not finish after the file was written (a change of the
+ *  project's level that could not be recorded): the window takes the new text and says it.
+ */
+export type SettingsSaved_Serialize = ({ kind: "saved"; file: SettingsFile; warning?: string | null }) & { reasons?: never } | ({ kind: "refused"; reasons: string[] }) & { file?: never; warning?: never };
 
 /**  One step of the way to a key: a table's key, or a block's place in `[[forge]]`. */
 export type SettingsStep = ({ key: string }) & { index?: never } | ({ index: number }) & { key?: never };
