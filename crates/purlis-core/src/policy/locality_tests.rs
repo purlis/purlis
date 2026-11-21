@@ -36,7 +36,8 @@ fn outside(folder: &Path) -> PathBuf {
 fn at(cwd: &Path) -> Whereabouts<'_> {
     Whereabouts {
         cwd,
-        target: None,
+        targets: &[],
+        repos: &[],
         ancestry: &[],
     }
 }
@@ -80,7 +81,8 @@ fn git_c_into_an_anchored_plane_is_never_judged_as_plane_less() {
     let elsewhere = outside(planes.path());
     let whereabouts = Whereabouts {
         cwd: &elsewhere,
-        target: Some(&root),
+        targets: std::slice::from_ref(&root),
+        repos: &[],
         ancestry: &[],
     };
     assert_eq!(
@@ -97,7 +99,8 @@ fn git_c_into_an_anchored_plane_is_never_judged_as_plane_less() {
         std::os::unix::fs::symlink(&root, &link).unwrap();
         let through = Whereabouts {
             cwd: &elsewhere,
-            target: Some(&link),
+            targets: std::slice::from_ref(&link),
+            repos: &[],
             ancestry: &[],
         };
         assert!(matches!(locate(&through), Locality::InPlane { .. }));
@@ -115,7 +118,8 @@ fn a_process_whose_ancestry_is_in_an_anchored_plane_is_never_judged_as_plane_les
     let ancestry = [elsewhere.clone(), root.join("sub")];
     let whereabouts = Whereabouts {
         cwd: &elsewhere,
-        target: None,
+        targets: &[],
+        repos: &[],
         ancestry: &ancestry,
     };
     assert!(matches!(
@@ -130,7 +134,6 @@ fn a_process_whose_ancestry_is_in_an_anchored_plane_is_never_judged_as_plane_les
 fn without_a_keyring_a_process_in_a_plane_found_on_disk_is_never_plane_less() {
     let (_home, planes) = machine();
     let root = plane(planes.path(), "p");
-    answers::register(&root).expect("registered while a keyring was there");
     seal::set_no_keyring_for_this_test(true);
     let inside = root.join("sub");
     std::fs::create_dir_all(&inside).unwrap();
@@ -145,14 +148,16 @@ fn without_a_keyring_a_process_in_a_plane_found_on_disk_is_never_plane_less() {
     let elsewhere = outside(planes.path());
     let target = Whereabouts {
         cwd: &elsewhere,
-        target: Some(&inside),
+        targets: std::slice::from_ref(&inside),
+        repos: &[],
         ancestry: &[],
     };
     assert!(matches!(locate(&target), Locality::InPlane { .. }));
     let ancestry = [inside];
     let parent = Whereabouts {
         cwd: &elsewhere,
-        target: None,
+        targets: &[],
+        repos: &[],
         ancestry: &ancestry,
     };
     assert!(matches!(locate(&parent), Locality::InPlane { .. }));
@@ -189,23 +194,275 @@ fn a_process_in_an_anchored_plane_is_the_hosts_to_ask() {
     assert_eq!(judged, Judged::AskTheHost { root });
 }
 
-/// `git -C <folder>` names the folder the command acts on, relative to the working directory.
+/// What a process that is not the app (no seal key, so an unreadable registry) is shown.
+fn outside_the_app() {
+    seal::set_for_this_test(None);
+}
+
+/// F1: outside the app the registry reads as unreadable, and an anchored plane is still anchored,
+/// by the app's own list: the refusal is reachable where the hook runs.
 #[test]
-fn the_target_of_a_git_c_command_is_its_folder() {
+fn outside_the_app_an_anchored_plane_is_still_anchored_by_the_apps_list() {
+    let (_home, planes) = machine();
+    let root = plane(planes.path(), "p");
+    answers::register(&root).expect("registered by the app");
+    outside_the_app();
+    assert!(
+        answers::plane_containing(&root).is_none(),
+        "the registry is unreadable here: this is what the hook sees"
+    );
+    let inside = root.join("sub");
+    std::fs::create_dir_all(&inside).unwrap();
+    assert_eq!(
+        locate(&at(&inside)),
+        Locality::InPlane {
+            root: root.clone(),
+            anchored: true
+        }
+    );
+    assert_eq!(
+        judge(&at(&inside), &said_request()),
+        Judged::AskTheHost { root }
+    );
+}
+
+/// F3: a linked worktree cut outside the plane is found through its main tree's plane, and that
+/// root is looked up in the anchored list: anchored, not "found on disk alone".
+#[test]
+fn a_linked_worktree_outside_an_anchored_plane_is_the_planes_and_anchored() {
+    let (_home, planes) = machine();
+    let root = plane(planes.path(), "p");
+    answers::register(&root).expect("registered");
+    outside_the_app();
+    // What `git worktree add` leaves: a `.git` file in the worktree, the main tree's git folder
+    // holding `worktrees/<name>`.
+    let worktree = outside(planes.path()).join("wt");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let admin = root.join(".git").join("worktrees").join("wt");
+    std::fs::create_dir_all(&admin).unwrap();
+    std::fs::write(admin.join("commondir"), "../..\n").unwrap();
+    std::fs::write(
+        worktree.join(".git"),
+        format!("gitdir: {}\n", admin.display()),
+    )
+    .unwrap();
+    assert_eq!(
+        locate(&at(&worktree)),
+        Locality::InPlane {
+            root: root.clone(),
+            anchored: true
+        }
+    );
+}
+
+/// A repo the command names is an anchored plane's by that plane's remote, from a folder that is
+/// no plane's at all.
+#[test]
+fn a_repo_the_command_names_is_the_anchored_planes_by_its_remote() {
+    let (_home, planes) = machine();
+    let root = plane(planes.path(), "p");
+    std::fs::write(
+        root.join(".git").join("config"),
+        "[remote \"origin\"]\n\turl = https://github.com/Acme/Web.git\n",
+    )
+    .unwrap();
+    answers::register(&root).expect("registered");
+    outside_the_app();
+    let elsewhere = outside(planes.path());
+    let named = ["acme/web".to_owned()];
+    let whereabouts = Whereabouts {
+        cwd: &elsewhere,
+        targets: &[],
+        repos: &named,
+        ancestry: &[],
+    };
+    assert_eq!(
+        locate(&whereabouts),
+        Locality::InPlane {
+            root,
+            anchored: true
+        }
+    );
+    let other = ["acme/other".to_owned()];
+    let whereabouts = Whereabouts {
+        repos: &other,
+        ..whereabouts
+    };
+    assert_eq!(locate(&whereabouts), Locality::PlaneLess);
+}
+
+/// With no `-C` and no `-R`, the working directory's own remote names the repo: a clone of the
+/// same repo outside the plane is the plane's too.
+#[test]
+fn the_working_directorys_remote_is_the_anchored_planes_when_it_is_the_same_repo() {
+    let (_home, planes) = machine();
+    let root = plane(planes.path(), "p");
+    let config = "[remote \"origin\"]\n\turl = https://github.com/acme/web.git\n";
+    std::fs::write(root.join(".git").join("config"), config).unwrap();
+    answers::register(&root).expect("registered");
+    outside_the_app();
+    let clone = outside(planes.path()).join("clone");
+    std::fs::create_dir_all(clone.join(".git")).unwrap();
+    std::fs::write(clone.join(".git").join("config"), config).unwrap();
+    assert!(matches!(
+        locate(&at(&clone)),
+        Locality::InPlane { anchored: true, .. }
+    ));
+}
+
+fn no_env(_: &str) -> Option<String> {
+    None
+}
+
+fn reach(command: &str) -> Result<Reach, Unreadable> {
+    reach_of(command, Path::new("/work/elsewhere"), &no_env)
+}
+
+/// `git -C <folder>` names the folder the command acts on, relative to the working directory, and
+/// git composes more than one.
+#[test]
+fn the_folders_of_a_git_command_are_those_of_its_own_global_options() {
     let cwd = Path::new("/work/elsewhere");
     assert_eq!(
-        target_of("git -C /plane merge feature", cwd),
-        Some(PathBuf::from("/plane"))
+        reach("git -C /plane status").unwrap().targets,
+        [PathBuf::from("/plane")]
     );
     assert_eq!(
-        target_of("git -C ../plane merge feature", cwd),
-        Some(Path::new("/work/elsewhere").join("../plane"))
+        reach("git -C ../plane status").unwrap().targets,
+        [cwd.join("../plane")]
     );
-    assert_eq!(target_of("git merge feature", cwd), None);
+    assert!(reach("git status").unwrap().targets.is_empty());
+    // Composed, as git reads them: the second is against the first.
     assert_eq!(
-        target_of("git -C a status && git -C \"b\" merge x", cwd),
-        Some(cwd.join("b"))
+        reach("git -C a -C b status").unwrap().targets,
+        [cwd.join("a"), cwd.join("a").join("b")]
     );
+    // Quoted, the folder is still the folder: the word is not cut at a space.
+    assert_eq!(
+        reach("git -C \"my plane\" status").unwrap().targets,
+        [cwd.join("my plane")]
+    );
+}
+
+/// F2, each evasion: the old reader took the last `-C` of the whole line.
+#[test]
+fn a_dash_c_after_the_command_or_in_another_tool_is_not_gits() {
+    // A later `-C` of another tool does not replace git's.
+    assert_eq!(
+        reach("git -C /plane status && make -C /elsewhere")
+            .unwrap()
+            .targets,
+        [PathBuf::from("/plane")]
+    );
+    // Nor is a `-C` after the subcommand (`git commit -C <commit>` reuses a message).
+    assert!(reach("git commit -C HEAD").unwrap().targets.is_empty());
+    // Each segment is read: a `-C` in the first of two commands is not lost to the second.
+    assert_eq!(
+        reach("git -C /plane status; git -C /other log")
+            .unwrap()
+            .targets,
+        [PathBuf::from("/plane"), PathBuf::from("/other")]
+    );
+}
+
+#[test]
+fn a_cd_is_a_target_and_moves_the_folder_later_words_are_against() {
+    let cwd = Path::new("/work/elsewhere");
+    assert_eq!(
+        reach("cd /plane && git status").unwrap().targets,
+        [PathBuf::from("/plane")]
+    );
+    assert_eq!(
+        reach("cd a && cd b && git status").unwrap().targets,
+        [cwd.join("a"), cwd.join("a").join("b")]
+    );
+    assert_eq!(
+        reach("cd sub && git -C inner status").unwrap().targets,
+        [cwd.join("sub"), cwd.join("sub").join("inner")]
+    );
+}
+
+#[test]
+fn git_dir_and_work_tree_name_a_folder_too() {
+    assert_eq!(
+        reach("git --git-dir=/plane/.git status").unwrap().targets,
+        [PathBuf::from("/plane/.git")]
+    );
+    assert_eq!(
+        reach("git --work-tree /plane status").unwrap().targets,
+        [PathBuf::from("/plane")]
+    );
+    assert_eq!(
+        reach("GIT_DIR=/plane/.git git status").unwrap().targets,
+        [PathBuf::from("/plane/.git")]
+    );
+    let env = |name: &str| (name == "GIT_WORK_TREE").then(|| "/plane".to_owned());
+    let from_env = reach_of("git status", Path::new("/w"), &env).unwrap();
+    assert_eq!(from_env.targets, [PathBuf::from("/plane")]);
+}
+
+/// Anything the shell would expand is read as unreadable, never as outside.
+#[test]
+fn a_folder_or_repo_the_shell_would_expand_is_unreadable() {
+    for command in [
+        "git -C $PLANE status",
+        "git -C ~/plane status",
+        "git -C \"$(pwd)/..\" status",
+        "git -C /pl* status",
+        "git -C `pwd` status",
+        "cd ~/plane && git status",
+        "cd && git status",
+        "cd - && git status",
+        "gh pr view 5 -R $REPO",
+        "gh pr view 5 --repo=${REPO}",
+        "GH_REPO=$R gh pr view 5",
+        "git --git-dir=$D status",
+    ] {
+        assert!(reach(command).is_err(), "{command} must not be read");
+    }
+    // A command that will not tokenize is not read either.
+    assert!(reach("git -C 'unclosed status").is_err());
+}
+
+/// The forge command's own target: `-R`, `--repo`, `GH_REPO` (in the line or the environment),
+/// and the request's address.
+#[test]
+fn the_repo_a_forge_command_names_is_read_from_its_own_words() {
+    assert_eq!(
+        reach("gh pr view 5 -R Acme/Web").unwrap().repos,
+        ["acme/web"]
+    );
+    assert_eq!(
+        reach("gh pr view 5 --repo acme/web").unwrap().repos,
+        ["acme/web"]
+    );
+    assert_eq!(
+        reach("gh pr view 5 --repo=github.com/acme/web")
+            .unwrap()
+            .repos,
+        ["acme/web"]
+    );
+    assert_eq!(
+        reach("GH_REPO=acme/web gh pr view 5").unwrap().repos,
+        ["acme/web"]
+    );
+    let env = |name: &str| (name == "GH_REPO").then(|| "acme/web".to_owned());
+    let named = reach_of("gh pr view 5", Path::new("/w"), &env).unwrap();
+    assert_eq!(named.repos, ["acme/web"]);
+    assert_eq!(
+        reach("gh pr view https://github.com/acme/web/pull/5")
+            .unwrap()
+            .repos,
+        ["acme/web"]
+    );
+    assert_eq!(
+        reach("glab mr view https://gitlab.com/grp/sub/api/-/merge_requests/7")
+            .unwrap()
+            .repos,
+        ["grp/sub/api"]
+    );
+    // Another tool's `-R` names no repo of a forge's.
+    assert!(reach("rsync -R a b").unwrap().repos.is_empty());
 }
 
 /// A merge asked by a process the app did not start is decided by the shipped default under

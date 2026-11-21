@@ -354,12 +354,20 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
 /// **A merge asked by a process the app did not start** (M75-07b, spec §6; #7012): where the
 /// process is decides who judges it ([`purlis_core::policy::locality`]). Outside every plane, or in
 /// a plane found only on disk, the shipped default under `strict` decides here, in this process.
-/// Inside a plane the registry anchors, its host is the one to ask, and a process the app did not
-/// start has no host to ask: it is refused, never judged by the local default.
+/// Inside an anchored plane (the registry's, or the app's list of them, which a process without
+/// the seal key can read), its host is the one to ask, and a process the app did not start has no
+/// host to ask: it is refused, never judged by the local default.
 ///
-/// An ask is the person's own to answer in their terminal, so it runs; a deny is refused. Whether the process runs
-/// under a chat the app started is the app's to say by its ancestry (see [`judged_merge`]); a
-/// descendant of a chat never gets here, so the ancestry is not part of what is read.
+/// **What the command reaches is read word by word** ([`locality::reach_of`]): a folder or repo
+/// the shell would expand is refused, never taken as outside. An empty `cwd` is the process's own
+/// folder, as `root` is.
+///
+/// An ask is the person's own to answer in their terminal, so it runs **if the harness prompts**:
+/// a harness in a bypass mode, or one whose allow list covers the command, runs it with no ask at
+/// all, and this guard does not know which. A deny is refused. The seal gap of a plane found only
+/// on disk is said on stderr, and in a refusal's words. **Ancestry is not implemented in the
+/// hook:** whether the process runs under a chat the app started is the app's to say by its
+/// ancestry (see [`judged_merge`]); a descendant of a chat never gets here, so it is not read.
 fn judged_without_a_chat(
     held: &purlis_core::mergehold::Held,
     command: &str,
@@ -377,16 +385,41 @@ fn judged_without_a_chat(
         }))
     };
     let (action, kind, id) = mergehold::policy_request(held);
-    let cwd_path = std::path::Path::new(cwd);
-    let target = locality::target_of(command, cwd_path);
+    let cwd_path = if cwd.is_empty() {
+        std::env::current_dir().unwrap_or_default()
+    } else {
+        std::path::PathBuf::from(cwd)
+    };
+    let reach = match locality::reach_of(command, &cwd_path, &|name| {
+        std::env::var(name).ok().filter(|value| !value.is_empty())
+    }) {
+        Ok(reach) => reach,
+        Err(why) => {
+            return refused(
+                mergehold::REASON_UNDECIDED,
+                mergehold::undecided(&format!(
+                    "this process is no chat the app started, and where it acts cannot be read                      from its command: {why}"
+                )),
+            );
+        }
+    };
     let whereabouts = Whereabouts {
-        cwd: cwd_path,
-        target: target.as_deref(),
+        cwd: &cwd_path,
+        targets: &reach.targets,
+        repos: &reach.repos,
         ancestry: &[],
     };
     let request = locality::process_request(action, (kind, &id));
+    let mut gap = None;
     let decision = match locality::judge(&whereabouts, &request) {
-        Judged::Locally(decision) | Judged::FoundPlane { decision, .. } => decision,
+        Judged::Locally(decision) => decision,
+        Judged::FoundPlane {
+            decision,
+            gap: said,
+        } => {
+            gap = Some(said);
+            decision
+        }
         Judged::AskTheHost { .. } => {
             return refused(
                 mergehold::REASON_UNDECIDED,
@@ -398,12 +431,27 @@ fn judged_without_a_chat(
         }
     };
     match decision.after_mode {
-        Outcome::Allow => None,
-        Outcome::Deny => refused(mergehold::REASON_DENIED, mergehold::denied(&decision)),
-        // The default holds a merge for the person, and the person is here: it is their own
-        // terminal, and the harness's own prompt asks them (A4's ground). No window of purlis's
-        // is asked, and a deny above is refused all the same.
-        Outcome::Ask => None,
+        Outcome::Allow => say_the_gap(gap),
+        Outcome::Deny => {
+            let mut denial = mergehold::denied(&decision);
+            if let Some(said) = gap {
+                denial = format!("{denial} {said}");
+            }
+            return refused(mergehold::REASON_DENIED, denial);
+        }
+        // The default holds a merge for the person. The harness's own prompt asks them (A4's
+        // ground) **if it prompts**: a bypass mode or an allow-listed command runs without
+        // asking. No window of purlis's is asked, and a deny above is refused all the same.
+        Outcome::Ask => say_the_gap(gap),
+    }
+    None
+}
+
+/// The seal gap of a plane found only on disk, on stderr: a run is let through, and the person
+/// reads what nothing they answered for it can have changed.
+fn say_the_gap(gap: Option<&str>) {
+    if let Some(said) = gap {
+        let _ = writeln!(std::io::stderr(), "purlis: {said}");
     }
 }
 

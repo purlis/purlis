@@ -286,3 +286,86 @@ fn a_start_in_the_deny_state_gets_the_deny_sandbox_and_a_start_outside_it_gets_n
         Err(refused) => assert!(!refused.to_string().is_empty()),
     }
 }
+
+/// F5: where a start is composed outside the app the standing is `Unverifiable`, and that is
+/// decided, not left to `is_deny()`: an anchored plane is started in the deny sandbox (fail
+/// closed), and one nothing was ever sealed for is the person's own level, as a fresh install.
+#[test]
+fn a_start_composed_outside_the_app_is_in_the_deny_sandbox_only_on_an_anchored_plane() {
+    let (_home, planes) = machine();
+    let base = std::fs::canonicalize(planes.path()).unwrap();
+    let anchored = base.join("anchored");
+    let unsealed = base.join("unsealed");
+    for root in [&anchored, &unsealed] {
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(root.join("purlis.toml"), "schema = 1\n").unwrap();
+    }
+    answers::register(&anchored).expect("registered by the app");
+    // A process that is not the app has no seal key.
+    seal::set_for_this_test(None);
+    let standing = answers::standing(&anchored);
+    assert!(standing.is_unverifiable(), "{standing:?}");
+    assert!(!standing.is_deny());
+    let machine = crate::sandbox::Machine::this();
+    let has = |_: &str| true;
+    let harness = crate::harness::Harness::ClaudeCode;
+    let held = crate::start::deny_state_sandbox(harness, &anchored, &machine, &has, &standing);
+    match held.expect("an anchored plane that cannot be verified is started as denied") {
+        Ok(applied) => assert_eq!(applied.level(), crate::sandbox::Level::Full, "{applied:?}"),
+        Err(refused) => assert!(!refused.to_string().is_empty()),
+    }
+    assert!(
+        crate::start::deny_state_sandbox(
+            harness,
+            &unsealed,
+            &machine,
+            &has,
+            &answers::standing(&unsealed)
+        )
+        .is_none(),
+        "nothing was sealed for a plane the app never anchored"
+    );
+}
+
+/// F4: a harness the project declares has no adapter and so no deny sandbox: in the deny state its
+/// start is refused, never started bare, whatever the person's opt-out says.
+#[test]
+fn a_declared_harness_is_refused_in_the_deny_state() {
+    crate::unsteered!();
+    let (_home, planes) = machine();
+    let root = std::fs::canonicalize(planes.path()).unwrap().join("p");
+    std::fs::create_dir_all(root.join(".git")).unwrap();
+    std::fs::write(root.join("purlis.toml"), "schema = 1\n").unwrap();
+    let dir = root.join(crate::harness_declaration::DIR);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("shelly.toml"),
+        "name = \"shelly\"\ntitle = \"Shelly\"\nprogram = \"true\"\n\
+         [session]\nchosen_by = \"purlis\"\nnew = [\"--session={id}\"]\n\
+         resume = [\"--resume={id}\"]\nnamed_by = [\"--resume\"]\n\
+         [capabilities]\nresumes_by_id = \"yes\"\n",
+    )
+    .unwrap();
+    let set = crate::profiles::current(&root);
+    let profile = set.get("shelly").expect("the declaration gave a profile");
+    let shown = crate::profiletrust::shown(&root, profile);
+    crate::profiletrust::approve(&root, profile, &shown).expect("approved");
+    let start = crate::start::Start {
+        profile: Some("shelly".to_owned()),
+        persona: None,
+        name: "ide.7".to_owned(),
+        cwd: Some(root.clone()),
+        resume: None,
+        show_footer: false,
+        resuming: None,
+        without_sandbox: Some(crate::sandbox::OptOut::default()),
+        held: None,
+        grants: Default::default(),
+        made: crate::sandbox::Made::Window,
+    };
+    // An anchored plane that cannot be verified here is the deny state for a start.
+    answers::register(&root).expect("registered by the app");
+    seal::set_for_this_test(None);
+    let refused = crate::start::ready(&start, &root).expect_err("refused in the deny state");
+    assert_eq!(refused, crate::start::DECLARED_HARNESS_IN_THE_DENY_STATE);
+}
