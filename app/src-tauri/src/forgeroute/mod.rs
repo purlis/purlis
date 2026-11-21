@@ -443,9 +443,22 @@ enum Registered {
 pub struct HeldAsks {
     next: AtomicU64,
     pending: Mutex<HashMap<u64, HeldAsk>>,
-    /// The runs whose latest held act was refused for want of room, so the person was not asked
-    /// ([`Registered::Full`]). Read only for the words of the refusal.
-    unasked: Mutex<HashSet<String>>,
+    /// What each run's latest held request came to, for the words of its refusal. Written for
+    /// every held request that is refused, so one request's result is never another's.
+    last: Mutex<HashMap<String, AskState>>,
+}
+
+/// What a refused held request came to, for the words of its refusal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AskState {
+    /// The person was asked (or already is, for the same act).
+    Asked,
+    /// The run is full, so the person was not asked.
+    Full,
+    /// A merge with no `sha` pinning the head: not asked.
+    NeedsSha,
+    /// Not the act's own request, so a plain refusal.
+    NotAsked,
 }
 
 impl HeldAsks {
@@ -465,21 +478,30 @@ impl HeldAsks {
             Registered::New(Box::new(ask.clone()))
         };
         drop(pending);
-        let mut unasked = self.unasked.lock().unwrap_or_else(PoisonError::into_inner);
-        if matches!(made, Registered::Full) {
-            unasked.insert(ask.run);
+        let state = if matches!(made, Registered::Full) {
+            AskState::Full
         } else {
-            unasked.remove(&ask.run);
-        }
+            AskState::Asked
+        };
+        self.note(&ask.run, state);
         made
     }
 
-    /// Whether `run`'s latest held act was refused with no ask raised, for want of room.
-    fn was_unasked(&self, run: &str) -> bool {
-        self.unasked
+    /// Records what `run`'s latest held request came to.
+    fn note(&self, run: &str, state: AskState) {
+        self.last
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .contains(run)
+            .insert(run.to_owned(), state);
+    }
+
+    /// What `run`'s latest held request came to.
+    fn state_of(&self, run: &str) -> Option<AskState> {
+        self.last
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(run)
+            .copied()
     }
 
     /// Removes `run`'s ask with `digest` **without performing it**, so a full run can be cleared
@@ -500,7 +522,7 @@ impl HeldAsks {
     }
 
     fn drop_run(&self, run: &str) {
-        self.unasked
+        self.last
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(run);
@@ -587,7 +609,7 @@ struct RunHandler {
 
 impl RunHandler {
     /// The recorded repo a held request is about, or `None` (and then no ask is raised): a REST
-    /// path names it in its own segments, a GraphQL mutation by the ids it names.
+    /// path names it in its own segments.
     fn repo_of(&self, inbound: &Inbound<'_>, path: &str) -> Option<String> {
         let host = forge_host(&inbound.head.host);
         let here: Vec<&AllowedRepo> = self
@@ -595,18 +617,6 @@ impl RunHandler {
             .iter()
             .filter(|repo| forge_host(repo.host()) == host)
             .collect();
-        if inbound.head.method.eq_ignore_ascii_case("POST")
-            && matches!(path, "/graphql" | "/api/graphql")
-        {
-            // The resolver of object ids is the proxy's own, which knows none yet (`NoObjects`),
-            // so a mutation on an object is tied to a repo only by an id that names the repo.
-            return purlis_core::forge::proxy::mutation_repo(
-                &here,
-                content_type_of(inbound).as_deref(),
-                inbound.body,
-                &NoObjects,
-            );
-        }
         let segments: Vec<String> = path
             .split('/')
             .filter(|segment| !segment.is_empty())
@@ -647,46 +657,74 @@ fn rest_repo(segments: &[String]) -> Option<String> {
     Some(parts.join("/"))
 }
 
-/// The request's `Content-Type`: the head's, else the header's, as the proxy reads it.
+/// The request's `Content-Type` header, and only it: the proxy decides on the header (it sets
+/// the head's content type from it), so the ask keeps and replays the type the proxy read.
 fn content_type_of(inbound: &Inbound<'_>) -> Option<String> {
-    inbound.head.content_type.clone().or_else(|| {
-        inbound
-            .headers
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
-            .map(|(_, value)| value.clone())
-    })
+    inbound
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-type"))
+        .map(|(_, value)| value.clone())
+}
+
+/// Whether a merge request body pins the head it merges: a non-empty `sha` (GitHub's and
+/// GitLab's own field), in a JSON object or a form. Without one the merge is of whatever the
+/// head is when the person allows it, which is not the thing they were shown.
+fn pins_head(content_type: Option<&str>, body: &[u8]) -> bool {
+    let is_form = content_type
+        .and_then(|t| t.split(';').next())
+        .is_some_and(|m| {
+            m.trim()
+                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+        });
+    if is_form {
+        let decode = |s: &str| {
+            percent_encoding::percent_decode_str(&s.replace('+', " "))
+                .decode_utf8_lossy()
+                .into_owned()
+        };
+        return String::from_utf8_lossy(body).split('&').any(|pair| {
+            let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+            decode(key) == "sha" && !decode(value).is_empty()
+        });
+    }
+    serde_json::from_slice::<serde_json::Value>(body)
+        .ok()
+        .and_then(|v| v.get("sha").and_then(|s| s.as_str().map(|s| !s.is_empty())))
+        .unwrap_or(false)
 }
 
 /// The segments of a forge path after the repo it names (GitHub `repos/<o>/<r>`, enterprise
-/// `api/v3/repos/<o>/<r>`, GitLab `api/v4/projects/<encoded>`, a clone `<path>.git`).
+/// `api/v3/repos/<o>/<r>`, GitLab `api/v4/projects/<encoded>`).
 fn after_repo(segments: &[String]) -> Option<&[String]> {
     let at = |i: usize| segments.get(i).map(String::as_str);
     match (at(0), at(1), at(2)) {
-        (Some("repos"), Some(_), Some(_)) => return segments.get(3..),
-        (Some("api"), Some("v3"), Some("repos")) => return segments.get(5..),
-        (Some("api"), Some("v4"), Some("projects")) => return segments.get(4..),
-        _ => {}
+        (Some("repos"), Some(_), Some(_)) => segments.get(3..),
+        (Some("api"), Some("v3"), Some("repos")) => segments.get(5..),
+        (Some("api"), Some("v4"), Some("projects")) => segments.get(4..),
+        _ => None,
     }
-    let at_git = segments.iter().position(|s| s.ends_with(".git"))?;
-    segments.get(at_git + 1..)
 }
 
-/// Whether a request has the shape of the act it was held as. **An ask is raised only for the
-/// act's own request**: the person is shown it and, allowed, it is replayed as method, path and
-/// body, so a refusal that the proxy gave for another reason (a `DELETE` of the repo with
+/// Whether a request has the shape of the act it was held as. **An ask is raised only for an act
+/// that replays exactly**: the person is shown it and, allowed, it is replayed as method, path and
+/// body, so a refusal the proxy gave for another reason (a `DELETE` of the repo with
 /// `?auto_merge=1`) must never become an ask. The shapes: a REST merge (`PUT` pulls or
 /// merge_requests `/<n>/merge`), an approval (`POST` a review, or a merge request's
-/// `approve`/`unapprove`), a release or tag (`POST` releases, git tags, repository tags, or a
-/// push's `git-receive-pack`), and a GraphQL `POST` (whose repo the ids in the body name).
+/// `approve`/`unapprove`) and a release or tag (`POST` releases, git tags, repository tags).
+/// **No GraphQL and no push**: core stops at a document's first refused field and a push's ask
+/// holds its commands but not its pack, so replaying either could do more than was refused.
+/// An empty segment (`//`, a trailing `/`) is no shape.
 fn has_act_shape(act: HeldAct, method: &str, path: &str) -> bool {
     let post = method.eq_ignore_ascii_case("POST");
-    if post && matches!(path, "/graphql" | "/api/graphql") {
-        return true;
+    let Some(rest) = path.strip_prefix('/') else {
+        return false;
+    };
+    if rest.split('/').any(str::is_empty) {
+        return false;
     }
-    let segments: Vec<String> = path
+    let segments: Vec<String> = rest
         .split('/')
-        .filter(|segment| !segment.is_empty())
         .map(|segment| {
             percent_encoding::percent_decode_str(segment)
                 .decode_utf8_lossy()
@@ -706,10 +744,7 @@ fn has_act_shape(act: HeldAct, method: &str, path: &str) -> bool {
             HeldAct::Approval,
             ["pulls", n, "reviews"] | ["merge_requests", n, "approve" | "unapprove"],
         ) => post && number(n),
-        (
-            HeldAct::ReleaseOrTag,
-            ["releases"] | ["git", "tags"] | ["repository", "tags"] | ["git-receive-pack"],
-        ) => post,
+        (HeldAct::ReleaseOrTag, ["releases"] | ["git", "tags"] | ["repository", "tags"]) => post,
         _ => false,
     }
 }
@@ -746,24 +781,39 @@ impl Handler for RunHandler {
             // the ask does not show and the replay would not send), or that is not the act's own
             // request is a plain refusal: nobody is asked to allow a thing that is not it.
             let has_query = inbound.head.target.contains(['?', '#']);
-            if !has_query
-                && has_act_shape(act, &inbound.head.method, &path)
-                && let Some(repo) = self.repo_of(inbound, &path)
-            {
-                let made = self.asks.register(HeldAsk {
-                    id: 0,
-                    run: self.run.clone(),
-                    host: forge_host(&inbound.head.host),
-                    method: inbound.head.method.to_ascii_uppercase(),
-                    path,
-                    repo: Some(repo),
-                    act,
-                    digest: act_digest(inbound),
-                    body: inbound.body.to_vec(),
-                    content_type: content_type_of(inbound),
-                });
-                if let Registered::New(ask) = made {
-                    self.held.raise(&ask);
+            let repo = if !has_query && has_act_shape(act, &inbound.head.method, &path) {
+                self.repo_of(inbound, &path)
+            } else {
+                None
+            };
+            let content_type = content_type_of(inbound);
+            match repo {
+                None => self.asks.note(&self.run, AskState::NotAsked),
+                // A merge is asked only when it pins the head it was shown against.
+                Some(_)
+                    if act == HeldAct::Merge
+                        && !pins_head(content_type.as_deref(), inbound.body) =>
+                {
+                    self.asks.note(&self.run, AskState::NeedsSha);
+                }
+                Some(repo) => {
+                    // Core's canonical body is not on a refusal, so the chat's own bytes are
+                    // kept and replayed; F replays core's once a refusal can carry it.
+                    let made = self.asks.register(HeldAsk {
+                        id: 0,
+                        run: self.run.clone(),
+                        host: forge_host(&inbound.head.host),
+                        method: inbound.head.method.to_ascii_uppercase(),
+                        path,
+                        repo: Some(repo),
+                        act,
+                        digest: act_digest(inbound),
+                        body: inbound.body.to_vec(),
+                        content_type,
+                    });
+                    if let Registered::New(ask) = made {
+                        self.held.raise(&ask);
+                    }
                 }
             }
         }
@@ -1146,15 +1196,22 @@ impl ForgeRoutes {
                         .to_owned(),
                 }
             }
-            r if held_act(r).is_some() && self.asks.was_unasked(run) => {
-                "This chat already has too many requests waiting for the person's approval, so \
-                 purlis did not ask about this one. It goes ahead only after they answer the \
-                 others."
-                    .to_owned()
-            }
-            r if held_act(r).is_some() => "That needs the person's approval. purlis has asked \
-                 them; it goes ahead only when they allow it."
-                .to_owned(),
+            r if held_act(r).is_some() => match self.asks.state_of(run) {
+                Some(AskState::Full) => "This chat already has too many requests waiting for the \
+                     person's approval, so purlis did not ask about this one. It goes ahead only \
+                     after they answer the others."
+                    .to_owned(),
+                Some(AskState::Asked) => "That needs the person's approval. purlis has asked \
+                     them; it goes ahead only when they allow it."
+                    .to_owned(),
+                Some(AskState::NeedsSha) => "purlis did not ask the person to allow this merge: \
+                     it has no `sha`. Send the merge again with the `sha` of the head you mean \
+                     to merge."
+                    .to_owned(),
+                Some(AskState::NotAsked) | None => {
+                    "purlis does not let a chat do that on this forge.".to_owned()
+                }
+            },
             _ => "purlis does not let a chat do that on this forge.".to_owned(),
         }
     }

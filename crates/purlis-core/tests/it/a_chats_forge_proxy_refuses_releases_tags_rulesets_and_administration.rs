@@ -235,6 +235,19 @@ fn a_push_may_not_move_the_default_branch_a_protected_one_a_tag_or_another_kind_
             vec![("create", "refs/heads/ok"), ("update", "refs/heads/main")],
             Refusal::ProtectedRef,
         ),
+        // A mixed push is refused as its most severe class, wherever the tag sits in it.
+        (
+            vec![("create", "refs/tags/v1"), ("delete", "refs/heads/main")],
+            Refusal::ProtectedRef,
+        ),
+        (
+            vec![("delete", "refs/heads/main"), ("create", "refs/tags/v1")],
+            Refusal::ProtectedRef,
+        ),
+        (
+            vec![("create", "refs/tags/v1"), ("update", "refs/notes/commits")],
+            Refusal::ProtectedRef,
+        ),
     ] {
         let out = push("github.com", "/acme/app", &cmds);
         assert!(is_refused(&out, why), "{cmds:?}: {out:?}");

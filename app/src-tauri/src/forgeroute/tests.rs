@@ -335,6 +335,41 @@ fn send_body(
     })
 }
 
+/// A request with any method, content type and bytes, from the run that holds `sentinel`.
+fn send_raw(
+    scene: &Scene,
+    run: &str,
+    sentinel: &str,
+    (method, host, target): (&str, &str, &str),
+    content_type: &str,
+    body: &[u8],
+) -> Outcome {
+    let head = RequestHead::new(method, host, 443, target).with_content_type(Some(content_type));
+    let headers = vec![
+        ("Host".to_owned(), host.to_owned()),
+        ("Authorization".to_owned(), format!("Bearer {sentinel}")),
+        ("Content-Type".to_owned(), content_type.to_owned()),
+    ];
+    scene.listener.handler_of(run).handle(&Inbound {
+        head: &head,
+        headers: &headers,
+        body,
+    })
+}
+
+/// A push's command list: a pkt-line per `(old is zero, new is zero, ref)` command, then a flush.
+fn push_commands(commands: &[(bool, bool, &str)]) -> Vec<u8> {
+    let id = |zero: bool| if zero { "0".repeat(40) } else { "a".repeat(40) };
+    let mut body = Vec::new();
+    for (n, (create, delete, name)) in commands.iter().enumerate() {
+        let caps = if n == 0 { "\0 report-status" } else { "" };
+        let line = format!("{} {} {name}{caps}\n", id(*create), id(*delete));
+        body.extend(format!("{:04x}{line}", line.len() + 4).as_bytes());
+    }
+    body.extend(b"0000");
+    body
+}
+
 /// A GitLab GraphQL mutation that accepts a merge request, naming `project` and the request's `iid`.
 fn gitlab_merge_mutation(project: &str, iid: u32) -> String {
     serde_json::json!({
@@ -373,14 +408,17 @@ fn comment(scene: &Scene, run: &str, sentinel: &str) -> Outcome {
     )
 }
 
+/// A merge that pins the head it merges, as an ask requires.
+const MERGE_BODY: &str = "{\"sha\":\"abc123\"}";
+
 fn merge(scene: &Scene, run: &str, sentinel: &str) -> Outcome {
-    send(
+    send_raw(
         scene,
         run,
         sentinel,
-        "PUT",
-        "api.github.com",
-        "/repos/acme/app/pulls/7/merge",
+        ("PUT", "api.github.com", "/repos/acme/app/pulls/7/merge"),
+        "application/json",
+        MERGE_BODY.as_bytes(),
     )
 }
 
@@ -1458,13 +1496,17 @@ fn a_gitlab_path_names_its_repo_by_its_encoded_segment() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "run-1", "/p/one");
 
-    let outcome = send(
+    let outcome = send_raw(
         &scene,
         "run-1",
         &params.sentinel,
-        "PUT",
-        "gitlab.com",
-        "/api/v4/projects/group%2Fproj/merge_requests/3/merge",
+        (
+            "PUT",
+            "gitlab.com",
+            "/api/v4/projects/group%2Fproj/merge_requests/3/merge",
+        ),
+        "application/json",
+        MERGE_BODY.as_bytes(),
     );
 
     assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
@@ -1475,82 +1517,125 @@ fn a_gitlab_path_names_its_repo_by_its_encoded_segment() {
 }
 
 #[test]
-fn a_graphql_held_act_is_asked_with_the_repo_its_ids_name_and_never_without_one() {
+fn a_graphql_refusal_raises_no_ask_whatever_the_document() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "run-1", "/p/one");
     let sentinel = &params.sentinel;
-
-    // A GitLab merge that names the project it is in.
-    let named = gitlab_merge_mutation("group/proj", 3);
-    let outcome = send_body(
-        &scene,
-        "run-1",
-        sentinel,
-        "gitlab.com",
-        "/api/graphql",
-        &named,
-    );
-    assert!(
-        matches!(outcome, Outcome::Refused(Refusal::Merge)),
-        "{outcome:?}"
-    );
-    let asks = lock(&scene.held.asks).clone();
-    assert_eq!(asks.len(), 1, "{asks:?}");
-    assert_eq!(asks[0].repo.as_deref(), Some("group/proj"));
-    scene
-        .routes
-        .perform_held(asks[0].id)
-        .expect("a recorded repo");
-
-    // A project the run does not record: refused, no ask.
-    let other = gitlab_merge_mutation("evil/proj", 3);
-    send_body(
-        &scene,
-        "run-1",
-        sentinel,
-        "gitlab.com",
-        "/api/graphql",
-        &other,
-    );
-    // A GitHub merge naming only a pull request's node id, which nothing here can place in a
-    // repo (`NoObjects`): refused, no ask.
+    let two_fields = serde_json::json!({
+        "query": "mutation { mergeBranch(input: {repositoryId: \"R_kgDOabc\"}) { clientMutationId } createBranchProtectionRule(input: {repositoryId: \"R_kgDOabc\"}) { clientMutationId } }"
+    })
+    .to_string();
     let by_object = serde_json::json!({
         "query": "mutation { mergePullRequest(input: {pullRequestId: \"PR_kwDOabc\"}) { clientMutationId } }"
     })
     .to_string();
-    let outcome = send_body(
-        &scene,
-        "run-1",
-        sentinel,
-        "api.github.com",
-        "/graphql",
-        &by_object,
-    );
+
+    // A multi-field mutation (core stops at the first refused field, so a replay would run the
+    // rest), a single merge that names its project, and one that names only an object.
+    for (host, path, body) in [
+        ("api.github.com", "/graphql", two_fields.as_str()),
+        ("api.github.com", "/graphql", by_object.as_str()),
+        (
+            "gitlab.com",
+            "/api/graphql",
+            &gitlab_merge_mutation("group/proj", 3),
+        ),
+    ] {
+        let outcome = send_body(&scene, "run-1", sentinel, host, path, body);
+        assert!(matches!(outcome, Outcome::Refused(_)), "{outcome:?}");
+        assert_eq!(
+            scene.routes.refusal_message(
+                "run-1",
+                match outcome {
+                    Outcome::Refused(r) => r,
+                    Outcome::Forward(_) => unreachable!(),
+                }
+            ),
+            "purlis does not let a chat do that on this forge."
+        );
+    }
+
+    assert!(lock(&scene.held.asks).is_empty());
+    assert!(scene.routes.pending_asks("run-1").is_empty());
+}
+
+#[test]
+fn a_push_of_a_tag_raises_no_ask_and_a_mixed_push_is_refused_as_its_most_severe_class() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let push = |commands: &[(bool, bool, &str)]| {
+        send_raw(
+            &scene,
+            "run-1",
+            &params.sentinel,
+            ("POST", "github.com", "/acme/app.git/git-receive-pack"),
+            "application/x-git-receive-pack-request",
+            &push_commands(commands),
+        )
+    };
+
+    let tag = push(&[(true, false, "refs/tags/v1")]);
     assert!(
-        matches!(outcome, Outcome::Refused(Refusal::Merge)),
-        "{outcome:?}"
+        matches!(tag, Outcome::Refused(Refusal::ReleaseOrTag)),
+        "{tag:?}"
     );
-    // A document naming two repos is in neither.
-    let two = serde_json::json!({
-        "query": "mutation { a: mergeRequestAccept(input: {projectPath: \"group/proj\", iid: \"1\"}) { clientMutationId } b: mergeRequestAccept(input: {projectPath: \"evil/proj\", iid: \"1\"}) { clientMutationId } }"
-    })
-    .to_string();
-    send_body(
-        &scene,
-        "run-1",
-        sentinel,
-        "gitlab.com",
-        "/api/graphql",
-        &two,
+    let mixed = push(&[
+        (true, false, "refs/tags/v1"),
+        (false, true, "refs/heads/main"),
+    ]);
+    assert!(
+        matches!(mixed, Outcome::Refused(Refusal::ProtectedRef)),
+        "a tag beside a delete of main is a protected ref: {mixed:?}"
     );
 
-    assert_eq!(
-        lock(&scene.held.asks).len(),
-        1,
-        "only the first was ever asked: {:?}",
-        lock(&scene.held.asks)
-    );
+    assert!(lock(&scene.held.asks).is_empty());
     assert!(scene.routes.pending_asks("run-1").is_empty());
+    assert_eq!(
+        scene.routes.refusal_message("run-1", Refusal::ReleaseOrTag),
+        "purlis does not let a chat do that on this forge."
+    );
+}
+
+#[test]
+fn a_merge_is_asked_only_when_its_body_pins_the_head_with_a_sha() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let put = |content_type: &str, body: &str| {
+        send_raw(
+            &scene,
+            "run-1",
+            &params.sentinel,
+            ("PUT", "api.github.com", "/repos/acme/app/pulls/7/merge"),
+            content_type,
+            body.as_bytes(),
+        )
+    };
+
+    for (content_type, body) in [
+        ("application/json", ""),
+        ("application/json", "{}"),
+        ("application/json", "{\"sha\":\"\"}"),
+        ("application/json", "{\"sha\":7}"),
+        ("application/json", "{\"merge_method\":\"squash\"}"),
+        ("application/x-www-form-urlencoded", "merge_method=squash"),
+        ("application/x-www-form-urlencoded", "sha="),
+    ] {
+        let outcome = put(content_type, body);
+        assert!(
+            matches!(outcome, Outcome::Refused(Refusal::Merge)),
+            "{body}: {outcome:?}"
+        );
+        assert!(lock(&scene.held.asks).is_empty(), "asked for: {body}");
+        let said = scene.routes.refusal_message("run-1", Refusal::Merge);
+        assert!(said.contains("`sha`"), "{said}");
+    }
+
+    put("application/json", "{\"sha\":\"abc123\"}");
+    assert_eq!(lock(&scene.held.asks).len(), 1);
+    put("application/x-www-form-urlencoded", "sha=def456");
+    assert_eq!(lock(&scene.held.asks).len(), 2);
+    let said = scene.routes.refusal_message("run-1", Refusal::Merge);
+    assert!(said.contains("approval"), "{said}");
 }
 
 #[test]
@@ -1585,24 +1670,12 @@ fn different_acts_are_different_asks_and_only_the_same_act_is_one() {
     // The same path with another body is another act.
     merge_with("{\"sha\":\"bbb\"}");
     assert_eq!(lock(&scene.held.asks).len(), 2);
-    // The same GraphQL endpoint with another mutation is another act, though method, host and
-    // path are the same.
-    for iid in [1, 2, 1] {
-        send_body(
-            &scene,
-            "run-1",
-            sentinel,
-            "gitlab.com",
-            "/api/graphql",
-            &gitlab_merge_mutation("group/proj", iid),
-        );
-    }
     let asks = lock(&scene.held.asks).clone();
-    assert_eq!(asks.len(), 4, "{asks:?}");
+    assert_eq!(asks.len(), 2, "{asks:?}");
     let mut digests: Vec<&str> = asks.iter().map(|a| a.digest.as_str()).collect();
     digests.sort_unstable();
     digests.dedup();
-    assert_eq!(digests.len(), 4, "each ask has its own digest");
+    assert_eq!(digests.len(), 2, "each ask has its own digest");
     assert!(asks.iter().all(|a| a.digest.len() == 64));
 }
 
@@ -1728,8 +1801,8 @@ fn an_ask_keeps_the_exact_body_the_chat_sent_for_the_person_to_read_and_for_the_
     merge(&scene, "run-1", &params.sentinel);
 
     let asks = lock(&scene.held.asks).clone();
-    assert_eq!(asks[0].body, b"{\"body\":\"hello\"}");
-    assert_eq!(asks[0].body_text(), "{\"body\":\"hello\"}");
+    assert_eq!(asks[0].body, MERGE_BODY.as_bytes());
+    assert_eq!(asks[0].body_text(), MERGE_BODY);
     assert_eq!(asks[0].content_type.as_deref(), Some("application/json"));
     scene.routes.perform_held(asks[0].id).expect("performed");
     let performed = lock(&scene.held.performed);
@@ -1904,7 +1977,7 @@ fn a_content_type_only_in_the_header_is_kept_on_the_ask() {
     scene.listener.handler_of("run-1").handle(&Inbound {
         head: &head,
         headers: &headers,
-        body: b"{}",
+        body: MERGE_BODY.as_bytes(),
     });
 
     let asks = scene.routes.pending_asks("run-1");
@@ -2004,7 +2077,6 @@ fn an_act_has_the_shape_of_its_own_request_and_no_other() {
             "PUT",
             "/api/v4/projects/group%2Fproj/merge_requests/3/merge",
         ),
-        (Merge, "POST", "/graphql"),
         (Approval, "POST", "/repos/acme/app/pulls/7/reviews"),
         (
             Approval,
@@ -2018,7 +2090,6 @@ fn an_act_has_the_shape_of_its_own_request_and_no_other() {
             "POST",
             "/api/v4/projects/group%2Fproj/repository/tags",
         ),
-        (ReleaseOrTag, "POST", "/acme/app.git/git-receive-pack"),
     ] {
         assert!(has_act_shape(act, method, path), "{act:?} {method} {path}");
     }
@@ -2031,14 +2102,21 @@ fn an_act_has_the_shape_of_its_own_request_and_no_other() {
         (Merge, "PUT", "/repos/acme/app/pulls/7/merge/extra"),
         (Approval, "PUT", "/repos/acme/app/pulls/7/reviews"),
         (ReleaseOrTag, "DELETE", "/repos/acme/app/releases"),
-        (ReleaseOrTag, "GET", "/graphql"),
+        (Merge, "POST", "/graphql"),
+        (Merge, "POST", "/api/graphql"),
+        (ReleaseOrTag, "POST", "/acme/app.git/git-receive-pack"),
+        // An empty segment is no shape, whatever the proxy made of it.
+        (Merge, "PUT", "/repos/acme/app/pulls/7/merge/"),
+        (Merge, "PUT", "/repos//acme/app/pulls/7/merge"),
+        (Merge, "PUT", "//repos/acme/app/pulls/7/merge"),
+        (ReleaseOrTag, "POST", "/repos/acme/app//releases"),
     ] {
         assert!(!has_act_shape(act, method, path), "{act:?} {method} {path}");
     }
 }
 
 #[test]
-fn a_content_type_comes_from_the_head_else_the_header() {
+fn a_content_type_is_the_headers_as_the_proxy_reads_it_never_the_heads() {
     let headers = vec![("content-type".to_owned(), "application/json".to_owned())];
     let bare = RequestHead::new("PUT", "api.github.com", 443, "/x");
     let with_head =
@@ -2051,12 +2129,15 @@ fn a_content_type_comes_from_the_head_else_the_header() {
         })
     };
     assert_eq!(of(&bare, &headers).as_deref(), Some("application/json"));
-    assert_eq!(of(&with_head, &headers).as_deref(), Some("text/plain"));
-    assert_eq!(of(&bare, &[]), None);
+    assert_eq!(
+        of(&with_head, &headers).as_deref(),
+        Some("application/json")
+    );
+    assert_eq!(of(&with_head, &[]), None);
 }
 
 #[test]
-fn the_registry_says_unasked_only_for_a_full_run_and_dismiss_makes_room() {
+fn the_registry_says_full_only_for_the_request_that_was_full_and_dismiss_makes_room() {
     let asks = HeldAsks::default();
     let ask = |digest: &str| an_ask("run-1", "github.com", Some("acme/app"), digest);
     for n in 0..MAX_ASKS_PER_RUN {
@@ -2064,14 +2145,15 @@ fn the_registry_says_unasked_only_for_a_full_run_and_dismiss_makes_room() {
             asks.register(ask(&format!("d{n}"))),
             Registered::New(_)
         ));
-        assert!(!asks.was_unasked("run-1"), "the 16th was raised");
+        assert_eq!(asks.state_of("run-1"), Some(AskState::Asked));
     }
     assert!(matches!(asks.register(ask("more")), Registered::Full));
-    assert!(asks.was_unasked("run-1"));
-    assert!(!asks.was_unasked("run-2"));
+    assert_eq!(asks.state_of("run-1"), Some(AskState::Full));
+    assert_eq!(asks.state_of("run-2"), None);
     assert!(matches!(asks.register(ask("d0")), Registered::Duplicate));
-    assert!(
-        !asks.was_unasked("run-1"),
+    assert_eq!(
+        asks.state_of("run-1"),
+        Some(AskState::Asked),
         "a duplicate retry was asked about"
     );
 
@@ -2081,4 +2163,24 @@ fn the_registry_says_unasked_only_for_a_full_run_and_dismiss_makes_room() {
     assert!(!asks.dismiss("run-2", "d4"), "only its own run's");
     assert_eq!(asks.pending_for("run-1").len(), MAX_ASKS_PER_RUN - 1);
     assert!(matches!(asks.register(ask("more")), Registered::New(_)));
+}
+
+#[test]
+fn a_body_pins_the_head_only_with_a_non_empty_sha_string() {
+    let json = Some("application/json");
+    let form = Some("application/x-www-form-urlencoded; charset=utf-8");
+    for (content_type, body, pins) in [
+        (json, "{\"sha\":\"abc\"}", true),
+        (json, "{\"sha\":\"\"}", false),
+        (json, "{\"sha\":7}", false),
+        (json, "{\"merge_method\":\"squash\"}", false),
+        (json, "not json", false),
+        (json, "", false),
+        (form, "merge_method=squash&sha=abc", true),
+        (form, "sha=", false),
+        (form, "xsha=abc", false),
+        (None, "{\"sha\":\"abc\"}", true),
+    ] {
+        assert_eq!(pins_head(content_type, body.as_bytes()), pins, "{body}");
+    }
 }
