@@ -48,6 +48,36 @@ expectations (T1.1-05, #6852; M74.1's spec principles 2 to 4).
   `production_only` pair and `host_killed` skip scaled runs. `production_nightly_only` keeps a
   cell to the nightly production run.
 
+## The runner (#7322)
+
+`app/src-tauri/src/scenarios/cells.rs` plays every cell in `cells/` in the scenario host, one chat
+per batch and dialect, and reports each through `report_cell`, so a cell that ran is a cell record
+(kind, row, `refusal_expected`, events) and not only a JUnit row (#7229). What a cell means is
+decided in `src/play.rs`, which has no chat and is tested on its own: a step's `require` and
+`forbid` read against the events its chat wrote (`step_assertions`; the file's docs say what
+`count`, `before`, `at`, `within` and `args` mean), and the verdict (`verdict`).
+
+**An unknown word is malformed, never passed.** A cell with one is reported `fail` with every
+reason, so the run-result gate goes red on it. The words are closed lists, one place each:
+
+- `window[].query` is a word of `play::Window`, each one of the window's own queries:
+  `ask.listed`, `notice.standing`, `blocked_log.lists`, `chat_log.block_row`,
+  `needs_you.queued`, `merge_row.listed`, `settings.grant_listed`. `forbid: true` asks for it not
+  to hold. Prose is not a word.
+- `press` is a label in `press_of` (`cells.rs`): the ask's buttons by the window's own wording
+  (`allow_said`, `KEEP_SAID`), `Merge`, `Don't merge`, `Stop chat`, `Ignore the ask`, and
+  `Kill the harness process from the person's terminal`. A button's `target` is `ask` and its
+  `when` is `ask.raised`.
+- `restart` and a second `chat` are not played yet: a cell with either is malformed.
+- A mark's `check` is one the suite runs: `refusal_black_hole`, `ask_black_hole` or
+  `block_without_source`.
+
+**Q301.** An escape cell is never `expected_fail`, and neither is a failed `outcome` of a step
+with `refusal_expected`: the refused action happened, so the record is a `fail` and carries
+`refusal_expected` for the comparison of runs to open the escape issue.
+
+Claude on macOS is ticket 10's leg, so the fake leg plays no Claude cell there.
+
 ## The coverage gate (ticket 8)
 
 `cargo test -p purlis-scenarios --test coverage` holds `coverage.json` to the matrix:
@@ -135,7 +165,7 @@ is harness agnostic: a dialect is only the key to the hook words it is armed wit
   a cell failed live or nothing was compared, and 2 when a file, an option or an extra argument is
   wrong. It does not check that the live report covers every cell the brief asked for: the cells
   files given to `report` decide that, and a cell they leave out is not in the report at all.
-  The scenario host can write `events` (`report::ran`, `Scenario::report_cell`) into the record of
-  a cell it reports as run, so those pairs would compare event sequences; no cell is reported as
-  run yet, until the cells-format runner calls `report_cell`. A suite record with none (a
+  The scenario host writes `events` (`report::ran`, `Scenario::report_cell`) into the record of
+  every cell the runner plays (`every_cell_plays_and_is_reported`), so those pairs compare event
+  sequences. A suite record with none (a
   skipped-for-timing cell, a fixture) compares verdicts only.

@@ -128,7 +128,6 @@ impl Protection {
     }
 
     /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
-    #[allow(dead_code)]
     pub(crate) fn in_report(self) -> purlis_scenarios::model::Protection {
         use purlis_scenarios::model::Protection as Report;
         match self {
@@ -160,7 +159,6 @@ impl Dialect {
     }
 
     /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
-    #[allow(dead_code)]
     pub(crate) fn in_report(self) -> purlis_scenarios::model::Dialect {
         use purlis_scenarios::model::Dialect as Report;
         match self {
@@ -1625,9 +1623,8 @@ impl Scenario {
     /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
     /// report with the kinds of the events its log gained after `since`, the [`Self::latest_seq`]
     /// taken when the cell began: the canary's and earlier cells' events are not the cell's. A log
-    /// that cannot be read is an error, never a record with no events. Named by the runner of the cells format, which no scenario has yet:
-    /// the cells that run today are Rust tests that name no cell.
-    #[expect(dead_code)]
+    /// that cannot be read is an error, never a record with no events. Called by the runner of
+    /// the cells format (`cells.rs`).
     pub(crate) fn report_cell(
         &self,
         cell: &purlis_scenarios::model::Cell,
