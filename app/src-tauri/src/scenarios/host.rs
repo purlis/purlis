@@ -192,18 +192,19 @@ pub(crate) fn policy_of(template: Template) -> String {
 }
 
 /// **What a chat starting in a project under `template` runs under**: each family as the
-/// template sets it, under this machine's locks. `strict` is every family enforced.
+/// template sets it, under this machine's locks. `strict` is every family enforced. The sandbox's
+/// level is the project's own `[sandbox] mode` (the scenario's protection, not its template), which
+/// outranks the template's since #7105.
 pub(crate) fn resolved_under(
     template: Template,
     root: &Path,
 ) -> purlis_core::enforcement::Resolved {
-    purlis_core::enforcement::Resolved::of(
-        &purlis_core::enforcement::Settings::from_text(Some(&format!(
-            "[policy]\ntemplate = \"{}\"\n",
-            template.word()
-        ))),
-        &purlis_core::sandbox::policy::Locks::of(root),
-    )
+    let mut said = purlis_core::enforcement::Settings::from_text(Some(&format!(
+        "[policy]\ntemplate = \"{}\"\n",
+        template.word()
+    )));
+    said.sandbox = purlis_core::enforcement::Settings::read(root).sandbox;
+    purlis_core::enforcement::Resolved::of(&said, &purlis_core::sandbox::policy::Locks::of(root))
 }
 
 /// **The project at `root` runs under `template` at every chat's start** (Q308a): the person
