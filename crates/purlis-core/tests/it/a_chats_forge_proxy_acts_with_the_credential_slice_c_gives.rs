@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use purlis_core::forge::credential::{TokenConnection, variable_for};
 use purlis_core::forge::proxy::{
-    AllowedRepo, BrokeredCredentials, ChatId, ForgeProxy, Inbound, Kind, NoObjects, Outcome,
-    Refusal, RequestHead,
+    AllowedRepo, BrokeredCredentials, ChatId, ForgeProxy, ForgeRepoId, Inbound, Kind, NoObjects,
+    Outcome, Refusal, RequestHead,
 };
 
 use crate::support::forge_proxy::is_refused;
@@ -46,7 +46,7 @@ fn proxy_with(tokens: Vec<(&'static str, &'static str)>) -> (ForgeProxy, ChatId,
             AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "main").unwrap(),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
-                .with_project_id(42),
+                .with_forge_id(ForgeRepoId::for_a_test(42)),
             AllowedRepo::new(Kind::GitLab, "git.corp.example", 443, "grp/proj", "main").unwrap(),
         ],
     );

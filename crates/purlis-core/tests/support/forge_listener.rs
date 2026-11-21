@@ -18,7 +18,7 @@ use purlis_core::forge::proxy::listener::{
 };
 use purlis_core::forge::proxy::{
     AllowedRepo, ChatId, Credential, CredentialError, CredentialRequest, CredentialSource,
-    ForgeProxy, Kind, NoObjects, Sentinel, TokenKind,
+    ForgeProxy, ForgeRepoId, Kind, NoObjects, Sentinel, TokenKind,
 };
 use purlis_core::secrets::keyring::Secret;
 
@@ -132,7 +132,7 @@ impl World {
                 .with_node_id("R_acme_app"),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
-                .with_project_id(42),
+                .with_forge_id(ForgeRepoId::for_a_test(42)),
         ])
     }
 
@@ -159,6 +159,7 @@ impl World {
             },
             storage: Default::default(),
             observe: None,
+            push: None,
         };
         Self {
             proxy,

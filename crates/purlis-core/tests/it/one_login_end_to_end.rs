@@ -231,6 +231,26 @@ fn serve(listener: &TcpListener, bridge: &Arc<Bridge>) {
 #[test]
 fn a_person_signs_in_once_and_a_chat_works_the_forge_through_the_real_policy() {
     purlis_core::unsteered!();
+    // The scenario drives the real clients. In the default build this test is in every run, so a
+    // machine without one says so and passes; the run that exists to prove the scenario
+    // (`one-login-e2e.yml`) sets `PURLIS_PROXY_REAL_CLIENTS`, and a missing one then fails it.
+    for name in ["node", "gh", "glab", "git", "openssl"] {
+        let present = purlis_core::forklock::status(
+            Command::new(name)
+                .arg("--version")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null()),
+        )
+        .is_ok_and(|status| status.success());
+        if !present {
+            assert!(
+                std::env::var_os("PURLIS_PROXY_REAL_CLIENTS").is_none(),
+                "{name} is not installed, and PURLIS_PROXY_REAL_CLIENTS says it must be"
+            );
+            let _ = writeln!(std::io::stderr(), "skipping: {name} is not installed");
+            return;
+        }
+    }
     let tokens = Tokens::default();
     let bridge = Arc::new(Bridge {
         proxy: ForgeProxy::new(Box::new(tokens.clone()), Box::new(NoObjects)),

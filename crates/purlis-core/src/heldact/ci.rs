@@ -326,6 +326,20 @@ impl GitTrees {
     }
 }
 
+/// **No objects to read**: the trees of a held act that has no push's quarantine, which is every
+/// act but a CI-file push. Every question is an error, never a read of a clone.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct NoClone;
+
+impl Trees for NoClone {
+    fn changed(&self, _: &HeadSha, _: &HeadSha) -> Result<Vec<String>, String> {
+        Err("no clone".to_owned())
+    }
+    fn patch(&self, _: &HeadSha, _: &HeadSha, _: &[String]) -> Result<String, String> {
+        Err("no clone".to_owned())
+    }
+}
+
 impl Trees for GitTrees {
     fn changed(&self, against: &HeadSha, tip: &HeadSha) -> Result<Vec<String>, String> {
         // Both objects must be here: a commit the clone lacks has no tree to compare.

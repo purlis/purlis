@@ -38,6 +38,15 @@ pub trait TipFiles: Send + Sync {
     fn message(&self, tip: &HeadSha) -> Result<String, String>;
 }
 
+impl TipFiles for super::ci::NoClone {
+    fn changes(&self, _: &HeadSha, _: &HeadSha) -> Result<Vec<TipChange>, String> {
+        Err("no clone".to_owned())
+    }
+    fn message(&self, _: &HeadSha) -> Result<String, String> {
+        Err("no clone".to_owned())
+    }
+}
+
 impl TipFiles for GitTrees {
     fn changes(&self, base: &HeadSha, tip: &HeadSha) -> Result<Vec<TipChange>, String> {
         // A listing past what a push may hold is never read whole.

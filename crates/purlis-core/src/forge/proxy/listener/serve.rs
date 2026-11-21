@@ -28,7 +28,6 @@ use url::Url;
 use super::super::{
     BodyNeed, Class, Forwarded, Inbound, Outcome, Refusal, RequestHead, is_download_host,
 };
-use super::Wiring;
 use super::http::{
     BodyError, Framed, Framing, Head, HeadError, finish_chunks, framing_of, message, write_answer,
     write_chunk, write_head,
@@ -39,6 +38,7 @@ use super::scrub::{
     ChatSide, Scanner, advertised_branches, is_dropped_header, is_text, push_fully_accepted,
 };
 use super::upstream::{UpstreamRequest, UpstreamResponse};
+use super::{PushRead, PushUpdate, PushVerdict, Wiring};
 use crate::forge::proxy::{framing_is_unambiguous, header_names_are_plain, normal};
 
 /// Where a request arrived.
@@ -170,7 +170,29 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
     );
     match outcome {
         Outcome::Refused(refusal) => refused(&mut framed.stream, refusal),
+        // A held act (slice F2): the ask is raised, and the chat is told its number and that
+        // nothing was sent. The act itself waits for the person's press.
+        Outcome::Held(held) => write_answer(&mut framed.stream, 403, &message(&held.said)),
         Outcome::Forward(forwarded) => {
+            // A push is checked for CI files before any of it goes on (ADR 0128 D8.3): the
+            // listener forwards only what the gate lets through.
+            if forwarded.class == Class::GitPush
+                && let Some(gate) = &w.push
+            {
+                let Some(push) = read_push(&forwarded, &body) else {
+                    return write_answer(
+                        &mut framed.stream,
+                        403,
+                        &message("purlis could not read this push, so it was not sent"),
+                    );
+                };
+                match gate.check(&w.chat, &push) {
+                    PushVerdict::Forward => {}
+                    PushVerdict::Refuse(why) | PushVerdict::Held(why) => {
+                        return write_answer(&mut framed.stream, 403, &message(&why));
+                    }
+                }
+            }
             let hosts = w.proxy.terminable_hosts(&w.chat);
             let side = ChatSide {
                 hosts: &hosts,
@@ -179,6 +201,54 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
             forward(w, &mut framed.stream, &rh, forwarded, body, &side)
         }
     }
+}
+
+/// A push's commands and pack, read from the body of its `git-receive-pack` request, or `None`
+/// where it is not pkt-lines the way git sends them.
+fn read_push(forwarded: &Forwarded, body: &[u8]) -> Option<PushRead> {
+    let mut at = 0;
+    let mut updates = Vec::new();
+    loop {
+        let len = std::str::from_utf8(body.get(at..at + 4)?)
+            .ok()
+            .filter(|hex| hex.bytes().all(|b| b.is_ascii_hexdigit()))
+            .and_then(|hex| usize::from_str_radix(hex, 16).ok())?;
+        if len == 0 {
+            at += 4;
+            break;
+        }
+        if len < 4 {
+            return None;
+        }
+        let payload = body.get(at + 4..at + len)?;
+        at += len;
+        let line = payload.split(|b| *b == 0).next()?;
+        let line = std::str::from_utf8(line).ok()?;
+        let line = line.strip_suffix('\n').unwrap_or(line);
+        if line.starts_with("shallow ") {
+            continue;
+        }
+        let mut parts = line.split(' ');
+        let (Some(old), Some(new), Some(name), None) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
+        else {
+            return None;
+        };
+        updates.push(PushUpdate {
+            old: old.to_owned(),
+            new: new.to_owned(),
+            name: name.to_owned(),
+        });
+    }
+    if updates.is_empty() {
+        return None;
+    }
+    Some(PushRead {
+        host: forwarded.host.clone(),
+        repo: forwarded.repo.clone(),
+        updates,
+        pack: body.get(at..)?.to_vec(),
+    })
 }
 
 fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {

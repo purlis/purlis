@@ -109,12 +109,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
-  # **The one-login train switch** (ADR 0128, slice J): the app features the app's builds and tests
-  # here turn on. `main` builds the app without them, so the forge route is off for everyone until
-  # the train lands; the `one-login` branch sets this, and the pull request that lands the train
-  # deletes this line and the steps that name it. The manifest never turns it on
-  # (`app/src-tauri/Cargo.toml`), and the `rust` job checks that it does not.
-  FORGE_WIRING: forge-wiring
   # The test runner the `rust` job installs, one exact version (`.config/nextest.toml`).
   NEXTEST_VERSION: "0.9.146"
   # Cargo's network retries, 10 instead of its default 3, for every cargo run in every job, the
@@ -524,13 +518,12 @@ jobs:
       # The app's `e2e` feature, so what only the scenario build compiles (`ipc_commands.rs`'s
       # `e2e_only` and what it calls, #2836) is linted too.
       - run: cargo clippy -p purlis-app --lib --features e2e --locked -- -D warnings
-      # The forge route on (the train's build, `FORGE_WIRING`), tests included; the steps above
-      # lint it off, which is what `main` ships.
-      - run: cargo clippy -p purlis-app --lib --tests --features "$FORGE_WIRING" --locked -- -D warnings
-      # `main`'s default build has the forge route off: the feature exists and no default turns
-      # it on.
+      # The forge route is on in every build (one login, ADR 0128): the app's `forge-wiring`
+      # feature exists and a default feature turns it on, and so does the core's, whose listener
+      # it needs. Left out only by `--no-default-features`.
+      - run: cargo clippy -p purlis-app --lib --tests --locked -- -D warnings
       - run: |
-          cargo metadata --no-deps --format-version 1 --locked | jq -e '.packages[] | select(.name == "purlis-app") | (.features["forge-wiring"] != null) and ((.features.default // []) | index("forge-wiring") == null)' > /dev/null || { echo "::error file=app/src-tauri/Cargo.toml::forge-wiring must exist and must not be a default feature; the one-login train turns it on in CI (FORGE_WIRING)"; exit 1; }
+          cargo metadata --no-deps --format-version 1 --locked | jq -e '.packages[] | select(.name == "purlis-app" or .name == "purlis-core") | (.features["forge-wiring"] != null) and ((.features.default // []) | index("forge-wiring") != null)' > /dev/null || { echo "::error::forge-wiring must exist and be a default feature of purlis-app and purlis-core"; exit 1; }
   # nextest does not run doctests, so cargo does, in a job of its own (#4255). In `rust`'s part 2
   # this step was 3 of the 5 minutes that made that part the slowest (22.8 against 17.6 to 18.4,
   # 2026-10-31), and no part needs it: the workspace has no doctest yet, so the 3 minutes are
@@ -559,15 +552,14 @@ jobs:
       - run: mkdir -p app/dist
       - name: Run the doctests
         run: tools/no-orphans.sh --reap -- cargo test --workspace --locked --doc
-  # **The forge route's tests, with the route on** (ADR 0128, slice J). The switch is out of the
-  # manifest (`FORGE_WIRING`), so `rust`'s parts build the app without it and the `forgeroute`
-  # module's tests are not even compiled there; the Docker-pool jobs filter to their own tests.
-  # This runs only `forgeroute::` tests, and `--no-tests fail` makes a filter that matches nothing
+  # **The forge route's tests** (ADR 0128, slice J). The route is on in every build, so `rust`'s
+  # parts compile and run these too; the Docker-pool jobs filter to their own tests. This runs only
+  # `forgeroute::` tests, on the two systems whose socket path limits differ, and `--no-tests fail` makes a filter that matches nothing
   # a red run, not a green one. `rust (fmt, clippy, test)` requires the Linux run; the macOS one
   # (where the socket path limit is 104 bytes) is `forgeroute-macos`, below. The train's landing
   # pull request deletes both with the switch.
   forgeroute:
-    name: forge route tests (ubuntu-24.04, forge-wiring on)
+    name: forge route tests (ubuntu-24.04)
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
@@ -590,12 +582,12 @@ jobs:
       # tauri::generate_context! reads the built frontend, so it has to exist before a build.
       - run: mkdir -p app/dist
       - name: The forgeroute tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --profile ci --no-tests fail -E 'test(/^forgeroute::/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail -E 'test(/^forgeroute::/)'
   # The same tests on macOS, where a unix socket's path may hold 104 bytes and the per-user
   # temporary directory is long. Like `browser-engine-macos`, on a pull request that is not a
   # draft and in the merge queue, never on a push (a draft runs no macOS job, 2026-11-02).
   forgeroute-macos:
-    name: forge route tests (macos-latest, forge-wiring on)
+    name: forge route tests (macos-latest)
     needs: changes
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'merge_group') && needs.changes.outputs.rust != 'false' && !github.event.pull_request.draft }}
     runs-on: macos-latest
@@ -612,7 +604,7 @@ jobs:
           tool: cargo-nextest@${{ env.NEXTEST_VERSION }}
       - run: mkdir -p app/dist
       - name: The forgeroute tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --profile ci --no-tests fail -E 'test(/^forgeroute::/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-app --lib --profile ci --no-tests fail -E 'test(/^forgeroute::/)'
   # The required check `rust (fmt, clippy, test)`: green only when the lint, the doctests and every
   # part of `rust` are. `!cancelled()` so a red one still reports here as red, not as skipped, which a
   # required check would count as passing.
@@ -707,7 +699,7 @@ jobs:
           set -euo pipefail
           mkdir -p app/dist
           cargo build --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
-          cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --no-run
+          cargo nextest run --locked -p purlis-app --lib --no-run
           cargo nextest run --locked -p purlis-core --test it --no-run
       - name: The runner image of this build, and the parity suite's around it, by digest
         if: steps.scope.outputs.run == 'true'
@@ -761,7 +753,7 @@ jobs:
         if: steps.scope.outputs.run == 'true'
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --profile ci --retries 0 --no-tests fail
+          cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail
           -E 'test(/::in_a_docker_pool$/) | test(/^runnerlinks::tests::a_(window_reaches|project_reaches)_/)'
       # `--retries 0` in both: the `ci` profile's retry is reported by `rust`'s annotate step,
       # which this job has not, so a flake here fails as it did rather than pass unseen.
@@ -839,7 +831,7 @@ jobs:
           set -euo pipefail
           mkdir -p app/dist
           cargo build --locked -p purlis-cli --bin purlis -p fake-harness --bin fake-harness
-          cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --no-run
+          cargo nextest run --locked -p purlis-app --lib --no-run
           cargo nextest run --locked -p purlis-core --test it --no-run
       - name: The runner image of this build, and the parity suite's around it, by digest
         if: steps.scope.outputs.run == 'true'
@@ -932,7 +924,7 @@ jobs:
         if: ${{ !cancelled() && steps.scope.outputs.run == 'true' }}
         run: >-
           tools/no-orphans.sh --reap --
-          cargo nextest run --locked -p purlis-app --lib --features "$FORGE_WIRING" --profile ci --retries 0 --no-tests fail
+          cargo nextest run --locked -p purlis-app --lib --profile ci --retries 0 --no-tests fail
           -E 'test(/::in_a_remote_docker_pool$/)'
       - name: What the other machine ran and said, if a test failed
         if: failure() && steps.scope.outputs.run == 'true'

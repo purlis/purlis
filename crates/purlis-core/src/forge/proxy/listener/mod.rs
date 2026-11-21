@@ -164,6 +164,44 @@ pub trait Observe: Send + Sync {
     fn request(&self, head: &super::RequestHead, body: &[u8]);
 }
 
+/// One ref a push moves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushUpdate {
+    pub old: String,
+    pub new: String,
+    pub name: String,
+}
+
+/// A push as the listener read it, before any of it goes to the forge: the repo, the refs it moves
+/// and the pack it sends.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PushRead {
+    pub host: String,
+    /// The repo's path as the proxy recorded it (`owner/name`).
+    pub repo: String,
+    pub updates: Vec<PushUpdate>,
+    /// The packfile after the commands (empty for a push that only deletes).
+    pub pack: Vec<u8>,
+}
+
+/// What a [`PushGate`] says of a push.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PushVerdict {
+    /// Nothing the person must see in it: send it on.
+    Forward,
+    /// Not sent, and not asked: the sentence says why.
+    Refuse(String),
+    /// Not sent: an ask was raised for the person, and the sentence names it.
+    Held(String),
+}
+
+/// **The check of a push's objects** (ADR 0128 D8.3), made by the app, which alone holds the forge
+/// and a place for the pack. The listener asks it before it forwards a push, and forwards only on
+/// [`PushVerdict::Forward`]: a push that changes CI files is never sent on by this door.
+pub trait PushGate: Send + Sync {
+    fn check(&self, chat: &ChatId, push: &PushRead) -> PushVerdict;
+}
+
 /// Everything one chat's listener needs, as plain values.
 #[derive(Clone)]
 pub struct Wiring {
@@ -177,6 +215,8 @@ pub struct Wiring {
     pub storage: Arc<LfsStorage>,
     /// See every request read ([`Observe`]); none in the app.
     pub observe: Option<Arc<dyn Observe>>,
+    /// The check of a push's objects ([`PushGate`]); none sends every push the core allowed.
+    pub push: Option<Arc<dyn PushGate>>,
 }
 
 impl Wiring {
@@ -191,7 +231,15 @@ impl Wiring {
             limits: Limits::default(),
             storage: Arc::new(LfsStorage::default()),
             observe: None,
+            push: None,
         }
+    }
+
+    /// This wiring, its pushes checked by `gate` before they are forwarded.
+    #[must_use]
+    pub fn with_push_gate(mut self, gate: Arc<dyn PushGate>) -> Self {
+        self.push = Some(gate);
+        self
     }
 }
 
@@ -329,6 +377,66 @@ impl Drop for ForgeListener {
             let _ = thread.join();
         }
     }
+}
+
+/// **One run's whole route** (one login, slice K): the unix socket for `gh` and the `CONNECT` door
+/// for `git` and `glab`, bound for one chat of one run, with the authority's certificate written
+/// beside the socket. Dropping it closes both doors and removes the socket.
+#[cfg(unix)]
+pub struct RunRoute {
+    _socket: ForgeListener,
+    _connect: ForgeListener,
+    /// The socket `gh` is pointed at.
+    pub socket: std::path::PathBuf,
+    /// The `CONNECT` door on loopback, which the chat's egress proxy hands a forge connection to.
+    pub door: SocketAddr,
+    /// The authority's certificate (public), for git's `sslCAInfo` and glab's `GLAB_CA_CERT`.
+    pub ca_cert: std::path::PathBuf,
+    /// The hosts the door terminates.
+    pub hosts: Vec<String>,
+}
+
+#[cfg(unix)]
+impl RunRoute {
+    /// The route of `wiring`'s chat, its socket in `dir` (a folder that is the app's alone, which
+    /// [`ForgeListener::serve_socket`] checks) and its certificate there too.
+    pub fn open(wiring: Wiring, dir: &std::path::Path) -> io::Result<Self> {
+        let hosts = wiring.proxy.terminable_hosts(&wiring.chat);
+        let socket = ForgeListener::serve_socket(wiring.clone(), dir)?;
+        let EndpointKind::UnixSocket(path) = socket.kind().clone() else {
+            return Err(io::Error::other("a socket endpoint is not a socket"));
+        };
+        let connect = ForgeListener::serve_connect(wiring)?;
+        let EndpointKind::Loopback(door) = connect.kind().clone() else {
+            return Err(io::Error::other("a loopback endpoint is not on loopback"));
+        };
+        let pem = connect
+            .ca_certificate_pem()
+            .ok_or_else(|| io::Error::other("the door made no authority"))?;
+        let ca_cert = dir.join("ca.pem");
+        write_public(&ca_cert, pem.as_bytes())?;
+        Ok(Self {
+            _socket: socket,
+            _connect: connect,
+            socket: path,
+            door,
+            ca_cert,
+            hosts,
+        })
+    }
+}
+
+/// Writes a certificate (public) as a new file the app owns: `create_new` never follows a link.
+#[cfg(unix)]
+fn write_public(path: &std::path::Path, bytes: &[u8]) -> io::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let _ = std::fs::remove_file(path);
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o644)
+        .open(path)?;
+    file.write_all(bytes)
 }
 
 /// Run `serve` on a thread of its own, unless the listener is already serving as many connections

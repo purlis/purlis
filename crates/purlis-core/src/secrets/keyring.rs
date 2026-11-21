@@ -110,13 +110,6 @@ impl Secret {
     pub fn into_inner(mut self) -> String {
         std::mem::take(&mut *self.0)
     }
-
-    /// The value, for a test to read what a transport was given. Never public: a caller outside
-    /// the core takes the value with [`Secret::into_inner`].
-    #[cfg(test)]
-    pub(crate) fn expose(&self) -> &str {
-        &self.0
-    }
 }
 
 impl std::fmt::Debug for Secret {

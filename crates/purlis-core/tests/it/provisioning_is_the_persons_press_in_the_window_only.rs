@@ -190,6 +190,17 @@ const ALLOWED_IN_APP: &[&str] = &[
     "createproject.rs",
     "forgeaccounts.rs",
     "forgepkce.rs",
+    // The forge route the app runs for each run of a chat (one login, slice K). A run starts by
+    // the app (the person started the chat): the route enrols it with its proxy and its gate, and
+    // reads the person's sign-in as the app, in its own process. A chat's process tree has no
+    // `HostScope`, so none of this is reachable from one.
+    "forgeroute/mod.rs",
+    // The route's seams: the person's confirmed repos (recorded by their press, with the id the
+    // forge gave) and the gate over them. It records nothing itself.
+    "forgeroute/prod.rs",
+    // Held acts: the app reads and writes the forge as the person only for their press of an ask,
+    // and a CI-file push's base is fetched for the ask the chat's push raised.
+    "forgewiring.rs",
     // Lists the window's commands, `vouch_clone` among them, for the handler.
     "ipc_commands.rs",
     "onelogin.rs",

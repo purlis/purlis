@@ -624,6 +624,21 @@ pub struct Serving {
     /// How [`Self::forge_denied`] is looked up for its addresses: none uses the system's. Tests
     /// name one.
     pub forge_resolver: Option<super::forgedeny::Resolver>,
+    /// **Where a `CONNECT` to a forge host the chat's route serves is handed** (ADR 0128 D3a):
+    /// the app's listener, on a loopback address of this machine. The connection is carried there
+    /// whole, so the chat's `git` and `glab` reach the forge only through the proxy, which
+    /// terminates it under the chat's own authority. None where the chat has no forge route.
+    pub forge_route: Option<ForgeRoute>,
+}
+
+/// A chat's forge route as its egress proxy sees it: the loopback address of the listener that
+/// terminates a forge connection, and the hosts it serves.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgeRoute {
+    /// The listener's `CONNECT` door. Only a loopback address is ever dialled.
+    pub addr: SocketAddr,
+    /// The forge hosts (lower case) whose `CONNECT` is handed over.
+    pub hosts: Vec<String>,
 }
 
 impl Serving {
@@ -647,6 +662,7 @@ impl Serving {
             network: None,
             forge_denied: Vec::new(),
             forge_resolver: None,
+            forge_route: None,
         }
     }
 
@@ -804,6 +820,7 @@ impl Proxy {
                 }
                 None => super::forgedeny::ForgeDenial::of(&serving.forge_denied),
             }),
+            route: serving.forge_route,
             live: Live::default(),
             tally: Mutex::new(Tally::default()),
             teller: Teller::default(),
@@ -1082,6 +1099,8 @@ struct Allowed {
     network: Option<(super::asks::Answered, ToldOnce)>,
     /// [`Serving::forge_denied`], held as names, addresses and port 22.
     forge: Option<super::forgedeny::ForgeDenial>,
+    /// [`Serving::forge_route`].
+    route: Option<ForgeRoute>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1542,6 +1561,16 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         );
         return;
     }
+    // A forge host the chat's route serves is handed to the listener, which terminates the
+    // connection itself (ADR 0128 D3a): before any layer is asked, because no layer may allow a
+    // forge to be tunnelled, and none may refuse the route the chat's `git` and `glab` use.
+    if request.forward.is_none()
+        && let Some(route) = &allowed.route
+        && route.serves(&request.host)
+    {
+        hand_to_route(client, route, &request.host, request.port, &rest, allowed);
+        return;
+    }
     // This machine's networks, read once for the decision and the connect.
     let read = super::hosts::own_networks_read();
     let own: Vec<std::net::IpAddr> = read.iter().flatten().map(|one| one.address).collect();
@@ -1668,6 +1697,47 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         return;
     }
     splice(client, upstream, up_to - rest.len() as u64, allowed.idle);
+}
+
+impl ForgeRoute {
+    /// Whether `host` is one the route serves.
+    fn serves(&self, host: &str) -> bool {
+        self.hosts.iter().any(|h| h.eq_ignore_ascii_case(host))
+    }
+}
+
+/// Carries a chat's `CONNECT host:port` to the listener's door: the line is sent on as the chat
+/// sent it, and what the listener answers (its `200` or its refusal) goes back whole, so the chat
+/// is answered by the proxy that decided and never by this one. A listener that is not there
+/// ends the connection with a `502`.
+fn hand_to_route(
+    mut client: TcpStream,
+    route: &ForgeRoute,
+    host: &str,
+    port: u16,
+    rest: &[u8],
+    allowed: &Arc<Allowed>,
+) {
+    // Only this machine's own loopback is ever the listener's address, whatever a plan said.
+    let door = if route.addr.ip().is_loopback() {
+        TcpStream::connect_timeout(&route.addr, Duration::from_secs(5)).ok()
+    } else {
+        None
+    };
+    let Some(mut door) = door else {
+        answer(
+            &mut client,
+            "502 Bad Gateway",
+            "purlis's forge route is not listening, so nothing was sent",
+        );
+        return;
+    };
+    let _ = door.set_write_timeout(Some(allowed.idle));
+    let line = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n");
+    if door.write_all(line.as_bytes()).is_err() || door.write_all(rest).is_err() {
+        return;
+    }
+    splice(client, door, u64::MAX, allowed.idle);
 }
 
 /// A confined connection held in its proxy's [`Live`], let go of when it ends.

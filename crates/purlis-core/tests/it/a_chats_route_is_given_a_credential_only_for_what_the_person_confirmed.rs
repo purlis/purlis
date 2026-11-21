@@ -239,6 +239,7 @@ impl Chat {
                 .map(|(_, value)| value.clone())
                 .expect("a credentialed request carries one")),
             Outcome::Refused(refusal) => Err(refusal),
+            Outcome::Held(held) => panic!("a held act in a read: {held:?}"),
         }
     }
 }
@@ -464,6 +465,7 @@ impl Chat {
                 .map(|(_, value)| value.clone())
                 .expect("a credentialed request carries one")),
             Outcome::Refused(refusal) => Err(refusal),
+            Outcome::Held(held) => panic!("a held act in a read: {held:?}"),
         }
     }
 }

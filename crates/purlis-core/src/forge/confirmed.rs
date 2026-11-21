@@ -131,8 +131,21 @@ impl TokenSource for Fixed {
     }
 }
 
-impl RepoLookup for AsThePerson<'_> {
-    fn repo_id(&self, account: &ForgeAccount, path: &str) -> Result<u64, String> {
+/// What the forge says of a repo to the person's own account: what a chat's route is made from
+/// (ADR 0128 D3a). A forge read at the start of a run, never a chat's word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RepoRead {
+    /// The forge's numeric id.
+    pub id: u64,
+    /// The repo's default branch, which a push is never allowed to move.
+    pub default_branch: String,
+    /// GitHub's GraphQL node id, where the forge gives one.
+    pub node_id: Option<String>,
+}
+
+impl AsThePerson<'_> {
+    /// The repo at `path`, as `account` is shown it by its forge.
+    pub fn read(&self, account: &ForgeAccount, path: &str) -> Result<RepoRead, String> {
         let token = accounts::token(self.keyring, account)?.ok_or_else(|| {
             format!(
                 "{} on {} is signed out. Sign in first, then trust the clone.",
@@ -167,8 +180,15 @@ impl RepoLookup for AsThePerson<'_> {
         if !reply.ok() {
             return Err(not_found());
         }
-        serde_json::from_str::<Value>(&reply.out)
-            .ok()
+        let body = serde_json::from_str::<Value>(&reply.out).ok();
+        let text = |key: &str| {
+            body.as_ref()
+                .and_then(|body| body.get(key))
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        };
+        let id = body
+            .as_ref()
             .and_then(|body| body.get("id").and_then(Value::as_u64))
             .filter(|id| *id != 0)
             .ok_or_else(|| {
@@ -176,7 +196,18 @@ impl RepoLookup for AsThePerson<'_> {
                     "{} answered without saying which repo {path} is, so nothing was recorded.",
                     account.host
                 )
-            })
+            })?;
+        Ok(RepoRead {
+            id,
+            default_branch: text("default_branch").unwrap_or_default(),
+            node_id: text("node_id"),
+        })
+    }
+}
+
+impl RepoLookup for AsThePerson<'_> {
+    fn repo_id(&self, account: &ForgeAccount, path: &str) -> Result<u64, String> {
+        self.read(account, path).map(|read| read.id)
     }
 }
 

@@ -186,6 +186,10 @@ impl Allowed {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "one decision is made per request and read at once: boxing the allowed request would only add a heap allocation to every allowed one"
+)]
 pub enum Decision {
     Allow(Allowed),
     Refuse(Refusal),

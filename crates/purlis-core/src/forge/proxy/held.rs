@@ -78,7 +78,7 @@ impl ChatPolicy {
             super::Kind::GitHub => crate::forge::Kind::GitHub,
             super::Kind::GitLab => crate::forge::Kind::GitLab,
         };
-        Some(crate::heldact::recognise(
+        let reading = crate::heldact::recognise(
             kind,
             &crate::heldact::Call {
                 method,
@@ -87,6 +87,61 @@ impl ChatPolicy {
                 body: &json,
             },
             &recorded,
-        ))
+        );
+        // An ask is raised only for the act's own exact request (ADR 0128 D8): whatever else a
+        // request is, it is refused as it was, and nobody is asked about it.
+        if let crate::heldact::Recognised::Hold(requested) = &reading
+            && !is_exactly_the_act(head, parsed.as_ref(), requested, kind)
+        {
+            return None;
+        }
+        Some(reading)
+    }
+}
+
+/// Whether `head` and its body are exactly the act `requested` and nothing more:
+///
+/// - **no query and no fragment**: the ask shows no query, and a replay would not send one, so a
+///   request that carries one is not the act that was shown;
+/// - **no text a bot would act on as a command**, in any string of the body at any depth: a
+///   release or a tag that carries it would act under the person's login when the forge's own bot
+///   read it;
+/// - **a merge pins the head**: exactly one non-empty `sha`, from a JSON body or, on GitLab alone,
+///   a form's one field, so the forge itself refuses the act on a head the person did not see.
+fn is_exactly_the_act(
+    head: &super::RequestHead,
+    body: Option<&super::commands::Body>,
+    requested: &crate::heldact::Requested,
+    kind: crate::forge::Kind,
+) -> bool {
+    if head.target.contains(['?', '#']) {
+        return false;
+    }
+    match requested {
+        crate::heldact::Requested::Merge(_) => body.is_some_and(|body| {
+            let pinned = |value: Option<&Value>| {
+                value
+                    .and_then(Value::as_str)
+                    .is_some_and(|sha| !sha.trim().is_empty())
+            };
+            match &body.json {
+                Some(Value::Object(map)) => pinned(map.get("sha")),
+                Some(_) => false,
+                None => {
+                    kind == crate::forge::Kind::GitLab
+                        && body.form.iter().filter(|(k, _)| k == "sha").count() == 1
+                        && body
+                            .form
+                            .iter()
+                            .any(|(k, v)| k == "sha" && !v.trim().is_empty())
+                }
+            }
+        }),
+        _ => body.is_none_or(|body| {
+            !body
+                .strings
+                .iter()
+                .any(|text| super::commands::has_merge_command(text))
+        }),
     }
 }

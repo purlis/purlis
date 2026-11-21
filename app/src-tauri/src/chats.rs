@@ -5417,6 +5417,20 @@ impl Chats {
             }
             None => None,
         };
+        // The run's forge route (ADR 0128 D3a, slice K): the sandbox is wired to it, so the chat's
+        // `gh`, git and `glab` reach a forge only through the person's own sign-in, brokered by
+        // the app. A chat with no route (nothing recorded, or one put back from the session host)
+        // is not wired, and keeps what it had.
+        #[cfg(feature = "forge-wiring")]
+        let wired;
+        #[cfg(feature = "forge-wiring")]
+        let sandbox = match (sandbox, route.as_ref().and_then(|route| route.params())) {
+            (Some(applied), Some(params)) => {
+                wired = applied.clone().with_forge_route((*params.inputs).clone());
+                Some(&wired)
+            }
+            (other, _) => other,
+        };
         let conversation = match &how {
             _ if !on_the_runner => conversation,
             purlis_core::reopen::Reopened::Resumed(id) => Some(id.to_string()),

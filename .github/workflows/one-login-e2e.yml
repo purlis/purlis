@@ -74,7 +74,10 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - name: the same scenario, behind the forge-wiring feature
+      - name: the same scenario, in the default build
         timeout-minutes: 30
         shell: bash
-        run: cargo test -p purlis-core --locked --features forge-wiring --test it -- --nocapture one_login_end_to_end
+        env:
+          # A client that is missing fails this run; everywhere else the test skips and says so.
+          PURLIS_PROXY_REAL_CLIENTS: "1"
+        run: cargo test -p purlis-core --locked --test it -- --nocapture one_login_end_to_end

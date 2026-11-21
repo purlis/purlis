@@ -2129,6 +2129,7 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
         any_port: false,
         beside: Beside::Wrapped,
         given: Vec::new(),
+        forge: None,
     };
     let host = Comeback::new();
     let first = host.window();
@@ -2196,6 +2197,7 @@ fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_ca
         any_port: false,
         beside: Beside::Wrapped,
         given: Vec::new(),
+        forge: None,
     };
     let held = vec![
         std::path::PathBuf::from("/home/op/.docker/ca.pem"),
@@ -2314,6 +2316,7 @@ impl purlis_host::Compose for ComposesConfined {
             any_port: false,
             beside: session::Beside::Wrapped,
             given: vec![5432],
+            forge: None,
         })?;
         Ok(purlis_core::session::Spec::new("/bin/true", starting.size))
     }

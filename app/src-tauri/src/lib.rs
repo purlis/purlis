@@ -98,14 +98,16 @@ mod forgeaccounts;
 mod forgepkce;
 #[cfg(feature = "forge-wiring")]
 mod forgeroute;
+#[cfg(feature = "forge-wiring")]
+mod forgewiring;
 
-/// `main` ships the forge route off (one login, ADR 0128 J): the feature exists, and no default
-/// turns it on. The one-login train turns it on in CI (`FORGE_WIRING`, `ci.yml`), never in the
-/// manifest. Ungated, so the off build runs it too.
+/// **The forge route is on** (one login, ADR 0128, slice K): the feature is declared and is a
+/// default one, so every build of the app has it. Ungated, so a build with the feature off (a
+/// deliberate `--no-default-features`) runs it too and says so.
 #[cfg(test)]
-mod forge_wiring_is_off_by_default {
+mod forge_wiring_is_on_by_default {
     #[test]
-    fn the_apps_manifest_declares_the_feature_and_no_default_turns_it_on() {
+    fn the_apps_manifest_declares_the_feature_and_a_default_turns_it_on() {
         let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
             .expect("the app's manifest");
         assert!(
@@ -118,8 +120,8 @@ mod forge_wiring_is_off_by_default {
             .filter(|line| line.contains('='))
             .collect();
         assert!(
-            defaults.iter().all(|line| !line.contains("forge-wiring")),
-            "a default feature turns the forge route on: {defaults:?}"
+            defaults.iter().any(|line| line.contains("forge-wiring")),
+            "no default feature turns the forge route on: {defaults:?}"
         );
     }
 }
@@ -4153,7 +4155,10 @@ pub fn run() {
             // a crashed app's folders never meets a second app's; it removes only those whose
             // app is gone.
             #[cfg(feature = "forge-wiring")]
-            forgeroute::install();
+            forgeroute::install(std::sync::Arc::new(forgewiring::AppHeldSinks::new(
+                app.handle().clone(),
+                forgeroute::quarantine_dir(),
+            )));
             // This machine's local state moves to the purlis names (RN-5, V93f): after the
             // single-instance handoff and the one-per-user lock, so a second launch never
             // migrates, and before any project, chat or watch opens a file under one. Anything

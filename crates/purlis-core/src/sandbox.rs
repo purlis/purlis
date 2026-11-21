@@ -4867,6 +4867,10 @@ pub struct Applied {
     /// gh's and glab's folders as the person's environment names them by a relative path, which
     /// each is held at against the chat's own folder ([`forge_folders_relative`]).
     forge_relative: Vec<PathBuf>,
+    /// **This chat's forge route** (ADR 0128), where the app made one for its run: what its line
+    /// is wired from ([`Self::forge_route`]), what its egress proxy denies and hands over
+    /// ([`Self::forge_egress`]).
+    forge: Option<Box<crate::forgewire::Inputs>>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -5434,7 +5438,7 @@ impl Applied {
         // the forge proxy and carry its sentinel, never a token. After the lock, whose marker it
         // takes out, and before the PATH file below, which reads the folder it names.
         #[cfg(feature = "forge-wiring")]
-        if let Some(route) = self.forge_route() {
+        if let Some(route) = self.forge_route(at.confinement) {
             // Written where no chat writes ([`crate::forgewire::wire_folder`]), never in the chat's
             // own temporary folder: its `gh` goes first on the `PATH` of the harness, its hooks and
             // its MCP servers, which run outside the chat's sandbox.
@@ -5621,28 +5625,77 @@ impl Applied {
         )
     }
 
+    /// **This sandbox for a chat whose run has a forge route** (ADR 0128 D3a): its line is wired to
+    /// the route, its egress proxy denies the forges and hands their connections to the
+    /// route's listener, and the folder every run's route is made in is held from it (only its
+    /// own socket is reached, by the network rule that names it, never by listing the folder).
+    #[must_use]
+    pub fn with_forge_route(mut self, inputs: crate::forgewire::Inputs) -> Self {
+        let held = Denial {
+            class: Class::Integrity,
+            path: inputs.root.clone(),
+            access: Access::ReadWrite,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: false,
+        };
+        // Held on macOS, whose rule for a socket is the network's and not the file's. Elsewhere a
+        // socket is reached by access to its file, so the folder cannot be held without holding
+        // the chat's own socket; the folder is the app's (0700), its socket is 0600 and its peer
+        // is checked, and no request is served without the run's sentinel.
+        if self.os == Os::MacOs && !self.denied.contains(&held) {
+            self.denied.push(held.clone());
+            self.confines.denied.push(held);
+        }
+        self.forge = Some(Box::new(inputs));
+        self
+    }
+
     /// **Where this chat's forge traffic goes** (ADR 0128 D3a), or none where it has no forge
-    /// route. The route's parts are slice A's: its endpoint's unix socket and egress port, its
-    /// CA, its sentinel, and the repos the person recorded for it. They are not in the tree yet,
-    /// so this answers none, and a chat is wired by nothing until the train that turns the
-    /// `forge-wiring` feature on replaces this with the proxy's answer.
+    /// route, or no proxy of its own to carry the route's `CONNECT`: its route's parts are the
+    /// app's ([`Self::with_forge_route`]) and its egress port is `confinement`'s.
     #[cfg(feature = "forge-wiring")]
-    fn forge_route(&self) -> Option<crate::forgewire::Route> {
-        None
+    fn forge_route(&self, confinement: Option<&Confinement>) -> Option<crate::forgewire::Route> {
+        let inputs = self.forge.as_ref()?;
+        Some(inputs.route(confinement?.proxy_url()))
     }
 
     /// The forge hosts this chat's proxy never tunnels to ([`egress::Serving::forge_denied`]):
     /// those of its route, none where it has none. **Only the local chat's proxy has a route:** a
-    /// chat planned elsewhere ([`plan::Plan`], carried to a runner by `session::ConfinePlan`) has no
-    /// forge endpoint on the runner to go through, so denying it a forge would only cut its own
-    /// `gh`. Wiring a runner chat takes a field on the wire plan, with the train that gives a
-    /// runner a route.
+    /// chat planned on a runner has no forge endpoint there to go through (a plan with a forge
+    /// route does not fit one, [`plan::Plan::fits`]), so denying it a forge would only cut its
+    /// own `gh`.
     fn forge_denied(&self) -> Vec<String> {
         #[cfg(feature = "forge-wiring")]
-        if let Some(route) = self.forge_route() {
-            return crate::forgewire::denied_hosts(&route.repos);
+        if let Some(inputs) = &self.forge {
+            return crate::forgewire::denied_hosts(&inputs.repos);
         }
         Vec::new()
+    }
+
+    /// What this chat's proxy is told of its route ([`plan::ForgeEgress`]).
+    fn forge_egress(&self) -> Option<plan::ForgeEgress> {
+        #[cfg(feature = "forge-wiring")]
+        {
+            let inputs = self.forge.as_ref()?;
+            let mut hosts: Vec<String> = inputs
+                .hosts
+                .iter()
+                .map(|h| h.to_ascii_lowercase())
+                .collect();
+            hosts.sort();
+            hosts.dedup();
+            Some(plan::ForgeEgress {
+                denied: crate::forgewire::denied_hosts(&inputs.repos),
+                door: inputs.door.ip(),
+                port: inputs.door.port(),
+                hosts,
+            })
+        }
+        #[cfg(not(feature = "forge-wiring"))]
+        {
+            None
+        }
     }
 
     /// **A Claude Code chat's ssh route** (#1667), from `confinement`: only one written in this
@@ -5721,6 +5774,7 @@ impl Applied {
                 plan::Beside::Wrapped
             },
             given: self.confines.widened.ports.clone(),
+            forge: self.forge_egress(),
         }
     }
 
@@ -7996,6 +8050,7 @@ pub(crate) fn applied_of(
         older: None,
         usual_folders: usual_home_folders(compiled.level, machine),
         forge_relative: forge_folders_relative(machine),
+        forge: None,
         tools: None,
         wrap: None,
     })

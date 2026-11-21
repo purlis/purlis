@@ -5758,6 +5758,11 @@ impl Planes {
             .ok_or_else(|| no_such(plane, "act on"))
     }
 
+    /// The plane at `root`, where this process holds it open.
+    pub fn held_at(&self, root: &Path) -> Option<Arc<Held>> {
+        self.map().get(&PlaneId::of(root)).map(Arc::clone)
+    }
+
     /// The folder of every plane this process holds: a project open in a window, which fetches
     /// what its pools owe it (#5461).
     pub fn roots_open(&self) -> Vec<PathBuf> {

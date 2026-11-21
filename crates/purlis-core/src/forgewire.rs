@@ -42,8 +42,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use secrecy::ExposeSecret;
-pub use secrecy::SecretString;
+pub use secrecy::{ExposeSecret, SecretString};
 
 use crate::forge::gitcredential::{SENTINEL_ENV, SENTINEL_HELPER_ARG};
 
@@ -364,6 +363,72 @@ impl std::fmt::Debug for Route {
             .finish_non_exhaustive()
     }
 }
+
+/// **What the app knows of a run's forge route before the chat's sandbox starts** (ADR 0128 D3a):
+/// everything of a [`Route`] but the chat's egress port, which the chat's confinement alone
+/// knows, and where the listener's `CONNECT` door is, for the egress proxy to hand a forge
+/// connection to. A sandbox holds it ([`crate::sandbox::Applied::with_forge_route`]) and makes
+/// the chat's [`Route`] from it when its line is composed.
+#[derive(Clone)]
+pub struct Inputs {
+    /// The run's unix socket, for `gh`.
+    pub gh_socket: PathBuf,
+    /// The run's CA certificate (public).
+    pub ca_cert: PathBuf,
+    /// The run's sentinel.
+    pub sentinel: SecretString,
+    /// The app's own binary, which git starts as the credential helper.
+    pub helper_exe: PathBuf,
+    /// The run's recorded repos.
+    pub repos: Vec<Repo>,
+    /// The listener's `CONNECT` door, on this machine's loopback.
+    pub door: std::net::SocketAddr,
+    /// The hosts the listener terminates (what the egress proxy hands over).
+    pub hosts: Vec<String>,
+    /// The private folder every run's route is made in. A chat is held out of it, and reaches its
+    /// own socket by the grant that names it.
+    pub root: PathBuf,
+}
+
+impl Inputs {
+    /// The chat's [`Route`], its egress port being `egress_url`'s.
+    pub fn route(&self, egress_url: String) -> Route {
+        Route {
+            egress_url,
+            gh_socket: self.gh_socket.clone(),
+            ca_cert: self.ca_cert.clone(),
+            sentinel: SecretString::from(self.sentinel.expose_secret().to_owned()),
+            helper_exe: self.helper_exe.clone(),
+            repos: self.repos.clone(),
+        }
+    }
+}
+
+impl std::fmt::Debug for Inputs {
+    /// Never the sentinel.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Inputs")
+            .field("gh_socket", &self.gh_socket)
+            .field("door", &self.door)
+            .field("repos", &self.repos)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for Inputs {
+    fn eq(&self, other: &Self) -> bool {
+        self.gh_socket == other.gh_socket
+            && self.ca_cert == other.ca_cert
+            && self.sentinel.expose_secret() == other.sentinel.expose_secret()
+            && self.helper_exe == other.helper_exe
+            && self.repos == other.repos
+            && self.door == other.door
+            && self.hosts == other.hosts
+            && self.root == other.root
+    }
+}
+
+impl Eq for Inputs {}
 
 /// The wiring of one chat, composed and written.
 #[derive(Debug, Clone, PartialEq, Eq)]

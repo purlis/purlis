@@ -2897,6 +2897,7 @@ fn a_plan(listed: Vec<(String, By)>, given: Vec<u16>) -> Plan {
         any_port: false,
         beside: plan::Beside::Wrapped,
         given,
+        forge: None,
     }
 }
 

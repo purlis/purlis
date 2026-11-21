@@ -16,9 +16,9 @@ use purlis_core::mergehold::{Repo, Request};
 
 use crate::support::held_acts::{Fake, NoTrees, Rec, Second, press, sha};
 
-struct App {
-    forge: Arc<Fake>,
-    attended: bool,
+pub(crate) struct App {
+    pub(crate) forge: Arc<Fake>,
+    pub(crate) attended: bool,
 }
 
 impl HeldContext for App {
@@ -44,15 +44,15 @@ impl HeldContext for App {
     }
 }
 
-struct Scene {
-    proxy: ForgeProxy,
-    chat: ChatId,
-    sentinel: Sentinel,
-    forge: Arc<Fake>,
-    held: Arc<HeldActs>,
+pub(crate) struct Scene {
+    pub(crate) proxy: ForgeProxy,
+    pub(crate) chat: ChatId,
+    pub(crate) sentinel: Sentinel,
+    pub(crate) forge: Arc<Fake>,
+    pub(crate) held: Arc<HeldActs>,
 }
 
-fn scene(attended: bool) -> Scene {
+pub(crate) fn scene(attended: bool) -> Scene {
     let forge = Arc::new(Fake::github());
     forge.with(|s| {
         s.revs.insert("main".into(), sha('1'));
@@ -84,7 +84,7 @@ fn scene(attended: bool) -> Scene {
 }
 
 impl Scene {
-    fn send(&self, method: &str, target: &str, body: &str, bearer: &str) -> Outcome {
+    pub(crate) fn send(&self, method: &str, target: &str, body: &str, bearer: &str) -> Outcome {
         let head = RequestHead::new(method, "api.github.com", 443, target);
         let headers = vec![
             ("Authorization".to_owned(), format!("Bearer {bearer}")),
@@ -100,7 +100,7 @@ impl Scene {
         )
     }
 
-    fn own(&self, method: &str, target: &str, body: &str) -> Outcome {
+    pub(crate) fn own(&self, method: &str, target: &str, body: &str) -> Outcome {
         self.send(method, target, body, self.sentinel.expose())
     }
 
@@ -118,7 +118,7 @@ impl Scene {
     }
 }
 
-fn said(outcome: Outcome) -> String {
+pub(crate) fn said(outcome: Outcome) -> String {
     match outcome {
         Outcome::Held(held) => held.said,
         other => panic!("expected a held act, got {other:?}"),

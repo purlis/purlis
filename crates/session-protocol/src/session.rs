@@ -1722,6 +1722,23 @@ pub struct ConfinePlan {
     /// The services on the machine the chat was given, each by its port.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub given: Vec<u16>,
+    /// The chat's forge route (one login, ADR 0128 D3a): where its proxy hands a `CONNECT` to a
+    /// forge host, and the hosts it never tunnels to. Only a plan made for a chat of this machine
+    /// has one, for a proxy that runs on it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forge: Option<ForgeEgress>,
+}
+
+/// A chat's forge route as its proxy is told it ([`ConfinePlan::forge`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgeEgress {
+    /// The forge hosts its proxy never tunnels to.
+    pub denied: Vec<String>,
+    /// The listener's loopback address and port.
+    pub door: std::net::IpAddr,
+    pub port: u16,
+    /// The forge hosts handed to the listener.
+    pub hosts: Vec<String>,
 }
 
 /// A host a confinement's proxy carries, and the layer that lists it (1.4).

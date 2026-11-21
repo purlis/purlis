@@ -1877,7 +1877,11 @@ and its tab says so (#3787).
   overwrite (one login F2, ADR 0128 D8.3).
 - **Status:** **purlis only**.
 - **Tier:** Machine, device-bound, rebuildable, transient — made for one held push and removed with
-  the ask it was made for. Nothing in it is not on the forge or in the chat's own pack.
+  the ask it was made for. Nothing in it is not on the forge or in the chat's own pack. It is made in
+  `quarantine/` of the app's private route root (slice K), at most sixteen at a time, each kept for
+  its ask and removed when that chat's session closes. The base is fetched with the person's own
+  token through a helper script written inside the quarantine's `.git` (mode 0600, removed as soon
+  as the fetch ends): the token is in no argument and no variable.
 - **Written by:** `purlis_core::heldact::Quarantine`.
 - **Read by:** `purlis_core::heldact::GitTrees`, only through `Quarantine::trees`; a test fails
   on any other use of `GitTrees::of_trusted_store` in the source.
@@ -5923,8 +5927,8 @@ set = { PURLIS_HARNESS = "codex" }
 - **Tier:** Machine, device-bound, rebuildable — written again for every chat whose forge calls
   go through purlis's forge proxy, as it starts. **A folder a killed app left behind** is removed
   as the project opens, as the ssh route's is (`tunnel::sweep_routes`, #1708).
-- **Written by:** `crates/purlis-core/src/forgewire.rs` (`compose`), only where the
-  `forge-wiring` feature is on (ADR 0128 D3c, "One login", slice B). **Under the app's state,
+- **Written by:** `crates/purlis-core/src/forgewire.rs` (`compose`), where the `forge-wiring`
+  feature is on, which it is by default (ADR 0128 D3c, "One login", slices B and K). **Under the app's state,
   which every chat is denied writing**, never in the chat's own temporary folder: `bin/` goes
   first on the `PATH` of the harness, its hooks and its MCP servers, which run outside the
   chat's sandbox. Refused where `forge-wire/` or any folder on the way to it is a link.
@@ -9756,8 +9760,12 @@ of 2026-11-01). A purlis from before it refuses a file holding it, as it refuses
   gives it to the caller, who writes it to the chat's own folder for `git`'s
   `http.<host>.sslCAInfo` and `glab`'s `GLAB_CA_CERT` to name. The authority's **private key is
   never written**: it is made when the listener starts and is gone with it.
-- **Status:** **internal**, behind the `forge-wiring` feature; nothing starts a listener until
-  slice B's wiring does.
+- **Status:** **internal**. The app starts one listener per run of a chat that has recorded repos
+  (`forgeroute`, slice K), in `pf-<uid>/<pid>-<8 hex>/` of the app's private route root (`$XDG_RUNTIME_DIR`
+  on Linux, else the machine folder; `$TMPDIR` on macOS). The socket is `proxy.sock`; the
+  authority's certificate is `ca.pem` beside it. On macOS the chat's sandbox is denied the whole
+  root (its network rule reaches its own socket); elsewhere the folder is the app's (0700), the socket
+  is 0600, the peer's user is checked, and no request is served without the run's sentinel.
 - **Tier:** Machine, device-bound, transient, rebuildable — the socket lasts as long as its
   listener, and the certificate is made again, with a new key, at every start and resume of its chat.
 - **Written by:** the listener (`purlis_core::forge::proxy::listener`) for the socket; the caller

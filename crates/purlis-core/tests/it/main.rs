@@ -138,6 +138,7 @@ mod a_grades_chat_runs_on_the_model_picked;
 mod a_guard_names_its_real_cause;
 mod a_handoff_todo_is_recorded_once_per_piece_of_work;
 mod a_harness_is_found_the_way_a_shell_finds_it;
+mod a_held_act_is_asked_only_for_the_acts_own_exact_request;
 mod a_held_act_is_made_once_by_the_second_of_two_distinct_presses;
 mod a_held_ci_push_is_read_in_a_quarantine_never_from_the_chat_clone;
 mod a_held_fork_goes_only_into_the_persons_own_account;
@@ -273,7 +274,6 @@ mod no_tracked_file_is_one_a_sandboxed_chat_may_not_write;
 mod nothing_escapes;
 mod nothing_escapes_a_worktree;
 mod nothing_escapes_while_a_writer_races;
-#[cfg(feature = "forge-wiring")]
 mod one_login_end_to_end;
 mod only_attendance_compares_permission_mode_with_bypass;
 mod only_the_resolver_builds_the_native_transport;

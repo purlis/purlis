@@ -10,7 +10,7 @@
 //! exactly ([`super::reach::Reach::from_written`]) and started there by this same code. So a
 //! chat's proxy decides alike wherever it runs: one compile, one plan, one start.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -39,6 +39,22 @@ pub struct Plan {
     /// The services on this Mac the chat was given, each by its port (qw384): never a port a
     /// proxy of purlis's listens on, which [`Plan::start`] holds to again where it starts.
     pub given: Vec<u16>,
+    /// **The chat's forge route** (ADR 0128 D3a, D3g), where it has one: the forge hosts its proxy
+    /// never tunnels to, and where a `CONNECT` to one is handed. Carried to a proxy started in the
+    /// session host, which runs on this machine and so reaches the listener's loopback door.
+    pub forge: Option<ForgeEgress>,
+}
+
+/// What a chat's proxy is told of its forge route.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ForgeEgress {
+    /// The forge hosts denied to a tunnel ([`egress::Serving::forge_denied`]).
+    pub denied: Vec<String>,
+    /// The listener's `CONNECT` door, on loopback.
+    pub door: IpAddr,
+    pub port: u16,
+    /// The forge hosts handed to it.
+    pub hosts: Vec<String>,
 }
 
 /// What runs beside a chat's proxy.
@@ -160,6 +176,12 @@ impl Plan {
                 },
             },
             given: self.given.clone(),
+            forge: self.forge.as_ref().map(|forge| session::ForgeEgress {
+                denied: forge.denied.clone(),
+                door: forge.door,
+                port: forge.port,
+                hosts: forge.hosts.clone(),
+            }),
         }
     }
 
@@ -190,6 +212,12 @@ impl Plan {
                 },
             },
             given: wired.given.clone(),
+            forge: wired.forge.as_ref().map(|forge| ForgeEgress {
+                denied: forge.denied.clone(),
+                door: forge.door,
+                port: forge.port,
+                hosts: forge.hosts.clone(),
+            }),
         })
     }
 
@@ -213,6 +241,14 @@ impl Plan {
 
     /// [`Self::fits`], for the plan as the runner starts it.
     fn fitting(&self, here: &Here<'_>) -> Result<(), String> {
+        // The listener's door is on the machine that made the plan, never the runner's own.
+        if self.forge.is_some() {
+            return Err(
+                "it hands the chat's forge connections to a listener on the machine that made \
+                 it, which a runner cannot reach"
+                    .to_owned(),
+            );
+        }
         if let Beside::ProxyOnly { routes } = &self.beside
             && routes != here.routes
         {
@@ -297,6 +333,15 @@ impl Plan {
             reached: telling.reached,
             asks: telling.asks,
             network: telling.network,
+            forge_denied: self
+                .forge
+                .as_ref()
+                .map(|forge| forge.denied.clone())
+                .unwrap_or_default(),
+            forge_route: self.forge.as_ref().map(|forge| egress::ForgeRoute {
+                addr: SocketAddr::new(forge.door, forge.port),
+                hosts: forge.hosts.clone(),
+            }),
             ..egress::Serving::of(reach)
         }
     }
