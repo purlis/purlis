@@ -80,7 +80,7 @@ table() {
 
 before=$(mktemp) || exit 3
 programs=$(mktemp) || exit 3
-trap 'rm -f "$before" "$programs"' EXIT
+trap 'rm -f "$before" "$programs" "$programs.raw"' EXIT
 first=$(table) || exit 3
 awk -F'|' '{print $1 "|" $4}' <<<"$first" >"$before"
 
@@ -93,8 +93,23 @@ now=$(table) || exit 3
 # Each process's executable, as the kernel names it, on macOS only: "pid|path". A list that
 # could not be read leaves every process counted.
 if [ "$os" = Darwin ]; then
-  LC_ALL=C ps -A -o pid=,comm= 2>/dev/null |
-    awk '{ p=$1; sub(/^[ \t]*[0-9]+[ \t]+/, ""); print p "|" $0 }' >"$programs" || true
+  LC_ALL=C ps -U "$me" -o pid=,comm= 2>/dev/null |
+    awk '{ p=$1; sub(/^[ \t]*[0-9]+[ \t]+/, ""); print p "|" $0 }' >"$programs.raw" || true
+  # `comm` is the path the kernel recorded at exec, but a bare name came back for cloudphotod on
+  # macos-26 (#7344, #7346), so the skip below never saw its /System path. A bare name is
+  # resolved through the process's first mapped file (`lsof -d txt`), which is its executable.
+  # Still the kernel's answer, never the arguments, and it must then pass the same folders.
+  : >"$programs"
+  while IFS='|' read -r p path; do
+    case "$path" in
+      /*) ;;
+      *)
+        r=$(lsof -a -p "$p" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+        [ -n "$r" ] && path=$r ;;
+    esac
+    echo "$p|$path" >>"$programs"
+  done <"$programs.raw"
+  rm -f "$programs.raw"
 fi
 left=$(
   awk -F'|' -v me="$me" -v here="$here" -v os="$os" -v programs="$programs" '
@@ -116,7 +131,7 @@ left=$(
           if (q == here) { ours = 1; break }
           q = ppid[q]
         }
-        if (!ours && !(p in above)) print p "|" cmd[p]
+        if (!ours && !(p in above)) print p "|" ppid[p] "|" ((p in exe) ? exe[p] : "?") "|" cmd[p]
       }
     }' "$before" "$programs" - <<<"$now"
 )
@@ -126,8 +141,9 @@ if [ -z "$left" ]; then
 fi
 
 echo "no-orphans: '$*' left these processes running:" >&2
-while IFS='|' read -r pid cmd; do
+while IFS='|' read -r pid ppid exe cmd; do
   echo "  pid $pid: $cmd" >&2
+  echo "    ppid $ppid, exe $exe" >&2
 done <<<"$left"
 # On a GitHub runner, the same list as an error on the run: this exit of 1 is otherwise the
 # one red of the `rust` job that names nothing through the checks API, where a failed test is
@@ -143,7 +159,7 @@ if [ "${GITHUB_ACTIONS-}" = true ]; then
   said=""
   listed=0
   more=0
-  while IFS='|' read -r pid cmd; do
+  while IFS='|' read -r pid ppid exe cmd; do
     if [ "$listed" -ge "$listed_most" ]; then
       more=$((more + 1))
       continue
@@ -153,7 +169,7 @@ if [ "${GITHUB_ACTIONS-}" = true ]; then
     if [ "${#cmd}" -gt "$line_most" ]; then
       cmd="${cmd:0:$line_most}..."
     fi
-    said="${said}pid $pid, running for ${ran:-an unread time}: $cmd"$'\n'
+    said="${said}pid $pid, ppid $ppid, exe $exe, running for ${ran:-an unread time}: $cmd"$'\n'
   done <<<"$left"
   if [ "$more" -gt 0 ]; then
     said="${said}and $more more, each named in the job's log"$'\n'

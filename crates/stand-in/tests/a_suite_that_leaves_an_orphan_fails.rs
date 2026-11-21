@@ -84,7 +84,7 @@ fn the_annotation_lists_a_bounded_number_of_processes_and_a_bounded_part_of_each
         "ps",
         &format!(
             "#!/bin/sh\nhere=$(dirname \"$0\")\n\
-             case \"$*\" in *etime*) echo ' 00:07'; exit 0 ;; esac\n\
+             case \"$*\" in *etime*) echo ' 00:07'; exit 0 ;; *comm=*) exit 0 ;; esac\n\
              echo '1 0 0 Wed Oct 14 01:00:00 2026 /sbin/init'\n\
              if [ -e \"$here/asked\" ]; then\n\
              me=$(id -u); i=1\n\
@@ -134,7 +134,7 @@ fn the_annotation_lists_a_bounded_number_of_processes_and_a_bounded_part_of_each
         "twenty processes and what is left out: {lines:?}"
     );
     for (at, line) in lines[..20].iter().enumerate() {
-        let before = format!("pid {}, running for 00:07: ", 9_000_001 + at);
+        let before = format!("pid {}, ppid 1, exe ?, running for 00:07: ", 9_000_001 + at);
         let command = line
             .strip_prefix(before.as_str())
             .unwrap_or_else(|| panic!("line {at} is {line}"));
@@ -306,4 +306,74 @@ fn a_grace_with_no_value_is_a_usage_error() {
 
     assert_eq!(said.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&said.stderr).contains("usage:"));
+}
+
+/// A macOS where launchd (pid 1) has started `cloudphotod`, as a runner's did: `ps` names the
+/// program by its bare name, and `lsof` is asked where its executable is.
+fn a_launchd_child_on_macos(dir: &std::path::Path, executable: &str) -> std::process::Output {
+    stand_in::program(dir, "uname", "#!/bin/sh\necho Darwin\n");
+    stand_in::program(
+        dir,
+        "ps",
+        "#!/bin/sh\nhere=$(dirname \"$0\")\n\
+         case \"$*\" in *etime*) echo ' 21:22'; exit 0 ;; esac\n\
+         me=$(id -u)\n\
+         case \"$*\" in\n\
+         *comm=*) [ -e \"$here/asked\" ] && echo '9100001 cloudphotod'; exit 0 ;;\n\
+         esac\n\
+         echo '1 0 0 Wed Oct 14 01:00:00 2026 /sbin/launchd'\n\
+         if [ -e \"$here/asked\" ]; then\n\
+         echo \"9100001 1 $me Wed Oct 14 02:00:00 2026 cloudphotod\"\n\
+         fi\n\
+         : > \"$here/asked\"\n",
+    );
+    stand_in::program(
+        dir,
+        "lsof",
+        &format!("#!/bin/sh\necho p9100001\necho 'n{executable}'\n"),
+    );
+    let path = format!(
+        "{}:{}",
+        dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    Command::new(the_check())
+        .args(["--grace", "0", "--", "true"])
+        .env("PATH", path)
+        .env("GITHUB_ACTIONS", "true")
+        .output()
+        .expect("the check runs")
+}
+
+#[test]
+fn a_launchd_child_whose_comm_is_a_bare_name_is_the_systems_when_its_mapped_executable_is_under_system()
+ {
+    let dir = tempfile::tempdir().expect("a directory");
+    let said = a_launchd_child_on_macos(
+        dir.path(),
+        "/System/Library/PrivateFrameworks/CloudPhotoLibrary.framework/Versions/A/Support/cloudphotod",
+    );
+    let stderr = String::from_utf8_lossy(&said.stderr);
+    assert_eq!(said.status.code(), Some(0), "{stderr}");
+}
+
+#[test]
+fn a_launchd_child_whose_comm_is_a_bare_name_still_counts_when_its_mapped_executable_is_in_usr_bin()
+{
+    let dir = tempfile::tempdir().expect("a directory");
+    let said = a_launchd_child_on_macos(dir.path(), "/usr/bin/cloudphotod");
+    let stderr = String::from_utf8_lossy(&said.stderr);
+    assert_eq!(said.status.code(), Some(1), "{stderr}");
+    // The next case diagnoses itself: the report names the parent and the resolved executable.
+    assert!(
+        stderr.contains("pid 9100001: cloudphotod\n    ppid 1, exe /usr/bin/cloudphotod"),
+        "{stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&said.stdout);
+    assert!(
+        stdout.contains(
+            "pid 9100001, ppid 1, exe /usr/bin/cloudphotod, running for 21:22: cloudphotod"
+        ),
+        "{stdout}"
+    );
 }
