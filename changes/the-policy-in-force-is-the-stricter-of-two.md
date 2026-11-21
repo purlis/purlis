@@ -20,3 +20,8 @@
   earlier build do not read until you press again. Where there is no keyring there is no floor at
   all: the policy in force is the project's last commit and the shipped default. The project
   template `strict` is not stricter than the forbids it drops, which an accepted copy still holds.
+  Where nothing could be verified at all (a `.git` swapped, say), a start is also refused with the
+  sandbox off, and a known gap counts whatever mode its family is set to. The limit that remains:
+  there, a forbid you accepted on a start for a specific profile, persona or workspace is not
+  held, since no accepted copy can be read, and the chat that does start runs under the strict
+  deny-state sandbox.

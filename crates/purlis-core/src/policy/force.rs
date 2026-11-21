@@ -376,6 +376,12 @@ fn has_gaps(request: &Request<'_>) -> bool {
             .is_none_or(|gaps| !gaps.is_empty())
 }
 
+/// Whether the start `request` runs with the sandbox off.
+fn sandbox_is_off(request: &Request<'_>) -> bool {
+    request.action == "start"
+        && request.context.get("sandbox").and_then(|s| s.as_str()) == Some("off")
+}
+
 /// The workspace of this version that holds the path `id`, from the plane root: the first folder
 /// of the path, or the one after `workspaces/`.
 fn owning_workspace(version: &Version, root: &Path, id: &str) -> Option<String> {
@@ -618,13 +624,15 @@ pub fn judge(
     };
     // Nothing verified (a deny state of any other cause): a start, which the deny state does not
     // refuse, is judged by the shipped strict policy, and is refused where the harness has known
-    // gaps, since no accepted copy can say they are fine.
+    // gaps (the caller counts a gap of every family, enforced or not) or the sandbox is off, since
+    // no accepted copy can say either is fine. The chat that does start runs under the deny-state
+    // sandbox ([`crate::sandbox::for_start_in_deny_state`]), whatever its own level.
     let verified = !denied || !standing.kept.is_empty();
     if !verified {
         decisions.push(held(undecidable_strict(request), floor));
-        if has_gaps(request) {
+        if has_gaps(request) || sandbox_is_off(request) {
             decisions.push(held(
-                undecidable(request, "no sealed answer can say a known gap is accepted"),
+                undecidable(request, "no sealed answer can say a known gap, or no sandbox, is accepted"),
                 floor,
             ));
         }

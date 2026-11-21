@@ -887,3 +887,56 @@ fn the_local_files_sealed_versions_are_capped_too() {
         "local versions past the cap are recorded"
     );
 }
+
+// ---- review round 4: a start in a deny state where nothing was verified -----------------------
+
+fn clone_key_swapped() -> Standing {
+    Standing {
+        state: State::Deny(vec![Deny::CloneKeySwapped]),
+        ..Standing::fresh()
+    }
+}
+
+#[test]
+fn a_start_with_the_sandbox_off_is_refused_where_nothing_was_verified() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    // The person accepted a forbid on a start with the sandbox off; a swapped `.git` verified
+    // nothing, so the accepted copy is not read, and the refusal is the deny state's own.
+    let ban = format!(
+        "{HEADER}@id(\"no-unsandboxed-start\")\nforbid (principal, action == Action::\"start\", resource) when {{ context.sandbox == \"off\" }};\n"
+    );
+    let mut standing = clone_key_swapped();
+    standing.entries = vec![accepted(&version(open, Some(&ban)))];
+    let mut unsandboxed = start();
+    unsandboxed.context["sandbox"] = "off".into();
+    let said = by(&root, &standing, &unsandboxed);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(by(&root, &standing, &start()).after_mode, strict_of_start());
+}
+
+#[test]
+fn a_start_naming_a_gap_family_at_log_is_refused_where_nothing_was_verified() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    // The caller counts every family a gap affects, so `context.gaps` is not empty even where
+    // the family is at log.
+    let mut gappy = start();
+    gappy.context["gaps"] = serde_json::json!(["trust"]);
+    let said = by(&root, &clone_key_swapped(), &gappy);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+#[test]
+fn a_start_that_does_not_say_its_gaps_is_refused_where_nothing_was_verified() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let mut silent = start();
+    silent.context.as_object_mut().expect("object").remove("gaps");
+    assert!(has_gaps(&silent), "a missing `gaps` counts as a gap");
+    let said = by(&root, &clone_key_swapped(), &silent);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
