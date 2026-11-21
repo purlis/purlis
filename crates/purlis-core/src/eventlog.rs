@@ -1353,6 +1353,10 @@ pub struct Attributes {
     /// came on (`local-ui` for the window, `terminal`, `remote-link`), where it is known
     /// (#2171).
     pub started_by: Option<String>,
+    /// **Whether anyone is at the chat** as it starts (R-106, R-219): the attendance fact's word,
+    /// `attended` or `unattended` ([`crate::attendance::Fact`]), from how purlis started it and
+    /// never from the chat. [`UNKNOWN`] where the start holds no fact.
+    pub attendance: Option<String>,
     /// **The protection the chat started under** (R-227): each layer's level and the tier that
     /// set it, the `charter.toml` commit and the answers in force, as the start resolved them
     /// ([`crate::sandbox::protection::at_start`]), never from the chat. [`UNKNOWN`] where the
@@ -1390,6 +1394,7 @@ impl Attributes {
             "sandbox": said(&self.sandbox),
             "conversation": said(&conversation),
             "started_by": said(&self.started_by),
+            "attendance": said(&self.attendance),
             "protection": self
                 .protection
                 .as_ref()

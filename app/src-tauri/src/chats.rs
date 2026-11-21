@@ -391,6 +391,8 @@ pub(crate) fn run_attributes(
                 .word()
                 .to_owned(),
         ),
+        // Set where the start holds the chat's attendance fact ([`Chats::open`]).
+        attendance: None,
         // Set by the start that resolves it ([`purlis_core::sandbox::protection::at_start`]).
         protection: None,
     }
@@ -6153,6 +6155,13 @@ impl Chats {
             if let Some(beginning) = lock(&self.beginning).as_ref().filter(|_| !on_the_runner)
                 && let (Some(chat), Some(run)) = (&identity.id, &identity.run)
             {
+                // Said as the fact this start just held says it (R-106, R-219).
+                let attributes = Attributes {
+                    attendance: lock(&self.attendance)
+                        .get(&session)
+                        .map(|fact| fact.attendance().word().to_owned()),
+                    ..attributes.clone()
+                };
                 beginning(
                     session,
                     RunOf { chat, run },
