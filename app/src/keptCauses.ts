@@ -13,7 +13,8 @@
  * chats behind (`chats_on_older_sandbox`, #1428), a remembered
  * project that is gone (`recent_planes`' `gone`, #1291: `dismissals.ts`' `GONE`), and a
  * workspace's repo left off its default branch or on a moved remote (`stale_clones`, #1985), and
- * a workspace's clone made outside purlis that the person has not trusted (`clones_to_vouch`). A
+ * a workspace's clone made outside purlis that the person has not trusted (`clones_to_vouch`), and
+ * a project's old forge token lines the sign-in replaces (`sandbox_state`'s `forge_replaced`). A
  * family is the cause up to its first `:`.
  */
 export const KEPT: ReadonlySet<string> = new Set([
@@ -27,4 +28,5 @@ export const KEPT: ReadonlySet<string> = new Set([
   "project-gone",
   "stale-clone",
   "clone-vouch",
+  "forge-sign-in-replaces",
 ]);

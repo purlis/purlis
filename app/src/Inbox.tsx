@@ -75,6 +75,7 @@ import { EmptyState } from "./ui/empty-state/EmptyState";
 import { List, ListRowSection } from "./ui/list/List";
 import { chatsOf, SnoozeAll, type Snoozing } from "./AsksSnooze";
 import { CoolingLine, RulesIMade } from "./AskRules";
+import { HeldActAsks } from "./HeldActAsks";
 
 import { chainSaid, NothingDone } from "./inboxRowParts";
 import { inOrder, type Standing } from "./asksOrder";
@@ -843,6 +844,8 @@ export function Inbox({
           )}
         </div>
       )}
+      {/* **Held forge acts** (one login F2): a tag, release, CI-file push or fork a chat asked for. */}
+      {drawsAsks && <HeldActAsks plane={plane} />}
       {drawsAsks && <DismissUndo hold={ignoring} cause="ask-ignored" said={ignoredSaid} />}
       {/* What was just dismissed, while its Undo stands (#5650). */}
       {(part === "updates" || part === "notices") && <DismissUndo hold={hold} />}

@@ -1,0 +1,68 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: one-login-proxy-spike
+
+# **One login, slice E: which mechanism sends `gh`, `glab` and `git` to the forge proxy?** A spike.
+#
+# The sandbox that designed "one login" could not bind a loopback port, so it could not prove how a
+# chat's clients reach the proxy. This runs `tests/one-login-spike/spike.mjs` on a runner of each OS
+# (Linux and macOS, where Go's trust differs): a fake forge, a stand-in proxy that swaps a sentinel
+# for a real token, and each client through each mechanism. It reports; it gates nothing, and it
+# runs only for a change to the spike itself.
+
+on:
+  pull_request:
+    paths:
+      - tests/one-login-spike/**
+      - .github/workflows/one-login-proxy-spike.yml
+  workflow_dispatch:
+
+# Nothing by default: the job names what it needs.
+permissions: {}
+
+concurrency:
+  group: one-login-proxy-spike-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  spike:
+    name: spike (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `gh` is on both images; `glab` is on neither (as in the scenarios' action).
+      - name: glab
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then
+            brew install glab
+          else
+            go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
+            echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          fi
+      # `gh` sends `GH_HOST=github.localhost` to http://api.github.localhost/ on port 80.
+      - name: names and port 80 for github.localhost
+        shell: bash
+        run: |
+          echo "127.0.0.1 github.localhost api.github.localhost" | sudo tee -a /etc/hosts
+          if [ "$RUNNER_OS" = Linux ]; then sudo sysctl -w net.ipv4.ip_unprivileged_port_start=0; fi
+      - name: spike
+        timeout-minutes: 20
+        shell: bash
+        run: node tests/one-login-spike/spike.mjs --out "$RUNNER_TEMP/spike-out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: spike-${{ matrix.os }}
+          path: ${{ runner.temp }}/spike-out
+          if-no-files-found: warn

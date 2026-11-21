@@ -1025,6 +1025,17 @@ export const commands = {
 	 *  merged.
 	 */
 	dontMergeHeldRequest: (plane: PlaneId, session: number, repo: string, number: number, head: string) => typedError<null, string>(__TAURI_INVOKE("dont_merge_held_request", { plane, session, repo, number, head })),
+	/**  **The held acts a project's chats asked for**, for Asks. */
+	heldActsWaiting: (plane: PlaneId) => typedError<HeldActShown[], string>(__TAURI_INVOKE("held_acts_waiting", { plane })),
+	/**
+	 *  **The person's press** of a held act, as the window: the first press asks once more, the second
+	 *  (naming the nonce the first returned) performs, with the person's own sign-in, exactly the act
+	 *  the row showed (`digest`). Where the forge refuses, the ask waits again and the refusal is
+	 *  said.
+	 */
+	pressHeldAct: (plane: PlaneId, ask: number, digest: string, nonce: string | null) => typedError<HeldPress, string>(__TAURI_INVOKE("press_held_act", { plane, ask, digest, nonce })),
+	/**  **Don't**, on a held act: the ask is put away and nothing is done. */
+	dontHeldAct: (plane: PlaneId, ask: number) => typedError<boolean, string>(__TAURI_INVOKE("dont_held_act", { plane, ask })),
 	/**
 	 *  **This project's sites, or also the open web**, on chat `session`'s browser Ask (#2013): its
 	 *  browser starts at its next browser call, reaching that; the chat is told on its next turn.
@@ -2387,6 +2398,51 @@ export const commands = {
 	 *  One that has not started yet is stopped as it starts; one that is over is left as it ended.
 	 */
 	forgePkceSignInCancel: (attempt: string) => __TAURI_INVOKE<void>("forge_pkce_sign_in_cancel", { attempt }),
+	/**  This machine's pinned applications, in the order they were pinned. */
+	forgeApplications: () => typedError<ForgeApplicationRow[], string>(__TAURI_INVOKE("forge_applications")),
+	/**
+	 *  **The person's press of *Use this application*** (D1.3 rule 2): pins `client_id` for `kind` on
+	 *  `host`, with `owner`, the organization or group the person expects the application to be owned
+	 *  by. A changed client id or owner is a new press, and the answer says what it replaced.
+	 */
+	forgeUseApplication: (kind: string, host: string, clientId: string, owner: string) => typedError<ForgeApplicationPinned, string>(__TAURI_INVOKE("forge_use_application", { kind, host, clientId, owner })),
+	/**
+	 *  Takes `host`'s pinned application away. Accounts signed in through it stay listed and keep
+	 *  their tokens until they end; they can no longer be renewed.
+	 */
+	forgeRemoveApplication: (kind: string, host: string) => typedError<null, string>(__TAURI_INVOKE("forge_remove_application", { kind, host })),
+	/**
+	 *  **The request to send an owner** who has not made the application on `host`: what to enter,
+	 *  as text to copy (D1.3 rule 3).
+	 */
+	forgeApplicationRequest: (kind: string, host: string) => typedError<string, string>(__TAURI_INVOKE("forge_application_request", { kind, host })),
+	/**  Every confirmed repo, with the account that serves it and the accounts it could be served by. */
+	forgeProjectAccounts: () => typedError<ProjectAccountRow[], string>(__TAURI_INVOKE("forge_project_accounts")),
+	/**  **The press that chooses which account serves a repo.** */
+	forgeChooseProjectAccount: (cloneKey: string, kind: string, host: string, repoId: string, accountId: string) => typedError<null, string>(__TAURI_INVOKE("forge_choose_project_account", { cloneKey, kind, host, repoId, accountId })),
+	/**
+	 *  The person's press that records the clone at `folder` (relative to the project) for D4: the
+	 *  repo's numeric id is read from the forge as `account_id` (the only account on the host, when
+	 *  none is named) and kept with the account. The clone must already be trusted.
+	 */
+	forgeTrustCloneRepo: (plane: PlaneId, folder: string, accountId: string | null) => typedError<ConfirmedAnswer, string>(__TAURI_INVOKE("forge_trust_clone_repo", { plane, folder, accountId })),
+	/**
+	 *  **Ask GitHub for CI-file permission** on the press a held CI-file push needs (D1.1, D8.3): a
+	 *  device flow asking for what the account holds and `workflow`. The code and the forge's page
+	 *  are answered for the window to show. Waited on with [`forge_ci_permission_wait`].
+	 */
+	forgeCiPermissionStart: (accountId: string) => typedError<ForgeDeviceCode, string>(__TAURI_INVOKE("forge_ci_permission_start", { accountId })),
+	/**
+	 *  Wait for the person to allow CI files on GitHub's page for `flow`, then keep the second token
+	 *  as its own keychain item. The everyday token is read back first: if GitHub folded the
+	 *  permission into it, nothing is kept and a CI-file push is not offered.
+	 */
+	forgeCiPermissionWait: (flow: number) => typedError<CiPermissionAnswer, string>(__TAURI_INVOKE("forge_ci_permission_wait", { flow })),
+	/**
+	 *  Stop waiting on a CI-permission `flow`: the polling ends within a moment, and nothing of it
+	 *  is kept.
+	 */
+	forgeCiPermissionCancel: (flow: number) => __TAURI_INVOKE<void>("forge_ci_permission_cancel", { flow }),
 	/**
 	 *  This machine's profiles, in the order they were made, each with the version of its harness
 	 *  installed here beside its pin (#2038): each harness asked `--version` once.
@@ -3941,6 +3997,11 @@ export const commands = {
 	 *  shows what it publishes and where at once, and says who reads it when the forge answers.
 	 */
 	planeRemoteReaders: (plane: PlaneId) => typedError<RemoteReaders, string>(__TAURI_INVOKE("plane_remote_readers", { plane })),
+	/**
+	 *  Whether the project at the open plane is ready for all users on its forge. Asks the network:
+	 *  off the UI thread.
+	 */
+	planeReadiness: (plane: PlaneId) => typedError<ReadinessAnswer, string>(__TAURI_INVOKE("plane_readiness", { plane })),
 	/**
 	 *  What deleting this workspace would discard, for the dialog to show **before** anything is
 	 *  pressed.
@@ -8636,6 +8697,16 @@ export type ChosenInstruction = {
 	text: string,
 };
 
+/**  How a second sign-in ended. */
+export type CiPermissionAnswer = {
+	/**
+	 *  `ready` (the second token is kept) or `not-offered` (GitHub folded the permission into
+	 *  the everyday sign-in, so a CI-file push is not offered).
+	 */
+	state: string,
+	says: string,
+};
+
 /**  What came of a clash. */
 export type ClashOutcome = 
 /**  Both copies load. */
@@ -8805,6 +8876,15 @@ export type CommandDoes =
 { kind: "open"; view: string; title: string } | 
 /**  Runs one of its actions, on nothing in particular. */
 { kind: "run"; action: RowAction };
+
+/**  What a recording found, for the window to say. */
+export type ConfirmedAnswer = {
+	/**  `recorded`, `choose` (several accounts on the host: the person picks) or `sign-in` (none). */
+	state: string,
+	/**  The repo as recorded, `owner/name`. */
+	path: string | null,
+	host: string | null,
+};
 
 /**  The crash Notice's state (#5700), as the window names it. */
 export type CrashNoticeSaid = 
@@ -10635,6 +10715,29 @@ export type ForgeAccountRow = {
 	wider: string[],
 };
 
+/**  What a press of *Use this application* changed. */
+export type ForgeApplicationPinned = {
+	host: string,
+	/**  `pinned`, `client-id` (another application replaced the pinned one) or `owner`. */
+	change: string,
+	/**  The client id (or owner) this replaced, for the Notice a changed pin raises. */
+	replaced: string | null,
+	consent: string,
+};
+
+/**  A host's pinned application, as Settings lists it. */
+export type ForgeApplicationRow = {
+	kind: string,
+	host: string,
+	client_id: string,
+	/**  The owner the person expects the forge's page to show. */
+	owner: string,
+	/**  What to read before signing in: *check that the application is owned by …*. */
+	consent: string,
+	/**  Accounts signed in on the host now. */
+	signed_in: number,
+};
+
 /**
  *  A forge CLI's login purlis could import (#1376, ADR 0077 §5): `cli` is signed in to `host`,
  *  where purlis has no account yet.
@@ -10689,6 +10792,16 @@ export type ForgeOwners = {
 	host: string | null,
 	login: string,
 	owners: OwnerRow[],
+};
+
+/**
+ *  **What the window says once about a project's old forge token lines**
+ *  ([`sandbox::tools::replaced::Told`]): its text, and a cause key that moves only when the
+ *  lines do, so a dismissal stands until they change.
+ */
+export type ForgeReplaced = {
+	cause: string,
+	text: string,
 };
 
 /**  One forge's CLI, as the first-run screen lists it. */
@@ -11393,10 +11506,49 @@ export type HarnessSetupFound = {
 	local_models: LocalModelRow[],
 };
 
+/**
+ *  **A held act the person is asked about**: exactly what the core read, and the digest of it
+ *  that a press hands back.
+ */
+export type HeldActShown = {
+	ask: number,
+	/**  The chat that asked. */
+	session: number,
+	/**  `tag`, `release`, `CI-file push` or `fork`. */
+	kind: string,
+	repo: string,
+	rows: HeldRowShown[],
+	body: HeldBodyShown | null,
+	/**  What a press names, so it performs only what was drawn. */
+	digest: string,
+};
+
+/**  **A long text an ask shows whole**: a release's notes, a CI file's diff. */
+export type HeldBodyShown = {
+	label: string,
+	text: string,
+};
+
+/**  **What a press did.** */
+export type HeldPress = 
+/**
+ *  The first press: the forge was read again and the ask is as shown. Press again, naming
+ *  `nonce`, to perform it.
+ */
+{ step: "asks-once-more"; shown: HeldActShown; nonce: string } | 
+/**  The second press: the act was performed. `said` is what was made. */
+{ step: "done"; said: string };
+
 /**  One change Remove held: its proposal's id, and the file it changes. */
 export type HeldRemoval = {
 	id: number,
 	file: string,
+};
+
+/**  **One line of an ask**, as the window draws it. */
+export type HeldRowShown = {
+	label: string,
+	value: string,
 };
 
 /**
@@ -15360,6 +15512,39 @@ export type ProfileRow = {
 	icon?: HarnessIconRow | null,
 };
 
+/**  One account the person may choose for a repo. */
+export type ProjectAccountChoice = {
+	id: string,
+	login: string,
+};
+
+/**  A confirmed repo, and the account that serves it. */
+export type ProjectAccountRow = {
+	/**  What the choice names the clone by. */
+	clone_key: string,
+	/**  `github` or `gitlab`: with the host and the repo number, what names the repo. */
+	kind: string,
+	/**
+	 *  The forge's own number for the repo, as text (a repo number can outgrow what the window's
+	 *  numbers hold).
+	 */
+	repo_id: string,
+	host: string,
+	path: string,
+	/**  The account serving it, or null when it is signed out or gone. */
+	serving: ProjectAccountChoice | null,
+	/**
+	 *  `serving`; `signed-out` (the chosen account is signed out, or holds CI-file permission:
+	 *  the person signs it in again, or chooses another; **no other account serves in its
+	 *  place**); `unchosen` (several accounts are signed in, and none was chosen); or
+	 *  `application-changed` (the chosen account signed in through an application the host no
+	 *  longer pins).
+	 */
+	state: string,
+	/**  The signed-in accounts on this repo's host, for the choice. */
+	choices: ProjectAccountChoice[],
+};
+
 /**
  *  What came of making a project: made and opened (or asked about), or a question about the
  *  forge first. Two nullable fields, as [`Opened`] is: exactly one is ever set.
@@ -15927,6 +16112,31 @@ export type ReadOnlyProject = {
 	 *  person mends (#1759). Every other write stays off.
 	 */
 	mendable: boolean,
+};
+
+/**  What asking about the project's forge came to. */
+export type ReadinessAnswer = 
+/**
+ *  Nothing was checked, and why on one line: no `origin`, a path on this machine, a host no
+ *  forge purlis knows.
+ */
+{ state: "notChecked"; why: string } | 
+/**  The forge `host` was asked about `path`. `ready` is every check ready, and only that. */
+{ state: "checked"; host: string; path: string; ready: boolean; checks: ReadinessCheck[] };
+
+/**  One check, as the window draws it. */
+export type ReadinessCheck = {
+	id: string,
+	title: string,
+	/**  `ready`, `blocked` or `unknown`. */
+	verdict: string,
+	/**  Who can fix a blocker: `you`, `owner` or `admin`. */
+	who: string | null,
+	detail: string,
+	link: string | null,
+	steps: string[],
+	/**  A short message for whoever can fix it, when it is not the person. */
+	request: string | null,
 };
 
 /**  The prefix rebuilds this conversation has paid for (`↻N 696k`). */
@@ -17526,6 +17736,13 @@ export type SandboxState = {
 	 *  allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
 	 */
 	expects?: ProjectExpects | null,
+	/**
+	 *  **Tool lines the person's sign-in replaces** (ADR 0128, "Migration"), with the one-login
+	 *  train's `forge-wiring` feature on: the project's `mint = "github-app"` and vault forge
+	 *  token lines, which still parse and run nothing. The window says it once, until the lines
+	 *  change. `null` where the project has none, and always without the feature.
+	 */
+	forge_replaced?: ForgeReplaced | null,
 	/**
 	 *  **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
 	 *  "off"`, where it came from as far as purlis verified it, and how the person on this

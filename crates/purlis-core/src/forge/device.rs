@@ -338,6 +338,7 @@ pub fn finish(
         registration.host,
         granted,
         Method::Device,
+        registration.client_id,
     )
     .map_err(Ended::Failed)
 }

@@ -34,9 +34,17 @@ type Step =
  *   code; **Cancel** stops the waiting (`forge_device_sign_in_cancel`) and leaves nothing behind.
  */
 export function ForgeDeviceSignIn({
+  host = "github.com",
+  consent,
   onSignedIn,
   onCancel,
 }: {
+  /** The host to sign in on: github.com, or a GitHub Enterprise Server host whose application
+   *  the person pinned (ADR 0128 D1.3). */
+  host?: string;
+  /** What to check on the forge's own page before approving: the pinned owner, said. Only for a
+   *  host of an application an owner made. */
+  consent?: string;
   /** The account the sign-in made, as Settings lists it. */
   onSignedIn: (account: ForgeAccountRow) => void;
   onCancel: () => void;
@@ -60,7 +68,7 @@ export function ForgeDeviceSignIn({
       void commands.forgeDeviceSignInCancel(which).catch(() => undefined);
     const refused = (err: unknown) => ({ status: "error" as const, error: String(err) });
     void commands
-      .forgeDeviceSignInStart("github", "github.com")
+      .forgeDeviceSignInStart("github", host)
       .catch(refused)
       .then((started) => {
         if (started.status === "error") {
@@ -91,7 +99,7 @@ export function ForgeDeviceSignIn({
       left = true;
       if (flow !== undefined) stop(flow);
     };
-  }, [attempt]);
+  }, [attempt, host]);
 
   const tryAgain = () => {
     setStep({ at: "asking" });
@@ -118,7 +126,7 @@ export function ForgeDeviceSignIn({
     <Dialog
       onClose={onCancel}
       title="Sign in with GitHub"
-      subtitle="on github.com, in your browser; purlis keeps the sign-in in your system keychain"
+      subtitle={`on ${host}, in your browser; purlis keeps the sign-in in your system keychain`}
       main={{
         children: ended ? "Try again" : "Open GitHub in your browser",
         reserve: ["Open GitHub in your browser", "Try again"],
@@ -131,7 +139,7 @@ export function ForgeDeviceSignIn({
     >
       {step.at === "asking" && (
         <p className="pending" role="status" aria-busy="true">
-          Asking github.com for a code…
+          Asking {host} for a code…
         </p>
       )}
 
@@ -141,6 +149,7 @@ export function ForgeDeviceSignIn({
             Enter this code on GitHub&apos;s page, then approve purlis there. The code is for this
             sign-in only.
           </p>
+          {consent !== undefined && <p role="note">{consent}</p>}
           <Card as="p" variant="ask" className="forge-device-code">
             <strong>
               <code aria-label="The code to enter on GitHub">{step.code.user_code}</code>
