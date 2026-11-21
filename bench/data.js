@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795206291142,
+  "lastUpdate": 1795282216419,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51912,6 +51912,48 @@ window.BENCHMARK_DATA = {
             "value": 100.999562,
             "unit": "ms",
             "extra": "median of 5 runs: 100.752, 100.884, 101.000, 101.179, 102.561 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2236ef2daae328a9a54e5ca52f55476673f04d08",
+          "message": "ADR: one sign-in provisions every chat's forge identity (draft) (#7269)\n\n* ADR 0127 (proposed): one sign-in provisions every chat's forge identity, with its research note\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W69RPXCFKV67TPP1Q73EC6\nPurlis-Persona: steward\n\n* ADR 0128 (proposed, round 2): everyone works as themselves, and the forge token never enters a chat\n\nPer-user tokens are the base (GitHub agents App by device flow, GitLab agent OAuth app),\nbrokered by an app-side proxy; bot mode is opt-in. Renumbered from 0127, taken on m75-policy.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W76YNRGZ0074FS7S4ZJ4CC\nPurlis-Persona: steward\n\n* ADR 0128 (proposed, round 3): your sign-in, brokered; one approach for every forge\n\nOne OAuth-app sign-in per forge host, renewed by the app, and one forge proxy\nthat acts as the person for the chat's own repos. Replaces the bot App, the\nGitLab vault tokens and the CLI-login push. Research note section 7 holds the\nre-read forge facts and what gh and glab can be pointed at.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W7JS27SPP8K1GBPY6HMX1Z\nPurlis-Persona: steward\n\n* ADR 0128 round 4: fold Fable round 2 (proxy, one approach, held acts, token connections, readiness, migration)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W8NSXMJ3MJH1KXF4DPT98C\nPurlis-Persona: steward\n\n* ADR 0128 round 5: fold Fable round 3 (own-port proxy and secret, anonymous read route, held-act Asks, headless, residuals, facts)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7W9M4Y0JPE7H3WW1548XSR7\nPurlis-Persona: steward\n\n* ADR 0128 round 6: headless checkout token, GraphQL field allowlist, D3i credential and storage rules, CONNECT ruling, gh remote matching, citations\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WADZM3FVFEFZAK86FC3883\nPurlis-Persona: steward\n\n* ADR 0128 round 7: gh/glab/git requirement row, anon closed list, dependency exceptions, chunked, release-assets, replay wording\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WAVM2C71TMJGDE8TWJE8MD\nPurlis-Persona: steward\n\n* ADR 0128 round 7: fix a stray bold marker in the new requirement row\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WAVM2C71TMJGDE8TWJE8MD\nPurlis-Persona: steward\n\n* ADR 0128 round 8: adopt spike E's proven mechanisms (D3a-D3c, D3g-D3i, requirement row)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WCKFB9M65V3WWQSWAR5QJQ\nPurlis-Persona: steward\n\n* ADR 0128 round 9: per-chat CA and route rules, exact\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7WD00NSDN84BXVZVEHZJ2SX\nPurlis-Persona: steward\n\n* ADR 0128 round 10: bring the record in line with the one-login train, and the user docs (Refs #7269, #7301)\n\nThe ADR now says what was built where round 9 said what would be: GraphQL\nand REST reads per type and pattern, the CI-file hold by path, the egress\ndenial by name, SNI and address, the second token failing closed, a route\nper run, and the migration. D3h gains the residuals the final reviews of\nA2, B, F2, G and J accepted (D3h.11 to D3h.20), and the open items gain\nthe follow-ups of #7301.\n\ndocs/forges.md is the person-facing page: sign in once, what a chat can\ndo and what is refused, what waits for a press, the readiness check,\nrenewal, token connections and the move from Agent identity and vault\nGitLab tokens. The getting-started pages stop saying a chat can use the\nCLI's own login.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7Y91JQ5PJK449MW6030SJ68\nPurlis-Persona: steward\n\n* ADR 0128 D3g: an administrator's never-allow pin wins over the brokered route (Refs #7269)\n\nA pinned forge host is refused entirely, the listener included, after the pin is checked and before the route hand-off; the refusal names the pin and who set it, and the person's sign-in does not override it. docs/forges.md says so under what is refused.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01XQZeZj6j8EHMyj3pZWHum9\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7YGH53PTMQBJ3XRXCC1N9X6\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-21T16:55:43Z",
+          "tree_id": "ff41651122ad70915aa9358e770e475a0f026afc",
+          "url": "https://github.com/purlis/purlis/commit/2236ef2daae328a9a54e5ca52f55476673f04d08"
+        },
+        "date": 1795282207643,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.672412,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.656, 0.664, 0.672, 0.691, 0.698 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.626889000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.566, 16.596, 16.627, 16.665, 16.695 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.474152,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.804, 101.966, 102.474, 102.615, 103.199 ms"
           }
         ]
       }
