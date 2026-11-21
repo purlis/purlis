@@ -27,6 +27,17 @@ const ALLOWED: &[Allowed] = &[
     // door's, a confined extension's, the resolver's), or in process but deliberately unscaled
     // (a retry, a poll, a clamp, a cache, a teardown or a wake on loopback), as its `why` says.
     Allowed {
+        file: "sandbox/denial_report.rs",
+        line: "pub const LATE_FOLDS: Duration = Duration::from_secs(30);",
+        why: "how long the kernel may take to deliver a folded refusal report after its process \
+              ended (measured about 25 s, T1.1-51): out of process, and no cell orders against it",
+    },
+    Allowed {
+        file: "sandbox/denial_report.rs",
+        line: "const READY: Duration = Duration::from_secs(10);",
+        why: "the bound on `log stream` saying it is reading: out of process, at real time",
+    },
+    Allowed {
         file: "sandbox/egress.rs",
         line: "const BACKOFF: Duration = Duration::from_millis(100);",
         why: "a failing accept's retry: no cell orders anything against it",
