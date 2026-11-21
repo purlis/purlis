@@ -234,7 +234,7 @@ pub const HANDLERS: [Handler; 20] = [
     Handler {
         name: "posttoolusefailure-blocked",
         event: "PostToolUseFailure",
-        matcher: Some("Bash|Read"),
+        matcher: Some(".*"),
         timeout: 5,
     },
     // A purlis tool that failed (#5697): one whose error says it failed inside purlis is
