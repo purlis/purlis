@@ -2552,6 +2552,7 @@ fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from
         sandbox: Some("seatbelt".to_owned()),
         conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
         started_by: Some("terminal".to_owned()),
+        attendance: None,
         protection: None,
     };
     host.begin(
@@ -4645,4 +4646,43 @@ fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_stil
         )
         .unwrap();
     assert!(again.is_empty(), "{again:?}");
+}
+
+/// R-106, R-219 (T1.1-40, #6887): a run's `run.started` says whether anyone was at the chat when
+/// it began, as the attendance fact's word, and a start that holds no fact says so: the fact is
+/// in the event log, where a person and a reader find it, never only in the app's memory.
+#[test]
+fn run_started_records_attendance() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    for (chat, run, attendance) in [
+        (CHAT, RUN, Some("attended")),
+        ("chat-two", "run-two", Some("unattended")),
+        ("chat-three", "run-three", None),
+    ] {
+        host.begin(
+            plane,
+            3,
+            RunOf { chat, run },
+            Began::Start,
+            &Attributes {
+                attendance: attendance.map(str::to_owned),
+                ..Attributes::default()
+            },
+        )
+        .unwrap();
+    }
+    let words: Vec<_> = runs_started(dir.path())
+        .iter()
+        .map(|event| event.body["attendance"].as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        words,
+        [
+            Some("attended".to_owned()),
+            Some("unattended".to_owned()),
+            Some("unknown".to_owned())
+        ]
+    );
 }
