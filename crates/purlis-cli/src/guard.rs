@@ -452,7 +452,7 @@ impl Budget {
     /// The budget, from now.
     pub(crate) fn start() -> Self {
         Self {
-            ends: Instant::now() + budget(),
+            ends: Instant::now() + budget_of(BUDGET),
         }
     }
 
@@ -461,7 +461,7 @@ impl Budget {
     /// would cut off and refuse for being slow.
     pub(crate) fn lasting(lasting: Duration) -> Self {
         Self {
-            ends: Instant::now() + lasting,
+            ends: Instant::now() + budget_of(lasting),
         }
     }
 
@@ -471,7 +471,8 @@ impl Budget {
     }
 }
 
-fn budget() -> Duration {
+/// `usual`, or what the tests set in its place in a debug build.
+fn budget_of(usual: Duration) -> Duration {
     #[cfg(debug_assertions)]
     if let Some(ms) = std::env::var(BUDGET_ON_PURPOSE_ENV)
         .ok()
@@ -479,7 +480,7 @@ fn budget() -> Duration {
     {
         return Duration::from_millis(ms);
     }
-    BUDGET
+    usual
 }
 
 /// The hook ran out of its budget: refused, by the panic hook ([`refuse_on_a_crash`]), which

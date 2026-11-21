@@ -2651,7 +2651,7 @@ fn a_path_denied_to_write_stays_readable() {
         filesystem_by_path(&settings),
         (Vec::new(), vec!["/p/.charter/app".to_owned()])
     );
-    assert_eq!(by_path(&settings.deny)[3..], ["Edit(//p/.charter/app)"]);
+    assert_eq!(by_path(&settings.deny)[1..], ["Edit(//p/.charter/app)"]);
 }
 
 /// A Claude Code sandbox's `denyWrite`, the later-code class's included.
