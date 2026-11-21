@@ -1282,7 +1282,7 @@ fn a_protection_level_change_writes_one_event_naming_both_levels_and_who_made_it
         .filter(|event| event.kind == "trust.sandbox.level")
         .collect();
     assert_eq!(levels.len(), 1, "one event for one change");
-    let drawn: Vec<(String, Option<String>, Option<String>, String, String)> = rows(&events, ONE)
+    let drawn: Vec<_> = rows(&events, ONE)
         .into_iter()
         .filter_map(|row| match row {
             Row::ProtectionChanged {
