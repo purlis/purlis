@@ -1186,13 +1186,12 @@ impl Allowed {
     }
 
     /// The refusal of a name that resolved only to addresses a chat never reaches. Where a forge
-    /// is denied the addresses may be the forge's (GitHub Pages and `ghcr.io` are served from its
-    /// ranges too), so the sentence names that and not only this machine.
-    fn only_local(&self, host: &str) -> Decision {
-        if self.forge.is_some() {
+    /// held some of the addresses back (`forge_held`: GitHub Pages and `ghcr.io` are served from
+    /// its ranges too), the sentence names that; a plain local refusal does not.
+    fn only_local(&self, host: &str, forge_held: bool) -> Decision {
+        if forge_held {
             return Decision::Refused(Refused::NeverAHost(format!(
-                "{host} resolves only to addresses a chat does not reach: this machine, a \
-                 link-local or metadata address, or an address of a forge. A forge, and GitHub's \
+                "{host} resolves only to addresses a forge holds. A forge, and GitHub's \
                  addresses with it (GitHub Pages and ghcr.io are served from them), is reached \
                  only through purlis: use gh, glab or git"
             )));
@@ -1297,10 +1296,11 @@ impl Allowed {
         own: &[std::net::IpAddr],
         read: Option<&[super::hosts::Network]>,
     ) -> Connected {
+        let forge_held = std::cell::Cell::new(false);
         if self.confined
             && let Some(providers) = &self.providers
         {
-            let carries = |at| self.carries(host, at, read);
+            let carries = |at| self.carries_noting(host, at, read, &forge_held);
             let resolve = |name: &str, port: u16| providers.resolve(name, port);
             return match confined_addresses(
                 host,
@@ -1312,7 +1312,7 @@ impl Allowed {
                 &resolve,
             ) {
                 Ok(reached) => connect_first(reached),
-                Err(refused) => refused,
+                Err(refused) => refused.noting(forge_held.get()),
             };
         }
         match self.pinned(host, port) {
@@ -1320,9 +1320,27 @@ impl Allowed {
                 TcpStream::connect_timeout(&at, PATIENCE).map_or(Connected::Not, Connected::To)
             }
             None => connect_held(host, port, &self.reach, own, &|at| {
-                self.carries(host, at, read)
-            }),
+                self.carries_noting(host, at, read, &forge_held)
+            })
+            .noting(forge_held.get()),
         }
+    }
+
+    /// [`Self::carries`], noting in `forge_held` that the forge's denial held an address back.
+    fn carries_noting(
+        &self,
+        host: &str,
+        at: SocketAddr,
+        own: Option<&[super::hosts::Network]>,
+        forge_held: &std::cell::Cell<bool>,
+    ) -> bool {
+        if let Some(forge) = &self.forge
+            && !forge.carries(host, at.ip())
+        {
+            forge_held.set(true);
+            return false;
+        }
+        self.carries(host, at, own)
     }
 
     /// **The decision, once the person had their say** (#1666): an ask is held on the chat's
@@ -1566,8 +1584,8 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
             );
             return;
         }
-        Connected::OnlyLocal => {
-            let local = allowed.only_local(&request.host);
+        one @ (Connected::OnlyLocal | Connected::OnlyForge) => {
+            let local = allowed.only_local(&request.host, matches!(one, Connected::OnlyForge));
             allowed.refused(&request.host, request.port, &local);
             let said = match &local {
                 Decision::Refused(Refused::NeverAHost(why)) => format!(
@@ -1718,8 +1736,12 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
     let _ = client.set_write_timeout(Some(allowed.idle));
     let mut upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
-        Connected::OnlyLocal => {
-            allowed.refused(&host, port, &allowed.only_local(&host));
+        one @ (Connected::OnlyLocal | Connected::OnlyForge) => {
+            allowed.refused(
+                &host,
+                port,
+                &allowed.only_local(&host, matches!(one, Connected::OnlyForge)),
+            );
             return socks_reply(&mut client, reply::NOT_ALLOWED);
         }
         // A confined extension's proxy carries no SOCKS request, so this is never one of its.
@@ -2006,11 +2028,24 @@ pub(crate) enum Connected {
     To(TcpStream),
     /// The name resolved, and only to addresses a chat never reaches: refused, as a Block.
     OnlyLocal,
+    /// As [`Connected::OnlyLocal`], where the forge's denial held at least one address back.
+    OnlyForge,
     /// It did not resolve, or nothing answered.
     Not,
     /// For a confined extension's proxy: the name resolved, and only to addresses a model is
     /// served at ([`ProviderAddresses`], #3094). Refused, as a Block.
     AtAModel,
+}
+
+impl Connected {
+    /// This refusal, as [`Connected::OnlyForge`] where `forge_held` says the forge's denial held
+    /// an address back.
+    fn noting(self, forge_held: bool) -> Self {
+        match self {
+            Self::OnlyLocal if forge_held => Self::OnlyForge,
+            other => other,
+        }
+    }
 }
 
 /// Connects to `host` on `port`, only at the addresses it resolves to now that a chat may reach
@@ -2236,21 +2271,24 @@ const ENCRYPTED_CLIENT_HELLO: usize = 0xfe0d;
 /// The most a TLS record may hold: 2^14 bytes of plaintext and the record's own overhead.
 const MOST_TLS_RECORD: usize = (1 << 14) + 2048;
 
-/// Whether `bytes` start a TLS record: a type of `0x14` to `0x17` (change cipher spec, alert,
-/// handshake, application data) and a version of `03 00` to `03 04`. `None` while fewer bytes
-/// than that are known and what there is could still be one. A warning alert before the
-/// ClientHello is a record a TLS library skips, so it is no excuse for not reading the hello.
+/// Whether `bytes` start a TLS record: a content type of `0x14` to `0x18` (change cipher spec,
+/// alert, handshake, application data, heartbeat) and any version, which RFC 8446 §5.1 says a
+/// receiver ignores in a ClientHello's record (Go and rustls accept `03 05`). `None` while
+/// nothing is known. A warning alert before the ClientHello is a record a TLS library skips, so
+/// it is no excuse for not reading the hello.
 fn record_shaped(bytes: &[u8]) -> Option<bool> {
+    bytes.first().map(|content| (0x14..=0x18).contains(content))
+}
+
+/// Whether `bytes` start an SSLv2-compatible ClientHello (a two-byte length with its high bit
+/// set, then message type 1), which a TLS server may still read as a ClientHello. `None` while
+/// fewer than three bytes are known and what there is could still be one.
+fn ssl2_shaped(bytes: &[u8]) -> Option<bool> {
     let first = bytes.first()?;
-    if !(0x14..=0x17).contains(first) {
+    if first & 0x80 == 0 {
         return Some(false);
     }
-    match bytes.get(1..3) {
-        Some([3, minor]) => Some(*minor <= 4),
-        Some(_) => Some(false),
-        None if bytes.get(1).is_some_and(|major| *major != 3) => Some(false),
-        None => None,
-    }
+    bytes.get(2).map(|kind| *kind == 1)
 }
 
 /// **The first TLS record a tunnel's client sent**, read from `client` after `already` (what
@@ -2265,7 +2303,7 @@ fn first_record(client: &mut TcpStream, already: &[u8], within: Duration) -> Opt
         (hello.len() >= 5).then(|| 5 + usize::from(u16::from_be_bytes([hello[3], hello[4]])))
     };
     loop {
-        if record_shaped(&hello) == Some(false) {
+        if record_shaped(&hello) == Some(false) && ssl2_shaped(&hello).is_some() {
             return Some(hello);
         }
         if let Some(record) = whole(&hello)
@@ -2318,7 +2356,10 @@ pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
 pub(crate) fn hello_of(record: &[u8]) -> Hello {
     // Anything shaped like a TLS record that is no readable ClientHello is unreadable, not no
     // TLS: an alert before the hello hides it from a reader of the first record.
-    if record_shaped(record) == Some(false) || record.is_empty() {
+    if ssl2_shaped(record) == Some(true) {
+        return Hello::Unreadable;
+    }
+    if record_shaped(record) != Some(true) {
         return Hello::NotTls;
     }
     read_hello(record).unwrap_or(Hello::Unreadable)
@@ -2361,15 +2402,18 @@ fn read_hello(record: &[u8]) -> Option<Hello> {
     let extensions = &hello[extensions];
     let mut at = 0usize;
     let mut named: Option<String> = None;
+    let mut ech = false;
     while at < extensions.len() {
         let kind = take(&mut at, 2, extensions)?;
         let size = take(&mut at, 2, extensions)?;
         let data = take(&mut at, len16(extensions, size), extensions)?;
         // An encrypted ClientHello (ECH) names its real server inside, where the proxy does not
-        // read: the outer name says nothing of where the tunnel goes, so none is carried.
+        // read. The outer name is kept beside it: a server that does not speak ECH ignores the
+        // extension and serves the outer name.
         let kind = len16(extensions, kind);
         if kind == ENCRYPTED_CLIENT_HELLO {
-            return Some(Hello::Ech);
+            ech = true;
+            continue;
         }
         if kind != 0 {
             continue;
@@ -2398,7 +2442,11 @@ fn read_hello(record: &[u8]) -> Option<Hello> {
         }
         named = Some(name.trim_end_matches('.').to_owned());
     }
-    Some(named.map_or(Hello::NoName, Hello::Named))
+    Some(match (ech, named) {
+        (true, named) => Hello::Ech(named),
+        (false, Some(name)) => Hello::Named(name),
+        (false, None) => Hello::NoName,
+    })
 }
 
 pub(super) fn answer(client: &mut TcpStream, status: &str, why: &str) {

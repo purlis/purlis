@@ -67,6 +67,10 @@ pub const HELD: Duration = Duration::from_secs(1200);
 /// unreachable host adds no resolver wait to each connection.
 pub const NEGATIVE: Duration = Duration::from_secs(10);
 
+/// [`NEGATIVE`] for a sibling name ([`SIBLINGS`]): most forges answer for few of them, and a
+/// name that does not exist is not worth a lookup on a connection's path every ten seconds.
+pub const SIBLING_NEGATIVE: Duration = Duration::from_secs(600);
+
 /// The names a forge serves beside its host, from addresses of their own at times (`altssh` is
 /// not `gitlab.com`'s address): each is resolved for a forge host as the host is.
 const SIBLINGS: [&str; 7] = ["altssh", "ssh", "registry", "uploads", "gist", "raw", "www"];
@@ -86,8 +90,9 @@ pub enum Hello {
     Named(String),
     /// A whole ClientHello that names none.
     NoName,
-    /// A ClientHello that carries an encrypted one (ECH): its real name is not readable.
-    Ech,
+    /// A ClientHello that carries an encrypted one (ECH): its real name is not readable. The
+    /// outer name is kept, since a server that does not speak ECH serves it.
+    Ech(Option<String>),
     /// TLS that is no whole ClientHello in its first record, or is none that can be read.
     Unreadable,
     /// Bytes that do not start a TLS handshake.
@@ -247,6 +252,9 @@ pub struct ForgeDenial {
     resolve: Resolver,
     /// What each forge name resolved to.
     resolved: Mutex<HashMap<String, Known>>,
+    /// Held while names are looked up, so connections arriving together share one round of
+    /// lookups and not one each.
+    asking: Mutex<()>,
 }
 
 /// What one forge name has resolved to.
@@ -277,6 +285,7 @@ impl ForgeDenial {
             ranges: snapshot().to_vec(),
             resolve,
             resolved: Mutex::new(HashMap::new()),
+            asking: Mutex::new(()),
         }
     }
 
@@ -313,6 +322,13 @@ impl ForgeDenial {
             }
         }
         names
+    }
+
+    /// Whether `name` is one of a forge host's [`SIBLINGS`].
+    fn is_sibling(&self, name: &str) -> bool {
+        name.split_once('.').is_some_and(|(first, rest)| {
+            SIBLINGS.contains(&first) && self.bases.iter().any(|base| base == rest)
+        })
     }
 
     /// Asks again every name that is due, side by side, and adds what each answers to what it
@@ -354,13 +370,14 @@ impl ForgeDenial {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let now = Instant::now();
         for (name, found) in due.into_iter().zip(answers) {
+            let sibling = self.is_sibling(&name);
             let known = seen.entry(name).or_insert_with(|| Known {
                 addresses: HashMap::new(),
                 ask_after: now,
             });
             known.addresses.retain(|_, until| *until > now);
             if found.is_empty() {
-                known.ask_after = now + NEGATIVE;
+                known.ask_after = now + if sibling { SIBLING_NEGATIVE } else { NEGATIVE };
             } else {
                 known
                     .addresses
@@ -377,7 +394,26 @@ impl ForgeDenial {
         if self.ranges.iter().any(|range| range.holds(ip)) {
             return true;
         }
-        self.refresh();
+        // One round of lookups at a time: a connection that finds another asking uses what is
+        // known (the first lookup of all is waited for), and is not held up by the same names.
+        let lookup = if self
+            .resolved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .is_empty()
+        {
+            Some(
+                self.asking
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner),
+            )
+        } else {
+            self.asking.try_lock().ok()
+        };
+        if lookup.is_some() {
+            self.refresh();
+        }
+        drop(lookup);
         let now = Instant::now();
         self.resolved
             .lock()
@@ -410,7 +446,16 @@ impl ForgeDenial {
             // A hello that says no name is no better than a literal: nothing else names the
             // server, so a tunnel to an address literal is carried only where a list says the
             // forge is not there, and a hello that hides or has no name does not say so.
-            Hello::NoName | Hello::Ech => exempt || literal(&host).is_some(),
+            Hello::NoName | Hello::Ech(None) => exempt || literal(&host).is_some(),
+            // A forge name beside an encrypted hello is what a server ignoring ECH would serve:
+            // refused as a named hello is. Browsers' GREASE ECH to any other name passes.
+            Hello::Ech(Some(sni)) => {
+                let sni = plain(sni);
+                exempt
+                    || literal(&host).is_some()
+                    || self.is_forge_name(&sni)
+                    || literal(&sni).is_some_and(|ip| self.holds(ip))
+            }
             Hello::NotTls => exempt,
             Hello::Unreadable => true,
         }

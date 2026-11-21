@@ -2304,7 +2304,12 @@ fn a_hello_is_read_for_what_it_says_of_its_server() {
         Hello::Named("github.com".into())
     );
     assert_eq!(hello_of(&client_hello(None, false)), Hello::NoName);
-    assert_eq!(hello_of(&client_hello(Some("a.example"), true)), Hello::Ech);
+    assert_eq!(
+        hello_of(&client_hello(Some("a.example"), true)),
+        Hello::Ech(Some("a.example".into())),
+        "the outer name is kept beside the encrypted hello"
+    );
+    assert_eq!(hello_of(&client_hello(None, true)), Hello::Ech(None));
     assert_eq!(hello_of(b"GET / HTTP/1.1\r\n"), Hello::NotTls);
     assert_eq!(hello_of(b""), Hello::NotTls);
     // A record cut short, or one that holds no whole hello: not read.
@@ -2322,8 +2327,8 @@ fn a_record_shaped_first_record_that_is_no_hello_is_unreadable_never_no_tls() {
         Hello::Unreadable,
         "an alert"
     );
-    for kind in [0x14u8, 0x17] {
-        for minor in 0..=4u8 {
+    for kind in [0x14u8, 0x17, 0x18] {
+        for minor in 0..=9u8 {
             assert_eq!(
                 hello_of(&[kind, 3, minor, 0, 1, 1]),
                 Hello::Unreadable,
@@ -2331,22 +2336,48 @@ fn a_record_shaped_first_record_that_is_no_hello_is_unreadable_never_no_tls() {
             );
         }
     }
+    // RFC 8446 says a ClientHello's record version is ignored: the content type alone says TLS.
+    for version in [[4u8, 1], [3, 5], [2, 0], [0, 0], [0xff, 0xff]] {
+        assert_eq!(
+            hello_of(&[0x15, version[0], version[1], 0, 2, 1, 0x5a]),
+            Hello::Unreadable,
+            "{version:?}"
+        );
+        let mut odd = client_hello(Some("github.com"), false);
+        odd[1..3].copy_from_slice(&version);
+        assert_eq!(
+            hello_of(&odd),
+            Hello::Named("github.com".into()),
+            "a hello in a record of version {version:?} is read as one"
+        );
+    }
+    // An SSLv2-compatible hello is unreadable, not no TLS; other first bytes with the high bit
+    // are not.
+    assert_eq!(hello_of(&[0x80, 0x2e, 1, 3, 1, 0, 0]), Hello::Unreadable);
+    assert_eq!(hello_of(&[0x80, 0x2e, 2, 3, 1, 0, 0]), Hello::NotTls);
     // What is no TLS record at all is carried as such.
-    assert_eq!(hello_of(&[0x15, 4, 1, 0, 2]), Hello::NotTls);
-    assert_eq!(hello_of(&[0x15, 3, 5, 0, 2]), Hello::NotTls);
     assert_eq!(hello_of(&[0x13, 3, 1, 0, 2]), Hello::NotTls);
+    assert_eq!(hello_of(&[0x19, 3, 1, 0, 2]), Hello::NotTls);
     assert_eq!(hello_of(b"SSH-2.0-OpenSSH_9.6\r\n"), Hello::NotTls);
 }
 
 #[test]
-fn a_record_shape_is_known_from_as_few_bytes_as_tell_it() {
-    use super::record_shaped;
+fn a_record_shape_is_known_from_the_content_type_alone() {
+    use super::{record_shaped, ssl2_shaped};
     assert_eq!(record_shaped(b""), None);
-    assert_eq!(record_shaped(&[0x15]), None);
-    assert_eq!(record_shaped(&[0x15, 3]), None);
-    assert_eq!(record_shaped(&[0x15, 2]), Some(false));
-    assert_eq!(record_shaped(&[0x15, 3, 1]), Some(true));
+    for version in [&[][..], &[3], &[2], &[3, 1], &[3, 5], &[4, 1]] {
+        let mut bytes = vec![0x15];
+        bytes.extend(version);
+        assert_eq!(record_shaped(&bytes), Some(true), "{bytes:?}");
+    }
+    assert_eq!(record_shaped(&[0x13, 3, 1]), Some(false));
+    assert_eq!(record_shaped(&[0x19, 3, 1]), Some(false));
     assert_eq!(record_shaped(b"S"), Some(false));
+    assert_eq!(ssl2_shaped(&[0x80]), None);
+    assert_eq!(ssl2_shaped(&[0x80, 0x2e]), None);
+    assert_eq!(ssl2_shaped(&[0x80, 0x2e, 1]), Some(true));
+    assert_eq!(ssl2_shaped(&[0x80, 0x2e, 2]), Some(false));
+    assert_eq!(ssl2_shaped(b"S"), Some(false));
 }
 
 /// What a server behind a proxy that denies `github.com` received of a tunnel whose client sent
@@ -2426,6 +2457,33 @@ fn a_tunnel_to_an_address_literal_whose_hello_has_no_name_or_hides_it_is_cut() {
     // 127.0.0.1 is the tunnel's address literal: nothing else names its server.
     assert!(tunnelled_first(&client_hello(None, false)).is_empty());
     assert!(tunnelled_first(&client_hello(Some("cover.example"), true)).is_empty());
+}
+
+#[test]
+fn a_forge_sni_beside_an_ech_extension_is_cut() {
+    // The outer name is what a server that does not speak ECH serves: it is not dropped. (Here
+    // the tunnel is to an address literal, which is cut either way; `forgedeny`'s own test holds
+    // the named-host case.)
+    for inside in ["github.com", "API.GitHub.com.", "gitlab.com"] {
+        assert!(
+            tunnelled_first(&client_hello(Some(inside), true)).is_empty(),
+            "{inside}"
+        );
+    }
+}
+
+#[test]
+fn a_hello_in_a_record_of_an_unusual_version_is_read_not_spliced() {
+    for version in [[3u8, 5], [4, 1], [2, 0]] {
+        let mut hello = client_hello(Some("github.com"), false);
+        hello[1..3].copy_from_slice(&version);
+        assert!(tunnelled_first(&hello).is_empty(), "{version:?}");
+        let mut hello = client_hello(Some("example.org"), false);
+        hello[1..3].copy_from_slice(&version);
+        assert_eq!(tunnelled_first(&hello), hello, "{version:?}");
+    }
+    // An SSLv2-compatible hello on a tunnel that is not exempt.
+    assert!(tunnelled_first(&[0x80, 0x2e, 1, 3, 1, 0, 0, 0, 0]).is_empty());
 }
 
 #[test]

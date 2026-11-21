@@ -447,7 +447,13 @@ fn an_exempt_tunnel_is_carried_only_where_its_sni_is_exactly_its_name() {
         // Another exempt name, or any other.
         assert!(forge.pins(host, &named("example.org")), "{host}");
         // Nothing, or nothing readable, inside an exempt tunnel.
-        for hello in [Hello::NoName, Hello::Ech, Hello::Unreadable, Hello::NotTls] {
+        for hello in [
+            Hello::NoName,
+            Hello::Ech(None),
+            Hello::Ech(Some("github.com".into())),
+            Hello::Unreadable,
+            Hello::NotTls,
+        ] {
             assert!(forge.pins(host, &hello), "{host}: {hello:?}");
         }
     }
@@ -485,8 +491,30 @@ fn a_tunnel_to_another_name_is_refused_where_its_sni_names_a_forge() {
     assert!(forge.pins("mirror.example", &Hello::Unreadable));
     // No name, or a hidden one (a browser's GREASE ECH), to a named host no list holds is the
     // residual; bytes that are no TLS record are carried.
-    for hello in [Hello::NoName, Hello::Ech, Hello::NotTls] {
+    for hello in [
+        Hello::NoName,
+        Hello::Ech(None),
+        Hello::Ech(Some("mirror.example".into())),
+        Hello::Ech(Some("public-name.cloudflare-ech.example".into())),
+        Hello::NotTls,
+    ] {
         assert!(!forge.pins("mirror.example", &hello), "{hello:?}");
+    }
+    // A forge name beside an ECH extension is what a server ignoring ECH would serve.
+    for inside in [
+        "github.com",
+        "GitHub.com.",
+        "api.github.com",
+        "gitlab.com",
+        "140.82.112.3",
+    ] {
+        assert!(
+            forge.pins(
+                "anything.wildcard.example",
+                &Hello::Ech(Some(inside.to_owned()))
+            ),
+            "{inside}"
+        );
     }
 }
 
@@ -495,7 +523,11 @@ fn no_name_or_a_hidden_one_is_not_carried_to_an_address_literal() {
     let forge = denial(&[]);
     // A GHES or GitLab that answers without SNI, or one behind ECH, is reached by its address.
     for host in ["203.0.113.9", "[2001:db8::1]", "0xcb007109"] {
-        for hello in [Hello::NoName, Hello::Ech] {
+        for hello in [
+            Hello::NoName,
+            Hello::Ech(None),
+            Hello::Ech(Some("example.org".into())),
+        ] {
             assert!(forge.pins(host, &hello), "{host}: {hello:?}");
         }
         // Another host's name inside is no worse than at any address no list holds.
@@ -589,4 +621,36 @@ fn one_host_that_does_not_resolve_leaves_the_others_held() {
     assert!(forge.holds(ip("172.65.251.78")));
     assert!(forge.refuses("172.65.251.78", 443));
     assert!(forge.refuses("ghe.down.example", 443));
+}
+
+#[test]
+fn a_sibling_that_does_not_exist_is_not_asked_again_for_minutes() {
+    use std::sync::Mutex;
+    let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+    let log = asked.clone();
+    let forge = ForgeDenial::resolving(
+        &["gitlab.com".to_owned()],
+        Arc::new(move |name| {
+            log.lock().unwrap().push(name.to_owned());
+            if name == "gitlab.com" {
+                vec![ip("198.51.100.1")]
+            } else {
+                Vec::new()
+            }
+        }),
+    );
+    assert!(forge.holds(ip("198.51.100.1")));
+    let first = asked.lock().unwrap().len();
+    assert!(first > 1);
+    let sibling = forge
+        .resolved
+        .lock()
+        .unwrap()
+        .get("altssh.gitlab.com")
+        .map(|k| k.ask_after);
+    let now = Instant::now();
+    assert!(
+        sibling.is_some_and(|after| after > now + super::NEGATIVE * 5),
+        "a sibling's negative hold is minutes, not seconds"
+    );
 }

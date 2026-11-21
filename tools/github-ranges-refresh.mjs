@@ -47,9 +47,18 @@ export function render(meta) {
 
 async function main() {
   const [saved] = process.argv.slice(2);
-  const meta = saved
-    ? JSON.parse(readFileSync(saved, "utf8"))
-    : await (await fetch("https://api.github.com/meta")).json();
+  let meta;
+  if (saved) {
+    meta = JSON.parse(readFileSync(saved, "utf8"));
+  } else {
+    const res = await fetch("https://api.github.com/meta");
+    if (!res.ok) {
+      throw new Error(
+        `https://api.github.com/meta answered ${res.status} ${res.statusText}: the snapshot is left as it was`,
+      );
+    }
+    meta = await res.json();
+  }
   writeFileSync(SNAPSHOT, render(meta));
 }
 

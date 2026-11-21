@@ -133,7 +133,19 @@ address and by the name inside a tunnel. It does not hold:
 - **A server that ignores SNI.** The pin reads the server name in the TLS ClientHello; a GHES or
   self-hosted GitLab that answers whatever name it is sent is held only by its address. A hello that
   hides its name (ECH) or has none is therefore refused on a tunnel to an address literal while a
-  forge is denied; to a named host it is carried, so browsers' GREASE ECH keeps working.
+  forge is denied; to a named host it is carried, so browsers' GREASE ECH keeps working. An ECH
+  hello keeps its outer name: a forge name beside it is refused as a named hello is, since a server
+  that does not speak ECH serves the outer name. A hello's record version is not read (RFC 8446
+  ignores it), so any record of content type `0x14` to `0x18` must parse as a ClientHello or is
+  refused, as is an SSLv2-compatible hello.
+- **The literal-tunnel rule does not hold servers that ignore SNI.** A tunnel to an address literal
+  is refused for a hello with no name or an ECH one, but a server that ignores SNI and gets a
+  non-forge name inside is held only by the address lists, never by this rule.
+- **Sibling holds on shared CDN addresses.** A forge host's sibling names (`altssh`, `ssh`,
+  `registry`, `uploads`, `gist`, `raw`, `www`) are resolved and their addresses held. Where one
+  resolves to an address shared with unrelated sites (a CDN), those sites are refused too, for
+  the hold's 20 minutes. A sibling that does not exist is asked again every 10 minutes, not 10
+  seconds.
 - **An arbitrary non-forge name said inside a tunnel to an address of a forge that no list holds.**
   The pin refuses a forge's own names; a tunnel to an unlisted address that says `example.org`
   inside is carried by design, and held only by the address lists (GitHub's published ranges, and
