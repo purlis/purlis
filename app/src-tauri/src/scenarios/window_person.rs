@@ -62,6 +62,8 @@ struct Clean {
     grants_listed: Vec<(String, String, String)>,
     grants_made: Vec<(String, String, String)>,
     budget: Duration,
+    /// Whether the chats ran a real harness binary ([`Observed::real_harness`]).
+    real_harness: bool,
 }
 
 impl Clean {
@@ -74,6 +76,7 @@ impl Clean {
             grants_listed: Vec::new(),
             grants_made: Vec::new(),
             budget: Duration::from_secs(40),
+            real_harness: false,
         }
     }
 
@@ -86,6 +89,7 @@ impl Clean {
             grants_listed: &self.grants_listed,
             grants_made: &self.grants_made,
             hook_budget: self.budget,
+            real_harness: self.real_harness,
         })
     }
 
@@ -189,6 +193,30 @@ fn each_global_check_fires_on_its_planted_fault() {
 /// **A refusal with nothing written is a black hole** (R-004, #6675): a planted urllib refusal
 /// (a Python client that dials past what the proxy tells), or a hook's `deny`, with no ask, no
 /// block and no hold written for its chat, is reported, naming the step and its target.
+/// **A real harness is not failed for the asks its own start-up raises** (T1.1-53): two sandbox
+/// asks in a row, written before any call, are two connections of a real harness's start-up whose
+/// events name no target, and `one ask, one raise` cannot tell them from one ask raised twice
+/// (#6674); the fake harness, which opens none, is still held to it, and every other check still
+/// fires on a real harness.
+#[test]
+fn a_real_harness_is_not_failed_for_its_own_start_up_asks_but_the_fake_is() {
+    let two_raises = planted(Check::OneAskOneRaise);
+    assert_eq!(two_raises.fired(), vec![Check::OneAskOneRaise]);
+
+    let mut real = planted(Check::OneAskOneRaise);
+    real.real_harness = true;
+    assert!(
+        real.judged().is_empty(),
+        "a real harness's start-up asks fail a check: {:?}",
+        real.judged()
+    );
+
+    // Nothing else is relaxed: a refusal with nothing written is a black hole for it too.
+    let mut hole = planted(Check::NoBlackHole);
+    hole.real_harness = true;
+    assert_eq!(hole.fired(), vec![Check::NoBlackHole]);
+}
+
 #[test]
 fn a_refusal_with_nothing_written_is_reported_as_a_black_hole() {
     let observed = planted(Check::NoBlackHole);

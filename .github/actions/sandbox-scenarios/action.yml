@@ -121,32 +121,27 @@ runs:
           cargo build --locked -p purlis-app --bin purlis-app --target-dir target/scenario-kit
           echo "PURLIS_HOST_APP=$PWD/target/scenario-kit/debug/purlis-app" >> "$GITHUB_ENV"
         fi
-    # **The pinned Claude Code, for the Claude Code leg** (T1.1-10, #6857): the version
-    # `tests/fixtures/harness-versions/claude.txt` pins, from the committed lockfile with no install
-    # scripts run, named by `PURLIS_CLAUDE_CODE`. The leg starts it through the scenario host's own
-    # chat start, under its own sandbox, against a stand-in model on a loopback port: no model is
-    # called and no credential is used. macOS only: on Linux purlis wraps Claude Code itself
-    # (ticket 53), and the leg is reported not run. On macOS a leg without it fails.
-    - name: The pinned Claude Code, for the Claude Code leg
-      if: runner.os == 'macOS'
+    # **The pinned real harnesses, for the real-harness legs** (T1.1-10, #6857; T1.1-53, #6900):
+    # Claude Code, Codex and OpenCode at the versions `tests/fixtures/harness-versions/*.txt` pin,
+    # each installed by `tools/harness-install.sh` from its committed lockfile (`npm ci`, which
+    # checks every tarball against the lockfile's SHA-512 integrity), with no install scripts run
+    # and no secret in the step, and named by `PURLIS_CLAUDE_CODE`, `PURLIS_CODEX` and
+    # `PURLIS_OPENCODE`. Each leg starts its binary through the scenario host's own chat start,
+    # against a stand-in model on a loopback port: no model is called and no credential is used.
+    # Claude Code runs its own sandbox on macOS (T1.1-10) and is wrapped by purlis on Linux, Codex
+    # and OpenCode are wrapped on both. A leg without its binary fails; it never skips.
+    - name: The pinned real harnesses, for the real-harness legs
       shell: bash
       run: |
-        version=$(sed 's/ .*//' tests/fixtures/harness-versions/claude.txt)
-        case "$RUNNER_ARCH" in
-          ARM64) arch=arm64 ;;
-          X64) arch=x64 ;;
-          *) echo "::error::no Claude Code build for $RUNNER_ARCH"; exit 1 ;;
-        esac
-        package="@anthropic-ai/claude-code-darwin-$arch"
-        mkdir -p "$RUNNER_TEMP/claude-code"
-        cp tests/fixtures/harness-versions/claude-code/package.json tests/fixtures/harness-versions/claude-code/package-lock.json "$RUNNER_TEMP/claude-code/"
-        locked=$(jq -r --arg p "node_modules/$package" '.packages[$p].version' "$RUNNER_TEMP/claude-code/package-lock.json")
-        if [ "$locked" != "$version" ]; then
-          echo "::error::the lockfile holds $package $locked and claude.txt says $version"
-          exit 1
-        fi
-        (cd "$RUNNER_TEMP/claude-code" && npm ci --ignore-scripts --no-audit --no-fund)
-        echo "PURLIS_CLAUDE_CODE=$RUNNER_TEMP/claude-code/node_modules/$package/claude" >> "$GITHUB_ENV"
+        for harness in claude codex opencode; do
+          bin=$(tools/harness-install.sh "$harness" pinned)
+          case "$harness" in
+            claude) var=PURLIS_CLAUDE_CODE ;;
+            codex) var=PURLIS_CODEX ;;
+            opencode) var=PURLIS_OPENCODE ;;
+          esac
+          echo "$var=$bin/$harness" >> "$GITHUB_ENV"
+        done
     # Each set judges itself: a red suite does not hide the production-timing entries' verdicts.
     - name: The sandbox scenarios
       if: ${{ !cancelled() && inputs.suite == 'true' }}

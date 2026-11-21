@@ -106,6 +106,12 @@ pub(crate) struct Observed<'a> {
     pub grants_made: &'a [(String, String, String)],
     /// The most a hook may take.
     pub hook_budget: Duration,
+    /// Whether the chats ran a real harness binary, not the fake (T1.1-53). A real harness opens
+    /// connections of its own while it starts, to hosts the project does not list, and each
+    /// raises a sandbox ask whose event names no target (`ask.raised {"ask": "sandbox"}`): two
+    /// raises in a row cannot then be told from one ask raised twice by two writers (#6674), so
+    /// [`Check::OneAskOneRaise`] is the fake harness's.
+    pub real_harness: bool,
 }
 
 /// One check's failure.
@@ -273,7 +279,7 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
     // with no new call (`hook.pretooluse`), prompt or answer between them are one ask raised twice,
     // by two writers (#6674); a second call that is refused raises an ask of its own.
     let mut open: BTreeMap<&str, usize> = BTreeMap::new();
-    for event in observed.events {
+    for event in observed.events.iter().filter(|_| !observed.real_harness) {
         let Some(chat) = event.chat.as_deref() else {
             continue;
         };
@@ -488,6 +494,19 @@ impl Ledger {
             .collect()
     }
 
+    /// **A grant the scenario's own setup made** for `target`, before its chat started, as the
+    /// project's settings hold the stand-in model's loopback port a real-harness leg grants its
+    /// chat (T1.1-53, as the recordings' driver does): it is the project's own, not a grant the
+    /// person made, so [`Check::NoLeftoverGrant`] does not read it as one nobody made.
+    pub(crate) fn setup_grant(&self, scenario: &Scenario, target: &str) {
+        let mut baseline = self.baseline.lock().expect("baseline");
+        for (kind, listed, _) in Self::settings_now(scenario) {
+            if listed == target && !baseline.iter().any(|(k, t)| *k == kind && *t == listed) {
+                baseline.push((kind, listed));
+            }
+        }
+    }
+
     /// Settings as the scenario begins: what is listed then is the project's own.
     pub(crate) fn begins(&self, scenario: &Scenario) {
         *self.baseline.lock().expect("baseline") = Self::settings_now(scenario)
@@ -661,6 +680,7 @@ pub(crate) fn at_the_end(scenario: &Scenario) -> Result<Outcome, String> {
         grants_listed: &grants_listed,
         grants_made: &grants_made,
         hook_budget: scenario.timings.hold() + scenario.timings.patience(),
+        real_harness: scenario.real_harness,
     });
     let marks = scenario.ledger.marks.lock().expect("marks").clone();
     Ok(outcome(found, &marks))

@@ -236,6 +236,21 @@ impl StandIn {
                 map.remove("tools");
             }
             raw
+        })
+        // A request that offers no tool and is taken for no chat's: its body is the only way to
+        // see why (T1.1-53), small as it has no tool schemas. Never part of a recording.
+        .or_else(|| {
+            (conversation == Conversation::Side && offers.is_empty() && !body.is_null()).then(
+                || {
+                    let mut raw = body.clone();
+                    if let Some(map) = raw.as_object_mut() {
+                        for key in ["instructions", "input", "messages", "system"] {
+                            map.remove(key);
+                        }
+                    }
+                    raw
+                },
+            )
         });
         self.heard.lock().expect("the stand-in's log").push(Heard {
             raw,
