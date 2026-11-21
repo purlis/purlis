@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import { requiredDrift } from "./ci-push-jobs.mjs";
 import { conflicted, requiredNames } from "./land.mjs";
+import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, parseBudgets } from "./job-budgets.mjs";
 import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
 /** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
@@ -347,6 +348,40 @@ export function quarantineVerdict(entries, { today }) {
   };
 }
 
+const BUDGET_TITLE = "Job over budget: ";
+const BUDGET_MARKER = /<!-- budget-job: (.*?) -->/;
+
+/**
+ * The tickets for jobs over their budget (`overBudget`): `create` is `{ title, body, labels }`, one
+ * for each job that has no open ticket of its own (found by the job id in its body, then by its
+ * title). A closed ticket does not hold the job: its budget was raised or its time fixed, and it
+ * has gone over again.
+ */
+export function planBudgetTickets(over, issues) {
+  const open = issues.filter((issue) => issue.state !== "closed");
+  const create = [];
+  for (const job of over) {
+    const title = `${BUDGET_TITLE}${job.id}`;
+    const held = open.some((issue) => BUDGET_MARKER.exec(issue.body ?? "")?.[1] === job.id || issue.title === title);
+    if (held) continue;
+    create.push({
+      title,
+      labels: [ISSUE_LABEL],
+      body: [
+        `<!-- budget-job: ${job.id} -->`,
+        `The \`${job.id}\` job of \`ci.yml\` took a p50 of ${job.p50.toFixed(1)} min over ${plural(job.n, "passed run")} of the last seven days: ` +
+          `${Math.round(job.over * 100)}% over its budget of ${job.budget} min in \`ci/job-budgets.toml\`.`,
+        "",
+        `A job is filed when it runs more than ${Math.round(OVER * 100)}% over. Make the job faster, or raise its budget in a pull request that says why ` +
+          "(spec #7324, ADR 0127, ADR 0086).",
+        "",
+        "Filed by `ci-health`.",
+      ].join("\n"),
+    });
+  }
+  return { create };
+}
+
 /** How many tests, flaky tests and jobs the report lists. */
 export const LIMIT = 20;
 
@@ -521,6 +556,24 @@ export function report(week) {
     // The required-check gates and the jobs a change's paths skip take seconds: listed, they bury the rest.
     ...(jobs.some((job) => !long(job))
       ? [`${plural(jobs.filter((job) => !long(job)).length, "more job")} took under a minute at p90.`, ""]
+      : []),
+    ...(week.over
+      ? [
+          "### Budgets",
+          "",
+          week.over.length === 0
+            ? `No job is more than ${Math.round(OVER * 100)}% over its budget in \`ci/job-budgets.toml\`.`
+            : `Jobs whose p50 of the week is more than ${Math.round(OVER * 100)}% over their budget in \`ci/job-budgets.toml\`, in minutes:`,
+          "",
+          ...(week.over.length === 0
+            ? []
+            : [
+                "| job | p50 | budget | over |",
+                "| --- | ---: | ---: | ---: |",
+                ...week.over.map((job) => `| ${job.id} | ${job.p50.toFixed(1)} | ${job.budget} | +${Math.round(job.over * 100)}% |`),
+              ]),
+          "",
+        ]
       : []),
     "### Red on a green run",
     "",
@@ -724,6 +777,7 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     unread,
     sampled: { runs: sampled.length, of: runs.length },
     jobs: jobStats(suites),
+    over: overBudget(suites, parseBudgets(readFileSync(BUDGETS_FILE, "utf8")), ciJobs(readFileSync(CI_FILE, "utf8"))),
     flaky: flakyTests(suites),
     flakes: flakeEvidence(suites),
     slowest: slowestTests(lists),
@@ -878,6 +932,9 @@ async function main(argv) {
     console.log(`the report is in #${number}`);
     const { filed, commented, created } = await fileFlakes({ repo, token, flakes: week.flakes, issues });
     console.log(`flake tickets: ${filed} filed, ${commented} commented on`);
+    const { create: budgetTickets } = planBudgetTickets(week.over, issues);
+    for (const ticket of budgetTickets) await call(`/repos/${repo}/issues`, { method: "POST", body: ticket, token });
+    console.log(`budget tickets: ${budgetTickets.length} filed`);
     const kept = await keepQuarantine({
       repo,
       token,

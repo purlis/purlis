@@ -11,6 +11,9 @@ name: ci-health
 # queue drop rate, the week's runs) so whoever watches the issue hears of it. It also files one
 # `area:ci` ticket for each flaky test, and comments on the ticket a test already has.
 #
+# It also files a ticket for each job whose p50 of the week runs more than 20% over its budget
+# (`ci/job-budgets.toml`, #7334).
+#
 # It keeps the quarantine (`ci/quarantine.toml`, #7333): a test that flaked in three runs of the
 # week gets a pull request adding it (the steward reviews and enqueues it); the ticket of a test
 # quarantined 14 days gets a priority label; and more than 10 quarantined tests turns this run
@@ -71,6 +74,8 @@ jobs:
           sparse-checkout: |
             /tools/
             /ci/quarantine.toml
+            /ci/job-budgets.toml
+            /.github/workflows/ci.yml
             /.nvmrc
           sparse-checkout-cone-mode: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

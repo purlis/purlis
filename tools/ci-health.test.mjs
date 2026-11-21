@@ -16,6 +16,7 @@ import {
   flakeEvidence,
   flakyTests,
   PRIORITY_LABEL,
+  planBudgetTickets,
   appendEntry,
   planFlakeTickets,
   planQuarantine,
@@ -452,4 +453,32 @@ test("an entry 14 days old has its ticket labelled for priority, one 13 days old
     { id: "young x", ticket: 301, added: "2026-11-09" },
   ];
   assert.deepEqual(quarantineVerdict(entries, { today: TODAY }).prioritise, [{ ticket: 300, label: PRIORITY_LABEL, days: 14 }]);
+});
+
+// ---- job budgets: a ticket for a job over its budget (#7334) ----
+
+const slow = { id: "rust", p50: 37.5, budget: 30, over: 0.25, n: 40 };
+
+test("a job 25% over its budget is filed as one area:ci ticket naming the job, its p50 and its budget", () => {
+  const { create } = planBudgetTickets([slow], []);
+  assert.equal(create.length, 1);
+  assert.equal(create[0].title, "Job over budget: rust");
+  assert.deepEqual(create[0].labels, ["area:ci"]);
+  assert.match(create[0].body, /rust/);
+  assert.match(create[0].body, /37\.5 min/);
+  assert.match(create[0].body, /budget of 30 min/);
+  assert.match(create[0].body, /ci\/job-budgets\.toml/);
+});
+
+test("a job whose budget ticket is still open gets no second one, and a closed ticket does not hold it", () => {
+  const filed = planBudgetTickets([slow], []).create[0];
+  const open = { number: 5, state: "open", title: filed.title, body: filed.body, labels: [{ name: "area:ci" }] };
+  assert.deepEqual(planBudgetTickets([slow], [open]), { create: [] });
+  assert.equal(planBudgetTickets([slow], [{ ...open, state: "closed" }]).create.length, 1);
+});
+
+test("the report names each job over its budget, and says when none is", () => {
+  assert.match(report({ ...week, over: [slow] }), /### Budgets[\s\S]*\| rust \| 37\.5 \| 30 \| \+25% \|/);
+  assert.match(report({ ...week, over: [] }), /### Budgets[\s\S]*No job is more than 20% over/);
+  assert.doesNotMatch(report(week), /### Budgets/);
 });

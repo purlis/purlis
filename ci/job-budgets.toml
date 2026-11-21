@@ -1,0 +1,144 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Each job of `.github/workflows/ci.yml` and the minutes its p50 may take (spec #7324, ADR 0127, in
+# line with ADR 0086: every budget names the job that measures it, here by its id in `ci.yml`).
+# `ci-health` reads each job's p50 of the last seven days against its budget every day and files
+# an `area:ci` ticket when it runs more than 20% over. A matrix job's p50 pools its legs.
+#
+# A job without a budget fails `tools/job-budgets.test.mjs`, so a new job brings its own. Raising
+# a budget takes a pull request that says why; lowering one is welcome.
+#
+# Seeded on 2026-11-22 from the p50 of each job's passed runs, rounded up to the minute, with a
+# floor of one: 43 runs of `ci.yml` read through the public API (every merge-group and push run of
+# the newest 100 green ones, 31 pull request runs spread evenly over them, and the last three
+# nightly runs), which is the same number `ci-health` computes (`overBudget`). A job that did not
+# run in them says so beside its budget.
+
+[[job]]
+id = "changes"
+p50 = 1
+
+[[job]]
+id = "stale-group"
+p50 = 42  # waits for the group it guards; 4 runs
+
+[[job]]
+id = "rust"
+p50 = 27  # pools its four parts
+
+[[job]]
+id = "git-lfs"
+p50 = 8
+
+[[job]]
+id = "lint"
+p50 = 11
+
+[[job]]
+id = "rust-doctests"
+p50 = 6
+
+[[job]]
+id = "rust-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "parity"
+p50 = 26
+
+[[job]]
+id = "remote-parity"
+p50 = 33
+
+[[job]]
+id = "deny"
+p50 = 1
+
+[[job]]
+id = "web"
+p50 = 12  # pools its four parts
+
+[[job]]
+id = "web-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "bench"
+p50 = 3
+
+[[job]]
+id = "bench-record"
+p50 = 1
+
+[[job]]
+id = "app"
+p50 = 15
+
+[[job]]
+id = "app-evidence"
+p50 = 12  # no green run of its own measured: the evidence legs of `app`, 4 runs
+
+[[job]]
+id = "fedora"
+p50 = 45  # no green run in the sample: the wall of its two red runs, 41 and 47 min; revisit when one is green
+
+[[job]]
+id = "macos-tests"
+p50 = 85  # no green run in the sample: the wall of its red runs, 74 to 94 min; revisit when one is green
+
+[[job]]
+id = "browser-engine-macos"
+p50 = 1  # 7 runs
+
+[[job]]
+id = "studio-confinement-macos"
+p50 = 40  # 11 runs
+
+[[job]]
+id = "listen-shim"
+p50 = 1
+
+[[job]]
+id = "recorded"
+p50 = 8
+
+[[job]]
+id = "scenario"
+p50 = 15
+
+[[job]]
+id = "scenario-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "scenario-linux"
+p50 = 23
+
+[[job]]
+id = "outcome-bars"
+p50 = 54  # 6 runs
+
+[[job]]
+id = "outcome-bars-linux"
+p50 = 26  # 12 runs
+
+[[job]]
+id = "outcome-bars-linux-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "pool-setup-scenario"
+p50 = 21
+
+[[job]]
+id = "pool-setup-scenario-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "scenario-linux-checks"
+p50 = 1  # the required-check gate
+
+[[job]]
+id = "windows"
+p50 = 6  # 2 runs
