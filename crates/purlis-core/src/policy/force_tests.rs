@@ -677,7 +677,10 @@ fn a_start_with_an_entry_that_does_not_read_is_refused() {
         // A version sealed before the format stamp: its personas are not known.
         Entry::new(answers::FLOOR, "{\"settings_file\":\"purlis.toml\"}"),
     ] {
-        for standing in [holding(vec![entry.clone()]), denied_past_the_cap(vec![entry.clone()])] {
+        for standing in [
+            holding(vec![entry.clone()]),
+            denied_past_the_cap(vec![entry.clone()]),
+        ] {
             let said = by(&root, &standing, &start());
             assert_eq!(said.after_mode, Outcome::Deny, "{entry:?} {said:?}");
         }
@@ -694,7 +697,11 @@ fn a_start_with_known_gaps_is_refused_where_nothing_was_verified() {
         ..Standing::fresh()
     };
     let said = by(&root, &denied, &start());
-    assert_eq!(said.after_mode, strict_of_start(), "no gaps: the shipped strict policy");
+    assert_eq!(
+        said.after_mode,
+        strict_of_start(),
+        "no gaps: the shipped strict policy"
+    );
     let mut gappy = start();
     gappy.context["gaps"] = serde_json::json!(["processes"]);
     let said = by(&root, &denied, &gappy);
@@ -827,7 +834,10 @@ fn a_head_that_never_holds_still_has_no_version_of_two_commits() {
         git(&at, &["update-ref", "HEAD", to]);
     })));
     let read = Version::at_head(&root);
-    assert!(matches!(read, Head::Unread), "a HEAD that keeps moving is no read: {read:?}");
+    assert!(
+        matches!(read, Head::Unread),
+        "a HEAD that keeps moving is no read: {read:?}"
+    );
     // The current side is then undecidable, never a fresh read over a world with no workspaces.
     let said = host(&root, &merge(true));
     seam::set(None);
@@ -935,7 +945,11 @@ fn a_start_that_does_not_say_its_gaps_is_refused_where_nothing_was_verified() {
     let open = "[policy]\ntemplate = \"open\"\n";
     let root = plane(&m, &[("purlis.toml", open)]);
     let mut silent = start();
-    silent.context.as_object_mut().expect("object").remove("gaps");
+    silent
+        .context
+        .as_object_mut()
+        .expect("object")
+        .remove("gaps");
     assert!(has_gaps(&silent), "a missing `gaps` counts as a gap");
     let said = by(&root, &clone_key_swapped(), &silent);
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");

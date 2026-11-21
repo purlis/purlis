@@ -632,7 +632,10 @@ pub fn judge(
         decisions.push(held(undecidable_strict(request), floor));
         if has_gaps(request) || sandbox_is_off(request) {
             decisions.push(held(
-                undecidable(request, "no sealed answer can say a known gap, or no sandbox, is accepted"),
+                undecidable(
+                    request,
+                    "no sealed answer can say a known gap, or no sandbox, is accepted",
+                ),
                 floor,
             ));
         }
@@ -699,22 +702,20 @@ pub fn limit(sources: &Sources<'_>, standing: &Standing, key: &str) -> Option<i6
     let spec = super::limits::spec(key)?;
     let current = levels::load(sources);
     let of = |version: &Version| {
-        let mut workspaces: Vec<&str> = sources.workspaces.to_vec();
-        workspaces.extend(version.workspaces.iter().map(String::as_str));
-        levels::load_held(&sources_for(sources, &workspaces), &version.held())
+        loaded_for(sources, version)
             .project_limits
             .get(key)
             .copied()
     };
     let mut sides = vec![current.project_limits.get(key).copied()];
     sides.push(
-        accepted_in(standing)
+        accepted_in(&standing.entries)
             .ok()
             .flatten()
             .and_then(|version| of(&version)),
     );
     sides.extend(
-        floor_in(standing)
+        floor_in(&standing.entries)
             .into_iter()
             .map(|held| held.ok().and_then(|version| of(&version))),
     );
