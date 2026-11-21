@@ -123,3 +123,22 @@ to a file, an argument or an environment a chat reads.
 - **The operator** (`operator/`) is a workspace of its own that links nothing of `purlis-core`. It
   mints an installation token from the organisation's App Secret for a vouched runner and holds no
   person's credential. What it mints is a `ghs_` token, which a token connection reads as per-job.
+
+## What a chat's egress denial does not hold
+
+The text of an amendment to ADR 0128 D3g (the ADR is #7269's, so the amendment file moves to
+`docs/adr/0128/` when it lands). The denial in `sandbox/forgedeny.rs` holds a forge by name, by
+address and by the name inside a tunnel. It does not hold:
+
+- **A server that ignores SNI.** The pin reads the server name in the TLS ClientHello; a GHES or
+  self-hosted GitLab that answers whatever name it is sent is held only by its address. A hello that
+  hides its name (ECH) or has none is therefore refused on a tunnel to an address literal while a
+  forge is denied; to a named host it is carried, so browsers' GREASE ECH keeps working.
+- **An arbitrary non-forge name said inside a tunnel to an address of a forge that no list holds.**
+  The pin refuses a forge's own names; a tunnel to an unlisted address that says `example.org`
+  inside is carried by design, and held only by the address lists (GitHub's published ranges, and
+  what each forge host and its sibling names resolve to).
+- **A server-first protocol on port 443.** Its first bytes are no TLS record, so the wait for a
+  hello ends after the proxy's head timeout, recorded as such, not as the forge route.
+- **GitHub Pages and `ghcr.io`,** which share GitHub's ranges: refused by name while a forge is
+  denied, with a sentence that names the forge's addresses.

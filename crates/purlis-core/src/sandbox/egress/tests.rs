@@ -2313,6 +2313,42 @@ fn a_hello_is_read_for_what_it_says_of_its_server() {
     assert_eq!(hello_of(&[0x16, 3, 1]), Hello::Unreadable);
 }
 
+#[test]
+fn a_record_shaped_first_record_that_is_no_hello_is_unreadable_never_no_tls() {
+    use super::{Hello, hello_of};
+    // A warning alert, as OpenSSL and BoringSSL skip before a ClientHello.
+    assert_eq!(
+        hello_of(&[0x15, 3, 1, 0, 2, 1, 0x5a]),
+        Hello::Unreadable,
+        "an alert"
+    );
+    for kind in [0x14u8, 0x17] {
+        for minor in 0..=4u8 {
+            assert_eq!(
+                hello_of(&[kind, 3, minor, 0, 1, 1]),
+                Hello::Unreadable,
+                "{kind:#x} 03 {minor:02x}"
+            );
+        }
+    }
+    // What is no TLS record at all is carried as such.
+    assert_eq!(hello_of(&[0x15, 4, 1, 0, 2]), Hello::NotTls);
+    assert_eq!(hello_of(&[0x15, 3, 5, 0, 2]), Hello::NotTls);
+    assert_eq!(hello_of(&[0x13, 3, 1, 0, 2]), Hello::NotTls);
+    assert_eq!(hello_of(b"SSH-2.0-OpenSSH_9.6\r\n"), Hello::NotTls);
+}
+
+#[test]
+fn a_record_shape_is_known_from_as_few_bytes_as_tell_it() {
+    use super::record_shaped;
+    assert_eq!(record_shaped(b""), None);
+    assert_eq!(record_shaped(&[0x15]), None);
+    assert_eq!(record_shaped(&[0x15, 3]), None);
+    assert_eq!(record_shaped(&[0x15, 2]), Some(false));
+    assert_eq!(record_shaped(&[0x15, 3, 1]), Some(true));
+    assert_eq!(record_shaped(b"S"), Some(false));
+}
+
 /// What a server behind a proxy that denies `github.com` received of a tunnel whose client sent
 /// `first` after the `CONNECT`, up to the end of the connection: nothing where it was cut. The
 /// server echoes it back, and the client is shown to read what the server did.
@@ -2378,9 +2414,29 @@ fn a_tunnel_whose_hello_cannot_be_read_is_cut_and_one_that_names_another_host_is
     assert!(tunnelled_first(&[0x16, 3, 1, 0, 4, 1, 0, 0, 50]).is_empty());
     // The same hello whole, another host's name, no name, and plain bytes, are carried.
     assert_eq!(tunnelled_first(&whole), whole);
-    let nameless = client_hello(None, false);
-    assert_eq!(tunnelled_first(&nameless), nameless);
     assert_eq!(tunnelled_first(b"ping"), b"ping");
+    assert_eq!(
+        tunnelled_first(b"SSH-2.0-OpenSSH_9.6\r\n"),
+        b"SSH-2.0-OpenSSH_9.6\r\n"
+    );
+}
+
+#[test]
+fn a_tunnel_to_an_address_literal_whose_hello_has_no_name_or_hides_it_is_cut() {
+    // 127.0.0.1 is the tunnel's address literal: nothing else names its server.
+    assert!(tunnelled_first(&client_hello(None, false)).is_empty());
+    assert!(tunnelled_first(&client_hello(Some("cover.example"), true)).is_empty());
+}
+
+#[test]
+fn a_warning_alert_before_the_hello_does_not_skip_the_pin() {
+    let mut alerted = vec![0x15, 3, 1, 0, 2, 1, 0x5a];
+    alerted.extend(client_hello(Some("api.github.com"), false));
+    assert!(tunnelled_first(&alerted).is_empty());
+    // Whichever record starts it, and whichever name the hello after says.
+    let mut other = vec![0x14, 3, 3, 0, 1, 1];
+    other.extend(client_hello(Some("example.org"), false));
+    assert!(tunnelled_first(&other).is_empty());
 }
 
 /// A `git ls-remote` of a forge repo through `proxy` with `extra` set, and what it said.

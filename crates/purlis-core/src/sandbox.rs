@@ -5632,7 +5632,11 @@ impl Applied {
     }
 
     /// The forge hosts this chat's proxy never tunnels to ([`egress::Serving::forge_denied`]):
-    /// those of its route, none where it has none.
+    /// those of its route, none where it has none. **Only the local chat's proxy has a route:** a
+    /// chat planned elsewhere ([`plan::Plan`], carried to a runner by `session::ConfinePlan`) has no
+    /// forge endpoint on the runner to go through, so denying it a forge would only cut its own
+    /// `gh`. Wiring a runner chat takes a field on the wire plan, with the train that gives a
+    /// runner a route.
     fn forge_denied(&self) -> Vec<String> {
         #[cfg(feature = "forge-wiring")]
         if let Some(route) = self.forge_route() {

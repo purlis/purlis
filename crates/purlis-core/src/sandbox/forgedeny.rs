@@ -9,27 +9,43 @@
 //!
 //! 1. **Every name under a forge host**, not only the host itself: `*.github.com`,
 //!    `*.githubusercontent.com`, `*.gitlab.com` and `*.<a recorded GHES or GitLab host>`, less
-//!    [`crate::forgewire::TUNNELLED`], which carry downloads and never a sign-in.
+//!    [`crate::forgewire::TUNNELLED`], the download-only hosts. What holds those instead of a
+//!    refusal: a chat carries no token for them (the forge route is the only place a token is put
+//!    on a request), so a private archive on `codeload.github.com` answers a chat's own
+//!    request as it answers any anonymous one.
 //! 2. **The addresses of the forge**: an allowed name that *resolves* to one is refused at
 //!    connect, and so is an address literal that belongs to one, in any spelling `getaddrinfo`
 //!    reads (decimal, hex, octal, IPv4-mapped, NAT64) ([`ForgeDenial::carries`]). A
 //!    [`TUNNELLED`](crate::forgewire::TUNNELLED) name is not asked, since GitHub serves it from the
 //!    same ranges. GitHub's published ranges for its web, api and git services are a vendored
 //!    snapshot ([`SNAPSHOT`], refreshed by `tools/github-ranges-refresh.mjs`, never fetched from
-//!    a chat's path); every forge host is also resolved, and what it answers is held for
-//!    [`TTL`] (a failed lookup is not held: it is asked again).
+//!    a chat's path); every forge host, and the sibling names a forge serves beside it
+//!    ([`SIBLINGS`]: `altssh.`, `ssh.`, `registry.`, `uploads.`, `gist.`, `raw.`, `www.`), is also
+//!    resolved, and what it answers is held: each address for [`HELD`], the answers of one name
+//!    added to what it answered before, asked again every [`TTL`]. A lookup that fails keeps what
+//!    was known and is not asked again for [`NEGATIVE`].
 //! 3. **The name inside the tunnel** ([`ForgeDenial::pins`]): GitHub serves `github.com` from
 //!    many addresses no list holds (Azure `/32`s and `/28`s that come and go), so a tunnel is
 //!    carried only where the SNI of its TLS ClientHello is no forge name, or is the exempt name
-//!    the tunnel was asked for. A ClientHello that cannot be read is not carried.
+//!    the tunnel was asked for. A first record shaped like TLS (`0x14` to `0x17`, version `03 0x`)
+//!    that is no readable ClientHello, an alert before the hello among them, is not carried.
+//!    Bytes that are no TLS record at all are carried. A hello that hides its name (ECH) or has
+//!    none is refused on a tunnel to an address literal, where nothing else names the server.
 //! 4. **Port 22** to a forge name or address, a tunnelled name included: no ssh to a forge leaves
 //!    the machine but through purlis's own ssh route.
 //!
 //! **Residual** (named in ADR 0128 and the pull request): a chat with the network family off
 //! is not served by this proxy at all; a forge that publishes no ranges is held only by name, by
-//! SNI and by what its host resolves to; a TLS handshake that hides its name (ECH) to an address
-//! no list holds is carried; a server-first protocol through a tunnel is not carried while a
-//! forge is denied, as its first bytes cannot be read.
+//! SNI and by what its host resolves to; the SNI pin does not hold a server that ignores SNI, and
+//! a tunnel to a name no list holds that says another non-forge name inside is carried to an
+//! address of an unheld forge, held by the address lists alone; a server-first protocol through
+//! a tunnel to port 443 is not carried while a forge is denied, as its first bytes cannot be
+//! read. **GitHub Pages and `ghcr.io` share GitHub's ranges** (`185.199.108.0/22` serves
+//! `github.io` and custom Pages domains; `140.82.112.0/20` may serve `ghcr.io`): a connection to
+//! one by name is refused at connect while a forge is denied, with a sentence that names the
+//! forge's addresses (`Allowed::only_local`), and a chat reaches such a site through no proxy of
+//! purlis's. That is the cost of holding the ranges, chosen over a carve-out by SNI, which would
+//! carry any name said inside a tunnel to a forge address.
 
 use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, Ipv4Addr};
@@ -43,6 +59,17 @@ pub type Resolver = Arc<dyn Fn(&str) -> Vec<IpAddr> + Send + Sync + 'static>;
 
 /// How long what a forge host resolved to is held before it is asked again.
 pub const TTL: Duration = Duration::from_secs(300);
+
+/// How long an address a forge host answered is held after it last answered.
+pub const HELD: Duration = Duration::from_secs(1200);
+
+/// How long a name whose lookup answered nothing is left alone before it is asked again, so an
+/// unreachable host adds no resolver wait to each connection.
+pub const NEGATIVE: Duration = Duration::from_secs(10);
+
+/// The names a forge serves beside its host, from addresses of their own at times (`altssh` is
+/// not `gitlab.com`'s address): each is resolved for a forge host as the host is.
+const SIBLINGS: [&str; 7] = ["altssh", "ssh", "registry", "uploads", "gist", "raw", "www"];
 
 /// The port of ssh.
 const SSH: u16 = 22;
@@ -199,13 +226,12 @@ fn literal(host: &str) -> Option<IpAddr> {
         .map(canonical)
 }
 
-/// The name a connection is asked for, as a host is listed: lower case, no final dot, and an IPv6
+/// The name a connection is asked for, as a host is listed: lower case, no final dots, and an IPv6
 /// literal without its brackets.
 fn plain(host: &str) -> String {
     host.trim_start_matches('[')
         .trim_end_matches(']')
-        .strip_suffix('.')
-        .unwrap_or(host.trim_start_matches('[').trim_end_matches(']'))
+        .trim_end_matches('.')
         .to_ascii_lowercase()
 }
 
@@ -219,9 +245,16 @@ pub struct ForgeDenial {
     tunnelled: Vec<(String, Option<u16>)>,
     ranges: Vec<Range>,
     resolve: Resolver,
-    /// What each forge host resolved to, and when. A host whose lookup answered nothing has no
-    /// entry, so it is asked again at the next question.
-    resolved: Mutex<HashMap<String, (Instant, HashSet<IpAddr>)>>,
+    /// What each forge name resolved to.
+    resolved: Mutex<HashMap<String, Known>>,
+}
+
+/// What one forge name has resolved to.
+struct Known {
+    /// Each address it answered, and when it stops being held.
+    addresses: HashMap<IpAddr, Instant>,
+    /// When it is asked again: [`TTL`] after an answer, [`NEGATIVE`] after none.
+    ask_after: Instant,
 }
 
 impl ForgeDenial {
@@ -261,41 +294,96 @@ impl ForgeDenial {
             .any(|(name, held)| name == host && (port.is_none() || held.is_none() || *held == port))
     }
 
-    /// What `base` resolves to: held for [`TTL`] where it answered, asked again where it did not.
-    fn addresses_of(&self, base: &str) -> HashSet<IpAddr> {
-        {
+    /// The names looked up for addresses: each forge host and its [`SIBLINGS`], less what is never
+    /// addressed and what is an address already.
+    fn addressed(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for base in &self.bases {
+            if literal(base).is_some() || NOT_ADDRESSED.contains(&base.as_str()) {
+                continue;
+            }
+            names.push(base.clone());
+            // A host under another forge host has the siblings of that one.
+            let under = self
+                .bases
+                .iter()
+                .any(|other| other != base && base.ends_with(&format!(".{other}")));
+            if !under {
+                names.extend(SIBLINGS.iter().map(|sibling| format!("{sibling}.{base}")));
+            }
+        }
+        names
+    }
+
+    /// Asks again every name that is due, side by side, and adds what each answers to what it
+    /// answered before. A name that answers nothing keeps what it had, and is left alone for
+    /// [`NEGATIVE`].
+    fn refresh(&self) {
+        let due: Vec<String> = {
             let seen = self
                 .resolved
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if let Some((at, addresses)) = seen.get(base)
-                && at.elapsed() < TTL
-            {
-                return addresses.clone();
-            }
+            let now = Instant::now();
+            self.addressed()
+                .into_iter()
+                .filter(|name| seen.get(name).is_none_or(|known| now >= known.ask_after))
+                .collect()
+        };
+        if due.is_empty() {
+            return;
         }
         // Looked up outside the lock: a slow answer holds only this call.
-        let found: HashSet<IpAddr> = (self.resolve)(base).into_iter().map(canonical).collect();
-        if !found.is_empty() {
-            self.resolved
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .insert(base.to_owned(), (Instant::now(), found.clone()));
+        let ask = |name: &String| -> HashSet<IpAddr> {
+            (self.resolve)(name).into_iter().map(canonical).collect()
+        };
+        let answers: Vec<HashSet<IpAddr>> = if let [only] = due.as_slice() {
+            vec![ask(only)]
+        } else {
+            std::thread::scope(|scope| {
+                let asking: Vec<_> = due.iter().map(|name| scope.spawn(|| ask(name))).collect();
+                asking
+                    .into_iter()
+                    .map(|one| one.join().unwrap_or_default())
+                    .collect()
+            })
+        };
+        let mut seen = self
+            .resolved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let now = Instant::now();
+        for (name, found) in due.into_iter().zip(answers) {
+            let known = seen.entry(name).or_insert_with(|| Known {
+                addresses: HashMap::new(),
+                ask_after: now,
+            });
+            known.addresses.retain(|_, until| *until > now);
+            if found.is_empty() {
+                known.ask_after = now + NEGATIVE;
+            } else {
+                known
+                    .addresses
+                    .extend(found.into_iter().map(|at| (at, now + HELD)));
+                known.ask_after = now + TTL;
+            }
         }
-        found
     }
 
-    /// Whether the forge is at `ip`: in a snapshotted range, or among what a forge host resolved
-    /// to in the last [`TTL`].
+    /// Whether the forge is at `ip`: in a snapshotted range, or among what a forge host or one of
+    /// its siblings resolved to and is still held.
     fn holds(&self, ip: IpAddr) -> bool {
         let ip = canonical(ip);
         if self.ranges.iter().any(|range| range.holds(ip)) {
             return true;
         }
-        self.bases
-            .iter()
-            .filter(|base| literal(base).is_none() && !NOT_ADDRESSED.contains(&base.as_str()))
-            .any(|base| self.addresses_of(base).contains(&ip))
+        self.refresh();
+        let now = Instant::now();
+        self.resolved
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .values()
+            .any(|known| known.addresses.get(&ip).is_some_and(|until| *until > now))
     }
 
     /// **Whether a tunnel asked for `host`, whose first bytes were `hello`, is refused**
@@ -305,8 +393,8 @@ impl ForgeDenial {
     /// under one, and wherever the first record cannot be read as a whole ClientHello, since a
     /// hello split across records hides its name. A hello that names nothing, or hides it (ECH),
     /// is carried to an address no list holds, as [`Self::carries`] has already refused every
-    /// address a list does hold; and bytes that start no TLS handshake are carried, to anything
-    /// but an exempt name.
+    /// address a list does hold, but not on a tunnel to an address literal; and bytes that are no
+    /// TLS record at all are carried, to anything but an exempt name.
     pub fn pins(&self, host: &str, hello: &Hello) -> bool {
         let host = plain(host);
         let exempt = self.tunnels(&host, None);
@@ -319,7 +407,11 @@ impl ForgeDenial {
                     self.is_forge_name(&sni) || literal(&sni).is_some_and(|ip| self.holds(ip))
                 }
             }
-            Hello::NoName | Hello::Ech | Hello::NotTls => exempt,
+            // A hello that says no name is no better than a literal: nothing else names the
+            // server, so a tunnel to an address literal is carried only where a list says the
+            // forge is not there, and a hello that hides or has no name does not say so.
+            Hello::NoName | Hello::Ech => exempt || literal(&host).is_some(),
+            Hello::NotTls => exempt,
             Hello::Unreadable => true,
         }
     }

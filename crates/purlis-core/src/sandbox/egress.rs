@@ -1165,14 +1165,39 @@ impl Allowed {
         let Some(forge) = &self.forge else {
             return Some(already.to_vec());
         };
-        let first = first_record(client, already, self.head);
-        match first {
+        match first_record(client, already, self.head) {
             Some(bytes) if !forge.pins(host, &hello_of(&bytes)) => Some(bytes),
-            _ => {
+            Some(_) => {
                 self.refused(host, port, &Decision::Refused(Refused::ForgeRoute));
                 None
             }
+            // Nothing in time, or a record no TLS allows: a server that speaks first (ssh, smtp)
+            // is told for what it is, not as the forge route's.
+            None => {
+                let silent = Decision::Refused(Refused::NeverAHost(format!(
+                    "the tunnel to {host}:{port} sent no readable TLS record in time, and a \
+                     forge is denied for this chat, so a protocol where the server speaks first \
+                     is not carried"
+                )));
+                self.refused(host, port, &silent);
+                None
+            }
         }
+    }
+
+    /// The refusal of a name that resolved only to addresses a chat never reaches. Where a forge
+    /// is denied the addresses may be the forge's (GitHub Pages and `ghcr.io` are served from its
+    /// ranges too), so the sentence names that and not only this machine.
+    fn only_local(&self, host: &str) -> Decision {
+        if self.forge.is_some() {
+            return Decision::Refused(Refused::NeverAHost(format!(
+                "{host} resolves only to addresses a chat does not reach: this machine, a \
+                 link-local or metadata address, or an address of a forge. A forge, and GitHub's \
+                 addresses with it (GitHub Pages and ghcr.io are served from them), is reached \
+                 only through purlis: use gh, glab or git"
+            )));
+        }
+        Decision::Refused(Refused::LocalAddress)
     }
 
     /// The decision for a connection to `host` on `port`, a tunnel or not.
@@ -1542,13 +1567,16 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
             return;
         }
         Connected::OnlyLocal => {
-            let local = Decision::Refused(Refused::LocalAddress);
+            let local = allowed.only_local(&request.host);
             allowed.refused(&request.host, request.port, &local);
-            answer(
-                &mut client,
-                "403 Forbidden",
-                &refusal_said(&request.host, request.port, &local),
-            );
+            let said = match &local {
+                Decision::Refused(Refused::NeverAHost(why)) => format!(
+                    "purlis's sandbox does not allow {}:{}: {why}",
+                    request.host, request.port
+                ),
+                _ => refusal_said(&request.host, request.port, &local),
+            };
+            answer(&mut client, "403 Forbidden", &said);
             return;
         }
         Connected::Not => {
@@ -1691,7 +1719,7 @@ fn serve_socks(mut client: TcpStream, allowed: &Arc<Allowed>) {
     let mut upstream = match allowed.connect(&host, port, &own, read.as_deref()) {
         Connected::To(upstream) => upstream,
         Connected::OnlyLocal => {
-            allowed.refused(&host, port, &Decision::Refused(Refused::LocalAddress));
+            allowed.refused(&host, port, &allowed.only_local(&host));
             return socks_reply(&mut client, reply::NOT_ALLOWED);
         }
         // A confined extension's proxy carries no SOCKS request, so this is never one of its.
@@ -2208,10 +2236,27 @@ const ENCRYPTED_CLIENT_HELLO: usize = 0xfe0d;
 /// The most a TLS record may hold: 2^14 bytes of plaintext and the record's own overhead.
 const MOST_TLS_RECORD: usize = (1 << 14) + 2048;
 
+/// Whether `bytes` start a TLS record: a type of `0x14` to `0x17` (change cipher spec, alert,
+/// handshake, application data) and a version of `03 00` to `03 04`. `None` while fewer bytes
+/// than that are known and what there is could still be one. A warning alert before the
+/// ClientHello is a record a TLS library skips, so it is no excuse for not reading the hello.
+fn record_shaped(bytes: &[u8]) -> Option<bool> {
+    let first = bytes.first()?;
+    if !(0x14..=0x17).contains(first) {
+        return Some(false);
+    }
+    match bytes.get(1..3) {
+        Some([3, minor]) => Some(*minor <= 4),
+        Some(_) => Some(false),
+        None if bytes.get(1).is_some_and(|major| *major != 3) => Some(false),
+        None => None,
+    }
+}
+
 /// **The first TLS record a tunnel's client sent**, read from `client` after `already` (what
 /// arrived with the request's head) within `within`, and returned whole, to be sent on unchanged.
-/// Bytes that do not start a TLS handshake are returned as they came, the first of them at least.
-/// `None` where the client said nothing in time, or sent a record larger than TLS allows.
+/// Bytes that are no TLS record at all ([`record_shaped`]) are returned as they came, the first of
+/// them at least. `None` where the client said nothing in time, or sent a record larger than TLS allows.
 fn first_record(client: &mut TcpStream, already: &[u8], within: Duration) -> Option<Vec<u8>> {
     let deadline = Instant::now() + within;
     let mut hello = already.to_vec();
@@ -2220,7 +2265,7 @@ fn first_record(client: &mut TcpStream, already: &[u8], within: Duration) -> Opt
         (hello.len() >= 5).then(|| 5 + usize::from(u16::from_be_bytes([hello[3], hello[4]])))
     };
     loop {
-        if !hello.is_empty() && hello[0] != 0x16 {
+        if record_shaped(&hello) == Some(false) {
             return Some(hello);
         }
         if let Some(record) = whole(&hello)
@@ -2271,7 +2316,9 @@ pub(crate) fn hello_names(record: &[u8]) -> Option<String> {
 /// **What a tunnel's first record says of its server** ([`Hello`]): [`hello_names`] with the
 /// reason a name is missing.
 pub(crate) fn hello_of(record: &[u8]) -> Hello {
-    if record.first() != Some(&0x16) {
+    // Anything shaped like a TLS record that is no readable ClientHello is unreadable, not no
+    // TLS: an alert before the hello hides it from a reader of the first record.
+    if record_shaped(record) == Some(false) || record.is_empty() {
         return Hello::NotTls;
     }
     read_hello(record).unwrap_or(Hello::Unreadable)

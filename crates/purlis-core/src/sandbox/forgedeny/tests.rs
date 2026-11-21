@@ -165,7 +165,97 @@ fn what_a_forge_host_resolves_to_is_held_for_a_while_and_then_asked_again() {
     assert!(forge.holds(ip("172.65.251.78")));
     assert!(forge.holds(ip("172.65.251.78")));
     assert!(!forge.holds(ip("203.0.113.9")));
-    assert_eq!(asked.load(Ordering::SeqCst), 1, "looked up once, then held");
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        forge.addressed().len(),
+        "each name looked up once, then held"
+    );
+}
+
+/// Makes every name of `forge` due again, as if [`TTL`] had passed.
+fn due_again(forge: &ForgeDenial) {
+    for known in forge.resolved.lock().unwrap().values_mut() {
+        known.ask_after = Instant::now();
+    }
+}
+
+#[test]
+fn what_a_name_answers_is_added_to_what_it_answered_and_kept_when_a_refresh_fails() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let round = Arc::new(AtomicUsize::new(0));
+    let at = round.clone();
+    let forge = ForgeDenial::resolving(
+        &["gitlab.com".to_owned()],
+        Arc::new(move |name| match (name, at.load(Ordering::SeqCst)) {
+            ("gitlab.com", 0) => vec![ip("198.51.100.1")],
+            ("gitlab.com", 1) => vec![ip("198.51.100.2")],
+            _ => Vec::new(),
+        }),
+    );
+    assert!(forge.holds(ip("198.51.100.1")));
+    round.store(1, Ordering::SeqCst);
+    due_again(&forge);
+    // Both answers are held: a name that rotates its addresses is held at all of them.
+    assert!(forge.holds(ip("198.51.100.2")));
+    assert!(forge.holds(ip("198.51.100.1")));
+    // A refresh that fails keeps what was known.
+    round.store(2, Ordering::SeqCst);
+    due_again(&forge);
+    assert!(forge.holds(ip("198.51.100.1")));
+    assert!(forge.holds(ip("198.51.100.2")));
+}
+
+#[test]
+fn an_address_not_answered_for_longer_than_it_is_held_is_dropped() {
+    let forge = ForgeDenial::resolving(
+        &["gitlab.com".to_owned()],
+        Arc::new(|name| {
+            if name == "gitlab.com" {
+                vec![ip("198.51.100.1")]
+            } else {
+                Vec::new()
+            }
+        }),
+    );
+    assert!(forge.holds(ip("198.51.100.1")));
+    for known in forge.resolved.lock().unwrap().values_mut() {
+        known.ask_after = Instant::now();
+        for until in known.addresses.values_mut() {
+            *until = Instant::now();
+        }
+    }
+    // The name answers again after its address expired: only the answer is held.
+    assert!(forge.holds(ip("198.51.100.1")));
+}
+
+#[test]
+fn a_name_whose_lookup_failed_is_not_asked_again_for_a_few_seconds() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let asked = Arc::new(AtomicUsize::new(0));
+    let count = asked.clone();
+    let forge = ForgeDenial::resolving(
+        &["ghe.corp.example".to_owned()],
+        Arc::new(move |_| {
+            count.fetch_add(1, Ordering::SeqCst);
+            Vec::new()
+        }),
+    );
+    for _ in 0..5 {
+        assert!(!forge.holds(ip("203.0.113.9")));
+    }
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        forge.addressed().len(),
+        "each failed name asked once, not on every connection"
+    );
+}
+
+#[test]
+fn trailing_dots_are_folded() {
+    let forge = denial(&[]);
+    assert!(forge.refuses("github.com...", 443));
+    assert!(forge.refuses("140.82.112.3..", 443));
+    assert_eq!(plain("Example.ORG.."), "example.org");
 }
 
 #[test]
@@ -393,11 +483,55 @@ fn a_tunnel_to_another_name_is_refused_where_its_sni_names_a_forge() {
     assert!(!forge.pins("mirror.example", &named("mirror.example")));
     // A hello that cannot be read is never carried: split across records, it hides its name.
     assert!(forge.pins("mirror.example", &Hello::Unreadable));
-    // No name, or a hidden one, to an address no list holds, is the residual; bytes that start
-    // no handshake are no TLS.
+    // No name, or a hidden one (a browser's GREASE ECH), to a named host no list holds is the
+    // residual; bytes that are no TLS record are carried.
     for hello in [Hello::NoName, Hello::Ech, Hello::NotTls] {
         assert!(!forge.pins("mirror.example", &hello), "{hello:?}");
     }
+}
+
+#[test]
+fn no_name_or_a_hidden_one_is_not_carried_to_an_address_literal() {
+    let forge = denial(&[]);
+    // A GHES or GitLab that answers without SNI, or one behind ECH, is reached by its address.
+    for host in ["203.0.113.9", "[2001:db8::1]", "0xcb007109"] {
+        for hello in [Hello::NoName, Hello::Ech] {
+            assert!(forge.pins(host, &hello), "{host}: {hello:?}");
+        }
+        // Another host's name inside is no worse than at any address no list holds.
+        assert!(
+            !forge.pins(host, &Hello::Named("example.org".into())),
+            "{host}"
+        );
+        // Bytes that are no TLS record at all are the server-first protocols' (ssh): carried,
+        // as the address lists hold the forge's addresses.
+        assert!(!forge.pins(host, &Hello::NotTls), "{host}");
+    }
+}
+
+#[test]
+fn the_names_a_forge_serves_beside_its_host_are_resolved_and_their_addresses_held() {
+    // `altssh.gitlab.com` answers at an address `gitlab.com` does not, and the snapshot lacks it.
+    let forge = denial(&[
+        ("altssh.gitlab.com", "198.51.100.7"),
+        ("registry.gitlab.com", "198.51.100.8"),
+        ("ssh.ghe.corp.example", "198.51.100.9"),
+    ]);
+    for at in ["198.51.100.7", "198.51.100.8", "198.51.100.9"] {
+        assert!(forge.refuses(at, 443), "{at}:443");
+        assert!(forge.refuses(at, 22), "{at}:22");
+        assert!(!forge.carries("mirror.example", ip(at)), "{at}");
+    }
+    assert!(!forge.refuses("198.51.100.10", 443));
+    // A host under another forge host has the siblings of the other, not its own.
+    let names = forge.addressed();
+    assert!(names.contains(&"altssh.gitlab.com".to_owned()));
+    assert!(!names.contains(&"altssh.api.github.com".to_owned()));
+    assert!(
+        !names
+            .iter()
+            .any(|name| name.ends_with("githubusercontent.com"))
+    );
 }
 
 #[test]
@@ -413,18 +547,17 @@ fn a_hello_without_a_name_goes_to_no_address_the_lists_hold() {
 }
 
 #[test]
-fn a_failed_lookup_is_asked_again_and_not_held_as_empty() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let asked = Arc::new(AtomicUsize::new(0));
-    let count = asked.clone();
+fn a_failed_lookup_is_asked_again_after_its_short_wait_and_not_held_as_empty() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let up = Arc::new(AtomicBool::new(false));
+    let answering = up.clone();
     let forge = ForgeDenial::resolving(
         &["ghe.corp.example".to_owned()],
         Arc::new(move |_| {
-            // Down for the first two questions, then up.
-            if count.fetch_add(1, Ordering::SeqCst) < 2 {
-                Vec::new()
-            } else {
+            if answering.load(Ordering::SeqCst) {
                 vec![ip("10.1.2.3")]
+            } else {
+                Vec::new()
             }
         }),
     );
@@ -432,18 +565,13 @@ fn a_failed_lookup_is_asked_again_and_not_held_as_empty() {
     // Still named, so still refused by name while its address is unknown.
     assert!(forge.refuses("ghe.corp.example", 443));
     assert!(forge.refuses("api.ghe.corp.example", 443));
-    assert!(!forge.holds(ip("10.1.2.3")), "still down");
+    up.store(true, Ordering::SeqCst);
     assert!(
-        forge.holds(ip("10.1.2.3")),
-        "up: held at once, not after five minutes"
+        !forge.holds(ip("10.1.2.3")),
+        "up, but not asked for a few seconds"
     );
-    assert_eq!(asked.load(Ordering::SeqCst), 3);
-    assert!(forge.holds(ip("10.1.2.3")));
-    assert_eq!(
-        asked.load(Ordering::SeqCst),
-        3,
-        "an answer is held for a while"
-    );
+    due_again(&forge);
+    assert!(forge.holds(ip("10.1.2.3")), "asked again, then held");
 }
 
 #[test]
