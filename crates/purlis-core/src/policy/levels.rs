@@ -190,8 +190,17 @@ pub struct Loaded {
     pub organisation_locks: Locks,
     /// The project's locks.
     pub project_locks: Locks,
-    /// The Organisation's `[policy.limits]`, as its files say them, for slice 12.
+    /// The Organisation's `[policy.limits]`, as its files say them.
     pub organisation_limits: BTreeMap<String, i64>,
+    /// The project's `[policy.limits]` as committed (the accepted copy's where the commit is
+    /// broken), each key a row of [`super::limits`]'s table.
+    pub project_limits: BTreeMap<String, i64>,
+    /// The `[policy.limits]` of the copy the person last accepted: the side a raised cap or a
+    /// lowered retention waits on until the press.
+    pub accepted_limits: BTreeMap<String, i64>,
+    /// Your own file's `[policy.limits]`: a side that only tightens, since the stricter number
+    /// wins and a number looser than the others says nothing (§4.7).
+    pub local_limits: BTreeMap<String, i64>,
     /// Each rule's mode where a `[policy.rules]` sets one; `off` rules are not in the policy.
     pub rule_modes: BTreeMap<String, Mode>,
     /// Who the Organisation is: the owner its rules and locks are named by.
@@ -302,6 +311,9 @@ impl Loaded {
             project_locks: Locks::default(),
             rule_modes: BTreeMap::new(),
             organisation_limits: BTreeMap::new(),
+            project_limits: BTreeMap::new(),
+            accepted_limits: BTreeMap::new(),
+            local_limits: BTreeMap::new(),
             organisation_owner: "the Organisation".to_owned(),
             organisation: Defaults::default(),
             project: Tables::strict().defaults,
@@ -387,6 +399,39 @@ impl Loaded {
             Some(mine) => mode.max(mine),
             None => mode,
         }
+    }
+}
+
+impl Loaded {
+    /// **The value in force for the limit `key` by this one loaded policy** (spec §5.1): the
+    /// stricter, in the key's declared direction, of the Organisation's, the project's as
+    /// committed, your own file's and the accepted copy's numbers. `None` is no cap, or a key the
+    /// table doesn't name (no file that names one reads).
+    ///
+    /// **Not held by the floor**: it knows no older version of the accepted floor, and its mode is
+    /// this policy's alone. What the app enforces is [`super::force::limit`] and
+    /// [`super::force::limit_verdict`].
+    pub fn limit(&self, key: &str) -> Option<i64> {
+        let spec = super::limits::spec(key)?;
+        super::limits::in_force(
+            spec,
+            self.organisation_limits.get(key).copied(),
+            // Your own file is a side only where it says a number.
+            [
+                self.project_limits.get(key).copied(),
+                self.accepted_limits.get(key).copied(),
+            ]
+            .into_iter()
+            .chain(self.local_limits.get(key).copied().map(Some)),
+        )
+    }
+
+    /// **What `used` does against the cap `key`** for `chat`: under `limits = log` an exceeded cap
+    /// is counted, not applied (Q308b). **Not held by the floor**: this policy's own mode and
+    /// number alone, so a committed `limits = "log"` disables it here; the app asks
+    /// [`super::force::limit_verdict`].
+    pub fn limit_verdict(&self, chat: Chat<'_>, key: &str, used: i64) -> super::limits::Verdict {
+        super::limits::verdict(self.mode_for("limits", chat), self.limit(key), used)
     }
 }
 
@@ -497,14 +542,10 @@ fn read_tables(
                     into.insert(named.to_owned(), defaults);
                 }
             }
-            // `[policy.limits]` is slice 12's, which validates it; the integers are kept so an
-            // Organisation's are not lost on the way (M75-06 round 3). `sandbox` is slice 11's.
+            // `[policy.limits]` is typed against the limits key table (slice 12); `sandbox` is
+            // slice 11's.
             "limits" if item.is_table_like() => {
-                for (k, v) in item.as_table_like().into_iter().flat_map(|t| t.iter()) {
-                    if let Some(n) = v.as_integer() {
-                        tables.limits.insert(k.to_owned(), n);
-                    }
-                }
+                read_limits(item, name, &at, &mut problem, &mut tables.limits);
             }
             "sandbox" => {}
             _ => read_default(
@@ -520,6 +561,64 @@ fn read_tables(
     }
     tables.warnings = warnings;
     (tables, problems)
+}
+
+/// **`[policy.limits]`**: each key a row of the limits key table, each value a whole number from
+/// zero up. A key written with a dot (`dispatch.running-per-chat = 3`) and one in a table of its
+/// own (`[policy.limits.dispatch]`) are the same key. A key the table doesn't name, or a value
+/// that is no whole number, is a problem, which makes the file broken (spec §5.1).
+fn read_limits(
+    item: &toml_edit::Item,
+    prefix: &str,
+    at: &dyn Fn(&toml_edit::Key, &toml_edit::Item) -> usize,
+    problem: &mut dyn FnMut(usize, String),
+    into: &mut BTreeMap<String, i64>,
+) {
+    let Some(table) = item.as_table_like() else {
+        return;
+    };
+    for (k, v) in table.iter() {
+        let (key, _) = table.get_key_value(k).expect("a key it iterates");
+        let line = at(key, v);
+        let name = if prefix == "limits" {
+            k.to_owned()
+        } else {
+            format!("{prefix}.{k}")
+        };
+        if v.is_table_like() {
+            read_limits(v, &name, at, problem, into);
+            continue;
+        }
+        if super::limits::spec(&name).is_none() {
+            problem(
+                line,
+                format!(
+                    "[policy.limits] names \"{name}\", which is no limit purlis has: check its spelling"
+                ),
+            );
+            continue;
+        }
+        if into.contains_key(&name) {
+            problem(
+                line,
+                format!(
+                    "[policy.limits] says \"{name}\" twice (once dotted, once in its own table): say it once"
+                ),
+            );
+            continue;
+        }
+        match v.as_integer().filter(|n| *n >= 0) {
+            Some(n) => {
+                into.insert(name, n);
+            }
+            None => problem(
+                line,
+                format!(
+                    "[policy.limits] \"{name}\" is not a whole number: write it as 0 or more, such as 6"
+                ),
+            ),
+        }
+    }
 }
 
 /// One `[policy]` default: `template`, a family's mode, or the `guards` table of them. An
@@ -1269,7 +1368,12 @@ fn read_organisation(
             tables.locks.add(&more.tables.locks);
             tables.lock_lines.extend(more.tables.lock_lines);
             // Its limits join `policy.toml`'s (slice 12 reads them).
-            tables.limits.extend(more.tables.limits);
+            for (key, number) in more.tables.limits {
+                let kept = tables.limits.entry(key.clone()).or_insert(number);
+                if let Some(spec) = super::limits::spec(&key) {
+                    *kept = super::limits::stricter_number(spec, *kept, number);
+                }
+            }
             rules.extend(more.rules);
         }
     }
@@ -1476,6 +1580,19 @@ fn load_with(
             (read.tables, read.rules)
         }
     };
+    // The accepted copy's own limits, which a committed raise waits on (slice 12).
+    let accepted_limits: BTreeMap<String, i64> = accepted
+        .map(|accepted| {
+            read_level(
+                accepted.settings.map(|t| (accepted_names.0.as_str(), t)),
+                None,
+                Level::Project,
+                sources,
+            )
+        })
+        .filter(|read| read.problems.is_empty())
+        .map(|read| read.tables.limits)
+        .unwrap_or_default();
     let (project_tables, project_rules) = match (&committed_settings, &committed_rules) {
         (Committed::Unread { file, why }, _) | (_, Committed::Unread { file, why }) => {
             broken = true;
@@ -1828,6 +1945,9 @@ fn load_with(
         project_locks: project_tables.locks.clone(),
         rule_modes: BTreeMap::new(),
         organisation_limits: org_tables.limits.clone(),
+        project_limits: project_tables.limits.clone(),
+        accepted_limits: accepted_limits.clone(),
+        local_limits: you_tables.limits.clone(),
         organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults.clone(),
         project: project_tables.defaults.clone(),
@@ -2007,6 +2127,9 @@ fn load_with(
         project_locks: project_tables.locks,
         rule_modes,
         organisation_limits: org_tables.limits.clone(),
+        project_limits: project_tables.limits.clone(),
+        accepted_limits: accepted_limits.clone(),
+        local_limits: you_tables.limits,
         organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults,
         project: project_tables.defaults,

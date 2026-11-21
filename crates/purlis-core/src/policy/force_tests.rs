@@ -1083,6 +1083,43 @@ fn in_the_deny_state_a_sealed_local_forbid_on_start_removed_from_the_file_still_
     assert_ne!(said.after_mode, Outcome::Deny, "{said:?}");
 }
 
+#[test]
+fn a_raised_cap_stays_held_by_the_floor_until_the_press() {
+    let m = machine();
+    let raised = "[policy.limits]\n\"dispatch.running-per-chat\" = 12\n";
+    let root = plane(&m, &[("purlis.toml", raised)]);
+    let key = "dispatch.running-per-chat";
+    // Nothing accepted and nothing floored: the shipped 6 stands for the accepted side.
+    assert_eq!(limit(&sources(&root), &holding(vec![]), key), Some(6));
+    // An earlier committed version, now on the floor, said 2: moving the cap up again drops
+    // nothing.
+    let tight = version("[policy.limits]\n\"dispatch.running-per-chat\" = 2\n", None);
+    assert_eq!(
+        limit(&sources(&root), &holding(vec![floor(&tight)]), key),
+        Some(2)
+    );
+    // The accepted copy's own number is what a raise waits on.
+    let ten = version(
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 10\n",
+        None,
+    );
+    assert_eq!(
+        limit(&sources(&root), &holding(vec![accepted(&ten)]), key),
+        Some(10)
+    );
+}
+
+#[test]
+fn a_floor_version_that_does_not_read_holds_the_strictest_limit() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let broken = Entry::new(answers::FLOOR, "not json");
+    assert_eq!(
+        limit(&sources(&root), &holding(vec![broken]), "trust.unread-max"),
+        Some(0)
+    );
+}
+
 // ---- review round 5: a start no chat can have brought to a refusal --------------------------
 
 fn gappy_start() -> Request<'static> {
@@ -1146,4 +1183,167 @@ fn a_folder_that_is_no_repository_starts_with_gaps_where_a_broken_git_does_not()
     std::fs::create_dir_all(broken.join(".git")).expect("a broken .git");
     let said = by(&broken, &Standing::fresh(), &gappy_start());
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+// ---- #7307 round 2: limits are held across every side, and so is their mode --------------------
+
+use crate::policy::limits::Verdict;
+
+const ANYONE: Chat<'static> = Chat {
+    workspace: None,
+    persona: None,
+};
+
+const CAP: &str = "dispatch.running-per-chat";
+const NO_CAP: &str = "dispatch.may-dispatch";
+
+fn limits(text: &str) -> Version {
+    version(text, None)
+}
+
+fn limit_in(root: &Path, standing: &Standing, key: &str) -> Option<i64> {
+    limit(&sources(root), standing, key)
+}
+
+fn verdict_in(root: &Path, standing: &Standing, used: i64) -> Verdict {
+    limit_verdict(&sources(root), standing, ANYONE, CAP, used)
+}
+
+#[test]
+fn a_cap_the_accepted_copy_holds_still_holds_past_the_floor_cap() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let accepted_at_3 = accepted(&limits(
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 3\n",
+    ));
+    let kept = denied_past_the_cap(vec![accepted_at_3.clone()]);
+    assert_eq!(
+        limit_in(&root, &kept, CAP),
+        Some(3),
+        "from the kept entries"
+    );
+    assert_eq!(limit_in(&root, &holding(vec![accepted_at_3]), CAP), Some(3));
+    // A floor version's number is kept the same way.
+    let floor_at_2 = floor(&limits(
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 2\n",
+    ));
+    assert_eq!(
+        limit_in(&root, &denied_past_the_cap(vec![floor_at_2]), CAP),
+        Some(2)
+    );
+}
+
+#[test]
+fn a_key_with_no_shipped_cap_is_capped_by_a_kept_version_past_the_floor_cap() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    assert_eq!(limit_in(&root, &Standing::fresh(), NO_CAP), None);
+    let kept = denied_past_the_cap(vec![accepted(&limits(
+        "[policy.limits]\n\"dispatch.may-dispatch\" = 4\n",
+    ))]);
+    assert_eq!(limit_in(&root, &kept, NO_CAP), Some(4));
+}
+
+#[test]
+fn an_entry_that_does_not_read_counts_as_the_strictest_limit_never_as_silent() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    for entry in [
+        Entry::new(answers::ACCEPTED, "not json"),
+        Entry::new(answers::FLOOR, "{\"settings\": 3}"),
+    ] {
+        for standing in [
+            holding(vec![entry.clone()]),
+            denied_past_the_cap(vec![entry.clone()]),
+        ] {
+            assert_eq!(limit_in(&root, &standing, CAP), Some(0), "{entry:?}");
+            assert_eq!(limit_in(&root, &standing, NO_CAP), Some(0), "{entry:?}");
+            assert_eq!(
+                limit_in(&root, &standing, "audit.record-days"),
+                Some(i64::MAX),
+                "a retention's strictest is the longest"
+            );
+            assert_eq!(
+                verdict_in(&root, &standing, 0),
+                Verdict::Refuse,
+                "{entry:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_committed_limits_log_loosens_nothing_while_the_accepted_copy_enforces() {
+    let m = machine();
+    for mode in ["log", "off"] {
+        let root = plane(
+            &m,
+            &[("purlis.toml", &format!("[policy]\nlimits = \"{mode}\"\n"))],
+        );
+        let standing = holding(vec![accepted(&version(STRICT, None))]);
+        assert_eq!(verdict_in(&root, &standing, 7), Verdict::Refuse, "{mode}");
+        assert_eq!(verdict_in(&root, &standing, 6), Verdict::Within, "{mode}");
+    }
+}
+
+#[test]
+fn a_floor_version_that_enforces_holds_a_cap_the_committed_file_logs() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", "[policy]\nlimits = \"log\"\n")]);
+    let log = limits("[policy]\nlimits = \"log\"\n");
+    let enforcing = floor(&limits("[policy]\ntemplate = \"strict\"\n"));
+    let standing = holding(vec![accepted(&log), enforcing]);
+    assert_eq!(verdict_in(&root, &standing, 7), Verdict::Refuse);
+    // Every side logging counts the cap and refuses nothing.
+    let all_log = holding(vec![accepted(&log), floor(&log)]);
+    assert_eq!(verdict_in(&root, &all_log, 7), Verdict::Counted);
+    assert_eq!(verdict_in(&root, &all_log, 6), Verdict::Within);
+}
+
+#[test]
+fn a_cap_the_accepted_copy_raised_and_the_committed_file_lowered_is_the_lower() {
+    let m = machine();
+    let root = plane(
+        &m,
+        &[(
+            "purlis.toml",
+            "[policy]\ntemplate = \"strict\"\n[policy.limits]\n\"dispatch.running-per-chat\" = 2\n",
+        )],
+    );
+    let standing = holding(vec![accepted(&limits(
+        "[policy]\ntemplate = \"strict\"\n[policy.limits]\n\"dispatch.running-per-chat\" = 10\n",
+    ))]);
+    assert_eq!(limit_in(&root, &standing, CAP), Some(2));
+    assert_eq!(verdict_in(&root, &standing, 3), Verdict::Refuse);
+}
+
+#[test]
+fn a_key_the_table_does_not_name_is_never_met() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let none = Standing::fresh();
+    assert_eq!(limit_in(&root, &none, "no.such-key"), None);
+    assert_eq!(
+        limit_verdict(&sources(&root), &none, ANYONE, "no.such-key", i64::MAX),
+        Verdict::Within
+    );
+}
+
+#[test]
+fn your_own_file_can_tighten_a_limit_and_never_loosen_one() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let local = root.join(crate::settings::Which::Local.file_at(&root));
+    std::fs::write(
+        &local,
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 2\n",
+    )
+    .expect("the local file");
+    assert_eq!(limit_in(&root, &Standing::fresh(), CAP), Some(2));
+    std::fs::write(
+        &local,
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 12\n",
+    )
+    .expect("the local file");
+    assert_eq!(limit_in(&root, &Standing::fresh(), CAP), Some(6));
 }

@@ -671,10 +671,15 @@ pub fn translate_locks(locks: &Locks) -> Translation {
     let limits: Vec<String> = Limit::ALL
         .into_iter()
         .filter_map(|limit| {
+            // Only the keys of the limits table: depth stays in Cedar's `context.depth` and the
+            // note and Stuck? timers stay plain settings (spec §5.1), and the legacy ceiling
+            // keeps enforcing them.
+            let key = format!("dispatch.{}", limit.word());
+            super::limits::spec(&key)?;
             locks
                 .dispatch_ceiling()
                 .get(limit)
-                .map(|value| format!("\"dispatch.{}\" = {value}\n", limit.word()))
+                .map(|value| format!("\"{key}\" = {value}\n"))
         })
         .collect();
     if !limits.is_empty() {

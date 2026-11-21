@@ -704,6 +704,104 @@ pub fn judge(
     )
 }
 
+/// One side that holds a limit: a version's own policy, or one that did not read.
+enum LimitSide {
+    Read(Box<levels::Loaded>),
+    Unread,
+}
+
+/// Every side that holds a limit, as [`judge`] counts its sides: the project as committed now and
+/// the local file, the accepted copy (the shipped policy until there is one, or where no answer
+/// verifies), and every version of the accepted floor. In the deny state past the cap the entries
+/// the store kept stand in for the ones it verified, as in [`judge`]. A side that does not read is
+/// [`LimitSide::Unread`], never silent.
+fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+    let entries: &[answers::Entry] = if standing.is_deny() {
+        &standing.kept
+    } else {
+        &standing.entries
+    };
+    let none = Version::default();
+    let mut sides = vec![LimitSide::Read(Box::new(levels::load(sources)))];
+    if standing.is_unverified_by_a_reachable_cause() {
+        sides.push(LimitSide::Read(Box::new(loaded_for(sources, &none))));
+    } else {
+        sides.push(match accepted_in(entries) {
+            Ok(version) => LimitSide::Read(Box::new(loaded_for(
+                sources,
+                version.as_ref().unwrap_or(&none),
+            ))),
+            Err(()) => LimitSide::Unread,
+        });
+    }
+    sides.extend(floor_in(entries).into_iter().map(|held| match held {
+        Ok(version) => LimitSide::Read(Box::new(loaded_for(sources, &version))),
+        Err(()) => LimitSide::Unread,
+    }));
+    sides
+}
+
+/// What one side says for `spec`: its Organisation's number and its own, as committed and in the
+/// local file, the stricter, the shipped value where it is silent. A side that does not read says
+/// the strictest number there is.
+fn side_limit(side: &LimitSide, spec: &super::limits::Spec) -> Option<i64> {
+    match side {
+        LimitSide::Read(loaded) => super::limits::in_force(
+            spec,
+            loaded.organisation_limits.get(&spec.key).copied(),
+            // Your own file is a side only where it says a number: its silence is no shipped
+            // value to hold the project's raise down.
+            [loaded.project_limits.get(&spec.key).copied()]
+                .into_iter()
+                .chain(loaded.local_limits.get(&spec.key).copied().map(Some)),
+        ),
+        LimitSide::Unread => Some(super::limits::strictest(spec)),
+    }
+}
+
+/// **The value in force for the limit `key`** (spec §5.1; slice 12): the stricter, in the key's
+/// declared direction, of the Organisation's number, the project as committed now, the local
+/// file, the accepted copy (the shipped value until there is one) and every version of the
+/// accepted floor. A raised cap or a lowered retention therefore waits for the press, and moving
+/// `HEAD` back drops no tightening. A version that does not read says the strictest number there
+/// is. `None` is no cap, or a key the limits table doesn't name.
+pub fn limit(sources: &Sources<'_>, standing: &Standing, key: &str) -> Option<i64> {
+    let spec = super::limits::spec(key)?;
+    let numbers: Vec<Option<i64>> = limit_sides(sources, standing)
+        .iter()
+        .map(|side| side_limit(side, spec))
+        .collect();
+    super::limits::in_force(spec, None, numbers)
+}
+
+/// **What `used` does against the cap `key`** for `chat`, side by side: each side (as [`limit`]
+/// counts them) with its own `limits` mode and its own number, the strictest verdict standing. A
+/// committed `[policy] limits = "log"` or `"off"` therefore loosens nothing until it is accepted,
+/// and a side that does not read refuses. A key the limits table doesn't name is never met.
+pub fn limit_verdict(
+    sources: &Sources<'_>,
+    standing: &Standing,
+    chat: levels::Chat<'_>,
+    key: &str,
+    used: i64,
+) -> super::limits::Verdict {
+    use super::limits::Verdict;
+    let Some(spec) = super::limits::spec(key) else {
+        return Verdict::Within;
+    };
+    limit_sides(sources, standing)
+        .iter()
+        .map(|side| match side {
+            LimitSide::Read(loaded) => super::limits::verdict(
+                loaded.mode_for("limits", chat),
+                side_limit(side, spec),
+                used,
+            ),
+            LimitSide::Unread => Verdict::Refuse,
+        })
+        .fold(Verdict::Within, Verdict::stricter)
+}
+
 /// **A version the app saw, to seal** ([`seal`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seen {
