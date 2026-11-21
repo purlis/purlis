@@ -52,6 +52,7 @@ export const NOT_SHIPPING = {
   "stress.yml": "the stress and scale measurements: its builds run tests and benchmarks only",
   "scale.yml": "the nightly scale run (#5497): its release builds measure a generated project and are never handed on",
   "artifact-isolation.yml": "ADR 0122 §3's isolation tests on each platform (#5949): it builds the probe app to run them and hands nothing on",
+  "forge-wiring.yml": "runs purlis-core's tests with the one-login train's forge-wiring feature on (ADR 0128): it compiles tests only",
   "skill-grades.yml": "the CI grader of the built-in skills (spec #5714): it builds the grader to run trigger tests and proposes pins, never hands a build on",
 };
 
