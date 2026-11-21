@@ -2510,3 +2510,57 @@ fn a_tool_line_heard_live_with_its_digest_is_known_in_its_spooled_copy_without_o
 
     assert_eq!(tools(&drained_running(&spool, 12)), Vec::new());
 }
+
+/// #6880: the digest is in the spool, but sealed: nothing on disk matches the unkeyed digest,
+/// and the same digest never seals to the same text.
+#[test]
+fn nothing_at_rest_in_the_spool_matches_an_unkeyed_digest() {
+    let dir = tempfile::tempdir().expect("a directory");
+    let keys = tempfile::tempdir().expect("a directory");
+    let spool = dir.path().join(".charter/app").join(DIR);
+    let token = issued(&spool, 11);
+    let plane = dir.path();
+    let public = crate::hookwire::seal::public_for(keys.path(), plane, 11).expect("a key");
+    let digest = crate::eventlog::args_hash(&serde_json::json!({"command": "ls -la"}));
+    let mut with_args = call(11, "digested");
+    with_args.args = Some(digest.clone());
+
+    for _ in 0..2 {
+        append_sealing_to(
+            &spool,
+            11,
+            &token,
+            &with_args,
+            Bounds::A_HOOKS,
+            Some(&public),
+        )
+        .expect("spooled");
+    }
+
+    for (path, bytes) in every_file_under(dir.path()) {
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(
+            !text.contains(&digest),
+            "{} holds the unkeyed digest: {text}",
+            path.display()
+        );
+    }
+    let sealed: Vec<String> = drained(&spool)
+        .into_iter()
+        .filter_map(|item| match item {
+            Drained::Line {
+                line: Spooled::Tool(call),
+                ..
+            } => call.args,
+            _ => None,
+        })
+        .collect();
+    assert_eq!(sealed.len(), 2);
+    assert_ne!(sealed[0], sealed[1], "equal hashes must not seal alike");
+    for each in &sealed {
+        assert_eq!(
+            crate::hookwire::seal::open(keys.path(), plane, 11, each).as_deref(),
+            Some(digest.as_str())
+        );
+    }
+}

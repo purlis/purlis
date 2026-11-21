@@ -1073,6 +1073,7 @@ impl purlis_host::Channel for StandInChannel {
     fn report_to(&self, number: u32) -> Result<session::Reporting, String> {
         self.issued.lock().unwrap().push(number);
         Ok(session::Reporting {
+            seal: None,
             socket: "/the/project/hooks.sock".into(),
             token: format!("issued-by-the-host-{number}"),
         })

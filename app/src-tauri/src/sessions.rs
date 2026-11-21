@@ -34,12 +34,26 @@ pub const STOPPED: &str = "Every chat purlis started is stopped. Re-arm from the
 ///
 /// A hook is a descendant of the session's own program, so it inherits this and has to look
 /// nothing up: no plane read, no file, no discovery. That is most of why the call costs 1.8 ms.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Reporting {
     pub socket: PathBuf,
     /// The chats' tokens the socket checks every line against: each chat is issued its own
     /// here as it starts, and it is forgotten when the chat closes.
     pub tokens: Arc<ChatTokens>,
+    /// The public key a chat's spooled argument digests are sealed to, where this process holds
+    /// the event log that keeps the private half (#6880).
+    pub seals: Option<Seals>,
+}
+
+/// The public key of the seal of chat `n`, if there is one ([`Reporting::seals`]).
+pub type Seals = Arc<dyn Fn(u32) -> Option<String> + Send + Sync>;
+
+impl std::fmt::Debug for Reporting {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Reporting")
+            .field("socket", &self.socket)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Every session the app is running, by the id the UI calls it by.
@@ -194,6 +208,11 @@ impl SessionHost for Sessions {
         // **The chat is what charter's per-session state is keyed on** (charter-app#63), so
         // its number goes in whether or not there is a socket to report to: an app whose
         // channel would not open still owns fifty ptys that each need a key of their own.
+        let seal = self
+            .reporting
+            .as_ref()
+            .and_then(|reporting| reporting.seals.as_ref())
+            .and_then(|seals| seals(id));
         let spec =
             purlis_core::chatspec::spec(
                 std::env::vars_os(),
@@ -215,6 +234,7 @@ impl SessionHost for Sessions {
                         |(reporting, token)| purlis_core::chatspec::Reporting {
                             socket: &reporting.socket,
                             token: token.expose(),
+                            seal: seal.as_deref(),
                         },
                     ),
                     prompt_key: opening
@@ -1514,6 +1534,7 @@ mod tests {
         let sessions = Sessions::reporting_to(Some(Reporting {
             socket: PathBuf::from("/nowhere/hooks.sock"),
             tokens: Arc::clone(&tokens),
+            seals: None,
         }));
         (sessions, tokens)
     }

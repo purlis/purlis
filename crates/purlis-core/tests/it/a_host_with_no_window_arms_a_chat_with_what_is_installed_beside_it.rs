@@ -176,6 +176,7 @@ fn composed(project: &Project, kit: &Kit, host: &Host) -> Result<Launch, String>
             number: 3,
             start: &start,
             reporting: Some(&session::Reporting {
+                seal: None,
                 socket: "/the/project/hooks.sock".into(),
                 token: "token-3".into(),
             }),
