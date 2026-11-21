@@ -49,24 +49,54 @@ const SCHEME_MAX: usize = 32;
 fn userinfo() -> &'static Regex {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
-        // `scheme://user:secret@`: a pair, so `git@host` and `ssh://git@host/…` are left alone.
-        Regex::new(r#"(?-u)((?i:[a-z][a-z0-9+.\-]*))://[^/\s"'<>@?#:]+:[^/\s"'<>@?#]+@"#)
-            .expect("a fixed pattern")
+        // `scheme://user:secret@`, of any scheme: a pair, so `git@host` and `ssh://git@host/…`
+        // are left alone.
+        compile(format!(
+            r"(?-u)((?i:[a-z][a-z0-9+.\-]*)):({SEP}){USER}+:{INFO}+{AT}"
+        ))
     })
 }
 
-fn token_only() -> &'static Regex {
+/// Any userinfo at all before the at sign over HTTP, a web socket, FTP or git's own protocol,
+/// which takes no login: a token alone, a token and a colon, or a colon and a token (an empty
+/// user and the token as the password). Over ssh a lone userinfo is the account's name, and is
+/// left alone.
+fn http_family() -> &'static Regex {
     static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     RE.get_or_init(|| {
-        // A lone userinfo over HTTP is the credential (a token, or a user name that is one); over
-        // ssh it is the account's name, and is left alone.
-        Regex::new(r#"(?-u)((?i:https?|wss?|ftps?))://[^/\s"'<>@?#:]+@"#).expect("a fixed pattern")
+        compile(format!(
+            r"(?-u)((?i:https?|wss?|ftps?|git(?:\+https?)?)):({SEP}){INFO}+{AT}"
+        ))
     })
+}
+
+/// A scheme-less `//user:secret@host/…`, which a client reads against the scheme it came by.
+fn scheme_less() -> &'static Regex {
+    static RE: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| compile(format!(r"(?-u)(^|[^:/\\a-zA-Z0-9+.\-])({SEP}){INFO}+{AT}")))
+}
+
+/// One byte of a userinfo: not what ends one (a slash, a quote, white space, `?`, `#`, an at
+/// sign), and a backslash only as a JSON `\uXXXX` escape.
+const INFO: &str = r#"(?:[^/\\\s"'<>@?#]|\\u[0-9a-fA-F]{4})"#;
+/// The same without the colon, for the user of a `user:secret` pair.
+const USER: &str = r#"(?:[^/\\\s"'<>@?#:]|\\u[0-9a-fA-F]{4})"#;
+/// The at sign that ends a userinfo: as it is, as a JSON unicode escape, or as an HTML numeric
+/// entity, decimal or hex.
+const AT: &str = r"(?:@|(?i:\\u0040)|&#(?:0*64|[xX]0*40);)";
+/// `//`, either slash escaped for JSON (`\/`).
+const SEP: &str = r"(?:\\?/){2}";
+
+fn compile(pattern: String) -> Regex {
+    Regex::new(&pattern).expect("a fixed pattern")
 }
 
 fn redact_urls(ready: &[u8]) -> Vec<u8> {
-    let pairs = userinfo().replace_all(ready, &b"$1://"[..]);
-    token_only().replace_all(&pairs, &b"$1://"[..]).into_owned()
+    let pairs = userinfo().replace_all(ready, &b"$1:$2"[..]);
+    let family = http_family().replace_all(&pairs, &b"$1:$2"[..]);
+    scheme_less()
+        .replace_all(&family, &b"$1$2"[..])
+        .into_owned()
 }
 
 impl Scanner {
@@ -136,9 +166,9 @@ impl Scanner {
             if !last && let Some(open) = open_url(&data, end) {
                 // Too long to wait for: keep its scheme, drop what follows up to the end of a
                 // userinfo, and read on from there.
-                if let Some(scheme) = open.scheme.filter(|_| data.len() - open.start > URL_CAP) {
-                    out.extend(redact_urls(&data[..scheme + 3]));
-                    data.drain(..scheme + 3);
+                if let Some(after) = open.after.filter(|_| data.len() - open.start > URL_CAP) {
+                    out.extend(redact_urls(&data[..after]));
+                    data.drain(..after);
                     self.skipping = true;
                     continue;
                 }
@@ -151,10 +181,11 @@ impl Scanner {
     }
 }
 
-/// An open URL: where it starts, and where its `://` is when the read is already past it.
+/// An open URL: where it starts, and where what follows its `//` begins when the read is already
+/// past it.
 struct OpenUrl {
     start: usize,
-    scheme: Option<usize>,
+    after: Option<usize>,
 }
 
 /// A byte that ends a userinfo.
@@ -175,28 +206,73 @@ fn skip_userinfo(data: &[u8]) -> (usize, bool) {
     (data.len(), false)
 }
 
+/// Whether `tail`, what follows a `//`, is still inside a userinfo: nothing in it ends one. The
+/// `#` of a numeric entity (`&#64;`) does not.
+fn in_userinfo(tail: &[u8]) -> bool {
+    tail.iter()
+        .enumerate()
+        .all(|(i, b)| !ends_userinfo(*b) || (*b == b'#' && i > 0 && tail[i - 1] == b'&'))
+}
+
+/// The last `//` in `head`, either slash escaped for JSON (`\/`): where it starts and where it
+/// ends.
+fn last_double_slash(head: &[u8]) -> Option<(usize, usize)> {
+    let second = head.iter().rposition(|b| *b == b'/')?;
+    let before = second.checked_sub(1)?;
+    let first = if head[before] == b'\\' {
+        before.checked_sub(1).filter(|k| head[*k] == b'/')?
+    } else if head[before] == b'/' {
+        before
+    } else {
+        // A lone slash: look further back for the pair.
+        return last_double_slash(&head[..second]);
+    };
+    let start = if first > 0 && head[first - 1] == b'\\' {
+        first - 1
+    } else {
+        first
+    };
+    Some((start, second + 1))
+}
+
 /// The URL that is still open at `end`, if there is one: what is held back has to start there, so
 /// that what follows can complete it. Open means the cut falls inside the scheme, between it and
-/// its `://`, or after the `://` and before a byte that ends a userinfo.
+/// its `//` (written plain or escaped for JSON, with or without a scheme), or after the `//` and
+/// before a byte that ends a userinfo.
 fn open_url(data: &[u8], end: usize) -> Option<OpenUrl> {
-    let head = &data[..end];
-    if let Some(scheme) = memchr::memmem::rfind(head, b"://")
-        && !data[scheme + 3..end].iter().copied().any(ends_userinfo)
-    {
-        return Some(OpenUrl {
-            start: scheme_start(data, scheme),
-            scheme: Some(scheme),
-        });
+    if let Some(open) = open_double_slash(data, end) {
+        return Some(open);
     }
-    let colon = if head.ends_with(b":/") {
-        2
-    } else {
-        usize::from(head.ends_with(b":"))
+    let trailing = data[..end]
+        .iter()
+        .rev()
+        .take(4)
+        .take_while(|b| b":/\\".contains(b))
+        .count();
+    let start = scheme_start(data, end - trailing);
+    // The cut may still fall in the middle of a URL whose userinfo is not over (`@` written as an
+    // escape or an entity ends in letters and digits, which the walk back over a scheme took for
+    // one): it is held from the URL's start, as one open at the cut itself would be.
+    if let Some(open) = open_double_slash(data, start) {
+        return Some(open);
+    }
+    (start < end).then_some(OpenUrl { start, after: None })
+}
+
+/// The URL whose `//` is the last in `data[..end]`, when what follows it is still a userinfo.
+fn open_double_slash(data: &[u8], end: usize) -> Option<OpenUrl> {
+    let (start, after) = last_double_slash(&data[..end])?;
+    if !in_userinfo(&data[after..end]) {
+        return None;
+    }
+    let start = match start.checked_sub(1) {
+        Some(colon) if data[colon] == b':' => scheme_start(data, colon),
+        Some(prefix) => prefix,
+        None => 0,
     };
-    let start = scheme_start(data, end - colon);
-    (start < end).then_some(OpenUrl {
+    Some(OpenUrl {
         start,
-        scheme: None,
+        after: Some(after),
     })
 }
 
@@ -496,6 +572,111 @@ mod tests {
         let text = run(&mut scanner, &[format!("{token} {ssh}").as_bytes()]);
         assert!(!text.contains("tok123"), "{text}");
         assert!(text.contains(&kept), "{text}");
+    }
+
+    /// Every userinfo shape the answer may carry, built at run time so no source line is one: the
+    /// secret it hides, and the text it is in.
+    fn shapes() -> Vec<(&'static str, String)> {
+        let at = "@";
+        let (h, s) = ("host.example/x", "SECRETvalue123");
+        let f = |t: String| t;
+        vec![
+            (
+                "empty user, token as password",
+                f(["https://", ":", s, at, h].concat()),
+            ),
+            (
+                "token and an empty password",
+                f(["https://", s, ":", at, h].concat()),
+            ),
+            ("http, token alone", f(["http://", s, at, h].concat())),
+            (
+                "escaped slashes",
+                f(["https:\\/\\/", "u:", s, at, h].concat()),
+            ),
+            (
+                "escaped slashes, token alone",
+                f(["https:\\/\\/", s, at, h].concat()),
+            ),
+            (
+                "at as a json escape",
+                f(["https://", "u:", s, "\\u0040", h].concat()),
+            ),
+            (
+                "at as a json escape, upper case",
+                f(["https://", s, "\\u0040", h].concat()),
+            ),
+            (
+                "at as a decimal entity",
+                f(["https://", "u:", s, "&#64;", h].concat()),
+            ),
+            (
+                "at as a padded decimal entity",
+                f(["https://", s, "&#0064;", h].concat()),
+            ),
+            (
+                "at as a hex entity",
+                f(["https://", "u:", s, "&#x40;", h].concat()),
+            ),
+            ("scheme-less", f(["//", "u:", s, at, h].concat())),
+            ("scheme-less, token alone", f(["//", s, at, h].concat())),
+            (
+                "scheme-less, escaped",
+                f(["\\/\\/", "u:", s, at, h].concat()),
+            ),
+            ("git, token alone", f(["git://", s, at, h].concat())),
+            ("git, a pair", f(["git://", "u:", s, at, h].concat())),
+            ("git plus https", f(["git+https://", s, at, h].concat())),
+            ("a web socket", f(["wss://", ":", s, at, h].concat())),
+        ]
+    }
+
+    #[test]
+    fn every_userinfo_shape_is_cut_whole_and_when_split_at_any_byte() {
+        for (name, url) in shapes() {
+            let body = format!("see {url} and \"{url}\" end");
+            let mut scanner = Scanner::new(Vec::new(), true);
+            let text = run(&mut scanner, &[body.as_bytes()]);
+            assert!(!text.contains("SECRETvalue"), "{name}: {text}");
+            assert!(text.contains("host.example/x"), "{name}: {text}");
+            for k in 0..=body.len() {
+                let (a, b) = body.as_bytes().split_at(k);
+                let mut scanner = Scanner::new(Vec::new(), true);
+                let text = run(&mut scanner, &[a, b]);
+                assert!(!text.contains("SECRETvalue"), "{name}, split {k}: {text}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_hold_boundary_inside_any_userinfo_shape_still_cuts_it() {
+        for (name, url) in shapes() {
+            for k in 0..=url.len() {
+                let mut first = b"pad ".to_vec();
+                first.extend_from_slice(url.as_bytes());
+                first.resize(4 + k + URL_WINDOW, b'z');
+                let mut scanner = Scanner::new(Vec::new(), true);
+                let text = run(&mut scanner, &[&first, b" more text"]);
+                assert!(!text.contains("SECRETvalue"), "{name}, offset {k}");
+            }
+        }
+    }
+
+    #[test]
+    fn what_has_no_userinfo_is_left_as_it_was() {
+        let at = '@';
+        let plain = [
+            "https://host.example/x".to_string(),
+            format!("ssh://git{at}host.example/r"),
+            format!("git{at}host.example:r.git"),
+            format!("mail someone{at}example.test about //path"),
+            "https://host.example/a//b/c".to_string(),
+            "see a//b".to_string(),
+        ];
+        for text in plain {
+            let mut scanner = Scanner::new(Vec::new(), true);
+            assert_eq!(run(&mut scanner, &[text.as_bytes()]), text);
+        }
     }
 
     #[test]

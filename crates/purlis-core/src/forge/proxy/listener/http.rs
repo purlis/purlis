@@ -9,10 +9,71 @@
 //! answers it with `Connection: close` and closes. Bytes that arrive after the request are never
 //! read as another one, so a second request cannot ride the first one's verdict.
 
+use std::cell::Cell;
 use std::io::{self, Read, Write};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use super::super::normal;
+
+thread_local! {
+    /// The time by which the connection this thread serves must have moved: every read and write
+    /// on a [`Gated`] stream fails once it has passed. A connection has a thread of its own.
+    static GATE: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+
+/// Fail the connection this thread serves if any read or write is attempted after `within` from
+/// now, until [`within`] sets another. The socket's own timeout is per call: it does not stop a
+/// peer that takes one byte a minute, nor one that drips a TLS handshake.
+pub(crate) fn within(limit: Duration) {
+    GATE.set(Some(Instant::now() + limit));
+}
+
+/// What a connection's gate was before a [`Scope`], put back when it ends.
+pub(crate) struct Scope(Option<Instant>);
+
+impl Scope {
+    /// Open a gate `limit` from now for the connection this thread serves.
+    pub(crate) fn new(limit: Duration) -> Self {
+        let before = GATE.get();
+        within(limit);
+        Self(before)
+    }
+}
+
+impl Drop for Scope {
+    fn drop(&mut self) {
+        GATE.set(self.0);
+    }
+}
+
+fn gate_open() -> io::Result<()> {
+    if GATE.get().is_some_and(|by| Instant::now() >= by) {
+        return Err(io::ErrorKind::TimedOut.into());
+    }
+    Ok(())
+}
+
+/// A stream whose reads and writes obey the connection's gate.
+pub(crate) struct Gated<S>(pub(crate) S);
+
+impl<S: Read> Read for Gated<S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        gate_open()?;
+        self.0.read(buf)
+    }
+}
+
+impl<S: Write> Write for Gated<S> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        gate_open()?;
+        self.0.write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        gate_open()?;
+        self.0.flush()
+    }
+}
 
 /// A request's line and headers, as read.
 #[derive(Debug)]

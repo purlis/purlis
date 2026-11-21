@@ -675,8 +675,8 @@ fn swap_credential(
     let (name, value) = match (allowed.surface, allowed.kind, credential.token_kind) {
         (policy::Surface::Git, kind, _) => {
             let user = match kind {
-                Kind::GitHub => "x-access-token",
-                Kind::GitLab => "oauth2",
+                Kind::GitHub => GIT_LOGINS[0],
+                Kind::GitLab => GIT_LOGINS[1],
             };
             let basic =
                 data_encoding::BASE64.encode(format!("{user}:{}", secret.as_str()).as_bytes());
@@ -692,8 +692,8 @@ fn swap_credential(
     Some((headers, needles))
 }
 
-/// The forms of a credential an answer must not hold: as it is, percent-encoded, and in Base64
-/// (standard and URL alphabets, which is how a `Basic` pair or a token in a URL is carried).
+/// The forms of a credential an answer must not hold: as it is, percent-encoded, in Base64
+/// (standard and URL alphabets), and the Base64 of the whole `Basic` pair it is sent in.
 fn leak_needles_of(secret: &str) -> Vec<zeroize::Zeroizing<Vec<u8>>> {
     use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
     let mut forms: Vec<Vec<u8>> = vec![secret.as_bytes().to_vec()];
@@ -707,8 +707,34 @@ fn leak_needles_of(secret: &str) -> Vec<zeroize::Zeroizing<Vec<u8>>> {
             .encode(secret.as_bytes())
             .into_bytes(),
     );
+    // The `Basic` pair the proxy sends git, as a whole: Base64 of `login:secret` is not Base64 of
+    // the secret, and inside a longer Base64 text it is spelled one of three ways, by where its
+    // first byte falls in a group of three.
+    for login in GIT_LOGINS {
+        let pair = format!("{login}:{secret}");
+        for encoding in [data_encoding::BASE64, data_encoding::BASE64URL_NOPAD] {
+            for pad in 0..3 {
+                let mut bytes = vec![0u8; pad];
+                bytes.extend_from_slice(pair.as_bytes());
+                let text = encoding.encode(&bytes);
+                // Only the characters whose six bits all come from the pair: after the first one
+                // that holds a padding byte's bits and before the last that holds a byte after it.
+                let first = (pad * 8).div_ceil(6);
+                let last = (bytes.len() * 8) / 6;
+                let kept = text.get(first..last).unwrap_or_default();
+                if !kept.is_empty() {
+                    forms.push(kept.as_bytes().to_vec());
+                }
+            }
+        }
+    }
+    forms.sort();
+    forms.dedup();
     forms.into_iter().map(zeroize::Zeroizing::new).collect()
 }
+
+/// The logins the proxy sends a git request's `Basic` pair under, one per forge.
+const GIT_LOGINS: [&str; 2] = ["x-access-token", "oauth2"];
 
 /// Headers that name where a request goes or which method it is, which the proxy decides itself:
 /// the upstream is [`Forwarded::upstream`], and the method is the request line's.
@@ -755,4 +781,39 @@ pub(crate) fn framing_is_unambiguous(headers: &[(String, String)]) -> bool {
     let encodings_ok =
         encodings.len() <= 1 && encodings.iter().all(|e| e.eq_ignore_ascii_case("chunked"));
     lengths_ok && encodings_ok && !(encodings.len() == 1 && !lengths.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The Base64 of the whole `login:secret` pair, in a longer Base64 text at each of the three
+    /// alignments and in both alphabets, is found; a different secret's is not.
+    #[test]
+    fn the_base64_of_a_whole_basic_pair_is_a_needle_at_every_alignment() {
+        let secret = ["tok", "en-for-the-test-0123"].concat();
+        let needles = leak_needles_of(&secret);
+        let found = |text: &str| {
+            needles
+                .iter()
+                .any(|n| memchr::memmem::find(text.as_bytes(), n).is_some())
+        };
+        for login in GIT_LOGINS {
+            let pair = format!("{login}:{secret}");
+            for encoding in [data_encoding::BASE64, data_encoding::BASE64URL_NOPAD] {
+                for pad in 0..3 {
+                    for tail in 0..3 {
+                        let mut bytes = vec![b'q'; pad + 5];
+                        bytes.extend_from_slice(pair.as_bytes());
+                        bytes.extend(std::iter::repeat_n(b'z', tail));
+                        let text = format!("x{}y", encoding.encode(&bytes));
+                        assert!(found(&text), "{login} pad {pad} tail {tail}: {text}");
+                    }
+                }
+            }
+        }
+        let other = format!("x-access-token:{secret}x");
+        let unrelated = data_encoding::BASE64.encode(other.replace("test", "tset").as_bytes());
+        assert!(!found(&unrelated), "{unrelated}");
+    }
 }

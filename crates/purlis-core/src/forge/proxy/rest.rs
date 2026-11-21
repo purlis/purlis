@@ -4,8 +4,10 @@
 //! The forge APIs' REST routes under a chat's repo: what is refused by name, and the allowlist of
 //! writes. `rel` is the path after the repo (`pulls/7/merge`), decoded once.
 //!
-//! **Reads** (`GET`, `HEAD`) are answered for anything under the repo, except the families that
-//! hold the repo's administration (hooks, keys, secrets, protection, collaborators…). **Writes**
+//! **Reads** (`GET`, `HEAD`) are an allowlist too: the families `gh` and `glab` read, and under
+//! pulls, issues, commits and merge requests only the routes listed, because the others follow
+//! cross-references into other repos. The repo's administration (hooks, keys, secrets…) is
+//! refused by name for every method. **Writes**
 //! are an allowlist: a route not named below is refused, whatever it would do. The names exist so
 //! the refusal says why; they are never what lets a request through.
 
@@ -220,20 +222,105 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
     }
 }
 
+/// The reads under a repo that no forge limits to the repo: what `gh` and `glab` read, as
+/// patterns. A route that follows cross-references (an issue's timeline, its sub-issues, the
+/// pull requests of a commit, a merge request's closed issues) returns another repo's titles
+/// and bodies under this token, so it is not on the list, and nothing under `pulls`, `issues`,
+/// `commits` or `merge_requests` is allowed by its first word alone.
+const GITHUB_READS: &[&[&str]] = &[
+    &["pulls"],
+    &["pulls", "#"],
+    &["pulls", "#", "files"],
+    &["pulls", "#", "commits"],
+    // Whether it is merged: a bare status, no body.
+    &["pulls", "#", "merge"],
+    &["pulls", "#", "comments"],
+    &["pulls", "#", "reviews"],
+    &["pulls", "#", "reviews", "#"],
+    &["pulls", "#", "reviews", "#", "comments"],
+    &["pulls", "#", "requested_reviewers"],
+    &["pulls", "comments"],
+    &["pulls", "comments", "#"],
+    &["issues"],
+    &["issues", "#"],
+    &["issues", "#", "comments"],
+    &["issues", "#", "labels"],
+    &["issues", "comments"],
+    &["issues", "comments", "#"],
+    &["commits"],
+    &["commits", "*"],
+    &["commits", "*", "check-runs"],
+    &["commits", "*", "check-suites"],
+    &["commits", "*", "status"],
+    &["commits", "*", "statuses"],
+];
+
+const GITLAB_READS: &[&[&str]] = &[
+    &["merge_requests"],
+    &["merge_requests", "#"],
+    &["merge_requests", "#", "changes"],
+    &["merge_requests", "#", "diffs"],
+    &["merge_requests", "#", "commits"],
+    &["merge_requests", "#", "notes"],
+    &["merge_requests", "#", "notes", "#"],
+    &["merge_requests", "#", "discussions"],
+    &["merge_requests", "#", "discussions", "*"],
+    &["merge_requests", "#", "pipelines"],
+    &["merge_requests", "#", "participants"],
+    &["merge_requests", "#", "versions"],
+    &["merge_requests", "#", "award_emoji"],
+    &["issues"],
+    &["issues", "#"],
+    &["issues", "#", "notes"],
+    &["issues", "#", "notes", "#"],
+    &["issues", "#", "discussions"],
+    &["issues", "#", "discussions", "*"],
+    &["issues", "#", "award_emoji"],
+    &["commits"],
+    &["commits", "*"],
+    &["commits", "*", "statuses"],
+    &["commits", "*", "diff"],
+    &["commits", "*", "comments"],
+];
+
+/// A compare head or base written `owner:branch` or `owner/repo:branch` reaches that fork's
+/// objects: refused unless it names the recorded repo's owner.
+fn compare_is_own(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo) -> bool {
+    let own_owner = repo.path.split('/').next().unwrap_or_default();
+    match kind {
+        Kind::GitHub => rel.get(1).is_none_or(|spec| {
+            let spec = spec.to_ascii_lowercase();
+            spec.split("...")
+                .flat_map(|side| side.split(".."))
+                .all(|side| {
+                    side.split_once(':')
+                        .is_none_or(|(owner, _)| owner == own_owner || owner == repo.path.as_str())
+                })
+        }),
+        Kind::GitLab => target.query.iter().all(|(k, v)| {
+            !k.eq_ignore_ascii_case("from_project_id")
+                || repo.project_id.is_some_and(|id| id.to_string() == *v)
+        }),
+    }
+}
+
 /// The reads a chat may make under its repo: an allowlist, per forge, of the families it works
 /// with. Anything else (secret scanning, traffic, exports, triggers…) is not on it.
-fn read_allowed(kind: Kind, rel: &[String]) -> bool {
+fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo) -> bool {
     let first = rel.first().map(|s| s.to_ascii_lowercase());
     let Some(first) = first else {
         // The repo itself: its name, default branch and visibility.
         return true;
     };
     let second = rel.get(1).map(|s| s.to_ascii_lowercase());
+    let listed = |rows: &[&[&str]]| rows.iter().any(|pattern| matches(rel, pattern));
     match kind {
         Kind::GitHub => match first.as_str() {
-            "pulls" | "issues" | "commits" | "branches" | "contents" | "compare" | "readme"
-            | "languages" | "contributors" | "labels" | "milestones" | "tags" | "releases"
-            | "check-runs" | "check-suites" | "statuses" | "status" => true,
+            "pulls" | "issues" | "commits" => listed(GITHUB_READS),
+            "compare" => rel.len() <= 2 && compare_is_own(kind, rel, target, repo),
+            "branches" | "contents" | "readme" | "languages" | "contributors" | "labels"
+            | "milestones" | "tags" | "releases" | "check-runs" | "check-suites" | "statuses"
+            | "status" => true,
             "git" => matches!(
                 second.as_deref(),
                 Some("refs" | "trees" | "blobs" | "commits" | "matching-refs" | "ref")
@@ -245,21 +332,15 @@ fn read_allowed(kind: Kind, rel: &[String]) -> bool {
             _ => false,
         },
         Kind::GitLab => match first.as_str() {
-            "merge_requests" | "issues" | "pipelines" | "jobs" | "labels" | "milestones"
-            | "languages" | "commits" | "releases" => true,
-            "repository" => matches!(
-                second.as_deref(),
+            "merge_requests" | "issues" | "commits" => listed(GITLAB_READS),
+            "pipelines" | "jobs" | "labels" | "milestones" | "languages" | "releases" => true,
+            "repository" => match second.as_deref() {
+                Some("compare") => compare_is_own(kind, rel, target, repo),
                 Some(
-                    "tree"
-                        | "files"
-                        | "blobs"
-                        | "commits"
-                        | "branches"
-                        | "compare"
-                        | "tags"
-                        | "contributors"
-                )
-            ),
+                    "tree" | "files" | "blobs" | "commits" | "branches" | "tags" | "contributors",
+                ) => true,
+                _ => false,
+            },
             _ => false,
         },
     }
@@ -325,7 +406,7 @@ pub(crate) fn decide(
         return Err(refusal);
     }
     if is_read(method) {
-        return if read_allowed(kind, rel) {
+        return if read_allowed(kind, rel, target, repo) {
             Ok(Class::ApiRead)
         } else {
             Err(Refusal::NotOnList)

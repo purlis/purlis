@@ -33,6 +33,7 @@ use super::http::{
     BodyError, Framed, Framing, Head, HeadError, finish_chunks, framing_of, message, write_answer,
     write_chunk, write_head,
 };
+use super::http::{Gated, Scope, within};
 use super::lfs;
 use super::scrub::{
     ChatSide, Scanner, advertised_branches, is_dropped_header, is_text, push_fully_accepted,
@@ -51,7 +52,10 @@ pub(crate) enum Route<'a> {
 /// Serve one request on `stream` and close it. Nothing here panics on what a client sends, and an
 /// I/O error only ends the connection.
 pub(crate) fn serve_one<S: Read + Write>(wiring: &Wiring, stream: S, route: &Route<'_>) {
-    let mut framed = Framed::new(stream).with_deadline(Instant::now() + wiring.limits.total);
+    // The whole request and the answer's head are bounded by the total; a streaming answer is
+    // bounded by its progress instead (see `answer`), so a long clone is not cut.
+    let _scope = Scope::new(wiring.limits.total);
+    let mut framed = Framed::new(Gated(stream)).with_deadline(Instant::now() + wiring.limits.total);
     let _ = serve(wiring, &mut framed, route);
 }
 
@@ -430,17 +434,18 @@ fn answer<W: Write>(
     }
     write_head(out, status, &out_headers)?;
     let chunked = by_length.is_none();
-    let deadline = Instant::now() + w.limits.total;
+    // From here the answer may run as long as it keeps moving: each piece must reach the chat
+    // within the idle limit, which a slow reader of a long pack does, and one that takes a byte a
+    // minute does not.
+    within(w.limits.io_timeout);
     emit(out, &ready, chunked)?;
     if first == 0 {
         let rest = scanner.finish().map_err(|_| leak())?;
         emit(out, &rest, chunked)?;
     } else {
         loop {
-            if Instant::now() >= deadline {
-                return Err(io::ErrorKind::TimedOut.into());
-            }
             let n = read_some(&mut response.body, &mut buf)?;
+            within(w.limits.io_timeout);
             if n == 0 {
                 let rest = scanner.finish().map_err(|_| leak())?;
                 emit(out, &rest, chunked)?;

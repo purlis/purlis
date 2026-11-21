@@ -401,6 +401,13 @@ impl<'d> Context<'_, 'd> {
     /// neither for `pr status` or a filtered `pr list`, which join their terms by spaces.
     fn check_search(&self, field: &Field<'_, String>, vars: &Vars<'_>) -> Result<(), Refusal> {
         let refuse = Refusal::GraphqlOtherRepo;
+        // An argument given twice is read by the server by its own rule, which this reading does
+        // not know.
+        for name in ["query", "type"] {
+            if field.arguments.iter().filter(|(n, _)| n == name).count() > 1 {
+                return Err(refuse);
+            }
+        }
         let is_issue = field
             .arguments
             .iter()
@@ -418,6 +425,11 @@ impl<'d> Context<'_, 'd> {
                 _ => None,
             })
             .ok_or(refuse)?;
+        // A zero-width space or a control character is a separator or nothing to the forge and a
+        // letter of a word to this reading: only printable ASCII and the space are read.
+        if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
+            return Err(refuse);
+        }
         // A quote hides a qualifier from this reading and not from the forge's.
         if query.contains(['"', '\'', '\\', '`']) {
             return Err(refuse);
@@ -453,7 +465,13 @@ impl<'d> Context<'_, 'd> {
         let [path] = repos.as_slice() else {
             return Err(refuse);
         };
-        self.in_repos(path)
+        // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+        // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+        if self.repos.iter().any(|r| r.path.eq_ignore_ascii_case(path)) {
+            Ok(())
+        } else {
+            Err(refuse)
+        }
     }
 
     /// `node(id:)` and `nodes(ids:)`: every id must be one of the chat's repos' own, or resolve

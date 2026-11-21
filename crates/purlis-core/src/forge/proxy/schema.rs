@@ -427,21 +427,28 @@ const GITHUB: Table = &[
         ("repository", Obj("RepoRef")),
         ("closedByPullRequestsReferences", Conn("PullRequestRef")),
         ("issueType", Obj("IssueType")),
-        ("parent", Obj("IssueRef")),
-        ("subIssues", Conn("IssueRef")),
-        ("blockedBy", Conn("IssueRef")),
-        ("blocking", Conn("IssueRef")),
+        ("parent", Obj("RelatedIssue")),
+        ("subIssues", Conn("RelatedIssue")),
+        ("blockedBy", Conn("RelatedIssue")),
+        ("blocking", Conn("RelatedIssue")),
         ("subIssuesSummary", Obj("SubIssuesSummary")),
         ("projectCards", Conn("ProjectCard")),
         ("projectItems", Conn("ProjectV2Item")),
         ("reactionGroups", Obj("ReactionGroup")),
     ]),
-    // An issue reached from another issue (its parent, a sub-issue, one it is blocked by): what
-    // names it, and nothing it holds.
-    ("IssueRef", &["id", "number", "title", "url", "state", "closed"], &[("repository", Obj("RepoRef"))]),
+    // An issue named by a reference in text ("Fixes org/private#N" in a pull request the chat
+    // writes): only what names it, never what it holds. Not its title or state either: a
+    // chat that writes the reference could read them for a repo it has no right to, and so
+    // learn that the issue exists.
+    ("IssueRef", &["id", "number", "url"], &[("repository", Obj("RepoRef"))]),
+    // An issue the forge itself has related to another (its parent, a sub-issue, one it is
+    // blocked by). Only a relationship write makes one, and the proxy allows a chat none, so
+    // a chat cannot point it at a repo it chooses; `gh issue view` selects title and state on
+    // all four, and nothing it holds beyond them.
+    ("RelatedIssue", &["id", "number", "title", "url", "state"], &[("repository", Obj("RepoRef"))]),
     // The same for a pull request reached from an issue, a ref or a commit: a reference such as
     // "Fixes org/private#N" can name another repo's, so only what names it is readable.
-    ("PullRequestRef", &["id", "number", "title", "url", "state", "closed", "merged"], &[("repository", Obj("RepoRef"))]),
+    ("PullRequestRef", &["id", "number", "url"], &[("repository", Obj("RepoRef"))]),
     ("IssueType", &["id", "name", "description", "color"], &[]),
     ("SubIssuesSummary", &["total", "completed", "percentCompleted"], &[]),
     ("Label", &["id", "name", "color", "description", "url", "isDefault", "createdAt", "updatedAt"], &[]),
@@ -449,11 +456,11 @@ const GITHUB: Table = &[
         "id", "number", "title", "description", "dueOn", "state", "url", "closed", "closedAt",
         "createdAt", "updatedAt", "progressPercentage",
     ], &[]),
-    ("ProjectCard", &["id", "state", "note", "url"], &[
+    ("ProjectCard", &["id", "state", "url"], &[
         ("project", Obj("Project")),
         ("column", Obj("ProjectColumn")),
     ]),
-    ("Project", &["id", "name", "number", "url", "body", "closed"], &[]),
+    ("Project", &["id", "name", "number", "url", "closed"], &[]),
     ("ProjectColumn", &["id", "name"], &[]),
     ("ProjectV2Item", &["id", "type"], &[
         ("project", Obj("ProjectV2")),

@@ -616,3 +616,57 @@ fn a_push_advertisement_is_read_so_a_branch_that_exists_is_not_made() {
     .unwrap();
     assert_eq!(reply.status, 403, "{}", reply.text());
 }
+
+/// An upstream whose answer arrives in pieces, with a pause before each: a long clone.
+struct Trickle {
+    pieces: usize,
+    pause: std::time::Duration,
+}
+
+impl purlis_core::forge::proxy::listener::Upstream for Trickle {
+    fn send(
+        &self,
+        _: purlis_core::forge::proxy::listener::UpstreamRequest,
+    ) -> Result<
+        purlis_core::forge::proxy::listener::UpstreamResponse,
+        purlis_core::forge::proxy::listener::UpstreamError,
+    > {
+        struct Body {
+            left: usize,
+            pause: std::time::Duration,
+        }
+        impl std::io::Read for Body {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                if self.left == 0 {
+                    return Ok(0);
+                }
+                std::thread::sleep(self.pause);
+                self.left -= 1;
+                buf[0] = b'x';
+                Ok(1)
+            }
+        }
+        Ok(purlis_core::forge::proxy::listener::UpstreamResponse {
+            status: 200,
+            headers: vec![("Content-Type".into(), "application/octet-stream".into())],
+            body: Box::new(Body {
+                left: self.pieces,
+                pause: self.pause,
+            }),
+        })
+    }
+}
+
+#[test]
+fn an_answer_that_keeps_moving_is_not_cut_at_the_total_the_request_had() {
+    purlis_core::unsteered!();
+    let mut w = World::new();
+    w.wiring.limits.total = std::time::Duration::from_millis(150);
+    w.wiring.upstream = std::sync::Arc::new(Trickle {
+        pieces: 10,
+        pause: std::time::Duration::from_millis(50),
+    });
+    let reply = plain(&w, &gh_get(&w, "/user"));
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    assert_eq!(reply.body.len(), 10, "{}", reply.text());
+}

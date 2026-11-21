@@ -292,6 +292,14 @@ fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing
         "repo:acme/app (is:issue)",
         "(repo:acme/app)",
         "repo:acme/app user:someone",
+        "repo:acme/app.git",
+        "repo:///acme/app",
+        "repo:github.com/acme/app",
+        "repo:acme/app\u{200b} org:other",
+        "repo:acme/app\u{200b}org:other",
+        "repo:acme/app\tis:pr",
+        "repo:acme/app\u{7}",
+        "repo:acme/app é",
         "repo:acme/app owner:someone",
         "repo:acme/app team:acme/x",
         "repo:acme/app enterprise:x",
@@ -307,6 +315,17 @@ fn a_search_is_answered_only_when_it_is_of_one_of_the_chats_repos_and_of_nothing
         assert!(
             is_refused(&out, Refusal::GraphqlOtherRepo),
             "{q:?}: {out:?}"
+        );
+    }
+    // An argument given twice is read by the forge's own rule, not this one's.
+    for doc in [
+        "query{ search(query:\"repo:acme/app\", query:\"repo:acme/other\", type:ISSUE, first:5){ issueCount } }",
+        "query{ search(query:\"repo:acme/app\", type:ISSUE, type:REPOSITORY, first:5){ issueCount } }",
+    ] {
+        let out = gh(&s, doc);
+        assert!(
+            is_refused(&out, Refusal::GraphqlOtherRepo),
+            "{doc}: {out:?}"
         );
     }
     // Not issues, not a literal type, and not what a search of a repo can return.
@@ -337,7 +356,7 @@ fn what_a_reference_reaches_is_named_and_never_read() {
             ),
         )
     };
-    let named = "number title url state repository{ nameWithOwner }";
+    let named = "id number url repository{ nameWithOwner owner{ login } }";
     for (root, edge) in [
         ("pullRequest", "closingIssuesReferences"),
         ("issue", "closedByPullRequestsReferences"),
@@ -347,6 +366,10 @@ fn what_a_reference_reaches_is_named_and_never_read() {
             "{edge}"
         );
         for secret in [
+            "title",
+            "state",
+            "closed",
+            "merged",
             "body",
             "bodyText",
             "bodyHTML",
@@ -356,6 +379,32 @@ fn what_a_reference_reaches_is_named_and_never_read() {
             "reactionGroups{ content }",
         ] {
             let out = reach(root, edge, &format!("{named} {secret}"));
+            assert!(
+                is_refused(&out, Refusal::GraphqlOtherRepo),
+                "{edge} {secret}: {out:?}"
+            );
+        }
+    }
+    // An issue the forge relates to another is read as `gh issue view` reads it: with a title and
+    // a state, and nothing else; only a relationship write makes one, which a chat cannot send.
+    for edge in ["subIssues", "blockedBy", "blocking"] {
+        let q = |inner: &str| {
+            gh(
+                &s,
+                &format!(
+                    "query{{ repository(owner:\"acme\", name:\"app\"){{ issue(number:1){{ {edge}(first:5){{ nodes{{ {inner} }} }} }} }} }}"
+                ),
+            )
+        };
+        assert!(
+            matches!(
+                q("id number title url state repository{ nameWithOwner }"),
+                Outcome::Forward(_)
+            ),
+            "{edge}"
+        );
+        for secret in ["body", "closed", "comments(first:1){ totalCount }"] {
+            let out = q(&format!("number {secret}"));
             assert!(
                 is_refused(&out, Refusal::GraphqlOtherRepo),
                 "{edge} {secret}: {out:?}"
@@ -379,8 +428,10 @@ fn what_a_reference_reaches_is_named_and_never_read() {
             "{root} {inner}: {out:?}"
         );
     }
-    let ok = "query{ repository(owner:\"acme\", name:\"app\"){ ref(qualifiedName:\"refs/heads/main\"){ associatedPullRequests(first:5){ nodes{ number title url state repository{ nameWithOwner } } } } } }";
+    let ok = "query{ repository(owner:\"acme\", name:\"app\"){ ref(qualifiedName:\"refs/heads/main\"){ associatedPullRequests(first:5){ nodes{ number url repository{ nameWithOwner } } } } } }";
     assert!(matches!(gh(&s, ok), Outcome::Forward(_)));
+    let titled = ok.replace("number url", "number title state url");
+    assert!(is_refused(&gh(&s, &titled), Refusal::GraphqlOtherRepo));
 }
 
 #[test]

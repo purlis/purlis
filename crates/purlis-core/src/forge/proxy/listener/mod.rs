@@ -453,8 +453,16 @@ pub fn serve_terminated<S: Read + Write>(
     let Ok(connection) = rustls::ServerConnection::new(config) else {
         return false;
     };
-    let mut tls = rustls::StreamOwned::new(connection, stream);
-    serve_one(wiring, &mut tls, &Route::Tls { host, port });
+    let mut tls = rustls::StreamOwned::new(connection, http::Gated(stream));
+    // The handshake first, under a bound of its own: a client that drips one into a connection
+    // would otherwise be inside a single read of it for as long as it liked.
+    let shaken = {
+        let _scope = http::Scope::new(wiring.limits.io_timeout);
+        tls.conn.complete_io(&mut tls.sock).is_ok()
+    };
+    if shaken {
+        serve_one(wiring, &mut tls, &Route::Tls { host, port });
+    }
     // Say goodbye, and only write: a flush would also wait to read, from a client that may have
     // nothing more to say (a handshake that failed leaves one silent, not gone).
     tls.conn.send_close_notify();

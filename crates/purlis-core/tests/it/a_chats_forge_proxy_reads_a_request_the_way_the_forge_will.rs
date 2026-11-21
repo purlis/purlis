@@ -561,3 +561,66 @@ fn a_chat_locked_out_by_guessing_is_let_back_in_when_the_lockout_ends() {
     std::thread::sleep(Duration::from_millis(250));
     assert!(matches!(send(sentinel.expose()), Outcome::Forward(_)));
 }
+
+#[test]
+fn a_read_that_follows_a_cross_reference_into_another_repo_is_refused_on_github() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for target in [
+        "/repos/acme/app/issues/5/timeline",
+        "/repos/acme/app/issues/5/sub_issues",
+        "/repos/acme/app/issues/5/parent",
+        "/repos/acme/app/issues/5/dependencies/blocked_by",
+        "/repos/acme/app/issues/5/dependencies/blocking",
+        "/repos/acme/app/issues/5/events",
+        "/repos/acme/app/commits/abc123/pulls",
+        "/repos/acme/app/commits/abc123/branches-where-head",
+        "/repos/acme/app/compare/main...other:topic",
+        "/repos/acme/app/compare/other/app:main...topic",
+    ] {
+        let out = s.send("GET", "api.github.com", target, b"");
+        assert!(matches!(out, Outcome::Refused(_)), "{target}: {out:?}");
+    }
+    for target in [
+        "/repos/acme/app/issues/5",
+        "/repos/acme/app/issues/5/comments",
+        "/repos/acme/app/pulls/7/files",
+        "/repos/acme/app/pulls/7/reviews",
+        "/repos/acme/app/commits/abc123",
+        "/repos/acme/app/commits/abc123/check-runs",
+        "/repos/acme/app/compare/main...acme:topic",
+        "/repos/acme/app/compare/main...topic",
+    ] {
+        let out = s.send("GET", "api.github.com", target, b"");
+        assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
+    }
+}
+
+#[test]
+fn a_read_that_follows_a_cross_reference_into_another_project_is_refused_on_gitlab() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    for target in [
+        "/api/v4/projects/42/issues/5/links",
+        "/api/v4/projects/42/issues/5/related_merge_requests",
+        "/api/v4/projects/42/issues/5/closed_by",
+        "/api/v4/projects/42/merge_requests/3/closes_issues",
+        "/api/v4/projects/42/merge_requests/3/related_issues",
+        "/api/v4/projects/42/merge_requests/3/related_merge_requests",
+        "/api/v4/projects/42/repository/compare?from=a&to=b&from_project_id=99",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Refused(_)), "{target}: {out:?}");
+    }
+    for target in [
+        "/api/v4/projects/42/issues/5",
+        "/api/v4/projects/42/issues/5/notes",
+        "/api/v4/projects/42/merge_requests/3/changes",
+        "/api/v4/projects/42/merge_requests/3/discussions",
+        "/api/v4/projects/42/repository/compare?from=a&to=b",
+        "/api/v4/projects/42/repository/compare?from=a&to=b&from_project_id=42",
+    ] {
+        let out = s.send("GET", "gitlab.com", target, b"");
+        assert!(matches!(out, Outcome::Forward(_)), "{target}: {out:?}");
+    }
+}
