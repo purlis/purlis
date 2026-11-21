@@ -177,9 +177,19 @@ fn holds(scenario: &Scenario, word: Window, chat: u32) -> bool {
 
 /// **Whether `query` is what the window shows** for `chat`: a word that holds ([`holds`]), or a
 /// number the window's own query gives that equals the cell's.
-fn shows(scenario: &Scenario, query: Query, chat: u32) -> bool {
+fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
     match query {
-        Query::Holds(word) => holds(scenario, word, chat),
+        Query::Holds(word) => holds(scenario, *word, chat),
+        Query::AskFor(key) => hosts.get(key).is_some_and(|name| {
+            scenario.queries().counted().asks.iter().any(|ask| {
+                super::person::is_the_ask_for(
+                    ask.session,
+                    &super::person::shown_target(ask),
+                    chat,
+                    name,
+                )
+            })
+        }),
         Query::Equals(word, n) => {
             let queries = scenario.queries();
             let seen = match word {
@@ -191,7 +201,7 @@ fn shows(scenario: &Scenario, query: Query, chat: u32) -> bool {
                     .last()
                     .map_or(0, |finish| u64::from(finish.blocked)),
             };
-            seen == n
+            seen == *n
         }
     }
 }
@@ -500,7 +510,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 .iter()
                 .map(|q| {
                     let (query, forbid) = play::window_of(q).expect("checked before the run");
-                    shows(&scenario, query, id) != forbid
+                    shows(&scenario, &query, id, &hosts) != forbid
                 })
                 .collect();
             played.push(Played {
@@ -652,18 +662,40 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
             .collect();
         let (verdict, mut reason) = play::verdict(cell, &run, &assertions, &globals);
         if verdict == ReportVerdict::Fail {
-            // What each step's window held, so a mark is pinned from the record and not guessed.
+            // What each step's window held (its events, and the chat's lines to the next step's
+            // first tool result), so a mark is pinned from the record and not guessed.
             let seen = played
                 .iter()
                 .zip(&ends)
-                .filter(|(p, _)| p.cell == cell.id)
-                .map(|(p, end)| {
+                .zip(&transcript_ends)
+                .filter(|((p, _), _)| p.cell == cell.id)
+                .map(|((p, end), transcript_end)| {
                     let kinds: Vec<&str> = events
                         .iter()
                         .filter(|e| e.seq > p.since && e.seq <= *end)
                         .map(|e| e.kind.as_str())
                         .collect();
-                    format!("step {} saw [{}]", p.step + 1, kinds.join(" "))
+                    let to = (*transcript_end).min(all.len());
+                    let said: Vec<String> = all[p.transcript_from.min(to)..to]
+                        .iter()
+                        .map(|line| {
+                            let text = line["text"].as_str().unwrap_or_default();
+                            format!(
+                                "{}: {}",
+                                line["kind"].as_str().unwrap_or("?"),
+                                text.chars()
+                                    .take(140)
+                                    .collect::<String>()
+                                    .replace('\n', " ")
+                            )
+                        })
+                        .collect();
+                    format!(
+                        "step {} saw [{}] and the chat [{}]",
+                        p.step + 1,
+                        kinds.join(" "),
+                        said.join(" / ")
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join("; ");

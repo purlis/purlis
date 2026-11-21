@@ -80,6 +80,8 @@ impl std::fmt::Display for Malformed {
 ///
 /// A `window` entry with `forbid: true` asks for the word not to hold.
 ///
+/// **And `ask.listed_for $hN`** ([`Query::AskFor`]): the chat's ask for that host is listed.
+///
 /// **And the counted words** ([`Counted`]), written `word == N` as #7318's cells do: the number the
 /// window shows for the chat, equal to `N`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -156,11 +158,15 @@ impl Counted {
     }
 }
 
-/// **What a `window` entry asks**: a word that holds, or a number that equals.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// **What a `window` entry asks**: a word that holds, a number that equals, or whether the chat's
+/// ask for one of the cell's hosts is listed (`ask.listed_for $h2`: the same ask a press on that
+/// host is made on, so another host's lingering ask is not taken for it).
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Query {
     Holds(Window),
     Equals(Counted, u64),
+    /// The ask for the host the cell binds under this key (`h2`).
+    AskFor(String),
 }
 
 /// **A `window` entry, as the runner plays it**: a word of the list, and whether it must not hold.
@@ -176,11 +182,16 @@ pub fn window_of(query: &WindowQuery) -> Result<(Query, bool), Malformed> {
             .map(Window::word)
             .into_iter()
             .chain(Counted::ALL.map(|c| c.word()))
+            .chain(["ask.listed_for $hN"])
             .collect::<Vec<_>>()
             .join(", ")
     };
     let text = query.query.as_str();
     let parsed = match text.split_once("==") {
+        None if text.starts_with("ask.listed_for ") => text
+            .strip_prefix("ask.listed_for $")
+            .filter(|key| !key.is_empty())
+            .map(|key| Query::AskFor(key.to_owned())),
         Some((word, n)) => Counted::ALL
             .into_iter()
             .find(|c| c.word() == word.trim())
@@ -334,8 +345,15 @@ pub fn malformed_step(
         }
     }
     for query in &step.window {
-        if let Err(why) = window_of(query) {
-            found.push(why);
+        match window_of(query) {
+            Err(why) => found.push(why),
+            Ok((Query::AskFor(key), _)) if !hosts.contains_key(&key) => {
+                found.push(Malformed(format!(
+                    "window `{}` names a host the cell does not bind",
+                    query.query
+                )))
+            }
+            Ok(_) => {}
         }
     }
     found
@@ -677,7 +695,20 @@ mod tests {
             };
             assert_eq!(window_of(&q), Ok((Query::Equals(word, 2), false)));
         }
+        let hosted = WindowQuery {
+            query: "ask.listed_for $h1".to_owned(),
+            forbid: true,
+            at: None,
+        };
+        assert_eq!(
+            window_of(&hosted),
+            Ok((Query::AskFor("h1".to_owned()), true))
+        );
+        let unbound = step(json!({"window": [{"query": "ask.listed_for $h9"}]}));
+        assert_eq!(malformed_step(&unbound, &hosts(), &seconds()).len(), 1);
         for bad in [
+            "ask.listed_for h1",
+            "ask.listed_for",
             "blocks.marker_blocked",
             "blocks.marker_blocked == two",
             "ask.listed == 1",
