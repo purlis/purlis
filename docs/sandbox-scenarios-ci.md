@@ -44,6 +44,28 @@ decisions; this page says what runs when, and what each job is allowed to cost.
 - **The Linux release-profile job** builds the bundle as `release.yml` does and runs one check for
   each Linux entry of `switches.json` (`tools/release-profile-checks.mjs`).
 
+## The Claude Code leg (T1.1-10)
+
+On macOS purlis does not wrap Claude Code: it hands the chat the `sandbox` object and the
+`permissions.deny` rules of `sandbox::claude` in `--settings`, and Claude Code builds its own
+seatbelt, with its Bash tool's network going through purlis's proxy. The fake harness cannot play
+that, so `app/src-tauri/src/scenarios/claude_leg.rs` runs the real binary in the scenario host.
+It is part of the suite on macOS (`scenarios::claude_leg::`), so it runs where the suite does: on
+a pull request with `macos-scenarios`, in the merge queue and in the nightly. On Linux its tests
+report `not_run`: purlis wraps Claude Code there (ticket 53's leg).
+
+- **The binary** is the version `tests/fixtures/harness-versions/claude.txt` pins, installed by a
+  step of `.github/actions/sandbox-scenarios` from the committed lockfile with no install scripts
+  and named by `PURLIS_CLAUDE_CODE`. On macOS CI a leg without it fails; it never skips.
+- **Started by the host's own chat start**, never by hand (`Scenario::starts_claude_code`).
+- **A stand-in model** (T1.1-03's, on a loopback port the scenario's child binds) asks for each
+  step's Bash call. No model is called and no credential is used. Claude Code's keep-list gains
+  four variables, named in the test plane's `[chat_env] pass` (`claude_leg::ADDED`) and listed
+  as substitutions in `switches.json`.
+- **The transcript is the stand-in's request log**: what the real harness showed the model.
+- **The canary** runs first: one write outside the project and one direct connect, both of which
+  Claude Code's own sandbox must refuse. A command that gets through fails the leg.
+
 ## A nightly entry that fails or is cancelled
 
 A job that exceeds its `timeout-minutes` reads as *cancelled*, not failed. The nightly's steps that

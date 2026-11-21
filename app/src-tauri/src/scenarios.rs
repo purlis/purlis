@@ -16,6 +16,9 @@
 #[path = "scenarios/checks.rs"]
 mod checks;
 #[cfg(unix)]
+#[path = "scenarios/claude_leg.rs"]
+mod claude_leg;
+#[cfg(unix)]
 #[path = "scenarios/forge.rs"]
 mod forge;
 #[cfg(unix)]
