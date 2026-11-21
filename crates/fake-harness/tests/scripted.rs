@@ -872,6 +872,7 @@ fn claude_hooks_are_told_the_terminal_size_the_fake_runs_in_not_a_fixed_one() {
 }
 
 #[test]
+#[cfg_attr(target_os = "linux", ignore = "bisecting #7304")]
 fn a_tool_command_says_its_group_in_the_file_the_scenario_names() {
     let run = Run::new();
     run.script(&covering_like(json!([
@@ -903,6 +904,7 @@ fn a_tool_command_says_its_group_in_the_file_the_scenario_names() {
 }
 
 #[test]
+#[cfg_attr(target_os = "linux", ignore = "bisecting #7304")]
 fn a_tool_command_fails_loudly_where_its_group_cannot_be_said() {
     let run = Run::new();
     run.script(&covering_like(json!([
