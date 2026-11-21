@@ -1730,7 +1730,7 @@ pub struct ConfinePlan {
 }
 
 /// A chat's forge route as its proxy is told it ([`ConfinePlan::forge`]).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ForgeEgress {
     /// The forge hosts its proxy never tunnels to.
     pub denied: Vec<String>,
@@ -1739,6 +1739,23 @@ pub struct ForgeEgress {
     pub port: u16,
     /// The forge hosts handed to the listener.
     pub hosts: Vec<String>,
+    /// The run's hand-off secret, in hex: what its proxy proves to the door and the door proves
+    /// back. Empty in a plan that has none, which is refused.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub handoff: String,
+}
+
+// Written by hand so the secret is in no Debug line.
+impl std::fmt::Debug for ForgeEgress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ForgeEgress")
+            .field("denied", &self.denied)
+            .field("door", &self.door)
+            .field("port", &self.port)
+            .field("hosts", &self.hosts)
+            .field("handoff", &"..")
+            .finish()
+    }
 }
 
 /// A host a confinement's proxy carries, and the layer that lists it (1.4).

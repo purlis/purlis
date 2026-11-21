@@ -57,9 +57,10 @@ pub use ca::{CaError, ChatCa};
 pub use lfs::LfsStorage;
 pub use upstream::{StrictUpstream, Upstream, UpstreamError, UpstreamRequest, UpstreamResponse};
 
-use self::http::{Framed, HeadError, message, write_answer};
+use self::http::{Framed, HeadError, message, write_answer, write_head};
 use self::serve::{Route, serve_one};
 use super::{ChatEndpoint, ChatId, ConnectVerdict, EndpointKind, ForgeProxy, LoopbackEndpoint};
+use crate::sandbox::egress::handoff::{self, Secret};
 
 /// What a connection is read under.
 #[derive(Debug, Clone, Copy)]
@@ -177,6 +178,8 @@ pub struct PushUpdate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PushRead {
     pub host: String,
+    /// The port the push goes to: a repo confirmed on `host:443` is not the one on `host:8443`.
+    pub port: u16,
     /// The repo's path as the proxy recorded it (`owner/name`).
     pub repo: String,
     pub updates: Vec<PushUpdate>,
@@ -215,14 +218,23 @@ pub struct Wiring {
     pub storage: Arc<LfsStorage>,
     /// See every request read ([`Observe`]); none in the app.
     pub observe: Option<Arc<dyn Observe>>,
-    /// The check of a push's objects ([`PushGate`]); none sends every push the core allowed.
-    pub push: Option<Arc<dyn PushGate>>,
+    /// The run's hand-off secret: the door answers a `CONNECT` only when it proves this
+    /// ([`crate::sandbox::egress::handoff`]), and proves it back.
+    pub handoff: Secret,
+    /// The check of a push's objects ([`PushGate`]), **always one**: a listener with no gate would
+    /// forward every push the core allowed, CI files and all.
+    pub push: Arc<dyn PushGate>,
 }
 
 impl Wiring {
     /// The app's wiring: strict TLS to the forge with the system's roots, public addresses only.
     #[must_use]
-    pub fn new(chat: ChatId, proxy: Arc<ForgeProxy>) -> Self {
+    pub fn new(
+        chat: ChatId,
+        proxy: Arc<ForgeProxy>,
+        push: Arc<dyn PushGate>,
+        handoff: Secret,
+    ) -> Self {
         Self {
             chat,
             proxy,
@@ -231,15 +243,20 @@ impl Wiring {
             limits: Limits::default(),
             storage: Arc::new(LfsStorage::default()),
             observe: None,
-            push: None,
+            handoff,
+            push,
         }
     }
+}
 
-    /// This wiring, its pushes checked by `gate` before they are forwarded.
-    #[must_use]
-    pub fn with_push_gate(mut self, gate: Arc<dyn PushGate>) -> Self {
-        self.push = Some(gate);
-        self
+/// A gate that lets every push through, for a test of something else than the gate.
+#[cfg(any(test, feature = "fenced"))]
+pub struct ForwardAll;
+
+#[cfg(any(test, feature = "fenced"))]
+impl PushGate for ForwardAll {
+    fn check(&self, _: &ChatId, _: &PushRead) -> PushVerdict {
+        PushVerdict::Forward
     }
 }
 
@@ -464,6 +481,28 @@ fn spawn_connection(
     }
 }
 
+/// The door's `200`, carrying its proof of the connection's nonce.
+fn established(out: &mut TcpStream, proof: &str) -> io::Result<()> {
+    write!(
+        out,
+        "HTTP/1.1 200 Connection Established\r\n{}: {proof}\r\n\r\n",
+        handoff::REPLY_HEADER
+    )?;
+    out.flush()
+}
+
+/// [`write_answer`], carrying the door's proof of the connection's nonce.
+fn answer_proving(out: &mut TcpStream, status: u16, body: &str, proof: &str) -> io::Result<()> {
+    let headers = vec![
+        ("Content-Type".to_string(), "application/json".to_string()),
+        ("Content-Length".to_string(), body.len().to_string()),
+        (handoff::REPLY_HEADER.to_string(), proof.to_string()),
+    ];
+    write_head(out, status, &headers)?;
+    out.write_all(body.as_bytes())?;
+    out.flush()
+}
+
 /// One connection on the `CONNECT` door: the `CONNECT` line, the core's verdict on its host, and
 /// then a terminated request or a tunnel.
 pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
@@ -488,8 +527,30 @@ pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
         );
         return;
     }
+    // **Only the chat's own egress proxy comes in by this door** ([`handoff`]): a connection that
+    // does not prove the run's secret is answered with nothing that proves the door, and carried
+    // nowhere.
+    let proven = head
+        .headers
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(handoff::HEADER))
+        .and_then(|(_, value)| wiring.handoff.accept(value));
+    let Some(nonce) = proven else {
+        let _ = write_answer(
+            &mut framed.stream,
+            407,
+            &message("this port takes the chat's own egress proxy and nothing else"),
+        );
+        return;
+    };
+    let proof = wiring.handoff.reply(&nonce);
     let Some((host, port)) = authority(&head.target) else {
-        let _ = write_answer(&mut framed.stream, 400, &message("not a host and port"));
+        let _ = answer_proving(
+            &mut framed.stream,
+            400,
+            &message("not a host and port"),
+            &proof,
+        );
         return;
     };
     // The client waits for the answer before it speaks; one that did not has sent bytes the
@@ -499,18 +560,15 @@ pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
     };
     match wiring.proxy.connect(&wiring.chat, &host, port) {
         ConnectVerdict::Refuse(refusal) => {
-            let _ = write_answer(
+            let _ = answer_proving(
                 &mut client,
                 403,
                 &message(&format!("purlis refused this connection: {refusal:?}")),
+                &proof,
             );
         }
         ConnectVerdict::Terminate { host } => {
-            if client
-                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                .and_then(|()| client.flush())
-                .is_err()
-            {
+            if established(&mut client, &proof).is_err() {
                 return;
             }
             serve_terminated(wiring, ca, &host, port, client);
@@ -519,19 +577,16 @@ pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
             let upstream = match wiring.dial.dial(&host, port) {
                 Ok(upstream) => upstream,
                 Err(e) => {
-                    let _ = write_answer(
+                    let _ = answer_proving(
                         &mut client,
                         502,
                         &message(&format!("purlis could not reach {host}: {e}")),
+                        &proof,
                     );
                     return;
                 }
             };
-            if client
-                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                .and_then(|()| client.flush())
-                .is_err()
-            {
+            if established(&mut client, &proof).is_err() {
                 return;
             }
             tunnel(client, upstream, wiring.limits.io_timeout);

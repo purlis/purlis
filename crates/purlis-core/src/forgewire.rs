@@ -385,6 +385,8 @@ pub struct Inputs {
     pub door: std::net::SocketAddr,
     /// The hosts the listener terminates (what the egress proxy hands over).
     pub hosts: Vec<String>,
+    /// The run's hand-off secret for the door ([`crate::sandbox::egress::handoff`]).
+    pub handoff: crate::sandbox::egress::handoff::Secret,
     /// The private folder every run's route is made in. A chat is held out of it, and reaches its
     /// own socket by the grant that names it.
     pub root: PathBuf,
@@ -423,6 +425,7 @@ impl PartialEq for Inputs {
             && self.helper_exe == other.helper_exe
             && self.repos == other.repos
             && self.door == other.door
+            && self.handoff == other.handoff
             && self.hosts == other.hosts
             && self.root == other.root
     }

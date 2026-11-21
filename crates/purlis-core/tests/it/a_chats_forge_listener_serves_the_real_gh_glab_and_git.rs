@@ -290,6 +290,8 @@ struct Setup {
     forge: Arc<Forge>,
     socket: ForgeListener,
     connect: ForgeListener,
+    /// The relay a chat's egress proxy stands for: git's `HTTPS_PROXY`, in front of the door.
+    relay: u16,
     seen: Arc<Seen>,
     ca_file: PathBuf,
     dir: tempfile::TempDir,
@@ -338,11 +340,16 @@ fn setup() -> Setup {
     let connect = ForgeListener::serve_connect(world.wiring.clone()).unwrap();
     let ca_file = dir.path().join("ca.pem");
     std::fs::write(&ca_file, connect.ca_certificate_pem().unwrap()).unwrap();
+    let EndpointKind::Loopback(door) = connect.kind().clone() else {
+        unreachable!()
+    };
+    let relay = crate::support::forge_listener::relay_to_door(door, world.wiring.handoff.clone());
     Setup {
         world,
         forge,
         socket,
         connect,
+        relay,
         seen,
         ca_file,
         dir,
@@ -416,10 +423,7 @@ fn run(mut command: Command) -> (bool, String) {
 
 impl Setup {
     fn port(&self) -> u16 {
-        match self.connect.kind() {
-            EndpointKind::Loopback(a) => a.port(),
-            _ => unreachable!(),
-        }
+        self.relay
     }
 
     fn gh(&self, args: &[&str]) -> (bool, String) {

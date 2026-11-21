@@ -142,6 +142,20 @@ pub fn for_the_window(host: &str) -> Option<String> {
     helper_command(&window.exe, &window.config_root, &account.id)
 }
 
+/// The `credential.helper` value for a git **the app itself runs** against `account`'s host, off
+/// the window's own thread scope (the push gate's fetch of a held push's base runs on a listener's
+/// thread, not the window's): purlis's helper for exactly that account, which reads the token from
+/// the keyring and answers git's pipe, so no file, argument or variable of the app's holds it.
+/// `None` where the account's id or a path cannot be quoted for the shell.
+pub fn helper_for_account(
+    _: &HostScope,
+    exe: &Path,
+    config_root: &Path,
+    account: &ForgeAccount,
+) -> Option<String> {
+    helper_command(exe, config_root, &account.id)
+}
+
 /// Whether `account` is still signed in once its token was renewed, if it was about to expire:
 /// the window is the one process that refreshes, so it does before git starts the helper. A
 /// pasted or imported token is never read here. `false` only when the forge ended the sign-in;

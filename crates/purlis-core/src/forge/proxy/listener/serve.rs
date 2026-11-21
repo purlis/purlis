@@ -176,17 +176,15 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
         Outcome::Forward(forwarded) => {
             // A push is checked for CI files before any of it goes on (ADR 0128 D8.3): the
             // listener forwards only what the gate lets through.
-            if forwarded.class == Class::GitPush
-                && let Some(gate) = &w.push
-            {
-                let Some(push) = read_push(&forwarded, &body) else {
+            if forwarded.class == Class::GitPush {
+                let Some(push) = read_push(&forwarded, rh.port, &body) else {
                     return write_answer(
                         &mut framed.stream,
                         403,
                         &message("purlis could not read this push, so it was not sent"),
                     );
                 };
-                match gate.check(&w.chat, &push) {
+                match w.push.check(&w.chat, &push) {
                     PushVerdict::Forward => {}
                     PushVerdict::Refuse(why) | PushVerdict::Held(why) => {
                         return write_answer(&mut framed.stream, 403, &message(&why));
@@ -205,7 +203,7 @@ fn serve<S: Read + Write>(w: &Wiring, framed: &mut Framed<S>, route: &Route<'_>)
 
 /// A push's commands and pack, read from the body of its `git-receive-pack` request, or `None`
 /// where it is not pkt-lines the way git sends them.
-fn read_push(forwarded: &Forwarded, body: &[u8]) -> Option<PushRead> {
+fn read_push(forwarded: &Forwarded, port: u16, body: &[u8]) -> Option<PushRead> {
     let mut at = 0;
     let mut updates = Vec::new();
     loop {
@@ -234,6 +232,11 @@ fn read_push(forwarded: &Forwarded, body: &[u8]) -> Option<PushRead> {
         else {
             return None;
         };
+        // A commit id is forty hex digits (sixty-four in a SHA-256 repository), nothing else: a
+        // gate compares these with what it read, so a shorter or odd word is not a push it reads.
+        if !is_object_id(old) || !is_object_id(new) {
+            return None;
+        }
         updates.push(PushUpdate {
             old: old.to_owned(),
             new: new.to_owned(),
@@ -245,10 +248,16 @@ fn read_push(forwarded: &Forwarded, body: &[u8]) -> Option<PushRead> {
     }
     Some(PushRead {
         host: forwarded.host.clone(),
+        port,
         repo: forwarded.repo.clone(),
         updates,
         pack: body.get(at..)?.to_vec(),
     })
+}
+
+/// Forty or sixty-four hex digits.
+fn is_object_id(word: &str) -> bool {
+    matches!(word.len(), 40 | 64) && word.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
@@ -708,5 +717,65 @@ fn serve_storage<W: Write>(
             502,
             &message(&format!("purlis could not reach the storage: {e}")),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ZERO: &str = "0000000000000000000000000000000000000000";
+    const TIP: &str = "1111111111111111111111111111111111111111";
+
+    fn pkt(line: &str) -> Vec<u8> {
+        format!("{:04x}{line}", line.len() + 4).into_bytes()
+    }
+
+    fn push_of(commands: &[&str]) -> Vec<u8> {
+        let mut body = Vec::new();
+        for command in commands {
+            body.extend(pkt(command));
+        }
+        body.extend(b"0000PACK");
+        body
+    }
+
+    fn read(commands: &[&str]) -> Option<PushRead> {
+        let forwarded = Forwarded::for_storage("gitlab.com", "https://gitlab.com/x");
+        read_push(&forwarded, 443, &push_of(commands))
+    }
+
+    #[test]
+    fn a_push_is_read_with_the_host_port_and_pack_it_was_sent_to() {
+        let said = format!("{ZERO} {TIP} refs/heads/work\0 report-status");
+
+        let push = read(&[&said]).expect("a push");
+
+        assert_eq!((push.host.as_str(), push.port), ("gitlab.com", 443));
+        assert_eq!(push.updates.len(), 1);
+        assert_eq!(push.updates[0].new, TIP);
+        assert_eq!(push.pack, b"PACK");
+    }
+
+    #[test]
+    fn an_id_that_is_not_forty_or_sixty_four_hex_digits_is_not_a_push_that_is_read() {
+        for bad in [
+            format!("{ZERO} abc123 refs/heads/work"),
+            format!("{ZERO} {}zz refs/heads/work", &TIP[..38]),
+            format!("short {TIP} refs/heads/work"),
+            format!("{ZERO} {TIP}0 refs/heads/work"),
+        ] {
+            assert!(read(&[&bad]).is_none(), "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_sha256_id_is_read() {
+        let zero = "0".repeat(64);
+        let tip = "a".repeat(64);
+
+        let push = read(&[&format!("{zero} {tip} refs/heads/work")]).expect("a push");
+
+        assert_eq!(push.updates[0].new, tip);
     }
 }

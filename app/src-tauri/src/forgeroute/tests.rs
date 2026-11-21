@@ -70,6 +70,7 @@ impl Listener for FakeListener {
             egress_url: "http://127.0.0.1:9/".to_owned(),
             ca: dir.join("ca.pem"),
             door: std::net::SocketAddr::from(([127, 0, 0, 1], 9)),
+            handoff: purlis_core::sandbox::egress::handoff::Secret::random()?,
             hosts,
             guard: Box::new((Alive(self.alive.clone()), bound)),
         })

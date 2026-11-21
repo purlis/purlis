@@ -40,7 +40,10 @@ pub trait BaseObjects {
 
 /// **The forge's own objects**, fetched over HTTPS with the person's credential and no other
 /// ([`git::run_network`]'s one-credential rule): `url` is the repo's address without user
-/// information, and `helper` the credential helper purlis's own binary provides.
+/// information, and `helper` the credential helper purlis's own binary provides
+/// ([`crate::forge::gitcredential::helper_for_account`]). **The token is on no disk and in no
+/// argument or variable**: the helper reads it from the keyring and answers git's pipe, and
+/// answers only for the one account's host.
 pub struct FromForge {
     pub url: String,
     pub helper: Option<String>,
@@ -66,88 +69,6 @@ impl BaseObjects for FromForge {
             ))
         }
     }
-}
-
-/// **The forge's own objects, fetched as the person**: [`FromForge`] with a credential the app holds
-/// (one sign-in's token), handed to git through a helper script written inside the quarantine's own
-/// `.git`, readable by the app alone and removed as soon as the fetch ends. The token is in no
-/// argument, no variable and no file outside that folder.
-pub struct FromForgeAs {
-    pub url: String,
-    /// What the forge takes as the user name beside a token (`x-access-token`, `oauth2`).
-    pub username: String,
-    pub token: secrecy::SecretString,
-}
-
-impl BaseObjects for FromForgeAs {
-    fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
-        use secrecy::ExposeSecret as _;
-        if self.url.contains('@') {
-            return Err("a forge's address carries no user information".to_owned());
-        }
-        if self.username.is_empty()
-            || !self
-                .username
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        {
-            return Err("a user name git can hand over".to_owned());
-        }
-        let folder = into.join(".git");
-        let token_file = folder.join("purlis-fetch-token");
-        let script = folder.join("purlis-fetch-helper");
-        let written =
-            write_private(&token_file, self.token.expose_secret().as_bytes()).and_then(|()| {
-                write_private(
-                    &script,
-                    format!(
-                        "#!/bin/sh\necho username={}\nprintf 'password=%s\\n' \"$(cat '{}')\"\n",
-                        self.username,
-                        token_file.display()
-                    )
-                    .as_bytes(),
-                )
-            });
-        let run = written.map_err(|why| why.to_string()).and_then(|()| {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt as _;
-                std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700))
-                    .map_err(|why| why.to_string())?;
-            }
-            let helper = format!("!'{}'", script.display());
-            git::run_network(
-                into,
-                Some(&helper),
-                &["fetch", "--quiet", "--no-tags", &self.url, base.as_str()],
-            )
-            .map_err(|why| why.to_string())
-        });
-        let _ = std::fs::remove_file(&token_file);
-        let _ = std::fs::remove_file(&script);
-        let run = run?;
-        if run.ok() {
-            Ok(())
-        } else {
-            Err(first_line(
-                &run.err,
-                "git could not fetch the base from the forge",
-            ))
-        }
-    }
-}
-
-/// Writes `bytes` to a new file only the app reads.
-fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    use std::io::Write as _;
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o600);
-    }
-    options.open(path)?.write_all(bytes)
 }
 
 /// **A repository of the app's own, with nothing checked out**, removed when this is dropped.
@@ -242,6 +163,24 @@ impl Quarantine {
     /// **The trees of the quarantine**, and no other repository's.
     pub fn trees(&self) -> GitTrees {
         GitTrees::of_trusted_store(&self.path)
+    }
+}
+
+/// **Removes every quarantine under `parent`**, left by an app that ended without dropping them: a
+/// real folder named `quarantine-*`, never a link. The app calls it at start (the one-per-user lock
+/// means no other app owns a live one) and at exit.
+pub fn sweep(parent: &Path) {
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let named = entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("quarantine-");
+        if named && entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+            let _ = std::fs::remove_dir_all(entry.path());
+        }
     }
 }
 
