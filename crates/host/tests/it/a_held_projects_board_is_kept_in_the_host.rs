@@ -80,6 +80,7 @@ struct KeepingChannel(Kept);
 impl Channel for KeepingChannel {
     fn report_to(&self, number: u32) -> Result<Reporting, String> {
         Ok(Reporting {
+            seal: None,
             socket: "/the/project/hooks.sock".into(),
             token: format!("token-{number}"),
         })

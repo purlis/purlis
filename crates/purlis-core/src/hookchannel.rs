@@ -715,6 +715,13 @@ impl purlis_host::Channel for HookChannel {
         Ok(session::Reporting {
             socket: self.socket.display().to_string(),
             token: token.expose().to_owned(),
+            // The key this chat's spooled digests are sealed to, whose private half stays in
+            // this host's event log folder (#6880).
+            seal: self.log.recorder().and_then(|log| {
+                log.lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .seal_public(number)
+            }),
         })
     }
 

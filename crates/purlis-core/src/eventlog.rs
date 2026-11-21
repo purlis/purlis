@@ -1440,6 +1440,10 @@ pub fn phase(word: &str) -> Option<Phase> {
 /// not check, a sequence drained, and a refused commit's line drained from a spool.
 pub const SPOOL_GAP: &str = "hook.spool.gap";
 pub const SPOOL_REJECTED: &str = "hook.spool.rejected";
+
+/// The `why` of a `hook.spool.rejected` that is not a line refused: a tool line's sealed
+/// argument digest could not be opened, so the line was recorded without its `args` (#6880).
+pub const ARGS_UNREADABLE: &str = "args_unreadable";
 pub const SPOOL_DRAINED: &str = "hook.spool.drained";
 pub const COMMIT_REFUSED: &str = "hook.commit_refused";
 
@@ -1843,6 +1847,16 @@ impl Recorder {
         Some(data.join(EVENTS).join(device))
     }
 
+    /// The public key chat `chat`'s spooled argument digests are sealed to, its private half
+    /// kept in this log's folder (#6880). `None` for a recorder with no folder of its own, and
+    /// where the key cannot be kept: the chat then spools without a digest.
+    #[cfg(unix)]
+    pub fn seal_public(&self, chat: u32) -> Option<String> {
+        (!self.dir.as_os_str().is_empty())
+            .then(|| crate::hookwire::seal::public_for(&self.dir, chat).ok())
+            .flatten()
+    }
+
     pub fn new(log: Log, key: ArgsKey) -> Recorder {
         Recorder {
             dir: PathBuf::new(),
@@ -2186,9 +2200,40 @@ impl Recorder {
         item: crate::hookwire::spool::Drained,
     ) -> io::Result<Event> {
         use crate::hookwire::spool::{Drained, Spooled};
+        // A tool line's digest was sealed to its chat's key when it was spooled (#6880): opened
+        // here, so the line joins the live ones once keyed. A key that opens nothing leaves the
+        // line without a digest, and the log says so; the sealed text is never kept.
+        let mut item = item;
+        let mut unreadable = None;
+        if let Drained::Line {
+            seq,
+            line: Spooled::Tool(call),
+            ..
+        } = &mut item
+            && let Some(args) = call.args.as_deref()
+            && crate::hookwire::seal::is_sealed(args)
+        {
+            call.args = crate::hookwire::seal::open(&self.dir, call.chat, args);
+            if call.args.is_none() {
+                unreadable = Some(*seq);
+            }
+        }
         let number = item.chat();
         self.begun(plane, number)?;
         let known = self.chats.get(&(plane.to_path_buf(), number)).cloned();
+        if let Some(seq) = unreadable {
+            let body = serde_json::json!({
+                "seq": seq,
+                "why": ARGS_UNREADABLE,
+                "chat_number": number,
+            });
+            match &known {
+                Some(who) => {
+                    self.write(Some(&who.chat), Some(&who.run), None, SPOOL_REJECTED, body)?
+                }
+                None => self.write(None, None, None, SPOOL_REJECTED, body)?,
+            };
+        }
         let (kind, mut body) = match item {
             Drained::Line { seq, line, .. } => match (line, &known) {
                 (Spooled::Report(report), Some(_)) => {
