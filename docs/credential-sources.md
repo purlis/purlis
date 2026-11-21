@@ -146,6 +146,15 @@ address and by the name inside a tunnel. It does not hold:
   resolves to an address shared with unrelated sites (a CDN), those sites are refused too, for
   the hold's 20 minutes. A sibling that does not exist is asked again every 10 minutes, not 10
   seconds.
+- **A PROXY-protocol preamble on a self-hosted front end.** A front end that reads a PROXY
+  protocol header before the TLS hello would see the tunnel's first bytes as that header, not a
+  record; those bytes are no TLS record, so they are carried (to a name that is not exempt). A
+  forge reached that way is held by its address lists only, and the port inside the preamble is
+  not read.
+- **A server that tolerates a changed SNI in the second ClientHello.** After a HelloRetryRequest
+  the client sends a second ClientHello. Only the first record of a tunnel is read, so a server
+  that accepts a different server name in the second hello is pinned to the first one's name and
+  nothing later.
 - **An arbitrary non-forge name said inside a tunnel to an address of a forge that no list holds.**
   The pin refuses a forge's own names; a tunnel to an unlisted address that says `example.org`
   inside is carried by design, and held only by the address lists (GitHub's published ranges, and

@@ -654,3 +654,83 @@ fn a_sibling_that_does_not_exist_is_not_asked_again_for_minutes() {
         "a sibling's negative hold is minutes, not seconds"
     );
 }
+
+/// A denial of `gitlab.com` whose lookups answer `198.51.100.7` after a wait, once `slow` is on,
+/// and nothing while `answer` is off. `entered` counts the lookups that have started.
+fn slow_denial(
+    slow: &Arc<std::sync::atomic::AtomicBool>,
+    answer: &Arc<std::sync::atomic::AtomicBool>,
+    entered: &Arc<std::sync::atomic::AtomicUsize>,
+) -> ForgeDenial {
+    use std::sync::atomic::Ordering;
+    let (slow, answer, entered) = (slow.clone(), answer.clone(), entered.clone());
+    ForgeDenial::resolving(
+        &["gitlab.com".to_owned()],
+        Arc::new(move |name| {
+            entered.fetch_add(1, Ordering::SeqCst);
+            if slow.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(400));
+            }
+            if name == "gitlab.com" && answer.load(Ordering::SeqCst) {
+                vec![ip("198.51.100.7")]
+            } else {
+                Vec::new()
+            }
+        }),
+    )
+}
+
+/// Starts a first caller whose lookups are in flight, and asks `holds` of the forge's address from
+/// a second one meanwhile.
+fn second_caller_during_a_lookup(
+    forge: &ForgeDenial,
+    entered: &Arc<std::sync::atomic::AtomicUsize>,
+) -> bool {
+    use std::sync::atomic::Ordering;
+    let before = entered.load(Ordering::SeqCst);
+    std::thread::scope(|scope| {
+        scope.spawn(|| forge.holds(ip("203.0.113.9")));
+        while entered.load(Ordering::SeqCst) == before {
+            std::thread::yield_now();
+        }
+        forge.holds(ip("198.51.100.7"))
+    })
+}
+
+#[test]
+fn a_connection_arriving_during_a_lookup_waits_for_it_after_every_entry_expired() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let (slow, answer) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(true)),
+    );
+    let entered = Arc::new(AtomicUsize::new(0));
+    let forge = slow_denial(&slow, &answer, &entered);
+    assert!(forge.holds(ip("198.51.100.7")));
+    // The chat idled past HELD: every address and every name is expired.
+    for known in forge.resolved.lock().unwrap().values_mut() {
+        known.ask_after = Instant::now();
+        for until in known.addresses.values_mut() {
+            *until = Instant::now();
+        }
+    }
+    slow.store(true, Ordering::SeqCst);
+    assert!(second_caller_during_a_lookup(&forge, &entered));
+}
+
+#[test]
+fn a_connection_arriving_during_a_lookup_waits_for_it_after_a_failed_round() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    let (slow, answer) = (
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
+    );
+    let entered = Arc::new(AtomicUsize::new(0));
+    let forge = slow_denial(&slow, &answer, &entered);
+    // A round that answers nothing leaves every name known, with no address.
+    assert!(!forge.holds(ip("198.51.100.7")));
+    due_again(&forge);
+    answer.store(true, Ordering::SeqCst);
+    slow.store(true, Ordering::SeqCst);
+    assert!(second_caller_during_a_lookup(&forge, &entered));
+}

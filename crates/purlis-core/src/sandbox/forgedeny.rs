@@ -27,8 +27,8 @@
 //! 3. **The name inside the tunnel** ([`ForgeDenial::pins`]): GitHub serves `github.com` from
 //!    many addresses no list holds (Azure `/32`s and `/28`s that come and go), so a tunnel is
 //!    carried only where the SNI of its TLS ClientHello is no forge name, or is the exempt name
-//!    the tunnel was asked for. A first record shaped like TLS (`0x14` to `0x17`, version `03 0x`)
-//!    that is no readable ClientHello, an alert before the hello among them, is not carried.
+//!    the tunnel was asked for. A first record shaped like TLS (a content type of `0x14` to `0x18`,
+//!    whatever its version) that is no readable ClientHello, an alert before the hello among them, is not carried.
 //!    Bytes that are no TLS record at all are carried. A hello that hides its name (ECH) or has
 //!    none is refused on a tunnel to an address literal, where nothing else names the server.
 //! 4. **Port 22** to a forge name or address, a tunnelled name included: no ssh to a forge leaves
@@ -333,7 +333,7 @@ impl ForgeDenial {
 
     /// Asks again every name that is due, side by side, and adds what each answers to what it
     /// answered before. A name that answers nothing keeps what it had, and is left alone for
-    /// [`NEGATIVE`].
+    /// [`NEGATIVE`], or for [`SIBLING_NEGATIVE`] where it is one of a forge host's siblings.
     fn refresh(&self) {
         let due: Vec<String> = {
             let seen = self
@@ -394,25 +394,16 @@ impl ForgeDenial {
         if self.ranges.iter().any(|range| range.holds(ip)) {
             return true;
         }
-        // One round of lookups at a time: a connection that finds another asking uses what is
-        // known (the first lookup of all is waited for), and is not held up by the same names.
-        let lookup = if self
-            .resolved
+        // One round of lookups at a time, and always waited for: a connection that found another
+        // asking and answered from what is known could answer from an empty set (every entry
+        // expired after an idle chat, or a failed round), and let a connection through to a forge
+        // address. Once the round is over this call's refresh finds nothing due. No `resolved`
+        // guard is held here, and `refresh` takes `resolved` only under `asking`.
+        let lookup = self
+            .asking
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .is_empty()
-        {
-            Some(
-                self.asking
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner),
-            )
-        } else {
-            self.asking.try_lock().ok()
-        };
-        if lookup.is_some() {
-            self.refresh();
-        }
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.refresh();
         drop(lookup);
         let now = Instant::now();
         self.resolved
