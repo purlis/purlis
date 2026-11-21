@@ -95,13 +95,14 @@ keeps a GitHub token in your system keychain instead, and is the way on a GitHub
 server. The window's GitHub work then uses your sign-in, with no `gh` needed: the repo
 picker, discover, saves and the pull requests they open, and each workspace's pull request and
 checks. The page also shows whether `gh` and `glab` are installed and signed in: a host you
-have not signed in to through purlis still uses `gh`, and chats always do. If `gh` is
+have not signed in to through purlis still uses `gh` for the window's own work. A chat never uses
+`gh`'s login: it works through your purlis sign-in ([Your forge sign-in](../forges.md)). If `gh` is
 installed but not signed in, **Sign in to GitHub** runs `gh auth login` in a split beside the pane
 you are in, which goes when you're signed in.
 If `gh` is already signed in to github.com, the page also offers **Use my gh login**. It says
 first what it does: the token `gh` keeps is copied into purlis's own keychain item, which purlis
-never hands to a chat. A chat that runs `gh` itself can still use `gh`'s own stored login; sign
-out of `gh` if you don't want that. Nothing is imported unless you press it.
+never hands to a chat. A chat does not use `gh`'s own stored login, with or without that copy.
+Nothing is imported unless you press it.
 
 **Get a project from your forge** gets a teammate's project. Paste its URL, HTTPS or SSH, and
 purlis clones it into `~/Projects/<name>`, or into the place you picked last with **Choose a
