@@ -72,9 +72,11 @@ mod rest;
 mod sentinel;
 
 pub use audit::{AuditLog, AuditRecord, Verdict};
+pub use commands::has_merge_command;
 #[cfg(unix)]
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
+pub use graphql::mutation_repo;
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, NoObjects, ObjectRepo, Refusal,
 };

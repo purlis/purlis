@@ -64,7 +64,7 @@ const MERGE_LABELS: &[&str] = &[
 ];
 
 /// Whether any line of `text` is one of [`COMMANDS`], or the whole of it is a merge label.
-pub(crate) fn has_merge_command(text: &str) -> bool {
+pub fn has_merge_command(text: &str) -> bool {
     let label = text.trim().to_lowercase().replace(['_', ' '], "-");
     if MERGE_LABELS.contains(&label.as_str()) {
         return true;
