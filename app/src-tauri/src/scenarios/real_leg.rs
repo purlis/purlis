@@ -846,11 +846,12 @@ const TAMPER: &str = "written-by-the-chat-into-the-transcript";
 const POLLS: usize = 24;
 
 /// **A command the proxy holds, run in the background**, its result written to `file` as its own
-/// words and its exit (`net-exit=N`), and the call itself gone at once: with no stdin, so a
+/// words and its exit (`net-exit=N`), and the call itself gone at once (no `rm`: purlis's guard
+/// asks the person about a command that deletes, which Codex then waits on; the file is new): with no stdin, so a
 /// harness that waits on its terminal's last holder (Codex's tool did, for 300 s) has none to wait on.
 fn in_the_background(command: &str, file: &Path) -> String {
     format!(
-        "rm -f '{file}'; ( {command}; echo \"net-exit=$?\" ) > '{file}' 2>&1 < /dev/null & echo started",
+        "( {command}; echo \"net-exit=$?\" ) > '{file}' 2>&1 < /dev/null & echo started",
         file = file.display(),
     )
 }
