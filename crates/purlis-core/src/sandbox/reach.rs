@@ -343,6 +343,15 @@ impl Reach {
         out
     }
 
+    /// Whether policy pins `host` on `port` as never allowed. Asked before anything that would
+    /// carry the connection for a host a layer lists: an administrator's pin outranks a listing.
+    pub fn pinned_never(&self, host: &str, port: u16) -> bool {
+        let host = host.strip_suffix('.').unwrap_or(host);
+        let named = super::egress::host_and_port(host, port);
+        Host::parse(&named)
+            .is_ok_and(|parsed| self.never.iter().any(|pinned| pinned.covers(&parsed)))
+    }
+
     /// **The decision** for a connection to `host` on `port`, where a host listed without a
     /// port is carried on `defaults`, and `own` is this machine's interface addresses.
     pub fn decide(&self, host: &str, port: u16, defaults: &[u16], own: &[IpAddr]) -> Decision {

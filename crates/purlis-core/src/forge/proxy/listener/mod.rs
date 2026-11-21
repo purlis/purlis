@@ -530,11 +530,13 @@ pub fn serve_connect_stream(wiring: &Wiring, ca: &ChatCa, stream: TcpStream) {
     // **Only the chat's own egress proxy comes in by this door** ([`handoff`]): a connection that
     // does not prove the run's secret is answered with nothing that proves the door, and carried
     // nowhere.
-    let proven = head
-        .headers
-        .iter()
-        .find(|(name, _)| name.eq_ignore_ascii_case(handoff::HEADER))
-        .and_then(|(_, value)| wiring.handoff.accept(value));
+    let target = authority(&head.target);
+    let proven = target.as_ref().and_then(|(host, port)| {
+        head.headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case(handoff::HEADER))
+            .and_then(|(_, value)| wiring.handoff.accept(value, host, *port))
+    });
     let Some(nonce) = proven else {
         let _ = write_answer(
             &mut framed.stream,

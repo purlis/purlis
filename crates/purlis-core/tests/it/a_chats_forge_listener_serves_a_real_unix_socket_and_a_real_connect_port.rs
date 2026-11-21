@@ -131,10 +131,18 @@ impl Dial for ToEcho {
     }
 }
 
+/// The host and port a `CONNECT` line names.
+fn target_of(line: &str) -> (String, u16) {
+    let target = line.split_whitespace().nth(1).expect("a target");
+    let (host, port) = target.rsplit_once(':').expect("a port");
+    (host.to_owned(), port.parse().expect("a number"))
+}
+
 /// `line` (a `CONNECT` with its head's last blank line) as the chat's egress proxy sends it: with
 /// the proof of `secret` before that line.
 fn proven(secret: &Secret, line: &str) -> String {
-    let (proof, _) = secret.ask().unwrap();
+    let (host, port) = target_of(line);
+    let (proof, _) = secret.ask(&host, port).unwrap();
     let head = line
         .strip_suffix("\r\n")
         .expect("a head ends in a blank line");
@@ -338,7 +346,8 @@ fn every_answer_of_the_door_proves_the_door_to_the_nonce_it_was_asked() {
         "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n",
         "CONNECT evil.example:443 HTTP/1.1\r\n\r\n",
     ] {
-        let (proof, nonce) = w.wiring.handoff.ask().unwrap();
+        let (host, target_port) = target_of(line);
+        let (proof, nonce) = w.wiring.handoff.ask(&host, target_port).unwrap();
         let head = line.strip_suffix("\r\n").unwrap();
         let (_, answer) = connect_raw(port, &format!("{head}{}: {proof}\r\n\r\n", handoff::HEADER));
 

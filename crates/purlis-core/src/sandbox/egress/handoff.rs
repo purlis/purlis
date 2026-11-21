@@ -59,6 +59,15 @@ impl Secret {
         &self.0
     }
 
+    /// What a request's proof covers: the nonce and the target, so a proof captured on the wire
+    /// opens that `CONNECT` and no other.
+    fn bound(nonce: &str, host: &str, port: u16) -> String {
+        format!(
+            "{nonce}:{}:{port}",
+            host.trim_end_matches('.').to_ascii_lowercase()
+        )
+    }
+
     fn proof(&self, role: &str, nonce: &str) -> String {
         let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(self.0.as_bytes())
             .expect("HMAC takes a key of any length");
@@ -68,19 +77,22 @@ impl Secret {
         data_encoding::HEXLOWER.encode(&mac.finalize().into_bytes())
     }
 
-    /// The value of [`HEADER`] for a new `CONNECT`, and the nonce its answer must prove.
-    pub fn ask(&self) -> std::io::Result<(String, String)> {
+    /// The value of [`HEADER`] for a new `CONNECT host:port`, and the nonce its answer must prove.
+    /// The proof covers the target.
+    pub fn ask(&self, host: &str, port: u16) -> std::io::Result<(String, String)> {
         let nonce = random_hex()?;
-        Ok((format!("{nonce}.{}", self.proof("request", &nonce)), nonce))
+        let proof = self.proof("request", &Self::bound(&nonce, host, port));
+        Ok((format!("{nonce}.{proof}"), nonce))
     }
 
-    /// The nonce of a [`HEADER`] value whose proof is this secret's, or `None`.
-    pub fn accept(&self, header: &str) -> Option<String> {
+    /// The nonce of a [`HEADER`] value whose proof is this secret's **for `CONNECT host:port`**, or
+    /// `None`: a proof made for another target is not accepted.
+    pub fn accept(&self, header: &str, host: &str, port: u16) -> Option<String> {
         let (nonce, proof) = header.trim().split_once('.')?;
         if nonce.len() != BYTES * 2 || !nonce.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
-        let wanted = self.proof("request", nonce);
+        let wanted = self.proof("request", &Self::bound(nonce, host, port));
         bool::from(
             wanted
                 .as_bytes()
@@ -130,10 +142,10 @@ mod tests {
     #[test]
     fn a_door_accepts_the_proof_of_its_own_secret_and_proves_the_same_nonce_back() {
         let secret = secret();
-        let (header, nonce) = secret.ask().unwrap();
+        let (header, nonce) = secret.ask("github.com", 443).unwrap();
 
         let accepted = secret
-            .accept(&header)
+            .accept(&header, "github.com", 443)
             .expect("the door accepts its own proof");
 
         assert_eq!(accepted, nonce);
@@ -142,18 +154,40 @@ mod tests {
 
     #[test]
     fn a_proof_of_another_secret_or_a_made_up_one_is_not_accepted() {
-        let (header, _) = secret().ask().unwrap();
+        let (header, _) = secret().ask("github.com", 443).unwrap();
 
-        assert!(secret().accept(&header).is_none());
-        assert!(secret().accept("").is_none());
-        assert!(secret().accept("abc.def").is_none());
+        assert!(secret().accept(&header, "github.com", 443).is_none());
+        assert!(secret().accept("", "github.com", 443).is_none());
+        assert!(secret().accept("abc.def", "github.com", 443).is_none());
+    }
+
+    #[test]
+    fn a_proof_captured_for_one_connect_opens_no_other() {
+        let secret = secret();
+        let (header, nonce) = secret.ask("github.com", 443).unwrap();
+
+        assert_eq!(
+            secret.accept(&header, "GitHub.com.", 443),
+            Some(nonce),
+            "the same target, spelled as a host is"
+        );
+        for (host, port) in [
+            ("gitlab.com", 443),
+            ("github.com", 8443),
+            ("api.github.com", 443),
+        ] {
+            assert!(
+                secret.accept(&header, host, port).is_none(),
+                "{host}:{port} was opened by another target's proof"
+            );
+        }
     }
 
     #[test]
     fn an_answer_that_proves_another_nonce_or_nothing_is_not_the_doors() {
         let secret = secret();
-        let (_, nonce) = secret.ask().unwrap();
-        let (_, other) = secret.ask().unwrap();
+        let (_, nonce) = secret.ask("github.com", 443).unwrap();
+        let (_, other) = secret.ask("github.com", 443).unwrap();
 
         assert!(
             !secret.answers(&nonce, &secret.reply(&other)),

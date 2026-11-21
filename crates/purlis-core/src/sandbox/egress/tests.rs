@@ -2589,3 +2589,64 @@ fn a_chats_own_git_meets_the_denial_whatever_it_sets_for_itself() {
         );
     }
 }
+
+#[test]
+fn the_door_answer_is_given_to_the_chat_without_the_proof_that_is_for_the_egress_proxy() {
+    let head =
+        b"HTTP/1.1 200 Connection Established\r\nPurlis-Door: abc123\r\nX-Other: kept\r\n\r\nafter";
+    let shown = super::without_header(head, super::handoff::REPLY_HEADER);
+    assert_eq!(
+        String::from_utf8_lossy(&shown),
+        "HTTP/1.1 200 Connection Established\r\nX-Other: kept\r\n\r\nafter"
+    );
+    // Whatever its case, and a head without it is as it was.
+    let lower = b"HTTP/1.1 200 OK\r\npurlis-door: x\r\n\r\n";
+    assert_eq!(
+        String::from_utf8_lossy(&super::without_header(lower, super::handoff::REPLY_HEADER)),
+        "HTTP/1.1 200 OK\r\n\r\n"
+    );
+    let plain = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+    assert_eq!(
+        super::without_header(plain, super::handoff::REPLY_HEADER),
+        plain
+    );
+}
+
+#[test]
+fn a_forge_host_policy_pins_is_refused_for_the_route_and_its_door_is_never_dialled() {
+    // A door that notes every connection it is given.
+    let door = std::net::TcpListener::bind("127.0.0.1:0").expect("a door");
+    let addr = door.local_addr().expect("its address");
+    door.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        forge_route: Some(super::ForgeRoute {
+            addr,
+            hosts: vec!["github.com".to_owned()],
+            handoff: super::handoff::Secret::random().expect("a secret"),
+        }),
+        ..heard.serving(Reach::open(vec!["github.com".to_owned()]).never(vec![
+            crate::sandbox::hosts::Host::parse("github.com").expect("a host"),
+        ]))
+    })
+    .expect("a proxy");
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert!(
+        door.accept().is_err(),
+        "the door was dialled for a host policy pins"
+    );
+    let said = super::refusal_said(
+        "github.com",
+        443,
+        &crate::sandbox::reach::Decision::Refused(crate::sandbox::reach::Refused::Policy),
+    );
+    assert!(
+        said.contains("administrator's policy pins it as never allowed"),
+        "{said}"
+    );
+}

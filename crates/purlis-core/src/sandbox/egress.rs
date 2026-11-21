@@ -1573,6 +1573,18 @@ fn serve(mut client: TcpStream, allowed: &Arc<Allowed>) {
         && let Some(route) = &allowed.route
         && route.serves(&request.host)
     {
+        // An administrator's pin wins (ADR 0128 D3g): a forge host policy pins as never allowed is
+        // refused for the chat, the route included, whatever the route serves.
+        if allowed.reach.pinned_never(&request.host, request.port) {
+            let pinned = Decision::Refused(Refused::Policy);
+            allowed.refused(&request.host, request.port, &pinned);
+            answer(
+                &mut client,
+                "403 Forbidden",
+                &refusal_said(&request.host, request.port, &pinned),
+            );
+            return;
+        }
         hand_to_route(client, route, &request.host, request.port, &rest, allowed);
         return;
     }
@@ -1779,17 +1791,47 @@ pub fn open_door(
         .map_err(|_| DoorError::NotListening)?;
     let _ = door.set_write_timeout(Some(write_timeout));
     let _ = door.set_read_timeout(Some(DOOR_ANSWERS_WITHIN));
-    let (proof, nonce) = route.handoff.ask().map_err(|_| DoorError::NotSent)?;
+    let (proof, nonce) = route
+        .handoff
+        .ask(host, port)
+        .map_err(|_| DoorError::NotSent)?;
     let line = format!(
         "CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{}: {proof}\r\n\r\n",
         handoff::HEADER
     );
     door.write_all(line.as_bytes())
-        .and_then(|()| door.write_all(rest))
         .map_err(|_| DoorError::NotSent)?;
     let answered = door_answer(&mut door, &route.handoff, &nonce).ok_or(DoorError::NotTheDoor)?;
+    // The chat's own first bytes go to the door only once it has proved it is the door: a
+    // listener that is not the route is never given what the chat sent.
+    door.write_all(rest).map_err(|_| DoorError::NotSent)?;
     let _ = door.set_read_timeout(None);
-    Ok((door, answered))
+    Ok((door, without_header(&answered, handoff::REPLY_HEADER)))
+}
+
+/// `head` (a response head, whole, and any bytes after it) without the header line `name`: the
+/// door's proof is for the egress proxy, and the chat is never shown it.
+pub(crate) fn without_header(head: &[u8], name: &str) -> Vec<u8> {
+    let Some(end) = head
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .map(|at| at + 4)
+    else {
+        return head.to_vec();
+    };
+    let (top, after) = head.split_at(end);
+    let mut out = Vec::with_capacity(head.len());
+    for line in top.split_inclusive(|b| *b == b'\n') {
+        let named = line
+            .iter()
+            .position(|b| *b == b':')
+            .is_some_and(|colon| line[..colon].eq_ignore_ascii_case(name.as_bytes()));
+        if !named {
+            out.extend_from_slice(line);
+        }
+    }
+    out.extend_from_slice(after);
+    out
 }
 
 /// How long the door has to answer a `CONNECT` it was handed.
