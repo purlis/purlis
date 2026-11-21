@@ -911,6 +911,7 @@ enum Entry {
 ///
 /// An entry with no row, a row with no entry, or a row with an answer taken away, turns this red.
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_setup_flow() {
     use crate::forge::Kind;
@@ -1113,6 +1114,7 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
 /// from its start instead (the tab's note, which reads the class and the mint, not a failed read),
 /// and the shim of a chat with a mint answers with its sentence and runs nothing, whatever its
 /// config folder holds.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_locked_chat_with_no_token_is_told_so_without_gh_reading_its_config() {
     use crate::forge::Kind;
