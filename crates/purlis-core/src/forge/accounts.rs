@@ -1151,27 +1151,40 @@ fn keep(
         .map_err(|e| e.to_string())
         .and_then(|transport| check(transport.as_ref(), &forge, granted))
         .map_err(|why| unechoed(why, &secret))?;
-    if let Held::Grant(Granted {
-        scopes: Some(scopes),
-        ..
-    }) = &held
-    {
-        // The grant's own word on its scopes, where the forge gave one. On GitHub the token's own
-        // `X-OAuth-Scopes` is a second word, and **either naming `workflow` records it** (the
-        // union): a grant that says less than the token holds never hides it from the check that
-        // keeps such a token from a chat's route.
-        checked.scopes = Some(match (kind, checked.scopes.take()) {
-            (Kind::GitHub, Some(mut header)) => {
-                for scope in scopes {
-                    if !header.contains(scope) {
-                        header.push(scope.clone());
-                    }
+    // Two decisions, kept apart. **Whether the sign-in holds what purlis needs** asks every source
+    // that spoke: the grant's own word, and on GitHub the token's `X-OAuth-Scopes` read back as
+    // well, so a scope only one of them names is never taken as granted. **What is recorded** is,
+    // on GitHub, the union of the two, so `workflow` named by either stays in view of the check
+    // that keeps such a token from a chat's route.
+    let said: Option<Vec<String>> = match &held {
+        Held::Grant(Granted {
+            scopes: Some(scopes),
+            ..
+        }) => Some(scopes.clone()),
+        _ => None,
+    };
+    let back = checked.scopes.take();
+    let sources: Vec<Vec<String>> = match (kind, said, back) {
+        (Kind::GitHub, Some(said), Some(back)) => {
+            checked.scopes = Some(said.iter().chain(&back).fold(Vec::new(), |mut all, scope| {
+                if !all.contains(scope) {
+                    all.push(scope.clone());
                 }
-                header
-            }
-            _ => scopes.clone(),
-        });
-    }
+                all
+            }));
+            vec![said, back]
+        }
+        (_, Some(said), _) => {
+            checked.scopes = Some(said.clone());
+            vec![said]
+        }
+        (_, None, Some(back)) => {
+            checked.scopes = Some(back.clone());
+            vec![back]
+        }
+        (_, None, None) => Vec::new(),
+    };
+    let held_by_all = |want: &str| sources.iter().all(|scopes| grants(kind, scopes, want));
     if let Some(StepUp { account, more }) = &step_up {
         if account.login != checked.login {
             let login = &account.login;
@@ -1183,12 +1196,11 @@ fn keep(
                 forge.kind.display()
             ));
         }
-        // What the grant holds, as it says or the forge read it back: every scope asked for.
-        let held = checked.scopes.as_deref().unwrap_or_default();
+        // What the grant holds, as it says and the forge read it back: every scope asked for.
         let short: Vec<&str> = more
             .iter()
             .copied()
-            .filter(|want| !grants(kind, held, want))
+            .filter(|want| !held_by_all(want))
             .collect();
         if !short.is_empty() {
             return Err(format!(
@@ -1199,8 +1211,12 @@ fn keep(
             ));
         }
     }
-    if let Some(scopes) = &checked.scopes {
-        let missing = missing(kind, scopes);
+    if !sources.is_empty() {
+        let missing: Vec<&'static str> = needed(kind)
+            .iter()
+            .copied()
+            .filter(|want| !held_by_all(want))
+            .collect();
         if !missing.is_empty() {
             return Err(if granted {
                 lacks_granted(kind, &host, &missing)
