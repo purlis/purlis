@@ -55,6 +55,8 @@ pub struct ForgeEgress {
     pub port: u16,
     /// The forge hosts handed to it.
     pub hosts: Vec<String>,
+    /// The run's hand-off secret ([`egress::handoff`]).
+    pub handoff: egress::handoff::Secret,
 }
 
 /// What runs beside a chat's proxy.
@@ -181,6 +183,7 @@ impl Plan {
                 door: forge.door,
                 port: forge.port,
                 hosts: forge.hosts.clone(),
+                handoff: forge.handoff.expose().to_owned(),
             }),
         }
     }
@@ -212,12 +215,23 @@ impl Plan {
                 },
             },
             given: wired.given.clone(),
-            forge: wired.forge.as_ref().map(|forge| ForgeEgress {
-                denied: forge.denied.clone(),
-                door: forge.door,
-                port: forge.port,
-                hosts: forge.hosts.clone(),
-            }),
+            forge: wired
+                .forge
+                .as_ref()
+                .map(|forge| {
+                    Ok::<_, String>(ForgeEgress {
+                        denied: forge.denied.clone(),
+                        door: forge.door,
+                        port: forge.port,
+                        hosts: forge.hosts.clone(),
+                        // A plan with no secret is refused, never started with a door that
+                        // would be carried to unproven.
+                        handoff: egress::handoff::Secret::from_hex(&forge.handoff).ok_or_else(
+                            || "its forge route carries no hand-off secret".to_owned(),
+                        )?,
+                    })
+                })
+                .transpose()?,
         })
     }
 
@@ -340,6 +354,7 @@ impl Plan {
                 .unwrap_or_default(),
             forge_route: self.forge.as_ref().map(|forge| egress::ForgeRoute {
                 addr: SocketAddr::new(forge.door, forge.port),
+                handoff: forge.handoff.clone(),
                 hosts: forge.hosts.clone(),
             }),
             ..egress::Serving::of(reach)

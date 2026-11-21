@@ -1879,10 +1879,13 @@ and its tab says so (#3787).
 - **Status:** **purlis only**.
 - **Tier:** Machine, device-bound, rebuildable, transient — made for one held push and removed with
   the ask it was made for. Nothing in it is not on the forge or in the chat's own pack. It is made in
-  `quarantine/` of the app's private route root (slice K), at most sixteen at a time, each kept for
-  its ask and removed when that chat's session closes. The base is fetched with the person's own
-  token through a helper script written inside the quarantine's `.git` (mode 0600, removed as soon
-  as the fetch ends): the token is in no argument and no variable.
+  `quarantine/` of the app's private route root (slice K), at most sixteen kept at a time (and at
+  most four fetching at once), each kept for its ask and removed when that chat's session closes.
+  A start-up sweep and the app's exit remove any a crash left (`quarantine-*` folders only, never
+  a link). **The token is on no disk**: the base is fetched with the app's own git credential helper
+  (the app's binary, which reads the person's token from the keyring and answers git's pipe, for
+  that account's host alone), so no file under the route root ever holds it, and it is in no
+  argument and no variable.
 - **Written by:** `purlis_core::heldact::Quarantine`.
 - **Read by:** `purlis_core::heldact::GitTrees`, only through `Quarantine::trees`; a test fails
   on any other use of `GitTrees::of_trusted_store` in the source.

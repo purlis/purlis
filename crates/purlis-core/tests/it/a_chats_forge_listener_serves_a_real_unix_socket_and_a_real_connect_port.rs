@@ -16,6 +16,8 @@ use std::time::Duration;
 
 use purlis_core::forge::proxy::listener::{Dial, ForgeListener};
 use purlis_core::forge::proxy::{EndpointKind, Refusal};
+use purlis_core::sandbox::egress::handoff::{self, Secret};
+use purlis_core::sandbox::egress::{DoorError, ForgeRoute, open_door};
 
 use crate::support::forge_listener::{Answer, World, basic, client_config, gh_get, parse_reply};
 
@@ -129,7 +131,21 @@ impl Dial for ToEcho {
     }
 }
 
-fn connect(port: std::net::SocketAddr, line: &str) -> (TcpStream, String) {
+/// `line` (a `CONNECT` with its head's last blank line) as the chat's egress proxy sends it: with
+/// the proof of `secret` before that line.
+fn proven(secret: &Secret, line: &str) -> String {
+    let (proof, _) = secret.ask().unwrap();
+    let head = line
+        .strip_suffix("\r\n")
+        .expect("a head ends in a blank line");
+    format!("{head}{}: {proof}\r\n\r\n", handoff::HEADER)
+}
+
+fn connect(port: std::net::SocketAddr, secret: &Secret, line: &str) -> (TcpStream, String) {
+    connect_raw(port, &proven(secret, line))
+}
+
+fn connect_raw(port: std::net::SocketAddr, line: &str) -> (TcpStream, String) {
     let mut stream = TcpStream::connect(port).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(10)))
@@ -181,6 +197,7 @@ fn connect_terminates_a_recorded_host_tunnels_a_download_host_and_refuses_the_re
     w.fake.answer(Answer::ok(r#"{"login":"octocat"}"#));
     let (stream, head) = connect(
         port,
+        &w.wiring.handoff,
         "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n",
     );
     assert!(head.starts_with("HTTP/1.1 200"), "{head}");
@@ -201,6 +218,7 @@ fn connect_terminates_a_recorded_host_tunnels_a_download_host_and_refuses_the_re
     // A download host: a tunnel, never terminated. The bytes are the client's own, both ways.
     let (mut tunnel, head) = connect(
         port,
+        &w.wiring.handoff,
         "CONNECT codeload.github.com:443 HTTP/1.1\r\nHost: codeload.github.com:443\r\n\r\n",
     );
     assert!(head.starts_with("HTTP/1.1 200"), "{head}");
@@ -219,7 +237,7 @@ fn connect_terminates_a_recorded_host_tunnels_a_download_host_and_refuses_the_re
         "CONNECT [::1]:443 HTTP/1.1\r\n\r\n",
         "CONNECT github.com HTTP/1.1\r\n\r\n",
     ] {
-        let (_, head) = connect(port, line);
+        let (_, head) = connect(port, &w.wiring.handoff, line);
         let status = head.split(' ').nth(1).unwrap_or_default();
         if line.starts_with("CONNECT gitlab.com") {
             // The chat has a repo there: a recorded host is terminated.
@@ -270,9 +288,117 @@ fn a_client_that_speaks_before_the_connect_is_answered_is_closed() {
         .set_read_timeout(Some(Duration::from_secs(10)))
         .unwrap();
     stream
-        .write_all(b"CONNECT github.com:443 HTTP/1.1\r\n\r\n\x16\x03\x01early bytes")
+        .write_all(
+            format!(
+                "{}\x16\x03\x01early bytes",
+                proven(&w.wiring.handoff, "CONNECT github.com:443 HTTP/1.1\r\n\r\n")
+            )
+            .as_bytes(),
+        )
         .unwrap();
     let mut raw = Vec::new();
     let _ = stream.read_to_end(&mut raw);
     assert!(raw.is_empty(), "{:?}", String::from_utf8_lossy(&raw));
+}
+
+#[test]
+fn the_door_carries_nothing_for_a_connect_that_does_not_prove_the_runs_secret() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    let listener = ForgeListener::serve_connect(w.wiring.clone()).unwrap();
+    let EndpointKind::Loopback(port) = listener.kind().clone() else {
+        panic!("a port");
+    };
+    let line = "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n";
+    let other = Secret::random().unwrap();
+
+    for sent in [line.to_owned(), proven(&other, line)] {
+        let (_, head) = connect_raw(port, &sent);
+        assert!(head.starts_with("HTTP/1.1 407"), "{head}");
+        assert!(
+            handoff::header_of(&head, handoff::REPLY_HEADER).is_none(),
+            "an unproven connection is given no proof of the door: {head}"
+        );
+    }
+    assert!(
+        w.proxy.audit(&w.chat).is_empty(),
+        "nothing reached the core's verdict"
+    );
+}
+
+#[test]
+fn every_answer_of_the_door_proves_the_door_to_the_nonce_it_was_asked() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    let listener = ForgeListener::serve_connect(w.wiring.clone()).unwrap();
+    let EndpointKind::Loopback(port) = listener.kind().clone() else {
+        panic!("a port");
+    };
+    for line in [
+        "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n",
+        "CONNECT evil.example:443 HTTP/1.1\r\n\r\n",
+    ] {
+        let (proof, nonce) = w.wiring.handoff.ask().unwrap();
+        let head = line.strip_suffix("\r\n").unwrap();
+        let (_, answer) = connect_raw(port, &format!("{head}{}: {proof}\r\n\r\n", handoff::HEADER));
+
+        let said = handoff::header_of(&answer, handoff::REPLY_HEADER).expect("a proof");
+        assert!(w.wiring.handoff.answers(&nonce, said), "{answer}");
+    }
+}
+
+#[test]
+fn the_proxy_splices_nothing_to_a_port_that_answers_without_the_doors_proof() {
+    purlis_core::unsteered!();
+    // A port the run gave up, and something else bound: it answers a CONNECT as a door would.
+    let impostor = TcpListener::bind("127.0.0.1:0").unwrap();
+    let at = impostor.local_addr().unwrap();
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let heard = seen.clone();
+    std::thread::spawn(move || {
+        if let Ok((mut c, _)) = impostor.accept() {
+            let mut buf = [0u8; 1024];
+            let n = c.read(&mut buf).unwrap_or(0);
+            heard.lock().unwrap().extend_from_slice(&buf[..n]);
+            let _ = c.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n");
+            let _ = c.flush();
+            std::thread::sleep(Duration::from_millis(500));
+        }
+    });
+    let secret = Secret::random().unwrap();
+    let route = ForgeRoute {
+        addr: at,
+        handoff: secret.clone(),
+        hosts: vec!["github.com".to_owned()],
+    };
+
+    let opened = open_door(&route, "github.com", 443, b"", Duration::from_secs(5));
+
+    assert_eq!(opened.err(), Some(DoorError::NotTheDoor));
+    let sent = String::from_utf8_lossy(&seen.lock().unwrap()).into_owned();
+    assert!(
+        !sent.contains(secret.expose()),
+        "only a proof was sent, never the secret: {sent}"
+    );
+}
+
+#[test]
+fn the_proxy_opens_the_real_door_with_its_proof_and_gives_the_chat_the_doors_head() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    let listener = ForgeListener::serve_connect(w.wiring.clone()).unwrap();
+    let EndpointKind::Loopback(door) = listener.kind().clone() else {
+        panic!("a port");
+    };
+    let route = ForgeRoute {
+        addr: door,
+        handoff: w.wiring.handoff.clone(),
+        hosts: vec!["api.github.com".to_owned()],
+    };
+
+    let (_, head) = open_door(&route, "api.github.com", 443, b"", Duration::from_secs(5))
+        .expect("the door proves itself");
+    let head = String::from_utf8_lossy(&head).into_owned();
+
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
 }

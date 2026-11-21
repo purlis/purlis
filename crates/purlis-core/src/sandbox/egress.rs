@@ -631,12 +631,17 @@ pub struct Serving {
     pub forge_route: Option<ForgeRoute>,
 }
 
+pub mod handoff;
+
 /// A chat's forge route as its egress proxy sees it: the loopback address of the listener that
 /// terminates a forge connection, and the hosts it serves.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ForgeRoute {
     /// The listener's `CONNECT` door. Only a loopback address is ever dialled.
     pub addr: SocketAddr,
+    /// The run's hand-off secret: the proof the door requires, and the proof the proxy requires
+    /// back before it splices ([`handoff`]).
+    pub handoff: handoff::Secret,
     /// The forge hosts (lower case) whose `CONNECT` is handed over.
     pub hosts: Vec<String>,
 }
@@ -1706,10 +1711,12 @@ impl ForgeRoute {
     }
 }
 
-/// Carries a chat's `CONNECT host:port` to the listener's door: the line is sent on as the chat
-/// sent it, and what the listener answers (its `200` or its refusal) goes back whole, so the chat
-/// is answered by the proxy that decided and never by this one. A listener that is not there
-/// ends the connection with a `502`.
+/// Carries a chat's `CONNECT host:port` to the listener's door, **proving the run's hand-off
+/// secret** ([`handoff`]) and **reading the door's proof back before anything is spliced**: what
+/// the listener answers (its `200` or its refusal) goes back whole once the answer proves itself,
+/// so the chat is answered by the proxy that decided and never by this one. A listener that is not
+/// there, or a port that answers without the proof (one the run gave up and something else
+/// bound), ends the connection with a `502` and is never a pipe.
 fn hand_to_route(
     mut client: TcpStream,
     route: &ForgeRoute,
@@ -1718,26 +1725,103 @@ fn hand_to_route(
     rest: &[u8],
     allowed: &Arc<Allowed>,
 ) {
-    // Only this machine's own loopback is ever the listener's address, whatever a plan said.
-    let door = if route.addr.ip().is_loopback() {
-        TcpStream::connect_timeout(&route.addr, Duration::from_secs(5)).ok()
-    } else {
-        None
+    let (door, answered) = match open_door(route, host, port, rest, allowed.idle) {
+        Ok(opened) => opened,
+        Err(why) => {
+            answer(&mut client, "502 Bad Gateway", why.said());
+            return;
+        }
     };
-    let Some(mut door) = door else {
-        answer(
-            &mut client,
-            "502 Bad Gateway",
-            "purlis's forge route is not listening, so nothing was sent",
-        );
-        return;
-    };
-    let _ = door.set_write_timeout(Some(allowed.idle));
-    let line = format!("CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n\r\n");
-    if door.write_all(line.as_bytes()).is_err() || door.write_all(rest).is_err() {
+    if client.write_all(&answered).is_err() {
         return;
     }
     splice(client, door, u64::MAX, allowed.idle);
+}
+
+/// Why [`open_door`] did not give a door.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DoorError {
+    /// Nothing is listening at the door's address, or it is not this machine's loopback.
+    NotListening,
+    /// The proof could not be made, or the `CONNECT` could not be sent.
+    NotSent,
+    /// Something answered, and it did not prove it is the door.
+    NotTheDoor,
+}
+
+impl DoorError {
+    fn said(self) -> &'static str {
+        match self {
+            DoorError::NotListening => "purlis's forge route is not listening, so nothing was sent",
+            DoorError::NotSent => "purlis could not reach its forge route, so nothing was sent",
+            DoorError::NotTheDoor => {
+                "what answered at purlis's forge route is not the route, so nothing was sent"
+            }
+        }
+    }
+}
+
+/// **Opens a connection through the route's door** for `CONNECT host:port`: proves the run's
+/// secret, and returns the door's connection with the bytes to give the chat first (the door's
+/// head, whole) **only once the door's own proof is read** ([`door_answer`]).
+pub fn open_door(
+    route: &ForgeRoute,
+    host: &str,
+    port: u16,
+    rest: &[u8],
+    write_timeout: Duration,
+) -> Result<(TcpStream, Vec<u8>), DoorError> {
+    // Only this machine's own loopback is ever the listener's address, whatever a plan said.
+    if !route.addr.ip().is_loopback() {
+        return Err(DoorError::NotListening);
+    }
+    let mut door = TcpStream::connect_timeout(&route.addr, Duration::from_secs(5))
+        .map_err(|_| DoorError::NotListening)?;
+    let _ = door.set_write_timeout(Some(write_timeout));
+    let _ = door.set_read_timeout(Some(DOOR_ANSWERS_WITHIN));
+    let (proof, nonce) = route.handoff.ask().map_err(|_| DoorError::NotSent)?;
+    let line = format!(
+        "CONNECT {host}:{port} HTTP/1.1\r\nHost: {host}:{port}\r\n{}: {proof}\r\n\r\n",
+        handoff::HEADER
+    );
+    door.write_all(line.as_bytes())
+        .and_then(|()| door.write_all(rest))
+        .map_err(|_| DoorError::NotSent)?;
+    let answered = door_answer(&mut door, &route.handoff, &nonce).ok_or(DoorError::NotTheDoor)?;
+    let _ = door.set_read_timeout(None);
+    Ok((door, answered))
+}
+
+/// How long the door has to answer a `CONNECT` it was handed.
+const DOOR_ANSWERS_WITHIN: Duration = Duration::from_secs(10);
+
+/// The most of a door's answer read before its head ends.
+const MOST_DOOR_HEAD: usize = 16 * 1024;
+
+/// What the door answered, head and any bytes read after it, **only if its head proves the door**:
+/// a status line and [`handoff::REPLY_HEADER`] holding the secret's proof of `nonce`. `None` for
+/// anything else, and for an answer that did not come.
+fn door_answer(door: &mut TcpStream, secret: &handoff::Secret, nonce: &str) -> Option<Vec<u8>> {
+    let mut read = Vec::new();
+    let mut chunk = [0u8; 2048];
+    let end = loop {
+        if let Some(at) = read.windows(4).position(|w| w == b"\r\n\r\n") {
+            break at + 4;
+        }
+        if read.len() >= MOST_DOOR_HEAD {
+            return None;
+        }
+        match door.read(&mut chunk) {
+            Ok(0) | Err(_) => return None,
+            Ok(n) => read.extend_from_slice(&chunk[..n]),
+        }
+    };
+    let head = std::str::from_utf8(&read[..end]).ok()?;
+    if !head.starts_with("HTTP/1.1 ") {
+        return None;
+    }
+    let proof = handoff::header_of(head, handoff::REPLY_HEADER)?;
+    secret.answers(nonce, proof).then_some(read)
 }
 
 /// A confined connection held in its proxy's [`Live`], let go of when it ends.

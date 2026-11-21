@@ -20,8 +20,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use purlis_core::forge::accounts::{self, ForgeAccount};
-use purlis_core::forge::confirmed::{self, AsThePerson, ConfirmedRepo};
+use purlis_core::forge::accounts;
+use purlis_core::forge::confirmed::{self, Admission, AsThePerson, ConfirmedRepo, Serving};
 use purlis_core::forge::credential::chatroute::ChatRoute;
 use purlis_core::forge::proxy::listener::PushGate;
 use purlis_core::forge::proxy::{
@@ -53,13 +53,18 @@ impl Listener for CoreListener {
         push: Arc<dyn PushGate>,
     ) -> io::Result<Bound> {
         use purlis_core::forge::proxy::listener::{RunRoute, Wiring};
-        let wiring = Wiring::new(ChatId::new(run), proxy).with_push_gate(push);
+        // This run's hand-off secret: the door answers only the chat's own egress proxy, which is
+        // handed the secret with the door's address, and the proxy splices only an answer that
+        // proves the door.
+        let handoff = purlis_core::sandbox::egress::handoff::Secret::random()?;
+        let wiring = Wiring::new(ChatId::new(run), proxy, push, handoff.clone());
         let route = RunRoute::open(wiring, dir)?;
         Ok(Bound {
             socket: route.socket.clone(),
             egress_url: format!("http://{}", route.door),
             ca: route.ca_cert.clone(),
             door: route.door,
+            handoff,
             hosts: route.hosts.clone(),
             guard: Box::new(route),
         })
@@ -95,22 +100,16 @@ impl ConfirmedRecorded {
     }
 
     /// Every repo confirmed for a clone of `project`, with its clone.
-    pub fn confirmed_for(&self, project: &Path) -> Vec<ConfirmedRepo> {
+    pub fn confirmed_for(&self, project: &Path) -> Vec<(ConfirmedRepo, PathBuf)> {
         clones_of(project)
-            .iter()
-            .filter_map(|clone| confirmed::repos_of_clone(&self.config_root, clone).ok())
-            .flatten()
-            .collect()
-    }
-
-    fn account_of(&self, repo: &ConfirmedRepo) -> Option<ForgeAccount> {
-        if repo.account.is_empty() {
-            return None;
-        }
-        accounts::listed(&self.config_root)
-            .ok()?
             .into_iter()
-            .find(|account| account.id == repo.account)
+            .flat_map(|clone| {
+                confirmed::repos_of_clone(&self.config_root, &clone)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(move |repo| (repo, clone.clone()))
+            })
+            .collect()
     }
 }
 
@@ -126,8 +125,13 @@ impl Recorded for ConfirmedRecorded {
             reach: &crate::forgeaccounts::token_check,
         };
         let mut out: Vec<AllowedRepo> = Vec::new();
-        for repo in self.confirmed_for(project) {
-            let Some(account) = self.account_of(&repo) else {
+        let listed = accounts::listed(&self.config_root).unwrap_or_default();
+        for (repo, clone) in self.confirmed_for(project) {
+            // As a chat's own route serves a repo: the chosen account signed in, allowed and
+            // through the host's pinned application ([`confirmed::account_for`]).
+            let Serving::Account(account) =
+                confirmed::account_for(&self.config_root, &repo, &listed)
+            else {
                 continue;
             };
             let read = match lookup.read(&account, &repo.path) {
@@ -143,6 +147,20 @@ impl Recorded for ConfirmedRecorded {
             // The id read now is the id confirmed: a repo renamed away and replaced under its
             // old name is another repo, and has no route.
             if read.id != repo.repo_id || read.default_branch.is_empty() {
+                continue;
+            }
+            // And the clone trusted, with the repo confirmed by that id ([`confirmed::serves`]).
+            if !matches!(
+                confirmed::serves(
+                    &self.config_root,
+                    &clone,
+                    repo.kind,
+                    &repo.host,
+                    &repo.path,
+                    read.id
+                ),
+                Ok(Admission::Confirmed(_))
+            ) {
                 continue;
             }
             let (host, port) = confirmed::address_of(&repo.host);
@@ -171,7 +189,7 @@ impl Recorded for ConfirmedRecorded {
     /// The account the person chose for the project's repos on `host`: one account, or none.
     fn account(&self, project: &Path, host: &str) -> Option<String> {
         let mut found: Option<String> = None;
-        for repo in self.confirmed_for(project) {
+        for (repo, _) in self.confirmed_for(project) {
             let (bare, _) = confirmed::address_of(&repo.host);
             if forge_host(&bare) != host || repo.account.is_empty() {
                 continue;

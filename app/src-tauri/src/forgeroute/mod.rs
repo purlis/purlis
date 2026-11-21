@@ -219,6 +219,8 @@ pub struct Bound {
     pub ca: PathBuf,
     /// The listener's `CONNECT` door, on loopback.
     pub door: std::net::SocketAddr,
+    /// The run's hand-off secret for the door, given to the chat's egress proxy with its address.
+    pub handoff: purlis_core::sandbox::egress::handoff::Secret,
     /// The hosts the door terminates.
     pub hosts: Vec<String>,
     pub guard: Box<dyn Send + Sync>,
@@ -309,6 +311,8 @@ impl PushGate for BlindGate {
 /// Which session a run's chat is, while it is open.
 pub trait SessionOfRun: Send + Sync {
     fn session(&self, run: &str) -> Option<u32>;
+    /// Whether `session` is a chat that is open now.
+    fn is_open(&self, session: u32) -> bool;
 }
 
 /// The stub where no project holds acts: a held act stays refused.
@@ -513,6 +517,14 @@ impl SessionOfRun for RunSessions {
             .find(|(_, of)| of.as_str() == run)
             .map(|(session, _)| *session)
     }
+
+    fn is_open(&self, session: u32) -> bool {
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .of_run
+            .contains_key(&session)
+    }
 }
 
 struct Live {
@@ -670,6 +682,7 @@ impl ForgeRoutes {
                 helper_exe: self.helper_exe.clone(),
                 repos: wire_repos,
                 door: bound.door,
+                handoff: bound.handoff.clone(),
                 hosts: bound.hosts.clone(),
                 root: self.root.clone(),
             }),
@@ -1311,4 +1324,6 @@ pub fn stop_all() {
     if let Some(routes) = routes() {
         routes.stop_all();
     }
+    // No quarantine outlives the app: each holds a repository a held push was read in.
+    purlis_core::heldact::sweep_quarantines(&quarantine_dir());
 }

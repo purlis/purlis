@@ -5707,6 +5707,7 @@ impl Applied {
                 door: inputs.door.ip(),
                 port: inputs.door.port(),
                 hosts,
+                handoff: inputs.handoff.clone(),
             })
         }
         #[cfg(not(feature = "forge-wiring"))]

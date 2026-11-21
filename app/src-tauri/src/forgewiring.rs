@@ -21,10 +21,11 @@
 //! (`docs/plane-format.md`, "A held CI-file push's quarantine"); the asks are memory only.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use purlis_core::forge::accounts::{self, ForgeAccount};
-use purlis_core::forge::confirmed::{self, ConfirmedRepo};
+use purlis_core::forge::confirmed::{self, Admission, ConfirmedRepo, Serving};
 use purlis_core::forge::credential::{
     CredentialError as SourceError, CredentialSource as HostSource, SignedIn,
 };
@@ -34,7 +35,7 @@ use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{ChatId, ForgeProxy, HeldSink};
 use purlis_core::forge::route::HostScope;
 use purlis_core::forge::transport::Transport;
-use purlis_core::forge::{Forge, ForgeError, Kind};
+use purlis_core::forge::{Forge, ForgeError};
 use purlis_core::forgewire::{ExposeSecret, SecretString};
 use purlis_core::heldact::{
     Handoff, HeldContext, NoClone, OwnedWorld, PushCheck, Quarantine, Recorded, Requested,
@@ -49,6 +50,10 @@ use crate::planes::Held;
 /// The most quarantines kept for pushes that wait, in all: each is a repository on disk.
 const MOST_KEPT: usize = 16;
 
+/// The most quarantine fetches in flight at once, in all: each is a `git fetch` as the person and a
+/// repository on disk, and a chat can push as fast as it likes.
+const MOST_FETCHING: usize = 4;
+
 /// A chat's session and the repo a push is of.
 type Key = (u32, String);
 
@@ -57,9 +62,29 @@ type Key = (u32, String);
 #[derive(Default)]
 pub struct Quarantines {
     kept: Mutex<Vec<(Key, Arc<Quarantine>)>>,
+    fetching: AtomicUsize,
+}
+
+/// A place among the [`MOST_FETCHING`], given back when dropped.
+struct Fetching<'a>(&'a AtomicUsize);
+
+impl Drop for Fetching<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl Quarantines {
+    /// A place to fetch in, or `None` when [`MOST_FETCHING`] are fetching already.
+    fn begin_fetching(&self) -> Option<Fetching<'_>> {
+        self.fetching
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |now| {
+                (now < MOST_FETCHING).then_some(now + 1)
+            })
+            .ok()
+            .map(|_| Fetching(&self.fetching))
+    }
+
     fn keep(&self, session: u32, repo: &str, quarantine: Quarantine) {
         let mut kept = self.kept.lock().unwrap_or_else(PoisonError::into_inner);
         let key = (session, repo.to_ascii_lowercase());
@@ -183,6 +208,39 @@ impl Recorded for RecordedRepos {
     }
 }
 
+/// A repo served as the person: its confirmed entry, its account and its clone.
+struct Served {
+    repo: ConfirmedRepo,
+    account: ForgeAccount,
+    clone: PathBuf,
+}
+
+/// The one of `candidates` whose path is `path`: none is a refusal, and so is one confirmed on
+/// more than one host, which a path alone cannot tell apart.
+fn pick(
+    candidates: Vec<(ConfirmedRepo, PathBuf)>,
+    path: &str,
+) -> Result<(ConfirmedRepo, PathBuf), String> {
+    let mut named = candidates
+        .into_iter()
+        .filter(|(have, _)| have.path.eq_ignore_ascii_case(path));
+    let Some(first) = named.next() else {
+        return Err(format!("{path} is not a repo confirmed for this project"));
+    };
+    if named.any(|(other, _)| !other.host.eq_ignore_ascii_case(&first.0.host)) {
+        return Err(format!(
+            "{path} is confirmed on more than one forge, and purlis cannot tell which this is"
+        ));
+    }
+    Ok(first)
+}
+
+/// Whether `repo` is the one at `host` and `port`.
+fn is_at(repo: &ConfirmedRepo, host: &str, port: u16) -> bool {
+    let (bare, at) = confirmed::address_of(&repo.host);
+    bare.eq_ignore_ascii_case(host) && at == port
+}
+
 /// **What a project's held acts read** ([`HeldContext`]).
 pub struct ProjectContext {
     project: PathBuf,
@@ -193,38 +251,61 @@ pub struct ProjectContext {
 }
 
 impl ProjectContext {
-    fn confirmed(&self) -> Vec<ConfirmedRepo> {
+    /// Every confirmed repo of the project's clones, with its clone.
+    fn candidates(&self) -> Vec<(ConfirmedRepo, PathBuf)> {
         crate::forgeroute::prod::clones_of(&self.project)
-            .iter()
-            .filter_map(|clone| confirmed::repos_of_clone(&self.config_root, clone).ok())
-            .flatten()
+            .into_iter()
+            .flat_map(|clone| {
+                confirmed::repos_of_clone(&self.config_root, &clone)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(move |repo| (repo, clone.clone()))
+            })
             .collect()
     }
 
-    fn confirmed_repo(&self, repo: &Repo) -> Option<ConfirmedRepo> {
-        self.confirmed()
-            .into_iter()
-            .find(|have| have.path.eq_ignore_ascii_case(repo.as_str()))
-    }
-
-    fn account_of(&self, repo: &ConfirmedRepo) -> Result<ForgeAccount, String> {
-        if repo.account.is_empty() {
-            return Err("no account is chosen for this repo".to_owned());
+    /// **The one repo `repo` is**, served as the person now, as a chat's own route serves it
+    /// (`ChatRoute`): the clone trusted and the repo confirmed by its numeric id
+    /// ([`confirmed::serves`]), and its chosen account signed in and allowed
+    /// ([`confirmed::account_for`]). A path confirmed on more than one forge is refused: a path is
+    /// not a repo, and the held acts name a repo by its path alone.
+    fn served(&self, repo: &Repo) -> Result<Served, String> {
+        let (confirmed, clone) = pick(self.candidates(), repo.as_str())?;
+        match confirmed::serves(
+            &self.config_root,
+            &clone,
+            confirmed.kind,
+            &confirmed.host,
+            &confirmed.path,
+            confirmed.repo_id,
+        )? {
+            Admission::Confirmed(_) | Admission::Alias(_) => {}
+            Admission::NotConfirmed => {
+                return Err(format!(
+                    "{} is not confirmed for this project's clone now",
+                    repo.as_str()
+                ));
+            }
         }
-        accounts::listed(&self.config_root)?
-            .into_iter()
-            .find(|account| account.id == repo.account)
-            .ok_or_else(|| "the account chosen for this repo is gone".to_owned())
+        let listed = accounts::listed(&self.config_root)?;
+        match confirmed::account_for(&self.config_root, &confirmed, &listed) {
+            Serving::Account(account) => Ok(Served {
+                repo: confirmed,
+                account,
+                clone,
+            }),
+            _ => Err("the account chosen for this repo cannot serve it now".to_owned()),
+        }
     }
 
     /// The forge as the person, for `repo`, reading a push's files from `quarantine` where there
     /// is one.
     fn forge_of(
         &self,
-        confirmed: &ConfirmedRepo,
+        served: &Served,
         quarantine: Option<&Quarantine>,
     ) -> Result<(Box<dyn purlis_core::heldact::HeldForge>, ForgeAccount), String> {
-        let account = self.account_of(confirmed)?;
+        let account = served.account.clone();
         let scope = HostScope::claim()
             .ok_or_else(|| "only the app itself acts as the person".to_owned())?;
         let signed_in = SignedIn::new(&scope, &self.config_root);
@@ -268,19 +349,21 @@ impl HeldContext for ProjectContext {
     }
 
     fn world(&self, session: u32, repo: &Repo) -> Result<OwnedWorld, String> {
-        let confirmed = self
-            .confirmed_repo(repo)
-            .ok_or_else(|| format!("{} is not a repo confirmed for this project", repo.as_str()))?;
+        // At the ask and again at each press: a chat that has closed is nobody's to act for.
+        if !self.sessions.is_open(session) {
+            return Err("this chat is not open".to_owned());
+        }
+        let served = self.served(repo)?;
         let quarantine = self.quarantines.of(session, repo.as_str());
-        let (forge, account) = self.forge_of(&confirmed, quarantine.as_deref())?;
+        let (forge, account) = self.forge_of(&served, quarantine.as_deref())?;
         let trees: Arc<dyn Trees> = match quarantine.as_deref() {
             Some(quarantine) => Arc::new(quarantine.trees()),
             None => Arc::new(NoClone),
         };
         let recorded: Vec<Repo> = self
-            .confirmed()
+            .candidates()
             .iter()
-            .filter_map(|have| Repo::try_from(have.path.as_str()).ok())
+            .filter_map(|(have, _)| Repo::try_from(have.path.as_str()).ok())
             .collect();
         Ok(OwnedWorld {
             forge: Arc::from(forge),
@@ -300,15 +383,8 @@ impl HeldContext for ProjectContext {
         let Some(cwd) = request
             .repo
             .as_ref()
-            .and_then(|repo| self.confirmed_repo(repo))
-            .and_then(|confirmed| {
-                crate::forgeroute::prod::clones_of(&self.project)
-                    .into_iter()
-                    .find(|clone| {
-                        confirmed::repos_of_clone(&self.config_root, clone)
-                            .is_ok_and(|repos| repos.iter().any(|r| r.path == confirmed.path))
-                    })
-            })
+            .and_then(|repo| self.served(repo).ok())
+            .map(|served| served.clone)
         else {
             return "purlis did not hold this merge: it names no repo of this project.".to_owned();
         };
@@ -353,11 +429,25 @@ impl PushGate for CiPushGate {
         let Ok(repo) = Repo::try_from(push.repo.as_str()) else {
             return Self::refuse("purlis did not send this push: it names no repo it can read.");
         };
-        let Some(confirmed) = self.context.confirmed_repo(&repo) else {
-            return Self::refuse("purlis did not send this push: its repo is not confirmed.");
+        let served = match self.context.served(&repo) {
+            Ok(served) => served,
+            Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
+        };
+        // The repo is the one at this host and port, never only at this path: a path confirmed on
+        // GitHub is not the repo of the same path on GitLab, whose CI files are other files.
+        if !is_at(&served.repo, &push.host, push.port) {
+            return Self::refuse(
+                "purlis did not send this push: its repo is not the one confirmed at that address.",
+            );
+        }
+        let Some(_fetching) = self.quarantines.begin_fetching() else {
+            return Self::refuse(
+                "purlis did not send this push: it is reading other pushes now, so try again in a moment.",
+            );
         };
         for update in &push.updates {
             // A delete moves no file; a tag or another ref is not a branch the policy lets by.
+            let created = update.old.bytes().all(|b| b == b'0');
             if update.new.bytes().all(|b| b == b'0') {
                 continue;
             }
@@ -369,14 +459,26 @@ impl PushGate for CiPushGate {
             else {
                 return Self::refuse("purlis did not send this push: a name it cannot read.");
             };
-            let (forge, _) = match self.context.forge_of(&confirmed, None) {
+            let (forge, _) = match self.context.forge_of(&served, None) {
                 Ok(made) => made,
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
-            // The base is the branch's tip on the forge, or the default branch's for a new one.
-            let base = match forge.branch_tip(&repo, &branch) {
-                Ok(Some(base)) => base,
-                Ok(None) => match forge.default_branch(&repo) {
+            // The base is the branch's tip on the forge, and the push must start from it: a push
+            // that names another old tip is not the push whose diff is read here. A new branch's
+            // base is the default branch's.
+            let base = match (created, forge.branch_tip(&repo, &branch)) {
+                (false, Ok(Some(base))) if base.as_str().eq_ignore_ascii_case(&update.old) => base,
+                (false, Ok(_)) => {
+                    return Self::refuse(
+                        "purlis did not send this push: its branch is not at the commit the push starts from.",
+                    );
+                }
+                (true, Ok(Some(_))) => {
+                    return Self::refuse(
+                        "purlis did not send this push: it makes a branch that is there already.",
+                    );
+                }
+                (true, Ok(None)) => match forge.default_branch(&repo) {
                     Ok((_, base)) => base,
                     Err(why) => {
                         return Self::refuse(format!(
@@ -384,7 +486,7 @@ impl PushGate for CiPushGate {
                         ));
                     }
                 },
-                Err(why) => {
+                (_, Err(why)) => {
                     return Self::refuse(format!(
                         "purlis did not send this push: it could not read the branch ({why})."
                     ));
@@ -399,8 +501,8 @@ impl PushGate for CiPushGate {
                     ));
                 }
             };
-            let url = format!("https://{}/{}.git", confirmed.host, confirmed.path);
-            let from = match self.context.fetch_source(&confirmed, &url) {
+            let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
+            let from = match self.context.fetch_source(&served, &url) {
                 Ok(from) => from,
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
@@ -447,27 +549,35 @@ impl PushGate for CiPushGate {
 
 impl ProjectContext {
     /// Where a quarantine fetches its base from: the repo's own address, with the person's
-    /// credential for one fetch and no other.
+    /// credential for that host and no other, given to git by the app's own credential helper,
+    /// which reads it from the keyring and answers git's pipe. The token is in no file.
     fn fetch_source(
         &self,
-        confirmed: &ConfirmedRepo,
+        served: &Served,
         url: &str,
-    ) -> Result<purlis_core::heldact::FromForgeAs, String> {
-        let account = self.account_of(confirmed)?;
+    ) -> Result<purlis_core::heldact::FromForge, String> {
         let scope = HostScope::claim()
             .ok_or_else(|| "only the app itself acts as the person".to_owned())?;
-        let signed_in = SignedIn::new(&scope, &self.config_root);
-        let credential = signed_in
-            .credential_of(&account.host, &account.id, crate::sandboxing::now_secs())
+        // A sign-in about to expire is renewed here, as the helper never renews: it reads what the
+        // keyring item then holds.
+        SignedIn::new(&scope, &self.config_root)
+            .credential_of(
+                &served.account.host,
+                &served.account.id,
+                crate::sandboxing::now_secs(),
+            )
             .map_err(|why| why.to_string())?;
-        Ok(purlis_core::heldact::FromForgeAs {
+        let exe = std::env::current_exe().map_err(|why| why.to_string())?;
+        let helper = purlis_core::forge::gitcredential::helper_for_account(
+            &scope,
+            &exe,
+            &self.config_root,
+            &served.account,
+        )
+        .ok_or_else(|| "purlis has no credential helper for this account".to_owned())?;
+        Ok(purlis_core::heldact::FromForge {
             url: url.to_owned(),
-            username: match account.kind {
-                Kind::GitHub => "x-access-token",
-                Kind::GitLab => "oauth2",
-            }
-            .to_owned(),
-            token: SecretString::from(credential.expose().to_owned()),
+            helper: Some(helper),
         })
     }
 }
@@ -482,6 +592,9 @@ pub struct AppHeldSinks {
 
 impl AppHeldSinks {
     pub fn new(app: tauri::AppHandle, parent: PathBuf) -> Self {
+        // A quarantine an earlier app left (it ended without dropping them) is gone before a
+        // new one is made: the one-per-user lock means none belongs to a live app.
+        purlis_core::heldact::sweep_quarantines(&parent);
         Self {
             app,
             quarantines: Arc::new(Quarantines::default()),
@@ -535,3 +648,6 @@ impl HeldSinks for AppHeldSinks {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests;

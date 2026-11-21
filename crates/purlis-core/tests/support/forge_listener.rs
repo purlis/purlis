@@ -159,7 +159,8 @@ impl World {
             },
             storage: Default::default(),
             observe: None,
-            push: None,
+            handoff: purlis_core::sandbox::egress::handoff::Secret::random().unwrap(),
+            push: Arc::new(purlis_core::forge::proxy::listener::ForwardAll),
         };
         Self {
             proxy,
@@ -350,4 +351,68 @@ pub fn basic(user: &str, password: &str) -> String {
 /// One pkt-line.
 pub fn pkt(text: &str) -> String {
     format!("{:04x}{text}", text.len() + 4)
+}
+
+/// **What a chat's egress proxy does for a forge host's `CONNECT`**, for a client that cannot prove
+/// the hand-off secret itself (a real `git`): a loopback relay that opens the door as the proxy does
+/// ([`purlis_core::sandbox::egress::open_door`], so the proof and the door's proof back are the
+/// shipped ones) and then carries bytes both ways. Returns the relay's port.
+#[allow(dead_code)]
+pub fn relay_to_door(
+    door: std::net::SocketAddr,
+    handoff: purlis_core::sandbox::egress::handoff::Secret,
+) -> u16 {
+    use purlis_core::sandbox::egress::{ForgeRoute, open_door};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for client in listener.incoming().flatten() {
+            let handoff = handoff.clone();
+            std::thread::spawn(move || {
+                let mut client = client;
+                let mut head = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if client.read(&mut byte).unwrap_or(0) == 0 {
+                        return;
+                    }
+                    head.push(byte[0]);
+                }
+                let head = String::from_utf8_lossy(&head).into_owned();
+                let Some(target) = head.split_whitespace().nth(1) else {
+                    return;
+                };
+                let Some((host, at)) = target.rsplit_once(':') else {
+                    return;
+                };
+                let Ok(at) = at.parse::<u16>() else { return };
+                let route = ForgeRoute {
+                    addr: door,
+                    handoff,
+                    hosts: vec![host.to_owned()],
+                };
+                let Ok((upstream, answered)) =
+                    open_door(&route, host, at, &[], Duration::from_secs(10))
+                else {
+                    return;
+                };
+                if client.write_all(&answered).is_err() {
+                    return;
+                }
+                let (Ok(mut client_out), Ok(mut upstream_in)) =
+                    (client.try_clone(), upstream.try_clone())
+                else {
+                    return;
+                };
+                let (mut client_in, mut upstream_out) = (client, upstream);
+                std::thread::spawn(move || {
+                    let _ = std::io::copy(&mut upstream_in, &mut client_out);
+                    let _ = client_out.shutdown(std::net::Shutdown::Both);
+                });
+                let _ = std::io::copy(&mut client_in, &mut upstream_out);
+                let _ = upstream_out.shutdown(std::net::Shutdown::Both);
+            });
+        }
+    });
+    port
 }
