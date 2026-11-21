@@ -55,7 +55,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** **A commit loosens**: the diff, the commit, an author purlis could not verify, Accept and Not now. */
+/** **A commit loosens**: the diff, the commit, the author it claims, Accept and Not now. */
 export const LooseningPress: Story = {
   play: async ({ canvas, userEvent }) => {
     await canvas.findByText("loosens: removed");

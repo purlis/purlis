@@ -169,7 +169,7 @@ describe("the project's policy (Q308a)", () => {
     expect(screen.getByText(/Drop the merge ban/)).toBeTruthy();
   });
 
-  it("an_unverified_author_is_shown_as_unverified_at_the_press", async () => {
+  it("the_author_is_shown_as_the_commit_claims_it_and_never_vouched_for", async () => {
     core(PRESSED);
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
     // The author is the commit's own claim, and the window says it cannot be checked.

@@ -159,7 +159,7 @@ fn the_press_shows_mode_and_limit_changes() {
 }
 
 #[test]
-fn an_unverified_author_is_shown_as_unverified_at_the_press() {
+fn the_author_is_shown_as_the_commit_claims_it_and_never_vouched_for() {
     let m = machine();
     let (root, standing) = dropped_the_ban(&m);
     // The commit names its author, and purlis does not vouch for it: nothing it fetched, nothing
@@ -183,7 +183,7 @@ fn an_unverified_author_is_shown_as_unverified_at_the_press() {
 }
 
 #[test]
-fn a_replace_ref_in_the_repo_shows_the_author_as_unverified() {
+fn a_replace_ref_in_the_repo_changes_nothing_about_the_author_shown() {
     let m = machine();
     let (root, standing) = dropped_the_ban(&m);
     let first = git(&root, &["rev-list", "--max-parents=0", "HEAD"]);
@@ -453,4 +453,20 @@ fn the_digest_binds_the_bases_the_rows_and_the_commit() {
     // A new commit with the same project text is a different press.
     commit(&root, &[]);
     assert_ne!(first, press_of(&root, &one).expect("a press").digest);
+}
+
+#[test]
+fn a_rule_mode_entry_that_goes_is_a_row_whatever_family_it_reads_as() {
+    let m = machine();
+    // A forbid over two families' actions: how its entry reads as a mode depends on the request.
+    let both = format!(
+        "{HEADER}@id(\"trust-x\")\nforbid (principal, action in [Action::\"start\", Action::\"merge\"], \
+         resource);\n"
+    );
+    let head = "[policy]\ntemplate = \"strict\"\nguards.merge = \"off\"\n";
+    let was = format!("{head}[policy.rules]\n\"trust-x\" = \"enforce\"\n");
+    let root = plane(&m, &[("purlis.toml", head), ("policy.cedar", &both)]);
+    let standing = holding(vec![accepted(&version(&was, Some(&both)))]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert!(other(&press).contains(&"policy.rules.trust-x"), "{press:?}");
 }

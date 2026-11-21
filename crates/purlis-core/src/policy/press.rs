@@ -13,10 +13,10 @@
 //!   that loosens what the floor holds, though not what the accepted copy holds, is a loosening.
 //!   Each rule is `loosens`, `tightens` or `changes` ([`Kind`]); each family's mode and each
 //!   limit is shown before and after.
-//! - **The commit** ([`Commit`]) and its author, **named only if verified** (Q309.5): the commit
-//!   is one the upstream branch, as this clone last fetched it, holds, and the repository holds no
-//!   replace ref (spec §5, review round 5, SEC5-SF1). Read as history was written
-//!   ([`crate::worktree::git::run_as_written`]). Anything else is "unverified"; purlis enforces no
+//! - **The commit** ([`Commit`]) and its author **as the commit claims it**: purlis cannot check
+//!   who wrote a commit, so the window says only that the commit names this author. Read as
+//!   history was written ([`crate::worktree::git::run_as_written`]), so a replace ref changes
+//!   nothing it shows. Purlis enforces no
 //!   commit review, and the press says so (Q309.6).
 //! - **Why it is raised** ([`Reason`]): a commit that loosens, a commit past the accepted floor's
 //!   cap, the removal of a tightening from the You level's local file (which has no commit and no
@@ -352,7 +352,12 @@ fn diff_pair(before: &Loaded, after: &Loaded) -> Diff {
     let parts: std::collections::BTreeSet<&String> =
         was_parts.keys().chain(now_parts.keys()).collect();
     for part in parts {
-        if was_parts.get(part) != now_parts.get(part) {
+        let shown = part.strip_prefix("policy.rules.").is_some_and(|id| {
+            diff.modes
+                .iter()
+                .any(|row| row.key == format!("rules.{id}"))
+        });
+        if !shown && was_parts.get(part) != now_parts.get(part) {
             diff.other.push(OtherChange { part: part.clone() });
         }
     }
@@ -633,10 +638,10 @@ fn diff_all(
             part("the shared vault registry (vaults.json)");
         }
         if base.workspaces != after.workspaces {
-            part("the plane's workspaces");
+            part("the project's workspaces");
         }
         if base.personas != after.personas {
-            part("the plane's personas");
+            part("the project's personas");
         }
     }
     for what in unread {
@@ -645,7 +650,7 @@ fn diff_all(
     all
 }
 
-/// The sources the window judges the project with: its own files and the plane's workspaces and
+/// The sources the window judges the project with: its own files and the project's workspaces and
 /// personas, with no Organisation's folder read here.
 fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
     let plane = crate::workspaces::Plane::open(root);

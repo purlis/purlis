@@ -327,6 +327,11 @@ impl Loaded {
         for (name, level) in &self.personas {
             parts.insert(format!("policy.persona.{name}"), level.said());
         }
+        // The raw `[policy.rules]` entries, whatever rule they name: how an entry reads as a mode
+        // depends on the request's action, so an entry that appears, goes or changes is a part.
+        for (id, mode) in &self.rule_modes {
+            parts.insert(format!("policy.rules.{id}"), mode.word().to_owned());
+        }
         parts.insert(
             "policy.locks of the organisation".to_owned(),
             format!("{:?}", self.organisation_locks),
