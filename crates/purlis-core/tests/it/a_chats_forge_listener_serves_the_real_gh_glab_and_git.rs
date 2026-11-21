@@ -669,14 +669,17 @@ fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
                 "other",
             ),
             (
-                "a merge",
+                "a merge, by the REST route",
+                vec!["api", "-X", "PUT", "repos/acme/app/pulls/1/merge"],
+                "/merge",
+            ),
+            (
+                "a merge, by a mutation",
                 vec![
-                    "pr",
-                    "merge",
-                    "1",
-                    "--merge",
-                    "-R",
-                    "github.localhost/acme/app",
+                    "api",
+                    "graphql",
+                    "-f",
+                    "query=mutation{ mergePullRequest(input:{pullRequestId:\"PR_kwDO_1\"}){ clientMutationId } }",
                 ],
                 "mergepullrequest",
             ),
@@ -704,7 +707,12 @@ fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
             ),
             (
                 "a merge",
-                vec!["mr", "merge", "1", "-R", "group/proj", "--yes"],
+                vec![
+                    "api",
+                    "-X",
+                    "PUT",
+                    "projects/group%2Fproj/merge_requests/1/merge",
+                ],
                 "/merge",
             ),
         ] {
