@@ -456,6 +456,15 @@ impl Budget {
         }
     }
 
+    /// A budget of `lasting`, from now: the web tools' judge waits on the person's ask through the
+    /// chat's proxy ([`purlis_core::toolhooks::WEB_JUDGE_WAIT`]), which the guards' two seconds
+    /// would cut off and refuse for being slow.
+    pub(crate) fn lasting(lasting: Duration) -> Self {
+        Self {
+            ends: Instant::now() + lasting,
+        }
+    }
+
     /// What is left of it.
     pub(crate) fn left(&self) -> Duration {
         self.ends.saturating_duration_since(Instant::now())
