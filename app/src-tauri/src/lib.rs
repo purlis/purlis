@@ -61,6 +61,7 @@ mod gitlabaccess;
 mod finishedturns;
 // A block's Tell the chat… (T1-33, Q267): purlis's own line, typed through T1-36's way in.
 mod blockways;
+mod heldacts;
 mod layout;
 mod mergeholds;
 mod pane_links;
@@ -95,6 +96,35 @@ mod firstrun;
 mod firsttask;
 mod forgeaccounts;
 mod forgepkce;
+#[cfg(feature = "forge-wiring")]
+mod forgeroute;
+#[cfg(feature = "forge-wiring")]
+mod forgewiring;
+
+/// **The forge route is on** (one login, ADR 0128, slice K): the feature is declared and is a
+/// default one, so every build of the app has it. Ungated, so a build with the feature off (a
+/// deliberate `--no-default-features`) runs it too and says so.
+#[cfg(test)]
+mod forge_wiring_is_on_by_default {
+    #[test]
+    fn the_apps_manifest_declares_the_feature_and_a_default_turns_it_on() {
+        let manifest = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml"))
+            .expect("the app's manifest");
+        assert!(
+            manifest.contains("\nforge-wiring = ["),
+            "the feature is declared"
+        );
+        let defaults: Vec<&str> = manifest
+            .lines()
+            .filter(|line| line.trim_start().starts_with("default"))
+            .filter(|line| line.contains('='))
+            .collect();
+        assert!(
+            defaults.iter().any(|line| line.contains("forge-wiring")),
+            "no default feature turns the forge route on: {defaults:?}"
+        );
+    }
+}
 mod getproject;
 mod gitbroker;
 mod goingaway;
@@ -107,6 +137,7 @@ mod host;
 mod inboxupdates;
 mod machineprofiles;
 mod mainwatch;
+mod onelogin;
 mod personaskills;
 mod policypress;
 mod regenerate;
@@ -182,6 +213,7 @@ mod portal;
 mod projectready;
 mod projectsettings;
 mod proposals;
+mod readiness;
 mod readonly;
 mod rebrief;
 mod reconnecting;
@@ -4119,6 +4151,14 @@ pub fn run() {
             // when it is stale on the promise that no second app is running.
             #[cfg(target_os = "linux")]
             instance::one_per_user(app);
+            // The forge proxy's routes (ADR 0128 J): after the one-per-user lock, so the sweep of
+            // a crashed app's folders never meets a second app's; it removes only those whose
+            // app is gone.
+            #[cfg(feature = "forge-wiring")]
+            forgeroute::install(std::sync::Arc::new(forgewiring::AppHeldSinks::new(
+                app.handle().clone(),
+                forgeroute::quarantine_dir(),
+            )));
             // This machine's local state moves to the purlis names (RN-5, V93f): after the
             // single-instance handoff and the one-per-user lock, so a second launch never
             // migrates, and before any project, chat or watch opens a file under one. Anything
@@ -4283,6 +4323,8 @@ pub fn run() {
             forgeaccounts::hand_over_sign_ins();
             // And the window is told when a forge ends one of them (#729).
             forgeaccounts::tell_the_window_when_a_sign_in_ends(app.handle());
+            // And each browser sign-in is renewed before it ends, without a prompt (one login).
+            forgeaccounts::keep_sign_ins_renewed();
             // The engine's first download is shown as it goes (#2207).
             {
                 let window = app.handle().clone();
@@ -5158,6 +5200,9 @@ pub fn run() {
                 // group, so that nothing an extension was asked to run outlives the window
                 // that asked (`purlis_core::executor`).
                 app.state::<views::Views>().stop_all();
+                // No forge socket or CA outlives the app (ADR 0128 J).
+                #[cfg(feature = "forge-wiring")]
+                forgeroute::stop_all();
                 app.state::<heard::Heard>().stop_all();
                 // Every plane, not "the" plane: each one writes its own record into itself
                 // and ends its own sessions. A failure is not worth refusing to exit over —

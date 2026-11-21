@@ -2897,6 +2897,7 @@ fn a_plan(listed: Vec<(String, By)>, given: Vec<u16>) -> Plan {
         any_port: false,
         beside: plan::Beside::Wrapped,
         given,
+        forge: None,
     }
 }
 
@@ -4624,6 +4625,9 @@ fn a_sandboxed_opencode_chat_on_a_profile_its_runner_made_writes_its_own_data(ta
 /// of its own for them. Declared, `gh`
 /// runs through its shim on the value its desktop sent for that run, which stands in for the
 /// person's Allow and vault. A declared program the image does not have says so, naming the image.
+// The old route, retired under the one login (ADR 0128): a runner chat's `gh` is not a declared
+// tool with a vault token there, so this has nothing to run.
+#[cfg(not(feature = "forge-wiring"))]
 fn a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them(target: &Target) {
     let Some(runner) = &target.runner else {
         return;
@@ -5169,6 +5173,7 @@ mod the_persons_shell_on_a_runner_makes_no_namespace {
     }
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 mod a_chat_on_a_runner_runs_gh_and_glab_and_a_declared_tool_of_them {
     /// Run by the parity job, which names a runner image; elsewhere it runs nothing.
     #[test]

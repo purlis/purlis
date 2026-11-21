@@ -303,6 +303,9 @@ pub fn set_up(
     personas: &[String],
     allow: Option<&mut Allow<'_>>,
 ) -> Result<SetUp, String> {
+    if cfg!(feature = "forge-wiring") {
+        return Err(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned());
+    }
     let host = host_in_project(root, host)?;
     token_ok(token)?;
     if personas.is_empty() {

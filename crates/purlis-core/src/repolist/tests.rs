@@ -13,6 +13,7 @@ fn account(kind: Kind, host: &str, login: &str) -> ForgeAccount {
         method: Method::Pat,
         state: State::SignedIn,
         scopes: None,
+        client_id: None,
     }
 }
 
