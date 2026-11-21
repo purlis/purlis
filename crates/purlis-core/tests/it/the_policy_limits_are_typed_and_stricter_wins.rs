@@ -199,3 +199,17 @@ fn under_limits_log_an_exceeded_cap_is_counted_not_applied() {
         Verdict::Within
     );
 }
+
+#[test]
+fn two_spellings_of_one_limit_make_the_file_broken() {
+    purlis_core::unsteered!();
+    let loaded = load(
+        "[policy.limits]\n\"dispatch.running-per-chat\" = 3\n[policy.limits.dispatch]\nrunning-per-chat = 9\n",
+        None,
+    );
+    assert!(
+        loaded.notices.iter().any(|n| n.what.contains("twice")),
+        "{:#?}",
+        loaded.notices
+    );
+}

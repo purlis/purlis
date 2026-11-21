@@ -67,19 +67,26 @@ pub fn table() -> &'static [Spec] {
             .flat_map(|tables| tables.iter())
             .map(|row| {
                 let text = |name: &str| row.get(name).and_then(toml_edit::Item::as_str);
+                let key = text("key").expect("a row names its key").to_owned();
                 let shipped = match row.get("shipped") {
                     Some(item) if item.as_integer().is_some() => {
                         Shipped::Number(item.as_integer().expect("an integer"))
                     }
                     Some(item) if item.as_str() == Some("by-memory") => Shipped::ByMemory,
-                    _ => Shipped::Unset,
+                    Some(item) if item.as_str() == Some("none") => Shipped::Unset,
+                    other => panic!(
+                        "limits.toml: {key}'s shipped is {other:?}, not a whole number, \"none\" or \"by-memory\""
+                    ),
                 };
                 let loosens = match text("loosens") {
                     Some("lowered") => Direction::Lowered,
-                    _ => Direction::Raised,
+                    Some("raised") => Direction::Raised,
+                    other => panic!(
+                        "limits.toml: {key}'s loosens is {other:?}, not \"raised\" or \"lowered\""
+                    ),
                 };
                 Spec {
-                    key: text("key").expect("a row names its key").to_owned(),
+                    key,
                     shipped,
                     loosens,
                 }
@@ -101,6 +108,20 @@ fn stricter(direction: Direction, a: Option<i64>, b: Option<i64>) -> Option<i64>
             Direction::Lowered => a.max(b),
         }),
         (a, b) => a.or(b),
+    }
+}
+
+/// The stricter of two numbers said for `spec`, in its declared direction.
+pub(super) fn stricter_number(spec: &Spec, a: i64, b: i64) -> i64 {
+    stricter(spec.loosens, Some(a), Some(b)).expect("two numbers")
+}
+
+/// The strictest number a key can have in its direction: what a side that does not read says,
+/// since it counts as the strictest policy there is, never as none.
+pub fn strictest(spec: &Spec) -> i64 {
+    match spec.loosens {
+        Direction::Raised => 0,
+        Direction::Lowered => i64::MAX,
     }
 }
 
@@ -136,6 +157,22 @@ pub enum Verdict {
     Refuse,
     /// Past the cap under `log`: count it and let it through.
     Counted,
+}
+
+impl Verdict {
+    /// The stricter of two verdicts: refusing beats counting, which beats nothing.
+    pub fn stricter(self, other: Verdict) -> Verdict {
+        let rank = |v: Verdict| match v {
+            Verdict::Within => 0,
+            Verdict::Counted => 1,
+            Verdict::Refuse => 2,
+        };
+        if rank(other) > rank(self) {
+            other
+        } else {
+            self
+        }
+    }
 }
 
 /// **What `used` does against the cap `cap`** under the `limits` family's `mode` (Q308b). Under

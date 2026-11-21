@@ -198,6 +198,9 @@ pub struct Loaded {
     /// The `[policy.limits]` of the copy the person last accepted: the side a raised cap or a
     /// lowered retention waits on until the press.
     pub accepted_limits: BTreeMap<String, i64>,
+    /// Your own file's `[policy.limits]`: a side that only tightens, since the stricter number
+    /// wins and a number looser than the others says nothing (§4.7).
+    pub local_limits: BTreeMap<String, i64>,
     /// Each rule's mode where a `[policy.rules]` sets one; `off` rules are not in the policy.
     pub rule_modes: BTreeMap<String, Mode>,
     /// Who the Organisation is: the owner its rules and locks are named by.
@@ -310,6 +313,7 @@ impl Loaded {
             organisation_limits: BTreeMap::new(),
             project_limits: BTreeMap::new(),
             accepted_limits: BTreeMap::new(),
+            local_limits: BTreeMap::new(),
             organisation_owner: "the Organisation".to_owned(),
             organisation: Defaults::default(),
             project: Tables::strict().defaults,
@@ -399,24 +403,33 @@ impl Loaded {
 }
 
 impl Loaded {
-    /// **The value in force for the limit `key`** (spec §5.1): the stricter, in the key's declared
-    /// direction, of the Organisation's, the project's as committed and the accepted copy's
-    /// numbers. `None` is no cap, or a key the table doesn't name (no file that names one reads).
-    /// The accepted floor's older versions are folded in by `force`.
+    /// **The value in force for the limit `key` by this one loaded policy** (spec §5.1): the
+    /// stricter, in the key's declared direction, of the Organisation's, the project's as
+    /// committed, your own file's and the accepted copy's numbers. `None` is no cap, or a key the
+    /// table doesn't name (no file that names one reads).
+    ///
+    /// **Not held by the floor**: it knows no older version of the accepted floor, and its mode is
+    /// this policy's alone. What the app enforces is [`super::force::limit`] and
+    /// [`super::force::limit_verdict`].
     pub fn limit(&self, key: &str) -> Option<i64> {
         let spec = super::limits::spec(key)?;
         super::limits::in_force(
             spec,
             self.organisation_limits.get(key).copied(),
+            // Your own file is a side only where it says a number.
             [
                 self.project_limits.get(key).copied(),
                 self.accepted_limits.get(key).copied(),
-            ],
+            ]
+            .into_iter()
+            .chain(self.local_limits.get(key).copied().map(Some)),
         )
     }
 
     /// **What `used` does against the cap `key`** for `chat`: under `limits = log` an exceeded cap
-    /// is counted, not applied (Q308b).
+    /// is counted, not applied (Q308b). **Not held by the floor**: this policy's own mode and
+    /// number alone, so a committed `limits = "log"` disables it here; the app asks
+    /// [`super::force::limit_verdict`].
     pub fn limit_verdict(&self, chat: Chat<'_>, key: &str, used: i64) -> super::limits::Verdict {
         super::limits::verdict(self.mode_for("limits", chat), self.limit(key), used)
     }
@@ -581,6 +594,15 @@ fn read_limits(
                 line,
                 format!(
                     "[policy.limits] names \"{name}\", which is no limit purlis has: check its spelling"
+                ),
+            );
+            continue;
+        }
+        if into.contains_key(&name) {
+            problem(
+                line,
+                format!(
+                    "[policy.limits] says \"{name}\" twice (once dotted, once in its own table): say it once"
                 ),
             );
             continue;
@@ -1346,7 +1368,12 @@ fn read_organisation(
             tables.locks.add(&more.tables.locks);
             tables.lock_lines.extend(more.tables.lock_lines);
             // Its limits join `policy.toml`'s (slice 12 reads them).
-            tables.limits.extend(more.tables.limits);
+            for (key, number) in more.tables.limits {
+                let kept = tables.limits.entry(key.clone()).or_insert(number);
+                if let Some(spec) = super::limits::spec(&key) {
+                    *kept = super::limits::stricter_number(spec, *kept, number);
+                }
+            }
             rules.extend(more.rules);
         }
     }
@@ -1920,6 +1947,7 @@ fn load_with(
         organisation_limits: org_tables.limits.clone(),
         project_limits: project_tables.limits.clone(),
         accepted_limits: accepted_limits.clone(),
+        local_limits: you_tables.limits.clone(),
         organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults.clone(),
         project: project_tables.defaults.clone(),
@@ -2101,6 +2129,7 @@ fn load_with(
         organisation_limits: org_tables.limits.clone(),
         project_limits: project_tables.limits.clone(),
         accepted_limits: accepted_limits.clone(),
+        local_limits: you_tables.limits,
         organisation_owner: org_owner.to_owned(),
         organisation: org_tables.defaults,
         project: project_tables.defaults,
