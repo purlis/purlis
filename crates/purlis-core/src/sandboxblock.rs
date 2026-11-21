@@ -1245,7 +1245,7 @@ const READING_TOOLS: [&str; 2] = [READ_TOOL, "BashOutput"];
 /// carries an `error` where a read that came back carries none, and a refused or failed read is
 /// no words read back, so the chat is never told to carry on after it.
 pub fn read_back(payload: &serde_json::Value) -> bool {
-    payload.get("error").is_none()
+    payload["error"].as_str().is_none()
         && payload["tool_name"]
             .as_str()
             .is_some_and(|tool| READING_TOOLS.contains(&tool))

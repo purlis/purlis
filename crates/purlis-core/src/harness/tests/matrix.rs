@@ -517,7 +517,8 @@ fn purlis_s_own(tool: &str) -> bool {
 ///   `command` and never holds one (R-164's shipped exception, Q225).
 /// - Claude Code's `PostToolUseFailure` to `posttoolusefailure-blocked`, on every tool (T1.1-41,
 ///   #6888): it runs after the call has already failed, so it can hold nothing, and writes the
-///   call's failure line. It reads a block of a failed `Bash` alone, never another tool's error.
+///   call's failure line. It reads a block, a report draft or git's half-written words of a failed
+///   `Bash` alone, never another tool's error.
 fn holds_nothing(group: &Group) -> bool {
     let only = |word: &str| !group.words.is_empty() && group.words.iter().all(|w| w == word);
     (group.event == "PermissionRequest" && only(crate::harness::hooked::WORD))

@@ -2440,6 +2440,9 @@ fn tell_the_host_about_the_tool_call(
         return;
     };
     let data: serde_json::Value = serde_json::from_str(payload).unwrap_or_default();
+    if hooks::another_word_writes_the_failure_line(word, &data) {
+        return;
+    }
     let text = |field: &str| data[field].as_str().map(str::to_owned);
     let call = hookwire::ToolCall {
         chat,

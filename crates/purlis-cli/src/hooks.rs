@@ -286,7 +286,7 @@ pub fn stopped_partway(
     payload: &serde_json::Value,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Option<String> {
-    if !purlis_core::sandbox::chat_is_sandboxed_in(env) {
+    if !purlis_core::sandbox::chat_is_sandboxed_in(env) || !ran_a_shell_command(payload) {
         return None;
     }
     let command = payload["tool_input"]["command"].as_str()?;
@@ -312,7 +312,25 @@ pub fn is_a_block_word(word: &str) -> bool {
 /// heard on every tool, so a call's failure leaves its line (#6888), but a block is read of a
 /// shell command's failure alone: a failed `Write`, `Read` or MCP tool is never one.
 pub fn reads_for_blocks(word: &str, payload: &serde_json::Value) -> bool {
-    word != BLOCKED_ON_FAILURE || payload["tool_name"].as_str() == Some("Bash")
+    word != BLOCKED_ON_FAILURE || ran_a_shell_command(payload)
+}
+
+/// Whether the call `payload` heard is a shell command (`Bash`, which is also what Codex's and
+/// opencode's shells are to a hook). **The one test every reader of a failed call's `command`
+/// and `error` asks first** (T1.1-41): `posttoolusefailure-blocked` is heard on every tool, and
+/// an MCP tool's input may carry a `command` and its error any words, none of them a command's.
+pub fn ran_a_shell_command(payload: &serde_json::Value) -> bool {
+    payload["tool_name"].as_str() == Some("Bash")
+}
+
+/// Whether another word writes this call's failure line, so `word` must not write it twice: a
+/// failed purlis tool is heard by [`purlis_core::caught::TOOL_WORD`] as well as by the
+/// every-tool `posttoolusefailure-blocked`, and one failed call is one line.
+pub fn another_word_writes_the_failure_line(word: &str, payload: &serde_json::Value) -> bool {
+    word == BLOCKED_ON_FAILURE
+        && payload["tool_name"]
+            .as_str()
+            .is_some_and(|tool| tool.starts_with(purlis_core::caught::TOOL_PREFIX))
 }
 
 /// The sandbox blocks in a block word's `payload` ([`purlis_core::sandboxblock`]), read through
@@ -685,6 +703,16 @@ pub fn list(json: bool) -> ExitCode {
 /// small write. The hook answers the harness nothing of it either way.
 const HOLDING_A_FAILURE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_secs(3);
 
+/// The failure of purlis's own in `data`, for the word that heard it. The shell command's word
+/// reads a `command`, so only a shell command's failure is one: an MCP tool's input may carry a
+/// `command` of its own.
+fn caught_in(word: &str, data: &serde_json::Value) -> Option<purlis_core::caught::Caught> {
+    if word == BLOCKED_ON_FAILURE && !ran_a_shell_command(data) {
+        return None;
+    }
+    purlis_core::caught::of_hook(word, data)
+}
+
 /// **A failure of purlis's own in the call `word` heard come back, handed to the app** (#5697,
 /// spec #5683 layer 1): an internal-failure exit of a `purlis` command, or a purlis tool that
 /// failed inside purlis ([`purlis_core::caught::of_hook`]). The app holds it as a Report draft
@@ -697,7 +725,7 @@ pub fn tell_the_app_what_failed(word: &str, payload: &str) {
     let Ok(data) = serde_json::from_str::<serde_json::Value>(payload) else {
         return;
     };
-    let Some(caught) = purlis_core::caught::of_hook(word, &data) else {
+    let Some(caught) = caught_in(word, &data) else {
         return;
     };
     let _ = crate::brokered::asked(
@@ -708,4 +736,53 @@ pub fn tell_the_app_what_failed(word: &str, payload: &str) {
         },
         HOLDING_A_FAILURE_TAKES_AT_MOST,
     );
+}
+
+#[cfg(test)]
+mod failed_call_readers {
+    use super::*;
+    use serde_json::json;
+
+    fn failed(tool: &str, command: &str, error: &str) -> serde_json::Value {
+        json!({"tool_name": tool, "tool_input": {"command": command}, "error": error})
+    }
+
+    #[test]
+    fn a_failed_mcp_tool_whose_input_names_a_purlis_command_holds_no_report_draft() {
+        let payload = failed("mcp__other__run", "purlis x", "Exit code 70\nboom");
+        assert!(caught_in(BLOCKED_ON_FAILURE, &payload).is_none());
+        let bash = failed("Bash", "purlis x", "Exit code 70\nboom");
+        assert!(caught_in(BLOCKED_ON_FAILURE, &bash).is_some());
+    }
+
+    #[test]
+    fn a_failed_mcp_tool_with_gits_words_gets_no_stopped_partway_context() {
+        let words = "error: unable to unlink old 'app/.vscode/tasks.json': Operation not permitted\n\
+                     HEAD is now at 6d66ac1 two\nM\tapp/.vscode/tasks.json\n";
+        let env = |name: &str| match name {
+            n if n == purlis_core::hookwire::SANDBOXED_ENV => Some("1".to_owned()),
+            _ => None,
+        };
+        let mcp = failed("mcp__other__run", "git checkout feature", words);
+        assert!(stopped_partway(&mcp, &env).is_none());
+        let bash = failed("Bash", "git checkout feature", words);
+        assert!(stopped_partway(&bash, &env).is_some());
+    }
+
+    #[test]
+    fn a_failed_purlis_tool_is_written_by_its_own_word_not_the_every_tool_one() {
+        let payload = failed("mcp__purlis__todo_add", "", "x");
+        assert!(another_word_writes_the_failure_line(
+            BLOCKED_ON_FAILURE,
+            &payload
+        ));
+        assert!(!another_word_writes_the_failure_line(
+            purlis_core::caught::TOOL_WORD,
+            &payload
+        ));
+        assert!(!another_word_writes_the_failure_line(
+            BLOCKED_ON_FAILURE,
+            &failed("Bash", "ls", "x")
+        ));
+    }
 }
