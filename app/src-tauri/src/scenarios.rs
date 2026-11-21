@@ -849,7 +849,6 @@ fn a_shell_command_whose_group_was_never_said_is_a_watch_that_failed() {
         serde_json::json!({"kind": "prompt"}),
         shell("a"),
         serde_json::json!({"kind": "tool_result", "step": "write"}),
-        serde_json::json!({"kind": "tool_result", "step": "cut", "exit": null}),
         shell("b"),
     ];
     assert!(

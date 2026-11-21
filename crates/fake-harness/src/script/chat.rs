@@ -945,6 +945,14 @@ impl Chat {
         #[cfg(unix)]
         if let Err(why) = say_tool_group(child.id()) {
             // A command nobody watches fails the call: the scenario's teardown could not see it.
+            // The shell leads its own group (`process_group(0)` above), and the group is the one
+            // nobody watches: signal it in-process, never through an external `kill`.
+            if let Some(leader) = i32::try_from(child.id())
+                .ok()
+                .and_then(rustix::process::Pid::from_raw)
+            {
+                let _ = rustix::process::kill_process_group(leader, rustix::process::Signal::KILL);
+            }
             let _ = child.kill();
             let _ = child.wait();
             drop((child.stdout.take(), child.stderr.take()));

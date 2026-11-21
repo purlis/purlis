@@ -30,6 +30,10 @@ regex = "1"
 purlis-core.workspace = true
 portable-pty.workspace = true
 
+# The loud-failure path signals the shell's whole process group in-process (`script/chat.rs`).
+[target."cfg(unix)".dependencies]
+rustix = { version = "1", features = ["process"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 # `scripted.rs` writes the stand-in `purlis` its hooks run.

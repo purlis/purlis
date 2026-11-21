@@ -963,5 +963,9 @@ fn a_tool_command_fails_loudly_where_its_group_cannot_be_said() {
             "{dialect}: {result}"
         );
         assert_eq!(result["exit"], 70, "{dialect}: {result}");
+        assert_eq!(
+            result["stdout"], "",
+            "{dialect}: the command must not have run: {result}"
+        );
     }
 }

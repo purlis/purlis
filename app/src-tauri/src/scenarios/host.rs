@@ -1078,9 +1078,10 @@ pub(crate) fn tool_groups_lost(transcript: &[serde_json::Value], said: usize) ->
         .iter()
         .filter(|line| line["kind"] == "tool_result" && line["exit"].is_number())
         .filter(|line| {
-            !line["stderr"]
-                .as_str()
-                .is_some_and(|e| e.starts_with("cannot run the shell"))
+            !(line["exit"] == 127
+                && line["stderr"]
+                    .as_str()
+                    .is_some_and(|e| e.starts_with("cannot run the shell")))
         })
         .count();
     (said < ran).then(|| {
