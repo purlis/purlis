@@ -8184,7 +8184,9 @@ at: string | null; cause: string; protection: StartProtection | null } |
  *  The chat's sandbox was lifted for a run (`off`) or put back on (`on`), and who did it:
  *  `actor_kind` `human`, `host` or `agent`, and the actor's word.
  */
-{ kind: "protection_changed"; at: string | null; change: string; from: string | null; to: string | null; actor_kind: string; actor: string } | 
+{ kind: "protection_changed"; at: string | null; change: string; 
+/**  For a `level` change, the levels before and after: `on` (full) or `floor` (basic). */
+from: string | null; to: string | null; actor_kind: string; actor: string } | 
 /**  The chat raised an ask, by its group's word. */
 { kind: "ask_raised"; at: string | null; ask: string } | 
 /**  The chat's ask was answered: `allowed` or `refused`, and by whom: `window` or `inbox`. */
