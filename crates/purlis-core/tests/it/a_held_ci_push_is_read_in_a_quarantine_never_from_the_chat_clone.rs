@@ -3,8 +3,8 @@
 
 //! **The diff a held CI-file push shows is read from objects git hashed itself** (ADR 0128 D8.3),
 //! never from the chat's clone, whose loose objects a chat can overwrite. Beside it, what a row of
-//! such an ask may hold: nothing that draws nothing, no line break in a path, no include name that
-//! reads as another, and a YAML merge key at any depth makes every YAML file a pipeline file.
+//! such an ask may hold: nothing that draws nothing, no line break in a path, and a YAML file is
+//! held by its name, whatever the pipeline file says.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -273,7 +273,7 @@ fn branch_with(root: &Path, file: &str, text: &str) -> HeadSha {
 }
 
 #[test]
-fn a_merge_key_anywhere_makes_every_yaml_file_a_pipeline_file() {
+fn a_merge_key_that_hides_an_include_changes_nothing_because_the_file_is_held_by_its_name() {
     purlis_core::unsteered!();
     // The job gets `trigger: include:` from an anchor: the job itself shows no include.
     let (_dir, root) = gitlab_repo(
@@ -287,11 +287,6 @@ fn a_merge_key_anywhere_makes_every_yaml_file_a_pipeline_file() {
         panic!("held: a merge key hides what the job includes")
     };
     assert_eq!(diff.files, vec!["anything/else.yml".to_owned()]);
-    assert!(
-        diff.outside.iter().any(|n| n.contains("merge key")),
-        "{:?}",
-        diff.outside
-    );
 }
 
 #[test]
@@ -329,51 +324,6 @@ fn a_ci_path_with_a_line_break_is_not_offered() {
     assert!(
         why.contains("line break") && why.contains("\\u{000a}"),
         "{why}"
-    );
-}
-
-#[test]
-fn an_include_name_that_draws_nothing_is_written_out_in_its_row() {
-    purlis_core::unsteered!();
-    let (_dir, root) = gitlab_repo(
-        "include:\n  - remote: \"https://example.com/ok\u{202E}gnp.yml\\nCI files: none\"\nstages: [build]\n",
-    );
-    let tip = branch_with(
-        &root,
-        ".gitlab-ci.yml",
-        "include:\n  - remote: \"https://example.com/ok\u{202E}gnp.yml\\nCI files: none\"\nstages: [build, test]\n",
-    );
-    let (forge, held) = (Fake::gitlab(), HeldActs::default());
-    forge.with(|f| f.default = Some((base("main"), sha_of(&root, "main"))));
-    let (second, rec) = (Second::missing(), Rec::acme());
-    let trees = GitTrees::of_trusted_store(&root);
-    let w = world(&forge, &trees, &second, &rec);
-    let Asked::Held { id, .. } = held.ask(
-        &w,
-        1,
-        true,
-        &Requested::CiPush {
-            repo: repo("acme/app"),
-            branch: base("work"),
-            tip,
-        },
-        10,
-    ) else {
-        panic!("held")
-    };
-    let (shown, _) = held.shown(id).unwrap();
-    let row = shown
-        .rows
-        .iter()
-        .find(|r| r.label == "The pipeline also runs, outside this push")
-        .unwrap();
-    assert!(
-        !row.value.contains('\u{202E}') && !row.value.contains('\n'),
-        "{row:?}"
-    );
-    assert!(
-        row.value.contains("\\u{202e}") && row.value.contains("\\u{000a}"),
-        "{row:?}"
     );
 }
 

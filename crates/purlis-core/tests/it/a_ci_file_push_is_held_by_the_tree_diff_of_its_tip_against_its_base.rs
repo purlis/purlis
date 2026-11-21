@@ -301,9 +301,9 @@ fn a_push_that_changes_no_ci_file_is_not_a_held_act() {
     let clone = Clone::new();
     git(&clone.path, &["checkout", "-q", "-b", "plain", "main"]);
     write(&clone.path, "src/lib.rs", "// changed\n");
-    // Names that only look like CI: not below `.github/workflows/` itself.
-    write(&clone.path, ".github/workflows-notes.md", "x\n");
+    // Names that only look like CI: not below the repository's own `.github/`, and not an action.
     write(&clone.path, "docs/.github/workflows/ci.yml", "x\n");
+    write(&clone.path, "docs/action.yml.txt", "x\n");
     commit(&clone.path, "plain");
     let tip = clone.sha("HEAD");
     assert_eq!(
@@ -468,4 +468,51 @@ fn a_commit_message_too_long_for_its_row_refuses_the_push_instead_of_hiding_its_
         held.ask(&world, 1, true, &push("feature", &tip), 10),
         Asked::Refused(Refused::Text(_))
     ));
+}
+
+#[test]
+fn on_github_anything_under_dot_github_and_any_action_file_is_held_by_its_path() {
+    purlis_core::unsteered!();
+    for file in [
+        ".github/workflows-notes.md",
+        ".github/actions/setup/run.sh",
+        ".github/scripts/build.py",
+        ".github/CODEOWNERS",
+        "tools/deploy/action.yml",
+        "tools/deploy/action.yaml",
+        "tools/deploy/ACTION.YML",
+        "action.yml",
+    ] {
+        let clone = Clone::new();
+        git(&clone.path, &["checkout", "-q", "-b", "work", "main"]);
+        write(&clone.path, file, "name: x\nruns:\n  using: composite\n");
+        commit(&clone.path, "change");
+        let tip = clone.sha("HEAD");
+        let PushCheck::Hold(diff) =
+            check_push(Kind::GitHub, None, &clone.trees(), &clone.sha("main"), &tip)
+        else {
+            panic!("{file} is held on GitHub")
+        };
+        assert_eq!(diff.files, vec![file.to_owned()]);
+    }
+}
+
+#[test]
+fn a_gitlab_ci_config_path_that_cannot_be_read_refuses_the_ask_and_asks_nobody() {
+    purlis_core::unsteered!();
+    let clone = Clone::new();
+    let tip = evil_workflow(&clone, "feature");
+    let forge = Fake::gitlab();
+    forge.with(|s| {
+        s.default = Some((base("main"), clone.sha("main")));
+        s.ci_config_unreadable = Some("the forge answered 403".to_owned());
+    });
+    let (held, second, rec) = (HeldActs::default(), Second::missing(), Rec::acme());
+    let trees = clone.trees();
+    let world = world(&forge, &trees, &second, &rec);
+    let Asked::Refused(why) = held.ask(&world, 1, true, &push("feature", &tip), 10) else {
+        panic!("not offered")
+    };
+    assert!(format!("{why:?}").contains("403"), "{why:?}");
+    assert!(held.every().is_empty());
 }

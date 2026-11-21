@@ -9,7 +9,7 @@
 //! That is what makes "the ask shows what will happen" checkable: a press performs the act a read
 //! gives **now**, and only while it is the act the person was shown.
 
-use super::ci::{PushCheck, check_push_in};
+use super::ci::{PushCheck, check_push};
 use super::recognise::valid_rev;
 use super::{Act, Against, Body, CiDiff, Prepared, Refused, Requested, Row, Shown, TagName, World};
 use crate::mergehold::{Base, HeadSha, Repo};
@@ -433,14 +433,7 @@ fn ci_push(
         }
     };
     let config = forge.ci_config_path(repo).map_err(forge_said)?;
-    let diff: CiDiff = match check_push_in(
-        forge.kind(),
-        config.as_deref(),
-        Some(repo.as_str()),
-        world.trees,
-        &base,
-        tip,
-    ) {
+    let diff: CiDiff = match check_push(forge.kind(), config.as_deref(), world.trees, &base, tip) {
         PushCheck::Hold(diff) => diff,
         PushCheck::NoCiFiles => return Err(Refused::NoCiFiles),
         PushCheck::Refuse(why) => return Err(Refused::CiDiff(why)),
@@ -507,16 +500,6 @@ fn ci_push(
                 "The changed lines hold {unseen_in_diff} control or direction characters that \
                  draw nothing. They are written out as \\u{{…}} in the diff below"
             ),
-        ));
-    }
-    if !diff.outside.is_empty() {
-        rows.push(row(
-            "The pipeline also runs, outside this push",
-            diff.outside
-                .iter()
-                .map(|note| shown_text(note, MOST_ENTRY))
-                .collect::<Vec<_>>()
-                .join("; "),
         ));
     }
     let body = Some(Body {

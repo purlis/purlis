@@ -77,7 +77,7 @@ pub mod said;
 mod tag;
 mod tip;
 
-pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push, check_push_in};
+pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, PushCheck, check_push};
 pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
@@ -229,10 +229,6 @@ pub trait Trees: Send + Sync {
     fn changed(&self, against: &HeadSha, tip: &HeadSha) -> Result<Vec<String>, String>;
     /// The patch of `paths` between the trees.
     fn patch(&self, against: &HeadSha, tip: &HeadSha, paths: &[String]) -> Result<String, String>;
-    /// Every file of the tree of `commit`, as a path.
-    fn files(&self, commit: &HeadSha) -> Result<Vec<String>, String>;
-    /// The text of `path` at `commit`, or `None` where the commit has no such file.
-    fn read(&self, commit: &HeadSha, path: &str) -> Result<Option<String>, String>;
     /// The message of the commit `tip`, as a push of it sends it. A store that cannot say has no
     /// push to show.
     fn message(&self, _tip: &HeadSha) -> Result<String, String> {

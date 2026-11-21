@@ -645,6 +645,11 @@ impl HeldForge for GitLabHeld {
 
     fn ci_config_path(&self, repo: &Repo) -> Result<Option<String>, String> {
         let record = self.project_record(repo)?;
+        // `null` and an empty string are the default pipeline file; a record that does not carry
+        // the key at all is one purlis cannot read the path from, and a guess is never made.
+        if record.get("ci_config_path").is_none() {
+            return Err("the project's record does not say where its pipeline file is".to_owned());
+        }
         Ok(text(&record, "ci_config_path").map(str::to_owned))
     }
 

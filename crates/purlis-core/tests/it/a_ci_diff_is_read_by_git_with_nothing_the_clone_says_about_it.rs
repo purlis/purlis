@@ -114,14 +114,6 @@ impl Trees for Binary {
     fn patch(&self, _: &HeadSha, _: &HeadSha, _: &[String]) -> Result<String, String> {
         Ok("diff --git a/x b/x\nBinary files a/x and b/x differ\n".to_owned())
     }
-
-    fn files(&self, _: &HeadSha) -> Result<Vec<String>, String> {
-        Ok(Vec::new())
-    }
-
-    fn read(&self, _: &HeadSha, _: &str) -> Result<Option<String>, String> {
-        Ok(None)
-    }
 }
 
 #[test]

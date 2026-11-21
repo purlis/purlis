@@ -55,3 +55,37 @@ to approve it."* and the request waits for a connected desktop.
 chat gets a 403 with one sentence that names the ask: *"purlis holds tags. It has asked the person;
 the tag happens when they approve it in Asks. Ask 3: tag v1.4.0 in acme/app."* A yes typed in the chat
 is not the press.
+
+## Which pushes are CI-file pushes: by path, never by parsing (round 6 of #7299)
+
+**The rule is on the path alone.** A push is held as a CI-file push if it adds, changes, deletes or
+renames (a rename is the removal and the addition it is, so both paths count):
+
+- **on GitLab**, any file whose name ends in `.yml` or `.yaml`, in any case, anywhere in the tree,
+  or the project's configured pipeline file (`ci_config_path`);
+- **on GitHub**, anything under `.github/` (workflows, local actions, reusable workflows, and what
+  they reference), or a file named `action.yml` or `action.yaml`, in any case, anywhere, which a
+  `uses: ./path` can name;
+- on both, the dependency bots' configuration and `CODEOWNERS`, as before.
+
+`ci_config_path` is read from the forge's project API at prepare time, as the person, and never
+cached. A project record that cannot be read, or that does not carry the field, **refuses the ask**
+with a sentence that says why; purlis does not guess the default.
+
+**Why parsing was dropped.** The first design worked out which files a pipeline runs by reading its
+`include:` graph with a YAML parser (`yaml-rust2`). Five rounds of review each found new inputs on
+which that parser and GitLab's own loader read a file differently: merge keys, tags, byte order
+marks, line breaks the two spell differently, `---` handling, symbol keys, `spec:inputs`
+interpolation of keys, a multi-document split the loader does itself. Each fix narrowed the gap and
+none closed it, because the decision depended on two readers agreeing on every file a chat can write.
+A GitLab `local:` include must be a `.yml` or `.yaml` file, so the name rule covers every local
+include without reading one. `strict_subset`, the tag audit, the alias audit and `includes_of` are
+gone, as is the `yaml-rust2` dependency of `purlis-core`, and the ask no longer lists what a
+pipeline runs from outside the repository.
+
+**The trade-off.** On a GitLab repository a push that edits only YAML nothing includes (a data
+file, a Helm values file, an OpenAPI document) asks for the person's press where it did not need to.
+That cost is accepted: an extra ask is visible and cheap, and a pipeline file read differently by
+two parsers is not. What the rule cannot name is a file a pipeline or workflow runs that is not YAML
+and not under `.github/` (a script a job calls, a local action's `index.js` outside `.github/`):
+those are not held by this rule, and are the forge credential's to bound (ADR 0128).

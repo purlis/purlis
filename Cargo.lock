@@ -6531,7 +6531,6 @@ dependencies = [
  "wiremock",
  "x509-cert 0.3.0",
  "xattr",
- "yaml-rust2",
  "zeroize",
  "zip",
 ]

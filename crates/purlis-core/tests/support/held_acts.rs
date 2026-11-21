@@ -77,6 +77,8 @@ pub struct State {
     pub merged: HashSet<HeadSha>,
     pub tags: HashMap<String, HeadSha>,
     pub ci_config: Option<String>,
+    /// The forge cannot say the project's `ci_config_path`, in these words.
+    pub ci_config_unreadable: Option<String>,
     pub may_fork: bool,
     pub source_id: String,
     pub account: String,
@@ -179,7 +181,10 @@ impl HeldForge for Fake {
     }
 
     fn ci_config_path(&self, _: &Repo) -> Result<Option<String>, String> {
-        Ok(self.with(|s| s.ci_config.clone()))
+        self.with(|s| match &s.ci_config_unreadable {
+            Some(why) => Err(why.clone()),
+            None => Ok(s.ci_config.clone()),
+        })
     }
 
     fn source_id(&self, _: &Repo) -> Result<String, String> {
@@ -293,14 +298,6 @@ impl Trees for NoTrees {
     }
 
     fn patch(&self, _: &HeadSha, _: &HeadSha, _: &[String]) -> Result<String, String> {
-        Err("no clone".to_owned())
-    }
-
-    fn files(&self, _: &HeadSha) -> Result<Vec<String>, String> {
-        Err("no clone".to_owned())
-    }
-
-    fn read(&self, _: &HeadSha, _: &str) -> Result<Option<String>, String> {
         Err("no clone".to_owned())
     }
 }
