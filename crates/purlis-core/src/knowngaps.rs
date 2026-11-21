@@ -786,7 +786,7 @@ pub fn refusal(
     // A start in a deny state with nothing verified is judged by no accepted copy, so a gap of any
     // family counts, whatever mode the floor gives it (M75-14, #7305 round 4).
     let sealed = crate::policy::decide::Sealed::for_start(judged.root);
-    let gaps = if sealed.standing.is_deny() && sealed.standing.kept.is_empty() {
+    let gaps = if sealed.standing.is_unverified_by_a_reachable_cause() {
         declared.context_gaps_if_all_enforced()
     } else {
         declared.context_gaps()

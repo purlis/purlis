@@ -677,7 +677,10 @@ fn a_start_with_an_entry_that_does_not_read_is_refused() {
         // A version sealed before the format stamp: its personas are not known.
         Entry::new(answers::FLOOR, "{\"settings_file\":\"purlis.toml\"}"),
     ] {
-        for standing in [holding(vec![entry.clone()]), denied_past_the_cap(vec![entry.clone()])] {
+        for standing in [
+            holding(vec![entry.clone()]),
+            denied_past_the_cap(vec![entry.clone()]),
+        ] {
             let said = by(&root, &standing, &start());
             assert_eq!(said.after_mode, Outcome::Deny, "{entry:?} {said:?}");
         }
@@ -694,7 +697,11 @@ fn a_start_with_known_gaps_is_refused_where_nothing_was_verified() {
         ..Standing::fresh()
     };
     let said = by(&root, &denied, &start());
-    assert_eq!(said.after_mode, strict_of_start(), "no gaps: the shipped strict policy");
+    assert_eq!(
+        said.after_mode,
+        strict_of_start(),
+        "no gaps: the shipped strict policy"
+    );
     let mut gappy = start();
     gappy.context["gaps"] = serde_json::json!(["processes"]);
     let said = by(&root, &denied, &gappy);
@@ -827,7 +834,10 @@ fn a_head_that_never_holds_still_has_no_version_of_two_commits() {
         git(&at, &["update-ref", "HEAD", to]);
     })));
     let read = Version::at_head(&root);
-    assert!(matches!(read, Head::Unread), "a HEAD that keeps moving is no read: {read:?}");
+    assert!(
+        matches!(read, Head::Unread),
+        "a HEAD that keeps moving is no read: {read:?}"
+    );
     // The current side is then undecidable, never a fresh read over a world with no workspaces.
     let said = host(&root, &merge(true));
     seam::set(None);
@@ -935,8 +945,78 @@ fn a_start_that_does_not_say_its_gaps_is_refused_where_nothing_was_verified() {
     let open = "[policy]\ntemplate = \"open\"\n";
     let root = plane(&m, &[("purlis.toml", open)]);
     let mut silent = start();
-    silent.context.as_object_mut().expect("object").remove("gaps");
+    silent
+        .context
+        .as_object_mut()
+        .expect("object")
+        .remove("gaps");
     assert!(has_gaps(&silent), "a missing `gaps` counts as a gap");
     let said = by(&root, &clone_key_swapped(), &silent);
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+// ---- review round 5: a start no chat can have brought to a refusal --------------------------
+
+fn gappy_start() -> Request<'static> {
+    let mut gappy = start();
+    gappy.context["gaps"] = serde_json::json!(["sandbox", "network"]);
+    gappy
+}
+
+#[test]
+fn a_plane_with_no_store_or_a_keyring_at_fault_starts_with_gaps_as_it_always_did() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let standing_of = |state: State| Standing {
+        state,
+        ..Standing::fresh()
+    };
+    let fresh = by(&root, &Standing::fresh(), &gappy_start());
+    assert_ne!(fresh.after_mode, Outcome::Deny, "{fresh:?}");
+    for state in [
+        State::NoKeyring,
+        State::Unverifiable,
+        State::Deny(vec![Deny::KeyringDidNotStart]),
+        State::Deny(vec![Deny::SealKeyLocked]),
+        State::Deny(vec![Deny::NeversNotImported]),
+    ] {
+        let said = by(&root, &standing_of(state.clone()), &gappy_start());
+        assert_eq!(said.after_mode, fresh.after_mode, "{state:?}: {said:?}");
+        assert!(said.deny_state.is_none(), "{state:?}: {said:?}");
+    }
+}
+
+#[test]
+fn a_keyring_cause_beside_a_cause_a_chat_reaches_still_refuses_a_start_with_gaps() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let root = plane(&m, &[("purlis.toml", open)]);
+    let both = Standing {
+        state: State::Deny(vec![Deny::KeyringDidNotStart, Deny::CloneKeySwapped]),
+        ..Standing::fresh()
+    };
+    let said = by(&root, &both, &gappy_start());
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+}
+
+#[test]
+fn a_folder_that_is_no_repository_starts_with_gaps_where_a_broken_git_does_not() {
+    let m = machine();
+    let open = "[policy]\ntemplate = \"open\"\n";
+    let bare = m.dir.path().join("not-a-repository");
+    std::fs::create_dir_all(&bare).expect("a folder");
+    let bare = std::fs::canonicalize(&bare).expect("a real path");
+    std::fs::write(bare.join("purlis.toml"), open).expect("a file");
+    let said = by(&bare, &Standing::fresh(), &gappy_start());
+    assert_ne!(
+        said.after_mode,
+        Outcome::Deny,
+        "no commit is no refusal: {said:?}"
+    );
+    // A `.git` that git cannot read is a repository that failed, never one that is not there.
+    let broken = m.dir.path().join("broken");
+    std::fs::create_dir_all(broken.join(".git")).expect("a broken .git");
+    let said = by(&broken, &Standing::fresh(), &gappy_start());
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
 }

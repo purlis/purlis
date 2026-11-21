@@ -835,6 +835,17 @@ pub enum Deny {
 }
 
 impl Deny {
+    /// Whether a chat can bring this cause about: one that writes the project's `.git`, the
+    /// store's files or the registry can, and one of the person's keyring (it did not start, it
+    /// stays locked, the old nevers are not imported) cannot. A start is refused for the first
+    /// kind only (M75-14, #7305 round 5).
+    pub fn a_chat_can_reach(&self) -> bool {
+        !matches!(
+            self,
+            Self::SealKeyLocked | Self::KeyringDidNotStart | Self::NeversNotImported
+        )
+    }
+
     /// What this cause says, in words, for doctor and the window.
     pub fn said(&self) -> String {
         match self {
@@ -939,6 +950,14 @@ impl Standing {
     /// Whether the plane is in the deny state.
     pub fn is_deny(&self) -> bool {
         matches!(self.state, State::Deny(_))
+    }
+
+    /// Whether a start is judged as if nothing were verified and no gap accepted: the plane is in
+    /// the deny state, no verified answer was kept, and a cause a chat can reach is among its
+    /// causes ([`Deny::a_chat_can_reach`]). Where only the keyring is at fault, or the plane has
+    /// no store (`Fresh`, `NoKeyring`, `Unverifiable`), a start is judged as it always was.
+    pub fn is_unverified_by_a_reachable_cause(&self) -> bool {
+        self.is_deny() && self.kept.is_empty() && self.causes().iter().any(Deny::a_chat_can_reach)
     }
 
     /// The causes, empty unless denied.
