@@ -8763,6 +8763,7 @@ pub mod claude_wrap;
 pub mod codex;
 pub mod compile_cache;
 pub mod confined;
+pub mod denial_report;
 pub mod door;
 pub mod egress;
 #[cfg(feature = "fuzzing")]
