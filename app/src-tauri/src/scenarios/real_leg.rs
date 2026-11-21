@@ -871,7 +871,8 @@ fn script_of_the_held(command: &str) -> String {
 fn poll_for(file: &Path) -> String {
     format!(
         "for i in 1 2 3 4 5 6 7; do grep -q net-exit '{file}' 2>/dev/null && break; sleep 1; done; \
-         cat '{file}' 2>/dev/null; echo polled",
+         cat '{file}' 2>/dev/null; ls -l '{file}' 2>&1; \\
+         ps -eo pid,sid,args 2>/dev/null | grep -E 'curl|network' | grep -v grep; echo polled",
         file = file.display(),
     )
 }
@@ -1067,6 +1068,9 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         let last = polls.last().expect("polls").as_str();
         scenario.answers_until_played(chat, &[last], &driving);
         // The command's own word: curl's exit, said into the file the polls read.
+        let started = scenario
+            .result_of(chat, "network-start")
+            .map(|line| line["text"].to_string());
         let said_by_polls: Vec<String> = polls
             .iter()
             .filter_map(|name| scenario.result_of(chat, name))
@@ -1079,7 +1083,9 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         assert!(
             exit.is_some_and(|code| code != 0 && code != 127),
             "the connection to a host the project does not list was not refused at Full \
-             (curl's exit: {exit:?}): {said_by_polls:?}\n{said}"
+             (curl's exit: {exit:?}); it was started with {started:?}; the first polls: \
+             {:?}\n{said}",
+            &said_by_polls[..said_by_polls.len().min(2)]
         );
         // And the refusal is recorded against the host: a block of it in the log, which a
         // connection that never reached purlis's proxy would not leave.
