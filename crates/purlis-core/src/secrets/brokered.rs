@@ -4067,6 +4067,9 @@ pub(crate) fn serve_recorded(
         command: command.clone(),
         argv0: None,
     };
+    // What a failed run of a minting tool is told of its clone (#7196): the grants and the record
+    // its mint read, kept to say it by, only when the run fails.
+    let mut minted_by: Option<(Vec<PathBuf>, Option<PathBuf>)> = None;
     let prepared = match (&v, handed, &minting) {
         // A GitHub App's token, minted here from its key, which goes to nothing else (#2053, E2):
         // the tool's one key is answered with the token.
@@ -4079,6 +4082,7 @@ pub(crate) fn serve_recorded(
             }
             // And only those purlis cloned or the person saved from the window.
             let config_root = crate::forge::apptoken::record_root();
+            minted_by = Some((grants.clone(), config_root.clone()));
             // The App's key is read to mint, through a link too: judged as any read (#5795).
             let minted_from: Vec<&str> = tool.values.iter().map(|one| one.key.as_str()).collect();
             if let Some(why) = read_out_of_reach(&ctx, persona, &tool.vault, &minted_from) {
@@ -4517,6 +4521,25 @@ pub(crate) fn serve_recorded(
             &secret_values,
         ),
     );
+    // A tool that failed in a clone the window did not make is told so, naming that clone: its
+    // token left that repo out, which may be why (#7196). Said, never refused.
+    if code != 0
+        && let Some((grants, config_root)) = &minted_by
+        && let Some(note) =
+            crate::forge::apptoken::unrecorded_here_note(&crate::forge::apptoken::For {
+                root: &asker.root,
+                chat: asker.chat,
+                folder: asker.folder.as_deref(),
+                here: wanted.cwd.as_deref(),
+                writes: grants,
+                started: Some(&confines.clones),
+                on_a_runner: false,
+                config_root: config_root.as_deref(),
+                ends_seen: None,
+            })
+    {
+        let _ = send(&mut *writer, &Frame::Note(note));
+    }
     let (withheld, named): (Vec<String>, Vec<String>) = refusals
         .refused()
         .into_iter()

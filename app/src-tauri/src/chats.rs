@@ -5535,6 +5535,33 @@ impl Chats {
                 runs_as.as_deref(),
             )
         }));
+        // Clones of the workspace that were not made from the window get no Agent identity token
+        // (#7196): said from the start, not left for a `gh` to find.
+        late.extend(sandbox.and_then(|applied| {
+            let mints = applied
+                .confines()
+                .tools
+                .iter()
+                .any(|ready| ready.tool.mint.is_some());
+            let record = purlis_core::forge::apptoken::record_root();
+            mints
+                .then(|| {
+                    purlis_core::forge::apptoken::unrecorded_note(
+                        &purlis_core::forge::apptoken::For {
+                            root: &self.project,
+                            chat: 0,
+                            folder: chat.cwd.as_deref(),
+                            here: None,
+                            writes: &[],
+                            started: None,
+                            on_a_runner: false,
+                            config_root: record.as_deref(),
+                            ends_seen: None,
+                        },
+                    )
+                })
+                .flatten()
+        }));
         // **Whether the plane's skills reach it** (#3445): the Skill studio's flag, read once
         // here, so its arming, its Notice, its stamp and Use skill… take the same word; a chat
         // reattached keeps its start's, where its record has it (#3466).
