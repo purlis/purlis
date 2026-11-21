@@ -98,6 +98,7 @@ impl Channel for StandInChannel {
     fn report_to(&self, number: u32) -> Result<Reporting, String> {
         self.0.say(format!("token for {number}"));
         Ok(Reporting {
+            seal: None,
             socket: "/the/project/hooks.sock".into(),
             token: format!("token-{number}"),
         })
@@ -221,6 +222,7 @@ fn the_windows_start(number: Option<u32>) -> StartProgram {
             harness: None,
             git_hooks: None,
             reporting: Some(Reporting {
+                seal: None,
                 socket: "/the/window/s/own.sock".into(),
                 token: "the-window-s-token".into(),
             }),

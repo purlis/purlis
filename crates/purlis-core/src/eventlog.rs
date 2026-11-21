@@ -1192,6 +1192,10 @@ fn read_on(reading: &mut Reading, last: &mut u64, got: &mut Vec<Delivery>) -> io
 /// The file in a device's directory that holds the key its args digests are made with.
 pub const ARGS_KEY: &str = "args.key";
 
+/// The folder in a device's directory that holds the private keys spooled digests are sealed
+/// to ([`crate::hookwire::seal`]).
+pub const SEAL_DIR: &str = "seal";
+
 /// How many random bytes the args key is.
 const KEY_BYTES: usize = 32;
 
@@ -1203,8 +1207,9 @@ const KEY_BYTES: usize = 32;
 /// arguments. The key is made once and kept, as `fingerprint.key` is for a project's `fp:`
 /// values, so a digest compares with yesterday's; AU-19 may move it into the keyring.
 ///
-/// **Who can read it:** anything running as the same OS user, and whoever holds a backup that
-/// carries it (FR-10 backs it up with the log). The key keeps the digests from everyone else.
+/// **Who can read it:** the person's own programs, and whoever holds a backup that carries it
+/// (FR-10 backs it up with the log). A chat's sandbox neither reads nor writes it
+/// (`sandbox::event_keys_held`). The key keeps the digests from everyone else.
 /// The hook sends the host the arguments' *unkeyed* SHA-256, on the chat's own hook channel,
 /// which only the same user can reach.
 pub struct ArgsKey(Vec<u8>);
@@ -1450,6 +1455,10 @@ pub fn phase(word: &str) -> Option<Phase> {
 /// not check, a sequence drained, and a refused commit's line drained from a spool.
 pub const SPOOL_GAP: &str = "hook.spool.gap";
 pub const SPOOL_REJECTED: &str = "hook.spool.rejected";
+
+/// The `why` of a `hook.spool.rejected` that is not a line refused: a tool line's sealed
+/// argument digest could not be opened, so the line was recorded without its `args` (#6880).
+pub const ARGS_UNREADABLE: &str = "args_unreadable";
 pub const SPOOL_DRAINED: &str = "hook.spool.drained";
 pub const COMMIT_REFUSED: &str = "hook.commit_refused";
 
@@ -1853,6 +1862,43 @@ impl Recorder {
         Some(data.join(EVENTS).join(device))
     }
 
+    /// The public key chat `chat` of the project at `plane` seals its spooled argument digests
+    /// to, its private half kept in this log's folder (#6880). `None` for a recorder with no
+    /// folder of its own, and where the key cannot be kept: the chat then spools without a
+    /// digest.
+    #[cfg(unix)]
+    pub fn seal_public(&self, plane: &Path, chat: u32) -> Option<String> {
+        (!self.dir.as_os_str().is_empty())
+            .then(|| crate::hookwire::seal::public_for(&self.dir, plane, chat).ok())
+            .flatten()
+    }
+
+    /// Where there is no spool to seal for (the channel is a unix socket), a chat spools
+    /// without a digest.
+    #[cfg(not(unix))]
+    pub fn seal_public(&self, _plane: &Path, _chat: u32) -> Option<String> {
+        None
+    }
+
+    /// Deletes chat `chat`'s seal key in the project at `plane`: said once the chat has ended
+    /// and its spool is drained, so no line is left that only that key opens.
+    #[cfg(unix)]
+    pub fn forget_seal(&self, plane: &Path, chat: u32) -> io::Result<()> {
+        if self.dir.as_os_str().is_empty() {
+            return Ok(());
+        }
+        crate::hookwire::seal::forget(&self.dir, plane, chat)
+    }
+
+    /// Deletes the seal key of each chat of the project at `plane` that `ended` says has ended.
+    #[cfg(unix)]
+    pub fn forget_seals(&self, plane: &Path, ended: impl Fn(u32) -> bool) -> io::Result<()> {
+        if self.dir.as_os_str().is_empty() {
+            return Ok(());
+        }
+        crate::hookwire::seal::forget_ended(&self.dir, plane, ended)
+    }
+
     pub fn new(log: Log, key: ArgsKey) -> Recorder {
         Recorder {
             dir: PathBuf::new(),
@@ -2196,9 +2242,40 @@ impl Recorder {
         item: crate::hookwire::spool::Drained,
     ) -> io::Result<Event> {
         use crate::hookwire::spool::{Drained, Spooled};
+        // A tool line's digest was sealed to its chat's key when it was spooled (#6880): opened
+        // here, so the line joins the live ones once keyed. A key that opens nothing leaves the
+        // line without a digest, and the log says so; the sealed text is never kept.
+        let mut item = item;
+        let mut unreadable = None;
+        if let Drained::Line {
+            seq,
+            line: Spooled::Tool(call),
+            ..
+        } = &mut item
+            && let Some(args) = call.args.as_deref()
+            && crate::hookwire::seal::is_sealed(args)
+        {
+            call.args = crate::hookwire::seal::open(&self.dir, plane, call.chat, args);
+            if call.args.is_none() {
+                unreadable = Some(*seq);
+            }
+        }
         let number = item.chat();
         self.begun(plane, number)?;
         let known = self.chats.get(&(plane.to_path_buf(), number)).cloned();
+        if let Some(seq) = unreadable {
+            let body = serde_json::json!({
+                "seq": seq,
+                "why": ARGS_UNREADABLE,
+                "chat_number": number,
+            });
+            match &known {
+                Some(who) => {
+                    self.write(Some(&who.chat), Some(&who.run), None, SPOOL_REJECTED, body)?
+                }
+                None => self.write(None, None, None, SPOOL_REJECTED, body)?,
+            };
+        }
         let (kind, mut body) = match item {
             Drained::Line { seq, line, .. } => match (line, &known) {
                 (Spooled::Report(report), Some(_)) => {

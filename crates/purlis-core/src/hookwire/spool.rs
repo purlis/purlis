@@ -64,10 +64,11 @@
 //! a hook socket anywhere else (the fallback for a project whose path is too long for a
 //! socket) nothing is spooled and no key is written, and the hook says the line is lost.
 //!
-//! **No unkeyed argument digest is kept** (#977). A tool line's `args` is the arguments'
+//! **No unkeyed argument digest is kept** (#977, #6880). A tool line's `args` is the arguments'
 //! unkeyed SHA-256, which the host keys with the device's key before it writes it. A spooled
-//! line leaves it out ([`append`]), so the event a drained tool line becomes has no `args`; a
-//! line a build before this one spooled is drained with the digest it holds, and keyed then.
+//! line holds it sealed to the chat's public key ([`append`], [`super::seal`]), which only the
+//! host can open, so the drained line still joins the live ones; a line a build before this one
+//! spooled leaves it out and is drained without one.
 //!
 //! **Numbers are per key.** A key is one token, and a token is one start of a chat, so its
 //! sequence starts at 1 and runs on across every drain until the chat ends.
@@ -776,10 +777,23 @@ fn append_within(
     what: &impl serde::Serialize,
     bounds: Bounds,
 ) -> io::Result<u64> {
+    let public = crate::envvar::var(super::seal::SEAL_ENV);
+    append_sealing_to(dir, chat, token, what, bounds, public.as_deref())
+}
+
+/// [`append_within`], a tool line's digest sealed to `public` where there is one.
+fn append_sealing_to(
+    dir: &Path,
+    chat: u32,
+    token: &ChatToken,
+    what: &impl serde::Serialize,
+    bounds: Bounds,
+    public: Option<&str>,
+) -> io::Result<u64> {
     refused_unless_covered(dir)?;
     private(dir)?;
     let key = SpoolKey::of(token);
-    let line = serde_json::to_string(&at_rest(what)?).map_err(io::Error::other)?;
+    let line = serde_json::to_string(&at_rest(what, public)?).map_err(io::Error::other)?;
     let dir = dir.to_path_buf();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::Builder::new()
@@ -804,15 +818,23 @@ fn append_within(
     }
 }
 
-/// `what` as a spooled line may hold it (#977): without the argument digest a tool line carries
-/// ([`ToolCall::args`]). That digest is the arguments' unkeyed SHA-256, which anyone who reads it
-/// can match against a guess at them, and only the host keys it, with the device's key, before
-/// it writes it anywhere. A spooled line is on disk before any host has seen it, so it is left
-/// out, and the event a drained tool line becomes has no `args`.
-fn at_rest(what: &impl serde::Serialize) -> io::Result<serde_json::Value> {
+/// `what` as a spooled line may hold it (#977, #6880): a tool line's argument digest is the
+/// arguments' unkeyed SHA-256, which anyone who reads it can match against a guess at them, and
+/// only the host keys it, with the device's key, before it writes it anywhere. A spooled line
+/// is on disk before any host has seen it, so the digest is sealed to the chat's public key
+/// ([`super::seal`], from its environment) and only the host can open it at the drain. With no
+/// key to seal to, or one that is not a key, the line goes without it.
+fn at_rest(what: &impl serde::Serialize, public: Option<&str>) -> io::Result<serde_json::Value> {
     let mut value = serde_json::to_value(what).map_err(io::Error::other)?;
-    if let Some(fields) = value.as_object_mut() {
-        fields.remove(ARGS);
+    if let Some(fields) = value.as_object_mut()
+        && let Some(hash) = fields.remove(ARGS)
+    {
+        let sealed = hash
+            .as_str()
+            .and_then(|hash| super::seal::seal(public?, hash));
+        if let Some(sealed) = sealed {
+            fields.insert(ARGS.into(), sealed.into());
+        }
     }
     Ok(value)
 }
