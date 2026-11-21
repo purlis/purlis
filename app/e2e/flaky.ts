@@ -25,7 +25,9 @@ export function flakesOfWorker(
   return specs.map((spec) =>
     flakyAnnotation({
       retries: retried,
-      test: relative(root, spec.replace(/^file:\/\//, "")).split("\\").join("/"),
+      test: relative(root, spec.replace(/^file:\/\//, ""))
+        .split("\\")
+        .join("/"),
     }),
   );
 }

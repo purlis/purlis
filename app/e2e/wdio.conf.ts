@@ -37,6 +37,7 @@ import { whatTheWindowShows } from "./windowShows.js";
 import { aSessionBegins, aSessionEnds, recordTiming } from "./timings.js";
 import { specsOfPart } from "./parts.js";
 import { SPEC_FILE_RETRIES, flakesOfWorker } from "./flaky.js";
+import { quarantinedSpecs } from "./quarantined.js";
 
 /**
  * The scenario tests: WebdriverIO driving the real app, with the fake harness standing in for
@@ -197,6 +198,9 @@ export const config: WebdriverIO.Config = {
     // The nightly scale run opens a project of a thousand workspaces (`wdio.scale.conf.ts`, #5497).
     "./specs/**/*.scale.e2e.ts",
     ...(process.env.STRESS === "1" ? [] : ["./specs/stress.e2e.ts"]),
+    // A spec file that flaked three times in seven days waits in `ci/quarantine.toml` for its
+    // fix, and only the nightly run runs it (ADR 0127, `quarantined.ts`).
+    ...quarantinedSpecs(),
   ],
   maxInstances: 1,
   // A spec file that fails is started once more in CI, and a pass on that retry is a flake: named

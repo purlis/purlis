@@ -175,7 +175,12 @@ export default defineConfig(async ({ command }) => ({
     // warning, never silently green (ADR 0127, `tools/vitest-flaky-reporter.mjs`). Not locally,
     // where a red is the answer a person is waiting for.
     ...(process.env.CI
-      ? { reporters: ["default", fileURLToPath(new URL("../tools/vitest-flaky-reporter.mjs", import.meta.url))] }
+      ? {
+          reporters: [
+            "default",
+            fileURLToPath(new URL("../tools/vitest-flaky-reporter.mjs", import.meta.url)),
+          ],
+        }
       : {}),
     projects: [
       {

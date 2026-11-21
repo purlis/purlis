@@ -378,9 +378,12 @@ jobs:
       # suite's heavy neighbours (the theme engine's import tests, 50 to 170 s each) to the same
       # part, and in three parts on 2026-10-27 part 1 summed 51.6 minutes of tests against 35 and
       # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
+      # Without the tests `ci/quarantine.toml` lists (ADR 0127), which only the nightly run runs:
+      # `tools/quarantine.mjs` says so as a filterset, `all()` when none is listed. The part's
+      # own `hash:` still places each test by its name.
       - name: Run the tests
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E "not test(/::in_a_docker_pool\$/) & $(node tools/quarantine.mjs nextest)"
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -1568,7 +1571,7 @@ jobs:
           cargo build --locked -p purlis-cli --bin purlis
           cargo build --locked -p fake-harness --bin fake-harness
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E "not (package(purlis-app) & test(/^behaviour::/)) & $(node tools/quarantine.mjs nextest)"
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
