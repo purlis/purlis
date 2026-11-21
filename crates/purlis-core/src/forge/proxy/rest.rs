@@ -348,10 +348,7 @@ const READ_QUERY_KEYS: &[&str] = &[
     "name",
     "source",
     "event",
-    "with_labels_details",
     "pagination",
-    "id",
-    "iid",
 ];
 
 fn read_query_ok(target: &Target) -> bool {
@@ -398,7 +395,10 @@ fn compare_is_own(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRep
 /// with. Anything else (secret scanning, traffic, exports, triggers…) is not on it.
 fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo) -> bool {
     // No read impersonates, on any route.
-    if target.has_query_key("sudo") {
+    if target.has_query_key("sudo")
+        || target.has_query_key("render_html")
+        || target.has_query_key("include_html_description")
+    {
         return false;
     }
     let first = rel.first().map(|s| s.to_ascii_lowercase());
@@ -524,7 +524,11 @@ fn check_body(
             return Err(Refusal::OtherRepo);
         }
     }
-    if kind == Kind::GitLab && rel.first().is_some_and(|f| f == "merge_requests") {
+    if kind == Kind::GitLab
+        && rel
+            .first()
+            .is_some_and(|f| f.eq_ignore_ascii_case("merge_requests"))
+    {
         let mut named: Vec<String> = Vec::new();
         if let Some(v) = body.json.as_ref().and_then(|j| j.get("target_project_id")) {
             named.push(v.as_str().map_or_else(|| v.to_string(), str::to_string));
@@ -532,7 +536,7 @@ fn check_body(
         named.extend(
             body.form
                 .iter()
-                .filter(|(k, _)| k == "target_project_id")
+                .filter(|(k, _)| k.eq_ignore_ascii_case("target_project_id"))
                 .map(|(_, v)| v.clone()),
         );
         let own = repo.project_id.map(|id| id.to_string());

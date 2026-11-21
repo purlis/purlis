@@ -798,3 +798,66 @@ fn a_sudo_header_is_not_passed_to_the_forge() {
         );
     }
 }
+
+#[test]
+fn a_quick_action_hidden_by_a_carriage_return_is_read_the_way_gitlab_reads_it() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    // GitLab deletes every `\r` before it matches, so each of these is a command to it.
+    for (text, refusal) in [
+        ("/\rmerge", Refusal::MergeCommand),
+        ("ok\n/me\rrge", Refusal::MergeCommand),
+        ("/label ~auto\rmerge", Refusal::MergeCommand),
+        ("/\rmove grp/other", Refusal::QuickAction),
+    ] {
+        let target = "/api/v4/projects/42/issues/5/notes";
+        let out = post_gitlab(&s, target, &serde_json::json!({ "body": text }).to_string());
+        assert!(is_refused(&out, refusal), "json {text:?}: {out:?}");
+        let form = format!("body={}", text.replace('\r', "%0D").replace('/', "%2F"));
+        let out = s.send("POST", "gitlab.com", target, form.as_bytes());
+        assert!(is_refused(&out, refusal), "form {text:?}: {out:?}");
+        let q = "mutation($b:String!){ createNote(input:{noteableId:\"gid://gitlab/Issue/5\", body:$b}){ errors } }";
+        let out = s.send(
+            "POST",
+            "gitlab.com",
+            "/api/graphql",
+            &graphql(q, serde_json::json!({ "b": text })),
+        );
+        assert!(
+            matches!(out, Outcome::Refused(_)),
+            "graphql {text:?}: {out:?}"
+        );
+    }
+}
+
+#[test]
+fn a_quick_action_whose_word_gitlab_folds_to_ascii_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    // U+212A (Kelvin sign) and U+017F (long s) fold to `k` and `s` under Unicode case folding.
+    for text in [
+        "/bloc\u{212a}s grp/other#3",
+        "/unlin\u{212a} #4",
+        "/\u{17f}ubscribe",
+        "/\u{17f}et_parent #4",
+    ] {
+        let out = post_gitlab(
+            &s,
+            "/api/v4/projects/42/issues/5/notes",
+            &serde_json::json!({ "body": text }).to_string(),
+        );
+        assert!(is_refused(&out, Refusal::QuickAction), "{text:?}: {out:?}");
+    }
+}
+
+#[test]
+fn a_carriage_return_inside_ordinary_text_is_still_forwarded() {
+    purlis_core::unsteered!();
+    let s = Scene::single();
+    let out = post_gitlab(
+        &s,
+        "/api/v4/projects/42/issues/5/notes",
+        &serde_json::json!({ "body": "line one\r\nsee a/b\r\n" }).to_string(),
+    );
+    assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+}

@@ -99,8 +99,14 @@ fn is_label_quick_action(line: &str) -> bool {
 }
 
 /// Whether any line of `text` is one of [`COMMANDS`] or a label quick action naming a merge label,
-/// or the whole of it is a merge label.
+/// or the whole of it is a merge label. GitLab deletes every `\r` before it reads quick actions
+/// (`content.delete!("\r")`), so the text is read as written and with every `\r` removed.
 pub(crate) fn has_merge_command(text: &str) -> bool {
+    has_merge_command_as_written(text)
+        || (text.contains('\r') && has_merge_command_as_written(&text.replace('\r', "")))
+}
+
+fn has_merge_command_as_written(text: &str) -> bool {
     if is_merge_label(text) {
         return true;
     }
@@ -127,15 +133,22 @@ const LABEL_ONLY_ACTIONS: &[&str] = &["label", "unlabel", "relabel"];
 /// of a line. GitLab ignores one in a code block, but the proxy refuses it there too: a fence is
 /// not worth reading to be right about.
 pub(crate) fn has_quick_action(text: &str) -> bool {
+    has_quick_action_as_written(text)
+        || (text.contains('\r') && has_quick_action_as_written(&text.replace('\r', "")))
+}
+
+fn has_quick_action_as_written(text: &str) -> bool {
     text.split(LINE_BREAKS).any(|line| {
         line.trim_start().strip_prefix('/').is_some_and(|rest| {
-            let word_len = rest
-                .bytes()
-                .take_while(|b| b.is_ascii_alphabetic() || *b == b'_')
-                .count();
-            word_len > 0
-                && !LABEL_ONLY_ACTIONS.contains(&rest[..word_len].to_ascii_lowercase().as_str())
-                && rest[word_len..]
+            // GitLab folds case with Unicode rules before it matches (a Kelvin sign is a `k`), so
+            // the word is read as Unicode letters and digits, and a non-ASCII one is refused.
+            let word: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            !word.is_empty()
+                && (!word.is_ascii() || !LABEL_ONLY_ACTIONS.contains(&word.to_lowercase().as_str()))
+                && rest[word.len()..]
                     .chars()
                     .next()
                     .is_none_or(char::is_whitespace)
