@@ -178,7 +178,7 @@ pub(crate) fn opencode_config_path(url: &str) -> PathBuf {
 /// message as the harness takes one (`purlis_core::handoff::first_message_argv`): Claude Code's
 /// permission mode (the recordings' conditions: a mode that sends no call to Anthropic's servers
 /// to judge, `tests/recordings/README.md`), and Codex's model provider, which is the stand-in.
-pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: &str) -> Vec<String> {
+pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: Option<&str>) -> Vec<String> {
     let mut words: Vec<String> = match dialect {
         Dialect::Claude => ["--permission-mode", purlis_recordings::PERMISSION_MODE]
             .map(str::to_owned)
@@ -197,10 +197,12 @@ pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: &str) -> Vec<Str
         .collect(),
         Dialect::OpenCode => Vec::new(),
     };
-    words.extend(
-        purlis_core::handoff::first_message_argv(dialect.word(), prompt)
-            .expect("the harness takes a first message"),
-    );
+    if let Some(prompt) = prompt {
+        words.extend(
+            purlis_core::handoff::first_message_argv(dialect.word(), prompt)
+                .expect("the harness takes a first message"),
+        );
+    }
     words
 }
 
@@ -483,6 +485,9 @@ impl Model {
                     )
                 })
                 .collect();
+            if let Some(raw) = &one.raw {
+                said.push_str(&format!("\n  its request, bar what it said: {raw}"));
+            }
             said.push_str(&format!(
                 "\n  {} as {:?}, response {:?}, offered {:?}, asked {:?}, shown {:?}",
                 one.path,
@@ -788,6 +793,11 @@ fn record(
 /// canary first where the sandbox is full, and then the leg's cells ([`cells`]). The test ends,
 /// saying why, where the leg cannot be set up here.
 pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
+    runs_with(dialect, protection, test, false);
+}
+
+/// [`runs`], with the first message typed once the harness has begun its session where `typing`.
+pub(crate) fn runs_with(dialect: Dialect, protection: Protection, test: &str, typing: bool) {
     let Some(program) = program(dialect) else {
         return;
     };
@@ -814,7 +824,7 @@ pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
     if protection == Protection::Full {
         canary(&scenario, &model);
     }
-    cells(&scenario, &model, protection, test);
+    cells(&scenario, &model, protection, test, typing);
 }
 
 /// **The leg's cells**, in one chat: the probe, one file cell and one network cell.
@@ -827,7 +837,7 @@ pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
 ///   the window lists its ask, the person keeps it blocked, and the command is refused by the
 ///   proxy; at the floor, where no host is asked about, a link-local address is refused by
 ///   purlis's proxy in its own words.
-fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str) {
+fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str, typing: bool) {
     use purlis_scenarios::model::ReportVerdict;
     let dialect = scenario.dialect;
     let vaults = scenario.root.join(".purlis").join("vaults");
@@ -848,7 +858,7 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         (
             "reads-the-vault",
             format!(
-                "d='{}/.pur'; d=\"${{d}}lis\"; cat \"$d/vaults/covering.json\" 2>&1; echo exit=$?",
+                "d='{}/.pur'; d=\"${{d}}lis\"; cat \"$d/vaults/covering.json\" 2>&1; echo vault-exit=$?",
                 scenario.root.display()
             ),
         ),
@@ -865,7 +875,11 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         },
     ));
     let prompt = model.plays(&steps);
-    let chat = scenario.starts_real(model, &prompt);
+    let chat = if typing {
+        scenario.starts_real_typing(model, &prompt)
+    } else {
+        scenario.starts_real(model, &prompt)
+    };
     let heard = || model.requests() > 0;
     let evidence = || model.heard_said();
     let driving = host::Driving {
@@ -906,7 +920,7 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         ["operation not permitted", "permission denied"]
             .iter()
             .any(|words| refused.said.contains(words))
-            && !refused.said.contains("exit=0"),
+            && !refused.said.contains("vault-exit=0"),
         "the vault read was not refused by the wrap (no guard reads its path: it is put together \
          in the shell): {vault_said}\n{said}"
     );
@@ -1283,10 +1297,10 @@ mod tests {
     #[test]
     fn each_harness_is_started_with_the_words_that_reach_the_stand_in() {
         let url = "http://127.0.0.1:4321";
-        let claude = launch_words(Dialect::Claude, url, "go on");
+        let claude = launch_words(Dialect::Claude, url, Some("go on"));
         assert_eq!(claude, ["--permission-mode", "bypassPermissions", "go on"]);
 
-        let codex = launch_words(Dialect::Codex, url, "go on");
+        let codex = launch_words(Dialect::Codex, url, Some("go on"));
         assert_eq!(codex.last().map(String::as_str), Some("go on"));
         let settings: Vec<&str> = codex
             .iter()
@@ -1303,8 +1317,19 @@ mod tests {
             assert!(settings.contains(&wanted), "{wanted} is missing: {codex:?}");
         }
 
-        let opencode = launch_words(Dialect::OpenCode, url, "go on");
+        let opencode = launch_words(Dialect::OpenCode, url, Some("go on"));
         assert_eq!(opencode, ["--prompt", "go on"]);
+        // Typed instead of given: no first message at all, and the rest as before.
+        assert_eq!(
+            launch_words(Dialect::Claude, url, None),
+            ["--permission-mode", "bypassPermissions"]
+        );
+        assert!(launch_words(Dialect::OpenCode, url, None).is_empty());
+        assert_eq!(
+            launch_words(Dialect::Codex, url, None).len() + 1,
+            codex.len(),
+            "the first message is the one word Codex's line gains"
+        );
     }
 
     /// **What the leg adds to a chat names no credential** (T1.1-53): each variable it names is a
@@ -1625,6 +1650,19 @@ mod tests {
             Dialect::Codex,
             Protection::Basic,
             "a_real_codex_at_the_floor_is_held_in_the_host",
+        );
+    }
+
+    /// **Codex with its first message typed, not given** (T1.1-53, an experiment of the run that
+    /// found Codex offered no tool when its message was on its command line): the same cells at
+    /// the floor, with the message typed once Codex has begun its session.
+    #[test]
+    fn a_real_codex_with_its_prompt_typed_is_held_at_the_floor() {
+        runs_with(
+            Dialect::Codex,
+            Protection::Basic,
+            "a_real_codex_with_its_prompt_typed_is_held_at_the_floor",
+            true,
         );
     }
 

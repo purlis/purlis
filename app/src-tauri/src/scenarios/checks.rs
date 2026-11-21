@@ -488,6 +488,19 @@ impl Ledger {
             .collect()
     }
 
+    /// **A grant the scenario's own setup made** for `target`, before its chat started, as the
+    /// project's settings hold the stand-in model's loopback port a real-harness leg grants its
+    /// chat (T1.1-53, as the recordings' driver does): it is the project's own, not a grant the
+    /// person made, so [`Check::NoLeftoverGrant`] does not read it as one nobody made.
+    pub(crate) fn setup_grant(&self, scenario: &Scenario, target: &str) {
+        let mut baseline = self.baseline.lock().expect("baseline");
+        for (kind, listed, _) in Self::settings_now(scenario) {
+            if listed == target && !baseline.iter().any(|(k, t)| *k == kind && *t == listed) {
+                baseline.push((kind, listed));
+            }
+        }
+    }
+
     /// Settings as the scenario begins: what is listed then is the project's own.
     pub(crate) fn begins(&self, scenario: &Scenario) {
         *self.baseline.lock().expect("baseline") = Self::settings_now(scenario)

@@ -89,6 +89,15 @@ pub(crate) fn on_ci() -> bool {
 /// terminal interface and, on a runner, a cold binary under the wrap.
 pub(crate) const REAL_PLAYS_WITHIN: Duration = Duration::from_secs(300);
 
+/// How many of each screen a real harness's driver has answered ([`Scenario::answers_a_screen`]).
+#[derive(Default)]
+struct Answered {
+    first_run: u32,
+    newer_model: u32,
+    bypass: u32,
+    permission: u32,
+}
+
 /// **What a real harness's driver reads and says** ([`Scenario::answers_until_played`]).
 pub(crate) struct Driving<'a> {
     /// Whether the stand-in model has heard the harness yet.
@@ -1362,6 +1371,17 @@ impl Scenario {
     /// answers the chat's model calls, its request log being the transcript
     /// ([`super::real_leg::Model::attach`]). Answers the chat's number.
     pub(crate) fn starts_real(&self, model: &super::real_leg::Model, prompt: &str) -> u32 {
+        self.start_real(model, prompt, false)
+    }
+
+    /// [`Self::starts_real`] with the first message typed once the harness has begun its session
+    /// (its SessionStart hook has answered), as a person types at a harness that is ready,
+    /// instead of given on its command line.
+    pub(crate) fn starts_real_typing(&self, model: &super::real_leg::Model, prompt: &str) -> u32 {
+        self.start_real(model, prompt, true)
+    }
+
+    fn start_real(&self, model: &super::real_leg::Model, prompt: &str, typing: bool) -> u32 {
         let dialect = self.dialect;
         self.profiled.call_once(|| {
             let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
@@ -1392,6 +1412,7 @@ impl Scenario {
             // port, as the recordings' chats reach it (`tests/recordings/tests/record.rs`).
             purlis_core::sandbox::local::grant_port(&self.root, model.port())
                 .expect("the stand-in's port is granted");
+            self.ledger.setup_grant(self, &model.port().to_string());
         }
         let number = self.chats.lock().expect("chats").len() + 1;
         let own = own_folder(&self.root);
@@ -1418,13 +1439,41 @@ impl Scenario {
         // prompt, which an auto mode would send to Anthropic's servers to judge (the recordings'
         // conditions, `tests/recordings/README.md`), for Codex its model provider, and the prompt
         // it starts with.
-        ready
-            .args
-            .extend(super::real_leg::launch_words(dialect, &model.url(), prompt));
+        ready.args.extend(super::real_leg::launch_words(
+            dialect,
+            &model.url(),
+            (!typing).then_some(prompt),
+        ));
         model.attach(&transcript);
+        let sessions_before = self.sessions_begun();
         let id = self.launches(&name, &ready, &transcript);
+        if typing {
+            let deadline = std::time::Instant::now() + REAL_PLAYS_WITHIN;
+            let mut answered = Answered::default();
+            while self.sessions_begun() <= sessions_before {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "chat {id} never began its session; its screen:\n{}\n{}",
+                    self.screen_tail_of(id),
+                    self.said()
+                );
+                self.answers_a_screen(id, true, &mut answered);
+                std::thread::sleep(Duration::from_millis(250));
+            }
+            self.types(id, prompt);
+        }
         self.note_running();
         id
+    }
+
+    /// How many sessions the event log says harnesses have begun (their SessionStart hook).
+    fn sessions_begun(&self) -> usize {
+        self.try_events().map_or(0, |events| {
+            events
+                .iter()
+                .filter(|event| event.kind == "hook.sessionstart")
+                .count()
+        })
     }
 
     /// **Until chat `id` has a result for each of `steps`**, answering what a real harness asks
@@ -1444,16 +1493,14 @@ impl Scenario {
     /// The same answers `tests/recordings/tests/record.rs` gives its harnesses, bar the last.
     pub(crate) fn answers_until_played(&self, id: u32, steps: &[&str], driving: &Driving<'_>) {
         let deadline = std::time::Instant::now() + REAL_PLAYS_WITHIN;
-        let (mut first_run, mut newer_model, mut bypass, mut permission) = (0, 0, 0, 0);
-        let press = |bytes: &[u8]| {
-            let _ = self.held().chats().sessions().input(id, bytes);
-        };
+        let mut answered = Answered::default();
         while !steps.iter().all(|step| self.result_of(id, step).is_some()) {
             assert!(
                 std::time::Instant::now() < deadline,
-                "chat {id} played none of {steps:?} in time; its screen:\n{}\n{}\n{}",
+                "chat {id} played none of {steps:?} in time; its screen:\n{}\n{}\n{}\n{}",
                 self.screen_tail_of(id),
                 (driving.evidence)(),
+                self.profile_logs_said(),
                 self.said()
             );
             for ask in self.queries().counted().asks {
@@ -1468,52 +1515,102 @@ impl Scenario {
                         .presses_on(&ask, &super::person::Press::Keep(None));
                 }
             }
-            let screen = self.screen_of(id).to_lowercase();
-            let nothing_heard = !(driving.heard)();
-            if first_run < 3
-                && nothing_heard
-                && [
-                    "do you trust",
-                    "trust the files",
-                    "press enter",
-                    "enter to confirm",
-                    "yes, proceed",
-                    "open restricted",
-                    "enter continue",
-                ]
-                .iter()
-                .any(|ask| screen.contains(ask))
-            {
-                press(b"\r");
-                first_run += 1;
-                std::thread::sleep(Duration::from_secs(2));
-            } else if newer_model < 3 && screen.contains("use existing model") {
-                press(b"\x1b[B");
-                std::thread::sleep(Duration::from_millis(600));
-                press(b"\r");
-                newer_model += 1;
-                std::thread::sleep(Duration::from_secs(2));
-            } else if bypass < 5
-                && screen.contains("bypass permissions mode")
-                && screen.contains("yes, i accept")
-            {
-                std::thread::sleep(Duration::from_secs(1));
-                press(b"\x1b[B");
-                std::thread::sleep(Duration::from_millis(600));
-                press(b"\r");
-                bypass += 1;
-                std::thread::sleep(Duration::from_secs(2));
-            } else if permission < 8 && screen.contains("permission required") {
-                // Once purlis's own hook on the ask has had its say: pressed sooner, OpenCode
-                // cuts that hook off (`record.rs`).
-                std::thread::sleep(Duration::from_secs(1));
-                press(b"\r");
-                permission += 1;
-                std::thread::sleep(Duration::from_secs(2));
-            }
+            self.answers_a_screen(id, !(driving.heard)(), &mut answered);
             std::thread::sleep(Duration::from_millis(250));
         }
         self.note_running();
+    }
+
+    /// **Answers what chat `id`'s screen asks of a person**, once if it asks anything: see
+    /// [`Self::answers_until_played`] for the questions. `nothing_heard` is whether the stand-in
+    /// model has heard nothing from the harness yet, which a first-run question is answered
+    /// only while.
+    fn answers_a_screen(&self, id: u32, nothing_heard: bool, answered: &mut Answered) {
+        let press = |bytes: &[u8]| {
+            let _ = self.held().chats().sessions().input(id, bytes);
+        };
+        let screen = self.screen_of(id).to_lowercase();
+        if answered.first_run < 3
+            && nothing_heard
+            && [
+                "do you trust",
+                "trust the files",
+                "press enter",
+                "enter to confirm",
+                "yes, proceed",
+                "open restricted",
+                "enter continue",
+            ]
+            .iter()
+            .any(|ask| screen.contains(ask))
+        {
+            press(b"\r");
+            answered.first_run += 1;
+            std::thread::sleep(Duration::from_secs(2));
+        } else if answered.newer_model < 3 && screen.contains("use existing model") {
+            press(b"\x1b[B");
+            std::thread::sleep(Duration::from_millis(600));
+            press(b"\r");
+            answered.newer_model += 1;
+            std::thread::sleep(Duration::from_secs(2));
+        } else if answered.bypass < 5
+            && screen.contains("bypass permissions mode")
+            && screen.contains("yes, i accept")
+        {
+            std::thread::sleep(Duration::from_secs(1));
+            press(b"\x1b[B");
+            std::thread::sleep(Duration::from_millis(600));
+            press(b"\r");
+            answered.bypass += 1;
+            std::thread::sleep(Duration::from_secs(2));
+        } else if answered.permission < 8 && screen.contains("permission required") {
+            // Once purlis's own hook on the ask has had its say: pressed sooner, OpenCode cuts
+            // that hook off (`record.rs`).
+            std::thread::sleep(Duration::from_secs(1));
+            press(b"\r");
+            answered.permission += 1;
+            std::thread::sleep(Duration::from_secs(2));
+        }
+    }
+
+    /// **What the harness's profile folder says in its logs**, for a red run's reader: the tail of
+    /// each `*.log` under the sandbox-only profile's config folder (Codex keeps
+    /// `log/codex-tui.log` there), at most four files of thirty lines.
+    pub(crate) fn profile_logs_said(&self) -> String {
+        let Some(config) = purlis_core::profilestore::listed_here()
+            .into_iter()
+            .find(|profile| profile.name == self.profile())
+            .map(|profile| profile.folders.config)
+        else {
+            return "no profile folder to read logs of".to_owned();
+        };
+        let mut logs = Vec::new();
+        let mut stack = vec![(PathBuf::from(&config), 0)];
+        while let Some((dir, depth)) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() && depth < 3 {
+                    stack.push((path, depth + 1));
+                } else if path.extension().is_some_and(|ext| ext == "log") {
+                    logs.push(path);
+                }
+            }
+        }
+        logs.sort();
+        let mut said = format!("{} log files under {}", logs.len(), config.display());
+        for log in logs.into_iter().take(4) {
+            let text = std::fs::read_to_string(&log).unwrap_or_default();
+            let lines: Vec<&str> = text.lines().collect();
+            said.push_str(&format!("\n--- {}:\n", log.display()));
+            for line in &lines[lines.len().saturating_sub(30)..] {
+                said.push_str(&line.chars().take(300).collect::<String>());
+                said.push('\n');
+            }
+        }
+        said
     }
 
     /// What is on chat `id`'s screen, without its blank lines and cut to a readable width: the
