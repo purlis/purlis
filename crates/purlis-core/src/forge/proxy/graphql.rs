@@ -99,6 +99,8 @@ impl Vars<'_> {
 
 /// The mutations a chat may make, per forge. Everything else is refused.
 fn mutation_allowed(kind: Kind, name: &str) -> bool {
+    // The mutations that take only label ids (`addLabelsToLabelable`, `mergeRequestSetLabels`,
+    // `issueSetLabels`…) are not on the list: the proxy cannot read a label's name from its id.
     const GITHUB: &[&str] = &[
         "createPullRequest",
         "updatePullRequest",
@@ -119,14 +121,11 @@ fn mutation_allowed(kind: Kind, name: &str) -> bool {
         "updateIssue",
         "closeIssue",
         "reopenIssue",
-        "addLabelsToLabelable",
-        "removeLabelsFromLabelable",
     ];
     const GITLAB: &[&str] = &[
         "mergeRequestCreate",
         "mergeRequestUpdate",
         "mergeRequestSetDraft",
-        "mergeRequestSetLabels",
         "mergeRequestSetAssignees",
         "createNote",
         "updateNote",
@@ -135,7 +134,6 @@ fn mutation_allowed(kind: Kind, name: &str) -> bool {
         "discussionToggleResolve",
         "createIssue",
         "updateIssue",
-        "issueSetLabels",
     ];
     match kind {
         Kind::GitHub => GITHUB.contains(&name),
@@ -573,10 +571,13 @@ impl<'d> Context<'_, 'd> {
                 return Err(named_mutation_refusal(&field.name));
             }
             let mut ids = Vec::new();
-            for (_, value) in &field.arguments {
+            for (name, value) in &field.arguments {
                 let val = vars
                     .resolve(value)
                     .map_err(|()| Refusal::GraphqlOtherRepo)?;
+                if commands::is_label_id_key(name) || has_label_id_key(&val) {
+                    return Err(Refusal::LabelById);
+                }
                 collect_ids("", &val, &mut ids);
                 if strings(&val)
                     .iter()
@@ -673,6 +674,17 @@ fn names_an_id(key: &str) -> bool {
             || key.ends_with("Ids")
             || key == "projectPath"
             || key == "fullPath")
+}
+
+/// Whether any key of a value, at any depth, names labels by id (`labelIds`, `addLabelIds`).
+fn has_label_id_key(val: &Val) -> bool {
+    match val {
+        Val::List(items) => items.iter().any(has_label_id_key),
+        Val::Obj(fields) => fields
+            .iter()
+            .any(|(k, v)| commands::is_label_id_key(k) || has_label_id_key(v)),
+        _ => false,
+    }
 }
 
 /// Every string in a value.

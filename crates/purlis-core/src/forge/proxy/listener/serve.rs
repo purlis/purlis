@@ -202,7 +202,10 @@ fn refused<W: Write>(out: &mut W, refusal: Refusal) -> io::Result<()> {
     write_answer(
         out,
         403,
-        &message(&format!("purlis refused this request: {refusal:?}")),
+        &message(&match refusal.advice() {
+            Some(advice) => format!("purlis refused this request: {refusal:?}; {advice}"),
+            None => format!("purlis refused this request: {refusal:?}"),
+        }),
     )
 }
 

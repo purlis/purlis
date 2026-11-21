@@ -8,7 +8,7 @@
 
 use purlis_core::forge::proxy::{Inbound, Outcome, Refusal, RequestHead};
 
-use crate::support::forge_proxy::{Scene, is_refused, push_body};
+use crate::support::forge_proxy::{Scene, graphql, is_refused, push_body};
 
 fn json(v: serde_json::Value) -> Vec<u8> {
     serde_json::to_vec(&v).unwrap()
@@ -252,30 +252,112 @@ fn gitlab_label_lists_are_split_and_each_label_is_checked() {
 }
 
 #[test]
-fn a_label_quick_action_that_names_a_merge_label_is_refused() {
+fn every_label_quick_action_is_refused_whatever_it_names() {
     purlis_core::unsteered!();
     let s = Scene::new();
+    let note = |text: &str| {
+        s.send(
+            "POST",
+            "gitlab.com",
+            "/api/v4/projects/42/merge_requests/3/notes",
+            &json(serde_json::json!({"body": text})),
+        )
+    };
     for text in [
         "/label ~automerge",
         "ok\n/label ~bug ~\"ready to merge\"",
         "/relabel ~auto-merge",
         "/label ~bug, ~merge-queue",
+        // The shapes a differential fuzz found GitLab reading as a merge label.
+        "/label ~automerge.",
+        "/label (~automerge)",
+        "/label x~automerge",
+        "/label ~bug~automerge",
+        "/label ~automerge\u{200b}",
+        "/label\u{200b}~automerge",
+        "/label ~bug\r~automerge",
+        "/label bug \"ship it\"",
+        "/label ~17",
+        "/unlabel ~bug",
+        "/LABEL ~bug",
+        // An ordinary label is a quick action too: labels are set through the labels field.
+        "/label ~bug ~docs",
     ] {
+        let out = note(text);
+        assert!(is_refused(&out, Refusal::QuickAction), "{text:?}: {out:?}");
+    }
+}
+
+#[test]
+fn a_label_quick_action_after_any_line_break_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    for brk in [
+        "\n", "\r", "\u{b}", "\u{c}", "\u{85}", "\u{2028}", "\u{2029}",
+    ] {
+        let text = format!("fine{brk}/label ~automerge");
         let out = s.send(
             "POST",
             "gitlab.com",
             "/api/v4/projects/42/merge_requests/3/notes",
             &json(serde_json::json!({"body": text})),
         );
-        assert!(is_refused(&out, Refusal::MergeCommand), "{text:?}: {out:?}");
+        assert!(is_refused(&out, Refusal::QuickAction), "{brk:?}: {out:?}");
+    }
+}
+
+#[test]
+fn a_label_named_by_id_is_refused_and_a_label_named_by_name_is_not() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    for body in [
+        json(serde_json::json!({"title": "t", "label_ids": [17]})),
+        json(serde_json::json!({"add_label_ids": [17]})),
+        json(serde_json::json!({"nested": {"labelIds": ["gid://gitlab/Label/17"]}})),
+    ] {
+        let out = s.send("POST", "gitlab.com", "/api/v4/projects/42/issues", &body);
+        assert!(is_refused(&out, Refusal::LabelById), "{out:?}");
     }
     let out = s.send(
         "POST",
         "gitlab.com",
-        "/api/v4/projects/42/merge_requests/3/notes",
-        &json(serde_json::json!({"body": "/label ~bug ~docs"})),
+        "/api/v4/projects/42/issues",
+        b"title=t&label_ids[]=17",
+    );
+    assert!(is_refused(&out, Refusal::LabelById), "{out:?}");
+    let out = s.send(
+        "PUT",
+        "gitlab.com",
+        "/api/v4/projects/42/merge_requests/3",
+        &json(serde_json::json!({"add_labels": "automerge"})),
+    );
+    assert!(is_refused(&out, Refusal::MergeCommand), "{out:?}");
+    let out = s.send(
+        "PUT",
+        "gitlab.com",
+        "/api/v4/projects/42/merge_requests/3",
+        &json(serde_json::json!({"add_labels": "bug,docs"})),
     );
     assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
+}
+
+#[test]
+fn a_graphql_label_mutation_by_id_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    for q in [
+        "mutation { issueSetLabels(input:{projectPath:\"acme/app\", iid:\"5\", labelIds:[\"gid://gitlab/Label/17\"]}){ errors } }",
+        "mutation { mergeRequestSetLabels(input:{projectPath:\"acme/app\", iid:\"5\", labelIds:[\"gid://gitlab/Label/17\"]}){ errors } }",
+        "mutation { updateIssue(input:{projectPath:\"acme/app\", iid:\"5\", addLabelIds:[\"gid://gitlab/Label/17\"]}){ errors } }",
+    ] {
+        let out = s.send(
+            "POST",
+            "gitlab.com",
+            "/api/graphql",
+            &graphql(q, serde_json::json!({})),
+        );
+        assert!(matches!(out, Outcome::Refused(_)), "{q}: {out:?}");
+    }
 }
 
 #[test]

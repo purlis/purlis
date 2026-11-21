@@ -490,6 +490,9 @@ fn check_body(
     let Some(body) = body else {
         return Ok(());
     };
+    if body.label_by_id {
+        return Err(Refusal::LabelById);
+    }
     if body
         .strings
         .iter()

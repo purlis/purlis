@@ -807,7 +807,7 @@ fn a_quick_action_hidden_by_a_carriage_return_is_read_the_way_gitlab_reads_it() 
     for (text, refusal) in [
         ("/\rmerge", Refusal::MergeCommand),
         ("ok\n/me\rrge", Refusal::MergeCommand),
-        ("/label ~auto\rmerge", Refusal::MergeCommand),
+        ("/label ~auto\rmerge", Refusal::QuickAction),
         ("/\rmove grp/other", Refusal::QuickAction),
     ] {
         let target = "/api/v4/projects/42/issues/5/notes";

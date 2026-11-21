@@ -49,6 +49,9 @@ pub enum Refusal {
     /// Text a GitLab quick action would act on (`/move`, `/relate`, `/clone`…): each writes
     /// outside the recorded repo or makes what the proxy has not seen.
     QuickAction,
+    /// A write that names labels by id (`label_ids`, `labelIds`): the proxy cannot tell a merge
+    /// label from another by its id.
+    LabelById,
     /// Approving or reviewing in a way that counts toward a merge.
     Approval,
     /// A release, or a tag.
@@ -88,6 +91,20 @@ pub enum Refusal {
     NotOnList,
     /// The request was allowed, and the person's credential could not be had.
     NoCredential,
+}
+
+impl Refusal {
+    /// What a chat should do instead, for the refusals that have a way round.
+    #[must_use]
+    pub fn advice(self) -> Option<&'static str> {
+        match self {
+            Self::QuickAction => Some(
+                "set labels through the API's labels field, not a /label, /unlabel or /relabel line, and leave other quick actions out of the text",
+            ),
+            Self::LabelById => Some("name labels in the API's labels field, not by id"),
+            _ => None,
+        }
+    }
 }
 
 /// What a request was, for the audit: a class, never a path.

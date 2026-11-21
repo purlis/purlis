@@ -81,25 +81,8 @@ pub(crate) fn is_merge_label(label: &str) -> bool {
     MERGE_LABELS.contains(&label.as_str())
 }
 
-/// Whether a GitLab label quick action (`/label ~automerge`, `/relabel ~"ready to merge"`) on
-/// `line` (lower case, trimmed) names a merge label.
-fn is_label_quick_action(line: &str) -> bool {
-    let rest = ["/label", "/relabel"].iter().find_map(|command| {
-        line.strip_prefix(command)
-            .filter(|rest| rest.starts_with(char::is_whitespace))
-    });
-    let Some(rest) = rest else {
-        return false;
-    };
-    let plain: String = rest.chars().filter(|c| !matches!(c, '~' | '"')).collect();
-    is_merge_label(&plain)
-        || plain
-            .split(|c: char| c.is_whitespace() || c == ',')
-            .any(is_merge_label)
-}
-
-/// Whether any line of `text` is one of [`COMMANDS`] or a label quick action naming a merge label,
-/// or the whole of it is a merge label. GitLab deletes every `\r` before it reads quick actions
+/// Whether any line of `text` is one of [`COMMANDS`], or the whole of it is a merge label. A label
+/// quick action is not read here: on GitLab every quick action is refused ([`has_quick_action`]). GitLab deletes every `\r` before it reads quick actions
 /// (`content.delete!("\r")`), so the text is read as written and with every `\r` removed.
 pub(crate) fn has_merge_command(text: &str) -> bool {
     has_merge_command_as_written(text)
@@ -112,25 +95,25 @@ fn has_merge_command_as_written(text: &str) -> bool {
     }
     text.split(LINE_BREAKS).any(|line| {
         let line = line.trim().to_lowercase();
-        is_label_quick_action(&line)
-            || COMMANDS.iter().any(|command| {
-                line.strip_prefix(command).is_some_and(|rest| {
-                    rest.is_empty()
-                        || rest.starts_with(char::is_whitespace)
-                        || command.ends_with('=')
-                        || command.ends_with('+')
-                        || command.starts_with('@')
-                })
+        COMMANDS.iter().any(|command| {
+            line.strip_prefix(command).is_some_and(|rest| {
+                rest.is_empty()
+                    || rest.starts_with(char::is_whitespace)
+                    || command.ends_with('=')
+                    || command.ends_with('+')
+                    || command.starts_with('@')
             })
+        })
     })
 }
 
-/// The quick actions that touch only the labels of the item written to, so they reach nothing
-/// outside the recorded repo. A merge label in one is refused by [`has_merge_command`].
-const LABEL_ONLY_ACTIONS: &[&str] = &["label", "unlabel", "relabel"];
+/// The quick actions that set labels. Their arguments are not parsed (GitLab's reading of them
+/// has too many forms: punctuation, zero-width marks, ids, several words), so each is refused
+/// whatever follows its name, and labels are set through the API's `labels` field instead.
+const LABEL_ACTIONS: &[&str] = &["label", "unlabel", "relabel"];
 
-/// Whether any line of `text` is a GitLab quick action: a `/` and a lower-case word at the start
-/// of a line. GitLab ignores one in a code block, but the proxy refuses it there too: a fence is
+/// Whether any line of `text` is a GitLab quick action: a `/` and a word at the start of a line.
+/// Lines end at every break in [`LINE_BREAKS`], not only GitLab's `\n`, so no line is skipped. GitLab ignores one in a code block, but the proxy refuses it there too: a fence is
 /// not worth reading to be right about.
 pub(crate) fn has_quick_action(text: &str) -> bool {
     has_quick_action_as_written(text)
@@ -147,11 +130,11 @@ fn has_quick_action_as_written(text: &str) -> bool {
                 .take_while(|c| c.is_alphanumeric() || *c == '_')
                 .collect();
             !word.is_empty()
-                && (!word.is_ascii() || !LABEL_ONLY_ACTIONS.contains(&word.to_lowercase().as_str()))
-                && rest[word.len()..]
-                    .chars()
-                    .next()
-                    .is_none_or(char::is_whitespace)
+                && (LABEL_ACTIONS.contains(&word.to_lowercase().as_str())
+                    || rest[word.len()..]
+                        .chars()
+                        .next()
+                        .is_none_or(char::is_whitespace))
         })
     })
 }
@@ -172,6 +155,8 @@ pub(crate) struct Body {
     /// Every label a body names, one each: GitLab's `labels`, `add_labels` and `remove_labels`
     /// are comma-separated, so a bot's trigger can ride in a list.
     pub(crate) labels: Vec<String>,
+    /// Whether any key, at any depth, names labels by id or any other way than their names.
+    pub(crate) label_by_id: bool,
 }
 
 /// The keys a body names labels by.
@@ -182,6 +167,15 @@ const LABEL_KEYS: &[&str] = &[
     "label",
     "label_names",
 ];
+
+/// Whether a key names labels by something other than their names (`label_ids`, `labelIds`,
+/// `add_label_ids`): the proxy cannot know a label's name from its id, so it refuses the write.
+pub(crate) fn is_label_id_key(key: &str) -> bool {
+    key.split(['[', ']'])
+        .filter(|part| !part.is_empty())
+        .map(|part| part.to_ascii_lowercase().replace('-', "_"))
+        .any(|part| part.contains("label") && !LABEL_KEYS.contains(&part.as_str()))
+}
 
 /// The keys a forge reads as the chat's own login. A chat holds no token, so one in a body is one
 /// it found or made up.
@@ -224,6 +218,16 @@ fn push_labels(value: &str, out: &mut Vec<String>) {
     );
 }
 
+fn json_has_label_id_key(json: &Json) -> bool {
+    match json {
+        Json::Object(map) => map
+            .iter()
+            .any(|(key, value)| is_label_id_key(key) || json_has_label_id_key(value)),
+        Json::Array(items) => items.iter().any(json_has_label_id_key),
+        _ => false,
+    }
+}
+
 fn json_labels(json: &Json, out: &mut Vec<String>) {
     match json {
         Json::Object(map) => {
@@ -264,6 +268,7 @@ pub(crate) fn parse(body: &[u8], content_type: Option<&str>) -> Result<Option<Bo
             let mut labels = Vec::new();
             json_labels(&json, &mut labels);
             let canonical = serde_json::to_vec(&json).map_err(|_| Refusal::BodyUnreadable)?;
+            let label_by_id = json_has_label_id_key(&json);
             Ok(Some(Body {
                 strings,
                 canonical,
@@ -271,6 +276,7 @@ pub(crate) fn parse(body: &[u8], content_type: Option<&str>) -> Result<Option<Bo
                 form: Vec::new(),
                 media: "application/json".to_string(),
                 labels,
+                label_by_id,
             }))
         }
         "application/x-www-form-urlencoded" => {
@@ -289,6 +295,7 @@ pub(crate) fn parse(body: &[u8], content_type: Option<&str>) -> Result<Option<Bo
                     push_labels(value, &mut labels);
                 }
             }
+            let label_by_id = form.iter().any(|(key, _)| is_label_id_key(key));
             let mut out = url::form_urlencoded::Serializer::new(String::new());
             for (k, v) in &form {
                 out.append_pair(k, v);
@@ -300,6 +307,7 @@ pub(crate) fn parse(body: &[u8], content_type: Option<&str>) -> Result<Option<Bo
                 form,
                 media: "application/x-www-form-urlencoded".to_string(),
                 labels,
+                label_by_id,
             }))
         }
         "multipart/form-data" => Err(Refusal::Multipart),
@@ -389,6 +397,7 @@ pub(crate) fn parse_upload(body: &[u8], content_type: Option<&str>) -> Result<Bo
         form: Vec::new(),
         media: format!("multipart/form-data; boundary={boundary}"),
         labels: Vec::new(),
+        label_by_id: false,
     })
 }
 
