@@ -1,0 +1,1392 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The app runs the forge proxy for every chat** (one login, slice J; ADR 0128).
+//!
+//! Slice A is the proxy's decisions ([`purlis_core::forge::proxy`]); this is who starts it, for
+//! which run of which chat, with whose credential, and who stops it. Plain Rust, no Tauri: the
+//! chat start and end, the doctor and the exit call it, and the tests drive it without a window.
+//!
+//! - **A route belongs to a run, not to a chat.** A restart keeps the chat's id and begins a new
+//!   run, so the old run ending (or being closed) can never tear down the new run's route: each
+//!   is keyed by its own run id, its own sentinel, its own folder. A start holds a
+//!   [`RouteGuard`] that stops the route on every early return, and `commit`s it to the chat's
+//!   session once the chat is open; from then on its end, its close, its program exiting on its
+//!   own and its project closing each stop it ([`ForgeRoutes::stop_session`],
+//!   [`ForgeRoutes::stop_project`]). **A program that exits before the commit** (its exit
+//!   arrives on another thread while the start is still opening the chat) is remembered, and the
+//!   commit then stops the route instead of keeping it.
+//! - **Per run** ([`ForgeRoutes::start`]): a run with recorded repos gets its own [`ForgeProxy`]
+//!   (its credential lookup is its project's), a sentinel, a folder of mode 0700 in the app's own
+//!   private root and, from the listener, a socket, an egress URL and a certificate authority.
+//!   A run's repos not being recorded any more stops the route that same run had before.
+//!   The [`RouteParams`] go to slice B's route.
+//! - **The root is the app's alone** ([`ensure_root`]): made 0700 and refused unless it is a
+//!   directory (never a link) this user owns. A folder is named `<pid>-<8 hex>` (short, because a
+//!   unix socket's path may not pass 104 bytes on macOS: a route whose socket path would pass
+//!   [`MAX_SOCKET_PATH`] is refused with that said), and the sweep ([`sweep`]) removes only
+//!   folders of that shape, owned by this user, whose app is gone.
+//! - **Credentials** ([`ProjectCredentials`]): the forge's host ([`forge_host`], one place) and the
+//!   project's account, asked of slice C. A missing or ended sign-in refuses the request in
+//!   words that name the sign-in step and raises one Notice per chat. A forge that could not be
+//!   reached is said to be unreachable, not ended.
+//! - **Held acts**: every request goes through [`Handler::handle`], so a refusal the person may
+//!   allow registers an ask once ([`HeldAsks`]) and raises slice F's. Only a registered ask can
+//!   be performed ([`ForgeRoutes::perform_held`]): one time, for the run and the request it was
+//!   raised for, with the person's credential. **An ask names a recorded repo of its run** (read
+//!   from the path, or, for GraphQL, from the ids the mutation names) or is not raised, and it
+//!   is performed only while that repo is still one of the route's. Two different acts are two
+//!   asks: each is keyed by the digest of its whole request.
+//! - **Runners** ([`ForgeRoutes::for_runner`]): a runner's chat is forwarded to this app's proxy
+//!   only for a runner paired with this desktop (D9), and the project is the pairing's, never
+//!   the caller's.
+//!
+//! **Stubs, each filled by the slice named.** [`Listener`]: A2. [`RouteParams`] into the chat's
+//! environment: B. [`HeldActs`] and its list of held refusals: F (F2's registry replaces
+//! [`HeldAsks`]). [`Recorded`]: G. [`Notices`]'s real sink: G's settings group. [`RunnerLink`]:
+//! the pools' pairing: **a stub, owned by the pools follow-up**, so no runner is paired and a
+//! runner's chat keeps its token connections until that lands.
+//!
+//! **Tier** (ADR 0069): the root is Machine, device-bound, transient, named in
+//! `docs/plane-format.md`. The sentinels, policies, asks and audit are memory only.
+
+// The seams are called by the slices that fill them (A2's listener, B's route, F's asks, the
+// pools' pairing); until they merge, only the tests reach them.
+#![allow(
+    dead_code,
+    reason = "slices A2, B, F and the pools call these; see the module note"
+)]
+
+use std::collections::{HashMap, HashSet};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
+use purlis_core::forge::proxy::{
+    AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
+    CredentialSource, ForgeProxy, HeldSink, Inbound, NoObjects, Outcome, Refusal, TokenKind,
+};
+use purlis_core::secrets::keyring::Secret;
+
+pub mod prod;
+
+#[cfg(test)]
+mod tests;
+
+// ---- the seams ----------------------------------------------------------------------------
+
+/// Why a person's sign-in could not be used.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignInState {
+    /// There is none on this host for this account.
+    Missing,
+    /// There was one, and it has ended (revoked, or the forge refused its renewal).
+    Ended,
+    /// The forge could not be asked now. The sign-in may be fine: this is not "sign in again".
+    Unavailable,
+}
+
+/// Why a credential was not had: the state, and the sentence that names the step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignInFailure {
+    pub state: SignInState,
+    pub said: String,
+}
+
+impl SignInFailure {
+    fn missing(host: &str) -> Self {
+        Self {
+            state: SignInState::Missing,
+            said: sign_in_words(host, SignInState::Missing),
+        }
+    }
+}
+
+/// The forge's own host for a request's host: GitHub's API host is the forge `github.com`, every
+/// other host is itself, in lower case. **The one place** a credential's host is made, for a
+/// request and for a held act alike.
+pub fn forge_host(host: &str) -> String {
+    let host = host.trim().to_ascii_lowercase();
+    match host.as_str() {
+        "api.github.com" => "github.com".to_owned(),
+        _ => host,
+    }
+}
+
+/// The person's credential for a host and an account (**slice C's**, through
+/// [`AccountCredentials`]); a trait so a test stands where the keyring would. `host` is always
+/// [`forge_host`]'s.
+pub trait Credentials: Send + Sync {
+    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInFailure>;
+    /// Whether [`Self::credential`] would answer.
+    fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure>;
+}
+
+/// Nobody is signed in: the app has no config root or no host scope (a process a chat started).
+pub struct NoSignIns;
+
+impl Credentials for NoSignIns {
+    fn credential(&self, host: &str, _: &str) -> Result<Credential, SignInFailure> {
+        Err(SignInFailure::missing(host))
+    }
+    fn check(&self, host: &str, _: &str) -> Result<(), SignInFailure> {
+        Err(SignInFailure::missing(host))
+    }
+}
+
+/// **Slice C's sign-ins** as this app's [`Credentials`]: the token of the account the project is
+/// bound to on the host, renewed by C as it needs. No other account answers for it.
+pub struct AccountCredentials(purlis_core::forge::credential::SignedIn);
+
+impl AccountCredentials {
+    pub fn new(signed_in: purlis_core::forge::credential::SignedIn) -> Self {
+        Self(signed_in)
+    }
+}
+
+impl Credentials for AccountCredentials {
+    fn credential(&self, host: &str, account: &str) -> Result<Credential, SignInFailure> {
+        use purlis_core::forge::credential::{CredentialError as Why, TokenKind as Made};
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let got = self
+            .0
+            .credential_of(host, account, now)
+            .map_err(|e| SignInFailure {
+                state: match &e {
+                    Why::None { .. } => SignInState::Missing,
+                    // The forge could not be asked: not a sign-in that ended.
+                    Why::Unreachable { .. } => SignInState::Unavailable,
+                    _ => SignInState::Ended,
+                },
+                // C's sentence names the step and carries no token.
+                said: e.to_string(),
+            })?;
+        Ok(Credential {
+            token_kind: match got.token_kind() {
+                Made::SignIn | Made::GitHubUser => TokenKind::Oauth,
+                _ => TokenKind::Pat,
+            },
+            secret: Secret::new(got.expose().to_owned()),
+        })
+    }
+    fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
+        self.credential(host, account).map(|_| ())
+    }
+}
+
+/// **Slice G's** store: a project's recorded repos and the account it is bound to on a host.
+pub trait Recorded: Send + Sync {
+    fn repos(&self, project: &Path) -> Vec<AllowedRepo>;
+    /// `host` is [`forge_host`]'s.
+    fn account(&self, project: &Path, host: &str) -> Option<String>;
+}
+
+/// The stub until G lands: nothing is recorded, so no chat has a route.
+pub struct NothingRecorded;
+
+impl Recorded for NothingRecorded {
+    fn repos(&self, _: &Path) -> Vec<AllowedRepo> {
+        Vec::new()
+    }
+    fn account(&self, _: &Path, _: &str) -> Option<String> {
+        None
+    }
+}
+
+/// **Slice G's gate on a credential** (ADR 0128 D2, D4): a chat's request is given the person's
+/// token only for a repo the person confirmed, by its numeric id, under the account they chose
+/// for it, from a clone of this chat's ([`purlis_core::forge::credential::ChatRoute`]). Where
+/// there is no gate (a test, or a process with no host scope), the project's bound account
+/// answers as it did before.
+pub trait Gate: Send + Sync {
+    /// A run starts: these are its project's clones.
+    fn enrol(&self, run: &str, project: &Path);
+    /// A run ended.
+    fn leave(&self, run: &str);
+    /// The credential for `request`, if every condition holds.
+    fn credential(&self, request: &CredentialRequest) -> Result<Credential, CredentialError>;
+}
+
+/// What a bound run endpoint holds. Dropping the guard closes the listener.
+pub struct Bound {
+    pub socket: PathBuf,
+    /// The listener's own `CONNECT` address, `http://127.0.0.1:<port>`. A chat is not given it: it
+    /// reaches the door through its own egress proxy, which is handed [`Bound::door`].
+    pub egress_url: String,
+    pub ca: PathBuf,
+    /// The listener's `CONNECT` door, on loopback.
+    pub door: std::net::SocketAddr,
+    /// The run's hand-off secret for the door, given to the chat's egress proxy with its address.
+    pub handoff: purlis_core::sandbox::egress::handoff::Secret,
+    /// The hosts the door terminates.
+    pub hosts: Vec<String>,
+    pub guard: Box<dyn Send + Sync>,
+}
+
+/// **Slice A2's** listener: binds the run's socket and `CONNECT` door inside `dir`, makes the
+/// run's own CA (its key in memory only) permitting the hosts the run's repos record, and serves
+/// every request through `proxy`, which is the one door a request goes in by: a held act's
+/// refusal registers and raises its ask in the proxy itself ([`ForgeProxy::with_held`]).
+pub trait Listener: Send + Sync {
+    /// `push` checks every push's objects before it is sent ([`PushGate`]).
+    fn bind(
+        &self,
+        run: &str,
+        dir: &Path,
+        proxy: Arc<ForgeProxy>,
+        push: Arc<dyn PushGate>,
+    ) -> io::Result<Bound>;
+    /// Whether it can bind at all in this build (the doctor's "proxy up").
+    fn ready(&self) -> bool;
+}
+
+/// The stub until A2 lands: nothing listens.
+pub struct NoListener;
+
+impl Listener for NoListener {
+    fn bind(
+        &self,
+        _: &str,
+        _: &Path,
+        _: Arc<ForgeProxy>,
+        _: Arc<dyn PushGate>,
+    ) -> io::Result<Bound> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the forge listener is not in this build",
+        ))
+    }
+    fn ready(&self) -> bool {
+        false
+    }
+}
+
+/// Where a Notice goes. The real sink is the Inbox's, with a way out into the sign-in settings
+/// (slice G's group); until then it is [`NoNotices`].
+pub trait Notices: Send + Sync {
+    /// Told once per chat, with the host that had no usable sign-in. Never for
+    /// [`SignInState::Unavailable`], which is not the person's to fix.
+    fn sign_in_needed(&self, chat: &str, host: &str, state: SignInState);
+}
+
+pub struct NoNotices;
+
+impl Notices for NoNotices {
+    fn sign_in_needed(&self, _: &str, _: &str, _: SignInState) {}
+}
+
+/// **Slice F's** held acts, as the route needs them: where a project's held acts are asked. The
+/// sink is F's [`purlis_core::heldact::Handoff`] over the project's registry, and `sessions` says
+/// which session a run's chat is, once it is open.
+pub trait HeldSinks: Send + Sync {
+    fn sink(&self, project: &Path, sessions: Arc<dyn SessionOfRun>) -> Option<Box<dyn HeldSink>>;
+    /// The check of a push's objects for a CI-file push: it reads the push in a quarantine of the
+    /// app's own, hands a push that changes CI files to `proxy` as an ask, and lets through only
+    /// what changes none. None where the project holds no acts.
+    fn push_gate(
+        &self,
+        project: &Path,
+        sessions: Arc<dyn SessionOfRun>,
+        proxy: Arc<ForgeProxy>,
+    ) -> Option<Arc<dyn PushGate>>;
+    /// A chat's session closed: the quarantines of its waiting pushes go.
+    fn forget(&self, _session: u32) {}
+}
+
+/// **The gate that sends no push**, for a project that holds no acts: a push cannot be read for CI
+/// files there, so none goes (a fetch, a comment or a pull request is not a push).
+pub struct BlindGate;
+
+impl PushGate for BlindGate {
+    fn check(&self, _: &ChatId, _: &PushRead) -> PushVerdict {
+        PushVerdict::Refuse(
+            "purlis cannot check this push for CI files here, so it was not sent.".to_owned(),
+        )
+    }
+}
+
+/// Which session a run's chat is, while it is open.
+pub trait SessionOfRun: Send + Sync {
+    fn session(&self, run: &str) -> Option<u32>;
+    /// Whether `session` is a chat that is open now.
+    fn is_open(&self, session: u32) -> bool;
+}
+
+/// The stub where no project holds acts: a held act stays refused.
+pub struct NoHeldSinks;
+
+impl HeldSinks for NoHeldSinks {
+    fn sink(&self, _: &Path, _: Arc<dyn SessionOfRun>) -> Option<Box<dyn HeldSink>> {
+        None
+    }
+    fn push_gate(
+        &self,
+        _: &Path,
+        _: Arc<dyn SessionOfRun>,
+        _: Arc<ForgeProxy>,
+    ) -> Option<Arc<dyn PushGate>> {
+        None
+    }
+}
+
+/// A runner as its link authenticated it (D9): its device and its link key's public half.
+/// Made only from a link's own handshake, never from a request's words.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunnerPeer {
+    pub device: String,
+    pub key: [u8; 32],
+}
+
+/// **The pools' pairing** (D9): which runners are paired with this desktop, and which project a
+/// paired runner's run belongs to.
+pub trait RunnerLink: Send + Sync {
+    /// Whether `peer` is a runner this desktop is paired with (its key pinned at pairing).
+    fn paired(&self, peer: &RunnerPeer) -> bool;
+    /// The project `run` of a chat on `peer` belongs to, from the pairing's records.
+    fn project_of(&self, peer: &RunnerPeer, run: &str) -> Option<PathBuf>;
+}
+
+/// The stub until the pools carry the pairing: no runner is paired.
+pub struct NoRunnerLink;
+
+impl RunnerLink for NoRunnerLink {
+    fn paired(&self, _: &RunnerPeer) -> bool {
+        false
+    }
+    fn project_of(&self, _: &RunnerPeer, _: &str) -> Option<PathBuf> {
+        None
+    }
+}
+
+/// Every seam, so a test (or the app) names the ones it has and leaves the rest as stubs.
+#[derive(Clone)]
+pub struct Seams {
+    pub listener: Arc<dyn Listener>,
+    pub credentials: Arc<dyn Credentials>,
+    pub recorded: Arc<dyn Recorded>,
+    pub notices: Arc<dyn Notices>,
+    pub held: Arc<dyn HeldSinks>,
+    pub runner_link: Arc<dyn RunnerLink>,
+    /// Slice G's gate, where there is one ([`Gate`]).
+    pub gate: Option<Arc<dyn Gate>>,
+    /// The administrator's never-allow pin for a project's chats (ADR 0128 D3g), made for each
+    /// run and asked by its proxy, its door, its socket and the app's own git on every request.
+    pub pin: PinOf,
+}
+
+/// What makes the pin a run is held to, from its project.
+pub type PinOf = Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::pin::Pin> + Send + Sync>;
+
+impl Seams {
+    /// Every seam as its stub: a build with `forge-wiring` and none of the other slices.
+    pub fn stubs() -> Self {
+        Self {
+            listener: Arc::new(NoListener),
+            credentials: Arc::new(NoSignIns),
+            recorded: Arc::new(NothingRecorded),
+            notices: Arc::new(NoNotices),
+            held: Arc::new(NoHeldSinks),
+            runner_link: Arc::new(NoRunnerLink),
+            gate: None,
+            pin: Arc::new(|_| Arc::new(purlis_core::forge::pin::NoPin)),
+        }
+    }
+}
+
+// ---- what a run is handed -----------------------------------------------------------------
+
+/// What **slice B's** `Route` is handed for a run: where its proxy is, and the stand-in it holds.
+pub struct RouteParams {
+    pub socket: PathBuf,
+    pub egress_url: String,
+    pub ca: PathBuf,
+    pub sentinel: String,
+    pub helper_exe: PathBuf,
+    /// `(host, path)` of each recorded repo.
+    pub repos: Vec<(String, String)>,
+    /// What the chat's sandbox is wired from (slice B), with the listener's `CONNECT` door, which
+    /// the chat's egress proxy hands a forge connection to.
+    pub inputs: Box<purlis_core::forgewire::Inputs>,
+}
+
+impl std::fmt::Debug for RouteParams {
+    /// Never the sentinel.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RouteParams")
+            .field("socket", &self.socket)
+            .field("egress_url", &self.egress_url)
+            .field("ca", &self.ca)
+            .field("repos", &self.repos)
+            .finish_non_exhaustive()
+    }
+}
+
+/// How a runner's chat reaches its forges.
+#[derive(Debug)]
+pub enum RunnerForward {
+    /// Through this app's proxy, as a desktop chat does.
+    Desktop(RouteParams),
+    /// This app has no route for it (nothing recorded, or no listener): the runner keeps the
+    /// token connections it had before one login (D9).
+    TokenConnections,
+    /// The caller is not a runner paired with this desktop, or names no run of its own.
+    Refused,
+}
+
+// ---- the credential lookup ----------------------------------------------------------------
+
+/// What one run's proxy asked of the sign-ins, kept for the words of its refusals.
+#[derive(Default)]
+struct SignInTrouble {
+    last: Mutex<Option<(String, SignInFailure)>>,
+}
+
+/// A run's [`CredentialSource`]: the credential for the host and the account its project is
+/// bound to. **A host with no bound account is a missing sign-in**, never another account's.
+pub struct ProjectCredentials {
+    chat: String,
+    project: PathBuf,
+    seams: Seams,
+    trouble: Arc<SignInTrouble>,
+    /// The chats already told, across their runs.
+    told: Arc<Mutex<HashSet<String>>>,
+}
+
+impl CredentialSource for ProjectCredentials {
+    fn credential_for(&self, request: &CredentialRequest) -> Result<Credential, CredentialError> {
+        let host = forge_host(&request.host);
+        // Where there is a gate, it decides first: a repo that is not confirmed for this chat, or
+        // whose chosen account cannot serve it, is given nothing, whatever the project's bound
+        // account could have answered.
+        let gated = self
+            .seams
+            .gate
+            .as_ref()
+            .map(|gate| gate.credential(request));
+        if let Some(Ok(credential)) = gated {
+            return Ok(credential);
+        }
+        let lookup = match self.seams.recorded.account(&self.project, &host) {
+            None => Err(SignInFailure::missing(&host)),
+            Some(account) => self.seams.credentials.credential(&host, &account),
+        };
+        let failure = match (gated, lookup) {
+            (None, Ok(credential)) => return Ok(credential),
+            // A sign-in that is missing or ended names its step, as it always did.
+            (_, Err(failure)) => failure,
+            (Some(_), Ok(_)) => SignInFailure {
+                state: SignInState::Unavailable,
+                said: format!(
+                    "purlis did not use a sign-in for this repo on {host}: it is not one you \
+                     confirmed for this project, or its chosen account cannot serve it now. Check \
+                     Settings › You › Accounts, then try again."
+                ),
+            },
+        };
+        let state = failure.state;
+        *self
+            .trouble
+            .last
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some((host.clone(), failure));
+        // One Notice per chat, however many requests and runs; none for a forge that could not
+        // be reached, which is not the person's to fix.
+        if state != SignInState::Unavailable
+            && self
+                .told
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(self.chat.clone())
+        {
+            self.seams.notices.sign_in_needed(&self.chat, &host, state);
+        }
+        Err(CredentialError::Unavailable)
+    }
+}
+
+// ---- the lifecycle ------------------------------------------------------------------------
+
+/// [`SessionOfRun`] over the committed runs.
+struct RunSessions {
+    sessions: Arc<Mutex<Sessions>>,
+}
+
+impl SessionOfRun for RunSessions {
+    fn session(&self, run: &str) -> Option<u32> {
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .of_run
+            .iter()
+            .find(|(_, of)| of.as_str() == run)
+            .map(|(session, _)| *session)
+    }
+
+    fn is_open(&self, session: u32) -> bool {
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .of_run
+            .contains_key(&session)
+    }
+}
+
+struct Live {
+    chat: String,
+    proxy: Arc<ForgeProxy>,
+    project: PathBuf,
+    trouble: Arc<SignInTrouble>,
+    dir: PathBuf,
+    /// The paired runner's device, for a run forwarded from one.
+    peer: Option<String>,
+    /// Dropped before the folder goes.
+    bound: Option<Bound>,
+    /// What the run's sandbox was wired from: the app's own git for this chat ([`ForgeRoutes::git_route`])
+    /// goes through the same door.
+    inputs: Box<purlis_core::forgewire::Inputs>,
+    /// The app's own git's way to the door: a proxy that proves the hand-off and asks the pin
+    /// (the git cannot prove it itself). `None` where it could not start, and then the app's git
+    /// has no route for this chat.
+    relay: Option<purlis_core::sandbox::egress::relay::DoorRelay>,
+}
+
+/// Which session each committed run is, and the sessions whose program ended while a start was
+/// still opening its chat: the start commits after its program may already have exited, on
+/// another thread, and an exit that finds nothing to stop must not be lost.
+#[derive(Default)]
+struct Sessions {
+    of_run: HashMap<u32, String>,
+    /// Sessions that ended with an uncommitted route pending; kept only while one is.
+    exited: HashSet<u32>,
+}
+
+/// How long the app's git may sit idle on a relayed connection.
+const RELAY_IDLE: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// Every run's route, in this app.
+pub struct ForgeRoutes {
+    root: PathBuf,
+    helper_exe: PathBuf,
+    seams: Seams,
+    live: Mutex<HashMap<String, Live>>,
+    sessions: Arc<Mutex<Sessions>>,
+    told: Arc<Mutex<HashSet<String>>>,
+}
+
+impl ForgeRoutes {
+    /// Routes made under `root`, the app's own private folder. Folders an earlier app left that
+    /// belong to no running app are removed ([`sweep`]).
+    pub fn new(root: PathBuf, helper_exe: PathBuf, seams: Seams) -> Self {
+        if ensure_root(&root).is_ok() {
+            sweep(&root);
+        }
+        Self {
+            root,
+            helper_exe,
+            seams,
+            live: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(Sessions::default())),
+            told: Arc::new(Mutex::new(HashSet::new())),
+        }
+    }
+
+    /// The project's recorded repos that are not on a forge the pin pins.
+    fn unpinned(
+        &self,
+        project: &Path,
+        pin: &dyn purlis_core::forge::pin::Pin,
+    ) -> Vec<purlis_core::forge::proxy::AllowedRepo> {
+        let mut repos = self.seams.recorded.repos(project);
+        repos.retain(|repo| {
+            purlis_core::forge::pin::pinned_forge(pin, repo.host(), repo.port()).is_none()
+        });
+        repos
+    }
+
+    /// A run starts. `None` when its project records no repo: there is nothing to proxy, and
+    /// nothing else is stopped for it. An error leaves nothing behind.
+    pub fn start(&self, chat: &str, run: &str, project: &Path) -> io::Result<Option<RouteParams>> {
+        self.start_for(chat, run, project, None)
+    }
+
+    fn start_for(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        peer: Option<String>,
+    ) -> io::Result<Option<RouteParams>> {
+        // The same run starting again replaces its route, or ends it where nothing is recorded
+        // now: the old sentinel stops working either way.
+        self.stop(run);
+        let pin = (self.seams.pin)(project);
+        // **No repo on a pinned forge is enrolled** (D3g): a chat has no route to a forge an
+        // administrator pinned, and its authority is made for no name of it.
+        let repos = self.unpinned(project, pin.as_ref());
+        if repos.is_empty() {
+            return Ok(None);
+        }
+        ensure_root(&self.root)?;
+        let run_dir = make_run_dir(&self.root)?;
+        let trouble = Arc::new(SignInTrouble::default());
+        let mut proxy = ForgeProxy::new(
+            Box::new(ProjectCredentials {
+                chat: chat.to_owned(),
+                project: project.to_owned(),
+                seams: self.seams.clone(),
+                trouble: trouble.clone(),
+                told: self.told.clone(),
+            }),
+            Box::new(NoObjects),
+        )
+        .with_pin(pin.clone());
+        // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
+        // registry of them, so no request reaches the forge by a way that skips the hold.
+        if let Some(sink) = self.seams.held.sink(
+            project,
+            Arc::new(RunSessions {
+                sessions: self.sessions.clone(),
+            }),
+        ) {
+            proxy = proxy.with_held(sink);
+        }
+        let proxy = Arc::new(proxy);
+        let repo_view: Vec<(String, String)> = repos
+            .iter()
+            .map(|r| (r.host().to_owned(), r.path().to_owned()))
+            .collect();
+        // The repos as the chat's wiring names them. One that wiring cannot name (a host with a
+        // port, a path with an odd character) is left to the policy alone: it is wired to nothing.
+        let wire_repos: Vec<purlis_core::forgewire::Repo> = repos
+            .iter()
+            .filter_map(|r| {
+                let (owner, name) = r.path().rsplit_once('/')?;
+                let kind = match r.kind() {
+                    purlis_core::forge::proxy::Kind::GitHub => {
+                        purlis_core::forgewire::ForgeKind::GitHub
+                    }
+                    purlis_core::forge::proxy::Kind::GitLab => {
+                        purlis_core::forgewire::ForgeKind::GitLab
+                    }
+                };
+                purlis_core::forgewire::Repo::new(r.host(), owner, name, kind).ok()
+            })
+            .collect();
+        let id = ChatId::new(run);
+        if let Some(gate) = &self.seams.gate {
+            gate.enrol(run, project);
+        }
+        let sentinel = proxy.enrol(&id, repos.clone());
+        let sessions = Arc::new(RunSessions {
+            sessions: self.sessions.clone(),
+        });
+        let push = self
+            .seams
+            .held
+            .push_gate(project, sessions, proxy.clone())
+            .unwrap_or_else(|| Arc::new(BlindGate));
+        let bound = match self.seams.listener.bind(run, &run_dir, proxy.clone(), push) {
+            Ok(bound) => bound,
+            Err(refused) => {
+                proxy.retire(&id);
+                if let Some(gate) = &self.seams.gate {
+                    gate.leave(run);
+                }
+                let _ = std::fs::remove_dir_all(&run_dir);
+                return Err(refused);
+            }
+        };
+        let params = RouteParams {
+            socket: bound.socket.clone(),
+            egress_url: bound.egress_url.clone(),
+            ca: bound.ca.clone(),
+            sentinel: sentinel.expose().to_owned(),
+            helper_exe: self.helper_exe.clone(),
+            repos: repo_view,
+            inputs: Box::new(purlis_core::forgewire::Inputs {
+                gh_socket: bound.socket.clone(),
+                ca_cert: bound.ca.clone(),
+                sentinel: purlis_core::forgewire::SecretString::from(sentinel.expose().to_owned()),
+                helper_exe: self.helper_exe.clone(),
+                repos: wire_repos,
+                door: bound.door,
+                handoff: bound.handoff.clone(),
+                hosts: bound.hosts.clone(),
+                root: self.root.clone(),
+            }),
+        };
+        let inputs = params.inputs.clone();
+        // The app's own git reaches the door through a relay that proves the hand-off (the door
+        // answers 407 to a CONNECT without it) and asks the pin on each connection.
+        let relay = purlis_core::sandbox::egress::relay::DoorRelay::start(
+            purlis_core::sandbox::egress::ForgeRoute {
+                addr: inputs.door,
+                handoff: inputs.handoff.clone(),
+                hosts: inputs.hosts.clone(),
+            },
+            pin,
+            RELAY_IDLE,
+        )
+        .map_err(|why| {
+            tracing::warn!("purlis: the app's git has no route for a chat ({why})");
+            why
+        })
+        .ok();
+        self.live().insert(
+            run.to_owned(),
+            Live {
+                chat: chat.to_owned(),
+                proxy,
+                project: project.to_owned(),
+                trouble,
+                dir: run_dir,
+                peer,
+                bound: Some(bound),
+                inputs,
+                relay,
+            },
+        );
+        Ok(Some(params))
+    }
+
+    /// A start holding its route until it is committed: stopped if the start returns early.
+    pub fn guard(&self, chat: &str, run: &str, project: &Path) -> RouteGuard<'_> {
+        let params = match self.start(chat, run, project) {
+            Ok(params) => params,
+            Err(refused) => {
+                tracing::warn!("purlis: the forge route of a chat did not start ({refused})");
+                None
+            }
+        };
+        RouteGuard {
+            routes: self,
+            run: run.to_owned(),
+            params,
+            armed: true,
+        }
+    }
+
+    /// A run's route stops: its sentinel, its listener, its folder and its asks.
+    pub fn stop(&self, run: &str) {
+        let gone = self.live().remove(run);
+        {
+            let mut sessions = self.sessions();
+            sessions.of_run.retain(|_, r| r != run);
+            self.forget_exits_if_none_pending(&mut sessions);
+        }
+        if let Some(mut live) = gone {
+            live.proxy.retire(&ChatId::new(run));
+            if let Some(gate) = &self.seams.gate {
+                gate.leave(run);
+            }
+            drop(live.bound.take());
+            let _ = std::fs::remove_dir_all(&live.dir);
+            // The chat is told again only by a run that starts after none of its runs is left.
+            let chat_has_another = self.live().values().any(|other| other.chat == live.chat);
+            if !chat_has_another {
+                self.told
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .remove(&live.chat);
+            }
+        }
+    }
+
+    /// The route of the run that session `session` is, on its close, its program's end, or a
+    /// restart's old run ending. Another run of the same chat is untouched.
+    ///
+    /// **If no run is committed to `session` yet**, and a start is still holding a route it has
+    /// not committed, the session is remembered as ended: the program's exit arrives on its own
+    /// thread, and the start commits afterwards ([`RouteGuard::commit`]), which then stops the
+    /// route it was about to keep.
+    pub fn stop_session(&self, session: u32) {
+        let run = {
+            let mut sessions = self.sessions();
+            let run = sessions.of_run.remove(&session);
+            if run.is_none() && self.has_pending(&sessions) {
+                sessions.exited.insert(session);
+            }
+            run
+        };
+        self.seams.held.forget(session);
+        if let Some(run) = run {
+            self.stop(&run);
+        }
+    }
+
+    fn sessions(&self) -> std::sync::MutexGuard<'_, Sessions> {
+        self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether a desktop route is live that no session holds yet: a start still opening its chat.
+    /// A runner's route is never committed to a session, so it is not one.
+    fn has_pending(&self, sessions: &Sessions) -> bool {
+        let committed: HashSet<&String> = sessions.of_run.values().collect();
+        self.live()
+            .iter()
+            .any(|(run, live)| live.peer.is_none() && !committed.contains(run))
+    }
+
+    fn forget_exits_if_none_pending(&self, sessions: &mut Sessions) {
+        if !sessions.exited.is_empty() && !self.has_pending(sessions) {
+            sessions.exited.clear();
+        }
+    }
+
+    /// Every route of `project`: the project is closing.
+    pub fn stop_project(&self, project: &Path) {
+        let runs: Vec<String> = self
+            .live()
+            .iter()
+            .filter(|(_, live)| live.project == project)
+            .map(|(run, _)| run.clone())
+            .collect();
+        for run in runs {
+            self.stop(&run);
+        }
+    }
+
+    /// Every route of the runner `device`: its link went.
+    pub fn stop_peer(&self, device: &str) {
+        let runs: Vec<String> = self
+            .live()
+            .iter()
+            .filter(|(_, live)| live.peer.as_deref() == Some(device))
+            .map(|(run, _)| run.clone())
+            .collect();
+        for run in runs {
+            self.stop(&run);
+        }
+    }
+
+    /// Every route, at the app's exit. Only this app's own folders are removed.
+    pub fn stop_all(&self) {
+        let runs: Vec<String> = self.live().keys().cloned().collect();
+        for run in runs {
+            self.stop(&run);
+        }
+    }
+
+    pub fn is_live(&self, run: &str) -> bool {
+        self.live().contains_key(run)
+    }
+
+    /// The folder `run`'s route is made in, while it is live.
+    pub fn folder_of(&self, run: &str) -> Option<PathBuf> {
+        self.live().get(run).map(|live| live.dir.clone())
+    }
+
+    fn live(&self) -> std::sync::MutexGuard<'_, HashMap<String, Live>> {
+        self.live.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// One request from `run`'s endpoint, decided by its proxy.
+    pub fn handle(&self, run: &str, inbound: &Inbound<'_>) -> Outcome {
+        let proxy = self.live().get(run).map(|live| live.proxy.clone());
+        match proxy {
+            Some(proxy) => proxy.handle(&ChatId::new(run), inbound),
+            None => Outcome::Refused(Refusal::UnknownChat),
+        }
+    }
+
+    /// What to tell the chat for `refusal`. A missing or ended sign-in names the step.
+    pub fn refusal_message(&self, run: &str, refusal: Refusal) -> String {
+        match refusal {
+            Refusal::NoCredential => {
+                let last = self.live().get(run).and_then(|live| {
+                    live.trouble
+                        .last
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .clone()
+                });
+                match last {
+                    Some((_, failure)) => failure.said,
+                    None => "There is no sign-in for this forge. Sign in under Accounts in \
+                         Settings, then try again."
+                        .to_owned(),
+                }
+            }
+            _ => "purlis does not let a chat do that on this forge.".to_owned(),
+        }
+    }
+
+    /// A runner's chat run, forwarded to this app's proxy (D9). **Only a runner paired with
+    /// this desktop is served**, and the project is the pairing's record of the run, never the
+    /// caller's word: an unpaired caller, or a run the pairing does not know, is refused. Its
+    /// route stops with [`Self::stop`] or [`Self::stop_peer`].
+    pub fn for_runner(&self, peer: &RunnerPeer, chat: &str, run: &str) -> RunnerForward {
+        if !self.seams.runner_link.paired(peer) {
+            return RunnerForward::Refused;
+        }
+        let Some(project) = self.seams.runner_link.project_of(peer, run) else {
+            return RunnerForward::Refused;
+        };
+        // A project whose every repo is on a pinned forge keeps no token connection either: the
+        // pin is the administrator's, and the runner's chat is refused, not left to its tokens.
+        let pin = (self.seams.pin)(&project);
+        if !self.seams.recorded.repos(&project).is_empty()
+            && self.unpinned(&project, pin.as_ref()).is_empty()
+        {
+            return RunnerForward::Refused;
+        }
+        match self.start_for(chat, run, &project, Some(peer.device.clone())) {
+            Ok(Some(params)) => RunnerForward::Desktop(params),
+            Ok(None) | Err(_) => RunnerForward::TokenConnections,
+        }
+    }
+
+    /// **The route the app's own git takes for chat `session`** (one login, slice K): what `purlis
+    /// worktree push` and `update` run for a chat through, so the git the app runs for it reaches
+    /// the forge through this run's proxy with its sentinel, as the chat's own git does, and holds
+    /// none of the person's credentials. `None` where the session has no live route: a chat with
+    /// no recorded repo, one put back from the session host, one whose route stopped.
+    pub fn git_route(
+        &self,
+        session: u32,
+    ) -> Option<std::io::Result<purlis_core::worktree::git::NetworkRoute>> {
+        let run = self.sessions().of_run.get(&session).cloned()?;
+        let (inputs, relay) = self.live().get(&run).map(|live| {
+            (
+                live.inputs.clone(),
+                live.relay.as_ref().map(|relay| relay.addr()),
+            )
+        })?;
+        // **Never the bare door**: it answers 407 to a CONNECT that lacks the hand-off proof, which
+        // git cannot send. The relay proves it, and asks the administrator's pin on each connection.
+        let Some(relay) = relay else {
+            return Some(Err(io::Error::other(
+                "purlis's own git has no route to this chat's forge: its relay did not start",
+            )));
+        };
+        let route = inputs.route(format!("http://{relay}"));
+        Some(purlis_core::forgewire::git_network(&route))
+    }
+
+    /// The run's audit, a line per request: method, host, repo, class and verdict. The audit
+    /// holds no token and no path, so nor does a line.
+    pub fn audit_lines(&self, run: &str) -> Vec<String> {
+        let proxy = self.live().get(run).map(|live| live.proxy.clone());
+        proxy
+            .map(|proxy| {
+                proxy
+                    .audit(&ChatId::new(run))
+                    .iter()
+                    .map(audit_line)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The doctor's `forge route` row for `project`: the proxy up, and a sign-in for every
+    /// recorded host.
+    pub fn row(&self, project: &Path) -> RouteRow {
+        let repos = self.seams.recorded.repos(project);
+        if repos.is_empty() {
+            return RouteRow::ok("no repo is recorded for this project, so no chat has a route");
+        }
+        let mut hosts: Vec<String> = repos.iter().map(|r| forge_host(r.host())).collect();
+        hosts.sort();
+        hosts.dedup();
+        if !self.seams.listener.ready() {
+            return RouteRow::problem(
+                "the forge proxy is not running".to_owned(),
+                "restart purlis; chats keep their token connections until it runs".to_owned(),
+            );
+        }
+        let without: Vec<String> = hosts
+            .iter()
+            .filter(|host| {
+                self.seams
+                    .recorded
+                    .account(project, host)
+                    .is_none_or(|account| self.seams.credentials.check(host, &account).is_err())
+            })
+            .cloned()
+            .collect();
+        if without.is_empty() {
+            RouteRow::ok(&format!(
+                "the proxy is up and signed in on {}",
+                hosts.join(", ")
+            ))
+        } else {
+            RouteRow::problem(
+                format!("no usable sign-in on {}", without.join(", ")),
+                "sign in under Accounts in Settings".to_owned(),
+            )
+        }
+    }
+}
+
+impl Drop for ForgeRoutes {
+    fn drop(&mut self) {
+        self.stop_all();
+    }
+}
+
+/// A start's hold on its route. Dropped without [`RouteGuard::commit`], it stops the route: every
+/// `?` between the route's start and the chat being open ends the route with it.
+#[must_use = "a dropped guard stops the route"]
+pub struct RouteGuard<'a> {
+    routes: &'a ForgeRoutes,
+    run: String,
+    params: Option<RouteParams>,
+    armed: bool,
+}
+
+impl RouteGuard<'_> {
+    /// What the run is handed (slice B), where it has a route.
+    pub fn params(&self) -> Option<&RouteParams> {
+        self.params.as_ref()
+    }
+
+    /// The chat is open as `session`: the route now stops with that session, by its close, its
+    /// program's end or its project's. A run with no route commits nothing.
+    pub fn commit(mut self, session: u32) {
+        self.armed = false;
+        let ended = {
+            let mut sessions = self.routes.sessions();
+            let ended = sessions.exited.remove(&session);
+            if !ended && self.routes.is_live(&self.run) {
+                sessions.of_run.insert(session, self.run.clone());
+            }
+            self.routes.forget_exits_if_none_pending(&mut sessions);
+            ended
+        };
+        // Its program ended before this commit: the route goes now, not at the app's exit.
+        if ended {
+            self.routes.stop(&self.run);
+        }
+    }
+}
+
+impl Drop for RouteGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.routes.stop(&self.run);
+        }
+    }
+}
+
+/// The doctor's row, before the doctor draws it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RouteRow {
+    pub problem: bool,
+    pub detail: String,
+    pub hint: String,
+}
+
+impl RouteRow {
+    fn ok(detail: &str) -> Self {
+        Self {
+            problem: false,
+            detail: detail.to_owned(),
+            hint: String::new(),
+        }
+    }
+    fn problem(detail: String, hint: String) -> Self {
+        Self {
+            problem: true,
+            detail,
+            hint,
+        }
+    }
+}
+
+fn sign_in_words(host: &str, state: SignInState) -> String {
+    match state {
+        SignInState::Missing => format!(
+            "There is no sign-in for {host} on this project. Sign in under Accounts in \
+             Settings, then try again."
+        ),
+        SignInState::Ended => format!(
+            "The sign-in for {host} has ended. Sign in again under Accounts in Settings, then \
+             try again."
+        ),
+        SignInState::Unavailable => format!(
+            "purlis could not reach {host} to use the sign-in just now. Try again in a moment."
+        ),
+    }
+}
+
+fn audit_line(record: &AuditRecord) -> String {
+    format!(
+        "{} {} {} {} {:?}",
+        record.method,
+        record.host,
+        record.repo.as_deref().unwrap_or("-"),
+        record
+            .class
+            .as_ref()
+            .map_or_else(|| "-".to_owned(), |class| format!("{class:?}")),
+        record.verdict,
+    )
+}
+
+// ---- the folder ---------------------------------------------------------------------------
+
+/// The most bytes a run's socket path may have. A unix socket's path holds 104 bytes on macOS
+/// (108 on Linux) with its terminator, so this keeps a margin.
+pub const MAX_SOCKET_PATH: usize = 100;
+
+/// The name the listener gives a run's socket in the run's folder (slice A2's `bind`).
+pub const SOCKET_NAME: &str = "proxy.sock";
+
+/// `<pid>-<8 hex>`: whose folder it is, so a sweep removes only a gone app's, and a name short
+/// enough for a socket's path. The hex is random: a run's id is not in it (the app keeps which
+/// folder is whose), and a crashed app's folder of a reused pid is never met by it.
+fn folder_name() -> io::Result<String> {
+    let mut random = [0u8; 4];
+    getrandom::fill(&mut random).map_err(io::Error::other)?;
+    let id: String = random.iter().map(|b| format!("{b:02x}")).collect();
+    Ok(format!("{}-{id}", std::process::id()))
+}
+
+/// Whether `name` is a folder this module made: `<digits>-<8 hex>`; its pid.
+fn pid_of_folder(name: &str) -> Option<u32> {
+    let (pid, id) = name.split_once('-')?;
+    let is_id = id.len() == 8
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_id || pid.is_empty() || !pid.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    pid.parse().ok()
+}
+
+/// A new private folder for a run in `root`, refused, before it is made, when the socket the
+/// listener will bind in it would not fit a unix socket's path.
+fn make_run_dir(root: &Path) -> io::Result<PathBuf> {
+    let mut tries = 0;
+    loop {
+        let dir = root.join(folder_name()?);
+        let socket = dir.join(SOCKET_NAME);
+        let length = socket.as_os_str().len();
+        if length > MAX_SOCKET_PATH {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "the forge route's socket path would be {length} bytes, over the {MAX_SOCKET_PATH} \
+                     a unix socket allows ({}); purlis needs a shorter folder for it",
+                    socket.display()
+                ),
+            ));
+        }
+        match make_private_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(refused) if refused.kind() == io::ErrorKind::AlreadyExists && tries < 4 => {
+                tries += 1;
+            }
+            Err(refused) => return Err(refused),
+        }
+    }
+}
+
+/// Makes `root` this user's alone, or says why it cannot be: created `0700`, and refused unless
+/// it is a directory (never a link) this user owns ([`purlis_same_user::private_directory`]).
+fn ensure_root(root: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        purlis_same_user::private_directory(root)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = root;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "the forge route needs a unix socket",
+        ))
+    }
+}
+
+fn make_private_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(dir)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir(dir)
+    }
+}
+
+/// Removes the folders in `root` this module made for an app that is gone: a real directory
+/// (never a link, never followed) owned by this user, named `<pid>-<run>`, whose pid is not a
+/// running process. Anything else in `root` is left alone.
+fn sweep(root: &Path) {
+    sweep_with(root, &process_may_run);
+}
+
+/// Whether process `pid` may be running. **Only "no such process" says it is gone**: a process
+/// this one may not signal (`EPERM`: another user's process, or the macOS sandbox), or any other
+/// answer, is taken as running, so a live app's folders are never removed on a guess. Another pid
+/// namespace answers `ESRCH`, not `EPERM`, so there the one-per-user instance lock is what keeps
+/// two apps from sweeping each other. A dead app's folder stays until its pid is free again, and
+/// a reused pid keeps it longer: it fails closed. Where this process may not look at all, a
+/// folder is left, never removed.
+#[cfg(unix)]
+fn process_may_run(pid: u32) -> bool {
+    use rustix::process::{Pid, test_kill_process};
+    let Some(pid) = i32::try_from(pid).ok().and_then(Pid::from_raw) else {
+        return true;
+    };
+    probe_says_running(test_kill_process(pid))
+}
+
+#[cfg(not(unix))]
+fn process_may_run(_: u32) -> bool {
+    true
+}
+
+/// A `kill(pid, 0)` answer, read: gone only for `ESRCH`.
+#[cfg(unix)]
+fn probe_says_running(answer: Result<(), rustix::io::Errno>) -> bool {
+    !matches!(answer, Err(rustix::io::Errno::SRCH))
+}
+
+/// [`sweep`] with its liveness probe given, so a test can answer as another namespace would.
+fn sweep_with(root: &Path, may_run: &dyn Fn(u32) -> bool) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let mine = purlis_same_user::Uid::effective().as_raw();
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(name) = entry.file_name().into_string() else {
+                continue;
+            };
+            let Some(pid) = pid_of_folder(&name) else {
+                continue;
+            };
+            if pid == std::process::id() || may_run(pid) {
+                continue;
+            }
+            let path = entry.path();
+            let Ok(found) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
+            if found.is_dir() && !found.file_type().is_symlink() && found.uid() == mine {
+                let _ = std::fs::remove_dir_all(&path);
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (root, may_run);
+    }
+}
+
+/// Where the routes live: the app's private folder, short because a unix socket's path may not
+/// pass 104 bytes on macOS. This user's runtime directory where there is one (Linux); without it
+/// on Linux, this user's own machine folder (not a shared directory); on macOS,
+/// the per-user temporary directory the system makes private. `None` where there is none of
+/// these, and then no chat has a route.
+pub fn route_dir() -> Option<PathBuf> {
+    // **One resolver** with the sandbox's, which holds every chat out of this folder
+    // ([`purlis_core::forgewire::route_root`]): the folder the app makes and the folder a chat is
+    // denied are the same one, whatever `XDG_RUNTIME_DIR` or `TMPDIR` say.
+    purlis_core::forgewire::route_root(&purlis_core::sandbox::Machine::this())
+}
+
+/// [`route_dir`] for the directories it was given.
+fn route_dir_in(
+    runtime: Option<PathBuf>,
+    machine: Option<PathBuf>,
+    temporary: PathBuf,
+    who: &str,
+    linux: bool,
+) -> Option<PathBuf> {
+    purlis_core::forgewire::route_dir_in(runtime, machine, temporary, who, linux)
+}
+
+// ---- the app's one ------------------------------------------------------------------------
+
+static ROUTES: std::sync::OnceLock<ForgeRoutes> = std::sync::OnceLock::new();
+
+/// The app's routes, made once at setup, after the one-per-user lock (so a sweep never meets a
+/// second app's folders). **Seams are the stubs until the slices named at the top fill them.**
+pub fn install(held: Arc<dyn HeldSinks>) {
+    let Some(root) = route_dir() else {
+        tracing::warn!("purlis: no private folder for the forge route; chats keep their tokens");
+        return;
+    };
+    let _ = ROUTES.get_or_init(|| {
+        let mut seams = Seams::stubs();
+        seams.held = held;
+        // Slice C's sign-ins and slice G's confirmed repos, where this process may read them (only
+        // the app's own, never a process a chat started) and a config root exists. Without them
+        // no repo is recorded, so no chat has a route.
+        if let (Some(scope), Some(config)) = (
+            purlis_core::forge::route::HostScope::claim(),
+            purlis_core::machine::config_root(),
+        ) {
+            seams.credentials = Arc::new(AccountCredentials::new(
+                purlis_core::forge::credential::SignedIn::new(&scope, &config),
+            ));
+            seams.recorded = Arc::new(prod::ConfirmedRecorded::new(config.clone()));
+            seams.gate = Some(Arc::new(prod::ChatGate::new(
+                purlis_core::forge::credential::chatroute::ChatRoute::new(&scope, &config),
+            )));
+            seams.listener = Arc::new(prod::CoreListener);
+            // Read from policy on each ask: a pin set while a chat is open reaches it at once.
+            seams.pin =
+                Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
+        }
+        ForgeRoutes::new(root, std::env::current_exe().unwrap_or_default(), seams)
+    });
+}
+
+/// Where a held CI-file push's quarantines are made: a folder of the app's own, in the machine
+/// folder no chat writes, beside its route folders. Removed with each push's ask, and swept with
+/// the route folders' sweep when the app next starts.
+pub fn quarantine_dir() -> PathBuf {
+    route_dir()
+        .map(|root| root.join("quarantine"))
+        .unwrap_or_else(|| std::env::temp_dir().join("purlis-quarantine"))
+}
+
+/// The app's routes, once [`install`] has run.
+pub fn routes() -> Option<&'static ForgeRoutes> {
+    ROUTES.get()
+}
+
+/// A run starts (`chats.rs`): its route, held by a guard that stops it unless the chat opens.
+/// **Slice B puts the params in the run's environment**; until it merges nothing is handed over.
+pub fn guard(chat: &str, run: &str, project: &Path) -> Option<RouteGuard<'static>> {
+    Some(routes()?.guard(chat, run, project))
+}
+
+/// The route the app's own git takes for chat `session` ([`ForgeRoutes::git_route`]).
+pub fn git_route(session: u32) -> Option<io::Result<purlis_core::worktree::git::NetworkRoute>> {
+    routes()?.git_route(session)
+}
+
+/// A chat's session closes, or its program ends on its own (`chats.rs`).
+pub fn stop_session(session: u32) {
+    if let Some(routes) = routes() {
+        routes.stop_session(session);
+    }
+}
+
+/// A project closes (`Chats::end_all`).
+pub fn stop_project(project: &Path) {
+    if let Some(routes) = routes() {
+        routes.stop_project(project);
+    }
+}
+
+/// The app exits.
+pub fn stop_all() {
+    if let Some(routes) = routes() {
+        routes.stop_all();
+    }
+    // No quarantine outlives the app: each holds a repository a held push was read in.
+    purlis_core::heldact::sweep_quarantines(&quarantine_dir());
+}

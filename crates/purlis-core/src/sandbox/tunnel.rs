@@ -776,7 +776,9 @@ fn carry(client: TcpStream, carrying: &Carrying) {
     let target = egress::host_and_port(&carrying.host, carrying.port);
     let upstream = match egress::connect(&carrying.host, carrying.port, &carrying.reach, &own) {
         egress::Connected::To(upstream) => upstream,
-        egress::Connected::OnlyLocal | egress::Connected::AtAModel => {
+        egress::Connected::OnlyLocal
+        | egress::Connected::OnlyForge
+        | egress::Connected::AtAModel => {
             carrying.tell(|tally| tally.heard(&target, "refused", Instant::now()));
             let _ = client.shutdown(std::net::Shutdown::Both);
             return;
@@ -957,20 +959,10 @@ pub fn routes_folder(root: &Path) -> PathBuf {
     crate::names::state(root).join("app").join("ssh")
 }
 
-/// **A chat's ssh route through SOCKS port `socks`, its proxy run by `program`
-/// ([`SshRoute::write`]), in a folder of its own inside `within`** ([`routes_folder`]), made the
-/// person's alone if missing. The folder goes when the returned handle is dropped, as the chat
-/// ends. Refused where `within` is not, as the kernel names it,
-/// a folder of its own: a link there could put the route where a chat writes.
-///
-/// The folder is named `chat-<pid>-<random>`, the pid this process's, so one an app killed
-/// before it could drop the handle is known as left behind once that process is gone
-/// ([`sweep_routes`], #1708).
-pub fn routed_in(
-    within: &Path,
-    socks: u16,
-    program: Option<&Path>,
-) -> io::Result<(tempfile::TempDir, SshRoute)> {
+/// **Makes `within` a folder of its own, the person's alone**: made if missing, a folder and not
+/// a link, and as the kernel names it (no link on the way to it), mode 0700. Refused otherwise: a
+/// link there could put what is written in it where a chat writes.
+pub fn make_own_folder(within: &Path) -> io::Result<()> {
     std::fs::create_dir_all(within)?;
     let not_its_own =
         || io::Error::other(format!("{} is not a folder of its own", within.display()));
@@ -988,6 +980,24 @@ pub fn routed_in(
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(within, std::fs::Permissions::from_mode(0o700))?;
     }
+    Ok(())
+}
+
+/// **A chat's ssh route through SOCKS port `socks`, its proxy run by `program`
+/// ([`SshRoute::write`]), in a folder of its own inside `within`** ([`routes_folder`]), made the
+/// person's alone if missing. The folder goes when the returned handle is dropped, as the chat
+/// ends. Refused where `within` is not, as the kernel names it,
+/// a folder of its own: a link there could put the route where a chat writes.
+///
+/// The folder is named `chat-<pid>-<random>`, the pid this process's, so one an app killed
+/// before it could drop the handle is known as left behind once that process is gone
+/// ([`sweep_routes`], #1708).
+pub fn routed_in(
+    within: &Path,
+    socks: u16,
+    program: Option<&Path>,
+) -> io::Result<(tempfile::TempDir, SshRoute)> {
+    make_own_folder(within)?;
     let dir = tempfile::Builder::new()
         .prefix(&format!("{ROUTE_PREFIX}{}-", std::process::id()))
         .tempdir_in(within)?;
@@ -1023,10 +1033,25 @@ fn route_maker(name: &str) -> Option<u32> {
 /// **Unix only.** Off unix [`crate::process::alive`] cannot ask and answers no for every pid,
 /// which would read a live chat's route as left behind, so nothing is swept there.
 pub fn sweep_routes(root: &Path) -> usize {
+    sweep_folder(
+        root,
+        &routes_folder(root),
+        "ssh route folder",
+        "ssh route folders",
+    ) + sweep_folder(
+        root,
+        &crate::forgewire::wire_folder(root),
+        "forge wiring folder",
+        "forge wiring folders",
+    )
+}
+
+/// [`sweep_routes`] for one folder of the app's, `one` and `many` naming what it holds.
+fn sweep_folder(root: &Path, within: &Path, one: &str, many: &str) -> usize {
     if !cfg!(unix) {
         return 0;
     }
-    let within = routes_folder(root);
+    let within = within.to_path_buf();
     if crate::contain::no_link_on_the_way(root, &within).is_err() {
         return 0;
     }
@@ -1051,7 +1076,7 @@ pub fn sweep_routes(root: &Path) -> usize {
     if removed > 0 {
         tracing::info!(
             "purlis: removed {} a chat left behind in {}",
-            counted(removed, "ssh route folder", "ssh route folders"),
+            counted(removed, one, many),
             within.display()
         );
     }

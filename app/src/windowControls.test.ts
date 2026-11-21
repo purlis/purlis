@@ -117,6 +117,17 @@ const UNLINKED: Readonly<Record<string, string>> = {
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Fix": BESIDE,
   "crates/purlis-core/src/doctor/fix/move_into_repos.rs: Trust these clones": TRUST_THESE,
   "crates/purlis-core/src/doctor/sandbox.rs: File report": BESIDE,
+  "crates/purlis-core/src/forge/readiness.rs: Add protected branch": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Create": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Grant": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Grant access": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Protect": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Register application": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Request": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Review": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Save": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Save application": ELSEWHERE,
+  "crates/purlis-core/src/forge/readiness.rs: Save changes": ELSEWHERE,
   // A merge refused for want of a press asked once more, or for a ruleset that changed, is shown
   // on the merge row and its pane, beside the Merge it names (Q269).
   "crates/purlis-core/src/mergehold.rs: Merge": BESIDE,
@@ -281,6 +292,8 @@ const FROM_THE_WINDOW: ReadonlyArray<readonly [path: string, starts: string, why
   ],
   ["crates/purlis-core/src/gitbroker.rs", "this chat stands in branch folder", NAMED_IN_WORDS],
   ["crates/purlis-core/src/planegit/resolvefolder.rs", "Resolve moves the project", NAMED_IN_WORDS],
+  // `purlis doctor`'s refusal inside a chat: it names the Settings group the readiness is read in.
+  ["crates/purlis-core/src/doctor/readiness.rs", "Run it from the window", NAMED_IN_WORDS],
   ["crates/purlis-core/src/chattools.rs", "Remove a finished branch folder", NOT_A_REFUSAL],
   ["crates/purlis-core/src/planegit.rs", "This save is left unsigned", NOT_A_REFUSAL],
   ["crates/purlis-core/src/renamelocal/keychain.rs", "it waits for you to finish", NOT_A_REFUSAL],

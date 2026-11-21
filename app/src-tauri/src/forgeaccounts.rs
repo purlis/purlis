@@ -149,7 +149,8 @@ pub(crate) fn config_root() -> Result<std::path::PathBuf, String> {
 }
 
 pub(crate) fn host_scope() -> Result<HostScope, String> {
-    HostScope::claim().ok_or_else(|| "Forge sign-in is the window's, never a chat's.".to_string())
+    // ADR 0128 D5: provisioning is the person's press, in the window.
+    purlis_core::forge::provision::on_the_persons_press()
 }
 
 /// Hand this machine's forge sign-ins to the window's own forge calls (#1816): from here on a
@@ -186,14 +187,68 @@ pub const SIGN_IN_ENDED: &str = "forge-sign-in-ended";
 /// the person reads which sign-in ended, and how to sign in again, when it happens rather than
 /// at the next thing that fails. Called once, as the app starts.
 pub fn tell_the_window_when_a_sign_in_ends(app: &tauri::AppHandle) {
-    use tauri::Emitter;
     let Some(scope) = HostScope::claim() else {
         return;
     };
-    let app = app.clone();
-    purlis_core::forge::refresh::tell_when_ended(&scope, move |_account| {
-        let _ = app.emit(SIGN_IN_ENDED, ());
+    tell_the_window(&scope, app);
+}
+
+/// [`tell_the_window_when_a_sign_in_ends`] once the host's scope is in hand, over any runtime so
+/// a test can give it a mock one.
+fn tell_the_window<R: tauri::Runtime>(scope: &HostScope, app: &tauri::AppHandle<R>) {
+    use tauri::Emitter;
+    let ended = app.clone();
+    purlis_core::forge::refresh::tell_when_ended(scope, move |_account| {
+        let _ = ended.emit(SIGN_IN_ENDED, ());
     });
+    let app = app.clone();
+    purlis_core::forge::refresh::tell_of_trouble(scope, move |account, trouble| {
+        let _ = app.emit(SIGN_IN_TROUBLE, trouble_said(&account.id, trouble));
+    });
+}
+
+/// The event the window is sent when a sign-in is not renewing, though no forge has ended it
+/// (ADR 0077 §3): the application pinned for the host is not the one the account signed in
+/// through, or renewals keep failing. `ForgeSignInEnded.tsx` holds the window's spelling to this
+/// one. It carries the account's id and the kind of trouble, and no token or login.
+pub const SIGN_IN_TROUBLE: &str = "forge-sign-in-trouble";
+
+/// What [`SIGN_IN_TROUBLE`] carries.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SignInTrouble {
+    pub account: String,
+    pub trouble: &'static str,
+}
+
+/// `trouble` for the account `id`, as the window is told it.
+pub fn trouble_said(id: &str, trouble: &purlis_core::forge::refresh::Trouble) -> SignInTrouble {
+    use purlis_core::forge::refresh::Trouble;
+    SignInTrouble {
+        account: id.to_string(),
+        trouble: match trouble {
+            Trouble::PinChanged => "pin-changed",
+            Trouble::RenewalFailing { .. } => "renewal-failing",
+            Trouble::EverydayHoldsWorkflow => "everyday-holds-workflow",
+            Trouble::ScopesUnknown => "scopes-unknown",
+        },
+    }
+}
+
+/// From now on each browser sign-in is renewed before it ends, on a thread of its own, with no
+/// prompt (ADR 0128 D1, `forge::credential::renewal`): a forge that refuses ends the sign-in and
+/// [`tell_the_window_when_a_sign_in_ends`] draws the Notice. Called once, as the app starts. A test
+/// build reaches no forge, so it renews nothing.
+pub fn keep_sign_ins_renewed() {
+    static KEPT: std::sync::OnceLock<purlis_core::forge::credential::renewal::Keeper> =
+        std::sync::OnceLock::new();
+    if purlis_core::fence::FENCED {
+        return;
+    }
+    let (Some(scope), Some(root)) = (HostScope::claim(), purlis_core::machine::config_root())
+    else {
+        return;
+    };
+    let _ = KEPT.set(purlis_core::forge::credential::renewal::Renewal::new(&scope, &root).keep());
 }
 
 /// Run `work` on a blocking thread: each act may wait on the keychain or the forge.
@@ -369,11 +424,17 @@ static DEVICE_FLOW: Mutex<Option<DeviceFlow>> = Mutex::new(None);
 /// The number the next flow gets.
 static NEXT_FLOW: AtomicU32 = AtomicU32::new(1);
 
+/// The number the next flow of any kind gets: the sign-in's and the CI permission's share one
+/// sequence, so a number names one flow.
+pub(crate) fn next_flow_number() -> u32 {
+    NEXT_FLOW.fetch_add(1, Ordering::SeqCst)
+}
+
 /// How often a waiting flow looks for a cancel.
 const CANCEL_CHECK: Duration = Duration::from_millis(200);
 
 /// Waits between a flow's polls, a slice at a time, so a cancel ends it within a moment.
-struct UntilCancelled(Arc<AtomicBool>);
+pub(crate) struct UntilCancelled(pub(crate) Arc<AtomicBool>);
 
 impl device::Pace for UntilCancelled {
     fn wait(&self, for_: Duration) -> bool {
@@ -393,8 +454,8 @@ impl device::Pace for UntilCancelled {
 /// Why `kind` on `host` has no browser sign-in, when it has none.
 fn no_device_flow(kind: Kind, host: &str) -> String {
     format!(
-        "purlis signs in through the browser on github.com only. On {host}, sign in to {} with \
-         a token.",
+        "purlis has no application on {host} yet. Use your organization's application for it \
+         (Settings › You › Accounts), or sign in to {} with a token.",
         kind.display()
     )
 }
@@ -413,7 +474,7 @@ pub async fn forge_device_sign_in_start(
     blocking(move || {
         host_scope()?;
         let host = accounts::host_named(kind, &host)?;
-        let registration = registration::on(kind, &host)
+        let registration = registration::resolve(&config_root()?, kind, &host)?
             .filter(|r| r.flow == registration::Flow::Device)
             .ok_or_else(|| no_device_flow(kind, &host))?;
         // A test build (the e2e build among them) has no person at a browser, and must never
@@ -669,7 +730,112 @@ pub async fn forge_sign_out(id: String) -> Result<Option<bool>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_trouble_is_told_to_the_window_by_account_and_kind_and_nothing_else() {
+        use purlis_core::forge::refresh::Trouble;
+        let pin = trouble_said("01J9ACCOUNT", &Trouble::PinChanged);
+        assert_eq!(
+            serde_json::to_value(&pin).unwrap(),
+            serde_json::json!({"account": "01J9ACCOUNT", "trouble": "pin-changed"})
+        );
+        let failing = trouble_said("01J9ACCOUNT", &Trouble::RenewalFailing { failures: 3 });
+        assert_eq!(
+            serde_json::to_value(&failing).unwrap(),
+            serde_json::json!({"account": "01J9ACCOUNT", "trouble": "renewal-failing"})
+        );
+    }
+
     use super::*;
+
+    /// A forge that says whose token it is.
+    struct WhoAmI;
+
+    impl purlis_core::forge::transport::Transport for WhoAmI {
+        fn send(
+            &self,
+            _forge: &purlis_core::forge::Forge,
+            _call: &purlis_core::forge::transport::Call,
+        ) -> Result<purlis_core::forge::transport::Reply, purlis_core::forge::transport::NoAnswer>
+        {
+            Ok(purlis_core::forge::transport::Reply {
+                code: 0,
+                out: r#"{"login": "octocat", "username": "octocat"}"#.to_string(),
+                err: String::new(),
+                status: Some(200),
+                headers: Vec::new(),
+            })
+        }
+
+        fn check_auth(
+            &self,
+            _forge: &purlis_core::forge::Forge,
+        ) -> Result<(), purlis_core::forge::ForgeError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_app_registers_the_trouble_handler_and_a_trouble_reaches_the_window_once() {
+        use purlis_core::forge::refresh::Refresher;
+        use tauri::Listener;
+        let app = tauri::test::mock_app();
+        let heard = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = heard.clone();
+        app.listen(SIGN_IN_TROUBLE, move |event| {
+            log.lock().unwrap().push(event.payload().to_string());
+        });
+        let scope = HostScope::for_a_test();
+        tell_the_window(&scope, app.handle());
+
+        // An account signed in through an application the host no longer has pinned, with its
+        // token about to end: renewal stops, and that is told.
+        let home = tempfile::tempdir().unwrap();
+        let keyring = accounts::keyring_at(home.path());
+        let granted = oauth::Answer::of(
+            200,
+            &format!(
+                r#"{{"access_token": "an-access-value", "scope": "{}", "expires_in": 28800,
+                     "refresh_token": "a-refresh-value"}}"#,
+                accounts::needed(Kind::GitHub).join(",")
+            ),
+        )
+        .granted()
+        .unwrap();
+        let reach = |_: &purlis_core::forge::Forge,
+                     _: Arc<dyn purlis_core::forge::http::TokenSource>|
+         -> Result<
+            Arc<dyn purlis_core::forge::transport::Transport>,
+            purlis_core::forge::ForgeError,
+        > { Ok(Arc::new(WhoAmI)) };
+        let account = accounts::sign_in_with_grant(
+            &scope,
+            home.path(),
+            keyring.as_ref(),
+            &reach,
+            Kind::GitHub,
+            "ghe.example.com",
+            granted,
+            Method::Device,
+            "Iv1.ghes-client",
+        )
+        .unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let near_its_end = now + 8 * 60 * 60 - 60;
+        let refresher = Refresher::new(&scope, home.path());
+        // Asked twice: the trouble is the same, and the window is told of it once.
+        for _ in 0..2 {
+            refresher.token_at(&account, near_its_end).unwrap();
+        }
+        let heard = heard.lock().unwrap();
+        assert_eq!(heard.len(), 1, "{heard:?}");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&heard[0]).unwrap(),
+            serde_json::json!({"account": account.id, "trouble": "pin-changed"})
+        );
+    }
 
     #[test]
     fn a_handed_token_never_prints() {
@@ -687,6 +853,7 @@ mod tests {
             method: Method::Pat,
             state: State::SignedIn,
             scopes: Some(vec!["repo".into(), "read:org".into(), "gist".into()]),
+            client_id: None,
         });
         assert_eq!(row.method, "token");
         assert_eq!(row.kind, "github");

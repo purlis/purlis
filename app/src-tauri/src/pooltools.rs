@@ -723,6 +723,7 @@ pub fn sent(
 /// `[policy]` of the chain that dispatched it, as its brokered reads here are (#7153).
 pub(crate) fn desktop_ctx(held: &crate::planes::Held, session: u32) -> Ctx {
     Ctx::new(held.root(), Env::from_process())
+        .for_a_chat()
         .under_chain(crate::vaultroute::chain_policy(held, session).as_deref())
 }
 
