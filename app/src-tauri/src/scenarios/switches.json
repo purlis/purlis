@@ -68,7 +68,7 @@
     },
     {
       "name": "the Codex leg's API key, and the model provider its launch words name",
-      "reason": "The leg's chats start from the keep-list, and `OPENAI_*` is among the credentials it drops: OPENAI_API_KEY (a literal that is no credential) is named in the test plane's `charter.local.toml` `[chat_env] pass` with its value in the host's environment, and Codex is told its model provider (the stand-in model's loopback address, over the Responses API, with no retry) in `-c` words beside purlis's own on its launch line, as the recordings are made (`scenarios::real_leg::launch_words`, T1.1-53). A person's chat is given neither.",
+      "reason": "The leg's chats start from the keep-list, and `OPENAI_*` is among the credentials it drops: OPENAI_API_KEY (a literal that is no credential) is named in the test plane's `charter.local.toml` `[chat_env] pass` with its value in the host's environment, and Codex is told its model provider (the stand-in model's loopback address, over the Responses API, with no retry), and that it checks no update and sends no analytics, in `-c` words beside purlis's own on its launch line, as the recordings are made (`scenarios::real_leg::launch_words`, T1.1-53). A person's chat is given neither.",
       "covers": {
         "linux": [
           "linux-release-profile"
@@ -80,7 +80,7 @@
     },
     {
       "name": "the OpenCode leg's inline configuration and its start-up switch",
-      "reason": "The leg's chats start from the keep-list: OPENCODE_CONFIG_CONTENT (the whole configuration, naming the stand-in model's loopback address as its one provider, over Chat Completions, with a literal that is no credential as its key) and OPENCODE_DISABLE_AUTOUPDATE are named in the test plane's `charter.local.toml` `[chat_env] pass`, with their values in the host's environment (`scenarios::real_leg::opencode_config`, T1.1-53). A person's chat is given neither.",
+      "reason": "The leg's chats start from the keep-list: OPENCODE_CONFIG_CONTENT (the whole configuration, naming the stand-in model's loopback address as its one provider, over Chat Completions, with a literal that is no credential as its key) and OPENCODE_DISABLE_AUTOUPDATE, _MODELS_FETCH, _DEFAULT_PLUGINS and _LSP_DOWNLOAD (its start-up traffic to its model list, the npm registry and its language servers' hosts) are named in the test plane's `charter.local.toml` `[chat_env] pass`, with their values in the host's environment (`scenarios::real_leg::opencode_config`, T1.1-53). A person's chat is given neither.",
       "covers": {
         "linux": [
           "linux-release-profile"
@@ -105,6 +105,18 @@
     {
       "name": "OpenCode's commands end by saying their own exit status",
       "reason": "OpenCode's Bash tool result carries no exit status, and a cell reads whether a command ran and how it ended: the leg asks OpenCode for each command inside a group that ends by echoing its own status, so the cells read the same exit in every harness. A person's chat is asked no such thing (`scenarios::real_leg::command_for`, T1.1-53).",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the person keeps a harness's start-up traffic blocked at once",
+      "reason": "A real harness's own start-up traffic (what its switches do not silence) reaches purlis's proxy as a held ask for a host the project does not list, and the proxy holds it for the person for the length of the hold: the leg's person answers every such ask at once with Keep blocked, as a person who wants none of it would, so the harness is refused now and the leg does not wait out each hold. The one host a cell itself asks about is left to the cell (`Scenario::answers_until_played`, T1.1-53).",
       "covers": {
         "linux": [
           "linux-release-profile"

@@ -38,7 +38,9 @@
 //!   and played), one file cell (a plain file reads, the project's vault is refused, the project
 //!   is written) and one network cell (at Full a held connection raises an ask the person keeps
 //!   blocked; at the floor, where no host is asked about, a link-local address is refused by
-//!   purlis's proxy), at Full and at Basic.
+//!   purlis's proxy), at Full and at Basic. The harness's own start-up traffic (an update check,
+//!   a model list, a plugin install) is silenced in its own words where it has them, and any ask
+//!   the proxy still raises for it is kept blocked at once ([`Scenario::answers_until_played`]).
 //!
 //! Each harness runs with the binary its variable names ([`host::program_var`]), at the version
 //! `tests/fixtures/harness-versions/<harness>.txt` pins. On CI a leg that cannot run fails.
@@ -117,7 +119,13 @@ pub(crate) fn added(dialect: Dialect) -> &'static [&'static str] {
             "DISABLE_AUTOUPDATER",
         ],
         Dialect::Codex => &["OPENAI_API_KEY"],
-        Dialect::OpenCode => &["OPENCODE_CONFIG_CONTENT", "OPENCODE_DISABLE_AUTOUPDATE"],
+        Dialect::OpenCode => &[
+            "OPENCODE_CONFIG_CONTENT",
+            "OPENCODE_DISABLE_AUTOUPDATE",
+            "OPENCODE_DISABLE_MODELS_FETCH",
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS",
+            "OPENCODE_DISABLE_LSP_DOWNLOAD",
+        ],
     }
 }
 
@@ -144,6 +152,7 @@ pub(crate) fn opencode_config(url: &str) -> String {
         }},
         "model": "standin/stand-in",
         "small_model": "standin/stand-in",
+        "disabled_providers": ["opencode"],
         "autoupdate": false,
         "share": "disabled"
     })
@@ -167,6 +176,10 @@ pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: &str) -> Vec<Str
             "model_providers.standin.wire_api=\"responses\"".to_owned(),
             "model_providers.standin.request_max_retries=0".to_owned(),
             "model_providers.standin.stream_max_retries=0".to_owned(),
+            // Its own start-up traffic, which would go to GitHub and OpenAI and be held for the
+            // person: no update check, no analytics.
+            "check_for_update_on_startup=false".to_owned(),
+            "analytics.enabled=false".to_owned(),
         ]
         .into_iter()
         .flat_map(|setting| ["-c".to_owned(), setting])
@@ -184,18 +197,6 @@ pub(crate) fn launch_words(dialect: Dialect, url: &str, prompt: &str) -> Vec<Str
 /// macOS, under its own sandbox (T1.1-10).
 pub(crate) fn holds_itself(dialect: Dialect) -> bool {
     dialect == Dialect::Claude && cfg!(target_os = "macos")
-}
-
-/// Whether the floor cannot be applied to `dialect`'s harness here, so its chat starts with no
-/// sandbox and its pane head says why (`docs/plane-format.md`, `[sandbox].mode`): Codex and
-/// opencode off macOS.
-pub(crate) fn floorless(dialect: Dialect, protection: Protection) -> bool {
-    floorless_on(cfg!(target_os = "macos"), dialect, protection)
-}
-
-/// [`floorless`] on macOS (`macos`) or off it.
-pub(crate) fn floorless_on(macos: bool, dialect: Dialect, protection: Protection) -> bool {
-    protection == Protection::Basic && !macos && dialect != Dialect::Claude
 }
 
 /// **The real harness this run starts**, or none, saying why: the file its variable
@@ -278,6 +279,9 @@ pub(crate) fn environment_at(dialect: Dialect, url: &str) -> Vec<(String, String
             ("OPENCODE_CONFIG_CONTENT", opencode_config(url)),
             (STAND_IN_URL, url.to_owned()),
             ("OPENCODE_DISABLE_AUTOUPDATE", "1".to_owned()),
+            ("OPENCODE_DISABLE_MODELS_FETCH", "1".to_owned()),
+            ("OPENCODE_DISABLE_DEFAULT_PLUGINS", "1".to_owned()),
+            ("OPENCODE_DISABLE_LSP_DOWNLOAD", "1".to_owned()),
         ],
     };
     pairs
@@ -436,6 +440,37 @@ impl Model {
     /// The transcript of the chat about to start is `file`, written from the request log.
     pub(crate) fn attach(&self, file: &Path) {
         *self.attached.lock().expect("the transcript") = Some(file.to_path_buf());
+    }
+
+    /// What the current chat's stand-in has heard, for a red run's reader: each request's path,
+    /// whom it was taken for and what the model was shown of it.
+    pub(crate) fn heard_said(&self) -> String {
+        let stand_in = Arc::clone(&self.current.lock().expect("the stand-in"));
+        let heard = stand_in.heard.lock().expect("the log");
+        let mut said = format!("the stand-in model heard {} requests:", heard.len());
+        for one in heard.iter() {
+            let shown: Vec<String> = one
+                .shown
+                .iter()
+                .map(|item| {
+                    format!(
+                        "{}: {}",
+                        item.kind,
+                        item.text.chars().take(120).collect::<String>()
+                    )
+                })
+                .collect();
+            said.push_str(&format!(
+                "\n  {} as {:?}, response {:?}, offered {:?}, asked {:?}, shown {:?}",
+                one.path,
+                one.conversation,
+                one.response,
+                one.offered,
+                one.asked.iter().map(|call| &call.step).collect::<Vec<_>>(),
+                shown
+            ));
+        }
+        said.chars().take(8000).collect()
     }
 
     /// How many requests the current chat's stand-in has heard.
@@ -648,9 +683,17 @@ pub(crate) fn canary(scenario: &Scenario, model: &Model) {
     let [write, connect] = canary_commands(&file, port);
     let prompt = model.plays(&[("canary-write", write), ("canary-connect", connect)]);
     let chat = scenario.starts_real(model, &prompt);
-    scenario.answers_until_played(chat, &["canary-write", "canary-connect"], &|| {
-        model.requests() > 0
-    });
+    let heard = || model.requests() > 0;
+    let evidence = || model.heard_said();
+    scenario.answers_until_played(
+        chat,
+        &["canary-write", "canary-connect"],
+        &host::Driving {
+            heard: &heard,
+            held: None,
+            evidence: &evidence,
+        },
+    );
     let seen = Canary {
         wrote: file.exists(),
         dialled: dialled(&mut accepted) - controls,
@@ -748,11 +791,9 @@ pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
 /// **The leg's cells**, in one chat: the probe, one file cell and one network cell.
 ///
 /// - **The probe**: the chat runs the real binary, never the fake, under the sandbox its
-///   protection names (or, where the floor cannot be applied, under none, which the pane says),
-///   the stand-in model answers it, and its first command runs.
+///   protection names, the stand-in model answers it, and its first command runs.
 /// - **The file cell**: a plain file of the project reads (the control) and the project is
-///   written; the project's vault, which no chat reads, is refused. Where the floor cannot be
-///   applied the vault is not refused, so the cell is reported not run there, never passed.
+///   written; the project's vault, which no chat reads, is refused.
 /// - **The network cell**: at Full a connection to a host the project does not list is held and
 ///   the window lists its ask, the person keeps it blocked, and the command is refused by the
 ///   proxy; at the floor, where no host is asked about, a link-local address is refused by
@@ -760,7 +801,6 @@ pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
 fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str) {
     use purlis_scenarios::model::ReportVerdict;
     let dialect = scenario.dialect;
-    let no_floor = floorless(dialect, protection);
     let vaults = scenario.root.join(".purlis").join("vaults");
     std::fs::create_dir_all(&vaults).expect("the vaults");
     let vault = vaults.join("covering.json");
@@ -779,25 +819,26 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
             format!("echo wrote-by-the-chat > {0} && cat {0}", made.display()),
         ),
     ];
-    let network_asked = match (protection, no_floor) {
-        (Protection::Full, _) => {
-            steps.push(("network", super::reaches(host)));
-            true
-        }
-        (_, false) => {
-            steps.push(("network", REFUSED_CLASS.to_owned()));
-            true
-        }
-        // No proxy holds a chat that has no sandbox: nothing here refuses the address.
-        (_, true) => false,
-    };
+    steps.push((
+        "network",
+        match protection {
+            Protection::Full => super::reaches(host),
+            _ => REFUSED_CLASS.to_owned(),
+        },
+    ));
     let prompt = model.plays(&steps);
     let chat = scenario.starts_real(model, &prompt);
     let heard = || model.requests() > 0;
+    let evidence = || model.heard_said();
+    let driving = host::Driving {
+        heard: &heard,
+        held: (protection == Protection::Full).then_some(host),
+        evidence: &evidence,
+    };
     scenario.answers_until_played(
         chat,
         &["hello", "reads-plain", "reads-the-vault", "writes-inside"],
-        &heard,
+        &driving,
     );
     probe(scenario, model, chat, protection);
 
@@ -817,30 +858,18 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         .result_of(chat, "reads-the-vault")
         .map(|line| line.to_string())
         .unwrap_or_default();
-    if no_floor {
-        record(
-            test,
-            dialect,
-            protection,
-            ReportVerdict::NotRun,
-            "the floor cannot be applied to this harness off macOS, so its chat runs with no \
-             sandbox and the vault is not refused: the file and network cells are not asked \
-             (docs/plane-format.md, `[sandbox].mode`)",
-        );
-    } else {
-        assert!(
-            !vault_said.contains("VAULT-HELD"),
-            "the real {} read the project's vault, so it ran outside its wrap: {vault_said}\n{said}",
-            dialect.word()
-        );
-        assert!(
-            StepResult::of(scenario.result_of(chat, "reads-the-vault").as_ref()).ran,
-            "the vault read never ran, so nothing refused it: {vault_said}\n{said}"
-        );
-    }
+    assert!(
+        !vault_said.contains("VAULT-HELD"),
+        "the real {} read the project's vault, so it ran outside its wrap: {vault_said}\n{said}",
+        dialect.word()
+    );
+    assert!(
+        StepResult::of(scenario.result_of(chat, "reads-the-vault").as_ref()).ran,
+        "the vault read never ran, so nothing refused it: {vault_said}\n{said}"
+    );
 
     // The network cell.
-    if network_asked && protection == Protection::Full {
+    if protection == Protection::Full {
         // The proxy holds the connection and the window lists its ask: the connection reached
         // purlis's proxy.
         let (_, kept) = scenario.person().when_listed(
@@ -851,37 +880,33 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         );
         kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
     }
-    if network_asked {
-        scenario.answers_until_played(chat, &["network"], &heard);
-        let result = StepResult::of(scenario.result_of(chat, "network").as_ref());
-        let said = scenario.said();
-        if protection == Protection::Full {
-            assert!(
-                result.ran && result.exit.is_some_and(|code| code != 0 && code != 127),
-                "the held connection was not refused once the person kept it blocked: \
-                 {result:?}\n{said}"
-            );
-        } else {
-            assert!(
-                result.said.contains(PROXY_REFUSAL),
-                "the link-local address was not refused by purlis's proxy: {result:?}\n{said}"
-            );
-        }
-    }
-    scenario.keeps_listed_asks_blocked();
-    if !no_floor {
-        record(
-            test,
-            dialect,
-            protection,
-            ReportVerdict::Pass,
-            &format!(
-                "the real {} under {}: the probe, a file cell and a network cell",
-                dialect.word(),
-                holder(dialect)
-            ),
+    scenario.answers_until_played(chat, &["network"], &driving);
+    let result = StepResult::of(scenario.result_of(chat, "network").as_ref());
+    let said = scenario.said();
+    if protection == Protection::Full {
+        assert!(
+            result.ran && result.exit.is_some_and(|code| code != 0 && code != 127),
+            "the held connection was not refused once the person kept it blocked: \
+             {result:?}\n{said}"
+        );
+    } else {
+        assert!(
+            result.said.contains(PROXY_REFUSAL),
+            "the link-local address was not refused by purlis's proxy: {result:?}\n{said}"
         );
     }
+    scenario.keeps_listed_asks_blocked();
+    record(
+        test,
+        dialect,
+        protection,
+        ReportVerdict::Pass,
+        &format!(
+            "the real {} under {}: the probe, a file cell and a network cell",
+            dialect.word(),
+            holder(dialect)
+        ),
+    );
 }
 
 /// **The probe** (T1.1-53, the §3.0 probe for a real binary): chat `chat` was started through the
@@ -906,22 +931,12 @@ fn probe(scenario: &Scenario, model: &Model, chat: u32, protection: Protection) 
         dialect.word()
     );
     // The sandbox the window composed.
-    let applied = scenario.applied_of(chat);
-    if floorless(dialect, protection) {
-        assert!(
-            applied.is_none(),
-            "the floor cannot be applied here, so the chat starts with no sandbox, but one was \
-             composed: {:?}\n{said}",
-            applied.map(|applied| applied.level())
-        );
-    } else {
-        let applied = applied.expect("a sandbox was composed");
-        let level = match protection {
-            Protection::Full => purlis_core::sandbox::Level::Full,
-            _ => purlis_core::sandbox::Level::Floor,
-        };
-        assert_eq!(applied.level(), level, "{said}");
-    }
+    let applied = scenario.applied_of(chat).expect("a sandbox was composed");
+    let level = match protection {
+        Protection::Full => purlis_core::sandbox::Level::Full,
+        _ => purlis_core::sandbox::Level::Floor,
+    };
+    assert_eq!(applied.level(), level, "{said}");
     // The process is the real binary, and the stand-in model answered it.
     let commands: Vec<String> = scenario.pids().into_iter().map(command_of).collect();
     assert!(
@@ -1241,6 +1256,8 @@ mod tests {
             "model_providers.standin.base_url=\"http://127.0.0.1:4321/v1\"",
             "model_providers.standin.wire_api=\"responses\"",
             "model_providers.standin.request_max_retries=0",
+            "check_for_update_on_startup=false",
+            "analytics.enabled=false",
         ] {
             assert!(settings.contains(&wanted), "{wanted} is missing: {codex:?}");
         }
@@ -1376,28 +1393,10 @@ mod tests {
         }
     }
 
-    /// **Where the floor cannot be applied the leg says so** (T1.1-53): Codex and OpenCode at the
-    /// floor off macOS start with no sandbox (`docs/plane-format.md`, `[sandbox].mode`), which is a
-    /// fact of the product the leg reports, never a pass; nothing else is floorless, on either OS.
+    /// **Only Claude Code on macOS holds itself** (T1.1-10): purlis wraps every other harness on
+    /// every OS, at the floor as at Full, so the leg asks every cell of each.
     #[test]
-    fn only_codex_and_opencode_are_floorless_and_only_off_macos() {
-        for dialect in Dialect::ALL {
-            for macos in [true, false] {
-                assert!(
-                    !floorless_on(macos, dialect, Protection::Full),
-                    "{dialect:?} at Full, macOS {macos}"
-                );
-                assert_eq!(
-                    floorless_on(macos, dialect, Protection::Basic),
-                    !macos && dialect != Dialect::Claude,
-                    "{dialect:?} at Basic, macOS {macos}"
-                );
-            }
-        }
-        assert!(floorless_on(false, Dialect::Codex, Protection::Basic));
-        assert!(floorless_on(false, Dialect::OpenCode, Protection::Basic));
-        assert!(!floorless_on(false, Dialect::Claude, Protection::Basic));
-        assert!(!floorless_on(true, Dialect::Codex, Protection::Basic));
+    fn only_claude_code_on_macos_holds_itself() {
         assert!(holds_itself(Dialect::Claude) == cfg!(target_os = "macos"));
         assert!(!holds_itself(Dialect::Codex) && !holds_itself(Dialect::OpenCode));
     }
@@ -1570,8 +1569,7 @@ mod tests {
     }
 
     /// **A real Codex at the floor is held in the host** (T1.1-53), on each OS: the probe, the
-    /// file cell and the network cell at Basic, where no host is asked about. Off macOS the floor
-    /// cannot be applied to Codex, and the leg reports that.
+    /// file cell and the network cell at Basic, where no host is asked about.
     #[test]
     fn a_real_codex_at_the_floor_is_held_in_the_host() {
         runs(

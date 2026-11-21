@@ -89,6 +89,17 @@ pub(crate) fn on_ci() -> bool {
 /// terminal interface and, on a runner, a cold binary under the wrap.
 pub(crate) const REAL_PLAYS_WITHIN: Duration = Duration::from_secs(300);
 
+/// **What a real harness's driver reads and says** ([`Scenario::answers_until_played`]).
+pub(crate) struct Driving<'a> {
+    /// Whether the stand-in model has heard the harness yet.
+    pub heard: &'a dyn Fn() -> bool,
+    /// The one host the leg itself asks about, whose ask is the person's to press and is left to
+    /// the cell; every other ask the chat raises is kept blocked.
+    pub held: Option<&'a str>,
+    /// What the stand-in model heard, for a red run's reader.
+    pub evidence: &'a dyn Fn() -> String,
+}
+
 /// **Why a scenario did not run**: a failure on CI, a printed reason elsewhere (`None`).
 pub(crate) fn cannot_run<T>(why: &str) -> Option<T> {
     assert!(!on_ci(), "the scenario cannot run on CI: {why}");
@@ -1344,7 +1355,7 @@ impl Scenario {
     /// ([`Self::launches`]), so the launch line, the environment, the bundled plugin and the
     /// settings are what purlis writes, never a hand launch. The sandbox-only profile is signed
     /// in with the first-run state of an interactive start where purlis does not seed it
-    /// ([`super::real_leg::seed_first_run`], Claude Code on macOS), what the leg adds to the
+    /// ([`super::real_leg::seed_first_run`], Claude Code), what the leg adds to the
     /// keep-list is named in the project's local `[chat_env] pass`
     /// ([`super::real_leg::chat_env_pass`]) with its values in this process's environment, the
     /// stand-in's port is granted where purlis walls the chat's network, and the stand-in model
@@ -1363,7 +1374,7 @@ impl Scenario {
                 assert!(why.contains("already has a profile"), "the profile: {why}");
             }
         });
-        if super::real_leg::holds_itself(dialect) {
+        if dialect == Dialect::Claude {
             let config = purlis_core::profilestore::listed_here()
                 .into_iter()
                 .find(|profile| profile.name == self.profile())
@@ -1421,14 +1432,17 @@ impl Scenario {
     ///
     /// - a first-run question the harness asks in its terminal before the chat (a folder's trust,
     ///   a key's use, Codex's "Folder access"): Enter on its default, while the model has heard
-    ///   nothing (`heard` says it has);
+    ///   nothing ([`Driving::heard`] says it has);
     /// - Codex's offer of a newer model: "Use existing model";
     /// - Claude Code's bypass-permissions warning, which defaults to "No, exit": "Yes, I accept";
     /// - OpenCode's "Permission required" for a folder outside the project: allowed once, so the
-    ///   wrap, not the harness, decides the call.
+    ///   wrap, not the harness, decides the call;
+    /// - an ask the proxy raises for a host the leg did not name ([`Driving::held`]), which is the
+    ///   harness's own start-up traffic: kept blocked at once, as a person who wants none of it
+    ///   would, so the harness is refused now and does not wait out the proxy's hold.
     ///
-    /// The same answers `tests/recordings/tests/record.rs` gives its harnesses.
-    pub(crate) fn answers_until_played(&self, id: u32, steps: &[&str], heard: &dyn Fn() -> bool) {
+    /// The same answers `tests/recordings/tests/record.rs` gives its harnesses, bar the last.
+    pub(crate) fn answers_until_played(&self, id: u32, steps: &[&str], driving: &Driving<'_>) {
         let deadline = std::time::Instant::now() + REAL_PLAYS_WITHIN;
         let (mut first_run, mut newer_model, mut bypass, mut permission) = (0, 0, 0, 0);
         let press = |bytes: &[u8]| {
@@ -1437,12 +1451,25 @@ impl Scenario {
         while !steps.iter().all(|step| self.result_of(id, step).is_some()) {
             assert!(
                 std::time::Instant::now() < deadline,
-                "chat {id} played none of {steps:?} in time; its screen:\n{}\n{}",
-                self.screen_of(id),
+                "chat {id} played none of {steps:?} in time; its screen:\n{}\n{}\n{}",
+                self.screen_tail_of(id),
+                (driving.evidence)(),
                 self.said()
             );
+            for ask in self.queries().counted().asks {
+                let target = super::person::shown_target(&ask);
+                if ask.session == id
+                    && !target.is_empty()
+                    && driving.held != Some(target.as_str())
+                    && ask.options.iter().any(|one| one.id == crate::asking::KEEP)
+                {
+                    let _ = self
+                        .person()
+                        .presses_on(&ask, &super::person::Press::Keep(None));
+                }
+            }
             let screen = self.screen_of(id).to_lowercase();
-            let nothing_heard = !heard();
+            let nothing_heard = !(driving.heard)();
             if first_run < 3
                 && nothing_heard
                 && [
@@ -1487,6 +1514,18 @@ impl Scenario {
             std::thread::sleep(Duration::from_millis(250));
         }
         self.note_running();
+    }
+
+    /// What is on chat `id`'s screen, without its blank lines and cut to a readable width: the
+    /// last forty lines, for a red run's reader.
+    pub(crate) fn screen_tail_of(&self, id: u32) -> String {
+        let lines: Vec<String> = self
+            .screen_of(id)
+            .lines()
+            .map(|line| line.trim().chars().take(200).collect::<String>())
+            .filter(|line| !line.is_empty())
+            .collect();
+        lines[lines.len().saturating_sub(40)..].join("\n")
     }
 
     /// **A folder of the person's own that no chat may write**: in the run's own home, outside

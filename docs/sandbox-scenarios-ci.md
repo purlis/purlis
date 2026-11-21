@@ -53,7 +53,7 @@ says which:
 | Harness | macOS | Linux |
 |---|---|---|
 | Claude Code | its own sandbox, built from the `sandbox` object and `permissions.deny` rules purlis hands it in `--settings`, its Bash tool's network going through purlis's proxy (T1.1-10) | wrapped whole by purlis, its own sandbox off (`claude_wrap.rs`) (T1.1-53) |
-| Codex | wrapped by purlis (Seatbelt) | wrapped by purlis; the floor cannot be applied, so at Basic it runs with no sandbox and the leg reports its file and network cells `not_run` |
+| Codex | wrapped by purlis (Seatbelt) | wrapped by purlis (Landlock and seccomp), at the floor too |
 | OpenCode | wrapped by purlis (Seatbelt) | the same as Codex |
 
 The legs are part of the suite (`scenarios::real_leg::`), so they run where the suite does: on every
@@ -84,8 +84,10 @@ queue and in the nightly's `sandbox-scenarios` entries. A test that is not for a
   stand-in and played, under the sandbox its protection names), one file cell (a plain file reads,
   the project is written, the project's vault is refused) and one network cell (at Full a held
   connection raises an ask the person keeps blocked; at Basic, where no host is asked about, a
-  link-local address is refused by purlis's proxy in its own words). Tickets 20 to 22 and 13 add
-  their cells to this leg.
+  link-local address is refused by purlis's proxy in its own words). Each harness's own start-up
+  traffic (an update check, a model list, a plugin install) is silenced in its own words, and any
+  ask the proxy still raises for it is kept blocked at once, so a held connection never stalls
+  the harness. Tickets 20 to 22 and 13 add their cells to this leg.
 
 Not in this leg yet: `the_fake_reproduces_recordings_made_on_the_hosts_own_chat_start` (ticket 53's
 last test) and the recorder as `Kit.binary`; it needs ticket 3's recorder run through
