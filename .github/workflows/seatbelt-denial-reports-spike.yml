@@ -21,9 +21,13 @@ jobs:
         os: [macos-15, macos-26]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: As the runner's admin user
+        shell: bash
         run: tools/spikes/seatbelt-denial-reports.sh 100 2>&1 | tee "$RUNNER_TEMP/admin.txt"
       - name: As a standard (non-admin) user
+        shell: bash
         run: |
           sudo sysadminctl -addUser spiketest -password 'spike-Test-1' -home /Users/spiketest >/dev/null 2>&1
           sudo mkdir -p /Users/spiketest && sudo chown spiketest /Users/spiketest
@@ -31,6 +35,7 @@ jobs:
           sudo -u spiketest -H env TMPDIR=/tmp /tmp/spike.sh 100 2>&1 | tee "$RUNNER_TEMP/standard.txt"
       - name: Summary
         if: always()
+        shell: bash
         run: |
           { echo "## admin"; echo '```'; cat "$RUNNER_TEMP/admin.txt"; echo '```'
             echo "## standard user"; echo '```'; cat "$RUNNER_TEMP/standard.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

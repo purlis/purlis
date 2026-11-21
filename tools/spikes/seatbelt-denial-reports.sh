@@ -5,8 +5,11 @@
 # docs/spikes/seatbelt-denial-reports.md. Usage: seatbelt-denial-reports.sh [count] (default 100).
 set -u
 N=${1:-100}
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/seatbelt-spike.XXXXXX")
-WORK=$(cd "$WORK" && pwd -P)
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/seatbelt-spike.XXXXXX") || { echo "mktemp failed" >&2; exit 1; }
+WORK=$(cd "$WORK" && pwd -P) || { echo "cannot enter the work dir" >&2; exit 1; }
+# Never let the cleanup run on an empty or foreign path: it is an rm -rf.
+case "$WORK" in */seatbelt-spike.*) ;; *) echo "refusing work dir [$WORK]" >&2; exit 1 ;; esac
+[ -d "$WORK" ] && [ "$WORK" != "$PWD" ] || { echo "refusing work dir [$WORK]" >&2; exit 1; }
 trap 'kill $(jobs -p) 2>/dev/null; rm -rf "$WORK"' EXIT
 
 echo "== who: $(id -un) (uid $(id -u)); groups: $(id -Gn); macOS $(sw_vers -productVersion)"
@@ -57,11 +60,27 @@ printf "  identical refusals: %d; reports of that one file: %d\n", $n, $seen{rep
 printf "  deny lines on the stream not from this chat's dir: %d (of %d)\n", $stray // 0, $total // 0;
 PL
 
-# case NAME MODIFIER PREDICATE-TEMPLATE [load]
+# The folded-summary judge: the kernel's "N duplicate report(s) for Sandbox: ..." lines for this
+# chat's dir, how many refusals they stand for, and whether they carry the tag.
+cat >"$WORK/folded.pl" <<'PL'
+my ($recv, $dir, $tag, $wait) = @ARGV;
+my ($lines, $folded, $tagged, $tagged_n) = (0, 0, 0, 0);
+open my $r, '<', $recv or die;
+while (<$r>) {
+  next unless /^(\d+\.\d+) (.*)/s; my ($arr, $line) = ($1, $2);
+  next unless $line =~ /duplicate reports? for/ && $line =~ m{\Q$dir\E};
+  my ($n) = $line =~ /(\d+) duplicate reports? for/; $lines++; $folded += $n;
+  if ($line =~ /\Q$tag\E\s*$/) { $tagged++; $tagged_n += $n }
+  print "  folded line: ", substr($line, 0, 300), "\n" if $lines <= 3;
+}
+printf "  folded summary lines for this chat's dir: %d, standing for %d refusals; carrying the tag at the end: %d (%d refusals); waited %s s after the child ended\n", $lines, $folded, $tagged, $tagged_n, $wait;
+PL
+
+# case NAME MODIFIER PREDICATE-TEMPLATE [load] [wait-seconds after the child ends, default 12]
 #   @TAG@ in the predicate is replaced by this case's tag; the chat's dir name carries the tag only
 #   when the predicate says CONTAINS @DIRTAG@.
 case_run() {
-  local name=$1 mod=$2 pred=$3 load=${4:-} tag="spk$RANDOM$RANDOM"
+  local name=$1 mod=$2 pred=$3 load=${4:-} wait_s=${5:-12} tag="spk$RANDOM$RANDOM"
   local dir="$WORK/chat-$tag" other="$WORK/other-$tag"
   mkdir -p "$dir" "$other"
   pred=${pred//@TAG@/$tag}; pred=${pred//@DIRTAG@/chat-$tag}
@@ -75,15 +94,16 @@ case_run() {
     ( while :; do logger -t spikeflood "flood $RANDOM"; done ) & pids+=($!)
     ( while :; do logger -t spikeflood "flood $RANDOM"; done ) & pids+=($!)
   fi
-  log stream --style compact --predicate "$pred" 2>"$WORK/recv.err" | perl "$WORK/stamp.pl" >"$WORK/recv.out" &
+  # $! is this case's own `log stream` (the stamper is a process substitution), so it alone is killed.
+  log stream --style compact --predicate "$pred" 2>"$WORK/recv.err" > >(perl "$WORK/stamp.pl" >"$WORK/recv.out") &
   local rpid=$!
   sleep 4
   sandbox-exec -p "$oprof" perl "$WORK/child.pl" "$other" "$N" 0.01 >/dev/null 2>&1 &
   sandbox-exec -p "$prof" perl "$WORK/child.pl" "$dir" "$N" 0.01 >"$WORK/child.out" 2>"$WORK/child.err"
   local rc=$?
   wait $! 2>/dev/null
-  sleep 12
-  pkill -f "log stream --style compact" 2>/dev/null; kill $rpid 2>/dev/null; wait $rpid 2>/dev/null
+  sleep "$wait_s"
+  kill $rpid 2>/dev/null; wait $rpid 2>/dev/null; sleep 1
   [ ${#pids[@]} -gt 0 ] && kill "${pids[@]}" 2>/dev/null
   [ -s "$WORK/recv.err" ] && echo "  receiver stderr: $(head -c 200 "$WORK/recv.err")"
   [ -s "$WORK/child.err" ] && echo "  child stderr: $(head -c 200 "$WORK/child.err")"
@@ -95,6 +115,7 @@ case_run() {
     echo "  log show as this user: $(log show --last 3m --style compact --predicate "$pred" 2>&1 | head -c 200 | tr "\n" "|")"
   fi
   perl "$WORK/judge.pl" "$WORK/child.out" "$WORK/recv.out" "$dir" "$N"
+  case "$name" in F_*) perl "$WORK/folded.pl" "$WORK/recv.out" "$dir" "$tag" "$wait_s" ;; esac
 }
 
 for _ in 1 2 3; do case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"'; done
@@ -103,6 +124,8 @@ case_run C_with_report_path_tag '(with report)' 'eventMessage CONTAINS "@DIRTAG@
 case_run D_no_report_control '(with no-report)' 'eventMessage CONTAINS "@DIRTAG@"'
 case_run A_message_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@"' load
 case_run B_default_report_path_tag '' 'eventMessage CONTAINS "@DIRTAG@"' load
+echo "== folded summary lines: does 'N duplicate reports' carry the tag? (waits 60 s: a fold came about 25 s after its process ended)"
+for _ in 1 2; do case_run F_folded_summary_tag '(with message "@TAG@")' 'eventMessage ENDSWITH "@TAG@" OR eventMessage CONTAINS "duplicate report"' '' 60; done
 echo "== broad-predicate comparison (what 'log stream over everything' would show): sender Sandbox"
 case_run E_message_tag_broad_predicate '(with message "@TAG@")' 'sender == "Sandbox" OR process == "kernel"'
 echo "== trace directive: does a profile with (trace) compile?"
