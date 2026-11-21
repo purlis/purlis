@@ -21,36 +21,45 @@ use super::mint;
 
 /// The variables a forge's own CLI reads a token from, and a CI job is handed one in. A tool that
 /// hands a vault value in one of these is the vault-token route.
-const TOKEN_VARS: [&str; 7] = [
+const TOKEN_VARS: [&str; 12] = [
     "GH_TOKEN",
     "GITHUB_TOKEN",
     "GH_ENTERPRISE_TOKEN",
     "GITHUB_ENTERPRISE_TOKEN",
     "GITLAB_TOKEN",
     "GITLAB_ACCESS_TOKEN",
+    "GITLAB_PRIVATE_TOKEN",
+    "GITHUB_PAT",
+    "GITHUB_PERSONAL_ACCESS_TOKEN",
+    "GIT_PASSWORD",
+    "HOMEBREW_GITHUB_API_TOKEN",
     "CI_JOB_TOKEN",
 ];
 
 /// The prefixes a forge's own tokens carry: GitHub's (`ghp_` classic, `gho_` OAuth, `ghu_` user,
-/// `ghs_` installation, `github_pat_` fine-grained) and GitLab's (`glpat-` personal or project,
-/// `glcbt-` CI build, `glrt-` runner).
-const TOKEN_PREFIXES: [&str; 8] = [
+/// `ghs_` installation, `ghr_` refresh, `github_pat_` fine-grained) and GitLab's (`glpat-`
+/// personal, project or group, `glcbt-` CI build, `glrt-` runner, `gldt-` deploy, `glptt-`
+/// pipeline trigger, `glft-` feed, `glsoat-` SCIM).
+const TOKEN_PREFIXES: [&str; 13] = [
     "ghp_",
     "gho_",
     "ghu_",
     "ghs_",
+    "ghr_",
     "github_pat_",
     "glpat-",
     "glcbt-",
     "glrt-",
+    "gldt-",
+    "glptt-",
+    "glft-",
+    "glsoat-",
 ];
 
-/// **Whether `value` is a forge token**, by its documented prefix.
+/// **Whether `value` holds a forge token**, by its documented prefix, anywhere in it: a bare
+/// token, one after `Bearer `, or one inside a URL's userinfo.
 pub fn forge_token_value(value: &str) -> bool {
-    let value = value.trim_start();
-    TOKEN_PREFIXES
-        .iter()
-        .any(|prefix| value.starts_with(prefix))
+    TOKEN_PREFIXES.iter().any(|prefix| value.contains(prefix))
 }
 
 /// **Whether a vault item called `key` is one purlis recorded as a forge token**: what Agent

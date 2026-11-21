@@ -70,7 +70,9 @@ still comes. A repo not probed is listed unmarked. Nothing is cloned until the p
   agent socket emptied and git's ssh told no agent (not in Claude Code, whose sandbox sets git's
   ssh itself), `browser_login` to a forge host refused, and its tool calls to a forge connector
   (`github`, `gitlab`, the claude.ai and plugin forms of each, `gh`, `glab`) refused (#7205).
-  Open: on macOS `gh`'s keychain token; a helper the chat names itself (`git -c
+  A chat whose sandbox does not hold your credentials class has these routes only: they deny no
+  file, so your `gh` config and `~/.ssh` stay readable there, and with the baseline on every chat,
+  that is more chats than a mint alone ever claimed. Open: on macOS `gh`'s keychain token; a helper the chat names itself (`git -c
   credential.helper=…`, `GIT_CONFIG_COUNT=0 git …`, `env -u GIT_CONFIG_COUNT …`); a socket you
   granted; a bare `ssh` reading `~/.ssh/config` (Codex, opencode); Claude Code's own ssh and its
   ssh agent; and a forge server under a name purlis does not list, since connector servers still

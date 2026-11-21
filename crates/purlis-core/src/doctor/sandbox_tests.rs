@@ -310,8 +310,28 @@ fn old_forge_token_lines_are_one_warning_naming_the_step_and_each_tool() {
     .expect("a row");
     assert_eq!(row.name, "forge sign-in replaces");
     assert_eq!(row.status, Status::Warn);
-    assert!(row.detail.starts_with("2 tool lines"), "{}", row.detail);
-    assert!(row.detail.contains("gh of dev, glab of dev"));
+    // Only the line to delete is the finding: the `mint` line guards its App's key.
+    assert!(row.detail.starts_with("1 tool line"), "{}", row.detail);
+    assert!(row.detail.contains("glab of dev") && !row.detail.contains("gh of dev"));
     assert!(row.hint.contains("Settings › Forges"));
     assert_eq!(replaced_by_sign_in_row(&[]), None);
+}
+
+#[test]
+fn a_mint_line_kept_on_purpose_is_no_finding_and_never_warns() {
+    use crate::sandbox::tools::replaced::{Found, Kind};
+    let row = replaced_by_sign_in_row(&[Found {
+        persona: "dev".into(),
+        tool: "gh".into(),
+        kind: Kind::GithubApp,
+    }])
+    .expect("a row");
+    assert_eq!(row.status, Status::Ok);
+    assert!(
+        row.detail
+            .contains("Kept, they stop purlis handing the App's key")
+            || row.detail.contains("Kept"),
+        "{}",
+        row.detail
+    );
 }

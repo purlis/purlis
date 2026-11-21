@@ -13,6 +13,8 @@ on:
   pull_request:
     paths:
       - crates/purlis-core/**
+      - crates/purlis-cli/**
+      - app/src-tauri/**
       - .github/workflows/forge-wiring.yml
   merge_group:
 
@@ -72,6 +74,13 @@ jobs:
         if: runner.os == 'Linux'
         timeout-minutes: 60
         run: cargo nextest run -p purlis-cli -p purlis-app --features purlis-cli/forge-wiring,purlis-app/forge-wiring --locked --no-run
+      # The app's and the cli's own tests with it on: the app's window state carries the Notice of
+      # a project's old forge token lines only then (`sandboxing` tests), and the cli's recorded
+      # behaviour (`recorded_behaviour`) is held to it. Linux only, as the build above.
+      - name: Run the app's and the cli's tests with it
+        if: runner.os == 'Linux'
+        timeout-minutes: 60
+        run: cargo nextest run -p purlis-cli -p purlis-app --features purlis-cli/forge-wiring,purlis-app/forge-wiring --locked --profile ci -E 'test(/sandboxing::/) | test(/recorded_behaviour/)'
       - name: Run the tests
         # The end-to-end test (`one_login_end_to_end`) needs the real gh, glab and git and its own
         # node harness: `one-login-e2e` runs it, with those, on every one-login pull request.

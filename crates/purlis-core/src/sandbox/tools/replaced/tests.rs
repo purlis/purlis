@@ -108,3 +108,28 @@ fn an_old_project_raises_one_notice_whose_cause_moves_only_with_its_lines() {
     assert!(first.text.contains("Nothing was deleted for you"));
     assert_eq!(told_of(&[]), None);
 }
+
+#[test]
+fn a_forge_token_is_known_by_its_prefix_bare_after_bearer_or_in_a_url() {
+    // Synthetic values, made at run time.
+    let bare = format!("{}{}", "glsoat-", "synthetic");
+    assert!(super::forge_token_value(&bare));
+    assert!(super::forge_token_value(&format!(
+        "Bearer {}{}",
+        "ghr_", "synthetic"
+    )));
+    let user = "someone";
+    let host = "example.test";
+    let url = format!("https://{user}:{}{}@{host}/o/r", "glpat-", "synthetic");
+    assert!(super::forge_token_value(&url));
+    assert!(!super::forge_token_value("plain-value"));
+    for var in [
+        "GITLAB_PRIVATE_TOKEN",
+        "GITHUB_PAT",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "GIT_PASSWORD",
+        "HOMEBREW_GITHUB_API_TOKEN",
+    ] {
+        assert!(token_var(var), "{var}");
+    }
+}

@@ -100,6 +100,9 @@ pub const FORGE_ITEM_REFUSED: &str = "this vault item is a forge token, which pu
 /// **Whether this process runs in a chat** (a sandboxed one, or one whose hooks reach the app), as
 /// its environment says.
 pub fn in_a_chat(ctx: &Ctx) -> bool {
+    if ctx.for_a_chat {
+        return true;
+    }
     let env = |name: &str| ctx.env.get(name);
     if crate::sandbox::chat_is_sandboxed_in(&env) {
         return true;

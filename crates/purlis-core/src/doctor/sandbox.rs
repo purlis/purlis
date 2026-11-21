@@ -274,27 +274,49 @@ pub(super) fn replaced_by_sign_in(d: &Doctor) -> Option<Row> {
 /// The row [`replaced_by_sign_in`] prints for `found`: how many lines, and the step. It names
 /// each persona's tool and touches no file and no vault item.
 fn replaced_by_sign_in_row(found: &[crate::sandbox::tools::replaced::Found]) -> Option<Row> {
+    use crate::sandbox::tools::replaced::Kind;
     if found.is_empty() {
         return None;
     }
-    let named: Vec<String> = found
-        .iter()
-        .map(|one| format!("{} of {}", one.tool, one.persona))
-        .collect();
+    let named = |lines: &[&crate::sandbox::tools::replaced::Found]| {
+        lines
+            .iter()
+            .map(|one| format!("{} of {}", one.tool, one.persona))
+            .collect::<Vec<String>>()
+            .join(", ")
+    };
+    let (kept, to_delete): (Vec<_>, Vec<_>) =
+        found.iter().partition(|one| one.kind == Kind::GithubApp);
+    // A `mint` line guards its App's key from being handed to a chat while the key is in a vault:
+    // kept on purpose, it is no finding, so it never warns for ever. Every other line only runs
+    // nothing, and is the person's to delete.
+    if to_delete.is_empty() {
+        return Some(Row::ok(
+            "forge sign-in replaces",
+            format!(
+                "{} in this project's settings ask for a GitHub App token that purlis no longer \
+                 mints, so {} nothing: {}. Kept, they stop purlis handing the App's key to a chat; \
+                 delete {} once the key is out of its vault",
+                crate::counts::counted(kept.len(), "tool line", "tool lines"),
+                crate::counts::plural(kept.len(), "it runs", "they run"),
+                named(&kept),
+                crate::counts::plural(kept.len(), "it", "them"),
+            ),
+        ));
+    }
     Some(
         Row::warn(
             "forge sign-in replaces",
             format!(
                 "{} in this project's settings {} a chat a forge token, which purlis no longer \
                  does, so {} nothing: {}. Chats use your sign-in",
-                crate::counts::counted(found.len(), "tool line", "tool lines"),
-                crate::counts::plural(found.len(), "hands", "hand"),
-                crate::counts::plural(found.len(), "it runs", "they run"),
-                named.join(", ")
+                crate::counts::counted(to_delete.len(), "tool line", "tool lines"),
+                crate::counts::plural(to_delete.len(), "hands", "hand"),
+                crate::counts::plural(to_delete.len(), "it runs", "they run"),
+                named(&to_delete)
             ),
-            "Sign in under Settings › Forges, then delete those lines. Keep a `mint` line while its \
-             App's key is in a vault: it stops purlis handing that key to a chat. A vault item \
-             a line named stays until you delete it.",
+            "Sign in under Settings › Forges, then delete those lines. A vault item a line named \
+             stays until you delete it.",
         )
         .in_settings(SettingsGroup::Forges),
     )
