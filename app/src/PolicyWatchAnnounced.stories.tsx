@@ -38,6 +38,7 @@ const meta = {
       template_default: true,
       overrides: [],
       locked: [],
+      press: null,
     });
     return () => {
       forgetPolicies();

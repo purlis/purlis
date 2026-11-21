@@ -1,0 +1,326 @@
+// Copyright 2026 Purlis
+// SPDX-License-Identifier: Apache-2.0
+
+//! **The loosening press** (M75-15, #7024): what the window shows at the press, against the policy
+//! in force, and what Accept does. The accepted copy and the floor are handed in as a standing
+//! built by hand, except where a test accepts: that one runs on a sealed store of its own.
+
+use std::path::{Path, PathBuf};
+
+use super::force::tests::{
+    HEADER, Machine, STRICT, accepted, commit, floor, forbid_merge, git, holding, host, machine,
+    merge, plane, sources, version,
+};
+use super::*;
+use crate::policy::decide::Outcome;
+use crate::secrets::answers::{Deny, State};
+
+const WHEN_ATTENDED: &str = " when { context.attended }";
+const WHEN_UNATTENDED: &str = " when { !context.attended }";
+const OPEN: &str = "[policy]\ntemplate = \"open\"\n";
+
+/// A test plays the person's press.
+#[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
+fn the_persons_press() -> answers::Press {
+    answers::Press::of_the_persons_press()
+}
+
+/// The press the project at `root` raises with `standing`, `HEAD` read as the host reads it.
+fn press_of(root: &Path, standing: &Standing) -> Option<Press> {
+    of_head(root, &sources(root), standing, &Version::at_head(root))
+}
+
+fn rule<'a>(press: &'a Press, id: &str) -> &'a RuleChange {
+    press
+        .diff
+        .rules
+        .iter()
+        .find(|one| one.id == id)
+        .unwrap_or_else(|| panic!("no row for {id}: {:?}", press.diff.rules))
+}
+
+/// A permit of `id` for the merge action.
+fn permit_merge(id: &str) -> String {
+    format!("@id(\"{id}\")\npermit (principal, action == Action::\"merge\", resource);\n")
+}
+
+/// A plane whose accepted copy holds the ban on a merge and whose `HEAD` has dropped it: the
+/// press the commit raises.
+fn dropped_the_ban(m: &Machine) -> (PathBuf, Standing) {
+    let ban = forbid_merge("guards-merge-ban", "");
+    let root = plane(m, &[("purlis.toml", STRICT), ("policy.cedar", &ban)]);
+    let standing = holding(vec![accepted(&version(STRICT, Some(&ban)))]);
+    commit(&root, &[("policy.cedar", "-")]);
+    (root, standing)
+}
+
+/// Gives the plane's clone an upstream that holds every commit it has now.
+fn push_to_an_upstream(m: &Machine, root: &Path) {
+    let bare = m.dir.path().join("upstream.git");
+    git(
+        m.dir.path(),
+        &["init", "-q", "--bare", bare.to_str().expect("a path")],
+    );
+    git(
+        root,
+        &["remote", "add", "origin", bare.to_str().expect("a path")],
+    );
+    git(root, &["push", "-q", "-u", "origin", "HEAD:main"]);
+}
+
+#[test]
+fn the_press_shows_each_rule_as_loosens_tightens_or_changes() {
+    let m = machine();
+    let was = format!(
+        "{HEADER}{}{}{}",
+        // Dropped: a forbid is gone.
+        "@id(\"guards-merge-ban\")\nforbid (principal, action == Action::\"merge\", resource);\n",
+        // Edited in a way purlis cannot call narrower or wider.
+        "@id(\"guards-merge-edit\")\nforbid (principal, action == Action::\"merge\", resource) \
+         when { context.attended };\n",
+        // Asks the person; will forbid outright.
+        "@id(\"guards-merge-ask\") @ask(\"you\")\nforbid (principal, action == Action::\"merge\", \
+         resource);\n",
+    );
+    let now = format!(
+        "{HEADER}{}{}{}{}",
+        "@id(\"guards-merge-edit\")\nforbid (principal, action == Action::\"merge\", resource) \
+         when { !context.attended };\n",
+        "@id(\"guards-merge-ask\")\nforbid (principal, action == Action::\"merge\", resource);\n",
+        // A forbid added, and a permit added.
+        "@id(\"guards-merge-new\")\nforbid (principal, action == Action::\"merge\", resource);\n",
+        permit_merge("guards-merge-grant"),
+    );
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &now)]);
+    let standing = holding(vec![accepted(&version(STRICT, Some(&was)))]);
+    let press = press_of(&root, &standing).expect("a press");
+    let seen: Vec<(&str, Kind, &str)> = press
+        .diff
+        .rules
+        .iter()
+        .map(|one| (one.id.as_str(), one.kind, one.what))
+        .collect();
+    assert_eq!(
+        seen,
+        [
+            ("guards-merge-ban", Kind::Loosens, "removed"),
+            ("guards-merge-edit", Kind::Changes, "edited"),
+            ("guards-merge-ask", Kind::Tightens, "no longer asks"),
+            ("guards-merge-new", Kind::Tightens, "added"),
+            ("guards-merge-grant", Kind::Loosens, "added"),
+        ],
+        "{press:?}"
+    );
+    assert_eq!(press.reason, Reason::Loosening);
+}
+
+#[test]
+fn the_press_shows_mode_and_limit_changes() {
+    let m = machine();
+    let was = format!(
+        "{STRICT}[policy.limits.dispatch]\nrunning-per-chat = 3\n[policy.limits.asks]\n\
+         cool-off-within-minutes = 90\n"
+    );
+    let now = "[policy]\ntemplate = \"strict\"\nguards.merge = \"log\"\n\
+               [policy.limits.dispatch]\nrunning-per-chat = 9\n[policy.limits.asks]\n\
+               cool-off-within-minutes = 30\n";
+    let root = plane(&m, &[("purlis.toml", now)]);
+    let standing = holding(vec![accepted(&version(&was, None))]);
+    let press = press_of(&root, &standing).expect("a press");
+    let mode = press
+        .diff
+        .modes
+        .iter()
+        .find(|one| one.key == "guards.merge")
+        .expect("a row for the merge guard");
+    assert_eq!(
+        (mode.before, mode.after, mode.kind),
+        ("enforce", "log", Kind::Loosens)
+    );
+    let limit = |key: &str| {
+        press
+            .diff
+            .limits
+            .iter()
+            .find(|one| one.key == key)
+            .unwrap_or_else(|| panic!("no row for {key}: {:?}", press.diff.limits))
+    };
+    // A cap raised loosens; a wait lowered loosens, by each key's own direction.
+    let cap = limit("dispatch.running-per-chat");
+    assert_eq!(
+        (cap.before, cap.after, cap.kind),
+        (Some(3), Some(9), Kind::Loosens)
+    );
+    let wait = limit("asks.cool-off-within-minutes");
+    assert_eq!(
+        (wait.before, wait.after, wait.kind),
+        (Some(90), Some(30), Kind::Loosens)
+    );
+}
+
+#[test]
+fn an_unverified_author_is_shown_as_unverified_at_the_press() {
+    let m = machine();
+    let (root, standing) = dropped_the_ban(&m);
+    // No upstream at all: nobody fetched this commit from anywhere.
+    let said = press_of(&root, &standing)
+        .expect("a press")
+        .commit
+        .expect("a commit");
+    assert_eq!(said.author, None, "{said:?}");
+    // An upstream that holds the plane's history, but not this commit: still unverified.
+    git(&root, &["reset", "-q", "--hard", "HEAD~1"]);
+    push_to_an_upstream(&m, &root);
+    git(&root, &["reset", "-q", "--hard", "HEAD@{1}"]);
+    let said = press_of(&root, &standing)
+        .expect("a press")
+        .commit
+        .expect("a commit");
+    assert_eq!(said.author, None, "{said:?}");
+    // Once the upstream holds it, the author is named.
+    git(&root, &["push", "-q"]);
+    let said = press_of(&root, &standing)
+        .expect("a press")
+        .commit
+        .expect("a commit");
+    assert_eq!(said.author.as_deref(), Some("t <nobody>"), "{said:?}");
+    assert_eq!(said.subject, "c");
+    assert_eq!(said.sha.len(), 40);
+}
+
+#[test]
+fn a_replace_ref_in_the_repo_shows_the_author_as_unverified() {
+    let m = machine();
+    let (root, standing) = dropped_the_ban(&m);
+    push_to_an_upstream(&m, &root);
+    let verified = press_of(&root, &standing)
+        .expect("a press")
+        .commit
+        .expect("a commit");
+    assert_eq!(verified.author.as_deref(), Some("t <nobody>"));
+    // One replace ref anywhere in the repo, whatever it replaces: no author can be vouched for.
+    let first = git(&root, &["rev-list", "--max-parents=0", "HEAD"]);
+    let head = git(&root, &["rev-parse", "HEAD"]);
+    git(&root, &["replace", &first, &head]);
+    let said = press_of(&root, &standing)
+        .expect("a press")
+        .commit
+        .expect("a commit");
+    assert_eq!(said.author, None, "{said:?}");
+}
+
+#[test]
+fn the_press_diffs_against_the_policy_in_force_not_only_the_accepted_copy() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    // `HEAD` holds what the accepted copy holds (no ban), but the floor holds a commit that did.
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let standing = holding(vec![
+        accepted(&version(STRICT, None)),
+        floor(&version(STRICT, Some(&ban))),
+    ]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert_eq!(
+        rule(&press, "guards-merge-ban").kind,
+        Kind::Loosens,
+        "{press:?}"
+    );
+    assert_eq!(press.reason, Reason::Loosening);
+    // Against the accepted copy alone there is nothing to accept.
+    let alone = holding(vec![accepted(&version(STRICT, None))]);
+    assert_eq!(press_of(&root, &alone), None);
+}
+
+#[test]
+fn a_commit_past_the_accepted_floor_cap_raises_the_press() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    // A commit that only tightens raises nothing…
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &ban)]);
+    let standing = holding(vec![accepted(&version(STRICT, None))]);
+    assert_eq!(press_of(&root, &standing), None);
+    // …until it went past the cap, which is the deny state until the press.
+    let past = Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        kept: vec![accepted(&version(STRICT, None))],
+        ..Standing::fresh()
+    };
+    let press = press_of(&root, &past).expect("a press");
+    assert_eq!(press.reason, Reason::PastTheCap);
+    assert_eq!(rule(&press, "guards-merge-ban").kind, Kind::Tightens);
+    assert!(press.commit.is_some());
+}
+
+#[test]
+fn removing_a_local_tightening_raises_the_press_and_is_shown_as_a_loosening() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", OPEN)]);
+    // The project is looser than the shipped default, which stands in until the first press.
+    let first = of(&root).expect("a press against the shipped default");
+    accept(&root, &the_persons_press(), &first.digest).expect("the first press");
+    let local = root.join(crate::settings::Which::Local.file_at(&root));
+    std::fs::write(&local, STRICT).expect("the local file");
+    // The app sees the tightening and seals it into the floor.
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Ask);
+    assert_eq!(
+        of(&root),
+        None,
+        "nothing waits while the tightening is there"
+    );
+    // The person takes the line out.
+    std::fs::remove_file(&local).expect("removed");
+    let press = of(&root).expect("a press for the removal");
+    assert_eq!(press.reason, Reason::LocalRemoval);
+    assert_eq!(press.commit, None, "a removal has no commit and no author");
+    assert!(
+        press
+            .diff
+            .local
+            .iter()
+            .any(|one| one.key == "template" && one.was == "strict" && one.now == "open"),
+        "{press:?}"
+    );
+    assert!(
+        press
+            .diff
+            .modes
+            .iter()
+            .any(|one| one.key == "guards.merge" && one.kind == Kind::Loosens),
+        "{press:?}"
+    );
+    // Until the press the sealed tightening stays in force…
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Ask);
+    // …and Accept applies it.
+    accept(&root, &the_persons_press(), &press.digest).expect("the press");
+    assert_eq!(of(&root), None);
+    assert_ne!(host(&root, &merge(true)).after_mode, Outcome::Ask);
+    let held = answers::standing(&root);
+    assert!(!held.entries.iter().any(|e| e.kind == answers::FLOOR));
+    assert!(held.entries.iter().any(|e| e.kind == answers::ACCEPTED));
+}
+
+#[test]
+fn an_unrelated_press_lists_a_pending_local_file_loosening() {
+    let m = machine();
+    let was = forbid_merge("guards-merge-rule", WHEN_ATTENDED);
+    let now = forbid_merge("guards-merge-rule", WHEN_UNATTENDED);
+    let root = plane(&m, &[("purlis.toml", OPEN), ("policy.cedar", &now)]);
+    // The floor holds a local tightening that the file no longer says, and an unrelated commit
+    // changed a rule.
+    let with_local = |rules: &str| Version {
+        local: Some(STRICT.to_owned()),
+        ..version(OPEN, Some(rules))
+    };
+    let standing = holding(vec![
+        accepted(&version(OPEN, Some(&was))),
+        floor(&with_local(&was)),
+    ]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert_eq!(press.reason, Reason::Loosening, "the commit's own press");
+    assert_eq!(rule(&press, "guards-merge-rule").kind, Kind::Changes);
+    assert!(press.commit.is_some());
+    assert!(
+        press.diff.local.iter().any(|one| one.key == "template"),
+        "the local loosening is listed in the commit's press: {press:?}"
+    );
+}

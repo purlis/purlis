@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { commands, type PlaneId, type PolicyState } from "./bindings";
+import { LooseningPress, pressReasonSaid } from "./LooseningPress";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { holdPolicy } from "./projectPolicy";
@@ -125,14 +126,17 @@ export function ProjectPolicyNotice({
       </Notice>
     ) : null;
 
-  const waits = state.waiting.length > 0 || state.unsealed;
+  const press = state.press ?? null;
+  const waits = state.waiting.length > 0 || state.unsealed || press !== null;
   if (!waits || hidden) return refused;
 
   const body = (
     <p>
       {state.unsealed && `${POLICY_UNSEALED_SAID} `}
+      {press !== null && `${pressReasonSaid(press)} `}
       {state.waiting.length > 0 &&
         `The project loosened its policy: ${waitingSaid(state)}. ${notInForceSaid(state)}${POLICY_ACCEPT_MEANS}`}
+      {press !== null && state.waiting.length === 0 && `${POLICY_ACCEPT_MEANS}`}
       {!canAccept && " Accept it from purlis's own window on this machine."}
       {said !== undefined && ` ${said}`}
     </p>
@@ -140,11 +144,15 @@ export function ProjectPolicyNotice({
   return (
     <>
       {refused}
-      {canAccept && (state.waiting.length > 0 || state.unsealed) ? (
+      {canAccept && (state.waiting.length > 0 || state.unsealed || press !== null) ? (
         <Notice
           cause="policy-loosened"
           label="The project's policy"
-          fixes={[{ label: "Accept", onPress: accept, busy }]}
+          fixes={[
+            { label: "Accept", onPress: accept, busy, allows: true },
+            { label: "Not now", onPress: () => setHidden(true) },
+          ]}
+          under={press !== null ? <LooseningPress press={press} /> : undefined}
         >
           {body}
         </Notice>
@@ -153,6 +161,7 @@ export function ProjectPolicyNotice({
           cause="policy-loosened"
           label="The project's policy"
           onDismiss={() => setHidden(true)}
+          under={press !== null ? <LooseningPress press={press} /> : undefined}
         >
           {body}
         </Notice>

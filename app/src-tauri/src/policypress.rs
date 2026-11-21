@@ -23,6 +23,153 @@ pub struct PolicyWaiting {
     pub committed: String,
 }
 
+/// One rule the press changes, by its `@id`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PressRule {
+    /// Its `@id`.
+    pub id: String,
+    /// `loosens`, `tightens` or `changes`.
+    pub kind: String,
+    /// What happened to it: `added`, `removed`, `edited`, `now permits`, `now forbids`, `now
+    /// asks` or `no longer asks`.
+    pub what: String,
+}
+
+/// One mode the press changes: a family's, or a rule's (`rules.<@id>`).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PressMode {
+    /// The family's key, or `rules.<@id>`.
+    pub key: String,
+    /// The mode in force before: `off`, `log` or `enforce`.
+    pub before: String,
+    /// The mode after.
+    pub after: String,
+    /// `loosens` or `tightens`.
+    pub kind: String,
+}
+
+/// One `[policy.limits]` number the press changes, said as the window shows it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PressLimit {
+    /// The key, `<family>.<kebab>`.
+    pub key: String,
+    /// The number before, or `no cap`.
+    pub before: String,
+    /// The number after, or `no cap`.
+    pub after: String,
+    /// `loosens` or `tightens`.
+    pub kind: String,
+}
+
+/// One tightening of your own file that the press lets go.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PressLocal {
+    /// What it sets: `template`, a family's key, or `rules.<@id>`.
+    pub key: String,
+    /// What your sealed tightening holds.
+    pub was: String,
+    /// What runs once you accept.
+    pub now: String,
+}
+
+/// The commit a press accepts.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PressCommit {
+    /// Its full sha.
+    pub sha: String,
+    /// Its subject line.
+    pub subject: String,
+    /// Its author, **only where purlis verified it** on the commit as fetched from the upstream;
+    /// `null` is unverified.
+    pub author: Option<String>,
+}
+
+/// **The loosening press** (M75-15): what Accept would accept, against the policy in force.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct PolicyPress {
+    /// Why it is raised: `loosening`, `past-the-cap`, `local-removal` or `lost-store`.
+    pub reason: String,
+    /// Each rule that differs.
+    pub rules: Vec<PressRule>,
+    /// Each mode that differs.
+    pub modes: Vec<PressMode>,
+    /// Each limit that differs.
+    pub limits: Vec<PressLimit>,
+    /// Each tightening of your own file the press lets go: listed in every press.
+    pub local: Vec<PressLocal>,
+    /// The commit, none for the removal of a tightening from your own file.
+    pub commit: Option<PressCommit>,
+    /// After a lost store, what was lost, in one sentence.
+    pub lost: Option<String>,
+}
+
+fn number_said(number: Option<i64>) -> String {
+    number.map_or_else(|| "no cap".to_owned(), |n| n.to_string())
+}
+
+fn press_of(root: &std::path::Path) -> Option<(PolicyPress, String)> {
+    use purlis_core::policy::press::{self, Reason};
+    let held = press::of(root)?;
+    let shown = PolicyPress {
+        reason: match held.reason {
+            Reason::Loosening => "loosening",
+            Reason::PastTheCap => "past-the-cap",
+            Reason::LocalRemoval => "local-removal",
+            Reason::LostStore => "lost-store",
+        }
+        .to_owned(),
+        rules: held
+            .diff
+            .rules
+            .iter()
+            .map(|one| PressRule {
+                id: one.id.clone(),
+                kind: one.kind.word().to_owned(),
+                what: one.what.to_owned(),
+            })
+            .collect(),
+        modes: held
+            .diff
+            .modes
+            .iter()
+            .map(|one| PressMode {
+                key: one.key.clone(),
+                before: one.before.to_owned(),
+                after: one.after.to_owned(),
+                kind: one.kind.word().to_owned(),
+            })
+            .collect(),
+        limits: held
+            .diff
+            .limits
+            .iter()
+            .map(|one| PressLimit {
+                key: one.key.clone(),
+                before: number_said(one.before),
+                after: number_said(one.after),
+                kind: one.kind.word().to_owned(),
+            })
+            .collect(),
+        local: held
+            .diff
+            .local
+            .iter()
+            .map(|one| PressLocal {
+                key: one.key.clone(),
+                was: one.was.clone(),
+                now: one.now.clone(),
+            })
+            .collect(),
+        commit: held.commit.map(|one| PressCommit {
+            sha: one.sha,
+            subject: one.subject,
+            author: one.author,
+        }),
+        lost: held.lost.map(|lost| lost.said()),
+    };
+    Some((shown, held.digest))
+}
+
 /// What the window says about the project's `[policy]` on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyState {
@@ -48,6 +195,10 @@ pub struct PolicyState {
     /// Each family an administrator's lock holds enforced on this machine, whatever the file
     /// says (Q308a: Settings shows it as locked).
     pub locked: Vec<String>,
+    /// The loosening press (M75-15): the diff against the policy in force, the commit and its
+    /// author, raised while a loosening, a commit past the accepted floor's cap, the removal of a
+    /// tightening from your own file or a lost store waits for Accept.
+    pub press: Option<PolicyPress>,
 }
 
 /// One family the project's `[policy]` sets apart from its template.
@@ -78,7 +229,9 @@ fn state_of(root: &std::path::Path) -> PolicyState {
             })
         })
         .collect();
+    let (press, press_digest) = press_of(root).unzip();
     PolicyState {
+        press,
         waiting: standing
             .waiting
             .into_iter()
@@ -108,7 +261,8 @@ fn state_of(root: &std::path::Path) -> PolicyState {
             .map(|family| family.key().to_owned())
             .collect(),
         unsealed: standing.unsealed,
-        digest: standing.digest,
+        // What Accept names is both reads: the old press's digest, and the new press's.
+        digest: format!("{}+{}", standing.digest, press_digest.unwrap_or_default()),
         template: standing.said.template.word().to_owned(),
         template_default: !standing.said.template_said,
         overrides,
@@ -261,6 +415,15 @@ pub async fn project_policy_state(
 /// shown** (`shown`, the state's digest), looser where it is looser, at once. Sealed on this
 /// machine by the app; refused where it cannot be sealed, or where the file changed since it was
 /// shown. The window's alone.
+/// The person's press, made here: the window's command layer is its one maker.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the window's command layer is the one place that makes the person's press"
+)]
+fn the_persons_press() -> purlis_core::secrets::answers::Press {
+    purlis_core::secrets::answers::Press::of_the_persons_press()
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn accept_project_policy(
@@ -270,9 +433,28 @@ pub async fn accept_project_policy(
 ) -> Result<PolicyState, String> {
     let root = planes.held(&plane)?.root().to_path_buf();
     crate::off_the_window(READING_POLICY, move || {
-        enforcement::press(&root, &shown).map_err(|why| {
+        let kept = |why: std::io::Error| {
             format!("purlis could not keep your acceptance on this machine: {why}")
-        })?;
+        };
+        // The digest is both reads (`state_of`): the settings' and the press's.
+        let (settings, shown_press) = shown.split_once('+').unwrap_or((&shown, ""));
+        // Both are checked before either is kept, so a press on a project that changed since it
+        // was shown accepts neither.
+        if enforcement::digest_of(&root) != settings {
+            return Err(kept(std::io::Error::other(
+                "the project's policy changed since it was shown, so nothing was accepted; look \
+                 at it again",
+            )));
+        }
+        if !shown_press.is_empty() {
+            purlis_core::policy::press::accept(
+                &root,
+                &the_persons_press(),
+                shown_press,
+            )
+            .map_err(kept)?;
+        }
+        enforcement::press(&root, settings).map_err(kept)?;
         Ok(state_of(&root))
     })
     .await

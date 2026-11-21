@@ -163,7 +163,7 @@ impl Version {
     }
 
     /// This version without the local file: what a commit made of it.
-    fn committed(&self) -> Self {
+    pub(super) fn committed(&self) -> Self {
         Self {
             local: None,
             ..self.clone()
@@ -441,7 +441,7 @@ fn vault_in(version: &Version, name: &str) -> (serde_json::Value, Option<String>
 
 /// The accepted copy the store holds, if any: `Err` where it does not read, which counts as the
 /// strictest policy there is, never as none.
-fn accepted_in(entries: &[answers::Entry]) -> Result<Option<Version>, ()> {
+pub(super) fn accepted_in(entries: &[answers::Entry]) -> Result<Option<Version>, ()> {
     entries
         .iter()
         .find(|e| e.kind == answers::ACCEPTED)
@@ -450,7 +450,7 @@ fn accepted_in(entries: &[answers::Entry]) -> Result<Option<Version>, ()> {
 }
 
 /// Every version of the accepted floor the store holds; `Err` for one that does not read.
-fn floor_in(entries: &[answers::Entry]) -> Vec<Result<Version, ()>> {
+pub(super) fn floor_in(entries: &[answers::Entry]) -> Vec<Result<Version, ()>> {
     entries
         .iter()
         .filter(|e| e.kind == answers::FLOOR)
@@ -461,7 +461,7 @@ fn floor_in(entries: &[answers::Entry]) -> Vec<Result<Version, ()>> {
 /// What a held version loads as: its own files over the workspaces and personas of the plane now
 /// and of that version, so a table naming one deleted or renamed since still reads, whatever the
 /// working tree holds (spec §4.7: a side is never looser for an edit not yet committed).
-fn loaded_for(sources: &Sources<'_>, version: &Version) -> levels::Loaded {
+pub(super) fn loaded_for(sources: &Sources<'_>, version: &Version) -> levels::Loaded {
     let mut workspaces: Vec<&str> = sources.workspaces.to_vec();
     workspaces.extend(version.workspaces.iter().map(String::as_str));
     let mut personas: Vec<&str> = sources.personas.to_vec();
@@ -931,4 +931,4 @@ pub fn seal(root: &Path, seen: &Seen) {
 
 #[cfg(test)]
 #[path = "force_tests.rs"]
-mod tests;
+pub(super) mod tests;

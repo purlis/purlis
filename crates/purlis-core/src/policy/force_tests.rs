@@ -19,16 +19,16 @@ use crate::secrets::seal;
 const WORKSPACES: [&str; 1] = ["web"];
 const PERSONAS: [&str; 1] = ["builder"];
 
-const STRICT: &str = "[policy]\ntemplate = \"strict\"\n";
-const HEADER: &str = "// purlis-policy 1\n";
+pub(in crate::policy) const STRICT: &str = "[policy]\ntemplate = \"strict\"\n";
+pub(in crate::policy) const HEADER: &str = "// purlis-policy 1\n";
 
 /// A machine of the test's own: its config home, a keyring that knows nothing, a key.
-struct Machine {
+pub(in crate::policy) struct Machine {
     _home: OwnConfigHome,
-    dir: tempfile::TempDir,
+    pub(in crate::policy) dir: tempfile::TempDir,
 }
 
-fn machine() -> Machine {
+pub(in crate::policy) fn machine() -> Machine {
     let home = OwnConfigHome::new();
     seal::forget_kept_for_this_test();
     seal::set_for_this_test(Some(vec![7; 32]));
@@ -41,7 +41,7 @@ fn machine() -> Machine {
     }
 }
 
-fn git(dir: &Path, args: &[&str]) -> String {
+pub(in crate::policy) fn git(dir: &Path, args: &[&str]) -> String {
     let ran = crate::forklock::output(
         std::process::Command::new("git")
             .arg("-C")
@@ -63,7 +63,7 @@ fn git(dir: &Path, args: &[&str]) -> String {
 }
 
 /// A plane on `machine`, its root committing `files` (and a `.gitignore` for the local files).
-fn plane(machine: &Machine, files: &[(&str, &str)]) -> PathBuf {
+pub(in crate::policy) fn plane(machine: &Machine, files: &[(&str, &str)]) -> PathBuf {
     let root = machine.dir.path().join("plane");
     std::fs::create_dir_all(&root).expect("a plane");
     let root = std::fs::canonicalize(&root).expect("a real path");
@@ -78,7 +78,7 @@ fn plane(machine: &Machine, files: &[(&str, &str)]) -> PathBuf {
 }
 
 /// Commits `files` as they are now: written, or removed where the text is `-`.
-fn commit(root: &Path, files: &[(&str, &str)]) {
+pub(in crate::policy) fn commit(root: &Path, files: &[(&str, &str)]) {
     for (name, text) in files {
         let path = root.join(name);
         if *text == "-" {
@@ -92,7 +92,7 @@ fn commit(root: &Path, files: &[(&str, &str)]) {
     git(root, &["commit", "-q", "--allow-empty", "-m", "c"]);
 }
 
-fn sources(root: &Path) -> Sources<'_> {
+pub(in crate::policy) fn sources(root: &Path) -> Sources<'_> {
     Sources {
         root,
         workspaces: &WORKSPACES,
@@ -102,7 +102,7 @@ fn sources(root: &Path) -> Sources<'_> {
     }
 }
 
-fn holding(entries: Vec<Entry>) -> Standing {
+pub(in crate::policy) fn holding(entries: Vec<Entry>) -> Standing {
     Standing {
         state: State::Holds,
         entries,
@@ -110,15 +110,15 @@ fn holding(entries: Vec<Entry>) -> Standing {
     }
 }
 
-fn accepted(version: &Version) -> Entry {
+pub(in crate::policy) fn accepted(version: &Version) -> Entry {
     Entry::new(answers::ACCEPTED, &serde_json::to_string(version).unwrap())
 }
 
-fn floor(version: &Version) -> Entry {
+pub(in crate::policy) fn floor(version: &Version) -> Entry {
     Entry::new(answers::FLOOR, &serde_json::to_string(version).unwrap())
 }
 
-fn version(settings: &str, rules: Option<&str>) -> Version {
+pub(in crate::policy) fn version(settings: &str, rules: Option<&str>) -> Version {
     Version {
         settings_file: Some("purlis.toml".to_owned()),
         settings: Some(settings.to_owned()),
@@ -150,7 +150,7 @@ fn request<'a>(
     }
 }
 
-fn merge(attended: bool) -> Request<'static> {
+pub(in crate::policy) fn merge(attended: bool) -> Request<'static> {
     let mut context = base(attended);
     context["via"] = "hook".into();
     request("merge", ("Branch", "acme/web#main"), context)
@@ -176,7 +176,7 @@ fn read(path: &'static str) -> Request<'static> {
 
 /// What the host does for one request: the policy in force over the store as it stands, then what
 /// it saw sealed.
-fn host(root: &Path, request: &Request<'_>) -> Decision {
+pub(in crate::policy) fn host(root: &Path, request: &Request<'_>) -> Decision {
     in_force(
         root,
         &sources(root),
@@ -191,7 +191,7 @@ fn by(root: &Path, standing: &Standing, request: &Request<'_>) -> Decision {
     judge(root, &sources(root), standing, request, None).0
 }
 
-fn forbid_merge(id: &str, when: &str) -> String {
+pub(in crate::policy) fn forbid_merge(id: &str, when: &str) -> String {
     format!(
         "{HEADER}@id(\"{id}\")\nforbid (principal, action == Action::\"merge\", resource){when};\n"
     )
