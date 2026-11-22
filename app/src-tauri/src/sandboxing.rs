@@ -165,6 +165,12 @@ pub struct SandboxState {
     /// allowed (ADR 0093): asked about once, up front. `null` where nothing waits.
     #[specta(optional)]
     pub expects: Option<ProjectExpects>,
+    /// **Tool lines the person's sign-in replaces** (ADR 0128, "Migration"), with the one-login
+    /// train's `forge-wiring` feature on: the project's `mint = "github-app"` and vault forge
+    /// token lines, which still parse and run nothing. The window says it once, until the lines
+    /// change. `null` where the project has none, and always without the feature.
+    #[specta(optional)]
+    pub forge_replaced: Option<ForgeReplaced>,
     /// **The project's sandbox off** (#2071 PR C, #2156): its committed `[sandbox] mode =
     /// "off"`, where it came from as far as purlis verified it, and how the person on this
     /// machine answered it. `null` where the project does not turn the sandbox off in a commit.
@@ -265,6 +271,24 @@ pub struct ProjectExpects {
     /// Whether the person is still to be asked: something is declared that they have neither
     /// allowed nor said "Not now" to on this machine.
     pub asked: bool,
+}
+
+/// **What the window says once about a project's old forge token lines**
+/// ([`sandbox::tools::replaced::Told`]): its text, and a cause key that moves only when the
+/// lines do, so a dismissal stands until they change.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct ForgeReplaced {
+    pub cause: String,
+    pub text: String,
+}
+
+impl From<sandbox::tools::replaced::Told> for ForgeReplaced {
+    fn from(told: sandbox::tools::replaced::Told) -> Self {
+        Self {
+            cause: told.cause,
+            text: told.text,
+        }
+    }
 }
 
 /// One local socket or system service a project expects ([`sandbox::services::Awaited`]).
@@ -629,6 +653,7 @@ fn state_on(root: &std::path::Path, os: sandbox::Os) -> SandboxState {
             CertificateCheck::of(sandbox::CertificateChecks::of(&policy, &locks), os)
         }),
         expects: sandbox::services::awaiting(root, &sandbox::Machine::this()).map(Into::into),
+        forge_replaced: sandbox::tools::replaced::told(root).map(Into::into),
         team_off: TeamOffState::of(sandbox::team::team_off(root)),
         level_held: sandbox::team::allowed_levels(root).why,
         yours: yours_of(root, &locks),

@@ -166,6 +166,14 @@ pub fn moved(_host: &HostScope, config_root: &Path, clone: &Path, was: &str, now
     }
 }
 
+/// The person's trust of `clone` at `place` (`<host>/<owner>/<repo>`), as the window's press
+/// records it: for a test of what a trusted clone is served.
+#[cfg(any(test, feature = "fenced"))]
+#[doc(hidden)]
+pub fn record_for_a_test(config_root: &Path, clone: &Path, place: &str) -> Result<String, String> {
+    record(config_root, clone, place.to_string())
+}
+
 /// Records `now` as the remote of `clone`, and answers it.
 pub(crate) fn record(config_root: &Path, clone: &Path, now: String) -> Result<String, String> {
     let key = crate::sandbox::local::clone_key(clone);

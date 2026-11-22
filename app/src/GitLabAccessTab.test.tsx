@@ -5,6 +5,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
+import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
 import type { GitlabShown } from "./bindings";
 import { GitLabAccessTab } from "./GitLabAccessTab";
 
@@ -95,5 +96,19 @@ describe("GitLab access", () => {
     await userEvent.type(screen.getByLabelText("GitLab token for git.acme.internal"), "x");
     await userEvent.click(screen.getByRole("button", { name: "Set up GitLab access" }));
     expect(await screen.findByText(/Paste the token alone/)).toBeTruthy();
+  });
+});
+
+describe("The one sign-in", () => {
+  it("points to Accounts, and says what is set up here keeps working until then", async () => {
+    fake({ gitlab_access_list: NONE });
+    const heard: SettingsLinkAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<SettingsLinkAsk>).detail);
+    window.addEventListener(SETTINGS_LINK, hear);
+    render(<GitLabAccessTab plane="p" />);
+    expect(await screen.findByText(/keeps working until then/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Open accounts" }));
+    window.removeEventListener(SETTINGS_LINK, hear);
+    expect(heard).toEqual([{ plane: "p", link: { group: "you.accounts" } }]);
   });
 });

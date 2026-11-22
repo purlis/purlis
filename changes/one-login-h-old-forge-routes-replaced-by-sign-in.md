@@ -1,0 +1,3 @@
+### Changed
+
+- Chats reach a forge through the one sign-in, and no chat holds a forge token. A tool line that asks for a GitHub App token (`mint = "github-app"`) or hands a vault token in `GH_TOKEN` or `GITLAB_TOKEN` still loads but runs nothing: a Notice and a `purlis doctor` row say to sign in under Settings › Forges and delete the line (keep a `mint` line while its GitHub App's key is in a vault: it stops purlis handing that key to a chat). purlis deletes no vault item and no keyring entry unless you press to remove it. A pool runner's chat holds no installation token either, and keeps its token connections: a runner is not paired with a desktop's proxy yet, so its chats do not use the sign-in.

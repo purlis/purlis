@@ -128,6 +128,8 @@ fn it_names_each_gitlab_host_the_projects_clones_are_on_and_whether_chats_have_a
     );
 }
 
+// The old route, retired under the one login (ADR 0128): `purlis gitlab access` sets up nothing.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn it_keeps_the_token_in_the_personas_vault_and_declares_glab_and_says_what_is_left_to_allow() {
     let tmp = plane();
@@ -163,6 +165,8 @@ fn it_keeps_the_token_in_the_personas_vault_and_declares_glab_and_says_what_is_l
     assert!(!read(&root.join("charter.toml")).contains("glab"));
 }
 
+// The old route, retired under the one login (ADR 0128): `purlis gitlab access` sets up nothing.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn it_sets_up_nothing_for_a_host_the_project_is_not_on_or_a_token_that_is_not_one() {
     let tmp = plane();

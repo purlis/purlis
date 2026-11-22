@@ -1386,6 +1386,17 @@ fn see_of(kind: Kind, id: StepId, facts: &Facts, choices: &Choices) -> Option<Se
         },
     ) = (id, &facts.identity)
     {
+        // A tool line that hands a runner chat a forge token is no longer read (ADR 0128 D9): the
+        // runner uses the desktop's sign-in, or a token connection the operator provisions.
+        if cfg!(feature = "forge-wiring") {
+            return Some(See {
+                note: "A runner chat holds no forge token and needs no tool line. With this \
+                       desktop present its forge calls go through your sign-in; with none, the \
+                       operator gives the runner a token connection."
+                    .to_owned(),
+                text: "Sign in under Settings › Forges".to_owned(),
+            });
+        }
         return Some(See {
             note: "These make a vault of the agent's own and keep its token there, then the \
                    line goes in your project's settings. Never use your own token: a chat would \

@@ -908,5 +908,44 @@ fn a_step_up_for_an_account_removed_while_github_waited_signs_nobody_in() {
         panic!("a step-up for an account no longer here is refused");
     };
     assert!(why.contains("was removed from this machine"), "{why}");
-    assert!(machine.list().is_empty(), "{:?}", machine.list());
+    assert!(
+        machine
+            .list()
+            .iter()
+            .all(|a| a.state == accounts::State::SignedOut),
+        "{:?}",
+        machine.list()
+    );
+}
+
+#[test]
+fn a_step_up_with_no_grant_scope_and_no_scopes_header_is_refused_and_changes_nothing() {
+    purlis_core::unsteered!();
+    let machine = Machine::new();
+    let signed_in = machine
+        .sign_in(&Scripted::answering(&[
+            codes("https://github.com/login/device"),
+            grant(ACCESS, REFRESH),
+        ]))
+        .unwrap();
+    let item_before = machine.item(&signed_in);
+    // The grant names no scope, and GET /user sends no X-OAuth-Scopes: nothing spoke.
+    let forge = Scripted::answering(&[
+        codes("https://github.com/login/device"),
+        (
+            200,
+            format!(
+                r#"{{"access_token": "{ACCESS_TWO}", "token_type": "bearer",
+                    "expires_in": 28800, "refresh_token": "{REFRESH_TWO}",
+                    "refresh_token_expires_in": 15897600}}"#
+            ),
+        ),
+    ]);
+    let Err(Ended::Failed(why)) = machine.widen(&forge, &signed_in, "token_check.no_scopes") else {
+        panic!("a step-up with no evidence of its scopes is refused");
+    };
+    assert!(why.contains("did not allow"), "{why}");
+    assert_eq!(machine.list(), std::slice::from_ref(&signed_in));
+    assert_eq!(machine.item(&signed_in), item_before);
+    assert_eq!(machine.token(&signed_in).as_deref(), Some(ACCESS));
 }

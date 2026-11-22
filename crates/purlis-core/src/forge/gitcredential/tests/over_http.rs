@@ -326,3 +326,132 @@ fn a_private_repo_is_cloned_and_pushed_to_with_purlis_sign_in_and_no_forge_cli()
         "the clone and the push each sent the account's: {seen:?}"
     );
 }
+
+/// The base of a held push fetched the way [`crate::heldact::FromForge`] does, with the one
+/// difference a stand-in on plain HTTP needs: the network rule's refusal of `http` lifted on this
+/// command line, after the rule.
+struct OverLoopback {
+    url: String,
+    helper: String,
+}
+
+impl crate::heldact::BaseObjects for OverLoopback {
+    fn fetch(&self, into: &Path, base: &crate::mergehold::HeadSha) -> Result<(), String> {
+        let run = git::run_network(
+            into,
+            Some(&self.helper),
+            &[
+                "-c",
+                "protocol.http.allow=always",
+                "fetch",
+                "--quiet",
+                "--no-tags",
+                &self.url,
+                base.as_str(),
+            ],
+        )
+        .map_err(|why| why.to_string())?;
+        if run.ok() {
+            Ok(())
+        } else {
+            Err(format!("{run:?}"))
+        }
+    }
+}
+
+/// Every file under `root` whose bytes hold `needle`.
+fn files_holding(root: &Path, needle: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    let mut more = vec![root.to_path_buf()];
+    while let Some(dir) = more.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            match entry.file_type() {
+                Ok(kind) if kind.is_dir() => more.push(path),
+                Ok(kind)
+                    if kind.is_file()
+                        && std::fs::read(&path).is_ok_and(|bytes| {
+                            bytes.windows(needle.len()).any(|w| w == needle.as_bytes())
+                        }) =>
+                {
+                    found.push(path);
+                }
+                _ => {}
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn a_held_pushs_base_is_fetched_with_the_helper_and_the_token_is_in_no_file_of_the_route_root() {
+    let forge = Forge::holding_one_commit("octocat", TOKEN);
+    let machine = Machine::signed_in_on(&forge.host);
+    let helper = Helper::new("");
+    let account = machine.account.clone();
+    let named = helper_for_account(
+        &HostScope::for_a_test(),
+        &helper.exe,
+        machine.config(),
+        &account,
+    )
+    .expect("a helper for the account");
+    assert!(
+        !named.contains(TOKEN),
+        "the helper's command line is no place for the token"
+    );
+    let base = crate::mergehold::HeadSha::try_from(
+        testgit::run(
+            forge.bare.parent().unwrap(),
+            &[
+                "--git-dir",
+                &forge.bare.display().to_string(),
+                "rev-parse",
+                "main",
+            ],
+        )
+        .out
+        .trim(),
+    )
+    .expect("a commit id");
+    let route_root = tempfile::tempdir().unwrap();
+    let parent = route_root.path().join("quarantine");
+
+    // A watcher reads every file under the root for as long as the fetch runs.
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let watching = {
+        let (stop, root) = (stop.clone(), route_root.path().to_path_buf());
+        std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                seen.extend(files_holding(&root, TOKEN));
+            }
+            seen
+        })
+    };
+    let quarantine = crate::heldact::Quarantine::open(
+        &parent,
+        &base,
+        &OverLoopback {
+            url: forge.url(),
+            helper: named,
+        },
+    );
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let seen = watching.join().unwrap();
+
+    let quarantine = quarantine.expect("the base is fetched through the helper");
+    assert!(
+        seen.is_empty(),
+        "the token was in a file of the route root: {seen:?}"
+    );
+    assert!(files_holding(route_root.path(), TOKEN).is_empty());
+    assert!(
+        forge.seen.lock().unwrap().iter().flatten().count() >= 1,
+        "the forge was asked with the account's credentials"
+    );
+    drop(quarantine);
+}

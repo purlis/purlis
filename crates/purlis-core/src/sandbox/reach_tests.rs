@@ -386,3 +386,15 @@ fn a_decisions_word_reads_back_and_no_other_does() {
     }
     assert_eq!(Decision::word_of("everything"), None);
 }
+
+#[test]
+fn a_host_policy_pins_never_allowed_is_pinned_though_a_layer_lists_it() {
+    let reach = Reach::open(vec!["github.com".to_owned()]).never(vec![
+        crate::sandbox::hosts::Host::parse("github.com").expect("a host"),
+    ]);
+    // Listed and pinned: the listing wins in [`Reach::decide`], so the pin is asked on its own.
+    assert!(reach.pinned_never("github.com", 443));
+    assert!(reach.pinned_never("GitHub.com.", 443));
+    assert!(!reach.pinned_never("gitlab.com", 443));
+    assert!(!Reach::open(vec!["github.com".to_owned()]).pinned_never("github.com", 443));
+}

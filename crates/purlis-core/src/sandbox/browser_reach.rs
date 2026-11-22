@@ -187,7 +187,9 @@ impl Lane {
             Decision::Refused(reach::Refused::NeverAHost(why)) => {
                 Verdict::Refused(Refusal::NeverAHost(why))
             }
-            Decision::Refused(reach::Refused::Policy) => Verdict::Refused(Refusal::Policy),
+            Decision::Refused(reach::Refused::Policy | reach::Refused::ForgeRoute) => {
+                Verdict::Refused(Refusal::Policy)
+            }
             // Never for a public address or a name of no local machine; refused all the same.
             Decision::Refused(reach::Refused::LocalAddress) => Verdict::Refused(Refusal::NotPublic),
             by => Verdict::Carry { by, at },

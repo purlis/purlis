@@ -2929,8 +2929,10 @@ describe("the palette at fifty chats", () => {
     // skill controls. 1485 since T1-27: each of the fifty chats' Chat log (R-224). 1486 since
     // #6344: Your settings: Attention › Remind me, a setting's row, listed once typed. 1489 since
     // Q308a (instruction 45): Policy's two rows and the enforcement log's one. 1490 since
-    // #1349: GitLab access.
-    expect(offers).toHaveLength(1490);
+    // #1349: GitLab access. 1491 since one login slice D: Ready for all users, a setting's row.
+    // 1493 since one login (ADR 0128) slice G: Your organization's application and Account for each
+    // project, two settings rows of You › Accounts.
+    expect(offers).toHaveLength(1493);
     // Fifty tabs of one chat each: the palette has their chats' Rename chat rows instead.
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.rename:"))).toHaveLength(0);
     expect(inPalette(offers).filter((row) => row.id.startsWith("tab.closeOthers:"))).toHaveLength(

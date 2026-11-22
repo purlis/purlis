@@ -766,6 +766,31 @@ impl Settings {
         out.tidied_after(self)
     }
 
+    /// These settings with the one socket of a chat's forge route reached (ADR 0128 D3a): its
+    /// `gh` connects to `socket` (`allowUnixSockets`, which on macOS is the network rule that
+    /// holds a socket, as `allowAllUnixSockets` stays off), and the socket is read again inside
+    /// the route folder every chat is denied (`allowRead` wins over `denyRead`, which on Linux
+    /// binds it back into the masked folder). Each under both of its names, and nothing else in
+    /// the folder.
+    pub fn reaching_socket(&self, socket: &Path) -> Settings {
+        let mut out = self.clone();
+        for name in both_names(socket) {
+            let name = name.display().to_string();
+            for (section, key) in [("network", "allowUnixSockets"), ("filesystem", "allowRead")] {
+                let list = &mut out.sandbox[section][key];
+                if !list.is_array() {
+                    *list = json!([]);
+                }
+                if let Some(list) = list.as_array_mut()
+                    && !list.contains(&json!(name))
+                {
+                    list.push(json!(name));
+                }
+            }
+        }
+        out
+    }
+
     /// These settings for a chat whose commands reach the network through purlis's proxy
     /// (#1665): `ports`, its HTTP and then its SOCKS5 port, as `network.httpProxyPort` and
     /// `network.socksProxyPort`, and nothing else changed.
