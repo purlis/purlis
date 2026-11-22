@@ -454,6 +454,9 @@ pub enum Reason {
     PastTheCap,
     /// A tightening was taken out of the You level's local file: no commit, no author.
     LocalRemoval,
+    /// An update of purlis took a forbid out of the shipped default, or loosened one: no commit and
+    /// no author, since nothing in the project changed (spec §7.8).
+    ShippedDefault,
     /// The sealed store was lost: diffed against the shipped default.
     LostStore,
 }
@@ -478,7 +481,8 @@ pub struct Press {
     pub reason: Reason,
     /// What changes against the policy in force.
     pub diff: Diff,
-    /// The commit accepted: none for a local file's removal, which has none.
+    /// The commit accepted: none for a local file's removal or a shipped default's update, which
+    /// have none.
     pub commit: Option<Commit>,
     /// What was lost, for a [`Reason::LostStore`].
     pub lost: Option<RePress>,
@@ -560,24 +564,50 @@ pub fn of_head(
             }
         }
     }
-    let diff = diff_all(sources, &held, &unread, version);
+    let mut diff = diff_all(sources, &held, &unread, version);
+    // What the project alone changes, each base under the shipped default this build ships: a
+    // shipped default's own change is the update's, never a commit's (spec §7.8).
+    let alone: Vec<Version> = held.iter().map(Version::unpinned).collect();
+    if diff.waits() && diff != diff_all(sources, &alone, &unread, version) {
+        diff.other.push(OtherChange {
+            part: format!(
+                "the shipped default, as purlis {} ships it",
+                env!("CARGO_PKG_VERSION")
+            ),
+        });
+    }
     // What the commit itself loosens, the local file left out of both sides: a commit's loosening
     // and a local file's removal are different presses (Q322).
-    let committed: Vec<Version> = held.iter().map(Version::committed).collect();
-    let commit_waits = diff_all(sources, &committed, &unread, &version.committed()).waits();
+    let committed_after = version.committed();
+    let commit_waits = diff_all(
+        sources,
+        &alone.iter().map(Version::committed).collect::<Vec<_>>(),
+        &unread,
+        &committed_after,
+    )
+    .waits();
+    let shipped_waits = diff_all(
+        sources,
+        &held.iter().map(Version::committed).collect::<Vec<_>>(),
+        &unread,
+        &committed_after,
+    )
+    .waits();
     let reason = if lost_store {
         Reason::LostStore
     } else if past_the_cap {
         Reason::PastTheCap
     } else if commit_waits {
         Reason::Loosening
+    } else if shipped_waits {
+        Reason::ShippedDefault
     } else if !diff.local.is_empty() {
         Reason::LocalRemoval
     } else {
         return None;
     };
     let commit = match reason {
-        Reason::LocalRemoval => None,
+        Reason::LocalRemoval | Reason::ShippedDefault => None,
         _ => commit_of(root),
     };
     Some(Press {
@@ -602,10 +632,14 @@ fn digest_of(
     commit: Option<&Commit>,
 ) -> String {
     use sha2::Digest;
+    // A base that is the project as shown says nothing a row could: the app seals the version it
+    // sees, so the floor may gain exactly that between the press shown and Accept.
+    let shown = version.pinned();
+    let bases: Vec<&Version> = bases.iter().filter(|base| **base != shown).collect();
     let text = format!(
         "{reason:?}\n{}\n{}\n{diff:?}\n{}",
         serde_json::to_string(version).expect("a version is JSON"),
-        serde_json::to_string(bases).expect("versions are JSON"),
+        serde_json::to_string(&bases).expect("versions are JSON"),
         commit.map_or("", |one| one.sha.as_str()),
     );
     crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
@@ -697,7 +731,9 @@ pub fn accept(root: &Path, press: &answers::Press, shown: &str) -> io::Result<()
              it again",
         ));
     }
-    let text = serde_json::to_string(version).expect("a version is JSON");
+    // Accepted under the shipped default this build ships, for good: a later purlis that loosens
+    // it waits for its own press.
+    let text = serde_json::to_string(&version.pinned()).expect("a version is JSON");
     if standing.is_deny() {
         let mut keep: Vec<answers::Entry> = Vec::new();
         // A commit past the cap leaves a store that verified: what it held but the floor, the

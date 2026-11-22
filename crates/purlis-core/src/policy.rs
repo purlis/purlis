@@ -649,6 +649,17 @@ fn version_problem(file: &File<'_>) -> Option<String> {
 }
 
 /// One file's rules, in the order they are written, or its problems.
+/// The `@id`s of a shipped default's `text`; none where it does not read.
+pub fn shipped_ids(text: &str) -> Vec<String> {
+    let file = File {
+        text,
+        ..File::shipped_default()
+    };
+    read_file(&file)
+        .map(|rules| rules.into_iter().map(|rule| rule.id).collect())
+        .unwrap_or_default()
+}
+
 fn read_file(file: &File<'_>) -> Result<Vec<Rule>, Vec<Problem>> {
     let problem = |line: usize, rule: Option<&str>, what: String| Problem {
         file: file.name.to_owned(),
