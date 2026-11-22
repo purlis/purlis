@@ -269,7 +269,7 @@ const ONLY_PRINTS: &[&str] = &["--help", "-h", "--version", "-v"];
 /// [`Forge::refused`], `api` naming a host (`--hostname`) or an endpoint by a whole URL, or
 /// `api` reaching a route that does what a refused command does (`api::refused`) runs. Each
 /// applies with or without the tool's `args`.
-pub fn refused_forge(names: &[&Path], args: &[String]) -> Option<String> {
+pub fn refused_forge(names: &[&Path], host: &str, args: &[String]) -> Option<String> {
     let forge = names
         .iter()
         .map(|name| super::file_name_of(name))
@@ -308,7 +308,8 @@ pub fn refused_forge(names: &[&Path], args: &[String]) -> Option<String> {
         {
             return Some(format!(
                 "{name} api names another host here (--hostname, or an endpoint as a whole URL), \
-                 and a chat runs it with a vault's value only against the forge's own; {terminal}."
+                 and a chat runs it with a vault's value only against {host}, the forge its tool \
+                 names; {terminal}."
             ));
         }
         if let Some(why) = api::refused(forge, args) {

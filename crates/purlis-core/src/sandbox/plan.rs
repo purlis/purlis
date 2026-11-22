@@ -79,6 +79,8 @@ pub struct Telling {
     /// names up and dials ([`super::names`]). None asks the system.
     #[cfg(any(test, feature = "test-support"))]
     pub names: Option<Arc<super::names::Names>>,
+    /// Where the project's `[policy]` does not enforce `network` ([`egress::Serving::network`]).
+    pub network: Option<super::asks::Answered>,
 }
 
 impl Default for Telling {
@@ -90,6 +92,7 @@ impl Default for Telling {
             timings: Timings::production(),
             #[cfg(any(test, feature = "test-support"))]
             names: None,
+            network: None,
         }
     }
 }
@@ -111,6 +114,9 @@ pub struct Hearing {
     /// The one value the confinement's timers wait by (T1.1-01), where it is started here: the
     /// window's own ([`Self::here`]).
     pub timings: Timings,
+    /// Where the project's `[policy]` does not enforce `network` (the Q308 follow-up, item 5):
+    /// told each host its proxy carried only for that ([`egress::Serving::network`]).
+    pub network: Option<super::asks::Answered>,
 }
 
 impl Default for Hearing {
@@ -122,6 +128,7 @@ impl Default for Hearing {
             reached: None,
             asks: None,
             timings: Timings::production(),
+            network: None,
         }
     }
 }
@@ -164,6 +171,7 @@ impl Hearing {
             timings,
             #[cfg(any(test, feature = "test-support"))]
             names: None,
+            network: self.network,
         }
     }
 }
@@ -332,6 +340,7 @@ impl Plan {
             asks: telling.asks,
             #[cfg(any(test, feature = "test-support"))]
             names: telling.names,
+            network: telling.network,
             ..egress::Serving::of(reach, &telling.timings)
         }
     }

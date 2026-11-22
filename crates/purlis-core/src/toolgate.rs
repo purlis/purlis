@@ -470,6 +470,15 @@ pub fn judged(
     plane: Option<&Plane<'_>>,
     modes: &dyn Fn(Family) -> Mode,
 ) -> Judged {
+    // A relative path in the line is read against the payload's directory (#7195).
+    floorguard::in_directory(call.cwd, || judged_in_its_directory(call, plane, modes))
+}
+
+fn judged_in_its_directory(
+    call: &Call<'_>,
+    plane: Option<&Plane<'_>>,
+    modes: &dyn Fn(Family) -> Mode,
+) -> Judged {
     let gate = Gate {
         modes,
         logged: std::cell::RefCell::new(Vec::new()),
@@ -532,6 +541,12 @@ impl Gate<'_> {
     /// re-review of #6992): `--no-verify` and `send-pack` skip the token scan, which Q308a keeps
     /// at enforce wherever `guards.credential` is.
     fn mode(&self, arm: Arm) -> Mode {
+        // The wrap's own arms are enforced whatever the project's level (the review of #7105): a
+        // chat may run wrapped at its person's own level where the project's is no sandbox, and
+        // git its wrap stops partway is refused whenever a wrap is applied.
+        if arm.family() == Some(Family::Sandbox) {
+            return Mode::Enforce;
+        }
         let mode = arm
             .family()
             .map_or(Mode::Enforce, |family| (self.modes)(family));

@@ -288,6 +288,7 @@ fn a_sandbox_block_of_purlis_s_own_takes_the_same_road() {
                 kind: Kind::ProjectState,
                 ours: true,
             },
+            command: None,
             ran_as: RanAs::default(),
         })
     };
@@ -306,6 +307,44 @@ fn a_sandbox_block_of_purlis_s_own_takes_the_same_road() {
         reports.hold_once(block(), &Caller::chat("5"), from(5)),
         Ok(None),
         "the same block from another chat is counted"
+    );
+}
+
+#[test]
+fn two_blocks_that_differ_only_in_the_command_that_met_them_are_one_draft() {
+    purlis_core::unsteered!();
+    use purlis_core::sandboxblock::{Block, Kind, Operation};
+    let root = tempfile::tempdir().unwrap();
+    let reports = reports(root.path(), Some(true));
+    let met_by = |command: &str| {
+        Evidence::PurlisFailure(PurlisFailure::SandboxBlock {
+            block: Block {
+                operation: Operation::Write,
+                kind: Kind::ProjectState,
+                ours: true,
+            },
+            command: Some(command.to_owned()),
+            ran_as: RanAs::default(),
+        })
+    };
+
+    let first = reports
+        .hold_once(met_by("purlis doctor"), &Caller::chat("4"), from(4))
+        .expect("held")
+        .expect("new");
+    for another in ["purlis vault", "purlis worktree push", "not a command"] {
+        assert_eq!(
+            reports.hold_once(met_by(another), &Caller::chat("4"), from(4)),
+            Ok(None),
+            "{another}: what the chat's line said is not a new report"
+        );
+    }
+
+    let held = reports.held();
+    assert_eq!(held.len(), 1, "{held:?}");
+    assert_eq!(
+        (held[0].id.as_str(), held[0].repeats),
+        (first.id.as_str(), 3)
     );
 }
 

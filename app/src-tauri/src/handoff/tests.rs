@@ -12981,6 +12981,9 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
 /// A chat's open or dispatch heard from a pool waits for the person's Approve.
 mod heard_from_a_pool;
 
+/// A dispatched chat's vault checks in the window run under its chain's `[policy]` (#7153).
+mod chain_policy_checks;
+
 /// **A dispatch that names where the levels already put it starts at once, and follows them**
 /// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no
 /// choice of its own, so a later change of the levels holds for it. A word purlis can't read is
@@ -14451,7 +14454,7 @@ fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_noti
         matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
         "{ran:?}"
     );
-    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team")
+    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team", None)
         .expect("ops holds team");
     assert_eq!(
         pressed.expect("pressed").expect("kept"),

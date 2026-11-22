@@ -616,18 +616,29 @@ fn ready_given_on(
     // dropped, so the chat still starts at its task's level, capped at auto (#3787), and its
     // tab says so. A declared harness's own words, added after the profile's, are read too
     // (the re-review of #7104).
-    if matches!(start.made, crate::sandbox::Made::Asked { .. })
-        && let Some(flag) = crate::dispatchunattended::bypass_in(&argv)
-            .or_else(|| crate::dispatchunattended::bypass_in(&added))
-    {
-        argv = crate::dispatchunattended::without_bypass(&argv);
-        added = crate::dispatchunattended::without_bypass(&added);
-        notices.push(format!(
-            "Profile '{}' switches the permission prompts off ({}), and a chat another chat \
-             asked for never runs that way, so it started without it.",
-            crate::shown::short(&profile.name),
-            crate::shown::short(&flag)
-        ));
+    if matches!(start.made, crate::sandbox::Made::Asked { .. }) {
+        let mut found = crate::dispatchunattended::bypass_all(&argv);
+        found.extend(crate::dispatchunattended::bypass_all(&added));
+        if !found.is_empty() {
+            argv = crate::dispatchunattended::without_bypass(&argv);
+            added = crate::dispatchunattended::without_bypass(&added);
+            let named: Vec<String> = found
+                .iter()
+                .map(|found| {
+                    format!(
+                        "{} ({})",
+                        found.what.clause(),
+                        crate::shown::short(&found.flag)
+                    )
+                })
+                .collect();
+            notices.push(format!(
+                "Profile '{}' starts its harness with {}, and a chat another chat asked for \
+                 never runs that way, so it started without it.",
+                crate::shown::short(&profile.name),
+                named.join("; and with ")
+            ));
+        }
     }
     let standing = Standing::of(&here, root);
     let mut env = environment(

@@ -14,6 +14,11 @@
       "by": ["agentIdentityFinish"]
     },
     {
+      "at": "gitlabaccess.rs gitlab_access_set",
+      "writes": "this machine's network record",
+      "by": ["gitlabAccessSet"]
+    },
+    {
       "at": "asking.rs forget_sandbox_block",
       "writes": "this machine's network record",
       "by": ["forgetSandboxBlock"]
@@ -351,7 +356,7 @@
     {
       "at": "sandboxing.rs allow_shown",
       "writes": "this machine's answers about the project (sandbox-grants)",
-      "by": ["allowPersonaHosts", "agentIdentityFinish", "answerRunGrant"]
+      "by": ["allowPersonaHosts", "agentIdentityFinish", "gitlabAccessSet", "answerRunGrant"]
     },
     {
       "at": "sandboxing.rs allow_sandbox_block",
@@ -367,6 +372,12 @@
       "at": "sandboxing.rs answer",
       "writes": "the project's manifest and its local settings",
       "by": ["answerSandboxOffer"]
+    },
+    {
+      "at": "sandboxing.rs answered_at",
+      "writes": "this machine's network record",
+      "by": [],
+      "why": "A folder or socket ask the project's [policy] answers itself (Q308 follow-up A): reached from a chat's hook reporting its block as it happens, never from a window command; the grant it keeps is audited into the network record as the Notice's Allow is."
     },
     {
       "at": "sandboxing.rs answer_team_sandbox_off",

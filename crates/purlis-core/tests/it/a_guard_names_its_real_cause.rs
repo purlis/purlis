@@ -4,7 +4,8 @@
 //! **A guard's refusal names its real cause** (#6962, T1.1-72).
 //!
 //! - Creating a branch and committing a file through the API is no merge. A new ref whose name
-//!   cannot be read is refused in its own words, a tag is held as a release, and a file committed
+//!   cannot be read is refused in its own words and, since it could be the default branch's, held
+//!   as a merge (Q330, which #7124 brought after this), a tag is held as a release, and a file committed
 //!   to the default branch is refused as the push to it that it is, naming `purlis worktree
 //!   push`. None of them is the merge hold's, so none points at `gh pr merge`.
 //! - A `curl --variable` placeholder is a name, not a credential, to every guard that reads a
@@ -16,7 +17,7 @@
 //! `crates/purlis-cli/tests/it/a_guard_decides_within_its_budget.rs`.
 
 use purlis_core::floorguard::release_floor_reason;
-use purlis_core::mergehold;
+use purlis_core::mergehold::{self, Held};
 use purlis_core::secretshape::{self, Structured};
 
 /// What the merge hold says when it cannot name a request: the wrong words for every line here.
@@ -56,11 +57,11 @@ fn an_opaque_or_shell_filled_git_refs_ref_is_refused_with_write_it_out_literally
     ] {
         let said = refused(cmd);
         assert!(
-            said.contains("can't tell what this ref writes; write it out literally"),
+            said.contains("Write the ref out literally"),
             "{cmd}: {said}"
         );
-        assert!(!said.contains("merge"), "{cmd}: {said}");
-        assert_eq!(mergehold::held(cmd), None, "no merge to hold: {cmd}");
+        // A ref whose branch cannot be read could be the default branch's (Q330).
+        assert_eq!(mergehold::held(cmd), Some(Held::Unreadable), "{cmd}");
         assert_eq!(release_floor_reason(cmd, false), None, "attended: {cmd}");
     }
 }
@@ -195,7 +196,7 @@ fn a_typed_ref_read_from_a_file_or_filled_in_by_gh_is_refused_with_write_it_out_
     ] {
         let said = refused(cmd);
         assert!(
-            said.contains("can't tell what this ref writes; write it out literally"),
+            said.contains("Write the ref out literally"),
             "{cmd}: {said}"
         );
     }

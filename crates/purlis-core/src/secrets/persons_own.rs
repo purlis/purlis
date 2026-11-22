@@ -60,6 +60,11 @@ pub enum Verb<'a> {
     PersonaSecretAudit {
         persona: Option<&'a str>,
     },
+    /// `purlis gitlab access`: a token into a persona's vault and a `glab` line into the
+    /// project's settings (#1349), the person's to give and never a chat's.
+    GitlabAccess {
+        host: &'a str,
+    },
 }
 
 /// Says why `verb` is refused in this process and answers `true`, or answers `false` where it
@@ -131,6 +136,11 @@ pub fn refused_in_a_sandboxed_chat(ctx: &Ctx, verb: Verb<'_>) -> Option<String> 
              purlis persona secret list{flag}\n  For their ages, ask the person to run `purlis \
              persona secret audit{flag}` in their own terminal.",
             flag = flag(persona)
+        ),
+        Verb::GitlabAccess { host } => written(
+            "the persona's vault and the project's settings",
+            &format!("set GitLab access up for {host} in Settings › GitLab access in the app"),
+            &format!("purlis gitlab access {host} --persona <persona>"),
         ),
         Verb::VaultVerify { name } => {
             let run = match name.filter(|n| !n.is_empty()) {

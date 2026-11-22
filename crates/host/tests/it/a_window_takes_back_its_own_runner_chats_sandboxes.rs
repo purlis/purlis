@@ -81,6 +81,7 @@ fn planned(id: &str) -> Confine {
             given: vec![5432],
         },
         asks: true,
+        lifted: Vec::new(),
     }
 }
 

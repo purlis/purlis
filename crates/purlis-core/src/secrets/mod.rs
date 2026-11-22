@@ -808,15 +808,6 @@ pub fn reads_on_open(provider: &str) -> bool {
     !matches!(provider, "keyring" | "plain-file" | "reference")
 }
 
-/// **Whether reading one value of a vault of `provider` asks nobody** (#6309): a keyring vault's
-/// value is its own item, and a plain-file vault's is in its own file. Not so a reference
-/// vault's, though opening one does not read ([`reads_on_open`]): its value is what `op read` or
-/// `vault kv get` answers, either of which may ask the person; nor any other provider's, which
-/// reads through its program; nor one this build does not know.
-pub fn reads_a_value_without_asking(provider: &str) -> bool {
-    matches!(provider, "keyring" | "plain-file")
-}
-
 #[cfg(test)]
 mod tests;
 

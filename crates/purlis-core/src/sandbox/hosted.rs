@@ -132,6 +132,9 @@ fn starting(
     let planned_as = Plan::from_wire(&confine.plan)?;
     let (plan, left_out) = started_here(planned, planned_as, alone, project_path);
     let root = project_path.to_path_buf();
+    // This machine's own locks hold over what the window named (the review of #7105): a family
+    // an administrator holds enforced here is never lifted, whoever relayed the chat.
+    let locks = super::policy::Locks::of(project_path);
     let board = (confine.asks && hosts_askable(planned, project_path)).then(|| {
         Asking {
             tell: {
@@ -148,14 +151,26 @@ fn starting(
             },
             askable: Arc::new(move || askable()),
             known: Arc::new(move |host| super::grant::allowed_already(&root, host).map(By::from)),
-            // The `asks` family off or logged (Q308): answered Allow. The host knows the chat by
-            // its plan alone, so a logged one is let through with no line.
-            answered: (crate::enforcement::mode(project_path, crate::enforcement::Family::Asks)
-                != crate::enforcement::Mode::Enforce)
-                .then(|| -> super::asks::Answered { Arc::new(|_: &str, _: u16| {}) }),
+            // The `asks` family off or logged (Q308), as the window resolved the project's policy
+            // for this chat and named it ([`session::Confine::lifted`]): answered Allow, and told
+            // to the window, which knows the chat and writes its line (the follow-up, item 3).
+            // Only the app resolves the policy: a confinement the window named nothing for, the
+            // host's own composed start among them, asks as before.
+            answered: lifted(
+                &confine.lifted,
+                crate::enforcement::Family::Asks,
+                &locks,
+                &tell,
+            ),
         }
         .board(timings)
     });
+    let network = lifted(
+        &confine.lifted,
+        crate::enforcement::Family::Network,
+        &locks,
+        &tell,
+    );
     let telling = Telling {
         refusals: egress::Refusals::telling({
             let tell = Arc::clone(&tell);
@@ -196,6 +211,7 @@ fn starting(
         timings: *timings,
         #[cfg(any(test, feature = "test-support"))]
         names,
+        network,
     };
     let confinement = match planned {
         Planned::Here => plan.start(telling),
@@ -211,6 +227,32 @@ fn starting(
         left_out,
         planned,
     })
+}
+
+/// **What a confinement tells of a host it let through only because the window named `family`
+/// as not enforced for its chat** (`named`, [`session::Confine::lifted`], 1.94): told to the
+/// window as [`SandboxTold::Lifted`]. None, and the family is enforced, where the window did not
+/// name it, or where `locks`, this machine's, hold it enforced: a runner applies its own locks
+/// over what a desktop relays.
+fn lifted(
+    named: &[String],
+    family: crate::enforcement::Family,
+    locks: &super::policy::Locks,
+    tell: &Tell,
+) -> Option<super::asks::Answered> {
+    if !named.iter().any(|named| named == family.key())
+        || locks.enforcement_floor(family) == Some(crate::enforcement::Mode::Enforce)
+    {
+        return None;
+    }
+    let tell = Arc::clone(tell);
+    let family = family.key().to_owned();
+    Some(Arc::new(move |host: &str, port: u16| {
+        tell(SandboxTold::Lifted {
+            family: family.clone(),
+            target: egress::host_and_port(host, port),
+        });
+    }))
 }
 
 /// **Whether `wired`, a plan another machine made, fits the project at `project_path` on this

@@ -61,7 +61,7 @@ fn take_back(again: &Browsing2, left: Vec<HeldProgram>, open: &[u32], root: &std
 impl Browsing2 {
     /// One browser call of chat `chat`'s, as its tool server sends it.
     fn call(&self, root: &std::path::Path, chat: u32, asked: Browsing) {
-        self.chats.identify(chat, Some(id_of(chat)));
+        self.chats.identify_for(chat, Some(id_of(chat)), &|| None);
         self.chats.answer(
             Some(&self.driver),
             root,

@@ -95,6 +95,7 @@ pub mod browserfiles;
 pub mod browserlimits;
 #[cfg(unix)]
 pub mod browserlogins;
+pub mod browserposture;
 pub mod browserproof;
 pub mod browsers;
 pub mod browsersatquit;
@@ -114,6 +115,7 @@ pub mod floorguard;
 pub mod footer;
 pub mod footerclaim;
 pub mod forge;
+pub mod forgelock;
 pub mod forklock;
 pub mod getproject;
 pub mod gitbroker;

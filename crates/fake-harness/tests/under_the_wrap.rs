@@ -51,6 +51,7 @@ impl Beside for Host {
             project: "fake-wrap".to_owned(),
             plan: plan.clone(),
             asks: false,
+            lifted: Vec::new(),
         };
         let started = hosted::start(
             &self.root,
