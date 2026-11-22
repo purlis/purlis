@@ -650,7 +650,11 @@ fn redirect<W: Write>(
 
     // A run's logs and artifacts are served from Actions storage (#7358): followed here like a
     // download host, but never handed to the chat to tunnel to.
-    let ci_storage = plain_https && is_ci_storage_host(&host);
+    // Only for a credentialed read of the API: the address is signed for what the API answered.
+    let ci_storage = plain_https
+        && is_ci_storage_host(&host)
+        && forwarded.class == Class::ApiRead
+        && forwarded.credentialed;
 
     // `gh` on its socket cannot follow a redirect to a storage host: it is followed here, once,
     // anonymously, and what it answers is streamed. A second redirect is not followed.

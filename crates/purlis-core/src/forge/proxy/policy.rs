@@ -245,7 +245,7 @@ pub fn is_download_host(host: &str) -> bool {
 }
 
 /// Whether `host` is where GitHub Actions keeps a run's logs and artifacts (#7358): `*.actions.githubusercontent.com`
-/// (one label under it, as `pipelines.` and `results-receiver.`) and Actions results storage,
+/// (one label under it, as `pipelines.` and `results-receiver.`, but never `token.` or `vstoken.`) and Actions results storage,
 /// `productionresultssa<digits>.blob.core.windows.net`. **Never a bare `*.blob.core.windows.net`**,
 /// which is anyone's storage account. The address is pre-signed, so it is followed once, by a GET
 /// and with no credential, and only for the chat on its unix socket: it is never tunnelled to, so
@@ -258,11 +258,12 @@ pub fn is_ci_storage_host(host: &str) -> bool {
             && !l.starts_with('-')
     };
     if let Some(sub) = host.strip_suffix(".actions.githubusercontent.com") {
-        return label(sub);
+        // `token.` and `vstoken.` mint Actions tokens: never a place a log is kept.
+        return label(sub) && !matches!(sub, "token" | "vstoken");
     }
     host.strip_suffix(".blob.core.windows.net")
         .and_then(|account| account.strip_prefix("productionresultssa"))
-        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        .is_some_and(|n| (1..=5).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
@@ -1060,7 +1061,9 @@ mod tests {
             "actions.githubusercontent.com",
             "a.b.actions.githubusercontent.com",
             "-x.actions.githubusercontent.com",
-            "Pipelines.actions.githubusercontent.com",
+            "token.actions.githubusercontent.com",
+            "vstoken.actions.githubusercontent.com",
+            "productionresultssa123456.blob.core.windows.net",
             "pipelines.actions.githubusercontent.com.evil.example",
             "evilactions.githubusercontent.com",
             "productionresultssa.blob.core.windows.net",

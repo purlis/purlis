@@ -238,6 +238,36 @@ fn connect_terminates_a_recorded_host_tunnels_a_download_host_and_refuses_the_re
     tunnel.read_exact(&mut echoed).unwrap();
     assert_eq!(&echoed, b"not TLS at all");
 
+    // A redirect to CI storage inside TLS is never followed for the chat, and its address is never
+    // written for it to tunnel to: 502, whatever the host.
+    for location in [
+        "https://productionresultssa7.blob.core.windows.net/x?sig=abc",
+        "https://pipelines.actions.githubusercontent.com/x?sig=abc",
+    ] {
+        w.fake
+            .answer(Answer::ok("").status(302).with_header("Location", location));
+        let (stream, head) = connect(
+            port,
+            &w.wiring.handoff,
+            "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n",
+        );
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        let name = rustls::pki_types::ServerName::try_from("api.github.com".to_string()).unwrap();
+        let connection = rustls::ClientConnection::new(client_config(&ca_pem), name).unwrap();
+        let mut tls = rustls::StreamOwned::new(connection, stream);
+        let request = format!(
+            "GET /repos/acme/app/actions/jobs/5/logs HTTP/1.1\r\nHost: api.github.com\r\nAuthorization: {}\r\n\r\n",
+            basic("x-access-token", w.sentinel.expose())
+        );
+        let before = w.fake.requests().len();
+        tls.write_all(request.as_bytes()).unwrap();
+        let mut raw = Vec::new();
+        let _ = tls.read_to_end(&mut raw);
+        let reply = parse_reply(&raw);
+        assert_eq!(reply.status, 502, "{location}: {}", reply.text());
+        assert_eq!(w.fake.requests().len(), before + 1, "{location}");
+    }
+
     // Everything else: refused, and the chat's audit says so.
     for line in [
         "CONNECT evil.example:443 HTTP/1.1\r\n\r\n",

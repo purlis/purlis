@@ -375,6 +375,12 @@ fn a_redirect_to_a_storage_account_that_is_not_actions_results_is_not_followed()
         "https://pipelines.actions.githubusercontent.com.evil.example/x",
         "http://pipelines.actions.githubusercontent.com/x",
         "https://pipelines.actions.githubusercontent.com:8443/x",
+        "https://pipelines.actions.githubusercontent.com./x",
+        "https://token.actions.githubusercontent.com/x",
+        "https://vstoken.actions.githubusercontent.com/x",
+        "https://productionresultssa123456.blob.core.windows.net/x",
+        "https://user@pipelines.actions.githubusercontent.com/x",
+        "https://user:pw@productionresultssa7.blob.core.windows.net/x",
     ] {
         w.fake
             .answer(Answer::ok("").status(302).with_header("Location", location));
@@ -383,6 +389,40 @@ fn a_redirect_to_a_storage_account_that_is_not_actions_results_is_not_followed()
         assert_eq!(w.fake.requests().len(), 1, "{location}");
         w.fake.seen.lock().unwrap().clear();
     }
+}
+
+#[test]
+fn a_second_redirect_from_ci_storage_and_one_after_a_write_are_not_followed() {
+    purlis_core::unsteered!();
+    let signed = "https://productionresultssa7.blob.core.windows.net/actions-results/x?sig=abc";
+    let w = World::new();
+    w.fake
+        .answer(Answer::ok("").status(302).with_header("Location", signed));
+    w.fake.answer(Answer::ok("").status(302).with_header(
+        "Location",
+        "https://pipelines.actions.githubusercontent.com/b",
+    ));
+    let reply = plain(&w, &gh_get(&w, "/repos/acme/app/actions/jobs/5/logs"));
+    assert!(reply.status >= 300, "{reply:?}");
+    assert_eq!(w.fake.requests().len(), 2);
+    assert!(
+        reply
+            .header("location")
+            .is_none_or(|l| !l.contains("actions.githubusercontent")),
+        "{reply:?}"
+    );
+
+    // A rerun (a write) answered with a redirect to the same place is never followed.
+    let w = World::new();
+    w.fake
+        .answer(Answer::ok("").status(302).with_header("Location", signed));
+    let request = format!(
+        "POST /repos/acme/app/actions/runs/9/rerun HTTP/1.1\r\nHost: api.github.localhost\r\nAuthorization: token {}\r\nContent-Length: 0\r\n\r\n",
+        sentinel(&w)
+    );
+    let reply = plain(&w, request.as_bytes());
+    assert_eq!(reply.status, 502, "{}", reply.text());
+    assert_eq!(w.fake.requests().len(), 1);
 }
 
 #[test]

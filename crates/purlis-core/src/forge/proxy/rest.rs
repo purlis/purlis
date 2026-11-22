@@ -76,12 +76,11 @@ const RULE_READS: &[&[&str]] = &[
 ];
 
 /// What a chat may do to a workflow run of its own repo besides read it (#7358): rerun it, rerun
-/// its failed jobs, and approve a run held for a fork's or a bot's commit. None of them is a
-/// review, so [`APPROVAL`] does not apply: see ADR 0128's amendment of 2026-11-22.
+/// its failed jobs. **Never `approve`**: that runs an outsider's fork code on the repo's runners,
+/// so it stays under [`APPROVAL`] and is refused: see ADR 0128's amendment of 2026-11-22.
 const CI_WRITES: &[&[&str]] = &[
     &["actions", "runs", "#", "rerun"],
     &["actions", "runs", "#", "rerun-failed-jobs"],
-    &["actions", "runs", "#", "approve"],
 ];
 
 fn is_ci_write(method: &str, rel: &[String]) -> bool {
@@ -586,6 +585,16 @@ fn check_body(
     Ok(())
 }
 
+/// Whether a body is no body at all: no text, or a JSON `{}`.
+fn is_empty_object(body: &Body) -> bool {
+    body.form.is_empty()
+        && body.strings.is_empty()
+        && body
+            .json
+            .as_ref()
+            .is_none_or(|j| j.as_object().is_some_and(|m| m.is_empty()))
+}
+
 /// Decide one REST request under a chat's repo.
 pub(crate) fn decide(
     kind: Kind,
@@ -607,5 +616,9 @@ pub(crate) fn decide(
     }
     let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo)?;
+    if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {
+        // A rerun's body is `enable_debug_logging` and nothing else the chat may choose.
+        return Err(Refusal::MalformedRequest);
+    }
     Ok(class)
 }

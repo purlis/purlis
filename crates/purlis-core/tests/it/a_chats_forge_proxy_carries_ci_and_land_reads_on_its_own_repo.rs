@@ -3,7 +3,7 @@
 
 //! One login follow-up (#7358; ADR 0128 amended 2026-11-22): a chat's ordinary CI and landing
 //! work on its own repo is answered: the rules that apply to a branch, a merge queue's state, and
-//! a rerun or an approval of a workflow run. Another repo, a write to a ruleset, a merge and the
+//! a rerun of a workflow run (an approval is refused: it runs a stranger's code). Another repo, a write to a ruleset, a merge and the
 //! enqueue of one stay refused.
 
 use purlis_core::forge::proxy::{Class, Outcome, Refusal, TokenKind};
@@ -74,19 +74,56 @@ fn the_rules_of_another_repo_and_every_write_to_a_rule_are_refused() {
 }
 
 #[test]
-fn a_rerun_or_an_approval_of_a_run_of_the_chats_repo_is_answered() {
+fn a_rerun_of_a_run_of_the_chats_repo_is_answered() {
     purlis_core::unsteered!();
     let s = Scene::new();
     for target in [
         "/repos/acme/app/actions/runs/9/rerun",
         "/repos/acme/app/actions/runs/9/rerun-failed-jobs",
-        "/repos/acme/app/actions/runs/9/approve",
     ] {
-        assert_eq!(
-            class(s.send("POST", "api.github.com", target, b"")),
-            Class::CiWrite,
-            "{target}"
-        );
+        for body in [&b""[..], b"{}"] {
+            assert_eq!(
+                class(s.send("POST", "api.github.com", target, body)),
+                Class::CiWrite,
+                "{target}"
+            );
+        }
+    }
+}
+
+#[test]
+fn an_approval_of_a_run_is_refused_whatever_the_repo() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    for target in [
+        "/repos/acme/app/actions/runs/9/approve",
+        "/repos/acme/app/actions/runs/9/approve?x=1",
+    ] {
+        for body in [&b""[..], b"{}"] {
+            let out = s.send("POST", "api.github.com", target, body);
+            assert!(is_refused(&out, Refusal::Approval), "{target}: {out:?}");
+        }
+    }
+}
+
+#[test]
+fn a_rerun_that_carries_anything_in_its_body_is_refused() {
+    purlis_core::unsteered!();
+    let s = Scene::new();
+    for body in [
+        &br#"{"enable_debug_logging":true}"#[..],
+        br#"{"x":1}"#,
+        b"enable_debug_logging=true",
+    ] {
+        for verb in ["rerun", "rerun-failed-jobs"] {
+            let target = format!("/repos/acme/app/actions/runs/9/{verb}");
+            let out = s.send("POST", "api.github.com", &target, body);
+            assert!(
+                matches!(out, Outcome::Refused(_)),
+                "{verb} {}: {out:?}",
+                String::from_utf8_lossy(body)
+            );
+        }
     }
 }
 
@@ -99,11 +136,6 @@ fn a_rerun_or_an_approval_anywhere_else_is_refused() {
         (
             "POST",
             "/repos/acme/other/actions/runs/9/rerun",
-            Refusal::OtherRepo,
-        ),
-        (
-            "POST",
-            "/repos/acme/other/actions/runs/9/approve",
             Refusal::OtherRepo,
         ),
         // Not a run, or not those verbs.
