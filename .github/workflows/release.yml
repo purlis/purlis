@@ -486,9 +486,10 @@ jobs:
             runner_target: linux-x86_64
     runs-on: ${{ matrix.os }}
     # The cold macOS build takes 65 to 68 minutes with the thin-LTO profile (ADR 0092), and the
-    # first attempt of 0.5.0's ran past 90 and was cancelled (run 42122707604). 120 leaves room
-    # and keeps the slowest chain of this run's jobs under the 240 its test holds.
-    timeout-minutes: 120
+    # first attempt of 0.5.0's ran past 90 and was cancelled (run 42122707604). Since then
+    # successful dev builds took 106-107 minutes and run 45030876196 hit 120:00 and was cancelled,
+    # so 150 (the slowest chain of this run's jobs stays under the 400 its test holds).
+    timeout-minutes: 150
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       PUBLISH: ${{ needs.plan.outputs.publish }}
