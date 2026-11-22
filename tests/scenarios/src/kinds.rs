@@ -22,13 +22,14 @@ use purlis_core::{hookreg, opencode, plugin};
 use crate::model::Dialect;
 
 /// Kinds purlis-core writes from a string literal rather than a public constant.
-pub const WRITTEN_AS_TEXT: [&str; 6] = [
+pub const WRITTEN_AS_TEXT: [&str; 7] = [
     "run.started",
     "run.ended",
     "trust.sandbox.grant",
     "trust.sandbox.revoke",
     "trust.sandbox.on",
     "trust.sandbox.off",
+    "trust.sandbox.level",
 ];
 
 /// The state words OpenCode's shim sends from its own events (`opencode.rs`, the shim's
