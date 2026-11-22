@@ -63,6 +63,7 @@ fn send_both(source: Source) -> Outcome {
 
 #[test]
 fn one_account_renewed_between_two_lookups_still_serves_a_document_naming_both_repos() {
+    purlis_core::unsteered!();
     let out = send_both(Source {
         asked: AtomicUsize::new(0),
         // Every lookup answers a new token: a renewal landed between them.
@@ -74,6 +75,7 @@ fn one_account_renewed_between_two_lookups_still_serves_a_document_naming_both_r
 
 #[test]
 fn two_accounts_holding_equal_token_bytes_do_not_serve_one_document() {
+    purlis_core::unsteered!();
     let out = send_both(Source {
         asked: AtomicUsize::new(0),
         token: |_, _| "the-same-bytes".to_owned(),
