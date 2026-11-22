@@ -233,3 +233,4 @@ See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechan
 See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.
 - `pgrep` and `ps` see no other process in the sandbox, so a wait written as `until ! pgrep …` ends at once. Wait on a background command's output file instead:
   `timeout 585 bash -c "until grep -q 'Finished\|error' <file>; do sleep 20; done"`.
+- `git fetch` and `git merge` cannot write the worktree's git folder in the sandbox: bring the base in with `purlis worktree update --merge --base origin/<base>` (alone in its call), resolve, then `--continue`. The ratchet judges marks against the base's commit time, so after a merge a mark on an existing cell for an issue filed before that commit fails `the_marks_keep_their_ratchet_against_the_base`.
