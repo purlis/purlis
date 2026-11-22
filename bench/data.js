@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795385301312,
+  "lastUpdate": 1795388618640,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52416,6 +52416,48 @@ window.BENCHMARK_DATA = {
             "value": 102.61119350000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.000, 102.392, 102.611, 103.019, 103.547 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ec4989f3e9cef3304afd73e1e04483ad126404f1",
+          "message": "Key the created-branches record by (project, chat), not chat alone (#7391)\n\nA chat id from another project, or a runner naming another chat's id, no longer\ninherits created branches. Lines with no project (old) are owned by nobody.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82HC369PRHW12K16PJ40Y83\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T22:19:02Z",
+          "tree_id": "ef9c89051ef3e93fbe686c1a443e21339b210ac7",
+          "url": "https://github.com/purlis/purlis/commit/ec4989f3e9cef3304afd73e1e04483ad126404f1"
+        },
+        "date": 1795388609099,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.686813,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.681, 0.686, 0.687, 0.694, 0.707 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.730202,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.344, 16.591, 16.730, 16.866, 16.923 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.98448149999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.964, 102.591, 102.984, 103.381, 103.731 ms"
           }
         ]
       }
