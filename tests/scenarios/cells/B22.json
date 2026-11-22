@@ -1,0 +1,249 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B22",
+  "title": "restart: host killed (§3.17, Linux)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {
+    "h1": "example.com",
+    "h2": "www.iana.org",
+    "h3": "example.net",
+    "h4": "example.org"
+  },
+  "cells": [
+    {
+      "id": "M-RST-12",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"
+              }
+            }
+          ],
+          "wait": "hold+1",
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "host_killed",
+          "require": [
+            {
+              "kind": "run.ended",
+              "state": "failed",
+              "count": 1
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h1",
+              "count": 1
+            }
+          ],
+          "window": [
+            {
+              "query": "asks: no ask left with no chat behind it; the ask leaves"
+            },
+            {
+              "query": "needs_you: the chat shows failed in Updates > Mine"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-13",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "M-FILE-01 form, path -r13"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "require": [
+            {
+              "kind": "hook.pretooluse",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "host_killed",
+          "require": [
+            {
+              "kind": "hook.spool.drained",
+              "count": "≥1"
+            },
+            {
+              "kind": "hook.spool.drained",
+              "args": "this_call"
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "qualifier": null,
+              "count": 1
+            }
+          ],
+          "window": [
+            {
+              "query": "blocks: marker +1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "M-RST-14",
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 3"
+              }
+            }
+          ],
+          "press": {
+            "label": "Keep blocked",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 3"
+              }
+            }
+          ],
+          "press": {
+            "label": "Allow only for this chat",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 3"
+              }
+            }
+          ],
+          "press": {
+            "label": "Allow for me on this machine",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "require": [
+            {
+              "kind": "trust.sandbox.grant",
+              "level": "you",
+              "target": "$h3",
+              "count": 1
+            }
+          ]
+        },
+        {
+          "restart": "host_killed",
+          "chat": "new",
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 3"
+              }
+            },
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 3"
+              }
+            },
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 3"
+              }
+            }
+          ],
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "target.host": "$h1",
+              "count": 1
+            },
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "target.host": "$h2",
+              "count": 1
+            },
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "target.host": "$h3",
+              "count": 0
+            }
+          ]
+        },
+        {
+          "press": "Remove the h3 grant",
+          "require": [
+            {
+              "kind": "trust.sandbox.revoke",
+              "target": "$h3",
+              "count": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

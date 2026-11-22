@@ -841,3 +841,108 @@ fn the_log_is_read_from_a_cursor_as_a_link_reads_it_and_says_where_it_ends() {
         "every line from the start"
     );
 }
+
+/// What a chat's hook spools for one tool call, with no digest.
+fn a_spooled_call(chat: u32) -> crate::hookwire::ToolCall {
+    crate::hookwire::ToolCall {
+        chat,
+        tool_hook: "pretooluse".to_owned(),
+        tool: Some("Bash".to_owned()),
+        call: Some("call-1".to_owned()),
+        args: None,
+        decision: crate::hookwire::Decision::Allow,
+        rule: None,
+        arm: None,
+        hook_ms: 1,
+        agent: None,
+        at_ms: 0,
+        skill: None,
+    }
+}
+
+/// A recorder with its own folder under `data`, as a host opens it, and a chat's seal key in it.
+fn a_recorder_sealing(
+    config: &Path,
+    data: &Path,
+    root: &Path,
+    chats: &[u32],
+) -> (Mutex<Recorder>, Vec<PathBuf>) {
+    let recorder = Recorder::open_in(config, data).expect("a recorder");
+    let keys = chats
+        .iter()
+        .map(|chat| {
+            recorder.seal_public(root, *chat).expect("a key");
+            std::fs::read_dir(recorder.dir().join(crate::eventlog::SEAL_DIR))
+                .expect("the seal folder")
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| {
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(&format!("-{chat}.key")))
+                })
+                .expect("the chat's key")
+        })
+        .collect();
+    (Mutex::new(recorder), keys)
+}
+
+#[test]
+fn a_chats_seal_key_goes_when_the_chat_ends_and_its_spool_is_drained() {
+    let temp = tempfile::tempdir().expect("a folder");
+    let (config, data, root) = (
+        temp.path().join("config"),
+        temp.path().join("data"),
+        temp.path().join("project"),
+    );
+    for dir in [&config, &data, &root] {
+        std::fs::create_dir_all(dir).expect("a folder");
+    }
+    let (log, keys) = a_recorder_sealing(&config, &data, &root, &[4, 5]);
+    // Where a project's spool is: the folder the sandbox's integrity denial covers.
+    let socket = temp.path().join(".charter/app/hooks.sock");
+    let spool = crate::hookwire::spool::dir_for(&socket);
+    let token = crate::hookwire::ChatTokens::spooling_into(spool.clone())
+        .issue_to_this_process(4)
+        .expect("a token");
+    crate::hookwire::spool::append(&spool, 4, &token, &a_spooled_call(4)).expect("spooled");
+
+    spool_ended(&socket, &root, Some(&log), 4);
+
+    assert!(!keys[0].exists(), "chat 4's key outlived it");
+    assert!(keys[1].exists(), "chat 5 is still running");
+    let events = crate::eventlog::read(log.lock().unwrap().dir()).expect("the log");
+    assert!(
+        events.iter().any(|event| event.kind == "hook.pretooluse"),
+        "the line was drained before the key went: {events:?}"
+    );
+}
+
+#[test]
+fn a_chat_the_project_does_not_bring_back_loses_its_seal_key_at_open() {
+    let temp = tempfile::tempdir().expect("a folder");
+    let (config, data, root) = (
+        temp.path().join("config"),
+        temp.path().join("data"),
+        temp.path().join("project"),
+    );
+    for dir in [&config, &data, &root] {
+        std::fs::create_dir_all(dir).expect("a folder");
+    }
+    let (log, keys) = a_recorder_sealing(&config, &data, &root, &[4, 5]);
+    let other = temp.path().join("other");
+    let kept = {
+        let log = log.lock().unwrap();
+        log.seal_public(&other, 4).expect("a key");
+        log.dir().join(crate::eventlog::SEAL_DIR)
+    };
+
+    drain_at_open(&temp.path().join("hooks.sock"), &root, Some(&log));
+
+    assert!(
+        keys.iter().all(|key| !key.exists()),
+        "no chat is brought back, so none keeps a key"
+    );
+    let left: Vec<_> = std::fs::read_dir(kept).expect("the folder").collect();
+    assert_eq!(left.len(), 1, "another project's chat 4 keeps its own key");
+}

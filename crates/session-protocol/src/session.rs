@@ -2558,6 +2558,10 @@ impl SkillsNotThere {
 pub struct Reporting {
     pub socket: String,
     pub token: String,
+    /// The public key a chat's spooled argument digests are sealed to (#6880), base64, where the
+    /// host keeps its private half.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub seal: Option<String>,
 }
 
 /// Never prints the token.

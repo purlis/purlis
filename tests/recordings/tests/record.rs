@@ -267,6 +267,7 @@ fn records_a_harness_under_purlis_wrap_at_full() {
         ..StartProgram::of("01JRECORDINGPRJCT000000000", ProgramKind::Harness)
     };
     let reporting = session::Reporting {
+        seal: None,
         socket: socket.display().to_string(),
         token: token.expose().to_owned(),
     };

@@ -653,3 +653,126 @@ fn a_chat_purlis_wraps_leaves_its_refused_hosts_to_the_proxy() {
         vec![(Operation::Lookup, Kind::Host)]
     );
 }
+
+/// Whether Claude Code would run a hook registered under `matcher` for `tool`: a bare name or a
+/// `|` list of them is matched whole, anything else is a pattern (the registry's `.*`, and the
+/// purlis tools' `mcp__purlis__.*`).
+fn matcher_hears(matcher: Option<&str>, tool: &str) -> bool {
+    let Some(matcher) = matcher else { return false };
+    matcher.split('|').any(|part| {
+        part == tool
+            || part
+                .strip_suffix(".*")
+                .is_some_and(|prefix| tool.starts_with(prefix))
+    })
+}
+
+/// T1.1-41 (#6888), cell M-TOOL-09. A failed call of any tool but a shell command left no line,
+/// because the failure word was registered on `Bash` alone. The word is now registered on every
+/// tool, and the hook writes the call's own line for each, and a block for none.
+#[test]
+fn a_failed_tool_writes_a_post_line_and_no_block() {
+    let word = "posttoolusefailure-blocked";
+    let registered = purlis_core::hookreg::find(word).expect("the word is wired");
+    assert_eq!(registered.event, "PostToolUseFailure");
+    for tool in [
+        "Read",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "Grep",
+        "Glob",
+        "WebFetch",
+        "Skill",
+        "Task",
+        "Agent",
+        "mcp__github__create_issue",
+    ] {
+        assert!(
+            matcher_hears(registered.matcher, tool),
+            "{word} is not registered for {tool}: {:?}",
+            registered.matcher
+        );
+        let heard = hook(
+            word,
+            &serde_json::json!({
+                "hook_event_name": "PostToolUseFailure",
+                "tool_name": tool,
+                "tool_use_id": "toolu_1",
+                "tool_input": {"file_path": "/etc/master.passwd"},
+                "error": "EACCES: permission denied, open '/etc/master.passwd'",
+                "cwd": "/Users/dev/plane/workspaces/a/repo",
+            }),
+        );
+        let line = heard
+            .tool
+            .as_ref()
+            .unwrap_or_else(|| panic!("no line for {tool}"));
+        assert_eq!(line.tool_hook, word, "{tool}");
+        assert_eq!(line.tool.as_deref(), Some(tool));
+        assert_eq!(line.call.as_deref(), Some("toolu_1"));
+        assert!(heard.blocked.is_empty(), "{tool}: {:?}", heard.blocked);
+        assert_eq!(heard.said, "", "{tool}: nothing to tell the chat");
+    }
+}
+
+/// M-TOOL-09's own negative: a Read the file's permissions refuse (EACCES, or EPERM from the
+/// OS) gives the failure line and no block. Claude Code's Read runs in its own process, outside
+/// the Bash profile, so even words that look like a violation block in its error are no block:
+/// and none is ever a read-back, so the chat is never told to carry on after a refused read.
+#[test]
+fn a_read_the_os_refused_gives_the_failure_line_and_no_block() {
+    for error in [
+        "EACCES: permission denied, open '/etc/master.passwd'".to_owned(),
+        "EPERM: operation not permitted, open '/etc/master.passwd'".to_owned(),
+        format!(
+            "EPERM: operation not permitted, open '/Users/dev/{CANARY}'\n\
+             <sandbox_violations>\n\
+             Claude(48211) deny(1) file-read-data /Users/dev/{CANARY}\n\
+             </sandbox_violations>"
+        ),
+    ] {
+        let payload = serde_json::json!({
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Read",
+            "tool_use_id": "toolu_2",
+            "tool_input": {"file_path": "/etc/master.passwd"},
+            "error": error,
+            "cwd": "/Users/dev/plane/workspaces/a/repo",
+        });
+        assert!(
+            !purlis_core::sandboxblock::read_back(&payload),
+            "a failed Read is never a read-back: {error}"
+        );
+        let heard = hook("posttoolusefailure-blocked", &payload);
+        assert_eq!(
+            heard.tool.as_ref().map(|call| call.tool_hook.as_str()),
+            Some("posttoolusefailure-blocked"),
+            "the failure line: {error}"
+        );
+        assert!(heard.blocked.is_empty(), "{error}: {:?}", heard.blocked);
+        assert_eq!(heard.said, "", "{error}: the chat is told nothing");
+    }
+}
+
+/// Block detection stays on a shell command: a failed `Write` whose error carries a violation
+/// block leaves its line and raises none.
+#[test]
+fn a_failed_write_is_no_block_though_its_error_says_violation() {
+    let heard = hook(
+        "posttoolusefailure-blocked",
+        &serde_json::json!({
+            "hook_event_name": "PostToolUseFailure",
+            "tool_name": "Write",
+            "tool_use_id": "toolu_3",
+            "tool_input": {"file_path": "/Users/dev/x"},
+            "error": "EPERM: operation not permitted\n<sandbox_violations>\n\
+                      Claude(48211) deny(1) file-write-create /Users/dev/x\n\
+                      </sandbox_violations>",
+            "cwd": "/Users/dev/plane/workspaces/a/repo",
+        }),
+    );
+    assert!(heard.tool.is_some(), "its line is written");
+    assert!(heard.blocked.is_empty(), "{:?}", heard.blocked);
+    assert_eq!(heard.said, "");
+}

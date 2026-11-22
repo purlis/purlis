@@ -1,0 +1,29 @@
+{
+  "$schema": "../schema/cells.schema.json",
+  "batch": "B13-FIN",
+  "title": "a resolved block leaves no suffix on the finish row (matrix §3.13)",
+  "persona": "steward",
+  "protection": "full",
+  "hosts": {"h1": "www.gimp.org"},
+  "cells": [{
+    "id": "M-FIN-02",
+    "steps": [{
+      "calls": [
+        {"tool": "Bash", "client": "get", "timeout": "150s",
+         "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"}},
+        {"tool": "Bash", "input": {"command": "sleep 60"}, "timeout": "90s"},
+        {"tool": "Bash", "client": "get", "timeout": "10s",
+         "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 10"}}
+      ],
+      "press": {"label": "Allow once", "target": "block_row", "when": "stop.block", "delay": "5s"},
+      "outcome": "came_back",
+      "require": [
+        {"kind": "stop.block", "source": "sandbox", "target.host": "$h1", "count": 1},
+        {"kind": "trust.sandbox.grant", "level": "once", "count": 1},
+        {"kind": "trust.sandbox.revoke", "level": "once", "count": 1},
+        {"kind": "hook.stop", "count": 1}
+      ],
+      "window": [{"query": "finishes.row_suffix", "forbid": true}]
+    }]
+  }]
+}
