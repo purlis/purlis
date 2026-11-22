@@ -70,6 +70,18 @@
 // request against its siblings ahead of it, so a scope rule that is wrong costs a pull request
 // one trip through the queue and never a red main.
 //
+// **`ships`: whether a dev build has anything to build** (#7383, R4). `release.yml`'s `plan` runs
+// `node tools/ci-scope.mjs ships <kind> <sha>` for a push to `main` and skips the build when
+// nothing that reaches a build changed. The change is measured from the commit the published
+// `dev.json` names, never from the push's parent: a pending run can be displaced by the next
+// push, and a crate change in the displaced commit must not be skipped because the commit on top
+// of it is docs. Not shipped: docs, research, Markdown other than `CHANGELOG.md` (compiled into
+// the app), test-only files and workflows other than `release.yml`. Everything else ships,
+// including a path nothing here knows. A stable tag, a hand-started build and the nightly always
+// build; and so does any change that cannot be read (no `dev.json`, a compare that says nothing
+// of order, one too long to list). The skip only means no new build: nothing is published,
+// signed or replaced (ADR 0042).
+//
 // Run as `node tools/ci-scope.mjs <event> <base>` in a checkout whose HEAD is the change: it
 // writes `<scope>=true|false` for each scope to `$GITHUB_OUTPUT` (or stdout), and says on the
 // run which paths decided it. Any failure to read the change runs every scope.
@@ -77,6 +89,8 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+
+import { readPublished } from "./dev-build-order.mjs";
 
 export const SCOPES = ["rust", "web", "app", "scenario", "stories", "tools", "docs"];
 
@@ -381,6 +395,111 @@ export function namedIn(text, name) {
 const isBinary = (path) =>
   /\.(png|jpe?g|gif|ico|icns|webp|woff2?|ttf|otf|gz|zip|wasm|pdf|mp4|bin)$/i.test(path);
 
+// Paths a dev build never reads. A pattern only matches a path it is certain of; the rest ships.
+const NOT_SHIPPED = [
+  /^(docs|research)\//,
+  // A test: Rust's integration tests, vitest and node's, the scenario specs, the stories and the
+  // story baselines. A Rust unit test lives in the source file it tests, so it ships.
+  /^crates\/[^/]+\/tests\//,
+  /^app\/e2e\//,
+  /^app\/src\/.*\.(test|stories)\.(tsx?|mjs)$/,
+  /(^|\/)__screenshots__\//,
+  /^tools\/[^/]+\.test\.mjs$/,
+  // A workflow other than the release one and the one it calls (`runner-image.yml`): `ci`,
+  // `docs`, `stories` and the rest build nothing that is published.
+  /^\.github\/workflows\/(?!(release|runner-image)\.yml$)[^/]+\.ya?ml$/,
+];
+
+/** Whether a dev build reads this path. */
+export function pathShips(path) {
+  if (path === "CHANGELOG.md") return true;
+  if (NOT_SHIPPED.some((re) => re.test(path))) return false;
+  // Markdown under `crates/` and `app/` is compiled or bundled into a build: `purlis-core`'s
+  // `docs/` and `templates/` (`build.rs`) and the plugin's skills (`app/src-tauri/plugin/`). Every
+  // other Markdown file is a page for people.
+  if (path.endsWith(".md")) return /^(crates|app)\//.test(path);
+  return true;
+}
+
+/**
+ * Whether a build of `kind` has anything to build, and why. Only a `dev` build (a push to
+ * `main`) can be skipped; `paths` is every path changed since the published commit, or `null`
+ * when that could not be read.
+ */
+export function shipsOf({ kind, paths }) {
+  if (kind !== "dev") return { ships: true, why: `a ${kind} build always builds` };
+  if (paths === null || paths.length === 0) {
+    return { ships: true, why: "no change since the published commit could be read" };
+  }
+  const shipped = paths.filter(pathShips);
+  if (shipped.length > 0) {
+    return { ships: true, why: `it ships ${shipped.slice(0, 5).join(", ")}` };
+  }
+  return {
+    ships: false,
+    why: `nothing a build reads changed (${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ", ..." : ""})`,
+  };
+}
+
+const COMPARE_PAGE = 100;
+const COMPARE_PAGES = 3;
+
+/**
+ * [`shipsOf`] for the push of `sha`, read from the forge through `api` (a function from `gh api`'s
+ * arguments to what it printed, throwing when it fails): the paths changed between the commit the
+ * published `dev.json` names and `sha`. Whatever cannot be read says `ships`.
+ */
+export function askShips({ repo, kind, sha, api }) {
+  if (kind !== "dev") return shipsOf({ kind, paths: null });
+  try {
+    const published = readPublished({ repo, api });
+    if (published === null) return { ships: true, why: "the dev channel serves nothing yet" };
+    const paths = [];
+    for (let page = 1; page <= COMPARE_PAGES; page += 1) {
+      const compared = JSON.parse(
+        api([`repos/${repo}/compare/${published.sha}...${sha}?per_page=${COMPARE_PAGE}&page=${page}`]),
+      );
+      // Only a build ahead of the published one is measured; `dev-build-order.mjs` rules on any
+      // other standing (behind, identical, diverged).
+      if (compared.status !== "ahead") {
+        return { ships: true, why: `the compare says ${compared.status}, which is not a change to measure` };
+      }
+      const files = compared.files ?? [];
+      for (const file of files) {
+        paths.push(file.filename);
+        if (file.previous_filename) paths.push(file.previous_filename);
+      }
+      if (files.length < COMPARE_PAGE) {
+        const answer = shipsOf({ kind, paths });
+        return { ...answer, why: `since ${published.sha}: ${answer.why}` };
+      }
+    }
+    return { ships: true, why: "the change is too long for the forge to list in full" };
+  } catch (error) {
+    return { ships: true, why: `the change could not be read (${error.message})` };
+  }
+}
+
+function ghApi(args) {
+  return execFileSync("gh", ["api", ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 1 << 28,
+  });
+}
+
+// `ships <kind> <sha>`: writes `ships=true|false` to `$GITHUB_OUTPUT` (or stdout) and says why.
+function mainShips([kind, sha]) {
+  const out = process.env.GITHUB_OUTPUT;
+  const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
+  const repo = process.env.GITHUB_REPOSITORY;
+  const answer = repo
+    ? askShips({ repo, kind, sha, api: ghApi })
+    : { ships: true, why: "GITHUB_REPOSITORY is not set" };
+  say(`ships=${answer.ships}`);
+  console.log(`ships=${answer.ships}: ${answer.why}`);
+}
+
 function main([event, base]) {
   const out = process.env.GITHUB_OUTPUT;
   const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
@@ -431,4 +550,8 @@ function main([event, base]) {
   }
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main(process.argv.slice(2));
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const [first, ...rest] = process.argv.slice(2);
+  if (first === "ships") mainShips(rest);
+  else main([first, ...rest]);
+}

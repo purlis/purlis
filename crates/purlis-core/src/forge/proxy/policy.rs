@@ -121,9 +121,15 @@ pub enum Class {
     /// An archive or a release download of a repo.
     PublicRead,
     PullRequestWrite,
+    /// A merge `guards.merge` = `log` or `off` let through: a pull request or merge request merge,
+    /// or GitLab's cancel of merge-when-pipeline-succeeds.
+    MergeWrite,
     CommentWrite,
     IssueWrite,
     LabelWrite,
+    /// A rerun of a workflow run of the chat's repo (#7358), or a retry or cancel of a GitLab
+    /// pipeline or job.
+    CiWrite,
     GraphqlQuery,
     /// The batch call of Git LFS, asking for download addresses only.
     LfsBatch,
@@ -241,6 +247,45 @@ const DOWNLOAD_HOSTS: &[&str] = &[
 pub fn is_download_host(host: &str) -> bool {
     DOWNLOAD_HOSTS.contains(&host)
 }
+
+/// Whether `host` is where GitHub Actions keeps a run's logs and artifacts (#7358): `*.actions.githubusercontent.com`
+/// (one label under it, as `pipelines.` and `results-receiver.`, but never `token.` or `vstoken.`) and Actions results storage,
+/// `productionresultssa<digits>.blob.core.windows.net`. **Never a bare `*.blob.core.windows.net`**,
+/// which is anyone's storage account. The address is pre-signed, so it is followed once, by a GET
+/// and with no credential, and only for the chat on its unix socket: it is never tunnelled to, so
+/// it is on no [`DOWNLOAD_HOSTS`] list and the chat's own egress still refuses it.
+pub fn is_ci_storage_host(host: &str) -> bool {
+    let label = |l: &str| {
+        !l.is_empty()
+            && l.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !l.starts_with('-')
+    };
+    if let Some(sub) = host.strip_suffix(".actions.githubusercontent.com") {
+        // `token.` and `vstoken.` mint Actions tokens: never a place a log is kept.
+        return label(sub) && !matches!(sub, "token" | "vstoken");
+    }
+    host.strip_suffix(".blob.core.windows.net")
+        .and_then(|account| account.strip_prefix("productionresultssa"))
+        .is_some_and(|n| (1..=5).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Where gitlab.com keeps a job's artifacts and archived log: Google Cloud Storage, in the
+/// one bucket GitLab names for it, `gitlab-gprd-artifacts`. **Never a bare `storage.googleapis.com`**,
+/// which is anyone's bucket. `path` is the address's path as the URL parser left it, so a `..` in it
+/// is already resolved. Only gitlab.com's own redirect is followed ([`GITLAB_COM`]): a self-hosted
+/// GitLab serves a job's log and artifacts itself, and its object storage (an operator's choice
+/// of host) is not carried. As GitHub's, the address is pre-signed: followed once, by a GET, with
+/// no credential.
+pub fn is_gitlab_ci_storage(host: &str, path: &str) -> bool {
+    host == "storage.googleapis.com"
+        && path
+            .strip_prefix("/gitlab-gprd-artifacts/")
+            .is_some_and(|object| !object.is_empty())
+}
+
+/// The one GitLab host whose redirects to [`is_gitlab_ci_storage`] are followed.
+pub const GITLAB_COM: &str = "gitlab.com";
 
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
 const NON_REPO_READS: &[(&[&str], Kind)] = &[
@@ -477,7 +522,30 @@ impl ChatPolicy {
 
     /// Decide one request. `body` is what [`body_need`] asked for: nothing for most requests.
     pub fn decide(&self, head: &RequestHead, body: &[u8], objects: &dyn ObjectRepo) -> Decision {
-        match self.try_decide(head, body, objects) {
+        self.decide_as(head, body, objects, false)
+    }
+
+    /// [`Self::decide`] with the merge routes open, for `guards.merge` = `log` or `off`: the REST
+    /// and GraphQL merges, auto-merge and the merge queue of [`graphql::merge_mutation`] and
+    /// [`rest::merge_class`], each still tied to a recorded repo of the chat by the same checks
+    /// as any write. A request that is anything else is decided exactly as [`Self::decide`] does.
+    pub fn decide_merging(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+    ) -> Decision {
+        self.decide_as(head, body, objects, true)
+    }
+
+    fn decide_as(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+        merging: bool,
+    ) -> Decision {
+        match self.try_decide(head, body, objects, merging) {
             Ok(allowed) => Decision::Allow(allowed),
             Err(refusal) => Decision::Refuse(refusal),
         }
@@ -488,6 +556,7 @@ impl ChatPolicy {
         head: &RequestHead,
         body: &[u8],
         objects: &dyn ObjectRepo,
+        merging: bool,
     ) -> Result<Allowed, Refusal> {
         let method = request::method(head).ok_or(Refusal::NotOnList)?;
         let host = request::host(head)?;
@@ -592,7 +661,8 @@ impl ChatPolicy {
             if document.json.is_none() {
                 return Err(Refusal::GraphqlParse);
             }
-            let decided = graphql::decide(kind, &candidates, &document.canonical, objects)?;
+            let decided =
+                graphql::decide(kind, &candidates, &document.canonical, objects, merging)?;
             // Every id in the document was tied to one of the chat's repos, and the credential is
             // asked for each of them, not for the first: a document naming repo B is never sent
             // with repo A's token. One that touches none is a request outside a repo.
@@ -648,7 +718,7 @@ impl ChatPolicy {
             } else {
                 commands::parse(body, head.content_type.as_deref())?
             };
-            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo)?;
+            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo, merging)?;
             let mut answer = allowed(repo, class, Surface::Api, segments, &target);
             if let Some(b) = parsed {
                 answer.canonical_media = Some(b.media);
@@ -1016,5 +1086,73 @@ impl crate::heldact::Recorded for RecordedRepos {
         self.0
             .iter()
             .any(|r| r.path.eq_ignore_ascii_case(repo.as_str()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_ci_storage_host, is_gitlab_ci_storage};
+
+    #[test]
+    fn gitlab_com_artifact_storage_is_named_exactly() {
+        for (host, path) in [
+            (
+                "storage.googleapis.com",
+                "/gitlab-gprd-artifacts/ab/cd/x.zip",
+            ),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts/x"),
+        ] {
+            assert!(is_gitlab_ci_storage(host, path), "{host}{path}");
+        }
+        for (host, path) in [
+            ("storage.googleapis.com", "/"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts/"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts-evil/x"),
+            ("storage.googleapis.com", "/attacker-bucket/x"),
+            ("storage.googleapis.com", "/other/gitlab-gprd-artifacts/x"),
+            ("gitlab-gprd-artifacts.storage.googleapis.com", "/x"),
+            (
+                "storage.googleapis.com.evil.example",
+                "/gitlab-gprd-artifacts/x",
+            ),
+            ("evilstorage.googleapis.com", "/gitlab-gprd-artifacts/x"),
+            (
+                "pipelines.actions.githubusercontent.com",
+                "/gitlab-gprd-artifacts/x",
+            ),
+        ] {
+            assert!(!is_gitlab_ci_storage(host, path), "{host}{path}");
+        }
+    }
+
+    #[test]
+    fn actions_log_and_artifact_storage_is_named_exactly() {
+        for host in [
+            "pipelines.actions.githubusercontent.com",
+            "results-receiver.actions.githubusercontent.com",
+            "productionresultssa0.blob.core.windows.net",
+            "productionresultssa19.blob.core.windows.net",
+        ] {
+            assert!(is_ci_storage_host(host), "{host}");
+        }
+        for host in [
+            "actions.githubusercontent.com",
+            "a.b.actions.githubusercontent.com",
+            "-x.actions.githubusercontent.com",
+            "token.actions.githubusercontent.com",
+            "vstoken.actions.githubusercontent.com",
+            "productionresultssa123456.blob.core.windows.net",
+            "pipelines.actions.githubusercontent.com.evil.example",
+            "evilactions.githubusercontent.com",
+            "productionresultssa.blob.core.windows.net",
+            "productionresultssa1a.blob.core.windows.net",
+            "attacker.blob.core.windows.net",
+            "blob.core.windows.net",
+            "productionresultssa1.blob.core.windows.net.evil.example",
+            "raw.githubusercontent.com",
+        ] {
+            assert!(!is_ci_storage_host(host), "{host}");
+        }
     }
 }

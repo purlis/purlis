@@ -48,7 +48,20 @@ fn rulesets_and_branch_protection_are_refused_to_read_and_to_write() {
     let s = Scene::single();
     for (method, host, target) in [
         ("POST", "api.github.com", "/repos/acme/app/rulesets"),
-        ("GET", "api.github.com", "/repos/acme/app/rulesets"),
+        (
+            "GET",
+            "api.github.com",
+            "/repos/acme/app/rulesets/9/history",
+        ),
+        ("GET", "api.github.com", "/repos/acme/app/rules"),
+        ("GET", "api.github.com", "/repos/acme/app/rules/branches"),
+        ("PUT", "api.github.com", "/repos/acme/app/rulesets/9"),
+        ("DELETE", "api.github.com", "/repos/acme/app/rulesets/9"),
+        (
+            "POST",
+            "api.github.com",
+            "/repos/acme/app/rules/branches/main",
+        ),
         (
             "PUT",
             "api.github.com",
@@ -154,14 +167,10 @@ fn a_write_route_that_is_not_on_the_list_is_refused_whatever_it_is() {
         (
             "POST",
             "api.github.com",
-            "/repos/acme/app/actions/runs/9/rerun",
+            "/repos/acme/app/actions/runs/9/cancel",
         ),
         ("POST", "gitlab.com", "/api/v4/projects/42/pipeline"),
-        (
-            "POST",
-            "gitlab.com",
-            "/api/v4/projects/42/pipelines/9/retry",
-        ),
+        ("POST", "gitlab.com", "/api/v4/projects/42/trigger/pipeline"),
         (
             "POST",
             "gitlab.com",

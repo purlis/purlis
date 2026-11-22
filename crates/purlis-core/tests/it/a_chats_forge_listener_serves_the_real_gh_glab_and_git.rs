@@ -109,9 +109,26 @@ impl Forge {
                 Reply::new(404, "application/json", br#"{"message":"Not Found"}"#.to_vec())
             }
             ("POST", "api.github.com/graphql") => self.json(&graphql_answer(&body)),
+            ("PUT", "api.github.com/repos/acme/app/pulls/1/merge") => {
+                self.json(r#"{"merged":true,"sha":"abc","message":"Pull Request successfully merged"}"#)
+            }
+            ("PUT", "gitlab.com/api/v4/projects/group%2Fproj/merge_requests/1/merge") => {
+                self.json(r#"{"iid":1,"state":"merged"}"#)
+            }
             ("GET", "gitlab.com/api/v4/user") => self.json(r#"{"id":1,"username":"tanuki"}"#),
             ("GET", p) if p.starts_with("gitlab.com/api/v4/projects/group%2Fproj/merge_requests") => {
                 self.json("[]")
+            }
+            // What `glab ci` reads and retries.
+            ("GET", "gitlab.com/api/v4/projects/group%2Fproj/pipelines") => self.json(
+                r#"[{"id":9,"iid":3,"project_id":42,"status":"failed","ref":"main","sha":"abc","web_url":"https://gitlab.com/group/proj/-/pipelines/9"}]"#,
+            ),
+            ("GET", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5") => self.json(JOB),
+            ("GET", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5/trace") => {
+                Reply::new(200, "text/plain", b"Running with the runner\nJOBLOGLINE\n".to_vec())
+            }
+            ("POST", "gitlab.com/api/v4/projects/group%2Fproj/pipelines/9/retry") => {
+                self.json(r#"{"id":9,"project_id":42,"status":"pending","ref":"main"}"#)
             }
             ("GET", "gitlab.com/api/v4/projects/group%2Fproj") => self.json(
                 r#"{"id":42,"name":"proj","path_with_namespace":"group/proj","default_branch":"main"}"#,
@@ -138,6 +155,9 @@ impl Forge {
         }
     }
 }
+
+/// A finished job, as GitLab answers one.
+const JOB: &str = r#"{"id":5,"name":"build","stage":"test","status":"success","ref":"main","web_url":"https://gitlab.com/group/proj/-/jobs/5","pipeline":{"id":9,"project_id":42,"status":"success","ref":"main"}}"#;
 
 struct Reply {
     status: u16,
@@ -355,6 +375,11 @@ fn app_relay(door: std::net::SocketAddr, world: &World, pin: Arc<dyn Pin>) -> Do
 
 /// [`setup`], its listeners checking every push with `gate`.
 fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
+    setup_in(gate, World::new())
+}
+
+/// [`setup_with`], on `world`.
+fn setup_in(gate: Option<Arc<dyn PushGate>>, world: World) -> Setup {
     let dir = tempfile::Builder::new()
         .prefix("fp")
         .tempdir_in("/tmp")
@@ -364,7 +389,7 @@ fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     }
     let forge = make_forge(dir.path());
-    let mut world = World::new();
+    let mut world = world;
     world.wiring.upstream = forge.clone();
     let seen = Arc::new(Seen::default());
     world.wiring.observe = Some(seen.clone());
@@ -712,6 +737,42 @@ fn glab_reaches_the_forge_through_connect_and_the_chats_own_authority() {
 }
 
 #[test]
+fn glab_lists_pipelines_reads_a_job_log_and_retries_a_pipeline_through_the_route() {
+    purlis_core::unsteered!();
+    // `tool` fails a run that sets `PURLIS_PROXY_REAL_CLIENTS` (CI does) when `glab` is missing.
+    if !tool("glab") {
+        return;
+    }
+    let s = setup();
+    let (ok, text) = s.glab(&["ci", "list", "-R", "group/proj"]);
+    assert!(ok, "glab ci list: {text}");
+    let (ok, text) = s.glab(&["ci", "trace", "5", "-R", "group/proj"]);
+    assert!(ok && text.contains("JOBLOGLINE"), "glab ci trace: {text}");
+    let (ok, text) = s.glab(&[
+        "api",
+        "-X",
+        "POST",
+        "projects/group%2Fproj/pipelines/9/retry",
+    ]);
+    assert!(ok, "glab api pipeline retry: {text}");
+    assert!(
+        s.forge_was_sent("pipelines/9/retry"),
+        "the retry did not reach the forge"
+    );
+    // Nothing a tool sent was refused, and the forge saw the real token only.
+    s.assert_clean();
+    assert!(s.forge_saw_the_real_token());
+    // A job's retry can start a manual job at once, so it is not carried: `glab ci retry` fails
+    // and the forge never hears of it.
+    let (ok, text) = s.glab(&["ci", "retry", "5", "-R", "group/proj"]);
+    assert!(!ok, "glab ci retry of a job succeeded: {text}");
+    assert!(
+        !s.forge_was_sent("jobs/5/retry"),
+        "a job retry reached the forge"
+    );
+}
+
+#[test]
 fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
     purlis_core::unsteered!();
     let have_gh = tool("gh");
@@ -779,6 +840,26 @@ fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
                 ],
                 "/merge",
             ),
+            (
+                "another project's job log, by its numeric id",
+                vec!["api", "projects/43/jobs/5/trace"],
+                "projects/43",
+            ),
+            (
+                "a manual job's play",
+                vec!["api", "-X", "POST", "projects/group%2Fproj/jobs/5/play"],
+                "/play",
+            ),
+            (
+                "a protected branch's removal",
+                vec![
+                    "api",
+                    "-X",
+                    "DELETE",
+                    "projects/group%2Fproj/protected_branches/main",
+                ],
+                "protected_branches",
+            ),
         ] {
             let before = s.refusals();
             let (ok, text) = s.glab(&args);
@@ -791,6 +872,61 @@ fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
             assert!(!text.contains(REAL), "{text}");
         }
     }
+}
+
+/// `guards.merge` = `log`: the same merges the test above sees refused go through, each recorded
+/// once for the chat and the repo, and what stays refused is still refused.
+#[test]
+fn gh_and_glab_merge_where_guards_merge_is_log_and_are_still_refused_another_repo_and_the_token() {
+    purlis_core::unsteered!();
+    let have_gh = tool("gh");
+    let have_glab = tool("glab");
+    if !have_gh && !have_glab {
+        return;
+    }
+    let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+    let kept = lines.clone();
+    let stance = purlis_core::forge::mergestance::PolicyMergeStance::reading(
+        || purlis_core::enforcement::Mode::Log,
+        move |_, said| kept.lock().unwrap().push(said.to_owned()),
+    );
+    let s = setup_in(None, World::with_merge_stance(Arc::new(stance)));
+    if have_gh {
+        let (ok, text) = s.gh(&["api", "-X", "PUT", "repos/acme/app/pulls/1/merge"]);
+        assert!(ok, "gh, a merge under log: {text}");
+        assert!(s.forge_was_sent("pulls/1/merge"), "the merge was not sent");
+        // Another repo, and the token, stay out of reach.
+        let before = s.refusals();
+        let (ok, text) = s.gh(&["api", "-X", "PUT", "repos/acme/other/pulls/1/merge"]);
+        assert!(!ok && s.refusals() > before, "another repo's merge: {text}");
+        assert!(!s.forge_was_sent("acme/other"));
+        let (_, text) = s.gh(&["auth", "token"]);
+        assert!(
+            !text.contains(REAL),
+            "gh auth token showed the token: {text}"
+        );
+    }
+    if have_glab {
+        let (ok, text) = s.glab(&[
+            "api",
+            "-X",
+            "PUT",
+            "projects/group%2Fproj/merge_requests/1/merge",
+        ]);
+        assert!(
+            !text.contains("purlis refused"),
+            "glab, a merge under log: {text}"
+        );
+        assert!(s.forge_was_sent("merge_requests/1/merge"), "{ok} {text}");
+    }
+    let expected = usize::from(have_gh) + usize::from(have_glab);
+    let lines = lines.lock().unwrap();
+    assert_eq!(lines.len(), expected, "one line for each merge: {lines:?}");
+    assert!(
+        lines
+            .iter()
+            .all(|said| said.ends_with("acme/app") || said.ends_with("group/proj"))
+    );
 }
 
 #[test]

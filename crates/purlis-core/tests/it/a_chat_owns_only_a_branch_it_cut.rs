@@ -19,6 +19,7 @@ use purlis_core::worktree::{self, Located, Refusal};
 
 const CHAT: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
 const OTHER: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2B";
+const PROJECT: &str = "/work/project";
 const HOST: &str = "github.com";
 const REPO: &str = "acme/app";
 
@@ -70,7 +71,7 @@ fn a_cut_may_not_take_the_name_of_a_branch_a_remote_has() {
 }
 
 fn own(config: &Path, chat: &str) -> Vec<String> {
-    createdbranches::created_by(config, chat, HOST, REPO)
+    createdbranches::created_by(config, Path::new(PROJECT), chat, HOST, REPO)
 }
 
 fn located(f: &support::Fixture, piece: &str) -> Located {
@@ -161,6 +162,7 @@ fn a_branch_recorded_as_created_is_its_creating_chats_own_and_no_other_chats() {
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
+        Path::new(PROJECT),
         CHAT,
         &[(HOST.to_owned(), REPO.to_owned(), "task/one".to_owned())],
     )
@@ -171,10 +173,35 @@ fn a_branch_recorded_as_created_is_its_creating_chats_own_and_no_other_chats() {
     assert!(own(config.path(), OTHER).is_empty());
 }
 
+#[test]
+fn another_projects_chat_with_the_same_id_and_an_old_line_with_no_project_own_nothing() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    createdbranches::record(
+        config.path(),
+        Path::new(PROJECT),
+        CHAT,
+        &[(HOST.to_owned(), REPO.to_owned(), "task/one".to_owned())],
+    )
+    .unwrap();
+    let file = createdbranches::file_in(config.path());
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    text.push_str(&format!(
+        "{}\n",
+        serde_json::json!({"chat": CHAT, "host": HOST, "repo": REPO, "branch": "task/old"})
+    ));
+    std::fs::write(&file, text).unwrap();
+
+    assert_eq!(own(config.path(), CHAT), ["task/one"]);
+    let elsewhere =
+        createdbranches::created_by(config.path(), Path::new("/work/other"), CHAT, HOST, REPO);
+    assert!(elsewhere.is_empty());
+}
+
 fn record_line(chat: &str, branch: &str) -> String {
     format!(
         "{}\n",
-        serde_json::json!({"chat": chat, "host": HOST, "repo": REPO, "branch": branch})
+        serde_json::json!({"project": PROJECT, "chat": chat, "host": HOST, "repo": REPO, "branch": branch})
     )
 }
 
@@ -184,6 +211,7 @@ fn a_line_forged_for_another_chats_id_is_not_own_for_this_chat() {
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
+        Path::new(PROJECT),
         OTHER,
         &[(HOST.to_owned(), REPO.to_owned(), "task/theirs".to_owned())],
     )

@@ -141,12 +141,31 @@ fn mutation_allowed(kind: Kind, name: &str) -> bool {
     }
 }
 
+/// The mutations that merge, which `guards.merge` = `log` or `off` puts on the list: a merge, auto
+/// merge on or off, and the merge queue on or off. `mergeBranch` merges with no pull request and
+/// stays refused.
+fn merge_mutation(kind: Kind, name: &str) -> bool {
+    match kind {
+        Kind::GitHub => matches!(
+            name,
+            "mergePullRequest"
+                | "enablePullRequestAutoMerge"
+                | "disablePullRequestAutoMerge"
+                | "enqueuePullRequest"
+                | "dequeuePullRequest"
+        ),
+        Kind::GitLab => name == "mergeRequestAccept",
+    }
+}
+
 /// What a mutation not on the list is, by its name, so the refusal says so.
 fn named_mutation_refusal(name: &str) -> Refusal {
     let n = name.to_ascii_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| n.contains(w));
     if has(&["automerge", "auto_merge"])
         || n == "mergepullrequest"
+        || n == "enqueuepullrequest"
+        || n == "dequeuepullrequest"
         || n == "mergebranch"
         || n.starts_with("mergerequestaccept")
     {
@@ -222,6 +241,7 @@ pub(crate) fn decide<'a>(
     repos: &[&'a AllowedRepo],
     body: &[u8],
     objects: &dyn ObjectRepo,
+    merging: bool,
 ) -> Result<Decided<'a>, Refusal> {
     if body.len() > MAX_BODY {
         return Err(Refusal::BodyUnreadable);
@@ -255,6 +275,7 @@ pub(crate) fn decide<'a>(
         kind,
         repos,
         objects,
+        merging,
         fragments,
         touched: std::cell::RefCell::new(Vec::new()),
     };
@@ -305,6 +326,8 @@ struct Context<'a, 'd> {
     kind: Kind,
     repos: &'a [&'a AllowedRepo],
     objects: &'a dyn ObjectRepo,
+    /// `guards.merge` lets a merge mutation ([`merge_mutation`]) through.
+    merging: bool,
     fragments: HashMap<&'d str, &'d FragmentDefinition<'d, String>>,
     /// Indexes into `repos` of each repo the document named, once each, in the order met.
     touched: std::cell::RefCell<Vec<usize>>,
@@ -601,7 +624,9 @@ impl<'d> Context<'_, 'd> {
             if field.name == "__typename" {
                 continue;
             }
-            if !mutation_allowed(self.kind, &field.name) {
+            if !mutation_allowed(self.kind, &field.name)
+                && !(self.merging && merge_mutation(self.kind, &field.name))
+            {
                 return Err(named_mutation_refusal(&field.name));
             }
             let mut ids = Vec::new();

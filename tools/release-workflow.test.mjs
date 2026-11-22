@@ -338,10 +338,11 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
       continue;
     }
     const minutes = Number(value(body, 4, "timeout-minutes"));
-    // The build is one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092). The gate
+    // The build is one long job: a cold macOS build took 65 to 68 minutes (ADR 0092), and 106 to
+    // 107 by 2026-11-22 (run 45030876196 hit its old 120 and was cancelled). The gate
     // is the other: it waits for this commit's `ci`, which took up to 111 minutes on a push to
     // main in the first week of November 2026.
-    const most = { build: 120, gate: 150 }[name] ?? 90;
+    const most = { build: 150, gate: 150 }[name] ?? 90;
     assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }
@@ -579,4 +580,16 @@ test("a dev publish keeps the last dev builds' runner assets, not only its own",
   const publish = job("publish").join("\n");
   assert.match(publish, /node tools\/dev-runner-assets\.mjs "\$VERSION"/);
   assert.doesNotMatch(publish, /startswith\("purlis-'"\$VERSION"'-"\)/);
+});
+
+test("plan skips a dev build that ships nothing, asks before the order is asked, and says so in the summary", () => {
+  const plan = job("plan").map((line) => line.trim());
+  const ships = plan.findIndex((l) => l.startsWith('why=$(GITHUB_OUTPUT="$ships_out" node tools/ci-scope.mjs ships dev "$SHA")'));
+  assert.notEqual(ships, -1, "plan does not ask tools/ci-scope.mjs ships");
+  // Only a dev build is asked, and never after something already skipped it.
+  assert.equal(plan.slice(0, ships).findLast((l) => l.startsWith("if [")), 'if [ "$DEV" = true ] && [ "$skip" != "true" ]; then');
+  assert.ok(plan.slice(ships).some((l) => l.includes("skip=true; publish=false")));
+  assert.ok(plan.slice(ships, ships + 14).some((l) => l.includes(">> \"$GITHUB_STEP_SUMMARY\"")));
+  assert.ok(ships < plan.indexOf('order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")'));
+  assert.ok(ships < plan.indexOf('} >> "$GITHUB_OUTPUT"'));
 });

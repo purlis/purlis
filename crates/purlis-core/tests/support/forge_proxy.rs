@@ -48,6 +48,19 @@ impl ObjectRepo for Objects {
     }
 }
 
+/// [`Objects`] that count each ask: how often the proxy resolved a node id.
+pub struct CountingObjects {
+    pub known: Objects,
+    pub asked: Arc<AtomicUsize>,
+}
+
+impl ObjectRepo for CountingObjects {
+    fn repo_of(&self, kind: Kind, host: &str, id: &str) -> Option<String> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        self.known.repo_of(kind, host, id)
+    }
+}
+
 pub struct Scene {
     pub proxy: ForgeProxy,
     pub a: ChatId,
@@ -86,7 +99,24 @@ impl Scene {
         Self::build(token_kind, objects, true)
     }
 
+    /// As [`Scene::with`], with the proxy changed by `tune` before the chats are enrolled.
+    pub fn tuned(
+        objects: impl ObjectRepo + 'static,
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, false, tune)
+    }
+
     fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
+        Self::build_tuned(token_kind, objects, ghes, |proxy| proxy)
+    }
+
+    fn build_tuned(
+        token_kind: TokenKind,
+        objects: impl ObjectRepo + 'static,
+        ghes: bool,
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
         let proxy = ForgeProxy::new(
             Box::new(Creds {
@@ -95,6 +125,7 @@ impl Scene {
             }),
             Box::new(objects),
         );
+        let proxy = tune(proxy);
         let a = ChatId::new("chat-a");
         let b = ChatId::new("chat-b");
         let mut a_repos = vec![
@@ -169,6 +200,21 @@ impl Scene {
             target,
             Auth::Bearer(self.a_sentinel.expose()),
             b"",
+        )
+    }
+
+    /// `chat-a` sends a write whose `Content-Type` the test names, whatever the body looks like.
+    pub fn send_typed(&self, host: &str, target: &str, content_type: &str, body: &[u8]) -> Outcome {
+        let head = RequestHead::new("POST", host, 443, target);
+        let mut headers = headers(Auth::Bearer(self.a_sentinel.expose()));
+        headers.push(("Content-Type".into(), content_type.into()));
+        self.proxy.handle(
+            &self.a,
+            &Inbound {
+                head: &head,
+                headers: &headers,
+                body,
+            },
         )
     }
 

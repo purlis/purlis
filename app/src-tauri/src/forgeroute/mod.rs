@@ -65,10 +65,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{
     AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
-    CredentialSource, ForgeProxy, HeldSink, Inbound, NoObjects, Outcome, Refusal, TokenKind,
+    CredentialSource, ForgeProxy, HeldSink, Inbound, Outcome, Refusal, TokenKind,
 };
 use purlis_core::secrets::keyring::Secret;
 
+pub mod objects;
 pub mod prod;
 
 #[cfg(test)]
@@ -185,13 +186,14 @@ pub trait Recorded: Send + Sync {
     /// The branches of `repo` that the chat `chat` itself created through the route, from the
     /// app's own record of them: which the chat may push although they exist on the forge. Any
     /// doubt is none: the route refuses any update to a branch not named here (the person pushes it),
-    /// and the chat's id is the key, so a chat with another id owns none of them.
+    /// and the project and the chat's id are the key, so a chat with another id, or of another
+    /// project, owns none of them.
     fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
         Vec::new()
     }
     /// The forge confirmed that `chat` made these `(host, repo path, branch)` branches: keep that
-    /// where no chat can write.
-    fn record_created(&self, _chat: &str, _created: &[(String, String, String)]) {}
+    /// where no chat can write, keyed by the project and the chat.
+    fn record_created(&self, _project: &Path, _chat: &str, _created: &[(String, String, String)]) {}
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -385,10 +387,21 @@ pub struct Seams {
     /// The administrator's never-allow pin for a project's chats (ADR 0128 D3g), made for each
     /// run and asked by its proxy, its door, its socket and the app's own git on every request.
     pub pin: PinOf,
+    /// How the project's `guards.merge` runs for a run's merges (ADR 0128 D8, 2026-11-22), read
+    /// by its proxy on each merge. The stub holds every merge.
+    pub merges: MergesOf,
 }
 
 /// What makes the pin a run is held to, from its project.
 pub type PinOf = Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::pin::Pin> + Send + Sync>;
+
+/// What makes the merge stance a run is held to, from its project and the strictest policy along
+/// the chain that dispatched its chat (`None` for a chat nobody dispatched).
+pub type MergesOf = Arc<
+    dyn Fn(&Path, Option<&str>) -> Arc<dyn purlis_core::forge::mergestance::MergeStance>
+        + Send
+        + Sync,
+>;
 
 impl Seams {
     /// Every seam as its stub: a build with `forge-wiring` and none of the other slices.
@@ -402,6 +415,7 @@ impl Seams {
             runner_link: Arc::new(NoRunnerLink),
             gate: None,
             pin: Arc::new(|_| Arc::new(purlis_core::forge::pin::NoPin)),
+            merges: Arc::new(|_, _| Arc::new(purlis_core::forge::mergestance::HoldMerges)),
         }
     }
 }
@@ -619,7 +633,7 @@ impl ForgeRoutes {
     /// A run starts. `None` when its project records no repo: there is nothing to proxy, and
     /// nothing else is stopped for it. An error leaves nothing behind.
     pub fn start(&self, chat: &str, run: &str, project: &Path) -> io::Result<Option<RouteParams>> {
-        self.start_for(chat, run, project, None)
+        self.start_for(chat, run, project, None, None)
     }
 
     fn start_for(
@@ -628,6 +642,7 @@ impl ForgeRoutes {
         run: &str,
         project: &Path,
         peer: Option<String>,
+        chain: Option<&str>,
     ) -> io::Result<Option<RouteParams>> {
         // The same run starting again replaces its route, or ends it where nothing is recorded
         // now: the old sentinel stops working either way.
@@ -653,24 +668,31 @@ impl ForgeRoutes {
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
         let trouble = Arc::new(SignInTrouble::default());
-        let mut proxy = ForgeProxy::new(
-            Box::new(ProjectCredentials {
-                chat: chat.to_owned(),
-                project: project.to_owned(),
-                seams: self.seams.clone(),
-                trouble: trouble.clone(),
-                told: self.told.clone(),
-            }),
-            Box::new(NoObjects),
-        )
-        .with_pin(pin.clone());
+        let credentials = Arc::new(ProjectCredentials {
+            chat: chat.to_owned(),
+            project: project.to_owned(),
+            seams: self.seams.clone(),
+            trouble: trouble.clone(),
+            told: self.told.clone(),
+        });
+        // A GraphQL mutation that names a pull request by node id is tied to its repo by asking
+        // the forge, with this run's own credential (`objects`).
+        let objects = objects::RunObjects::new(
+            ChatId::new(run),
+            repos.clone(),
+            Arc::new(objects::ForgeLookup::new(credentials.clone())),
+        );
+        let mut proxy = ForgeProxy::new(Box::new(objects::Shared(credentials)), Box::new(objects))
+            .with_pin(pin.clone())
+            .with_merge_stance((self.seams.merges)(project, chain));
         // Each branch the forge confirms this chat's push made is recorded by the app, under this
         // chat's id: the brokered `purlis worktree push` goes through this same route.
         {
             let recorded = self.seams.recorded.clone();
             let chat = chat.to_owned();
+            let project = project.to_owned();
             proxy = proxy.with_created(Box::new(move |created| {
-                recorded.record_created(&chat, created);
+                recorded.record_created(&project, &chat, created);
             }));
         }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
@@ -783,8 +805,14 @@ impl ForgeRoutes {
     }
 
     /// A start holding its route until it is committed: stopped if the start returns early.
-    pub fn guard(&self, chat: &str, run: &str, project: &Path) -> RouteGuard<'_> {
-        let params = match self.start(chat, run, project) {
+    pub fn guard(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        chain: Option<&str>,
+    ) -> RouteGuard<'_> {
+        let params = match self.start_for(chat, run, project, None, chain) {
             Ok(params) => params,
             Err(refused) => {
                 tracing::warn!("purlis: the forge route of a chat did not start ({refused})");
@@ -963,7 +991,14 @@ impl ForgeRoutes {
         {
             return RunnerForward::Refused;
         }
-        match self.start_for(chat, run, &project, Some(peer.device.clone())) {
+        match self.start_for(
+            chat,
+            run,
+            &project,
+            Some(peer.device.clone()),
+            // A runner's chat carries no record of its chain here, so its merges are held.
+            Some(&purlis_core::enforcement::Resolved::strict().spelled()),
+        ) {
             Ok(Some(params)) => RunnerForward::Desktop(params),
             Ok(None) | Err(_) => RunnerForward::TokenConnections,
         }
@@ -1413,6 +1448,12 @@ pub fn install(held: Arc<dyn HeldSinks>) {
             // Read from policy on each ask: a pin set while a chat is open reaches it at once.
             seams.pin =
                 Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
+            // Likewise `guards.merge`: `log` and `off` let a merge through, `enforce` holds it.
+            seams.merges = Arc::new(|project, chain| {
+                Arc::new(purlis_core::forge::mergestance::PolicyMergeStance::of(
+                    project, chain,
+                ))
+            });
         }
         ForgeRoutes::new(root, std::env::current_exe().unwrap_or_default(), seams)
     });
@@ -1434,8 +1475,13 @@ pub fn routes() -> Option<&'static ForgeRoutes> {
 
 /// A run starts (`chats.rs`): its route, held by a guard that stops it unless the chat opens.
 /// **Slice B puts the params in the run's environment**; until it merges nothing is handed over.
-pub fn guard(chat: &str, run: &str, project: &Path) -> Option<RouteGuard<'static>> {
-    Some(routes()?.guard(chat, run, project))
+pub fn guard(
+    chat: &str,
+    run: &str,
+    project: &Path,
+    chain: Option<&str>,
+) -> Option<RouteGuard<'static>> {
+    Some(routes()?.guard(chat, run, project, chain))
 }
 
 /// The route the app's own git takes for chat `session` ([`ForgeRoutes::git_route`]).

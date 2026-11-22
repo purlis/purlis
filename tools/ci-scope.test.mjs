@@ -27,6 +27,8 @@ import {
   namedIn,
   scopesOf,
   scopesOfPath,
+  shipsOf,
+  askShips,
   webParts,
 } from "./ci-scope.mjs";
 
@@ -1209,4 +1211,134 @@ test("a change that cannot be read runs every scope, part and gated job", () => 
   for (const key of [...SCOPES, ...Object.keys(GATES)]) assert.equal(said[key], "true", key);
   assert.equal(said["web-parts"], "[1,2,3,4]");
   rmSync(dir, { recursive: true });
+});
+
+// ---- `ships`: whether a dev build has anything to build (#7383, R4) ----
+
+const ships = (paths, kind = "dev") => shipsOf({ kind, paths }).ships;
+
+test("a dev build is skipped when everything since the published commit is docs, research, other Markdown, tests or another workflow", () => {
+  assert.equal(ships(["docs/spec.md", "docs/adr/0120-x.md", "research/notes.md"]), false);
+  assert.equal(ships(["README.md", "changes/a-fix.md"]), false);
+  assert.equal(
+    ships([
+      "crates/purlis-core/tests/it/a_thing_works.rs",
+      "app/src/Thing.test.tsx",
+      "app/e2e/specs/opening.e2e.ts",
+      "tools/ci-scope.test.mjs",
+    ]),
+    false,
+  );
+  assert.equal(ships([".github/workflows/ci.yml", ".github/workflows/docs.yml"]), false);
+});
+
+test("a dev build is made when the change reaches a crate, a lockfile, the toolchain, release.yml, CHANGELOG.md or a path nothing knows", () => {
+  for (const path of [
+    "crates/purlis-core/src/lib.rs",
+    "app/src/App.tsx",
+    "Cargo.lock",
+    "app/package-lock.json",
+    "rust-toolchain.toml",
+    ".github/workflows/release.yml",
+    "CHANGELOG.md",
+    "something/new/nobody-heard-of.bin",
+    ".github/actions/rust-toolchain/action.yml",
+    // Called by release.yml.
+    ".github/workflows/runner-image.yml",
+    // Markdown compiled or bundled into a build.
+    "crates/purlis-core/docs/secrets.md",
+    "crates/purlis-core/templates/rust/personas/rust-engineer/persona.md",
+    "app/src-tauri/plugin/skills/x/SKILL.md",
+  ]) {
+    assert.equal(ships([path]), true, path);
+    assert.equal(ships(["docs/spec.md", path]), true, `${path} beside a doc`);
+  }
+});
+
+test("a stable tag, a hand-started build and an unreadable change always build", () => {
+  assert.equal(ships(["docs/spec.md"], "stable"), true);
+  assert.equal(ships(["docs/spec.md"], "dispatch"), true);
+  assert.equal(ships(["docs/spec.md"], "schedule"), true);
+  assert.equal(ships(null), true);
+  assert.equal(ships([]), true);
+});
+
+const compare = (files, status = "ahead") => JSON.stringify({ status, files: files.map((filename) => ({ filename })) });
+const PUBLISHED = "a".repeat(40);
+const PUSHED = "c".repeat(40);
+const forge = ({ files, status, release = "ok", calls = [] }) => (args) => {
+  calls.push(args.at(-1));
+  const url = args.at(-1);
+  if (url.endsWith("releases/tags/dev")) {
+    if (release === "404") throw new Error("gh api: HTTP 404");
+    return JSON.stringify({ assets: [{ name: "dev.json", id: 7 }] });
+  }
+  if (url.endsWith("releases/assets/7")) {
+    return JSON.stringify({ version: "0.5.1-dev.9", notes: `a dev build of ${PUBLISHED}` });
+  }
+  const page = Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? 1);
+  return compare(files.slice((page - 1) * 100, page * 100), status);
+};
+
+test("a displaced crate commit followed by a docs commit is built: the push is measured from what dev.json names, not from its parent", () => {
+  // B (a crate change) was displaced and never built; C (docs) is pushed on top of it.
+  // C's parent is B, and C alone is docs. Since A, which dev.json names, it is B and C.
+  const calls = [];
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    api: forge({ files: ["crates/purlis-core/src/lib.rs", "docs/spec.md"], calls }),
+  });
+  assert.equal(answer.ships, true);
+  assert.ok(calls.some((u) => u.includes(`compare/${PUBLISHED}...${PUSHED}`)), calls.join("\n"));
+});
+
+test("a docs-only change since dev.json's commit is not built", () => {
+  const answer = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    api: forge({ files: ["docs/spec.md", "research/x.md"] }),
+  });
+  assert.equal(answer.ships, false);
+  assert.match(answer.why, /docs\/spec\.md/);
+});
+
+test("when dev.json cannot be read, or the compare says nothing of order, a dev build ships", () => {
+  const ask = (api) => askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, api });
+  assert.equal(ask(forge({ files: ["docs/a.md"], release: "404" })).ships, true);
+  assert.equal(ask(() => { throw new Error("network down"); }).ships, true);
+  assert.equal(ask(forge({ files: ["docs/a.md"], status: "diverged" })).ships, true);
+  assert.equal(ask(forge({ files: ["docs/a.md"], status: "behind" })).ships, true);
+  assert.equal(ask(forge({ files: ["docs/a.md"], status: "identical" })).ships, true);
+});
+
+test("a compare too long to list in full ships, and a rename counts both of its paths", () => {
+  const many = Array.from({ length: 300 }, (_, i) => `docs/page-${i}.md`);
+  assert.equal(
+    askShips({ repo: "purlis/purlis", kind: "dev", sha: PUSHED, api: forge({ files: many }) }).ships,
+    true,
+  );
+  const api = () =>
+    JSON.stringify({
+      status: "ahead",
+      files: [{ filename: "docs/moved.md", previous_filename: "crates/purlis-core/src/old.rs" }],
+    });
+  const answered = askShips({
+    repo: "purlis/purlis",
+    kind: "dev",
+    sha: PUSHED,
+    api: (args) => (args.at(-1).includes("compare") ? api() : forge({ files: [] })(args)),
+  });
+  assert.equal(answered.ships, true);
+});
+
+test("a stable or hand-started build does not even ask the forge", () => {
+  const api = () => {
+    throw new Error("asked");
+  };
+  for (const kind of ["stable", "dispatch", "schedule"]) {
+    assert.equal(askShips({ repo: "r/r", kind, sha: PUSHED, api }).ships, true);
+  }
 });

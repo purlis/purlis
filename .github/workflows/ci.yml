@@ -94,13 +94,20 @@ on:
 # after this lands; walking it back is this `if:` and `scenario-checks`'s `want`.
 
 concurrency:
-  # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
-  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  # The nightly run keeps a group of its own, so it never displaces a merge's run on main.
+  # A push to `main` is grouped by its commit, not its ref: a group holds one running run and ONE
+  # pending run, and a third push cancels the pending one even with `cancel-in-progress: false`
+  # (2026-11-20: the runs on 74e80aac and 7d184670 ended `cancelled`, and `release.yml`'s gate
+  # builds nothing on a cancelled `ci`, so those commits lost their dev builds too). One group
+  # per commit leaves nothing to displace. A merge group's ref is unique to the group already
+  # (`refs/heads/gh-readonly-queue/main/pr-<n>-<sha>`), and a pull request keeps its branch's.
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   # Superseding a PR's run is right: only the newest push is a claim about that branch.
   # Superseding a run on `main` is NOT: every merge's run is the record for that commit, and
   # `main` is protected by nine required checks. Cancelling it leaves the commit with no
   # verified result at all — measured on 2026-09-20, three merges in a row cancelled the
-  # previous merge's run, so three commits on a protected branch were never checked.
+  # previous merge's run, so three commits on a protected branch were never checked. (The group
+  # key above is what keeps it from being cancelled by a later pending run, too.)
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -410,9 +417,12 @@ jobs:
       # suite's heavy neighbours (the theme engine's import tests, 50 to 170 s each) to the same
       # part, and in three parts on 2026-10-27 part 1 summed 51.6 minutes of tests against 35 and
       # 30. On that run's own times four `hash:` parts put at most about 33 minutes in one.
+      # Without the tests `ci/quarantine.toml` lists (ADR 0127), which only the nightly run runs:
+      # `tools/quarantine.mjs` says so as a filterset, `all()` when none is listed. The part's
+      # own `hash:` still places each test by its name.
       - name: Run the tests
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E 'not test(/::in_a_docker_pool$/)'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --workspace --locked --profile ci --partition hash:${{ matrix.part }}/4 -E "not test(/::in_a_docker_pool\$/) & $(node tools/quarantine.mjs nextest)"
       # The slowest tests and test binaries, as notices on the run: what makes the step above
       # slow, readable through the checks API without the job's log. A report, so it never turns
       # the job red.
@@ -1659,7 +1669,7 @@ jobs:
           cargo build --locked -p purlis-cli --bin purlis
           cargo build --locked -p fake-harness --bin fake-harness
       - name: Run the tests
-        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E 'not (package(purlis-app) & test(/^behaviour::/))'
+        run: tools/no-orphans.sh --reap -- cargo nextest run --locked -p purlis-core -p purlis-terminal -p purlis-app -p purlis-browser-engine -p studio-probe -p purlis-crash-handler --profile ci --partition count:${{ matrix.part }}/3 -E "not (package(purlis-app) & test(/^behaviour::/)) & $(node tools/quarantine.mjs nextest)"
       # What makes a part slow, as notices on the run, as in `rust`.
       - name: Annotate the slowest tests
         if: ${{ !cancelled() }}
