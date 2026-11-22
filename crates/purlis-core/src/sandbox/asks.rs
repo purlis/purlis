@@ -279,6 +279,15 @@ impl Asks {
         self.state().asked.clone()
     }
 
+    /// **Whether the person kept `host` on `port` blocked for this chat**: what a proxy asks
+    /// before it carries a host only because the project's `[policy]` does not enforce
+    /// `network`, since Keep blocked holds in every mode (Q308b; the review of #7105).
+    pub fn keeps_blocked(&self, host: &str, port: u16) -> bool {
+        let named = host.strip_suffix('.').unwrap_or(host).to_ascii_lowercase();
+        let parsed = Host::parse(&host_and_port(&named, port)).ok();
+        kept_blocked(&self.state(), parsed.as_ref(), &named, port)
+    }
+
     /// The scope a host allowed live lets `host` on `port` through at, where a host listed
     /// without a port is carried on `defaults`.
     pub fn allows(&self, host: &str, port: u16, defaults: &[u16]) -> Option<By> {

@@ -941,6 +941,15 @@ pub trait SessionHost: Send + Sync {
         let _ = (number, view);
     }
 
+    /// **The run each chat this plane left in the host from before this window is in**, by its
+    /// number, as the host recorded it as the chat started (#6737): what a launch whose record of
+    /// what was open was refused proves which chat a program it left is by, through the run's
+    /// own start in the event log. A chat whose host kept no run is left out, as is every one a
+    /// host that outlives no window holds.
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        Vec::new()
+    }
+
     /// **The browsers this plane left in the host from before this window** (#2025), running
     /// or ended, each answered once: what the put back takes back with their chats
     /// (`crate::chatbrowsers::take_back`). A host in the window's own process outlives no window,
@@ -1142,6 +1151,8 @@ pub(crate) mod pretend {
         pools_held_left: Mutex<Vec<(u32, Vec<std::path::PathBuf>)>>,
         /// How each chat left running is sandboxed, as its host recorded it (#2636).
         ran_in: Mutex<Vec<(u32, Option<purlis_session_protocol::session::RunSandbox>)>>,
+        /// The run each chat left running is in, where a test said ([`Pretend::left_in_run`]).
+        runs_left: Mutex<Vec<(u32, String)>>,
         /// What each session shows, where a test said ([`Pretend::shows`]): what a view of it
         /// is sent first.
         screens: Mutex<Vec<(u32, String)>>,
@@ -1373,6 +1384,11 @@ pub(crate) mod pretend {
         ) {
             lock(&self.seen.left).push((number, plan));
             lock(&self.seen.ran_in).push((number, ran));
+        }
+
+        /// Chat `number`, left running, is in run `run`, as its host recorded it (#6737).
+        pub fn left_in_run(&self, number: u32, run: &str) {
+            lock(&self.seen.runs_left).push((number, run.to_owned()));
         }
 
         /// Chat `number`, left running, is no longer in the host: its program ended there after
@@ -1967,6 +1983,13 @@ pub(crate) mod pretend {
         }
         fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
             std::mem::take(&mut *lock(&self.seen.browsers_left))
+        }
+        fn runs_left(&self) -> Vec<(u32, String)> {
+            lock(&self.seen.runs_left)
+                .iter()
+                .filter(|(number, _)| self.left_running(*number))
+                .cloned()
+                .collect()
         }
     }
 

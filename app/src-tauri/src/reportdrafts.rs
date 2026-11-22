@@ -201,7 +201,12 @@ pub fn failed(held: &Held, chat: u32, name: String, failure: PurlisFailure) -> R
 /// A sandbox block of purlis's own operation in chat `chat` (#1338), held as a draft by the
 /// road every failure of purlis's own takes ([`failed`]). Nothing is said where it is not
 /// held: the block's Notice is shown all the same.
-pub fn own_block(held: &Held, chat: u32, block: purlis_core::sandboxblock::Block) {
+pub fn own_block(
+    held: &Held,
+    chat: u32,
+    block: purlis_core::sandboxblock::Block,
+    command: Option<String>,
+) {
     let Some(name) = held.chats().shown_name(chat) else {
         return;
     };
@@ -211,6 +216,7 @@ pub fn own_block(held: &Held, chat: u32, block: purlis_core::sandboxblock::Block
         name,
         PurlisFailure::SandboxBlock {
             block,
+            command,
             ran_as: ran_as(held, chat),
         },
     );

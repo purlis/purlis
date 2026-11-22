@@ -235,17 +235,23 @@ fn a_press_on_a_request_whose_base_moved_merges_nothing() {
     assert_eq!(holds.every().len(), 1);
 }
 
-/// Q239 (S5): the press merges by the repo's own method, as the forge says it at the press.
+/// Q239 (S5): the press merges by the repo's own method, which is the one the row showed.
 #[test]
 fn a_press_merges_by_the_repos_own_method() {
     purlis_core::unsteered!();
     let holds = Holds::default();
-    holds.raise(4, key(12), facts(), 1_000);
+    let squashing = purlis_core::mergehold::Facts {
+        squash: true,
+        ..facts()
+    };
+    holds.raise(4, key(12), squashing.clone(), 1_000);
     let squashes = Forge {
         squash: true,
         ..Forge::default()
     };
-    asked_once_more(&holds, &key(12));
+    holds
+        .refresh(4, &key(12), key(12), squashing, Reread::AsksOnceMore)
+        .expect("asked once more");
     assert!(
         holds
             .press(4, &key(12), Seen::None, the_window(), &squashes)
@@ -275,6 +281,7 @@ fn facts() -> purlis_core::mergehold::Facts {
         },
         ruleset: purlis_core::mergehold::Ruleset::None,
         approved_by: None,
+        squash: false,
         read_at: 40,
     }
 }

@@ -585,6 +585,7 @@ fn vault_with_a_seed() -> (tempfile::TempDir, brokered::Asker) {
         root: dir.path().to_path_buf(),
         env: Env::of(&[("PATH", "/usr/bin:/bin")]),
         chat: 7,
+        id: Some("01K6ASKINGCHAT00000000000A".to_owned()),
         persona: None,
         folder: None,
         confines: None,

@@ -158,7 +158,26 @@ runs:
         SHUFFLE_SEED: ${{ inputs.repeat != '1' && github.run_id || '' }}
         BASE: ${{ inputs.base }}
         CARGO_PACKAGES: ${{ runner.os == 'Linux' && '--workspace' || '-p purlis-app -p purlis-scenarios -p fake-harness -p purlis-cli' }}
-      run: tools/sandbox-scenarios.sh suite
+      # A red run names its failures in annotations, so the run says which test failed and why
+      # without the log: nextest's own exit code (100) names nothing. GitHub shows ten per step.
+      run: |
+        status=0
+        tools/sandbox-scenarios.sh suite > scenarios.log 2>&1 || status=$?
+        cat scenarios.log
+        if [ "$status" -ne 0 ]; then
+          (grep -E 'test .* \.\.\. FAILED|FAIL \[' scenarios.log || true) | sort -u | head -5 |
+            awk '{gsub(/%/,"%25"); gsub(/\r/,""); print "::error title=failed::" $0}'
+          # Each panic (or failed test's stderr) and the lines after it, one annotation
+          # (percent- and newline-encoded); matched anywhere in a line, as nextest prefixes them.
+          awk '
+            function flush() { if (n) { print "::error title=panicked::" msg; shown++; n = 0 } }
+            /panicked at|--- STDERR:/ { flush(); if (shown >= 5) next; n = 12; msg = "" }
+            n > 0 { gsub(/%/, "%25"); gsub(/\r/, ""); msg = msg $0 "%0A"; if (--n == 0) flush() }
+            END { flush() }
+          ' scenarios.log || true
+          echo "::error title=sandbox scenarios::the suite failed with exit code $status"
+        fi
+        exit "$status"
     - name: The production-timing entries
       if: ${{ !cancelled() && inputs.production-timings == 'true' }}
       shell: bash

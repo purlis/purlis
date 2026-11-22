@@ -53,6 +53,32 @@ pub const DESKTOP_LABEL: &str = "purlis.desktop";
 /// Every runner container's and volume's name starts with this.
 pub const PREFIX: &str = "purlis-runner-";
 
+/// **The label a runner's container carries for the desktop that made it** (#7192): the
+/// [`device_tag`] its names carry, so another desktop on the engine counts it by what it says
+/// and not by how it is named.
+pub const DEVICE_LABEL: &str = "purlis.device";
+
+/// Whether the container `name` is one that serves the runner named `runner` by its label
+/// (the carry's `-copy` or the read's `-read`, [`Made::copy_container`], [`Made::read_container`]),
+/// not a runner's own. Where its runner label is unknown, a name that ends so is taken for one.
+fn serves_a_runner(name: &str, runner: Option<&str>) -> bool {
+    let Some(base) = name
+        .strip_suffix("-copy")
+        .or_else(|| name.strip_suffix("-read"))
+    else {
+        return false;
+    };
+    let Some(runner) = runner else {
+        return true;
+    };
+    let own = format!("{PREFIX}{runner}");
+    base == own
+        || base
+            .strip_prefix(&own)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|tag| crate::runnerlink::is_lower_hex(tag, 8))
+}
+
 /// Where `purlis` is in a runner image (`docs/runner-image.md`).
 pub const PURLIS: &str = "/usr/local/bin/purlis";
 
@@ -341,6 +367,43 @@ pub fn remade_name(pool: &str) -> Result<String, Refused> {
     Ok(format!("{pool}-{hex}"))
 }
 
+/// **The short, public tag a desktop's runners carry in their names** (#7192): the first eight
+/// hex digits of a SHA-256 of its device id (a ULID, which is public: it is what every runner
+/// pins), so a name never holds a key nor a part of an id that two desktops made at the same
+/// moment share. Case never matters, as for any device id.
+pub fn device_tag(device: &str) -> String {
+    use sha2::Digest;
+    sha2::Sha256::digest(device.to_ascii_lowercase().as_bytes())
+        .iter()
+        .take(4)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// **Whether `volume` is a name a runner's home volume can have** (#7192): one of purlis's
+/// ([`PREFIX`]) and one Docker's own rule allows, `[a-zA-Z0-9][a-zA-Z0-9_.-]*`. It is handed to
+/// `--mount type=volume,source=<name>`, where a `,` or `:` would add an option of its own.
+pub fn is_runner_volume_name(volume: &str) -> bool {
+    volume.len() > PREFIX.len()
+        && volume.starts_with(PREFIX)
+        && volume
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+}
+
+/// The name `made`'s container has once `device`'s desktop adopts it.
+fn adopted_container(made: &Made, device: &str) -> String {
+    container_named(made.runner.name(), Some(&device_tag(device)))
+}
+
+/// A runner container's name: `purlis-runner-<name>`, and `-<tag>` for one a desktop owns.
+fn container_named(name: &str, tag: Option<&str>) -> String {
+    match tag {
+        Some(tag) => format!("{PREFIX}{name}-{tag}"),
+        None => format!("{PREFIX}{name}"),
+    }
+}
+
 /// Why a runner container was not made, checked or linked, in words a person reads.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused(pub String);
@@ -606,6 +669,13 @@ pub struct Runner {
     home: String,
     limits: Limits,
     suspends_after: std::time::Duration,
+    /// Which desktop's runner it is, in its container's and volume's names ([`device_tag`]):
+    /// `None` for a runner made before names carried one (#7192), which keeps the names it was
+    /// made under until its desktop adopts it ([`Docker::adopt`]).
+    tag: Option<String>,
+    /// The name of its home volume where that is not the one its names give: a runner adopted
+    /// under a desktop's tag keeps the volume it was made with, which Docker cannot rename.
+    home_volume: Option<String>,
 }
 
 impl Runner {
@@ -648,7 +718,50 @@ impl Runner {
             home: home.to_owned(),
             limits: Limits::default(),
             suspends_after: SUSPEND_AFTER,
+            tag: None,
+            home_volume: None,
         })
+    }
+
+    /// This runner, made by the desktop whose device id is `device` (#7192): its container and
+    /// its home volume carry [`device_tag`] after its name, so two desktops on one Docker engine
+    /// each have a runner of a pool under names of their own.
+    pub fn of_desktop(self, device: &str) -> Runner {
+        Runner {
+            tag: Some(device_tag(device)),
+            ..self
+        }
+    }
+
+    /// This runner, as `device`'s desktop adopts it (#7192): named for that desktop from now on,
+    /// and its home volume kept under the name it has ([`Runner::volume`]).
+    pub fn adopted_by(self, device: &str) -> Runner {
+        let home_volume = Some(self.home_volume.clone().unwrap_or_else(|| self.volume()));
+        Runner {
+            tag: Some(device_tag(device)),
+            home_volume,
+            ..self
+        }
+    }
+
+    /// This runner with its tag and home volume as they were kept (`None` where it was kept
+    /// without): what a row of `runners.json` says.
+    pub fn named_as_kept(self, tag: Option<String>, home_volume: Option<String>) -> Runner {
+        Runner {
+            tag,
+            home_volume,
+            ..self
+        }
+    }
+
+    /// The desktop tag its names carry, where they carry one.
+    pub fn tag(&self) -> Option<&str> {
+        self.tag.as_deref()
+    }
+
+    /// The home volume's name where it is not the one its names give.
+    pub fn home_volume_kept(&self) -> Option<&str> {
+        self.home_volume.as_deref()
     }
 
     /// This runner, held to its pool's `limits` in place of the defaults.
@@ -693,12 +806,15 @@ impl Runner {
 
     /// The container's name.
     pub fn container(&self) -> String {
-        format!("{PREFIX}{}", self.name)
+        container_named(&self.name, self.tag.as_deref())
     }
 
     /// The volume that holds the container's home.
     pub fn volume(&self) -> String {
-        format!("{PREFIX}{}-home", self.name)
+        match (&self.home_volume, &self.tag) {
+            (Some(kept), _) => kept.clone(),
+            (None, tag) => format!("{}-home", container_named(&self.name, tag.as_deref())),
+        }
     }
 
     /// `docker`'s arguments that make and start the runner's container, confined as the
@@ -720,6 +836,9 @@ impl Runner {
         pair("--label", format!("{LABEL}={}", self.name));
         if let Some(desktop) = desktop {
             pair("--label", format!("{DESKTOP_LABEL}={desktop}"));
+        }
+        if let Some(tag) = &self.tag {
+            pair("--label", format!("{DEVICE_LABEL}={tag}"));
         }
         // Said back to the person if a declared tool's program is not in the image (#4354).
         pair(
@@ -2790,6 +2909,9 @@ fn check_by_login(
     ))
 }
 
+/// A runner container: its whole id, its name, and its desktop and device tag labels.
+type RunnerContainer = (String, String, Option<String>, Option<String>);
+
 impl Docker {
     /// The `docker` command at `program`.
     pub fn at(program: impl Into<std::path::PathBuf>) -> Docker {
@@ -4021,6 +4143,151 @@ impl Docker {
         }
     }
 
+    /// **Every runner container on this engine**, whoever made it (#7192): the whole id, the
+    /// name, and the desktop label ([`DESKTOP_LABEL`]) and device tag label ([`DEVICE_LABEL`])
+    /// where it has them, read and never changed. A container that carries a runner's label only
+    /// to carry sign-ins or read a home ([`Made::copy_container`], [`Made::read_container`]) is
+    /// not a runner: it is told by its runner label, which names the runner it serves, so a pool
+    /// whose own name ends in `-copy` is still a runner.
+    fn runner_containers(&self) -> Result<Vec<RunnerContainer>, Refused> {
+        let listed = self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--no-trunc".into(),
+                "--format".into(),
+                // Each label in brackets: one a container does not carry prints as nothing, which
+                // would shift the fields after it.
+                format!(
+                    "{{{{.ID}}}} {{{{.Names}}}} [{{{{.Label \"{DESKTOP_LABEL}\"}}}}] \
+                     [{{{{.Label \"{DEVICE_LABEL}\"}}}}] [{{{{.Label \"{LABEL}\"}}}}]"
+                ),
+                "--filter".into(),
+                format!("label={LABEL}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        // `[]` (or `-`) is a label the container does not carry.
+        let label = |field: Option<&str>| {
+            let value = field?.trim_start_matches('[').trim_end_matches(']');
+            (!value.is_empty() && value != "-").then(|| value.to_owned())
+        };
+        Ok(listed
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split_whitespace();
+                let (id, name) = (fields.next()?, fields.next()?);
+                let desktop = label(fields.next());
+                let device = label(fields.next());
+                let runner = label(fields.next());
+                (fields.next().is_none()
+                    && name.starts_with(PREFIX)
+                    && !serves_a_runner(name, runner.as_deref()))
+                .then(|| (id.to_owned(), name.to_owned(), desktop, device))
+            })
+            .collect())
+    }
+
+    /// **The runners on this engine that another desktop made** (#7192): the ones that carry the
+    /// device tag label ([`DEVICE_LABEL`]) of a desktop that is not `device`'s. Said by what the
+    /// container itself carries, never by what its name looks like (a name
+    /// `purlis-runner-<pool>-<tag>` and a successor's can be the same text) nor by the desktop
+    /// label ([`DESKTOP_LABEL`]), which hashes a config path two desktops can share. A runner
+    /// without a device label was made before it: it cannot be said to be anyone's, so it is not
+    /// counted. Each is named and only named: nothing here stops, removes, renames or links one.
+    pub fn runners_of_other_desktops(&self, device: &str) -> Result<Vec<String>, Refused> {
+        let mine = device_tag(device);
+        Ok(self
+            .runner_containers()?
+            .into_iter()
+            .filter(|(_, _, _, tag)| tag.as_deref().is_some_and(|tag| tag != mine))
+            .map(|(_, name, _, _)| name)
+            .collect())
+    }
+
+    /// **The names of the containers that mount the volume `volume`**, whoever made them and
+    /// whatever they are called: Docker's own answer, read and never changed.
+    fn mounting(&self, volume: &str) -> Result<Vec<String>, Refused> {
+        let listed = self.read(
+            &[
+                "container".into(),
+                "ls".into(),
+                "--all".into(),
+                "--format".into(),
+                "{{.Names}}".into(),
+                "--filter".into(),
+                format!("volume={volume}"),
+            ],
+            MOST_INSPECTED,
+        )?;
+        Ok(listed
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect())
+    }
+
+    /// **Adopts `made`, a runner made before names carried a desktop's tag, for the desktop
+    /// whose device id is `device`** (#7192): its container, by the id kept, is renamed to
+    /// carry the tag, which also says to another desktop that the name is taken. Its home
+    /// volume keeps the name it has ([`Runner::adopted_by`]): Docker cannot rename a volume.
+    ///
+    /// Only the container this desktop made is adopted: one whose name is no longer the old
+    /// one, or that carries another desktop's label (`desktop`, [`DESKTOP_LABEL`]), is refused
+    /// and left as it is. A runner that carries a tag already is returned as it is.
+    pub fn adopt(&self, made: &Made, device: &str, desktop: &str) -> Result<Made, Refused> {
+        if made.runner.tag().is_some() {
+            return Ok(made.clone());
+        }
+        let old = made.runner.container();
+        let found = self
+            .runner_containers()?
+            .into_iter()
+            .find(|(id, _, _, _)| id == made.container.as_str())
+            .ok_or_else(|| {
+                refused(format!(
+                    "Docker lists no container {old}, so it was not adopted"
+                ))
+            })?;
+        let new = adopted_container(made, device);
+        // Renamed already, by an adoption whose row was not kept: the row catches up.
+        if found.1 == new {
+            return Ok(Made {
+                container: made.container.clone(),
+                runner: made.runner.clone().adopted_by(device),
+            });
+        }
+        if found.1 != old {
+            return Err(refused(format!(
+                "the container {old} is now called {}, so another desktop took it and it was \
+                 not adopted",
+                found.1
+            )));
+        }
+        if found.2.as_deref().is_some_and(|label| label != desktop) {
+            return Err(refused(format!(
+                "the container {old} was made by another desktop, so it was not adopted"
+            )));
+        }
+        let adopted = Made {
+            container: made.container.clone(),
+            runner: made.runner.clone().adopted_by(device),
+        };
+        self.run(
+            &[
+                "container".into(),
+                "rename".into(),
+                made.container.as_str().to_owned(),
+                adopted.runner.container(),
+            ],
+            None,
+            MOST_INSPECTED,
+        )?;
+        Ok(adopted)
+    }
+
     /// **Whether an engine answers this `docker` at all** (#4478): a listing Docker and Podman
     /// both answer, and fail where nothing is behind them. It changes nothing.
     pub fn answers(&self) -> Result<(), Refused> {
@@ -4192,11 +4459,26 @@ impl Docker {
         desktop: &str,
         names: &[String],
     ) -> Result<Vec<String>, Refused> {
+        Ok(self.remove_labelled_owned(name, desktop, names, None)?.0)
+    }
+
+    /// [`Docker::remove_labelled`], held to `owned` where one is given (#7192): only a container
+    /// whose id is one of those is removed, and one that is not is left as it is and named in
+    /// the second answer. What the label says (a config path's hash, which two desktops can
+    /// share) is not proof that the container is this desktop's.
+    fn remove_labelled_owned(
+        &self,
+        name: &str,
+        desktop: &str,
+        names: &[String],
+        owned: Option<&[String]>,
+    ) -> Result<(Vec<String>, Vec<String>), Refused> {
         let words = |words: &[&str]| -> Vec<String> {
             words.iter().map(|word| (*word).to_owned()).collect()
         };
         let container = format!("{PREFIX}{name}");
         let mut removed = Vec::new();
+        let mut left = Vec::new();
         let listed = self.read(
             &words(&[
                 "container",
@@ -4223,6 +4505,10 @@ impl Docker {
             if !names.iter().any(|one| one == named) || made_by != desktop {
                 continue;
             }
+            if owned.is_some_and(|owned| !owned.iter().any(|one| one == id)) {
+                left.push(named.to_owned());
+                continue;
+            }
             let id = ContainerId::new(id)?;
             self.run(
                 &words(&["container", "rm", "--force", "--volumes", id.as_str()]),
@@ -4231,7 +4517,7 @@ impl Docker {
             )?;
             removed.push(format!("container {named}"));
         }
-        Ok(removed)
+        Ok((removed, left))
     }
 
     /// **Removes what a make of the runner `name` by `desktop` left behind** (#2869): its
@@ -4240,12 +4526,17 @@ impl Docker {
     /// volume of exactly its name, only once no container of that name is left, whatever its
     /// labels. One another desktop made, or one made before the label, is left as it is. What it
     /// removed, each named. Only for a name no kept runner holds: the caller says so.
-    pub fn remove_leftovers_of(&self, name: &str, desktop: &str) -> Result<Vec<String>, Refused> {
-        let words = |words: &[&str]| -> Vec<String> {
-            words.iter().map(|word| (*word).to_owned()).collect()
-        };
-        let container = format!("{PREFIX}{name}");
-        let volume = format!("{PREFIX}{name}-home");
+    pub fn remove_leftovers_of(
+        &self,
+        name: &str,
+        desktop: &str,
+        tag: Option<&str>,
+        home_volume: Option<&str>,
+    ) -> Result<Vec<String>, Refused> {
+        // Named as its runner is, with the tag of the desktop that owns it (#7192).
+        let container = container_named(name, tag);
+        // An adopted runner keeps the home volume it was made with (#7192).
+        let volume = home_volume.map_or_else(|| format!("{container}-home"), str::to_owned);
         // The containers that carried sign-ins to it (#4011) and read its home (#4861) are its
         // leftovers too.
         let mut removed = self.remove_labelled(
@@ -4257,6 +4548,54 @@ impl Docker {
                 format!("{container}-read"),
             ],
         )?;
+        self.remove_home_volume_if_free(&container, &volume, &mut removed)?;
+        Ok(removed)
+    }
+
+    /// **Removes the container names `name`'s runner had before names carried a desktop's tag,
+    /// of the ones this desktop recorded** (#7192): only a container whose id is one of `owned`
+    /// (the ids of the runners this desktop keeps), by the desktop label too. Another desktop's
+    /// container of the same name and label (a config path two desktops share) is left as it
+    /// is, and named in the second answer, the first being what was removed. The home volume
+    /// goes only after a container of this desktop did.
+    pub fn remove_untagged_leftovers_of(
+        &self,
+        name: &str,
+        desktop: &str,
+        owned: &[String],
+    ) -> Result<(Vec<String>, Vec<String>), Refused> {
+        let container = container_named(name, None);
+        let (mut removed, left) = self.remove_labelled_owned(
+            name,
+            desktop,
+            &[
+                container.clone(),
+                format!("{container}-copy"),
+                format!("{container}-read"),
+            ],
+            Some(owned),
+        )?;
+        if !removed.is_empty() {
+            self.remove_home_volume_if_free(
+                &container,
+                &format!("{container}-home"),
+                &mut removed,
+            )?;
+        }
+        Ok((removed, left))
+    }
+
+    /// Removes the home volume `volume` once no container of the name `container` is left,
+    /// whoever made it, and none mounts it.
+    fn remove_home_volume_if_free(
+        &self,
+        container: &str,
+        volume: &str,
+        removed: &mut Vec<String>,
+    ) -> Result<(), Refused> {
+        let words = |words: &[&str]| -> Vec<String> {
+            words.iter().map(|word| (*word).to_owned()).collect()
+        };
         // A home volume goes only once no container of its name is left, whoever made it.
         let still = self.read(
             &words(&[
@@ -4271,7 +4610,7 @@ impl Docker {
             MOST_INSPECTED,
         )?;
         if still.lines().any(|line| line.trim() == container) {
-            return Ok(removed);
+            return Ok(());
         }
         let volumes = self.read(
             &words(&[
@@ -4283,15 +4622,17 @@ impl Docker {
             ]),
             MOST_INSPECTED,
         )?;
-        if volumes.lines().any(|line| line.trim() == volume) {
+        // A tagged name and a successor's can spell the same volume (#7192): one a container
+        // still mounts is that container's, whatever its runner is called, and stays.
+        if volumes.lines().any(|line| line.trim() == volume) && self.mounting(volume)?.is_empty() {
             self.run(
-                &words(&["volume", "rm", "--force", &volume]),
+                &words(&["volume", "rm", "--force", volume]),
                 None,
                 MOST_INSPECTED,
             )?;
             removed.push(format!("volume {volume}"));
         }
-        Ok(removed)
+        Ok(())
     }
 
     /// **The version `made`'s runner runs** (#2749), as its `purlis --version` says it, once

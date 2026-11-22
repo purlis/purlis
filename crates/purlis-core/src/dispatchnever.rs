@@ -360,6 +360,9 @@ fn seal_in_step(
     anchor: &str,
     adds: &[String],
 ) -> io::Result<()> {
+    if crate::secrets::seal::can_seal() {
+        crate::sandbox::local::mark_sealed(anchor)?;
+    }
     let mut set = set_of(whole, entries);
     let texts: Vec<String> = entries.iter().map(Entry::text).collect();
     let adds: Vec<(&str, &str)> = adds.iter().map(|text| (NEVER, text.as_str())).collect();
@@ -423,15 +426,19 @@ fn sealed_standing(root: &Path) -> Sealed {
     let anchor = crate::sandbox::local::anchor_key(root);
     let verified = set_of(&whole, &entries).verify(STORE, &anchor);
     match verified.standing {
-        Standing::Holds if verified.missing == 0 => Sealed::Holds,
+        Standing::Holds if verified.missing == 0 => {
+            crate::sandbox::local::note_sealed(&anchor);
+            Sealed::Holds
+        }
         Standing::Holds | Standing::Broken | Standing::Unanchored => Sealed::Unread,
         // The key does not read: nevers present, by the file or by a marker the keyring keeps,
-        // are unknown; none at all is none.
+        // are unknown; none at all is none. A keyring that did not start keeps no marker only
+        // where no sealed record says one was used (#7153).
         Standing::Unverifiable => {
-            if entries.is_empty()
-                && !Set::anchored(STORE, &anchor)
-                && !crate::secrets::seal::kept_exists(WHOLE_KIND, &anchor)
-            {
+            let none_kept = crate::sandbox::local::no_keyring_at(root)
+                || (!Set::anchored(STORE, &anchor)
+                    && !crate::secrets::seal::kept_exists(WHOLE_KIND, &anchor));
+            if entries.is_empty() && none_kept {
                 Sealed::Holds
             } else {
                 Sealed::Unread
@@ -446,6 +453,18 @@ fn sealed_standing(root: &Path) -> Sealed {
                 _ => Sealed::Import,
             }
         }
+    }
+}
+
+/// **Whether the nevers file at `root` carries a seal the app made** (#7153): a set sealed at
+/// least once, or any entry with its seal. A file that is there and does not read may carry one.
+pub(crate) fn sealed_here(root: &Path) -> bool {
+    match whole_on_disk(root) {
+        Some((whole, entries)) => {
+            let set = set_of(&whole, &entries);
+            set.generation > 0 || !set.is_empty()
+        }
+        None => true,
     }
 }
 

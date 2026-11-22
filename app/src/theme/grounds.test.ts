@@ -2213,6 +2213,11 @@ describe("where each family is drawn on a surface a theme fills (#3268)", () => 
       "a merge row's View changes (`MergeChanges.tsx`, T1-41) opens a dialog: its code block is " +
         "drawn on the dialog's overlay, never on the Ask row's message",
     ],
+    [
+      "card code",
+      "a held act's changed lines (`HeldActAsks.tsx`, one login F2) are a code block inside an " +
+        "ask card, drawn on the card's own raised ground, which the card family measures",
+    ],
     // `list badge` is `STANDS_ON`'s `list.row badge` (#6149).
     [
       "panel code",

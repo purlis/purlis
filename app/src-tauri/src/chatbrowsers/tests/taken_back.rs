@@ -16,8 +16,8 @@ fn noted() -> (ChatBrowsers, Arc<Hosted>) {
     let hosted = Arc::new(Hosted::default());
     let driver: Arc<dyn Driver> = hosted.clone();
     let browsers = ChatBrowsers::default().noting(Some(driver), Path::new("/p"));
-    browsers.identify(3, Some(CHAT_3.into()));
-    browsers.identify(4, Some(CHAT_4.into()));
+    browsers.identify_for(3, Some(CHAT_3.into()), &|| None);
+    browsers.identify_for(4, Some(CHAT_4.into()), &|| None);
     (browsers, hosted)
 }
 

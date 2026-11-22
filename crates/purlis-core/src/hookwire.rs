@@ -1699,6 +1699,24 @@ pub enum Ask {
     /// cannot. The rule, the family and the host alone. The app answers [`Answer::Policy`]. No
     /// ticket, for a record's reason.
     PolicyLog(PolicyLogAsk),
+    /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
+    /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
+    /// outside the sandbox, on the chat's own run's route, and only for a repository recorded for
+    /// that run. It answers [`Answer::RemoteRefs`], or [`Answer::No`] where it will not or
+    /// cannot. No ticket: the line can only name the chat whose token it carries, and what it
+    /// hands over is what the forge says the repository's branches and tags are at.
+    RemoteRefs(RemoteRefsAsk),
+}
+
+/// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteRefsAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The remote's HTTPS address, as the push names it. The app asks it only where its host
+    /// and repository are recorded for the chat's run.
+    pub url: String,
 }
 
 /// **A hook's ask for its chat's policy** ([`Ask::Policy`]).
@@ -2560,6 +2578,9 @@ pub enum Answer {
     /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
     /// as [`crate::enforcement::Resolved::spelled`] writes them.
     Policy { spelled: String },
+    /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
+    /// object ids as `ls-remote` names them.
+    RemoteRefs { tips: Vec<String> },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2900,6 +2921,7 @@ impl Ask {
             Self::Attendance(asked) => asked.chat,
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
+            Self::RemoteRefs(asked) => asked.chat,
         }
     }
 }
@@ -3541,6 +3563,13 @@ pub struct SandboxBlocked {
     /// person to check, and judged again as a grant before anything is allowed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suggested: Option<String>,
+    /// **The `purlis` command the block was met by** (#7178), in fixed words only
+    /// ([`crate::sandboxblock::command::in_line`]): what a Report of purlis's own block names, so
+    /// the operation can be located where the block names no path. The app checks it again
+    /// ([`crate::sandboxblock::command::known`]); a chat can send any, which buys nothing but
+    /// those words in a draft.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub purlis_command: Option<String>,
 }
 
 /// What hears a brokered `secret exec` ([`crate::secrets::brokered`]): the ask, and its
@@ -3904,6 +3933,18 @@ pub fn deliver_armed<L: SpoolLine>(
         Some(kept) => with_delivery(&kept, delivery.as_ref())?,
         None => delivered,
     };
+    // A hook inside the chat's sandbox (Codex, opencode, a chat purlis wraps whole) has the spool
+    // denied: trying it would only make the sandbox refuse purlis's own write, and read, of the
+    // project's state (#7178). The line is lost, as the spool's own words say it is.
+    if crate::sandbox::writes_are_sandboxed() {
+        return Err(not_spooled(
+            &why,
+            io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "this hook runs inside the chat's sandbox, which denies the spool",
+            ),
+        ));
+    }
     spool::append(&spool::dir_for(path), line.chat(), token, &kept)
         .map(Delivered::Spooled)
         .map_err(|spooled| not_spooled(&why, spooled))

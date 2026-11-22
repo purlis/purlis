@@ -168,6 +168,9 @@ fn tables(cmd: &str) -> Value {
     ])
 }
 
+/// The sentence of the one refusal round 7 of #7131 adds to a line the Python let through.
+const ROUND_SEVEN_HOLD: &str = "A substitution here holds a comment, a heredoc or a `$'` quote";
+
 #[test]
 fn the_recorded_python_answer_is_the_answer_these_guards_give() {
     purlis_core::unsteered!();
@@ -189,6 +192,17 @@ fn the_recorded_python_answer_is_the_answer_these_guards_give() {
     for (at, row) in ats.iter().zip(&rows) {
         let cmd = row["cmd"].as_str().expect("every row names its command");
         let mut check = |what: &str, want: &Value, got: Value| {
+            // Round 7 of #7131 holds a substitution whose body carries a comment, a heredoc not
+            // closed inside it or a `$'` quote, where the Python read the line through. Only that
+            // hold is allowed to differ, and only from a line the Python let through.
+            if what == "rfr"
+                && want.is_null()
+                && got
+                    .as_str()
+                    .is_some_and(|said| said.contains(ROUND_SEVEN_HOLD))
+            {
+                return;
+            }
             if want != &got {
                 wrong.push(format!(
                     "{at} {cmd:?}\n    {what} python={want}\n    {what}   rust={got}"

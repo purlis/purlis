@@ -507,6 +507,7 @@ pub fn send(
             | Answer::Previewed { .. }
             | Answer::Attended { .. }
             | Answer::Policy { .. }
+            | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
@@ -799,6 +800,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Previewed { .. }
             | Answer::Attended { .. }
             | Answer::Policy { .. }
+            | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. },
         ) => Err(CliError::internal(format!(
             "{REPORT_SAYS} the purlis app answered the report with something purlis did not \
@@ -1453,8 +1455,16 @@ pub fn handbacks(
             _ => None,
         }
     });
-    let taken =
-        by_the_app.unwrap_or_else(|| purlis_core::handback::took_waiting(root, &folder, &names));
+    // Inside the chat's sandbox (a harness whose hooks run in it: Codex, opencode, a chat purlis
+    // wraps whole), purlis's own state is denied: taking a report here would remove a file the
+    // sandbox holds and read the plane's key, each a block of purlis's own (#7178). With no
+    // answer from the app, nothing is taken and nothing is handed: the reports wait for a turn
+    // the app answers.
+    let taken = match by_the_app {
+        Some(taken) => taken,
+        None if purlis_core::sandbox::writes_are_sandboxed() => return Vec::new(),
+        None => purlis_core::handback::took_waiting(root, &folder, &names),
+    };
     taken.handed(&waiting)
 }
 
@@ -1482,7 +1492,13 @@ pub fn messages(root: &std::path::Path, chat: u32) -> Vec<dispatchtalk::Message>
             _ => None,
         }
     });
-    let taken = by_the_app.unwrap_or_else(|| dispatchtalk::took(root, chat, &names));
+    // As for the reports ([`handbacks`]): inside the sandbox, which holds the folder, nothing is
+    // taken here (#7178).
+    let taken = match by_the_app {
+        Some(taken) => taken,
+        None if purlis_core::sandbox::writes_are_sandboxed() => return Vec::new(),
+        None => dispatchtalk::took(root, chat, &names),
+    };
     waiting
         .into_iter()
         .filter(|(name, _)| taken.contains(name))

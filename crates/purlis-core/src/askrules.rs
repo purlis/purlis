@@ -333,12 +333,20 @@ impl Store {
     /// Keeps `rule`, its words held to their bounds. Answers it as kept.
     ///
     /// **A merge ask's is refused** (R-117, Q135): there are no grants for merges, so no answer
-    /// to one is ever remembered, and nothing is kept.
+    /// to one is ever remembered, and nothing is kept. **So is a held forge act's** (ADR 0128 D8).
     pub fn make(&self, rule: Rule) -> io::Result<Rule> {
         if rule.source == crate::mergehold::SOURCE {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "a merge is never remembered: each one waits on the person's own press",
+            ));
+        }
+        // A tag, a release, a CI-file push and a fork are held the same way (ADR 0128 D8): no
+        // answer to one is ever kept, and "purlis decides" has no rule to make for one.
+        if rule.source == crate::heldact::SOURCE {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "a held forge act is never remembered: each one waits on the person's own press",
             ));
         }
         let rule = Rule {

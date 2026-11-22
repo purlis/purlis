@@ -312,8 +312,10 @@ async fn a_program_in_a_confinement_is_answered_with_where_its_confinement_is() 
                 any_port: false,
                 beside: session::Beside::Wrapped,
                 given: Vec::new(),
+                forge: None,
             },
             asks: true,
+            lifted: Vec::new(),
         })))
         .await
         .expect("confined")

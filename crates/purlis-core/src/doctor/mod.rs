@@ -51,6 +51,7 @@ mod personas;
 mod plane;
 mod plugin;
 mod profiles;
+mod readiness;
 mod remote;
 mod repos_folder;
 mod rules;
@@ -194,6 +195,18 @@ impl Row {
 
     pub(crate) fn fail(name: &str, detail: impl Into<String>, hint: impl Into<String>) -> Self {
         Self::new(name, Status::Fail, detail, hint)
+    }
+
+    /// A row for a check this doctor chose not to run where it is, because the sandbox it runs in
+    /// keeps what the check looks at from it (#7178). A WARN, the closest verdict that is not
+    /// green: `--json` must not show a check that did not run as one that passed. Its hint is not
+    /// [`NOT_CHECKED_HINT`], whose "re-run" would give the same answer from here.
+    pub(crate) fn skipped(name: &str, reason: impl std::fmt::Display) -> Self {
+        Self::warn(
+            name,
+            format!("not checked ({reason})"),
+            "Run `purlis doctor` in a terminal, outside the chat's sandbox.",
+        )
     }
 
     /// Python's `Result(name, WARN, detail=f"not checked ({why})", hint=_NOT_CHECKED_HINT)`.
@@ -400,6 +413,14 @@ pub struct Doctor {
     /// says once trimming it has stopped working while a host serves. `None` for a doctor a
     /// test names, which must never read the operator's own.
     pub(crate) host_log: Option<host_log::HostLog>,
+    /// Whether this doctor runs inside a chat's sandbox ([`crate::sandbox::writes_are_sandboxed`],
+    /// #7178). The sandbox denies a chat what the rows of the vaults, their credential files and
+    /// the hook spool look at, so from there they are not looked at: a look would be refused, and
+    /// the refusal drafted as a Report of purlis's own block. Said in the rows, never silent.
+    pub(crate) confined: bool,
+    /// Whether this doctor runs inside a chat's tree (`PURLIS_CHAT` is set). The `project
+    /// readiness` row refuses there: it reads the person's forge, which a chat has no login for.
+    pub(crate) in_chat: bool,
     /// What this machine's runner host looks like (RR-15, #724), where this purlis is a
     /// runner's: installed as a version (RR-14) or kept by a service manager. `None` on a
     /// desktop, and for a doctor a test names.
@@ -432,6 +453,8 @@ impl Doctor {
             .map(|config_root| (config_root, crate::extension::BuiltIn::of_this_program()));
         d.cache_home = crate::sandbox::caches::root_of(&crate::sandbox::Machine::this(), &d.root);
         d.host_log = host_log::HostLog::here();
+        d.confined = crate::sandbox::writes_are_sandboxed();
+        d.in_chat = crate::envvar::var(crate::hookwire::CHAT_ENV).is_some_and(|v| !v.is_empty());
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -509,6 +532,8 @@ impl Doctor {
             extensions: None,
             cache_home: None,
             host_log: None,
+            confined: false,
+            in_chat: false,
             #[cfg(unix)]
             runner_host: None,
         }
@@ -565,6 +590,7 @@ impl Doctor {
         rows.push(git::plane_root(self));
         rows.push(git::index_lock(self));
         rows.extend(remote::project_remote(self));
+        rows.extend(readiness::project_readiness(self));
         rows.extend(capabilities::forge_capabilities(self));
         rows.extend(budget::budgets(self));
         rows.push(session::session_root(self));
@@ -603,6 +629,7 @@ impl Doctor {
         rows.extend(sandbox::local_ports(self));
         rows.extend(sandbox::grants_held(self));
         rows.extend(sandbox::relayed_internal(self));
+        rows.extend(sandbox::replaced_by_sign_in(self));
         rows.extend(sandbox::cache_home(self));
         rows.extend(host_log::host_log(self));
         rows.push(memory::memory_indexes(self));

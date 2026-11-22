@@ -24,6 +24,7 @@ const SECRET_BOXES: Record<string, number> = {
   "ForgeTokenSignIn.tsx": 1,
   "SecretAskNotice.tsx": 1,
   "AgentIdentityFlow.tsx": 1,
+  "GitLabAccessTab.tsx": 1,
 };
 
 function views(dir = SRC): string[] {

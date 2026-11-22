@@ -99,6 +99,26 @@ fn a_device_id_is_minted_once_and_kept() {
     assert!(store.device.unwrap().created > 0, "with when it was minted");
 }
 
+#[cfg(unix)]
+#[test]
+fn asking_for_an_id_that_is_there_writes_nothing() {
+    // #7178: a chat's sandbox keeps the home folder from a command that rewrites the store only to
+    // read a name from it.
+    use std::os::unix::fs::PermissionsExt as _;
+    let machine = machine();
+    let id = device_id(machine.path()).unwrap();
+    let dir = crate::machine::dir(machine.path());
+    let before = std::fs::read(file(machine.path())).unwrap();
+    let kept = std::fs::metadata(&dir).unwrap().permissions();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o500)).unwrap();
+
+    let asked = device_id(machine.path());
+
+    std::fs::set_permissions(&dir, kept).unwrap();
+    assert_eq!(asked.expect("read, not written"), id);
+    assert_eq!(std::fs::read(file(machine.path())).unwrap(), before);
+}
+
 #[test]
 fn an_update_that_is_not_about_the_device_keeps_its_id() {
     let machine = machine();

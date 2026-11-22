@@ -190,19 +190,19 @@ pub(crate) fn policy_of(template: Template) -> String {
 }
 
 /// **What a chat starting in a project under `template` runs under**: each family as the
-/// template sets it, under this machine's locks. `strict` is every family enforced.
+/// template sets it, under this machine's locks. `strict` is every family enforced. The sandbox's
+/// level is the project's own `[sandbox] mode` (the scenario's protection, not its template), which
+/// outranks the template's since #7105.
 pub(crate) fn resolved_under(
     template: Template,
     root: &Path,
 ) -> purlis_core::enforcement::Resolved {
-    purlis_core::enforcement::Resolved::of(
-        &purlis_core::enforcement::Settings {
-            template,
-            template_said: true,
-            ..Default::default()
-        },
-        &purlis_core::sandbox::policy::Locks::of(root),
-    )
+    let mut said = purlis_core::enforcement::Settings::from_text(Some(&format!(
+        "[policy]\ntemplate = \"{}\"\n",
+        template.word()
+    )));
+    said.sandbox = purlis_core::enforcement::Settings::read(root).sandbox;
+    purlis_core::enforcement::Resolved::of(&said, &purlis_core::sandbox::policy::Locks::of(root))
 }
 
 /// **The project at `root` runs under `template` at every chat's start** (Q308a): the person
@@ -237,11 +237,15 @@ pub(crate) fn runs_under(template: Template, root: &Path, press: impl FnOnce(Str
         purlis_core::enforcement::denies_in_force(root)
     );
     if template == Template::Strict {
-        assert_eq!(
-            at_start,
-            purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Enforce),
-            "under strict every family is enforced"
-        );
+        // Every family, by its mode: the sandbox's level is the scenario's protection, which
+        // `Resolved::all` does not know (#7105).
+        for family in purlis_core::enforcement::Family::ALL {
+            assert_eq!(
+                at_start.mode(family),
+                purlis_core::enforcement::Mode::Enforce,
+                "under strict every family is enforced: {family:?} is not"
+            );
+        }
     }
 }
 

@@ -1344,6 +1344,17 @@ const STATES: State[] = [
     drawn: /acme-purlis-agent on 12 repos/,
   },
   {
+    name: "GitLab access, set up",
+    view: { from: null, view: "gitlab-access", key: "" },
+    answers: {
+      gitlab_access_list: {
+        rows: [{ host: "git.acme.internal", personas: ["steward"], by_hand: [] }],
+        personas: ["steward", "reviewer"],
+      },
+    },
+    drawn: /git\.acme\.internal/,
+  },
+  {
     name: "Devices, runners that answer on another version, and the use per pool",
     view: { from: null, view: "devices", key: "" },
     answers: { devices: DEVICES_SHOWN, device_runner: DEVICE_ANSWERS, devices_disk: DEVICES_DISK },
