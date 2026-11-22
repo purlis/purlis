@@ -584,3 +584,15 @@ test("a dev publish keeps the last dev builds' runner assets, not only its own",
   assert.match(publish, /node tools\/dev-runner-assets\.mjs "\$VERSION"/);
   assert.doesNotMatch(publish, /startswith\("purlis-'"\$VERSION"'-"\)/);
 });
+
+test("plan skips a dev build that ships nothing, asks before the order is asked, and says so in the summary", () => {
+  const plan = job("plan").map((line) => line.trim());
+  const ships = plan.findIndex((l) => l.startsWith('why=$(GITHUB_OUTPUT="$ships_out" node tools/ci-scope.mjs ships dev "$SHA")'));
+  assert.notEqual(ships, -1, "plan does not ask tools/ci-scope.mjs ships");
+  // Only a dev build is asked, and never after something already skipped it.
+  assert.equal(plan.slice(0, ships).findLast((l) => l.startsWith("if [")), 'if [ "$DEV" = true ] && [ "$skip" != "true" ]; then');
+  assert.ok(plan.slice(ships).some((l) => l.includes("skip=true; publish=false")));
+  assert.ok(plan.slice(ships, ships + 14).some((l) => l.includes(">> \"$GITHUB_STEP_SUMMARY\"")));
+  assert.ok(ships < plan.indexOf('order=$(node tools/dev-build-order.mjs --version "$version" --sha "$SHA")'));
+  assert.ok(ships < plan.indexOf('} >> "$GITHUB_OUTPUT"'));
+});
