@@ -102,8 +102,8 @@ impl Quarantine {
     }
 
     /// **Also holds commit `extra`**, with its history, as `from` gives it: the default branch's
-    /// tip, which a rebased push is read against ([`crate::heldact::Trees::compare_base`]) and
-    /// whose objects its pack leaves out because the forge has them.
+    /// tip, which a push to an existing branch is read against ([`crate::heldact::check_push_since`])
+    /// and whose objects its pack leaves out because the forge has them.
     pub fn also_have(&self, from: &dyn BaseObjects, extra: &HeadSha) -> Result<(), String> {
         from.fetch(&self.path, extra)?;
         self.has(extra)

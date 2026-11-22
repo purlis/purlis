@@ -745,6 +745,31 @@ fn branch_exists(clone: &Path, branch: &str) -> Result<bool, Refusal> {
     Ok(seen.ok())
 }
 
+/// Whether any remote of `clone` has a remote-tracking branch of this name.
+///
+/// A branch purlis cuts is the chat's own for the forge route (it may push it although it is on
+/// the forge): so a cut may not take the name of a branch the clone has seen on a remote, or a
+/// chat could cut `phase-1-proven` and push over a colleague's branch.
+fn branch_on_a_remote(clone: &Path, branch: &str) -> Result<bool, Refusal> {
+    let remotes = git::run(clone, &["remote"], git::READ)?;
+    for remote in remotes.out.lines().map(str::trim).filter(|r| !r.is_empty()) {
+        let seen = git::run(
+            clone,
+            &[
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/remotes/{remote}/{branch}"),
+            ],
+            git::READ,
+        )?;
+        if seen.ok() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// A piece, cut.
 #[derive(Debug, Clone)]
 pub struct Added {
@@ -878,7 +903,7 @@ pub fn add_vetted(
     let branch = checked.line().to_string();
     name::branch_name_ok(&branch)?;
 
-    if branch_exists(&clone, &branch)? {
+    if branch_exists(&clone, &branch)? || branch_on_a_remote(&clone, &branch)? {
         return Err(Refusal::BranchTaken {
             repo: repo.to_string(),
             branch,

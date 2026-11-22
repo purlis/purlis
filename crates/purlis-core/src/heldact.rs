@@ -77,7 +77,9 @@ pub mod said;
 mod tag;
 mod tip;
 
-pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, NoClone, PushCheck, check_push};
+pub use ci::{
+    CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, NoClone, PushCheck, check_push, check_push_since,
+};
 pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
@@ -229,21 +231,6 @@ pub trait Trees: Send + Sync {
     fn changed(&self, against: &HeadSha, tip: &HeadSha) -> Result<Vec<String>, String>;
     /// The patch of `paths` between the trees.
     fn patch(&self, against: &HeadSha, tip: &HeadSha, paths: &[String]) -> Result<String, String>;
-    /// **What a push to an existing branch is compared with** for its CI files: `old`, the branch's
-    /// tip on the forge, where the push is a fast-forward of it; where it is not (a rebase, a
-    /// forced update), the merge base of `tip` and `default_tip`, the default branch's tip. What a
-    /// rebased branch took in from the default branch is already there, so only its own commits
-    /// are read, and nothing the default branch holds is let by. Where no merge base can be found
-    /// it is an error, never a comparison with less. A store with no clone compares with `old`
-    /// (its own [`Self::changed`] says it cannot read).
-    fn compare_base(
-        &self,
-        old: &HeadSha,
-        _tip: &HeadSha,
-        _default_tip: &HeadSha,
-    ) -> Result<HeadSha, String> {
-        Ok(old.clone())
-    }
     /// The message of the commit `tip`, as a push of it sends it. A store that cannot say has no
     /// push to show.
     fn message(&self, _tip: &HeadSha) -> Result<String, String> {

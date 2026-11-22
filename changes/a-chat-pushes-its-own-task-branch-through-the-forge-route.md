@@ -4,6 +4,8 @@
   already, and a rebased branch is no longer held for CI changes it did not make.** The forge
   route refused every push to a branch that existed (403, protected ref); the branch folders a
   chat holds are now its own from the start, while the default branch and any other branch stay
-  protected. A forced push after a rebase was read against the branch's old tip, so every
-  `.github/` change the default branch had gained counted as the push's; it is now read against
-  where the branch leaves the default branch.
+  protected. A cut no longer takes the name of a branch a remote already has, so a chat cannot
+  make itself the owner of someone else's branch by cutting one of that name. A push over a
+  branch is read for CI files against the default branch's tip now, less what the branch had on
+  the forge already: a rebase onto the current default branch is clean, and a tip built on an
+  older base with that base's CI files is held, as is a new branch cut from one.

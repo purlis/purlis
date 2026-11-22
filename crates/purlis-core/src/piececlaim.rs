@@ -189,6 +189,36 @@ pub fn branches_held_by(
         .collect()
 }
 
+/// **The branches the chat `chat` holds in the clones `clones`** (canonical paths) of any
+/// workspace of the plane: every clone's branch folders, as git lists them, read through
+/// [`branches_held_by`]. A branch counts only where the folder is held by this chat in the piece
+/// log, and the cut refuses a name a remote already has ([`crate::worktree::add`]), so a chat
+/// cannot make itself the owner of a branch that was there before it.
+pub fn branches_held_in_clones(plane: &Path, clones: &[PathBuf], chat: &str) -> Vec<String> {
+    let Ok(workspaces) = crate::workspaces::Plane::open(plane.to_path_buf()).workspaces() else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for ws in workspaces {
+        let Ok(found) = crate::repos::clones(plane, &ws) else {
+            continue;
+        };
+        for held in found.repos {
+            let here = std::fs::canonicalize(&held.path).unwrap_or(held.path.clone());
+            if !clones.contains(&here) {
+                continue;
+            }
+            let Ok(pieces) = crate::worktree::list(plane, &ws, &held.name) else {
+                continue;
+            };
+            let pieces: Vec<(String, Option<String>)> =
+                pieces.into_iter().map(|p| (p.piece, p.branch)).collect();
+            out.extend(branches_held_by(plane, &ws, &held.name, &pieces, chat));
+        }
+    }
+    out
+}
+
 /// Whether the chat `me` (its stable id, where it has one) may `act` in the branch folder `at`,
 /// by the piece log and `live`: the chats the app has, or `None` where no app said.
 pub fn writer(

@@ -14,7 +14,7 @@
 //!   fresh repository, the base fetched from the forge with the person's credential, the chat's
 //!   pack taken in by git, which hashes every object. **One quarantine per push**, kept for its
 //!   ask, so the ask, the press and the files the push sends are read from the same objects
-//!   ([`Quarantines`]). A push goes on only when [`check_push`] says it changes no CI file; a
+//!   ([`Quarantines`]). A push goes on only when [`check_push_since`] says it changes no CI file; a
 //!   refusal, or an unreadable `ci_config_path`, sends nothing.
 //!
 //! **Tier** (ADR 0069): the quarantines are Machine, device-bound and rebuildable
@@ -39,7 +39,7 @@ use purlis_core::forge::{Forge, ForgeError};
 use purlis_core::forgewire::{ExposeSecret, SecretString};
 use purlis_core::heldact::{
     Handoff, HeldContext, NoClone, OwnedWorld, PushCheck, Quarantine, Recorded, Requested,
-    TipFiles, Trees, Unavailable, WorkflowCredential, check_push,
+    TipFiles, Trees, Unavailable, WorkflowCredential, check_push_since,
 };
 use purlis_core::mergehold::{Base, HeadSha, Repo, Request};
 use purlis_core::secrets::keyring::Secret;
@@ -514,9 +514,8 @@ impl PushGate for CiPushGate {
                     ));
                 }
             };
-            // A branch that is there already is pushed over, and a push that is not its
-            // fast-forward (a rebase) holds the default branch's new commits only by reference:
-            // its tip is read in too, to be read against where the push leaves it.
+            // A branch that is there already is read against the default branch's tip now, which a
+            // push over it (a rebase) holds only by reference: its commits are read in too.
             let default_tip = if created {
                 base.clone()
             } else {
@@ -541,15 +540,11 @@ impl PushGate for CiPushGate {
             }
             let kind = forge.kind();
             let trees = quarantine.trees();
-            let compare = match trees.compare_base(&base, &tip, &default_tip) {
-                Ok(compare) => compare,
-                Err(why) => {
-                    return Self::refuse(format!(
-                        "purlis did not send this push: it could not read what the push changes ({why})."
-                    ));
-                }
-            };
-            match check_push(kind, config.as_deref(), &trees, &compare, &tip) {
+            // A new branch is read against the commit it is cut from; one that is there, against
+            // the default branch's tip now, less what the branch had on the forge already: the
+            // same reading as the held act's ([`purlis_core::heldact::check_push_since`]).
+            let already = (!created).then_some(&base);
+            match check_push_since(kind, config.as_deref(), &trees, &default_tip, already, &tip) {
                 PushCheck::NoCiFiles => continue,
                 PushCheck::Refuse(why) => {
                     return Self::refuse(format!("purlis did not send this push: {why}"));

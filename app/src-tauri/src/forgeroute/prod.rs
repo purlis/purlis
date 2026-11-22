@@ -199,32 +199,7 @@ impl Recorded for ConfirmedRecorded {
             })
             .map(|(_, clone)| clone)
             .collect();
-        let Ok(workspaces) =
-            purlis_core::workspaces::Plane::open(project.to_path_buf()).workspaces()
-        else {
-            return Vec::new();
-        };
-        let mut out = Vec::new();
-        for ws in workspaces {
-            let Ok(found) = purlis_core::repos::clones(project, &ws) else {
-                continue;
-            };
-            for held in found.repos {
-                let here = std::fs::canonicalize(&held.path).unwrap_or(held.path.clone());
-                if !clones.contains(&here) {
-                    continue;
-                }
-                let Ok(pieces) = purlis_core::worktree::list(project, &ws, &held.name) else {
-                    continue;
-                };
-                let pieces: Vec<(String, Option<String>)> =
-                    pieces.into_iter().map(|p| (p.piece, p.branch)).collect();
-                out.extend(purlis_core::piececlaim::branches_held_by(
-                    project, &ws, &held.name, &pieces, chat,
-                ));
-            }
-        }
-        out
+        purlis_core::piececlaim::branches_held_in_clones(project, &clones, chat)
     }
 
     /// The account the person chose for the project's repos on `host`: one account, or none.
