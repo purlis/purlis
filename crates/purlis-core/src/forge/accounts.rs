@@ -1245,12 +1245,12 @@ fn keep(
             .is_some_and(|a| a.kind == kind && a.host == host && a.login == checked.login)
     });
     // A step-up keeps the account it was asked for, by its id: one signed out or removed while
-    // the person was on the forge's page is not made again.
+    // the person was on the forge's page is not made again (a signed-out record is still listed).
     if let Some(StepUp { account, .. }) = &step_up {
         let still = same
             .and_then(|at| file.accounts.get(at))
             .and_then(account_of)
-            .is_some_and(|listed| listed.id == account.id);
+            .is_some_and(|listed| listed.id == account.id && listed.state == State::SignedIn);
         if !still {
             return Err(format!(
                 "{} on {} was removed from this machine while {} waited, so nothing was \
@@ -1301,9 +1301,12 @@ fn keep(
     Ok(account)
 }
 
-/// Sign out of the account `id` (ADR 0077 §3): its keyring item deleted, then the account taken
-/// off the list. A token the person pasted is not revoked at the forge: it may be theirs for other
-/// uses, and they delete it there. The account as it was.
+/// Sign out of the account `id` (ADR 0077 §3): its keyring item deleted, and the account kept on
+/// the list, **signed out**, as [`signed_out_by_the_forge`] keeps it. The record is what a repo's
+/// confirmed account names by id: dropping it made a sign-in as the same login a new account, and
+/// left every repo it served served by nothing for good. [`keep`] reuses the id for the same kind,
+/// host and login. A token the person pasted is not revoked at the forge: it may be theirs for
+/// other uses, and they delete it there. The account as it was.
 pub fn sign_out(
     _host: &HostScope,
     config_root: &Path,
@@ -1333,7 +1336,12 @@ pub fn sign_out(
     super::refresh::clear_held(config_root, &account.id);
     // The second token (ADR 0128 D1.1) goes with the first: a signed-out account leaves none.
     workflow::remove(keyring, &account)?;
-    file.accounts.remove(at);
+    if let Some(Value::Object(fields)) = file.accounts.get_mut(at) {
+        fields.insert(
+            "state".to_string(),
+            serde_json::to_value(State::SignedOut).unwrap_or(Value::Null),
+        );
+    }
     write(config_root, file)?;
     Ok(account)
 }

@@ -155,13 +155,15 @@ function signedOutSays(account: ForgeAccountRow, ended: boolean | null): string 
 }
 
 /** Whether the second GitHub sign-in, for CI files, is offered for `account`: a signed-in browser
- *  sign-in on GitHub whose everyday token does not already hold `workflow`. */
+ *  sign-in on GitHub whose everyday token does not already hold `workflow` and that has not been
+ *  given the second one (kept apart, so the scopes never show it). */
 function canAllowCi(account: ForgeAccountRow): boolean {
   return (
     account.kind === "github" &&
     account.signed_in &&
     account.method === "browser" &&
-    !(account.scopes ?? []).includes("workflow")
+    !(account.scopes ?? []).includes("workflow") &&
+    !account.ci_allowed
   );
 }
 
@@ -171,6 +173,7 @@ function note(account: ForgeAccountRow): string {
   if ((account.scopes ?? []).includes("workflow"))
     return "CI-file permission on the everyday sign-in: not given to chats";
   const how = account.method === "token" ? "token" : account.method;
+  if (account.ci_allowed) return `${how}; CI files allowed`;
   return account.wider.length > 0 ? `${how}; wider than needed: ${account.wider.join(", ")}` : how;
 }
 

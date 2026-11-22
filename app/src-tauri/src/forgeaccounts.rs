@@ -59,6 +59,10 @@ pub struct ForgeAccountRow {
     pub scopes: Option<Vec<String>>,
     /// The scopes beyond what purlis needs (ADR 0077 §2).
     pub wider: Vec<String>,
+    /// Whether the second sign-in for CI files is already given (its token is kept apart, so the
+    /// scopes above never show it). Only the listing ([`forge_accounts`]) asks the keychain; a row
+    /// another command returns says `false`, and the window reads the list again.
+    pub ci_allowed: bool,
 }
 
 impl From<ForgeAccount> for ForgeAccountRow {
@@ -82,6 +86,7 @@ impl From<ForgeAccount> for ForgeAccountRow {
             login: account.login,
             scopes: account.scopes,
             wider,
+            ci_allowed: false,
         }
     }
 }
@@ -269,7 +274,15 @@ pub async fn forge_accounts() -> Result<Vec<ForgeAccountRow>, String> {
         let keyring = accounts::keyring_at(&root);
         Ok(accounts::list(&root, keyring.as_ref())?
             .into_iter()
-            .map(ForgeAccountRow::from)
+            .map(|account| {
+                let ci_allowed = account.state == State::SignedIn
+                    && accounts::workflow::availability(keyring.as_ref(), &account)
+                        == accounts::workflow::Availability::Ready;
+                ForgeAccountRow {
+                    ci_allowed,
+                    ..ForgeAccountRow::from(account)
+                }
+            })
             .collect())
     })
     .await

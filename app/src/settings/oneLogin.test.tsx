@@ -215,6 +215,29 @@ describe("You › Accounts › Account for each project", () => {
     expect(within(table).getByText(/No other account serves this repo meanwhile/)).toBeTruthy();
   });
 
+  it("offers the one signed-in account to a repo that is not served, and sends it", async () => {
+    repos = [
+      repo("acme/platform", {
+        repo_id: "2002",
+        serving: null,
+        state: "signed-out",
+        choices: [{ id: "personal", login: "octocat" }],
+      }),
+    ];
+    render(<Row setting={projectAccounts} />);
+    const table = await findGrid(screen, "Account for each repo");
+    await userEvent.click(
+      within(table).getByRole("button", { name: /Account for acme\/platform on github\.com/ }),
+    );
+    await userEvent.click(await screen.findByRole("option", { name: "octocat" }));
+    await waitFor(() =>
+      expect(sent.find((one) => one.cmd === "forge_choose_project_account")?.args).toMatchObject({
+        repoId: "2002",
+        accountId: "personal",
+      }),
+    );
+  });
+
   it("says a repo with no account chosen is served by none, and asks", async () => {
     repos = [
       repo("acme/platform", {

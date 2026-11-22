@@ -28,6 +28,7 @@ function account(login: string, host: string, more: Partial<ForgeAccountRow> = {
     signed_in: true,
     scopes: [],
     wider: [],
+    ci_allowed: false,
     ...more,
   } satisfies ForgeAccountRow;
 }
@@ -81,6 +82,21 @@ describe("You › Accounts › Forge accounts", () => {
     expect(
       within(sam).getByRole("button", { name: "Sign out of sam on gitlab.example.org" }),
     ).toBeTruthy();
+  });
+
+  it("offers Allow CI files until the second sign-in is given, then says it is", async () => {
+    accounts = [account("octocat", "github.com")];
+    const first = render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(
+      within(table).getByRole("button", { name: "Allow CI files for octocat on github.com" }),
+    ).toBeTruthy();
+    first.unmount();
+    accounts = [account("octocat", "github.com", { ci_allowed: true })];
+    render(<Accounts />);
+    const again = await findGrid(screen, "Forge accounts");
+    expect(within(again).queryByRole("button", { name: /Allow CI files/ })).toBeNull();
+    expect(within(again).getByText("browser; CI files allowed")).toBeTruthy();
   });
 
   it("signs an account out from its row, and lists what is left", async () => {

@@ -140,7 +140,8 @@ mod tests {
         machine.kept().is_none()
             && accounts::list(machine.home.path(), keyring.as_ref())
                 .unwrap()
-                .is_empty()
+                .iter()
+                .all(|a| a.state != accounts::State::SignedIn)
     }
 
     #[test]
