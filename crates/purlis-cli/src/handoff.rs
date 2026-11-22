@@ -698,6 +698,7 @@ fn in_the_app(
             | Answer::Attended { .. }
             | Answer::Policy { .. }
             | Answer::Decided(_)
+            | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
@@ -768,6 +769,7 @@ pub(crate) fn ticketed_within(within: std::time::Duration) -> Ticketed {
             | Answer::Attended { .. }
             | Answer::Policy { .. }
             | Answer::Decided(_)
+            | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }

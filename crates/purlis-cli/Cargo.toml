@@ -47,6 +47,11 @@ serde_json.workspace = true
 # `purlis skill grade --run`'s.
 tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
 
+[features]
+# One login (ADR 0128), forwarded to purlis-core, on by default as it is there.
+default = ["forge-wiring"]
+forge-wiring = ["purlis-core/forge-wiring"]
+
 [dev-dependencies]
 # Fenced, so the `charter` binary these tests spawn cannot act on a plane the run did not
 # make (charter-app#129). Cargo unifies a dependency's features across the unit graph a test

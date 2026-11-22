@@ -269,11 +269,10 @@ CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context \
   "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
   --test it -- a_chat_runs_on_a_cluster_runner_through_kubectl_exec:: --ignored --test-threads=1 --nocapture
 
-step "a whole chat on a Pool that mints, with its desktop away"
-# The stand-in for GitHub is this test's own now: the one above has ended.
-CLUSTER_POOL_TEST_IMAGE=$runner CLUSTER_POOL_TEST_CONTEXT=$context FAKE_GITHUB_PORT=$fake_github_port \
-  "$repo/tools/tests-ran.sh" -- cargo test --manifest-path "$repo/Cargo.toml" --locked -p purlis-core \
-  --test it -- a_chat_mints_on_a_cluster_runner_with_its_desktop_away:: --ignored --test-threads=1
+# **No step for "a whole chat on a Pool that mints, with its desktop away"** (ADR 0128 D9): with the
+# one login a runner takes no mint port, so that route is gone from every build that carries the
+# feature, which is every build that ships. Its test, `a_chat_mints_on_a_cluster_runner_with_its_desktop_away`,
+# is built only without it, and this script builds with it.
 
 step "a short task on a runner of its own, and its commits back before its claim goes"
 # The desktop's whole path (#4569), through the app's own chats: this runner image with a stand-in

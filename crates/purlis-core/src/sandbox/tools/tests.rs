@@ -1311,6 +1311,7 @@ fn a_program_nowhere_is_absent_and_one_only_where_a_chat_writes_is_not() {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn on_a_runner_the_tools_name_says_why_and_fails_as_a_missing_program() {
     let base = outside_temp("refusing");
@@ -1616,6 +1617,7 @@ fn a_chat_that_only_refuses_writes_its_shims_apart_from_another_chat_s() {
 /// **An undeclared `glab` in a chat under the credentials class says the flow and fails** (#1349
 /// part 2): its shim is written apart from another chat's, names the command that sets a token up
 /// on the project's one GitLab host and the persona, exits 1, and never runs the program.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
     use std::os::unix::fs::PermissionsExt as _;
@@ -1696,6 +1698,7 @@ fn an_undeclared_glab_gets_a_shim_that_names_the_flow_and_exits_1() {
 
 /// A persona's declared `glab` has its own shim, which a guard never replaces; with another tool
 /// ready, the guard sits in the same folder and a start without it takes it away again.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_declared_glab_keeps_its_own_shim_and_a_guard_goes_when_the_chat_no_longer_has_the_class() {
     let root = outside_temp("declared-root");
@@ -1901,4 +1904,16 @@ fn a_program_is_an_init_script_only_where_it_or_a_link_on_the_way_sits_in_init_d
         &bin.join("rcjob"),
         &lib.join("upstart-job")
     ));
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_guarded_glab_says_to_sign_in_and_names_no_token_flow() {
+    let said = crate::sandbox::tools::undeclared_glab_said("dev", Some("gitlab.com"));
+    assert!(said.contains("Settings › Forges"), "{said}");
+    assert!(!said.contains("gitlab access"), "{said}");
+    assert_eq!(
+        crate::sandbox::tools::declared_glab_not_running_said("dev"),
+        said
+    );
 }

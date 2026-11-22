@@ -1603,6 +1603,43 @@ pub struct Isolated {
     /// The email chosen for chat commits per forge host (#5788), host in lower case: a commit
     /// made in a clone whose `origin` is on that host is made as it ([`Isolated::for_host`]).
     emails_on: Vec<(String, String)>,
+    /// The chat's own forge route, where the app runs a network git for a chat that has one (one
+    /// login, ADR 0128): that git goes through the app's proxy with the chat's sentinel and takes
+    /// no credential of the person's own ([`NetworkRoute`]).
+    route: Option<NetworkRoute>,
+}
+
+/// **How a network git the app runs for a chat reaches its forge** (ADR 0128): the settings and
+/// variables that send it through the chat's own proxy, naming the sentinel helper and the chat's
+/// authority, exactly as the chat's own git is wired. Under it a call takes **no** helper of the
+/// person's (not the forge CLI's login, not purlis's account helper), so the proxy and its policy,
+/// the push gate and the held CI-file check decide what is sent and with whose token.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NetworkRoute {
+    /// `key=value`, each passed as `-c` after the one-credential rule.
+    config: Vec<String>,
+    /// Variables handed to git by name: the proxy's address and the sentinel the helper reads.
+    pass: Vec<(String, std::ffi::OsString)>,
+}
+
+impl NetworkRoute {
+    pub fn new(config: Vec<String>, pass: Vec<(String, std::ffi::OsString)>) -> Self {
+        Self { config, pass }
+    }
+}
+
+impl Isolated {
+    /// This isolation, its network calls going through `route`.
+    #[must_use]
+    pub fn through_route(mut self, route: NetworkRoute) -> Self {
+        self.route = Some(route);
+        self
+    }
+}
+
+/// The route the network calls of this thread go through, where its isolation names one.
+fn routed() -> Option<NetworkRoute> {
+    ISOLATED.with(|held| held.borrow().as_ref().and_then(|iso| iso.route.clone()))
 }
 
 /// One pinned work tree: its git directory, and **which directory that was** when it was
@@ -1651,6 +1688,7 @@ impl Isolated {
             pins: Vec::new(),
             signer: None,
             emails_on: Vec::new(),
+            route: None,
         }
     }
 
@@ -2308,6 +2346,33 @@ pub(crate) fn run_capped(
     timeout: Duration,
     most_records: usize,
 ) -> Result<Option<RawRun>, GitUnavailable> {
+    capped(dir, args, timeout, Cap::Records(most_records))
+}
+
+/// [`run_capped`], held to `most_bytes` of output instead of a count of records: past them git is
+/// stopped and the answer is `None`, so a patch or a blob is never buffered whole before its size
+/// is known.
+pub(crate) fn run_capped_bytes(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+    most_bytes: usize,
+) -> Result<Option<RawRun>, GitUnavailable> {
+    capped(dir, args, timeout, Cap::Bytes(most_bytes))
+}
+
+#[derive(Clone, Copy)]
+enum Cap {
+    Records(usize),
+    Bytes(usize),
+}
+
+fn capped(
+    dir: &Path,
+    args: &[&str],
+    timeout: Duration,
+    cap: Cap,
+) -> Result<Option<RawRun>, GitUnavailable> {
     use std::sync::Arc;
     let extra = match held(dir, args, Extra::default())? {
         Ok(extra) => extra,
@@ -2334,8 +2399,14 @@ pub(crate) fn run_capped(
                     match before_read().and_then(|()| stdout.read(&mut chunk)) {
                         Ok(0) => break Ok(Some(kept)),
                         Ok(n) => {
-                            records += chunk[..n].iter().filter(|b| **b == 0).count();
-                            if records > most_records {
+                            let past = match cap {
+                                Cap::Records(most) => {
+                                    records += chunk[..n].iter().filter(|b| **b == 0).count();
+                                    records > most
+                                }
+                                Cap::Bytes(most) => kept.len() + n > most,
+                            };
+                            if past {
                                 over.store(true, Ordering::Relaxed);
                                 break Ok(None);
                             }
@@ -2696,16 +2767,23 @@ fn run_network_shaped(
     system_trust: bool,
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
-    if let Some(helper) = helper {
+    // Under a chat's route there is no helper but the sentinel one it names, and none of the
+    // person's own credentials are handed to git.
+    let route = routed();
+    if let Some(helper) = helper.filter(|_| route.is_none()) {
         config.push(format!("credential.helper={helper}"));
     }
     let mut pass = more;
+    if let Some(route) = &route {
+        config.extend(route.config.iter().cloned());
+        pass.extend(route.pass.iter().cloned());
+    }
     if verb(args) == Some("clone") {
         pass.push((LFS_SKIP_SMUDGE.to_owned(), "1".into()));
     }
     let extra = Extra {
         config,
-        credentials: true,
+        credentials: route.is_none(),
         network: true,
         system_trust,
         pass,
@@ -2828,13 +2906,19 @@ pub(crate) fn spawn_network(
     args: &[&str],
 ) -> Result<Result<Child, String>, GitUnavailable> {
     let mut all: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
-    if let Some(helper) = helper {
+    let route = routed();
+    if let Some(helper) = helper.filter(|_| route.is_none()) {
         all.push(format!("credential.helper={helper}"));
     }
     all.extend(config.iter().cloned());
+    let mut pass = pass;
+    if let Some(route) = &route {
+        all.extend(route.config.iter().cloned());
+        pass.extend(route.pass.iter().cloned());
+    }
     let extra = Extra {
         config: all,
-        credentials: true,
+        credentials: route.is_none(),
         network: true,
         pass,
         ..Extra::default()
