@@ -13,6 +13,9 @@
 //! apply its wrap fails there and, anywhere else, says why it did not run.
 
 #[cfg(unix)]
+#[path = "scenarios/cells.rs"]
+mod cells;
+#[cfg(unix)]
 #[path = "scenarios/checks.rs"]
 mod checks;
 #[cfg(unix)]

@@ -83,7 +83,44 @@ fn the_run_result_gate_program_reads_a_job_s_reports_and_says_why_it_is_red() {
             .expect("the gate runs")
     };
     let folder = tempfile::tempdir().expect("a folder");
-    // Every cover of the repo's list is still pending, so a job that ran owes nothing yet.
+    // B0's linux rows are covered by scenario cells (#7322), so a job that ran the fake leg on
+    // Linux and reported nothing is red, and says which rows did not run.
+    let rows = [
+        "M-PRB-01",
+        "M-PRB-02",
+        "M-PRB-03",
+        "M-PRB-04",
+        "M-PRB-04b",
+        "M-PRB-05",
+        "M-PRB-06",
+    ];
+    let silent = gate(folder.path(), "pull_request", "fake:linux:scaled");
+    assert!(!silent.status.success(), "{silent:?}");
+    let said = String::from_utf8_lossy(&silent.stdout).into_owned();
+    for row in rows {
+        assert!(
+            said.contains(&format!(
+                "{row} claude linux: did not run in the fake leg on linux"
+            )),
+            "{row}: {said}"
+        );
+    }
+    // A job that ran only fixtures owes none of them: they are another pass's.
+    let fixtures = gate(folder.path(), "pull_request", "fixture:linux:scaled");
+    assert!(fixtures.status.success(), "{fixtures:?}");
+    // A pass for each row, as the runner writes one, and the gate is green.
+    let report: String = rows
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "kind": "cell", "row": row, "dialect": "claude", "protection": "full",
+                "os": "linux", "leg": "fake", "timings": "scaled", "verdict": "pass",
+            })
+            .to_string()
+                + "\n"
+        })
+        .collect();
+    std::fs::write(folder.path().join("linux-fake.jsonl"), report).expect("the report");
     let green = gate(folder.path(), "pull_request", "fake:linux:scaled");
     assert!(green.status.success(), "{green:?}");
     // A report folder that is not there, a trigger or a leg it does not know: red, with the reason.

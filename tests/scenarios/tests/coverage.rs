@@ -8,8 +8,8 @@
 //! the merge base with `origin/phase-1-proven`), and its rulings are the base's `rulings.json`,
 //! never its own: those tests need the base's history, so they are run by
 //! `sandbox-scenarios-linux` (`--run-ignored all`), which sets it. A new issue is one opened after
-//! the change began (`SCENARIOS_SINCE`, the change's merge base's commit time, or else read from
-//! git), and that job refreshes `issues.json` from GitHub first. The issues a pull request closes
+//! the change began (`SCENARIOS_SINCE`, or the commit time of the change's own first commit, or
+//! else read from git), and that job refreshes `issues.json` from GitHub first. The issues a pull request closes
 //! come from `SCENARIOS_PR_CLOSES` (`7001,7002`), which the same job sets.
 
 use std::process::Command;
@@ -185,8 +185,10 @@ fn base() -> String {
         .expect("no base to judge the marks against: set SCENARIOS_BASE to a commit")
 }
 
-/// When this change began: `SCENARIOS_SINCE`, or else when its merge base with `base` was
-/// committed. A mark's issue is new when it was opened after it.
+/// When this change began: `SCENARIOS_SINCE`, or else when its own first commit was committed
+/// (the oldest commit of `base..HEAD` that is no merge), or, with none of its own, its merge base
+/// with `base`. The base's tip moves and merging it in moves a merge base with it, so neither
+/// can say when the change began. A mark's issue is new when it was opened after it.
 fn since(base: &str) -> String {
     if let Some(since) = std::env::var("SCENARIOS_SINCE")
         .ok()
@@ -194,13 +196,48 @@ fn since(base: &str) -> String {
     {
         return since;
     }
-    let fork = git(&["merge-base", "HEAD", base])
-        .unwrap_or_else(|| panic!("no merge base with {base}: set SCENARIOS_SINCE"));
-    committed_at(&fork)
+    began(&root(), base).unwrap_or_else(|why| panic!("{why}: set SCENARIOS_SINCE"))
+}
+
+/// [`since`] without the override, for the repository in `dir`.
+fn began(dir: &std::path::Path, base: &str) -> Result<String, String> {
+    let own = git_in(
+        dir,
+        &[
+            "log",
+            &format!("{base}..HEAD"),
+            "--no-merges",
+            "--reverse",
+            "--format=%H",
+        ],
+    )?;
+    let first = match own.lines().next() {
+        Some(commit) => commit.to_string(),
+        None => git_in(dir, &["merge-base", "HEAD", base])?,
+    };
+    committed_at(dir, &first)
+}
+
+/// `git <args>` in `dir`: its output, or why it failed.
+fn git_in(dir: &std::path::Path, args: &[&str]) -> Result<String, String> {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .map_err(|e| format!("git {}: {e}", args.join(" ")))?;
+    if out.status.success() {
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    } else {
+        Err(format!(
+            "git {}: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ))
+    }
 }
 
 /// When `commit` was committed, in UTC, as issues.json writes `opened`.
-fn committed_at(commit: &str) -> String {
+fn committed_at(dir: &std::path::Path, commit: &str) -> Result<String, String> {
     let out = Command::new("git")
         .args([
             "show",
@@ -210,11 +247,13 @@ fn committed_at(commit: &str) -> String {
             commit,
         ])
         .env("TZ", "UTC")
-        .current_dir(root())
+        .current_dir(dir)
         .output()
-        .expect("git runs");
-    assert!(out.status.success(), "{commit}'s date can't be read");
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+        .map_err(|e| format!("git show {commit}: {e}"))?;
+    if !out.status.success() {
+        return Err(format!("{commit}'s date can't be read"));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 /// The coverage list at `commit`, if it has one.
@@ -1960,4 +1999,116 @@ fn a_nightly_only_entry_skipped_in_the_merge_queue_is_not_a_failure() {
         mentions(&found, &["M-T-25", "production", "skipped-for-timing"]),
         "{found:#?}"
     );
+}
+
+/// A repository in a folder of its own, with a commit at each of the dates named.
+fn dated_repo(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("purlis-began-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder");
+    git_in(&dir, &["init", "-q", "-b", "base"]).expect("init");
+    dir
+}
+
+fn commit_on(dir: &std::path::Path, file: &str, at: &str) {
+    std::fs::write(dir.join(file), file).expect("a file");
+    git_in(dir, &["add", file]).expect("add");
+    let out = Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "-m",
+            file,
+        ])
+        .env("GIT_AUTHOR_DATE", at)
+        .env("GIT_COMMITTER_DATE", at)
+        .current_dir(dir)
+        .output()
+        .expect("git runs");
+    assert!(out.status.success(), "{out:?}");
+}
+
+#[test]
+fn a_change_began_with_its_own_first_commit_and_a_later_base_merge_does_not_move_it() {
+    let dir = dated_repo("merge");
+    commit_on(&dir, "a", "2026-11-01T00:00:00Z");
+    git_in(&dir, &["checkout", "-q", "-b", "change"]).expect("branch");
+    commit_on(&dir, "own", "2026-11-10T00:00:00Z");
+    git_in(&dir, &["checkout", "-q", "base"]).expect("back");
+    commit_on(&dir, "b", "2026-11-20T00:00:00Z");
+    git_in(&dir, &["checkout", "-q", "change"]).expect("on");
+    let merged = Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "-c",
+            "commit.gpgsign=false",
+            "merge",
+            "-q",
+            "--no-ff",
+            "-m",
+            "merge",
+            "base",
+        ])
+        .env("GIT_COMMITTER_DATE", "2026-11-21T00:00:00Z")
+        .current_dir(&dir)
+        .output()
+        .expect("git runs");
+    assert!(merged.status.success(), "{merged:?}");
+    // Began 11-10, with its own commit, though the merge base is now the base's tip of 11-20.
+    let began = began(&dir, "base").expect("a date");
+    assert_eq!(began, "2026-11-10T00:00:00Z");
+    // An issue opened 11-15 (after the change began, before the base merge) is new on an existing
+    // cell; one opened 11-05 (before it began) is not.
+    let issues: Issues = serde_json::from_value(json!({"issues": {
+        "7001": {"state": "open", "opened": "2026-11-01T09:00:00Z"},
+        "7002": {"state": "open", "opened": "2026-11-15T09:00:00Z"},
+        "7003": {"state": "open", "opened": "2026-11-05T09:00:00Z"},
+    }}))
+    .expect("an issue cache");
+    let base = vec![batch(
+        "cells/T.json",
+        "full",
+        json!([marked(
+            "M-T-01",
+            json!([mark(7001, json!({"dialect": "claude"}))])
+        )]),
+    )];
+    let with = |issue: u64| {
+        vec![batch(
+            "cells/T.json",
+            "full",
+            json!([marked(
+                "M-T-01",
+                json!([
+                    mark(7001, json!({"dialect": "claude"})),
+                    mark(issue, json!({"dialect": "codex"})),
+                ])
+            )]),
+        )]
+    };
+    assert_eq!(
+        ratchet(&base, &with(7002), &issues, &began),
+        Vec::<String>::new()
+    );
+    let found = ratchet(&base, &with(7003), &issues, &began);
+    assert!(mentions(&found, &["M-T-01", "7003"]), "{found:#?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_change_with_no_commit_of_its_own_began_at_its_merge_base() {
+    let dir = dated_repo("none");
+    commit_on(&dir, "a", "2026-11-01T00:00:00Z");
+    git_in(&dir, &["checkout", "-q", "-b", "change"]).expect("branch");
+    assert_eq!(began(&dir, "base").expect("a date"), "2026-11-01T00:00:00Z");
+    let _ = std::fs::remove_dir_all(&dir);
 }
