@@ -35,6 +35,7 @@ fn merge() -> Cell {
 
 #[test]
 fn a_cell_with_no_policy_runs_under_strict() {
+    purlis_core::unsteered!();
     let batch = Batch {
         policy: None,
         cells: vec![merge()],
@@ -61,6 +62,7 @@ fn a_cell_with_no_policy_runs_under_strict() {
 
 #[test]
 fn the_oracle_never_calls_the_hook_request_builder() {
+    purlis_core::unsteered!();
     let source = include_str!("policy_proof/oracle.rs");
     let code: String = source
         .lines()
@@ -102,6 +104,7 @@ fn the_oracle_never_calls_the_hook_request_builder() {
 
 #[test]
 fn an_equality_cell_takes_its_expectation_from_the_oracle() {
+    purlis_core::unsteered!();
     let cell = merge();
     let batch = Batch::default();
     let input = batch.policy_of(&cell);
@@ -135,6 +138,7 @@ fn an_equality_cell_takes_its_expectation_from_the_oracle() {
 
 #[test]
 fn a_harness_block_with_no_rule_is_a_mismatch_unless_its_gap_is_declared() {
+    purlis_core::unsteered!();
     let cell = merge();
     let expected = oracle(&PolicyInput::default(), &cell);
     // The harness stopped the merge and no rule says why.
