@@ -27,7 +27,10 @@
 //! - The setting is read from the **plane root's committed file** alone. The local file can only
 //!   tighten it ([`Settings::read`]).
 //! - It is **resolved once, at a chat's start** ([`at_start`]), and handed to the chat's hooks in
-//!   [`ENV`], which the app sets after anything a profile set.
+//!   [`ENV`], which the app sets after anything a profile set. The app's forge route is held to the
+//!   same rule for `guards.merge` ([`crate::forge::mergestance`]): it reads the policy live, for
+//!   the chat (never looser than its dispatch chain) and never looser than the chat started, so a
+//!   tightening reaches an open chat at once and a loosening press with its next start.
 //! - What a start resolves is never looser than what **this person last accepted**
 //!   ([`crate::sandbox::local::policy_accepted`], in their config home, which no sandboxed chat
 //!   writes). A tightening is accepted as the start reads it; a loosening waits for the person's

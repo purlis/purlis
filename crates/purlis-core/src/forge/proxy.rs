@@ -590,13 +590,23 @@ impl ForgeProxy {
         // `guards.merge`, asked now: a merge is let through under `log` or `off` for a chat that
         // proved itself, by the same recorded-repo checks as any write. Under `enforce`, and for
         // anything that is not one of the merge routes, nothing changes.
+        //
+        // **No lookup before the sentinel is proved**: resolving a node id asks the forge with the
+        // person's credential, so a caller that has not proved itself is decided with
+        // [`NoObjects`] and costs the forge, and the person, nothing. It is refused the same way
+        // whatever the id is in.
+        let objects: &dyn ObjectRepo = if sentinel.is_ok() {
+            self.objects.as_ref()
+        } else {
+            &NoObjects
+        };
         let mut logged_merge = false;
-        let mut decision = policy.decide(&head, inbound.body, self.objects.as_ref());
+        let mut decision = policy.decide(&head, inbound.body, objects);
         if sentinel.is_ok()
             && decision == Decision::Refuse(Refusal::Merge)
             && let mode @ (Mode::Log | Mode::Off) = self.merges.mode()
         {
-            let merging = policy.decide_merging(&head, inbound.body, self.objects.as_ref());
+            let merging = policy.decide_merging(&head, inbound.body, objects);
             if matches!(merging, Decision::Allow(_)) {
                 logged_merge = mode == Mode::Log;
                 decision = merging;

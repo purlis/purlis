@@ -384,9 +384,13 @@ pub struct Seams {
 /// What makes the pin a run is held to, from its project.
 pub type PinOf = Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::pin::Pin> + Send + Sync>;
 
-/// What makes the merge stance a run is held to, from its project.
-pub type MergesOf =
-    Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::mergestance::MergeStance> + Send + Sync>;
+/// What makes the merge stance a run is held to, from its project and the strictest policy along
+/// the chain that dispatched its chat (`None` for a chat nobody dispatched).
+pub type MergesOf = Arc<
+    dyn Fn(&Path, Option<&str>) -> Arc<dyn purlis_core::forge::mergestance::MergeStance>
+        + Send
+        + Sync,
+>;
 
 impl Seams {
     /// Every seam as its stub: a build with `forge-wiring` and none of the other slices.
@@ -400,7 +404,7 @@ impl Seams {
             runner_link: Arc::new(NoRunnerLink),
             gate: None,
             pin: Arc::new(|_| Arc::new(purlis_core::forge::pin::NoPin)),
-            merges: Arc::new(|_| Arc::new(purlis_core::forge::mergestance::HoldMerges)),
+            merges: Arc::new(|_, _| Arc::new(purlis_core::forge::mergestance::HoldMerges)),
         }
     }
 }
@@ -618,7 +622,7 @@ impl ForgeRoutes {
     /// A run starts. `None` when its project records no repo: there is nothing to proxy, and
     /// nothing else is stopped for it. An error leaves nothing behind.
     pub fn start(&self, chat: &str, run: &str, project: &Path) -> io::Result<Option<RouteParams>> {
-        self.start_for(chat, run, project, None)
+        self.start_for(chat, run, project, None, None)
     }
 
     fn start_for(
@@ -627,6 +631,7 @@ impl ForgeRoutes {
         run: &str,
         project: &Path,
         peer: Option<String>,
+        chain: Option<&str>,
     ) -> io::Result<Option<RouteParams>> {
         // The same run starting again replaces its route, or ends it where nothing is recorded
         // now: the old sentinel stops working either way.
@@ -657,7 +662,7 @@ impl ForgeRoutes {
         );
         let mut proxy = ForgeProxy::new(Box::new(objects::Shared(credentials)), Box::new(objects))
             .with_pin(pin.clone())
-            .with_merge_stance((self.seams.merges)(project));
+            .with_merge_stance((self.seams.merges)(project, chain));
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(
@@ -768,8 +773,14 @@ impl ForgeRoutes {
     }
 
     /// A start holding its route until it is committed: stopped if the start returns early.
-    pub fn guard(&self, chat: &str, run: &str, project: &Path) -> RouteGuard<'_> {
-        let params = match self.start(chat, run, project) {
+    pub fn guard(
+        &self,
+        chat: &str,
+        run: &str,
+        project: &Path,
+        chain: Option<&str>,
+    ) -> RouteGuard<'_> {
+        let params = match self.start_for(chat, run, project, None, chain) {
             Ok(params) => params,
             Err(refused) => {
                 tracing::warn!("purlis: the forge route of a chat did not start ({refused})");
@@ -948,7 +959,14 @@ impl ForgeRoutes {
         {
             return RunnerForward::Refused;
         }
-        match self.start_for(chat, run, &project, Some(peer.device.clone())) {
+        match self.start_for(
+            chat,
+            run,
+            &project,
+            Some(peer.device.clone()),
+            // A runner's chat carries no record of its chain here, so its merges are held.
+            Some(&purlis_core::enforcement::Resolved::strict().spelled()),
+        ) {
             Ok(Some(params)) => RunnerForward::Desktop(params),
             Ok(None) | Err(_) => RunnerForward::TokenConnections,
         }
@@ -1354,9 +1372,9 @@ pub fn install(held: Arc<dyn HeldSinks>) {
             seams.pin =
                 Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
             // Likewise `guards.merge`: `log` and `off` let a merge through, `enforce` holds it.
-            seams.merges = Arc::new(|project| {
+            seams.merges = Arc::new(|project, chain| {
                 Arc::new(purlis_core::forge::mergestance::PolicyMergeStance::of(
-                    project,
+                    project, chain,
                 ))
             });
         }
@@ -1380,8 +1398,13 @@ pub fn routes() -> Option<&'static ForgeRoutes> {
 
 /// A run starts (`chats.rs`): its route, held by a guard that stops it unless the chat opens.
 /// **Slice B puts the params in the run's environment**; until it merges nothing is handed over.
-pub fn guard(chat: &str, run: &str, project: &Path) -> Option<RouteGuard<'static>> {
-    Some(routes()?.guard(chat, run, project))
+pub fn guard(
+    chat: &str,
+    run: &str,
+    project: &Path,
+    chain: Option<&str>,
+) -> Option<RouteGuard<'static>> {
+    Some(routes()?.guard(chat, run, project, chain))
 }
 
 /// The route the app's own git takes for chat `session` ([`ForgeRoutes::git_route`]).

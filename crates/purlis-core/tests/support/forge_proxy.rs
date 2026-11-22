@@ -48,6 +48,19 @@ impl ObjectRepo for Objects {
     }
 }
 
+/// [`Objects`] that count each ask: how often the proxy resolved a node id.
+pub struct CountingObjects {
+    pub known: Objects,
+    pub asked: Arc<AtomicUsize>,
+}
+
+impl ObjectRepo for CountingObjects {
+    fn repo_of(&self, kind: Kind, host: &str, id: &str) -> Option<String> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
+        self.known.repo_of(kind, host, id)
+    }
+}
+
 pub struct Scene {
     pub proxy: ForgeProxy,
     pub a: ChatId,
@@ -87,7 +100,10 @@ impl Scene {
     }
 
     /// As [`Scene::with`], with the proxy changed by `tune` before the chats are enrolled.
-    pub fn tuned(objects: Objects, tune: impl FnOnce(ForgeProxy) -> ForgeProxy) -> Self {
+    pub fn tuned(
+        objects: impl ObjectRepo + 'static,
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
         Self::build_tuned(TokenKind::Oauth, objects, false, tune)
     }
 
@@ -97,7 +113,7 @@ impl Scene {
 
     fn build_tuned(
         token_kind: TokenKind,
-        objects: Objects,
+        objects: impl ObjectRepo + 'static,
         ghes: bool,
         tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
     ) -> Self {

@@ -106,7 +106,7 @@ impl NodeRepos for ForgeLookup {
     ) -> Result<Option<String>, String> {
         let forge = Forge {
             kind: ForgeKind::GitHub,
-            host: request.host.clone(),
+            host: api_host(&request.host, request.port),
         };
         let tokens = Arc::new(RouteToken {
             credentials: self.credentials.clone(),
@@ -121,6 +121,16 @@ impl NodeRepos for ForgeLookup {
             return Err(reply.said(ForgeKind::GitHub));
         }
         repo_in(&reply.out)
+    }
+}
+
+/// The host the lookup's API root is made from: the recorded repo's own port is part of it unless
+/// it is HTTPS's default, so a GHES on `:8443` is asked there and not on `:443`.
+fn api_host(host: &str, port: u16) -> String {
+    if port == 443 {
+        host.to_owned()
+    } else {
+        format!("{host}:{port}")
     }
 }
 
@@ -307,6 +317,33 @@ mod tests {
             .unwrap()
             .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(7));
         RunObjects::new(ChatId::new("run-1"), vec![repo], lookup)
+    }
+
+    #[test]
+    fn a_ported_repo_is_asked_in_the_terms_of_its_own_port() {
+        let lookup = Answers::of(&[("PR_kwDOA", Ok(Some("acme/widgets")))]);
+        let repo = AllowedRepo::new(
+            Kind::GitHub,
+            "ghes.example.com",
+            8443,
+            "acme/widgets",
+            "main",
+        )
+        .unwrap();
+        let objects = RunObjects::new(ChatId::new("run-1"), vec![repo], lookup.clone());
+
+        assert!(
+            objects
+                .repo_of(Kind::GitHub, "ghes.example.com", "PR_kwDOA")
+                .is_some()
+        );
+        assert_eq!(lookup.terms.lock().unwrap()[0].port, 8443);
+    }
+
+    #[test]
+    fn a_ported_host_is_asked_on_its_port() {
+        assert_eq!(api_host("ghes.example.com", 8443), "ghes.example.com:8443");
+        assert_eq!(api_host("github.com", 443), "github.com");
     }
 
     #[test]

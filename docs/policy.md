@@ -48,7 +48,10 @@ a host you kept blocked, and your harness's ask and deny rules for a program, be
 guard that fails to answer refuses the call. Where the sandbox is on, a Bash guard that fails to
 answer refuses the call too, since it judges the sandbox's own rules (Q327).
 
-**`guards.merge` is honoured by the forge route as by the hook.** Under `log` or `off` a chat's
+**`guards.merge` is honoured by the forge route as by the hook, once you opt in.** The route
+forwards a merge only where your committed `[policy]` names `guards.merge` itself, or a template
+other than the default `watch` (`open`); with no `[policy]`, or `watch` and no `guards.merge` key,
+it holds every merge for your press, though the hook runs `watch` as `log`. Under `log` or `off` a chat's
 merge through its own forge route (REST, GraphQL, auto-merge, the merge queue, GitLab's merge and
 merge when the pipeline succeeds, and so `gh pr merge` and `glab mr merge`) goes through, and
 `log` writes one line to the chat's enforcement log (the chat and the repo, never the request);

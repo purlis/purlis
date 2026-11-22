@@ -14,11 +14,21 @@ route in the chat the hook had let through.
 
 ## Decision
 
-The route asks the project's `guards.merge`, **live on each request**, as `forge/pin.rs` reads
-`Locks` on each ask, and keeps no copy. The one source of truth is `purlis_core::enforcement`
-(`enforcement::mode`): the stricter of the committed file and what the person accepted, never below
-an administrator's lock, and `enforce` wherever the policy cannot be read or the process is not the
-app. The route adds no reading of its own (`forge::mergestance`).
+The route asks the project's `guards.merge` **for the chat it serves, on each request**, and gives
+the answer the chat's own hook gets, so the two never disagree. The one source of truth is
+`purlis_core::enforcement` (`forge::mergestance` adds no reading of its own):
+
+- `in_force(root).for_chat(chain)`: the stricter of the committed file and what the person accepted,
+  never below an administrator's lock, and `enforce` wherever the policy cannot be read or the
+  process is not the app, made no looser than `chain`, the strictest policy along the chat's
+  dispatch chain (`HandedFrom::policy`). This is the call the hook's answer is made with
+  (`handoff.rs`, `Ask::Policy`), so **a dispatched chat whose asker ran under `enforce` is held by
+  the route as by its hook, whatever its project now says.**
+- Then the stricter of that and what the chat **started** under (`enforcement::at_start`, taken
+  when the route is made), which is the stricter-of-start rule the hook has in its environment
+  (`PURLIS_POLICY`). **A tightening reaches a running chat's route at once; a loosening press
+  reaches it with the chat's next start**, as it does the hook. A runner's chat, whose chain the
+  app has no record of here, is held (`strict`).
 
 - **`enforce`**: unchanged. The merge is a held act (D8.1); the person is asked.
 - **`log`**: the merge is forwarded and one line is recorded in the chat's enforcement log, family
@@ -43,6 +53,10 @@ of merge commands, no query, and, in GraphQL, every id tied to a recorded repo.
 
 - Only a recorded repo of the chat's own run, and a valid sentinel. A merge of another repo, or with
   none, is refused or held as before; the stance is asked only after the sentinel is proved.
+- **Nothing is looked up for a caller that has not proved itself.** The proxy decides a request
+  with `NoObjects` unless its sentinel is valid, so an unauthenticated request makes no credentialed
+  `node(id)` call (credential use, up to ten seconds of a request's wait, and an oracle on which ids
+  are in a recorded repo) and is refused the same way whatever the id is in.
 - Administration, tags and releases, rulesets and branch protection, approvals, a branch merge
   (`POST merges`, `mergeBranch`) and a merge flag in a query string other than GitLab's one
   (below) stay refused.
@@ -74,12 +88,34 @@ only gains `AllowedRepo::forge_id`):
   another repo.
 - Answers are cached for the run, at most 256, oldest out first. A forge that could not be asked
   is not cached.
+- The lookup goes to the recorded repo's own host **and port** (a GHES on `:8443` is asked there).
+
+**What this changes for every mode, not only for a merge.** Because ids now resolve, the by-id
+mutations and queries the list already held (`closePullRequest`, `addComment`,
+`updatePullRequestBranch`, `node` and `nodes`) now work for an id in the recorded repo **under every
+mode, `enforce` included**, where before they were refused as another repo. An id in another repo,
+or one the forge cannot place, is still refused.
 
 ## GitLab's query form
 
 `PUT …/merge_requests/<iid>/merge?merge_when_pipeline_succeeds=true` (or `false`), the form `glab`
 and GitLab's own documentation send, is taken as the body's field under `log` and `off`, by the same
-decision. A query with any other key or value, the flag on any other route, and GitHub's
-`?auto_merge=true` stay refused as a merge (held under `enforce`, refused otherwise).
+decision, **only as the query's one parameter, spelled exactly so**. The flag repeated, in another
+case, beside any other key, with another value, on any other route, and GitHub's `?auto_merge=true`
+stay refused as a merge (held under `enforce`, refused otherwise): a forge may read a repeated or
+re-cased key differently from the proxy.
+
+## Only an explicit opt-in (the person's ruling, 2026-11-22)
+
+`watch`, the shipped default template, runs `guards.merge` as `log` for the hook
+(`Template::mode`: only `hold`, `team` and `strict` enforce it). **The route does not follow the
+default.** It forwards a merge only where the project's committed `[policy]` **itself** lets merges
+through (`forge::mergestance::merges_opted_in`): it names `guards.merge` by key, or names a template
+other than `watch` (in practice `open`; `hold`, `team` and `strict` enforce). A project with no
+`[policy]`, or with `template = "watch"` and no `guards.merge` key, keeps today's behaviour: the
+route holds every merge for the person's press, whatever the hook does. So landing this changes
+nothing for a project that never wrote the setting; one that wrote `guards.merge = "log"` or `"off"`
+(or `template = "open"`) now has its chats' merges forwarded, `log` writing one line each. The rule
+is read from the committed file on each merge, so removing the key holds merges again at once.
 
 **Tier** (ADR 0069): no new store. The log line is the enforcement log's own.

@@ -5292,7 +5292,11 @@ impl Chats {
                 .id
                 .as_deref()
                 .zip(identity.run.as_deref())
-                .and_then(|(chat_id, run)| crate::forgeroute::guard(chat_id, run, &self.project))
+                .and_then(|(chat_id, run)| {
+                    // The merge stance is never looser than the chain that dispatched this chat.
+                    let chain = chat.from.as_ref().and_then(|from| from.policy.as_deref());
+                    crate::forgeroute::guard(chat_id, run, &self.project, chain)
+                })
         };
         // A grade's chat is armed here, with its limits, or not at all (SK-16): a runner
         // composes its own line, and would start it with none of them.

@@ -13,6 +13,7 @@
 //! `enforce`.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use purlis_core::enforcement::{self, Family, Mode};
@@ -21,7 +22,9 @@ use purlis_core::forge::proxy::{ChatId, HeldSink, Outcome, Refusal};
 use purlis_core::heldact::Requested;
 use purlis_core::sandbox::policy::Locks;
 
-use crate::support::forge_proxy::{Auth, Objects, Scene, graphql, is_refused};
+use crate::support::forge_proxy::{
+    Auth, CountingObjects, GITLAB_SELF, Objects, Scene, graphql, is_refused,
+};
 
 struct Asks;
 
@@ -466,7 +469,7 @@ fn a_policy_that_cannot_be_read_holds_every_merge() {
     purlis_core::unsteered!();
     // Outside the app, a project's file is never read, and nobody answered this process: what
     // cannot be read is `enforce`.
-    let stance = PolicyMergeStance::of(Path::new("/nonexistent/plane"));
+    let stance = PolicyMergeStance::of(Path::new("/nonexistent/plane"), None);
     let s = Scene::tuned(Objects::default(), |proxy| {
         proxy
             .with_held(Box::new(Asks))
@@ -542,4 +545,217 @@ fn an_administrators_pin_still_wins_over_a_merge_let_through() {
         br#"{"sha":"abc"}"#,
     );
     assert!(is_refused(&out, Refusal::Pinned), "{out:?}");
+}
+
+fn forwarded(out: &Outcome) -> bool {
+    matches!(out, Outcome::Forward(_))
+}
+
+fn document(q: &str) -> Vec<u8> {
+    graphql(q, serde_json::json!({}))
+}
+
+fn post_graphql(s: &Scene, body: &[u8]) -> Outcome {
+    s.send("POST", "api.github.com", "/graphql", body)
+}
+
+const MERGE_MINE: &str =
+    "mergePullRequest(input:{pullRequestId:\"PR_kwDO_1\"}){ clientMutationId }";
+const MERGE_THEIRS: &str =
+    "mergePullRequest(input:{pullRequestId:\"PR_other\"}){ clientMutationId }";
+
+#[test]
+fn a_merge_by_input_variables_is_what_gh_pr_merge_sends_and_follows_the_stance() {
+    purlis_core::unsteered!();
+    let by_variables = |id: &str| {
+        graphql(
+            "mutation($input: MergePullRequestInput!){ mergePullRequest(input:$input){ clientMutationId } }",
+            serde_json::json!({"input": {"pullRequestId": id, "mergeMethod": "SQUASH"}}),
+        )
+    };
+    let (held, _) = in_mode(Mode::Enforce);
+    assert!(stopped(
+        &post_graphql(&held, &by_variables("PR_kwDO_1")),
+        Refusal::Merge
+    ));
+    let (s, lines) = in_mode(Mode::Log);
+    assert!(forwarded(&post_graphql(&s, &by_variables("PR_kwDO_1"))));
+    assert_eq!(lines.lock().unwrap().len(), 1);
+    // Another repo's pull request, named the same way, is not the chat's to merge.
+    assert!(!forwarded(&post_graphql(&s, &by_variables("PR_other"))));
+    assert!(!forwarded(&post_graphql(&s, &by_variables("PR_unknown"))));
+    assert_eq!(lines.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn a_document_that_merges_mine_and_theirs_is_refused_whole() {
+    purlis_core::unsteered!();
+    for mode in [Mode::Log, Mode::Off] {
+        let (s, lines) = in_mode(mode);
+        let both = document(&format!("mutation{{ a: {MERGE_MINE} b: {MERGE_THEIRS} }}"));
+        let out = post_graphql(&s, &both);
+        assert!(!forwarded(&out), "{mode:?}: {out:?}");
+        assert!(lines.lock().unwrap().is_empty(), "{mode:?}");
+    }
+}
+
+#[test]
+fn a_document_that_merges_and_administers_is_refused_whole() {
+    purlis_core::unsteered!();
+    for mode in [Mode::Log, Mode::Off] {
+        let (s, lines) = in_mode(mode);
+        let both = document(&format!(
+            "mutation{{ a: {MERGE_MINE} b: updateBranchProtectionRule(input:{{branchProtectionRuleId:\"BPR_1\"}}){{ clientMutationId }} }}"
+        ));
+        let out = post_graphql(&s, &both);
+        assert!(!forwarded(&out), "{mode:?}: {out:?}");
+        assert!(lines.lock().unwrap().is_empty(), "{mode:?}");
+        // And a merge beside a branch merge, which stays refused.
+        let beside = document(&format!(
+            "mutation{{ a: {MERGE_MINE} b: mergeBranch(input:{{repositoryId:\"R_acme_app\",base:\"main\",head:\"x\"}}){{ clientMutationId }} }}"
+        ));
+        assert!(!forwarded(&post_graphql(&s, &beside)), "{mode:?}");
+    }
+}
+
+#[test]
+fn a_json_array_of_documents_is_not_a_batch_the_route_serves() {
+    purlis_core::unsteered!();
+    let (s, _) = in_mode(Mode::Log);
+    let one = serde_json::json!({"query": format!("mutation{{ {MERGE_MINE} }}")});
+    let batch = serde_json::to_vec(&serde_json::json!([one, one])).unwrap();
+    assert!(!forwarded(&post_graphql(&s, &batch)));
+}
+
+#[test]
+fn an_aliased_duplicate_of_my_own_merge_is_one_forwarded_request_with_one_line() {
+    purlis_core::unsteered!();
+    let (s, lines) = in_mode(Mode::Log);
+    let twice = document(&format!("mutation{{ a: {MERGE_MINE} b: {MERGE_MINE} }}"));
+    assert!(forwarded(&post_graphql(&s, &twice)));
+    assert_eq!(lines.lock().unwrap().len(), 1);
+    // An alias is only a name for the response: it never makes a mutation another one.
+    let disguised = document(
+        "mutation{ mergePullRequest: mergeBranch(input:{repositoryId:\"R_acme_app\",base:\"main\",head:\"x\"}){ clientMutationId } }",
+    );
+    assert!(!forwarded(&post_graphql(&s, &disguised)));
+    assert_eq!(lines.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn the_gitlab_merge_flag_is_one_exact_key_in_the_query_and_nothing_else() {
+    purlis_core::unsteered!();
+    let target = |query: &str| format!("/api/v4/projects/42/merge_requests/3/merge?{query}");
+    let (s, lines) = in_mode(Mode::Log);
+    let put = |query: &str| s.send("PUT", "gitlab.com", &target(query), br#"{"sha":"abc"}"#);
+    assert!(forwarded(&put("merge_when_pipeline_succeeds=true")));
+    assert!(forwarded(&put("merge_when_pipeline_succeeds=false")));
+    let sent = lines.lock().unwrap().len();
+    for refused in [
+        "merge_when_pipeline_succeeds=true&merge_when_pipeline_succeeds=false",
+        "merge_when_pipeline_succeeds=true&merge_when_pipeline_succeeds=true",
+        "Merge_When_Pipeline_Succeeds=true",
+        "MERGE_WHEN_PIPELINE_SUCCEEDS=true",
+        "merge_when_pipeline_succeeds=true&squash=true",
+        "merge_when_pipeline_succeeds=yes",
+        "merge_when_pipeline_succeeds=true&Merge_When_Pipeline_Succeeds=true",
+    ] {
+        let out = put(refused);
+        assert!(!forwarded(&out), "{refused}: {out:?}");
+    }
+    assert_eq!(lines.lock().unwrap().len(), sent);
+}
+
+#[test]
+fn a_merge_on_a_ported_host_is_the_recorded_repos_alone() {
+    purlis_core::unsteered!();
+    let (s, lines) = in_mode(Mode::Log);
+    let target = "/api/v4/projects/grp%2Fsub%2Fproj/merge_requests/3/merge";
+    let out = s.send_as(
+        &s.a,
+        "PUT",
+        GITLAB_SELF,
+        8443,
+        target,
+        Auth::Bearer(s.a_sentinel.expose()),
+        br#"{"sha":"abc"}"#,
+    );
+    assert!(forwarded(&out), "{out:?}");
+    assert_eq!(
+        lines.lock().unwrap().as_slice(),
+        [("chat-a".to_owned(), format!("{GITLAB_SELF}/grp/sub/proj"))]
+    );
+    // The same host on its other port is no repo the chat recorded.
+    let other = s.send_as(
+        &s.a,
+        "PUT",
+        GITLAB_SELF,
+        443,
+        target,
+        Auth::Bearer(s.a_sentinel.expose()),
+        br#"{"sha":"abc"}"#,
+    );
+    assert!(!forwarded(&other), "{other:?}");
+}
+
+#[test]
+fn a_caller_that_has_not_proved_itself_costs_no_lookup_and_learns_nothing_of_an_id() {
+    purlis_core::unsteered!();
+    let asked = Arc::new(AtomicUsize::new(0));
+    let mut known = Objects::default();
+    known.0.insert("PR_kwDO_1".into(), "acme/app".into());
+    let counting = CountingObjects {
+        known,
+        asked: asked.clone(),
+    };
+    let s = Scene::tuned(counting, |proxy| {
+        proxy
+            .with_held(Box::new(Asks))
+            .with_merge_stance(Arc::new(PolicyMergeStance::reading(
+                || Mode::Log,
+                |_, _| {},
+            )))
+    });
+    let refusal = |out: Outcome| match out {
+        Outcome::Refused(why) => why,
+        other => panic!("not refused: {other:?}"),
+    };
+    for auth in [Auth::None, Auth::Bearer("not-the-sentinel")] {
+        let mine = refusal(s.send_as(
+            &s.a,
+            "POST",
+            "api.github.com",
+            443,
+            "/graphql",
+            auth,
+            &document(&format!("mutation{{ {MERGE_MINE} }}")),
+        ));
+        let unknown = refusal(s.send_as(
+            &s.a,
+            "POST",
+            "api.github.com",
+            443,
+            "/graphql",
+            Auth::None,
+            &document(
+                "mutation{ mergePullRequest(input:{pullRequestId:\"PR_nowhere\"}){ clientMutationId } }",
+            ),
+        ));
+        assert_eq!(
+            mine, unknown,
+            "the refusal is the same whatever the id is in"
+        );
+    }
+    assert_eq!(
+        asked.load(Ordering::SeqCst),
+        0,
+        "no lookup before the sentinel"
+    );
+    assert_eq!(s.asked.load(Ordering::SeqCst), 0, "no credential either");
+    // A caller that has proved itself is the one that is looked up for.
+    assert!(forwarded(&post_graphql(
+        &s,
+        &document(&format!("mutation{{ {MERGE_MINE} }}"))
+    )));
+    assert!(asked.load(Ordering::SeqCst) > 0);
 }
