@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795371775540,
+  "lastUpdate": 1795383192782,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52332,6 +52332,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1723485,
             "unit": "ms",
             "extra": "median of 5 runs: 101.055, 101.062, 101.172, 101.737, 101.747 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a6f40e483844f718d0ef30e4d2aaba98d3078fe0",
+          "message": "Codex at Full on macOS may lock its SQLite state (#7352) (#7376)\n\n* Codex may lock its SQLite stores under the full macOS profile (#7352)\n\nSQLite takes fcntl locks, which (deny default) refuses as file-lock and\nfile-write* does not give, so Codex could not create or migrate state_5.sqlite.\nAllow file-lock for the stores' regex only. Adds a profile unit test and a live\nsandbox-exec test with WAL and a migration.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81RY0HHPHCA5S2J1N1W66ME\nPurlis-Persona: steward\n\n* Changelog fragment for the Codex SQLite lock fix (#7352)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81RY0HHPHCA5S2J1N1W66ME\nPurlis-Persona: steward\n\n* Linux profile reader: set file-lock aside as Seatbelt's own (#7352)\n\nSQLite's fcntl lock needs nothing beyond opening the file on Linux and Landlock has no lock right, so the rule reads and grants no path.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M829D2QPF1W52JKKA6HYT0W0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T20:47:13Z",
+          "tree_id": "92c064171eea249f16bd55aca277de114faa5759",
+          "url": "https://github.com/purlis/purlis/commit/a6f40e483844f718d0ef30e4d2aaba98d3078fe0"
+        },
+        "date": 1795383185613,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.41558649999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.398, 0.409, 0.416, 0.423, 0.423 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.675642500000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.622, 16.633, 16.676, 16.739, 16.792 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6377025,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.826, 101.274, 101.638, 101.752, 102.813 ms"
           }
         ]
       }
