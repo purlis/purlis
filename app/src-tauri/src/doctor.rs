@@ -610,6 +610,7 @@ fn report_in(
         ]
         .into_iter()
         .chain(config_root.and_then(|config_root| local_project(root, config_root)))
+        .chain(forge_route(root))
         .chain(
             config_root
                 .map(purlis_core::pools::cluster_deletion_notices)
@@ -621,6 +622,32 @@ fn report_in(
         full,
         path: std::env::var_os("PATH").map(|p| p.to_string_lossy().into_owned()),
     }
+}
+
+/// `forge route`: is the forge proxy up, and is there a sign-in for every host the project
+/// records (one login, ADR 0128 J). The app's own row: only the app runs the proxy. None where
+/// the build has no forge wiring or the app has not installed it.
+#[cfg(feature = "forge-wiring")]
+fn forge_route(root: &std::path::Path) -> Option<DoctorRow> {
+    let said = crate::forgeroute::routes()?.row(root);
+    Some(DoctorRow {
+        name: "forge route".to_owned(),
+        status: if said.problem {
+            DoctorStatus::Warn
+        } else {
+            DoctorStatus::Ok
+        },
+        detail: said.detail,
+        hint: said.hint,
+        checked: true,
+        settings: None,
+        fix: None,
+    })
+}
+
+#[cfg(not(feature = "forge-wiring"))]
+fn forge_route(_: &std::path::Path) -> Option<DoctorRow> {
+    None
 }
 
 /// `chat footer`: can the chats this app starts record what a turn cost?

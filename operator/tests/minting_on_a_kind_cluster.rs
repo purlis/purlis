@@ -903,6 +903,20 @@ async fn a_vouched_runner_gets_a_token_covering_exactly_the_intersection_and_eve
             String::from_utf8_lossy(&out.stderr)
         );
     };
+    // With the one login (ADR 0128 D9) a runner takes no mint port: its chats use the desktop's
+    // sign-in, or a token connection, and the runner image says so to a word about the port. The
+    // route this test measures is the one that was retired, so a runner that says it takes no port
+    // is the route being gone, and the test ends here; a build without the feature goes on.
+    let probe = exec_fed(
+        &runner_ns,
+        &pod,
+        &["purlis", "bridge", "--mint-port"],
+        &format!("{}\n", told(&[])),
+    );
+    if String::from_utf8_lossy(&probe.stderr).contains("takes no mint port") {
+        eprintln!("the runner takes no mint port (one login): the retired route is not measured");
+        return;
+    }
     // Each check is a mint of its own: it asks the port for a challenge and a token, and revokes
     // the token. Nothing is kept from one check to the next.
     let check = |app: &str| {

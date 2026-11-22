@@ -6550,3 +6550,33 @@ fn an_undeclared_glab_is_refused_a_run_with_the_token_and_never_runs() {
     assert_ne!(frames.last(), Some(&Frame::Exit(0)), "{frames:?}");
     assert!(!stdout(&frames).contains("token="), "{frames:?}");
 }
+
+// ----------------------------------------------------------------------------------------
+// With the one-login train a chat is handed no forge token by the broker (ADR 0128).
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_sandboxed_chat_is_served_no_forge_token_whatever_variable_its_tool_is_declared_in() {
+    let project = project();
+    // A synthetic token-shaped value, made at run time.
+    let token = format!("{}{}", "glpat-", "synthetic0example");
+    std::fs::write(
+        project.path().join("team.json"),
+        serde_json::json!({"TOKEN": TOKEN, "PRIV": token}).to_string(),
+    )
+    .unwrap();
+    let mut want = wanted(project.path(), "team", sh("echo ran"));
+    want.env = vec!["PRIVATE_TOKEN=PRIV".into()];
+    let (frames, _, _) = served_recorded(&asker(project.path(), Some("devops")), want);
+    let refused = frames
+        .iter()
+        .any(|frame| matches!(frame, Frame::Refused { why, .. } if why.contains("forge token")));
+    assert!(refused, "{frames:?}");
+    assert_eq!(stdout(&frames), "", "nothing ran: {frames:?}");
+
+    // A value that is no forge token is served as it always was.
+    let mut plain = wanted(project.path(), "team", sh("echo ran"));
+    plain.env = vec!["X=TOKEN".into()];
+    let (frames, _, _) = served_recorded(&asker(project.path(), Some("devops")), plain);
+    assert_eq!(stdout(&frames), "ran\n", "{frames:?}");
+}

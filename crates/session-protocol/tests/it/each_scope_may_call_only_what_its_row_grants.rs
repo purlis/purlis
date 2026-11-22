@@ -241,6 +241,7 @@ fn every_command() -> Vec<Command> {
                 any_port: false,
                 beside: session::Beside::Wrapped,
                 given: Vec::new(),
+                forge: None,
             },
             asks: true,
             lifted: Vec::new(),

@@ -114,7 +114,16 @@ pub async fn vouch_clone(
         // Any folder that is not one of the project's workspace clones is refused by the core.
         // The same press clears every chat's refusal that waited on it, from its ask or its
         // Notice (R-328).
-        purlis_core::windowonly::trust_this_clone(&scope, &config_root, &root, &folder, &place)
+        let trusted = purlis_core::windowonly::trust_this_clone(
+            &scope,
+            &config_root,
+            &root,
+            &folder,
+            &place,
+        )?;
+        // ADR 0128 D4: the repo's number and account are recorded with the trust, best effort.
+        crate::onelogin::confirm_after_trust(&root.join(&folder));
+        Ok(trusted)
     })
     .await
     .map_err(|err| format!("trusting the clone did not finish: {err}"))?

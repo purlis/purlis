@@ -68,6 +68,7 @@ fn facts() -> mergehold::Facts {
         },
         ruleset: mergehold::Ruleset::Protects,
         approved_by: None,
+        squash: false,
         read_at: 40,
     }
 }

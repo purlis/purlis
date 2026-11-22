@@ -107,6 +107,7 @@ fn plan() -> ConfinePlan {
         any_port: false,
         beside: Beside::Wrapped,
         given: Vec::new(),
+        forge: None,
     }
 }
 

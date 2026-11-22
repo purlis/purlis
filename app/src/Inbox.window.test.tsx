@@ -50,6 +50,12 @@ import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
 import { NETWORK } from "./settings/GrantedList";
 import type { DispatchPending, InboxUpdate, Shown } from "./bindings";
 
+/** The held acts view's own reads: its list, and its hearing of the asks' event. */
+const heldActsView = (call: { cmd: string; args?: unknown }) =>
+  call.cmd === "held_acts_waiting" ||
+  (call.cmd === "plugin:event|listen" &&
+    (call.args as { event?: string } | undefined)?.event === "asks-changed");
+
 /**
  * **The Inbox** (#1692, spec #1688): a project's asks grouped by chat, oldest first, each under
  * its chain, answered in place through the path its source's Notice answers with, Go to chat on
@@ -809,9 +815,11 @@ describe("answering in place", () => {
       const { props, again } = draw([removal]);
       await userEvent.click(screen.getByRole("button", { name: "Remove…" }));
       await waitFor(() => expect(opened).toEqual([{ plane: PLANE, workspace: "alpha" }]));
-      expect(calls.filter((one) => one.cmd !== "asks_waiting" && one.cmd !== "rules_made")).toEqual(
-        [],
-      );
+      expect(
+        calls.filter(
+          (one) => one.cmd !== "asks_waiting" && one.cmd !== "rules_made" && !heldActsView(one),
+        ),
+      ).toEqual([]);
       expect(props.onAnswered).not.toHaveBeenCalled();
       // The person closed the dialog, and the question was answered elsewhere: nothing says
       // they answered Remove… here.
@@ -2100,7 +2108,10 @@ describe("the keyboard (I-11)", () => {
     await userEvent.keyboard("ydn");
     // Reads alone: which dispatches wait, and the rules made (#6010).
     expect(
-      calls.filter((one) => one.cmd !== "dispatch_grants_needed" && one.cmd !== "rules_made"),
+      calls.filter(
+        (one) =>
+          one.cmd !== "dispatch_grants_needed" && one.cmd !== "rules_made" && !heldActsView(one),
+      ),
     ).toEqual([]);
   });
 });

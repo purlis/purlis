@@ -190,6 +190,7 @@ fn held_reads_each_personas_glab_line_and_says_which_are_ours() {
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn setting_up_keeps_the_token_in_the_personas_vault_declares_glab_and_allows_what_it_wrote() {
     let plane = project("");
@@ -230,6 +231,7 @@ fn setting_up_keeps_the_token_in_the_personas_vault_declares_glab_and_allows_wha
     assert!(!file.contains(TOKEN), "{file}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn nothing_is_stored_where_something_would_refuse() {
     let plane = project("");
@@ -295,6 +297,7 @@ fn nothing_is_stored_where_something_would_refuse() {
     let _ = before;
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn removing_takes_the_token_and_the_line_away_and_refuses_what_it_did_not_write() {
     let plane = project("");
@@ -319,6 +322,7 @@ fn removing_takes_the_token_and_the_line_away_and_refuses_what_it_did_not_write(
     );
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn with_no_allow_to_record_every_persona_is_left_for_the_persons_own() {
     let plane = project("");
@@ -338,4 +342,29 @@ fn with_no_allow_to_record_every_persona_is_left_for_the_persons_own() {
         Some(TOKEN)
     );
     assert!(held(plane.path()).unwrap()[0].ours());
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn setting_up_a_gitlab_token_is_refused_and_stores_and_writes_nothing() {
+    let plane = project("");
+    let before = std::fs::read_to_string(crate::names::manifest(plane.path())).unwrap();
+    let (_machine, ctx) = machine(&["dev"]);
+    let said = set_up(
+        &ctx,
+        plane.path(),
+        SELF_HOSTED,
+        TOKEN,
+        &["dev".to_owned()],
+        None,
+    );
+    assert_eq!(
+        said.err(),
+        Some(crate::sandbox::tools::replaced::SETUP_REFUSED.to_owned())
+    );
+    assert_eq!(stored(&ctx, "dev", &key_of(SELF_HOSTED)), None);
+    assert_eq!(
+        std::fs::read_to_string(crate::names::manifest(plane.path())).unwrap(),
+        before
+    );
 }

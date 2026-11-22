@@ -688,6 +688,7 @@ fn a_refused_credential_is_known_as_one() {
 /// #7205: a chat that holds the person's credentials claims the forge lock, and its line hands it
 /// no path to their forge login; one at the floor under `watch`, which holds none and has no mint,
 /// keeps its own login on purpose and is handed nothing of the lock.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
     let (_home, home) = home();
@@ -762,6 +763,7 @@ fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
 
 /// #7205: the config purlis compiles for a chat that claims the forge lock has the harness's
 /// forge connector off, and one that does not claim it is compiled as it was.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_chat_that_claims_the_forge_lock_is_compiled_with_its_forge_connectors_off() {
     use crate::harness::{Kit, StateHooks};
@@ -879,6 +881,7 @@ fn a_credential_is_one_under_every_spelling_a_program_opens_it_by() {
     }
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 /// What each entry of [`CREDENTIAL_FILES`] is, said by a row here and never guessed from its name.
 enum Entry {
     /// A forge's own login file: the program that reads it, the kind of forge, the variable the
@@ -909,6 +912,7 @@ enum Entry {
 ///
 /// An entry with no row, a row with no entry, or a row with an answer taken away, turns this red.
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_setup_flow() {
     use crate::forge::Kind;
@@ -1111,6 +1115,7 @@ fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_set
 /// from its start instead (the tab's note, which reads the class and the mint, not a failed read),
 /// and the shim of a chat with a mint answers with its sentence and runs nothing, whatever its
 /// config folder holds.
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_locked_chat_with_no_token_is_told_so_without_gh_reading_its_config() {
     use crate::forge::Kind;

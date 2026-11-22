@@ -26,6 +26,7 @@ const ACCOUNT: ForgeAccountRow = {
   signed_in: true,
   scopes: ["api"],
   wider: [],
+  ci_allowed: false,
 };
 
 /** Every command the window sent, with its arguments. */
@@ -226,5 +227,79 @@ describe("a gitlab.com sign-in GitLab would not renew", () => {
     await waitFor(() => expect(sent.some((one) => one.cmd === "forge_accounts")).toBe(true));
     await Promise.resolve();
     expect(screen.queryByText(/has ended/)).toBeNull();
+  });
+});
+
+describe("Sign in with GitLab on a self-managed host", () => {
+  const CONSENT =
+    "On the next page, check that the application is owned by acme-platform on git.example.com. Sign in only if it is.";
+
+  it("shows what to check and does not open the browser until the person presses", async () => {
+    render(
+      <ForgeGitLabSignIn
+        host="git.example.com"
+        consent={CONSENT}
+        onSignedIn={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(CONSENT)).toBeTruthy();
+    await Promise.resolve();
+    expect(starts()).toHaveLength(0);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open git.example.com in your browser" }),
+    );
+    await waitFor(() => expect(starts()).toHaveLength(1));
+    expect(starts()[0].args).toMatchObject({ kind: "gitlab", host: "git.example.com" });
+  });
+
+  it("cancelling before the press starts and stops nothing", async () => {
+    const onCancel = vi.fn();
+    render(
+      <ForgeGitLabSignIn
+        host="git.example.com"
+        consent={CONSENT}
+        onSignedIn={vi.fn()}
+        onCancel={onCancel}
+      />,
+    );
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(onCancel).toHaveBeenCalled());
+    expect(starts()).toHaveLength(0);
+    expect(cancels()).toHaveLength(0);
+  });
+});
+
+describe("An everyday GitHub token that holds workflow", () => {
+  function Lines() {
+    return (
+      <NoticeList>
+        <ForgeSignInEnded />
+      </NoticeList>
+    );
+  }
+
+  it("is a Notice drawn from the account list, with the way out, and survives a restart", async () => {
+    accounts = [
+      {
+        id: "01J9GITHUB",
+        kind: "github",
+        host: "github.com",
+        login: "octocat",
+        method: "browser",
+        signed_in: true,
+        scopes: ["repo", "read:org", "workflow"],
+        wider: ["workflow"],
+        ci_allowed: false,
+      },
+    ];
+    render(<Lines />);
+    const notice = await screen.findByText(/gives it to no chat|so purlis gives it to no chat/);
+    expect(notice.closest("[data-cause]")).toHaveAttribute(
+      "data-cause",
+      "forge-sign-in-everyday-holds-workflow:01J9GITHUB",
+    );
+    expect(notice.textContent).toContain("revoke purlis");
+    expect(screen.getByRole("button", { name: "Sign in again" })).toBeTruthy();
   });
 });
