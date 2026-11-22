@@ -1112,7 +1112,8 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         // person kept blocked, or at least one the proxy wrote when it raised the hold. On Linux
         // every leg showed one; on macOS the sandbox's block is written without an ask being
         // listed in time (OpenCode's Full leg), so there the block above is what is asserted and
-        // the record says whether an ask was kept.
+        // the record says whether an ask was kept. That may hide a real gap, a held connection
+        // that raises no ask on macOS: #7368 holds it, and this carve-out goes when it is read.
         assert!(
             !cfg!(target_os = "linux")
                 || kept.get()
@@ -1180,8 +1181,8 @@ fn probe(scenario: &Scenario, model: &Model, chat: u32, protection: Protection) 
     assert_eq!(applied.level(), level, "{said}");
     // Where purlis wraps the harness, the wrap is composed: a leg that ran unwrapped would pass
     // its cells for the wrong reason. Guaranteed at Full on both OSes and at the floor on Linux
-    // (Landlock and seccomp); the floor on macOS composes no wrap program, and no more than that
-    // is asserted for it.
+    // (Landlock and seccomp); the floor on macOS seems to compose no wrap program (unconfirmed,
+    // #7368), and no more than that is asserted for it.
     if holds_itself(dialect) {
         assert!(
             applied.wrap_program().is_none(),
