@@ -1407,11 +1407,14 @@ impl Scenario {
         }
     }
 
-    /// The clone `workspaces/work/repo` of this scenario's project, with one commit: made once,
-    /// as an operator's own clone is, for a task's branch folder to be cut off. Answers its
-    /// workspace and repo.
+    /// The clone of repo `repo` in workspace `work` of this scenario's project, where the
+    /// resolver puts a new clone, with one commit: made once, as an operator's own clone is, for
+    /// a task's branch folder to be cut off. Answers its workspace and repo.
     fn a_clone(&self) -> (String, String) {
         let (workspace, repo) = ("work", "repo");
+        // The workspace's folder first: the resolver answers only inside one that is there.
+        std::fs::create_dir_all(self.root.join("workspaces").join(workspace))
+            .expect("the scenario's workspace folder");
         let clone = purlis_core::repofolder::new_folder(&self.root, workspace, repo)
             .expect("where the scenario's clone goes");
         if !clone.join(".git").exists() {
