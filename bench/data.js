@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795359391487,
+  "lastUpdate": 1795367128028,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52164,6 +52164,48 @@ window.BENCHMARK_DATA = {
             "value": 102.48335599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.742, 101.955, 102.483, 102.506, 102.805 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4bcdd846cc0741e95f334fb1450b5c56d0d61b1e",
+          "message": "Key main's ci, docs, stories, stress and operator runs per commit (#7344)\n\nA concurrency group holds one pending run and cancels it when a third push arrives, even with\ncancel-in-progress false, so main's runs on 74e80aac and 7d184670 ended cancelled, and release's\ngate builds nothing on a cancelled ci. A push to main now gets a group of its own per commit.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZDXCHEW5YC0J147WZGF0QQ\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T16:04:28Z",
+          "tree_id": "878f98225c1bb530bdbfa86af006f24b67a2d862",
+          "url": "https://github.com/purlis/purlis/commit/4bcdd846cc0741e95f334fb1450b5c56d0d61b1e"
+        },
+        "date": 1795367120487,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5224955,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.504, 0.507, 0.522, 0.529, 0.536 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.163988,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.144, 16.152, 16.164, 16.268, 16.434 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9875735,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.368, 101.529, 101.988, 102.145, 102.173 ms"
           }
         ]
       }
