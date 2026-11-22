@@ -440,18 +440,23 @@ fn ran(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// The most characters of one line of git's words that reach a chat.
+const MAX_GIT_LINE: usize = 300;
+
 /// What git said when it failed, or, where it said nothing, what is known of how it ended: a git
 /// stopped at its deadline answers no code and no words, and a reason that is empty reaches the
 /// chat as `git did not push <branch> to origin:` with nothing after it.
 fn why_git_failed(run: &git::Run) -> String {
     // Every line git said, not only the first: its first is often `RPC failed; HTTP 403`, and
     // the lines that follow it (`remote: ...`, `! [remote rejected] ...`) are the remote's words.
-    let said: Vec<&str> = run
+    // Each line is cut short: a remote's words are not trusted to be brief.
+    let said: Vec<String> = run
         .err
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .take(4)
+        .map(|line| line.chars().take(MAX_GIT_LINE).collect())
         .collect();
     if !said.is_empty() {
         return said.join(" | ");
@@ -2154,6 +2159,12 @@ mod tests {
             why_git_failed(&ran(Some(128), "  \n")),
             "git exited with code 128 and said nothing"
         );
+    }
+
+    #[test]
+    fn a_line_git_said_is_cut_to_a_length_a_chat_can_read() {
+        let said = why_git_failed(&ran(Some(1), &format!("{}\nshort", "x".repeat(5_000))));
+        assert_eq!(said, format!("{} | short", "x".repeat(MAX_GIT_LINE)));
     }
 
     #[test]

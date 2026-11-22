@@ -3308,6 +3308,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Attendance(_) => 25,
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
+            Ask::GitRoute(_) => 28,
         }
     }
     let asks = vec![
@@ -3486,10 +3487,11 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             rule: "A3".to_owned(),
             host: None,
         }),
+        Ask::GitRoute(purlis_core::hookwire::GitRouteAsk { chat }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=27).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -16043,4 +16045,9 @@ fn no_grant_with_no_sandbox() -> String {
         },
     )
     .say()
+}
+
+#[test]
+fn a_hook_asking_for_the_route_of_a_chat_with_none_is_told_no() {
+    assert!(matches!(hook_route_answer(987_654), Answer::No { .. }));
 }

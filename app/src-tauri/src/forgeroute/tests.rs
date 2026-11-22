@@ -1519,6 +1519,26 @@ fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_othe
 }
 
 #[test]
+fn a_hook_is_told_the_route_of_its_own_chat_by_the_path_of_the_apps_ca_and_no_other_chats() {
+    let scene = Scene::new();
+    // A chat with no route, and one that has not committed a run, are told nothing.
+    assert!(scene.routes.hook_route(7).is_none());
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let ca = guard.params().expect("params").ca.clone();
+    guard.commit(7);
+    let route = scene.routes.hook_route(7).expect("a route for the session");
+    assert_eq!(
+        Path::new(&route.ca_path),
+        ca,
+        "the app's own file, not a copy"
+    );
+    // Another chat's number gets no route.
+    assert!(scene.routes.hook_route(8).is_none());
+    scene.routes.stop("run-1");
+    assert!(scene.routes.hook_route(7).is_none());
+}
+
+#[test]
 fn a_repo_on_a_pinned_forge_is_not_enrolled_and_a_project_with_only_pinned_repos_has_no_route() {
     // github.com pinned: the chat's route holds the GitLab repo and none of GitHub's.
     let scene = Scene::pinning(&["github.com"]);

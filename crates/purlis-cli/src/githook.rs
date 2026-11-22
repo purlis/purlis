@@ -134,9 +134,7 @@ fn push(args: &[String]) -> ExitCode {
     if let Err(e) = std::io::stdin().read_to_string(&mut updates) {
         return cannot(&format!("the refs git sent could not be read: {e}"));
     }
-    // Kept until the scan is done: the route's authority is a file in it.
-    let held = std::cell::RefCell::new(None);
-    match diffscan::pushed_through(&repo, url, &updates, &|| chat_route(&held)).map(|mut scan| {
+    match diffscan::pushed_through(&repo, url, &updates, &chat_route).map(|mut scan| {
         under_policy(&mut scan.refused, &repo);
         scan
     }) {
@@ -168,9 +166,7 @@ const ROUTE_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_sec
 /// app's authority does not let it read; with the sentinel, which only that proxy is shown. `None`
 /// where the app does not answer, the chat has no route, or any part is unusable: the remote is
 /// then asked as before and, if it cannot be, the push is read in full.
-fn chat_route(
-    held: &std::cell::RefCell<Option<OwnFolder>>,
-) -> Option<purlis_core::worktree::git::NetworkRoute> {
+fn chat_route() -> Option<purlis_core::worktree::git::NetworkRoute> {
     use purlis_core::hookwire::{Answer, Ask, GitRouteAsk};
     let env = purlis_core::envvar::var;
     let proxy = env("HTTPS_PROXY").or_else(|| env("https_proxy"))?;
@@ -181,35 +177,26 @@ fn chat_route(
     ) else {
         return None;
     };
-    let dir = OwnFolder::made()?;
-    let ca = dir.0.join("ca.pem");
-    std::fs::write(&ca, &route.ca_pem).ok()?;
-    let found = purlis_core::forgewire::git_network_in_hook(&route, &proxy, &ca, &sentinel).ok();
-    *held.borrow_mut() = Some(dir);
-    found
+    route_from(&route, &proxy, &sentinel)
 }
 
-/// A folder of this hook's own, made new (never one that is there already, a link included) and
-/// closed to others, and removed when it is dropped.
-struct OwnFolder(std::path::PathBuf);
-
-impl OwnFolder {
-    fn made() -> Option<Self> {
-        use std::os::unix::fs::DirBuilderExt as _;
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| since.as_nanos());
-        let path =
-            std::env::temp_dir().join(format!("purlis-route-{}-{nanos}", std::process::id()));
-        std::fs::DirBuilder::new().mode(0o700).create(&path).ok()?;
-        Some(Self(path))
+/// [`chat_route`], once the app has answered. **The trust anchor is the app's own file**, never
+/// one this hook writes: a folder under `$TMPDIR` is the chat's to set and its processes can
+/// rewrite what is in it, so a chat's own authority could answer for the remote and its commits
+/// would read as already on the forge. The file is used only where the folder it is in is one
+/// this process may not write ([`may_not_write`]); otherwise there is no route.
+fn route_from(
+    route: &purlis_core::forgewire::HookRoute,
+    proxy: &str,
+    sentinel: &str,
+) -> Option<purlis_core::worktree::git::NetworkRoute> {
+    let ca = Path::new(&route.ca_path);
+    let kept_from_the_chat =
+        ca.is_absolute() && ca.is_file() && ca.parent().is_some_and(hookwire::reach::may_not_write);
+    if !kept_from_the_chat {
+        return None;
     }
-}
-
-impl Drop for OwnFolder {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
+    purlis_core::forgewire::git_network_in_hook(route, proxy, ca, sentinel).ok()
 }
 
 /// The repository as a needs-you item names it: its directory's name.
@@ -255,4 +242,47 @@ fn tell_the_app(why: String) {
             commit_refused: why,
         },
     );
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+    use purlis_core::forgewire::HookRoute;
+
+    fn route_with_ca(ca: &Path) -> HookRoute {
+        HookRoute {
+            ca_path: ca.display().to_string(),
+            helper_exe: "/app/purlis-forge-helper".to_owned(),
+            hosts: vec!["github.com".to_owned()],
+        }
+    }
+
+    /// A CA file in a folder this process can write is one a chat can write: no route.
+    #[test]
+    fn a_ca_file_the_chat_can_write_gives_no_route() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("ca.pem");
+        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").unwrap();
+        let found = route_from(&route_with_ca(&ca), "http://127.0.0.1:9", "sentinel");
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn a_non_loopback_proxy_gives_no_route() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("ca.pem");
+        std::fs::write(&ca, "x").unwrap();
+        let route = route_with_ca(&ca);
+        for proxy in [
+            "http://evil.example:9",
+            "http://10.0.0.1:9",
+            "https://127.0.0.1:9",
+        ] {
+            assert!(
+                purlis_core::forgewire::git_network_in_hook(&route, proxy, &ca, "s").is_err(),
+                "{proxy}"
+            );
+            assert!(route_from(&route, proxy, "s").is_none(), "{proxy}");
+        }
+    }
 }

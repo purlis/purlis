@@ -737,8 +737,10 @@ pub fn git_network(route: &Route) -> io::Result<crate::worktree::git::NetworkRou
 /// more. The helper is the app's own program, and the hosts are the recorded ones.
 #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HookRoute {
-    /// The chat's CA certificate (public), as PEM.
-    pub ca_pem: String,
+    /// The path of the chat's CA certificate (public), a file of the app's own. The hook trusts
+    /// it only from a folder it may not write; the certificate is never copied anywhere a chat
+    /// can write.
+    pub ca_path: String,
     /// The app's own program, which git starts as the chat's credential helper.
     pub helper_exe: String,
     /// The recorded forge hosts.
@@ -758,15 +760,14 @@ impl HookRoute {
     /// What the app tells the hook of a chat's `route`; `None` where its CA cannot be read.
     pub fn of(route: &Route) -> Option<Self> {
         Some(Self {
-            ca_pem: std::fs::read_to_string(&route.ca_cert).ok()?,
+            ca_path: route.ca_cert.to_str()?.to_owned(),
             helper_exe: route.helper_exe.to_str()?.to_owned(),
             hosts: route_hosts(route).into_iter().map(str::to_owned).collect(),
         })
     }
 }
 
-/// **The route a chat's hook asks a forge through** ([`HookRoute`]): `ca` is a file the hook made
-/// from [`HookRoute::ca_pem`], `egress_url` the chat's own egress port as its environment names it
+/// **The route a chat's hook asks a forge through** ([`HookRoute`]): `ca` is [`HookRoute::ca_path`], `egress_url` the chat's own egress port as its environment names it
 /// (loopback alone), and `sentinel` the chat's, which only the proxy that holds the CA's key
 /// reads. An error where a part is unusable: the ask is then not made through any route.
 pub fn git_network_in_hook(

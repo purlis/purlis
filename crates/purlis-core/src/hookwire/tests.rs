@@ -5608,3 +5608,19 @@ fn a_chat_is_named_only_where_one_chat_s_program_holds_the_asker() {
     // Inside both: nothing names one chat, and that is no answer that it is in none.
     assert_eq!(tokens.chat_by(&|_| true), ChatOf::InDoubt);
 }
+
+#[test]
+fn a_git_route_ask_and_its_answer_cross_the_wire_unchanged() {
+    let ask = Ask::GitRoute(GitRouteAsk { chat: 7 });
+    let line = serde_json::to_string(&ask).unwrap();
+    assert_eq!(serde_json::from_str::<Ask>(&line).unwrap(), ask);
+    let answer = Answer::GitRoute {
+        route: crate::forgewire::HookRoute {
+            ca_path: "/app/ca.pem".to_owned(),
+            helper_exe: "/app/helper".to_owned(),
+            hosts: vec!["github.com".to_owned()],
+        },
+    };
+    let line = serde_json::to_string(&answer).unwrap();
+    assert_eq!(serde_json::from_str::<Answer>(&line).unwrap(), answer);
+}
