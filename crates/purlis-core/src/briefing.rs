@@ -236,6 +236,7 @@ fn told(ask: &Ask, piece_note: Option<String>, only: Option<Part>) -> Vec<String
     let mut parts = Vec::new();
     if let Some(standing) = &standing {
         parts.extend(who_it_is(ask, standing));
+        parts.extend(attendance_note(ask));
     }
     if wants(Part::Notes) {
         parts.extend(routes(ask));
@@ -257,6 +258,21 @@ fn told(ask: &Ask, piece_note: Option<String>, only: Option<Part>) -> Vec<String
     // The chat's skills, for a chat whose harness cannot load them, are a hook's output of their
     // own ([`skills_part`]), never a part of this.
     parts
+}
+
+/// **Whether anyone is at the chat** (R-111, T1.1-40, #6887), said in words true of every
+/// harness, from the attendance fact and never from the harness's mode. **Said only where the
+/// hook holds a fact**: its env names a chat number. A hook with none is no chat purlis
+/// started, holds no fact, and is told nothing, never "Attended".
+fn attendance_note(ask: &Ask) -> Option<String> {
+    crate::secrets::brokered::chat_number(ask.env)?;
+    Some(if ask.unattended() {
+        "⬢ **Unattended.** This chat runs with nobody there to answer. An ask may go unanswered, \
+         and what needs a person is blocked."
+            .to_owned()
+    } else {
+        "⬢ **Attended.** A person can answer this chat's prompts and asks.".to_owned()
+    })
 }
 
 /// The gate, the persona, and what the retired persona sub-agent left to say.

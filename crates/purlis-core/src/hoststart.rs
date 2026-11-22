@@ -1206,6 +1206,18 @@ fn routed_recorded(
         .and_then(|entry| beside.record(entry))
 }
 
+/// **The attendance a run the host composes says** (R-106): a chat on a runner is unattended,
+/// by what a runner is. Anywhere else the host holds no attendance fact for the chat (the
+/// window's fact is the app's), so it is not known, and a reader treats `unknown` as
+/// unattended.
+fn attendance_of_a_host_start(on_a_runner: bool) -> Option<String> {
+    on_a_runner.then(|| {
+        crate::dispatchunattended::Attendance::Unattended
+            .word()
+            .to_owned()
+    })
+}
+
 /// **Writes the run `starting` begins** in the host's event log, as the window writes a run of
 /// its own: under the start's chat and run, with what the start decided, and who started it.
 /// A run that is not written is said in the host's log, as the window says one, and the chat
@@ -1238,6 +1250,7 @@ fn begun(
         sandbox: sandbox.map_or_else(none, |applied| applied.backend_word().map(str::to_owned)),
         conversation: ready.session.as_ref().map(ToString::to_string),
         started_by: Some(starting.started_by.to_owned()),
+        attendance: attendance_of_a_host_start(crate::sandbox::Machine::this().is_a_runner()),
         // What the start resolved (R-227), as it was made here: by no grant of the window's.
         protection: Some(crate::sandbox::protection::at_start(
             starting.root,

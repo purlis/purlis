@@ -66,6 +66,13 @@ pub enum Entry {
     /// it. Its run ends `completed` for `superseded` here, sub-agents and all, so the close
     /// that follows ends nothing more ([`Recorder::end_run_with`]).
     Superseded { plane: PathBuf, number: u32 },
+    /// **Chat `number`'s attendance fact was lowered** to `attendance`, `unattended`
+    /// ([`Recorder::attendance_lowered`]): the runs after it carry the word on.
+    Attendance {
+        plane: PathBuf,
+        number: u32,
+        attendance: String,
+    },
     /// The start whose run was held was put aside: its run is never said, and what its program
     /// still sends is of no run ([`Recorder::taken_back`], #2252).
     TakenBack { plane: PathBuf, number: u32 },
@@ -225,6 +232,14 @@ impl Recorder {
                 crate::state::run::RunState::Completed,
                 crate::state::run::Cause::Superseded,
             ),
+            Entry::Attendance {
+                plane,
+                number,
+                attendance,
+            } => {
+                self.attendance_lowered(&plane, number, &attendance);
+                Ok(Vec::new())
+            }
             Entry::TakenBack { plane, number } => {
                 self.taken_back(&plane, number);
                 Ok(Vec::new())

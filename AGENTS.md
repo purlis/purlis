@@ -193,6 +193,9 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   the failed job's log. Make a red run say what the harness saw (the stand-in's request log, the
   screen's tail, the profile's logs) before guessing: a Codex stand-in request that offers no tool
   was the model offer's Enter, found in the request's own `model`.
+- In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
+  socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
+  change. `settings::tests` and `sandbox::personal::tests` run here.
 
 ## Agent skills
 

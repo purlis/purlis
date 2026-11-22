@@ -168,6 +168,7 @@ fn composed(project: &Project, start: &StartProgram, host: &Host) -> Result<Laun
             number: 3,
             start,
             reporting: Some(&session::Reporting {
+                seal: None,
                 socket: "/the/project/hooks.sock".into(),
                 token: "token-3".into(),
             }),

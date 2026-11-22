@@ -134,7 +134,13 @@ export type EntryRefused = {
 export type Files = Partial<Record<SettingsFileId, Shown>>;
 
 /** What writing a level's file answered: the level as it now stands, or why nothing was written. */
-export type Wrote<T> = { saved: T } | { refused: string[] };
+export type Wrote<T> =
+  | {
+      saved: T;
+      /** What the write did not finish once it was made, said beside the setting. */
+      warned?: string;
+    }
+  | { refused: string[] };
 
 /** What the driver answers once the level has been read: its files, and what to do with a setting. */
 export type Driven<T> = {
@@ -337,7 +343,10 @@ export function useSettingsDriver<T>(target: string, level: Level<T>): Driver<T>
         return false;
       }
       took(said.saved);
-      setRefused((before) => without(before, id));
+      // A warning is kept by its setting as a refusal is: the text is written, and it is said.
+      setRefused((before) =>
+        said.warned === undefined ? without(before, id) : { ...before, [id]: [said.warned] },
+      );
       return true;
     },
     [readFiles, took],
@@ -539,7 +548,7 @@ export function useSettingsDriver<T>(target: string, level: Level<T>): Driver<T>
           took(said.saved);
           // The keys an Undo would write back are the text's now.
           setLast(undefined);
-          answer(undefined);
+          answer(said.warned === undefined ? undefined : [said.warned]);
         });
       }),
     [enqueue, readFiles, took],
