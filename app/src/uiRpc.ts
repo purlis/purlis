@@ -7327,6 +7327,12 @@ export type ForgeAccountRow = {
 	scopes: string[] | null,
 	/**  The scopes beyond what purlis needs (ADR 0077 §2). */
 	wider: string[],
+	/**
+	 *  Whether the second sign-in for CI files is already given (its token is kept apart, so the
+	 *  scopes above never show it). Only the listing ([`forge_accounts`]) asks the keychain; a row
+	 *  another command returns says `false`, and the window reads the list again.
+	 */
+	ci_allowed: boolean,
 };
 
 /**  What a press of *Use this application* changed. */

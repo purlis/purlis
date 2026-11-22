@@ -154,7 +154,7 @@ fn owners(root: &std::path::Path) -> Vec<IdentityOwner> {
         .and_then(|config| accounts::listed(&config).ok())
         .unwrap_or_default()
         .into_iter()
-        .filter(|account| account.host == core::HOST)
+        .filter(|account| account.host == core::HOST && account.state == accounts::State::SignedIn)
         .map(|account| account.login)
         .collect();
     let mut offered: Vec<IdentityOwner> = core::owners_on_github(root)
