@@ -193,10 +193,10 @@ impl Credentials for FakeSignIns {
 }
 
 #[derive(Default)]
-struct FakeNotices(Mutex<Vec<(String, String, SignInState)>>);
+struct FakeNotices(Mutex<Vec<(u32, String, SignInState)>>);
 impl Notices for FakeNotices {
-    fn sign_in_needed(&self, chat: &str, host: &str, state: SignInState) {
-        lock(&self.0).push((chat.to_owned(), host.to_owned(), state));
+    fn sign_in_needed(&self, _: &Path, session: u32, host: &str, state: SignInState) {
+        lock(&self.0).push((session, host.to_owned(), state));
     }
 }
 
@@ -309,6 +309,16 @@ impl Scene {
             .start(chat, run, Path::new(project))
             .expect("the route starts")
             .expect("the project records repos")
+    }
+
+    /// A route started and open as chat session `session`, as a committed run's is.
+    fn open(&self, chat: &str, run: &str, project: &str, session: u32) -> RouteParams {
+        let params = self.start(chat, run, project);
+        self.routes
+            .sessions()
+            .of_run
+            .insert(session, run.to_owned());
+        params
     }
 
     /// The folder the route of `run` is made in, while it is live.
@@ -989,7 +999,7 @@ fn another_runs_sentinel_is_refused_at_this_runs_endpoint() {
 fn a_missing_sign_in_is_refused_in_words_that_name_the_sign_in_step_and_noticed_once_per_chat() {
     let scene = Scene::new();
     lock(&scene.sign_ins.tokens).clear();
-    let params = scene.start("chat-1", "run-1", "/p/one");
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
 
     for _ in 0..3 {
         let outcome = comment(&scene, "run-1", &params.sentinel);
@@ -1006,18 +1016,37 @@ fn a_missing_sign_in_is_refused_in_words_that_name_the_sign_in_step_and_noticed_
     );
     assert_eq!(
         *lock(&scene.notices.0),
-        vec![(
-            "chat-1".to_owned(),
-            "github.com".to_owned(),
-            SignInState::Missing
-        )],
+        vec![(5, "github.com".to_owned(), SignInState::Missing)],
         "one Notice for the chat, however many requests"
     );
 
     // The chat restarts while it still has the first run: its second run is not told again.
-    let second = scene.start("chat-1", "run-2", "/p/one");
+    let second = scene.open("chat-1", "run-2", "/p/one", 6);
     comment(&scene, "run-2", &second.sentinel);
     assert_eq!(lock(&scene.notices.0).len(), 1);
+}
+
+#[test]
+fn an_ended_sign_in_is_told_as_ended_and_a_chat_not_yet_open_is_told_when_it_opens() {
+    let scene = Scene::new();
+    scene
+        .sign_ins
+        .fail("github.com", "alice", SignInState::Ended);
+
+    // Before the chat opens there is no pane to say it on: nothing is told, and the chat is not
+    // counted as told.
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    comment(&scene, "run-1", &params.sentinel);
+    assert!(lock(&scene.notices.0).is_empty());
+
+    // Once it is open, its next request tells it once, as ended.
+    scene.routes.sessions().of_run.insert(3, "run-1".to_owned());
+    comment(&scene, "run-1", &params.sentinel);
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        *lock(&scene.notices.0),
+        vec![(3, "github.com".to_owned(), SignInState::Ended)]
+    );
 }
 
 #[test]
@@ -1026,7 +1055,7 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
     scene
         .sign_ins
         .fail("github.com", "alice", SignInState::Ended);
-    let params = scene.start("chat-1", "run-1", "/p/one");
+    let params = scene.open("chat-1", "run-1", "/p/one", 1);
 
     assert!(matches!(
         comment(&scene, "run-1", &params.sentinel),
@@ -1040,7 +1069,7 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
     );
 
     lock(&scene.recorded.accounts).clear();
-    let other = scene.start("chat-2", "run-2", "/p/one");
+    let other = scene.open("chat-2", "run-2", "/p/one", 2);
     assert!(matches!(
         comment(&scene, "run-2", &other.sentinel),
         Outcome::Refused(Refusal::NoCredential)

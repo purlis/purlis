@@ -43,6 +43,17 @@ pub struct ChatNoticed {
     /// T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
     /// whose adapter reports no mode purlis can check.
     pub mode: Option<ModeDiffers>,
+    /// The forge sign-in its route found missing or ended (ADR 0128, #7290): a standing fault its
+    /// pane says in a Notice with a way into Settings › You › Accounts. None until it is found.
+    pub sign_in: Option<SignInNeeded>,
+}
+
+/// **A chat's forge route had no usable sign-in**: the host, and whether there never was one
+/// (`missing`) or it ended (`ended`). Never told for a forge that merely could not be reached.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SignInNeeded {
+    pub host: String,
+    pub ended: bool,
 }
 
 /// **A chat reported a mode purlis didn't set** (R-243): each mode as its own harness names it,
@@ -83,6 +94,7 @@ struct Said {
     stuck: Option<String>,
     left_work: Option<bool>,
     mode: Option<ModeDiffers>,
+    sign_in: Option<SignInNeeded>,
 }
 
 /// How long a turn's timer sleeps at most before it looks at the clock again: the machine's
@@ -239,6 +251,12 @@ impl Noticed {
         self.tell_if_changed(chat, |said| said.mode = Some(differs));
     }
 
+    /// Chat `chat`'s forge route found no usable sign-in (ADR 0128): the window is told where
+    /// that changed, and it stands until the chat closes.
+    pub fn sign_in_needed(&self, chat: u32, needed: SignInNeeded) {
+        self.tell_if_changed(chat, |said| said.sign_in = Some(needed));
+    }
+
     /// **"It's fine"**: chat `chat` is not stuck until it changes state.
     pub fn fine(&self, chat: u32) {
         held_lock(&self.watch).fine(chat);
@@ -276,6 +294,7 @@ impl Noticed {
             stuck: said.stuck.clone(),
             left_work: said.left_work,
             mode: said.mode.clone(),
+            sign_in: said.sign_in.clone(),
         }
     }
 

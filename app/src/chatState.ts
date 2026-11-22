@@ -20,6 +20,7 @@ import {
   type ChildAgent,
   type ChatNoticed,
   type ModeDiffers,
+  type SignInNeeded,
   type HowFailed,
   type Moved,
   type Need,
@@ -136,11 +137,13 @@ export type ChatStates = {
 };
 
 /** What the core noticed of one chat (#6014): `null` is "no", for Stuck?, and "not known", for
- *  work left. `mode` is the mode purlis didn't set that it reported (R-243), or `null`. */
+ *  work left. `mode` is the mode purlis didn't set that it reported (R-243), or `null`.
+ *  `signIn` is the forge sign-in its route found missing or ended (ADR 0128), or `null`. */
 export type Noticed = {
   readonly stuck: string | null;
   readonly leftWork: boolean | null;
   readonly mode: ModeDiffers | null;
+  readonly signIn: SignInNeeded | null;
 };
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
@@ -895,6 +898,15 @@ export function modeDiffersOf(states: ChatStates, session: number): ModeDiffers 
   return states.noticed?.[session]?.mode ?? undefined;
 }
 
+/** **The forge sign-in chat `session`'s route found missing or ended** (ADR 0128, #7290), or
+ *  nothing: the host, and whether it ended. */
+export function signInNeededOf(states: ChatStates, session: number): SignInNeeded | undefined {
+  return states.noticed?.[session]?.signIn ?? undefined;
+}
+
+const sameSignIn = (a: SignInNeeded | null, b: SignInNeeded | null) =>
+  a === b || (a !== null && b !== null && a.host === b.host && a.ended === b.ended);
+
 const sameMode = (a: ModeDiffers | null, b: ModeDiffers | null) =>
   a === b ||
   (a !== null &&
@@ -907,12 +919,18 @@ const sameMode = (a: ModeDiffers | null, b: ModeDiffers | null) =>
 export function noticed(states: ChatStates, told: ChatNoticed): ChatStates {
   const was = states.noticed?.[told.session];
   // A core older than T1-44 tells no mode.
-  const now: Noticed = { stuck: told.stuck, leftWork: told.left_work, mode: told.mode ?? null };
+  const now: Noticed = {
+    stuck: told.stuck,
+    leftWork: told.left_work,
+    mode: told.mode ?? null,
+    signIn: told.sign_in ?? null,
+  };
   if (
     was !== undefined &&
     was.stuck === now.stuck &&
     was.leftWork === now.leftWork &&
-    sameMode(was.mode, now.mode)
+    sameMode(was.mode, now.mode) &&
+    sameSignIn(was.signIn, now.signIn)
   )
     return states;
   return { ...states, noticed: { ...states.noticed, [told.session]: now } };

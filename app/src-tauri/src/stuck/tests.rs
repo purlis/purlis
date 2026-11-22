@@ -79,3 +79,39 @@ fn a_chat_not_working_is_never_told_stuck() {
             .all(|one| one.stuck.is_none())
     );
 }
+
+#[test]
+fn a_missing_sign_in_is_told_to_the_window_once_and_goes_with_its_chat() {
+    let (noticed, told) = noticed();
+    let needed = crate::stuck::SignInNeeded {
+        host: "github.com".to_owned(),
+        ended: false,
+    };
+    noticed.sign_in_needed(CHAT, needed.clone());
+    noticed.sign_in_needed(CHAT, needed.clone());
+    assert_eq!(
+        told.lock().expect("held").len(),
+        1,
+        "a repeat tells nothing"
+    );
+    assert_eq!(
+        told.lock()
+            .expect("held")
+            .last()
+            .and_then(|one| one.sign_in.clone()),
+        Some(needed)
+    );
+
+    // The sign-in ends: that is another cause, told again.
+    noticed.sign_in_needed(
+        CHAT,
+        crate::stuck::SignInNeeded {
+            host: "github.com".to_owned(),
+            ended: true,
+        },
+    );
+    assert_eq!(told.lock().expect("held").len(), 2);
+
+    noticed.forget(CHAT);
+    assert!(noticed.all().is_empty(), "a closed chat keeps nothing");
+}

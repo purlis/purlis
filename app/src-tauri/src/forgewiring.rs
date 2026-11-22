@@ -44,7 +44,7 @@ use purlis_core::heldact::{
 use purlis_core::mergehold::{Base, HeadSha, Repo, Request};
 use purlis_core::secrets::keyring::Secret;
 
-use crate::forgeroute::{HeldSinks, SessionOfRun};
+use crate::forgeroute::{HeldSinks, Notices, SessionOfRun, SignInState};
 use crate::planes::Held;
 
 /// The most quarantines kept for pushes that wait, in all: each is a repository on disk.
@@ -708,6 +708,36 @@ impl HeldSinks for AppHeldSinks {
             quarantines: self.quarantines.clone(),
             parent: self.parent.clone(),
         }))
+    }
+}
+
+/// **The Notice of a chat's missing or ended sign-in** ([`Notices`], ADR 0128, #7290): told to
+/// the chat's project, whose pane says it with a way into Settings › You › Accounts. Nothing is
+/// kept here: the project's [`crate::stuck::Noticed`] holds it until the chat closes.
+pub struct AppNotices {
+    app: tauri::AppHandle,
+}
+
+impl AppNotices {
+    pub fn new(app: tauri::AppHandle) -> Self {
+        Self { app }
+    }
+}
+
+impl Notices for AppNotices {
+    fn sign_in_needed(&self, project: &Path, session: u32, host: &str, state: SignInState) {
+        use tauri::Manager as _;
+        // A project that is not open has no pane to say it on.
+        let Some(held) = self.app.state::<crate::planes::Planes>().held_at(project) else {
+            return;
+        };
+        held.noticed().sign_in_needed(
+            session,
+            crate::stuck::SignInNeeded {
+                host: host.to_owned(),
+                ended: state == SignInState::Ended,
+            },
+        );
     }
 }
 
