@@ -75,6 +75,21 @@ const RULE_READS: &[&[&str]] = &[
     &["rules", "branches", "*"],
 ];
 
+/// The same on GitLab (#7372): the rules a chat may read. `approval_settings`, `push_rules` and
+/// every write stay refused under [`RULESET`].
+const GITLAB_RULE_READS: &[&[&str]] = &[
+    &["protected_branches"],
+    &["protected_branches", "*"],
+    &["approval_rules"],
+];
+
+fn rule_reads(kind: Kind) -> &'static [&'static [&'static str]] {
+    match kind {
+        Kind::GitHub => RULE_READS,
+        Kind::GitLab => GITLAB_RULE_READS,
+    }
+}
+
 /// What a chat may do to a workflow run of its own repo besides read it (#7358): rerun it, rerun
 /// its failed jobs. **Never `approve`**: that runs an outsider's fork code on the repo's runners,
 /// so it stays under [`APPROVAL`] and is refused: see ADR 0128's amendment of 2026-11-22.
@@ -83,8 +98,23 @@ const CI_WRITES: &[&[&str]] = &[
     &["actions", "runs", "#", "rerun-failed-jobs"],
 ];
 
-fn is_ci_write(method: &str, rel: &[String]) -> bool {
-    method == "POST" && CI_WRITES.iter().any(|p| matches(rel, p))
+/// GitLab's (#7372): retry or cancel a pipeline or one job, with an empty body. **Never `play`**:
+/// it starts a manual job, which can carry variables, and a manual job is gated code (a deploy, a
+/// job on a protected ref) that is the person's to start, as GitHub's `approve` is. Never the
+/// trigger routes, which start a pipeline with variables of the caller's choosing.
+const GITLAB_CI_WRITES: &[&[&str]] = &[
+    &["pipelines", "#", "retry"],
+    &["pipelines", "#", "cancel"],
+    &["jobs", "#", "retry"],
+    &["jobs", "#", "cancel"],
+];
+
+fn is_ci_write(kind: Kind, method: &str, rel: &[String]) -> bool {
+    let list = match kind {
+        Kind::GitHub => CI_WRITES,
+        Kind::GitLab => GITLAB_CI_WRITES,
+    };
+    method == "POST" && list.iter().any(|p| matches(rel, p))
 }
 
 /// The repo's administration: refused for every method, reads included, because what a hook, a
@@ -127,7 +157,15 @@ const MERGE: &[&str] = &[
     "auto_merge",
 ];
 
-const APPROVAL: &[&str] = &["approve", "unapprove", "approvals", "approval", "reviews"];
+// `play` is GitLab's start of a manual job: held for the person like an approval (#7372).
+const APPROVAL: &[&str] = &[
+    "approve",
+    "unapprove",
+    "approvals",
+    "approval",
+    "reviews",
+    "play",
+];
 
 const RELEASE: &[&str] = &["releases", "tags", "tag"];
 
@@ -136,12 +174,12 @@ fn any(names: &[String], list: &[&str]) -> bool {
 }
 
 /// The refusal a route earns by its name, if it earns one.
-fn named_refusal(method: &str, rel: &[String], target: &Target) -> Option<Refusal> {
+fn named_refusal(kind: Kind, method: &str, rel: &[String], target: &Target) -> Option<Refusal> {
     let names = names(rel);
-    if is_ci_write(method, rel) {
+    if is_ci_write(kind, method, rel) {
         return None;
     }
-    let rule_read = is_read(method) && RULE_READS.iter().any(|p| matches(rel, p));
+    let rule_read = is_read(method) && rule_reads(kind).iter().any(|p| matches(rel, p));
     if any(&names, RULESET) && !rule_read {
         return Some(Refusal::Ruleset);
     }
@@ -177,7 +215,7 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
             .find(|(m, pattern, _)| *m == method && matches(rel, pattern))
             .map(|(_, _, class)| class.clone())
     };
-    if kind == Kind::GitHub && is_ci_write(method, rel) {
+    if is_ci_write(kind, method, rel) {
         return Some(Class::CiWrite);
     }
     match kind {
@@ -297,6 +335,12 @@ const GITLAB_READS: &[&[&str]] = &[
     &["merge_requests", "#", "participants"],
     &["merge_requests", "#", "versions"],
     &["merge_requests", "#", "award_emoji"],
+    // Whether a merge request has the approvals it needs (#7372): a read of the state, never of
+    // the rules' settings.
+    &["merge_requests", "#", "approval_state"],
+    // Merge trains (#7372): who is in a project's train and where. Joining one stays a merge.
+    &["merge_trains"],
+    &["merge_trains", "merge_requests", "#"],
     &["issues"],
     &["issues", "#"],
     &["issues", "#", "notes"],
@@ -313,6 +357,7 @@ const GITLAB_READS: &[&[&str]] = &[
     // What `glab ci` reads: a pipeline and its jobs and test report. Not `bridges`, which names
     // the downstream projects a pipeline triggers, nor `variables`.
     &["pipelines"],
+    &["pipelines", "latest"],
     &["pipelines", "#"],
     &["pipelines", "#", "jobs"],
     &["pipelines", "#", "test_report"],
@@ -464,7 +509,8 @@ fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo)
             _ => false,
         },
         Kind::GitLab => match first.as_str() {
-            "merge_requests" | "issues" | "pipelines" => listed(GITLAB_READS),
+            "merge_requests" | "issues" | "pipelines" | "merge_trains" => listed(GITLAB_READS),
+            "protected_branches" | "approval_rules" => listed(GITLAB_RULE_READS),
             "jobs" | "labels" | "milestones" | "languages" | "releases" => true,
             "repository" => match second.as_deref() {
                 Some("compare") => compare_is_own(kind, rel, target, repo),
@@ -604,7 +650,7 @@ pub(crate) fn decide(
     body: Option<&Body>,
     repo: &AllowedRepo,
 ) -> Result<Class, Refusal> {
-    if let Some(refusal) = named_refusal(method, rel, target) {
+    if let Some(refusal) = named_refusal(kind, method, rel, target) {
         return Err(refusal);
     }
     if is_read(method) {
@@ -617,7 +663,8 @@ pub(crate) fn decide(
     let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo)?;
     if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {
-        // A rerun's body is `enable_debug_logging` and nothing else the chat may choose.
+        // A rerun's body is `enable_debug_logging` and nothing else the chat may choose; GitLab's
+        // retry and cancel take none.
         return Err(Refusal::MalformedRequest);
     }
     Ok(class)

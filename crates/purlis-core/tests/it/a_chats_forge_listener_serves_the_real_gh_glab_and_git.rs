@@ -113,6 +113,15 @@ impl Forge {
             ("GET", p) if p.starts_with("gitlab.com/api/v4/projects/group%2Fproj/merge_requests") => {
                 self.json("[]")
             }
+            // What `glab ci` reads and retries (#7372).
+            ("GET", "gitlab.com/api/v4/projects/group%2Fproj/pipelines") => self.json(
+                r#"[{"id":9,"iid":3,"project_id":42,"status":"failed","ref":"main","sha":"abc","web_url":"https://gitlab.com/group/proj/-/pipelines/9"}]"#,
+            ),
+            ("GET", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5") => self.json(JOB),
+            ("GET", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5/trace") => {
+                Reply::new(200, "text/plain", b"Running with the runner\nJOBLOGLINE\n".to_vec())
+            }
+            ("POST", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5/retry") => self.json(JOB),
             ("GET", "gitlab.com/api/v4/projects/group%2Fproj") => self.json(
                 r#"{"id":42,"name":"proj","path_with_namespace":"group/proj","default_branch":"main"}"#,
             ),
@@ -138,6 +147,9 @@ impl Forge {
         }
     }
 }
+
+/// A finished job, as GitLab answers one.
+const JOB: &str = r#"{"id":5,"name":"build","stage":"test","status":"success","ref":"main","web_url":"https://gitlab.com/group/proj/-/jobs/5","pipeline":{"id":9,"project_id":42,"status":"success","ref":"main"}}"#;
 
 struct Reply {
     status: u16,
@@ -695,6 +707,28 @@ fn glab_reaches_the_forge_through_connect_and_the_chats_own_authority() {
 }
 
 #[test]
+fn glab_lists_pipelines_reads_a_job_log_and_retries_a_job_through_the_route() {
+    purlis_core::unsteered!();
+    if !tool("glab") {
+        return;
+    }
+    let s = setup();
+    let (ok, text) = s.glab(&["ci", "list", "-R", "group/proj"]);
+    assert!(ok, "glab ci list: {text}");
+    let (ok, text) = s.glab(&["ci", "trace", "5", "-R", "group/proj"]);
+    assert!(ok && text.contains("JOBLOGLINE"), "glab ci trace: {text}");
+    let (ok, text) = s.glab(&["ci", "retry", "5", "-R", "group/proj"]);
+    assert!(ok, "glab ci retry: {text}");
+    assert!(
+        s.forge_was_sent("jobs/5/retry"),
+        "the retry did not reach the forge"
+    );
+    // Nothing a tool sent was refused, and the forge saw the real token only.
+    s.assert_clean();
+    assert!(s.forge_saw_the_real_token());
+}
+
+#[test]
 fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
     purlis_core::unsteered!();
     let have_gh = tool("gh");
@@ -761,6 +795,26 @@ fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
                     "projects/group%2Fproj/merge_requests/1/merge",
                 ],
                 "/merge",
+            ),
+            (
+                "another project's job log, by its numeric id",
+                vec!["api", "projects/43/jobs/5/trace"],
+                "projects/43",
+            ),
+            (
+                "a manual job's play",
+                vec!["api", "-X", "POST", "projects/group%2Fproj/jobs/5/play"],
+                "/play",
+            ),
+            (
+                "a protected branch's removal",
+                vec![
+                    "api",
+                    "-X",
+                    "DELETE",
+                    "projects/group%2Fproj/protected_branches/main",
+                ],
+                "protected_branches",
             ),
         ] {
             let before = s.refusals();
