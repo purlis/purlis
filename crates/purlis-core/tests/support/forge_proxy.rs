@@ -86,7 +86,21 @@ impl Scene {
         Self::build(token_kind, objects, true)
     }
 
+    /// As [`Scene::with`], with the proxy changed by `tune` before the chats are enrolled.
+    pub fn tuned(objects: Objects, tune: impl FnOnce(ForgeProxy) -> ForgeProxy) -> Self {
+        Self::build_tuned(TokenKind::Oauth, objects, false, tune)
+    }
+
     fn build(token_kind: TokenKind, objects: Objects, ghes: bool) -> Self {
+        Self::build_tuned(token_kind, objects, ghes, |proxy| proxy)
+    }
+
+    fn build_tuned(
+        token_kind: TokenKind,
+        objects: Objects,
+        ghes: bool,
+        tune: impl FnOnce(ForgeProxy) -> ForgeProxy,
+    ) -> Self {
         let asked = Arc::new(AtomicUsize::new(0));
         let proxy = ForgeProxy::new(
             Box::new(Creds {
@@ -95,6 +109,7 @@ impl Scene {
             }),
             Box::new(objects),
         );
+        let proxy = tune(proxy);
         let a = ChatId::new("chat-a");
         let b = ChatId::new("chat-b");
         let mut a_repos = vec![

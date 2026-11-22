@@ -109,6 +109,12 @@ impl Forge {
                 Reply::new(404, "application/json", br#"{"message":"Not Found"}"#.to_vec())
             }
             ("POST", "api.github.com/graphql") => self.json(&graphql_answer(&body)),
+            ("PUT", "api.github.com/repos/acme/app/pulls/1/merge") => {
+                self.json(r#"{"merged":true,"sha":"abc","message":"Pull Request successfully merged"}"#)
+            }
+            ("PUT", "gitlab.com/api/v4/projects/group%2Fproj/merge_requests/1/merge") => {
+                self.json(r#"{"iid":1,"state":"merged"}"#)
+            }
             ("GET", "gitlab.com/api/v4/user") => self.json(r#"{"id":1,"username":"tanuki"}"#),
             ("GET", p) if p.starts_with("gitlab.com/api/v4/projects/group%2Fproj/merge_requests") => {
                 self.json("[]")
@@ -355,6 +361,11 @@ fn app_relay(door: std::net::SocketAddr, world: &World, pin: Arc<dyn Pin>) -> Do
 
 /// [`setup`], its listeners checking every push with `gate`.
 fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
+    setup_in(gate, World::new())
+}
+
+/// [`setup_with`], on `world`.
+fn setup_in(gate: Option<Arc<dyn PushGate>>, world: World) -> Setup {
     let dir = tempfile::Builder::new()
         .prefix("fp")
         .tempdir_in("/tmp")
@@ -364,7 +375,7 @@ fn setup_with(gate: Option<Arc<dyn PushGate>>) -> Setup {
         std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     }
     let forge = make_forge(dir.path());
-    let mut world = World::new();
+    let mut world = world;
     world.wiring.upstream = forge.clone();
     let seen = Arc::new(Seen::default());
     world.wiring.observe = Some(seen.clone());
@@ -774,6 +785,61 @@ fn gh_and_glab_are_refused_another_repo_a_merge_and_the_token() {
             assert!(!text.contains(REAL), "{text}");
         }
     }
+}
+
+/// `guards.merge` = `log`: the same merges the test above sees refused go through, each recorded
+/// once for the chat and the repo, and what stays refused is still refused.
+#[test]
+fn gh_and_glab_merge_where_guards_merge_is_log_and_are_still_refused_another_repo_and_the_token() {
+    purlis_core::unsteered!();
+    let have_gh = tool("gh");
+    let have_glab = tool("glab");
+    if !have_gh && !have_glab {
+        return;
+    }
+    let lines: Arc<Mutex<Vec<String>>> = Arc::default();
+    let kept = lines.clone();
+    let stance = purlis_core::forge::mergestance::PolicyMergeStance::reading(
+        || purlis_core::enforcement::Mode::Log,
+        move |_, said| kept.lock().unwrap().push(said.to_owned()),
+    );
+    let s = setup_in(None, World::with_merge_stance(Arc::new(stance)));
+    if have_gh {
+        let (ok, text) = s.gh(&["api", "-X", "PUT", "repos/acme/app/pulls/1/merge"]);
+        assert!(ok, "gh, a merge under log: {text}");
+        assert!(s.forge_was_sent("pulls/1/merge"), "the merge was not sent");
+        // Another repo, and the token, stay out of reach.
+        let before = s.refusals();
+        let (ok, text) = s.gh(&["api", "-X", "PUT", "repos/acme/other/pulls/1/merge"]);
+        assert!(!ok && s.refusals() > before, "another repo's merge: {text}");
+        assert!(!s.forge_was_sent("acme/other"));
+        let (_, text) = s.gh(&["auth", "token"]);
+        assert!(
+            !text.contains(REAL),
+            "gh auth token showed the token: {text}"
+        );
+    }
+    if have_glab {
+        let (ok, text) = s.glab(&[
+            "api",
+            "-X",
+            "PUT",
+            "projects/group%2Fproj/merge_requests/1/merge",
+        ]);
+        assert!(
+            !text.contains("purlis refused"),
+            "glab, a merge under log: {text}"
+        );
+        assert!(s.forge_was_sent("merge_requests/1/merge"), "{ok} {text}");
+    }
+    let expected = usize::from(have_gh) + usize::from(have_glab);
+    let lines = lines.lock().unwrap();
+    assert_eq!(lines.len(), expected, "one line for each merge: {lines:?}");
+    assert!(
+        lines
+            .iter()
+            .all(|said| said.ends_with("acme/app") || said.ends_with("group/proj"))
+    );
 }
 
 #[test]

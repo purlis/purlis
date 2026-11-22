@@ -149,11 +149,34 @@ impl World {
         ]
     }
 
+    /// [`Self::new`]'s repos, the proxy asking `stance` how `guards.merge` runs on each merge.
+    pub fn with_merge_stance(
+        stance: Arc<dyn purlis_core::forge::mergestance::MergeStance>,
+    ) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            Some(stance),
+        )
+    }
+
     pub fn with_repos_and_pin(
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
     ) -> Self {
-        let proxy = Arc::new(ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin));
+        Self::build(repos, pin, None)
+    }
+
+    fn build(
+        repos: Vec<AllowedRepo>,
+        pin: Arc<dyn purlis_core::forge::pin::Pin>,
+        stance: Option<Arc<dyn purlis_core::forge::mergestance::MergeStance>>,
+    ) -> Self {
+        let mut proxy = ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin);
+        if let Some(stance) = stance {
+            proxy = proxy.with_merge_stance(stance);
+        }
+        let proxy = Arc::new(proxy);
         let chat = ChatId::new("chat-listener");
         let advertised: Vec<(String, String)> = repos
             .iter()

@@ -114,8 +114,35 @@ fn any(names: &[String], list: &[&str]) -> bool {
     names.iter().any(|n| list.contains(&n.as_str()))
 }
 
-/// The refusal a route earns by its name, if it earns one.
-fn named_refusal(method: &str, rel: &[String], target: &Target) -> Option<Refusal> {
+/// The merge routes `guards.merge` = `log` or `off` opens ([`decide`] with `merging`): GitHub's
+/// pull request merge, GitLab's merge request merge and its cancel of merge-when-pipeline-succeeds.
+/// Nothing else that merges is here: a branch merge (`POST merges`) and a flag in a query stay
+/// refused.
+fn merge_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
+    let rows: &[(&str, &[&str])] = match kind {
+        Kind::GitHub => &[("PUT", &["pulls", "#", "merge"])],
+        Kind::GitLab => &[
+            ("PUT", &["merge_requests", "#", "merge"]),
+            (
+                "POST",
+                &["merge_requests", "#", "cancel_merge_when_pipeline_succeeds"],
+            ),
+        ],
+    };
+    rows.iter()
+        .any(|(m, pattern)| *m == method && matches(rel, pattern))
+        .then_some(Class::MergeWrite)
+}
+
+/// The refusal a route earns by its name, if it earns one. `merging`: `guards.merge` lets a merge
+/// route of [`merge_class`] through.
+fn named_refusal(
+    kind: Kind,
+    method: &str,
+    rel: &[String],
+    target: &Target,
+    merging: bool,
+) -> Option<Refusal> {
     let names = names(rel);
     if any(&names, RULESET) {
         return Some(Refusal::Ruleset);
@@ -126,9 +153,10 @@ fn named_refusal(method: &str, rel: &[String], target: &Target) -> Option<Refusa
     if is_read(method) {
         return None;
     }
-    if any(&names, MERGE)
+    if (any(&names, MERGE)
         || target.has_query_key("merge_when_pipeline_succeeds")
-        || target.has_query_key("auto_merge")
+        || target.has_query_key("auto_merge"))
+        && !(merging && merge_class(kind, method, rel).is_some())
     {
         return Some(Refusal::Merge);
     }
@@ -564,8 +592,9 @@ pub(crate) fn decide(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    merging: bool,
 ) -> Result<Class, Refusal> {
-    if let Some(refusal) = named_refusal(method, rel, target) {
+    if let Some(refusal) = named_refusal(kind, method, rel, target, merging) {
         return Err(refusal);
     }
     if is_read(method) {
@@ -575,7 +604,9 @@ pub(crate) fn decide(
             Err(Refusal::NotOnList)
         };
     }
-    let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
+    let class = write_class(kind, method, rel)
+        .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
+        .ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo)?;
     Ok(class)
 }

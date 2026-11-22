@@ -266,6 +266,7 @@ impl Scene {
                 runner_link: pairing.clone(),
                 gate,
                 pin,
+                merges: Seams::stubs().merges,
             },
         );
         Self {

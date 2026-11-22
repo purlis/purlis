@@ -375,10 +375,17 @@ pub struct Seams {
     /// The administrator's never-allow pin for a project's chats (ADR 0128 D3g), made for each
     /// run and asked by its proxy, its door, its socket and the app's own git on every request.
     pub pin: PinOf,
+    /// How the project's `guards.merge` runs for a run's merges (ADR 0128 D8, 2026-11-22), read
+    /// by its proxy on each merge. The stub holds every merge.
+    pub merges: MergesOf,
 }
 
 /// What makes the pin a run is held to, from its project.
 pub type PinOf = Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::pin::Pin> + Send + Sync>;
+
+/// What makes the merge stance a run is held to, from its project.
+pub type MergesOf =
+    Arc<dyn Fn(&Path) -> Arc<dyn purlis_core::forge::mergestance::MergeStance> + Send + Sync>;
 
 impl Seams {
     /// Every seam as its stub: a build with `forge-wiring` and none of the other slices.
@@ -392,6 +399,7 @@ impl Seams {
             runner_link: Arc::new(NoRunnerLink),
             gate: None,
             pin: Arc::new(|_| Arc::new(purlis_core::forge::pin::NoPin)),
+            merges: Arc::new(|_| Arc::new(purlis_core::forge::mergestance::HoldMerges)),
         }
     }
 }
@@ -642,7 +650,8 @@ impl ForgeRoutes {
             }),
             Box::new(NoObjects),
         )
-        .with_pin(pin.clone());
+        .with_pin(pin.clone())
+        .with_merge_stance((self.seams.merges)(project));
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(
@@ -1338,6 +1347,12 @@ pub fn install(held: Arc<dyn HeldSinks>) {
             // Read from policy on each ask: a pin set while a chat is open reaches it at once.
             seams.pin =
                 Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
+            // Likewise `guards.merge`: `log` and `off` let a merge through, `enforce` holds it.
+            seams.merges = Arc::new(|project| {
+                Arc::new(purlis_core::forge::mergestance::PolicyMergeStance::of(
+                    project,
+                ))
+            });
         }
         ForgeRoutes::new(root, std::env::current_exe().unwrap_or_default(), seams)
     });

@@ -48,6 +48,15 @@ a host you kept blocked, and your harness's ask and deny rules for a program, be
 guard that fails to answer refuses the call. Where the sandbox is on, a Bash guard that fails to
 answer refuses the call too, since it judges the sandbox's own rules (Q327).
 
+**`guards.merge` is honoured by the forge route as by the hook.** Under `log` or `off` a chat's
+merge through its own forge route (REST, GraphQL, auto-merge, the merge queue, GitLab's merge and
+merge when the pipeline succeeds, and so `gh pr merge` and `glab mr merge`) goes through, and
+`log` writes one line to the chat's enforcement log (the chat and the repo, never the request);
+under `enforce` it is still a held act the window asks you about. Only a repo your chat's own run
+recorded, a branch merge, a tag, a release, a ruleset and the repository's administration stay
+refused, an administrator's lock keeps the family enforced, and a policy purlis cannot read is
+`enforce` (ADR 0128, amended 2026-11-22).
+
 **The names of purlis's own sockets are held at every floor, whatever `ports` says.** A chat in
 the sandbox can neither move nor link `hooks.sock`, `slots.sock`, `purlisd*.sock`,
 `purlis-crash-*.sock`, the app's single-instance socket, or the folders holding purlis's server

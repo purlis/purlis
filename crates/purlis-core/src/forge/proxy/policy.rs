@@ -121,6 +121,9 @@ pub enum Class {
     /// An archive or a release download of a repo.
     PublicRead,
     PullRequestWrite,
+    /// A merge `guards.merge` = `log` or `off` let through: a pull request or merge request merge,
+    /// or GitLab's cancel of merge-when-pipeline-succeeds.
+    MergeWrite,
     CommentWrite,
     IssueWrite,
     LabelWrite,
@@ -477,7 +480,30 @@ impl ChatPolicy {
 
     /// Decide one request. `body` is what [`body_need`] asked for: nothing for most requests.
     pub fn decide(&self, head: &RequestHead, body: &[u8], objects: &dyn ObjectRepo) -> Decision {
-        match self.try_decide(head, body, objects) {
+        self.decide_as(head, body, objects, false)
+    }
+
+    /// [`Self::decide`] with the merge routes open, for `guards.merge` = `log` or `off`: the REST
+    /// and GraphQL merges, auto-merge and the merge queue of [`graphql::merge_mutation`] and
+    /// [`rest::merge_class`], each still tied to a recorded repo of the chat by the same checks
+    /// as any write. A request that is anything else is decided exactly as [`Self::decide`] does.
+    pub fn decide_merging(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+    ) -> Decision {
+        self.decide_as(head, body, objects, true)
+    }
+
+    fn decide_as(
+        &self,
+        head: &RequestHead,
+        body: &[u8],
+        objects: &dyn ObjectRepo,
+        merging: bool,
+    ) -> Decision {
+        match self.try_decide(head, body, objects, merging) {
             Ok(allowed) => Decision::Allow(allowed),
             Err(refusal) => Decision::Refuse(refusal),
         }
@@ -488,6 +514,7 @@ impl ChatPolicy {
         head: &RequestHead,
         body: &[u8],
         objects: &dyn ObjectRepo,
+        merging: bool,
     ) -> Result<Allowed, Refusal> {
         let method = request::method(head).ok_or(Refusal::NotOnList)?;
         let host = request::host(head)?;
@@ -592,7 +619,8 @@ impl ChatPolicy {
             if document.json.is_none() {
                 return Err(Refusal::GraphqlParse);
             }
-            let decided = graphql::decide(kind, &candidates, &document.canonical, objects)?;
+            let decided =
+                graphql::decide(kind, &candidates, &document.canonical, objects, merging)?;
             // Every id in the document was tied to one of the chat's repos, and the credential is
             // asked for each of them, not for the first: a document naming repo B is never sent
             // with repo A's token. One that touches none is a request outside a repo.
@@ -648,7 +676,7 @@ impl ChatPolicy {
             } else {
                 commands::parse(body, head.content_type.as_deref())?
             };
-            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo)?;
+            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo, merging)?;
             let mut answer = allowed(repo, class, Surface::Api, segments, &target);
             if let Some(b) = parsed {
                 answer.canonical_media = Some(b.media);
