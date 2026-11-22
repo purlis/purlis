@@ -86,7 +86,7 @@ pub struct PressCommit {
 /// **The loosening press** (M75-15): what Accept would accept, against the policy in force.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyPress {
-    /// Why it is raised: `loosening`, `past-the-cap`, `local-removal` or `lost-store`.
+    /// Why it is raised: `loosening`, `past-the-cap`, `local-removal`, `shipped-default` or `lost-store`.
     pub reason: String,
     /// Each rule that differs.
     pub rules: Vec<PressRule>,
@@ -117,6 +117,7 @@ fn press_of(root: &std::path::Path) -> Option<(PolicyPress, String)> {
             Reason::Loosening => "loosening",
             Reason::PastTheCap => "past-the-cap",
             Reason::LocalRemoval => "local-removal",
+            Reason::ShippedDefault => "shipped-default",
             Reason::LostStore => "lost-store",
         }
         .to_owned(),
@@ -173,6 +174,27 @@ fn press_of(root: &std::path::Path) -> Option<(PolicyPress, String)> {
     Some((shown, held.digest))
 }
 
+/// The shipped rules this purlis dropped that the project's own rule of the same `@id` now stands
+/// alone for.
+fn orphaned_of(root: &std::path::Path) -> Vec<String> {
+    let standing = purlis_core::secrets::answers::standing(root);
+    let plane = purlis_core::workspaces::Plane::open(root);
+    let workspaces = plane.workspaces().unwrap_or_default();
+    let personas = plane.personas().unwrap_or_default();
+    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
+    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
+    purlis_core::policy::force::orphaned_replacements(
+        &purlis_core::policy::levels::Sources {
+            root,
+            workspaces: &workspaces,
+            personas: &personas,
+            organisation: None,
+            accepted: None,
+        },
+        &standing,
+    )
+}
+
 /// What the window says about the project's `[policy]` on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct PolicyState {
@@ -202,6 +224,9 @@ pub struct PolicyState {
     /// author, raised while a loosening, a commit past the accepted floor's cap, the removal of a
     /// tightening from your own file or a lost store waits for Accept.
     pub press: Option<PolicyPress>,
+    /// Each shipped rule an earlier purlis shipped and this one does not, that the project holds a
+    /// rule of the same `@id` for (M75-17): it stays as a plain rule of the project.
+    pub orphaned: Vec<String>,
 }
 
 /// One family the project's `[policy]` sets apart from its template.
@@ -235,6 +260,7 @@ fn state_of(root: &std::path::Path) -> PolicyState {
     let (press, press_digest) = press_of(root).unzip();
     PolicyState {
         press,
+        orphaned: orphaned_of(root),
         waiting: standing
             .waiting
             .into_iter()

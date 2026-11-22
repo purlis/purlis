@@ -25,6 +25,7 @@ const QUIET: PolicyState = {
   waiting: [],
   refused: [],
   not_in_force: [],
+  orphaned: [],
   unsealed: false,
   digest: "d1",
   template: "watch",
@@ -192,6 +193,25 @@ describe("the project's policy (Q308a)", () => {
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
     await waitFor(() => expect(screen.getByText(/A commit went past the most/)).toBeTruthy());
     expect(screen.queryByText(/they keep what you accepted before/)).toBeNull();
+  });
+
+  it("raises the press for an update of the shipped default with no commit and no author", async () => {
+    core({
+      ...QUIET,
+      press: { ...PRESS, reason: "shipped-default", local: [], commit: null },
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/This version of purlis changed its shipped default/)).toBeTruthy(),
+    );
+    expect(screen.queryByText(/The commit names its author/)).toBeNull();
+  });
+
+  it("says a project rule that replaced a removed shipped rule stays as a plain rule", async () => {
+    core({ ...QUIET, orphaned: ["guards-merge-old"] });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/no longer ships guards-merge-old/)).toBeTruthy());
+    expect(screen.getByText(/runs as a plain rule of the project/)).toBeTruthy();
   });
 
   it("raises the press for a removal from your own file, with no commit and no author", async () => {

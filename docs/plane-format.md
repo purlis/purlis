@@ -5001,8 +5001,14 @@ write into this folder cannot make its own text arrive as the person's.
   `rules` (`policy.cedar`), `vaults` (the shared `vaults.json`, from which a Vault's tags and
   Persona are read, never the local half), `workspaces` (the folders of `workspaces/` at `HEAD`,
   from which a Path's owning workspace is read) and `local` (the You level's local file's text,
-  whose tightenings are sealed with the version); each key is left out where it holds nothing.
-  Every decision is judged by the project as committed now and by the accepted copy (the shipped
+  whose tightenings are sealed with the version) and `personas`; and **`shipped`, the text of the
+  shipped default the version was judged under** (M75 slice 17, #7026; spec §7.8), as the purlis
+  that sealed it shipped it. The app seals every version with it, and Accept writes the accepted
+  copy with it, so an update that adds a forbid to the shipped default applies at once and is
+  sealed (the new default is a new floor version), a downgrade drops none, and one that takes a
+  forbid away waits for the press, raised as `shipped-default` with no commit. A version with no
+  `shipped` is judged under the default of the purlis that reads it. Each key is left out where it
+  holds nothing. Same store, same tier. Every decision is judged by the project as committed now and by the accepted copy (the shipped
   default until there is one) and by every `floor` version, each with its own named sets and its
   own attributes, the stricter result winning. **The app seals a `floor` version, with no
   press, whenever it sees a committed version no entry holds, or the local file tightening**

@@ -1357,7 +1357,11 @@ fn shipped_without(id: &str) -> String {
         .split("\n\n")
         .filter(|block| !block.contains(&marker))
         .collect();
-    assert_ne!(kept.len(), crate::policy::DEFAULT.split("\n\n").count(), "{id} is shipped");
+    assert_ne!(
+        kept.len(),
+        crate::policy::DEFAULT.split("\n\n").count(),
+        "{id} is shipped"
+    );
     kept.join("\n\n")
 }
 
@@ -1460,6 +1464,8 @@ fn a_project_replacement_of_a_removed_shipped_rule_stays_as_a_project_rule() {
         ["guards-merge-shipped-old"]
     );
     // A project that never replaced a shipped rule is told nothing.
-    let plain = holding(vec![accepted(&shipped_as(&shipped_without("guards-merge-hold")))]);
+    let plain = holding(vec![accepted(&shipped_as(&shipped_without(
+        "guards-merge-hold",
+    )))]);
     assert!(orphaned_replacements(&sources(&root), &plain).is_empty());
 }

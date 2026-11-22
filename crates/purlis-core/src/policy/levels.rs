@@ -1584,7 +1584,12 @@ pub fn load_held(sources: &Sources<'_>, held: &Held<'_>) -> Loaded {
         },
         None => Committed::Absent,
     };
-    load_with(sources, vec![settings, rules], Some(held.local), held.shipped)
+    load_with(
+        sources,
+        vec![settings, rules],
+        Some(held.local),
+        held.shipped,
+    )
 }
 
 /// [`load`], the project's two files as `committed` says them and the local file as `held_local`

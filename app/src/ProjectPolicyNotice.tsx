@@ -74,6 +74,7 @@ export function ProjectPolicyNotice({
   const [again, setAgain] = useState(0);
   const [hidden, setHidden] = useState(false);
   const [refusedHidden, setRefusedHidden] = useState(false);
+  const [orphanedHidden, setOrphanedHidden] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -132,9 +133,31 @@ export function ProjectPolicyNotice({
       </Notice>
     ) : null;
 
+  // A project rule that replaced a shipped rule this purlis no longer ships (Q316.10).
+  const orphaned =
+    (state.orphaned ?? []).length > 0 && !orphanedHidden ? (
+      <Notice
+        cause="policy-shipped-rule-removed"
+        label="The project's policy"
+        onDismiss={() => setOrphanedHidden(true)}
+      >
+        <p>
+          This version of purlis no longer ships {state.orphaned.map((id) => inertly(id)).join(", ")},
+          which the project's own rule of the same name replaced. The project's rule stays and now
+          runs as a plain rule of the project.
+        </p>
+      </Notice>
+    ) : null;
+  const standing = (
+    <>
+      {refused}
+      {orphaned}
+    </>
+  );
+
   const press = state.press ?? null;
   const waits = state.waiting.length > 0 || state.unsealed || press !== null;
-  if (!waits || hidden) return refused;
+  if (!waits || hidden) return standing;
 
   const body = (
     <p>
@@ -149,7 +172,7 @@ export function ProjectPolicyNotice({
   );
   return (
     <>
-      {refused}
+      {standing}
       {canAccept && (state.waiting.length > 0 || state.unsealed || press !== null) ? (
         <Notice
           cause="policy-loosened"

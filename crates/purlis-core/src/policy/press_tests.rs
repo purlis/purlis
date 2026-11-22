@@ -526,7 +526,11 @@ fn a_shipped_default_update_is_announced_once() {
     assert_eq!(press.commit, None, "{press:?}");
     assert_eq!(rule(&press, "guards-merge-shipped-ban").kind, Kind::Loosens);
     assert!(
-        press.diff.other.iter().any(|one| one.part.contains("shipped default")),
+        press
+            .diff
+            .other
+            .iter()
+            .any(|one| one.part.contains("shipped default")),
         "{press:?}"
     );
     // The same press every time it is read, so the window has one line, not one per decision.
@@ -539,9 +543,17 @@ fn a_shipped_default_update_is_announced_once() {
     .expect("an accepted copy");
     let press = of(&root).expect("a press on the real store");
     assert_eq!(press.reason, Reason::ShippedDefault);
-    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Deny, "held until Accept");
+    assert_eq!(
+        host(&root, &merge(true)).after_mode,
+        Outcome::Deny,
+        "held until Accept"
+    );
     accept(&root, &the_persons_press(), &press.digest).expect("the press");
     assert_eq!(of(&root), None, "announced once");
     assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Ask);
-    assert_eq!(of(&root), None, "and not again by the decision that sealed what it saw");
+    assert_eq!(
+        of(&root),
+        None,
+        "and not again by the decision that sealed what it saw"
+    );
 }

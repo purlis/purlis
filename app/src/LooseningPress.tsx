@@ -11,6 +11,8 @@ export const pressReasonSaid = (press: PolicyPress): string => {
       return "A commit went past the most project versions purlis keeps as accepted, so nothing but starting a chat is allowed until you accept the project's policy again.";
     case "local-removal":
       return "A tightening is gone from your own settings file. Until you accept, the one you sealed stays in force.";
+    case "shipped-default":
+      return "This version of purlis changed its shipped default, and some of it is looser. Until you accept, your chats keep the default you accepted before.";
     case "lost-store":
       return press.lost ?? "";
     default:
