@@ -62,11 +62,17 @@ const WAIT_ENV: [(&str, &str); 2] = [
 /// text and never a file of the checkout (the commit's code has run in the job by then), and
 /// `tools/release-wait.test.mjs` runs it against a fake `gh`. A line added to it, such as a
 /// `|| true`, is a change to this constant too.
-const WAIT_RUN: [&str; 34] = [
+const WAIT_RUN: [&str; 42] = [
     r##"if [ "$DEV" != true ]; then"##,
     r##"echo "Not a push to main: nothing to wait for.""##,
     r##"exit 0"##,
     r##"fi"##,
+    r##"for v in $(compgen -e); do"##,
+    r##"case "$v" in"##,
+    r##"GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;"##,
+    r##"*) unset "$v" 2>/dev/null || true ;;"##,
+    r##"esac"##,
+    r##"done"##,
     r##"PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"##,
     r##"gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }"##,
     r##"case "$gh" in"##,
@@ -79,7 +85,9 @@ const WAIT_RUN: [&str; 34] = [
     r##"echo "$out""##,
     r##"return 0"##,
     r##"fi"##,
+    r##"if [ "$try" -lt 3 ]; then"##,
     r##"sleep $((try * 15))"##,
+    "fi",
     r##"done"##,
     r##"return 1"##,
     r##"}"##,

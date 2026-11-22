@@ -9,8 +9,10 @@ commit's own checkout and the lockfiles, and it signs, uploads and publishes not
 or uploads, a step waits for the commit's `ci` on `main`. The step is written out in the workflow,
 as `gate`'s is, and no file of the checkout runs it: the commit's code has already run in that job.
 It runs in the runner's own bash with `BASH_ENV` unset, takes a fixed `PATH` and refuses a `gh`
-that is not the runner's own, and reads status and conclusion in one call, tried three times, so an
-API error is not an answer and a cancelled `ci` still ends the job. A red or cancelled `ci`, or one that never ends, ends the job there, with nothing
+that is not the runner's own. It drops the environment the compile left in `$GITHUB_ENV` (`GH_HOST`,
+a proxy, `LD_PRELOAD`) bar what it needs, and reads status and conclusion in one call, tried three times, so an
+API error is not an answer and a cancelled `ci` still ends the job. A red or cancelled `ci`, or one
+that never ends, ends the job there, with nothing
 signed and nothing uploaded, and nothing downstream publishes. A tag, a build by hand and the
 nightly pass at once, as they pass `gate`.
 

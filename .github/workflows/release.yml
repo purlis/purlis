@@ -137,8 +137,8 @@ jobs:
   # on its `green`: the runner image and its signature, the runner binaries, `sbom`, `manifest`,
   # `provenance`, `publish` and `symbols`. Two jobs do not, so they can compile while `ci` runs:
   # `build` and `runner-binary-aarch64` start at once and each has a step that makes the same wait
-  # (a step of its own, written out in the workflow) before its first step that signs or uploads, which ends the job on a
-  # red `ci`. `plan` and `keys` hold nothing and publish nothing, so they do not wait either.
+  # (a step of its own, written out in the workflow) before its first step that signs or uploads,
+  # which ends the job on a red `ci`. `plan` and `keys` hold nothing and publish nothing, so they do not wait either.
   # `crates/release-manifest` holds each of those rules on a workflow broken on purpose. Every
   # other way in (a tag, the profile guard, a build by hand) passes at once, here and in those
   # steps.
@@ -175,7 +175,9 @@ jobs:
                 echo "$out"
                 return 0
               fi
-              sleep $((try * 15))
+              if [ "$try" -lt 3 ]; then
+                sleep $((try * 15))
+              fi
             done
             return 1
           }
@@ -813,6 +815,14 @@ jobs:
             echo "Not a push to main: nothing to wait for."
             exit 0
           fi
+          # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
+          # `$GITHUB_ENV`) reaches `gh`: everything but what the step needs is dropped.
+          for v in $(compgen -e); do
+            case "$v" in
+              GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;
+              *) unset "$v" 2>/dev/null || true ;;
+            esac
+          done
           PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
           gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }
           case "$gh" in
@@ -826,7 +836,9 @@ jobs:
                 echo "$out"
                 return 0
               fi
-              sleep $((try * 15))
+              if [ "$try" -lt 3 ]; then
+                sleep $((try * 15))
+              fi
             done
             return 1
           }
@@ -1554,6 +1566,14 @@ jobs:
             echo "Not a push to main: nothing to wait for."
             exit 0
           fi
+          # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
+          # `$GITHUB_ENV`) reaches `gh`: everything but what the step needs is dropped.
+          for v in $(compgen -e); do
+            case "$v" in
+              GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;
+              *) unset "$v" 2>/dev/null || true ;;
+            esac
+          done
           PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
           gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }
           case "$gh" in
@@ -1567,7 +1587,9 @@ jobs:
                 echo "$out"
                 return 0
               fi
-              sleep $((try * 15))
+              if [ "$try" -lt 3 ]; then
+                sleep $((try * 15))
+              fi
             done
             return 1
           }

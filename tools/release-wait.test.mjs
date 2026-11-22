@@ -36,14 +36,14 @@ function waitScripts() {
 }
 
 /** Runs the script with a `gh` that answers `listed` to `run list` and `views` (one per call) to `run view`. */
-function run({ dev = "true", listed = "4242", views = ["completed success"] } = {}) {
+function run({ dev = "true", listed = "4242", views = ["completed success"], extraEnv = {} } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "release-wait-"));
   const log = join(dir, "calls.log");
   writeFileSync(join(dir, "count"), "0");
   writeFileSync(
     join(dir, "gh"),
     `#!/bin/bash
-echo "$*" >> "${log}"
+echo "$* host=$GH_HOST" >> "${log}"
 case "$1 $2" in
   "run list") printf '%s' "${listed}" ;;
   "run watch") exit 1 ;;
@@ -66,7 +66,7 @@ esac
   assert.ok(script.includes(`${dir}/gh |`), "the gh allow-list line moved");
   const result = spawnSync("/bin/bash", ["--noprofile", "--norc", "-eo", "pipefail", "-c", script], {
     encoding: "utf8",
-    env: { DEV: dev, GITHUB_REPOSITORY: "purlis/purlis", GITHUB_SHA: "abc123", GH_TOKEN: "x", PATH: "/usr/bin:/bin" },
+    env: { ...extraEnv, DEV: dev, GITHUB_REPOSITORY: "purlis/purlis", GITHUB_SHA: "abc123", GH_TOKEN: "x", PATH: "/usr/bin:/bin" },
   });
   let calls = "";
   try {
@@ -136,4 +136,11 @@ test("the gate asks the forge with the same call and answers false for a red or 
   const wait = waitScripts()[0].replace(/^/gm, "          ");
   assert.equal(ask(gate).replaceAll('gh run view', '"$gh" run view'), ask(wait));
   assert.match(gate, /conclusion" = success \]; then\n\s+echo "green=true"/);
+});
+
+test("what the compile left in the environment never reaches gh", () => {
+  const r = run({ extraEnv: { GH_HOST: "evil.example", LD_PRELOAD: "/tmp/x.so" } });
+  assert.equal(r.code, 0, r.out);
+  assert.doesNotMatch(r.calls, /evil\.example/);
+  assert.match(r.calls, /host=\n/);
 });
