@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795288168720,
+  "lastUpdate": 1795336261146,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -51996,6 +51996,48 @@ window.BENCHMARK_DATA = {
             "value": 100.8128295,
             "unit": "ms",
             "extra": "median of 5 runs: 100.198, 100.550, 100.813, 100.898, 101.463 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "939a0ea8c07b3aa90d8a3b83c5001fef0d10f6b5",
+          "message": "One login: sign-out keeps the repo binding; picker and Allow CI files fixed (#7359)\n\n* Sign out keeps the account's record, so signing in again as the same login serves its repos again\n\nSign out removed the record, so the next sign-in made a new id and every confirmed repo\nthat named the old one stayed ChosenIsSignedOut for good. It now keeps the record signed\nout, as a sign-out the forge forces does; keep() reuses the id. A step-up still refuses an\naccount that was signed out while it waited. The Served by picker shows for a repo that is\nnot served when one account is signed in, and Allow CI files hides once the CI sign-in is\ngiven (ForgeAccountRow.ci_allowed).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80CSEYX93ZQFC5X49FEM9EP\nPurlis-Persona: steward\n\n* Changelog fragment: signing out and in again keeps each repo's account\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80CSEYX93ZQFC5X49FEM9EP\nPurlis-Persona: steward\n\n* Review fixes: ci_allowed only for GitHub and kept beside the scopes note; sign-out tests; stale docs; signed-in filters\n\nci_allowed is true only for a signed-in GitHub account holding the second token (GitLab has\nnone), with a test of the derivation; the row appends 'CI files allowed' to the note instead\nof replacing it. New tests: a different login after a sign-out is a new account and the repo\nstays unserved; a pasted token signed in again does not serve a browser-bound repo. Docs no\nlonger say sign-out removes the account. The agent identity's owners and choosing a repo's\naccount take signed-in accounts only.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80CSEYX93ZQFC5X49FEM9EP\nPurlis-Persona: steward\n\n* ci_allowed takes the availability, so its test names no keyring item (the provisioning guard test)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01XQZeZj6j8EHMyj3pZWHum9\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T07:54:15Z",
+          "tree_id": "82d41e407abb830e4fff7720d4e48dc02d1a11c0",
+          "url": "https://github.com/purlis/purlis/commit/939a0ea8c07b3aa90d8a3b83c5001fef0d10f6b5"
+        },
+        "date": 1795336255192,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.688166,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.658, 0.684, 0.688, 0.699, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7397585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.334, 16.702, 16.740, 16.819, 16.847 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5377235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.562, 102.384, 102.538, 102.677, 102.700 ms"
           }
         ]
       }
