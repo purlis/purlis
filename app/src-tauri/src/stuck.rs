@@ -337,7 +337,12 @@ impl Noticed {
             change(&mut said);
             (said != was).then(|| {
                 let told = self.noticed(chat, &said);
-                all.insert(chat, said);
+                // An entry back to nothing is dropped, so a closed chat leaves none behind.
+                if said == Said::default() {
+                    all.remove(&chat);
+                } else {
+                    all.insert(chat, said);
+                }
                 told
             })
         };

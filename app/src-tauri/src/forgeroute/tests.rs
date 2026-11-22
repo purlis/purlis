@@ -1111,7 +1111,7 @@ fn a_successful_sign_in_takes_the_notice_down_and_a_later_loss_is_told_again() {
 }
 
 #[test]
-fn a_host_still_missing_is_told_again_after_another_hosts_sign_in() {
+fn one_hosts_sign_in_leaves_another_hosts_told_state_alone() {
     let scene = Scene::new();
     lock(&scene.sign_ins.tokens).clear();
     let params = scene.open("chat-1", "run-1", "/p/one", 5);
