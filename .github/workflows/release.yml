@@ -801,7 +801,7 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$PROFILE" != release ]; then
-            if [ -e ../target/release ]; then echo "::error::target/release exists: \`tauri bundle\` would read it in place of target/$PROFILE"; exit 1; fi
+            if [ -e ../target/release ] || [ -L ../target/release ]; then echo "::error::target/release exists: \`tauri bundle\` would read it in place of target/$PROFILE"; exit 1; fi
             ln -s "$PROFILE" ../target/release
           fi
           npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles "$BUNDLES"

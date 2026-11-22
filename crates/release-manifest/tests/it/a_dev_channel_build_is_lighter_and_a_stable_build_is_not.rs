@@ -205,7 +205,8 @@ fn every_step_of_the_build_reads_the_one_profile_plan_chose() {
     let fixed: Vec<&String> = build
         .body
         .iter()
-        .filter(|l| !l.trim_start().starts_with('#') && !bundling.contains(l))
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter(|l| !(bundling.contains(l) && l.contains("../target/release")))
         .filter(|l| l.contains("target/release") || l.contains("--release"))
         .collect();
     assert!(fixed.is_empty(), "{fixed:#?}");
