@@ -317,6 +317,31 @@ jobs:
             echo "::warning::no TAURI_SIGNING_PRIVATE_KEY in the release environment, so this green main is not published to the dev channel. docs/updating.md, steps 0 and 1, is the setup."
             skip=true; publish=false
           fi
+          # **A commit that ships nothing gets no dev build** (R4). `tools/ci-scope.mjs ships`
+          # measures the push from the commit the published `dev.json` names, never from the
+          # push's parent: a displaced run's crate change is still in that range when the commit
+          # on top of it is docs. Docs, research, other Markdown, tests and the other workflows
+          # ship nothing; release.yml, the toolchain, the lockfiles, CHANGELOG.md and any path it
+          # does not know ship. A tag, a hand-started build and the nightly always build, and a
+          # change it cannot read ships. Like the checks here, this only skips a build: nothing
+          # unsigned or stale is published (ADR 0042).
+          if [ "$DEV" = true ] && [ "$skip" != "true" ]; then
+            ships_out=$(mktemp)
+            # A check that cannot run builds, as one that cannot read the change does.
+            why=$(GITHUB_OUTPUT="$ships_out" node tools/ci-scope.mjs ships dev "$SHA") || why="the ships check failed, so this builds"
+            echo "$why"
+            if grep -qx 'ships=false' "$ships_out"; then
+              echo "::notice::no dev build: nothing since the published dev build ships"
+              {
+                echo "### No dev build for this commit"
+                echo
+                echo "Nothing that reaches a build changed since the commit \`dev.json\` names, so nothing was built, signed or published and the dev channel is as it was."
+                echo
+                echo "$why"
+              } >> "$GITHUB_STEP_SUMMARY"
+              skip=true; publish=false
+            fi
+          fi
           # **The dev channel only moves forward.** When dev builds were started by `ci`'s end
           # they ran in the order their `ci` runs ENDED, which is not the order of the commits:
           # run 654 published 4c7854ee that way on 2026-10-13, over e827217c, nine commits
