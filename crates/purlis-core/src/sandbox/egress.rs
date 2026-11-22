@@ -630,6 +630,13 @@ pub struct Serving {
     /// names up and dials, its `providers` among them ([`super::names`]). None asks the system.
     #[cfg(any(test, feature = "test-support"))]
     pub names: Option<Arc<super::names::Names>>,
+    /// **Where the project's `[policy]` does not enforce `network`** (the Q308 follow-up, item
+    /// 5): a host nothing lists, which a person could allow, is carried with nobody asked, and
+    /// this is told it, once per host and port, so a logged one is recorded. None refuses or
+    /// asks as before. This machine, a link-local or metadata address, a host an
+    /// administrator's policy pins as never allowed and the person's Keep blocked are never
+    /// carried by it.
+    pub network: Option<super::asks::Answered>,
 }
 
 impl Serving {
@@ -653,6 +660,7 @@ impl Serving {
             providers: None,
             #[cfg(any(test, feature = "test-support"))]
             names: None,
+            network: None,
         }
     }
 
@@ -824,6 +832,9 @@ impl Proxy {
             providers,
             #[cfg(any(test, feature = "test-support"))]
             names: serving.names,
+            network: serving
+                .network
+                .map(|told| (told, Mutex::new(std::collections::HashSet::new()))),
             live: Live::default(),
             tally: Mutex::new(Tally::new(&serving.timings)),
             teller: Teller::default(),
@@ -1103,6 +1114,8 @@ struct Allowed {
     names: Option<Arc<super::names::Names>>,
     /// What it carries now, for a confined extension's proxy, ended when its question is.
     live: Live,
+    /// [`Serving::network`], and the hosts and ports it was told of already.
+    network: Option<(super::asks::Answered, ToldOnce)>,
     tally: Mutex<Tally>,
     teller: Teller,
 }
@@ -1138,6 +1151,9 @@ impl Teller {
             .take();
     }
 }
+
+/// The hosts and ports a lift of `network` told of already ([`Serving::network`]).
+type ToldOnce = Mutex<std::collections::HashSet<(String, u16)>>;
 
 impl Allowed {
     /// Whether this is a confined extension's proxy none of whose questions is being answered:
@@ -1180,6 +1196,29 @@ impl Allowed {
         );
         if refused_here && self.asks.is_some() && self.left_out_at(host, port) {
             return Decision::Ask;
+        }
+        // The `network` family off or logged (the Q308 follow-up, item 5): a host a person could
+        // allow is carried, never asked about. Never for a confined extension's proxy, which
+        // carries only what its question names, and never a host the person kept blocked for
+        // this chat (Q308b: Keep blocked holds in every mode; the review of #7105), which goes
+        // on to the board, where it is refused. An administrator's never-hosts, this machine and
+        // a link-local or metadata address are refused before any ask, so never reach here.
+        if decision == Decision::Ask
+            && !self.confined
+            && let Some((told, seen)) = &self.network
+            && !self
+                .asks
+                .as_ref()
+                .is_some_and(|asks| asks.keeps_blocked(host, port))
+        {
+            let first = seen
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert((host.to_ascii_lowercase(), port));
+            if first {
+                told(host, port);
+            }
+            return Decision::Open;
         }
         decision
     }

@@ -157,15 +157,20 @@ pub fn stack_of(minidump: &[u8]) -> Result<CrashStack, String> {
     };
     // A signal is answered on the crashing thread itself, so its live registers, all the
     // minidump has, are the handler's: the crash is past the trampoline it was called from.
-    let from = if arrived_as_a_signal(&exception, system.os) {
-        past_the_trampoline(stack.frames.iter().map(|frame| {
+    let walked: Vec<Option<String>> = stack
+        .frames
+        .iter()
+        .map(|frame| {
             frame
                 .module
                 .as_ref()
                 .map(|module| file_name(&module.code_file()))
-        }))
+        })
+        .collect();
+    let from = if arrived_as_a_signal(&exception, system.os) {
+        past_the_trampoline(walked)
     } else {
-        0
+        past_an_aborts_trampoline(&walked)
     };
     let mut bases = Vec::new();
     for frame in stack.frames.iter().skip(from) {
@@ -247,6 +252,31 @@ fn past_the_trampoline(modules: impl IntoIterator<Item = Option<String>>) -> usi
         in_the_handler |= !module.starts_with(LIBSYSTEM);
     }
     0
+}
+
+/// The modules an abort raises its `SIGABRT` through on the way to the trampoline:
+/// `__pthread_kill` (`libsystem_kernel`, often not walked: it keeps no frame) and `pthread_kill`.
+const RAISED_THROUGH: [&str; 2] = ["libsystem_kernel.dylib", "libsystem_pthread.dylib"];
+
+/// The module `abort` is in.
+const ABORT: &str = "libsystem_c.dylib";
+
+/// [`past_the_trampoline`] for a stack whose exception does not say it was a signal, when the
+/// stack itself does: past the first trampoline is an abort raising its `SIGABRT` (`pthread_kill`,
+/// then `abort` in [`ABORT`]). An abort's signal is answered by crash-handler's own handler, so
+/// the frames before it are the handler's whatever the exception record says (main ci run
+/// 43725561053 kept them, its trampoline too). Any other stack is kept whole: a crash in
+/// `libsystem_platform` itself (`memmove`'s `EXC_BAD_ACCESS`) has the app past it, not an abort,
+/// and a fault in a signal handler of the app's own has the code the signal interrupted past it.
+fn past_an_aborts_trampoline(modules: &[Option<String>]) -> usize {
+    let from = past_the_trampoline(modules.iter().cloned());
+    let raised_by_an_abort = from > 0
+        && modules[from..]
+            .iter()
+            .flatten()
+            .find(|module| !RAISED_THROUGH.contains(&module.as_str()))
+            .is_some_and(|module| module == ABORT);
+    if raised_by_an_abort { from } else { 0 }
 }
 
 /// A module's file name, without the folders it is in: they may name the person's.
@@ -357,7 +387,7 @@ fn in_folder(crashes: &Path, extension: &str) -> Vec<(PathBuf, Option<u64>)> {
 
 #[cfg(test)]
 mod tests {
-    use super::past_the_trampoline;
+    use super::{past_an_aborts_trampoline, past_the_trampoline};
 
     /// The app's own binary.
     const APP: &str = "purlis-app";
@@ -448,5 +478,71 @@ mod tests {
         ]);
 
         assert_eq!(past_the_trampoline(stack), 2);
+    }
+
+    #[test]
+    fn an_aborts_stack_is_cut_past_its_trampoline_when_the_exception_does_not_say_signal() {
+        // As main ci run 43725561053 had it, innermost first: the handler's frames above the
+        // trampoline, with no wait in libsystem_kernel, and an exception that did not say it was
+        // a signal, so the stack was kept whole.
+        let mut names = vec!["purlis-app"; 14]; // the handler, running
+        names.extend([
+            "libsystem_platform.dylib", // _sigtramp
+            "libsystem_pthread.dylib",  // pthread_kill
+            "libsystem_c.dylib",        // abort
+            "purlis-app",               // std::process::abort
+            "purlis-app",               // nativecrash::crash_if_asked: the crash
+        ]);
+
+        assert_eq!(past_an_aborts_trampoline(&modules(&names)), 15);
+    }
+
+    #[test]
+    fn an_aborts_signal_raised_through_the_kernel_is_cut_too() {
+        let stack = modules(&[
+            "libsystem_kernel.dylib",   // __psynch_cvwait
+            "purlis-app",               // the handler
+            "libsystem_platform.dylib", // _sigtramp
+            "libsystem_kernel.dylib",   // __pthread_kill
+            "",                         // a frame in no module
+            "libsystem_pthread.dylib",  // pthread_kill
+            "libsystem_c.dylib",        // abort
+            "purlis-app",
+        ]);
+
+        assert_eq!(past_an_aborts_trampoline(&stack), 3);
+    }
+
+    #[test]
+    fn a_crash_inside_libsystem_platform_keeps_its_top_frame() {
+        // memmove's EXC_BAD_ACCESS: the crash is in the trampoline's module, called by the app.
+        let stack = modules(&["libsystem_platform.dylib", "purlis-app", "purlis-app"]);
+
+        assert_eq!(past_an_aborts_trampoline(&stack), 0);
+    }
+
+    #[test]
+    fn a_fault_in_a_signal_handler_of_the_apps_is_kept_whole() {
+        // The trampoline was entered from the app's own code, not from an abort: the frames
+        // above it are where the fault is.
+        let stack = modules(&[
+            "purlis-app",
+            "libsystem_platform.dylib",
+            "purlis-app",
+            "libsystem_c.dylib",
+        ]);
+
+        assert_eq!(past_an_aborts_trampoline(&stack), 0);
+    }
+
+    #[test]
+    fn a_trampoline_with_nothing_past_it_is_kept_whole() {
+        let stack = modules(&[
+            "purlis-app",
+            "libsystem_platform.dylib",
+            "libsystem_pthread.dylib",
+        ]);
+
+        assert_eq!(past_an_aborts_trampoline(&stack), 0);
     }
 }

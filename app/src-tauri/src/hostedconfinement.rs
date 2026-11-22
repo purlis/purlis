@@ -119,18 +119,48 @@ pub struct Hears {
     more: Option<egress::MoreTold>,
     reached: Option<egress::Reached>,
     asked: Option<asks::Tell>,
+    /// Told each host the host's board answered Allow because `asks` is not enforced for the
+    /// chat, and each its proxy carried because `network` is not (1.94, the Q308 follow-up):
+    /// the window's own closures, which log it under the chat.
+    answered: Option<asks::Answered>,
+    network: Option<asks::Answered>,
 }
 
 impl Hears {
     /// What `hearing` is told by a proxy in the host. Its board is the host's: the window keeps
     /// only who hears an ask.
     pub fn of(hearing: Hearing) -> Hears {
+        let (asked, answered) = match hearing.asks {
+            Some(asking) => (Some(asking.tell), asking.answered),
+            None => (None, None),
+        };
         Hears {
             refusals: hearing.refusals,
             more: hearing.more,
             reached: hearing.reached,
-            asked: hearing.asks.map(|asking| asking.tell),
+            asked,
+            answered,
+            network: hearing.network,
         }
+    }
+
+    /// **The families `hearing` does not enforce**, as a confinement in the host is told them
+    /// ([`purlis_session_protocol::session::Confine::lifted`], 1.94): `asks` where its board
+    /// answers Allow, `network` where its proxy carries a host nothing lists.
+    pub fn lifted(hearing: &Hearing) -> Vec<String> {
+        use purlis_core::enforcement::Family;
+        let mut lifted = Vec::new();
+        if hearing
+            .asks
+            .as_ref()
+            .is_some_and(|asking| asking.answered.is_some())
+        {
+            lifted.push(Family::Asks.key().to_owned());
+        }
+        if hearing.network.is_some() {
+            lifted.push(Family::Network.key().to_owned());
+        }
+        lifted
     }
 
     /// The proxy did `told`.
@@ -171,8 +201,33 @@ impl Hears {
                     asked(Heard::DroppedNext(target));
                 }
             }
+            // Let through only because a family is not enforced for the chat (1.93): told to
+            // the window's own closure for it, which logs it. A family the window did not name
+            // is nobody's to tell.
+            SandboxTold::Lifted { family, target } => {
+                use purlis_core::enforcement::Family;
+                let told = match Family::of_key(&family) {
+                    Some(Family::Asks) => self.answered.as_ref(),
+                    Some(Family::Network) => self.network.as_ref(),
+                    _ => None,
+                };
+                if let (Some(told), Some((host, port))) = (told, host_and_port_of(&target)) {
+                    told(host, port);
+                }
+            }
         }
     }
+}
+
+/// `target`, as [`egress::host_and_port`] wrote it, read back: its host, without an IPv6
+/// address's brackets, and its port.
+fn host_and_port_of(target: &str) -> Option<(&str, u16)> {
+    let (host, port) = target.rsplit_once(':')?;
+    let host = host
+        .strip_prefix('[')
+        .and_then(|host| host.strip_suffix(']'))
+        .unwrap_or(host);
+    Some((host, port.parse().ok()?))
 }
 
 /// **A chat's confinement the session host holds, as the window reaches it** (#1999): its

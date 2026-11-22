@@ -243,7 +243,9 @@ test("the scenarios are purlis-app's one-word scenarios module, and the script's
 
 test("the Linux scenario build is the rust job's test build, so it restores the rust job's cache", () => {
   const rust = jobsOf(read(".github/workflows/ci.yml")).find((j) => j.id === "rust");
-  const built = /run: cargo nextest run (.*) --no-run\n/.exec(rust.text)[1];
+  // The build step is a script since #7200 (it samples memory around the command), so the command
+  // is found inside it, not as the whole `run:`.
+  const built = /\bcargo nextest run (--workspace [^\n|]*?) --no-run\b/.exec(rust.text)[1];
   const action = code(read(".github/actions/sandbox-scenarios/action.yml"));
   // The rust job keys its cache by its id, `rust`; the action restores that key on Linux.
   assert.doesNotMatch(rust.text, /shared-key/);

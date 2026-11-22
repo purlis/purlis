@@ -21,6 +21,7 @@
 use std::fs::File;
 use std::io;
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 /// How long [`lock_within`] sleeps between tries.
@@ -48,6 +49,34 @@ pub fn lock_within(file: File, wait: Duration, what: &str) -> io::Result<Held> {
             Err(std::fs::TryLockError::Error(why)) => return Err(why),
         }
     }
+}
+
+/// **The lock file beside a store `path`**, taken for one read-modify-write of it: `<path>.lock`,
+/// created 0600, never through a link, waited for `wait` at most ([`lock_within`]). Two purlis
+/// processes of one person (two windows, a restart's overlap) each rewrite a store whole from
+/// what they read, so without it the later write drops the earlier one's change. `flock` belongs
+/// to the open file, so two threads that each take it exclude one another as two processes do.
+/// The lock file is a file of its own and never the store: the store's rename replaces its
+/// inode, and a lock on it would then guard nothing.
+pub fn beside(path: &Path, wait: Duration, what: &str) -> io::Result<Held> {
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".lock");
+    let lock = path.with_file_name(name);
+    if let Some(dir) = lock.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.create(true).truncate(false).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = crate::contain::nofollow(&mut options).open(&lock)?;
+    lock_within(file, wait, what)
 }
 
 /// A [`File`] this process holds an `flock` on, unlocked when it is dropped.

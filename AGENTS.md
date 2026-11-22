@@ -180,6 +180,9 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
 - To undo a probe's mutations in a sandboxed chat, save them with `git diff > patch` and take them
   out with `git apply -R patch`: `git checkout` and `git restore` write the index, which is outside
   what the chat may write.
+- In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
+  socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
+  change. `settings::tests` and `sandbox::personal::tests` run here.
 
 ## Agent skills
 

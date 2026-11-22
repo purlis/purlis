@@ -242,6 +242,20 @@ pub fn hold_elsewhere(held: &[u16]) -> bool {
     true
 }
 
+/// **Every port purlis listens on now**, and the forge sign-in's redirect ports: what a chat
+/// whose project turns `ports` off is still denied as it starts (the Q308 follow-up, item 5).
+pub fn own_now() -> Vec<u16> {
+    let ports = ports();
+    ports
+        .own
+        .iter()
+        .copied()
+        .chain(crate::forge::registration::REDIRECT_PORTS.iter().copied())
+        .collect::<BTreeSet<u16>>()
+        .into_iter()
+        .collect()
+}
+
 /// `port` is no longer purlis's own: its listener closed.
 pub fn release(port: u16) {
     ports().own.remove(&port);

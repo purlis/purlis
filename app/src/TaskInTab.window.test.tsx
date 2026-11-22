@@ -936,6 +936,7 @@ describe("a shown task that ends", () => {
     reopens: true,
     not_reopened: null,
     chat: null,
+    chat_id: null,
     did_not_start: false,
     attempts: 0,
     waits: null,

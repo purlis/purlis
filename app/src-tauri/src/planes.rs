@@ -101,6 +101,26 @@ pub const WAITS_WHILE_YOU_STOP_IT: &str =
 pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
      its turn ends.";
 
+/// **What the app's tests share of a held project.**
+#[cfg(test)]
+pub(crate) mod fixtures {
+    /// **A project on disk, held as a window holds it**: the folder, the registry that holds it
+    /// (kept, so the project stays held) and the project.
+    pub(crate) fn a_project() -> (
+        tempfile::TempDir,
+        super::Planes,
+        std::sync::Arc<super::Held>,
+    ) {
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a plane");
+        let planes =
+            super::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+        let held = planes.held(&planes.open(&root)).expect("held");
+        (dir, planes, held)
+    }
+}
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -1372,8 +1392,13 @@ impl Held {
         }
         // A task that had finished when the window went without quitting is still in the
         // session host, and nothing kept its screen: it is read now, while the chats put back
-        // start, and kept before each is closed where it is held (#6504).
-        let screens = self.chats.start_keeping_screens_left(&finished);
+        // start, and kept before each is closed where it is held (#6504). Where the record was
+        // refused, none says which chats were tasks: each is proven one by its run (#6737).
+        let screens = if refused.is_some() {
+            self.chats.start_keeping_screens_proven_left()
+        } else {
+            self.chats.start_keeping_screens_left(&finished)
+        };
         let back = crate::restored::finish(self, begun, size, read).len();
         self.chats.close_finished_left(screens);
         // What the session host still runs of this project from before this window and no
@@ -3995,7 +4020,20 @@ impl Planes {
                             &strong,
                             block.line.chat,
                             block.line.sandbox_blocked,
+                            // Checked again in the draft: a chat can send any words.
+                            block
+                                .line
+                                .purlis_command
+                                .as_deref()
+                                .and_then(purlis_core::sandboxblock::command::known),
                         );
+                    }
+                    // A folder or socket ask the project's `[policy]` answers itself (the Q308
+                    // follow-up, item 3): allowed for this chat, kept in the record, and no
+                    // Notice; the chat takes it at its restart once its turn ends.
+                    if crate::sandboxing::answered_by_the_policy(&strong, &told, network.as_ref()) {
+                        record();
+                        return;
                     }
                     // The echo of a held connection's block written already, from the
                     // post-tool detector or the proxy's own raise landing late (Q240): dropped,
@@ -5608,6 +5646,7 @@ impl Planes {
             removal_asks: crate::removalasks::Asked::default(),
             merge_holds: crate::mergeholds::MergeHolds::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .keeping_answers(&browsers_root, self.config())
                 .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),

@@ -2043,3 +2043,41 @@ fn a_chat_another_chat_asked_for_starts_without_its_profiles_prompts_off_words()
         ready.command
     );
 }
+
+#[test]
+fn the_notice_of_a_chat_another_chat_asked_for_names_every_word_it_took_out_and_what_they_do() {
+    purlis_core::unsteered!();
+    // Round 3 of #7165: `GuardsOff` and `Unreadable` read in the start's notice, and each
+    // finding is named, not only the first.
+    let plane = Plane::new();
+    let bin = plane.harness();
+    plane.declares(&format!(
+        "[harness.work]\nkind = \"claude\"\ncommand = [{:?}, \"--safe-mode\", \"--settings\", \
+         \"{{not json\", \"--dangerously-skip-permissions\", \"--verbose\"]\n",
+        bin.display().to_string()
+    ));
+    plane.approve("work");
+    crate::support::no_claude_sandbox_here(plane.root());
+    let asked = Start {
+        made: purlis_core::sandbox::Made::Asked {
+            how: purlis_core::sandbox::Asking::Dispatch,
+            above: Some(vec![None]),
+        },
+        ..plane.start("work")
+    };
+    let ready = start::ready(&asked, plane.root()).expect("it starts");
+    assert_eq!(ready.command, ["--verbose"], "{:?}", ready.command);
+    let notice = ready
+        .notices
+        .iter()
+        .find(|n| n.contains("started without it"))
+        .unwrap_or_else(|| panic!("{:?}", ready.notices));
+    for must in [
+        "settings that can switch the permission prompts or purlis's guards off (--safe-mode)",
+        "inline settings purlis cannot read",
+        "(--settings (unreadable))",
+        "the permission prompts off (--dangerously-skip-permissions)",
+    ] {
+        assert!(notice.contains(must), "{must}: {notice}");
+    }
+}

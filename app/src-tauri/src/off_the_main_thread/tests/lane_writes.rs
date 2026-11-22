@@ -111,6 +111,7 @@ const LOCAL_READS: &[&str] = &[
     "hosts_changed",
     "made",
     "made_everywhere",
+    "no_keyring_at",
     "offer_due",
     "presets_changed",
     "services_everywhere",

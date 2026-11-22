@@ -1040,8 +1040,8 @@ export const commands = {
 	/**
 	 *  **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 	 *  browser logins may be filled on the pool's runner while the app runs and the pool stays as
-	 *  the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
-	 *  person typed. Every chat of that persona that waits on that pool is answered with it, and
+	 *  the Ask showed it; Keep off refuses them there until the pool changes or another window of
+	 *  this machine gives a yes, with the reason the person typed. Every chat of that persona that waits on that pool is answered with it, and
 	 *  each is told on its next turn.
 	 */
 	answerPoolLogin: (plane: PlaneId, session: number, allow: boolean, reason: string | null) => typedError<null, string>(__TAURI_INVOKE("answer_pool_login", { plane, session, allow, reason })),
@@ -2357,6 +2357,21 @@ export const commands = {
 	 *  made. What remains on GitHub's side is the App itself, and the answer names its page.
 	 */
 	agentIdentityRemove: (plane: PlaneId, app: string) => typedError<IdentityRemoved, string>(__TAURI_INVOKE("agent_identity_remove", { plane, app })),
+	/**
+	 *  **What the tab draws**, read fresh: each GitLab host the project's clones are on, with the
+	 *  personas set up for it.
+	 */
+	gitlabAccessList: (plane: PlaneId) => typedError<GitlabShown, string>(__TAURI_INVOKE("gitlab_access_list", { plane })),
+	/**  **The exact lines setting up adds**, from the one source it writes from. */
+	gitlabAccessLines: (plane: PlaneId, host: string, personas: string[]) => typedError<string, string>(__TAURI_INVOKE("gitlab_access_lines", { plane, host, personas })),
+	/**
+	 *  **Sets GitLab access up**: writes what the page showed, or nothing, then allows it on this
+	 *  machine where only those lines wait. The token is kept in each persona's vault and goes
+	 *  nowhere else.
+	 */
+	gitlabAccessSet: (plane: PlaneId, host: string, personas: string[], token: string, shown: string) => typedError<GitlabFinished, string>(__TAURI_INVOKE("gitlab_access_set", { plane, host, personas, token, shown })),
+	/**  **Takes GitLab access for a host away**: only what this flow wrote. */
+	gitlabAccessRemove: (plane: PlaneId, host: string) => typedError<null, string>(__TAURI_INVOKE("gitlab_access_remove", { plane, host })),
 	/**
 	 *  Sign in to `kind` on `host` in the person's browser, as the try `attempt`: the forge's
 	 *  authorization page is opened there, its one redirect is taken on a loopback port, and the
@@ -5838,7 +5853,7 @@ export const commands = {
 	 *  `base` is the text the window read (`null`: the file was not there), so a file changed on
 	 *  disk since is refused rather than overwritten.
 	 */
-	saveProjectSettings: (plane: PlaneId, which: SettingsWhich, base: string | null, change: SettingsChange) => typedError<SettingsSaved, string>(__TAURI_INVOKE("save_project_settings", { plane, which, base, change })),
+	saveProjectSettings: (plane: PlaneId, which: SettingsWhich, base: string | null, change: SettingsChange) => typedError<SettingsSaved_Serialize, string>(__TAURI_INVOKE("save_project_settings", { plane, which, base, change })),
 	/**
 	 *  Move the values at `paths` into `to`, out of the other file: the Settings tab's "Shared /
 	 *  Only on this machine" choice (SE-18). Both files are written or neither is
@@ -10316,6 +10331,11 @@ export type FinishedTask = {
 	 *  finds its row by. None for a task that finished before this app was started.
 	 */
 	chat: number | null,
+	/**
+	 *  **Its chat's ULID**, where its record names one (#7145): what the Chats list's filter
+	 *  matches a closed chat's row to it by, as a number may have been another chat's.
+	 */
+	chat_id: string | null,
 	persona: string | null,
 	/**
 	 *  **How it ended, as a value** ([`How`]): what the window draws its state from. The
@@ -10872,6 +10892,27 @@ export type GitPresence = { kind: "present" } |
 /**  No git. `install` is how this machine gets one. */
 { kind: "missing"; install: GitInstall };
 
+/**  What setting up did. */
+export type GitlabFinished = {
+	/**  Personas with an Allow of their own still to give. */
+	to_allow: string[],
+};
+
+/**  One GitLab host of the project's clones. */
+export type GitlabRow = {
+	host: string,
+	/**  Personas whose `glab` line this flow wrote for the host. */
+	personas: string[],
+	/**  Personas with a `glab` line of their own for the host: shown, never replaced. */
+	by_hand: string[],
+};
+
+/**  What the tab draws. */
+export type GitlabShown = {
+	rows: GitlabRow[],
+	personas: string[],
+};
+
 /**
  *  A remembered project that is no longer a project where it was (NO-5, #1237): what the
  *  window offers **Locate…** and **Forget** for. Never acted on by charter itself, because a
@@ -11166,7 +11207,13 @@ export type GrantWhat =
  *  chat. Given from its own ask (`answer_run_grant`), never from a block's Allow, and kept in
  *  memory only.
  */
-"run-grant";
+"run-grant" | 
+/**
+ *  A persona's browser logins on a pool's runner (#7190): the opt-in the person gave once,
+ *  kept on this machine across a restart and bound to the pool's definition and image. Given
+ *  from its own Ask (`answer_pool_login`), never from a block's Allow.
+ */
+"pool-login";
 
 /**  The folders chats may be granted, and those just dropped from the list. */
 export type GrantableFolders = {
@@ -14384,6 +14431,11 @@ export type PolicyState = {
 	waiting: PolicyWaiting[],
 	/**  Each value of `[policy]` purlis could not read, in one sentence, enforced meanwhile. */
 	refused: string[],
+	/**
+	 *  The families that mean nothing without a sandbox (`network`, `ports`, `processes`),
+	 *  where the project's level is no sandbox: said beside the press that would make it so.
+	 */
+	not_in_force: string[],
 	/**  Whether this machine keeps an acceptance whose seal does not hold, which counts as none. */
 	unsealed: boolean,
 	/**
@@ -14411,7 +14463,7 @@ export type PolicyState = {
 export type PolicyWaiting = {
 	/**  The family's key, as `[policy]` spells it. */
 	family: string,
-	/**  What you accepted: `off`, `log` or `enforce`. */
+	/**  What you accepted: `off`, `log` or `enforce`; the sandbox's level `off`, `floor` or `full`. */
 	accepted: string,
 	/**  What the project's file says now. */
 	committed: string,
@@ -15164,6 +15216,13 @@ export type PoolVersion = {
 	 *  each by name with what is left of it: the Pools group names each in a line of its own.
 	 */
 	not_checked: PoolNotChecked[],
+	/**
+	 *  **How many runners on its engine belong to another desktop** (#7192), as a line ("2
+	 *  runners belong to another desktop"): two desktops can share one remote engine, each with
+	 *  its own runner of a pool. Only said, never acted on. Left out where there are none or the
+	 *  engine could not be asked.
+	 */
+	other_desktops?: string | null,
 };
 
 /**  What the Pools group draws: the pools, and the limits a new pool gets by default. */
@@ -18054,8 +18113,29 @@ export type SettingsRefusal = {
 	key: string[] | null,
 };
 
-/**  What a save answered: the file as it now stands, or every reason nothing was written. */
-export type SettingsSaved = { kind: "saved"; file: SettingsFile } | { kind: "refused"; reasons: string[] };
+/**
+ *  What a save answered: the file as it now stands, or every reason nothing was written.
+ * 
+ *  `warning` is something the save did not finish after the file was written (a change of the
+ *  project's level that could not be recorded): the window takes the new text and says it.
+ */
+export type SettingsSaved = SettingsSaved_Serialize | SettingsSaved_Deserialize;
+
+/**
+ *  What a save answered: the file as it now stands, or every reason nothing was written.
+ * 
+ *  `warning` is something the save did not finish after the file was written (a change of the
+ *  project's level that could not be recorded): the window takes the new text and says it.
+ */
+export type SettingsSaved_Deserialize = ({ kind: "saved"; file: SettingsFile; warning?: string | null }) & { reasons?: never } | ({ kind: "refused"; reasons: string[] }) & { file?: never; warning?: never };
+
+/**
+ *  What a save answered: the file as it now stands, or every reason nothing was written.
+ * 
+ *  `warning` is something the save did not finish after the file was written (a change of the
+ *  project's level that could not be recorded): the window takes the new text and says it.
+ */
+export type SettingsSaved_Serialize = ({ kind: "saved"; file: SettingsFile; warning?: string | null }) & { reasons?: never } | ({ kind: "refused"; reasons: string[] }) & { file?: never; warning?: never };
 
 /**  One step of the way to a key: a table's key, or a block's place in `[[forge]]`. */
 export type SettingsStep = ({ key: string }) & { index?: never } | ({ index: number }) & { key?: never };

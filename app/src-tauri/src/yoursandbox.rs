@@ -128,15 +128,32 @@ pub async fn confirm_sandbox_level(
     persona: Option<String>,
     level: String,
 ) -> Result<String, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
     let shown = personal::Choice::of_word(&level)
         .ok_or_else(|| format!("'{}' is not a level", level.escape_debug()))?;
     tauri::async_runtime::spawn_blocking(move || {
-        let level = personal::confirm(&root, persona.as_deref(), shown)?;
-        Ok(confirmed_said(persona.as_deref(), level))
+        confirm_recorded(held.root(), held.hooks(), persona.as_deref(), shown)
     })
     .await
     .map_err(|err| format!("confirming your level did not finish: {err}"))?
+}
+
+/// A Confirm, which can lower the project's level as the file says it, so a move is recorded
+/// (`trust.sandbox.level`) as a save of the level is.
+pub(crate) fn confirm_recorded(
+    root: &std::path::Path,
+    hooks: &crate::hooks::Hooks,
+    persona: Option<&str>,
+    shown: personal::Choice,
+) -> Result<String, String> {
+    let (done, warning) = crate::settings::with_level_recorded(root, hooks, || {
+        personal::confirm(root, persona, shown)
+    });
+    let said = confirmed_said(persona, done?);
+    Ok(match warning {
+        Some(warning) => format!("{said} {warning}"),
+        None => said,
+    })
 }
 
 /// What a Confirm says.
