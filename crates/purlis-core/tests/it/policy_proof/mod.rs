@@ -7,9 +7,11 @@
 //! - [`PolicyInput`] is `policy {template, rules?}` on a [`Batch`] or a [`Cell`]; a cell that
 //!   names none runs under `strict` ([`Batch::policy_of`], Q317.1).
 //! - [`oracle`] is the expectation of an **equality cell**: the written action goes straight to
-//!   Cedar's authorizer ([`policy::Policy::decide`]) over the shipped default and the cell's
-//!   rules, never through `decide`'s request builder, the host or [`policy::levels`]
-//!   (Q317.4). `the_oracle_never_calls_the_hook_request_builder` reads this file to keep it so.
+//!   `cedar_policy::Authorizer::is_authorized`, with a request, a policy set and a derivation of
+//!   outcome and deciding `@id`s that `oracle.rs` writes itself (Q317.4). It shares only the
+//!   loader with the judged path, as a gate that refuses what the host would refuse; it
+//!   panics on a cell the schema cannot ask. `the_oracle_names_nothing_of_the_host_decision_path`
+//!   reads `oracle.rs` to keep it so. The mode check below is this file's, not the oracle's.
 //! - [`engine`] is what is under test on the host side: [`policy::decide::decide`] over the same
 //!   input.
 //! - [`compare`] says whether an [`Observed`] answer is **equal** to what the oracle expected
@@ -22,12 +24,11 @@
 use std::path::Path;
 
 mod oracle;
-pub use oracle::oracle;
 
-use purlis_core::enforcement::Template;
-use purlis_core::policy::World;
+use purlis_core::enforcement::{Family, Mode, Template};
 use purlis_core::policy::decide::{self, Outcome};
 use purlis_core::policy::levels::{self, Chat, Held, Sources};
+use purlis_core::policy::{World, family_of};
 
 /// The first line a project's rules file needs (`policy::VERSION_LINE`, schema version 1).
 pub const RULES_HEADER: &str = "// purlis-policy 1\n";
@@ -173,6 +174,22 @@ pub fn engine(input: &PolicyInput, cell: &Cell) -> Answer {
     }
 }
 
+/// **The oracle's expectation** for `cell` under `input` ([`oracle::judge`]).
+///
+/// The mode is the template's: a cell under a template that does not enforce the action's family
+/// waits for slice 10's modes, so it is refused here rather than guessed.
+pub fn oracle(input: &PolicyInput, cell: &Cell) -> Answer {
+    let family = family_of(cell.action)
+        .and_then(Family::of_key)
+        .unwrap_or_else(|| panic!("the schema has no family for the action of {cell:?}"));
+    assert_eq!(
+        input.template.mode(family),
+        Mode::Enforce,
+        "the oracle judges what a template enforces; the other modes are slice 10's"
+    );
+    oracle::judge(input, cell)
+}
+
 /// **How an observed answer differs from what the oracle expected.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Mismatch {
@@ -182,6 +199,8 @@ pub enum Mismatch {
     Looser,
     /// Enforcement is stricter than the policy: an ordinary bug.
     Stricter,
+    /// The outcome after the mode is the same, but the one before it is not.
+    OutcomeBeforeMode,
     /// The same outcome decided by other rules.
     OtherRule,
 }
@@ -202,6 +221,9 @@ pub fn compare(expected: &Answer, observed: &Observed, gap: Option<&str>) -> Res
     match observed.after_mode.cmp(&expected.after_mode) {
         std::cmp::Ordering::Less => Err(Mismatch::Looser),
         std::cmp::Ordering::Greater => Err(Mismatch::Stricter),
+        std::cmp::Ordering::Equal if observed.outcome != expected.outcome => {
+            Err(Mismatch::OutcomeBeforeMode)
+        }
         std::cmp::Ordering::Equal => Err(Mismatch::OtherRule),
     }
 }

@@ -3,56 +3,162 @@
 
 //! **The oracle**: the written action straight to Cedar's authorizer (spec §14.4, Q317.4).
 //!
-//! This file names nothing of the host's decision path: not its request builder, not its
-//! loader, not its modes. `the_oracle_never_calls_the_hook_request_builder` reads it to keep it
-//! so, so a change here that reaches for one fails there.
+//! It builds its own `cedar_policy::Request` from the cell, parses its own `PolicySet` from the
+//! shipped default's text and the cell's rules, and calls `Authorizer::is_authorized` over no
+//! entities. The outcome and the deciding `@id`s are read off Cedar's `Response` by the
+//! documented rules: a permit with no forbid allows; a forbid with `@ask` asks, if a permit
+//! stands under it; any other forbid denies; with no permit, the catch-all
+//! `policy-everything-else` is what denies.
+//!
+//! **What it shares with the judged path: the loader, and only as a gate.** `policy::load` is
+//! called to refuse a policy the host would refuse (its layering, `@id` and `@level` checks), and
+//! its result is dropped. The loader's text constants (the shipped default and the schema) are
+//! read, not its code. The request builder, the schema's parsed form, the host spelling, the
+//! suffix sets, the ask and deny derivation and the permits-only pass are all written here.
+//!
+//! A cell the schema cannot ask is a broken cell, so the oracle panics on it, naming the cell:
+//! the host answers an unfit request with a deny and no rule, which would otherwise agree with an
+//! oracle that said the same. A `Host` resource also panics: its spelling and wildcard sets are
+//! the family slices' to write here.
+//!
+//! `the_oracle_names_nothing_of_the_host_decision_path` reads this file, comments included, so a
+//! change here that reaches for the host's path fails there.
 
-use purlis_core::enforcement::{Family, Mode};
-use purlis_core::policy::decide::Outcome;
-use purlis_core::policy::{self, File, Level, Question, World};
+use std::str::FromStr;
 
-use super::{Answer, CHAT, Cell, PolicyInput};
+use cedar_policy::{
+    Authorizer, Context, Decision, Entities, EntityId, EntityTypeName, EntityUid, Policy, PolicyId,
+    PolicySet, Request, Schema,
+};
+use purlis_core::policy::{DEFAULT, File, Level, SCHEMA, load};
 
-/// **The oracle's expectation** for `cell` under `input`: straight to Cedar's authorizer.
+use super::{Answer, CHAT, Cell, Outcome, PolicyInput};
+
+/// **The oracle's expectation** for `cell` under `input`: straight to Cedar's authorizer, with
+/// the outcome as Cedar leaves it and no mode applied.
 ///
-/// The mode is the template's, read from `enforcement::Template`: a cell under a template that
-/// does not enforce the action's family waits for slice 10's modes, so it is refused here rather
-/// than guessed.
-pub fn oracle(input: &PolicyInput, cell: &Cell) -> Answer {
+/// # Panics
+///
+/// On a cell the schema cannot ask, or one that makes Cedar err: either is a broken cell.
+pub fn judge(input: &PolicyInput, cell: &Cell) -> Answer {
     let mut files = vec![File::shipped_default()];
     if let Some(rules) = &input.rules {
         files.push(File::at("policy.cedar", rules, Level::Project));
     }
-    let policy = policy::load(&files).expect("the oracle's policy loads");
-    let decided = policy.decide(
-        &Question {
-            chat: CHAT,
-            action: cell.action,
-            resource: cell.resource,
-            context: cell.context.clone(),
-        },
-        &World::from_json(serde_json::json!([])).expect("an empty world fits any schema"),
+    load(&files).expect("the policy of a cell loads");
+
+    let (all, asks) = policies(
+        [Some(DEFAULT), input.rules.as_deref()]
+            .into_iter()
+            .flatten()
+            .collect(),
     );
-    let ids = |ids: &[String]| ids.to_vec();
-    let (outcome, deciding) = match &decided {
-        policy::Decision::Allow { permits } => (Outcome::Allow, ids(permits)),
-        policy::Decision::Ask { asks } => (Outcome::Ask, ids(asks)),
-        policy::Decision::Deny { forbids } => (Outcome::Deny, ids(forbids)),
-        policy::Decision::NoPermit => (Outcome::Deny, vec![policy::EVERYTHING_ELSE.to_owned()]),
-        policy::Decision::Erred { rules } => (Outcome::Deny, ids(rules)),
-        policy::Decision::Unasked { .. } => (Outcome::Deny, Vec::new()),
+    let request = request(cell);
+    let authorizer = Authorizer::new();
+    let response = authorizer.is_authorized(&request, &all, &Entities::empty());
+    let erred: Vec<String> = response
+        .diagnostics()
+        .errors()
+        .map(|e| e.to_string())
+        .collect();
+    assert!(erred.is_empty(), "a rule erred on {cell:?}: {erred:?}");
+    let mut reasons: Vec<String> = response
+        .diagnostics()
+        .reason()
+        .map(|id| id.to_string())
+        .collect();
+    reasons.sort();
+    let no_permit = vec!["policy-everything-else".to_owned()];
+
+    let (outcome, deciding) = match response.decision() {
+        Decision::Allow => (Outcome::Allow, reasons),
+        Decision::Deny if reasons.is_empty() => (Outcome::Deny, no_permit),
+        Decision::Deny => {
+            let plain: Vec<String> = reasons
+                .iter()
+                .filter(|id| !asks.contains(id))
+                .cloned()
+                .collect();
+            if !plain.is_empty() {
+                (Outcome::Deny, plain)
+            } else if permits_stand(&authorizer, &request, &all) {
+                (Outcome::Ask, reasons)
+            } else {
+                (Outcome::Deny, no_permit)
+            }
+        }
     };
-    let family = policy::family_of(cell.action)
-        .and_then(Family::of_key)
-        .expect("the action is in a family");
-    assert_eq!(
-        input.template.mode(family),
-        Mode::Enforce,
-        "the oracle judges what a template enforces; the other modes are slice 10's"
-    );
     Answer {
         outcome,
         deciding,
         after_mode: outcome,
     }
+}
+
+/// The policies of `texts`, layered in order and keyed by `@id` (a later rule of one `@id`
+/// replaces an earlier), and the `@id`s of those that ask.
+fn policies(texts: Vec<&str>) -> (PolicySet, Vec<String>) {
+    let mut held: Vec<(String, Policy)> = Vec::new();
+    for text in texts {
+        let set = PolicySet::from_str(text).expect("the rules are Cedar");
+        for policy in set.policies() {
+            let id = policy.annotation("id").expect("a rule has an @id");
+            let policy = policy.new_id(PolicyId::new(id));
+            match held.iter_mut().find(|(held, _)| held == id) {
+                Some(slot) => slot.1 = policy,
+                None => held.push((id.to_owned(), policy)),
+            }
+        }
+    }
+    let asks = held
+        .iter()
+        .filter(|(_, policy)| policy.annotation("ask").is_some())
+        .map(|(id, _)| id.clone())
+        .collect();
+    let mut all = PolicySet::new();
+    for (_, policy) in held {
+        all.add(policy).expect("each @id is held once");
+    }
+    (all, asks)
+}
+
+/// Whether some permit applies to `request` with every forbid left out.
+fn permits_stand(authorizer: &Authorizer, request: &Request, all: &PolicySet) -> bool {
+    let mut permits = PolicySet::new();
+    for policy in all
+        .policies()
+        .filter(|p| p.effect() == cedar_policy::Effect::Permit)
+    {
+        permits.add(policy.clone()).expect("a permit is held once");
+    }
+    authorizer
+        .is_authorized(request, &permits, &Entities::empty())
+        .decision()
+        == Decision::Allow
+}
+
+/// The Cedar request `cell` writes, checked against the schema.
+fn request(cell: &Cell) -> Request {
+    assert!(
+        cell.resource.0 != "Host",
+        "the oracle does not spell hosts yet: {cell:?}"
+    );
+    let (schema, _) = Schema::from_cedarschema_str(SCHEMA).expect("the shipped schema parses");
+    let uid = |kind: &str, id: &str| {
+        EntityUid::from_type_name_and_id(
+            EntityTypeName::from_str(kind).expect("an entity type name"),
+            EntityId::new(id),
+        )
+    };
+    let action = uid("Action", cell.action);
+    let context = Context::from_json_value(cell.context.clone(), Some((&schema, &action)))
+        .unwrap_or_else(|e| panic!("the schema cannot ask {cell:?}: its context: {e}"));
+    Request::new(
+        uid("Chat", CHAT),
+        action,
+        uid(cell.resource.0, cell.resource.1),
+        context,
+        Some(&schema),
+    )
+    .unwrap_or_else(|e| panic!("the schema cannot ask {cell:?}: {e}"))
 }

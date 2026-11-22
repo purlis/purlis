@@ -60,44 +60,142 @@ fn a_cell_with_no_policy_runs_under_strict() {
     assert_eq!(engine(&input, &batch.cells[0]).after_mode, Outcome::Ask);
 }
 
+/// A `use` statement with its whitespace and trailing comma gone, so rustfmt's wrapping of one
+/// reads as the line it came from.
+fn squeezed(statement: &str) -> String {
+    statement
+        .split_whitespace()
+        .collect::<String>()
+        .replace(",}", "}")
+}
+
+/// The oracle's `use` statements, and no others: Cedar, the loader's four names, and the
+/// harness's own types.
+const ORACLE_MAY_USE: [&str; 4] = [
+    "use std::str::FromStr;",
+    "use cedar_policy::{Authorizer, Context, Decision, Entities, EntityId, EntityTypeName, \
+     EntityUid, Policy, PolicyId, PolicySet, Request, Schema};",
+    "use purlis_core::policy::{DEFAULT, File, Level, SCHEMA, load};",
+    "use super::{Answer, CHAT, Cell, Outcome, PolicyInput};",
+];
+
 #[test]
-fn the_oracle_never_calls_the_hook_request_builder() {
+fn the_oracle_names_nothing_of_the_host_decision_path() {
     purlis_core::unsteered!();
+    // Comments count: a name of the host's path in a doc line is a name of it.
     let source = include_str!("policy_proof/oracle.rs");
-    let code: String = source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    // The host's decision path: its request builder (`Asker`, `for_chat`, `in_plane`,
-    // `decide_locally`), its function (`decide::`), its loader (`levels`), its judge (`force`)
-    // and the hook's socket (`hookwire`). The oracle reaches only Cedar's authorizer, through
-    // `policy::Policy::decide`.
-    for name in [
-        "Asker",
-        "for_chat",
-        "in_plane",
-        "decide_locally",
-        "decide::decide",
-        "levels",
-        "force::",
-        "hookwire",
-        "Loaded",
+    let allowed: Vec<String> = ORACLE_MAY_USE.iter().map(|s| squeezed(s)).collect();
+    let mut rest = String::new();
+    for statement in source.split_inclusive(';') {
+        let code: String = statement
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let code = code.trim();
+        if code.starts_with("use ") || code.starts_with("pub use ") {
+            assert!(
+                allowed.contains(&squeezed(code)),
+                "the oracle imports `{code}`, which is not on its allow-list"
+            );
+        } else {
+            rest.push_str(statement);
+        }
+    }
+    assert!(
+        !rest.contains("purlis_core"),
+        "the oracle reaches purlis_core other than by an allowed `use`"
+    );
+    // The host's path, wherever it appears in the file: the harness's `engine`, the loaded
+    // policy, `decide::`, the evaluation behind it, and what the hook builds a request from.
+    // Each is read where it lives, so a rename cannot leave this list guarding nothing.
+    let mod_rs = include_str!("policy_proof/mod.rs");
+    let policy_rs = include_str!("../../src/policy.rs");
+    let decide_rs = include_str!("../../src/policy/decide.rs");
+    for (name, home, there) in [
+        ("engine", mod_rs, "pub fn engine"),
+        (".loaded(", mod_rs, "pub fn loaded"),
+        ("decide::", mod_rs, "decide::decide("),
+        ("evaluate", policy_rs, "pub fn evaluate"),
+        ("Asker", decide_rs, "pub struct Asker"),
+        ("for_chat", decide_rs, "pub fn for_chat"),
+        ("in_plane", decide_rs, "pub fn in_plane"),
+        ("decide_locally", decide_rs, "pub fn decide_locally"),
+        ("levels", mod_rs, "levels::load_held"),
+        ("force::", decide_rs, "force::"),
+        ("hookwire", decide_rs, "hookwire"),
+        ("Loaded", mod_rs, "levels::Loaded"),
+        ("canonical_host", policy_rs, "fn canonical_host"),
+        (
+            "world_with_suffix_sets",
+            policy_rs,
+            "fn world_with_suffix_sets",
+        ),
     ] {
         assert!(
-            !code.contains(name),
+            home.contains(there),
+            "`{there}` has moved: update this test"
+        );
+        assert!(
+            !source.contains(name),
             "the oracle names `{name}`, which is on the host's decision path"
         );
     }
     // And it does reach Cedar's authorizer.
-    assert!(code.contains("policy.decide("));
-    // The hook's request builder is still where this test thinks it is, so the list above
-    // cannot go stale unseen.
-    let decide = include_str!("../../src/policy/decide.rs");
-    for name in ["pub struct Asker", "pub fn for_chat", "pub fn in_plane"] {
+    assert!(source.contains("is_authorized("));
+}
+
+#[test]
+fn a_malformed_cell_fails_loudly_in_the_oracle() {
+    purlis_core::unsteered!();
+    let without_via = Cell {
+        context: serde_json::json!({
+            "sandbox": "floor",
+            "attended": true,
+            "harness_mode": "default",
+            "depth": 0,
+        }),
+        ..merge()
+    };
+    let misspelt_action = Cell {
+        action: "mrege",
+        ..merge()
+    };
+    let wrong_resource = Cell {
+        resource: ("Host", "example.com"),
+        ..merge()
+    };
+    let wrong_type = Cell {
+        resource: ("Repo", "acme/web"),
+        ..merge()
+    };
+    let mistyped_field = Cell {
+        context: serde_json::json!({
+            "sandbox": "floor",
+            "attended": "yes",
+            "harness_mode": "default",
+            "depth": 0,
+            "via": "hook",
+        }),
+        ..merge()
+    };
+    for cell in [
+        without_via,
+        misspelt_action,
+        wrong_resource,
+        wrong_type,
+        mistyped_field,
+    ] {
+        let caught = std::panic::catch_unwind(|| oracle(&PolicyInput::default(), &cell));
+        let payload = caught.expect_err(&format!("the oracle answered {cell:?}"));
+        let said = payload
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+            .unwrap_or_default();
         assert!(
-            decide.contains(name),
-            "`{name}` has moved: update this test"
+            said.contains(cell.action),
+            "the oracle's panic does not name the cell {cell:?}: {said}"
         );
     }
 }
@@ -181,4 +279,13 @@ fn a_harness_block_with_no_rule_is_a_mismatch_unless_its_gap_is_declared() {
         ..expected.clone()
     };
     assert_eq!(compare(&expected, &other, None), Err(Mismatch::OtherRule));
+    // The same outcome after the mode, but another before it, is its own mismatch.
+    let lifted = Answer {
+        outcome: Outcome::Allow,
+        ..expected.clone()
+    };
+    assert_eq!(
+        compare(&expected, &lifted, None),
+        Err(Mismatch::OutcomeBeforeMode)
+    );
 }
