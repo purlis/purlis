@@ -296,10 +296,11 @@ impl std::fmt::Display for Unavailable {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Unavailable::NotAdmin => out.write_str(
-                "purlis cannot read this Mac's sandbox reports, so it cannot confirm which files \
-                 this chat was refused: macOS lets only an administrator read them, and this \
-                 account is a standard user. Refusals are not recorded as confirmed. Sign in \
-                 with an administrator account to have them confirmed.",
+                "Refusals are not reported on this account (not an administrator). The sandbox \
+                 still blocks what it should, but macOS lets only an administrator read its \
+                 reports, so purlis cannot confirm which files this chat was refused, and none \
+                 is recorded as confirmed. Sign in with an administrator account to have them \
+                 confirmed.",
             ),
             Unavailable::NotStarted(why) => write!(
                 out,

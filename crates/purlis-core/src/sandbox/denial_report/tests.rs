@@ -141,8 +141,8 @@ fn only_an_administrator_can_read_the_log() {
 #[test]
 fn a_standard_user_is_told_there_is_no_receiver_in_purlis_words() {
     let said = Unavailable::NotAdmin.to_string();
-    assert!(said.contains("standard user"), "{said}");
-    assert!(said.contains("not recorded as confirmed"), "{said}");
+    assert!(said.contains("not an administrator"), "{said}");
+    assert!(said.contains("not reported on this account"), "{said}");
     assert!(said.contains("administrator"), "{said}");
 }
 
