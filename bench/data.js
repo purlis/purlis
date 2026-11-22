@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795369585074,
+  "lastUpdate": 1795370275763,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52248,6 +52248,48 @@ window.BENCHMARK_DATA = {
             "value": 101.93861199999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.020, 101.559, 101.939, 101.984, 102.066 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "37c4b65fc276386bd3040fcd371faef7aebe59dc",
+          "message": "CI flake guard, train A: retry, daily ci-health, quarantine, budgets (#7324) (#7349)\n\n* Every suite retries a failed test once and records a pass on retry as a flake (#7330)\n\nvitest retries once when CI is set and wdio retries a spec file once; each writes the\nFlaky (passed on retry N): <test> warning nextest already wrote, through one shared\ntools/flake-annotation.mjs, so ci-health counts all three runners. Rust's behaviour is\nunchanged. Ships ADR 0127, A PR run is a subset of the queue run, gated by ready.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZRPTV445TDJ9J87S3VVZ3Z\nPurlis-Persona: steward\n\n* ci-health runs daily, files a ticket per flaky test and headlines ready to merged (#7331)\n\nOne area:ci ticket per flaky test naming its test, suite and runs, found again by the test id in\nits body so a test never gets two (a comment, and a reopen when closed). The daily headline leads\nwith ready to merged p50/p90 and the queue drop rate over 7 days. Still evidence only (V70).\nThe report's issue is renamed from the weekly to the daily title, not filed twice.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZRPTV445TDJ9J87S3VVZ3Z\nPurlis-Persona: steward\n\n* A checked-in quarantine that PR, queue and main runs skip and the nightly run runs (#7332)\n\nci/quarantine.toml lists tests by the id a flake is annotated with: a test id, its ticket and the\nday it was added. tools/quarantine.mjs reads it and refuses an entry without a ticket or a date.\nvitest skips a listed test in its setup, wdio leaves a listed spec file out of its specs, and the\nrust and macos-tests runs add its filterset to nextest's. The list starts empty. Also runs prettier\nover the files of the first commit.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZRPTV445TDJ9J87S3VVZ3Z\nPurlis-Persona: steward\n\n* ci-health keeps the quarantine: proposals, a cap, a priority label (#7333)\n\nA test that flaked in three runs of the week gets a pull request adding it to ci/quarantine.toml\n(two get none); more than 10 quarantined tests turns the run red and pings the operator on the\nreport's issue; a test quarantined for 14 days gets priority:p1 on its ticket. Evidence only\nstill: no branch protection names it.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZRPTV445TDJ9J87S3VVZ3Z\nPurlis-Persona: steward\n\n* A checked-in p50 budget for every ci job, and a ticket when one runs 20% over (#7334)\n\nci/job-budgets.toml gives each job of ci.yml its p50 budget in minutes, by job id, and\ntools/job-budgets.test.mjs refuses a job without one. The daily ci-health run files an area:ci\nticket for a job whose 7-day p50 is more than 20% over (25% over files, 15% does not) and lists\nthe jobs over in its report.\n\nSeeded from the p50 of each job's passed runs (rounded up to the minute, floor 1), read through\nthe public API on 2026-11-22: 43 runs of ci.yml (all 9 merge-group and push runs among the newest\n100 green ones, 31 pull request runs spread evenly, the last 3 nightly runs). fedora and\nmacos-tests had no green run: their budgets are the wall of their red runs and say so.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZRPTV445TDJ9J87S3VVZ3Z\nPurlis-Persona: steward\n\n* ci-health: a queue drop is failed_checks only; quarantine and budgets follow review\n\nA queue drop is the reason failed_checks, the one GitHub gives (13 of 60 merged PRs; merge_conflict 2,\nmerged 27), recorded in tools/ci-health-fixtures/queue-reasons.graphql.json. priority:p1 is created\nif missing. From review: a branch left by a closed quarantine PR no longer fails the run, the cap\nverdict and labels come before opening any PR, no proposal once the list is at the cap, the vitest\nskip reads the list once, ci-health and job-budgets no longer import each other (percentile.mjs),\nand a trailing comment on a job's name: is ignored.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7ZRPTV445TDJ9J87S3VVZ3Z\nPurlis-Persona: steward\n\n* ci/job-budgets.toml: budget the forge route jobs main added after seeding\n\nMain added forgeroute and forgeroute-macos after train A seeded the budgets,\nso tools/job-budgets.test.mjs failed on the PR run (#7349, web part 2).\nNo runs measured yet: seeded conservatively, measured after a week.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* ci-health: escape every \">\" in a flake marker's test id (CodeQL js/bad-tag-filter)\n\nAn HTML comment also ends at --!>, which the old -->-only escape let\nthrough. Escaping every \">\" closes both; ticketFor compares the same\nescaped form on both sides, so lookups are unchanged.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T17:13:44Z",
+          "tree_id": "e9a3f1084790f41eb72c8ea8cbfa05d264e3e091",
+          "url": "https://github.com/purlis/purlis/commit/37c4b65fc276386bd3040fcd371faef7aebe59dc"
+        },
+        "date": 1795370268810,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.660549,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.650, 0.657, 0.661, 0.685, 0.702 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6203485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.567, 16.583, 16.620, 16.661, 16.669 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.27927650000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 102.079, 102.201, 102.279, 102.574, 103.029 ms"
           }
         ]
       }
