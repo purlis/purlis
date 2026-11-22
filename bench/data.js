@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795388618640,
+  "lastUpdate": 1795391640785,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52458,6 +52458,48 @@ window.BENCHMARK_DATA = {
             "value": 102.98448149999999,
             "unit": "ms",
             "extra": "median of 5 runs: 100.964, 102.591, 102.984, 103.381, 103.731 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4756551c8a1bf56b2955ebbce26f998c71dbfcc5",
+          "message": "CI: ready gate for heavy jobs, proved on stories (WebKit on PR, both in queue) (#7335) (#7394)\n\n* CI: ready gate for heavy jobs, proved on stories (WebKit on PR, both in queue) (#7335)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82NS99HGH5YJ653AV6NVCQ8\nPurlis-Persona: steward\n\n* CI: ready gate for heavy jobs, proved on stories: add the files the first commit missed (#7335)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82NS99HGH5YJ653AV6NVCQ8\nPurlis-Persona: steward",
+          "timestamp": "2026-11-22T22:58:40Z",
+          "tree_id": "a19facb8b0cfbbad18a1dce3c87ecf59784ba6a7",
+          "url": "https://github.com/purlis/purlis/commit/4756551c8a1bf56b2955ebbce26f998c71dbfcc5"
+        },
+        "date": 1795391633664,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.675424,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.657, 0.674, 0.675, 0.686, 0.692 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5978715,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.521, 16.588, 16.598, 16.672, 16.713 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9718465,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.376, 101.683, 101.972, 102.548, 104.449 ms"
           }
         ]
       }
