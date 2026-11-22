@@ -1259,9 +1259,10 @@ fn sign_in_words(host: &str, state: SignInState) -> String {
     }
 }
 
-/// The host a line shows: only a host name (`[A-Za-z0-9.-]`, at most 80 bytes) with an optional
-/// `:port`, else a fixed placeholder. The host is the chat's own word, and a path, a query, its
-/// sentinel, bidi controls or `; …` in it would forge a line of the doctor's row.
+/// The host a line shows: only a host name (`[A-Za-z0-9.-]`, at most 80 bytes, labels of at most
+/// 63, never the sentinel's prefix) with an optional `:port`, else a fixed placeholder. The host
+/// is the chat's own word, and a path, a query, its sentinel, bidi controls or `; …` in it would
+/// forge a line of the doctor's row.
 const UNREADABLE_HOST: &str = "(unreadable host)";
 
 fn shown_host(host: &str) -> &str {
@@ -1269,8 +1270,12 @@ fn shown_host(host: &str) -> &str {
         Some((name, port)) => (name, Some(port)),
         None => (host, None),
     };
+    // A DNS label is at most 63 bytes, and the chat's own sentinel (80 bytes of host-name
+    // characters) is refused by its prefix, so neither reaches the row.
     let name_ok = !name.is_empty()
         && name.len() <= 80
+        && name.split('.').all(|label| label.len() <= 63)
+        && !name.to_ascii_lowercase().starts_with("purlis-sentinel-")
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');

@@ -1299,6 +1299,7 @@ fn a_hostile_host_is_never_shown_in_the_audit_or_the_doctor_row() {
         "api.github.com:99999999",
         "api.github.com:80/x",
         "",
+        params.sentinel.as_str(),
     ];
     for host in hostile {
         send_raw(
@@ -1313,7 +1314,15 @@ fn a_hostile_host_is_never_shown_in_the_audit_or_the_doctor_row() {
     let lines = scene.routes.audit_lines("run-1");
     let row = scene.routes.refusals_row(Path::new("/p/one"));
     for text in [lines.join("\n"), row.detail.clone()] {
-        for bad in ["evil", "pulls", "chat-9", "\u{202e}", "99999999", "/x"] {
+        for bad in [
+            "evil",
+            "pulls",
+            "chat-9",
+            "\u{202e}",
+            "99999999",
+            "/x",
+            "purlis-sentinel-",
+        ] {
             assert!(!text.contains(bad), "{bad:?} got through: {text}");
         }
     }
