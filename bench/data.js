@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795367128028,
+  "lastUpdate": 1795369585074,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52206,6 +52206,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9875735,
             "unit": "ms",
             "extra": "median of 5 runs: 101.368, 101.529, 101.988, 102.145, 102.173 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a2c3b2a672dc50a4d0f99372f8a1e306f6a03cea",
+          "message": "One login: the route carries a chat's CI and land reads, GitHub and GitLab (#7371 + #7375) (#7377)\n\n* The route carries a chat's CI and land reads on its own repo (#7358)\n\nRulesets and branch rules are read, a merge queue's state is read, a run's logs and\nartifacts are followed once, anonymously, to Actions storage, and a run is rerun or\napproved. Merges, enqueue, administration and rule writes stay refused (ADR 0128\namendment 2026-11-22).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81MYAMPDSGFQ3FQE9DWFA6J\nPurlis-Persona: steward\n\n* Add the #7358 test file, ADR 0128 amendment and changelog fragment\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81MYAMPDSGFQ3FQE9DWFA6J\nPurlis-Persona: steward\n\n* Round 2 on #7371: refuse approve, empty rerun body, gate and narrow the CI-storage follow\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81PK5WCZPPDK4WW94BV6MTG\nPurlis-Persona: steward\n\n* The route carries a chat's GitLab CI and land reads on its own project (#7372)\n\nReads: protected branches, approval rules, a merge request's approval state,\nmerge trains, pipelines and jobs, and a job's log and artifacts. Writes: retry\nand cancel of a pipeline or a job, with an empty body, as Class::CiWrite.\nHeld for the person: jobs/:id/play and the trigger routes. Writes to rules,\nmerges, tags, releases and administration stay refused.\n\ngitlab.com's redirect for a job's artifacts is followed once, by a GET with no\ncredential, to storage.googleapis.com/gitlab-gprd-artifacts/ only, inside the\nTLS glab uses. A self-hosted GitLab's redirect and any other bucket are 502.\nForwarded now carries the forge kind the redirect rule reads.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81QA7BWNP218C5QM4Q6ZQXX\nPurlis-Persona: steward\n\n* Add the #7372 test files, ADR 0128 amendment and changelog fragment\n\nThe two test files main.rs already names, the amendment\ndocs/adr/0128/2026-11-22-the-route-carries-gitlab-ci-and-land-reads.md and\nchanges/the-route-carries-gitlab-ci-and-land-reads.md.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81QA7BWNP218C5QM4Q6ZQXX\nPurlis-Persona: steward\n\n* Drop an issue number that was not given from the comments, tests and ADR\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81QA7BWNP218C5QM4Q6ZQXX\nPurlis-Persona: steward\n\n* Narrow GitLab CI writes to a pipeline retry; pin the redirect and refusal tests\n\nA job's retry can enqueue a manual or delayed job at once, and a cancel then a retry would\nstart a never-played manual job without play; cancel has no GitHub counterpart and could stop\na deploy mid-apply. Only pipelines/#/retry stays, as GitHub's rerun.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81VDJHWAXQRXQ07QW1R6WPV\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T17:09:51Z",
+          "tree_id": "3bfbed5fd665f28703e0799e6e8730e9ebdb09c6",
+          "url": "https://github.com/purlis/purlis/commit/a2c3b2a672dc50a4d0f99372f8a1e306f6a03cea"
+        },
+        "date": 1795369576167,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5488474999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.535, 0.548, 0.549, 0.552, 0.560 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.279339999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.166, 16.224, 16.279, 16.435, 16.552 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.93861199999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.020, 101.559, 101.939, 101.984, 102.066 ms"
           }
         ]
       }
