@@ -1603,7 +1603,7 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
         scene.routes.remote_refs(7, own).unwrap_err(),
         "this chat has no forge route"
     );
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let not_recorded = "that remote is not a repository recorded for this chat";
@@ -1660,7 +1660,7 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
 #[test]
 fn the_refs_a_recorded_remote_has_are_what_the_ask_returns_on_the_runs_route() {
     let scene = Scene::new();
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let tips = vec!["a".repeat(40), "b".repeat(40)];
