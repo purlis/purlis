@@ -852,14 +852,22 @@ fn cover_problems(text: &str, want: &Want<'_>, repo: &Repo, problems: &mut Vec<S
     }
 }
 
-/// Whether a spec's `text` has a `test(` whose title is exactly `title`, in any quotes, across
-/// whatever line breaks a formatter puts after `test(`.
+/// Whether a spec's `text` has a `test(` or an `it(` (mocha's, which the repo's WebdriverIO specs
+/// use) whose title is exactly `title`, in any quotes, across whatever line breaks a formatter
+/// puts after the opening. A longer word that ends in `it(` (`submit(`) is no test.
 fn names_test(text: &str, title: &str) -> bool {
+    let opens_a_test = |before: &str| {
+        let before = before.trim_end();
+        ["test(", "it("].iter().any(|open| {
+            before.strip_suffix(open).is_some_and(|rest| {
+                !rest.ends_with(|c: char| c.is_alphanumeric() || c == '_' || c == '$')
+            })
+        })
+    };
     ['"', '\'', '`'].iter().any(|q| {
         let quoted = format!("{q}{title}{q}");
         text.match_indices(&quoted).any(|(at, _)| {
-            text[..at].trim_end().ends_with("test(")
-                && text[at + quoted.len()..].trim_start().starts_with(',')
+            opens_a_test(&text[..at]) && text[at + quoted.len()..].trim_start().starts_with(',')
         })
     })
 }
@@ -2023,4 +2031,35 @@ pub fn report(list: &Coverage, repo: &Repo) -> String {
         ));
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::names_test;
+
+    /// **A spec names its test the way the repo writes one** (the WebdriverIO specs use mocha's
+    /// `it(`, the Playwright-shaped ones `test(`), in any quotes and across a formatter's line
+    /// breaks; a longer word that ends in `it(` is no test.
+    #[test]
+    fn a_spec_names_a_test_by_test_or_by_it_and_by_nothing_longer() {
+        assert!(names_test("test(\"a title\", async () => {})", "a title"));
+        assert!(names_test("  it(\"a title\", async () => {})", "a title"));
+        assert!(names_test(
+            "it(\n    'a title',\n  async () => {})",
+            "a title"
+        ));
+        assert!(names_test(
+            "describe('x', () => { it(`a title`, () => {}) })",
+            "a title"
+        ));
+        assert!(
+            !names_test("submit(\"a title\", 1)", "a title"),
+            "`submit(` is not `it(`"
+        );
+        assert!(!names_test("it(\"another title\", () => {})", "a title"));
+        assert!(
+            !names_test("it(\"a title\")", "a title"),
+            "a title is followed by the body"
+        );
+    }
 }

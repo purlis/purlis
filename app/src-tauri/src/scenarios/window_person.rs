@@ -432,12 +432,43 @@ fn when_listed_matches_one_chats_ask_for_exactly_the_target() {
 /// **A mark names its issue, and a mark whose check passes is itself a failure**: a check is
 /// `expected_fail`ed per scenario, never switched off, and closing the issue removes the mark.
 #[test]
+fn a_mark_that_may_pass_is_no_unexpected_pass_when_its_race_does_not_happen() {
+    let mark = |may_pass| Mark {
+        check: Check::OneAskOneRaise,
+        issue: 7355,
+        why: "a race".to_owned(),
+        scope: checks::Scope::Anywhere,
+        may_pass,
+    };
+    // The race did not happen: the check passed.
+    let plain = checks::outcome(Vec::new(), &[mark(false)]);
+    assert!(
+        plain
+            .failures
+            .iter()
+            .any(|one| one.contains("unexpected pass")),
+        "{plain:?}"
+    );
+    let racy = checks::outcome(Vec::new(), &[mark(true)]);
+    assert!(racy.failures.is_empty(), "{racy:?}");
+    // The race happened: excused as any mark is, and another check's failure still is not.
+    let found = planted(Check::OneAskOneRaise).judged();
+    let fired = checks::outcome(found, &[mark(true)]);
+    assert!(
+        fired.failures.is_empty() && fired.fired.contains(&0),
+        "{fired:?}"
+    );
+}
+
+#[test]
 fn a_global_check_is_only_ever_expected_to_fail_with_its_issue_and_never_for_the_suite() {
     let found = planted(Check::OneAskOneRaise).judged();
     let mark = Mark {
         check: Check::OneAskOneRaise,
         issue: 6674,
         why: "two writers".to_owned(),
+        scope: checks::Scope::Anywhere,
+        may_pass: false,
     };
     let marked = checks::outcome(found.clone(), std::slice::from_ref(&mark));
     assert!(marked.failures.is_empty(), "{marked:?}");
@@ -462,6 +493,107 @@ fn a_global_check_is_only_ever_expected_to_fail_with_its_issue_and_never_for_the
     assert_eq!(unmarked.failures.len(), 1, "{unmarked:?}");
     // Every check is judged by every scenario: none is a field a scenario can leave out.
     assert_eq!(Check::ALL.len(), 6);
+}
+
+/// **A cell's mark excuses only what it names** (never the batch's check): a double raise in
+/// another step, and a refusal of another step, stay failures, and a mark whose own place stayed
+/// clean is an unexpected pass.
+#[test]
+fn a_cells_mark_excuses_the_events_and_refusal_it_scopes_to_and_no_others() {
+    let mut observed = Clean::new();
+    // Two double raises, one in each cell: seq 1-2, then a call, then seq 11-12.
+    observed.events.push(raised(1, "c1"));
+    observed.events.push(raised(2, "c1"));
+    observed.events.push(event(
+        5,
+        Some("c1"),
+        "hook.pretooluse",
+        serde_json::json!({}),
+    ));
+    observed.events.push(raised(11, "c1"));
+    observed.events.push(raised(12, "c1"));
+    let found = observed.judged();
+    assert_eq!(found.len(), 2, "{found:?}");
+    let first_cell = checks::Mark {
+        check: Check::OneAskOneRaise,
+        issue: 6674,
+        why: "first cell".to_owned(),
+        scope: checks::Scope::Events { after: 0, upto: 5 },
+        may_pass: false,
+    };
+    let out = checks::outcome(found.clone(), std::slice::from_ref(&first_cell));
+    assert_eq!(out.expected.len(), 1, "{out:?}");
+    assert_eq!(
+        out.failures.len(),
+        1,
+        "the second cell's raise is not excused: {out:?}"
+    );
+    assert_eq!(out.failure_at[0].seq, Some(12));
+    // A mark over a place that wrote nothing wrong did not fire, and says so.
+    let quiet = checks::Mark {
+        scope: checks::Scope::Events { after: 5, upto: 10 },
+        ..first_cell.clone()
+    };
+    let out = checks::outcome(found, &[first_cell, quiet]);
+    assert!(out.fired.contains(&0) && !out.fired.contains(&1), "{out:?}");
+    assert!(
+        out.failures
+            .iter()
+            .any(|one| one.contains("unexpected pass")),
+        "{out:?}"
+    );
+
+    // A refusal is excused by its own label only.
+    let mut refused = planted(Check::NoBlackHole);
+    refused.refusals[0].step = "M-A step 1".to_owned();
+    refused.refusals.push(Refusal {
+        chat: "c1".to_owned(),
+        step: "M-B step 1".to_owned(),
+        target: Some("urllib.example.test".to_owned()),
+        after: 0,
+    });
+    let mark = checks::Mark {
+        check: Check::NoBlackHole,
+        issue: 6675,
+        why: "M-A".to_owned(),
+        scope: checks::Scope::Refusal("M-A step 1".to_owned()),
+        may_pass: false,
+    };
+    let out = checks::outcome(refused.judged(), &[mark]);
+    assert_eq!(out.expected.len(), 1, "{out:?}");
+    assert_eq!(out.failures.len(), 1, "{out:?}");
+    assert!(out.failures[0].contains("M-B step 1"), "{out:?}");
+}
+
+/// **A repeat's refusal is answered by what is written after it began**, never by an ask or a
+/// block an earlier step wrote for the same target (the black-hole check's `after`).
+#[test]
+fn a_refusal_declared_since_its_step_began_is_not_answered_by_an_earlier_stop() {
+    let block = |seq: u64| {
+        event(
+            seq,
+            Some("c1"),
+            "stop.block",
+            serde_json::json!({"source": "sandbox", "target": {"host": "h.test"}}),
+        )
+    };
+    let refusal = |after: u64| Refusal {
+        chat: "c1".to_owned(),
+        step: "repeat".to_owned(),
+        target: Some("h.test".to_owned()),
+        after,
+    };
+    let mut observed = Clean::new();
+    observed.events.push(block(5));
+    // Declared for any, the first step's block answers the repeat.
+    observed.refusals.push(refusal(0));
+    assert_eq!(observed.fired(), vec![]);
+    // Declared since the repeat's step began (after event 5), it has no answer.
+    observed.refusals = vec![refusal(5)];
+    assert_eq!(observed.fired(), vec![Check::NoBlackHole]);
+    // Its own block, written after it began, answers it.
+    observed.events.push(block(6));
+    assert_eq!(observed.fired(), vec![]);
 }
 
 /// A sandbox ask of chat `session`, as the window lists it: Allow at three levels and Keep
