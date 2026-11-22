@@ -1700,7 +1700,7 @@ impl Scenario {
             return "no profile folder to read logs of".to_owned();
         };
         // `find`, not a walk of our own: a source file that walks a directory is taken for a
-        // whole-tree guard (`tools/ci-scope.test.mjs`).
+        // whole-tree guard by the CI scope's tests.
         let mut logs: Vec<PathBuf> =
             purlis_core::forklock::output(std::process::Command::new("find").arg(&config).args([
                 "-maxdepth",
