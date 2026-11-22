@@ -102,8 +102,17 @@ impl Secret {
         Self(zeroize::Zeroizing::new(value))
     }
 
-    /// The value, borrowed: for comparing two credentials, never for logging or storing.
-    pub fn expose(&self) -> &str {
+    /// A copy as a [`secrecy::SecretString`], for a caller that hands it on to a transport. The
+    /// value is never borrowed as text outside this crate (#7301): two credentials are compared
+    /// by their account, not by their bytes.
+    pub fn to_secret_string(&self) -> secrecy::SecretString {
+        secrecy::SecretString::from(self.0.to_string())
+    }
+
+    /// The value, borrowed, **for this crate's tests only** (#7301): nothing outside them reads
+    /// a secret without taking it, and two credentials are compared by their account.
+    #[cfg(test)]
+    pub(crate) fn expose(&self) -> &str {
         &self.0
     }
 

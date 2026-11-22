@@ -554,6 +554,8 @@ pub async fn forge_ci_permission_start(account_id: String) -> Result<ForgeDevice
             registration,
             &scopes,
         )?;
+        // The code stays approvable on GitHub whatever happens to this window, until it lapses.
+        workflow::pending(&scope, &root, &account, started.expires_in)?;
         let number = next_flow_number();
         let code = ForgeDeviceCode {
             flow: number,
@@ -613,13 +615,27 @@ pub async fn forge_ci_permission_wait(flow: u32) -> Result<CiPermissionAnswer, S
             *held = None;
         }
         drop(held);
+        // GitHub's own word that the code is over (it lapsed, or the person refused it) ends
+        // the pending record. A cancel or a failed poll does not: the code may still be approved.
+        if matches!(granted, Err(device::Ended::Denied | device::Ended::Expired)) {
+            workflow::dead(&scope, &root, &account)?;
+        }
         let granted = granted.map_err(|why| match why {
             device::Ended::Denied => {
-                "You didn't allow it on GitHub, so nothing changed. A push that changes a CI file \
-                 stays held."
-                    .to_string()
+                format!(
+                    "You didn't allow it on GitHub. A push that changes a CI file stays held. {}",
+                    workflow::HELD_BACK
+                )
             }
-            other => other.said(registration.kind.display()),
+            device::Ended::Expired => format!(
+                "The code expired before you allowed it on GitHub. {}",
+                workflow::HELD_BACK
+            ),
+            device::Ended::Cancelled => "You cancelled. GitHub's code still works until it expires, \
+                so your chats cannot use this account until then, or until you try again or sign \
+                in again."
+                .to_string(),
+            device::Ended::Failed(why) => format!("{why} {}", workflow::HELD_BACK),
         })?;
         match workflow::keep(&scope, &root, keyring.as_ref(), &token_check, &account, granted)? {
             workflow::Outcome::Kept => Ok(CiPermissionAnswer {

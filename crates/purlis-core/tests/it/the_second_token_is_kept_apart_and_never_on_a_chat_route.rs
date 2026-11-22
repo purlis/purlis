@@ -739,3 +739,126 @@ fn the_second_token_is_read_by_one_call_alone() {
     }
     assert!(readers.is_empty(), "{readers:?}");
 }
+
+/// A fresh sign-in as the same login, whose token says `repo, read:org`: what a person does
+/// while a CI-permission code is still open on GitHub's page.
+fn sign_in_again(scene: &Scene) -> ForgeAccount {
+    scene
+        .tokens
+        .know("canaryAGAINtoken5", "octocat", "repo, read:org");
+    let keyring = scene.keyring();
+    let reach = scene.tokens.reach();
+    accounts::sign_in_with_grant(
+        &scope(),
+        scene.home.path(),
+        keyring.as_ref(),
+        &reach,
+        Kind::GitHub,
+        "github.com",
+        grant_that_does_not_expire("canaryAGAINtoken5", "repo,read:org"),
+        Method::Device,
+        "Ov23litEn94I5HXrpdsX",
+    )
+    .unwrap();
+    scene.listed()
+}
+
+#[test]
+fn a_sign_in_while_a_ci_code_is_still_approvable_records_the_scopes_as_not_known() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    // The person started the flow, then cancelled: GitHub's code still works for a quarter hour.
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::Unknown,
+        "the old code could still fold `workflow` into this grant"
+    );
+    assert!(!served(&scene));
+}
+
+#[test]
+fn a_sign_in_after_the_code_is_dead_records_the_scopes_it_read() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    // GitHub said the code expired, or the person refused it.
+    workflow::dead(&scope(), scene.home.path(), &scene.account).unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown,
+        "dead is not a read-back: the scopes stay unknown until one"
+    );
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::No
+    );
+    assert!(served(&scene));
+}
+
+#[test]
+fn a_sign_in_after_the_code_has_lapsed_by_the_clock_records_the_scopes_it_read() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    // The app was quit and opened again long after: the record's time is behind us.
+    let file = accounts::path(scene.home.path());
+    let text = std::fs::read_to_string(&file).unwrap();
+    let mut json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    json["accounts"][0]["ci_flow_until"] = serde_json::json!(1);
+    std::fs::write(&file, serde_json::to_string(&json).unwrap()).unwrap();
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::No
+    );
+}
+
+#[test]
+fn a_second_token_that_is_kept_ends_the_pending_record() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
+    // The code was used: a later sign-in is believed.
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::No
+    );
+}

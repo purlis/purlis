@@ -479,13 +479,43 @@ impl ForgeDenial {
     }
 }
 
-/// The system resolver's answer for `name`, none where it does not resolve.
+/// How long a connection waits for the system resolver before the name counts as unresolved. A
+/// blackholed name would otherwise stall a chat's new connections for the OS resolver's own
+/// timeout (tens of seconds).
+const LOOKUP_WAIT: Duration = Duration::from_secs(3);
+
+/// The system resolver's answer for `name`, none where it does not resolve or does not answer
+/// within [`LOOKUP_WAIT`].
 fn system(name: &str) -> Vec<IpAddr> {
-    use std::net::ToSocketAddrs;
-    (name, 443)
-        .to_socket_addrs()
-        .map(|found| found.map(|at| at.ip()).collect())
-        .unwrap_or_default()
+    bounded(name, LOOKUP_WAIT, |name| {
+        use std::net::ToSocketAddrs;
+        (name, 443)
+            .to_socket_addrs()
+            .map(|found| found.map(|at| at.ip()).collect())
+            .unwrap_or_default()
+    })
+}
+
+/// `ask`'s answer for `name`, run on a thread of its own and waited for at most `wait`. **A
+/// timeout is a failed lookup**: it answers nothing, so the name stays refused by name, nothing
+/// is held as empty (the name is asked again after [`NEGATIVE`]), and the late answer is dropped.
+fn bounded(
+    name: &str,
+    wait: Duration,
+    ask: impl FnOnce(&str) -> Vec<IpAddr> + Send + 'static,
+) -> Vec<IpAddr> {
+    let (send, receive) = std::sync::mpsc::channel();
+    let name = name.to_owned();
+    let spawned = std::thread::Builder::new()
+        .name("forge-lookup".to_owned())
+        .spawn(move || {
+            // The receiver is gone once the wait is over: the late answer is dropped.
+            let _ = send.send(ask(&name));
+        });
+    match spawned {
+        Ok(_) => receive.recv_timeout(wait).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
 }
 
 #[cfg(test)]

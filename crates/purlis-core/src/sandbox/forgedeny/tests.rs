@@ -734,3 +734,23 @@ fn a_connection_arriving_during_a_lookup_waits_for_it_after_a_failed_round() {
     slow.store(true, Ordering::SeqCst);
     assert!(second_caller_during_a_lookup(&forge, &entered));
 }
+
+#[test]
+fn a_lookup_that_does_not_answer_in_time_answers_nothing_and_is_not_waited_for() {
+    let started = Instant::now();
+    let found = super::bounded("blackhole.example", Duration::from_millis(50), |_| {
+        std::thread::sleep(Duration::from_secs(30));
+        vec![ip("10.9.9.9")]
+    });
+    assert!(found.is_empty(), "a timeout is a failed lookup: {found:?}");
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn a_lookup_that_answers_in_time_is_returned_whole() {
+    let found = super::bounded("ghe.corp.example", Duration::from_secs(10), |name| {
+        assert_eq!(name, "ghe.corp.example");
+        vec![ip("10.1.2.3")]
+    });
+    assert_eq!(found, vec![ip("10.1.2.3")]);
+}

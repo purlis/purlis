@@ -65,7 +65,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{
     AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
-    CredentialSource, ForgeProxy, HeldSink, Inbound, Outcome, Refusal, TokenKind,
+    CredentialSource, ForgeProxy, HeldSink, Inbound, Outcome, Refusal, TokenKind, Verdict,
 };
 use purlis_core::secrets::keyring::Secret;
 
@@ -171,6 +171,7 @@ impl Credentials for AccountCredentials {
                 _ => TokenKind::Pat,
             },
             secret: Secret::new(got.expose().to_owned()),
+            account: Some(account.to_owned()),
         })
     }
     fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
@@ -1077,16 +1078,51 @@ impl ForgeRoutes {
     /// The run's audit, a line per request: method, host, repo, class and verdict. The audit
     /// holds no token and no path, so nor does a line.
     pub fn audit_lines(&self, run: &str) -> Vec<String> {
+        self.audit_records(run).iter().map(audit_line).collect()
+    }
+
+    fn audit_records(&self, run: &str) -> Vec<AuditRecord> {
         let proxy = self.live().get(run).map(|live| live.proxy.clone());
         proxy
-            .map(|proxy| {
-                proxy
-                    .audit(&ChatId::new(run))
-                    .iter()
-                    .map(audit_line)
-                    .collect()
-            })
+            .map(|proxy| proxy.audit(&ChatId::new(run)))
             .unwrap_or_default()
+    }
+
+    /// **The doctor's `forge refusals` row for `project`**: the newest [`MOST_REFUSALS`] requests
+    /// its running chats' routes refused, a line each with the chat's name and the rule that
+    /// stopped it, so a person can read why `gh` or `git` in a chat was refused. The audit keeps
+    /// no token and no path (the lines [`audit_lines`](Self::audit_lines) shows), and it lives
+    /// in memory: a chat that ended has no lines.
+    pub fn refusals_row(&self, project: &Path) -> RouteRow {
+        let runs: Vec<(String, String)> = self
+            .live()
+            .iter()
+            .filter(|(_, live)| live.project == project)
+            .map(|(run, live)| (run.clone(), live.chat.clone()))
+            .collect();
+        let mut refused: Vec<String> = Vec::new();
+        for (run, chat) in runs {
+            for record in self.audit_records(&run) {
+                if matches!(record.verdict, Verdict::Refused(_)) {
+                    refused.push(format!("{chat}: {}", audit_line(&record)));
+                }
+            }
+        }
+        if refused.is_empty() {
+            return RouteRow::ok("no running chat has been refused a request by its forge route");
+        }
+        let skipped = refused.len().saturating_sub(MOST_REFUSALS);
+        let mut shown = refused.split_off(skipped);
+        if skipped > 0 {
+            shown.insert(0, format!("{skipped} older refusals not shown"));
+        }
+        RouteRow {
+            problem: false,
+            detail: shown.join("; "),
+            hint: "each line is a chat, the request (method, host, repo, kind) and the rule that \
+                   refused it; a chat's route refuses anything it does not list"
+                .to_owned(),
+        }
     }
 
     /// The doctor's `forge route` row for `project`: the proxy up, and a sign-in for every
@@ -1179,6 +1215,9 @@ impl Drop for RouteGuard<'_> {
     }
 }
 
+/// How many refusals the doctor's `forge refusals` row lists, the newest.
+pub const MOST_REFUSALS: usize = 5;
+
 /// The doctor's row, before the doctor draws it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteRow {
@@ -1221,10 +1260,12 @@ fn sign_in_words(host: &str, state: SignInState) -> String {
 }
 
 fn audit_line(record: &AuditRecord) -> String {
+    // The host is the chat's own word for it: nothing in it is shown as anything but text.
+    let host: String = record.host.chars().filter(|c| !c.is_control()).collect();
     format!(
         "{} {} {} {} {:?}",
         record.method,
-        record.host,
+        host,
         record.repo.as_deref().unwrap_or("-"),
         record
             .class

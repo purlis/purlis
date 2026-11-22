@@ -88,7 +88,7 @@ impl TokenSource for RouteToken {
     fn token(&self) -> Result<SecretString, ForgeError> {
         self.credentials
             .credential_for(&self.request)
-            .map(|credential| SecretString::from(credential.secret.expose().to_owned()))
+            .map(|credential| SecretString::from(credential.secret.into_inner()))
             .map_err(|_| {
                 ForgeError::of(
                     Failure::Auth,

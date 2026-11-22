@@ -182,7 +182,7 @@ impl WorkflowCredential for WorkflowOver {
 
 impl WorkflowTransports for WorkflowOver {
     fn with(&self, forge: &Forge, secret: &Secret) -> Result<Arc<dyn Transport>, String> {
-        let token = Arc::new(Fixed(SecretString::from(secret.expose().to_owned())));
+        let token = Arc::new(Fixed(secret.to_secret_string()));
         accounts::over_https(forge, token).map_err(|why| why.to_string())
     }
 }

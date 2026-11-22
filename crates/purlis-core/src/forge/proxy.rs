@@ -131,6 +131,11 @@ pub struct CredentialRequest {
 pub struct Credential {
     pub token_kind: TokenKind,
     pub secret: Secret,
+    /// The id of the account the secret belongs to, or `None` for a source with one credential
+    /// per host and no accounts (a token connection). A request that touches several repos is
+    /// sent only when every repo is served by the same account: compared by this, never by the
+    /// token's bytes, which a renewal between two lookups changes.
+    pub account: Option<String>,
 }
 
 /// Why a credential could not be had. Either way the request is refused.
@@ -199,6 +204,7 @@ impl CredentialSource for BrokeredCredentials {
         Ok(Credential {
             token_kind,
             secret: Secret::new(held.expose().to_string()),
+            account: None,
         })
     }
 }
@@ -711,7 +717,7 @@ impl ForgeProxy {
                 {
                     Ok(next) => match &first {
                         None => first = Some(next),
-                        Some(held) if held.secret.expose() == next.secret.expose() => {}
+                        Some(held) if held.account == next.account => {}
                         Some(_) => outcome = Err(CredentialError::Unavailable),
                     },
                     Err(why) => outcome = Err(why),

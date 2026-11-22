@@ -1276,7 +1276,13 @@ fn keep(
         login: checked.login,
         method,
         state: State::SignedIn,
-        scopes: checked.scopes,
+        // A CI-permission code still approvable on GitHub may widen this very grant: until it
+        // has expired the sign-in's scopes are not known, whatever this check read.
+        scopes: if workflow::flow_pending(&rest) {
+            None
+        } else {
+            checked.scopes
+        },
         client_id,
     };
     keyring

@@ -212,6 +212,7 @@ impl CredentialSource for Person {
         Ok(Credential {
             token_kind: TokenKind::Oauth,
             secret: Secret::new("real-token".to_owned()),
+            account: None,
         })
     }
 }

@@ -611,6 +611,7 @@ fn report_in(
         .into_iter()
         .chain(config_root.and_then(|config_root| local_project(root, config_root)))
         .chain(forge_route(root))
+        .chain(forge_refusals(root))
         .chain(
             config_root
                 .map(purlis_core::pools::cluster_deletion_notices)
@@ -647,6 +648,28 @@ fn forge_route(root: &std::path::Path) -> Option<DoctorRow> {
 
 #[cfg(not(feature = "forge-wiring"))]
 fn forge_route(_: &std::path::Path) -> Option<DoctorRow> {
+    None
+}
+
+/// `forge refusals`: what the routes of this project's running chats refused lately, and why
+/// (#7358). The app's own row, as `forge route` is: the audit is the running proxy's, in the
+/// app's memory.
+#[cfg(feature = "forge-wiring")]
+fn forge_refusals(root: &std::path::Path) -> Option<DoctorRow> {
+    let said = crate::forgeroute::routes()?.refusals_row(root);
+    Some(DoctorRow {
+        name: "forge refusals".to_owned(),
+        status: DoctorStatus::Ok,
+        detail: said.detail,
+        hint: said.hint,
+        checked: true,
+        settings: None,
+        fix: None,
+    })
+}
+
+#[cfg(not(feature = "forge-wiring"))]
+fn forge_refusals(_: &std::path::Path) -> Option<DoctorRow> {
     None
 }
 

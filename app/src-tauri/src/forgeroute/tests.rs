@@ -185,6 +185,7 @@ impl Credentials for FakeSignIns {
         self.lookup(host, account).map(|token| Credential {
             token_kind: TokenKind::Pat,
             secret: Secret::new(token.to_owned()),
+            account: Some(account.to_owned()),
         })
     }
     fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
@@ -1248,6 +1249,45 @@ fn the_audit_has_a_line_per_request_and_never_a_token_or_a_path() {
 }
 
 #[test]
+fn the_doctor_lists_what_a_projects_running_chats_were_refused_and_never_a_token() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let quiet = scene.routes.refusals_row(Path::new("/p/one"));
+    assert!(quiet.detail.contains("no running chat"), "{quiet:?}");
+
+    comment(&scene, "run-1", &params.sentinel);
+    merge(&scene, "run-1", &params.sentinel);
+    let row = scene.routes.refusals_row(Path::new("/p/one"));
+
+    // The refusal and its rule, under the chat's name; the allowed comment is not listed.
+    assert!(
+        row.detail.contains("chat-1: POST api.github.com acme/app")
+            && row.detail.contains("Refused(Merge)"),
+        "{row:?}"
+    );
+    assert!(!row.detail.contains("Allowed"), "{row:?}");
+    let all = format!("{} {}", row.detail, row.hint);
+    for secret in [GITHUB_TOKEN, params.sentinel.as_str(), "zzz", "/pulls/7"] {
+        assert!(!all.contains(secret), "{secret} is in the row: {all}");
+    }
+    // Another project's row says nothing of this chat.
+    let other = scene.routes.refusals_row(Path::new("/p/two"));
+    assert!(!other.detail.contains("chat-1"), "{other:?}");
+}
+
+#[test]
+fn the_doctor_lists_only_the_newest_refusals_and_says_how_many_it_left_out() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    for _ in 0..(MOST_REFUSALS + 3) {
+        merge(&scene, "run-1", &params.sentinel);
+    }
+    let row = scene.routes.refusals_row(Path::new("/p/one"));
+    assert_eq!(row.detail.matches("Refused(Merge)").count(), MOST_REFUSALS);
+    assert!(row.detail.contains("3 older refusals not shown"), "{row:?}");
+}
+
+#[test]
 fn the_doctor_row_says_proxy_up_and_a_sign_in_for_every_recorded_host() {
     let scene = Scene::new();
     let project = Path::new("/p/one");
@@ -1542,6 +1582,7 @@ impl Gate for FakeGate {
             .map(|token| Credential {
                 token_kind: TokenKind::Oauth,
                 secret: Secret::new(token.to_owned()),
+                account: None,
             })
             .ok_or(CredentialError::Unavailable)
     }

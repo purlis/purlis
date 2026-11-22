@@ -34,6 +34,7 @@ impl CredentialSource for Creds {
         Ok(Credential {
             token_kind: self.token_kind,
             secret: Secret::new(REAL.to_string()),
+            account: None,
         })
     }
 }

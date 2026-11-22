@@ -173,7 +173,17 @@ folded it in) is refused by `SignedIn` itself, and the window draws a Notice fro
 **Unknown scopes fail closed**: a token whose scopes the forge never said (a fine-grained token has no
 scopes header), and an everyday token whose read-back after a second grant failed or said nothing,
 may hold `workflow`, so the account is served to no chat and a Notice says why, until a read-back
-says what it holds.
+says what it holds. **A second sign-in's code stays approvable on GitHub after the person cancels or
+purlis quits**, so the account records it (`ci_flow_until`, in `forge-accounts.json`) and a sign-in
+made until the code has lapsed records its scopes as not known too. A code GitHub says is dead (it
+expired, or was refused) ends that record, and the scopes stay unknown until a retry or a new
+sign-in reads them.
+
+**A chat's sandbox keeps a forge's addresses from the chat** (`sandbox::forgedeny`): a name it resolves
+to, and the ranges a forge publishes (GitHub's, vendored). **A forge with no published ranges** (GitLab,
+a GitHub Enterprise Server host) **is not held by address while its lookups fail and nothing is live**:
+only its names are refused, until a lookup answers. A lookup waits at most three seconds, and a
+timeout is a failed lookup.
 
 **The second token** (`forge::accounts::workflow`, D1.1 and D8.3) is the only credential that may
 push a CI file on GitHub. The everyday sign-in never asks for `workflow`. On the person's press, the

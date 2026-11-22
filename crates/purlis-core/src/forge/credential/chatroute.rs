@@ -184,6 +184,7 @@ impl CredentialSource for ChatRoute {
                 _ => TokenKind::Pat,
             },
             secret: Secret::new(credential.expose().to_string()),
+            account: Some(account.id.clone()),
         })
     }
 }
