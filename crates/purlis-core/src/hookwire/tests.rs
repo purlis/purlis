@@ -2886,7 +2886,8 @@ fn an_app_at(path: &std::path::Path, within: &std::path::Path) -> (Reading, Chat
                 | Ask::Merge(_)
                 | Ask::Attendance(_)
                 | Ask::Policy(_)
-                | Ask::PolicyLog(_) => Answer::No {
+                | Ask::PolicyLog(_)
+                | Ask::GitRoute(_) => Answer::No {
                     why: "not here".to_owned(),
                 },
             }

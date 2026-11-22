@@ -644,7 +644,7 @@ pub fn compose_at(route: &Route, folder: &Path) -> io::Result<Wiring> {
     ];
     env.sort();
 
-    let git_pairs = git_pairs_of(route, &helper, ca);
+    let git_pairs = git_pairs_of(&route_hosts(route), &route.egress_url, &helper, ca);
     Ok(Wiring {
         env,
         git_pairs,
@@ -652,14 +652,19 @@ pub fn compose_at(route: &Route, folder: &Path) -> io::Result<Wiring> {
     })
 }
 
+/// The recorded hosts of `route`.
+fn route_hosts(route: &Route) -> Vec<&str> {
+    route.repos.iter().map(|repo| repo.host()).collect()
+}
+
 /// The git settings that send a chat's git through its route: the reset first, so `osxkeychain` and
 /// every helper of the person's are dropped before purlis's one is named and so cannot be asked to
 /// store the sentinel; the sentinel helper and the chat's authority for each recorded host; and a
 /// proxy named for each forge host and each name under it, so neither `NO_PROXY` nor a person's
 /// own `http.proxy` can send git direct to one (a URL's own setting is read over both).
-fn git_pairs_of(route: &Route, helper: &str, ca: &str) -> Vec<(String, String)> {
+fn git_pairs_of(hosts: &[&str], egress_url: &str, helper: &str, ca: &str) -> Vec<(String, String)> {
     let mut git_pairs = vec![("credential.helper".to_owned(), String::new())];
-    let mut hosts: Vec<&str> = route.repos.iter().map(|repo| repo.host()).collect();
+    let mut hosts: Vec<&str> = hosts.to_vec();
     hosts.sort_unstable();
     hosts.dedup();
     let named: String = hosts.iter().map(|host| format!(" --host {host}")).collect();
@@ -681,10 +686,7 @@ fn git_pairs_of(route: &Route, helper: &str, ca: &str) -> Vec<(String, String)> 
     proxied.dedup();
     for host in proxied {
         for url in [host.to_owned(), format!("*.{host}")] {
-            git_pairs.push((
-                format!("http.https://{url}/.proxy"),
-                route.egress_url.clone(),
-            ));
+            git_pairs.push((format!("http.https://{url}/.proxy"), egress_url.to_owned()));
         }
     }
     git_pairs
@@ -714,7 +716,7 @@ pub fn git_network(route: &Route) -> io::Result<crate::worktree::git::NetworkRou
     let helper = quoted(&route.helper_exe).ok_or_else(|| {
         invalid("the credential helper's path cannot be quoted for the shell git runs it through")
     })?;
-    let config = git_pairs_of(route, &helper, ca)
+    let config = git_pairs_of(&route_hosts(route), &route.egress_url, &helper, ca)
         .into_iter()
         .map(|(key, value)| format!("{key}={value}"))
         .collect();
@@ -722,6 +724,98 @@ pub fn git_network(route: &Route) -> io::Result<crate::worktree::git::NetworkRou
         ("HTTPS_PROXY".to_owned(), route.egress_url.clone().into()),
         ("https_proxy".to_owned(), route.egress_url.clone().into()),
         (SENTINEL_ENV.to_owned(), sentinel.to_owned().into()),
+    ];
+    Ok(crate::worktree::git::NetworkRoute::new(config, pass))
+}
+
+/// **What the app tells a chat's own hook about the chat's route**, so the hook asks a forge
+/// through it without trusting what the chat's environment or a repository's config names
+/// (`pre-push`'s ask of the remote, #7302). The trust anchor is the chat's CA, which only the app
+/// holds: a proxy or a certificate authority the chat named could answer for the remote, but a
+/// proxy cannot present a certificate under a CA whose key it does not hold, so the proxy (the
+/// chat's own egress port, which is the only way out of its sandbox) is a transport and nothing
+/// more. The helper is the app's own program, and the hosts are the recorded ones.
+#[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HookRoute {
+    /// The chat's CA certificate (public), as PEM.
+    pub ca_pem: String,
+    /// The app's own program, which git starts as the chat's credential helper.
+    pub helper_exe: String,
+    /// The recorded forge hosts.
+    pub hosts: Vec<String>,
+}
+
+impl std::fmt::Debug for HookRoute {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HookRoute")
+            .field("helper_exe", &self.helper_exe)
+            .field("hosts", &self.hosts)
+            .finish_non_exhaustive()
+    }
+}
+
+impl HookRoute {
+    /// What the app tells the hook of a chat's `route`; `None` where its CA cannot be read.
+    pub fn of(route: &Route) -> Option<Self> {
+        Some(Self {
+            ca_pem: std::fs::read_to_string(&route.ca_cert).ok()?,
+            helper_exe: route.helper_exe.to_str()?.to_owned(),
+            hosts: route_hosts(route).into_iter().map(str::to_owned).collect(),
+        })
+    }
+}
+
+/// **The route a chat's hook asks a forge through** ([`HookRoute`]): `ca` is a file the hook made
+/// from [`HookRoute::ca_pem`], `egress_url` the chat's own egress port as its environment names it
+/// (loopback alone), and `sentinel` the chat's, which only the proxy that holds the CA's key
+/// reads. An error where a part is unusable: the ask is then not made through any route.
+pub fn git_network_in_hook(
+    hook: &HookRoute,
+    egress_url: &str,
+    ca: &Path,
+    sentinel: &str,
+) -> io::Result<crate::worktree::git::NetworkRoute> {
+    let invalid = |why: &'static str| io::Error::new(io::ErrorKind::InvalidInput, why);
+    let plain = |text: &str| {
+        !text.is_empty() && !text.contains(|c: char| c.is_control() || c.is_whitespace())
+    };
+    let loopback = egress_url
+        .strip_prefix("http://127.0.0.1:")
+        .is_some_and(|port| !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()));
+    if !loopback {
+        return Err(invalid("a chat's forge route is on the loopback interface"));
+    }
+    if !plain(sentinel) {
+        return Err(invalid(
+            "the sentinel is empty, or has a space or a control character",
+        ));
+    }
+    if hook.hosts.is_empty()
+        || !hook
+            .hosts
+            .iter()
+            .all(|h| plain(h) && !h.contains(['/', '*']))
+    {
+        return Err(invalid(
+            "the forge route names no host, or a host that is not one",
+        ));
+    }
+    let ca = ca
+        .to_str()
+        .filter(|s| !s.contains(['\n', '\r']))
+        .ok_or_else(|| invalid("a path of the forge route is not text"))?;
+    let helper = quoted(Path::new(&hook.helper_exe)).ok_or_else(|| {
+        invalid("the credential helper's path cannot be quoted for the shell git runs it through")
+    })?;
+    let hosts: Vec<&str> = hook.hosts.iter().map(String::as_str).collect();
+    let config = git_pairs_of(&hosts, egress_url, &helper, ca)
+        .into_iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    let pass = vec![
+        ("HTTPS_PROXY".to_owned(), egress_url.into()),
+        ("https_proxy".to_owned(), egress_url.into()),
+        (SENTINEL_ENV.to_owned(), sentinel.into()),
     ];
     Ok(crate::worktree::git::NetworkRoute::new(config, pass))
 }

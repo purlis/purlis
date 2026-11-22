@@ -440,6 +440,30 @@ fn ran(dir: &Path, args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// What git said when it failed, or, where it said nothing, what is known of how it ended: a git
+/// stopped at its deadline answers no code and no words, and a reason that is empty reaches the
+/// chat as `git did not push <branch> to origin:` with nothing after it.
+fn why_git_failed(run: &git::Run) -> String {
+    // Every line git said, not only the first: its first is often `RPC failed; HTTP 403`, and
+    // the lines that follow it (`remote: ...`, `! [remote rejected] ...`) are the remote's words.
+    let said: Vec<&str> = run
+        .err
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(4)
+        .collect();
+    if !said.is_empty() {
+        return said.join(" | ");
+    }
+    match run.code {
+        None => "git did not finish within the time purlis gives a network call, and said \
+                 nothing. Nothing is known to have been sent; run the push again"
+            .to_owned(),
+        Some(code) => format!("git exited with code {code} and said nothing"),
+    }
+}
+
 fn first_line(text: &str) -> String {
     text.lines().next().unwrap_or("").trim().to_owned()
 }
@@ -1944,7 +1968,7 @@ fn pushed(
         }
         return Err(format!(
             "git did not push {branch} to {remote}: {}",
-            first_line(&sent.err)
+            why_git_failed(&sent)
         ));
     }
     if over.is_some() {
@@ -2103,6 +2127,33 @@ mod tests {
         std::io::Write::write_all(&mut file, bytes).unwrap();
         let read = std::fs::File::open(file.path()).unwrap();
         (file, read)
+    }
+
+    fn ran(code: Option<i32>, err: &str) -> git::Run {
+        git::Run {
+            code,
+            out: String::new(),
+            err: err.to_owned(),
+        }
+    }
+
+    /// A push that failed always says why, even where git said nothing: a git ended at its
+    /// deadline answers no code and no words (#7302).
+    #[test]
+    fn a_push_that_failed_always_says_why_even_when_git_said_nothing() {
+        assert_eq!(
+            why_git_failed(&ran(
+                Some(1),
+                "\nerror: RPC failed; HTTP 403\nremote: denied\n"
+            )),
+            "error: RPC failed; HTTP 403 | remote: denied"
+        );
+        let stopped = why_git_failed(&ran(None, ""));
+        assert!(stopped.contains("did not finish"), "{stopped}");
+        assert_eq!(
+            why_git_failed(&ran(Some(128), "  \n")),
+            "git exited with code 128 and said nothing"
+        );
     }
 
     #[test]

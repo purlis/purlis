@@ -392,6 +392,10 @@ pub fn answer(
             },
             Err(why) => no(why),
         },
+        // What a chat's hook needs to ask its forge as the chat's git does (#7302): from the
+        // app's own record of the chat whose token the line carries, never from one the line
+        // names. A chat with no route has none to be told.
+        Ask::GitRoute(asked) => hook_route_answer(asked.chat),
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
@@ -4858,3 +4862,15 @@ pub async fn close_chat_stopping(
 
 #[cfg(test)]
 mod tests;
+
+/// The answer to a hook's ask for its chat's forge route ([`Ask::GitRoute`], #7302).
+fn hook_route_answer(chat: u32) -> Answer {
+    #[cfg(feature = "forge-wiring")]
+    if let Some(route) = crate::forgeroute::hook_route(chat) {
+        return Answer::GitRoute { route };
+    }
+    let _ = chat;
+    Answer::No {
+        why: "this chat has no forge route".to_owned(),
+    }
+}

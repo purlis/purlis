@@ -1080,3 +1080,246 @@ impl Pin for PinsAllOfGithub {
         })
     }
 }
+
+/// More commits than a scan reads for a remote it cannot ask (`UNASKED_AT_MOST`), made on top of
+/// `main` in `work` with one `fast-import`, as `refs/heads/many`: the commit it ends at.
+fn more_commits_than_an_unasked_scan_reads(work: &Path) -> String {
+    let mut stream = String::new();
+    for n in 0..=purlis_core::diffscan::UNASKED_AT_MOST {
+        let from = if n == 0 { "from refs/heads/main\n" } else { "" };
+        stream.push_str(&format!(
+            "commit refs/heads/many\ncommitter t <t{}example.invalid> {n} +0000\ndata 2\n{}\n{from}M 100644 inline f.txt\ndata 2\n{}\n\n",
+            '@',
+            n % 10,
+            n % 10
+        ));
+    }
+    let mut child = purlis_core::forklock::spawn(
+        Command::new("git")
+            .args(["fast-import", "--quiet"])
+            .current_dir(work)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped()),
+    )
+    .expect("git fast-import");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stream.as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let id = purlis_core::forklock::output(
+        Command::new("git")
+            .args(["rev-parse", "refs/heads/many"])
+            .current_dir(work),
+    )
+    .unwrap();
+    String::from_utf8_lossy(&id.stdout).trim().to_owned()
+}
+
+/// What a chat's own git is given for `github.com` (`forgewire::git_network`), the test's own
+/// sentinel helper in place of purlis's binary, its proxy the chat's egress stand-in and its
+/// authority the chat's.
+fn the_chats_route(s: &Setup, ca: &Path) -> purlis_core::worktree::git::NetworkRoute {
+    use purlis_core::worktree::git::NetworkRoute;
+    let proxy = format!("http://127.0.0.1:{}", s.port());
+    let sentinel = s.world.sentinel.expose().to_owned();
+    NetworkRoute::new(
+        vec![
+            "credential.helper=".to_owned(),
+            format!(
+                "credential.https://github.com.helper=!f() {{ echo username=x-access-token; echo password={sentinel}; }}; f"
+            ),
+            format!("http.https://github.com/.sslCAInfo={}", ca.display()),
+            format!("http.https://github.com/.proxy={proxy}"),
+        ],
+        vec![
+            ("HTTPS_PROXY".into(), proxy.clone().into()),
+            ("https_proxy".into(), proxy.into()),
+        ],
+    )
+}
+
+fn forge_was_asked_which_commits_it_has(s: &Setup) -> bool {
+    s.forge
+        .seen
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|r| r.url.contains("info/refs") && r.url.ends_with("service=git-upload-pack"))
+}
+
+/// #7302: the pre-push scan asks the remote what it has the way the chat's git reaches it, so a
+/// branch of more commits than an unasked scan reads is scanned knowing the remote's tips.
+#[test]
+fn a_pushs_scan_asks_the_remote_through_the_chats_route_and_knows_its_tips() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    let s = setup();
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    let tip = more_commits_than_an_unasked_scan_reads(&work);
+    let updates = format!("refs/heads/many {tip} refs/heads/many {}\n", "0".repeat(40));
+    let route = the_chats_route(&s, &s.ca_file);
+
+    let scan = purlis_core::diffscan::pushed_through(
+        &work,
+        "https://github.com/acme/app.git",
+        &updates,
+        &|| Some(route.clone()),
+    );
+
+    let scan = scan.expect("the remote was asked, so what it has is left out of the scan");
+    assert!(scan.refused.is_empty(), "{:?}", scan.refused);
+    assert!(
+        forge_was_asked_which_commits_it_has(&s),
+        "the scan never reached the forge through the route"
+    );
+    s.assert_clean();
+}
+
+/// A scan whose route is not the chat's own refuses what it cannot ask, as it always has: nothing
+/// is left out because something answered.
+#[test]
+fn a_pushs_scan_whose_route_fails_the_chats_authority_reads_the_push_in_full_and_refuses() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    let s = setup();
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    let tip = more_commits_than_an_unasked_scan_reads(&work);
+    let updates = format!("refs/heads/many {tip} refs/heads/many {}\n", "0".repeat(40));
+    // An authority that is not the chat's: the listener's certificate is not signed under it.
+    let forged = s.dir.path().join("forged-ca.pem");
+    let elsewhere = ForgeListener::serve_connect(World::new().wiring.clone()).unwrap();
+    std::fs::write(&forged, elsewhere.ca_certificate_pem().unwrap()).unwrap();
+    let route = the_chats_route(&s, &forged);
+
+    let refused = purlis_core::diffscan::pushed_through(
+        &work,
+        "https://github.com/acme/app.git",
+        &updates,
+        &|| Some(route.clone()),
+    )
+    .expect_err("a remote that could not be asked is not one the scan knows");
+
+    assert!(refused.contains("could not be asked"), "{refused}");
+}
+
+/// What a repository's own configuration says of the forge (a proxy, an authority, a helper) is
+/// not what the scan asks it by: a chat can write it.
+#[test]
+fn a_proxy_and_an_authority_a_chat_wrote_into_the_repository_are_not_what_the_scan_asks_by() {
+    purlis_core::unsteered!();
+    if !tool("git") {
+        return;
+    }
+    let s = setup();
+    let work = s.dir.path().join("clone");
+    let (ok, text) = s.git(
+        s.dir.path(),
+        &[
+            "clone",
+            "https://github.com/acme/app.git",
+            work.to_str().unwrap(),
+        ],
+    );
+    assert!(ok, "{text}");
+    let proxy = format!("http://127.0.0.1:{}", s.port());
+    for (key, value) in [
+        ("http.https://github.com/.proxy", proxy.as_str()),
+        ("http.proxy", proxy.as_str()),
+        ("http.sslCAInfo", s.ca_file.to_str().unwrap()),
+        (
+            "http.https://github.com/.sslCAInfo",
+            s.ca_file.to_str().unwrap(),
+        ),
+    ] {
+        git_ok(&work, &["config", key, value]);
+    }
+    let tip = more_commits_than_an_unasked_scan_reads(&work);
+    let updates = format!("refs/heads/many {tip} refs/heads/many {}\n", "0".repeat(40));
+
+    let scanned = purlis_core::diffscan::pushed_through(
+        &work,
+        "https://github.com/acme/app.git",
+        &updates,
+        &|| None,
+    );
+
+    assert!(
+        !forge_was_asked_which_commits_it_has(&s),
+        "the scan asked through what the repository's config named"
+    );
+    assert!(scanned.is_err(), "{scanned:?}");
+}
+
+/// What the app tells a hook of its chat's route is used only where every part is usable, and
+/// the egress is the chat's own on the loopback interface.
+#[test]
+fn a_hooks_route_is_refused_where_a_part_is_not_the_chats_own_loopback_egress_or_a_host() {
+    use purlis_core::forgewire::{HookRoute, git_network_in_hook};
+    let hook = HookRoute {
+        ca_pem: String::new(),
+        helper_exe: "/app/purlis-app".to_owned(),
+        hosts: vec!["github.com".to_owned()],
+    };
+    let ca = Path::new("/run/ca.pem");
+    let ok = |proxy: &str, sentinel: &str, hook: &HookRoute| {
+        git_network_in_hook(hook, proxy, ca, sentinel).is_ok()
+    };
+    assert!(ok("http://127.0.0.1:4100", "s3ntinel", &hook));
+    for proxy in [
+        "http://evil.example:4100",
+        "http://127.0.0.1.evil.example:4100",
+        "http://127.0.0.1:",
+        "http://127.0.0.1:41x0",
+        "https://127.0.0.1:4100",
+        "",
+    ] {
+        assert!(!ok(proxy, "s3ntinel", &hook), "{proxy}");
+    }
+    assert!(!ok("http://127.0.0.1:4100", "", &hook));
+    assert!(!ok("http://127.0.0.1:4100", "two words", &hook));
+    for hosts in [
+        vec![],
+        vec!["*".to_owned()],
+        vec!["a b".to_owned()],
+        vec!["x/y".to_owned()],
+    ] {
+        let hook = HookRoute {
+            hosts,
+            ..hook.clone()
+        };
+        assert!(!ok("http://127.0.0.1:4100", "s3ntinel", &hook));
+    }
+}

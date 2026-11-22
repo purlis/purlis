@@ -134,7 +134,9 @@ fn push(args: &[String]) -> ExitCode {
     if let Err(e) = std::io::stdin().read_to_string(&mut updates) {
         return cannot(&format!("the refs git sent could not be read: {e}"));
     }
-    match diffscan::pushed(&repo, url, &updates).map(|mut scan| {
+    // Kept until the scan is done: the route's authority is a file in it.
+    let held = std::cell::RefCell::new(None);
+    match diffscan::pushed_through(&repo, url, &updates, &|| chat_route(&held)).map(|mut scan| {
         under_policy(&mut scan.refused, &repo);
         scan
     }) {
@@ -149,6 +151,64 @@ fn push(args: &[String]) -> ExitCode {
         Ok(scan) if scan.refused.is_empty() => ExitCode::SUCCESS,
         Ok(scan) => refuse(Stopped::Push, &repo, &scan),
         Err(why) => cannot(&why),
+    }
+}
+
+/// How long the app has to answer for the chat's route: it answers from what it holds.
+const ROUTE_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// **The route this chat's git reaches its forge by, for the scan's ask of the remote** (#7302):
+/// under a chat's one login its git goes only through the app's proxy, under the chat's own
+/// authority and with its sentinel, and an ask made any other way fails and reads the whole push.
+///
+/// The authority, the credential helper and the hosts are **the app's**, from its own record of
+/// the chat ([`Ask::GitRoute`]), never the environment's or a repository's config: what a chat
+/// can write could name an authority that answers for the remote. The one thing taken from the
+/// environment is the chat's own egress port, a proxy that reads nothing a certificate under the
+/// app's authority does not let it read; with the sentinel, which only that proxy is shown. `None`
+/// where the app does not answer, the chat has no route, or any part is unusable: the remote is
+/// then asked as before and, if it cannot be, the push is read in full.
+fn chat_route(
+    held: &std::cell::RefCell<Option<OwnFolder>>,
+) -> Option<purlis_core::worktree::git::NetworkRoute> {
+    use purlis_core::hookwire::{Answer, Ask, GitRouteAsk};
+    let env = purlis_core::envvar::var;
+    let proxy = env("HTTPS_PROXY").or_else(|| env("https_proxy"))?;
+    let sentinel = env(purlis_core::forge::gitcredential::SENTINEL_ENV)?;
+    let Ok(Ok(Answer::GitRoute { route })) = crate::brokered::asked(
+        |chat| Ask::GitRoute(GitRouteAsk { chat }),
+        ROUTE_ANSWERED_WITHIN,
+    ) else {
+        return None;
+    };
+    let dir = OwnFolder::made()?;
+    let ca = dir.0.join("ca.pem");
+    std::fs::write(&ca, &route.ca_pem).ok()?;
+    let found = purlis_core::forgewire::git_network_in_hook(&route, &proxy, &ca, &sentinel).ok();
+    *held.borrow_mut() = Some(dir);
+    found
+}
+
+/// A folder of this hook's own, made new (never one that is there already, a link included) and
+/// closed to others, and removed when it is dropped.
+struct OwnFolder(std::path::PathBuf);
+
+impl OwnFolder {
+    fn made() -> Option<Self> {
+        use std::os::unix::fs::DirBuilderExt as _;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_nanos());
+        let path =
+            std::env::temp_dir().join(format!("purlis-route-{}-{nanos}", std::process::id()));
+        std::fs::DirBuilder::new().mode(0o700).create(&path).ok()?;
+        Some(Self(path))
+    }
+}
+
+impl Drop for OwnFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 

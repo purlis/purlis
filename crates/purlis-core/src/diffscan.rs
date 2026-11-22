@@ -588,7 +588,12 @@ pub fn remote_has(dir: &Path, helper: Option<&str>, remote: &str) -> Option<Vec<
 /// a repository's, nor the global or system file, nor one `XDG_CONFIG_HOME` points at. An
 /// address that is also a remote's name in `dir`, or a path that means something only from the
 /// repository's own folder, is not asked.
-fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
+fn address_has(
+    dir: &Path,
+    helper: Option<&str>,
+    url: &str,
+    route: Option<git::NetworkRoute>,
+) -> Option<Vec<String>> {
     if url.is_empty() || url.starts_with('-') || !an_address_anywhere(url) {
         return None;
     }
@@ -604,7 +609,7 @@ fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String
     {
         return None;
     }
-    address_asked_from(Path::new("/"), helper, url)
+    address_asked_from(Path::new("/"), helper, url, route)
 }
 
 /// What the address `url` says it has, asked with git run in `from` and in no repository: a
@@ -613,8 +618,24 @@ fn address_has(dir: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String
 /// ([`git::run_network_in_no_repository_trusting_the_system`]): the hook runs with the
 /// environment of the push that ran it, and an authority named there, with a proxy, could
 /// answer for the remote. The proxy it names is kept: it may be the only way out.
-fn address_asked_from(from: &Path, helper: Option<&str>, url: &str) -> Option<Vec<String>> {
-    let asked = git::isolated(&git::Isolated::default(), || {
+///
+/// **Through the chat's own forge route, where `route` is one** (#7302): a chat whose git reaches
+/// its forge only through the app's proxy, under the chat's own authority and with its sentinel,
+/// cannot ask the address any other way, and an ask that fails is a push read in full. The route
+/// is what the app told the hook ([`crate::forgewire::HookRoute`]), never what the environment or a
+/// repository's config names: under it git is given none of the environment's proxy or authority
+/// variables, only the route's own.
+fn address_asked_from(
+    from: &Path,
+    helper: Option<&str>,
+    url: &str,
+    route: Option<git::NetworkRoute>,
+) -> Option<Vec<String>> {
+    let isolation = match route {
+        Some(route) => git::Isolated::default().through_route(route),
+        None => git::Isolated::default(),
+    };
+    let asked = git::isolated(&isolation, || {
         git::run_network_in_no_repository_trusting_the_system(
             from,
             helper,
@@ -666,15 +687,20 @@ fn forge_of(url: &str) -> Option<crate::forge::Forge> {
 /// credential, whichever way the push spells it, so a push over SSH is answered too. Where the
 /// remote cannot be asked, `None`: the scan then reads all the push sends past the remote's
 /// side of each ref git named, up to [`UNASKED_AT_MOST`] commits.
-fn known_to(repo: &Path, url: &str) -> Option<Vec<String>> {
+fn known_to(
+    repo: &Path,
+    url: &str,
+    route: &dyn Fn() -> Option<git::NetworkRoute>,
+) -> Option<Vec<String>> {
     let forge = forge_of(url);
     let https = forge
         .as_ref()
         .and_then(|forge| crate::forge::https_of(url, forge));
     let helper = forge.as_ref().map(crate::forge::helper_for);
     match https {
-        Some(https) => address_has(repo, helper.as_deref(), &https),
-        None => address_has(repo, None, url),
+        // The chat's route is asked for only where the remote is on a forge purlis knows.
+        Some(https) => address_has(repo, helper.as_deref(), &https, route()),
+        None => address_has(repo, None, url, None),
     }
 }
 
@@ -727,7 +753,18 @@ fn is_nothing(oid: &str) -> bool {
 /// `Err` is input git did not write, a ref that is not a commit, or git failing to answer, all
 /// of which the caller refuses on.
 pub fn pushed(repo: &Path, url: &str, updates: &str) -> Result<Scan, String> {
-    match known_to(repo, url) {
+    pushed_through(repo, url, updates, &|| None)
+}
+
+/// [`pushed`], asking a remote on a forge purlis knows through the route `route` gives (called
+/// only then), as the chat's own git reaches it (#7302). `None` asks it as [`pushed`] does.
+pub fn pushed_through(
+    repo: &Path,
+    url: &str,
+    updates: &str,
+    route: &dyn Fn() -> Option<git::NetworkRoute>,
+) -> Result<Scan, String> {
+    match known_to(repo, url, route) {
         Some(known) => pushed_knowing(repo, updates, &known),
         None => pushed_without_asking(repo, updates),
     }
@@ -2884,7 +2921,10 @@ mod tests {
         testgit::run(&from, &["init", "-q"]);
         testgit::run(&from, &["config", &format!("url.{other}.insteadOf"), &url]);
 
-        assert_eq!(address_asked_from(&from, None, &url), Some(Vec::new()));
+        assert_eq!(
+            address_asked_from(&from, None, &url, None),
+            Some(Vec::new())
+        );
     }
 
     /// A ref the push deletes sends nothing, and what the remote had there is what it has: a new
