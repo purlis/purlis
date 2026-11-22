@@ -1109,14 +1109,10 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
              proxy\n{said}"
         );
         // The hold is the window's to show: an ask raised for the held connection, which the
-        // person kept blocked, or at least one the proxy wrote when it raised the hold. On Linux
-        // every leg showed one; on macOS the sandbox's block is written without an ask being
-        // listed in time (OpenCode's Full leg), so there the block above is what is asserted and
-        // the record says whether an ask was kept. That may hide a real gap, a held connection
-        // that raises no ask on macOS: #7368 holds it, and this carve-out goes when it is read.
+        // person kept blocked, or at least one the proxy wrote when it raised the hold. A leg
+        // whose held connection raised no ask at all has not shown the ask it is named for.
         assert!(
-            !cfg!(target_os = "linux")
-                || kept.get()
+            kept.get()
                 || events
                     .iter()
                     .any(|event| event.kind == purlis_core::eventlog::stops::ASK_RAISED),
@@ -1180,16 +1176,16 @@ fn probe(scenario: &Scenario, model: &Model, chat: u32, protection: Protection) 
     };
     assert_eq!(applied.level(), level, "{said}");
     // Where purlis wraps the harness, the wrap is composed: a leg that ran unwrapped would pass
-    // its cells for the wrong reason. Guaranteed at Full on both OSes and at the floor on Linux
-    // (Landlock and seccomp); the floor on macOS seems to compose no wrap program (unconfirmed,
-    // #7368), and no more than that is asserted for it.
+    // its cells for the wrong reason. `wrap_program` is Linux's notion alone (the program purlis
+    // checks and starts a chat under, Landlock and seccomp): macOS's Seatbelt is applied without
+    // one, so on macOS none is asserted for a harness purlis wraps, at either level.
     if holds_itself(dialect) {
         assert!(
             applied.wrap_program().is_none(),
             "{} holds itself and purlis wraps it too\n{said}",
             dialect.word()
         );
-    } else if protection == Protection::Full || cfg!(target_os = "linux") {
+    } else if cfg!(target_os = "linux") {
         assert!(
             applied.wrap_program().is_some(),
             "{} is not wrapped by purlis here, and it should be\n{said}",
@@ -1716,8 +1712,20 @@ mod tests {
                 !read(&second),
                 "{word}: chat 2 has no result of chat 1's step"
             );
-            std::fs::remove_dir_all(&dir).expect("the folder goes");
+            removed(&dir);
         }
+    }
+
+    /// A test's own folder, removed: the stand-in's server thread may still be writing a file into
+    /// it, so a folder that is not empty yet is tried again.
+    fn removed(dir: &Path) {
+        for _ in 0..50 {
+            if std::fs::remove_dir_all(dir).is_ok() || !dir.exists() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        std::fs::remove_dir_all(dir).expect("the folder goes");
     }
 
     /// **A real-harness scenario at Full whose canary never ran fails** (T1.1-10, review F1).
@@ -1864,7 +1872,7 @@ mod tests {
         assert_eq!(number_after(&late, "net-exit=", false), Some(56), "{late}");
         assert!(late.contains("refused"), "{late}");
         running.wait().expect("the call ends");
-        std::fs::remove_dir_all(&dir).expect("the folder goes");
+        removed(&dir);
     }
 
     /// **Only Claude Code on macOS holds itself** (T1.1-10): purlis wraps every other harness on
