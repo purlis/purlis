@@ -18,7 +18,7 @@
 //! pasted token. It checks the token with the forge (who it belongs to, and its scopes), refuses
 //! one missing a scope purlis needs and names that scope, then writes the keyring item and the
 //! account. Signing in again as the same login on the same host replaces the token and keeps the
-//! account. **Sign-out** ([`sign_out`]) deletes the keyring item and the account.
+//! account. **Sign-out** ([`sign_out`]) deletes the keyring item and keeps the account, signed out.
 //!
 //! **A browser sign-in** ([`sign_in_with_grant`], ADR 0077 §3) lands in the same two stores. What
 //! the forge granted (the device flow on github.com, [`super::device`]; PKCE on gitlab.com) is

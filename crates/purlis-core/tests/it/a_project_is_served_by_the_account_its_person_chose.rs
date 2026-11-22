@@ -267,3 +267,82 @@ fn signing_out_and_in_again_as_the_same_login_serves_the_repo_again_by_the_same_
         other => panic!("{other:?}"),
     }
 }
+
+/// A scene whose enterprise account served `acme/platform`, then signed out.
+fn signed_out_scene() -> (Scene, confirmed::ConfirmedRepo, tempfile::TempDir) {
+    let scene = scene();
+    let platform = tempfile::tempdir().unwrap();
+    let repo = confirmed::confirm(
+        &scope(),
+        scene.home.path(),
+        platform.path(),
+        &confirmed::Candidate {
+            kind: Kind::GitHub,
+            host: "github.com".into(),
+            path: "acme/platform".into(),
+            repo_id: 2002,
+        },
+        &scene.emu,
+        "Ov23litEn94I5HXrpdsX",
+    )
+    .unwrap();
+    let keyring = accounts::keyring_at(scene.home.path());
+    accounts::sign_out(&scope(), scene.home.path(), keyring.as_ref(), &scene.emu.id).unwrap();
+    (scene, repo, platform)
+}
+
+#[test]
+fn a_different_login_signed_in_after_a_sign_out_is_a_new_account_and_the_repo_stays_unserved() {
+    purlis_core::unsteered!();
+    let (scene, repo, _clone) = signed_out_scene();
+    let tokens = Tokens::default();
+    tokens.know("canaryOTHERtoken9d4", "octocat_other", "repo, read:org");
+    let keyring = accounts::keyring_at(scene.home.path());
+    let other = accounts::sign_in_with_grant(
+        &scope(),
+        scene.home.path(),
+        keyring.as_ref(),
+        &tokens.reach(),
+        Kind::GitHub,
+        "github.com",
+        grant_that_does_not_expire("canaryOTHERtoken9d4", "repo,read:org"),
+        Method::Device,
+        "Ov23litEn94I5HXrpdsX",
+    )
+    .unwrap();
+    assert_ne!(other.id, scene.emu.id);
+    assert_ne!(other.id, scene.personal.id);
+    let all = accounts::listed(scene.home.path()).unwrap();
+    assert!(matches!(
+        confirmed::account_for(scene.home.path(), &repo, &all),
+        Serving::ChosenIsSignedOut { .. }
+    ));
+}
+
+#[test]
+fn a_pasted_token_signed_in_again_does_not_serve_a_repo_bound_to_a_browser_sign_in() {
+    purlis_core::unsteered!();
+    let (scene, repo, _clone) = signed_out_scene();
+    let tokens = Tokens::default();
+    tokens.know("canaryPASTEDtoken1a7", "octocat_acme", "repo, read:org");
+    let keyring = accounts::keyring_at(scene.home.path());
+    let again = accounts::sign_in_with_token(
+        &scope(),
+        scene.home.path(),
+        keyring.as_ref(),
+        &tokens.reach(),
+        Kind::GitHub,
+        "github.com",
+        accounts::Pasted::new("canaryPASTEDtoken1a7".to_string()),
+    )
+    .unwrap();
+    assert_eq!(again.id, scene.emu.id, "the same login keeps its id");
+    let all = accounts::listed(scene.home.path()).unwrap();
+    assert!(
+        matches!(
+            confirmed::account_for(scene.home.path(), &repo, &all),
+            Serving::ApplicationChanged { .. }
+        ),
+        "a pasted token is not the application the repo was confirmed through"
+    );
+}

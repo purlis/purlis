@@ -275,9 +275,7 @@ pub async fn forge_accounts() -> Result<Vec<ForgeAccountRow>, String> {
         Ok(accounts::list(&root, keyring.as_ref())?
             .into_iter()
             .map(|account| {
-                let ci_allowed = account.state == State::SignedIn
-                    && accounts::workflow::availability(keyring.as_ref(), &account)
-                        == accounts::workflow::Availability::Ready;
+                let ci_allowed = ci_allowed(keyring.as_ref(), &account);
                 ForgeAccountRow {
                     ci_allowed,
                     ..ForgeAccountRow::from(account)
@@ -286,6 +284,15 @@ pub async fn forge_accounts() -> Result<Vec<ForgeAccountRow>, String> {
             .collect())
     })
     .await
+}
+
+/// Whether the second sign-in for CI files is given for `account`: GitHub only (GitLab has one
+/// token and no second to give), signed in, and the second token kept.
+fn ci_allowed(keyring: &dyn purlis_core::secrets::keyring::Store, account: &ForgeAccount) -> bool {
+    account.kind == Kind::GitHub
+        && account.state == State::SignedIn
+        && accounts::workflow::availability(keyring, account)
+            == accounts::workflow::Availability::Ready
 }
 
 /// The scopes a token needs on `kind` and the page that makes one on `host`, or why `host` is not
@@ -743,6 +750,41 @@ pub async fn forge_sign_out(id: String) -> Result<Option<bool>, String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ci_files_are_allowed_only_for_a_signed_in_github_account_that_holds_the_second_token() {
+        use super::*;
+        let home = tempfile::tempdir().unwrap();
+        let keyring = accounts::keyring_at(home.path());
+        let account = |kind, state| ForgeAccount {
+            id: "01J9CIALLOWED".into(),
+            kind,
+            host: "ci-allowed.example.com".into(),
+            login: "octocat".into(),
+            method: Method::Device,
+            state,
+            scopes: Some(vec!["repo".into()]),
+            client_id: None,
+        };
+        let github = account(Kind::GitHub, State::SignedIn);
+        assert!(
+            !ci_allowed(keyring.as_ref(), &github),
+            "no second token yet"
+        );
+        keyring
+            .set(&accounts::service(&github), "workflow", "second-token")
+            .unwrap();
+        assert!(ci_allowed(keyring.as_ref(), &github));
+        assert!(
+            !ci_allowed(keyring.as_ref(), &account(Kind::GitHub, State::SignedOut)),
+            "a signed-out account allows nothing"
+        );
+        assert!(
+            !ci_allowed(keyring.as_ref(), &account(Kind::GitLab, State::SignedIn)),
+            "GitLab has one token and no second to allow"
+        );
+        let _ = keyring.delete(&accounts::service(&github), "workflow");
+    }
+
     #[test]
     fn a_trouble_is_told_to_the_window_by_account_and_kind_and_nothing_else() {
         use purlis_core::forge::refresh::Trouble;

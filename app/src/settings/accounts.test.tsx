@@ -99,6 +99,15 @@ describe("You › Accounts › Forge accounts", () => {
     expect(within(again).getByText("browser; CI files allowed")).toBeTruthy();
   });
 
+  it("keeps the wider-than-needed note beside the CI files one", async () => {
+    accounts = [account("octocat", "github.com", { wider: ["gist"], ci_allowed: true })];
+    render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(
+      within(table).getByText("browser; wider than needed: gist; CI files allowed"),
+    ).toBeTruthy();
+  });
+
   it("signs an account out from its row, and lists what is left", async () => {
     render(<Accounts />);
     const table = await findGrid(screen, "Forge accounts");

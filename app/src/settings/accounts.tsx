@@ -27,7 +27,8 @@ import { signedCommits } from "./signing";
  * comes on screen and again after every sign-in and sign-out. A refusal is said in the row, in
  * the core's words.
  *
- * **Sign out** deletes the token from the keychain and takes the account off this machine. A
+ * **Sign out** deletes the token from the keychain and keeps the account's record, signed out, so
+ * signing in again as the same login gives its repos their account back. A
  * token the person made stays valid at the forge until they delete it there, which the row says
  * once it is done. A browser sign-in to gitlab.com is ended there too, and the row says so, or
  * says where to end it when GitLab could not be asked. One to GitHub cannot be revoked from
@@ -173,8 +174,9 @@ function note(account: ForgeAccountRow): string {
   if ((account.scopes ?? []).includes("workflow"))
     return "CI-file permission on the everyday sign-in: not given to chats";
   const how = account.method === "token" ? "token" : account.method;
-  if (account.ci_allowed) return `${how}; CI files allowed`;
-  return account.wider.length > 0 ? `${how}; wider than needed: ${account.wider.join(", ")}` : how;
+  const said =
+    account.wider.length > 0 ? `${how}; wider than needed: ${account.wider.join(", ")}` : how;
+  return account.ci_allowed ? `${said}; CI files allowed` : said;
 }
 
 const forgeAccounts: LiveSetting = {
