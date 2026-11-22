@@ -338,6 +338,22 @@ impl Repo {
     fn slug(&self) -> String {
         format!("{}/{}", self.owner, self.name)
     }
+
+    /// Whether `url` is this repository's own HTTPS address: `https://<host>/<owner>/<name>`,
+    /// with or without `.git` or a closing slash, and nothing else (no user, port, query or
+    /// fragment). What the app asks a remote of on a chat's behalf is held to this.
+    pub fn is_url(&self, url: &str) -> bool {
+        let Some((host, path)) = url
+            .strip_prefix("https://")
+            .and_then(|rest| rest.split_once('/'))
+        else {
+            return false;
+        };
+        let path = path.strip_suffix('/').unwrap_or(path);
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        // The wire's repo is lower-cased ([`AllowedRepo::path`]); a forge's path is not case-sensitive.
+        host.eq_ignore_ascii_case(&self.host) && path.eq_ignore_ascii_case(&self.slug())
+    }
 }
 
 /// **What the chat is routed to**, from slice A's endpoint and the chat's start.

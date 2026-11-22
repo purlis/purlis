@@ -91,9 +91,21 @@ type Held = (TokenKind, &'static str);
 struct FakeRecorded {
     repos: Mutex<HashMap<PathBuf, Vec<Recorded3>>>,
     accounts: Mutex<HashMap<(PathBuf, String), String>>,
+    /// The branches the app recorded a chat as having created, by chat id.
+    cut: Mutex<Vec<(String, String)>>,
 }
 
 impl FakeRecorded {
+    fn own_of(&self, chat: &str) -> Vec<String> {
+        lock(&self.cut)
+            .iter()
+            .filter(|(by, _)| by == chat)
+            .map(|(_, branch)| branch.clone())
+            .collect()
+    }
+    fn cut_for(&self, chat: &str, branch: &str) {
+        lock(&self.cut).push((chat.to_owned(), branch.to_owned()));
+    }
     fn record(&self, project: &str, repos: Vec<Recorded3>) {
         lock(&self.repos).insert(PathBuf::from(project), repos);
     }
@@ -106,6 +118,18 @@ impl FakeRecorded {
 }
 
 impl Recorded for FakeRecorded {
+    fn own_branches(&self, _: &Path, chat: &str, _: &AllowedRepo) -> Vec<String> {
+        lock(&self.cut)
+            .iter()
+            .filter(|(by, _)| by == chat)
+            .map(|(_, branch)| branch.clone())
+            .collect()
+    }
+    fn record_created(&self, chat: &str, created: &[(String, String, String)]) {
+        for (_, _, branch) in created {
+            lock(&self.cut).push((chat.to_owned(), branch.clone()));
+        }
+    }
     fn repos(&self, project: &Path) -> Vec<AllowedRepo> {
         lock(&self.repos)
             .get(project)
@@ -1571,6 +1595,105 @@ fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_othe
 }
 
 #[test]
+fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run() {
+    let scene = Scene::new();
+    let own = "https://github.com/acme/app.git";
+    // No run is committed to the session yet.
+    assert_eq!(
+        scene.routes.remote_refs(7, own).unwrap_err(),
+        "this chat has no forge route"
+    );
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    assert!(guard.params().is_some());
+    guard.commit(7);
+    let not_recorded = "that remote is not a repository recorded for this chat";
+    // Another host or repository is refused before anything is asked, however it is spelled.
+    for url in [
+        "https://github.com/acme/other.git",
+        "https://github.com/other/app.git",
+        "https://gitlab.example/acme/app.git",
+        "https://evil.example/github.com/acme/app.git",
+        "http://github.com/acme/app.git",
+        "https://user@github.com/acme/app.git",
+        "https://github.com/acme/app.git?x=1",
+        "git@github.com:acme/app.git",
+        "-u",
+        "",
+    ] {
+        assert_eq!(
+            scene.routes.remote_refs(7, url).unwrap_err(),
+            not_recorded,
+            "{url}"
+        );
+    }
+    // Another chat's number has no route of its own to ask by.
+    assert_eq!(
+        scene.routes.remote_refs(8, own).unwrap_err(),
+        "this chat has no forge route"
+    );
+    // The run's own repo passes the check and is asked on the run's route, never refused as
+    // unrecorded. The ask is a stand-in that answers nothing: git is never run here, so none of
+    // these can reach a real forge on the runner's network.
+    for url in [
+        own,
+        "https://github.com/acme/app",
+        "https://GitHub.com/acme/app/",
+    ] {
+        let mut asked = 0;
+        let why = scene
+            .routes
+            .remote_refs_asking(7, url, |_, _| {
+                asked += 1;
+                None
+            })
+            .unwrap_err();
+        assert_ne!(why, not_recorded, "{url}");
+        assert_eq!(asked, 1, "{url}");
+    }
+    scene.routes.stop("run-1");
+    assert_eq!(
+        scene.routes.remote_refs(7, own).unwrap_err(),
+        "this chat has no forge route"
+    );
+}
+
+#[test]
+fn the_refs_a_recorded_remote_has_are_what_the_ask_returns_on_the_runs_route() {
+    let scene = Scene::new();
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    assert!(guard.params().is_some());
+    guard.commit(7);
+    let tips = vec!["a".repeat(40), "b".repeat(40)];
+    let mut asked = Vec::new();
+    let got =
+        scene
+            .routes
+            .remote_refs_asking(7, "https://GitHub.com/Acme/App.git", |url, route| {
+                asked.push((url.to_owned(), format!("{route:?}")));
+                Some(tips.clone())
+            });
+    assert_eq!(got, Ok(tips));
+    let [(url, route)] = asked.as_slice() else {
+        panic!("asked once: {asked:?}")
+    };
+    assert_eq!(url, "https://GitHub.com/Acme/App.git");
+    assert!(route.contains("HTTPS_PROXY"), "{route}");
+    // An ask that fails is said, and one for an unrecorded repo is never made.
+    assert_eq!(
+        scene
+            .routes
+            .remote_refs_asking(7, "https://github.com/acme/app", |_, _| None),
+        Err("the remote could not be asked which commits it has".to_owned())
+    );
+    assert!(
+        scene
+            .routes
+            .remote_refs_asking(7, "https://github.com/acme/other", |_, _| panic!("asked"))
+            .is_err()
+    );
+}
+
+#[test]
 fn a_repo_on_a_pinned_forge_is_not_enrolled_and_a_project_with_only_pinned_repos_has_no_route() {
     // github.com pinned: the chat's route holds the GitLab repo and none of GitHub's.
     let scene = Scene::pinning(&["github.com"]);
@@ -1632,4 +1755,103 @@ fn the_apps_git_for_a_chat_goes_to_the_relay_that_proves_the_hand_off_and_never_
     let shown = format!("{route:?}");
     assert!(shown.contains(&format!("http://{relay}")), "{shown}");
     assert!(!shown.contains(&format!("http://{door}")), "{shown}");
+}
+
+// ---- a chat's own branches ----
+
+/// A push of `branch` (an update, so the branch exists on the forge already) through the run's
+/// route, as `git push` sends it.
+fn push_update(scene: &Scene, run: &str, sentinel: &str, branch: &str) -> Outcome {
+    send_raw(
+        scene,
+        run,
+        sentinel,
+        ("POST", "github.com", "/acme/app.git/git-receive-pack"),
+        "application/x-git-receive-pack-request",
+        &push_commands(&[(false, false, &format!("refs/heads/{branch}"))]),
+    )
+}
+
+#[test]
+fn a_branch_purlis_cut_for_the_chat_may_be_pushed_though_the_forge_has_it_already() {
+    let scene = Scene::new();
+    scene.recorded.cut_for("chat-1", "task/forms");
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    let pushed = push_update(&scene, "run-1", &params.sentinel, "task/forms");
+
+    assert!(matches!(pushed, Outcome::Forward(_)), "{pushed:?}");
+}
+
+#[test]
+fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
+    let scene = Scene::new();
+    scene.recorded.cut_for("chat-1", "task/forms");
+    scene.recorded.cut_for("chat-2", "task/other");
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    for branch in ["main", "task/other", "colleague"] {
+        let pushed = push_update(&scene, "run-1", &params.sentinel, branch);
+        assert!(
+            matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+            "{branch}: {pushed:?}"
+        );
+    }
+}
+
+/// A push that makes `branch`, which the forge's advertisement does not have, through the run's
+/// route.
+fn push_create(scene: &Scene, run: &str, sentinel: &str, branch: &str) -> Outcome {
+    let proxy = lock_live(scene, run);
+    proxy.note_advertised(
+        &ChatId::new(run),
+        "github.com",
+        "acme/app",
+        vec!["main".into()],
+    );
+    send_raw(
+        scene,
+        run,
+        sentinel,
+        ("POST", "github.com", "/acme/app.git/git-receive-pack"),
+        "application/x-git-receive-pack-request",
+        &push_commands(&[(true, false, &format!("refs/heads/{branch}"))]),
+    )
+}
+
+fn lock_live(scene: &Scene, run: &str) -> Arc<ForgeProxy> {
+    scene
+        .routes
+        .live()
+        .get(run)
+        .expect("a live route")
+        .proxy
+        .clone()
+}
+
+#[test]
+fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_for_that_chat() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let Outcome::Forward(made) = push_create(&scene, "run-1", &params.sentinel, "task/new") else {
+        panic!("a push that makes a branch is forwarded");
+    };
+    // Sent is not made: nothing is recorded until the forge says so.
+    assert!(scene.recorded.own_of("chat-1").is_empty());
+    lock_live(&scene, "run-1").confirm_push(&ChatId::new("run-1"), &made);
+    assert_eq!(scene.recorded.own_of("chat-1"), ["task/new"]);
+
+    // The same chat id, in a new run, owns it from the start: it may move it.
+    scene.routes.stop("run-1");
+    let again = scene.start("chat-1", "run-2", "/p/one");
+    let moved = push_update(&scene, "run-2", &again.sentinel, "task/new");
+    assert!(matches!(moved, Outcome::Forward(_)), "{moved:?}");
+
+    // A chat with another id (a resumed chat gets one) owns nothing: the route refuses its update.
+    let other = scene.start("chat-2", "run-3", "/p/one");
+    let refused = push_update(&scene, "run-3", &other.sentinel, "task/new");
+    assert!(
+        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        "{refused:?}"
+    );
 }

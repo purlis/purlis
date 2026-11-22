@@ -328,7 +328,12 @@ pub struct ForgeProxy {
     pin: Arc<dyn pin::Pin>,
     /// How `guards.merge` runs, asked on every merge a chat sends (ADR 0128 D8, 2026-11-22).
     merges: Arc<dyn mergestance::MergeStance>,
+    /// Told the branches the forge confirmed a push made: the app's own record of them.
+    created: Option<CreatedSink>,
 }
+
+/// What is told the `(host, repo path, branch)` triples a confirmed push made.
+pub type CreatedSink = Box<dyn Fn(&[(String, String, String)]) + Send + Sync>;
 
 impl ForgeProxy {
     pub fn new(credentials: Box<dyn CredentialSource>, objects: Box<dyn ObjectRepo>) -> Self {
@@ -341,6 +346,7 @@ impl ForgeProxy {
             held: None,
             pin: Arc::new(pin::NoPin),
             merges: Arc::new(mergestance::HoldMerges),
+            created: None,
         }
     }
 
@@ -351,6 +357,14 @@ impl ForgeProxy {
     #[must_use]
     pub fn with_merge_stance(mut self, merges: Arc<dyn mergestance::MergeStance>) -> Self {
         self.merges = merges;
+        self
+    }
+
+    /// Tell `sink` each branch the forge confirms a chat's push made, so the app can keep its own
+    /// record of what the chat created ([`crate::forge::createdbranches`]).
+    #[must_use]
+    pub fn with_created(mut self, sink: CreatedSink) -> Self {
+        self.created = Some(sink);
         self
     }
 
@@ -464,6 +478,11 @@ impl ForgeProxy {
             .cloned();
         if let Some(policy) = policy {
             policy.confirm_created(&forwarded.created);
+            if let Some(sink) = &self.created
+                && !forwarded.created.is_empty()
+            {
+                sink(&forwarded.created);
+            }
         }
     }
 
