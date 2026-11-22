@@ -1240,8 +1240,12 @@ fn the_audit_has_a_line_per_request_and_never_a_token_or_a_path() {
     let lines = scene.routes.audit_lines("run-1");
 
     assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(lines[0].contains("POST api.github.com acme/app") && lines[0].contains("Allowed"));
-    assert!(lines[1].contains("Refused(Merge)"));
+    assert!(lines[0].contains("POST api.github.com acme/app") && lines[0].contains("allowed"));
+    assert!(
+        lines[1].contains("blocked (merging is not allowed from a chat)"),
+        "{lines:?}"
+    );
+    assert!(!lines.join("\n").contains("Refused"), "{lines:?}");
     let all = lines.join("\n");
     for secret in [GITHUB_TOKEN, params.sentinel.as_str(), "zzz", "/pulls/7"] {
         assert!(!all.contains(secret), "{secret} is in the audit: {all}");
@@ -1262,10 +1266,19 @@ fn the_doctor_lists_what_a_projects_running_chats_were_refused_and_never_a_token
     // The refusal and its rule, under the chat's name; the allowed comment is not listed.
     assert!(
         row.detail.contains("chat-1: POST api.github.com acme/app")
-            && row.detail.contains("Refused(Merge)"),
+            && row
+                .detail
+                .contains("blocked (merging is not allowed from a chat)"),
         "{row:?}"
     );
-    assert!(!row.detail.contains("Allowed"), "{row:?}");
+    assert!(
+        !row.detail.contains("allowed\n") && !row.detail.contains(" allowed;"),
+        "{row:?}"
+    );
+    assert!(
+        !row.detail.contains("Refused") && !row.detail.contains("Merge)"),
+        "no internal type names: {row:?}"
+    );
     let all = format!("{} {}", row.detail, row.hint);
     for secret in [GITHUB_TOKEN, params.sentinel.as_str(), "zzz", "/pulls/7"] {
         assert!(!all.contains(secret), "{secret} is in the row: {all}");
@@ -1276,6 +1289,81 @@ fn the_doctor_lists_what_a_projects_running_chats_were_refused_and_never_a_token
 }
 
 #[test]
+fn a_hostile_host_is_never_shown_in_the_audit_or_the_doctor_row() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let hostile = [
+        "evil.example/pulls/7?x=1",
+        "api.github.com; chat-9: PUT api.github.com acme/app merge allowed",
+        "a\u{202e}moc.buhtig.ipa",
+        "api.github.com:99999999",
+        "api.github.com:80/x",
+        "",
+    ];
+    for host in hostile {
+        send_raw(
+            &scene,
+            "run-1",
+            &params.sentinel,
+            ("GET", host, "/user"),
+            "application/json",
+            b"",
+        );
+    }
+    let lines = scene.routes.audit_lines("run-1");
+    let row = scene.routes.refusals_row(Path::new("/p/one"));
+    for text in [lines.join("\n"), row.detail.clone()] {
+        for bad in ["evil", "pulls", "chat-9", "\u{202e}", "99999999", "/x"] {
+            assert!(!text.contains(bad), "{bad:?} got through: {text}");
+        }
+    }
+    assert!(lines.len() >= 3, "{lines:?}");
+    assert!(
+        lines.iter().all(|line| line.contains("(unreadable host)")),
+        "{lines:?}"
+    );
+    // A plain host name, with a port, is shown as it is.
+    assert_eq!(shown_host("git.example.com:8443"), "git.example.com:8443");
+    assert_eq!(shown_host("api.github.com"), "api.github.com");
+}
+
+#[test]
+fn an_audit_line_shows_a_host_only_when_it_is_a_host_name_and_names_no_internal_type() {
+    let record = |host: &str, verdict: Verdict| AuditRecord {
+        method: "GET".to_owned(),
+        host: host.to_owned(),
+        repo: None,
+        class: Some(Class::GraphqlMutation("secretName".to_owned())),
+        verdict,
+    };
+    for host in [
+        "evil.example/pulls/7?x=1",
+        "api.github.com; chat-9: PUT x merge allowed",
+        "a\u{202e}moc.buhtig.ipa",
+        "api.github.com:99999999",
+        "api.github.com:80/x",
+        "api.github.com:",
+        "",
+    ] {
+        let line = audit_line(&record(host, Verdict::Refused(Refusal::HostNotAllowed)));
+        assert_eq!(
+            line,
+            "GET (unreadable host) - GraphQL mutation blocked (the host is not one of the chat's \
+             repos' hosts)",
+            "{host:?}"
+        );
+    }
+    let line = audit_line(&record("git.example.com:8443", Verdict::Allowed));
+    assert_eq!(line, "GET git.example.com:8443 - GraphQL mutation allowed");
+    assert!(!line.contains("secretName"), "{line}");
+    let odd = AuditRecord {
+        method: "G\u{202e}T".to_owned(),
+        ..record("api.github.com", Verdict::Allowed)
+    };
+    assert!(audit_line(&odd).starts_with("(unreadable method) api.github.com"));
+}
+
+#[test]
 fn the_doctor_lists_only_the_newest_refusals_and_says_how_many_it_left_out() {
     let scene = Scene::new();
     let params = scene.start("chat-1", "run-1", "/p/one");
@@ -1283,8 +1371,16 @@ fn the_doctor_lists_only_the_newest_refusals_and_says_how_many_it_left_out() {
         merge(&scene, "run-1", &params.sentinel);
     }
     let row = scene.routes.refusals_row(Path::new("/p/one"));
-    assert_eq!(row.detail.matches("Refused(Merge)").count(), MOST_REFUSALS);
-    assert!(row.detail.contains("3 older refusals not shown"), "{row:?}");
+    assert_eq!(
+        row.detail
+            .matches("blocked (merging is not allowed")
+            .count(),
+        MOST_REFUSALS
+    );
+    assert!(
+        row.detail.contains("3 older blocked requests not shown"),
+        "{row:?}"
+    );
 }
 
 #[test]

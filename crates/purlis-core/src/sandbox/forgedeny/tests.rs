@@ -754,3 +754,29 @@ fn a_lookup_that_answers_in_time_is_returned_whole() {
     });
     assert_eq!(found, vec![ip("10.1.2.3")]);
 }
+
+#[test]
+fn a_name_whose_lookup_is_still_running_gets_no_second_thread() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static ASKED: AtomicUsize = AtomicUsize::new(0);
+    let slow = || {
+        super::bounded("one-thread.example", Duration::from_millis(50), |_| {
+            ASKED.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(600));
+            vec![ip("10.9.9.9")]
+        })
+    };
+    assert!(slow().is_empty(), "the first times out");
+    assert!(slow().is_empty(), "the second is a failed lookup at once");
+    assert_eq!(
+        ASKED.load(Ordering::SeqCst),
+        1,
+        "no second thread was started"
+    );
+    // The late answer ends the thread, and the name can be asked again.
+    std::thread::sleep(Duration::from_millis(900));
+    let found = super::bounded("one-thread.example", Duration::from_secs(10), |_| {
+        vec![ip("10.1.1.1")]
+    });
+    assert_eq!(found, vec![ip("10.1.1.1")]);
+}

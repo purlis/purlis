@@ -84,6 +84,9 @@ impl std::fmt::Debug for CiPushCredential {
 pub enum Outcome {
     /// The second token is kept, and the everyday one still lacks `workflow`.
     Kept,
+    /// The second token is kept, but an earlier code is still approvable, so the everyday token's
+    /// scopes stay unknown (and it is served to no chat) until that code has lapsed.
+    KeptAccountHeld,
     /// GitHub folded the scope into the everyday token. Nothing was kept; the account, with the
     /// scopes the forge now says it holds.
     Folded(ForgeAccount),
@@ -167,51 +170,136 @@ pub fn begin(_host: &HostScope, config_root: &Path, account: &ForgeAccount) -> R
     mark_unknown(config_root, account).map_err(|why| format!("{why} Nothing was started."))
 }
 
-/// The account field that records a second sign-in's code as still approvable: the time, in
-/// seconds since the epoch, after which GitHub has surely let it lapse.
-const FLOW_FIELD: &str = "ci_flow_until";
+/// The account field that records each second sign-in's code still approvable: an object of the
+/// code the person typed (`user_code`, which names the flow and is no secret) to the time, in
+/// seconds since the epoch, after which GitHub has surely let it lapse. **One entry per issued
+/// code**: pressing again while an earlier code is live adds a second entry, and each ends only
+/// its own.
+const FLOW_FIELD: &str = "ci_flows";
 
 /// A little past the code's own lifetime, for the time the forge and this machine disagree about.
 const FLOW_SLACK: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Whether an account's other fields (`rest` of the entry) say a CI-permission code may still be
-/// approved on the forge.
-pub(super) fn flow_pending(rest: &Map<String, Value>) -> bool {
-    rest.get(FLOW_FIELD)
-        .and_then(Value::as_u64)
-        .is_some_and(|until| until > now())
+/// What the record says of codes that may still be approved.
+enum Flows {
+    /// None: every recorded code has lapsed or ended.
+    None,
+    /// At least one, the latest of which lapses at this time.
+    Until(u64),
+    /// The field is there and cannot be read (an entry that is no time, or no object at all). A
+    /// code may be live and nothing says when it ends: **fails closed**, as pending.
+    Unreadable,
 }
 
-/// **Records that `account`'s CI-permission code stays approvable for `lasts`** (it was started
-/// by [`begin`]'s caller). Cancelling the wait or quitting purlis does not end the code at
+fn flows_of(rest: &Map<String, Value>) -> Flows {
+    let now = now();
+    match rest.get(FLOW_FIELD) {
+        None => Flows::None,
+        Some(Value::Object(codes)) => {
+            let mut latest = 0;
+            for until in codes.values() {
+                match until.as_u64() {
+                    Some(until) => latest = latest.max(until),
+                    None => return Flows::Unreadable,
+                }
+            }
+            if latest > now {
+                Flows::Until(latest)
+            } else {
+                Flows::None
+            }
+        }
+        Some(_) => Flows::Unreadable,
+    }
+}
+
+/// Whether an account's other fields (`rest` of the entry) say a CI-permission code may still be
+/// approved on the forge: **any** code unexpired, or a record that cannot be read.
+pub(super) fn flow_pending(rest: &Map<String, Value>) -> bool {
+    !matches!(flows_of(rest), Flows::None)
+}
+
+/// What a person is told when `account`'s sign-in cannot be believed because a CI-permission code
+/// may still be approved, or `None` when none can. It says how long to wait, from the record.
+pub fn waiting_said(config_root: &Path, account: &ForgeAccount) -> Option<String> {
+    let file = read(config_root).ok()?;
+    let fields = file
+        .accounts
+        .iter()
+        .find(|value| account_of(value).is_some_and(|a| a.id == account.id))
+        .and_then(Value::as_object)?;
+    let how_long = match flows_of(fields) {
+        Flows::None => return None,
+        Flows::Until(until) => {
+            let minutes = until.saturating_sub(now()).div_ceil(60).max(1);
+            if minutes == 1 {
+                "about a minute".to_string()
+            } else {
+                format!("about {minutes} minutes")
+            }
+        }
+        Flows::Unreadable => "up to about 15 minutes".to_string(),
+    };
+    Some(format!(
+        "A code you started for CI files on {} can still be allowed for {how_long}, so purlis \
+         cannot tell what a sign-in as {} may do and gives the account to no chat. Wait until \
+         it expires, then sign in again here.",
+        account.host, account.login
+    ))
+}
+
+/// What a flow that ended without a kept token tells the person to do: the wait if a code is
+/// still live ([`waiting_said`]), else [`HELD_BACK`].
+pub fn held_back(config_root: &Path, account: &ForgeAccount) -> String {
+    waiting_said(config_root, account).unwrap_or_else(|| HELD_BACK.to_string())
+}
+
+/// **Records that `account`'s CI-permission code `code` stays approvable for `lasts`** (it was
+/// started by [`begin`]'s caller). Cancelling the wait or quitting purlis does not end the code at
 /// GitHub: approving it later can still widen the everyday grant, and a sign-in made meanwhile
-/// would read clean scopes. Until the code has lapsed ([`dead`] says earlier that it has) a
-/// sign-in records the account's scopes as not known. If this cannot be written the flow must
-/// not be shown.
+/// would read clean scopes. Until every code has lapsed ([`dead`] says earlier that one has) a
+/// sign-in records the account's scopes as not known. A second code never shortens the first's
+/// record. If this cannot be written the flow must not be shown.
 pub fn pending(
     _host: &HostScope,
     config_root: &Path,
     account: &ForgeAccount,
+    code: &str,
     lasts: std::time::Duration,
 ) -> Result<(), String> {
     if account.kind != Kind::GitHub {
         return Ok(());
     }
     let until = now().saturating_add((lasts + FLOW_SLACK).as_secs());
-    set_flow(config_root, account, Some(until))
+    edit_flows(config_root, account, code, Some(until))
 }
 
-/// **Records that `account`'s CI-permission code is dead** (GitHub said it expired or that the
-/// person refused it): nothing can be approved any more, so a sign-in is believed again. The
-/// account's scopes stay unknown until a retry reads them back or a new sign-in records them.
-pub fn dead(_host: &HostScope, config_root: &Path, account: &ForgeAccount) -> Result<(), String> {
+/// **Records that `account`'s CI-permission code `code` is dead** (GitHub said it expired or that
+/// the person refused it, or it was used): it alone can be approved no more. Another code may
+/// still be live, and then a sign-in is still not believed. The account's scopes stay unknown
+/// until a retry reads them back or a new sign-in records them.
+pub fn dead(
+    _host: &HostScope,
+    config_root: &Path,
+    account: &ForgeAccount,
+    code: &str,
+) -> Result<(), String> {
     if account.kind != Kind::GitHub {
         return Ok(());
     }
-    set_flow(config_root, account, None)
+    edit_flows(config_root, account, code, None)
 }
 
-fn set_flow(config_root: &Path, account: &ForgeAccount, until: Option<u64>) -> Result<(), String> {
+/// Adds `code` lapsing at `until` to the record of codes, or (`None`) retires it, under the one
+/// writing lock: lapsed codes are dropped and an empty record is removed. A record that is not an
+/// object is **replaced only by a code just issued**; a retirement leaves it, so it keeps
+/// counting as pending.
+fn edit_flows(
+    config_root: &Path,
+    account: &ForgeAccount,
+    code: &str,
+    until: Option<u64>,
+) -> Result<(), String> {
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let fields = file
@@ -220,10 +308,29 @@ fn set_flow(config_root: &Path, account: &ForgeAccount, until: Option<u64>) -> R
         .find(|value| account_of(value).is_some_and(|a| a.id == account.id))
         .and_then(Value::as_object_mut)
         .ok_or_else(|| "That account is not on this machine any more.".to_string())?;
-    match until {
-        Some(until) => fields.insert(FLOW_FIELD.to_string(), Value::from(until)),
-        None => fields.remove(FLOW_FIELD),
+    let mut codes = match fields.get(FLOW_FIELD) {
+        None => Map::new(),
+        Some(Value::Object(codes)) => codes.clone(),
+        Some(_) if until.is_none() => return Ok(()),
+        Some(_) => Map::new(),
     };
+    match until {
+        Some(until) => {
+            let kept = codes.get(code).and_then(Value::as_u64).unwrap_or(0);
+            codes.insert(code.to_string(), Value::from(until.max(kept)));
+        }
+        None => {
+            codes.remove(code);
+        }
+    }
+    let now = now();
+    // An entry that is no time is kept: it cannot be shown to have lapsed.
+    codes.retain(|_, until| until.as_u64().is_none_or(|until| until > now));
+    if codes.is_empty() {
+        fields.remove(FLOW_FIELD);
+    } else {
+        fields.insert(FLOW_FIELD.to_string(), Value::Object(codes));
+    }
     write(config_root, file)
 }
 
@@ -253,6 +360,7 @@ pub fn keep(
     keyring: &dyn Store,
     reach: Reach<'_>,
     account: &ForgeAccount,
+    code: &str,
     granted: Granted,
 ) -> Result<Outcome, String> {
     if account.kind != Kind::GitHub {
@@ -265,11 +373,15 @@ pub fn keep(
     // Whatever the caller did, nothing below can leave the everyday token served on a path that
     // ends early: the account is not known to be clean until the read-back at the end says so.
     begin(host, config_root, account)?;
+    // The code was approved, so it can fold nothing more in: it alone is retired. Another code the
+    // person started earlier may still be live ([`Outcome::KeptAccountHeld`]).
+    dead(host, config_root, account, code)?;
+    let held_back = held_back(config_root, account);
     let second = granted.access.clone();
     crate::applog::keep_out(&second);
     if second.expose_secret().is_empty() {
         return Err(format!(
-            "{} gave no token, so purlis kept nothing. {HELD_BACK}",
+            "{} gave no token, so purlis kept nothing. {held_back}",
             account.host
         ));
     }
@@ -283,7 +395,7 @@ pub fn keep(
         .map_err(|why| unechoed(why, &second))?;
     if checked.login != account.login {
         return Err(format!(
-            "The code was confirmed as {} on {}, not as {}, so purlis kept nothing. {HELD_BACK} \
+            "The code was confirmed as {} on {}, not as {}, so purlis kept nothing. {held_back} \
              Confirm the code while signed in to GitHub as {}.",
             checked.login, forge.host, account.login, account.login
         ));
@@ -295,8 +407,7 @@ pub fn keep(
         .unwrap_or_default();
     if !grants(Kind::GitHub, &granted_scopes, SCOPE) {
         return Err(format!(
-            "{} did not allow {SCOPE}, so purlis kept nothing. {HELD_BACK} Try again, and allow it on the \
-             page GitHub shows.",
+            "{} did not allow {SCOPE}, so purlis kept nothing. {held_back} Allow it on the page GitHub shows.",
             forge.host
         ));
     }
@@ -341,17 +452,26 @@ pub fn keep(
         return Ok(Outcome::Folded(account));
     }
 
-    // A clean read-back is the only thing that records what the everyday token holds again, so a
-    // retry after an unknown outcome serves it once more.
-    set_scopes(config_root, account, scopes.clone())?;
+    // A clean read-back records what the everyday token holds again, so a retry after an unknown
+    // outcome serves it once more, **unless another code is still live**: that one can fold
+    // `workflow` in unseen, so the scopes stay unknown until it has lapsed.
+    let recorded = write_scopes(config_root, account, Some(scopes.clone()), true)?;
     keyring
         .set(&service(account), ITEM, second.expose_secret())
         .map_err(|e| unechoed(e.message.to_string(), &second))?;
-    Ok(Outcome::Kept)
+    Ok(if recorded.is_some() {
+        Outcome::Kept
+    } else {
+        Outcome::KeptAccountHeld
+    })
 }
 
 /// What a sign-in's `account` is told when its scopes are not known.
-pub fn scopes_unknown_said(account: &ForgeAccount) -> String {
+pub fn scopes_unknown_said(config_root: &Path, account: &ForgeAccount) -> String {
+    // A code still approvable is the cause, and signing in again records unknown again: say wait.
+    if let Some(wait) = waiting_said(config_root, account) {
+        return wait;
+    }
     if matches!(account.method, Method::Pat | Method::Import) {
         // A pasted token (a fine-grained one never says) has no sign-in to repeat.
         return format!(
@@ -407,7 +527,8 @@ fn set_scopes(
     account: &ForgeAccount,
     scopes: Vec<String>,
 ) -> Result<ForgeAccount, String> {
-    write_scopes(config_root, account, Some(scopes))
+    write_scopes(config_root, account, Some(scopes), false)?
+        .ok_or_else(|| "That account is not on this machine any more.".to_string())
 }
 
 /// `account` with its scopes recorded as not known.
@@ -415,14 +536,16 @@ pub(super) fn clear_scopes(
     config_root: &Path,
     account: &ForgeAccount,
 ) -> Result<ForgeAccount, String> {
-    write_scopes(config_root, account, None)
+    write_scopes(config_root, account, None, false)?
+        .ok_or_else(|| "That account is not on this machine any more.".to_string())
 }
 
 fn write_scopes(
     config_root: &Path,
     account: &ForgeAccount,
     scopes: Option<Vec<String>>,
-) -> Result<ForgeAccount, String> {
+    unless_pending: bool,
+) -> Result<Option<ForgeAccount>, String> {
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let at = file
@@ -433,15 +556,15 @@ fn write_scopes(
     let Some(Value::Object(fields)) = file.accounts.get_mut(at) else {
         return Err("That account is not on this machine any more.".to_string());
     };
+    if unless_pending && flow_pending(fields) {
+        return Ok(None);
+    }
     match scopes {
         Some(scopes) => {
             fields.insert(
                 "scopes".to_string(),
                 serde_json::to_value(&scopes).unwrap_or(Value::Null),
             );
-            // A read-back that says what the token holds follows a code that was used: it can
-            // be approved no more.
-            fields.remove(FLOW_FIELD);
         }
         None => {
             fields.remove("scopes");
@@ -452,5 +575,5 @@ fn write_scopes(
     write(config_root, file)?;
     // What it was told of this account was about the scopes before: told afresh if it holds again.
     crate::forge::refresh::forget_raised(&account.id);
-    Ok(updated)
+    Ok(Some(updated))
 }

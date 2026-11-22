@@ -174,10 +174,13 @@ folded it in) is refused by `SignedIn` itself, and the window draws a Notice fro
 scopes header), and an everyday token whose read-back after a second grant failed or said nothing,
 may hold `workflow`, so the account is served to no chat and a Notice says why, until a read-back
 says what it holds. **A second sign-in's code stays approvable on GitHub after the person cancels or
-purlis quits**, so the account records it (`ci_flow_until`, in `forge-accounts.json`) and a sign-in
-made until the code has lapsed records its scopes as not known too. A code GitHub says is dead (it
-expired, or was refused) ends that record, and the scopes stay unknown until a retry or a new
-sign-in reads them.
+purlis quits**, so the account records each code issued (`ci_flows`, in `forge-accounts.json`, one
+entry per code with the time it lapses) and a sign-in made while any code is unexpired records its
+scopes as not known too (a record that cannot be read counts as unexpired). A code GitHub says is
+dead (it expired, was refused, or was used) ends **its own entry only**: while another is live, a
+second token's clean read-back, a refusal or a sign-in leaves the scopes unknown, and the words say
+to wait for the earlier code to expire (about how long, from the record) and then sign in again.
+Once none is live, the scopes stay unknown until a retry or a new sign-in reads them.
 
 **A chat's sandbox keeps a forge's addresses from the chat** (`sandbox::forgedeny`): a name it resolves
 to, and the ranges a forge publishes (GitHub's, vendored). **A forge with no published ranges** (GitLab,

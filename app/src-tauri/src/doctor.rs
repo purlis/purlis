@@ -651,14 +651,14 @@ fn forge_route(_: &std::path::Path) -> Option<DoctorRow> {
     None
 }
 
-/// `forge refusals`: what the routes of this project's running chats refused lately, and why
+/// `forge blocks`: what the routes of this project's running chats blocked lately, and why
 /// (#7358). The app's own row, as `forge route` is: the audit is the running proxy's, in the
 /// app's memory.
 #[cfg(feature = "forge-wiring")]
 fn forge_refusals(root: &std::path::Path) -> Option<DoctorRow> {
     let said = crate::forgeroute::routes()?.refusals_row(root);
     Some(DoctorRow {
-        name: "forge refusals".to_owned(),
+        name: "forge blocks".to_owned(),
         status: DoctorStatus::Ok,
         detail: said.detail,
         hint: said.hint,

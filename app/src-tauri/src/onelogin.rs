@@ -555,7 +555,13 @@ pub async fn forge_ci_permission_start(account_id: String) -> Result<ForgeDevice
             &scopes,
         )?;
         // The code stays approvable on GitHub whatever happens to this window, until it lapses.
-        workflow::pending(&scope, &root, &account, started.expires_in)?;
+        workflow::pending(
+            &scope,
+            &root,
+            &account,
+            &started.user_code,
+            started.expires_in,
+        )?;
         let number = next_flow_number();
         let code = ForgeDeviceCode {
             flow: number,
@@ -618,31 +624,46 @@ pub async fn forge_ci_permission_wait(flow: u32) -> Result<CiPermissionAnswer, S
         // GitHub's own word that the code is over (it lapsed, or the person refused it) ends
         // the pending record. A cancel or a failed poll does not: the code may still be approved.
         if matches!(granted, Err(device::Ended::Denied | device::Ended::Expired)) {
-            workflow::dead(&scope, &root, &account)?;
+            workflow::dead(&scope, &root, &account, &started.user_code)?;
         }
+        // What the person does next is read from the record: another code of theirs may still be
+        // live, and then a new sign-in would only record unknown again.
+        let next = workflow::held_back(&root, &account);
         let granted = granted.map_err(|why| match why {
             device::Ended::Denied => {
                 format!(
-                    "You didn't allow it on GitHub. A push that changes a CI file stays held. {}",
-                    workflow::HELD_BACK
+                    "You didn't allow it on GitHub. A push that changes a CI file stays held. {next}"
                 )
             }
-            device::Ended::Expired => format!(
-                "The code expired before you allowed it on GitHub. {}",
-                workflow::HELD_BACK
-            ),
-            device::Ended::Cancelled => "You cancelled. GitHub's code still works until it expires, \
-                so your chats cannot use this account until then, or until you try again or sign \
-                in again."
-                .to_string(),
-            device::Ended::Failed(why) => format!("{why} {}", workflow::HELD_BACK),
+            device::Ended::Expired => {
+                format!("The code expired before you allowed it on GitHub. {next}")
+            }
+            // A cancel leaves the code live, so the record always has the wait to name.
+            device::Ended::Cancelled => format!("You cancelled. {next}"),
+            device::Ended::Failed(why) => format!("{why} {next}"),
         })?;
-        match workflow::keep(&scope, &root, keyring.as_ref(), &token_check, &account, granted)? {
+        match workflow::keep(
+            &scope,
+            &root,
+            keyring.as_ref(),
+            &token_check,
+            &account,
+            &started.user_code,
+            granted,
+        )? {
             workflow::Outcome::Kept => Ok(CiPermissionAnswer {
                 state: "ready".to_string(),
                 says: format!(
                     "{} may now push CI files when you approve one. Nothing pushes one without that.",
                     account.login
+                ),
+            }),
+            workflow::Outcome::KeptAccountHeld => Ok(CiPermissionAnswer {
+                state: "ready".to_string(),
+                says: format!(
+                    "{} may now push CI files when you approve one. {}",
+                    account.login,
+                    workflow::held_back(&root, &account)
                 ),
             }),
             workflow::Outcome::Folded(_) => Ok(CiPermissionAnswer {

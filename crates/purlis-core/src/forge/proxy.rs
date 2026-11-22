@@ -717,7 +717,10 @@ impl ForgeProxy {
                 {
                     Ok(next) => match &first {
                         None => first = Some(next),
-                        Some(held) if held.account == next.account => {}
+                        // Both name an account, and the same one. A source that names none says
+                        // nothing about who it serves, so two such answers are **not** the same
+                        // account (`None == None` must not pass for a future source).
+                        Some(held) if held.account.is_some() && held.account == next.account => {}
                         Some(_) => outcome = Err(CredentialError::Unavailable),
                     },
                     Err(why) => outcome = Err(why),

@@ -496,9 +496,25 @@ fn system(name: &str) -> Vec<IpAddr> {
     })
 }
 
+/// The names a lookup thread is still running for. **One thread in flight per name**: a name
+/// that does not answer would otherwise leave a thread per new connection behind it, each held
+/// by the system resolver's own timeout.
+static IN_FLIGHT: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+/// Takes `name` off [`IN_FLIGHT`] when the lookup thread ends, however it ends.
+struct Asking(String);
+
+impl Drop for Asking {
+    fn drop(&mut self) {
+        let mut asking = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        asking.retain(|name| *name != self.0);
+    }
+}
+
 /// `ask`'s answer for `name`, run on a thread of its own and waited for at most `wait`. **A
 /// timeout is a failed lookup**: it answers nothing, so the name stays refused by name, nothing
 /// is held as empty (the name is asked again after [`NEGATIVE`]), and the late answer is dropped.
+/// **A name already being asked on an earlier thread is a failed lookup too**, with no new thread.
 fn bounded(
     name: &str,
     wait: Duration,
@@ -506,9 +522,18 @@ fn bounded(
 ) -> Vec<IpAddr> {
     let (send, receive) = std::sync::mpsc::channel();
     let name = name.to_owned();
+    {
+        let mut asking = IN_FLIGHT.lock().unwrap_or_else(|e| e.into_inner());
+        if asking.contains(&name) {
+            return Vec::new();
+        }
+        asking.push(name.clone());
+    }
+    let guard = Asking(name.clone());
     let spawned = std::thread::Builder::new()
         .name("forge-lookup".to_owned())
         .spawn(move || {
+            let _guard = guard;
             // The receiver is gone once the wait is over: the late answer is dropped.
             let _ = send.send(ask(&name));
         });
