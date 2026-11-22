@@ -77,6 +77,16 @@ pub enum Attendance {
     Unattended,
 }
 
+impl Attendance {
+    /// The word the event log and the briefing say it in.
+    pub fn word(self) -> &'static str {
+        match self {
+            Self::Attended => "attended",
+            Self::Unattended => "unattended",
+        }
+    }
+}
+
 /// What [`covers`] answers an unattended chat.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Answer {

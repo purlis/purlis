@@ -5125,6 +5125,25 @@ impl Planes {
                     }
                 }
             }));
+            // A fact lowered is said to the log's recorder, so a clear's run and a child's say
+            // `unattended` too (R-107).
+            chats.when_attendance_is_lowered(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session| {
+                    let lowered = events.record(purlis_core::eventlog::Entry::Attendance {
+                        plane: root.clone(),
+                        number: session,
+                        attendance: purlis_core::dispatchunattended::Attendance::Unattended
+                            .word()
+                            .to_owned(),
+                    });
+                    if let Err(why) = lowered {
+                        tracing::warn!(
+                            "purlis: a lowered attendance was not told to the event log ({why})"
+                        );
+                    }
+                }
+            }));
             // A start put aside is taken back: its program's later lines are of no run (#2252).
             chats.when_a_held_start_is_settled(Box::new(move |session, how| {
                 let plane = root.clone();

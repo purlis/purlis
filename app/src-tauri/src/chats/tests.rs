@@ -12980,6 +12980,48 @@ fn a_chat_its_record_kept_unattended_relaunches_unattended() {
     }
 }
 
+/// T1.1-40 (#6887): the run a start begins carries the attendance fact that start just held, as
+/// its word: red if the announce stops writing it into the run's attributes.
+#[test]
+fn a_start_says_the_attendance_fact_it_held_in_the_run_it_begins() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut chats, _wrote) = recorded();
+    chats.on_device(Some(DEVICE.to_owned()));
+    let said: std::sync::Arc<Mutex<Vec<Option<String>>>> = std::sync::Arc::default();
+    let keep = std::sync::Arc::clone(&said);
+    chats.when_a_run_begins(Box::new(move |_, _, _, attributes, _| {
+        lock(&keep).push(attributes.attendance.clone());
+    }));
+
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+
+    assert!(!held_unattended(&chats, session), "a person's chat");
+    assert_eq!(*lock(&said), [Some("attended".to_owned())]);
+    chats.end_all();
+}
+
+/// R-107 (T1.1-40, #6887): a fact a report lowers is told to the event log's recorder once, so
+/// the runs after it say `unattended`; a report that moves nothing tells nothing.
+#[test]
+fn a_report_that_lowers_the_fact_is_told_to_the_event_log_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (chats, _wrote) = recorded();
+    let told: std::sync::Arc<Mutex<Vec<u32>>> = std::sync::Arc::default();
+    let keep = std::sync::Arc::clone(&told);
+    chats.when_attendance_is_lowered(Box::new(move |session| lock(&keep).push(session)));
+    let session = chats
+        .start(&chat(&a_claude(dir.path()), "ide.7", None), SIZE)
+        .unwrap();
+
+    chats.heard_attendance(&a_bypass_report(session));
+    chats.heard_attendance(&a_bypass_report(session));
+
+    assert_eq!(*lock(&told), [session]);
+    chats.end_all();
+}
+
 #[test]
 fn a_report_that_lowers_the_fact_is_written_down() {
     let dir = tempfile::tempdir().unwrap();

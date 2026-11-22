@@ -326,7 +326,7 @@ pub(crate) fn deadline_past(hold: Duration) -> Duration {
 
 /// The app's number for the chat this runs in, as `purlis session record` reads it: the hook
 /// variable, else the session id the app sets to the same number.
-fn chat_number(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
+pub(crate) fn chat_number(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
     [crate::hookwire::CHAT_ENV, crate::active::SESSION_ID_ENV]
         .into_iter()
         .filter_map(env)

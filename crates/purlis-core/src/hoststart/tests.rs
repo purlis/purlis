@@ -923,3 +923,14 @@ fn the_file_cap_holds_to_the_byte_and_for_a_chat_with_no_id() {
         .is_err()
     );
 }
+
+/// R-106: a run the host composes on a runner says `unattended`; anywhere else the host holds no
+/// attendance fact, so the run says nothing (`unknown` in the log), never `attended`.
+#[test]
+fn a_run_composed_on_a_runner_is_unattended_and_elsewhere_holds_no_fact() {
+    assert_eq!(
+        attendance_of_a_host_start(true).as_deref(),
+        Some("unattended")
+    );
+    assert_eq!(attendance_of_a_host_start(false), None);
+}

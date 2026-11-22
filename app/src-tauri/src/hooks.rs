@@ -3481,6 +3481,23 @@ impl Hooks {
             .map_err(|why| format!("the event log refused it: {why}"))
     }
 
+    /// **Audits a change of the project's level** (`trust.sandbox.level`, R-228) in the host's
+    /// event log, under no chat and made durable before it answers. Refused where this machine
+    /// has no event log open, or the log refused it.
+    pub fn record_level_changed(
+        &self,
+        root: &Path,
+        changed: &purlis_core::sandbox::personal::LevelChanged,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            None,
+            changed.kind(),
+            changed.body(),
+            ("recorded", "change of level"),
+        )
+    }
+
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
     /// `number` where it was allowed from one, and made durable before it answers. Refused
     /// where this machine has no event log open: a grant nobody recorded is never made.
