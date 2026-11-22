@@ -220,6 +220,12 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   segment, a shell or string runner, a substitution or here-document, an unnameable repo or any
   `gh api` without a `repos/o/r` path is `Unreadable`, and `guard::judged_without_a_chat` refuses it
   wherever `answers::anchored_roots()` is not empty.
+- The proof infrastructure (M75-09) is `crates/purlis-core/tests/it/policy_proof/`: `PolicyInput`,
+  `Batch`/`Cell`, `engine` (over `decide::decide`) and `oracle` (its own file, straight to
+  `policy::Policy::decide`). A cell's context must carry every field its action's schema type
+  declares (`merge` needs `via`), or both sides answer a deny with no rule. Its test run is
+  `cargo test -p purlis-core --test it -- the_policy_proof_infrastructure`, about 30 s warm; macOS
+  `sed -i` needs `-i ''`.
 - The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
   registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
   unreadable outside the app.

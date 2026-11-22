@@ -42,6 +42,8 @@ mod shipped_literals;
 #[path = "../support/mod.rs"]
 mod support;
 
+mod policy_proof;
+
 mod a4_reads_the_attendance_fact;
 mod a_blocks_reason_is_held_in_memory_and_sent_to_the_window_never_logged;
 mod a_branch_expands_into_its_files;
@@ -340,6 +342,7 @@ mod the_plane_root_guards_answer_what_the_python_answers;
 mod the_plane_root_lists_the_project_but_what_purlis_keeps;
 mod the_policy_levels_and_their_files;
 mod the_policy_limits_are_typed_and_stricter_wins;
+mod the_policy_proof_infrastructure;
 mod the_press_is_made_only_by_the_windows_command_layer;
 mod the_profiles_a_wrapped_chat_starts_under_are_written_out;
 mod the_record_brings_a_profile_back;
