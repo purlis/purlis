@@ -1694,7 +1694,7 @@ fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_f
     let moved = push_update(&scene, "run-2", &again.sentinel, "task/new");
     assert!(matches!(moved, Outcome::Forward(_)), "{moved:?}");
 
-    // A chat with another id (a resumed chat gets one) owns nothing: fast-forward only.
+    // A chat with another id (a resumed chat gets one) owns nothing: the route refuses its update.
     let other = scene.start("chat-2", "run-3", "/p/one");
     let refused = push_update(&scene, "run-3", &other.sentinel, "task/new");
     assert!(

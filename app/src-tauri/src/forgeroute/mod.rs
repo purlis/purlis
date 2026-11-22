@@ -184,8 +184,8 @@ pub trait Recorded: Send + Sync {
     fn account(&self, project: &Path, host: &str) -> Option<String>;
     /// The branches of `repo` that the chat `chat` itself created through the route, from the
     /// app's own record of them: which the chat may push although they exist on the forge. Any
-    /// doubt is none: a branch not named here is moved by fast-forward only, and the chat's id is
-    /// the key, so a chat with another id owns none of them.
+    /// doubt is none: the route refuses any update to a branch not named here (the person pushes it),
+    /// and the chat's id is the key, so a chat with another id owns none of them.
     fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
         Vec::new()
     }

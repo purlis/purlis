@@ -201,7 +201,7 @@ impl Recorded for ConfirmedRecorded {
         if let Err(why) =
             purlis_core::forge::createdbranches::record(&self.config_root, chat, created)
         {
-            // Unrecorded, the branch is moved by fast-forward only: safe, and said here.
+            // Unrecorded, the route refuses every later update to the branch: safe, and said here.
             tracing::warn!("purlis: a branch a chat created was not recorded ({why})");
         }
     }

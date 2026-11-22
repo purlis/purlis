@@ -7,12 +7,14 @@
 //! or never fetched). The cut also refuses a name a remote has, as a courtesy.
 
 use crate::support;
+use crate::support::forge_listener::{Answer, World, basic, pkt};
 
 use std::path::Path;
 
 use purlis_core::forge::createdbranches;
 use purlis_core::piececlaim::{self, Act, Live, Writer};
 use purlis_core::pieces::Who;
+use purlis_core::sandbox::{self, Compiled, Level, Machine, Os, grant};
 use purlis_core::worktree::{self, Located, Refusal};
 
 const CHAT: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
@@ -103,7 +105,9 @@ fn a_hand_written_claim_line_makes_a_chat_the_folders_holder_and_no_branch_its_o
         Act::Commit,
     );
     assert_eq!(writer, Writer::Yours);
-    // ...and that makes no branch its own.
+    // ...and that makes no branch its own: the app's record is not written from the log, and a
+    // line a chat forged for itself into the one file it can reach is not read as a creation.
+    assert!(!createdbranches::file_in(config.path()).exists());
     assert!(own(config.path(), CHAT).is_empty());
 }
 
@@ -128,6 +132,7 @@ fn taking_a_free_folder_on_an_existing_branch_makes_it_no_ones_own() {
     )
     .unwrap();
 
+    assert!(!createdbranches::file_in(config.path()).exists());
     assert!(own(config.path(), CHAT).is_empty());
 }
 
@@ -146,6 +151,7 @@ fn a_remote_ref_that_is_deleted_or_never_fetched_lets_the_name_be_cut_and_still_
     );
     worktree::add(&f.plane, &f.ws, &f.repo, "spoof", Some("m75-policy")).unwrap();
 
+    assert!(!createdbranches::file_in(config.path()).exists());
     assert!(own(config.path(), CHAT).is_empty());
 }
 
@@ -162,4 +168,128 @@ fn a_branch_recorded_as_created_is_its_creating_chats_own_and_no_other_chats() {
     assert_eq!(own(config.path(), CHAT), ["task/one"]);
     // A resumed chat has another id: it owns none, and may fast-forward the branch only.
     assert!(own(config.path(), OTHER).is_empty());
+}
+
+fn record_line(chat: &str, branch: &str) -> String {
+    format!(
+        "{}\n",
+        serde_json::json!({"chat": chat, "host": HOST, "repo": REPO, "branch": branch})
+    )
+}
+
+#[test]
+fn a_line_forged_for_another_chats_id_is_not_own_for_this_chat() {
+    let config = tempfile::tempdir().unwrap();
+    createdbranches::record(
+        config.path(),
+        OTHER,
+        &[(HOST.to_owned(), REPO.to_owned(), "task/theirs".to_owned())],
+    )
+    .unwrap();
+    // A line a chat appended by hand, naming the other chat, in the file the route reads.
+    let file = createdbranches::file_in(config.path());
+    let mut text = std::fs::read_to_string(&file).unwrap();
+    text.push_str(&record_line(OTHER, "task/forged"));
+    std::fs::write(&file, text).unwrap();
+
+    assert!(own(config.path(), CHAT).is_empty());
+    assert_eq!(own(config.path(), OTHER), ["task/theirs", "task/forged"]);
+}
+
+#[test]
+fn the_record_file_is_in_a_folder_the_floor_denies_a_chat_to_write() {
+    let config = tempfile::tempdir().unwrap();
+    let project = tempfile::tempdir().unwrap();
+    let machine = Machine {
+        env: purlis_core::secrets::Env::of(&[(
+            "XDG_CONFIG_HOME",
+            &config.path().display().to_string(),
+        )]),
+        home: Some(std::path::PathBuf::from("/nonexistent-home/op")),
+        os: Os::MacOs,
+    };
+    let compiled = Compiled::floor(project.path(), &machine, &grant::Grants::default());
+    assert_eq!(compiled.level, Level::Floor);
+    let denied =
+        |path: std::path::PathBuf| sandbox::covering(&compiled.denied.paths, &[path]).is_some();
+
+    // Where the record is kept, and where it was kept in the first version of this change
+    // (`<config>/forge-created-branches.jsonl`, beside purlis's folder and not in it).
+    assert!(denied(createdbranches::file_in(config.path())));
+    assert!(!denied(config.path().join("forge-created-branches.jsonl")));
+}
+
+/// A route whose confirmed branches are written to `config`, and a push of `branch` through it.
+fn push_through(w: &World, branch: &str, old: &str, answer: Answer) -> u16 {
+    let new = "1".repeat(40);
+    let line = format!("{old} {new} refs/heads/{branch}\0 report-status side-band-64k agent=git/2");
+    let body = format!("{}0000PACK....", pkt(&line));
+    let request = format!(
+        "POST /acme/app.git/git-receive-pack HTTP/1.1\r\nHost: github.com\r\nAuthorization: {}\r\nContent-Type: application/x-git-receive-pack-request\r\nContent-Length: {}\r\n\r\n{body}",
+        basic("x-access-token", w.sentinel.expose()),
+        body.len()
+    );
+    let ca = purlis_core::forge::proxy::listener::ChatCa::new(&w.proxy.terminable_hosts(&w.chat))
+        .unwrap();
+    w.fake.answer(answer);
+    support::forge_listener::tls(w, &ca, "github.com", 443, "github.com", request.as_bytes())
+        .expect("a handshake")
+        .status
+}
+
+#[test]
+fn a_refused_or_failed_push_leaves_no_record_on_disk_and_an_accepted_one_leaves_it() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    let zero = "0".repeat(40);
+    let file = createdbranches::file_in(config.path());
+
+    // The forge says `ng`.
+    let ng = Answer::ok(&format!(
+        "{}{}0000",
+        pkt("unpack ok\n"),
+        pkt("ng refs/heads/mine rejected\n")
+    ));
+    assert_eq!(push_through(&w, "mine", &zero, ng), 200);
+    assert!(!file.exists(), "an ng is no creation");
+
+    // The forge answers with an error status, even with an `ok` body.
+    let ok = || {
+        Answer::ok(&format!(
+            "{}{}0000",
+            pkt("unpack ok\n"),
+            pkt("ok refs/heads/mine\n")
+        ))
+    };
+    assert_eq!(push_through(&w, "mine", &zero, ok().status(502)), 502);
+    assert!(!file.exists(), "a non-200 is no creation");
+    assert!(own(config.path(), "chat-listener").is_empty());
+
+    // The forge takes it: the record is on disk, under this chat's id only.
+    assert_eq!(push_through(&w, "mine", &zero, ok()), 200);
+    assert_eq!(own(config.path(), "chat-listener"), ["mine"]);
+    assert!(own(config.path(), CHAT).is_empty());
+}
+
+#[test]
+fn a_create_that_differs_from_a_branch_the_forge_has_only_in_case_is_refused() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    w.proxy.note_advertised(
+        &w.chat,
+        "github.com",
+        "acme/app",
+        vec!["main".into(), "fix".into()],
+    );
+    let ok = Answer::ok(&format!(
+        "{}{}0000",
+        pkt("unpack ok\n"),
+        pkt("ok refs/heads/Fix\n")
+    ));
+
+    assert_eq!(push_through(&w, "Fix", &"0".repeat(40), ok), 403);
+    assert!(w.fake.requests().is_empty(), "never sent");
+    assert!(!createdbranches::file_in(config.path()).exists());
 }
