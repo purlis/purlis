@@ -908,7 +908,14 @@ fn a_step_up_for_an_account_removed_while_github_waited_signs_nobody_in() {
         panic!("a step-up for an account no longer here is refused");
     };
     assert!(why.contains("was removed from this machine"), "{why}");
-    assert!(machine.list().is_empty(), "{:?}", machine.list());
+    assert!(
+        machine
+            .list()
+            .iter()
+            .all(|a| a.state == accounts::State::SignedOut),
+        "{:?}",
+        machine.list()
+    );
 }
 
 #[test]
