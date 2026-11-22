@@ -1182,7 +1182,11 @@ fn probe(scenario: &Scenario, model: &Model, chat: u32, protection: Protection) 
         !holds_itself(dialect),
         "{} is {}wrapped by purlis here, and it should {}be\n{said}",
         dialect.word(),
-        if applied.wrap_program().is_some() { "" } else { "not " },
+        if applied.wrap_program().is_some() {
+            ""
+        } else {
+            "not "
+        },
         if holds_itself(dialect) { "not " } else { "" },
     );
     // The process is the real binary, and the stand-in model answered it.
