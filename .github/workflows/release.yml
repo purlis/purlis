@@ -137,7 +137,7 @@ jobs:
   # on its `green`: the runner image and its signature, the runner binaries, `sbom`, `manifest`,
   # `provenance`, `publish` and `symbols`. Two jobs do not, so they can compile while `ci` runs:
   # `build` and `runner-binary-aarch64` start at once and each has a step that makes the same wait
-  # (`tools/wait-for-ci.sh`) before its first step that signs or uploads, which ends the job on a
+  # (a step of its own, written out in the workflow) before its first step that signs or uploads, which ends the job on a
   # red `ci`. `plan` and `keys` hold nothing and publish nothing, so they do not wait either.
   # `crates/release-manifest` holds each of those rules on a workflow broken on purpose. Every
   # other way in (a tag, the profile guard, a build by hand) passes at once, here and in those
@@ -168,10 +168,21 @@ jobs:
             echo "green=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # One call reads status and conclusion, tried three times: an API error is not an answer.
+          ask() {
+            for try in 1 2 3; do
+              if out=$(gh run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then
+                echo "$out"
+                return 0
+              fi
+              sleep $((try * 15))
+            done
+            return 1
+          }
           # The push started `ci` and this run together; give its run a few minutes to be listed.
           id=""
           for _ in $(seq 1 30); do
-            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id=""
             [ -n "$id" ] && break
             sleep 10
           done
@@ -180,9 +191,10 @@ jobs:
           # The watch's own exit says little (it ends nonzero for a red run and for a lost
           # connection alike), so the run's state is read again after it.
           gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          status=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)
-          conclusion=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)
+          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"; exit 1; }
+          read -r status conclusion <<< "$state"
           [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }
+          # A cancelled or red `ci` is `green=false`, never green.
           if [ "$conclusion" = success ]; then
             echo "green=true" >> "$GITHUB_OUTPUT"
           else
@@ -513,7 +525,7 @@ jobs:
     # The job that reads the signing keys, so it runs in the `release` environment whenever
     # it builds something that is published — and only then (see `keys`).
     environment: ${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}
-    # To ask which `ci` run is this commit's (`tools/wait-for-ci.sh`).
+    # To ask which `ci` run is this commit's.
     permissions:
       contents: read
       actions: read
@@ -785,13 +797,56 @@ jobs:
       # running; nothing below signs or uploads until it has ended green (R2, #7381). A red or
       # cancelled `ci`, or one that never ended, ends the job here, so nothing is signed, nothing is
       # uploaded and `publish` never runs. Every other way in (a tag, a build by hand, the nightly)
-      # passes at once, as `gate` passes it. The `gh` lines are `gate`'s own, in
-      # `tools/wait-for-ci.sh`, and a test holds the two together.
+      # passes at once, as `gate` passes it. The step is a copy of `gate`'s asking, hardened (a shell
+      # without `BASH_ENV`, a fixed `PATH`, the runner's own `gh`), and written out here and not run
+      # from a file: the commit's code has already run in this job. A test holds the step's text.
       - name: Wait for this commit's ci on main, before anything is signed or uploaded
         env:
           GH_TOKEN: ${{ github.token }}
           DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: tools/wait-for-ci.sh
+        # The script is this step's own text, never a file of the checkout, which the commit's
+        # code has already run beside. The shell is the runner's own, without the file
+        # `BASH_ENV` names or a profile, and the script fixes `PATH` and takes `gh` from it.
+        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          if [ "$DEV" != true ]; then
+            echo "Not a push to main: nothing to wait for."
+            exit 0
+          fi
+          PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
+          gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }
+          case "$gh" in
+            /usr/bin/gh | /usr/local/bin/gh | /opt/homebrew/bin/gh) ;;
+            *) echo "::error::gh resolves to $gh, which is not the runner's own, so nothing is signed or uploaded"; exit 1 ;;
+          esac
+          # One call reads status and conclusion, tried three times: an API error is not an answer.
+          ask() {
+            for try in 1 2 3; do
+              if out=$("$gh" run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then
+                echo "$out"
+                return 0
+              fi
+              sleep $((try * 15))
+            done
+            return 1
+          }
+          # The push started `ci` and this run together; give its run a few minutes to be listed.
+          id=""
+          for _ in $(seq 1 30); do
+            id=$("$gh" run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id=""
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
+          echo "Waiting for ci run $id of $GITHUB_SHA."
+          # The watch's own exit says little (it ends nonzero for a red run and for a lost
+          # connection alike), so the run's state is read again after it.
+          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
+          read -r status conclusion <<< "$state"
+          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          [ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }
+          echo "ci run $id of $GITHUB_SHA ended success."
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -1490,7 +1545,49 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        run: tools/wait-for-ci.sh
+        # The script is this step's own text, never a file of the checkout, which the commit's
+        # code has already run beside. The shell is the runner's own, without the file
+        # `BASH_ENV` names or a profile, and the script fixes `PATH` and takes `gh` from it.
+        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          if [ "$DEV" != true ]; then
+            echo "Not a push to main: nothing to wait for."
+            exit 0
+          fi
+          PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
+          gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }
+          case "$gh" in
+            /usr/bin/gh | /usr/local/bin/gh | /opt/homebrew/bin/gh) ;;
+            *) echo "::error::gh resolves to $gh, which is not the runner's own, so nothing is signed or uploaded"; exit 1 ;;
+          esac
+          # One call reads status and conclusion, tried three times: an API error is not an answer.
+          ask() {
+            for try in 1 2 3; do
+              if out=$("$gh" run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then
+                echo "$out"
+                return 0
+              fi
+              sleep $((try * 15))
+            done
+            return 1
+          }
+          # The push started `ci` and this run together; give its run a few minutes to be listed.
+          id=""
+          for _ in $(seq 1 30); do
+            id=$("$gh" run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id=""
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
+          echo "Waiting for ci run $id of $GITHUB_SHA."
+          # The watch's own exit says little (it ends nonzero for a red run and for a lost
+          # connection alike), so the run's state is read again after it.
+          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
+          read -r status conclusion <<< "$state"
+          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          [ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }
+          echo "ci run $id of $GITHUB_SHA ended success."
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: purlis-runner-unsigned-linux-aarch64-${{ needs.plan.outputs.version }}
@@ -2125,7 +2222,7 @@ jobs:
   symbols:
     name: debug symbols to the Report intake
     needs: [gate, plan, keys, build]
-    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.keys.result == 'success' }}
     environment: release
     continue-on-error: true
     runs-on: ubuntu-24.04

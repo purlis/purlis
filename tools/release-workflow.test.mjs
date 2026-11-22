@@ -169,10 +169,12 @@ test("the gate answers green only when this commit's own ci, on its push to main
     'if [ "$DEV" != true ]; then',
     'echo "green=true" >> "$GITHUB_OUTPUT"',
     "exit 0",
-    'id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq \'.[0].databaseId // empty\')',
+    // One call reads both, three tries; a cancelled ci is `green=false`, never green.
+    'if out=$(gh run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq \'.status + " " + (.conclusion // "none")\'); then',
+    'id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq \'.[0].databaseId // empty\') || id=""',
     'gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true',
-    'status=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)',
-    'conclusion=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)',
+    'state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"; exit 1; }',
+    'read -r status conclusion <<< "$state"',
     '[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }',
     'if [ "$conclusion" = success ]; then',
     'echo "green=true" >> "$GITHUB_OUTPUT"',
@@ -462,7 +464,7 @@ test("the debug symbols go up in a job of their own that never holds a release b
   // its symbols; never in a cancelled run.
   assert.equal(
     value(symbols, 4, "if"),
-    "${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' }}",
+    "${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.keys.result == 'success' }}",
   );
   // A red here leaves the run green, and nothing that publishes waits on it.
   assert.equal(value(symbols, 4, "continue-on-error"), "true");
