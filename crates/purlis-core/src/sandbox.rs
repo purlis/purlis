@@ -1515,7 +1515,7 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
 /// path so it is neither removed nor replaced, as well as by its target. A chat changes its
 /// branch folder's copy and commits it; the root's is read at `HEAD`, and a change that loosens
 /// it waits for the person's press ([`crate::policy::selfchange`]).
-pub fn policy_file_held(root: &Path) -> Vec<Denial> {
+pub fn policy_file_held(root: &Path, folds_case: bool) -> Vec<Denial> {
     let mut out: Vec<Denial> = Vec::new();
     for spelled in [real(root), root.to_path_buf()] {
         let denial = Denial {
@@ -1524,7 +1524,7 @@ pub fn policy_file_held(root: &Path) -> Vec<Denial> {
             access: Access::Write,
             named: None,
             reach: Reach::AndBelow,
-            any_case: false,
+            any_case: folds_case,
         };
         if !out.contains(&denial) {
             out.push(denial);
@@ -2060,7 +2060,7 @@ impl Denied {
         paths.extend(manifests_held(root, None));
         // …and the project's policy rules (M75-16): the policy that governs a chat is not the
         // chat's to write.
-        paths.extend(policy_file_held(root));
+        paths.extend(policy_file_held(root, machine.os == Os::MacOs));
         // …and every workspace's manifest (#2046): the app reads a workspace's repos and
         // settings from it, so only the app and the person write it.
         paths.extend(workspace_manifests_held(root));

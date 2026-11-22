@@ -107,7 +107,11 @@ The window only says the policy; the app resolves it, as below.
   table or the rules changes nothing until you press Accept, if it loosens. A branch folder's copy
   of the file is never read, and is the chat's to edit and commit. The refusal reads the words of
   the call: a shell can spell a path no reading sees, so the sandbox is what holds a chat that
-  tries.
+  tries, and **a chat that runs without a sandbox has no second hold**: only that reading stands
+  between it and the file. Where a sandboxed Claude Code chat edits `[policy]` in the settings
+  file with a file tool, the edit becomes a proposed change you apply in the window, not a
+  refusal; `policy.cedar` is refused. The hold fails closed: where a guard that runs it times
+  out, crashes or answers unreadably, the call is refused, under every mode.
 - **Your local settings file can only make a family stricter.**
 - **An administrator's lock wins.** `/etc/purlis/policy.json`'s `enforcement` list names families
   that are always enforced on that machine, and its other locks keep their own families enforced.

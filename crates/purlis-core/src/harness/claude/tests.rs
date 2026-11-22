@@ -2146,7 +2146,9 @@ fn a_start_that_skips_the_policy_arms_every_guard_failing_closed() {
 }
 
 #[test]
-fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
+fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy_but_not_the_policy_hold() {
+    // The Bash and edit guards also hold a chat's write to the policy (M75-16), enforced under
+    // every mode, so they block even under `open`.
     use crate::enforcement::{Mode, Resolved, Settings};
     let open = Resolved::of(
         &Settings::from_text(Some("[policy]\ntemplate = \"open\"\n")),
@@ -2155,9 +2157,9 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
     assert_eq!(
         guards_failing(&under_policy(armed_args(), &open, false)),
         pairs([
-            ("pretooluse", "continue"),
+            ("pretooluse", "block"),
             ("pretooluse-read", "continue"),
-            ("pretooluse-edit", "continue"),
+            ("pretooluse-edit", "block"),
             ("pretooluse-dispatch", "continue"),
         ])
     );
@@ -2170,7 +2172,7 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
         pairs([
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
-            ("pretooluse-edit", "continue"),
+            ("pretooluse-edit", "block"),
             // `guards.shape`, the dispatch guard's family, switches since Q308b's nine did
             // (#7104), so where it is enforced a dead dispatch guard refuses too.
             ("pretooluse-dispatch", "block"),
@@ -2184,10 +2186,11 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
     // counts as an enforced family, so where they name a program a dead Bash guard refuses
     // rather than lets the call run. Only the Bash guard reads them.
     use crate::enforcement::{Resolved, Settings};
-    // Under `watch` the Bash guard refuses with no rule as well: it judges the sandbox, which
+    // The Bash guard blocks under every template now, for the policy hold; the rule that names
+    // a program no longer tells the two apart. Under `watch` the Bash guard refuses with no rule as well: it judges the sandbox, which
     // `watch` runs at the floor (ruling Q327). Under `open` there is no sandbox.
     for (text, bash_alone) in [
-        ("[policy]\ntemplate = \"open\"\n", "continue"),
+        ("[policy]\ntemplate = \"open\"\n", "block"),
         (
             "[policy]\nsecrets = \"log\"\nguards.credential = \"log\"\n",
             "block",
@@ -2202,7 +2205,7 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
             pairs([
                 ("pretooluse", bash_alone),
                 ("pretooluse-read", "continue"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]),
             "{text}, no rule names a program"
@@ -2212,7 +2215,7 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
             pairs([
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]),
             "{text}, a rule names a program"

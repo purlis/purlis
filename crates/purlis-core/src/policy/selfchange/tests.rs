@@ -114,9 +114,6 @@ fn a_chats_write_to_the_policy_file_is_held_only_at_the_plane_root() {
     ] {
         assert_eq!(p.shell(command, &p.branch), None, "{command}");
     }
-    // A tool that is not a write is no write.
-    let file = p.root.join("policy.cedar").display().to_string();
-    assert_eq!(p.tool("Read", json!({"file_path": file}), &p.branch), None);
 }
 
 #[test]
@@ -222,5 +219,172 @@ fn a_command_that_names_a_policy_file_and_cannot_be_read_is_held() {
         "xargs -I{} cp {} policy.cedar < list",
     ] {
         assert_eq!(p.shell(command, &p.branch), Some(Held::File), "{command}");
+    }
+}
+
+#[test]
+fn a_redirection_in_front_of_the_command_or_after_a_reader_is_a_write() {
+    let p = plane();
+    let root = p.root.display();
+    for command in [
+        format!("> {root}/policy.cedar"),
+        format!(">{root}/policy.cedar"),
+        format!(">> {root}/policy.cedar printf x"),
+        format!("2>/dev/null > {root}/policy.cedar"),
+        format!("cat x > {root}/policy.cedar"),
+        format!("cat x >| {root}/policy.cedar"),
+        format!("cat x &> {root}/policy.cedar"),
+    ] {
+        assert_eq!(p.shell(&command, &p.branch), Some(Held::File), "{command}");
+    }
+    assert_eq!(
+        p.shell("> policy.cedar", &p.root),
+        Some(Held::File),
+        "a bare redirection at the root"
+    );
+    // Output sent elsewhere, or a descriptor copied, writes no policy file.
+    for command in [
+        format!("cat {root}/policy.cedar > out.txt"),
+        format!("cat {root}/policy.cedar 2>&1"),
+        "> policy.cedar".to_owned(),
+    ] {
+        assert_eq!(p.shell(&command, &p.branch), None, "{command}");
+    }
+}
+
+#[test]
+fn a_git_reader_that_writes_with_output_is_a_write() {
+    let p = plane();
+    let root = p.root.display();
+    for command in [
+        format!("git -C {root} diff --output=policy.cedar"),
+        format!("git -C {root} show HEAD --output policy.cedar"),
+        format!("git -C {root} log --out=policy.cedar"),
+        format!("git diff --output={root}/policy.cedar"),
+        format!("git -C {root} diff --output=purlis.toml"),
+    ] {
+        assert!(p.shell(&command, &p.branch).is_some(), "{command}");
+    }
+    // The same readers without it stay readers.
+    assert_eq!(
+        p.shell(&format!("git -C {root} diff policy.cedar"), &p.branch),
+        None
+    );
+}
+
+#[test]
+fn a_settings_file_copied_into_the_root_is_held_like_the_rules() {
+    let p = plane();
+    let root = p.root.display();
+    for command in [
+        format!("cp x/purlis.toml {root}/"),
+        format!("mv ../x/purlis.local.toml {root}"),
+        format!("git -C {root} checkout main -- purlis.toml"),
+    ] {
+        assert_eq!(p.shell(&command, &p.branch), Some(Held::Table), "{command}");
+    }
+    // The branch folder's own copy is the chat's.
+    assert_eq!(p.shell("git checkout main -- purlis.toml", &p.branch), None);
+    assert_eq!(p.shell("cp x/purlis.toml .", &p.branch), None);
+}
+
+#[test]
+fn a_spelling_in_other_case_is_the_same_file_where_the_file_system_folds_case() {
+    let p = plane();
+    let root = p.root.display().to_string();
+    let upper = format!("{root}/POLICY.cedar");
+    let settings = format!("{root}/Purlis.toml");
+    let from = p.branch.to_string_lossy().into_owned();
+    let tool = |fold: bool, file: &str| {
+        by_tool_folding(
+            fold,
+            &p.root,
+            &from,
+            "Write",
+            &json!({"file_path": file, "content": "x"}),
+            &[file.to_owned()],
+        )
+    };
+    assert_eq!(tool(true, &upper), Some(Held::File));
+    assert_eq!(tool(true, &settings), Some(Held::Table));
+    assert_eq!(tool(false, &upper), None);
+    for command in [
+        format!("echo x > {upper}"),
+        format!("echo x > {root}/policy.CEDAR"),
+        format!("cp a {root}/POLICY.CEDAR"),
+    ] {
+        assert_eq!(
+            by_command_folding(true, &p.root, &from, &command),
+            Some(Held::File),
+            "{command}"
+        );
+        assert_eq!(
+            by_command_folding(false, &p.root, &from, &command),
+            None,
+            "{command}"
+        );
+    }
+    assert_eq!(
+        by_command_folding(
+            true,
+            &p.root,
+            &from,
+            &format!("sed -i '' s/a/b/ {settings}")
+        ),
+        Some(Held::Table)
+    );
+}
+
+#[test]
+fn a_tool_that_is_not_a_file_tool_is_held_on_the_path_alone() {
+    let p = plane();
+    let from = p.branch.to_string_lossy().into_owned();
+    for (file, held) in [("policy.cedar", Held::File), ("purlis.toml", Held::Table)] {
+        let file = p.root.join(file).display().to_string();
+        let held_at_it = by_tool(&p.root, &from, "NotebookEdit", &json!({}), &[file]);
+        assert_eq!(held_at_it, Some(held));
+    }
+    let copy = p.branch.join("policy.cedar").display().to_string();
+    assert_eq!(
+        by_tool(&p.root, &from, "NotebookEdit", &json!({}), &[copy]),
+        None
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_to_the_policy_file_is_the_policy_file() {
+    let p = plane();
+    let real = p.root.join("policy.cedar");
+    std::os::unix::fs::symlink(&real, p.branch.join("link.cedar")).expect("a link");
+    // By a file tool, and by a shell command that writes through it.
+    assert_eq!(
+        p.tool(
+            "Write",
+            json!({"file_path": "link.cedar", "content": "x"}),
+            &p.branch
+        ),
+        Some(Held::File)
+    );
+    for command in [
+        "echo x > link.cedar",
+        "cat x > link.cedar",
+        "tee link.cedar < x",
+    ] {
+        assert_eq!(p.shell(command, &p.branch), Some(Held::File), "{command}");
+    }
+    assert_eq!(p.shell("cat link.cedar", &p.branch), None);
+}
+
+#[test]
+fn a_shell_write_with_cat_into_the_policy_file_is_held() {
+    let p = plane();
+    let root = p.root.display();
+    for command in [
+        format!("cat x > {root}/policy.cedar"),
+        format!("cat a b >> {root}/policy.cedar"),
+        format!("cd {root} && cat x > policy.cedar"),
+    ] {
+        assert_eq!(p.shell(&command, &p.branch), Some(Held::File), "{command}");
     }
 }
