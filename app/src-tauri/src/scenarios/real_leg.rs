@@ -829,7 +829,9 @@ pub(crate) fn canary(scenario: &Scenario, model: &Model) {
                 "one refused write and one refused connect, by {}",
                 holder(dialect)
             ),
-            &why,
+            // What the harness showed the model of each command, as the stand-in heard it: a
+            // result the transcript reads as empty says here what the harness really sent.
+            &format!("{why}\n{}", model.heard_said()),
         );
     }
     let tamper = StepResult::of(scenario.result_of(chat, "canary-transcript").as_ref());
