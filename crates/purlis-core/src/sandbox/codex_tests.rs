@@ -369,6 +369,36 @@ fn the_profile_writes_the_chat_directory_its_temp_and_only_what_a_codex_turn_wri
     )));
 }
 
+/// #7352: SQLite takes `fcntl` locks, which `(deny default)` refuses as `file-lock` and
+/// `file-write*` does not give, so Codex could not create or migrate `state_5.sqlite`. The lock
+/// is given for Codex's stores in its home and nothing else.
+#[test]
+fn the_profile_lets_codex_lock_its_sqlite_stores_and_nothing_else() {
+    let plane = plane_saying(ON);
+    let cwd = plane.path().join("w");
+    std::fs::create_dir(&cwd).expect("a workspace");
+    let home = tempfile::tempdir().expect("a home");
+    let applied = codex_start(plane.path(), &machine_at(home.path(), Os::MacOs))
+        .expect("starts")
+        .expect("sandboxed");
+    let confinement = applied.confine().expect("confined").expect("a wrap");
+    let line = line_in(&applied, &cwd, "", &confinement).expect("starts");
+    let c = real(&chat_home(plane.path(), home.path()))
+        .display()
+        .to_string()
+        .replace('.', "\\\\.");
+    let locks: Vec<&str> = line.args[1]
+        .lines()
+        .filter(|rule| rule.contains("file-lock"))
+        .collect();
+    assert_eq!(
+        locks,
+        [format!(
+            "(allow file-lock (regex \"^{c}/[a-z_]+_[0-9]+\\\\.sqlite(-wal|-shm|-journal)?$\"))"
+        )]
+    );
+}
+
 #[test]
 fn a_codex_chat_runs_in_its_profiles_folder_and_the_operators_home_follows_codex_home() {
     // #2037, D-88q as amended 2026-10-15: the folder of the profile for sandboxed chats only,
@@ -1002,6 +1032,44 @@ mod live {
         .expect("sandbox-exec runs")
         .status
         .success()
+    }
+
+    /// #7352: what Codex does to `state_5.sqlite` (create it, switch it to WAL, migrate it, write
+    /// through the journal and `-shm`) with the system's own `sqlite3`, which takes the same
+    /// `fcntl` locks, under the full profile. `echo` never locks, so the test above could not see
+    /// the lock refused.
+    #[test]
+    fn codex_creates_and_migrates_its_sqlite_state_with_wal_under_the_full_profile() {
+        let wrapped = Wrapped::new();
+        let cwd = wrapped.plane.path().join("w");
+        std::fs::create_dir(&cwd).expect("a workspace");
+        let line = wrapped.line(&cwd);
+        let codex = chat_home(wrapped.plane.path(), wrapped.home.path());
+        let at = |script: &str| format!("cd '{}' && {script}", codex.display());
+        let sql = "/usr/bin/sqlite3 state_5.sqlite";
+        assert!(
+            ran_in(
+                &line,
+                &cwd,
+                &at(&format!(
+                    "{sql} \"PRAGMA journal_mode=WAL; CREATE TABLE threads(id INTEGER PRIMARY KEY); \
+                     INSERT INTO threads DEFAULT VALUES; PRAGMA user_version=1;\" \
+                     && {sql} \"ALTER TABLE threads ADD COLUMN title TEXT; PRAGMA user_version=2; \
+                     BEGIN; INSERT INTO threads(title) VALUES('x'); COMMIT;\" \
+                     && test \"$({sql} 'SELECT count(*) FROM threads')\" = 2"
+                )),
+            ),
+            "a SQLite store could not be created and migrated"
+        );
+        // The lock is for the stores alone: any other file in the home is still locked out.
+        assert!(
+            !ran_in(
+                &line,
+                &cwd,
+                &at("/usr/bin/sqlite3 config.sqlite 'CREATE TABLE t(a)'")
+            ),
+            "a file that is no store was written"
+        );
     }
 
     struct Wrapped {

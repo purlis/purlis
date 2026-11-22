@@ -205,8 +205,10 @@ const JUDGED: [&str; 14] = [
 
 /// Operations purlis writes rules for that this module does not judge. `file-read-xattr`, a
 /// file's extended attributes, is denied below a plane outside a Regenerate run's code (#6120);
-/// the supervisor judges no read of them, so that rule holds on macOS alone.
-const SET_ASIDE: [&str; 18] = [
+/// the supervisor judges no read of them, so that rule holds on macOS alone. `file-lock`, an
+/// `fcntl` lock (SQLite's, #7352), is Seatbelt's own: on Linux a lock needs nothing beyond
+/// opening the file and Landlock has no lock right, so the rule grants nothing here.
+const SET_ASIDE: [&str; 19] = [
     "process-fork",
     "process-info*",
     "signal",
@@ -225,6 +227,7 @@ const SET_ASIDE: [&str; 18] = [
     "file-write-setugid",
     "network-inbound",
     "file-read-xattr",
+    "file-lock",
 ];
 
 impl Profile {
