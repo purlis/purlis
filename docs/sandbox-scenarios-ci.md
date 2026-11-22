@@ -53,7 +53,7 @@ says which:
 | Harness | macOS | Linux |
 |---|---|---|
 | Claude Code | its own sandbox, built from the `sandbox` object and `permissions.deny` rules purlis hands it in `--settings`, its Bash tool's network going through purlis's proxy (T1.1-10) | wrapped whole by purlis, its own sandbox off (`claude_wrap.rs`) (T1.1-53) |
-| Codex | wrapped by purlis (Seatbelt) | wrapped by purlis (Landlock and seccomp), at the floor too |
+| Codex | wrapped by purlis (Seatbelt); at Full it cannot start here (its state database does not migrate, #7352), so that leg reports `not_run` | wrapped by purlis (Landlock and seccomp), at the floor too |
 | OpenCode | wrapped by purlis (Seatbelt) | the same as Codex |
 
 The legs are part of the suite (`scenarios::real_leg::`), so they run where the suite does: on every

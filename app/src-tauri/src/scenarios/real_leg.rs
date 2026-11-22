@@ -1992,11 +1992,24 @@ mod tests {
     /// probe, the file cell and a held connection the person keeps blocked.
     #[test]
     fn a_real_codex_under_the_wrap_raises_a_held_ask_in_the_host() {
-        runs(
-            Dialect::Codex,
-            Protection::Full,
-            "a_real_codex_under_the_wrap_raises_a_held_ask_in_the_host",
-        );
+        let test = "a_real_codex_under_the_wrap_raises_a_held_ask_in_the_host";
+        if cfg!(target_os = "macos") {
+            // Codex 0.169.0 cannot start under the full macOS sandbox in the scenario host: its
+            // state database does not migrate (#7352). A gap for the person's ruling, said, never
+            // a pass; the floor and Linux run.
+            let reason = "Codex cannot start under the full macOS sandbox here: its state \
+                          database does not migrate (#7352)";
+            record(
+                test,
+                Dialect::Codex,
+                Protection::Full,
+                purlis_scenarios::model::ReportVerdict::NotRun,
+                reason,
+            );
+            let _ = host::does_not_apply::<()>(reason);
+            return;
+        }
+        runs(Dialect::Codex, Protection::Full, test);
     }
 
     /// **A real Codex at the floor is held in the host** (T1.1-53), on each OS: the probe, the
