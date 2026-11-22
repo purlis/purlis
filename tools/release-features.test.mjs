@@ -176,9 +176,9 @@ test("the shipping workflows' builds, as read, one by one", () => {
   const app = { manifest: `${TAURI_PROJECT}/Cargo.toml`, packages: [] };
   assert.deepEqual(read, {
     "release.yml": [
-      { manifest: "Cargo.toml", packages: ["purlis-cli", "persona-statistics"] },
-      app,
-      app,
+      // `build`'s one cargo run, Tauri's: the app, the command line and the extensions, one
+      // feature set (R1, #7380).
+      { manifest: `${TAURI_PROJECT}/Cargo.toml`, packages: ["purlis-app", "purlis-cli", "persona-statistics"] },
       // `cargo run --release -p release-manifest --bin sign-runner-image`: signs the runner
       // image's line with the updater's key (#2749).
       { manifest: "Cargo.toml", packages: ["release-manifest"] },
