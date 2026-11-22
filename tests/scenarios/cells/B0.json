@@ -4,174 +4,718 @@
   "title": "probe: network asks on the held path",
   "persona": "steward",
   "protection": "full",
-  "hosts": {"h1": "example.com", "h2": "www.iana.org", "h3": "example.net", "h6": "example.org"},
+  "hosts": {
+    "h1": "example.com",
+    "h2": "www.iana.org",
+    "h3": "example.net",
+    "h6": "example.org"
+  },
   "cells": [
     {
       "id": "M-PRB-01",
-      "dialects": ["claude"],
-      "steps": [{
-        "calls": [{"tool": "Bash", "client": "get", "timeout": "150s",
-                   "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"}}],
-        "outcome": "failed",
-        "refusal_expected": true,
-        "window": [{"query": "blocks.marker_blocked == 1"}, {"query": "ask.listed_for $h1", "forbid": true}],
-        "transcript": [{"says": "Tunnel connection failed"}],
-        "require": [
-          {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h1", "qualifier": null, "count": 1},
-          {"kind": "ask.raised", "ask": "sandbox", "within": "group+1"}
-        ],
-        "forbid": [{"kind": "ask.answered"}]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h1 110"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "window": [
+            {
+              "query": "blocks.marker_blocked == 1"
+            },
+            {
+              "query": "ask.listed_for $h1",
+              "forbid": true
+            }
+          ],
+          "transcript": [
+            {
+              "says": "Tunnel connection failed"
+            }
+          ],
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1,
+              "before": "post"
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h1",
+              "qualifier": null,
+              "count": 1
+            },
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "within": "group+1"
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "ask.answered"
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6674, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 2,
-         "note": "chat 682 (test-matrix-phase-1.md §8): every held ask wrote ask.raised twice"},
-        {"issue": 6673, "leg": "live", "step": 1, "assertion": "require[1]", "observed": 0,
-         "note": "chat 682 (§8): the block was written only at the next prompt, so it landed in step 2 (M-PRB-02)"},
-        {"issue": 6672, "leg": "live", "step": 1, "assertion": "require[2]", "observed": {"from": "35s", "to": "50s"},
-         "note": "chat 682 (§8): the ask came 45 s after the call started, not at about 2 s"}
+        {
+          "issue": 6673,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[1]",
+          "observed": 0,
+          "note": "fake leg (CI run 44962030981): the block for $h1 is not in this step's window: the next step's window holds a stop.block"
+        },
+        {
+          "issue": 6672,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[2]",
+          "observed": {
+            "from": "hold",
+            "to": "hold+10"
+          },
+          "note": "fake leg (CI run 44962030981): the ask was written 31.2 s after the call's pre line, not within group+1 (hold is 30 s scaled)"
+        },
+        {
+          "issue": 6673,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[0]",
+          "observed": 0,
+          "note": "fake leg (CI run 44962030981): the Chat log counted 0 blocks when the step ended: the block is written after it"
+        },
+        {
+          "issue": 6673,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[1]",
+          "observed": true,
+          "note": "fake leg (CI run 44962030981): the ask for $h1 was still listed when the step ended: its row stays until the block is written"
+        },
+        {
+          "issue": 6674,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 2,
+          "note": "chat 682 (test-matrix-phase-1.md §8): every held ask wrote ask.raised twice"
+        },
+        {
+          "issue": 6673,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[1]",
+          "observed": 0,
+          "note": "chat 682 (§8): the block was written only at the next prompt, so it landed in step 2 (M-PRB-02)"
+        },
+        {
+          "issue": 6672,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[2]",
+          "observed": {
+            "from": "35s",
+            "to": "50s"
+          },
+          "note": "chat 682 (§8): the ask came 45 s after the call started, not at about 2 s"
+        }
       ]
     },
     {
       "id": "M-PRB-02",
-      "dialects": ["claude"],
-      "steps": [{
-        "calls": [{"tool": "Bash", "client": "get", "timeout": "150s",
-                   "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 110"}}],
-        "press": {"label": "Allow only for this chat", "target": "ask", "when": "ask.raised"},
-        "outcome": "came_back",
-        "window": [{"query": "ask.listed_for $h2", "forbid": true}],
-        "transcript": [{"says": "Allowed"}],
-        "require": [
-          {"kind": "ask.raised", "ask": "sandbox", "count": 1},
-          {"kind": "trust.sandbox.grant", "level": "chat", "what": "host", "target": "$h2", "count": 1},
-          {"kind": "ask.answered", "ask": "sandbox", "answer": "allowed", "count": 1}
-        ],
-        "forbid": [{"kind": "stop.block"}]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h2 110"
+              }
+            }
+          ],
+          "press": {
+            "label": "Allow only for this chat",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "outcome": "came_back",
+          "window": [
+            {
+              "query": "ask.listed_for $h2",
+              "forbid": true
+            }
+          ],
+          "transcript": [
+            {
+              "says": "Allowed"
+            }
+          ],
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            },
+            {
+              "kind": "trust.sandbox.grant",
+              "level": "chat",
+              "what": "host",
+              "target": "$h2",
+              "count": 1
+            },
+            {
+              "kind": "ask.answered",
+              "ask": "sandbox",
+              "answer": "allowed",
+              "count": 1
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "stop.block"
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6674, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 2,
-         "note": "chat 682 (§8): every held ask wrote ask.raised twice"},
-        {"issue": 6673, "leg": "live", "step": 1, "assertion": "forbid[0]", "observed": 1,
-         "note": "chat 682 (§8): step 1's block, written at the next prompt, landed in this turn"}
+        {
+          "issue": 6673,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "forbid[0]",
+          "observed": 1,
+          "note": "fake leg (CI run 44962030981): step 1's block lands in this step's window"
+        },
+        {
+          "issue": 6674,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 2,
+          "note": "chat 682 (§8): every held ask wrote ask.raised twice"
+        },
+        {
+          "issue": 6673,
+          "leg": "live",
+          "step": 1,
+          "assertion": "forbid[0]",
+          "observed": 1,
+          "note": "chat 682 (§8): step 1's block, written at the next prompt, landed in this turn"
+        }
       ]
     },
     {
       "id": "M-PRB-03",
-      "dialects": ["claude"],
-      "steps": [{
-        "calls": [{"tool": "Bash", "client": "get", "timeout": "150s",
-                   "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 110"}}],
-        "press": {"label": "Keep blocked", "target": "ask", "when": "ask.raised"},
-        "outcome": "failed",
-        "refusal_expected": true,
-        "window": [{"query": "blocks.marker_blocked == 2"}, {"query": "ask.listed_for $h3", "forbid": true}],
-        "transcript": [{"says": "Kept blocked by the person"}],
-        "require": [
-          {"kind": "ask.raised", "ask": "sandbox", "count": 1},
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "qualifier": null, "args": null, "count": 1},
-          {"kind": "ask.answered", "ask": "sandbox", "answer": "refused", "count": 1}
-        ],
-        "forbid": [{"kind": "stop.block", "at": "next_prompt"}]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "150s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 110"
+              }
+            }
+          ],
+          "press": {
+            "label": "Keep blocked",
+            "target": "ask",
+            "when": "ask.raised"
+          },
+          "outcome": "failed",
+          "refusal_expected": true,
+          "window": [
+            {
+              "query": "blocks.marker_blocked == 2"
+            },
+            {
+              "query": "ask.listed_for $h3",
+              "forbid": true
+            }
+          ],
+          "transcript": [
+            {
+              "says": "Kept blocked by the person"
+            }
+          ],
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h3",
+              "qualifier": null,
+              "args": null,
+              "count": 1
+            },
+            {
+              "kind": "ask.answered",
+              "ask": "sandbox",
+              "answer": "refused",
+              "count": 1
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "stop.block",
+              "at": "next_prompt"
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6674, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 2,
-         "note": "chat 682 (§8): every held ask wrote ask.raised twice; the rest of the cell passed"}
+        {
+          "issue": 6674,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 3,
+          "note": "fake leg (CI run 44962030981): three ask.raised in this step's window: the double raise the global check names (event 28) and one more raised in it, not attributed"
+        },
+        {
+          "issue": 6674,
+          "leg": "fake",
+          "check": "one_ask_one_raise",
+          "refusal": "step 1",
+          "note": "fake leg (CI run 44962030981): a held ask is raised twice with nothing between (event 28, inside this step's window)"
+        },
+        {
+          "issue": 6674,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 2,
+          "note": "chat 682 (§8): every held ask wrote ask.raised twice; the rest of the cell passed"
+        }
       ]
     },
     {
       "id": "M-PRB-04",
-      "dialects": ["claude"],
-      "steps": [{
-        "calls": [{"tool": "Bash", "client": "curl", "timeout": "10s",
-                   "input": {"command": "/usr/bin/curl -sS -m 10 https://$h3 -o /dev/null"}}],
-        "outcome": "failed",
-        "refusal_expected": true,
-        "window": [{"query": "blocks.marker_blocked == 3"}, {"query": "notice.standing", "forbid": true}],
-        "transcript": [{"says": "Kept blocked by the person"}, {"says": "wait for their answer", "forbid": true}],
-        "require": [
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "count": 1}
-        ],
-        "forbid": [{"kind": "ask.raised"}]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "curl",
+              "timeout": "10s",
+              "input": {
+                "command": "/usr/bin/curl -sS -m 10 https://$h3 -o /dev/null"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "window": [
+            {
+              "query": "blocks.marker_blocked == 3"
+            },
+            {
+              "query": "notice.standing",
+              "forbid": true
+            }
+          ],
+          "transcript": [
+            {
+              "says": "Kept blocked by the person"
+            },
+            {
+              "says": "wait for their answer",
+              "forbid": true
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h3",
+              "count": 1
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "ask.raised"
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6657, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
-         "note": "chat 682 (§8): the block was unverified, named no host, and came at the next prompt"},
-        {"issue": 6657, "leg": "live", "step": 1, "assertion": "forbid[0]", "observed": 1,
-         "note": "chat 682 (§8): an unnamed-host ask was raised"}
+        {
+          "issue": 6657,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 0,
+          "note": "fake leg (CI run 44962030981): a retry to the kept-blocked $h3 wrote no block in this step"
+        },
+        {
+          "issue": 6657,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[0]",
+          "observed": 2,
+          "note": "fake leg (CI run 44962030981): the Chat log counted 2 blocks when the step ended, not 3: this refusal wrote none"
+        },
+        {
+          "issue": 6657,
+          "leg": "fake",
+          "check": "refusal_black_hole",
+          "refusal": "step 1",
+          "note": "fake leg (CI run 44962030981): curl's refusal of the kept-blocked $h3 wrote no ask, block or hold"
+        },
+        {
+          "issue": 6657,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 0,
+          "note": "chat 682 (§8): the block was unverified, named no host, and came at the next prompt"
+        },
+        {
+          "issue": 6657,
+          "leg": "live",
+          "step": 1,
+          "assertion": "forbid[0]",
+          "observed": 1,
+          "note": "chat 682 (§8): an unnamed-host ask was raised"
+        }
       ]
     },
     {
       "id": "M-PRB-04b",
-      "dialects": ["claude"],
-      "steps": [{
-        "calls": [{"tool": "Bash", "client": "curl", "timeout": "10s",
-                   "input": {"command": "/usr/bin/curl -sS -m 10 https://$h3 -o /dev/null"}}],
-        "outcome": "failed",
-        "refusal_expected": true,
-        "repeat_of": {"cell": "M-PRB-04", "step": 1},
-        "window": [{"query": "blocks.marker_blocked == 4"}],
-        "transcript": [{"says": "Kept blocked by the person"}, {"says": "wait for their answer", "forbid": true}],
-        "require": [
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h3", "count": 1}
-        ]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "curl",
+              "timeout": "10s",
+              "input": {
+                "command": "/usr/bin/curl -sS -m 10 https://$h3 -o /dev/null"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "repeat_of": {
+            "cell": "M-PRB-04",
+            "step": 1
+          },
+          "window": [
+            {
+              "query": "blocks.marker_blocked == 4"
+            }
+          ],
+          "transcript": [
+            {
+              "says": "Kept blocked by the person"
+            },
+            {
+              "says": "wait for their answer",
+              "forbid": true
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h3",
+              "count": 1
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6657, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
-         "note": "chat 682 (§8): the repeat was throttled and silent"},
-        {"issue": 6657, "leg": "live", "check": "refusal_black_hole", "refusal": "step 1",
-         "note": "chat 682 (§8): the throttled repeat refused with no ask, block or hold"}
+        {
+          "issue": 6657,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 0,
+          "note": "fake leg (CI run 44962030981): the repeat to the kept-blocked $h3 wrote no block in this step"
+        },
+        {
+          "issue": 6657,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[0]",
+          "observed": 2,
+          "note": "fake leg (CI run 44962030981): the Chat log counted 2 blocks when the step ended, not 4: neither retry wrote one"
+        },
+        {
+          "issue": 6657,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "transcript[0]",
+          "observed": false,
+          "note": "fake leg (CI run 44962030981): the chat was told nothing of the refusal: its lines are the prompt and the tool result"
+        },
+        {
+          "issue": 6657,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 0,
+          "note": "chat 682 (§8): the repeat was throttled and silent"
+        },
+        {
+          "issue": 6657,
+          "check": "refusal_black_hole",
+          "refusal": "step 1",
+          "note": "chat 682 (§8): the throttled repeat refused with no ask, block or hold (and the fake leg, CI run 44962030981: the same refusal wrote nothing)"
+        }
       ]
     },
     {
       "id": "M-PRB-05",
-      "dialects": ["claude"],
-      "steps": [{
-        "wait": "throttle_window+1",
-        "calls": [{"tool": "Bash", "client": "get", "timeout": "10s",
-                   "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 10"}}],
-        "outcome": "failed",
-        "refusal_expected": true,
-        "window": [{"query": "blocks.marker_blocked == 5"}],
-        "transcript": [{"says": "Kept blocked by the person"}],
-        "require": [{"kind": "stop.block", "source": "sandbox"}]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "wait": "throttle_window+1",
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "10s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h3 10"
+              }
+            }
+          ],
+          "outcome": "failed",
+          "refusal_expected": true,
+          "window": [
+            {
+              "query": "blocks.marker_blocked == 5"
+            }
+          ],
+          "transcript": [
+            {
+              "says": "Kept blocked by the person"
+            }
+          ],
+          "require": [
+            {
+              "kind": "stop.block",
+              "source": "sandbox"
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6675, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
-         "note": "chat 682 (§8): black hole confirmed; urllib's refusal wrote nothing"},
-        {"issue": 6675, "leg": "live", "check": "refusal_black_hole", "refusal": "step 1",
-         "note": "chat 682 (§8): the refusal came with no ask, block or hold"}
+        {
+          "issue": 6675,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[0]",
+          "observed": 2,
+          "note": "fake leg (CI run 44962030981): the Chat log counted 2 blocks when the step ended, not 5: urllib's refusal wrote none"
+        },
+        {
+          "issue": 6675,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "transcript[0]",
+          "observed": false,
+          "note": "fake leg (CI run 44962030981): the chat was told nothing of the refusal: its lines are the prompt and the tool result"
+        },
+        {
+          "issue": 6675,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 0,
+          "note": "chat 682 (§8): black hole confirmed; urllib's refusal wrote nothing"
+        },
+        {
+          "issue": 6675,
+          "check": "refusal_black_hole",
+          "refusal": "step 1",
+          "note": "chat 682 (§8): the refusal came with no ask, block or hold (and the fake leg, CI run 44962030981: the same refusal wrote nothing)"
+        }
       ]
     },
     {
       "id": "M-PRB-06",
-      "dialects": ["claude"],
-      "steps": [{
-        "calls": [
-          {"tool": "Bash", "client": "get", "timeout": "3s",
-           "input": {"command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h6 3"}},
-          {"tool": "Bash", "input": {"command": "echo moved-on"}}
-        ],
-        "window": [{"query": "blocks.marker_blocked == 6"}, {"query": "ask.listed_for $h6", "forbid": true}],
-        "require": [
-          {"kind": "ask.raised", "ask": "sandbox", "count": 1, "before": "post"},
-          {"kind": "stop.block", "source": "sandbox", "target.host": "$h6", "qualifier": null, "args": "this_call", "count": 1},
-          {"kind": "hook.posttoolusefailure-blocked", "args": "this_call", "count": 1}
-        ],
-        "forbid": [
-          {"kind": "stop.block", "at": "next_prompt"},
-          {"kind": "hook.pretooluse", "args": null}
-        ]
-      }],
+      "dialects": [
+        "claude"
+      ],
+      "steps": [
+        {
+          "calls": [
+            {
+              "tool": "Bash",
+              "client": "get",
+              "timeout": "3s",
+              "input": {
+                "command": "python3 \"$TMPDIR/purlis-matrix-<chat>/get.py\" https://$h6 3"
+              }
+            },
+            {
+              "tool": "Bash",
+              "input": {
+                "command": "echo moved-on"
+              }
+            }
+          ],
+          "window": [
+            {
+              "query": "blocks.marker_blocked == 6"
+            },
+            {
+              "query": "ask.listed_for $h6",
+              "forbid": true
+            }
+          ],
+          "require": [
+            {
+              "kind": "ask.raised",
+              "ask": "sandbox",
+              "count": 1,
+              "before": "post"
+            },
+            {
+              "kind": "stop.block",
+              "source": "sandbox",
+              "target.host": "$h6",
+              "qualifier": null,
+              "args": "this_call",
+              "count": 1
+            },
+            {
+              "kind": "hook.posttoolusefailure-blocked",
+              "args": "this_call",
+              "count": 1
+            }
+          ],
+          "forbid": [
+            {
+              "kind": "stop.block",
+              "at": "next_prompt"
+            },
+            {
+              "kind": "hook.pretooluse",
+              "args": null
+            }
+          ]
+        }
+      ],
       "expected_fail": [
-        {"issue": 6672, "leg": "live", "step": 1, "assertion": "require[0]", "observed": 0,
-         "note": "chat 682 (§8): the client was gone at 3 s; the ask came 35 s later, once, after hook.stop"},
-        {"issue": 6673, "leg": "live", "step": 1, "assertion": "forbid[0]", "observed": 1,
-         "note": "chat 682 (§8): the block was written 30 s after the ask, after hook.stop"},
-        {"issue": 6676, "leg": "live", "step": 1, "assertion": "require[2]", "observed": 0,
-         "note": "chat 682 (§8): the get call's post line was spooled (seq 179098) and lost its args digest"},
-        {"issue": 6676, "leg": "live", "step": 1, "assertion": "forbid[1]", "observed": 1,
-         "note": "chat 682 (§8): the echo's pre line was spooled (seq 179100) and lost its args digest"}
+        {
+          "issue": 6676,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": "no hook.posttooluse",
+          "note": "fake leg (CI run 44962030981): the window holds the call's pre line and no post line (spooled lines arrive later)"
+        },
+        {
+          "issue": 6673,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[1]",
+          "observed": 0,
+          "note": "fake leg (CI run 44962030981): no block for $h6 in this step's window"
+        },
+        {
+          "issue": 6676,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "require[2]",
+          "observed": 0,
+          "note": "fake leg (CI run 44962030981): no post line with the call's digest in this step's window"
+        },
+        {
+          "issue": 6676,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "forbid[0]",
+          "observed": "no hook.stop",
+          "note": "fake leg (CI run 44962030981): no hook.stop in this step's window, so `next_prompt` has no anchor"
+        },
+        {
+          "issue": 6673,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[0]",
+          "observed": 2,
+          "note": "fake leg (CI run 44962030981): the Chat log counted 2 blocks when the step ended, not 6: the block for $h6 is written after it"
+        },
+        {
+          "issue": 6672,
+          "leg": "fake",
+          "step": 1,
+          "assertion": "window[1]",
+          "observed": true,
+          "note": "fake leg (CI run 44962030981): the ask for $h6 was still listed when the step ended, for a client that was gone at 3 s"
+        },
+        {
+          "issue": 6672,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[0]",
+          "observed": 0,
+          "note": "chat 682 (§8): the client was gone at 3 s; the ask came 35 s later, once, after hook.stop"
+        },
+        {
+          "issue": 6673,
+          "leg": "live",
+          "step": 1,
+          "assertion": "forbid[0]",
+          "observed": 1,
+          "note": "chat 682 (§8): the block was written 30 s after the ask, after hook.stop"
+        },
+        {
+          "issue": 6676,
+          "leg": "live",
+          "step": 1,
+          "assertion": "require[2]",
+          "observed": 0,
+          "note": "chat 682 (§8): the get call's post line was spooled (seq 179098) and lost its args digest"
+        },
+        {
+          "issue": 6676,
+          "leg": "live",
+          "step": 1,
+          "assertion": "forbid[1]",
+          "observed": 1,
+          "note": "chat 682 (§8): the echo's pre line was spooled (seq 179100) and lost its args digest"
+        }
       ]
     }
   ]
