@@ -186,6 +186,26 @@ impl Recorded for ConfirmedRecorded {
         out
     }
 
+    /// The branches of `repo` that `chat` created through the route: the app's own record under
+    /// the machine config root ([`purlis_core::forge::createdbranches`]).
+    fn own_branches(&self, _project: &Path, chat: &str, repo: &AllowedRepo) -> Vec<String> {
+        purlis_core::forge::createdbranches::created_by(
+            &self.config_root,
+            chat,
+            repo.host(),
+            repo.path(),
+        )
+    }
+
+    fn record_created(&self, chat: &str, created: &[(String, String, String)]) {
+        if let Err(why) =
+            purlis_core::forge::createdbranches::record(&self.config_root, chat, created)
+        {
+            // Unrecorded, the route refuses every later update to the branch: safe, and said here.
+            tracing::warn!("purlis: a branch a chat created was not recorded ({why})");
+        }
+    }
+
     /// The account the person chose for the project's repos on `host`: one account, or none.
     fn account(&self, project: &Path, host: &str) -> Option<String> {
         let mut found: Option<String> = None;

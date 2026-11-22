@@ -14,7 +14,7 @@
 //!   fresh repository, the base fetched from the forge with the person's credential, the chat's
 //!   pack taken in by git, which hashes every object. **One quarantine per push**, kept for its
 //!   ask, so the ask, the press and the files the push sends are read from the same objects
-//!   ([`Quarantines`]). A push goes on only when [`check_push`] says it changes no CI file; a
+//!   ([`Quarantines`]). A push goes on only when [`check_push_since`] says it changes no CI file; a
 //!   refusal, or an unreadable `ci_config_path`, sends nothing.
 //!
 //! **Tier** (ADR 0069): the quarantines are Machine, device-bound and rebuildable
@@ -39,7 +39,7 @@ use purlis_core::forge::{Forge, ForgeError};
 use purlis_core::forgewire::{ExposeSecret, SecretString};
 use purlis_core::heldact::{
     Handoff, HeldContext, NoClone, OwnedWorld, PushCheck, Quarantine, Recorded, Requested,
-    TipFiles, Trees, Unavailable, WorkflowCredential, check_push,
+    TipFiles, Trees, Unavailable, WorkflowCredential, check_push_since,
 };
 use purlis_core::mergehold::{Base, HeadSha, Repo, Request};
 use purlis_core::secrets::keyring::Secret;
@@ -463,87 +463,149 @@ impl PushGate for CiPushGate {
                 Ok(made) => made,
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
-            // The base is the branch's tip on the forge, and the push must start from it: a push
-            // that names another old tip is not the push whose diff is read here. A new branch's
-            // base is the default branch's.
-            let base = match (created, forge.branch_tip(&repo, &branch)) {
-                (false, Ok(Some(base))) if base.as_str().eq_ignore_ascii_case(&update.old) => base,
-                (false, Ok(_)) => {
-                    return Self::refuse(
-                        "purlis did not send this push: its branch is not at the commit the push starts from.",
-                    );
-                }
-                (true, Ok(Some(_))) => {
-                    return Self::refuse(
-                        "purlis did not send this push: it makes a branch that is there already.",
-                    );
-                }
-                (true, Ok(None)) => match forge.default_branch(&repo) {
-                    Ok((_, base)) => base,
-                    Err(why) => {
-                        return Self::refuse(format!(
-                            "purlis did not send this push: it could not read the default branch ({why})."
-                        ));
-                    }
-                },
-                (_, Err(why)) => {
-                    return Self::refuse(format!(
-                        "purlis did not send this push: it could not read the branch ({why})."
-                    ));
-                }
-            };
-            // An unreadable `ci_config_path` is a refusal, never a push let through.
-            let config = match forge.ci_config_path(&repo) {
-                Ok(config) => config,
-                Err(why) => {
-                    return Self::refuse(format!(
-                        "purlis did not send this push: it could not read where the CI files are ({why})."
-                    ));
-                }
-            };
             let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
             let from = match self.context.fetch_source(&served, &url) {
                 Ok(from) => from,
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
-            let quarantine = match Quarantine::open(&self.parent, &base, &from) {
-                Ok(quarantine) => quarantine,
-                Err(why) => {
-                    return Self::refuse(format!(
-                        "purlis did not send this push: it could not read the base ({why})."
-                    ));
-                }
+            let one = Update {
+                branch,
+                tip,
+                old: &update.old,
+                created,
+                pack: &push.pack,
             };
-            if let Err(why) = quarantine.take_in(push.pack.clone(), &tip, &base) {
-                return Self::refuse(format!(
-                    "purlis did not send this push: git did not take its objects in ({why})."
-                ));
-            }
-            let kind = forge.kind();
-            match check_push(kind, config.as_deref(), &quarantine.trees(), &base, &tip) {
-                PushCheck::NoCiFiles => continue,
-                PushCheck::Refuse(why) => {
-                    return Self::refuse(format!("purlis did not send this push: {why}"));
-                }
-                PushCheck::Hold(_) => {
-                    // The ask is made from the quarantine this push was read in, and the press
-                    // reads the same one again.
-                    self.quarantines.keep(session, repo.as_str(), quarantine);
-                    let asked = Requested::CiPush {
-                        repo: repo.clone(),
-                        branch,
-                        tip,
-                    };
-                    return match self.proxy.hand_over(chat, &asked) {
-                        Some(said) => PushVerdict::Held(said),
-                        None => Self::refuse(
-                            "purlis did not send this push: it changes CI files, and held acts are not on here.",
-                        ),
-                    };
-                }
+            if let Err(verdict) =
+                self.read_update(chat, session, forge.as_ref(), &from, &repo, &one)
+            {
+                return verdict;
             }
         }
         PushVerdict::Forward
+    }
+}
+
+/// One branch's update of a push, as the gate reads it.
+struct Update<'a> {
+    branch: Base,
+    tip: HeadSha,
+    /// The tip the push says the branch starts from (all zeros where it makes the branch).
+    old: &'a str,
+    created: bool,
+    pack: &'a [u8],
+}
+
+impl CiPushGate {
+    /// **One branch's update, read against what the forge has now** (ADR 0128 D8.3). The branch's
+    /// base is its tip on the forge, and the push must start from it. The CI files it changes are
+    /// those that differ from `against`, **the default branch's tip now**, for a branch the push
+    /// makes as for one that is there; for one that is there, less what the branch had on the forge
+    /// already (`already`, its old tip), so a file the push leaves as it was is no change of its
+    /// own. `Err` is the verdict to answer with: a refusal, or the held act's ask.
+    fn read_update(
+        &self,
+        chat: &ChatId,
+        session: u32,
+        forge: &dyn purlis_core::heldact::HeldForge,
+        from: &dyn purlis_core::heldact::BaseObjects,
+        repo: &Repo,
+        update: &Update<'_>,
+    ) -> Result<(), PushVerdict> {
+        let Update {
+            branch,
+            tip,
+            old,
+            created,
+            pack,
+        } = update;
+        let created = *created;
+        let refuse = |why: String| {
+            Err(Self::refuse(format!(
+                "purlis did not send this push: {why}"
+            )))
+        };
+        // The base is the branch's tip on the forge, and the push must start from it: a push
+        // that names another old tip is not the push whose diff is read here. A new branch's
+        // base is the default branch's.
+        let base = match (created, forge.branch_tip(repo, branch)) {
+            (false, Ok(Some(base))) if base.as_str().eq_ignore_ascii_case(old) => base,
+            (false, Ok(_)) => {
+                return refuse("its branch is not at the commit the push starts from.".to_owned());
+            }
+            (true, Ok(Some(_))) => {
+                return refuse("it makes a branch that is there already.".to_owned());
+            }
+            (true, Ok(None)) => match forge.default_branch(repo) {
+                Ok((_, base)) => base,
+                Err(why) => {
+                    return refuse(format!("it could not read the default branch ({why})."));
+                }
+            },
+            (_, Err(why)) => {
+                return refuse(format!("it could not read the branch ({why})."));
+            }
+        };
+        // An unreadable `ci_config_path` is a refusal, never a push let through.
+        let config = match forge.ci_config_path(repo) {
+            Ok(config) => config,
+            Err(why) => {
+                return refuse(format!("it could not read where the CI files are ({why})."));
+            }
+        };
+        let quarantine = match Quarantine::open(&self.parent, &base, from) {
+            Ok(quarantine) => quarantine,
+            Err(why) => return refuse(format!("it could not read the base ({why}).")),
+        };
+        // The default branch's tip now: what a new branch's base is, and what a branch that is
+        // there is read against, which a push over it (a rebase) holds only by reference: its
+        // commits are read in too.
+        let default_tip = if created {
+            base.clone()
+        } else {
+            match forge.default_branch(repo) {
+                Ok((_, default_tip)) => default_tip,
+                Err(why) => {
+                    return refuse(format!("it could not read the default branch ({why})."));
+                }
+            }
+        };
+        if !created && let Err(why) = quarantine.also_have(from, &default_tip) {
+            return refuse(format!(
+                "it could not read the default branch's commits ({why})."
+            ));
+        }
+        if let Err(why) = quarantine.take_in((*pack).to_vec(), tip, &base) {
+            return refuse(format!("git did not take its objects in ({why})."));
+        }
+        let trees = quarantine.trees();
+        let already = (!created).then_some(&base);
+        match check_push_since(
+            forge.kind(),
+            config.as_deref(),
+            &trees,
+            &default_tip,
+            already,
+            tip,
+        ) {
+            PushCheck::NoCiFiles => Ok(()),
+            PushCheck::Refuse(why) => refuse(why),
+            PushCheck::Hold(_) => {
+                // The ask is made from the quarantine this push was read in, and the press
+                // reads the same one again.
+                self.quarantines.keep(session, repo.as_str(), quarantine);
+                let asked = Requested::CiPush {
+                    repo: repo.clone(),
+                    branch: branch.clone(),
+                    tip: tip.clone(),
+                };
+                Err(match self.proxy.hand_over(chat, &asked) {
+                    Some(said) => PushVerdict::Held(said),
+                    None => Self::refuse(
+                        "purlis did not send this push: it changes CI files, and held acts are not on here.",
+                    ),
+                })
+            }
+        }
     }
 }
 

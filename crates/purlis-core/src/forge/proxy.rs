@@ -331,7 +331,12 @@ pub struct ForgeProxy {
     held: Option<Box<dyn HeldSink>>,
     /// The administrator's never-allow pin, asked on every request and connection (D3g).
     pin: Arc<dyn pin::Pin>,
+    /// Told the branches the forge confirmed a push made: the app's own record of them.
+    created: Option<CreatedSink>,
 }
+
+/// What is told the `(host, repo path, branch)` triples a confirmed push made.
+pub type CreatedSink = Box<dyn Fn(&[(String, String, String)]) + Send + Sync>;
 
 impl ForgeProxy {
     pub fn new(credentials: Box<dyn CredentialSource>, objects: Box<dyn ObjectRepo>) -> Self {
@@ -343,7 +348,16 @@ impl ForgeProxy {
             audit: AuditLog::default(),
             held: None,
             pin: Arc::new(pin::NoPin),
+            created: None,
         }
+    }
+
+    /// Tell `sink` each branch the forge confirms a chat's push made, so the app can keep its own
+    /// record of what the chat created ([`crate::forge::createdbranches`]).
+    #[must_use]
+    pub fn with_created(mut self, sink: CreatedSink) -> Self {
+        self.created = Some(sink);
+        self
     }
 
     /// Refuse every request, connection and alias that names a forge `pin` pins as never allowed
@@ -456,6 +470,11 @@ impl ForgeProxy {
             .cloned();
         if let Some(policy) = policy {
             policy.confirm_created(&forwarded.created);
+            if let Some(sink) = &self.created
+                && !forwarded.created.is_empty()
+            {
+                sink(&forwarded.created);
+            }
         }
     }
 
