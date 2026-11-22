@@ -473,7 +473,8 @@ impl Homes {
             more.iter()
                 .map(|(name, value)| (*name, OsString::from(value))),
         );
-        // The re-run clears every variable of purlis's own; these two are the run's.
+        // The re-run clears every variable of purlis's own; these are the run's: the binaries
+        // under test and the host's own.
         for kept in [
             BINARY_VAR,
             HOST_APP_VAR,

@@ -582,7 +582,7 @@
       "at": "scenarios/host.rs starts_real",
       "writes": "the project's manifest and its local settings",
       "by": [],
-      "why": "The scenario host's own fixture: it names the variables a real harness's chat passes through, as a person would in the project's local settings; no window command calls it."
+      "why": "The scenario host's own fixture: it names the variables a real harness's chat passes through in the project's local settings, and grants the stand-in's port in this machine's sandbox grants, as a person would in Settings; no window command calls it."
     },
     {
       "at": "secretasks.rs give_the_vault",

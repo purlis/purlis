@@ -115,8 +115,9 @@ pub(crate) fn url_var(dialect: Dialect) -> &'static str {
 ///   process on macOS would do without purlis's proxy.
 /// - Codex: its API key, a literal that is no credential. Where its model is, and which API, is
 ///   in its own `-c` words ([`launch_words`]).
-/// - OpenCode: its whole configuration, inline, with the stand-in as its one provider
-///   ([`opencode_config`]), and the variable that stops its self-update.
+/// - OpenCode: a file holding its whole configuration, with the stand-in as its one provider
+///   ([`opencode_config`], named by `OPENCODE_CONFIG`), and the variable that stops its
+///   self-update.
 ///
 /// Each is in ticket 6's list of substitutions (`switches.json`), covered by ticket 44's live
 /// pass. A person's chat is given none of them.
@@ -171,17 +172,23 @@ pub(crate) fn opencode_config(url: &str) -> String {
     .to_string()
 }
 
-/// Where OpenCode's configuration for the stand-in at `url` is kept: a file in the temp folder
-/// named for the stand-in's port, outside every project, which the scenario's parent writes
-/// ([`environment`]) and removes ([`runs`]), and which the child, which has the same port,
-/// finds where the parent put it.
+/// Where OpenCode's configuration for the stand-in at `url` is kept: a file in a folder of this
+/// run's own, in the temp folder, named for the stand-in's port, outside every project. The
+/// scenario's parent creates the folder (never one that is already there) and writes the file
+/// ([`environment`]), and removes both ([`runs`]); the child, which has the same port, finds
+/// the file where the parent put it.
 pub(crate) fn opencode_config_path(url: &str) -> PathBuf {
+    opencode_config_dir(url).join("opencode.json")
+}
+
+/// The folder of [`opencode_config_path`].
+fn opencode_config_dir(url: &str) -> PathBuf {
     let port = url
         .rsplit(':')
         .next()
         .unwrap_or_default()
         .trim_end_matches('/');
-    std::env::temp_dir().join(format!("purlis-leg-opencode-{port}.json"))
+    std::env::temp_dir().join(format!("purlis-leg-opencode-{port}"))
 }
 
 /// **The words a harness is started with beside what purlis composes**, ending with its first
@@ -323,7 +330,10 @@ pub(crate) fn environment(dialect: Dialect) -> Option<Vec<(String, String)>> {
     // writes none.
     if dialect == Dialect::OpenCode && !host::in_the_scenarios_child() {
         let file = opencode_config_path(&url);
-        if let Err(why) = std::fs::write(&file, opencode_config(&url)) {
+        // `create_dir`, not `create_dir_all`: a folder that is already there is not this run's.
+        let written = std::fs::create_dir(opencode_config_dir(&url))
+            .and_then(|()| std::fs::write(&file, opencode_config(&url)));
+        if let Err(why) = written {
             return host::cannot_run(&format!(
                 "OpenCode's configuration at {}: {why}",
                 file.display()
@@ -871,8 +881,7 @@ fn script_of_the_held(command: &str) -> String {
 fn poll_for(file: &Path) -> String {
     format!(
         "for i in 1 2 3 4 5 6 7; do grep -q net-exit '{file}' 2>/dev/null && break; sleep 1; done; \
-         cat '{file}' 2>/dev/null; ls -l '{file}' 2>&1; \\
-         ps -eo pid,sid,args 2>/dev/null | grep -E 'curl|network' | grep -v grep; echo polled",
+         cat '{file}' 2>/dev/null; ls -l '{file}' 2>&1; echo polled",
         file = file.display(),
     )
 }
@@ -943,7 +952,7 @@ pub(crate) fn runs(dialect: Dialect, protection: Protection, test: &str) {
         if dialect == Dialect::OpenCode
             && let Some((_, url)) = env.iter().find(|(name, _)| name == STAND_IN_URL)
         {
-            let _ = std::fs::remove_file(opencode_config_path(url));
+            let _ = std::fs::remove_dir_all(opencode_config_dir(url));
         }
         return;
     };
@@ -1002,8 +1011,8 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
         Protection::Full => {
             // The connection is held for the person for the proxy's hold (30 s here), and a
             // harness may give a command's result back before it ends (Codex's tool does after
-            // ten seconds, "Process running"): the command runs in the background and the result
-            // is polled, each poll short.
+            // ten seconds, "Process running"): the command runs in the foreground of its call,
+            // writing a file, and the result is read by short polls of that file.
             let script = scenario.root.join("network.sh");
             std::fs::write(&script, script_of_the_held(&super::reaches(host)))
                 .expect("the held connection's script");
@@ -1099,10 +1108,20 @@ fn cells(scenario: &Scenario, model: &Model, protection: Protection, test: &str)
             "no block of {host} is in the event log: the connection did not reach purlis's \
              proxy\n{said}"
         );
+        // The hold is the window's to show: an ask raised for the held connection, which the
+        // person kept blocked, or at least one the proxy wrote when it raised the hold. A leg
+        // whose held connection raised no ask at all has not shown the ask it is named for.
+        assert!(
+            kept.get()
+                || events
+                    .iter()
+                    .any(|event| event.kind == purlis_core::eventlog::stops::ASK_RAISED),
+            "the held connection to {host} raised no ask: the person was never asked\n{said}"
+        );
         if kept.get() {
             "the window listed its ask and the person kept it blocked"
         } else {
-            "its hold ended unanswered, and the proxy refused it"
+            "an ask was raised for it, its hold ended unanswered, and the proxy refused it"
         }
     } else {
         scenario.answers_until_played(chat, &["network"], &driving);
@@ -1156,6 +1175,16 @@ fn probe(scenario: &Scenario, model: &Model, chat: u32, protection: Protection) 
         _ => purlis_core::sandbox::Level::Floor,
     };
     assert_eq!(applied.level(), level, "{said}");
+    // Where purlis wraps the harness, the wrap is composed: a leg that ran unwrapped would pass
+    // its cells for the wrong reason.
+    assert_eq!(
+        applied.wrap_program().is_some(),
+        !holds_itself(dialect),
+        "{} is {}wrapped by purlis here, and it should {}be\n{said}",
+        dialect.word(),
+        if applied.wrap_program().is_some() { "" } else { "not " },
+        if holds_itself(dialect) { "not " } else { "" },
+    );
     // The process is the real binary, and the stand-in model answered it.
     let commands: Vec<String> = scenario.pids().into_iter().map(command_of).collect();
     assert!(
@@ -1532,7 +1561,10 @@ mod tests {
         assert!(
             opencode_config_path(url)
                 .file_name()
-                .is_some_and(|name| name == "purlis-leg-opencode-4321.json")
+                .is_some_and(|name| name == "opencode.json")
+                && opencode_config_dir(url)
+                    .file_name()
+                    .is_some_and(|name| name == "purlis-leg-opencode-4321")
         );
         let config: Value = serde_json::from_str(&opencode_config(url)).expect("JSON");
         assert_eq!(

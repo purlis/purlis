@@ -279,7 +279,13 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
     // with no new call (`hook.pretooluse`), prompt or answer between them are one ask raised twice,
     // by two writers (#6674); a second call that is refused raises an ask of its own.
     let mut open: BTreeMap<&str, usize> = BTreeMap::new();
-    for event in observed.events.iter().filter(|_| !observed.real_harness) {
+    // (A real harness's own start-up raises asks the check cannot tell from one raised twice.)
+    let one_raise_each: &[Event] = if observed.real_harness {
+        &[]
+    } else {
+        observed.events
+    };
+    for event in one_raise_each {
         let Some(chat) = event.chat.as_deref() else {
             continue;
         };
