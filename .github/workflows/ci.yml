@@ -2603,10 +2603,13 @@ jobs:
   # of its own platform: the 300 ms is judged on a real Mac (ADR 0086, amended 2026-11-05 and
   # 2026-11-06).
   #
-  # On main's push, and on a pull request that touches what the bars measure (`GATES`), by the
-  # operator's choice of 2026-11-01: it takes a macOS and a Linux runner, for 11 to 17 minutes on
-  # the debug build it used to make, and for about 31 on the release build warm (#4351). A
-  # regression from anywhere else shows on main, not on its pull request.
+  # On main's push and on the nightly run, and on neither a pull request nor the merge queue
+  # (#7335, ADR 0127, the steward's ruling of 2026-11-23): Macs are the queue's scarce resource, so
+  # the queue does not run it, and a pull request's run is a subset of the queue's, so a pull
+  # request does not either. It took a pull request that touched what the bars measure, by the
+  # operator's choice of 2026-11-01: it takes a macOS runner, for 11 to 17 minutes on the debug
+  # build it used to make, and for about 31 on the release build warm (#4351). A regression shows
+  # on main, and the Linux leg below still runs on a pull request its gate lets in.
   outcome-bars:
     # Named outright, not by `matrix.os`: a pattern would match the Linux leg's required check too.
     name: outcome bars (macos-latest)
@@ -2624,7 +2627,7 @@ jobs:
     # run from 05:41 to 10:44, so the cache was never saved, every run ended `cancelled`, and no dev
     # build shipped. One run that finishes warms the cache again.
     timeout-minutes: 130
-    if: ${{ !cancelled() && (github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')) && !github.event.pull_request.draft }}
+    if: ${{ !cancelled() && (github.event_name == 'push' || github.event_name == 'schedule') }}
     # Where the specs find the build: the profile the build step names for `outcome` (one place
     # for the path, so no harness's run can take another build's program).
     env:

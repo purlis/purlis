@@ -82,9 +82,19 @@
 // of order, one too long to list). The skip only means no new build: nothing is published,
 // signed or replaced (ADR 0042).
 //
-// Run as `node tools/ci-scope.mjs <event> <base>` in a checkout whose HEAD is the change: it
-// writes `<scope>=true|false` for each scope to `$GITHUB_OUTPUT` (or stdout), and says on the
-// run which paths decided it. Any failure to read the change runs every scope.
+// **The ready gate** (#7335, ADR 0127): a draft pull request runs the fast guards and the web tests
+// and nothing heavy. `HEAVY` (`rust`, `app`, `scenario`, `stories`) and every gated job are off on
+// a draft, whatever its paths say, a change to `.github/` included: marking the draft ready
+// (`ready_for_review`, which `ci.yml` and `stories.yml` trigger on) runs the change's scopes
+// without another push, and a change to the workflows turns every one of them on then. A merge
+// group, a push and a nightly run every scope and both story browsers, so a pull request run is
+// a subset of the queue run (`ci-stages.test.mjs` holds the workflows to it).
+//
+// Run as `node tools/ci-scope.mjs <event> <base> [draft] [labels]` in a checkout whose HEAD is the
+// change (`draft` is `true` for a draft pull request, `labels` its label names joined by commas,
+// which choose the story browsers): it writes `<scope>=true|false` for each scope to
+// `$GITHUB_OUTPUT` (or stdout), and says on the run which paths decided it. Any failure to read
+// the change runs every scope.
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -93,6 +103,10 @@ import { fileURLToPath } from "node:url";
 import { readPublished } from "./dev-build-order.mjs";
 
 export const SCOPES = ["rust", "web", "app", "scenario", "stories", "tools", "docs"];
+
+// The scopes a draft pull request does not run: each takes a runner for minutes, and a ready PR,
+// the queue and main run them (#7335).
+export const HEAVY = ["rust", "app", "scenario", "stories"];
 
 const ALL = new Set(SCOPES);
 const DOCS = new Set(["docs", "tools"]);
@@ -322,8 +336,13 @@ const narrowWhenDeleted = (path) =>
 
 // The scopes a change needs: the union of its paths', and every scope for an event that is not a
 // pull request or a change of no paths. `deleted` is the paths the change deletes.
-export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
-  if (event !== "pull_request" || paths.length === 0) return { scopes: ALL, why: [] };
+export function scopesOf({ event, paths, ciToolNames, deleted = new Set(), draft = false }) {
+  if (event !== "pull_request") return { scopes: ALL, why: [] };
+  if (draft) {
+    const { scopes, why } = scopesOf({ event, paths, ciToolNames, deleted });
+    return { scopes: new Set([...scopes].filter((s) => !HEAVY.includes(s))), why };
+  }
+  if (paths.length === 0) return { scopes: ALL, why: [] };
   const scopes = new Set();
   const why = [];
   for (const path of paths) {
@@ -337,11 +356,13 @@ export function scopesOf({ event, paths, ciToolNames, deleted = new Set() }) {
 
 // Whether each gated job is needed. Only a pull request is answered; every other event, and a
 // change of no paths, starts the job, whose own step then decides.
-export function gatesOf({ event, paths }) {
+// A draft starts none of them: they are heavy jobs, started when it is marked ready (#7335).
+export function gatesOf({ event, paths, draft = false }) {
   const open = event !== "pull_request" || paths.length === 0;
   return Object.fromEntries(
     Object.entries(GATES).map(([gate, pattern]) => {
       const re = new RegExp(pattern);
+      if (event === "pull_request" && draft) return [gate, false];
       return [gate, open || paths.some((path) => re.test(path))];
     }),
   );
@@ -350,6 +371,21 @@ export function gatesOf({ event, paths }) {
 // Which parts of `web` a change needs: part 2 holds the tools' tests, which run on every change.
 // The other three would each take a runner to say there is nothing to do.
 export const webParts = (scopes) => (scopes.has("web") ? [1, 2, 3, 4] : [2]);
+
+// The label that asks a pull request's `stories` run to draw the baselines it would need
+// (`stories-baselines.yml` commits them).
+export const BASELINES_LABEL = "update-baselines";
+
+// The browsers `stories.yml` runs: WebKit alone on a ready pull request, which is where the two
+// diverge most, and both on the queue, main and a nightly run (#7335). Chromium's pictures are
+// held there, and the queue draws none. So a pull request that asks for baselines (the
+// `update-baselines` label, `labels` as the names joined by commas) runs Chromium as well: its
+// run is the only one that can draw a Chromium picture, and a Chromium-only picture change would
+// otherwise first fail in the queue with no way to take the baseline.
+export const storiesBrowsers = ({ event, labels = "" }) =>
+  event !== "pull_request" || labels.split(",").includes(BASELINES_LABEL)
+    ? ["chromium", "webkit"]
+    : ["webkit"];
 
 // The file names under `tools/` that CI runs: each one a file outside `tools/` and the docs
 // names (`tools/<name>`: a workflow, an action, `app/package.json`, `vite.config.ts`, a test),
@@ -500,7 +536,8 @@ function mainShips([kind, sha]) {
   console.log(`ships=${answer.ships}: ${answer.why}`);
 }
 
-function main([event, base]) {
+function main([event, base, draftArg, labels = ""]) {
+  const draft = draftArg === "true";
   const out = process.env.GITHUB_OUTPUT;
   const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
   let result;
@@ -529,8 +566,8 @@ function main([event, base]) {
         }
       });
     }
-    result = scopesOf({ event, paths, ciToolNames, deleted });
-    gates = gatesOf({ event, paths });
+    result = scopesOf({ event, paths, ciToolNames, deleted, draft });
+    gates = gatesOf({ event, paths, draft });
     console.log(paths.join("\n"));
   } catch (error) {
     console.log(`::warning::the change could not be read, so every job runs: ${error.message}`);
@@ -540,6 +577,7 @@ function main([event, base]) {
   for (const scope of SCOPES) say(`${scope}=${result.scopes.has(scope)}`);
   for (const [gate, on] of Object.entries(gates)) say(`${gate}=${on}`);
   say(`web-parts=${JSON.stringify(webParts(result.scopes))}`);
+  say(`stories-browsers=${JSON.stringify(storiesBrowsers({ event, labels }))}`);
   const skipped = SCOPES.filter((s) => !result.scopes.has(s));
   if (skipped.length === 0) {
     const because = result.why.length > 0 ? `: ${result.why.slice(0, 5).join(", ")}` : "";
