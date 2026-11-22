@@ -521,6 +521,8 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                // The web judge fails closed in every mode (T1.1-39).
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -546,6 +548,8 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                // The web judge fails closed in every mode (T1.1-39).
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
