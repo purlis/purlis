@@ -125,4 +125,17 @@ describe("the project's policy (Q308a)", () => {
       screen.getByText(/Without a sandbox, network, ports and processes are not in force\./),
     ).toBeTruthy();
   });
+
+  it("says the merge opt-in as a change of the forge route, held until accepted", async () => {
+    core({
+      ...QUIET,
+      waiting: [
+        { family: "merges through the forge route", accepted: "held", committed: "log" },
+      ],
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/merges through the forge route from held to log/)).toBeTruthy(),
+    );
+  });
 });

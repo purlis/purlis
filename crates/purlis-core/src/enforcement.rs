@@ -873,15 +873,18 @@ impl Resolved {
         if locks.enforcement_floor(Family::Sandbox).is_some() {
             level = level.max(SandboxLevel::Floor);
         }
-        Self::of_modes(
-            Family::ALL
-                .into_iter()
-                .map(|family| (family, under(settings, locks, family)))
-                .collect(),
-            level,
-            settings.denies.clone(),
-            settings.merges_opted_in(),
-        )
+        let modes: BTreeMap<Family, Mode> = Family::ALL
+            .into_iter()
+            .map(|family| (family, under(settings, locks, family)))
+            .collect();
+        // The opt-in counts only where it loosens the route: a `guards.merge` that resolves to
+        // `enforce` (a `hold`, `team` or `strict` template, a lock, or the key itself) holds
+        // merges in the hook and the route alike, so there is nothing to wait for.
+        let merges = settings.merges_opted_in()
+            && modes
+                .get(&Family::GuardsMerge)
+                .is_some_and(|mode| *mode < Mode::Enforce);
+        Self::of_modes(modes, level, settings.denies.clone(), merges)
     }
 
     /// **How a chat runs, with `chain` the strictest policy along the chain that dispatched it**
@@ -944,19 +947,18 @@ impl Resolved {
             .filter(|family| self.mode(*family) < accepted.mode(*family))
             .map(|family| (family, accepted.mode(family), self.mode(family)))
             .collect();
-        // The merge opt-in is a loosening of `guards.merge` for the route, which holds every
-        // merge until it is accepted, even where the hook's mode reads the same (`watch` is `log`).
+        // The merge opt-in is a loosening of the route, which holds every merge until it is
+        // accepted, even where the hook's mode reads the same (`watch` is `log`). Its row has
+        // equal modes (the hook's, accepted and now): no real loosening has, so the window
+        // says it as "merges through the forge route" (`policypress`).
         if self.merges
             && !accepted.merges
             && !looser
                 .iter()
                 .any(|(family, _, _)| *family == Family::GuardsMerge)
         {
-            looser.push((
-                Family::GuardsMerge,
-                Mode::Enforce,
-                self.mode(Family::GuardsMerge),
-            ));
+            let mode = self.mode(Family::GuardsMerge);
+            looser.push((Family::GuardsMerge, mode, mode));
         }
         looser
     }
@@ -1015,6 +1017,8 @@ impl Resolved {
             crate::dispatchgrant::Denied::default(),
             // The spelling says nothing of the opt-in, so it never takes it away from what it
             // is joined with ([`Self::stricter`]); [`Self::of_kept`] reads it from the record.
+            // Safe only because the route always joins this with a committed-and-accepted
+            // `Resolved` (`for_chat`, `in_force`): a `true` that stood alone would open merges.
             true,
         )
     }

@@ -362,4 +362,55 @@ template = \"watch\"\n",
         );
         assert!(!enforcement::Resolved::of_kept_for_test(&kept).merges_opted_in());
     }
+
+    /// The `guards.merge` rows of `text` against an acceptance of the same file, minus its opt-in.
+    fn merge_rows(text: &str) -> Vec<(Family, Mode, Mode)> {
+        let committed = enforcement::committed_for_test(text);
+        let mut kept = committed.as_kept_for_test();
+        kept.remove("guards.merge.opted_in");
+        committed
+            .looser_than(&enforcement::Resolved::of_kept_for_test(&kept))
+            .into_iter()
+            .filter(|(family, _, _)| *family == Family::GuardsMerge)
+            .collect()
+    }
+
+    #[test]
+    fn an_opt_in_that_resolves_to_enforce_waits_for_nothing() {
+        for text in [
+            "[policy]\ntemplate = \"strict\"\n",
+            "[policy]\ntemplate = \"team\"\n",
+            "[policy]\ntemplate = \"hold\"\n",
+            "[policy]\nguards.merge = \"enforce\"\n",
+            "[policy]\ntemplate = \"open\"\nguards.merge = \"enforce\"\n",
+        ] {
+            assert!(merge_rows(text).is_empty(), "{text}");
+            assert!(
+                !enforcement::committed_for_test(text).merges_opted_in(),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_opt_in_that_resolves_below_enforce_still_waits() {
+        assert_eq!(
+            merge_rows("[policy]\ntemplate = \"watch\"\nguards.merge = \"log\"\n"),
+            vec![(Family::GuardsMerge, Mode::Log, Mode::Log)],
+            "a row with equal modes is the opt-in's, not a change of the hook's mode"
+        );
+        assert!(!merge_rows("[policy]\ntemplate = \"open\"\n").is_empty());
+    }
+
+    #[test]
+    fn a_spelling_reads_as_opted_in_only_to_be_joined_with_an_accepted_answer() {
+        // `Resolved::parse` says nothing of the opt-in and so defaults it to `true`, which is safe
+        // only because the route always joins it (`stricter`) with a committed-and-accepted answer.
+        let spelled = enforcement::Resolved::parse("guards.merge=log");
+        assert!(spelled.merges_opted_in());
+        let not_accepted = enforcement::committed_for_test("[policy]\nguards.merge = \"log\"\n");
+        let accepted_nothing = enforcement::Resolved::strict();
+        assert!(!not_accepted.stricter(&accepted_nothing).merges_opted_in());
+        assert!(!spelled.stricter(&accepted_nothing).merges_opted_in());
+    }
 }

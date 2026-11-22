@@ -22,12 +22,16 @@
   your chat recorded (`gh pr close`, a comment, updating a pull request's branch) now works where
   it was refused before, `enforce` included.
   **Only where you opted in, and accepted it:** the route forwards a merge only when your committed
-  `[policy]` itself says so, with `guards.merge = "log"` or `"off"` or `template = "open"`, **and
-  you pressed Accept for it**, like every loosening. Committing the opt-in waits for your press
-  even on the default `watch` project, where `guards.merge` already reads `log`; taking it out of
-  the committed file holds merges at once. A project with no `[policy]`, or on the default `watch`
-  template without a `guards.merge` key, keeps today's behaviour: the route holds every merge for
-  your press, though the merge guard in the hook (which runs `watch` as `log`) lets it through.
+  `[policy]` itself says so, with `guards.merge = "log"` or `"off"`, or a template that runs it below
+  `enforce` (`open`, or `watch` with the key), **and you pressed Accept for it**, like every
+  loosening. The window says it as "merges through the forge route from held to log". Committing
+  the opt-in waits for your press even on the default `watch` project, where `guards.merge` already
+  reads `log`; taking it out of the committed file holds merges at once. A project where
+  `guards.merge` is `enforce` (`hold`, `team` or `strict`, or the key itself) has nothing to
+  accept: its merges are asked in the window, as before. A project with no `[policy]`, or on the
+  default `watch` template without a `guards.merge` key, keeps today's behaviour: the route holds
+  every merge for your press, though the merge guard in the hook (which runs `watch` as `log`)
+  lets it through.
   **If you already pressed Accept for `guards.merge = "log"`:** that acceptance from before this
   change does not count as the opt-in, so press Accept once more after updating, and merges
   through the route stay held until you do.
