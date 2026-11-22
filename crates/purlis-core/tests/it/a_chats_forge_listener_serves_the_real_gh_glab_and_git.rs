@@ -1242,8 +1242,11 @@ fn a_route_that_fails_the_chats_authority_tells_no_tips_and_the_push_is_refused(
     let url = "https://github.com/acme/app.git";
 
     assert!(purlis_core::diffscan::remote_tips_through(url, route).is_none());
-    // Nothing told, and the remote is not asked any other way here: the push is read in full.
-    let refused = purlis_core::diffscan::pushed_told(&work, url, &updates, &|_| None);
+    // Nothing told: the push is read in full. This is what `pushed_told` does with no answer, but
+    // it is called directly: `pushed_told` would next ask github.com itself with `gh auth
+    // git-credential`, which reads the OS keyring (Secret Service over D-Bus on Linux) and, in CI,
+    // starts a session bus no test may leave behind.
+    let refused = purlis_core::diffscan::pushed_without_asking(&work, &updates);
     assert!(refused.is_err(), "{refused:?}");
 }
 
@@ -1269,10 +1272,15 @@ fn a_proxy_and_an_authority_a_chat_wrote_into_the_repository_are_not_what_the_sc
     let proxy = format!("http://127.0.0.1:{}", s.port());
     for (key, value) in [
         ("http.https://github.com/.proxy", proxy.as_str()),
+        ("http.https://git.example.test/.proxy", proxy.as_str()),
         ("http.proxy", proxy.as_str()),
         ("http.sslCAInfo", s.ca_file.to_str().unwrap()),
         (
             "http.https://github.com/.sslCAInfo",
+            s.ca_file.to_str().unwrap(),
+        ),
+        (
+            "http.https://git.example.test/.sslCAInfo",
             s.ca_file.to_str().unwrap(),
         ),
     ] {
@@ -1282,7 +1290,10 @@ fn a_proxy_and_an_authority_a_chat_wrote_into_the_repository_are_not_what_the_sc
     let updates = format!("refs/heads/many {tip} refs/heads/many {}\n", "0".repeat(40));
 
     let asked_before = times_the_forge_was_asked_which_commits_it_has(&s);
-    let scanned = purlis_core::diffscan::pushed(&work, "https://github.com/acme/app.git", &updates);
+    // Asked of an address on no forge purlis knows: for a forge's it would run `gh auth
+    // git-credential` against github.com, which reads the OS keyring (D-Bus on Linux).
+    let scanned =
+        purlis_core::diffscan::pushed(&work, "https://git.example.test/acme/app.git", &updates);
 
     assert_eq!(
         times_the_forge_was_asked_which_commits_it_has(&s),
