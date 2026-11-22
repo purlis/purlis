@@ -66,6 +66,27 @@ const RULESET: &[&str] = &[
     "deployment-protection-rules",
 ];
 
+/// The reads of a repo's rules that a chat may make (#7358): the rulesets that apply, and the
+/// rules that apply to a branch, which `tools/land.mjs` reads for the required checks. Every other
+/// route under [`RULESET`], and every write, stays refused.
+const RULE_READS: &[&[&str]] = &[
+    &["rulesets"],
+    &["rulesets", "#"],
+    &["rules", "branches", "*"],
+];
+
+/// What a chat may do to a workflow run of its own repo besides read it (#7358): rerun it, rerun
+/// its failed jobs. **Never `approve`**: that runs an outsider's fork code on the repo's runners,
+/// so it stays under [`APPROVAL`] and is refused: see ADR 0128's amendment of 2026-11-22.
+const CI_WRITES: &[&[&str]] = &[
+    &["actions", "runs", "#", "rerun"],
+    &["actions", "runs", "#", "rerun-failed-jobs"],
+];
+
+fn is_ci_write(method: &str, rel: &[String]) -> bool {
+    method == "POST" && CI_WRITES.iter().any(|p| matches(rel, p))
+}
+
 /// The repo's administration: refused for every method, reads included, because what a hook, a
 /// key or a variable holds is the point.
 const ADMIN: &[&str] = &[
@@ -117,7 +138,11 @@ fn any(names: &[String], list: &[&str]) -> bool {
 /// The refusal a route earns by its name, if it earns one.
 fn named_refusal(method: &str, rel: &[String], target: &Target) -> Option<Refusal> {
     let names = names(rel);
-    if any(&names, RULESET) {
+    if is_ci_write(method, rel) {
+        return None;
+    }
+    let rule_read = is_read(method) && RULE_READS.iter().any(|p| matches(rel, p));
+    if any(&names, RULESET) && !rule_read {
         return Some(Refusal::Ruleset);
     }
     if any(&names, ADMIN) {
@@ -152,6 +177,9 @@ fn write_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
             .find(|(m, pattern, _)| *m == method && matches(rel, pattern))
             .map(|(_, _, class)| class.clone())
     };
+    if kind == Kind::GitHub && is_ci_write(method, rel) {
+        return Some(Class::CiWrite);
+    }
     match kind {
         Kind::GitHub => allow(&[
             ("POST", &["pulls"], Class::PullRequestWrite),
@@ -428,6 +456,7 @@ fn read_allowed(kind: Kind, rel: &[String], target: &Target, repo: &AllowedRepo)
                 second.as_deref(),
                 Some("refs" | "trees" | "blobs" | "commits" | "matching-refs" | "ref")
             ),
+            "rulesets" | "rules" => listed(RULE_READS),
             "actions" => matches!(
                 second.as_deref(),
                 Some("runs" | "jobs" | "artifacts" | "workflows")
@@ -556,6 +585,16 @@ fn check_body(
     Ok(())
 }
 
+/// Whether a body is no body at all: no text, or a JSON `{}`.
+fn is_empty_object(body: &Body) -> bool {
+    body.form.is_empty()
+        && body.strings.is_empty()
+        && body
+            .json
+            .as_ref()
+            .is_none_or(|j| j.as_object().is_some_and(|m| m.is_empty()))
+}
+
 /// Decide one REST request under a chat's repo.
 pub(crate) fn decide(
     kind: Kind,
@@ -577,5 +616,9 @@ pub(crate) fn decide(
     }
     let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo)?;
+    if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {
+        // A rerun's body is `enable_debug_logging` and nothing else the chat may choose.
+        return Err(Refusal::MalformedRequest);
+    }
     Ok(class)
 }

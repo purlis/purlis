@@ -124,6 +124,8 @@ pub enum Class {
     CommentWrite,
     IssueWrite,
     LabelWrite,
+    /// A rerun of, or an approval to start, a workflow run of the chat's repo (#7358).
+    CiWrite,
     GraphqlQuery,
     /// The batch call of Git LFS, asking for download addresses only.
     LfsBatch,
@@ -240,6 +242,28 @@ const DOWNLOAD_HOSTS: &[&str] = &[
 /// terminated, and the one place the proxy follows a redirect to, once and with no credential.
 pub fn is_download_host(host: &str) -> bool {
     DOWNLOAD_HOSTS.contains(&host)
+}
+
+/// Whether `host` is where GitHub Actions keeps a run's logs and artifacts (#7358): `*.actions.githubusercontent.com`
+/// (one label under it, as `pipelines.` and `results-receiver.`, but never `token.` or `vstoken.`) and Actions results storage,
+/// `productionresultssa<digits>.blob.core.windows.net`. **Never a bare `*.blob.core.windows.net`**,
+/// which is anyone's storage account. The address is pre-signed, so it is followed once, by a GET
+/// and with no credential, and only for the chat on its unix socket: it is never tunnelled to, so
+/// it is on no [`DOWNLOAD_HOSTS`] list and the chat's own egress still refuses it.
+pub fn is_ci_storage_host(host: &str) -> bool {
+    let label = |l: &str| {
+        !l.is_empty()
+            && l.bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            && !l.starts_with('-')
+    };
+    if let Some(sub) = host.strip_suffix(".actions.githubusercontent.com") {
+        // `token.` and `vstoken.` mint Actions tokens: never a place a log is kept.
+        return label(sub) && !matches!(sub, "token" | "vstoken");
+    }
+    host.strip_suffix(".blob.core.windows.net")
+        .and_then(|account| account.strip_prefix("productionresultssa"))
+        .is_some_and(|n| (1..=5).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
@@ -1016,5 +1040,40 @@ impl crate::heldact::Recorded for RecordedRepos {
         self.0
             .iter()
             .any(|r| r.path.eq_ignore_ascii_case(repo.as_str()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_ci_storage_host;
+
+    #[test]
+    fn actions_log_and_artifact_storage_is_named_exactly() {
+        for host in [
+            "pipelines.actions.githubusercontent.com",
+            "results-receiver.actions.githubusercontent.com",
+            "productionresultssa0.blob.core.windows.net",
+            "productionresultssa19.blob.core.windows.net",
+        ] {
+            assert!(is_ci_storage_host(host), "{host}");
+        }
+        for host in [
+            "actions.githubusercontent.com",
+            "a.b.actions.githubusercontent.com",
+            "-x.actions.githubusercontent.com",
+            "token.actions.githubusercontent.com",
+            "vstoken.actions.githubusercontent.com",
+            "productionresultssa123456.blob.core.windows.net",
+            "pipelines.actions.githubusercontent.com.evil.example",
+            "evilactions.githubusercontent.com",
+            "productionresultssa.blob.core.windows.net",
+            "productionresultssa1a.blob.core.windows.net",
+            "attacker.blob.core.windows.net",
+            "blob.core.windows.net",
+            "productionresultssa1.blob.core.windows.net.evil.example",
+            "raw.githubusercontent.com",
+        ] {
+            assert!(!is_ci_storage_host(host), "{host}");
+        }
     }
 }
