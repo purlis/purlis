@@ -9002,10 +9002,10 @@ pub mod compile_cache;
 pub mod confined;
 pub mod door;
 pub mod egress;
+pub mod forgedeny;
 #[cfg(feature = "fuzzing")]
 #[doc(hidden)]
 pub mod fuzzing;
-pub mod forgedeny;
 pub mod grant;
 pub mod held;
 pub mod hosted;
