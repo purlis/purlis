@@ -204,6 +204,9 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   (about 8 minutes cold) runs the checks' planted-fault tests.
 - `gh api -X PATCH repos/purlis/purlis/pulls/<n> -F body=@<file>` edits a pull request's body;
   `gh pr edit` fails on the classic-projects deprecation.
+- In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
+  socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
+  change. `settings::tests` and `sandbox::personal::tests` run here.
 
 ## Agent skills
 

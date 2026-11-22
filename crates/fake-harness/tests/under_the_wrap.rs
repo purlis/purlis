@@ -197,6 +197,7 @@ fn play(given: &Given) -> Played {
         ..StartProgram::of("01JFAKEWRAPPRJCT0000000000", ProgramKind::Harness)
     };
     let reporting = session::Reporting {
+        seal: None,
         socket: socket.display().to_string(),
         token: token.expose().to_owned(),
     };

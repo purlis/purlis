@@ -126,6 +126,8 @@ pub const NOT_INHERITED: &[&str] = &[
     crate::active::WORKSPACE_ENV,
     crate::active::PLANE_ROOT_ENV,
     TOKEN_ENV,
+    #[cfg(unix)]
+    seal::SEAL_ENV,
     crate::noterminal::RELAUNCHED_ENV,
     SANDBOXED_ENV,
     WRAPPED_ENV,
@@ -3025,7 +3027,8 @@ pub struct ToolCall {
     /// The harness's id for this one call, which pairs its pre hook with its post hook.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call: Option<String>,
-    /// SHA-256 of the arguments, in hex. Never the arguments.
+    /// SHA-256 of the arguments, in hex. Never the arguments. In a spooled line it is sealed
+    /// ([`seal`]) and the drain opens it, so a drained line carries the hash again (#6880).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<String>,
     /// What charter's hook answered.
@@ -4078,6 +4081,9 @@ impl Asking {
 /// refusals in `off_unix`, kept in a file of their own because no unix build compiles them.
 #[cfg(not(unix))]
 mod off_unix;
+
+#[cfg(unix)]
+pub mod seal;
 
 #[cfg(unix)]
 pub mod spool;

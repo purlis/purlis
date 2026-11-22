@@ -2374,6 +2374,19 @@ impl Events {
         Self(Writer::Here(Arc::new(Mutex::new(recorder))))
     }
 
+    /// The public key chat `chat`'s spooled argument digests are sealed to, where this process
+    /// holds the log that keeps the private half (#6880). A chat the host runs gets its key
+    /// from the host.
+    pub fn seal_public(&self, plane: &Path, chat: u32) -> Option<String> {
+        match &self.0 {
+            Writer::Here(log) => log
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .seal_public(plane, chat),
+            Writer::InTheHost(_) => None,
+        }
+    }
+
     /// The log the session host holds: each write is handed to `send`, which answers once the
     /// host has written it durably, or why it did not.
     pub fn in_the_host(send: impl Fn(Entry) -> Result<(), String> + Send + Sync + 'static) -> Self {
@@ -3440,6 +3453,23 @@ impl Hooks {
             .map_err(|why| format!("the event log refused it: {why}"))
     }
 
+    /// **Audits a change of the project's level** (`trust.sandbox.level`, R-228) in the host's
+    /// event log, under no chat and made durable before it answers. Refused where this machine
+    /// has no event log open, or the log refused it.
+    pub fn record_level_changed(
+        &self,
+        root: &Path,
+        changed: &purlis_core::sandbox::personal::LevelChanged,
+    ) -> Result<(), String> {
+        self.audit(
+            root,
+            None,
+            changed.kind(),
+            changed.body(),
+            ("recorded", "change of level"),
+        )
+    }
+
     /// **Audits a dispatch grant or revoke** (#1437) in the host's event log, under chat
     /// `number` where it was allowed from one, and made durable before it answers. Refused
     /// where this machine has no event log open: a grant nobody recorded is never made.
@@ -3797,9 +3827,15 @@ impl Hooks {
     /// What a chat started in this plane is told to report to: the socket and the tokens it
     /// checks, or nothing when this is not listening.
     pub fn reporting(&self) -> Option<crate::sessions::Reporting> {
+        let events = Arc::clone(&self.events);
+        let root = self.plane.root().to_path_buf();
         Some(crate::sessions::Reporting {
             socket: self.socket.clone()?,
             tokens: Arc::clone(self.tokens.as_ref()?),
+            seals: Some(Arc::new(move |chat| {
+                let events = events.lock().unwrap_or_else(PoisonError::into_inner);
+                events.as_ref()?.seal_public(&root, chat)
+            })),
         })
     }
 

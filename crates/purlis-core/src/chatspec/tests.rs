@@ -84,6 +84,7 @@ fn a_chat_is_told_its_number_under_both_names() {
 #[test]
 fn a_chat_with_somewhere_to_report_is_told_where_and_its_token() {
     let reporting = Reporting {
+        seal: None,
         socket: std::path::Path::new("/home/me/project/.purlis/app/hooks.sock"),
         token: "the-chats-own",
     };
@@ -98,6 +99,24 @@ fn a_chat_with_somewhere_to_report_is_told_where_and_its_token() {
         value(&spec, "PURLIS_CHAT_TOKEN").as_deref(),
         Some("the-chats-own")
     );
+}
+
+#[test]
+fn a_chat_with_a_seal_key_is_told_its_public_half_and_one_without_is_told_nothing() {
+    let reporting = |seal| Reporting {
+        seal,
+        socket: std::path::Path::new("/home/me/project/.purlis/app/hooks.sock"),
+        token: "the-chats-own",
+    };
+
+    let sealed = spec(app(), &a_chat(&[], Some(reporting(Some("cHVibGlj")))));
+    let unsealed = spec(app(), &a_chat(&[], Some(reporting(None))));
+
+    assert_eq!(
+        value(&sealed, "PURLIS_CHAT_SEAL").as_deref(),
+        Some("cHVibGlj")
+    );
+    assert_eq!(value(&unsealed, "PURLIS_CHAT_SEAL"), None);
 }
 
 fn a_launch<'a>(harness: Option<&'a str>, set: &'a [(String, String)]) -> Launched<'a> {
@@ -178,6 +197,7 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
         harness: Some("claude".to_owned()),
         git_hooks: Some("/home/me/.purlis/git-hooks".to_owned()),
         reporting: Some(session::Reporting {
+            seal: None,
             socket: "/home/me/project/.purlis/app/hooks.sock".to_owned(),
             token: "the-chats-own".to_owned(),
         }),
@@ -203,6 +223,7 @@ fn a_launch_as_the_session_protocol_carries_it_is_started_by_its_words() {
             harness: Some("claude"),
             git_hooks: Some("/home/me/.purlis/git-hooks"),
             reporting: Some(Reporting {
+                seal: None,
                 socket: std::path::Path::new("/home/me/project/.purlis/app/hooks.sock"),
                 token: "the-chats-own",
             }),
@@ -242,6 +263,7 @@ fn a_chat_on_purlis_s_own_wrap_starts_it_with_only_what_it_carries_for_the_chat(
     ];
     let reporting = || {
         Some(Reporting {
+            seal: None,
             socket: std::path::Path::new("/run/purlis/hooks.sock"),
             token: "chat-token",
         })

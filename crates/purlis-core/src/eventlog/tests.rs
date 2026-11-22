@@ -2552,6 +2552,7 @@ fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from
         sandbox: Some("seatbelt".to_owned()),
         conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
         started_by: Some("terminal".to_owned()),
+        attendance: None,
         protection: None,
     };
     host.begin(
@@ -4645,4 +4646,234 @@ fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_stil
         )
         .unwrap();
     assert!(again.is_empty(), "{again:?}");
+}
+
+/// R-107, Q271 (T1.1-40, #6887): a fact lowered after the run began is said by the runs that
+/// carry the attributes on, a clear's and a child's: `unattended`, never the `attended` the
+/// first run began with.
+#[test]
+fn a_lowered_attendance_is_said_by_the_clear_and_the_child_run_that_follow() {
+    use crate::hookwire::Decision;
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane,
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes {
+            attendance: Some("attended".to_owned()),
+            ..Attributes::default()
+        },
+    )
+    .unwrap();
+    host.attendance_lowered(plane, 3, "unattended");
+
+    let mut by_agent = tool_call(3, "pretooluse", Decision::None);
+    by_agent.agent = Some("agent-1".to_owned());
+    host.tool(plane, &by_agent, std::time::Instant::now())
+        .unwrap();
+    host.report(plane, &report(3, SessionStart), Followed::Moved)
+        .unwrap();
+
+    let started = runs_started(dir.path());
+    let said: Vec<_> = started
+        .iter()
+        .map(|event| {
+            (
+                event.body["cause"].as_str().unwrap().to_owned(),
+                event.body["attendance"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let said: Vec<(&str, &str)> = said.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    assert_eq!(
+        said,
+        [
+            ("start", "attended"),
+            ("child", "unattended"),
+            ("clear", "unattended")
+        ],
+        "the first run said what it began as; the runs after the lowering say the lowered fact"
+    );
+}
+
+/// R-106, R-219 (T1.1-40, #6887): a run's `run.started` says whether anyone was at the chat when
+/// it began, as the attendance fact's word, and a start that holds no fact says so: the fact is
+/// in the event log, where a person and a reader find it, never only in the app's memory.
+#[test]
+fn run_started_records_attendance() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    for (chat, run, attendance) in [
+        (CHAT, RUN, Some("attended")),
+        ("chat-two", "run-two", Some("unattended")),
+        ("chat-three", "run-three", None),
+    ] {
+        host.begin(
+            plane,
+            3,
+            RunOf { chat, run },
+            Began::Start,
+            &Attributes {
+                attendance: attendance.map(str::to_owned),
+                ..Attributes::default()
+            },
+        )
+        .unwrap();
+    }
+    let words: Vec<_> = runs_started(dir.path())
+        .iter()
+        .map(|event| event.body["attendance"].as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        words,
+        [
+            Some("attended".to_owned()),
+            Some("unattended".to_owned()),
+            Some("unknown".to_owned())
+        ]
+    );
+}
+
+/// A recorder in `dir` as `Recorder::open_in` makes one: with the events folder it keeps the
+/// chats' seal keys in.
+#[cfg(unix)]
+fn recorder_keeping_seals(dir: &Path) -> Recorder {
+    let mut recorder = recorder(dir);
+    recorder.dir = dir.to_path_buf();
+    recorder
+}
+
+/// What the hook would spool for `call` in a chat whose seal public key is `public`.
+#[cfg(unix)]
+fn spooled_sealed(call: &crate::hookwire::ToolCall, public: &str) -> crate::hookwire::ToolCall {
+    let sealed = crate::hookwire::seal::seal(public, call.args.as_deref().unwrap()).unwrap();
+    crate::hookwire::ToolCall {
+        args: Some(sealed),
+        ..call.clone()
+    }
+}
+
+#[cfg(unix)]
+fn drained_line(call: crate::hookwire::ToolCall) -> crate::hookwire::spool::Drained {
+    crate::hookwire::spool::Drained::Line {
+        chat: call.chat,
+        seq: 1,
+        line: crate::hookwire::spool::Spooled::Tool(call),
+    }
+}
+
+/// #6880: the host keys the hash the hook sealed, so the drained event joins the live one.
+#[cfg(unix)]
+#[test]
+fn a_spooled_call_after_drain_carries_args_equal_to_the_live_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/plane");
+    let mut recorder = recorder_keeping_seals(dir.path());
+    let public = crate::hookwire::seal::public_for(dir.path(), plane, 3).unwrap();
+    let live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
+
+    recorder.tool(plane, &live, Instant::now()).unwrap();
+    recorder
+        .spooled(plane, drained_line(spooled_sealed(&live, &public)))
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let args: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "hook.pretooluse")
+        .map(|event| event.body["args"].clone())
+        .collect();
+    assert_eq!(args.len(), 2, "{events:?}");
+    assert!(args[0].is_string(), "the live event has its digest");
+    assert_eq!(args[0], args[1]);
+}
+
+/// #6880: the key is kept in the machine store, so a spool a host left behind opens when the
+/// next one drains it.
+#[cfg(unix)]
+#[test]
+fn a_spool_from_before_a_restart_still_decrypts() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/plane");
+    let live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
+    let public = crate::hookwire::seal::public_for(dir.path(), plane, 3).unwrap();
+    let spooled = spooled_sealed(&live, &public);
+
+    // The host that started the chat is gone; the next one makes a recorder of its own.
+    let mut next = recorder_keeping_seals(dir.path());
+    next.spooled(plane, drained_line(spooled)).unwrap();
+
+    let events = read(dir.path()).unwrap();
+    assert_eq!(
+        events[0].body["args"].as_str().unwrap(),
+        next.key.digest(live.args.as_deref().unwrap())
+    );
+}
+
+/// #6880: a key that is gone fails closed: no digest, a record that says so, and nothing sealed
+/// or plain in the log.
+#[cfg(unix)]
+#[test]
+fn a_spooled_call_whose_seal_key_is_gone_is_recorded_without_args_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/plane");
+    let live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
+    let elsewhere = tempfile::tempdir().unwrap();
+    let public = crate::hookwire::seal::public_for(elsewhere.path(), plane, 3).unwrap();
+    let mut recorder = recorder_keeping_seals(dir.path());
+
+    recorder
+        .spooled(plane, drained_line(spooled_sealed(&live, &public)))
+        .unwrap();
+
+    let events = read(dir.path()).unwrap();
+    let kinds: Vec<&str> = events.iter().map(|event| event.kind.as_str()).collect();
+    assert_eq!(kinds, ["hook.spool.rejected", "hook.pretooluse"]);
+    assert_eq!(events[0].body["why"], "args_unreadable");
+    assert!(events[1].body.get("args").is_none(), "{:?}", events[1]);
+    let log = std::fs::read_to_string(dir.path().join("events.jsonl")).unwrap_or_default();
+    assert!(!log.contains("sealed:"));
+}
+
+/// #6880: a sealed blob too short to be a sealed box (32 bytes or fewer) is no digest either:
+/// the same record, and nothing of the blob in the log.
+#[cfg(unix)]
+#[test]
+fn a_truncated_sealed_blob_is_recorded_without_args_and_says_so() {
+    use base64::Engine as _;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/plane");
+    let mut recorder = recorder_keeping_seals(dir.path());
+    crate::hookwire::seal::public_for(dir.path(), plane, 3).unwrap();
+    let mut live = tool_call(3, "pretooluse", crate::hookwire::Decision::Allow);
+    for length in [0usize, 32] {
+        let blob = base64::engine::general_purpose::STANDARD.encode(vec![9u8; length]);
+        live.args = Some(format!("sealed:{blob}"));
+        recorder.spooled(plane, drained_line(live.clone())).unwrap();
+    }
+    let events = read(dir.path()).unwrap();
+    let rejected: Vec<_> = events
+        .iter()
+        .filter(|event| event.kind == "hook.spool.rejected")
+        .collect();
+    assert_eq!(rejected.len(), 2, "{events:?}");
+    assert!(
+        rejected
+            .iter()
+            .all(|event| event.body["why"] == "args_unreadable")
+    );
+    assert!(
+        events
+            .iter()
+            .filter(|event| event.kind == "hook.pretooluse")
+            .all(|event| event.body.get("args").is_none())
+    );
 }

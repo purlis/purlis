@@ -388,3 +388,19 @@ fn a_setup_choice_an_administrator_s_lock_forbids_writes_nothing_and_says_why() 
     }
     set_for_this_test(Locks::none());
 }
+
+#[test]
+fn a_level_change_names_both_levels_and_the_person_and_the_same_level_is_none() {
+    let changed = LevelChanged::of(Choice::Floor, Choice::On).expect("Basic to Full moved");
+    assert_eq!(changed.kind(), "trust.sandbox.level");
+    let body = changed.body();
+    assert_eq!(
+        (&body["from"], &body["to"]),
+        (&"floor".into(), &"on".into())
+    );
+    assert_eq!(
+        (&body["actor_kind"], &body["actor"], &body["scope"]),
+        (&"human".into(), &"operator".into(), &"local-ui".into())
+    );
+    assert_eq!(LevelChanged::of(Choice::On, Choice::On), None);
+}
