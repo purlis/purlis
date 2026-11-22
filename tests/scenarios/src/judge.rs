@@ -120,7 +120,7 @@ pub fn judge(
         );
     }
     for (m, used) in marks.iter().zip(&used) {
-        if !used {
+        if !used && !m.may_pass {
             let what = match (&m.check, m.step, &m.assertion) {
                 (Some(check), _, _) => format!(
                     "global check {check} on {}",
@@ -157,8 +157,12 @@ fn applies(mark: &Mark, run: &Run) -> bool {
         && mark.timings.is_none_or(|t| t == run.timings)
 }
 
-/// Whether `seen` is what `want` pins: inside it for a range in Timings units, else equal.
+/// Whether `seen` is what `want` pins: inside it for a range in Timings units, one of its values
+/// for a set, else equal.
 fn observed_matches(want: &Value, seen: &Value, run: &Run) -> bool {
+    if let Some(set) = want.as_array() {
+        return set.iter().any(|one| observed_matches(one, seen, run));
+    }
     if let Some(range) = want.as_object() {
         let end = |key: &str| {
             range

@@ -219,8 +219,8 @@
           "leg": "fake",
           "step": 1,
           "assertion": "forbid[0]",
-          "observed": 2,
-          "note": "fake leg (CI run 44996302479): the window holds 2 stop.block lines (it held 1 in run 44962030981): the block of the step before lands here, and the second is likely its ask's second raise (#6674); which ask each came from was not read"
+          "observed": [1, 2],
+          "note": "a race in #6673, set pinned (1 or 2): the block of the step before is written at about the time this step's window closes, so the window held 1 stop.block in runs 44962030981 and 45002242423 and 2 in run 44996302479; which ask each line came from was not read"
         },
         {
           "issue": 7356,
@@ -737,7 +737,8 @@
           "leg": "fake",
           "check": "one_ask_one_raise",
           "refusal": "step 1",
-          "note": "fake leg (CI run 44962030981): a second ask.raised with nothing between it and the first (event 53), written after the client was gone"
+          "may_pass": true,
+          "note": "a race in #7355: the second raise after the client was gone is written in run 44962030981 (event 53) and was not in run 45002242423, where the check passed; may_pass keeps the mark in either case"
         },
         {
           "issue": 6672,

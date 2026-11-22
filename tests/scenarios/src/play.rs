@@ -1256,4 +1256,58 @@ mod tests {
             "a pass under a mark is red: {why:?}"
         );
     }
+
+    #[test]
+    fn a_set_pins_each_value_in_it_and_may_pass_excuses_a_mark_that_found_nothing() {
+        let marked = |extra: Value| {
+            let mut mark = json!({"issue": 6673, "step": 1, "assertion": "forbid[0]",
+                                  "observed": [1, 2], "note": "a race"});
+            mark.as_object_mut()
+                .expect("a mark")
+                .extend(extra.as_object().expect("extra").clone());
+            cell(json!({"id": "M-P",
+                "steps": [{"calls": [{"tool": "Bash", "input": {"command": "true"}}],
+                           "forbid": [{"kind": "stop.block"}]}],
+                "expected_fail": [mark]}))
+        };
+        let seen = |observed: Observed| {
+            [Assertion {
+                step: 1,
+                assertion: "forbid[0]".into(),
+                observed,
+            }]
+        };
+        let c = marked(json!({}));
+        for n in [1u64, 2] {
+            assert_eq!(
+                verdict(&c, &run(), &seen(Observed::Fail(n.into())), &[]).0,
+                ReportVerdict::ExpectedFail,
+                "{n} is in the set"
+            );
+        }
+        assert_eq!(
+            verdict(&c, &run(), &seen(Observed::Fail(3.into())), &[]).0,
+            ReportVerdict::Fail,
+            "3 is outside it"
+        );
+        // Passing under a plain mark is red; under a mark that may pass it is a pass.
+        assert_eq!(
+            verdict(&c, &run(), &seen(Observed::Pass), &[]).0,
+            ReportVerdict::Fail
+        );
+        let racy = marked(json!({"may_pass": true}));
+        assert_eq!(
+            verdict(&racy, &run(), &seen(Observed::Pass), &[]).0,
+            ReportVerdict::Pass
+        );
+        assert_eq!(
+            verdict(&racy, &run(), &seen(Observed::Fail(2.into())), &[]).0,
+            ReportVerdict::ExpectedFail
+        );
+        // A failure outside the set is still red, may_pass or not.
+        assert_eq!(
+            verdict(&racy, &run(), &seen(Observed::Fail(3.into())), &[]).0,
+            ReportVerdict::Fail
+        );
+    }
 }

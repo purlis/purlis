@@ -370,6 +370,8 @@ pub(crate) struct Mark {
     pub issue: u32,
     pub why: String,
     pub scope: Scope,
+    /// A race that sometimes does not happen: the check passing is no unexpected pass.
+    pub may_pass: bool,
 }
 
 /// **What came of a scenario's checks**: each failure that is not marked, and each marked check
@@ -407,7 +409,7 @@ pub(crate) fn outcome(found: Vec<Violation>, marks: &[Mark]) -> Outcome {
         }
     }
     for (i, mark) in marks.iter().enumerate() {
-        if !out.fired.contains(&i) {
+        if !out.fired.contains(&i) && !mark.may_pass {
             out.failures.push(format!(
                 "{}: unexpected pass: #{} ({}) is marked as failing here, and the check passed: \
                  remove the mark",
@@ -616,7 +618,7 @@ impl Scenario {
     /// **Marks `check` as failing here, for `issue`**: per scenario and check, never for the
     /// suite. A mark whose check passes is a failure at the end.
     pub(crate) fn expected_fail(&self, check: Check, issue: u32, why: &str) {
-        self.expected_fail_in(check, issue, why, Scope::Anywhere);
+        self.expected_fail_in(check, issue, why, Scope::Anywhere, false);
     }
 
     /// **[`Self::expected_fail`], excusing only what `scope` holds** (a cell's step, a cell's
@@ -627,6 +629,7 @@ impl Scenario {
         issue: u32,
         why: &str,
         scope: Scope,
+        may_pass: bool,
     ) -> usize {
         assert!(issue > 0, "an expected fail names its issue");
         let mut marks = self.ledger.marks.lock().expect("marks");
@@ -635,6 +638,7 @@ impl Scenario {
             issue,
             why: why.to_owned(),
             scope,
+            may_pass,
         });
         marks.len() - 1
     }

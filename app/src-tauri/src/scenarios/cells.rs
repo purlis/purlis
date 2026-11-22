@@ -669,6 +669,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 u32::try_from(mark.issue).expect("an issue number"),
                 mark.note.as_deref().unwrap_or("a cell's mark"),
                 scope,
+                mark.may_pass,
             );
             registered.push((cell.id.clone(), at, mark));
         }

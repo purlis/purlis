@@ -374,6 +374,9 @@ impl Validator {
                     "{at}: scoped to a dialect the cell does not run in"
                 ));
             }
+            if mark.may_pass && mark.note.as_deref().is_none_or(str::is_empty) {
+                say(format!("{at}: may_pass needs a note naming the race"));
+            }
             if let Some(check) = &mark.check {
                 if !GLOBAL_CHECKS.contains(&check.as_str()) {
                     say(format!(
@@ -431,7 +434,15 @@ impl Validator {
                     }
                 }
             }
-            (None, None) => {}
+            (None, None) => {
+                if let Some(set) = mark.observed.as_ref().and_then(Value::as_array)
+                    && (set.is_empty() || set.iter().any(|v| v.is_array() || v.is_object()))
+                {
+                    say(format!(
+                        "{at}: an observed set is a non-empty list of plain values"
+                    ));
+                }
+            }
         }
     }
 
