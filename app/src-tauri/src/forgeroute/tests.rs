@@ -513,6 +513,40 @@ fn a_chats_merge_stance_is_made_with_the_policy_of_the_chain_that_dispatched_it(
     );
 }
 
+#[test]
+fn a_runners_chat_is_made_its_merge_stance_with_the_strict_chain() {
+    // A runner's chat carries no record of its chain here, so `for_runner` holds its merges: the
+    // chain it names is `strict`, and no project policy, opted in and accepted or not, loosens it.
+    let chains: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let kept = chains.clone();
+    let scene = Scene::with_seams(
+        None,
+        Seams::stubs().pin,
+        Arc::new(move |_, chain| {
+            kept.lock().unwrap().push(chain.map(str::to_owned));
+            Arc::new(purlis_core::forge::mergestance::HoldMerges)
+        }),
+    );
+    scene
+        .pairing
+        .runs
+        .lock()
+        .unwrap()
+        .insert("run-r".to_owned(), PathBuf::from("/p/one"));
+
+    let forwarded = scene.routes.for_runner(&runner(), "chat-r", "run-r");
+
+    assert!(matches!(forwarded, RunnerForward::Desktop(_)));
+    let strict = purlis_core::enforcement::Resolved::strict().spelled();
+    assert_eq!(*chains.lock().unwrap(), [Some(strict.clone())]);
+    let opened_up = purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Off)
+        .for_chat(Some(&strict));
+    assert_eq!(
+        opened_up.mode(purlis_core::enforcement::Family::GuardsMerge),
+        purlis_core::enforcement::Mode::Enforce
+    );
+}
+
 // ---- lifecycle ----
 
 #[test]
@@ -1603,7 +1637,9 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
         scene.routes.remote_refs(7, own).unwrap_err(),
         "this chat has no forge route"
     );
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"), None);
+    let guard = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let not_recorded = "that remote is not a repository recorded for this chat";
@@ -1660,7 +1696,9 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
 #[test]
 fn the_refs_a_recorded_remote_has_are_what_the_ask_returns_on_the_runs_route() {
     let scene = Scene::new();
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"), None);
+    let guard = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let tips = vec!["a".repeat(40), "b".repeat(40)];

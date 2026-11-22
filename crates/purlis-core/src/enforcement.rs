@@ -492,6 +492,19 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// **Whether the committed `[policy]` itself lets merges through the forge route** (the
+    /// person's ruling of 2026-11-22): it names `guards.merge` by key, or a template other than
+    /// the default `watch`. A project with no `[policy]`, or on `watch` with no `guards.merge`,
+    /// runs the guard as `log` for the hook by the template's default, and the route holds its
+    /// merges. Not enough alone: [`Resolved::merges_opted_in`] needs the person's press too.
+    pub fn merges_opted_in(&self) -> bool {
+        // A file that did not read, or holds a value that did not, is `strict` and opts in to nothing.
+        !self.unread
+            && self.refused.is_empty()
+            && (self.overrides.contains_key(&Family::GuardsMerge)
+                || (self.template_said && self.template != Template::Watch))
+    }
+
     /// What `text`, a settings file, says; the default where it is `None`, holds no `[policy]`,
     /// or is not TOML (that file's own reader says why).
     pub fn from_text(text: Option<&str>) -> Self {
@@ -772,12 +785,21 @@ pub fn digest_of(root: &Path) -> String {
 fn digest(resolved: &Resolved) -> String {
     use sha2::Digest;
     // The denies are part of what is accepted, so of what is digested (the review of #7113).
-    let text = format!("{}\n{}", resolved.spelled(), resolved.denies.spelled());
+    let text = format!(
+        "{}\n{}\nmerges={}",
+        resolved.spelled(),
+        resolved.denies.spelled(),
+        resolved.merges
+    );
     crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
 }
 
 /// The key an acceptance keeps the denies it accepted under: no family's key.
 const DENIES_KEPT: &str = "dispatch.denies";
+
+/// The key an acceptance keeps the merge opt-in under ([`Resolved::merges_opted_in`]), kept only
+/// where it was accepted: an acceptance from before it existed has none, which reads as not opted in.
+const MERGES_KEPT: &str = "guards.merge.opted_in";
 
 /// How every family runs for one chat: what [`at_start`] resolved, the sandbox's level, and the
 /// dispatch denies.
@@ -789,6 +811,12 @@ pub struct Resolved {
     level: SandboxLevel,
     /// The dispatch denies (`[dispatch.denies]`, ticket T1.1-73).
     denies: crate::dispatchgrant::Denied,
+    /// **Whether the project opted in to merges through the forge route** ([`Settings::merges_opted_in`]).
+    /// Part of what a person accepts: turning it on is a loosening that waits for the press,
+    /// though `guards.merge` itself may read `log` either way (the default `watch` runs it as
+    /// `log`). Taking it away is a tightening, at once. An acceptance kept before this existed
+    /// reads as not opted in.
+    merges: bool,
 }
 
 impl Resolved {
@@ -808,6 +836,7 @@ impl Resolved {
                 .collect(),
             level,
             crate::dispatchgrant::Denied::default(),
+            false,
         )
     }
 
@@ -825,12 +854,14 @@ impl Resolved {
         mut modes: BTreeMap<Family, Mode>,
         level: SandboxLevel,
         denies: crate::dispatchgrant::Denied,
+        merges: bool,
     ) -> Self {
         modes.insert(Family::Sandbox, mode_of_level(level));
         Self {
             modes,
             level,
             denies,
+            merges,
         }
     }
 
@@ -849,6 +880,7 @@ impl Resolved {
                 .collect(),
             level,
             settings.denies.clone(),
+            settings.merges_opted_in(),
         )
     }
 
@@ -881,6 +913,14 @@ impl Resolved {
         &self.denies
     }
 
+    /// **Whether merges through the forge route are opted in and accepted**: the project's
+    /// committed `[policy]` names `guards.merge` or a template other than `watch`
+    /// ([`Settings::merges_opted_in`]), and the person pressed Accept for it. In [`in_force`] it
+    /// is both at once.
+    pub fn merges_opted_in(&self) -> bool {
+        self.merges
+    }
+
     /// The stricter of `self` and `other`, family by family, the stricter level, and every deny
     /// of either.
     pub fn stricter(&self, other: &Self) -> Self {
@@ -891,18 +931,34 @@ impl Resolved {
                 .collect(),
             self.level.max(other.level),
             self.denies.with(&other.denies),
+            self.merges && other.merges,
         )
     }
 
     /// The families `self` runs looser than `accepted`, each with both modes: what a loosening
     /// press would accept. The sandbox is [`Self::level_looser_than`]'s.
     pub fn looser_than(&self, accepted: &Self) -> Vec<(Family, Mode, Mode)> {
-        Family::ALL
+        let mut looser: Vec<(Family, Mode, Mode)> = Family::ALL
             .into_iter()
             .filter(|family| *family != Family::Sandbox)
             .filter(|family| self.mode(*family) < accepted.mode(*family))
             .map(|family| (family, accepted.mode(family), self.mode(family)))
-            .collect()
+            .collect();
+        // The merge opt-in is a loosening of `guards.merge` for the route, which holds every
+        // merge until it is accepted, even where the hook's mode reads the same (`watch` is `log`).
+        if self.merges
+            && !accepted.merges
+            && !looser
+                .iter()
+                .any(|(family, _, _)| *family == Family::GuardsMerge)
+        {
+            looser.push((
+                Family::GuardsMerge,
+                Mode::Enforce,
+                self.mode(Family::GuardsMerge),
+            ));
+        }
+        looser
     }
 
     /// The accepted level and this one, where this one is looser: what a loosening press would
@@ -957,6 +1013,9 @@ impl Resolved {
                 .collect(),
             level,
             crate::dispatchgrant::Denied::default(),
+            // The spelling says nothing of the opt-in, so it never takes it away from what it
+            // is joined with ([`Self::stricter`]); [`Self::of_kept`] reads it from the record.
+            true,
         )
     }
 
@@ -978,6 +1037,9 @@ impl Resolved {
         if !self.denies.is_empty() {
             kept.insert(DENIES_KEPT.to_owned(), self.denies.spelled());
         }
+        if self.merges {
+            kept.insert(MERGES_KEPT.to_owned(), "true".to_owned());
+        }
         kept
     }
 
@@ -985,7 +1047,7 @@ impl Resolved {
         let mut resolved = Self::parse(
             &kept
                 .iter()
-                .filter(|(key, _)| key.as_str() != DENIES_KEPT)
+                .filter(|(key, _)| key.as_str() != DENIES_KEPT && key.as_str() != MERGES_KEPT)
                 .map(|(family, mode)| format!("{family}={mode}"))
                 .collect::<Vec<_>>()
                 .join(","),
@@ -993,7 +1055,19 @@ impl Resolved {
         if let Some(denies) = kept.get(DENIES_KEPT) {
             resolved.denies = crate::dispatchgrant::Denied::parse(denies);
         }
+        // Fail closed: only an acceptance that says so is opted in.
+        resolved.merges = kept.get(MERGES_KEPT).is_some_and(|said| said == "true");
         resolved
+    }
+
+    #[cfg(test)]
+    pub(crate) fn as_kept_for_test(&self) -> BTreeMap<String, String> {
+        self.as_kept()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn of_kept_for_test(kept: &BTreeMap<String, String>) -> Self {
+        Self::of_kept(kept)
     }
 
     /// This, at `level` where that is looser or stricter: what the team's answer to its off
@@ -1023,6 +1097,15 @@ pub fn committed(root: &Path) -> Resolved {
     Resolved::of(
         &Settings::read(root),
         &crate::sandbox::policy::Locks::of(root),
+    )
+}
+
+/// [`committed`] for settings text, as a test names it.
+#[cfg(test)]
+pub(crate) fn committed_for_test(text: &str) -> Resolved {
+    Resolved::of(
+        &Settings::from_text(Some(text)),
+        &crate::sandbox::policy::Locks::none(),
     )
 }
 

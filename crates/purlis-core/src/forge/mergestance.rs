@@ -10,10 +10,14 @@
 //! [`super::pin::PolicyPin`] reads an administrator's pin) and held to what the chat started
 //! under, as its hook is:
 //!
-//! **Only on an explicit opt-in** (the person's ruling, 2026-11-22): the route forwards a merge only
-//! where the project's committed `[policy]` names `guards.merge` itself or a template other than
-//! `watch` (`merges_opted_in`). The default `watch` runs the guard as `log` for the hook, but the
-//! route holds every merge of a project that never wrote the setting.
+//! **Only on an explicit opt-in, that the person accepted** (the person's ruling, 2026-11-22, and
+//! round 4): the route forwards a merge only where the project's committed `[policy]` names
+//! `guards.merge` itself or a template other than `watch`
+//! ([`enforcement::Settings::merges_opted_in`]) **and** the person pressed Accept for it, like
+//! every loosening ([`enforcement::Resolved::merges_opted_in`]): the opt-in is part of what is
+//! accepted, so committing it waits for the press, and taking it out of `HEAD` holds at once. The
+//! default `watch` runs the guard as `log` for the hook, but the route holds every merge of a
+//! project that never wrote the setting.
 //!
 //! - **`enforce`** (and every mode this cannot read): the merge is a held act, as it was.
 //! - **`log`**: a merge the route would otherwise refuse is forwarded, and one line is recorded
@@ -69,33 +73,21 @@ pub struct PolicyMergeStance {
     record: Record,
 }
 
-/// **Whether the project's committed `[policy]` itself lets merges through**, the opt-in the route
-/// requires (the person's ruling of 2026-11-22): it names `guards.merge` by key, or names a
-/// template other than the default `watch`. A project with no `[policy]`, or with
-/// `template = "watch"` and no `guards.merge` key, runs the guard as `log` for the hook by the
-/// template's default, and the route still holds its merges for the person's press.
-fn merges_opted_in(settings: &enforcement::Settings) -> bool {
-    settings.overrides.contains_key(&Family::GuardsMerge)
-        || (settings.template_said && settings.template != enforcement::Template::Watch)
-}
-
 /// How `guards.merge` runs for a chat on the route: `live`, no looser than the chat's `chain`
 /// ([`enforcement::Resolved::for_chat`], what the hook's answer is made with), and no looser than
 /// what the chat `started` under (the stricter-of-start rule of the hook's environment); and
-/// `enforce` unless the project opted in (`merges_opted_in`).
+/// `enforce` unless the project's opt-in is both committed and accepted
+/// ([`enforcement::Resolved::merges_opted_in`]), in the chat's start as well as now.
 fn merge_mode(
     live: &enforcement::Resolved,
     chain: Option<&str>,
     started: &enforcement::Resolved,
-    opted_in: bool,
 ) -> Mode {
-    if !opted_in {
+    let run = live.clone().for_chat(chain).stricter(started);
+    if !run.merges_opted_in() {
         return Mode::Enforce;
     }
-    live.clone()
-        .for_chat(chain)
-        .stricter(started)
-        .mode(Family::GuardsMerge)
+    run.mode(Family::GuardsMerge)
 }
 
 impl PolicyMergeStance {
@@ -120,7 +112,6 @@ impl PolicyMergeStance {
                     &enforcement::in_force(&for_mode),
                     chain.as_deref(),
                     &started,
-                    merges_opted_in(&enforcement::Settings::read(&for_mode)),
                 )
             }),
             record: Box::new(move |chat, said| {
@@ -219,7 +210,7 @@ mod tests {
     /// says `text`, now and at its start.
     fn route_mode(text: &str) -> Mode {
         let live = resolved(text);
-        merge_mode(&live, None, &live, merges_opted_in(&settings(text)))
+        merge_mode(&live, None, &live)
     }
 
     #[test]
@@ -259,8 +250,8 @@ mod tests {
     fn a_dispatched_chat_under_an_enforcing_asker_is_held_where_the_project_says_log() {
         let log = resolved("[policy]\nguards.merge = \"log\"\n");
         let asker = enforcement::Resolved::strict().spelled();
-        assert_eq!(merge_mode(&log, None, &log, true), Mode::Log);
-        assert_eq!(merge_mode(&log, Some(&asker), &log, true), Mode::Enforce);
+        assert_eq!(merge_mode(&log, None, &log), Mode::Log);
+        assert_eq!(merge_mode(&log, Some(&asker), &log), Mode::Enforce);
     }
 
     #[test]
@@ -268,9 +259,9 @@ mod tests {
         let enforce = resolved("[policy]\nguards.merge = \"enforce\"\n");
         let log = resolved("[policy]\nguards.merge = \"log\"\n");
         // Started under enforce; the project now says log: still held, as the hook holds it.
-        assert_eq!(merge_mode(&log, None, &enforce, true), Mode::Enforce);
+        assert_eq!(merge_mode(&log, None, &enforce), Mode::Enforce);
         // Started under log; the project now enforces: held at once.
-        assert_eq!(merge_mode(&enforce, None, &log, true), Mode::Enforce);
+        assert_eq!(merge_mode(&enforce, None, &log), Mode::Enforce);
     }
 
     #[test]
@@ -289,5 +280,86 @@ mod tests {
             enforcement::under(&settings, &Locks::none(), Family::GuardsMerge),
             Mode::Log
         );
+    }
+
+    /// A plane whose committed file says `text`, the app's view of it, in a config home of its own.
+    fn app_plane(text: &str) -> (tempfile::TempDir, crate::sandbox::local::OwnConfigHome) {
+        let home = crate::sandbox::local::OwnConfigHome::new();
+        enforcement::set_in_the_app_for_this_test(true);
+        let root = tempfile::tempdir().expect("a folder");
+        commit(root.path(), text);
+        (root, home)
+    }
+
+    fn commit(root: &Path, text: &str) {
+        std::fs::write(root.join("charter.toml"), text).expect("the committed file");
+    }
+
+    fn press(root: &Path) {
+        enforcement::press(root, &enforcement::digest_of(root)).expect("the press is kept");
+    }
+
+    #[test]
+    fn an_opt_in_committed_on_a_watch_project_is_held_until_the_person_accepts_it() {
+        // `watch` already runs `guards.merge` as `log`, so the opt-in changes no mode.
+        let (root, _home) = app_plane(
+            "[policy]
+template = \"watch\"\n",
+        );
+        assert_eq!(
+            PolicyMergeStance::of(root.path(), None).mode(),
+            Mode::Enforce
+        );
+        commit(root.path(), "[policy]\nguards.merge = \"log\"\n");
+        let before = PolicyMergeStance::of(root.path(), None);
+        assert_eq!(before.mode(), Mode::Enforce, "committed, not accepted");
+        assert!(
+            enforcement::waiting(root.path())
+                .iter()
+                .any(|(family, _, _)| *family == Family::GuardsMerge),
+            "the window offers the press"
+        );
+        press(root.path());
+        // A chat started after the press forwards; one started before keeps what it started under.
+        assert_eq!(PolicyMergeStance::of(root.path(), None).mode(), Mode::Log);
+        assert_eq!(before.mode(), Mode::Enforce);
+        assert!(enforcement::waiting(root.path()).is_empty());
+    }
+
+    #[test]
+    fn an_off_committed_and_not_accepted_is_held_not_forwarded() {
+        let (root, _home) = app_plane("[policy]\nguards.merge = \"off\"\n");
+        assert_eq!(
+            PolicyMergeStance::of(root.path(), None).mode(),
+            Mode::Enforce
+        );
+        press(root.path());
+        assert_eq!(PolicyMergeStance::of(root.path(), None).mode(), Mode::Off);
+    }
+
+    #[test]
+    fn an_accepted_opt_in_removed_from_head_is_held_at_once() {
+        let (root, _home) = app_plane("[policy]\nguards.merge = \"log\"\n");
+        press(root.path());
+        let stance = PolicyMergeStance::of(root.path(), None);
+        assert_eq!(stance.mode(), Mode::Log);
+        commit(root.path(), "[policy]\ntemplate = \"watch\"\n");
+        assert_eq!(stance.mode(), Mode::Enforce, "a tightening is immediate");
+        // Put back, it is a loosening again and waits for its own press.
+        commit(root.path(), "[policy]\nguards.merge = \"log\"\n");
+        assert_eq!(stance.mode(), Mode::Enforce);
+        press(root.path());
+        assert_eq!(PolicyMergeStance::of(root.path(), None).mode(), Mode::Log);
+    }
+
+    #[test]
+    fn an_acceptance_kept_before_the_opt_in_existed_reads_as_not_opted_in() {
+        let mut kept = enforcement::committed_for_test("[policy]\nguards.merge = \"log\"\n")
+            .as_kept_for_test();
+        assert_eq!(
+            kept.remove("guards.merge.opted_in").as_deref(),
+            Some("true")
+        );
+        assert!(!enforcement::Resolved::of_kept_for_test(&kept).merges_opted_in());
     }
 }
