@@ -26,7 +26,8 @@ use std::time::Instant;
 use url::Url;
 
 use super::super::{
-    BodyNeed, Class, Forwarded, Inbound, Outcome, Refusal, RequestHead, is_download_host,
+    BodyNeed, Class, Forwarded, Inbound, Outcome, Refusal, RequestHead, is_ci_storage_host,
+    is_download_host,
 };
 use super::http::{
     BodyError, Framed, Framing, Head, HeadError, finish_chunks, framing_of, message, write_answer,
@@ -641,15 +642,23 @@ fn redirect<W: Write>(
         .host_str()
         .map(str::to_ascii_lowercase)
         .unwrap_or_default();
-    let storage = target.scheme() == "https"
+    let plain_https = target.scheme() == "https"
         && target.username().is_empty()
         && target.password().is_none()
-        && target.port().is_none_or(|p| p == 443)
-        && is_download_host(&host);
+        && target.port().is_none_or(|p| p == 443);
+    let storage = plain_https && is_download_host(&host);
+
+    // A run's logs and artifacts are served from Actions storage (#7358): followed here like a
+    // download host, but never handed to the chat to tunnel to.
+    let ci_storage = plain_https && is_ci_storage_host(&host);
 
     // `gh` on its socket cannot follow a redirect to a storage host: it is followed here, once,
     // anonymously, and what it answers is streamed. A second redirect is not followed.
-    if storage && side.alias.is_some() && rh.method.eq_ignore_ascii_case("GET") && !followed {
+    if (storage || ci_storage)
+        && side.alias.is_some()
+        && rh.method.eq_ignore_ascii_case("GET")
+        && !followed
+    {
         let kept = ["accept", "range", "if-none-match", "if-modified-since"];
         let request = UpstreamRequest {
             method: "GET".to_string(),

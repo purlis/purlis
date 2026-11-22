@@ -322,6 +322,70 @@ fn a_redirect_to_a_download_host_is_followed_once_with_no_credential() {
 }
 
 #[test]
+fn a_redirect_to_actions_log_and_artifact_storage_is_followed_once_with_no_credential() {
+    purlis_core::unsteered!();
+    for (path, signed) in [
+        (
+            "/repos/acme/app/actions/jobs/5/logs",
+            "https://productionresultssa7.blob.core.windows.net/actions-results/x/log.txt?sig=abc",
+        ),
+        (
+            "/repos/acme/app/actions/runs/5/logs",
+            "https://pipelines.actions.githubusercontent.com/abc/_apis/x?sig=abc",
+        ),
+        (
+            "/repos/acme/app/actions/artifacts/5/zip",
+            "https://results-receiver.actions.githubusercontent.com/a.zip?sig=abc",
+        ),
+    ] {
+        let w = World::new();
+        w.fake
+            .answer(Answer::ok("").status(302).with_header("Location", signed));
+        w.fake.answer(Answer::ok("LOGLINES"));
+        let reply = plain(&w, &gh_get(&w, path));
+        assert_eq!(reply.status, 200, "{path}: {}", reply.text());
+        assert_eq!(reply.body, b"LOGLINES");
+        let seen = w.fake.requests();
+        assert_eq!(seen.len(), 2, "{path}");
+        assert_eq!(seen[1].url, signed);
+        assert_eq!(seen[1].method, "GET");
+        assert!(
+            seen[1]
+                .headers
+                .iter()
+                .all(|(n, _)| !n.eq_ignore_ascii_case("authorization")),
+            "{path}: the credential followed the redirect: {:?}",
+            seen[1].headers
+        );
+        assert!(!format!("{:?}", seen[1]).contains(REAL));
+    }
+}
+
+#[test]
+fn a_redirect_to_a_storage_account_that_is_not_actions_results_is_not_followed() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    for location in [
+        "https://attacker.blob.core.windows.net/x",
+        "https://productionresultssa.blob.core.windows.net/x",
+        "https://productionresultssa7x.blob.core.windows.net/x",
+        "https://productionresultssa7.blob.core.windows.net.evil.example/x",
+        "https://a.b.actions.githubusercontent.com/x",
+        "https://actions.githubusercontent.com/x",
+        "https://pipelines.actions.githubusercontent.com.evil.example/x",
+        "http://pipelines.actions.githubusercontent.com/x",
+        "https://pipelines.actions.githubusercontent.com:8443/x",
+    ] {
+        w.fake
+            .answer(Answer::ok("").status(302).with_header("Location", location));
+        let reply = plain(&w, &gh_get(&w, "/repos/acme/app/actions/jobs/5/logs"));
+        assert_eq!(reply.status, 502, "{location}: {}", reply.text());
+        assert_eq!(w.fake.requests().len(), 1, "{location}");
+        w.fake.seen.lock().unwrap().clear();
+    }
+}
+
+#[test]
 fn a_redirect_anywhere_else_or_a_second_one_is_not_followed() {
     purlis_core::unsteered!();
     let w = World::new();
