@@ -20,6 +20,10 @@
 # work, leave it off — a process another session started while COMMAND ran is counted too,
 # and killing it would kill someone else's.
 #
+# Each line also says the process's parent and its `ps -o comm=` value (macOS only, else
+# "unread"), the two things the system-agent rule above reads, so a process it did not
+# exempt shows why.
+#
 # Started-while-it-ran is read as pid plus start time, so a pid reused during the run is
 # still a new process. `ps -A -o pid=,ppid=,uid=,lstart=,command=` reads the same on Linux
 # (procps) and macOS.
@@ -116,7 +120,7 @@ left=$(
           if (q == here) { ours = 1; break }
           q = ppid[q]
         }
-        if (!ours && !(p in above)) print p "|" cmd[p]
+        if (!ours && !(p in above)) print p "|" ppid[p] "|" ((p in exe) ? exe[p] : "unread") "|" cmd[p]
       }
     }' "$before" "$programs" - <<<"$now"
 )
@@ -126,8 +130,8 @@ if [ -z "$left" ]; then
 fi
 
 echo "no-orphans: '$*' left these processes running:" >&2
-while IFS='|' read -r pid cmd; do
-  echo "  pid $pid: $cmd" >&2
+while IFS='|' read -r pid ppid comm cmd; do
+  echo "  pid $pid (ppid $ppid, comm $comm): $cmd" >&2
 done <<<"$left"
 # On a GitHub runner, the same list as an error on the run: this exit of 1 is otherwise the
 # one red of the `rust` job that names nothing through the checks API, where a failed test is
@@ -143,7 +147,7 @@ if [ "${GITHUB_ACTIONS-}" = true ]; then
   said=""
   listed=0
   more=0
-  while IFS='|' read -r pid cmd; do
+  while IFS='|' read -r pid ppid comm cmd; do
     if [ "$listed" -ge "$listed_most" ]; then
       more=$((more + 1))
       continue
@@ -153,7 +157,7 @@ if [ "${GITHUB_ACTIONS-}" = true ]; then
     if [ "${#cmd}" -gt "$line_most" ]; then
       cmd="${cmd:0:$line_most}..."
     fi
-    said="${said}pid $pid, running for ${ran:-an unread time}: $cmd"$'\n'
+    said="${said}pid $pid (ppid $ppid, comm $comm), running for ${ran:-an unread time}: $cmd"$'\n'
   done <<<"$left"
   if [ "$more" -gt 0 ]; then
     said="${said}and $more more, each named in the job's log"$'\n'
