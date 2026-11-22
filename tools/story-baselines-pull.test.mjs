@@ -57,6 +57,12 @@ test("the newest finished, failed run of the head is the one taken", () => {
   assert.equal(runToTake([runOf({ id: 4, run_number: 4 }), again], HEAD, FROM).run, again);
 });
 
+test("a run that skipped every job (another label's) is never the one taken", () => {
+  const real = runOf({ id: 3, run_number: 3 });
+  const labelled = runOf({ id: 4, run_number: 4, conclusion: "skipped" });
+  assert.equal(runToTake([real, labelled], HEAD, FROM).run, real);
+});
+
 test("only a pull_request run of the head's own repository is taken", () => {
   assert.match(
     runToTake([runOf({ event: "workflow_dispatch" })], HEAD, FROM).why,

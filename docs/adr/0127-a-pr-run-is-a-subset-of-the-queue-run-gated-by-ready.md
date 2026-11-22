@@ -55,3 +55,8 @@ its one retry in the same run.
 A red that a moved suite would have caught on the PR now lands in the queue. So each move to a new
 stage is its own pull request, a week apart, and it is reverted if the queue drop rate over the
 next 7 days is more than 5 points above the 15.3% baseline.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0127/`](0127/), one per
+amendment.

@@ -74,7 +74,7 @@ const truth = (value) => (value === UNKNOWN ? UNKNOWN : Boolean(value));
  * other side settles it, so only a known false can take a job off a push. What this cannot parse
  * is unknown too.
  */
-export function evaluate(source) {
+export function evaluate(source, facts = PUSH) {
   const inner = /^\s*\$\{\{(.*)\}\}\s*$/s.exec(source);
   const words = (inner ? inner[1] : source).match(WORDS) ?? [];
   let at = 0;
@@ -102,7 +102,7 @@ export function evaluate(source) {
       at += 1;
       return word in CALLS ? CALLS[word] : UNKNOWN;
     }
-    return PUSH[word];
+    return facts[word];
   };
   const compare = () => {
     const left = atom();
@@ -139,6 +139,10 @@ export function evaluate(source) {
     return UNKNOWN;
   }
 }
+
+/** What a pull request's run and a merge group's run know (`ci-stages.mjs`, #7335). */
+export const PULL_REQUEST = { "github.event_name": "pull_request" };
+export const MERGE_GROUP = { "github.event_name": "merge_group" };
 
 /** Whether a job can run on a push: only an `if:` known to be false says it cannot. */
 export const onPush = (job) => job.if === undefined || evaluate(job.if) !== false;
