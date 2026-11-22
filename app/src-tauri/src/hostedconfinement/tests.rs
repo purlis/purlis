@@ -35,6 +35,7 @@ fn a_plan() -> Plan {
             routes: "/home/me/project/.purlis/app/ssh".into(),
         },
         given: vec![5432],
+        forge: None,
     }
 }
 
@@ -278,6 +279,7 @@ fn a_chats_proxy_in_the_host_still_reaches_its_hosts_once_the_windows_link_is_go
         any_port: false,
         beside: Beside::Wrapped,
         given: vec![port],
+        forge: None,
     });
     let (chats, nobodys) = runtime.block_on(async {
         let (a, b) = tokio::io::duplex(1 << 20);
@@ -436,6 +438,7 @@ fn a_runner_starts_a_relayed_plan_only_where_it_fits_the_runner() {
         any_port: false,
         beside: Beside::Wrapped,
         given: vec![port],
+        forge: None,
     });
     let confine = |id: &str| {
         Command::Confine(Box::new(Confine {
@@ -514,6 +517,7 @@ fn a_runner_starts_a_relayed_plan_without_a_service_allowed_for_this_chat_alone(
         any_port: false,
         beside: Beside::Wrapped,
         given: vec![port],
+        forge: None,
     });
     runtime.block_on(async {
         let (peer, _views, _events) =
@@ -619,6 +623,7 @@ fn the_windows_allow_of_a_service_a_runner_left_out_lets_the_chat_reach_it_there
         any_port: true,
         beside: Beside::Wrapped,
         given: vec![port],
+        forge: None,
     });
     let id = "01J9CNFNMNT0000000000000000";
     let confined = match link.call(Command::Confine(Box::new(Confine {

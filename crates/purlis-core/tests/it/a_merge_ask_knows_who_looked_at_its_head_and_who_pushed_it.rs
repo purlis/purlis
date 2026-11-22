@@ -60,6 +60,7 @@ fn facts(read_at: u64) -> Facts {
         },
         ruleset: Ruleset::None,
         approved_by: None,
+        squash: false,
         read_at,
     }
 }
@@ -212,6 +213,7 @@ fn the_press_count_comes_from_the_viewed_sha_and_the_forges_reviews() {
         key(HEAD),
         Facts {
             approved_by: Some("ana".to_owned()),
+            squash: false,
             ..facts(1_000)
         },
         1_000,
@@ -452,6 +454,7 @@ fn a_fact_that_changes_at_the_same_head_is_said_by_the_watch_and_clears_the_aske
         .expect("asked once more");
     let approved = Facts {
         approved_by: Some("ana".to_owned()),
+        squash: false,
         read_at: 1_040,
         ..failed
     };

@@ -126,6 +126,7 @@ fn through_the_browser(
         registration.host,
         granted,
         Method::Pkce,
+        registration.client_id,
     )
     .map(ForgeAccountRow::from)
 }
@@ -165,7 +166,7 @@ pub async fn forge_pkce_sign_in(
                 &open,
             );
         }
-        let registration = registration::on(kind, host.trim())
+        let registration = registration::resolve(&config_root()?, kind, host.trim())?
             .filter(|found| found.flow == Flow::Pkce)
             .ok_or_else(|| {
                 "purlis has no browser sign-in on that host. Sign in with a token instead."

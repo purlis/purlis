@@ -579,6 +579,30 @@ pub fn remote_has(dir: &Path, helper: Option<&str>, remote: &str) -> Option<Vec<
     tips(asked?)
 }
 
+/// The commits the remote at `url` says its branches and tags are at, asked in no repository
+/// through `route`: how the app asks a forge for a chat whose git reaches it only through the
+/// chat's own route (#7302). `None` where it cannot be asked. The caller has already checked
+/// that `url` is a repository the route is for.
+pub fn remote_tips_through(url: &str, route: git::NetworkRoute) -> Option<Vec<String>> {
+    if url.is_empty() || url.starts_with('-') {
+        return None;
+    }
+    let asked = git::isolated(&git::Isolated::default().through_route(route), || {
+        git::run_network_in_no_repository(
+            Path::new("/"),
+            None,
+            &["ls-remote", "--heads", "--tags", "--", url],
+        )
+    })
+    .ok()?;
+    if !asked.ok() {
+        // For the app's log only: the chat is told the remote could not be asked, never git's
+        // words, which can carry a proxy's or a forge's.
+        tracing::warn!(code = ?asked.code, stderr = %asked.err.trim(), "git ls-remote through a chat's route failed");
+    }
+    tips(asked)
+}
+
 /// The commits the remote at the address `url` says its branches and tags are at, asked of the
 /// address itself, for a push git hands to a hook ([`pushed`]); `None` where it cannot be asked.
 ///
@@ -625,20 +649,31 @@ fn address_asked_from(from: &Path, helper: Option<&str>, url: &str) -> Option<Ve
     tips(asked?)
 }
 
-/// The commits an `ls-remote` that answered names, at most [`KNOWN_AT_MOST`] of them; `None`
-/// where it did not answer.
+/// What a peer told of a remote's tips, kept to full object ids, at most [`KNOWN_AT_MOST`].
+fn only_tips(told: Vec<String>) -> Vec<String> {
+    told.into_iter()
+        .filter(|id| matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit()))
+        .take(KNOWN_AT_MOST)
+        .collect()
+}
+
+/// The distinct commits an `ls-remote` that answered names, at most [`KNOWN_AT_MOST`] of them;
+/// `None` where it did not answer. Distinct before the cap: an annotated tag is listed twice
+/// (itself and its `^{}`), and a branch and a tag may sit at one commit, so counting repeats
+/// would push real tips past the cap.
 fn tips(asked: git::Run) -> Option<Vec<String>> {
     if !asked.ok() {
         return None;
     }
     let full = |id: &str| matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit());
+    let mut seen = std::collections::HashSet::new();
     Some(
         asked
             .out
             .lines()
             .filter_map(|line| line.split_once('\t'))
             .map(|(id, _)| id)
-            .filter(|id| full(id))
+            .filter(|id| full(id) && seen.insert(*id))
             .map(str::to_owned)
             .take(KNOWN_AT_MOST)
             .collect(),
@@ -666,14 +701,22 @@ fn forge_of(url: &str) -> Option<crate::forge::Forge> {
 /// credential, whichever way the push spells it, so a push over SSH is answered too. Where the
 /// remote cannot be asked, `None`: the scan then reads all the push sends past the remote's
 /// side of each ref git named, up to [`UNASKED_AT_MOST`] commits.
-fn known_to(repo: &Path, url: &str) -> Option<Vec<String>> {
+fn known_to(
+    repo: &Path,
+    url: &str,
+    told: &dyn Fn(&str) -> Option<Vec<String>>,
+) -> Option<Vec<String>> {
     let forge = forge_of(url);
     let https = forge
         .as_ref()
         .and_then(|forge| crate::forge::https_of(url, forge));
     let helper = forge.as_ref().map(crate::forge::helper_for);
     match https {
-        Some(https) => address_has(repo, helper.as_deref(), &https),
+        // The app is asked first, where the remote is on a forge purlis knows (#7302): under a
+        // chat's one login its sandbox cannot ask the forge itself. No answer is asked as before.
+        Some(https) => told(&https)
+            .map(only_tips)
+            .or_else(|| address_has(repo, helper.as_deref(), &https)),
         None => address_has(repo, None, url),
     }
 }
@@ -727,7 +770,19 @@ fn is_nothing(oid: &str) -> bool {
 /// `Err` is input git did not write, a ref that is not a commit, or git failing to answer, all
 /// of which the caller refuses on.
 pub fn pushed(repo: &Path, url: &str, updates: &str) -> Result<Scan, String> {
-    match known_to(repo, url) {
+    pushed_told(repo, url, updates, &|_| None)
+}
+
+/// [`pushed`], asking `told` first for the tips of a remote on a forge purlis knows, given its
+/// HTTPS address (#7302): what the app answers a chat's hook. `None` asks the remote as [`pushed`]
+/// does, so a push with no answer is scanned exactly as one that was never told.
+pub fn pushed_told(
+    repo: &Path,
+    url: &str,
+    updates: &str,
+    told: &dyn Fn(&str) -> Option<Vec<String>>,
+) -> Result<Scan, String> {
+    match known_to(repo, url, told) {
         Some(known) => pushed_knowing(repo, updates, &known),
         None => pushed_without_asking(repo, updates),
     }
@@ -2827,6 +2882,69 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["deploy.sh"]
         );
+    }
+
+    /// What the app tells a hook of a forge remote's tips (#7302) is what the scan leaves out,
+    /// asked by the remote's HTTPS address: tips the remote has make the history known, and what
+    /// is not a full object id is not a tip.
+    #[test]
+    fn a_push_to_a_forge_remote_leaves_out_the_tips_the_app_told_it() {
+        let (_dir, repo) = repo();
+        let tip = a_history_the_clone_says_the_remote_has(&repo);
+        let url = "https://github.com/acme/app.git";
+        let asked = std::cell::RefCell::new(Vec::new());
+
+        let known = |tips: Vec<String>| {
+            let told = |address: &str| {
+                asked.borrow_mut().push(address.to_owned());
+                Some(tips.clone())
+            };
+            pushed_told(&repo, url, &update(&tip, NOTHING), &told).unwrap()
+        };
+        let scan = known(vec![tip.clone()]);
+        assert!(scan.refused.is_empty(), "{:?}", scan.refused);
+        let scan = known(vec!["not-an-id".to_owned(), "g".repeat(40)]);
+        assert_eq!(
+            scan.refused.len(),
+            1,
+            "a tip that is no object id left nothing out"
+        );
+        assert_eq!(*asked.borrow(), [url, url]);
+    }
+
+    #[test]
+    fn an_ls_remote_listing_is_deduplicated_before_the_cap() {
+        let id = |n: usize| format!("{n:040x}");
+        // Every tip listed twice (an annotated tag and its peeled line), more than the cap.
+        let mut out = String::new();
+        for n in 0..KNOWN_AT_MOST + 5 {
+            out.push_str(&format!(
+                "{}\trefs/tags/t{n}\n{0}\trefs/tags/t{n}^{{}}\n",
+                id(n)
+            ));
+        }
+        let kept = tips(git::Run {
+            code: Some(0),
+            out,
+            err: String::new(),
+        })
+        .expect("answered");
+        assert_eq!(kept.len(), KNOWN_AT_MOST);
+        assert_eq!(kept, (0..KNOWN_AT_MOST).map(id).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn only_full_object_ids_are_kept_and_no_more_than_the_cap() {
+        let many: Vec<String> = (0..KNOWN_AT_MOST + 10)
+            .map(|n| format!("{n:040x}"))
+            .collect();
+        let mut told = many.clone();
+        told.push("abc".to_owned());
+        told.push(format!("{}z", "a".repeat(39)));
+        let kept = only_tips(told);
+        assert_eq!(kept.len(), KNOWN_AT_MOST);
+        assert_eq!(kept, many[..KNOWN_AT_MOST]);
+        assert_eq!(only_tips(vec!["a".repeat(64)]).len(), 1);
     }
 
     /// The remote is asked at the address the push goes to, as git handed it: what the

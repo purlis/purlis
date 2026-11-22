@@ -214,15 +214,25 @@ fn signing_out_deletes_the_keyring_item_and_the_account() {
         machine.keyring.exists(&accounts::service(&gone), "token"),
         Presence::Absent
     );
-    assert_eq!(machine.list(), vec![kept.clone()]);
+    // The record stays, signed out, so signing in again as the same login keeps its id.
+    assert_eq!(
+        machine.list(),
+        vec![
+            kept.clone(),
+            ForgeAccount {
+                state: State::SignedOut,
+                ..gone.clone()
+            }
+        ]
+    );
     assert_eq!(machine.item(&kept).as_deref(), Some(TOKEN));
-    let again = accounts::sign_out(
+    let unknown = accounts::sign_out(
         &HostScope::for_a_test(),
         machine.config(),
         machine.keyring.as_ref(),
-        &gone.id,
+        "01NOSUCHACCOUNT",
     );
-    assert!(again.is_err(), "{again:?}");
+    assert!(unknown.is_err(), "{unknown:?}");
 }
 
 #[test]
@@ -459,9 +469,13 @@ fn what_a_later_purlis_wrote_survives_a_sign_in_and_a_sign_out() {
         serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
     assert_eq!(doc["bindings"][0]["owner"], "acme");
     assert_eq!(doc["accounts"][0]["id"], "01J9LATER");
-    assert!(
-        machine.list().is_empty(),
-        "an account of an unknown forge is not listed"
+    // Only the signed-out GitHub account is listed: the unknown forge's is not.
+    assert_eq!(
+        machine.list(),
+        vec![ForgeAccount {
+            state: State::SignedOut,
+            ..account
+        }]
     );
 }
 

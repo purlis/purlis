@@ -1106,6 +1106,51 @@ pub struct Reading {
 /// one by the segment itself, never by position (#7092). A line that will not lex is read as
 /// [`segment_argv`] reads it, a logical line at a time, by the same walk.
 pub fn segment_readings(cmd: &str) -> Vec<Reading> {
+    if cmd.len() < LARGE_READING {
+        return read_segments(cmd);
+    }
+    // One hook reads a large body again and again: the floor, the merge reading, and the hold
+    // each walk the same text, and the walk is the cost of it (#7245). A reading is a pure
+    // function of the text, so the last few large ones are kept; the one effect it has, the
+    // report of a reading nested too deep, is made again on a hit.
+    if let Some((too_deep, readings)) = LARGE_READINGS.with(|kept| {
+        kept.borrow()
+            .iter()
+            .find(|(text, ..)| text == cmd)
+            .map(|(_, too_deep, readings)| (*too_deep, readings.clone()))
+    }) {
+        if too_deep {
+            TOO_DEEP.with(|flag| flag.set(true));
+        }
+        return readings;
+    }
+    let before = TOO_DEEP.with(|flag| flag.replace(false));
+    let readings = read_segments(cmd);
+    let too_deep = TOO_DEEP.with(|flag| flag.replace(before || flag.get()));
+    LARGE_READINGS.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if kept.len() >= LARGE_READINGS_KEPT {
+            kept.remove(0);
+        }
+        kept.push((cmd.to_owned(), too_deep, readings.clone()));
+    });
+    readings
+}
+
+/// A text this long is read once however often it is asked for ([`segment_readings`]).
+const LARGE_READING: usize = 4096;
+/// How many large texts one thread keeps the reading of: the floor's two whole-text reads of a
+/// body, with room for the merge reading's.
+const LARGE_READINGS_KEPT: usize = 4;
+
+std::thread_local! {
+    /// The large texts [`segment_readings`] has read on this thread, each with whether its walk
+    /// met a nesting past [`MAX_NESTING`].
+    static LARGE_READINGS: std::cell::RefCell<Vec<(String, bool, Vec<Reading>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn read_segments(cmd: &str) -> Vec<Reading> {
     let cmd = unbacktick(cmd);
     let (walked, measured) = match lex(&cmd) {
         Ok(toks) => (walk_segments(toks).0, true),

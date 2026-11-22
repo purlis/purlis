@@ -13,6 +13,8 @@ import { expect, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type {
   ForgeAccountRow,
+  ForgeApplicationRow,
+  ProjectAccountRow,
   SigningAccount,
   SigningAccountKeys,
   SigningState,
@@ -31,6 +33,7 @@ const ACCOUNTS: ForgeAccountRow[] = [
     signed_in: true,
     scopes: ["repo", "workflow"],
     wider: [],
+    ci_allowed: false,
   },
   {
     id: "gitlab:gitlab.example.org:sam",
@@ -41,6 +44,7 @@ const ACCOUNTS: ForgeAccountRow[] = [
     signed_in: true,
     scopes: ["api"],
     wider: ["api"],
+    ci_allowed: false,
   },
 ];
 
@@ -100,6 +104,46 @@ const KEYS: SigningAccountKeys[] = [
   },
 ];
 
+/** An application an owner made on a GitHub Enterprise Server host, pinned (ADR 0128 D1.3). */
+const APPLICATIONS: ForgeApplicationRow[] = [
+  {
+    kind: "github",
+    host: "ghe.example.com",
+    client_id: "Iv1.0123456789abcdef",
+    owner: "acme-platform",
+    consent:
+      "On the next page, check that the application is owned by acme-platform on ghe.example.com. Sign in only if it is.",
+    signed_in: 0,
+  },
+];
+
+/** Two repos on one host, served by the two accounts the person has there (ADR 0128 D2). */
+const PROJECT_ACCOUNTS: ProjectAccountRow[] = [
+  {
+    clone_key: "a1",
+    kind: "github",
+    repo_id: "1001",
+    host: "github.com",
+    path: "octocat/hello",
+    serving: { id: "github:github.com:octocat", login: "octocat" },
+    state: "serving",
+    choices: [
+      { id: "github:github.com:octocat", login: "octocat" },
+      { id: "github:github.com:octocat_acme", login: "octocat_acme" },
+    ],
+  },
+  {
+    clone_key: "b2",
+    kind: "gitlab",
+    repo_id: "2002",
+    host: "gitlab.example.org",
+    path: "platform/tools",
+    serving: null,
+    state: "signed-out",
+    choices: [],
+  },
+];
+
 /** The core, faked: these accounts, signing on with these keys, and no gh or glab to import. */
 function theCore(accounts: ForgeAccountRow[]) {
   mockIPC(
@@ -110,6 +154,8 @@ function theCore(accounts: ForgeAccountRow[]) {
       if (cmd === "signing_key_shown")
         return { fingerprint: "SHA256:q3VbT1sMk2pQ1", public_key: "ssh-ed25519 AAAA example" };
       if (cmd === "forge_cli_logins") return [];
+      if (cmd === "forge_applications") return accounts.length > 0 ? APPLICATIONS : [];
+      if (cmd === "forge_project_accounts") return accounts.length > 0 ? PROJECT_ACCOUNTS : [];
       return null;
     },
     { shouldMockEvents: true },
@@ -149,6 +195,18 @@ export const SignedInAndSigning: Story = {
       name: "Remove Studio Mac mini's signing key from octocat on GitHub…",
     });
     await expect(canvas.getByText("Older setup")).toBeVisible();
+    // One login: the application an owner made, with what to check on the forge's page, and the
+    // account that serves each repo, a choice where there are two and a sentence where it is out.
+    const pinned = await canvas.findByRole("grid", { name: "Pinned applications" });
+    await expect(
+      within(pinned)
+        .getAllByRole("rowheader")
+        .map((one) => one.textContent),
+    ).toEqual(["ghe.example.com"]);
+    await canvas.findByText(/owned by acme-platform on ghe\.example\.com\. Sign in only if it is/);
+    const repos = await canvas.findByRole("grid", { name: "Account for each repo" });
+    await within(repos).findByRole("button", { name: /Account for octocat\/hello on github\.com/ });
+    await within(repos).findByText(/No other account serves this repo meanwhile/);
     const rows = () => within(accounts).getAllByRole("row").slice(1);
     (rows()[0] as HTMLElement).focus();
     await untilFocused(() => rows()[0] as HTMLElement, "the first account's row");
