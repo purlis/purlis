@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795339195698,
+  "lastUpdate": 1795356509165,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52080,6 +52080,48 @@ window.BENCHMARK_DATA = {
             "value": 103.180252,
             "unit": "ms",
             "extra": "median of 5 runs: 100.611, 102.128, 103.180, 103.328, 104.040 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8c98106be05fd6613f21e6a5ddbb01a112e23cbf",
+          "message": "One login P0: the pre-push scan asks through the chat's forge route (#7360)\n\n* Ask the pre-push scan's remote through the chat's forge route (P0)\n\nThe scan's ls-remote ran isolated with system trust only, so under the one-login route it\nfailed and every push over 1000 commits was refused. The hook now asks the app for the chat's\nCA, helper and hosts over the token-authenticated hook socket (Ask::GitRoute) and asks through\na route built from them; only the loopback egress port comes from the environment. A failed\napp-side push now always says why.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80D6FXP7H03BZCYYPQQYNHB\nPurlis-Persona: steward\n\n* Changelog fragment for the pre-push scan route fix\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80D6FXP7H03BZCYYPQQYNHB\nPurlis-Persona: steward\n\n* Pre-push route: trust the app's own CA file only where the chat cannot write it (M1), with route tests and a cap on git's lines\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80R126SQQEZA902YZ9D8XYE\nPurlis-Persona: steward\n\n* Changelog fragment for the pre-push route CA fix\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80R126SQQEZA902YZ9D8XYE\nPurlis-Persona: steward\n\n* Pre-push route: send the chat's wire-folder CA copy and refuse it where a chat could swap a folder above it (F1, F2)\n\nThe hook is told the path of the chat's own copy of its CA in its wire folder, the one file of it the chat's sandbox lets it read; the app's own file is in the route folder every chat is denied. The hook trusts it only where opening the file for writing and making a file in its folder are both refused by the sandbox, and no folder above it is one a chat can write (so none can be renamed with a tree of its own put at the path). Also: why_git_failed strips control and ANSI characters.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80SM6HQMGZ2W8747Z7E4MXW\nPurlis-Persona: steward\n\n* Pre-push scan: the app asks the remote for the ref tips, outside the sandbox, on the run's own route (Ask::RemoteRefs)\n\nReplaces the in-sandbox route (Ask::GitRoute, HookRoute, ca_copy_in, kept_from_the_chat and\nthe hook's env proxy and sentinel parsing), which went inert when the CA was unreadable, when\nHTTPS_PROXY named localhost, or when the chat's folder was the project root.\n\nThe hook asks the app over its authenticated socket (20 s); the app answers only for a\nrepository recorded for the asking chat's own run and returns the tips; diffscan leaves them\nout. No answer, refusal or error falls back exactly as before.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80X2MYDSQDBQAS01C1RRQ4C\nPurlis-Persona: steward\n\n* Pre-push remote refs: match a mixed-case repo address, carry a large answer on the framed stream (F1, F2)\n\nF1: Repo::is_url compares the owner/name path ignoring ASCII case, as the wire's repo is lower-cased.\nF2: the hook asks through brokered::replied (framed), and the app dedupes tips before the cap.\nAlso: git's stderr is logged with tracing::warn, remote_refs reads the run once, and each has a test.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80ZBBB92T5S53WS77NPRKXK\nPurlis-Persona: steward\n\n* Changelog fragment for the pre-push remote refs fixes\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M80ZBBB92T5S53WS77NPRKXK\nPurlis-Persona: steward\n\n* Listener test: count the forge's ref asks before and after, since the test's own clone asks it too; annotate the real-clients step's failures\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M811RTW9RYFM3RHGVCYD9M6A\nPurlis-Persona: steward\n\n* CI: the listener step annotates even when no test line matched, and shows the log's tail\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01XQZeZj6j8EHMyj3pZWHum9\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Test the app's ls-remote on production's route builder; a git 401 challenge is not a refusal; no real network in the refs test\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M813ZKMF8A74A3AFV5ESANND\nPurlis-Persona: steward\n\n* A large-body guard test no longer depends on the machine's load\n\nThe ordinary-large-body tests run the debug purlis binary, which reads a 64 KiB commit\nmessage in about 0.8 s on an idle machine (most of it in shellseg's fallback walk, in\nunoptimised iterator chains). That is 40% of the guard's 2 s budget, so a runner running these\ntests side by side pushed it over and the guard refused, as designed. These tests are about\nwhat the guard decides, not how fast, so they lift the debug-only budget knob\n(PURLIS_TEST_GUARD_DEADLINE_MS) to 60 s. The tests that force the budget are unchanged, and\nproduction's budget is untouched.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M815ESPEBF8P8X12E593AQDC\nPurlis-Persona: steward\n\n* Two listener tests no longer reach gh's credential helper, and so the OS keyring, through diffscan's fallback ask\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8174HKFKEZXQ9HMNR06GDY9\nPurlis-Persona: steward\n\n* no-orphans: name each left-behind process's ppid and ps comm, to see why a system agent was counted\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M81A0JDFZ8F1CST87VTWG1DQ\nPurlis-Persona: steward\n\n* Update url to 2.5.9 for RUSTSEC-2026-0592\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\n\n* Security: update url to 2.5.9 (RUSTSEC-2026-0592)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01XQZeZj6j8EHMyj3pZWHum9\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* no-orphans: a launchd agent started by a bare name is read by its executable, so macOS cloudphotod is the system's\n\nps -o comm is argv[0] for an agent whose plist names ProgramArguments by a bare name, so\nthe /System rule never matched cloudphotod and the macOS forge route job went red. For a\nlaunchd child whose comm is not a path, the executable lsof reports (txt) decides.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01XQZeZj6j8EHMyj3pZWHum9\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T13:23:50Z",
+          "tree_id": "af68fc25d459ce17be622e7fd7c3aa2ff8fc4e7e",
+          "url": "https://github.com/purlis/purlis/commit/8c98106be05fd6613f21e6a5ddbb01a112e23cbf"
+        },
+        "date": 1795356501942,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.671914,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.623, 0.668, 0.672, 0.687, 0.700 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.689614,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.393, 16.671, 16.690, 16.752, 16.821 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.5127795,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.308, 101.837, 102.513, 102.967, 103.501 ms"
           }
         ]
       }
