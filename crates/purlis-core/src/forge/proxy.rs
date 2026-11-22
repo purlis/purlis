@@ -83,8 +83,9 @@ pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use graphql::mutation_repo;
 pub use held::{Held, HeldSink};
 pub use policy::{
-    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GithubAlias, NoObjects,
-    ObjectRepo, Refusal, TouchedRepo, is_ci_storage_host, is_download_host,
+    Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
+    NoObjects, ObjectRepo, Refusal, TouchedRepo, is_ci_storage_host, is_download_host,
+    is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -254,6 +255,9 @@ pub struct Forwarded {
     /// listener tells the core of a push's advertisement and its outcome.
     pub host: String,
     pub repo: String,
+    /// Which forge's rules the request was decided under; `None` for a fetch the listener makes
+    /// for itself (an LFS object). A redirect is followed by the rules of this one.
+    pub kind: Option<Kind>,
 }
 
 impl Forwarded {
@@ -271,6 +275,7 @@ impl Forwarded {
             needles: Vec::new(),
             host: host.to_string(),
             repo: String::new(),
+            kind: None,
         }
     }
 
@@ -292,6 +297,7 @@ impl Forwarded {
                 .collect(),
             host: self.host.clone(),
             repo: String::new(),
+            kind: self.kind,
         }
     }
 
@@ -640,6 +646,7 @@ impl ForgeProxy {
                 needles: Vec::new(),
                 host: allowed.host,
                 repo: allowed.repo,
+                kind: Some(allowed.kind),
             });
         }
         let request = |repo_id: Option<u64>, repo: &str| CredentialRequest {
@@ -693,6 +700,7 @@ impl ForgeProxy {
             needles,
             host: allowed.host,
             repo: allowed.repo,
+            kind: Some(allowed.kind),
         })
     }
 

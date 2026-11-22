@@ -170,11 +170,7 @@ fn a_write_route_that_is_not_on_the_list_is_refused_whatever_it_is() {
             "/repos/acme/app/actions/runs/9/cancel",
         ),
         ("POST", "gitlab.com", "/api/v4/projects/42/pipeline"),
-        (
-            "POST",
-            "gitlab.com",
-            "/api/v4/projects/42/pipelines/9/retry",
-        ),
+        ("POST", "gitlab.com", "/api/v4/projects/42/trigger/pipeline"),
         (
             "POST",
             "gitlab.com",

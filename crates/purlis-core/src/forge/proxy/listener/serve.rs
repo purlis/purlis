@@ -14,6 +14,8 @@
 //! followed **once, anonymously**, and its answer streamed; a redirect to the recorded host is
 //! written again for the chat; any other is answered `502`. Inside TLS the chat follows a redirect
 //! to a download host itself (it is tunnelled), and one to a recorded host is its own request.
+//! A job's artifacts on gitlab.com, which `glab` fetches inside TLS, are the exception: followed
+//! here, once and anonymously, from the one bucket GitLab names (ADR 0128, amended 2026-11-22).
 //!
 //! **Bodies.** A response streams in a bounded window. A request body is held (a JSON body up to
 //! [`Limits::body`](super::Limits::body), a push up to [`Limits::push`](super::Limits::push)): the
@@ -26,8 +28,8 @@ use std::time::Instant;
 use url::Url;
 
 use super::super::{
-    BodyNeed, Class, Forwarded, Inbound, Outcome, Refusal, RequestHead, is_ci_storage_host,
-    is_download_host,
+    BodyNeed, Class, Forwarded, GITLAB_COM, Inbound, Kind, Outcome, Refusal, RequestHead,
+    is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
 };
 use super::http::{
     BodyError, Framed, Framing, Head, HeadError, finish_chunks, framing_of, message, write_answer,
@@ -648,18 +650,25 @@ fn redirect<W: Write>(
         && target.port().is_none_or(|p| p == 443);
     let storage = plain_https && is_download_host(&host);
 
-    // A run's logs and artifacts are served from Actions storage (#7358): followed here like a
+    // A run's logs and artifacts are served from CI storage (#7358): followed here like a
     // download host, but never handed to the chat to tunnel to.
     // Only for a credentialed read of the API: the address is signed for what the API answered.
-    let ci_storage = plain_https
-        && is_ci_storage_host(&host)
-        && forwarded.class == Class::ApiRead
-        && forwarded.credentialed;
+    // GitHub's is followed for the chat on its unix socket only. GitLab's has no socket: `glab`
+    // reaches the listener inside TLS, so it is followed there too, and only for gitlab.com, to the
+    // one bucket GitLab names ([`is_gitlab_ci_storage`]).
+    let ci_read = plain_https && forwarded.class == Class::ApiRead && forwarded.credentialed;
+    let ci_storage = ci_read
+        && match forwarded.kind {
+            Some(Kind::GitHub) => side.alias.is_some() && is_ci_storage_host(&host),
+            Some(Kind::GitLab) => {
+                forwarded.host == GITLAB_COM && is_gitlab_ci_storage(&host, target.path())
+            }
+            None => false,
+        };
 
     // `gh` on its socket cannot follow a redirect to a storage host: it is followed here, once,
     // anonymously, and what it answers is streamed. A second redirect is not followed.
-    if (storage || ci_storage)
-        && side.alias.is_some()
+    if ((storage && side.alias.is_some()) || ci_storage)
         && rh.method.eq_ignore_ascii_case("GET")
         && !followed
     {

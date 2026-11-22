@@ -124,7 +124,8 @@ pub enum Class {
     CommentWrite,
     IssueWrite,
     LabelWrite,
-    /// A rerun of, or an approval to start, a workflow run of the chat's repo (#7358).
+    /// A rerun of a workflow run of the chat's repo (#7358), or a retry or cancel of a GitLab
+    /// pipeline or job.
     CiWrite,
     GraphqlQuery,
     /// The batch call of Git LFS, asking for download addresses only.
@@ -265,6 +266,23 @@ pub fn is_ci_storage_host(host: &str) -> bool {
         .and_then(|account| account.strip_prefix("productionresultssa"))
         .is_some_and(|n| (1..=5).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()))
 }
+
+/// Where gitlab.com keeps a job's artifacts and archived log: Google Cloud Storage, in the
+/// one bucket GitLab names for it, `gitlab-gprd-artifacts`. **Never a bare `storage.googleapis.com`**,
+/// which is anyone's bucket. `path` is the address's path as the URL parser left it, so a `..` in it
+/// is already resolved. Only gitlab.com's own redirect is followed ([`GITLAB_COM`]): a self-hosted
+/// GitLab serves a job's log and artifacts itself, and its object storage (an operator's choice
+/// of host) is not carried. As GitHub's, the address is pre-signed: followed once, by a GET, with
+/// no credential.
+pub fn is_gitlab_ci_storage(host: &str, path: &str) -> bool {
+    host == "storage.googleapis.com"
+        && path
+            .strip_prefix("/gitlab-gprd-artifacts/")
+            .is_some_and(|object| !object.is_empty())
+}
+
+/// The one GitLab host whose redirects to [`is_gitlab_ci_storage`] are followed.
+pub const GITLAB_COM: &str = "gitlab.com";
 
 /// The reads outside any repo that `gh`, `glab` and git need, and nothing else.
 const NON_REPO_READS: &[(&[&str], Kind)] = &[
@@ -1045,7 +1063,40 @@ impl crate::heldact::Recorded for RecordedRepos {
 
 #[cfg(test)]
 mod tests {
-    use super::is_ci_storage_host;
+    use super::{is_ci_storage_host, is_gitlab_ci_storage};
+
+    #[test]
+    fn gitlab_com_artifact_storage_is_named_exactly() {
+        for (host, path) in [
+            (
+                "storage.googleapis.com",
+                "/gitlab-gprd-artifacts/ab/cd/x.zip",
+            ),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts/x"),
+        ] {
+            assert!(is_gitlab_ci_storage(host, path), "{host}{path}");
+        }
+        for (host, path) in [
+            ("storage.googleapis.com", "/"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts/"),
+            ("storage.googleapis.com", "/gitlab-gprd-artifacts-evil/x"),
+            ("storage.googleapis.com", "/attacker-bucket/x"),
+            ("storage.googleapis.com", "/other/gitlab-gprd-artifacts/x"),
+            ("gitlab-gprd-artifacts.storage.googleapis.com", "/x"),
+            (
+                "storage.googleapis.com.evil.example",
+                "/gitlab-gprd-artifacts/x",
+            ),
+            ("evilstorage.googleapis.com", "/gitlab-gprd-artifacts/x"),
+            (
+                "pipelines.actions.githubusercontent.com",
+                "/gitlab-gprd-artifacts/x",
+            ),
+        ] {
+            assert!(!is_gitlab_ci_storage(host, path), "{host}{path}");
+        }
+    }
 
     #[test]
     fn actions_log_and_artifact_storage_is_named_exactly() {
