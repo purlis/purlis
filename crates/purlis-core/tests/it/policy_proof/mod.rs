@@ -81,6 +81,7 @@ impl PolicyInput {
                 settings: Some(("purlis.toml", &settings)),
                 rules: self.rules.as_deref(),
                 local: None,
+                shipped: None,
             },
         );
         assert!(
