@@ -427,7 +427,8 @@ export const projectAccounts: LiveSetting = {
                         <span className="ui-record-where ui-text-meta">{row.host}</span>
                       </TableCell>
                       <TableCell heading="Served by">
-                        {row.choices.length > 1 ? (
+                        {row.choices.length > 1 ||
+                        (row.state !== "serving" && row.choices.length >= 1) ? (
                           <Select
                             size="sm"
                             aria-label={`Account for ${row.path} on ${row.host}`}

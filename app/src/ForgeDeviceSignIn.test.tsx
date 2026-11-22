@@ -44,6 +44,7 @@ const OCTOCAT: ForgeAccountRow = {
   signed_in: true,
   scopes: ["repo", "read:org"],
   wider: [],
+  ci_allowed: false,
 };
 
 let accounts: ForgeAccountRow[];

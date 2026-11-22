@@ -33,6 +33,7 @@ const ACCOUNTS: ForgeAccountRow[] = [
     signed_in: true,
     scopes: ["repo", "workflow"],
     wider: [],
+    ci_allowed: false,
   },
   {
     id: "gitlab:gitlab.example.org:sam",
@@ -43,6 +44,7 @@ const ACCOUNTS: ForgeAccountRow[] = [
     signed_in: true,
     scopes: ["api"],
     wider: ["api"],
+    ci_allowed: false,
   },
 ];
 

@@ -297,8 +297,8 @@ pub async fn forge_choose_project_account(
             .map_err(|_| "That repo is not one purlis knows.".to_string())?;
         let account = accounts::listed(&root)?
             .into_iter()
-            .find(|a| a.id == account_id)
-            .ok_or_else(|| "That account is not on this machine any more.".to_string())?;
+            .find(|a| a.id == account_id && a.state == State::SignedIn)
+            .ok_or_else(|| "That account is not signed in on this machine.".to_string())?;
         confirmed::choose_account(&scope, &root, &clone_key, kind, &host, repo_id, &account)
             .map(|_| ())
     })

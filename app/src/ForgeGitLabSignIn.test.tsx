@@ -26,6 +26,7 @@ const ACCOUNT: ForgeAccountRow = {
   signed_in: true,
   scopes: ["api"],
   wider: [],
+  ci_allowed: false,
 };
 
 /** Every command the window sent, with its arguments. */
@@ -289,6 +290,7 @@ describe("An everyday GitHub token that holds workflow", () => {
         signed_in: true,
         scopes: ["repo", "read:org", "workflow"],
         wider: ["workflow"],
+        ci_allowed: false,
       },
     ];
     render(<Lines />);
