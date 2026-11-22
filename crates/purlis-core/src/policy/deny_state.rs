@@ -35,7 +35,7 @@ pub const RULE_ID: &str = "answers-deny-state";
 /// (`docs/ui-copy.md`: what happened, what to do).
 pub const STARTED_NOTICE: &str = "Purlis can no longer vouch for what you answered in this \
      project, so this chat runs in the full sandbox with only what its harness needs, and \
-     everything it tries is refused. Press to start again to mend it.";
+     everything it tries is refused. Press Accept on the project's policy to mend it.";
 
 /// What the harness needs to run in a deny state, and nothing else (review round 3, SEC3-SF4;
 /// **proposed**, until slice 22 compiles the sandbox from the policy). Everything else a project,
@@ -127,7 +127,7 @@ impl RePress {
         }
         format!(
             "Purlis can no longer vouch for what you answered here, so nothing is allowed in this \
-             project until you press to start again.{lost} The shipped default holds no nevers and \
+             project until you press Accept on the project's policy.{lost} The shipped default holds no nevers and \
              no accepted floor: after the press, only the shipped default and the project's own \
              files apply, and what you answered before has to be answered again."
         )

@@ -6,7 +6,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { ProjectPolicyNotice } from "./ProjectPolicyNotice";
-import type { PolicyState } from "./bindings";
+import type { PolicyPress, PolicyState } from "./bindings";
 
 /**
  * **A loosening of the project's `[policy]` waits for the person's press** (Q308a, Q308b): the
@@ -31,12 +31,29 @@ const QUIET: PolicyState = {
   template_default: true,
   overrides: [],
   locked: [],
+  press: null,
 };
 
 const LOOSENED: PolicyState = {
   ...QUIET,
   waiting: [{ family: "guards.merge", accepted: "enforce", committed: "log" }],
 };
+
+const PRESS: PolicyPress = {
+  reason: "loosening",
+  rules: [
+    { id: "guards-merge-ban", kind: "loosens", what: "removed" },
+    { id: "guards-merge-new", kind: "tightens", what: "added" },
+    { id: "guards-merge-edit", kind: "changes", what: "edited" },
+  ],
+  modes: [{ key: "guards.merge", before: "enforce", after: "log", kind: "loosens" }],
+  limits: [{ key: "dispatch.running-per-chat", before: "3", after: "9", kind: "loosens" }],
+  local: [{ key: "template", was: "strict", now: "open" }],
+  other: ["policy.sets.protected-branches"],
+  commit: { sha: "0123abcd".repeat(5), subject: "Drop the merge ban", author: "Ada <ada@x>" },
+  lost: null,
+};
+const PRESSED: PolicyState = { ...QUIET, press: PRESS };
 
 function core(state: PolicyState, after: PolicyState = QUIET) {
   const asked: { cmd: string; args: unknown }[] = [];
@@ -124,5 +141,79 @@ describe("the project's policy (Q308a)", () => {
     expect(
       screen.getByText(/Without a sandbox, network, ports and processes are not in force\./),
     ).toBeTruthy();
+  });
+
+  it("project_policy_notice_offers_accept_and_not_now", async () => {
+    const asked = core(PRESSED);
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy());
+    // Not now puts the line away and asks the core nothing.
+    await userEvent.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Accept" })).toBeNull());
+    expect(asked("accept_project_policy")).toEqual([]);
+    // "Use it" and "Keep mine" are gone, and so is "Project recommends".
+    expect(screen.queryByText(/Use it|Keep mine|Project recommends/)).toBeNull();
+  });
+
+  it("draws the press: each rule as loosens, tightens or changes, each mode, limit and your own file's tightening", async () => {
+    core(PRESSED);
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/guards-merge-ban/)).toBeTruthy());
+    expect(screen.getByText("loosens: removed")).toBeTruthy();
+    expect(screen.getByText("tightens: added")).toBeTruthy();
+    expect(screen.getByText("changes: edited")).toBeTruthy();
+    expect(screen.getByText("loosens: enforce to log")).toBeTruthy();
+    expect(screen.getByText("loosens: 3 to 9")).toBeTruthy();
+    expect(screen.getByText("your own file loosens: strict to open")).toBeTruthy();
+    expect(screen.getByText("0123abcd")).toBeTruthy();
+    expect(screen.getByText(/Drop the merge ban/)).toBeTruthy();
+  });
+
+  it("the_author_is_shown_as_the_commit_claims_it_and_never_vouched_for", async () => {
+    core(PRESSED);
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    // The author is the commit's own claim, and the window says it cannot be checked.
+    await waitFor(() =>
+      expect(screen.getByText(/The commit names its author as Ada <ada@x>\./)).toBeTruthy(),
+    );
+    expect(screen.getByText(/purlis can't check who wrote it/)).toBeTruthy();
+    expect(screen.queryByText(/verified on/)).toBeNull();
+  });
+
+  it("names a part no typed row covers as a change that waits", async () => {
+    core(PRESSED);
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText("policy.sets.protected-branches")).toBeTruthy());
+    expect(screen.getAllByText("changes").length).toBeGreaterThan(0);
+  });
+
+  it("says Accept starts the policy afresh, not that earlier acceptances hold, where nothing is allowed until it", async () => {
+    core({ ...QUIET, press: { ...PRESS, reason: "past-the-cap" } });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/A commit went past the most/)).toBeTruthy());
+    expect(screen.queryByText(/they keep what you accepted before/)).toBeNull();
+  });
+
+  it("raises the press for a removal from your own file, with no commit and no author", async () => {
+    core({
+      ...QUIET,
+      press: {
+        reason: "local-removal",
+        rules: [],
+        modes: [],
+        limits: [],
+        local: [{ key: "template", was: "strict", now: "open" }],
+        other: [],
+        commit: null,
+        lost: null,
+      },
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/A tightening is gone from your own/)).toBeTruthy(),
+    );
+    expect(screen.getByText("your own file loosens: strict to open")).toBeTruthy();
+    expect(screen.queryByText(/Author/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Accept" })).toBeTruthy();
   });
 });

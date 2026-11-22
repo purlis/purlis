@@ -14495,6 +14495,29 @@ export type PolicyOverride = {
 	runs: string,
 };
 
+/**  **The loosening press** (M75-15): what Accept would accept, against the policy in force. */
+export type PolicyPress = {
+	/**  Why it is raised: `loosening`, `past-the-cap`, `local-removal` or `lost-store`. */
+	reason: string,
+	/**  Each rule that differs. */
+	rules: PressRule[],
+	/**  Each mode that differs. */
+	modes: PressMode[],
+	/**  Each limit that differs. */
+	limits: PressLimit[],
+	/**  Each tightening of your own file the press lets go: listed in every press. */
+	local: PressLocal[],
+	/**
+	 *  Each other part that differs and no typed row covers, said by name: they wait like any
+	 *  change.
+	 */
+	other: string[],
+	/**  The commit, none for the removal of a tightening from your own file. */
+	commit: PressCommit | null,
+	/**  After a lost store, what was lost, in one sentence. */
+	lost: string | null,
+};
+
 /**
  *  **What the controls would refuse, said before a review** (#6031): the core's sentence, and
  *  when it can be taken where it is refused for its age alone.
@@ -14541,6 +14564,12 @@ export type PolicyState = {
 	 *  says (Q308a: Settings shows it as locked).
 	 */
 	locked: string[],
+	/**
+	 *  The loosening press (M75-15): the diff against the policy in force, the commit and its
+	 *  author, raised while a loosening, a commit past the accepted floor's cap, the removal of a
+	 *  tightening from your own file or a lost store waits for Accept.
+	 */
+	press: PolicyPress | null,
 };
 
 /**  One family the project now runs looser than you accepted, or one dispatch deny it lifted. */
@@ -15361,6 +15390,63 @@ export type PresetsChanged = {
 
 /**  A press on a login's notice. */
 export type Press = "once" | "chat" | "always" | "keep";
+
+/**  The commit a press accepts. */
+export type PressCommit = {
+	/**  Its full sha. */
+	sha: string,
+	/**  Its subject line. */
+	subject: string,
+	/**  The author the commit names itself, as written. Purlis cannot check who wrote it. */
+	author: string,
+};
+
+/**  One `[policy.limits]` number the press changes, said as the window shows it. */
+export type PressLimit = {
+	/**  The key, `<family>.<kebab>`. */
+	key: string,
+	/**  The number before, or `no cap`. */
+	before: string,
+	/**  The number after, or `no cap`. */
+	after: string,
+	/**  `loosens` or `tightens`. */
+	kind: string,
+};
+
+/**  One tightening of your own file that the press lets go. */
+export type PressLocal = {
+	/**  What it sets: `template`, a family's key, or `rules.<@id>`. */
+	key: string,
+	/**  What your sealed tightening holds. */
+	was: string,
+	/**  What runs once you accept. */
+	now: string,
+};
+
+/**  One mode the press changes: a family's, or a rule's (`rules.<@id>`). */
+export type PressMode = {
+	/**  The family's key, or `rules.<@id>`. */
+	key: string,
+	/**  The mode in force before: `off`, `log` or `enforce`. */
+	before: string,
+	/**  The mode after. */
+	after: string,
+	/**  `loosens` or `tightens`. */
+	kind: string,
+};
+
+/**  One rule the press changes, by its `@id`. */
+export type PressRule = {
+	/**  Its `@id`. */
+	id: string,
+	/**  `loosens`, `tightens` or `changes`. */
+	kind: string,
+	/**
+	 *  What happened to it: `added`, `removed`, `edited`, `now permits`, `now forbids`, `now
+	 *  asks` or `no longer asks`.
+	 */
+	what: string,
+};
 
 /**  What a press answered. */
 export type Pressed = 

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type PlaneId, type PolicyState } from "./bindings";
+import { commands, type PlaneId, type PolicyPress, type PolicyState } from "./bindings";
+import { LooseningPress, pressReasonSaid } from "./LooseningPress";
 import { Notice } from "./Notice";
 import { inTheWindow } from "./personaHostsAllow";
 import { holdPolicy } from "./projectPolicy";
@@ -17,6 +18,12 @@ export const mayAcceptPolicy = (): boolean => inTheWindow(commands, "acceptProje
 /** What Accept means, after the families that wait. */
 export const POLICY_ACCEPT_MEANS =
   "Accept, and your chats here run that way from now on. Until you do, they keep what you accepted before.";
+
+/** What Accept means for a press: where nothing is allowed until it, no earlier acceptance holds. */
+const acceptMeans = (press: PolicyPress): string =>
+  press.reason === "past-the-cap" || press.reason === "lost-store"
+    ? "Accept, and your chats here run that way from now on."
+    : POLICY_ACCEPT_MEANS;
 
 /** What the window says where this machine's acceptance does not hold: every family enforced. */
 export const POLICY_UNSEALED_SAID =
@@ -125,14 +132,17 @@ export function ProjectPolicyNotice({
       </Notice>
     ) : null;
 
-  const waits = state.waiting.length > 0 || state.unsealed;
+  const press = state.press ?? null;
+  const waits = state.waiting.length > 0 || state.unsealed || press !== null;
   if (!waits || hidden) return refused;
 
   const body = (
     <p>
       {state.unsealed && `${POLICY_UNSEALED_SAID} `}
+      {press !== null && `${pressReasonSaid(press)} `}
       {state.waiting.length > 0 &&
         `The project loosened its policy: ${waitingSaid(state)}. ${notInForceSaid(state)}${POLICY_ACCEPT_MEANS}`}
+      {press !== null && state.waiting.length === 0 && ` ${acceptMeans(press)}`}
       {!canAccept && " Accept it from purlis's own window on this machine."}
       {said !== undefined && ` ${said}`}
     </p>
@@ -140,11 +150,15 @@ export function ProjectPolicyNotice({
   return (
     <>
       {refused}
-      {canAccept && (state.waiting.length > 0 || state.unsealed) ? (
+      {canAccept && (state.waiting.length > 0 || state.unsealed || press !== null) ? (
         <Notice
           cause="policy-loosened"
           label="The project's policy"
-          fixes={[{ label: "Accept", onPress: accept, busy }]}
+          fixes={[
+            { label: "Accept", onPress: accept, busy, allows: true },
+            { label: "Not now", onPress: () => setHidden(true) },
+          ]}
+          under={press !== null ? <LooseningPress press={press} /> : undefined}
         >
           {body}
         </Notice>
@@ -153,6 +167,7 @@ export function ProjectPolicyNotice({
           cause="policy-loosened"
           label="The project's policy"
           onDismiss={() => setHidden(true)}
+          under={press !== null ? <LooseningPress press={press} /> : undefined}
         >
           {body}
         </Notice>
