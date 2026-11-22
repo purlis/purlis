@@ -14,19 +14,18 @@ use std::process::Stdio;
 struct Machine {
     _tmp: tempfile::TempDir,
     root: PathBuf,
-    elsewhere: PathBuf,
     home: PathBuf,
     config: PathBuf,
 }
 
 impl Machine {
-    /// A plane, a folder beside it that is no plane's, and a config home of the test's own.
+    /// A plane, and a home and a config home of the test's own.
     fn new() -> Self {
         let tmp = tempfile::tempdir().expect("a directory");
         let base = tmp.path().canonicalize().expect("a real path");
-        let (root, elsewhere) = (base.join("plane"), base.join("elsewhere"));
+        let root = base.join("plane");
         let (home, config) = (base.join("home"), base.join("config"));
-        for dir in [&root, &elsewhere, &home, &config] {
+        for dir in [&root, &home, &config] {
             std::fs::create_dir_all(dir).expect("a folder");
         }
         std::fs::create_dir_all(root.join(".git")).expect("the plane's git folder");
@@ -34,7 +33,6 @@ impl Machine {
         Self {
             _tmp: tmp,
             root,
-            elsewhere,
             home,
             config,
         }
