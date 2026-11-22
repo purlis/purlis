@@ -649,7 +649,6 @@ fn version_problem(file: &File<'_>) -> Option<String> {
     }
 }
 
-/// One file's rules, in the order they are written, or its problems.
 /// The `@id`s of a shipped default's `text`; none where it does not read.
 pub fn shipped_ids(text: &str) -> Vec<String> {
     let file = File {
@@ -661,6 +660,18 @@ pub fn shipped_ids(text: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Whether a shipped default's `text` reads at all (a newer version line, a Cedar parse error or a
+/// schema mismatch all say no): a sealed text that does not is an unread side, never this build's
+/// default in its place.
+fn shipped_reads(text: &str) -> bool {
+    let file = File {
+        text,
+        ..File::shipped_default()
+    };
+    read_file(&file).is_ok()
+}
+
+/// One file's rules, in the order they are written, or its problems.
 fn read_file(file: &File<'_>) -> Result<Vec<Rule>, Vec<Problem>> {
     let problem = |line: usize, rule: Option<&str>, what: String| Problem {
         file: file.name.to_owned(),

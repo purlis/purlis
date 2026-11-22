@@ -5031,16 +5031,24 @@ write into this folder cannot make its own text arrive as the person's.
   copy with it, so an update that adds a forbid to the shipped default applies at once and is
   sealed (the new default is a new floor version), a downgrade drops none, and one that takes a
   forbid away waits for the press, raised as `shipped-default` with no commit. A version with no
-  `shipped` is judged under the default of the purlis that reads it. Each key is left out where it
-  holds nothing. Same store, same tier. Every decision is judged by the project as committed now and by the accepted copy (the shipped
+  `shipped` is judged under the default of the purlis that reads it. **A `shipped` text that does
+  not read** (a policy version line this build does not know, a Cedar parse error, a schema
+  mismatch) **is an unread side**, never this build's default in its place: it denies as a side
+  that does not read, and the press shows the row "the shipped default this was judged under does
+  not read". Each key is left out where it holds nothing. Same store, same tier.
+
+  Every decision is judged by the project as committed now, by the accepted copy (the shipped
   default until there is one) and by every `floor` version, each with its own named sets and its
   own attributes, the stricter result winning. **The app seals a `floor` version, with no
   press, whenever it sees a committed version no entry holds, or the local file tightening**
   (`policy::force::seal`); a version that does not read is not sealed. The floor is the
   conjunction of every version seen since the last press, which starts it again (`recommit`). The
   number of committed versions is capped by `trust.accepted-floor-max-versions` (32 until slice 12
-  reads the limit), the local file's versions not counted; a commit past it adds a
-  `past-the-cap` entry instead of a version, and that is the deny state until the press.
+  reads the limit), the local file's versions not counted; a version past it adds a
+  `past-the-cap` entry instead of a version, and that is the deny state until the press. **A
+  shipped-default update counts toward the cap**: the project sealed under the new default is a
+  version of its own, so enough updates with no commit can reach it, and the press then shows no
+  commit, since none caused it.
 - **Which state a plane is in:** the **deny state** where the anchor is present and the manifest
   is missing or older than the counter; the anchored path's clone key has no manifest (a swapped
   `.git`); an entry other than a grant is missing or fails its seal or the manifest's digest;

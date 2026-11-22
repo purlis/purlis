@@ -585,3 +585,54 @@ fn a_chats_commit_of_a_loosening_changes_nothing_until_the_press() {
     assert_eq!(of(&root), None);
     assert_ne!(host(&root, &merge(true)).after_mode, Outcome::Deny);
 }
+
+#[test]
+fn a_sealed_shipped_default_that_does_not_read_is_a_row_and_holds() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let newer = format!("// purlis-policy 999\n{}", crate::policy::DEFAULT);
+    let row = "the shipped default this was judged under does not read";
+    for standing in [
+        holding(vec![accepted_under(newer.clone())]),
+        holding(vec![
+            accepted(&version(STRICT, None)),
+            floor(&Version {
+                shipped: Some(newer.clone()),
+                ..version(STRICT, None)
+            }),
+        ]),
+    ] {
+        let press =
+            press_of(&root, &standing).unwrap_or_else(|| panic!("a press for {standing:?}"));
+        assert!(
+            press.diff.other.iter().any(|one| one.part == row),
+            "{press:?}"
+        );
+        assert!(press.diff.waits(), "{press:?}");
+        // And the decision is a deny, not this build's default in its place.
+        let said = super::force::judge(&root, &sources(&root), &standing, &merge(true), None).0;
+        assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    }
+}
+
+#[test]
+fn a_press_past_the_cap_that_a_shipped_update_made_names_no_commit() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    // The store set aside a version of this very project under an earlier default: the update is
+    // what went past the cap, and no commit is blamed for it.
+    let past = Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        kept: vec![accepted_under(shipped_with_a_ban())],
+        ..Standing::fresh()
+    };
+    let press = press_of(&root, &past).expect("a press");
+    assert_eq!(press.reason, Reason::PastTheCap, "{press:?}");
+    assert_eq!(press.commit, None, "{press:?}");
+    // A commit that changed the project is still named.
+    let ban = forbid_merge("guards-merge-ban", "");
+    commit(&root, &[("policy.cedar", &ban)]);
+    let press = press_of(&root, &past).expect("a press");
+    assert_eq!(press.reason, Reason::PastTheCap, "{press:?}");
+    assert!(press.commit.is_some(), "{press:?}");
+}

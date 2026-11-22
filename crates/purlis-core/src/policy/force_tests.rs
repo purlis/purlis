@@ -1400,6 +1400,16 @@ fn a_shipped_default_update_applies_its_tightenings_and_holds_its_loosenings() {
     let before = holding(vec![accepted(&shipped_as(&shipped_without(
         "guards-merge-hold",
     )))]);
+    // The accepted copy alone, under the default it was judged by, lets a merge by: it is the new
+    // default that asks, so what is asked below is the update, not the copy.
+    let old = side(
+        &sources(&root),
+        &shipped_as(&shipped_without("guards-merge-hold")),
+        &root,
+        &merge(true),
+        None,
+    );
+    assert_ne!(old.after_mode, Outcome::Ask, "{old:?}");
     assert_eq!(by(&root, &before, &merge(true)).after_mode, Outcome::Ask);
     // The app seals what it saw: the new default, as it ships, is on the floor.
     assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Ask);
@@ -1468,4 +1478,74 @@ fn a_project_replacement_of_a_removed_shipped_rule_stays_as_a_project_rule() {
         "guards-merge-hold",
     )))]);
     assert!(orphaned_replacements(&sources(&root), &plain).is_empty());
+}
+
+#[test]
+fn an_unreadable_sealed_shipped_default_denies_and_is_never_this_builds() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    // A newer version line, a Cedar parse error and a schema mismatch: none reads.
+    let newer = format!("// purlis-policy 999\n{}", crate::policy::DEFAULT);
+    let broken = format!("{}\nforbid (principal, action ==", crate::policy::DEFAULT);
+    let unknown = format!(
+        "{}\n\n@id(\"guards-merge-nope\")\nforbid (principal, action == Action::\"nope\", resource);\n",
+        crate::policy::DEFAULT
+    );
+    for text in [newer, broken, unknown] {
+        assert!(!crate::policy::shipped_reads(&text), "{text}");
+        let bad = shipped_as(&text);
+        assert!(!bad.reads());
+        // Sealed on the floor or accepted, it is an unread side: a deny, as for a side that does
+        // not parse, with nothing loosened by this build's default in its place.
+        for standing in [holding(vec![floor(&bad)]), holding(vec![accepted(&bad)])] {
+            let said = by(&root, &standing, &merge(true));
+            assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+        }
+        // A cap on the same side is the strictest there is, never this build's.
+        let sides = limit_sides(&sources(&root), &holding(vec![accepted(&bad)]));
+        assert!(sides.iter().any(|one| matches!(one, LimitSide::Unread)));
+    }
+}
+
+#[test]
+fn a_legacy_version_with_no_shipped_text_is_judged_under_the_default_that_reads_it() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    // Sealed before `shipped` was kept: it meets whatever default this build ships, with no
+    // second opinion of an older one, so it neither denies nor loosens.
+    let legacy = version(STRICT, None);
+    assert_eq!(legacy.shipped, None);
+    assert!(legacy.reads());
+    let standing = holding(vec![accepted(&legacy), floor(&legacy)]);
+    assert_eq!(by(&root, &standing, &merge(true)).after_mode, Outcome::Ask);
+    // And the app seals what it saw pinned to this build's default, so the next update meets it.
+    host(&root, &merge(true));
+    assert!(
+        floor_versions(&root)
+            .iter()
+            .all(|one| one.shipped.as_deref() == Some(crate::policy::DEFAULT)),
+        "{:?}",
+        floor_versions(&root)
+    );
+}
+
+#[test]
+fn shipped_default_updates_count_toward_the_floor_cap() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    // The cap's worth of versions of this one project, each sealed under an update of the default.
+    for n in 0..cap() {
+        let text = format!("{}\n// update {n}\n", crate::policy::DEFAULT);
+        answers::commit(&root, |draft| {
+            draft.add_narrowing(
+                answers::FLOOR,
+                &serde_json::to_string(&shipped_as(&text)).expect("a version is JSON"),
+            );
+        })
+        .expect("a sealed version");
+    }
+    assert!(!past_the_cap(&root), "the cap's worth is within it");
+    // This build's own default is one more, and no commit made it: it is past the cap.
+    host(&root, &merge(false));
+    assert!(past_the_cap(&root), "an update counts as a version");
 }

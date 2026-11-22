@@ -1744,8 +1744,22 @@ fn load_with(
         text: shipped_text.unwrap_or(File::shipped_default().text),
         ..File::shipped_default()
     };
-    let mut rules: Vec<Rule> = read_file(&shipped_file)
-        .unwrap_or_else(|_| read_file(&File::shipped_default()).unwrap_or_default());
+    // A sealed text that does not read is never this build's default in its place: callers judge
+    // such a version as an unread side ([`crate::policy::shipped_reads`]); if one gets here anyway it
+    // runs under the full sandbox, with the Notice.
+    let mut rules: Vec<Rule> = match read_file(&shipped_file) {
+        Ok(rules) => rules,
+        Err(_) => {
+            broken = true;
+            notices.push(Notice {
+                file: shipped.to_owned(),
+                line: 1,
+                what: "The shipped default this was judged under does not read: this build's runs in its place, under the full sandbox".into(),
+                rules: Vec::new(),
+            });
+            read_file(&File::shipped_default()).unwrap_or_default()
+        }
+    };
     // What runs where the policy can't be assembled: the shipped default and the
     // Organisation's rules, as the Organisation's own modes leave them (S4).
     let mut fallback = Vec::new();

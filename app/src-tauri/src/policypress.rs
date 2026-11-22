@@ -177,22 +177,7 @@ fn press_of(root: &std::path::Path) -> Option<(PolicyPress, String)> {
 /// The shipped rules this purlis dropped that the project's own rule of the same `@id` now stands
 /// alone for.
 fn orphaned_of(root: &std::path::Path) -> Vec<String> {
-    let standing = purlis_core::secrets::answers::standing(root);
-    let plane = purlis_core::workspaces::Plane::open(root);
-    let workspaces = plane.workspaces().unwrap_or_default();
-    let personas = plane.personas().unwrap_or_default();
-    let workspaces: Vec<&str> = workspaces.iter().map(String::as_str).collect();
-    let personas: Vec<&str> = personas.iter().map(String::as_str).collect();
-    purlis_core::policy::force::orphaned_replacements(
-        &purlis_core::policy::levels::Sources {
-            root,
-            workspaces: &workspaces,
-            personas: &personas,
-            organisation: None,
-            accepted: None,
-        },
-        &standing,
-    )
+    purlis_core::policy::press::orphaned(root)
 }
 
 /// What the window says about the project's `[policy]` on this machine.

@@ -497,6 +497,9 @@ fn git_out(root: &Path, args: &[&str]) -> Option<String> {
     run.ok().then(|| run.out.trim().to_owned())
 }
 
+/// The row for a sealed version whose shipped default does not read: an unread side, which denies.
+const UNREAD_SHIPPED: &str = "the shipped default this was judged under does not read";
+
 /// The commit `HEAD` names, read as history was written.
 fn commit_of(root: &Path) -> Option<Commit> {
     let sha = git_out(root, &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"])?;
@@ -551,6 +554,10 @@ pub fn of_head(
         held.push(none);
     } else {
         match force::accepted_in(entries) {
+            Ok(Some(accepted)) if !accepted.reads() => {
+                unread.push(UNREAD_SHIPPED);
+                held.push(none);
+            }
             Ok(accepted) => held.push(accepted.unwrap_or(none)),
             Err(()) => {
                 unread.push("the accepted copy does not read");
@@ -559,6 +566,7 @@ pub fn of_head(
         }
         for one in force::floor_in(entries) {
             match one {
+                Ok(version) if !version.reads() => unread.push(UNREAD_SHIPPED),
                 Ok(version) => held.push(version),
                 Err(()) => unread.push("a sealed version of the accepted floor does not read"),
             }
@@ -606,8 +614,18 @@ pub fn of_head(
     } else {
         return None;
     };
+    // A commit is named only where one could have caused the press. Past the cap, a base that
+    // holds the project's own text under another shipped default says an update did (it counts
+    // toward the cap, spec §7.8), and no commit is blamed.
     let commit = match reason {
         Reason::LocalRemoval | Reason::ShippedDefault => None,
+        Reason::PastTheCap
+            if held
+                .iter()
+                .any(|base| base.unpinned().committed() == version.unpinned().committed()) =>
+        {
+            None
+        }
         _ => commit_of(root),
     };
     Some(Press {
@@ -699,6 +717,16 @@ fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
             .as_ref()
             .map(super::organisation::Found::as_sources),
         accepted: None,
+    })
+}
+
+/// **The shipped rules an earlier purlis shipped and this one does not, that the plane at `root`
+/// holds a rule of the same `@id` for** ([`force::orphaned_replacements`]), judged with the same
+/// sources as the press, the Organisation in force included.
+pub fn orphaned(root: &Path) -> Vec<String> {
+    let standing = answers::standing(root);
+    with_sources(root, |sources| {
+        force::orphaned_replacements(sources, &standing)
     })
 }
 
