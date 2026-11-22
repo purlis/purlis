@@ -494,3 +494,145 @@ fn a_rule_mode_entry_that_appears_is_a_row_even_where_a_mode_row_shows_it_too() 
     assert!(other(&press).contains(&"policy.rules.trust-x"), "{press:?}");
     assert!(press.diff.waits());
 }
+
+// ---- the shipped default is versioned (M75-17, #7026) --------------------------------------------
+
+/// The shipped default of a later purlis that bans a merge outright.
+fn shipped_with_a_ban() -> String {
+    format!(
+        "{}\n\n@id(\"guards-merge-shipped-ban\") @level(\"project\")\nforbid (principal, action == \
+         Action::\"merge\", resource);\n",
+        crate::policy::DEFAULT
+    )
+}
+
+/// A plain strict project, accepted under the shipped default `text`.
+fn accepted_under(text: String) -> Entry {
+    accepted(&Version {
+        shipped: Some(text),
+        ..version(STRICT, None)
+    })
+}
+
+#[test]
+fn a_shipped_default_update_is_announced_once() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    // The update dropped a forbid the person accepted under: it waits, with its own reason, its
+    // diff and no commit, since no commit loosened anything.
+    let standing = holding(vec![accepted_under(shipped_with_a_ban())]);
+    let press = press_of(&root, &standing).expect("a press");
+    assert_eq!(press.reason, Reason::ShippedDefault, "{press:?}");
+    assert_eq!(press.commit, None, "{press:?}");
+    assert_eq!(rule(&press, "guards-merge-shipped-ban").kind, Kind::Loosens);
+    assert!(
+        press
+            .diff
+            .other
+            .iter()
+            .any(|one| one.part.contains("shipped default")),
+        "{press:?}"
+    );
+    // The same press every time it is read, so the window has one line, not one per decision.
+    assert_eq!(press_of(&root, &standing).as_ref(), Some(&press));
+    // On the real store: the press, Accept, and then nothing is raised again.
+    let real = accepted_under(shipped_with_a_ban());
+    answers::commit(&root, |draft| {
+        draft.add(&the_persons_press(), &real.kind, &real.text);
+    })
+    .expect("an accepted copy");
+    let press = of(&root).expect("a press on the real store");
+    assert_eq!(press.reason, Reason::ShippedDefault);
+    assert_eq!(
+        host(&root, &merge(true)).after_mode,
+        Outcome::Deny,
+        "held until Accept"
+    );
+    accept(&root, &the_persons_press(), &press.digest).expect("the press");
+    assert_eq!(of(&root), None, "announced once");
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Ask);
+    assert_eq!(
+        of(&root),
+        None,
+        "and not again by the decision that sealed what it saw"
+    );
+}
+
+#[test]
+fn a_chats_commit_of_a_loosening_changes_nothing_until_the_press() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &ban)]);
+    // The person pressed Accept on the project as it stands: the ban is what they accepted.
+    if let Some(first) = of(&root) {
+        accept(&root, &the_persons_press(), &first.digest).expect("the first press");
+    }
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+    // A chat commits the loosening: it drops the ban. Whoever the commit says wrote it, it is
+    // only a commit.
+    commit(&root, &[("policy.cedar", "-")]);
+    let said = host(&root, &merge(true));
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["guards-merge-ban"], "{said:?}");
+    // The window shows the loosening, with its row, and waits.
+    let press = of(&root).expect("a press for the commit");
+    assert_eq!(rule(&press, "guards-merge-ban").kind, Kind::Loosens);
+    assert!(press.commit.is_some());
+    // Still nothing changed for any chat…
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+    // …until the person's press, which accepts exactly what it showed.
+    accept(&root, &the_persons_press(), &press.digest).expect("the press");
+    assert_eq!(of(&root), None);
+    assert_ne!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+}
+
+#[test]
+fn a_sealed_shipped_default_that_does_not_read_is_a_row_and_holds() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let newer = format!("// purlis-policy 999\n{}", crate::policy::DEFAULT);
+    let row = "the shipped default this was judged under does not read";
+    for standing in [
+        holding(vec![accepted_under(newer.clone())]),
+        holding(vec![
+            accepted(&version(STRICT, None)),
+            floor(&Version {
+                shipped: Some(newer.clone()),
+                ..version(STRICT, None)
+            }),
+        ]),
+    ] {
+        let press =
+            press_of(&root, &standing).unwrap_or_else(|| panic!("a press for {standing:?}"));
+        assert!(
+            press.diff.other.iter().any(|one| one.part == row),
+            "{press:?}"
+        );
+        assert!(press.diff.waits(), "{press:?}");
+        // And the decision is a deny, not this build's default in its place.
+        let said = super::force::judge(&root, &sources(&root), &standing, &merge(true), None).0;
+        assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    }
+}
+
+#[test]
+fn a_press_past_the_cap_that_a_shipped_update_made_names_no_commit() {
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    // The store set aside a version of this very project under an earlier default: the update is
+    // what went past the cap, and no commit is blamed for it.
+    let past = Standing {
+        state: State::Deny(vec![Deny::PastTheFloorCap]),
+        kept: vec![accepted_under(shipped_with_a_ban())],
+        ..Standing::fresh()
+    };
+    let press = press_of(&root, &past).expect("a press");
+    assert_eq!(press.reason, Reason::PastTheCap, "{press:?}");
+    assert_eq!(press.commit, None, "{press:?}");
+    // A commit that changed the project is still named.
+    let ban = forbid_merge("guards-merge-ban", "");
+    commit(&root, &[("policy.cedar", &ban)]);
+    let press = press_of(&root, &past).expect("a press");
+    assert_eq!(press.reason, Reason::PastTheCap, "{press:?}");
+    assert!(press.commit.is_some(), "{press:?}");
+}

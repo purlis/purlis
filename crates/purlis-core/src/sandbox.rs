@@ -1510,6 +1510,29 @@ pub fn manifests_held(root: &Path, cwd: Option<&Path>) -> Vec<Denial> {
     out
 }
 
+/// **The project's policy rules a chat is denied writing** (M75-16, #7025; spec §2.5): the plane
+/// root's `policy.cedar`, as the root is spelled and as the kernel names it, held by its own
+/// path so it is neither removed nor replaced, as well as by its target. A chat changes its
+/// branch folder's copy and commits it; the root's is read at `HEAD`, and a change that loosens
+/// it waits for the person's press ([`crate::policy::selfchange`]).
+pub fn policy_file_held(root: &Path, folds_case: bool) -> Vec<Denial> {
+    let mut out: Vec<Denial> = Vec::new();
+    for spelled in [real(root), root.to_path_buf()] {
+        let denial = Denial {
+            class: Class::LaterCode,
+            path: spelled.join(crate::policy::selfchange::POLICY_FILE),
+            access: Access::Write,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: folds_case,
+        };
+        if !out.contains(&denial) {
+            out.push(denial);
+        }
+    }
+    out
+}
+
 /// **The skills of the project at `root` a chat is denied writing** (SK-9, #2772; ADR 0099 as
 /// amended 2026-10-22): every plane level's folder of skills, shared and local, at the project's
 /// root, in each workspace and in each persona's folder, whether or not it is there yet, and in
@@ -2035,6 +2058,9 @@ impl Denied {
         // the root and the chat's folder are added where the folder is known
         // ([`Applied::form_in`]).
         paths.extend(manifests_held(root, None));
+        // …and the project's policy rules (M75-16): the policy that governs a chat is not the
+        // chat's to write.
+        paths.extend(policy_file_held(root, machine.os == Os::MacOs));
         // …and every workspace's manifest (#2046): the app reads a workspace's repos and
         // settings from it, so only the app and the person write it.
         paths.extend(workspace_manifests_held(root));

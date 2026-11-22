@@ -1623,16 +1623,16 @@ mod a_guard_that_fails {
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
-    fn a_hook_that_times_out_runs_the_tool_on_claude_code_under_open() {
+    fn a_bash_hook_that_times_out_still_refuses_the_tool_on_claude_code_under_open() {
         purlis_core::unsteered!();
-        case(Guard::Bash, TIMES_OUT, &under("open"), true);
+        case(Guard::Bash, TIMES_OUT, &under("open"), false); // the policy hold (M75-16)
     }
 
     #[test]
     #[ignore = "runs the real Claude Code, named by PURLIS_CLAUDE_CODE"]
-    fn a_hook_that_dies_runs_the_tool_on_claude_code_under_open() {
+    fn a_bash_hook_that_dies_still_refuses_the_tool_on_claude_code_under_open() {
         purlis_core::unsteered!();
-        case(Guard::Bash, DIES, &under("open"), true);
+        case(Guard::Bash, DIES, &under("open"), false); // the policy hold (M75-16)
     }
 
     /// `watch` enforces `secrets` and `guards.credential`, which the Bash guard judges.

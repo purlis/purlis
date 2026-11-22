@@ -45,6 +45,7 @@ pub mod limits;
 pub mod locality;
 pub mod organisation;
 pub mod press;
+pub mod selfchange;
 
 use cedar_policy::{
     ActionConstraint, Authorizer, Context, Decision as CedarDecision, Effect, Entities, EntityId,
@@ -646,6 +647,28 @@ fn version_problem(file: &File<'_>) -> Option<String> {
             "the first line must name the policy version: `{VERSION_LINE}{VERSION}`"
         )),
     }
+}
+
+/// The `@id`s of a shipped default's `text`; none where it does not read.
+pub fn shipped_ids(text: &str) -> Vec<String> {
+    let file = File {
+        text,
+        ..File::shipped_default()
+    };
+    read_file(&file)
+        .map(|rules| rules.into_iter().map(|rule| rule.id).collect())
+        .unwrap_or_default()
+}
+
+/// Whether a shipped default's `text` reads at all (a newer version line, a Cedar parse error or a
+/// schema mismatch all say no): a sealed text that does not is an unread side, never this build's
+/// default in its place.
+fn shipped_reads(text: &str) -> bool {
+    let file = File {
+        text,
+        ..File::shipped_default()
+    };
+    read_file(&file).is_ok()
 }
 
 /// One file's rules, in the order they are written, or its problems.
