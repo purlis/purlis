@@ -91,11 +91,18 @@ type Held = (TokenKind, &'static str);
 struct FakeRecorded {
     repos: Mutex<HashMap<PathBuf, Vec<Recorded3>>>,
     accounts: Mutex<HashMap<(PathBuf, String), String>>,
-    /// The branches purlis cut for a chat, by chat.
+    /// The branches the app recorded a chat as having created, by chat id.
     cut: Mutex<Vec<(String, String)>>,
 }
 
 impl FakeRecorded {
+    fn own_of(&self, chat: &str) -> Vec<String> {
+        lock(&self.cut)
+            .iter()
+            .filter(|(by, _)| by == chat)
+            .map(|(_, branch)| branch.clone())
+            .collect()
+    }
     fn cut_for(&self, chat: &str, branch: &str) {
         lock(&self.cut).push((chat.to_owned(), branch.to_owned()));
     }
@@ -117,6 +124,11 @@ impl Recorded for FakeRecorded {
             .filter(|(by, _)| by == chat)
             .map(|(_, branch)| branch.clone())
             .collect()
+    }
+    fn record_created(&self, chat: &str, created: &[(String, String, String)]) {
+        for (_, _, branch) in created {
+            lock(&self.cut).push((chat.to_owned(), branch.clone()));
+        }
     }
     fn repos(&self, project: &Path) -> Vec<AllowedRepo> {
         lock(&self.repos)
@@ -1632,4 +1644,61 @@ fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
             "{branch}: {pushed:?}"
         );
     }
+}
+
+/// A push that makes `branch`, which the forge's advertisement does not have, through the run's
+/// route.
+fn push_create(scene: &Scene, run: &str, sentinel: &str, branch: &str) -> Outcome {
+    let proxy = lock_live(scene, run);
+    proxy.note_advertised(
+        &ChatId::new(run),
+        "github.com",
+        "acme/app",
+        vec!["main".into()],
+    );
+    send_raw(
+        scene,
+        run,
+        sentinel,
+        ("POST", "github.com", "/acme/app.git/git-receive-pack"),
+        "application/x-git-receive-pack-request",
+        &push_commands(&[(true, false, &format!("refs/heads/{branch}"))]),
+    )
+}
+
+fn lock_live(scene: &Scene, run: &str) -> Arc<ForgeProxy> {
+    scene
+        .routes
+        .live()
+        .get(run)
+        .expect("a live route")
+        .proxy
+        .clone()
+}
+
+#[test]
+fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_for_that_chat() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let Outcome::Forward(made) = push_create(&scene, "run-1", &params.sentinel, "task/new") else {
+        panic!("a push that makes a branch is forwarded");
+    };
+    // Sent is not made: nothing is recorded until the forge says so.
+    assert!(scene.recorded.own_of("chat-1").is_empty());
+    lock_live(&scene, "run-1").confirm_push(&ChatId::new("run-1"), &made);
+    assert_eq!(scene.recorded.own_of("chat-1"), ["task/new"]);
+
+    // The same chat id, in a new run, owns it from the start: it may move it.
+    scene.routes.stop("run-1");
+    let again = scene.start("chat-1", "run-2", "/p/one");
+    let moved = push_update(&scene, "run-2", &again.sentinel, "task/new");
+    assert!(matches!(moved, Outcome::Forward(_)), "{moved:?}");
+
+    // A chat with another id (a resumed chat gets one) owns nothing: fast-forward only.
+    let other = scene.start("chat-2", "run-3", "/p/one");
+    let refused = push_update(&scene, "run-3", &other.sentinel, "task/new");
+    assert!(
+        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        "{refused:?}"
+    );
 }

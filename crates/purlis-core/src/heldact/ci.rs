@@ -86,7 +86,7 @@ pub fn check_push(
 }
 
 /// **Whether pushing `tip` puts CI files on the forge that differ from `against`'s**, the default
-/// branch's tip now (or, for a branch the push creates, the commit it is cut from).
+/// branch's tip now, for a branch the push creates as for one that is there.
 ///
 /// A CI file of `tip` that is not what `against` holds is a change, however the branch came by it:
 /// a rebase onto the current default branch brings that branch's CI files in, and so is clean,

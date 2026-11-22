@@ -163,62 +163,6 @@ fn holder(plane: &Path, at: &Located) -> Option<Holder> {
     held
 }
 
-/// **The branches the chat `chat` holds** in repo `repo` of workspace `ws`: of `pieces` (a
-/// folder's name and the branch it is on), those whose claim names this chat as the holder. A
-/// folder on no branch, one nobody claimed, one another chat holds, or one declared `done` or
-/// `abandoned` holds none. What the forge route enrols as the chat's own branches, so it may
-/// push a branch purlis cut for it that is on the forge already.
-pub fn branches_held_by(
-    plane: &Path,
-    ws: &str,
-    repo: &str,
-    pieces: &[(String, Option<String>)],
-    chat: &str,
-) -> Vec<String> {
-    pieces
-        .iter()
-        .filter_map(|(piece, branch)| {
-            let at = Located {
-                workspace: ws.to_owned(),
-                repo: repo.to_owned(),
-                piece: piece.clone(),
-            };
-            let held = holder(plane, &at)?;
-            (held.id == chat).then(|| branch.clone()).flatten()
-        })
-        .collect()
-}
-
-/// **The branches the chat `chat` holds in the clones `clones`** (canonical paths) of any
-/// workspace of the plane: every clone's branch folders, as git lists them, read through
-/// [`branches_held_by`]. A branch counts only where the folder is held by this chat in the piece
-/// log, and the cut refuses a name a remote already has ([`crate::worktree::add`]), so a chat
-/// cannot make itself the owner of a branch that was there before it.
-pub fn branches_held_in_clones(plane: &Path, clones: &[PathBuf], chat: &str) -> Vec<String> {
-    let Ok(workspaces) = crate::workspaces::Plane::open(plane.to_path_buf()).workspaces() else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for ws in workspaces {
-        let Ok(found) = crate::repos::clones(plane, &ws) else {
-            continue;
-        };
-        for held in found.repos {
-            let here = std::fs::canonicalize(&held.path).unwrap_or(held.path.clone());
-            if !clones.contains(&here) {
-                continue;
-            }
-            let Ok(pieces) = crate::worktree::list(plane, &ws, &held.name) else {
-                continue;
-            };
-            let pieces: Vec<(String, Option<String>)> =
-                pieces.into_iter().map(|p| (p.piece, p.branch)).collect();
-            out.extend(branches_held_by(plane, &ws, &held.name, &pieces, chat));
-        }
-    }
-    out
-}
-
 /// Whether the chat `me` (its stable id, where it has one) may `act` in the branch folder `at`,
 /// by the piece log and `live`: the chats the app has, or `None` where no app said.
 pub fn writer(

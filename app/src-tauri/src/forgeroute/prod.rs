@@ -186,20 +186,24 @@ impl Recorded for ConfirmedRecorded {
         out
     }
 
-    /// The branches of the branch folders (`purlis worktree`) the chat `chat` holds, in the
-    /// clones that are `repo`: [`purlis_core::piececlaim::branches_held_by`], read from the piece
-    /// log and git's own list of the clone's worktrees.
-    fn own_branches(&self, project: &Path, chat: &str, repo: &AllowedRepo) -> Vec<String> {
-        let clones: Vec<PathBuf> = self
-            .confirmed_for(project)
-            .into_iter()
-            .filter(|(confirmed, _)| {
-                let (host, port) = confirmed::address_of(&confirmed.host);
-                host == repo.host() && port == repo.port() && confirmed.path == repo.path()
-            })
-            .map(|(_, clone)| clone)
-            .collect();
-        purlis_core::piececlaim::branches_held_in_clones(project, &clones, chat)
+    /// The branches of `repo` that `chat` created through the route: the app's own record under
+    /// the machine config root ([`purlis_core::forge::createdbranches`]).
+    fn own_branches(&self, _project: &Path, chat: &str, repo: &AllowedRepo) -> Vec<String> {
+        purlis_core::forge::createdbranches::created_by(
+            &self.config_root,
+            chat,
+            repo.host(),
+            repo.path(),
+        )
+    }
+
+    fn record_created(&self, chat: &str, created: &[(String, String, String)]) {
+        if let Err(why) =
+            purlis_core::forge::createdbranches::record(&self.config_root, chat, created)
+        {
+            // Unrecorded, the branch is moved by fast-forward only: safe, and said here.
+            tracing::warn!("purlis: a branch a chat created was not recorded ({why})");
+        }
     }
 
     /// The account the person chose for the project's repos on `host`: one account, or none.
