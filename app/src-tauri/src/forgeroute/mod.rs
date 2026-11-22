@@ -185,13 +185,14 @@ pub trait Recorded: Send + Sync {
     /// The branches of `repo` that the chat `chat` itself created through the route, from the
     /// app's own record of them: which the chat may push although they exist on the forge. Any
     /// doubt is none: the route refuses any update to a branch not named here (the person pushes it),
-    /// and the chat's id is the key, so a chat with another id owns none of them.
+    /// and the project and the chat's id are the key, so a chat with another id, or of another
+    /// project, owns none of them.
     fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
         Vec::new()
     }
     /// The forge confirmed that `chat` made these `(host, repo path, branch)` branches: keep that
-    /// where no chat can write.
-    fn record_created(&self, _chat: &str, _created: &[(String, String, String)]) {}
+    /// where no chat can write, keyed by the project and the chat.
+    fn record_created(&self, _project: &Path, _chat: &str, _created: &[(String, String, String)]) {}
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -669,8 +670,9 @@ impl ForgeRoutes {
         {
             let recorded = self.seams.recorded.clone();
             let chat = chat.to_owned();
+            let project = project.to_owned();
             proxy = proxy.with_created(Box::new(move |created| {
-                recorded.record_created(&chat, created);
+                recorded.record_created(&project, &chat, created);
             }));
         }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own

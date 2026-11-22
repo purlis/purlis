@@ -174,8 +174,13 @@ impl World {
         let mut proxy = ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin);
         if let Some(config) = record_to {
             proxy = proxy.with_created(Box::new(move |created| {
-                purlis_core::forge::createdbranches::record(&config, "chat-listener", created)
-                    .expect("the record is written");
+                purlis_core::forge::createdbranches::record(
+                    &config,
+                    std::path::Path::new("/work/project"),
+                    "chat-listener",
+                    created,
+                )
+                .expect("the record is written");
             }));
         }
         let proxy = Arc::new(proxy);
