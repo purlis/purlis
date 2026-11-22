@@ -101,8 +101,13 @@ The window only says the policy; the app resolves it, as below.
   sealed by purlis's app; a chat can neither press Accept nor write it.
 - **Only the app decides.** A hook or a command a chat runs asks the app, and refuses as `strict`
   does where the app does not answer.
-- **A chat cannot change `[policy]`.** Its write of the settings file is refused, and so is its
-  commit of a change to the table. A branch folder's copy of the file is never read.
+- **A chat cannot change `[policy]`.** Its write of the settings file, or of `policy.cedar` at the
+  plane root, is refused by a file tool or a shell command, naming the rule `policy-self-change`,
+  whatever the modes say; a chat's sandbox holds the same files. Its commit of a change to the
+  table or the rules changes nothing until you press Accept, if it loosens. A branch folder's copy
+  of the file is never read, and is the chat's to edit and commit. The refusal reads the words of
+  the call: a shell can spell a path no reading sees, so the sandbox is what holds a chat that
+  tries.
 - **Your local settings file can only make a family stricter.**
 - **An administrator's lock wins.** `/etc/purlis/policy.json`'s `enforcement` list names families
   that are always enforced on that machine, and its other locks keep their own families enforced.
