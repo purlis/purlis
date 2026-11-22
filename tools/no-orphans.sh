@@ -125,6 +125,27 @@ left=$(
     }' "$before" "$programs" - <<<"$now"
 )
 
+# `ps -o comm` is argv[0] where launchd starts an agent by a bare name (cloudphotod's plist has
+# `ProgramArguments = [cloudphotod]`), so such an agent reads as no path above. For a launchd
+# child whose comm is not a path, ask lsof for its executable, the `txt` file the kernel mapped
+# (never its arguments), and leave it out when that is in the system's own folders.
+system_program() {
+  [[ "$1" =~ ^/(System|usr/libexec|Library/Developer/PrivateFrameworks/CoreSimulator\.framework)/ ]]
+}
+if [ "$os" = Darwin ] && [ -n "$left" ]; then
+  kept=""
+  while IFS='|' read -r pid ppid comm cmd; do
+    if [ "$ppid" = 1 ] && [ "${comm#/}" = "$comm" ]; then
+      exe=$(lsof -a -p "$pid" -d txt -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
+      if [ -n "$exe" ] && system_program "$exe"; then
+        continue
+      fi
+    fi
+    kept="${kept}${pid}|${ppid}|${comm}|${cmd}"$'\n'
+  done <<<"$left"
+  left="${kept%$'\n'}"
+fi
+
 if [ -z "$left" ]; then
   exit "$status"
 fi
