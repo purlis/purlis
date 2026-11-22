@@ -28,6 +28,7 @@ use super::{
 
 mod making;
 mod read;
+mod readiness;
 // `read` calls the boards listing; the rest of the work items wait for their first caller
 // (#1202), and until then only their tests reach them, so the compiler would call them dead.
 #[allow(dead_code)]

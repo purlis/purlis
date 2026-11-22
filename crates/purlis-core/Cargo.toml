@@ -250,6 +250,11 @@ url = "2"
 # arguments the way a shell splits words, with no shell. Both already in this workspace's
 # lockfile, so they add no crate to the tree.
 percent-encoding = "2"
+# **The forge proxy's GraphQL gate** (ADR 0128 D2, Open item 6): a chat's GraphQL document is
+# parsed, never matched as text, so a mutation or a field outside the allowlist is found by its
+# syntax tree. MIT or Apache-2.0, and already in this workspace's lockfile (through
+# `graphql_client`'s code generator), so it adds no crate to the lockfile.
+graphql-parser = "0.4"
 # Whether an artifact's template holds script a browser runs (#5959, ADR 0122 §4): its pages
 # read by the HTML tokenizer browsers' parsing is specified by, never by matching text. Servo's,
 # MIT OR Apache-2.0, already in this workspace's lockfile through the webview's crates.
@@ -259,6 +264,13 @@ shell-words = "1"
 # dates an event without a timestamp field. The standard crate for them.
 ulid = { version = "3", features = ["serde"] }
 crypto_box = { version = "0.9", default-features = false, features = ["seal", "std", "getrandom", "salsa20"] }
+# The per-chat certificate authority of the forge proxy's listener (ADR 0128 D3a): made in memory,
+# with a critical `nameConstraints` that permits the chat's recorded forge hosts and nothing else.
+# `rcgen` is the standard crate for making X.509; with `ring` (already here) and no other backend.
+rcgen = { version = "0.14", optional = true, default-features = false, features = ["ring", "pem"] }
+# The request line and headers a chat's client sends the listener, read strictly. The crate hyper
+# and ureq's `http` stack use, with no runtime of its own.
+httparse = { version = "1", optional = true }
 
 [features]
 # The plane fence (`src/fence.rs`): a build that carries it dies rather than act on a plane
@@ -273,6 +285,16 @@ test-support = []
 # The parsers the fuzz targets reach (`src/sandbox/fuzzing.rs`, `fuzz/`, T1.1-47). Only the fuzz
 # crate turns it on.
 fuzzing = []
+# One login (ADR 0128), on by default (slice K): a chat's `gh`, git and `glab` reach a forge only
+# through the person's own sign-in, brokered by the app's proxy.
+# - the forge proxy's listener (slice A2; D3a to D3c): the per-chat unix socket and `CONNECT`
+#   endpoint that read a chat's request, ask the proxy's core, and send what it allows to the forge;
+# - the end-to-end test (slice I): `tests/it/one_login_end_to_end.rs` runs the real `gh`, `glab`
+#   and `git` against a fake forge, so it needs those programs, which every CI runner that runs it
+#   has.
+# A build can leave it out with `--no-default-features`; the wiring then does nothing.
+default = ["forge-wiring"]
+forge-wiring = ["dep:rcgen", "dep:httparse"]
 
 [dev-dependencies]
 # The heap of a design-tokens import, counted, so its memory bound is a measured one (#2926).

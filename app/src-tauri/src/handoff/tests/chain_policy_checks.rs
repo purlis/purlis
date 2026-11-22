@@ -228,3 +228,35 @@ fn keep_blocked_on_a_run_notice_for_a_vault_the_persona_may_not_use_holds_under_
         "ops may not use finance under its chain, so Keep blocked holds: {pressed:?}"
     );
 }
+
+/// A runner chat's vault reads, made with `pooltools::desktop_ctx`, refuse a forge token with the
+/// one-login train's feature on, whatever variable its tool is declared to hand it in: the read is
+/// the chat's though its environment is the desktop's own (ADR 0128).
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_runner_chats_reads_through_the_desktops_context_refuse_a_forge_token() {
+    let (plane, _extra) = the_plane();
+    // Synthetic values, made at run time: a token-shaped one and a plain one.
+    let token = format!("{}{}", "glpat-", "synthetic0example");
+    std::fs::write(
+        plane.root.join("t.json"),
+        serde_json::json!({"PRIV": token, "PLAIN": "plain-value"}).to_string(),
+    )
+    .expect("the vault's file");
+    let host = Pretend::default();
+    let planes = planes_on(&host);
+    let id = planes.open(&plane.root);
+    let held = planes.held(&id).expect("held");
+    let chat = a_dispatched_chat(&held, &plane, None);
+    let ctx = crate::pooltools::desktop_ctx(&held, chat);
+    let vault = purlis_core::secrets::cmd::provider(&ctx, "team").expect("the vault");
+    let refused = purlis_core::secrets::cmd::get_value(&ctx, &vault, "PRIV")
+        .expect_err("a forge token is not read for a chat");
+    assert!(
+        refused.message.to_string().contains("forge token"),
+        "{}",
+        refused.message
+    );
+    let plain = purlis_core::secrets::cmd::get_value(&ctx, &vault, "PLAIN").expect("a plain one");
+    assert_eq!(plain, "plain-value");
+}

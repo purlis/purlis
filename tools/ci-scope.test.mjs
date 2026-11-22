@@ -508,6 +508,8 @@ const WALK_ONLY_CODE = {
   "app/src/theme/themeIds.test.ts": "app/src and app/e2e (both run web)",
   "crates/purlis-cli/tests/it/every_command_charter_names_is_one_it_has.rs":
     "crates/*/src, app/src-tauri/src and the plugin's skills",
+  "crates/purlis-core/tests/it/a_held_ci_push_is_read_in_a_quarantine_never_from_the_chat_clone.rs":
+    "crates/ and app/src-tauri/ Rust sources",
   "crates/purlis-core/src/doctor/shadowed/tests.rs": "a plane's docs/; purlis's own is exempt",
   "crates/purlis-core/tests/it/every_named_limit_on_a_runners_path_is_sorted.rs":
     "crates/ and app/src-tauri/ Rust",

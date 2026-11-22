@@ -647,3 +647,119 @@ fn a_value_escaped_in_a_dotenv_file_is_handed_under_its_entry_as_escaped() {
         ]
     );
 }
+
+// ---------------------------------------------------------------------------------------
+// With the one-login train a chat is handed no forge token, by any variable or form (ADR 0128).
+
+/// A synthetic installation-token-shaped value: made at run time, never a real token.
+#[cfg(feature = "forge-wiring")]
+fn forge_value() -> String {
+    format!("{}{}", "ghs_", "synthetic0example0value")
+}
+
+/// A plane as [`plane`] makes it, whose vault also holds `FORGE`, a forge token's value, and
+/// `gitlab-token-gitlab.com`, an item GitLab access kept (its value is not token-shaped), run in a
+/// chat when `in_a_chat`.
+#[cfg(feature = "forge-wiring")]
+fn forge_plane(in_a_chat: bool) -> (tempfile::TempDir, Ctx) {
+    let env: &[(&str, &str)] = if in_a_chat {
+        &[("PURLIS_HOOK_SOCKET", "/synthetic/chat.sock")]
+    } else {
+        &[]
+    };
+    let (tmp, ctx) = plane(serde_json::json!({}), env);
+    std::fs::write(
+        tmp.path().join("team.json"),
+        serde_json::json!({
+            "TOKEN": TOKEN,
+            "FORGE": forge_value(),
+            "gitlab-token-gitlab.com": "plain-value",
+        })
+        .to_string(),
+    )
+    .unwrap();
+    (tmp, ctx)
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_chat_is_refused_a_forge_token_in_a_dotenv_file_whatever_the_variable_is_called() {
+    let (_tmp, ctx) = forge_plane(true);
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            dotenv: vec!["ENVF=GH_TOKEN:FORGE".into()],
+            ..req(sh("echo ran"))
+        },
+    );
+    assert_eq!(code, 1);
+    assert!(
+        rec.errors()[0].contains("forge token"),
+        "{:?}",
+        rec.errors()
+    );
+    assert_eq!(rec.out(), "");
+    // An innocent name for it is refused the same: the value says what it is.
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            env: vec!["FOO=FORGE".into()],
+            ..req(sh("echo ran"))
+        },
+    );
+    assert_eq!(code, 1);
+    assert!(
+        rec.errors()[0].contains("forge token"),
+        "{:?}",
+        rec.errors()
+    );
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_chat_is_refused_the_item_gitlab_access_kept_by_its_name() {
+    let (_tmp, ctx) = forge_plane(true);
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            file: vec!["TOKENFILE=gitlab-token-gitlab.com".into()],
+            ..req(sh("echo ran"))
+        },
+    );
+    assert_eq!(code, 1);
+    assert!(
+        rec.errors()[0].contains("forge token"),
+        "{:?}",
+        rec.errors()
+    );
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_chat_is_still_handed_an_item_that_is_no_forge_token() {
+    let (_tmp, ctx) = forge_plane(true);
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            env: vec!["FOO=TOKEN".into()],
+            ..req(sh(r#"test "$FOO" = s3cret-value && echo fine"#))
+        },
+    );
+    assert_eq!((code, rec.errors()), (0, vec![]));
+    assert_eq!(rec.out(), "fine\n");
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn the_person_at_their_own_terminal_still_reads_their_own_forge_token() {
+    let (_tmp, ctx) = forge_plane(false);
+    let (code, rec) = run(
+        &ctx,
+        Request {
+            env: vec!["FOO=FORGE".into()],
+            ..req(sh(r#"test -n "$FOO" && echo handed"#))
+        },
+    );
+    assert_eq!((code, rec.errors()), (0, vec![]));
+    assert_eq!(rec.out(), "handed\n");
+}

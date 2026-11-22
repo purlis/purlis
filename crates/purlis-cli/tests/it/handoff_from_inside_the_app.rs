@@ -276,7 +276,8 @@ fn opens_as_nine(tickets: &Tickets, connection: u64, ask: Ask) -> Answer {
         | Ask::Merge(_)
         | Ask::Attendance(_)
         | Ask::Policy(_)
-        | Ask::PolicyLog(_) => Answer::No {
+        | Ask::PolicyLog(_)
+        | Ask::RemoteRefs(_) => Answer::No {
             why: "not a handoff".to_owned(),
         },
     }

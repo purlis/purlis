@@ -1,0 +1,61 @@
+[
+ {
+  "command": "gh (feature detection, every command that lists or views): Issue",
+  "variables": {},
+  "query": "query Issue_fields { Issue: __type(name: \"Issue\") { fields { name } } }"
+ },
+ {
+  "command": "gh (feature detection): PullRequest",
+  "variables": {},
+  "query": "query PullRequest_fields { PullRequest: __type(name: \"PullRequest\") { fields { name } } }"
+ },
+ {
+  "command": "gh (feature detection): Repository, Mutation and an input type, in one document",
+  "variables": {},
+  "query": "query Detect { Repository: __type(name: \"Repository\") { fields { name } } Mutation: __type(name: \"Mutation\") { fields { name args { name type { name kind ofType { name kind } } } } } Input: __type(name: \"CreatePullRequestInput\") { inputFields { name } } Statuses: __type(name: \"StatusState\") { enumValues { name } } }"
+ },
+ {
+  "command": "gh api graphql -f query='{ __schema { queryType { name } types { name kind } } }'",
+  "variables": {},
+  "query": "{ __schema { queryType { name } mutationType { name } types { name kind } } }"
+ },
+ {
+  "command": "gh pr status -R github.localhost/acme/app",
+  "variables": {
+   "owner": "acme", "repo": "app", "headRefName": "fix", "per_page": 10,
+   "viewerQuery": "repo:acme/app state:open is:pr author:octocat",
+   "reviewerQuery": "repo:acme/app state:open review-requested:octocat is:pr"
+  },
+  "query": "query PullRequestStatus($owner: String!, $repo: String!, $headRefName: String!, $viewerQuery: String!, $reviewerQuery: String!, $per_page: Int = 10) { repository(owner: $owner, name: $repo) { defaultBranchRef { name } pullRequests(headRefName: $headRefName, first: $per_page, orderBy: {field: CREATED_AT, direction: DESC}) { totalCount edges { node { number title url state isDraft headRefName reviewDecision mergeStateStatus commits(last: 1) { nodes { commit { statusCheckRollup { state } } } } } } } } viewerCreated: search(query: $viewerQuery, type: ISSUE, first: $per_page) { totalCount: issueCount edges { node { ...on PullRequest { number title url state isDraft headRefName reviewDecision } } } } reviewRequested: search(query: $reviewerQuery, type: ISSUE, first: $per_page) { totalCount: issueCount edges { node { ...on PullRequest { number title url } } } } }"
+ },
+ {
+  "command": "gh pr list --search 'fix' -R github.localhost/acme/app",
+  "variables": {"q": "repo:acme/app is:pr is:open fix", "limit": 30},
+  "query": "query PullRequestSearch($q: String!, $limit: Int!, $endCursor: String) { search(query: $q, type: ISSUE, first: $limit, after: $endCursor) { issueCount nodes { ...on PullRequest { number title state url headRefName isDraft createdAt labels(first: 100) { nodes { name } totalCount } } } pageInfo { hasNextPage endCursor } } }"
+ },
+ {
+  "command": "gh pr create -R github.localhost/acme/app (an open pull request for the branch, and the template)",
+  "variables": {"owner": "acme", "repo": "app", "headRefName": "fix"},
+  "query": "query PullRequestForBranch($owner: String!, $repo: String!, $headRefName: String!) { repository(owner: $owner, name: $repo) { pullRequests(headRefName: $headRefName, states: [OPEN], first: 30, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { id number title state url headRefName baseRefName headRepositoryOwner { login } isCrossRepository isDraft maintainerCanModify } } pullRequestTemplates { body filename } } }"
+ },
+ {
+  "command": "gh pr create -R github.localhost/acme/app (the pull request)",
+  "variables": {"input": {"repositoryId": "R_acme_app", "baseRefName": "main", "headRefName": "fix", "title": "t", "body": "b", "draft": false, "maintainerCanModify": true}},
+  "query": "mutation PullRequestCreate($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id number url } } }"
+ },
+ {
+  "command": "gh issue create -R github.localhost/acme/app (templates, then the issue)",
+  "variables": {"owner": "acme", "name": "app"},
+  "query": "query IssueTemplates($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { id hasIssuesEnabled isBlankIssuesEnabled issueTemplates { name title body about filename } contactLinks { name url about } labels(first: 100) { nodes { id name } } milestones(first: 100, states: OPEN) { nodes { id number title } } assignableUsers(first: 100) { nodes { id login name } } } }"
+ },
+ {
+  "command": "gh issue create -R github.localhost/acme/app (the issue)",
+  "variables": {"input": {"repositoryId": "R_acme_app", "title": "t", "body": "b"}},
+  "query": "mutation IssueCreate($input: CreateIssueInput!) { createIssue(input: $input) { issue { id url number } } }"
+ },
+ {
+  "command": "gh repo view acme/app --json assignableUsers,codeOfConduct,contactLinks,fundingLinks,issueTemplates,pullRequestTemplates,mentionableUsers",
+  "variables": {"owner": "acme", "name": "app"},
+  "query": "query RepositoryInfo($owner: String!, $name: String!) { repository(owner: $owner, name: $name) { assignableUsers(first: 100) { nodes { login } totalCount } codeOfConduct { name key url } contactLinks { name url about } fundingLinks { platform url } issueTemplates { name filename } pullRequestTemplates { filename } mentionableUsers(first: 100) { totalCount } } }"
+ }
+]

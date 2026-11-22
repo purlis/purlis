@@ -6869,6 +6869,7 @@ fn a_chat_whose_sandbox_narrowed_while_no_window_was_there_is_reattached_and_off
             any_port: true,
             beside: Beside::Wrapped,
             given: Vec::new(),
+            forge: None,
         }),
     );
     let chats = restartable_chats_of(plane.path(), host.clone());
