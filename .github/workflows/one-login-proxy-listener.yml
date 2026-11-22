@@ -94,7 +94,22 @@ jobs:
       # something that never comes is a failure with its output, not a job that ends at its limit.
       - name: the real gh, glab and git through the listener
         timeout-minutes: 15
-        run: cargo test -p purlis-core --locked --test it serves_the_real -- --nocapture --test-threads=1
+        shell: bash
+        # A failure is annotated with what it said: the failed tests, and each `panicked at` with
+        # the lines after it, so the run's page says why without its log (the log is kept whole).
+        run: |
+          status=0
+          cargo test -p purlis-core --locked --test it serves_the_real -- --nocapture --test-threads=1 > "$RUNNER_TEMP/real-clients.log" 2>&1 || status=$?
+          cat "$RUNNER_TEMP/real-clients.log"
+          if [ "$status" -ne 0 ]; then
+            grep -E '^test .* FAILED$' "$RUNNER_TEMP/real-clients.log" | sed -e 's/%/%25/g' -e 's/^/::error title=failed::/'
+            awk '
+              /panicked at/ { n = 8; msg = "" }
+              n > 0 { gsub(/%/, "%25"); gsub(/\r/, ""); msg = msg (msg == "" ? "" : "%0A") $0; if (--n == 0) print "::error title=panicked::" msg }
+              END { if (n > 0) print "::error title=panicked::" msg }
+            ' "$RUNNER_TEMP/real-clients.log"
+          fi
+          exit "$status"
       # **K2:** `gh` and `git` run under the profile the sandbox generates for a chat with a route,
       # and another run's socket is refused. The sandbox is applied by `sandbox-exec`, so it runs
       # on the macOS runner and says it skips on Linux (purlis applies its own sandbox there).

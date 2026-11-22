@@ -1149,13 +1149,16 @@ fn the_chats_route(s: &Setup, ca: &Path) -> purlis_core::worktree::git::NetworkR
     )
 }
 
-fn forge_was_asked_which_commits_it_has(s: &Setup) -> bool {
+/// How many times the forge has been asked which commits it has. A test's own `clone` asks it
+/// too, so a test compares the count before and after the call it means to test.
+fn times_the_forge_was_asked_which_commits_it_has(s: &Setup) -> usize {
     s.forge
         .seen
         .lock()
         .unwrap()
         .iter()
-        .any(|r| r.url.contains("info/refs") && r.url.ends_with("service=git-upload-pack"))
+        .filter(|r| r.url.contains("info/refs") && r.url.ends_with("service=git-upload-pack"))
+        .count()
 }
 
 /// #7302: the app asks the forge for a chat's hook the way the chat's git reaches it, and what it
@@ -1183,11 +1186,12 @@ fn the_tips_the_app_asks_through_the_chats_route_are_what_a_pushs_scan_leaves_ou
     let route = the_chats_route(&s, &s.ca_file);
     let url = "https://github.com/acme/app.git";
 
+    let asked_before = times_the_forge_was_asked_which_commits_it_has(&s);
     let tips = purlis_core::diffscan::remote_tips_through(url, route)
         .expect("the app asked the forge on the chat's route");
     assert!(!tips.is_empty());
     assert!(
-        forge_was_asked_which_commits_it_has(&s),
+        times_the_forge_was_asked_which_commits_it_has(&s) > asked_before,
         "the app never reached the forge through the route"
     );
     let scan = purlis_core::diffscan::pushed_told(&work, url, &updates, &|_| Some(tips.clone()))
@@ -1264,10 +1268,12 @@ fn a_proxy_and_an_authority_a_chat_wrote_into_the_repository_are_not_what_the_sc
     let tip = more_commits_than_an_unasked_scan_reads(&work);
     let updates = format!("refs/heads/many {tip} refs/heads/many {}\n", "0".repeat(40));
 
+    let asked_before = times_the_forge_was_asked_which_commits_it_has(&s);
     let scanned = purlis_core::diffscan::pushed(&work, "https://github.com/acme/app.git", &updates);
 
-    assert!(
-        !forge_was_asked_which_commits_it_has(&s),
+    assert_eq!(
+        times_the_forge_was_asked_which_commits_it_has(&s),
+        asked_before,
         "the scan asked through what the repository's config named"
     );
     assert!(scanned.is_err(), "{scanned:?}");
