@@ -142,3 +142,11 @@ p50 = 1  # the required-check gate
 [[job]]
 id = "windows"
 p50 = 6  # 2 runs
+
+[[job]]
+id = "forgeroute"
+p50 = 20  # added on main after seeding, no runs measured: seeded from the parity jobs; measure after a week
+
+[[job]]
+id = "forgeroute-macos"
+p50 = 30  # added on main after seeding, no runs measured: seeded above its Linux leg for macOS; measure after a week
