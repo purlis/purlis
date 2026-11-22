@@ -562,9 +562,9 @@ fn claude_code_started_with(root: &std::path::Path, env: &[(String, String)]) ->
 }
 
 #[test]
-fn a_dead_bash_guard_refuses_where_the_rules_the_chat_will_read_name_a_program() {
-    // #7155: under `open`, nothing a guard judges is enforced, so only a rule naming a program
-    // holds a dead Bash guard closed. The start reads the rules the chat's live hook reads: the
+fn a_dead_bash_guard_refuses_under_open_whatever_rules_the_chat_will_read_name() {
+    // #7155 made a rule naming a program hold a dead Bash guard closed under `open`; the policy
+    // hold (M75-16) now does so whatever the rules say, so every case blocks. The start still reads the rules the chat's live hook reads: the
     // project's, and the person's in the `CLAUDE_CONFIG_DIR` the chat's profile sets.
     let _home = crate::sandbox::local::OwnConfigHome::new();
     let tmp = tempfile::tempdir().unwrap();
@@ -587,8 +587,8 @@ fn a_dead_bash_guard_refuses_where_the_rules_the_chat_will_read_name_a_program()
     )];
     assert_eq!(
         bash(&claude_code_started_in(&root)).as_deref(),
-        Some("continue"),
-        "no rule anywhere"
+        Some("block"),
+        "no rule anywhere, the policy hold alone"
     );
     assert_eq!(
         bash(&claude_code_started_with(&root, &env)).as_deref(),
@@ -600,7 +600,7 @@ fn a_dead_bash_guard_refuses_where_the_rules_the_chat_will_read_name_a_program()
     let env = [("CLAUDE_CONFIG_DIR".to_owned(), own.display().to_string())];
     assert_eq!(
         bash(&claude_code_started_with(&root, &env)).as_deref(),
-        Some("continue"),
+        Some("block"),
         "a profile whose settings have no rule"
     );
     std::fs::create_dir_all(root.join(".claude")).unwrap();
@@ -632,19 +632,19 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
         failing([
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
-            ("pretooluse-edit", "continue"),
+            ("pretooluse-edit", "block"),
             ("pretooluse-dispatch", "continue"),
         ])
     );
-    // Once the person accepts `open`, nothing a guard judges is enforced, and none holds a call
-    // when it dies.
+    // Once the person accepts `open`, nothing a guard judges is enforced, so the Read and dispatch
+    // guards let a call run when they die; the Bash and edit guards hold the policy and still block.
     crate::enforcement::press(&root, &crate::enforcement::digest_of(&root)).expect("pressed");
     assert_eq!(
         guards_failing(&claude_code_started_in(&root)),
         failing([
-            ("pretooluse", "continue"),
+            ("pretooluse", "block"),
             ("pretooluse-read", "continue"),
-            ("pretooluse-edit", "continue"),
+            ("pretooluse-edit", "block"),
             ("pretooluse-dispatch", "continue"),
         ])
     );

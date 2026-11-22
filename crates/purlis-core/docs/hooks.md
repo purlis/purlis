@@ -59,7 +59,9 @@ each guard with `"block"`, and its start loosens one to Claude Code's default, `
 where no family of `[policy]` that the guard judges is at `enforce` (`hookreg::Handler::judges`,
 [ADR 0125](../../../docs/adr/0125-blocks-are-off-by-default-and-opt-in-per-family.md)). So under
 `watch`, which enforces `secrets` and `guards.credential`, a dead Bash or Read guard refuses the
-call, and under `open` none does. A family `[policy]` does not switch yet does not count. The
+call. The policy-write hold (`policy::selfchange`) is outside the policy, so it makes `pretooluse`
+and `pretooluse-edit` block on a guard that fails to start or answer, under every mode, `open`
+included. A family `[policy]` does not switch yet does not count. The
 permission hook keeps `"continue"` under every policy: when it dies, nothing is allowed, and the
 pane asks. Codex has no such option (0.147, 0.169): a guard that dies there lets the call run, a
 declared gap. A chat outside the app, on the copy `purlis plugin install` writes, keeps its guards

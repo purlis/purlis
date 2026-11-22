@@ -1546,3 +1546,21 @@ fn a_proposed_change_or_a_draft_writes_no_block() {
         "the leak guard on Read names its arm"
     );
 }
+
+#[test]
+fn a_file_tools_write_to_the_policy_is_refused_naming_the_rule_and_a_branch_copy_is_not() {
+    let p = Plane::without_a_vault();
+    let root_file = format!("{}/policy.cedar", p.cwd());
+    let held = p.ask(
+        serde_json::json!({"tool_name": "Write", "cwd": p.cwd(),
+            "tool_input": {"file_path": root_file, "content": "x"}}),
+        pretooluse_edit,
+    );
+    assert!(
+        denied(&held).contains(crate::policy::selfchange::RULE),
+        "{held:?}"
+    );
+    let copy = serde_json::json!({"tool_name": "Write", "cwd": p.cwd(),
+        "tool_input": {"file_path": "branch/policy.cedar", "content": "x"}});
+    assert_eq!(p.ask(copy, pretooluse_edit), Answer::Nothing);
+}

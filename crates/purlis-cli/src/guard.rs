@@ -151,6 +151,19 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
     if let Some(verdict) = judged.refused {
         return crate::hooks::Answered::of(Answer::Deny(verdict));
     }
+    // A chat never changes the policy that governs it (M75-16, spec §2.5): a fixed hold, outside
+    // the policy, so no family mode switches it and no host is asked.
+    if let Some(found) = &found
+        && let Some(held) =
+            purlis_core::policy::selfchange::by_command(Path::new(&found.root), &cwd, &command)
+    {
+        return crate::hooks::Answered::of(Answer::Deny(toolgate::Verdict {
+            arm: None,
+            reason: purlis_core::policy::selfchange::RULE.to_owned(),
+            shape: None,
+            denial: held.said(),
+        }));
+    }
     // The merge hold (R-114, R-115), judged by the project policy (M75 slice 04): in a chat the
     // app started, the session host decides a merge, and an ask hands its request to the app,
     // which asks the person. After the refusals, and ahead of A4, which leaves a merge the hold

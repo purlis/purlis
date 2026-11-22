@@ -101,6 +101,13 @@ impl Handler {
         self.name == "pretooluse"
     }
 
+    /// **Whether this guard holds a chat's write to the policy** ([`crate::policy::selfchange`]),
+    /// which is outside the policy and so enforced under every mode: the Bash guard and the
+    /// file-edit guard.
+    fn holds_the_policy(&self) -> bool {
+        matches!(self.name, "pretooluse" | "pretooluse-edit")
+    }
+
     /// **What Claude Code does when this guard fails** (#7067): it could not start, timed out,
     /// exited with a code other than 0 or 2, or printed JSON it cannot read. `"block"` where the
     /// chat's `policy` enforces a family the guard judges, so a dead guard refuses as a live one
@@ -114,6 +121,10 @@ impl Handler {
     /// enforced wherever a wrap is applied and off where there is none, as under `open`, so a
     /// dead guard refuses where the sandbox it judges is in force and continues where it is not.
     ///
+    /// **The hold on a chat's write to the policy counts as always enforced** (round 2 of
+    /// M75-16): the Bash guard and the edit guard block when they die, under every mode, so a
+    /// timeout, a crash or an unreadable answer refuses a write that could touch the policy.
+    ///
     /// **A7c counts as an enforced family where the person's rules name a program**
     /// (`rules_name_a_program`; the re-review of #7104, ruling for Q327): it holds in every
     /// mode behind the person's own ask and deny rules, so a dead Bash guard, the one that reads
@@ -126,7 +137,10 @@ impl Handler {
         if !self.guards_a_call() {
             return None;
         }
-        let enforced = (rules_name_a_program && self.reads_the_persons_rules())
+        // Since the policy hold, `pretooluse` and `pretooluse-edit` always block, so A7c's clause
+        // below only decides nothing today; it stays for a guard that reads the rules alone.
+        let enforced = self.holds_the_policy()
+            || (rules_name_a_program && self.reads_the_persons_rules())
             || self.judges().iter().any(|family| {
                 family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
             });
@@ -463,7 +477,7 @@ mod tests {
             [
                 ("pretooluse", "block"),
                 ("pretooluse-read", "block"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 // `guards.shape` switches since Q308b's nine did (#7104).
                 ("pretooluse-dispatch", "block"),
             ]
@@ -471,9 +485,9 @@ mod tests {
         assert_eq!(
             failing(&under("[policy]\ntemplate = \"open\"\n")),
             [
-                ("pretooluse", "continue"),
+                ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -483,7 +497,7 @@ mod tests {
             [
                 ("pretooluse", "block"),
                 ("pretooluse-read", "block"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -496,7 +510,7 @@ mod tests {
             [
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -506,9 +520,9 @@ mod tests {
                 "{logged}[sandbox]\nmode = \"off\"\npolicy = \"local\"\n"
             ))),
             [
-                ("pretooluse", "continue"),
+                ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -520,7 +534,7 @@ mod tests {
             [
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
-                ("pretooluse-edit", "continue"),
+                ("pretooluse-edit", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );

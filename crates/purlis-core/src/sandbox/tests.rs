@@ -502,6 +502,31 @@ fn the_project_roots_manifests_are_denied_under_every_name_whatever_the_chats_fo
     }
 }
 
+#[test]
+fn the_plane_roots_policy_file_is_denied_to_a_chats_writes_and_a_branch_folders_copy_is_not() {
+    let plane = tempfile::tempdir().expect("a plane");
+    let denied = Denied::of(plane.path(), &machine(Os::Linux));
+    let want = plane.path().join("policy.cedar");
+    assert!(
+        denied.paths.iter().any(|it| it.path == want
+            && it.class == Class::LaterCode
+            && it.access == Access::Write),
+        "{:?}",
+        denied.paths
+    );
+    // Only the root's: a branch folder's own copy is the chat's to edit and commit.
+    assert!(
+        !denied
+            .paths
+            .iter()
+            .any(|it| it.path.ends_with("policy.cedar")
+                && it.path != want
+                && it.path != crate::sandbox::real(plane.path()).join("policy.cedar")),
+        "{:?}",
+        denied.paths
+    );
+}
+
 /// The second acceptance line of #667, as V22a words it: a chat cannot write another chat's
 /// spool. A sandboxed chat neither reads nor writes any chat's, its own included, nor the keys
 /// that check them: the hooks of the harnesses charter sandboxes run outside the sandbox their
