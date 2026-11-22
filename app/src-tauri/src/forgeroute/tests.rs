@@ -92,19 +92,19 @@ struct FakeRecorded {
     repos: Mutex<HashMap<PathBuf, Vec<Recorded3>>>,
     accounts: Mutex<HashMap<(PathBuf, String), String>>,
     /// The branches the app recorded a chat as having created, by chat id.
-    cut: Mutex<Vec<(String, String)>>,
+    cut: Mutex<Vec<(PathBuf, String, String)>>,
 }
 
 impl FakeRecorded {
     fn own_of(&self, chat: &str) -> Vec<String> {
         lock(&self.cut)
             .iter()
-            .filter(|(by, _)| by == chat)
-            .map(|(_, branch)| branch.clone())
+            .filter(|(_, by, _)| by == chat)
+            .map(|(_, _, branch)| branch.clone())
             .collect()
     }
-    fn cut_for(&self, chat: &str, branch: &str) {
-        lock(&self.cut).push((chat.to_owned(), branch.to_owned()));
+    fn cut_for(&self, project: &str, chat: &str, branch: &str) {
+        lock(&self.cut).push((PathBuf::from(project), chat.to_owned(), branch.to_owned()));
     }
     fn record(&self, project: &str, repos: Vec<Recorded3>) {
         lock(&self.repos).insert(PathBuf::from(project), repos);
@@ -118,16 +118,16 @@ impl FakeRecorded {
 }
 
 impl Recorded for FakeRecorded {
-    fn own_branches(&self, _: &Path, chat: &str, _: &AllowedRepo) -> Vec<String> {
+    fn own_branches(&self, project: &Path, chat: &str, _: &AllowedRepo) -> Vec<String> {
         lock(&self.cut)
             .iter()
-            .filter(|(by, _)| by == chat)
-            .map(|(_, branch)| branch.clone())
+            .filter(|(of, by, _)| of == project && by == chat)
+            .map(|(_, _, branch)| branch.clone())
             .collect()
     }
-    fn record_created(&self, chat: &str, created: &[(String, String, String)]) {
+    fn record_created(&self, project: &Path, chat: &str, created: &[(String, String, String)]) {
         for (_, _, branch) in created {
-            lock(&self.cut).push((chat.to_owned(), branch.clone()));
+            lock(&self.cut).push((project.to_owned(), chat.to_owned(), branch.clone()));
         }
     }
     fn repos(&self, project: &Path) -> Vec<AllowedRepo> {
@@ -1813,7 +1813,7 @@ fn push_update(scene: &Scene, run: &str, sentinel: &str, branch: &str) -> Outcom
 #[test]
 fn a_branch_purlis_cut_for_the_chat_may_be_pushed_though_the_forge_has_it_already() {
     let scene = Scene::new();
-    scene.recorded.cut_for("chat-1", "task/forms");
+    scene.recorded.cut_for("/p/one", "chat-1", "task/forms");
     let params = scene.start("chat-1", "run-1", "/p/one");
 
     let pushed = push_update(&scene, "run-1", &params.sentinel, "task/forms");
@@ -1824,8 +1824,8 @@ fn a_branch_purlis_cut_for_the_chat_may_be_pushed_though_the_forge_has_it_alread
 #[test]
 fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
     let scene = Scene::new();
-    scene.recorded.cut_for("chat-1", "task/forms");
-    scene.recorded.cut_for("chat-2", "task/other");
+    scene.recorded.cut_for("/p/one", "chat-1", "task/forms");
+    scene.recorded.cut_for("/p/one", "chat-2", "task/other");
     let params = scene.start("chat-1", "run-1", "/p/one");
 
     for branch in ["main", "task/other", "colleague"] {
@@ -1835,6 +1835,24 @@ fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
             "{branch}: {pushed:?}"
         );
     }
+}
+
+#[test]
+fn another_projects_chat_with_the_same_id_owns_none_of_a_branch_cut_in_this_one() {
+    let scene = Scene::new();
+    scene.recorded.cut_for("/p/two", "chat-1", "task/forms");
+    scene
+        .recorded
+        .record("/p/two", vec![(Kind::GitHub, "github.com", "acme/app")]);
+    scene.recorded.bind("/p/two", "github.com", "alice");
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    let pushed = push_update(&scene, "run-1", &params.sentinel, "task/forms");
+
+    assert!(
+        matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+        "{pushed:?}"
+    );
 }
 
 /// A push that makes `branch`, which the forge's advertisement does not have, through the run's
