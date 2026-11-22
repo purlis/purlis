@@ -162,10 +162,11 @@ runs:
         if [ "$status" -ne 0 ]; then
           (grep -E 'test .* \.\.\. FAILED|FAIL \[' scenarios.log || true) | sort -u | head -5 |
             awk '{gsub(/%/,"%25"); gsub(/\r/,""); print "::error title=failed::" $0}'
-          # Each panic and the six lines after it, one annotation (percent- and newline-encoded).
+          # Each panic (or failed test's stderr) and the lines after it, one annotation
+          # (percent- and newline-encoded); matched anywhere in a line, as nextest prefixes them.
           awk '
             function flush() { if (n) { print "::error title=panicked::" msg; shown++; n = 0 } }
-            /panicked at/ { flush(); if (shown >= 5) next; n = 7; msg = "" }
+            /panicked at|--- STDERR:/ { flush(); if (shown >= 5) next; n = 12; msg = "" }
             n > 0 { gsub(/%/, "%25"); gsub(/\r/, ""); msg = msg $0 "%0A"; if (--n == 0) flush() }
             END { flush() }
           ' scenarios.log || true
