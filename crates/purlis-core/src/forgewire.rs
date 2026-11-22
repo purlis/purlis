@@ -737,9 +737,12 @@ pub fn git_network(route: &Route) -> io::Result<crate::worktree::git::NetworkRou
 /// more. The helper is the app's own program, and the hosts are the recorded ones.
 #[derive(Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HookRoute {
-    /// The path of the chat's CA certificate (public), a file of the app's own. The hook trusts
-    /// it only from a folder it may not write; the certificate is never copied anywhere a chat
-    /// can write.
+    /// The path of **the chat's copy of its CA** in its wire folder ([`CA_COPY`]): public, written
+    /// by the app, readable by the chat and not writable by it (the folder is under the app's
+    /// state, which a sandbox denies every chat writing). It is the one CA file the chat's own
+    /// sandbox can open: the app's own file is in a folder the chat is denied reading whole.
+    /// The hook trusts it only where nothing the chat can write sits on the way to it
+    /// ([`crate::hookwire::reach::kept_from_the_chat`]).
     pub ca_path: String,
     /// The app's own program, which git starts as the chat's credential helper.
     pub helper_exe: String,
@@ -757,14 +760,47 @@ impl std::fmt::Debug for HookRoute {
 }
 
 impl HookRoute {
-    /// What the app tells the hook of a chat's `route`; `None` where its CA cannot be read.
-    pub fn of(route: &Route) -> Option<Self> {
+    /// What the app tells the hook of a chat's `route`, for the chat of the project at `root`:
+    /// the chat's copy of the CA in its wire folder ([`ca_copy_in`]). `None` where the app's CA
+    /// cannot be read, no wire folder holds that CA (the chat's line was not wired yet), or a
+    /// path is not text.
+    pub fn of(route: &Route, root: &Path) -> Option<Self> {
+        let pem = std::fs::read_to_string(&route.ca_cert).ok()?;
         Some(Self {
-            ca_path: route.ca_cert.to_str()?.to_owned(),
+            ca_path: ca_copy_in(root, &pem)?.to_str()?.to_owned(),
             helper_exe: route.helper_exe.to_str()?.to_owned(),
             hosts: route_hosts(route).into_iter().map(str::to_owned).collect(),
         })
     }
+}
+
+/// **The chat's copy of the CA `pem`** in the wire folder of the project at `root`
+/// ([`wire_folder`]): the newest `chat-*/ca.pem` there with exactly these bytes. A folder is the
+/// app's to write alone, so a match is a copy the app made of a CA of its own, whichever launch
+/// of the run made it. The wire folder's name is drawn at each launch ([`compose`]), which the
+/// app does not hear of, so it is found by what it holds.
+pub fn ca_copy_in(root: &Path, pem: &str) -> Option<PathBuf> {
+    let mut found: Option<(std::time::SystemTime, PathBuf)> = None;
+    for entry in std::fs::read_dir(wire_folder(root)).ok()?.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with("chat-") {
+            continue;
+        }
+        let copy = entry.path().join(CA_COPY);
+        let (Ok(meta), Ok(text)) = (
+            std::fs::symlink_metadata(&copy),
+            std::fs::read_to_string(&copy),
+        ) else {
+            continue;
+        };
+        if !meta.is_file() || text != pem {
+            continue;
+        }
+        let at = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+        if found.as_ref().is_none_or(|(newest, _)| at > *newest) {
+            found = Some((at, copy));
+        }
+    }
+    found.map(|(_, copy)| copy)
 }
 
 /// **The route a chat's hook asks a forge through** ([`HookRoute`]): `ca` is [`HookRoute::ca_path`], `egress_url` the chat's own egress port as its environment names it

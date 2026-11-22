@@ -399,3 +399,46 @@ fn is_this_process_sandboxed_reads_a_home_closed_by_a_flag_as_a_sandbox() {
     assert!(chflags("nouchg"));
     assert!(boxed);
 }
+
+#[test]
+fn a_file_a_chat_can_write_is_never_kept_from_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("ca.pem");
+    std::fs::write(&file, "PEM").unwrap();
+    assert!(
+        !kept_from_the_chat(&file),
+        "a file in a folder anyone here writes"
+    );
+    // Not a file, not there, and not an absolute path are none kept.
+    assert!(!kept_from_the_chat(tmp.path()));
+    assert!(!kept_from_the_chat(&tmp.path().join("missing.pem")));
+    assert!(!kept_from_the_chat(Path::new("ca.pem")));
+}
+
+#[test]
+fn a_file_that_opens_for_writing_is_not_refused_by_a_sandbox_and_is_left_as_it_was() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("ca.pem");
+    std::fs::write(&file, "PEM").unwrap();
+    assert!(!file_refuses_writing(&file));
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "PEM",
+        "never truncated"
+    );
+    // A file this user cannot open by its mode is refused with the mode's error, which is
+    // not a sandbox's on macOS (`EACCES`) and a root's own run opens it all the same.
+    assert!(!file_refuses_writing(&tmp.path().join("missing.pem")));
+}
+
+#[test]
+fn a_folder_a_user_cannot_write_is_out_of_a_chat_s_reach_and_one_it_can_is_not() {
+    let tmp = tempfile::tempdir().unwrap();
+    assert!(
+        !out_of_a_chat_s_reach(tmp.path()),
+        "a folder of this user's, written"
+    );
+    assert!(!out_of_a_chat_s_reach(&tmp.path().join("missing")));
+    // The root of the disk is another user's and closed to this one by its mode.
+    assert!(out_of_a_chat_s_reach(Path::new("/")));
+}

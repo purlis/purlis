@@ -966,14 +966,18 @@ impl ForgeRoutes {
         Some(purlis_core::forgewire::git_network(&route))
     }
 
-    /// **What a hook in chat `session` is told of the chat's route** (#7302): the chat's CA, the
-    /// app's credential helper and the recorded hosts, from this run's own record. `None` where
-    /// the session has no live route. The chat's egress port is not here: the app does not hold
+    /// **What a hook in chat `session` is told of the chat's route** (#7302): the chat's copy of its
+    /// CA in its wire folder (the one file of the CA its sandbox lets it open), the app's
+    /// credential helper and the recorded hosts, from this run's own record. `None` where the
+    /// session has no live route, or its line is not wired yet. The chat's egress port is not here: the app does not hold
     /// it, and the hook takes it from its own environment as a transport alone.
     pub fn hook_route(&self, session: u32) -> Option<purlis_core::forgewire::HookRoute> {
         let run = self.sessions().of_run.get(&session).cloned()?;
-        let inputs = self.live().get(&run).map(|live| live.inputs.clone())?;
-        purlis_core::forgewire::HookRoute::of(&inputs.route(String::new()))
+        let (inputs, project) = self
+            .live()
+            .get(&run)
+            .map(|live| (live.inputs.clone(), live.project.clone()))?;
+        purlis_core::forgewire::HookRoute::of(&inputs.route(String::new()), &project)
     }
 
     /// The run's audit, a line per request: method, host, repo, class and verdict. The audit

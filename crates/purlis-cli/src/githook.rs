@@ -180,20 +180,30 @@ fn chat_route() -> Option<purlis_core::worktree::git::NetworkRoute> {
     route_from(&route, &proxy, &sentinel)
 }
 
-/// [`chat_route`], once the app has answered. **The trust anchor is the app's own file**, never
-/// one this hook writes: a folder under `$TMPDIR` is the chat's to set and its processes can
-/// rewrite what is in it, so a chat's own authority could answer for the remote and its commits
-/// would read as already on the forge. The file is used only where the folder it is in is one
-/// this process may not write ([`may_not_write`]); otherwise there is no route.
+/// [`chat_route`], once the app has answered. **The trust anchor is the app's own copy of its CA**,
+/// in the chat's wire folder, never a file this hook or a chat writes: a folder under `$TMPDIR`
+/// is the chat's to set and its processes can rewrite what is in it, so a chat's own authority
+/// could answer for the remote and its commits would read as already on the forge. The file is
+/// used only where [`hookwire::reach::kept_from_the_chat`] holds: the sandbox refuses writing the
+/// file and its folder, and no folder above it is one a chat can write and swap. Otherwise there
+/// is no route.
 fn route_from(
     route: &purlis_core::forgewire::HookRoute,
     proxy: &str,
     sentinel: &str,
 ) -> Option<purlis_core::worktree::git::NetworkRoute> {
+    route_from_where(route, proxy, sentinel, &hookwire::reach::kept_from_the_chat)
+}
+
+/// [`route_from`], with `kept` deciding whether a chat is kept from the CA file.
+fn route_from_where(
+    route: &purlis_core::forgewire::HookRoute,
+    proxy: &str,
+    sentinel: &str,
+    kept: &dyn Fn(&Path) -> bool,
+) -> Option<purlis_core::worktree::git::NetworkRoute> {
     let ca = Path::new(&route.ca_path);
-    let kept_from_the_chat =
-        ca.is_absolute() && ca.is_file() && ca.parent().is_some_and(hookwire::reach::may_not_write);
-    if !kept_from_the_chat {
+    if !(ca.is_absolute() && kept(ca)) {
         return None;
     }
     purlis_core::forgewire::git_network_in_hook(route, proxy, ca, sentinel).ok()
@@ -267,12 +277,29 @@ mod route_tests {
         assert!(found.is_none());
     }
 
+    /// A CA file the sandbox keeps a chat from writing, read through a good proxy, is a route.
+    #[test]
+    fn a_ca_file_a_chat_can_read_and_not_write_gives_a_route() {
+        let dir = tempfile::tempdir().unwrap();
+        let ca = dir.path().join("ca.pem");
+        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").unwrap();
+        let route = route_with_ca(&ca);
+        let kept = |path: &Path| path == ca;
+        let found = route_from_where(&route, "http://127.0.0.1:9", "sentinel", &kept);
+        assert!(found.is_some());
+        // The same file, not kept from the chat, gives none.
+        let found = route_from_where(&route, "http://127.0.0.1:9", "sentinel", &|_| false);
+        assert!(found.is_none());
+    }
+
+    /// The CA is held (`kept` says so), so each of these is refused by the proxy check alone.
     #[test]
     fn a_non_loopback_proxy_gives_no_route() {
         let dir = tempfile::tempdir().unwrap();
         let ca = dir.path().join("ca.pem");
         std::fs::write(&ca, "x").unwrap();
         let route = route_with_ca(&ca);
+        assert!(route_from_where(&route, "http://127.0.0.1:9", "s", &|_| true).is_some());
         for proxy in [
             "http://evil.example:9",
             "http://10.0.0.1:9",
@@ -282,7 +309,10 @@ mod route_tests {
                 purlis_core::forgewire::git_network_in_hook(&route, proxy, &ca, "s").is_err(),
                 "{proxy}"
             );
-            assert!(route_from(&route, proxy, "s").is_none(), "{proxy}");
+            assert!(
+                route_from_where(&route, proxy, "s", &|_| true).is_none(),
+                "{proxy}"
+            );
         }
     }
 }

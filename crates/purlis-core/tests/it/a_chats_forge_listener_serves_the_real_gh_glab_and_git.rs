@@ -1289,7 +1289,7 @@ fn a_proxy_and_an_authority_a_chat_wrote_into_the_repository_are_not_what_the_sc
 fn a_hooks_route_is_refused_where_a_part_is_not_the_chats_own_loopback_egress_or_a_host() {
     use purlis_core::forgewire::{HookRoute, git_network_in_hook};
     let hook = HookRoute {
-        ca_pem: String::new(),
+        ca_path: "/run/ca.pem".to_owned(),
         helper_exe: "/app/purlis-app".to_owned(),
         hosts: vec!["github.com".to_owned()],
     };

@@ -1519,19 +1519,39 @@ fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_othe
 }
 
 #[test]
-fn a_hook_is_told_the_route_of_its_own_chat_by_the_path_of_the_apps_ca_and_no_other_chats() {
+fn a_hook_is_told_the_route_of_its_own_chat_by_the_path_of_its_wire_folders_ca_copy_and_no_other_chats()
+ {
     let scene = Scene::new();
+    // The sandbox's own root: the wire folder is made under its state.
+    let project = tempfile::tempdir().expect("a project");
+    let at = project.path().to_str().expect("text").to_owned();
+    scene
+        .recorded
+        .record(&at, vec![(Kind::GitHub, "github.com", "acme/app")]);
+    scene.recorded.bind(&at, "github.com", "alice");
     // A chat with no route, and one that has not committed a run, are told nothing.
     assert!(scene.routes.hook_route(7).is_none());
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene.routes.guard("chat-1", "run-1", project.path());
     let ca = guard.params().expect("params").ca.clone();
     guard.commit(7);
+    // Its line is not wired yet: there is no copy of its CA to name.
+    assert!(scene.routes.hook_route(7).is_none());
+    // The line is wired: the copy is in a wire folder of its own, beside a stranger's with
+    // another CA, which is never named.
+    let wire = purlis_core::forgewire::wire_folder(project.path());
+    let own = wire.join("chat-1-aaaa");
+    let stranger = wire.join("chat-2-bbbb");
+    for (folder, pem) in [(&own, "PEM"), (&stranger, "OTHER")] {
+        std::fs::create_dir_all(folder).expect("a wire folder");
+        std::fs::write(folder.join(purlis_core::forgewire::CA_COPY), pem).expect("a copy");
+    }
     let route = scene.routes.hook_route(7).expect("a route for the session");
     assert_eq!(
         Path::new(&route.ca_path),
-        ca,
-        "the app's own file, not a copy"
+        own.join(purlis_core::forgewire::CA_COPY),
+        "the chat's copy in its wire folder, which its sandbox lets it open"
     );
+    assert_ne!(Path::new(&route.ca_path), ca, "not the app's own file");
     // Another chat's number gets no route.
     assert!(scene.routes.hook_route(8).is_none());
     scene.routes.stop("run-1");

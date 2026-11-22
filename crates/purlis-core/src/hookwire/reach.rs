@@ -806,6 +806,68 @@ pub fn may_not_write(folder: &Path) -> bool {
     write_probe(folder) == Probe::SandboxRefused
 }
 
+/// **Whether `file`, a public file the app wrote for a chat to read, is one no chat can have
+/// written or put in its place**, so a hook may trust its bytes (the chat's copy of its CA,
+/// [`crate::forgewire::CA_COPY`]).
+///
+/// All of these must hold, on the path as written and as it resolves:
+///
+/// - the file is a regular file, and opening *it* for writing (no truncation, nothing made) is
+///   refused with a sandbox's error ([`a_sandbox_s_refusal`]): the file's own rule, not only its
+///   folder's;
+/// - the folder it is in refuses making a file ([`may_not_write`]);
+/// - **no folder on the way up can be written, or is held away from this process by a sandbox's
+///   rule alone**: a chat that can write a folder can rename the one below it toward the file
+///   and put a tree of its own at that path (Landlock holds inodes, so a tree moved into place
+///   is the chat's own; Seatbelt holds paths, but a tree built beforehand arrives whole). Each
+///   ancestor is this user's and refuses making a file as a sandbox does, or is another user's
+///   and closed to this process by its mode (or sticky).
+pub fn kept_from_the_chat(file: &Path) -> bool {
+    let Ok(real) = std::fs::canonicalize(file) else {
+        return false;
+    };
+    // The path as written, and where it resolves: a link on the way is re-pointed by a chat that
+    // can write the folder it is in, which is one of the folders asked about.
+    [file, real.as_path()].into_iter().all(|path| {
+        path.is_absolute()
+            && !path
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+            && file_refuses_writing(path)
+            && path.parent().is_some_and(may_not_write)
+            && path.ancestors().skip(2).all(out_of_a_chat_s_reach)
+    })
+}
+
+/// Whether opening `file` for writing is refused with a sandbox's error. The open neither
+/// truncates nor makes the file, so a refusal changes nothing and an open that succeeds
+/// writes nothing either.
+fn file_refuses_writing(file: &Path) -> bool {
+    std::fs::symlink_metadata(file).is_ok_and(|meta| meta.is_file())
+        && matches!(
+            std::fs::OpenOptions::new().write(true).open(file),
+            Err(why) if why.raw_os_error().is_some_and(a_sandbox_s_refusal)
+        )
+}
+
+/// Whether a chat cannot write in `dir`: a folder of this user's refuses making a file as a
+/// sandbox does ([`write_probe`]); another user's is closed to everyone else by its mode, or
+/// sticky, so nothing in it is renamed that its owner did not make.
+fn out_of_a_chat_s_reach(dir: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    let Ok(meta) = std::fs::metadata(dir) else {
+        return false;
+    };
+    if !meta.is_dir() {
+        return false;
+    }
+    if meta.uid() == purlis_same_user::Uid::effective().as_raw() {
+        write_probe(dir) == Probe::SandboxRefused
+    } else {
+        meta.mode() & 0o022 == 0 || meta.mode() & 0o1000 != 0
+    }
+}
+
 /// What trying to make a file in a folder showed ([`write_probe`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Probe {

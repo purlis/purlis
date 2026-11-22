@@ -1063,3 +1063,32 @@ fn the_route_folder_is_one_answer_for_a_stale_runtime_directory_and_an_unset_tmp
         Some(PathBuf::from("/tmp").join(format!("pf-{who}")))
     );
 }
+
+#[test]
+fn a_hook_is_told_the_chats_copy_of_its_ca_in_its_wire_folder_and_no_other_pem() {
+    let project = tempfile::tempdir().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let route = route(
+        dir.path(),
+        vec![repo("github.com", "acme", "app", ForgeKind::GitHub)],
+    );
+    std::fs::write(&route.ca_cert, "PEM-ONE").unwrap();
+    // Nothing is wired yet.
+    assert!(HookRoute::of(&route, project.path()).is_none());
+    let wire = wire_folder(project.path());
+    for (name, pem) in [
+        ("chat-1-a", "PEM-ONE"),
+        ("chat-2-b", "PEM-TWO"),
+        ("other", "PEM-ONE"),
+    ] {
+        std::fs::create_dir_all(wire.join(name)).unwrap();
+        std::fs::write(wire.join(name).join(CA_COPY), pem).unwrap();
+    }
+    let told = HookRoute::of(&route, project.path()).expect("a copy");
+    assert_eq!(
+        Path::new(&told.ca_path),
+        wire.join("chat-1-a").join(CA_COPY),
+        "the copy with these bytes, in a folder the app made, and never the app's own file"
+    );
+    assert_ne!(Path::new(&told.ca_path), route.ca_cert);
+}

@@ -443,6 +443,27 @@ fn ran(dir: &Path, args: &[&str]) -> Result<String, String> {
 /// The most characters of one line of git's words that reach a chat.
 const MAX_GIT_LINE: usize = 300;
 
+/// `line` without what a terminal would act on: an ANSI escape sequence (`ESC [ ... final`) and
+/// every other control character, since a remote's words reach a chat and its person's screen.
+fn plain(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            // Parameters and intermediates run up to the final byte (`@` to `~`).
+            for next in chars.by_ref() {
+                if ('\u{40}'..='\u{7e}').contains(&next) {
+                    break;
+                }
+            }
+        } else if !c.is_control() {
+            out.push(c);
+        }
+    }
+    out.trim().to_owned()
+}
+
 /// What git said when it failed, or, where it said nothing, what is known of how it ended: a git
 /// stopped at its deadline answers no code and no words, and a reason that is empty reaches the
 /// chat as `git did not push <branch> to origin:` with nothing after it.
@@ -456,6 +477,8 @@ fn why_git_failed(run: &git::Run) -> String {
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .take(4)
+        .map(plain)
+        .filter(|line| !line.is_empty())
         .map(|line| line.chars().take(MAX_GIT_LINE).collect())
         .collect();
     if !said.is_empty() {
@@ -2159,6 +2182,15 @@ mod tests {
             why_git_failed(&ran(Some(128), "  \n")),
             "git exited with code 128 and said nothing"
         );
+    }
+
+    #[test]
+    fn a_remote_s_colour_and_control_characters_never_reach_the_chat() {
+        let said = why_git_failed(&ran(
+            Some(1),
+            "\u{1b}[31mremote: denied\u{1b}[0m\u{7}\r\n\u{1b}[2K\u{1b}[1Aremote: \u{8}gone\n",
+        ));
+        assert_eq!(said, "remote: denied | remote: gone");
     }
 
     #[test]
