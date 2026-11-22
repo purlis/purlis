@@ -294,12 +294,18 @@ async function aNativeCrash() {
       // the crashing thread: its stack starts where the abort raised it (libsystem_c's `abort`
       // within the first frames), never in the handler or its trampoline in libsystem_platform
       // (#5691).
+      // On a failure it says what the crash was recorded as too, which decides whether the
+      // trampoline is looked past: `EXC_SOFTWARE` with `SIGABRT` for an abort.
       const innermost = frames.slice(-3).map((frame) => frame.package);
+      const recorded = event?.exception?.values?.[0];
       check(
         "the stack starts at the crash, not in the crash handler",
         innermost.includes("libsystem_c.dylib") &&
           frames.every((frame) => frame.package !== "libsystem_platform.dylib"),
-        JSON.stringify(frames.map((frame) => frame.package).reverse()),
+        [
+          `recorded as ${JSON.stringify({ type: recorded?.type, value: recorded?.value })}`,
+          `innermost first ${JSON.stringify(frames.map((frame) => frame.package).reverse())}`,
+        ].join("\n"),
       );
       check(
         "and nothing after the event: no minidump",

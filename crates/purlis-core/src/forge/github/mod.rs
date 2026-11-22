@@ -34,6 +34,7 @@ mod proof;
 mod read;
 #[cfg(test)]
 mod read_tests;
+mod readiness;
 #[allow(dead_code)]
 pub(crate) mod work;
 

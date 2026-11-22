@@ -1647,6 +1647,12 @@ impl SessionHost for RoutedSessions {
         self.here.close_what_was_not_reattached();
     }
 
+    /// This machine's host's alone: a pool's chat is taken back by the record of where it runs,
+    /// which a refused record is not (#6737).
+    fn runs_left(&self) -> Vec<(u32, String)> {
+        self.here.runs_left()
+    }
+
     /// This machine's host's alone: a browser runs only there (#2025).
     fn browsers_left(&self) -> Vec<purlis_session_protocol::session::HeldProgram> {
         self.here.browsers_left()

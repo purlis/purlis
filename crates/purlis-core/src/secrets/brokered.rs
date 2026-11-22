@@ -326,7 +326,7 @@ pub(crate) fn deadline_past(hold: Duration) -> Duration {
 
 /// The app's number for the chat this runs in, as `purlis session record` reads it: the hook
 /// variable, else the session id the app sets to the same number.
-fn chat_number(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
+pub(crate) fn chat_number(env: &dyn Fn(&str) -> Option<String>) -> Option<u32> {
     [crate::hookwire::CHAT_ENV, crate::active::SESSION_ID_ENV]
         .into_iter()
         .filter_map(env)
@@ -1784,6 +1784,9 @@ pub struct Asker {
     /// The app's own environment, which every value is resolved in.
     pub env: Env,
     pub chat: u32,
+    /// Its id (ADR 0066), as the app recorded it: what everything purlis names on disk of what
+    /// it was handed is sealed for (#7129). `None` for a chat given none, which is handed nothing.
+    pub id: Option<String>,
     /// The persona the app started the chat as.
     pub persona: Option<String>,
     /// The chat's folder, which its sandbox lets it write.
@@ -2629,7 +2632,7 @@ fn granted_ready(
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     (ready, ctx)
 }
@@ -2656,6 +2659,7 @@ pub fn fill_value(
     super::handedto::remember(
         &asker.root,
         asker.chat,
+        asker.id.as_deref(),
         &super::handedto::Entry::new(vault, key),
         value.expose(),
     )
@@ -2742,10 +2746,12 @@ pub fn fill_code(
         .map_err(|why| format!("{key} in vault '{vault}' {why}, so purlis filled nothing"))?;
     drop(value);
     let code = purlis_session_protocol::browsing::Secret::new(seed.code_now());
-    // A code is made for now from its seed: a launch after a crash cannot know it (#6309).
+    // A code is made for now from its seed, once: named so (#6309), and found after a crash by
+    // what is named of it (#6907).
     super::handedto::remember(
         &asker.root,
         asker.chat,
+        asker.id.as_deref(),
         &super::handedto::Entry::new(vault, key).in_form(super::handedto::Form::Unrepeatable),
         code.expose(),
     )
@@ -2759,7 +2765,7 @@ fn reading_for(asker: &Asker) -> Ctx {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     ctx.under_chain(asker.policy.as_deref())
 }
@@ -2880,8 +2886,14 @@ fn read_login(
         .chain([(pass_key, &password)]);
     for (key, value) in handed {
         let entry = super::handedto::Entry::new(vault, key);
-        super::handedto::remember(&asker.root, asker.chat, &entry, value.expose())
-            .map_err(|why| not_named_said(&why))?;
+        super::handedto::remember(
+            &asker.root,
+            asker.chat,
+            asker.id.as_deref(),
+            &entry,
+            value.expose(),
+        )
+        .map_err(|why| not_named_said(&why))?;
     }
     Ok((
         LogIn {
@@ -3009,7 +3021,7 @@ fn login_ready(
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     authorise(&ctx, asker.persona.as_deref(), &ready.tool.vault)?;
     Ok((ready, ctx))
@@ -3055,6 +3067,7 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
             target: Some(target),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         },
         vault: vault.to_owned(),
     }
@@ -3609,7 +3622,7 @@ pub(crate) fn serve_recorded(
         }
         let _ = send(writer, &Frame::Refused { why, code });
     };
-    let ctx = Ctx::new(&asker.root, asker.env.clone());
+    let ctx = Ctx::new(&asker.root, asker.env.clone()).for_a_chat();
     let mut command = wanted.command.clone();
     if command.first().is_some_and(|c| c == "--") {
         command.remove(0);
@@ -4277,7 +4290,13 @@ pub(crate) fn serve_recorded(
     // Whatever the run prints of them, the chat's kept screen never keeps one (#6309).
     for one in &prepared.values {
         let entry = super::handedto::Entry::new(&wanted.vault, &one.key).in_form(one.form.clone());
-        if let Err(why) = super::handedto::remember(&asker.root, asker.chat, &entry, &one.value) {
+        if let Err(why) = super::handedto::remember(
+            &asker.root,
+            asker.chat,
+            asker.id.as_deref(),
+            &entry,
+            &one.value,
+        ) {
             return refuse(&mut *writer, 1, not_named_said(&why));
         }
     }
@@ -4410,6 +4429,7 @@ pub(crate) fn serve_recorded(
         chat_writes: Vec::new(),
         kept: super::identity::Kept::default(),
         policy: asker.policy.clone(),
+        for_a_chat: true,
     };
     exec::record(
         &ctx_traced,

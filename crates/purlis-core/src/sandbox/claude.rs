@@ -479,6 +479,31 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
                 deny_write.push(rule);
             }
         }
+        // The names of purlis's sockets and the folders holding them, at any depth, whatever
+        // `ports` says (round 6 of #7105): no wrap covers a Claude Code chat on macOS, so a
+        // `mv` or `ln` of a socket to a name nothing holds would be reached once `ports = "off"`
+        // is pressed, or from a socket path the person allowed. The same set the wraps hold
+        // by regex ([`super::seatbelt::held_socket_names_unwritten`]), each in both cases. A
+        // Claude Code chat's own server never makes a socket here: it dials in through its hook
+        // socket (#3316), so there is nothing to give back.
+        let (socket_names, socket_folders) = super::seatbelt::held_socket_globs();
+        for name in socket_names {
+            for rule in [format!("/**/{name}"), format!("/**/{}", either_case(&name))] {
+                edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
+            }
+        }
+        for name in socket_folders {
+            for rule in [
+                format!("/**/{name}"),
+                format!("/**/{}", either_case(&name)),
+                format!("/**/{name}/**"),
+                format!("/**/{}/**", either_case(&name)),
+            ] {
+                edit_rules.push(format!("Edit(/{rule})"));
+                deny_write.push(rule);
+            }
+        }
         for path in &compiled.held {
             for name in names_for(path) {
                 let name = name.display().to_string();
@@ -550,6 +575,16 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     }
     .tidied()
 }
+
+// **A Claude Code chat's sandbox never opens every local socket or every loopback port**, even
+// where the project's `[policy]` turns `ports` off ([`super::Widened::every_local`], the Q308
+// follow-up, item 5; the review of #7105): `allowAllUnixSockets` and `allowLocalBinding` each
+// open them all at once, and nothing after them can hold one back, so purlis's own (every hook
+// socket, the session host's, another chat's proxy and doors) would be reached with them: a
+// chat could leave through another's proxy, past its own network policy. A Claude Code chat
+// reaches a local socket a person allowed by its path, and a service on this Mac by its one
+// port, through its proxy ([`super::localport`]), as before. Only a wrapped chat's profile,
+// which can hold purlis's own after the lift ([`super::seatbelt::every_local_held`]), lifts.
 
 /// **The floor's settings** (#2071): Claude Code's sandbox on, holding `filesystem` (every
 /// denial class, and the floor's held folders, with every other folder writable), and its
@@ -730,6 +765,31 @@ impl Settings {
             }
         }
         out.tidied_after(self)
+    }
+
+    /// These settings with the one socket of a chat's forge route reached (ADR 0128 D3a): its
+    /// `gh` connects to `socket` (`allowUnixSockets`, which on macOS is the network rule that
+    /// holds a socket, as `allowAllUnixSockets` stays off), and the socket is read again inside
+    /// the route folder every chat is denied (`allowRead` wins over `denyRead`, which on Linux
+    /// binds it back into the masked folder). Each under both of its names, and nothing else in
+    /// the folder.
+    pub fn reaching_socket(&self, socket: &Path) -> Settings {
+        let mut out = self.clone();
+        for name in both_names(socket) {
+            let name = name.display().to_string();
+            for (section, key) in [("network", "allowUnixSockets"), ("filesystem", "allowRead")] {
+                let list = &mut out.sandbox[section][key];
+                if !list.is_array() {
+                    *list = json!([]);
+                }
+                if let Some(list) = list.as_array_mut()
+                    && !list.contains(&json!(name))
+                {
+                    list.push(json!(name));
+                }
+            }
+        }
+        out
     }
 
     /// These settings for a chat whose commands reach the network through purlis's proxy

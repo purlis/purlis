@@ -1212,6 +1212,7 @@ fn a_claude_code_chat_purlis_wraps_runs_its_commands_unasked_as_its_own_sandbox_
     assert!(allow.iter().any(|rule| rule == "Bash"), "{allow:?}");
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_sandboxed_claude_code_chat_carries_its_sandbox_in_the_same_settings() {
     // One `--settings`: the sandbox and its deny rules beside the Smart close allow, which

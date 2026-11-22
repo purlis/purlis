@@ -2552,6 +2552,7 @@ fn run_started_carries_every_attribute_adr_0066_names_for_the_run_read_back_from
         sandbox: Some("seatbelt".to_owned()),
         conversation: Some("0f6c2a1e-aaaa-4bbb-8ccc-123456789abc".to_owned()),
         started_by: Some("terminal".to_owned()),
+        attendance: None,
         protection: None,
     };
     host.begin(
@@ -4645,6 +4646,142 @@ fn the_runs_a_writer_ended_are_held_no_more_than_the_runs_it_began_and_each_stil
         )
         .unwrap();
     assert!(again.is_empty(), "{again:?}");
+}
+
+/// #6737: a launch whose record of what was open was refused proves which chat a program the
+/// session host left is by the run the host says it began: the chat that run's `run.started`
+/// names, and nothing for a run the log never started.
+#[test]
+fn the_chat_of_a_run_is_the_one_its_run_started_names() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    let chat_a = "01M7TASKCHAT000000000000AA";
+    let chat_b = "01M7OWNCHAT0000000000000BB";
+    log.append(
+        Some(chat_a),
+        Some("01M7RUNA1"),
+        None,
+        "run.started",
+        serde_json::json!({}),
+    )
+    .unwrap();
+    log.append(
+        Some(chat_b),
+        Some("01M7RUNB1"),
+        None,
+        "run.started",
+        serde_json::json!({}),
+    )
+    .unwrap();
+    // An event of chat B under chat A's run is not a start, and says nothing of the run.
+    log.append(
+        Some(chat_b),
+        Some("01M7RUNA2"),
+        None,
+        "hook.stop",
+        serde_json::json!({}),
+    )
+    .unwrap();
+
+    let found = chats_of_runs(dir.path(), &["01M7RUNA1", "01M7RUNB1", "01M7RUNA2"]).unwrap();
+
+    assert_eq!(found.get("01M7RUNA1").map(String::as_str), Some(chat_a));
+    assert_eq!(found.get("01M7RUNB1").map(String::as_str), Some(chat_b));
+    assert_eq!(found.get("01M7RUNA2"), None);
+}
+
+/// R-107, Q271 (T1.1-40, #6887): a fact lowered after the run began is said by the runs that
+/// carry the attributes on, a clear's and a child's: `unattended`, never the `attended` the
+/// first run began with.
+#[test]
+fn a_lowered_attendance_is_said_by_the_clear_and_the_child_run_that_follow() {
+    use crate::hookwire::Decision;
+    use crate::state::Event::SessionStart;
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    host.begin(
+        plane,
+        3,
+        RunOf {
+            chat: CHAT,
+            run: RUN,
+        },
+        Began::Start,
+        &Attributes {
+            attendance: Some("attended".to_owned()),
+            ..Attributes::default()
+        },
+    )
+    .unwrap();
+    host.attendance_lowered(plane, 3, "unattended");
+
+    let mut by_agent = tool_call(3, "pretooluse", Decision::None);
+    by_agent.agent = Some("agent-1".to_owned());
+    host.tool(plane, &by_agent, std::time::Instant::now())
+        .unwrap();
+    host.report(plane, &report(3, SessionStart), Followed::Moved)
+        .unwrap();
+
+    let started = runs_started(dir.path());
+    let said: Vec<_> = started
+        .iter()
+        .map(|event| {
+            (
+                event.body["cause"].as_str().unwrap().to_owned(),
+                event.body["attendance"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let said: Vec<(&str, &str)> = said.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+    assert_eq!(
+        said,
+        [
+            ("start", "attended"),
+            ("child", "unattended"),
+            ("clear", "unattended")
+        ],
+        "the first run said what it began as; the runs after the lowering say the lowered fact"
+    );
+}
+
+/// R-106, R-219 (T1.1-40, #6887): a run's `run.started` says whether anyone was at the chat when
+/// it began, as the attendance fact's word, and a start that holds no fact says so: the fact is
+/// in the event log, where a person and a reader find it, never only in the app's memory.
+#[test]
+fn run_started_records_attendance() {
+    let dir = tempfile::tempdir().unwrap();
+    let plane = Path::new("/planes/one");
+    let mut host = recorder(dir.path());
+    for (chat, run, attendance) in [
+        (CHAT, RUN, Some("attended")),
+        ("chat-two", "run-two", Some("unattended")),
+        ("chat-three", "run-three", None),
+    ] {
+        host.begin(
+            plane,
+            3,
+            RunOf { chat, run },
+            Began::Start,
+            &Attributes {
+                attendance: attendance.map(str::to_owned),
+                ..Attributes::default()
+            },
+        )
+        .unwrap();
+    }
+    let words: Vec<_> = runs_started(dir.path())
+        .iter()
+        .map(|event| event.body["attendance"].as_str().map(str::to_owned))
+        .collect();
+    assert_eq!(
+        words,
+        [
+            Some("attended".to_owned()),
+            Some("unattended".to_owned()),
+            Some("unknown".to_owned())
+        ]
+    );
 }
 
 /// A recorder in `dir` as `Recorder::open_in` makes one: with the events folder it keeps the

@@ -525,6 +525,11 @@ fn guards_failing(args: &[String]) -> Vec<(String, String)> {
 
 /// A Claude Code chat in the project at `root`, armed by the start as the window arms it.
 fn claude_code_started_in(root: &std::path::Path) -> Vec<String> {
+    claude_code_started_with(root, &[])
+}
+
+/// [`claude_code_started_in`], for a chat whose profile sets `env`.
+fn claude_code_started_with(root: &std::path::Path, env: &[(String, String)]) -> Vec<String> {
     let plugin = root.parent().unwrap().join("plugin");
     std::fs::create_dir_all(plugin.join("skills")).unwrap();
     let kit = Kit {
@@ -542,7 +547,7 @@ fn claude_code_started_in(root: &std::path::Path) -> Vec<String> {
         plugins: &crate::harness_plugin::Chosen::new(),
         sandbox: None,
         persona: None,
-        env: &[],
+        env,
         graded: false,
         skills: &Box::new(ChatSkills::read(
             true,
@@ -554,6 +559,57 @@ fn claude_code_started_in(root: &std::path::Path) -> Vec<String> {
     })
     .expect("armed");
     args
+}
+
+#[test]
+fn a_dead_bash_guard_refuses_where_the_rules_the_chat_will_read_name_a_program() {
+    // #7155: under `open`, nothing a guard judges is enforced, so only a rule naming a program
+    // holds a dead Bash guard closed. The start reads the rules the chat's live hook reads: the
+    // project's, and the person's in the `CLAUDE_CONFIG_DIR` the chat's profile sets.
+    let _home = crate::sandbox::local::OwnConfigHome::new();
+    let tmp = tempfile::tempdir().unwrap();
+    let root = plane_in(&tmp);
+    std::fs::write(root.join("charter.toml"), "[policy]\ntemplate = \"open\"\n").unwrap();
+    crate::enforcement::press(&root, &crate::enforcement::digest_of(&root)).expect("pressed");
+    let bash = |args: &[String]| {
+        guards_failing(args)
+            .into_iter()
+            .find(|(word, _)| word == "pretooluse")
+            .map(|(_, failure)| failure)
+    };
+    let deny = r#"{"permissions":{"deny":["Bash(terraform apply *)"]}}"#;
+    let profile = tmp.path().join("profile-claude");
+    std::fs::create_dir_all(&profile).unwrap();
+    std::fs::write(profile.join("settings.json"), deny).unwrap();
+    let env = [(
+        "CLAUDE_CONFIG_DIR".to_owned(),
+        profile.display().to_string(),
+    )];
+    assert_eq!(
+        bash(&claude_code_started_in(&root)).as_deref(),
+        Some("continue"),
+        "no rule anywhere"
+    );
+    assert_eq!(
+        bash(&claude_code_started_with(&root, &env)).as_deref(),
+        Some("block"),
+        "a deny only in the profile's own settings"
+    );
+    let own = tmp.path().join("empty-claude");
+    std::fs::create_dir_all(&own).unwrap();
+    let env = [("CLAUDE_CONFIG_DIR".to_owned(), own.display().to_string())];
+    assert_eq!(
+        bash(&claude_code_started_with(&root, &env)).as_deref(),
+        Some("continue"),
+        "a profile whose settings have no rule"
+    );
+    std::fs::create_dir_all(root.join(".claude")).unwrap();
+    std::fs::write(root.join(".claude/settings.json"), deny).unwrap();
+    assert_eq!(
+        bash(&claude_code_started_in(&root)).as_deref(),
+        Some("block"),
+        "a deny in the project's own settings"
+    );
 }
 
 #[test]
@@ -868,4 +924,15 @@ fn the_file_cap_holds_to_the_byte_and_for_a_chat_with_no_id() {
         )
         .is_err()
     );
+}
+
+/// R-106: a run the host composes on a runner says `unattended`; anywhere else the host holds no
+/// attendance fact, so the run says nothing (`unknown` in the log), never `attended`.
+#[test]
+fn a_run_composed_on_a_runner_is_unattended_and_elsewhere_holds_no_fact() {
+    assert_eq!(
+        attendance_of_a_host_start(true).as_deref(),
+        Some("unattended")
+    );
+    assert_eq!(attendance_of_a_host_start(false), None);
 }

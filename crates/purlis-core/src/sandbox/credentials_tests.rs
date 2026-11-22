@@ -678,3 +678,497 @@ fn a_refused_credential_is_known_as_one() {
         assert!(!is_credential(Path::new(open), &machine), "{open}");
     }
 }
+
+/// #7205: a chat that holds the person's credentials claims the forge lock, and its line hands it
+/// no path to their forge login; one at the floor under `watch`, which holds none and has no mint,
+/// keeps its own login on purpose and is handed nothing of the lock.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn a_chat_that_holds_the_credentials_class_is_started_with_the_forge_lock() {
+    let (_home, home) = home();
+    let machine = machine(&home, Os::MacOs);
+    for harness in Harness::ALL {
+        for manifest in HELD {
+            let (_plane, cwd, applied) = started(manifest, harness, &machine);
+            assert!(applied.forge_locked(), "{harness:?} {manifest}");
+            // A wrapped harness is not started without its proxy, which a test has none of.
+            if harness != Harness::ClaudeCode {
+                continue;
+            }
+            let line = applied
+                .line(
+                    Words {
+                        program: "chat".to_owned(),
+                        command: Vec::new(),
+                        armed: Vec::new(),
+                        charters: Vec::new(),
+                    },
+                    &At {
+                        cwd: Some(&cwd),
+                        ..At::default()
+                    },
+                )
+                .expect("starts");
+            let set = |name: &str| {
+                line.env
+                    .iter()
+                    .rev()
+                    .find(|(key, _)| key == name)
+                    .map(|(_, value)| value.as_str())
+            };
+            // No folder of the chat's own here to write the lock's files in, so each reads as
+            // nothing at all.
+            assert_eq!(set("GH_CONFIG_DIR"), Some("/dev/null"), "{harness:?}");
+            assert_eq!(set("GIT_CONFIG_GLOBAL"), Some("/dev/null"), "{harness:?}");
+            assert_eq!(set("GIT_CONFIG_SYSTEM"), Some("/dev/null"), "{harness:?}");
+            assert_eq!(set("GIT_TERMINAL_PROMPT"), Some("0"), "{harness:?}");
+            assert_eq!(set("SSH_AUTH_SOCK"), Some(""), "{harness:?}");
+            // Claude Code's own sandbox sets git's ssh for each command, so its line names none.
+            assert_eq!(set("GIT_SSH_COMMAND"), None, "{harness:?}");
+        }
+        let (_plane, cwd, applied) = started(FLOOR, harness, &machine);
+        assert!(
+            !applied.forge_locked(),
+            "{harness:?} at the floor under watch"
+        );
+        if harness != Harness::ClaudeCode {
+            continue;
+        }
+        let line = applied
+            .line(
+                Words {
+                    program: "chat".to_owned(),
+                    command: Vec::new(),
+                    armed: Vec::new(),
+                    charters: Vec::new(),
+                },
+                &At {
+                    cwd: Some(&cwd),
+                    ..At::default()
+                },
+            )
+            .expect("starts");
+        assert!(
+            !line.env.iter().any(|(key, _)| key == "GH_CONFIG_DIR"),
+            "{harness:?}"
+        );
+    }
+}
+
+/// #7205: the config purlis compiles for a chat that claims the forge lock has the harness's
+/// forge connector off, and one that does not claim it is compiled as it was.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn a_chat_that_claims_the_forge_lock_is_compiled_with_its_forge_connectors_off() {
+    use crate::harness::{Kit, StateHooks};
+    let (_home, home) = home();
+    let machine = machine(&home, Os::MacOs);
+    let plugin = tempfile::tempdir().expect("a plugin folder");
+    let shim = crate::opencode::shim_in(plugin.path());
+    std::fs::create_dir_all(shim.parent().expect("a folder")).expect("its folder");
+    std::fs::write(&shim, "// shim").expect("the shim");
+    let kit = Kit {
+        skills: None,
+        laid_out: None,
+        binary: Path::new("/bin/charter"),
+        plugin: Some(plugin.path()),
+        persona: None,
+        graded: false,
+        judging: false,
+        writes_its_piece: false,
+        runs_a_shell: false,
+        own: &[],
+    };
+    let compiled = |harness: Harness, manifest: &str| {
+        let (_plane, cwd, applied) = started(manifest, harness, &machine);
+        let StateHooks::ThisSessionOnly { args, env, .. } = harness.state_hooks(
+            kit,
+            Some(&cwd),
+            &crate::harness_plugin::Chosen::new(),
+            Some(&applied),
+        ) else {
+            panic!("{harness:?} is armed per session");
+        };
+        (args, env)
+    };
+    // Claude Code keeps every server it had, purlis's own and the person's among them: only a
+    // forge connector's tools are denied, in the settings it is handed.
+    let (args, _) = compiled(Harness::ClaudeCode, FULL);
+    assert!(
+        !args.iter().any(|arg| arg == "--strict-mcp-config"),
+        "{args:?}"
+    );
+    let at = args
+        .iter()
+        .position(|arg| arg == "--mcp-config")
+        .expect("--mcp-config");
+    let servers: Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    assert!(
+        servers["mcpServers"][crate::chattools::SERVER].is_object(),
+        "purlis's own server stays: {servers}"
+    );
+    let at = args
+        .iter()
+        .position(|arg| arg == "--settings")
+        .expect("--settings");
+    let settings: Value = serde_json::from_str(&args[at + 1]).expect("JSON");
+    let deny: Vec<&str> = settings["permissions"]["deny"]
+        .as_array()
+        .expect("deny rules")
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    for name in crate::forgelock::CONNECTORS {
+        assert!(deny.contains(&format!("mcp__{name}").as_str()), "{name}");
+    }
+    assert!(
+        !deny.contains(&format!("mcp__{}", crate::chattools::SERVER).as_str()),
+        "purlis's own is not denied"
+    );
+    let (args, _) = compiled(Harness::ClaudeCode, FLOOR);
+    assert!(
+        !args.iter().any(|arg| arg.contains("mcp__github")),
+        "{args:?}"
+    );
+    let config = |env: &[(String, String)]| -> Value {
+        let (_, text) = env
+            .iter()
+            .find(|(name, _)| name == crate::opencode::CONFIG_ENV)
+            .expect("its session config");
+        serde_json::from_str(text).expect("JSON")
+    };
+    let (_, env) = compiled(Harness::Opencode, FULL);
+    assert_eq!(config(&env)["mcp"]["github"]["enabled"], false);
+    assert!(
+        config(&env)["mcp"]["purlis"].is_object(),
+        "purlis's own stays"
+    );
+    let (_, env) = compiled(Harness::Opencode, FLOOR);
+    assert!(config(&env)["mcp"]["github"].is_null());
+}
+
+/// A path is read as a program opens it: `.`, `//` and `..` change no name, so no spelling of a
+/// credential is open (`liftable` reads them the same way), and no spelling of an open file is a
+/// credential.
+#[test]
+fn a_credential_is_one_under_every_spelling_a_program_opens_it_by() {
+    let machine = machine(Path::new("/Users/ada"), Os::MacOs);
+    for credential in [
+        "/Users/ada/.config/gh/./hosts.yml",
+        "/Users/ada/.config//gh//hosts.yml",
+        "/Users/ada/.config/gh/x/../hosts.yml",
+        "/Users/ada/./.ssh/id_rsa",
+        "/Users/ada/.ssh/../.ssh/id_rsa",
+        "/Users/ada/.config/gh/hosts.yml/",
+    ] {
+        assert!(
+            is_credential(Path::new(credential), &machine),
+            "{credential}"
+        );
+    }
+    for open in [
+        "/Users/ada/.config/gh/../config.yml",
+        "/Users/ada/.config/gh/./config.yml",
+        "/Users/ada/.ssh/./id_ed25519.pub",
+    ] {
+        assert!(!is_credential(Path::new(open), &machine), "{open}");
+    }
+}
+
+#[cfg(not(feature = "forge-wiring"))]
+/// What each entry of [`CREDENTIAL_FILES`] is, said by a row here and never guessed from its name.
+enum Entry {
+    /// A forge's own login file: the program that reads it, the kind of forge, the variable the
+    /// program takes its token from, the words of the setup flow every answer names, and whether
+    /// an undeclared program is guarded ([`GUARDED_FORGES`]).
+    Forge(
+        &'static str,
+        crate::forge::Kind,
+        &'static str,
+        &'static str,
+        bool,
+    ),
+    /// Not a forge's file, with the reason it needs no start note or shim.
+    Exempt(&'static str),
+}
+
+/// **A forge's credential file never ships without its answers** (#1349): every entry of
+/// [`CREDENTIAL_FILES`] is classified here, as exempt with a written reason or as a forge that has
+///
+/// 1. a **route**: a declared tool that gives the chat a token and reaches the forge's host
+///    ([`forge_routes`]), the one thing a chat under the class takes in place of the person's login;
+/// 2. a **start check**: the note a chat that holds the class with no route is told, naming the
+///    forge's own flow, and said no more where a route to that very host stands;
+/// 3. a **shim answer** where the tool is declared but there is no token, naming the way, exit 1;
+/// 4. an **undeclared answer** where no tool is, for a forge whose program a chat under the class
+///    only fails on ([`GUARDED_FORGES`]): its flow, exit 1, the program never run;
+/// 5. a **setup flow** the answers name, that the person can run.
+///
+/// An entry with no row, a row with no entry, or a row with an answer taken away, turns this red.
+#[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn every_forge_credential_file_has_a_route_a_start_check_a_shim_answer_and_a_setup_flow() {
+    use crate::forge::Kind;
+    use crate::forge::agentidentity::{HostFound, credentials_note};
+    use crate::sandbox::tools::{
+        FORGE_PROGRAMS, GUARDED_FORGES, Handed, Ready, Tool, forge_routes, gitlab_flow,
+        guard_forges, no_minted_token_said, shim,
+    };
+    use std::os::unix::fs::PermissionsExt;
+    const GIT: &str = "git's own helper, not a forge's API login: no forge program to shim";
+    const CLOUD: &str = "a cloud provider's login, not a forge's: its tools are not shimmed";
+    const CLASSIFIED: [(&str, Entry); 14] = [
+        (".git-credentials", Entry::Exempt(GIT)),
+        (".config/git/credentials", Entry::Exempt(GIT)),
+        (
+            ".netrc",
+            Entry::Exempt("any program's login, no one forge's"),
+        ),
+        (".aws/credentials", Entry::Exempt(CLOUD)),
+        (".aws/sso/cache", Entry::Exempt(CLOUD)),
+        (".aws/cli/cache", Entry::Exempt(CLOUD)),
+        (".config/gcloud/credentials.db", Entry::Exempt(CLOUD)),
+        (".config/gcloud/access_tokens.db", Entry::Exempt(CLOUD)),
+        (
+            ".config/gcloud/application_default_credentials.json",
+            Entry::Exempt(CLOUD),
+        ),
+        (".config/gcloud/legacy_credentials", Entry::Exempt(CLOUD)),
+        (".azure", Entry::Exempt(CLOUD)),
+        (
+            ".docker/config.json",
+            Entry::Exempt("a registry's login, not a forge's"),
+        ),
+        (
+            ".config/gh/hosts.yml",
+            Entry::Forge("gh", Kind::GitHub, "GH_TOKEN", "Agent identity", false),
+        ),
+        (
+            ".config/glab-cli/config.yml",
+            Entry::Forge(
+                "glab",
+                Kind::GitLab,
+                "GITLAB_TOKEN",
+                "purlis gitlab access",
+                true,
+            ),
+        ),
+    ];
+    let mut unclassified: Vec<&str> = CREDENTIAL_FILES
+        .iter()
+        .copied()
+        .filter(|file| !CLASSIFIED.iter().any(|row| row.0 == *file))
+        .collect();
+    unclassified.sort_unstable();
+    assert!(
+        unclassified.is_empty(),
+        "CREDENTIAL_FILES entries with no class here (a forge, or exempt with a reason): {unclassified:?}"
+    );
+    for (file, entry) in &CLASSIFIED {
+        assert!(
+            CREDENTIAL_FILES.contains(file),
+            "{file} is no longer listed"
+        );
+        if let Entry::Exempt(reason) = entry {
+            assert!(!reason.is_empty(), "{file}: an exemption needs its reason");
+        }
+    }
+    let mut unclassified: Vec<&str> = CREDENTIAL_FILES
+        .iter()
+        .copied()
+        .filter(|file| !CLASSIFIED.iter().any(|row| row.0 == *file))
+        .collect();
+    unclassified.sort_unstable();
+    assert!(
+        unclassified.is_empty(),
+        "CREDENTIAL_FILES entries with no class here (a forge, or exempt with a reason): {unclassified:?}"
+    );
+    for (file, entry) in &CLASSIFIED {
+        assert!(
+            CREDENTIAL_FILES.contains(file),
+            "{file} is no longer listed"
+        );
+        if let Entry::Exempt(reason) = entry {
+            assert!(!reason.is_empty(), "{file}: an exemption needs its reason");
+        }
+    }
+    let forges = CLASSIFIED.iter().filter_map(|(_, entry)| match entry {
+        Entry::Forge(program, kind, var, flow, guarded) => {
+            Some((*program, *kind, *var, *flow, *guarded))
+        }
+        Entry::Exempt(_) => None,
+    });
+    let run = |script: &Path, var: &str| {
+        crate::forklock::output(
+            std::process::Command::new(script)
+                .env_remove("PURLIS_HOOK_SOCKET")
+                .env_remove("CHARTER_HOOK_SOCKET")
+                .env_remove(var),
+        )
+        .unwrap()
+    };
+    let executable = |path: &Path, text: String| {
+        std::fs::write(path, text).unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    };
+    for (program, kind, var, flow, guarded) in forges {
+        // 5. the setup flow, which the answers below name.
+        assert!(
+            FORGE_PROGRAMS.contains(&program),
+            "{program} has no shim rule"
+        );
+        assert_eq!(GUARDED_FORGES.contains(&program), guarded, "{program}");
+        let tmp = tempfile::tempdir().unwrap();
+        let ran = tmp.path().join("ran");
+        let bin = tmp.path().join(program);
+        executable(&bin, format!("#!/bin/sh\ntouch '{}'\n", ran.display()));
+        // 1. the route: the tool declared, as the forge's own host.
+        let mut tool = Tool::one(program, "forge", var, Handed::Env, "token");
+        tool.host = Some("forge.test".to_owned());
+        let ready = Ready {
+            tool,
+            program: bin.clone(),
+        };
+        let glab = kind == Kind::GitLab;
+        assert_eq!(
+            forge_routes(std::slice::from_ref(&ready)),
+            [(glab, "forge.test".to_owned())],
+            "{program}: no route"
+        );
+        // 2. the start check, said with no route and silent with one to that very host.
+        let found = [HostFound {
+            host: "forge.test".into(),
+            kind: Some(kind),
+        }];
+        let note = credentials_note(true, &[], &found, Some("dev")).expect("a start note");
+        assert!(note.contains(flow), "{program}: {note}");
+        assert_eq!(
+            credentials_note(
+                true,
+                &[(glab, "forge.test".to_owned())],
+                &found,
+                Some("dev")
+            ),
+            None,
+            "{program}: a route to the host still gets the note"
+        );
+        assert!(
+            credentials_note(
+                true,
+                &[(glab, "other.test".to_owned())],
+                &found,
+                Some("dev")
+            )
+            .is_some(),
+            "{program}: a route to another host serves this one"
+        );
+        // 3. the shim of the declared tool, run with no app and no token: the sentence, a
+        // failure, and the program unrun.
+        let script = tmp.path().join("shim");
+        executable(&script, shim(Path::new("/purlis"), "dev", &ready));
+        let out = run(&script, var);
+        assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
+        let said = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(
+            said.contains(&no_minted_token_said(program, false)),
+            "{program}: {said}"
+        );
+        assert!(!ran.exists(), "{program} ran with no token");
+        // 4. the undeclared program's shim, where it is guarded.
+        if guarded {
+            let resolved = guard_forges(None, tmp.path(), "dev", &["forge.test".to_owned()], &[])
+                .expect("a guard");
+            let [(name, sentence)] = resolved.guards.as_slice() else {
+                panic!("{:?}", resolved.guards)
+            };
+            assert_eq!(name, program);
+            assert!(sentence.contains(flow), "{program}: {sentence}");
+            assert!(
+                sentence.contains(&gitlab_flow("dev", Some("forge.test"))),
+                "{program}: {sentence}"
+            );
+            let guard = tmp.path().join("guard");
+            executable(
+                &guard,
+                crate::sandbox::tools::guard_shim("dev", name, sentence),
+            );
+            let out = run(&guard, var);
+            assert_eq!(out.status.code(), Some(1), "{program}: {out:?}");
+            assert!(
+                String::from_utf8_lossy(&out.stderr).contains(sentence.as_str()),
+                "{program}: {out:?}"
+            );
+            assert!(!ran.exists(), "{program} ran undeclared");
+        }
+    }
+}
+
+/// #7205 beside #1349: the forge lock empties `gh`'s config folder, so `gh` may never read the
+/// `hosts.yml` whose refusal raises the credentials Notice. A locked chat with no mint is told
+/// from its start instead (the tab's note, which reads the class and the mint, not a failed read),
+/// and the shim of a chat with a mint answers with its sentence and runs nothing, whatever its
+/// config folder holds.
+#[cfg(not(feature = "forge-wiring"))]
+#[test]
+fn a_locked_chat_with_no_token_is_told_so_without_gh_reading_its_config() {
+    use crate::forge::Kind;
+    use crate::forge::agentidentity::{HostFound, credentials_note};
+    use crate::sandbox::tools::{Handed, Ready, Tool, no_minted_token_said, shim};
+    use std::os::unix::fs::PermissionsExt;
+
+    let (_home, home) = home();
+    let machine = machine(&home, Os::MacOs);
+    let found = [HostFound {
+        host: "github.com".into(),
+        kind: Some(Kind::GitHub),
+    }];
+    for manifest in HELD {
+        let (_plane, _cwd, applied) = started(manifest, Harness::ClaudeCode, &machine);
+        assert!(applied.forge_locked(), "{manifest}");
+        let confines = applied.confines();
+        let holds = confines
+            .denied
+            .iter()
+            .any(|denial| denial.class == Class::Credentials);
+        let routes = crate::sandbox::tools::forge_routes(&confines.tools);
+        let note = credentials_note(holds, &routes, &found, Some("dev"))
+            .unwrap_or_else(|| panic!("a locked chat with no mint says so: {manifest}"));
+        assert!(note.contains("Agent identity"), "{note}");
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let ran = tmp.path().join("ran");
+    let bin = tmp.path().join("gh");
+    std::fs::write(&bin, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let script = tmp.path().join("shim");
+    std::fs::write(
+        &script,
+        shim(
+            Path::new("/purlis"),
+            "dev",
+            &Ready {
+                tool: Tool::one("gh", "forge", "GH_TOKEN", Handed::Env, "token"),
+                program: bin,
+            },
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let empty = tempfile::tempdir().unwrap();
+    let out = crate::forklock::output(
+        std::process::Command::new(&script)
+            .env("GH_CONFIG_DIR", empty.path())
+            .env_remove("PURLIS_HOOK_SOCKET")
+            .env_remove("CHARTER_HOOK_SOCKET")
+            .env_remove("GH_TOKEN"),
+    )
+    .unwrap();
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains(&no_minted_token_said("gh", false)),
+        "{out:?}"
+    );
+    assert!(!ran.exists(), "gh ran with no token");
+}

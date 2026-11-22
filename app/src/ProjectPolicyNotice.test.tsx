@@ -24,6 +24,7 @@ const PLANE = "/home/dev/plane";
 const QUIET: PolicyState = {
   waiting: [],
   refused: [],
+  not_in_force: [],
   unsealed: false,
   digest: "d1",
   template: "watch",
@@ -110,5 +111,18 @@ describe("the project's policy (Q308a)", () => {
     await waitFor(() =>
       expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d2" }]),
     );
+  });
+
+  it("names the sandbox's level that waits, and says what runs without a sandbox leaves out", async () => {
+    core({
+      ...QUIET,
+      waiting: [{ family: "sandbox", accepted: "floor", committed: "off" }],
+      not_in_force: ["network", "ports", "processes"],
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/sandbox from floor to off/)).toBeTruthy());
+    expect(
+      screen.getByText(/Without a sandbox, network, ports and processes are not in force\./),
+    ).toBeTruthy();
   });
 });

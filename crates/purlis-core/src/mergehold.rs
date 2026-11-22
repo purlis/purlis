@@ -421,6 +421,10 @@ pub enum AppSaid<'a> {
     /// The app could not read the hand-over ([`crate::hookwire::UNKNOWN_LINE`]): it and this
     /// purlis are different builds, so nobody was asked (#6960).
     OtherBuild,
+    /// As [`AppSaid::OtherBuild`], where the hook is the app's own binary on disk
+    /// ([`crate::plugin::BINARY_ENV`]): the only explanation is a bundle replaced under an app
+    /// that runs on, so the app is older than the purlis that wrote the hand-over (#7177).
+    OlderApp,
     /// No app answered in time, or none was there.
     Unheard,
 }
@@ -435,8 +439,10 @@ pub enum WayOut {
     /// The chat asks the person in words, who merges on their press, in Asks or the window. A
     /// yes in the chat merges nothing.
     AskThePerson,
-    /// The person restarts purlis, or updates the purlis plugin of the chat's harness, so the app
-    /// and the chat's purlis are one build: then the same merge asks them in Asks.
+    /// The person restarts purlis (Restart to update, or quit and reopen), or, where the hook is
+    /// not the app's own binary, updates the purlis plugin of the chat's harness, so the app and
+    /// the chat's purlis are one build: then the same merge asks them in Asks. A new chat is no
+    /// way out: the same app starts it with the same binary path (#7177).
     OneBuild,
 }
 
@@ -457,7 +463,9 @@ pub fn ways_out(held: &Held, app: &AppSaid<'_>) -> &'static [WayOut] {
     match (held, app) {
         (Held::Request(_), AppSaid::Held(_)) => &[],
         (Held::Request(_), AppSaid::Refused(_) | AppSaid::Unheard) => &[WayOut::AskThePerson],
-        (Held::Request(_), AppSaid::OtherBuild) => &[WayOut::OneBuild, WayOut::AskThePerson],
+        (Held::Request(_), AppSaid::OtherBuild | AppSaid::OlderApp) => {
+            &[WayOut::OneBuild, WayOut::AskThePerson]
+        }
         (Held::Unreadable, _) => &[WayOut::MergeOnItsOwn],
         (Held::Land, _) => &[WayOut::AskThePerson, WayOut::MergeOnItsOwn],
     }
@@ -474,29 +482,40 @@ pub fn reason(held: &Held, app: &AppSaid<'_>) -> &'static str {
     }
 }
 
+const OPENS: &str = "purlis holds merges: a chat never merges, the app does, on the \
+                     person's press. Nothing was merged.";
+// #6960: what the person says in the chat is no press.
+const NO_YES: &str = "A yes in this chat merges nothing: only the person's press of Merge \
+                      in Asks does.";
+
 /// **What the chat is told when its merge is held**, with what the app said: that a chat never
 /// merges, that nothing was merged, and what happens next. It says the person is asked only
 /// where the app confirmed it holds the ask.
 pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
-    const OPENS: &str = "purlis holds merges: a chat never merges, the app does, on the \
-                         person's press. Nothing was merged.";
-    // #6960: what the person says in the chat is no press.
-    const NO_YES: &str = "A yes in this chat merges nothing: only the person's press of Merge \
-                          in Asks does.";
     match (held, app) {
         (Held::Request(_), AppSaid::Held(said)) => format!("{OPENS} {said} {NO_YES}"),
         (Held::Request(request), AppSaid::Refused(why)) => format!(
-            "{OPENS} Nobody was asked to merge {}{}: {why} Ask the person to merge it in the \
+            "{OPENS} Nobody was asked to merge {}{}: {} Ask the person to merge it in the \
              window. Do not merge it another way. {NO_YES}",
             request.number_said(),
-            request.repo_said()
+            request.repo_said(),
+            sentence(why)
         ),
         (Held::Request(request), AppSaid::OtherBuild) => format!(
             "{OPENS} The app that started this chat could not read purlis's hand-over of {}{}: \
              the app and this purlis are different builds, so nobody was asked. Ask the person \
-             to restart purlis, or to update the purlis plugin of this chat's harness, so both \
-             are one build: then this same merge asks them in Asks. Until then, ask them to \
-             merge it in the window. Do not merge it another way. {NO_YES}",
+             to restart purlis (Restart to update, or quit and reopen it), or to update the purlis \
+             plugin of this chat's harness, so both are one build: then this same merge asks \
+             them in Asks. Until then, ask them to merge it in the window. Do not merge it \
+             another way. {NO_YES}",
+            request.number_said(),
+            request.repo_said()
+        ),
+        (Held::Request(request), AppSaid::OlderApp) => format!(
+            "{OPENS} Nobody was asked to merge {}{}: purlis was updated on disk but the running \
+             app is older: restart purlis (Restart to update, or quit and reopen it), then run \
+             the same line again. A new chat does not help: the same app starts it. Until then, \
+             ask the person to merge it in the window. Do not merge it another way. {NO_YES}",
             request.number_said(),
             request.repo_said()
         ),
@@ -512,11 +531,51 @@ pub fn refusal(held: &Held, app: &AppSaid<'_>) -> String {
              the window, or run `gh pr merge <number>` (or `glab mr merge <number>`) for one \
              request, and the person is asked to merge it in Asks."
         ),
-        (Held::Unreadable, _) => format!(
-            "{OPENS} purlis cannot tell which request this merges, so nobody was asked. Run `gh \
-             pr merge <number>` (or `glab mr merge <number>`) on its own, and the person is asked \
-             to merge it in Asks. {NO_YES}"
-        ),
+        (Held::Unreadable, _) => unreadable_said(None),
+    }
+}
+
+/// **The refusal of `held` for the line `cmd`, naming what purlis took for a merge** (#7176):
+/// [`refusal`], and for a [`Held::Unreadable`] line the cause the release floor read it by, so
+/// the chat is told which word, flag or endpoint made the line a merge or a move of a protected
+/// branch, and what to do about that one.
+pub fn refusal_for(cmd: &str, held: &Held, app: &AppSaid<'_>) -> String {
+    match held {
+        Held::Unreadable => {
+            let cause = crate::floorguard::merge_reason(cmd);
+            let cause = cause.as_deref().map(|said| {
+                said.strip_prefix(crate::floorguard::RELEASE_FLOOR_FIX)
+                    .unwrap_or(said)
+            });
+            unreadable_said(cause)
+        }
+        _ => refusal(held, app),
+    }
+}
+
+/// The refusal of a line held as a merge whose request cannot be named, and what the floor said
+/// it took for one where that is known.
+fn unreadable_said(cause: Option<&str>) -> String {
+    let took = cause.map_or_else(String::new, |cause| {
+        format!(" It took it for one because: {cause}")
+    });
+    format!(
+        "{OPENS} purlis took this line for a merge, or for a move of a protected branch, and \
+         cannot name the request, so nobody was asked.{took} If it is a merge, \
+         run `gh pr merge <number>` (or `glab mr merge <number>`) on its own, and the person is \
+         asked to merge it in Asks; if it only writes a branch, write the branch's name out in the \
+         call. {NO_YES}"
+    )
+}
+
+/// `said` as a sentence: the app's words, with the full stop they may lack, so what follows
+/// them never runs on (#7177).
+fn sentence(said: &str) -> String {
+    let said = said.trim();
+    if said.ends_with(['.', '!', '?']) {
+        said.to_owned()
+    } else {
+        format!("{said}.")
     }
 }
 
@@ -608,6 +667,10 @@ pub struct Facts {
     /// nor an app or a bot, by login ([`approves`], R-122). A review the forge did not give in
     /// time, or could not give whole, is no approval.
     pub approved_by: Option<String>,
+    /// **The merge method the row shows** (ADR 0128 D8.1): whether the repo's own method squashes
+    /// the request, as the forge said at this read. A press merges by it and only while the forge
+    /// still says it ([`NotMerged::MethodMoved`]); a read that says otherwise asks once more.
+    pub squash: bool,
     /// When the forge was read for these facts, in seconds since 1970: a try again at the same
     /// head reads it again, and the newer read replaces these ([`Holds::raise`]).
     pub read_at: u64,
@@ -702,6 +765,7 @@ pub fn read(
             checks,
             ruleset,
             approved_by,
+            squash: at.squash,
             read_at: now,
         },
         at,
@@ -844,6 +908,15 @@ impl MergeForge for ByForge<'_> {
     }
 }
 
+/// The merge method a squash flag names, as an ask says it.
+fn method_word(squash: bool) -> &'static str {
+    if squash {
+        "squashing"
+    } else {
+        "a merge commit"
+    }
+}
+
 /// One merge ask that waits: the chat it holds, its key, what the forge said of the request
 /// when it was raised, and since when, in seconds since 1970.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -883,6 +956,7 @@ impl Facts {
                 Some(by) => by.as_str(),
                 None => "\u{1f}not approved",
             },
+            method_word(self.squash),
         ]
         .join("\u{1e}");
         sha2::Sha256::digest(shown.as_bytes())
@@ -967,6 +1041,16 @@ pub enum NotMerged {
          was merged"
     )]
     BaseMoved { was: String, now: String },
+    /// The repo's merge method is not the one the person was shown (ADR 0128 D8.1): the ask
+    /// bound the method as well as the head and the base. The ask waits, showing the method now.
+    #[error(
+        "the repo now merges by {now}, not by {was} as it did when you were asked, so nothing was \
+         merged. Press Merge again"
+    )]
+    MethodMoved {
+        was: &'static str,
+        now: &'static str,
+    },
     /// Whether a ruleset protects the base is not what the person was shown (R-150). The ask
     /// still waits, showing what purlis read last.
     #[error(
@@ -1285,7 +1369,7 @@ impl Holds {
         by: Answerer,
         forge: &dyn MergeForge,
     ) -> Result<(HumanScope, Merged), NotMerged> {
-        let taken = {
+        let mut taken = {
             let mut held = self.lock();
             let at = held
                 .iter()
@@ -1299,6 +1383,7 @@ impl Holds {
             }
             held.remove(at)
         };
+        let shown = taken.facts.squash;
         let merged = forge
             .at(key)
             .map_err(NotMerged::Forge)
@@ -1309,6 +1394,19 @@ impl Holds {
                     Err(NotMerged::BaseMoved {
                         was: key.base.as_str().to_owned(),
                         now: at.base.as_str().to_owned(),
+                    })
+                }
+            })
+            .and_then(|at| {
+                // The method the row showed is the one the merge is made by, or none is made.
+                if at.squash == shown {
+                    Ok(at)
+                } else {
+                    taken.facts.squash = at.squash;
+                    taken.asked = false;
+                    Err(NotMerged::MethodMoved {
+                        was: method_word(shown),
+                        now: method_word(at.squash),
                     })
                 }
             })

@@ -89,6 +89,10 @@ pub struct Own {
     pub after: Vec<String>,
     /// At the floor, the held folders a person let this chat write ([`floor_planted_rules_but`]).
     pub lifted: Vec<PathBuf>,
+    /// The sockets this chat serves on ([`served`]), each by its exact path: the one thing the
+    /// held socket names ([`held_socket_names_unwritten`]) do not match, whatever order the rules
+    /// come in.
+    pub serving: Vec<PathBuf>,
 }
 
 /// `text` as an SBPL string, or [`CONTROL`].
@@ -426,6 +430,18 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
             string(&socket.display().to_string())?
         ));
     }
+    // This chat's forge route's one socket (ADR 0128 D3a), given back after the denial of the
+    // folder every run's route is made in: read, written and connected to by its exact path, so
+    // no other run's socket in that folder is.
+    if let Some(socket) = &widened.forge_socket {
+        for name in kernel_strings_itself(socket)? {
+            own.after
+                .push(format!("(allow file-read* file-write* (literal {name}))"));
+            own.after.push(format!(
+                "(allow network-outbound (remote unix-socket (path-literal {name})))"
+            ));
+        }
+    }
     for service in &widened.services {
         own.after.push(format!(
             "(allow mach-lookup (global-name {}))",
@@ -443,7 +459,211 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     {
         own.after.push(super::localport::seatbelt_rule(*port));
     }
+    // The `ports` family off (the Q308 follow-up, item 5): every local socket and every port of
+    // this Mac's loopback, after the floor's and the full profile's holds of them, so it wins;
+    // then purlis's own ports as the chat was compiled, held still.
+    if let Some(own_ports) = &widened.every_local {
+        own.after.extend(EVERY_LOCAL.lines().map(str::to_owned));
+        own.after.extend(every_local_held());
+        // …and the folder every run's forge route is made in (ADR 0128 D3a): every run's
+        // `proxy.sock` is in it, and `EVERY_LOCAL` would reach them all. It is held after it, then
+        // this chat's own socket is given back, so a chat with `ports` off reaches its own proxy
+        // and no other run's.
+        if let Some(root) = &widened.forge_root {
+            for name in super::kernel_names_itself(root) {
+                let regex: String = name
+                    .display()
+                    .to_string()
+                    .chars()
+                    .map(regex_escaped)
+                    .collect();
+                own.after.push(format!(
+                    "(deny network-outbound (remote unix-socket (path-regex #\"^{regex}/\")))"
+                ));
+            }
+            if let Some(socket) = &widened.forge_socket {
+                for name in kernel_strings_itself(socket)? {
+                    own.after.push(format!(
+                        "(allow network-outbound (remote unix-socket (path-literal {name})))"
+                    ));
+                }
+            }
+        }
+        for port in own_ports {
+            own.after.push(format!(
+                "(deny network-outbound (remote ip \"localhost:{port}\"))"
+            ));
+        }
+    }
     Ok(())
+}
+
+/// What the `ports` family off lets a chat connect to ([`super::Widened::every_local`]): every
+/// local socket and every port of this Mac's loopback, which [`FLOOR_HELD`] and the full
+/// profile otherwise hold, but purlis's own ([`every_local_held`]).
+pub const EVERY_LOCAL: &str = "(allow network-outbound (remote unix-socket))
+(allow network-outbound (remote ip \"localhost:*\"))
+";
+
+/// **The local sockets the `ports` family off still holds** (the review of #7105): purlis's own,
+/// each by where or what it is, in any case. Every project's state folder (`.purlis`, `.charter`:
+/// its hook socket and what it keeps beside it, every plane's and every vault's), every hook
+/// socket, the window's slots socket (`slots.sock`) and the session host's and its window's
+/// (`purlisd*.sock`), the crash companion's (`purlis-crash-*.sock`) and the app's
+/// single-instance socket (`/tmp/dev_purlis_app*_si.sock`, Tauri's), wherever they were made,
+/// every chat's server sockets (`purlis-serve`) and the forwards to a pool's engine
+/// (`engine-links`). Another program's socket, a container engine's among them (ruling Q328:
+/// only under a `ports = "off"` the person pressed), is reached. The chat's own hook socket is
+/// given back after them ([`hook_socket_again`]).
+pub fn every_local_held() -> Vec<String> {
+    let [state_folders, names, folders] = socket_name_regexes();
+    [&state_folders, &names, &folders]
+        .into_iter()
+        .map(|regex| {
+            format!("(deny network-outbound (remote unix-socket (path-regex #\"{regex}\")))")
+        })
+        .collect()
+}
+
+/// The regexes of the sockets purlis makes, by name or by folder: its projects' state folders,
+/// its sockets' names and the folders holding them, in any case.
+fn socket_name_regexes() -> [String; 3] {
+    let state = crate::names::STATE_DIR
+        .spellings()
+        .map(|name| folded(name.trim_start_matches('.')))
+        .collect::<Vec<_>>()
+        .join("|");
+    // Tauri's single-instance socket on macOS is `/tmp/<identifier>_si.sock` with every `.`
+    // and `-` of the identifier made `_` (`dev_purlis_app_si.sock`); a scenario build's
+    // (`dev_purlis_app_e2e_si.sock`) begins with the app's.
+    let app = crate::names::BUNDLE_ID
+        .spellings()
+        .map(|id| folded(&crate::names::single_instance_stem(id)))
+        .collect::<Vec<_>>()
+        .join("|");
+    [
+        format!("/\\.({state})/"),
+        format!(
+            "/({}|{}|{}[^/]*|{}[^/]*|({app})[^/]*{})\\.{}$",
+            folded("hooks"),
+            folded(crate::hookwire::serve::SLOTS_SOCKET.trim_end_matches(".sock")),
+            folded("purlisd"),
+            folded("purlis-crash-"),
+            folded("_si"),
+            folded("sock")
+        ),
+        format!(
+            "/({}|{})/",
+            folded(super::door::FOLDER),
+            folded(crate::sshroute::DIR)
+        ),
+    ]
+}
+
+/// **The names of purlis's sockets and the folders that hold them, never written or linked, at
+/// every floor** (round 5 of #7105), whatever `ports` says: held by name, so never moved or hard
+/// linked to a name nothing holds. The floor leaves `/tmp` and the session host's folder
+/// writable, where a chat would `mv` or `ln` a socket while ports are enforced, and connect to
+/// the new name once a person presses `ports = "off"`. Every project's state folder is held from
+/// being written already ([`every_project_rules`]); a chat's own server socket is given back
+/// after these ([`served`]). It also stops a chat creating any file named `hooks.sock`,
+/// `slots.sock` or `purlisd*.sock` anywhere (`docs/policy.md`).
+pub fn held_socket_names_unwritten() -> Vec<String> {
+    held_socket_names_unwritten_but(&[]).unwrap_or_default()
+}
+
+/// [`held_socket_names_unwritten`] but for `serving`, a chat's own server sockets (round 7 of
+/// #7105): each excluded from the deny by its exact literal path, so they are made whatever
+/// order the rules come in. The folder itself and every other name stay held. An empty `serving`
+/// gives the deny unchanged.
+pub fn held_socket_names_unwritten_but(serving: &[PathBuf]) -> Result<Vec<String>, &'static str> {
+    let [_, names, folders] = socket_name_regexes();
+    // And each of those folders itself, so it is never moved whole with its sockets inside.
+    let folders_and_themselves = format!("{}(/|$)", folders.trim_end_matches('/'));
+    let mut except = String::new();
+    for socket in serving {
+        except.push_str(&format!(
+            " (require-not (literal {}))",
+            string(&socket.display().to_string())?
+        ));
+    }
+    Ok([names, folders_and_themselves]
+        .iter()
+        .map(|regex| {
+            if except.is_empty() {
+                format!("(deny file-write* file-link (regex #\"{regex}\"))")
+            } else {
+                format!("(deny file-write* file-link (require-all (regex #\"{regex}\"){except}))")
+            }
+        })
+        .collect())
+}
+
+/// **The same held names as globs, for a harness whose own sandbox holds paths by glob** (round
+/// 6 of #7105: Claude Code, which no wrap covers on macOS): `(names, folders)`, as
+/// [`held_socket_names_unwritten`] holds them by regex. A name is a glob of a file name, a
+/// folder is a folder's name; the caller writes each at any depth and in either case.
+pub fn held_socket_globs() -> (Vec<String>, Vec<String>) {
+    let hooks = "hooks.sock".to_owned();
+    let slots = crate::hookwire::serve::SLOTS_SOCKET.to_owned();
+    let mut names = vec![
+        hooks,
+        slots,
+        "purlisd*.sock".to_owned(),
+        "purlis-crash-*.sock".to_owned(),
+    ];
+    for id in crate::names::BUNDLE_ID.spellings() {
+        let glob = format!("{}*_si.sock", crate::names::single_instance_stem(id));
+        if !names.contains(&glob) {
+            names.push(glob);
+        }
+    }
+    let folders = vec![
+        super::door::FOLDER.to_owned(),
+        crate::sshroute::DIR.to_owned(),
+    ];
+    (names, folders)
+}
+
+/// `word` as a regex that matches it in any case: macOS's volumes fold names, so the kernel may
+/// name a socket by any case it was reached by.
+fn folded(word: &str) -> String {
+    word.chars()
+        .map(|one| {
+            let (lower, upper) = (one.to_ascii_lowercase(), one.to_ascii_uppercase());
+            if lower == upper {
+                regex_escaped(one)
+            } else {
+                format!("[{lower}{upper}]")
+            }
+        })
+        .collect()
+}
+
+/// `one` escaped for a regex.
+fn regex_escaped(one: char) -> String {
+    if "\\.^$*+?()[]{}|".contains(one) {
+        format!("\\{one}")
+    } else {
+        one.to_string()
+    }
+}
+
+/// **The chat's own hook socket, given back after what `own` holds** ([`every_local_held`] holds
+/// every hook socket, so a chat whose project turns `ports` off still reaches its own). Nothing
+/// where `own` lifts no local socket.
+fn hook_socket_again(own: &Own, hook_socket: Option<&Path>) -> Result<Vec<String>, &'static str> {
+    let lifted = own
+        .after
+        .iter()
+        .any(|rule| EVERY_LOCAL.lines().next() == Some(rule.as_str()));
+    match hook_socket {
+        Some(socket) if lifted => Ok(vec![format!(
+            "(allow network-outbound (remote unix-socket (path-literal {})))",
+            quote(socket)?
+        )]),
+        _ => Ok(Vec::new()),
+    }
 }
 
 /// Lets a wrapped chat serve on each of `ports` (#2019): on its own socket for each in `folder`,
@@ -453,9 +673,9 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
 /// never in [`widen`].
 pub fn served(own: &mut Own, folder: &Path, ports: &[u16]) -> Result<(), &'static str> {
     for port in ports {
-        own.after.extend(super::localport::serve_rules(
-            &super::localport::serve_socket(folder, *port),
-        )?);
+        let socket = super::localport::serve_socket(folder, *port);
+        own.after.extend(super::localport::serve_rules(&socket)?);
+        own.serving.push(socket);
         own.after.push(super::localport::seatbelt_rule(*port));
     }
     Ok(())
@@ -655,8 +875,17 @@ pub fn profile(
             ))?
         ));
     }
+    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105),
+    // before `own`'s rules so a chat's own server socket, which `served` gives back there, is
+    // still made.
+    for rule in held_socket_names_unwritten_but(&own.serving)? {
+        line(rule);
+    }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
+    }
+    for rule in hook_socket_again(own, hook_socket)? {
+        line(rule);
     }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
@@ -770,8 +999,17 @@ pub fn floor_profile(
     for rule in every_project_rules()? {
         line(rule);
     }
+    // The names of purlis's sockets never written nor linked, at every floor (round 5 of #7105),
+    // before `own`'s rules so a chat's own server socket, which `served` gives back there, is
+    // still made.
+    for rule in held_socket_names_unwritten_but(&own.serving)? {
+        line(rule);
+    }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
+    }
+    for rule in hook_socket_again(own, hook_socket)? {
+        line(rule);
     }
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {

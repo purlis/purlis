@@ -130,6 +130,17 @@ impl Rules {
         Self::in_force_with(plane, anchors, user_settings().as_deref())
     }
 
+    /// **[`Rules::in_force`] for a chat whose own variables are `env`** (#7155): the person's
+    /// settings file is the one the chat's live hook reads, in the `CLAUDE_CONFIG_DIR` its
+    /// profile sets, not the starting process's.
+    pub fn in_force_for_chat(plane: &Path, anchors: &[&Path], env: &[(String, String)]) -> Self {
+        Self::in_force_with(
+            plane,
+            anchors,
+            user_settings_for(env, anchors.first().copied().unwrap_or(plane)).as_deref(),
+        )
+    }
+
     /// [`Rules::in_force`], with the person's own settings file at `user` (or none).
     pub(crate) fn in_force_with(plane: &Path, anchors: &[&Path], user: Option<&Path>) -> Self {
         Self {
@@ -521,6 +532,61 @@ pub(crate) fn user_settings() -> Option<PathBuf> {
     )
 }
 
+/// **[`user_settings`] for a chat whose own variables are `env`**: the chat's environment is the
+/// process's with the profile's laid over it, so the profile's `CLAUDE_CONFIG_DIR` and `HOME`
+/// win over the starting process's (#7155, #7165). A relative `CLAUDE_CONFIG_DIR` is the chat's
+/// own folder's, `base`, as the hook that reads it runs there.
+pub(crate) fn user_settings_for(env: &[(String, String)], base: &Path) -> Option<PathBuf> {
+    // A unit test never reads the real environment, so none of its answers hangs on whoever's
+    // machine runs it (#7165): only the profile's own variables count there.
+    let (process_config, process_home) = if cfg!(test) {
+        (None, None)
+    } else {
+        (
+            std::env::var_os("CLAUDE_CONFIG_DIR"),
+            crate::profiles::home(),
+        )
+    };
+    user_settings_in_env(env, process_config, process_home, base)
+}
+
+/// The last value `env` sets `key` to, if it sets it at all.
+fn set_in(env: &[(String, String)], key: &str) -> Option<std::ffi::OsString> {
+    env.iter()
+        .rev()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| std::ffi::OsString::from(value))
+}
+
+/// [`user_settings_for`], with the starting process's `CLAUDE_CONFIG_DIR` and home given. A
+/// variable the profile sets wins even where it is empty: in the chat an empty value is the
+/// value, and reads as unset there, so it does not fall back to the process's (#7165).
+fn user_settings_in_env(
+    env: &[(String, String)],
+    process_config: Option<std::ffi::OsString>,
+    process_home: Option<PathBuf>,
+    base: &Path,
+) -> Option<PathBuf> {
+    let absolute = |dir: std::ffi::OsString| {
+        let dir = PathBuf::from(dir);
+        if dir.is_absolute() {
+            dir
+        } else {
+            base.join(dir)
+        }
+    };
+    let config = set_in(env, "CLAUDE_CONFIG_DIR")
+        .or(process_config)
+        .filter(|dir| !dir.is_empty())
+        .map(absolute);
+    let home = set_in(env, "HOME")
+        .map(|home| Some(PathBuf::from(home)))
+        .unwrap_or(process_home)
+        .filter(|home| !home.as_os_str().is_empty())
+        .map(|home| absolute(home.into_os_string()));
+    user_settings_in(config.map(Into::into), home)
+}
+
 /// [`user_settings`], from the two values it reads.
 fn user_settings_in(
     config_dir: Option<std::ffi::OsString>,
@@ -819,6 +885,81 @@ mod tests {
             Some(PathBuf::from("/h/.claude/settings.json"))
         );
         assert_eq!(at(None, None), None);
+    }
+
+    /// #7155: the person's settings a chat's hook reads are in its profile's own
+    /// `CLAUDE_CONFIG_DIR`, which wins over the starting process's.
+    #[test]
+    fn a_profiles_own_config_dir_is_where_its_persons_settings_are() {
+        let env = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect()
+        };
+        let at = |pairs: &[(&str, &str)], config: Option<&str>, home: Option<&str>| {
+            user_settings_in_env(
+                &env(pairs),
+                config.map(Into::into),
+                home.map(PathBuf::from),
+                Path::new("/chat"),
+            )
+        };
+        let settings = |dir: &str| Some(PathBuf::from(dir).join("settings.json"));
+        assert_eq!(
+            at(&[("CLAUDE_CONFIG_DIR", "/p")], Some("/proc"), Some("/h")),
+            settings("/p")
+        );
+        assert_eq!(at(&[], Some("/proc"), Some("/h")), settings("/proc"));
+        // #7165: an empty one is the chat's value, which reads as unset there: it does not
+        // fall back to the starting process's.
+        assert_eq!(
+            at(&[("CLAUDE_CONFIG_DIR", "")], Some("/proc"), Some("/h")),
+            settings("/h/.claude")
+        );
+        // #7165: a relative one is the chat's folder's, where the hook runs.
+        assert_eq!(
+            at(&[("CLAUDE_CONFIG_DIR", "cfg")], Some("/proc"), Some("/h")),
+            settings("/chat/cfg")
+        );
+        // #7165: the profile's own HOME is the one the hook reads, not the app's.
+        assert_eq!(
+            at(&[("HOME", "/Users/me/work")], None, Some("/h")),
+            settings("/Users/me/work/.claude")
+        );
+        assert_eq!(at(&[("HOME", "")], None, Some("/h")), None);
+        assert_eq!(at(&[], None, None), None);
+    }
+
+    /// #7165: the rules a chat's start reads are the ones its live hook reads, from the folder
+    /// its profile's `HOME` or relative `CLAUDE_CONFIG_DIR` names, never the app's own.
+    #[test]
+    fn a_chats_start_reads_the_rules_of_the_home_and_config_dir_its_profile_sets() {
+        // A folder of its own, removed when the test ends, even by a panic.
+        let held = tempfile::tempdir().expect("a temp folder");
+        let dir = held.path().to_path_buf();
+        let write = |at: &str| {
+            let file = dir.join(at).join("settings.json");
+            std::fs::create_dir_all(file.parent().expect("a folder")).expect("folder");
+            std::fs::write(
+                &file,
+                r#"{"permissions":{"deny":["Bash(terraform destroy *)"]}}"#,
+            )
+            .expect("written");
+        };
+        write("work/.claude");
+        write("chat/cfg");
+        let plane = dir.join("project");
+        std::fs::create_dir_all(&plane).expect("a project folder");
+        let chat = dir.join("chat");
+        let var = |k: &str, v: &str| vec![(k.to_owned(), v.to_owned())];
+        let named = |env: &[(String, String)]| {
+            Rules::in_force_for_chat(&plane, &[chat.as_path()], env).names_a_program()
+        };
+        assert!(named(&var("HOME", &dir.join("work").display().to_string())));
+        assert!(named(&var("CLAUDE_CONFIG_DIR", "cfg")));
+        assert!(!named(&[]));
+        assert!(!named(&var("CLAUDE_CONFIG_DIR", "elsewhere")));
     }
 
     /// A program word only the shell can name — a variable, a substitution, a glob — may be

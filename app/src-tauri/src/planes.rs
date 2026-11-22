@@ -101,6 +101,26 @@ pub const WAITS_WHILE_YOU_STOP_IT: &str =
 pub const WAITS_ON_ITS_OWN_WORK: &str = "It has work of its own running in the background. It restarts once that work is done and \
      its turn ends.";
 
+/// **What the app's tests share of a held project.**
+#[cfg(test)]
+pub(crate) mod fixtures {
+    /// **A project on disk, held as a window holds it**: the folder, the registry that holds it
+    /// (kept, so the project stays held) and the project.
+    pub(crate) fn a_project() -> (
+        tempfile::TempDir,
+        super::Planes,
+        std::sync::Arc<super::Held>,
+    ) {
+        let dir = tempfile::tempdir().expect("a folder");
+        let root = std::fs::canonicalize(dir.path()).expect("canonical");
+        std::fs::write(root.join(purlis_core::plane::MANIFEST), "").expect("a plane");
+        let planes =
+            super::Planes::telling(std::sync::Arc::new(|_| {}), crate::Shipped::default(), None);
+        let held = planes.held(&planes.open(&root)).expect("held");
+        (dir, planes, held)
+    }
+}
+
 #[cfg(test)]
 impl PlaneId {
     /// An id for a test that holds no registry — a worker, a teller — never for a command.
@@ -364,6 +384,9 @@ pub struct Held {
     removal_asks: crate::removalasks::Asked,
     /// The merges its chats' hooks held, each an ask until the person answers (R-114).
     merge_holds: crate::mergeholds::MergeHolds,
+    /// The tags, releases, CI-file pushes and forks its chats asked for, each an ask until the
+    /// person answers (one login F2, ADR 0128 D8).
+    held_acts: crate::heldacts::HeldActState,
     /// Each chat's browsers, and what the person said they may reach (#2013).
     browsers: crate::chatbrowsers::ChatBrowsers,
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
@@ -824,6 +847,11 @@ impl Held {
     /// The merges its chats' hooks held, for the person's press (R-114, R-115).
     pub fn merge_holds(&self) -> &crate::mergeholds::MergeHolds {
         &self.merge_holds
+    }
+
+    /// The held forge acts its chats asked for, for the person's press (ADR 0128 D8).
+    pub fn held_acts(&self) -> &crate::heldacts::HeldActState {
+        &self.held_acts
     }
 
     /// Each chat's browsers, and what the person said they may reach (#2013).
@@ -1372,8 +1400,13 @@ impl Held {
         }
         // A task that had finished when the window went without quitting is still in the
         // session host, and nothing kept its screen: it is read now, while the chats put back
-        // start, and kept before each is closed where it is held (#6504).
-        let screens = self.chats.start_keeping_screens_left(&finished);
+        // start, and kept before each is closed where it is held (#6504). Where the record was
+        // refused, none says which chats were tasks: each is proven one by its run (#6737).
+        let screens = if refused.is_some() {
+            self.chats.start_keeping_screens_proven_left()
+        } else {
+            self.chats.start_keeping_screens_left(&finished)
+        };
         let back = crate::restored::finish(self, begun, size, read).len();
         self.chats.close_finished_left(screens);
         // What the session host still runs of this project from before this window and no
@@ -1589,6 +1622,7 @@ impl Held {
         self.secret_fills.forget(session);
         self.removal_asks.forget(session);
         self.merge_holds.forget(session);
+        self.held_acts.forget(session);
         // And its refusals whose only way out was a press in the window (R-328).
         purlis_core::windowonly::forget(self.root(), session);
         // What its runner's commands wait on goes with it (#2047).
@@ -3995,7 +4029,20 @@ impl Planes {
                             &strong,
                             block.line.chat,
                             block.line.sandbox_blocked,
+                            // Checked again in the draft: a chat can send any words.
+                            block
+                                .line
+                                .purlis_command
+                                .as_deref()
+                                .and_then(purlis_core::sandboxblock::command::known),
                         );
+                    }
+                    // A folder or socket ask the project's `[policy]` answers itself (the Q308
+                    // follow-up, item 3): allowed for this chat, kept in the record, and no
+                    // Notice; the chat takes it at its restart once its turn ends.
+                    if crate::sandboxing::answered_by_the_policy(&strong, &told, network.as_ref()) {
+                        record();
+                        return;
                     }
                     // The echo of a held connection's block written already, from the
                     // post-tool detector or the proxy's own raise landing late (Q240): dropped,
@@ -5087,6 +5134,25 @@ impl Planes {
                     }
                 }
             }));
+            // A fact lowered is said to the log's recorder, so a clear's run and a child's say
+            // `unattended` too (R-107).
+            chats.when_attendance_is_lowered(Box::new({
+                let (events, root) = (events.clone(), root.clone());
+                move |session| {
+                    let lowered = events.record(purlis_core::eventlog::Entry::Attendance {
+                        plane: root.clone(),
+                        number: session,
+                        attendance: purlis_core::dispatchunattended::Attendance::Unattended
+                            .word()
+                            .to_owned(),
+                    });
+                    if let Err(why) = lowered {
+                        tracing::warn!(
+                            "purlis: a lowered attendance was not told to the event log ({why})"
+                        );
+                    }
+                }
+            }));
             // A start put aside is taken back: its program's later lines are of no run (#2252).
             chats.when_a_held_start_is_settled(Box::new(move |session, how| {
                 let plane = root.clone();
@@ -5588,7 +5654,9 @@ impl Planes {
             secret_fills: crate::secretfills::Fills::default(),
             removal_asks: crate::removalasks::Asked::default(),
             merge_holds: crate::mergeholds::MergeHolds::default(),
+            held_acts: crate::heldacts::HeldActState::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .keeping_answers(&browsers_root, self.config())
                 .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
@@ -5722,6 +5790,11 @@ impl Planes {
             .get(plane)
             .map(Arc::clone)
             .ok_or_else(|| no_such(plane, "act on"))
+    }
+
+    /// The plane at `root`, where this process holds it open.
+    pub fn held_at(&self, root: &Path) -> Option<Arc<Held>> {
+        self.map().get(&PlaneId::of(root)).map(Arc::clone)
     }
 
     /// The folder of every plane this process holds: a project open in a window, which fetches

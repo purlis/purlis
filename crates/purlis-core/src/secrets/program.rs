@@ -219,6 +219,7 @@ impl Ctx {
     /// compiled to `confines`: what that chat may write is added to where no provider's program
     /// is run from. The app's record of the chat, never anything the chat sent.
     pub fn chat(mut self, confines: &crate::sandbox::Confines, folder: Option<&Path>) -> Self {
+        self.for_a_chat = true;
         self.chat_writes.extend(folder.map(Path::to_path_buf));
         self.chat_writes.extend(confines.writable.iter().cloned());
         self.chat_writes.extend(

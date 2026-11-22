@@ -445,7 +445,7 @@
     {
       "file": "app/src-tauri/src/forgeaccounts.rs",
       "at": "if purlis_core::fence::FENCED {",
-      "count": 2,
+      "count": 3,
       "kind": "switch",
       "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
       "covers": {
@@ -749,6 +749,21 @@
       }
     },
     {
+      "file": "app/src-tauri/src/onelogin.rs",
+      "at": "if purlis_core::fence::FENCED {",
+      "count": 4,
+      "kind": "switch",
+      "reason": "The fence (charter-app#129): a fenced build refuses, or stands in for, what reaches past its fence folder (the temp folder in a test): stores, keychains, forges, update checks. A release build has no fence. The scenario keeps every home inside the fence, so the fenced branch adds a refusal it never meets.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "app/src-tauri/src/planes.rs",
       "at": "(self.building)(&root);",
       "kind": "switch",
@@ -906,6 +921,36 @@
     {
       "file": "app/src-tauri/src/restoring.rs",
       "at": "{",
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/sandboxing.rs",
+      "at": "between_resolutions();",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/sandboxing.rs",
+      "at": "if let Some(machine) = MACHINE.with(|seam| seam.borrow().clone()) {",
+      "count": 1,
       "kind": "switch",
       "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
       "covers": {
@@ -1234,6 +1279,51 @@
       }
     },
     {
+      "file": "crates/purlis-core/src/enforcement.rs",
+      "at": "if let Some(here) = ANSWERED_HERE.with(|held| held.borrow().clone()) {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/enforcement.rs",
+      "at": "pub fn answered_on_this_thread(resolved: Option<Resolved>) {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/enforcement.rs",
+      "at": "thread_local! {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "crates/purlis-core/src/extension/capability.rs",
       "at": "if crate::fence::FENCED {",
       "kind": "switch",
@@ -1412,6 +1502,20 @@
       "covers": {
         "linux": [
           "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/forge/proxy/listener/mod.rs",
+      "at": "impl PushGate for ForwardAll {",
+      "kind": "switch",
+      "reason": "A test-only `PushGate` that lets every push through, which code that does not name it can run through the trait; only a test of the forge listener builds one (crates/purlis-core/tests/support/forge_listener.rs), and the app's listener is given the real gate.",
+      "covers": {
+        "linux": [
           "linux-release-profile"
         ],
         "macos": [

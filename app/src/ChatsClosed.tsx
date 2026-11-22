@@ -149,13 +149,15 @@ function ClosedChatRow({
 }) {
   const row = useRef<HTMLDivElement>(null);
   const [card, setCard] = useState<ChatCard | null>(null);
-  // Found by a number it had before a restart, it says that one too (#6685), as the core says.
+  // Found by a number it had before a restart, it says that one too (#6685), as the app's
+  // `chatcard::closed_chats_of` says.
   const name = numberedNameWas(chat.number, chat.title, chat.found_by);
   const at = endedAt(chat.ended);
   const choose = () => {
     void commands
       // By its own ULID, never the number typed, which another record may answer to (#6740).
-      // The number typed only labels its card, as the core decides (#7125).
+      // The number typed only labels its card, as the app's `chatcard::lookup_by_id` decides
+      // (#7125).
       .chatById(plane, chat.id, typed)
       .then((said) => {
         if (said.status !== "ok") {

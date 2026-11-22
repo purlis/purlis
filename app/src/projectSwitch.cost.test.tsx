@@ -99,8 +99,10 @@ const COMMANDS_AT_ONCE = 10;
  *  save standing older than that reads it once (`plane_saving`, #6246), which a slow runner's run
  *  of switches always reaches (#6264). And one more behind the paint since Q308: the project in
  *  front reads its `[policy]` once (`project_policy_state`), for the Notice of a loosening that
- *  waits for your press. */
-const COMMANDS = 24;
+ *  waits for your press. And one more since ADR 0128: the project in front reads its sandbox state
+ *  once (`sandbox_state`) for the Notice of its old forge token lines, which the sign-in
+ *  replaces. */
+const COMMANDS = 25;
 /** The most times React may commit for it, the reads' answers among them. It commits 5 times
  *  now, two of them small ones after the paint. */
 const COMMITS = 6;

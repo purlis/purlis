@@ -940,6 +940,32 @@ pub fn read_back(
     Ok(())
 }
 
+/// **The chat each of `runs` is a run of**, by the `run.started` the log holds of it, read
+/// newest first and only until each is found (#6737): what a launch whose record of what was open
+/// was refused proves a program the session host left belongs to a chat by, the host saying
+/// only its number and its run. A run with no `run.started` in the log is left out.
+pub fn chats_of_runs(dir: &Path, runs: &[&str]) -> io::Result<HashMap<String, String>> {
+    let mut found = HashMap::new();
+    let wanted: std::collections::HashSet<&str> = runs.iter().copied().collect();
+    if wanted.is_empty() {
+        return Ok(found);
+    }
+    read_back(dir, |event| {
+        if event.kind == "run.started"
+            && let (Some(run), Some(chat)) = (event.run, event.chat)
+            && wanted.contains(run.as_str())
+        {
+            found.entry(run).or_insert(chat);
+        }
+        if found.len() == wanted.len() {
+            std::ops::ControlFlow::Break(())
+        } else {
+            std::ops::ControlFlow::Continue(())
+        }
+    })?;
+    Ok(found)
+}
+
 /// What a subscription hands its client: an event, or word that some were missed.
 #[derive(Debug, Clone, PartialEq)]
 #[allow(
@@ -1358,6 +1384,15 @@ pub struct Attributes {
     /// came on (`local-ui` for the window, `terminal`, `remote-link`), where it is known
     /// (#2171).
     pub started_by: Option<String>,
+    /// **Whether anyone is at the chat** as its run starts (R-106, R-219): the attendance fact's
+    /// word, `attended` or `unattended` ([`crate::attendance::Fact`]), from how purlis started
+    /// it and never from the chat. A fact lowered later ([`Recorder::attendance_lowered`]) is
+    /// said by the runs that follow it (a clear's, a child's), never by the run it was lowered
+    /// in. **Only a chat the window starts carries it**: a run the host composes itself
+    /// ([`crate::hoststart`], a runner's chat among them) and a start that holds no fact say
+    /// [`UNKNOWN`]. **A reader that gates on it must treat `unknown` as unattended**, as A4
+    /// reads a missing fact.
+    pub attendance: Option<String>,
     /// **The protection the chat started under** (R-227): each layer's level and the tier that
     /// set it, the `charter.toml` commit and the answers in force, as the start resolved them
     /// ([`crate::sandbox::protection::at_start`]), never from the chat. [`UNKNOWN`] where the
@@ -1395,6 +1430,7 @@ impl Attributes {
             "sandbox": said(&self.sandbox),
             "conversation": said(&conversation),
             "started_by": said(&self.started_by),
+            "attendance": said(&self.attendance),
             "protection": self
                 .protection
                 .as_ref()
@@ -3239,6 +3275,16 @@ impl Recorder {
         if self.chats.get(&key).is_some_and(|who| who.held.is_some()) {
             self.chats.remove(&key);
             self.taken_back.insert(key);
+        }
+    }
+
+    /// **Chat `number`'s attendance fact was lowered** (R-107, Q271) to `word`: set on its run's
+    /// attributes, so the runs that carry them on (a clear's, a child's) say `unattended` after
+    /// the fact does. Nothing is written: the run already said began says what it began as, and
+    /// the log is append-only. A chat the log holds no run for has none to carry it on.
+    pub fn attendance_lowered(&mut self, plane: &Path, number: u32, word: &str) {
+        if let Some(who) = self.chats.get_mut(&(plane.to_path_buf(), number)) {
+            who.attributes.attendance = Some(word.to_owned());
         }
     }
 

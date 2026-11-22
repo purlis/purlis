@@ -62,6 +62,46 @@ const ALLOWED: &[Allowed] = &[
         why: "a confined extension's cache of a model provider's addresses, not a chat's proxy",
     },
     Allowed {
+        file: "sandbox/egress.rs",
+        line: "let mut door = TcpStream::connect_timeout(&route.addr, Duration::from_secs(5))",
+        why: "the browser door's connect bound: the door's, a fixed protocol limit no scenario scales",
+    },
+    Allowed {
+        file: "sandbox/egress.rs",
+        line: "const DOOR_ANSWERS_WITHIN: Duration = Duration::from_secs(10);",
+        why: "the browser door's bound on answering a CONNECT: the door's, no scenario scales it",
+    },
+    Allowed {
+        file: "sandbox/egress/relay.rs",
+        line: "const HEAD_WITHIN: Duration = Duration::from_secs(10);",
+        why: "how long a client has to send a relay's CONNECT head: a fixed protocol limit",
+    },
+    Allowed {
+        file: "sandbox/egress/relay.rs",
+        line: "let _ = TcpStream::connect_timeout(&self.addr, Duration::from_secs(1));",
+        why: "the stopping relay's wake of its own accept, on loopback",
+    },
+    Allowed {
+        file: "sandbox/forgedeny.rs",
+        line: "pub const TTL: Duration = Duration::from_secs(300);",
+        why: "how long a forge host's answers stand: a cache lifetime no cell orders against",
+    },
+    Allowed {
+        file: "sandbox/forgedeny.rs",
+        line: "pub const HELD: Duration = Duration::from_secs(1200);",
+        why: "how long a forge address is held after it last answered: a cache lifetime",
+    },
+    Allowed {
+        file: "sandbox/forgedeny.rs",
+        line: "pub const NEGATIVE: Duration = Duration::from_secs(10);",
+        why: "how long a failed forge lookup is left alone: a cache lifetime no cell orders against",
+    },
+    Allowed {
+        file: "sandbox/forgedeny.rs",
+        line: "pub const SIBLING_NEGATIVE: Duration = Duration::from_secs(600);",
+        why: "how long a failed sibling-name lookup is left alone: a cache lifetime",
+    },
+    Allowed {
         file: "sandbox/browser_reach.rs",
         line: "pub const LOOKUP_PATIENCE: Duration = Duration::from_secs(10);",
         why: "the browser's name lookups: the resolver seam (ticket 2) owns lookups",
