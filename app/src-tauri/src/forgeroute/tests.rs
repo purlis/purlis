@@ -1573,6 +1573,42 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
 }
 
 #[test]
+fn the_refs_a_recorded_remote_has_are_what_the_ask_returns_on_the_runs_route() {
+    let scene = Scene::new();
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    assert!(guard.params().is_some());
+    guard.commit(7);
+    let tips = vec!["a".repeat(40), "b".repeat(40)];
+    let mut asked = Vec::new();
+    let got =
+        scene
+            .routes
+            .remote_refs_asking(7, "https://GitHub.com/Acme/App.git", |url, route| {
+                asked.push((url.to_owned(), format!("{route:?}")));
+                Some(tips.clone())
+            });
+    assert_eq!(got, Ok(tips));
+    let [(url, route)] = asked.as_slice() else {
+        panic!("asked once: {asked:?}")
+    };
+    assert_eq!(url, "https://GitHub.com/Acme/App.git");
+    assert!(route.contains("HTTPS_PROXY"), "{route}");
+    // An ask that fails is said, and one for an unrecorded repo is never made.
+    assert_eq!(
+        scene
+            .routes
+            .remote_refs_asking(7, "https://github.com/acme/app", |_, _| None),
+        Err("the remote could not be asked which commits it has".to_owned())
+    );
+    assert!(
+        scene
+            .routes
+            .remote_refs_asking(7, "https://github.com/acme/other", |_, _| panic!("asked"))
+            .is_err()
+    );
+}
+
+#[test]
 fn a_repo_on_a_pinned_forge_is_not_enrolled_and_a_project_with_only_pinned_repos_has_no_route() {
     // github.com pinned: the chat's route holds the GitLab repo and none of GitHub's.
     let scene = Scene::pinning(&["github.com"]);

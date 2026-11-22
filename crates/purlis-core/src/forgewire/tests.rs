@@ -1072,6 +1072,9 @@ fn a_repo_is_asked_by_its_own_https_address_and_no_other_spelling() {
         "https://github.com/acme/app.git",
         "https://github.com/acme/app/",
         "https://GitHub.com/acme/app.git",
+        // The wire's repo is lower-cased; the address a person's git has is not.
+        "https://github.com/Acme/App.git",
+        "https://GITHUB.com/ACME/APP/",
     ] {
         assert!(own.is_url(url), "{url}");
     }

@@ -351,7 +351,8 @@ impl Repo {
         };
         let path = path.strip_suffix('/').unwrap_or(path);
         let path = path.strip_suffix(".git").unwrap_or(path);
-        host.eq_ignore_ascii_case(&self.host) && path == self.slug()
+        // The wire's repo is lower-cased ([`AllowedRepo::path`]); a forge's path is not case-sensitive.
+        host.eq_ignore_ascii_case(&self.host) && path.eq_ignore_ascii_case(&self.slug())
     }
 }
 

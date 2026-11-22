@@ -949,21 +949,20 @@ impl ForgeRoutes {
         session: u32,
     ) -> Option<std::io::Result<purlis_core::worktree::git::NetworkRoute>> {
         let run = self.sessions().of_run.get(&session).cloned()?;
-        let (inputs, relay) = self.live().get(&run).map(|live| {
-            (
-                live.inputs.clone(),
-                live.relay.as_ref().map(|relay| relay.addr()),
-            )
-        })?;
+        self.live().get(&run).map(Self::route_of)
+    }
+
+    /// The route git takes for a live run, read from the one snapshot of it the caller holds.
+    fn route_of(live: &Live) -> std::io::Result<purlis_core::worktree::git::NetworkRoute> {
         // **Never the bare door**: it answers 407 to a CONNECT that lacks the hand-off proof, which
         // git cannot send. The relay proves it, and asks the administrator's pin on each connection.
-        let Some(relay) = relay else {
-            return Some(Err(io::Error::other(
+        let Some(relay) = live.relay.as_ref().map(|relay| relay.addr()) else {
+            return Err(io::Error::other(
                 "purlis's own git has no route to this chat's forge: its relay did not start",
-            )));
+            ));
         };
-        let route = inputs.route(format!("http://{relay}"));
-        Some(purlis_core::forgewire::git_network(&route))
+        let route = live.inputs.route(format!("http://{relay}"));
+        purlis_core::forgewire::git_network(&route)
     }
 
     /// **The ref tips of the remote at `url`, asked for chat `session`'s hook** (#7302): the
@@ -973,6 +972,18 @@ impl ForgeRoutes {
     /// run the session belongs to: never another host or repository, and never another run's
     /// route. The error is the sentence the hook's chat is told.
     pub fn remote_refs(&self, session: u32, url: &str) -> Result<Vec<String>, String> {
+        self.remote_refs_asking(session, url, purlis_core::diffscan::remote_tips_through)
+    }
+
+    /// [`Self::remote_refs`], with `ask` as what asks the remote (a test's stand-in for git).
+    /// The run's repos and its route are read from one look at it, so a run that stops between
+    /// the two cannot be checked for one and asked on another's route.
+    fn remote_refs_asking(
+        &self,
+        session: u32,
+        url: &str,
+        ask: impl FnOnce(&str, purlis_core::worktree::git::NetworkRoute) -> Option<Vec<String>>,
+    ) -> Result<Vec<String>, String> {
         let no_route = || "this chat has no forge route".to_owned();
         let run = self
             .sessions()
@@ -980,19 +991,23 @@ impl ForgeRoutes {
             .get(&session)
             .cloned()
             .ok_or_else(no_route)?;
-        let recorded = self
+        // Only a recorded repository's route is built.
+        let route = self
             .live()
             .get(&run)
-            .map(|live| live.inputs.repos.iter().any(|repo| repo.is_url(url)))
+            .map(|live| {
+                live.inputs
+                    .repos
+                    .iter()
+                    .any(|repo| repo.is_url(url))
+                    .then(|| Self::route_of(live))
+            })
             .ok_or_else(no_route)?;
-        if !recorded {
+        let Some(route) = route else {
             return Err("that remote is not a repository recorded for this chat".to_owned());
-        }
-        let route = self
-            .git_route(session)
-            .ok_or_else(no_route)?
-            .map_err(|why| why.to_string())?;
-        purlis_core::diffscan::remote_tips_through(url, route)
+        };
+        let route = route.map_err(|why| why.to_string())?;
+        ask(url, route)
             .ok_or_else(|| "the remote could not be asked which commits it has".to_owned())
     }
 

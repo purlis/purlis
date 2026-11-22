@@ -594,8 +594,13 @@ pub fn remote_tips_through(url: &str, route: git::NetworkRoute) -> Option<Vec<St
             &["ls-remote", "--heads", "--tags", "--", url],
         )
     })
-    .ok();
-    tips(asked?)
+    .ok()?;
+    if !asked.ok() {
+        // For the app's log only: the chat is told the remote could not be asked, never git's
+        // words, which can carry a proxy's or a forge's.
+        tracing::warn!(code = ?asked.code, stderr = %asked.err.trim(), "git ls-remote through a chat's route failed");
+    }
+    tips(asked)
 }
 
 /// The commits the remote at the address `url` says its branches and tags are at, asked of the
@@ -652,20 +657,23 @@ fn only_tips(told: Vec<String>) -> Vec<String> {
         .collect()
 }
 
-/// The commits an `ls-remote` that answered names, at most [`KNOWN_AT_MOST`] of them; `None`
-/// where it did not answer.
+/// The distinct commits an `ls-remote` that answered names, at most [`KNOWN_AT_MOST`] of them;
+/// `None` where it did not answer. Distinct before the cap: an annotated tag is listed twice
+/// (itself and its `^{}`), and a branch and a tag may sit at one commit, so counting repeats
+/// would push real tips past the cap.
 fn tips(asked: git::Run) -> Option<Vec<String>> {
     if !asked.ok() {
         return None;
     }
     let full = |id: &str| matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit());
+    let mut seen = std::collections::HashSet::new();
     Some(
         asked
             .out
             .lines()
             .filter_map(|line| line.split_once('\t'))
             .map(|(id, _)| id)
-            .filter(|id| full(id))
+            .filter(|id| full(id) && seen.insert(*id))
             .map(str::to_owned)
             .take(KNOWN_AT_MOST)
             .collect(),
@@ -2902,6 +2910,27 @@ mod tests {
             "a tip that is no object id left nothing out"
         );
         assert_eq!(*asked.borrow(), [url, url]);
+    }
+
+    #[test]
+    fn an_ls_remote_listing_is_deduplicated_before_the_cap() {
+        let id = |n: usize| format!("{n:040x}");
+        // Every tip listed twice (an annotated tag and its peeled line), more than the cap.
+        let mut out = String::new();
+        for n in 0..KNOWN_AT_MOST + 5 {
+            out.push_str(&format!(
+                "{}\trefs/tags/t{n}\n{0}\trefs/tags/t{n}^{{}}\n",
+                id(n)
+            ));
+        }
+        let kept = tips(git::Run {
+            code: Some(0),
+            out,
+            err: String::new(),
+        })
+        .expect("answered");
+        assert_eq!(kept.len(), KNOWN_AT_MOST);
+        assert_eq!(kept, (0..KNOWN_AT_MOST).map(id).collect::<Vec<_>>());
     }
 
     #[test]

@@ -161,8 +161,10 @@ const REFS_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_secs
 /// not answer, refuses, or fails: the remote is then asked as before and, if it cannot be, the
 /// push is read in full, up to [`diffscan::UNASKED_AT_MOST`] commits.
 fn tips_the_app_has(url: &str) -> Option<Vec<String>> {
-    use purlis_core::hookwire::{Answer, Ask, RemoteRefsAsk};
-    let Ok(Ok(Answer::RemoteRefs { tips })) = crate::brokered::asked(
+    use purlis_core::hookwire::{Ask, RemoteRefsAsk};
+    // The framed stream, where the app speaks it: a big repository's tips are more than the
+    // line an answer is otherwise held to ([`purlis_core::hookwire::Asking::ask`]).
+    tips_in(crate::brokered::replied(
         |chat| {
             Ask::RemoteRefs(RemoteRefsAsk {
                 chat,
@@ -170,10 +172,24 @@ fn tips_the_app_has(url: &str) -> Option<Vec<String>> {
             })
         },
         REFS_ANSWERED_WITHIN,
-    ) else {
-        return None;
-    };
-    Some(tips)
+    ))
+}
+
+/// The tips in what the app replied: `None` for anything but [`Answer::RemoteRefs`].
+fn tips_in(
+    replied: Result<
+        std::io::Result<purlis_core::hookwire::framed::Reply>,
+        crate::brokered::NotTaken,
+    >,
+) -> Option<Vec<String>> {
+    use purlis_core::hookwire::Answer;
+    match replied {
+        Ok(Ok(reply)) => match reply.answer {
+            Answer::RemoteRefs { tips } => Some(tips),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 /// The repository as a needs-you item names it: its directory's name.
@@ -219,4 +235,32 @@ fn tell_the_app(why: String) {
             commit_refused: why,
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tips_in;
+    use crate::brokered::NotTaken;
+    use purlis_core::hookwire::Answer;
+
+    #[test]
+    fn the_tips_are_what_a_remote_refs_answer_carries_and_nothing_else_is() {
+        let tips = vec!["a".repeat(40), "b".repeat(64)];
+        let said = Answer::RemoteRefs { tips: tips.clone() };
+        assert_eq!(tips_in(Ok(Ok(said.into()))), Some(tips));
+        let no = Answer::No {
+            why: "that remote is not a repository recorded for this chat".to_owned(),
+        };
+        assert_eq!(tips_in(Ok(Ok(no.into()))), None);
+        let other = Answer::Said {
+            lines: vec![],
+            code: 0,
+        };
+        assert_eq!(tips_in(Ok(Ok(other.into()))), None);
+        assert_eq!(
+            tips_in(Ok(Err(std::io::Error::other("the app went away")))),
+            None
+        );
+        assert_eq!(tips_in(Err(NotTaken::NotAChat)), None);
+    }
 }
