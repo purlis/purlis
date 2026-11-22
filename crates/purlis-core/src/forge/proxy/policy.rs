@@ -125,7 +125,7 @@ pub enum Class {
     IssueWrite,
     LabelWrite,
     /// A rerun of a workflow run of the chat's repo (#7358), or a retry or cancel of a GitLab
-    /// pipeline or job (#7372).
+    /// pipeline or job.
     CiWrite,
     GraphqlQuery,
     /// The batch call of Git LFS, asking for download addresses only.
@@ -267,7 +267,7 @@ pub fn is_ci_storage_host(host: &str) -> bool {
         .is_some_and(|n| (1..=5).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Where gitlab.com keeps a job's artifacts and archived log (#7372): Google Cloud Storage, in the
+/// Where gitlab.com keeps a job's artifacts and archived log: Google Cloud Storage, in the
 /// one bucket GitLab names for it, `gitlab-gprd-artifacts`. **Never a bare `storage.googleapis.com`**,
 /// which is anyone's bucket. `path` is the address's path as the URL parser left it, so a `..` in it
 /// is already resolved. Only gitlab.com's own redirect is followed ([`GITLAB_COM`]): a self-hosted

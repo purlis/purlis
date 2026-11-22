@@ -75,7 +75,7 @@ const RULE_READS: &[&[&str]] = &[
     &["rules", "branches", "*"],
 ];
 
-/// The same on GitLab (#7372): the rules a chat may read. `approval_settings`, `push_rules` and
+/// The same on GitLab: the rules a chat may read. `approval_settings`, `push_rules` and
 /// every write stay refused under [`RULESET`].
 const GITLAB_RULE_READS: &[&[&str]] = &[
     &["protected_branches"],
@@ -98,7 +98,7 @@ const CI_WRITES: &[&[&str]] = &[
     &["actions", "runs", "#", "rerun-failed-jobs"],
 ];
 
-/// GitLab's (#7372): retry or cancel a pipeline or one job, with an empty body. **Never `play`**:
+/// GitLab's writes: retry or cancel a pipeline or one job, with an empty body. **Never `play`**:
 /// it starts a manual job, which can carry variables, and a manual job is gated code (a deploy, a
 /// job on a protected ref) that is the person's to start, as GitHub's `approve` is. Never the
 /// trigger routes, which start a pipeline with variables of the caller's choosing.
@@ -157,7 +157,7 @@ const MERGE: &[&str] = &[
     "auto_merge",
 ];
 
-// `play` is GitLab's start of a manual job: held for the person like an approval (#7372).
+// `play` is GitLab's start of a manual job: held for the person like an approval.
 const APPROVAL: &[&str] = &[
     "approve",
     "unapprove",
@@ -335,10 +335,10 @@ const GITLAB_READS: &[&[&str]] = &[
     &["merge_requests", "#", "participants"],
     &["merge_requests", "#", "versions"],
     &["merge_requests", "#", "award_emoji"],
-    // Whether a merge request has the approvals it needs (#7372): a read of the state, never of
+    // Whether a merge request has the approvals it needs: a read of the state, never of
     // the rules' settings.
     &["merge_requests", "#", "approval_state"],
-    // Merge trains (#7372): who is in a project's train and where. Joining one stays a merge.
+    // Merge trains: who is in a project's train and where. Joining one stays a merge.
     &["merge_trains"],
     &["merge_trains", "merge_requests", "#"],
     &["issues"],

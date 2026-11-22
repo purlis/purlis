@@ -256,7 +256,7 @@ pub struct Forwarded {
     pub host: String,
     pub repo: String,
     /// Which forge's rules the request was decided under; `None` for a fetch the listener makes
-    /// for itself (an LFS object). A redirect is followed by the rules of this one (#7372).
+    /// for itself (an LFS object). A redirect is followed by the rules of this one.
     pub kind: Option<Kind>,
 }
 

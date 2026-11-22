@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! One login follow-up (#7372; ADR 0128 amended 2026-11-22): the CI and landing work a chat does
+//! One login follow-up to #7371 (ADR 0128 amended 2026-11-22): the CI and landing work a chat does
 //! on its own GitLab project is answered, as #7358 did for GitHub: protected branches, approval
 //! rules and a merge request's approval state, merge trains, pipelines and jobs (their logs and
 //! artifacts too), and a retry or a cancel of a pipeline or a job. Another project (by path or by

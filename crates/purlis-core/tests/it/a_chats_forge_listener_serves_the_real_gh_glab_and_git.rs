@@ -113,7 +113,7 @@ impl Forge {
             ("GET", p) if p.starts_with("gitlab.com/api/v4/projects/group%2Fproj/merge_requests") => {
                 self.json("[]")
             }
-            // What `glab ci` reads and retries (#7372).
+            // What `glab ci` reads and retries.
             ("GET", "gitlab.com/api/v4/projects/group%2Fproj/pipelines") => self.json(
                 r#"[{"id":9,"iid":3,"project_id":42,"status":"failed","ref":"main","sha":"abc","web_url":"https://gitlab.com/group/proj/-/pipelines/9"}]"#,
             ),

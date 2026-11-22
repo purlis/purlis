@@ -650,7 +650,7 @@ fn redirect<W: Write>(
         && target.port().is_none_or(|p| p == 443);
     let storage = plain_https && is_download_host(&host);
 
-    // A run's logs and artifacts are served from CI storage (#7358, #7372): followed here like a
+    // A run's logs and artifacts are served from CI storage (#7358): followed here like a
     // download host, but never handed to the chat to tunnel to.
     // Only for a credentialed read of the API: the address is signed for what the API answered.
     // GitHub's is followed for the chat on its unix socket only. GitLab's has no socket: `glab`

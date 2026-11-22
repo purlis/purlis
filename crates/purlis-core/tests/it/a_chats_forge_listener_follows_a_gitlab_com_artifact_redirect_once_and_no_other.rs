@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! One login follow-up (#7372; ADR 0128 amended 2026-11-22): `glab` reaches the listener inside
+//! One login follow-up to #7371 (ADR 0128 amended 2026-11-22): `glab` reaches the listener inside
 //! TLS, where it cannot follow a redirect to object storage itself. gitlab.com's answer for a job's
 //! artifacts is followed **once, by a GET, with no credential**, to its one artifacts bucket and to
 //! nothing else. A self-hosted GitLab's redirect, another bucket, another host that is spelled like

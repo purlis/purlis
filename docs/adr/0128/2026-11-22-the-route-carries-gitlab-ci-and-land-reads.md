@@ -1,4 +1,4 @@
-# Amendment, 2026-11-22: the route carries a chat's GitLab CI and land reads (#7372)
+# Amendment, 2026-11-22: the route carries a chat's GitLab CI and land reads
 
 [The amendment of the same day](2026-11-22-the-route-carries-a-chats-ci-and-land-reads.md) taught
 the route to carry a chat's CI and landing work on GitHub. This one does the same for **GitLab,
