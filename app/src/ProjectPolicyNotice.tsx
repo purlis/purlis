@@ -142,9 +142,9 @@ export function ProjectPolicyNotice({
         onDismiss={() => setOrphanedHidden(true)}
       >
         <p>
-          This version of purlis no longer ships {state.orphaned.map((id) => inertly(id)).join(", ")},
-          which the project's own rule of the same name replaced. The project's rule stays and now
-          runs as a plain rule of the project.
+          This version of purlis no longer ships{" "}
+          {state.orphaned.map((id) => inertly(id)).join(", ")}, which the project's own rule of the
+          same name replaced. The project's rule stays and now runs as a plain rule of the project.
         </p>
       </Notice>
     ) : null;
