@@ -182,6 +182,16 @@ pub trait Recorded: Send + Sync {
     fn repos(&self, project: &Path) -> Vec<AllowedRepo>;
     /// `host` is [`forge_host`]'s.
     fn account(&self, project: &Path, host: &str) -> Option<String>;
+    /// The branches of `repo` that the chat `chat` itself created through the route, from the
+    /// app's own record of them: which the chat may push although they exist on the forge. Any
+    /// doubt is none: the route refuses any update to a branch not named here (the person pushes it),
+    /// and the chat's id is the key, so a chat with another id owns none of them.
+    fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
+        Vec::new()
+    }
+    /// The forge confirmed that `chat` made these `(host, repo path, branch)` branches: keep that
+    /// where no chat can write.
+    fn record_created(&self, _chat: &str, _created: &[(String, String, String)]) {}
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -629,6 +639,17 @@ impl ForgeRoutes {
         if repos.is_empty() {
             return Ok(None);
         }
+        // The branches this chat created through the route are its own from the start, from the
+        // app's own record, so one that is on the forge already (pushed before, or before a
+        // restart) may be pushed again. Nothing else is: not the piece log, not a clone's refs.
+        let repos: Vec<AllowedRepo> = repos
+            .into_iter()
+            .map(|repo| {
+                let own = self.seams.recorded.own_branches(project, chat, &repo);
+                let own: Vec<&str> = own.iter().map(String::as_str).collect();
+                repo.with_own_branches(&own)
+            })
+            .collect();
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
         let trouble = Arc::new(SignInTrouble::default());
@@ -643,6 +664,15 @@ impl ForgeRoutes {
             Box::new(NoObjects),
         )
         .with_pin(pin.clone());
+        // Each branch the forge confirms this chat's push made is recorded by the app, under this
+        // chat's id: the brokered `purlis worktree push` goes through this same route.
+        {
+            let recorded = self.seams.recorded.clone();
+            let chat = chat.to_owned();
+            proxy = proxy.with_created(Box::new(move |created| {
+                recorded.record_created(&chat, created);
+            }));
+        }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(

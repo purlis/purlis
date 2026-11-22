@@ -82,6 +82,26 @@ pub fn check_push(
     against: &HeadSha,
     tip: &HeadSha,
 ) -> PushCheck {
+    check_push_since(kind, ci_config, trees, against, None, tip)
+}
+
+/// **Whether pushing `tip` puts CI files on the forge that differ from `against`'s**, the default
+/// branch's tip now, for a branch the push creates as for one that is there.
+///
+/// A CI file of `tip` that is not what `against` holds is a change, however the branch came by it:
+/// a rebase onto the current default branch brings that branch's CI files in, and so is clean,
+/// while a tip built on an older commit, with that commit's CI files, is held. The one exception
+/// is `already`, the branch's old tip on the forge, for a push to a branch that is there: a file
+/// the push leaves as it was at `already` is not a change the push makes, whatever it differs from
+/// `against` by. Where there is no `already` (a new branch) nothing is excepted.
+pub fn check_push_since(
+    kind: Kind,
+    ci_config: Option<&str>,
+    trees: &dyn Trees,
+    against: &HeadSha,
+    already: Option<&HeadSha>,
+    tip: &HeadSha,
+) -> PushCheck {
     let changed = match trees.changed(against, tip) {
         Ok(changed) => changed,
         Err(why) => {
@@ -105,6 +125,20 @@ pub fn check_push(
         .collect();
     files.sort();
     files.dedup();
+    if let Some(already) = already
+        && !files.is_empty()
+    {
+        let moved = match trees.changed(already, tip) {
+            Ok(moved) => moved,
+            Err(why) => {
+                return PushCheck::Refuse(format!(
+                    "purlis could not compare the push with the branch's tip {}: {why}",
+                    short(already)
+                ));
+            }
+        };
+        files.retain(|path| moved.contains(path));
+    }
     if files.is_empty() {
         return PushCheck::NoCiFiles;
     }

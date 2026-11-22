@@ -27,7 +27,8 @@ fn a_command_that_leaves_a_process_behind_fails_and_names_it() {
     let stderr = String::from_utf8_lossy(&said.stderr);
     let orphan = stderr.lines().find_map(|line| {
         let rest = line.trim().strip_prefix("pid ")?;
-        let (pid, cmd) = rest.split_once(": ")?;
+        let (who, cmd) = rest.split_once("): ")?;
+        let pid = who.split(' ').next()?;
         cmd.contains("sleep 47.923")
             .then(|| pid.parse::<u32>().ok())?
     });
@@ -60,7 +61,8 @@ fn off_a_runner_the_orphan_is_named_on_stderr_only() {
     let stderr = String::from_utf8_lossy(&said.stderr);
     let orphan = stderr.lines().find_map(|line| {
         let rest = line.trim().strip_prefix("pid ")?;
-        let (pid, cmd) = rest.split_once(": ")?;
+        let (who, cmd) = rest.split_once("): ")?;
+        let pid = who.split(' ').next()?;
         cmd.contains("sleep 47.375")
             .then(|| pid.parse::<u32>().ok())?
     });
@@ -84,7 +86,7 @@ fn the_annotation_lists_a_bounded_number_of_processes_and_a_bounded_part_of_each
         "ps",
         &format!(
             "#!/bin/sh\nhere=$(dirname \"$0\")\n\
-             case \"$*\" in *etime*) echo ' 00:07'; exit 0 ;; esac\n\
+             case \"$*\" in *etime*) echo ' 00:07'; exit 0 ;; *comm=*) exit 0 ;; esac\n\
              echo '1 0 0 Wed Oct 14 01:00:00 2026 /sbin/init'\n\
              if [ -e \"$here/asked\" ]; then\n\
              me=$(id -u); i=1\n\
@@ -134,7 +136,10 @@ fn the_annotation_lists_a_bounded_number_of_processes_and_a_bounded_part_of_each
         "twenty processes and what is left out: {lines:?}"
     );
     for (at, line) in lines[..20].iter().enumerate() {
-        let before = format!("pid {}, running for 00:07: ", 9_000_001 + at);
+        let before = format!(
+            "pid {} (ppid 1, comm unread), running for 00:07: ",
+            9_000_001 + at
+        );
         let command = line
             .strip_prefix(before.as_str())
             .unwrap_or_else(|| panic!("line {at} is {line}"));
