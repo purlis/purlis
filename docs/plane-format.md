@@ -4878,7 +4878,11 @@ write into this folder cannot make its own text arrive as the person's.
   [`[policy]`](#policy--which-of-purliss-refusals-run) (rulings Q308a, Q308b): family key to
   mode, and `sandbox` to the level (`off`, `floor` or `full`; `enforce`, as an older build kept
   it, reads as `floor`), the least each family runs at here until you press to loosen it; a chat start keeps a
-  tightening in it, and only the window's Accept keeps a loosening. `policy_seal` is its
+  tightening in it, and only the window's Accept keeps a loosening. A pair `guards.merge.opted_in = "true"` is
+  kept where you accepted the project's [opt-in to merges through the forge route](#policy--which-of-purliss-refusals-run)
+  (`guards.merge` named by key, or a template other than `watch`); a record without it, as an older
+  build kept it, reads as not opted in, so the route holds merges until you press Accept again.
+  `policy_seal` is its
   [seal](#the-seals-key--the-keyring-item-purlis-seal), over `policy_counter` (one past the last
   on every acceptance) and the pairs. **The app anchors the newest seal in the keyring before it
   writes the record**, keyed by the plane's real path, never the clone key (a `.git` copied aside

@@ -558,7 +558,7 @@ point asks it.
 | # | Decision | Where | Family |
 |---|---|---|---|
 | 1 | Merging is on the release floor: `gh pr merge`, `glab mr merge`/`accept`, `purlis/charter change land` are denied when the run is unattended | crates/purlis-core/src/floorguard.rs:78 (`PUBLISH_FORGE`), :196 (`MERGE_ROWS`), crates/purlis-core/src/floorguard/merge.rs:68 (`VERB_ALIASES`); attendance check crates/purlis-core/src/floorguard.rs:272 | `guards.merge` |
-| 2 | In a chat the app started, any merge is refused to the chat in any mode, and the request is handed to the app as a merge ask | crates/purlis-cli/src/guard.rs:217 (`held_merge`), :220 (only with a chat number), call at :147; precedence over A4 at crates/purlis-core/src/toolgate.rs:381 | `guards.merge` |
+| 2 | In a chat the app started, a merge is refused to the chat and handed to the app as a merge ask under `enforce`; under `log` it is logged and under `off` it is not asked, by the hook and by the one-login forge route alike (`forge::mergestance`, ADR 0128 amended 2026-11-22) | crates/purlis-cli/src/guard.rs:217 (`held_merge`), :220 (only with a chat number), call at :147; precedence over A4 at crates/purlis-core/src/toolgate.rs:381 | `guards.merge` |
 | 3 | A harness the app did not start gets no hold; only the floor, read from its own `permission_mode` | crates/purlis-core/src/toolgate.rs:377 | `guards.merge` |
 | 4 | A merge whose request cannot be named (no number, raw API, two merges on a line) is refused with no ask | crates/purlis-core/src/mergehold.rs:213 (`held`) | `guards.merge` |
 | 5 | `purlis change land` in an app-started chat is refused with no ask (the person's to do) | crates/purlis-core/src/mergehold.rs:217 | `guards.merge` |

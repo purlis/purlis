@@ -149,11 +149,23 @@ impl World {
         ]
     }
 
+    /// [`Self::new`]'s repos, the proxy asking `stance` how `guards.merge` runs on each merge.
+    pub fn with_merge_stance(
+        stance: Arc<dyn purlis_core::forge::mergestance::MergeStance>,
+    ) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            Some(stance),
+            None,
+        )
+    }
+
     pub fn with_repos_and_pin(
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
     ) -> Self {
-        Self::build(repos, pin, None)
+        Self::build(repos, pin, None, None)
     }
 
     /// [`Self::new`]'s repos, with each branch the forge confirms the chat made recorded in the
@@ -162,6 +174,7 @@ impl World {
         Self::build(
             Self::default_repos(),
             Arc::new(purlis_core::forge::pin::NoPin),
+            None,
             Some(config),
         )
     }
@@ -169,9 +182,13 @@ impl World {
     fn build(
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
+        stance: Option<Arc<dyn purlis_core::forge::mergestance::MergeStance>>,
         record_to: Option<std::path::PathBuf>,
     ) -> Self {
         let mut proxy = ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin);
+        if let Some(stance) = stance {
+            proxy = proxy.with_merge_stance(stance);
+        }
         if let Some(config) = record_to {
             proxy = proxy.with_created(Box::new(move |created| {
                 purlis_core::forge::createdbranches::record(&config, "chat-listener", created)

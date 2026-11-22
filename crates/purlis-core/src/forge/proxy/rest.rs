@@ -170,8 +170,35 @@ fn any(names: &[String], list: &[&str]) -> bool {
     names.iter().any(|n| list.contains(&n.as_str()))
 }
 
-/// The refusal a route earns by its name, if it earns one.
-fn named_refusal(kind: Kind, method: &str, rel: &[String], target: &Target) -> Option<Refusal> {
+/// The merge routes `guards.merge` = `log` or `off` opens ([`decide`] with `merging`): GitHub's
+/// pull request merge, GitLab's merge request merge and its cancel of merge-when-pipeline-succeeds.
+/// Nothing else that merges is here: a branch merge (`POST merges`) and a flag in a query stay
+/// refused.
+fn merge_class(kind: Kind, method: &str, rel: &[String]) -> Option<Class> {
+    let rows: &[(&str, &[&str])] = match kind {
+        Kind::GitHub => &[("PUT", &["pulls", "#", "merge"])],
+        Kind::GitLab => &[
+            ("PUT", &["merge_requests", "#", "merge"]),
+            (
+                "POST",
+                &["merge_requests", "#", "cancel_merge_when_pipeline_succeeds"],
+            ),
+        ],
+    };
+    rows.iter()
+        .any(|(m, pattern)| *m == method && matches(rel, pattern))
+        .then_some(Class::MergeWrite)
+}
+
+/// The refusal a route earns by its name, if it earns one. `merging`: `guards.merge` lets a merge
+/// route of [`merge_class`] through.
+fn named_refusal(
+    kind: Kind,
+    method: &str,
+    rel: &[String],
+    target: &Target,
+    merging: bool,
+) -> Option<Refusal> {
     let names = names(rel);
     if is_ci_write(kind, method, rel) {
         return None;
@@ -186,9 +213,10 @@ fn named_refusal(kind: Kind, method: &str, rel: &[String], target: &Target) -> O
     if is_read(method) {
         return None;
     }
-    if any(&names, MERGE)
+    if (any(&names, MERGE)
         || target.has_query_key("merge_when_pipeline_succeeds")
-        || target.has_query_key("auto_merge")
+        || target.has_query_key("auto_merge"))
+        && !(merging && merge_class(kind, method, rel).is_some())
     {
         return Some(Refusal::Merge);
     }
@@ -550,8 +578,25 @@ fn body_values(body: &Body, key: &str) -> Vec<String> {
         .collect()
 }
 
-/// What a write's request may not say: a query at all, a merge command in any text, and, on
-/// GitLab, a merge request aimed at another project.
+/// Whether `target`'s query is GitLab's own `merge_when_pipeline_succeeds=true|false`, **once, with
+/// that exact key** and nothing else, on a merge request's merge (`PUT …/merge_requests/<iid>/merge`):
+/// the form `glab` and the API's own docs send it in, which `guards.merge` = `log` or `off` takes
+/// as the body's field. A repeated flag or a key in another case is a query a forge may read
+/// differently from the proxy, so it stays refused.
+fn is_the_merge_flag(kind: Kind, method: &str, rel: &[String], target: &Target) -> bool {
+    kind == Kind::GitLab
+        && method == "PUT"
+        && matches(rel, &["merge_requests", "#", "merge"])
+        && matches!(
+            target.query.as_slice(),
+            [(k, v)] if k == "merge_when_pipeline_succeeds"
+                && matches!(v.as_str(), "true" | "false")
+        )
+}
+
+/// What a write's request may not say: a query at all (but the merge flag of
+/// [`is_the_merge_flag`], where `merging`), a merge command in any text, and, on GitLab, a merge
+/// request aimed at another project.
 fn check_body(
     kind: Kind,
     method: &str,
@@ -559,10 +604,11 @@ fn check_body(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    merging: bool,
 ) -> Result<(), Refusal> {
     // No write carries a query: an unknown parameter is the forge reading something the proxy
     // did not.
-    if !target.query.is_empty() {
+    if !target.query.is_empty() && !(merging && is_the_merge_flag(kind, method, rel, target)) {
         return Err(Refusal::MalformedRequest);
     }
     let Some(body) = body else {
@@ -646,8 +692,9 @@ pub(crate) fn decide(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    merging: bool,
 ) -> Result<Class, Refusal> {
-    if let Some(refusal) = named_refusal(kind, method, rel, target) {
+    if let Some(refusal) = named_refusal(kind, method, rel, target, merging) {
         return Err(refusal);
     }
     if is_read(method) {
@@ -657,8 +704,10 @@ pub(crate) fn decide(
             Err(Refusal::NotOnList)
         };
     }
-    let class = write_class(kind, method, rel).ok_or(Refusal::NotOnList)?;
-    check_body(kind, method, rel, target, body, repo)?;
+    let class = write_class(kind, method, rel)
+        .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
+        .ok_or(Refusal::NotOnList)?;
+    check_body(kind, method, rel, target, body, repo, merging)?;
     if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {
         // A rerun's body is `enable_debug_logging` and nothing else the chat may choose; GitLab's
         // retry and cancel take none.

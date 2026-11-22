@@ -257,6 +257,10 @@ impl Scene {
     }
 
     fn with_gate_and_pin(gate: Option<Arc<dyn Gate>>, pin: PinOf) -> Self {
+        Self::with_seams(gate, pin, Seams::stubs().merges)
+    }
+
+    fn with_seams(gate: Option<Arc<dyn Gate>>, pin: PinOf, merges: MergesOf) -> Self {
         let root = tempfile::tempdir().expect("a temp dir");
         let dir = root.path().join("purlis-forge");
         let listener = Arc::new(FakeListener::default());
@@ -290,6 +294,7 @@ impl Scene {
                 runner_link: pairing.clone(),
                 gate,
                 pin,
+                merges,
             },
         );
         Self {
@@ -477,6 +482,71 @@ fn bearer(outcome: &Outcome) -> Option<String> {
         .map(|(_, v)| v.clone())
 }
 
+// ---- the merge stance is made per chat ----
+
+#[test]
+fn a_chats_merge_stance_is_made_with_the_policy_of_the_chain_that_dispatched_it() {
+    let chains: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let kept = chains.clone();
+    let scene = Scene::with_seams(
+        None,
+        Seams::stubs().pin,
+        Arc::new(move |_, chain| {
+            kept.lock().unwrap().push(chain.map(str::to_owned));
+            Arc::new(purlis_core::forge::mergestance::HoldMerges)
+        }),
+    );
+
+    let _two = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
+    let _two = scene.routes.guard(
+        "chat-2",
+        "run-2",
+        Path::new("/p/one"),
+        Some("merge=enforce"),
+    );
+
+    assert_eq!(
+        *chains.lock().unwrap(),
+        [None, Some("merge=enforce".to_owned())]
+    );
+}
+
+#[test]
+fn a_runners_chat_is_made_its_merge_stance_with_the_strict_chain() {
+    // A runner's chat carries no record of its chain here, so `for_runner` holds its merges: the
+    // chain it names is `strict`, and no project policy, opted in and accepted or not, loosens it.
+    let chains: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+    let kept = chains.clone();
+    let scene = Scene::with_seams(
+        None,
+        Seams::stubs().pin,
+        Arc::new(move |_, chain| {
+            kept.lock().unwrap().push(chain.map(str::to_owned));
+            Arc::new(purlis_core::forge::mergestance::HoldMerges)
+        }),
+    );
+    scene
+        .pairing
+        .runs
+        .lock()
+        .unwrap()
+        .insert("run-r".to_owned(), PathBuf::from("/p/one"));
+
+    let forwarded = scene.routes.for_runner(&runner(), "chat-r", "run-r");
+
+    assert!(matches!(forwarded, RunnerForward::Desktop(_)));
+    let strict = purlis_core::enforcement::Resolved::strict().spelled();
+    assert_eq!(*chains.lock().unwrap(), [Some(strict.clone())]);
+    let opened_up = purlis_core::enforcement::Resolved::all(purlis_core::enforcement::Mode::Off)
+        .for_chat(Some(&strict));
+    assert_eq!(
+        opened_up.mode(purlis_core::enforcement::Family::GuardsMerge),
+        purlis_core::enforcement::Mode::Enforce
+    );
+}
+
 // ---- lifecycle ----
 
 #[test]
@@ -596,10 +666,14 @@ fn the_same_run_starting_again_replaces_its_route_and_the_old_sentinel_stops() {
 fn a_restart_keeps_the_chat_and_the_old_runs_end_leaves_the_new_runs_route() {
     let scene = Scene::new();
     // Session 1, run A of chat-1: started, open.
-    let old = scene.routes.guard("chat-1", "run-a", Path::new("/p/one"));
+    let old = scene
+        .routes
+        .guard("chat-1", "run-a", Path::new("/p/one"), None);
     old.commit(1);
     // The restart: the same chat, a new run B, started before the old one ends.
-    let new = scene.routes.guard("chat-1", "run-b", Path::new("/p/one"));
+    let new = scene
+        .routes
+        .guard("chat-1", "run-b", Path::new("/p/one"), None);
     let sentinel_b = new.params().expect("a route").sentinel.clone();
     new.commit(2);
     assert!(scene.routes.is_live("run-a") && scene.routes.is_live("run-b"));
@@ -625,7 +699,9 @@ fn a_start_that_returns_early_stops_its_route_and_one_that_opens_keeps_it_until_
 
     // An early `Err` in the start drops the guard.
     {
-        let early = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+        let early = scene
+            .routes
+            .guard("chat-1", "run-1", Path::new("/p/one"), None);
         assert!(early.params().is_some());
         assert!(scene.routes.is_live("run-1"));
     }
@@ -639,14 +715,16 @@ fn a_start_that_returns_early_stops_its_route_and_one_that_opens_keeps_it_until_
     // An open chat keeps it until its session closes or its program ends.
     scene
         .routes
-        .guard("chat-1", "run-2", Path::new("/p/one"))
+        .guard("chat-1", "run-2", Path::new("/p/one"), None)
         .commit(9);
     assert!(scene.routes.is_live("run-2"));
     scene.routes.stop_session(9);
     assert!(!scene.routes.is_live("run-2"));
 
     // A project with nothing recorded has a guard with no route, and committing it is harmless.
-    let none = scene.routes.guard("chat-1", "run-3", Path::new("/p/none"));
+    let none = scene
+        .routes
+        .guard("chat-1", "run-3", Path::new("/p/none"), None);
     assert!(none.params().is_none());
     none.commit(10);
     scene.routes.stop_session(10);
@@ -889,7 +967,7 @@ fn stub_seams_fail_closed_a_run_has_no_route_without_a_listener() {
                 root.path(),
                 Arc::new(ForgeProxy::new(
                     Box::new(NoCredentials),
-                    Box::new(NoObjects)
+                    Box::new(purlis_core::forge::proxy::NoObjects)
                 )),
                 Arc::new(BlindGate)
             )
@@ -1233,7 +1311,9 @@ fn the_real_sign_ins_answer_missing_with_the_step_named_when_no_account_is_liste
 fn a_program_that_exits_before_its_start_commits_has_its_route_stopped_by_the_commit() {
     let scene = Scene::new();
     // The start has opened session 7 and holds its route; the exit arrives on another thread.
-    let held = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let held = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     let folder = scene.folder_of("run-1");
     assert!(scene.routes.is_live("run-1"));
 
@@ -1258,9 +1338,11 @@ fn an_exit_before_the_commit_stops_only_the_run_of_that_session() {
     let scene = Scene::new();
     scene
         .routes
-        .guard("chat-1", "run-a", Path::new("/p/one"))
+        .guard("chat-1", "run-a", Path::new("/p/one"), None)
         .commit(1);
-    let held = scene.routes.guard("chat-2", "run-b", Path::new("/p/one"));
+    let held = scene
+        .routes
+        .guard("chat-2", "run-b", Path::new("/p/one"), None);
 
     // Another chat's session ends while run-b is still being opened as session 2.
     scene.routes.stop_session(1);
@@ -1270,7 +1352,9 @@ fn an_exit_before_the_commit_stops_only_the_run_of_that_session() {
     assert!(!scene.routes.is_live("run-a") && !scene.routes.is_live("run-b"));
 
     // A run that opens after an exit of another session keeps its route.
-    let held = scene.routes.guard("chat-3", "run-c", Path::new("/p/one"));
+    let held = scene
+        .routes
+        .guard("chat-3", "run-c", Path::new("/p/one"), None);
     scene.routes.stop_session(3);
     held.commit(4);
     assert!(
@@ -1522,7 +1606,9 @@ fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_othe
     let scene = Scene::new();
     // No run is committed to the session yet.
     assert!(scene.routes.git_route(7).is_none());
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let route = scene
@@ -1551,7 +1637,9 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
         scene.routes.remote_refs(7, own).unwrap_err(),
         "this chat has no forge route"
     );
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let not_recorded = "that remote is not a repository recorded for this chat";
@@ -1608,7 +1696,9 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
 #[test]
 fn the_refs_a_recorded_remote_has_are_what_the_ask_returns_on_the_runs_route() {
     let scene = Scene::new();
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     assert!(guard.params().is_some());
     guard.commit(7);
     let tips = vec!["a".repeat(40), "b".repeat(40)];
@@ -1682,7 +1772,9 @@ fn a_runner_whose_every_repo_is_pinned_is_refused_and_does_not_keep_its_token_co
 #[test]
 fn the_apps_git_for_a_chat_goes_to_the_relay_that_proves_the_hand_off_and_never_the_bare_door() {
     let scene = Scene::new();
-    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    let guard = scene
+        .routes
+        .guard("chat-1", "run-1", Path::new("/p/one"), None);
     guard.commit(7);
     let (relay, door) = {
         let live = scene.routes.live();

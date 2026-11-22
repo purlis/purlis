@@ -459,7 +459,11 @@ fn the_committed_file_is_read_at_head_not_as_the_working_tree_has_it() {
 #[test]
 fn the_resolved_policy_reads_back_as_it_was_spelled_and_a_missing_family_is_enforced() {
     let resolved = Resolved::of(&said("[policy]\ntemplate = \"team\"\n"), &Locks::none());
-    assert_eq!(Resolved::parse(&resolved.spelled()), resolved);
+    // The spelling carries no opt-in (`team` enforces `guards.merge`, so has none), so compare it.
+    assert_eq!(
+        Resolved::parse(&resolved.spelled()).spelled(),
+        resolved.spelled()
+    );
     assert_eq!(
         Resolved::parse("network=off").mode(Family::GuardsGit),
         Mode::Enforce
@@ -976,7 +980,7 @@ fn the_level_reads_back_as_spelled_and_an_acceptance_from_before_it_is_the_floor
         "{}",
         team.spelled()
     );
-    assert_eq!(Resolved::parse(&team.spelled()), team);
+    assert_eq!(Resolved::parse(&team.spelled()).spelled(), team.spelled());
     // #6992 kept the sandbox as a mode: `enforce` was a wrap, at least the floor.
     assert_eq!(
         Resolved::parse("sandbox=enforce").level(),
