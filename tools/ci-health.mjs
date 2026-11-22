@@ -169,7 +169,8 @@ export function flakeEvidence(suites) {
 const TICKET_TITLE = "Flaky test: ";
 const TEST_MARKER = /<!-- flake-test: (.*?) -->/;
 const RUNS_MARKER = /<!-- flake-runs: ([\d,]*) -->/;
-const safe = (test) => test.replace(/-->/g, "--&gt;");
+// Every ">" is escaped, so no test id can end the comment it sits in (`-->` or `--!>`).
+const safe = (test) => test.replace(/>/g, "&gt;");
 const marked = (test, ids) => `<!-- flake-test: ${safe(test)} -->\n<!-- flake-runs: ${ids.join(",")} -->`;
 const runList = (runs) => runs.map((run) => `- ${run.url}`).join("\n");
 
