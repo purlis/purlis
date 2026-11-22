@@ -24,6 +24,7 @@ fn plan(given: Vec<u16>) -> Plan {
             routes: "/plane/.charter/app/ssh".into(),
         },
         given,
+        forge: None,
     }
 }
 

@@ -1920,6 +1920,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             manifest: None,
             certificate_check: None,
             expects: None,
+            forge_replaced: None,
             team_off: None,
             level_held: None,
             yours: None,
@@ -1954,6 +1955,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
                 widens: sandbox::Os::this() == sandbox::Os::MacOs,
             }),
             expects: None,
+            forge_replaced: None,
             team_off: None,
             level_held: None,
             yours: None,
@@ -1988,6 +1990,7 @@ fn keeping_it_off_leaves_the_project_as_it_was_and_asks_no_more() {
             manifest: None,
             certificate_check: None,
             expects: None,
+            forge_replaced: None,
             team_off: None,
             level_held: None,
             yours: None,
@@ -3943,4 +3946,31 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
         logged.last().and_then(|line| line.host.clone()),
         Some(elsewhere.display().to_string())
     );
+}
+
+/// With the one-login train's feature on, a project carrying old forge token lines hands the
+/// window the one Notice's text and a cause key that moves with the lines; one without says
+/// nothing (ADR 0128, "Migration").
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_project_with_old_forge_token_lines_hands_the_window_one_notice_and_a_clean_one_none() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        purlis_core::names::manifest(dir.path()),
+        "[sandbox.personas.dev.tools]\n\
+         gh = { vault = \"forge\", mint = \"github-app\", app = \"Iv1.abc\", key = \"k\" }\n",
+    )
+    .unwrap();
+    let shown = state_of(dir.path()).forge_replaced.expect("a notice");
+    assert!(
+        shown.cause.starts_with("forge-sign-in-replaces:"),
+        "{}",
+        shown.cause
+    );
+    assert!(shown.text.contains("Settings › Forges"), "{}", shown.text);
+    assert_eq!(state_of(dir.path()).forge_replaced, Some(shown));
+
+    let clean = tempfile::tempdir().unwrap();
+    std::fs::write(purlis_core::names::manifest(clean.path()), "schema = 1\n").unwrap();
+    assert_eq!(state_of(clean.path()).forge_replaced, None);
 }

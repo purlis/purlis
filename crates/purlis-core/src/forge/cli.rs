@@ -252,7 +252,7 @@ pub const FILE_REFUSED: &str =
 
 /// The token variables either CLI would sign in with in place of its stored login: `gh`'s
 /// ([`TOKEN_ENV`]) and `glab`'s.
-const EVERY_TOKEN_ENV: [&str; 7] = [
+pub(crate) const EVERY_TOKEN_ENV: [&str; 7] = [
     TOKEN_ENV[0],
     TOKEN_ENV[1],
     TOKEN_ENV[2],

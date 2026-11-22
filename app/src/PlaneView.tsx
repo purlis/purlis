@@ -332,6 +332,7 @@ import { DOCTOR_LINE, DoctorNotices, useDoctor } from "./Doctor";
 import { useFirstOpen } from "./firstOpen";
 import { StaleCloneNotices, useStaleClones } from "./StaleCloneNotices";
 import { CloneVouchNotices } from "./CloneVouchNotice";
+import { ForgeReplacedNotice } from "./ForgeReplacedNotice";
 import { BrowsersAtQuitNotice } from "./BrowsersAtQuitNotice";
 import { usePin } from "./Updates";
 import { projectName } from "./projectName";
@@ -12147,6 +12148,15 @@ export const PlaneView = memo(function PlaneView({
         dismissed={dismissed}
         dismiss={dismiss}
         settle={settleNotices}
+      />
+      {/* **Old forge token lines the sign-in replaces** (ADR 0128): said once for the project's
+          lines, with Open sign-in; nothing in its file or a vault is changed from here. */}
+      <ForgeReplacedNotice
+        plane={plane}
+        dismissed={dismissed}
+        dismiss={dismiss}
+        settle={settleNotices}
+        onSignIn={() => openSettingsAt({ group: "project.forges" })}
       />
       {savedNotice && (
         <Notice

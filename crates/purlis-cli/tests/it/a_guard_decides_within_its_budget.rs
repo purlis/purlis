@@ -22,6 +22,9 @@ use std::time::{Duration, Instant};
 const BUDGET: Duration = Duration::from_secs(2);
 const SLACK: Duration = Duration::from_millis(2500);
 
+/// The budget, in milliseconds, for a test of an ordinary large body ([`Here::answer_patiently`]).
+const PATIENCE: &str = "60000";
+
 /// What the sentence for a hook out of time says.
 const OUT_OF_TIME: &str = "could not check it in time";
 
@@ -72,6 +75,23 @@ impl Here {
             String::from_utf8_lossy(&out.stderr).into_owned(),
             began.elapsed(),
         )
+    }
+
+    /// [`Self::answer`] with the budget lifted to [`PATIENCE`]: for the tests of what the guard
+    /// decides about an ordinary large body, which say nothing about how fast it decides. The
+    /// test binary is a debug build, where reading 64 KiB takes about 0.8 s on an idle machine
+    /// and several times that on a runner running these tests side by side, so the production
+    /// budget would make the verdict depend on the machine's load. The budget itself is held by
+    /// the tests that force it (a debug build only reads this knob).
+    fn answer_patiently(
+        &self,
+        word: &str,
+        payload: &serde_json::Value,
+        env: &[(&str, &str)],
+    ) -> (Option<i32>, String, String, Duration) {
+        let mut patient = env.to_vec();
+        patient.push(("PURLIS_TEST_GUARD_DEADLINE_MS", PATIENCE));
+        self.answer(word, payload, &patient)
     }
 }
 
@@ -265,7 +285,8 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
     ] {
         for env in [&[][..], &chat[..]] {
             for mode in ["bypassPermissions", "default"] {
-                let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), env);
+                let (code, out, err, _) =
+                    here.answer_patiently("pretooluse", &bash(&cmd, mode), env);
                 assert_eq!(code, Some(0), "{mode} chat={}: {err}", !env.is_empty());
                 assert!(
                     !out.contains("deny"),
@@ -281,7 +302,7 @@ fn an_ordinary_large_commit_message_or_pr_body_still_passes() {
     let unclosed = format!("git commit -m \"$(cat <<'EOF'\n{body}\n)\"");
     for (what, cmd) in [("a merge line", merging), ("an unclosed heredoc", unclosed)] {
         for mode in ["bypassPermissions", "default"] {
-            let (code, out, err, _) = here.answer("pretooluse", &bash(&cmd, mode), &chat);
+            let (code, out, err, _) = here.answer_patiently("pretooluse", &bash(&cmd, mode), &chat);
             assert!(
                 out.contains("deny") || code == Some(2),
                 "{mode}: {what} was not held: {code:?} {out} {err}"
@@ -313,17 +334,18 @@ fn a_large_commit_body_with_a_paren_and_a_quote_passes_and_a_merge_line_in_it_is
         ),
     ];
     for mode in ["bypassPermissions", "default"] {
-        let (code, out, err, _) = here.answer("pretooluse", &bash(&ordinary, mode), &chat);
+        let (code, out, err, _) =
+            here.answer_patiently("pretooluse", &bash(&ordinary, mode), &chat);
         assert_eq!(code, Some(0), "{mode}: {err}");
         assert!(!out.contains("deny"), "{mode}: {out}");
-        let (code, out, err, _) = here.answer("pretooluse", &bash(&merging, mode), &chat);
+        let (code, out, err, _) = here.answer_patiently("pretooluse", &bash(&merging, mode), &chat);
         assert!(
             out.contains("deny") || code == Some(2),
             "{mode}: a merge line was not held: {code:?} {out} {err}"
         );
         // A program the shell builds, on a line nothing hedges, is still refused.
         let (code, out, err, _) =
-            here.answer("pretooluse", &bash("\"$(echo gh)\" pr view 7", mode), &chat);
+            here.answer_patiently("pretooluse", &bash("\"$(echo gh)\" pr view 7", mode), &chat);
         assert!(
             out.contains("deny") || code == Some(2),
             "{mode}: a built program was not refused: {code:?} {out} {err}"
