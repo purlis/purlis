@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-import { BUDGETS_FILE, budgetProblems, ciJobs, jobIdOf, overBudget, parseBudgets } from "./job-budgets.mjs";
+import { BUDGETS_FILE, budgetProblems, ciJobs, jobIdOf, overBudget, overReleaseBudget, parseBudgets, releaseProfile } from "./job-budgets.mjs";
 
 const CI = new URL("../.github/workflows/ci.yml", import.meta.url);
 
@@ -114,4 +114,124 @@ test("a job's p50 is read over all its matrix legs, and only of the runs it pass
 
 test("a job seen in too few runs says nothing yet", () => {
   assert.deepEqual(overBudget(withRuns("rust tests (part 1 of 4)", 90, 2), parseBudgets(BUDGETS), ciJobs(YML)), []);
+});
+
+// ---- release.yml jobs (#7384, train R5) ----
+
+const RELEASE = new URL("../.github/workflows/release.yml", import.meta.url);
+const fixture = (name) => JSON.parse(readFileSync(new URL(`./ci-health-fixtures/${name}`, import.meta.url), "utf8"));
+const recorded = (which) => ({
+  runs: fixture(`release-runs-${which}.json`).workflow_runs,
+  suites: fixture(`release-suites-${which}.graphql.json`).data.nodes,
+});
+
+const RELEASE_BUDGETS = `
+[[job]]
+id = "release-macos-dev"
+workflow = "release"
+profile = "dev-release"
+check = "macOS (.app)"
+run = 45069994116
+p50 = 91
+
+[[job]]
+id = "release-macos-release"
+workflow = "release"
+profile = "release"
+check = "macOS (.app, .dmg)"
+run = 45069994116
+p50 = 91
+`;
+
+test("a release budget names its workflow, profile, check run and the run it was measured from", () => {
+  assert.deepEqual(parseBudgets(RELEASE_BUDGETS)[1], {
+    id: "release-macos-release",
+    workflow: "release",
+    profile: "release",
+    check: "macOS (.app, .dmg)",
+    run: 45069994116,
+    p50: 91,
+  });
+});
+
+test("a release budget without its profile, check run or measured run is refused", () => {
+  const jobs = ciJobs(YML);
+  const bare = (drop) => parseBudgets(RELEASE_BUDGETS.split("\n").filter((line) => !line.startsWith(drop)).join("\n"));
+  assert.match(budgetProblems(jobs, [...parseBudgets(BUDGETS), ...bare("run =")]).join("\n"), /"release-macos-dev" names no run it was measured from/);
+  assert.match(budgetProblems(jobs, [...parseBudgets(BUDGETS), ...bare("check =")]).join("\n"), /"release-macos-dev" names no check run/);
+  assert.match(budgetProblems(jobs, [...parseBudgets(BUDGETS), ...bare("profile =")]).join("\n"), /"release-macos-dev" has no profile/);
+  assert.deepEqual(budgetProblems(jobs.slice(0, 2), [...parseBudgets(BUDGETS), ...parseBudgets(RELEASE_BUDGETS)]), []);
+});
+
+test("two release budgets for the same profile and check run are refused", () => {
+  const twice = parseBudgets(`${RELEASE_BUDGETS}\n${RELEASE_BUDGETS.replaceAll("macos-release", "macos-copy")}`);
+  assert.match(budgetProblems(ciJobs(YML).slice(0, 2), [...parseBudgets(BUDGETS), ...twice]).join("\n"), /"release-macos-copy" budgets release: macOS \(\.app, \.dmg\) a second time/);
+});
+
+test("a release budget does not count as the budget of a ci job, and ci runs do not read it", () => {
+  const budgets = [...parseBudgets(BUDGETS), ...parseBudgets(RELEASE_BUDGETS)];
+  assert.deepEqual(overBudget(withRuns("macOS (.app, .dmg)", 500, 6), budgets, ciJobs(YML)), []);
+});
+
+test("a run is of the profile its title says: a dev build is dev-release, a nightly guard or a tag is release, a hand-started one is neither", () => {
+  assert.equal(releaseProfile("dev build of 1a2b3c"), "dev-release");
+  assert.equal(releaseProfile("profile guard"), "release");
+  assert.equal(releaseProfile("stable v0.5.2"), "release");
+  assert.equal(releaseProfile("on demand, some-branch"), undefined);
+});
+
+// The seam's tests read their own budgets, so resetting a number in the checked-in file never breaks them.
+const realBudgets = () =>
+  parseBudgets(
+    [
+      ["macos-dev", "dev-release", "macOS (.app)", 91],
+      ["macos-release", "release", "macOS (.app, .dmg)", 91],
+      ["linux", "dev-release", "Linux (.deb, AppImage)", 35],
+      ["linux-release", "release", "Linux (.deb, AppImage)", 37],
+      ["runner-dev", "dev-release", "runner binary (linux-aarch64)", 11],
+      ["runner", "release", "runner binary (linux-aarch64)", 11],
+    ]
+      .map(([id, profile, check, p50]) => `[[job]]\nid = "release-${id}"\nworkflow = "release"\nprofile = "${profile}"\ncheck = "${check}"\nrun = 1\np50 = ${p50}\n`)
+      .join("\n"),
+  );
+
+
+test("a recorded week of release runs inside its budgets files nothing", () => {
+  const { runs, suites } = recorded("under");
+  assert.deepEqual(overReleaseBudget(runs, suites, realBudgets()), []);
+});
+
+test("a recorded week whose release-profile macOS build runs 30% over files that budget, and the dev budget beside it stays quiet", () => {
+  const { runs, suites } = recorded("over");
+  const over = overReleaseBudget(runs, suites, realBudgets());
+  assert.deepEqual(
+    over.map((job) => [job.id, job.workflow, job.profile, job.p50, job.budget, job.n]),
+    [["release-macos-release", "release", "release", 120, 91, 5]],
+  );
+});
+
+test("a dev build over its dev budget does not count against the release-profile budget, nor the other way round", () => {
+  const dev = (title, minutes, i) => ({
+    run: { id: i, display_title: title, event: "push", status: "completed", conclusion: "success" },
+    suite: { workflowRun: { databaseId: i }, checkRuns: { nodes: [ran("macOS (.app)", minutes)] } },
+  });
+  const slow = Array.from({ length: 6 }, (_, i) => dev("dev build of abc", 140, i));
+  const over = overReleaseBudget(slow.map((x) => x.run), slow.map((x) => x.suite), realBudgets());
+  assert.deepEqual(over.map((job) => job.id), ["release-macos-dev"]);
+  const stable = Array.from({ length: 6 }, (_, i) => dev("profile guard", 140, i));
+  assert.deepEqual(overReleaseBudget(stable.map((x) => x.run), stable.map((x) => x.suite), realBudgets()), []);
+});
+
+test("the checked-in release budgets cover each build job and the runner binary, once per profile, each with its run", () => {
+  const release = parseBudgets(readFileSync(BUDGETS_FILE, "utf8")).filter((budget) => budget.workflow === "release");
+  const checks = ["macOS (.app)", "macOS (.app, .dmg)", "Linux (.deb, AppImage)", "runner binary (linux-aarch64)"];
+  for (const profile of ["dev-release", "release"]) {
+    const mine = release.filter((budget) => budget.profile === profile).map((budget) => budget.check);
+    for (const check of checks.filter((check) => profile === "release" ? check !== "macOS (.app)" : check !== "macOS (.app, .dmg)")) {
+      assert.ok(mine.includes(check), `${profile} has a budget for ${check}`);
+    }
+  }
+  const yml = readFileSync(RELEASE, "utf8");
+  assert.match(yml, /name: runner binary \(linux-aarch64\)/);
+  assert.match(yml, /\$\{\{ format\('\{0\} \(\{1\}\{2\}\)', matrix\.platform, matrix\.made/);
 });

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { requiredDrift } from "./ci-push-jobs.mjs";
 import { requiredNames } from "./land.mjs";
 import { percentile } from "./percentile.mjs";
-import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, parseBudgets } from "./job-budgets.mjs";
+import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, overReleaseBudget, parseBudgets } from "./job-budgets.mjs";
 import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
 export { percentile };
@@ -370,7 +370,7 @@ export function planBudgetTickets(over, issues) {
       labels: [ISSUE_LABEL],
       body: [
         `<!-- budget-job: ${job.id} -->`,
-        `The \`${job.id}\` job of \`ci.yml\` took a p50 of ${job.p50.toFixed(1)} min over ${plural(job.n, "passed run")} of the last seven days: ` +
+        `The \`${job.id}\` job of \`${job.workflow ?? "ci"}.yml\`${job.profile ? ` (a \`${job.profile}\` profile build)` : ""} took a p50 of ${job.p50.toFixed(1)} min over ${plural(job.n, "passed run")} of the last seven days: ` +
           `${Math.round(job.over * 100)}% over its budget of ${job.budget} min in \`ci/job-budgets.toml\`.`,
         "",
         `A job is filed when it runs more than ${Math.round(OVER * 100)}% over. Make the job faster, or raise its budget in a pull request that says why ` +
@@ -704,6 +704,32 @@ async function suitesOf(nodeIds, token) {
 
 const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
 
+/**
+ * The budgets' view of `release.yml`: the completed runs of the week, from `since` to `until` (UTC
+ * days), and their check suites. The nightly profile guards are listed on their own (there are
+ * seven a week), so a busy week of dev builds on push, of which the newest hundred are read, never
+ * pushes them out of the `release` profile's budgets. A failed read is a warning and no release
+ * verdict: it must not take the ci report down with it.
+ */
+async function releaseWeek({ repo, token, since, until }) {
+  try {
+    const list = async (event) =>
+      (
+        await call(
+          `/repos/${repo}/actions/workflows/release.yml/runs?created=${since}..${until}&event=${event}&status=completed&per_page=100`,
+          { token },
+        )
+      ).workflow_runs;
+    const runs = [...(await list("schedule")), ...(await list("push"))].filter(
+      (run) => run.conclusion === "success" || run.conclusion === "failure",
+    );
+    return { runs, suites: await suitesOf(runs.map((run) => run.check_suite_node_id), token) };
+  } catch (error) {
+    console.log(`::warning title=ci-health::release.yml budgets not read: ${error.message}`);
+    return { runs: [], suites: [] };
+  }
+}
+
 async function measure({ repo, token, dayCount, sampleSize }) {
   // Whole UTC days, ending yesterday: today's runs are still running.
   const today = Date.parse(isoDay(Date.now()));
@@ -739,6 +765,8 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     .filter((run) => run.event === "push" && run.head_branch === "main" && run.conclusion === "success")
     .slice(-SLOWEST_RUNS);
   const suites = await suitesOf(sampled.map((run) => run.check_suite_node_id), token);
+  const budgets = parseBudgets(readFileSync(BUDGETS_FILE, "utf8"));
+  const release = await releaseWeek({ repo, token, since: dayList[0], until: dayList.at(-1) });
   const mainSuites = await suitesOf(mainGreen.map((run) => run.check_suite_node_id), token);
   // The nightlies are few and the only runs of most evidence jobs, so all of them are read.
   const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
@@ -778,7 +806,10 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     unread,
     sampled: { runs: sampled.length, of: runs.length },
     jobs: jobStats(suites),
-    over: overBudget(suites, parseBudgets(readFileSync(BUDGETS_FILE, "utf8")), ciJobs(readFileSync(CI_FILE, "utf8"))),
+    over: [
+      ...overBudget(suites, budgets, ciJobs(readFileSync(CI_FILE, "utf8"))),
+      ...overReleaseBudget(release.runs, release.suites, budgets),
+    ].sort((a, b) => b.over - a.over || a.id.localeCompare(b.id)),
     flaky: flakyTests(suites),
     flakes: flakeEvidence(suites),
     slowest: slowestTests(lists),
