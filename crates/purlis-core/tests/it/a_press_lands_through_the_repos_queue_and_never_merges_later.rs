@@ -174,6 +174,7 @@ fn facts() -> purlis_core::mergehold::Facts {
         },
         ruleset: purlis_core::mergehold::Ruleset::None,
         approved_by: None,
+        squash: false,
         read_at: 40,
     }
 }

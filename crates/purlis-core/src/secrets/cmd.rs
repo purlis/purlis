@@ -77,6 +77,54 @@ pub fn provider(ctx: &Ctx, name: &str) -> Result<Vault, VaultError> {
 /// **A linked entry is held to its target's rule too** (#5069): a link never hands over a key a
 /// read of the entry it reads would refuse.
 pub fn get_value(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
+    // With the one-login train a chat holds no forge token (ADR 0128): an item recorded as one is
+    // refused by its name before it is read, and any item whose value is one after, whatever
+    // variable, file or form the read is for.
+    if let Some(why) = forge_item_refused(ctx, key) {
+        return Err(VaultError::new(why));
+    }
+    let value = read_unguarded(ctx, v, key)?;
+    if cfg!(feature = "forge-wiring")
+        && in_a_chat(ctx)
+        && crate::sandbox::tools::replaced::forge_token_value(&value)
+    {
+        return Err(VaultError::new(FORGE_ITEM_REFUSED.to_owned()));
+    }
+    Ok(value)
+}
+
+/// What a chat's read of a forge token's item is refused with.
+pub const FORGE_ITEM_REFUSED: &str = "this vault item is a forge token, which purlis no longer \
+     hands to a chat: chats use your sign-in. Sign in under Settings › Forges";
+
+/// **Whether this process runs in a chat** (a sandboxed one, or one whose hooks reach the app), as
+/// its environment says.
+pub fn in_a_chat(ctx: &Ctx) -> bool {
+    if ctx.for_a_chat {
+        return true;
+    }
+    let env = |name: &str| ctx.env.get(name);
+    if crate::sandbox::chat_is_sandboxed_in(&env) {
+        return true;
+    }
+    let rest = crate::hookwire::SOCKET_ENV
+        .strip_prefix(crate::names::ENV_PREFIX.write)
+        .unwrap_or(crate::hookwire::SOCKET_ENV);
+    crate::names::ENV_PREFIX
+        .spellings()
+        .any(|prefix| ctx.env.get(&format!("{prefix}{rest}")).is_some())
+}
+
+/// Why a chat's read of the item `key` is refused where its name says it is a forge token's: the
+/// item Agent identity or GitLab access kept. `None` otherwise, and always with the feature off.
+fn forge_item_refused(ctx: &Ctx, key: &str) -> Option<String> {
+    if !cfg!(feature = "forge-wiring") || !in_a_chat(ctx) {
+        return None;
+    }
+    crate::sandbox::tools::replaced::forge_item_name(key).then(|| FORGE_ITEM_REFUSED.to_owned())
+}
+
+fn read_unguarded(ctx: &Ctx, v: &Vault, key: &str) -> Result<String, VaultError> {
     use crate::sandbox::tools::mint;
     if let Some(to) = super::links::of(ctx, &v.name, key)?
         && let mint::Raw::Refused(_) = mint::raw(&ctx.root, &to.vault, &to.key)

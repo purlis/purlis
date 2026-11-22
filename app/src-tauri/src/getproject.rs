@@ -103,7 +103,15 @@ pub async fn get_project(
         *running = None;
     }
     match answer.map_err(|err| format!("purlis could not get the project: {err}"))? {
-        Ok(Got::Cloned(at)) => Ok(Some(at.display().to_string())),
+        Ok(Got::Cloned(at)) => {
+            // ADR 0128 D4: the repo is recorded at the clone, with its number and its account.
+            let confirmed = at.clone();
+            let _ = tauri::async_runtime::spawn_blocking(move || {
+                crate::onelogin::confirm_after_clone(&confirmed);
+            })
+            .await;
+            Ok(Some(at.display().to_string()))
+        }
         Ok(Got::CalledOff) => Ok(None),
         Err(refused) => Err(refused.sentence),
     }

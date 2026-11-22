@@ -72,6 +72,10 @@ pub enum Refused {
     LocalAddress,
     /// A host an administrator's policy pins as never allowed (#1666): never asked about.
     Policy,
+    /// A forge host, reached only through purlis's forge route (ADR 0128 D3g): never asked
+    /// about, and never listed by a layer. Made by a proxy's [`super::egress::Serving`], never
+    /// by a [`Reach`].
+    ForgeRoute,
 }
 
 /// What a chat's connection to a host and port is answered with.
@@ -341,6 +345,19 @@ impl Reach {
             }
         }
         out
+    }
+
+    /// Whether policy pins `host` on `port` as never allowed. Asked before anything that would
+    /// carry the connection for a host a layer lists: an administrator's pin outranks a listing.
+    pub fn pinned_never(&self, host: &str, port: u16) -> bool {
+        let host = host.strip_suffix('.').unwrap_or(host);
+        // The pin names a forge, not a spelling (D3g): `github.com` pinned covers the API host and
+        // the download hosts the route also serves ([`crate::forge::pin::forge_host_of`]).
+        let forge = crate::forge::pin::forge_host_of(host);
+        [host, forge.as_str()].into_iter().any(|name| {
+            Host::parse(&super::egress::host_and_port(name, port))
+                .is_ok_and(|parsed| self.never.iter().any(|pinned| pinned.covers(&parsed)))
+        })
     }
 
     /// **The decision** for a connection to `host` on `port`, where a host listed without a

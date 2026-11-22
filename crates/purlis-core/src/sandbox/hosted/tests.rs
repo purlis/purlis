@@ -171,6 +171,7 @@ fn composed(given: Vec<u16>) -> Plan {
         any_port: false,
         beside: Beside::Wrapped,
         given,
+        forge: None,
     }
 }
 

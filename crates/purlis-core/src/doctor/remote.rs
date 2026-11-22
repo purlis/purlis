@@ -34,34 +34,45 @@ pub(super) fn project_remote(d: &Doctor) -> Option<Row> {
     Some(row(d))
 }
 
-fn row(d: &Doctor) -> Row {
+/// The project's `origin` URL, or the row to show instead: no plane, not a repository, not its
+/// own repository, no origin, or git did not answer. Shared with the readiness row, so both
+/// read one remote.
+pub(super) fn origin_url(d: &Doctor, name: &str) -> Result<String, Row> {
     if !d.has_plane {
-        return Row::ok(NAME, "no control plane found");
+        return Err(Row::ok(name, "no control plane found"));
     }
     let root = d.root.as_path();
     let top = match git_in(root, &["rev-parse", "--show-toplevel"]) {
         Ok(top) => top,
-        Err(why) => return Row::not_checked(NAME, why),
+        Err(why) => return Err(Row::not_checked(name, why)),
     };
     let toplevel = first_line(&top.out);
     if !top.ok() || toplevel.is_empty() {
-        return Row::ok(NAME, "not a git repository");
+        return Err(Row::ok(name, "not a git repository"));
     }
     // Another repository's remote is not the project's, as `plane root` reads it.
     if super::canonical(std::path::Path::new(&toplevel)) != super::canonical(root) {
-        return Row::ok(
-            NAME,
+        return Err(Row::ok(
+            name,
             format!(
                 "not its own repository (inside {})",
                 super::one_line(&toplevel, super::PATH_DISPLAY_LIMIT)
             ),
-        );
+        ));
     }
-    let url = match git_in(root, &["remote", "get-url", "origin"]) {
-        Ok(run) if run.ok() => first_line(&run.out),
-        Ok(_) => return Row::ok(NAME, "no origin remote, so nothing is pushed"),
-        Err(why) => return Row::not_checked(NAME, why),
+    match git_in(root, &["remote", "get-url", "origin"]) {
+        Ok(run) if run.ok() => Ok(first_line(&run.out)),
+        Ok(_) => Err(Row::ok(name, "no origin remote, so nothing is pushed")),
+        Err(why) => Err(Row::not_checked(name, why)),
+    }
+}
+
+fn row(d: &Doctor) -> Row {
+    let url = match origin_url(d, NAME) {
+        Ok(url) => url,
+        Err(row) => return row,
     };
+    let root = d.root.as_path();
     match ask(&url, root, d.forges.as_ref().map(|(c, t)| (c, t.clone()))) {
         Asked::ThisMachine => Row::ok(
             NAME,
