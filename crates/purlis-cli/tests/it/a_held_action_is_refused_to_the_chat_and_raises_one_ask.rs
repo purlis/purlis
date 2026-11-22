@@ -168,6 +168,7 @@ impl Chat {
                         },
                         ruleset: mergehold::Ruleset::Protects,
                         approved_by: None,
+                        squash: false,
                         read_at: 1_000,
                     };
                     Ok((key, facts))

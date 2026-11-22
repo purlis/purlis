@@ -75,6 +75,7 @@ fn signed_in_through_the_browser(config: &Path) {
         "github.com",
         granted,
         accounts::Method::Device,
+        "a-client-id",
     )
     .unwrap();
     // The control: both ARE kept, in the account's own keyring item.

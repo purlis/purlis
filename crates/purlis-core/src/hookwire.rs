@@ -1707,6 +1707,13 @@ pub enum Ask {
     /// whose host cannot be asked never runs the action, nor decides it itself (§6). No ticket,
     /// for a record's reason: it names only the chat whose token it carries, and moves nothing.
     Decide(DecideAsk),
+    /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
+    /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
+    /// outside the sandbox, on the chat's own run's route, and only for a repository recorded for
+    /// that run. It answers [`Answer::RemoteRefs`], or [`Answer::No`] where it will not or
+    /// cannot. No ticket: the line can only name the chat whose token it carries, and what it
+    /// hands over is what the forge says the repository's branches and tags are at.
+    RemoteRefs(RemoteRefsAsk),
 }
 
 /// **A hook's ask for one decision** ([`Ask::Decide`]).
@@ -1729,6 +1736,17 @@ pub struct DecideAsk {
     /// Nothing a rule reads, and a host that cannot find it decides on the id as it came.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+}
+
+/// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteRefsAsk {
+    /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
+    pub chat: u32,
+    /// The remote's HTTPS address, as the push names it. The app asks it only where its host
+    /// and repository are recorded for the chat's run.
+    pub url: String,
 }
 
 /// **A hook's ask for its chat's policy** ([`Ask::Policy`]).
@@ -2594,6 +2612,9 @@ pub enum Answer {
     /// deciding rules with their level and owner, the family, the mode and the outcome after it.
     /// Boxed: it carries the rules.
     Decided(Box<crate::policy::decide::Decision>),
+    /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
+    /// object ids as `ls-remote` names them.
+    RemoteRefs { tips: Vec<String> },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2935,6 +2956,7 @@ impl Ask {
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
             Self::Decide(asked) => asked.chat,
+            Self::RemoteRefs(asked) => asked.chat,
         }
     }
 }

@@ -63,6 +63,10 @@ beforeEach(() => {
   };
   mockIPC((command) => {
     if (command === "project_settings") return { shared: SHARED, local: LOCAL };
+    // The You level's Ready for all users group asks the forge when it is shown.
+    if (command === "plane_readiness") {
+      return { state: "notChecked", why: "No forge in this test." };
+    }
     return null;
   });
 });

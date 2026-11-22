@@ -168,8 +168,9 @@ const MOST_BODY: u64 = 64 * 1024 * 1024;
 /// ([`super::budget`]) and a token sign-in ([`super::accounts`]) read. GitHub spells its rate
 /// limit `x-ratelimit-*`, naming which limit in `x-ratelimit-resource`, and GitLab
 /// `ratelimit-*`, naming it in `ratelimit-name`. GitHub lists a classic token's scopes in
-/// `x-oauth-scopes`.
-const KEPT: [&str; 13] = [
+/// `x-oauth-scopes`, and names an organization's SAML enforcement in `x-github-sso` (the readiness
+/// check tells that refusal from the others).
+const KEPT: [&str; 14] = [
     "etag",
     "link",
     "retry-after",
@@ -183,6 +184,7 @@ const KEPT: [&str; 13] = [
     "ratelimit-reset",
     "ratelimit-name",
     "x-oauth-scopes",
+    "x-github-sso",
 ];
 
 /// The headers that say which API a request speaks: GitHub's media type and the REST version

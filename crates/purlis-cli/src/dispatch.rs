@@ -508,6 +508,7 @@ pub fn send(
             | Answer::Attended { .. }
             | Answer::Policy { .. }
             | Answer::Decided(_)
+            | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. }
             | Answer::Recorded { .. }
             | Answer::Written { .. }
@@ -801,6 +802,7 @@ pub fn report(outcome: &str, text: &str, changed: Option<&str>) -> Result<String
             | Answer::Attended { .. }
             | Answer::Policy { .. }
             | Answer::Decided(_)
+            | Answer::RemoteRefs { .. }
             | Answer::MergeHeld { .. },
         ) => Err(CliError::internal(format!(
             "{REPORT_SAYS} the purlis app answered the report with something purlis did not \

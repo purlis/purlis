@@ -315,3 +315,34 @@ fn the_linux_wrap_refuses_a_git_folder_made_by_its_name_below_a_chats_folder() {
     assert!(create(&root.join("a/.github"), Kind::Directory));
     assert!(create(&root.join("a/.git/objects"), Kind::Directory));
 }
+
+/// **A chat under `ports = "off"` starts on Linux, and purlis's own sockets stay denied** (the
+/// Linux side of #7105): the Linux wrap reads the Seatbelt profile purlis compiles, so what the
+/// lift writes ([`EVERY_LOCAL`](super::EVERY_LOCAL) and [`every_local_held`](super::every_local_held))
+/// must be a profile it reads, and judges as it says. Before it read a socket `path-regex`, it
+/// refused the whole profile and no chat started.
+#[test]
+fn the_ports_off_lift_is_read_by_the_linux_wrap_and_purlis_own_sockets_stay_denied() {
+    use purlis_linux_sandbox::profile::{Op, Profile, Remote};
+    let text = format!(
+        "(version 1)\n(allow default)\n{}{}\n",
+        super::EVERY_LOCAL,
+        super::every_local_held().join("\n")
+    );
+    let profile = Profile::parse(&text).expect("the Linux wrap reads the ports-off lift");
+    let reaches =
+        |path: &str| profile.allows(&Op::Connect(Remote::Unix(Some(std::path::Path::new(path)))));
+    for other in ["/var/run/docker.sock", "/run/user/1000/bus", "/tmp/x.sock"] {
+        assert!(reaches(other), "{other} is another program's");
+    }
+    for own in [
+        "/work/p/.purlis/hooks.sock",
+        "/work/p/.charter/vaults/v.sock",
+        "/run/user/1000/purlisd-1.sock",
+        "/tmp/dev_purlis_app_si.sock",
+        "/var/folders/x/T/purlis-serve/0123456789abcdef/3000.sock",
+        "/var/folders/x/T/ENGINE-LINKS/pool.sock",
+    ] {
+        assert!(!reaches(own), "{own} is purlis's own");
+    }
+}

@@ -430,6 +430,18 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
             string(&socket.display().to_string())?
         ));
     }
+    // This chat's forge route's one socket (ADR 0128 D3a), given back after the denial of the
+    // folder every run's route is made in: read, written and connected to by its exact path, so
+    // no other run's socket in that folder is.
+    if let Some(socket) = &widened.forge_socket {
+        for name in kernel_strings_itself(socket)? {
+            own.after
+                .push(format!("(allow file-read* file-write* (literal {name}))"));
+            own.after.push(format!(
+                "(allow network-outbound (remote unix-socket (path-literal {name})))"
+            ));
+        }
+    }
     for service in &widened.services {
         own.after.push(format!(
             "(allow mach-lookup (global-name {}))",
@@ -453,6 +465,30 @@ pub fn widen(own: &mut Own, widened: &super::Widened) -> Result<(), &'static str
     if let Some(own_ports) = &widened.every_local {
         own.after.extend(EVERY_LOCAL.lines().map(str::to_owned));
         own.after.extend(every_local_held());
+        // …and the folder every run's forge route is made in (ADR 0128 D3a): every run's
+        // `proxy.sock` is in it, and `EVERY_LOCAL` would reach them all. It is held after it, then
+        // this chat's own socket is given back, so a chat with `ports` off reaches its own proxy
+        // and no other run's.
+        if let Some(root) = &widened.forge_root {
+            for name in super::kernel_names_itself(root) {
+                let regex: String = name
+                    .display()
+                    .to_string()
+                    .chars()
+                    .map(regex_escaped)
+                    .collect();
+                own.after.push(format!(
+                    "(deny network-outbound (remote unix-socket (path-regex #\"^{regex}/\")))"
+                ));
+            }
+            if let Some(socket) = &widened.forge_socket {
+                for name in kernel_strings_itself(socket)? {
+                    own.after.push(format!(
+                        "(allow network-outbound (remote unix-socket (path-literal {name})))"
+                    ));
+                }
+            }
+        }
         for port in own_ports {
             own.after.push(format!(
                 "(deny network-outbound (remote ip \"localhost:{port}\"))"
