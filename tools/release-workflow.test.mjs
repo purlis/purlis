@@ -338,10 +338,11 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
       continue;
     }
     const minutes = Number(value(body, 4, "timeout-minutes"));
-    // The build is one long job: a cold macOS build takes 65 to 68 minutes (ADR 0092). The gate
+    // The build is one long job: a cold macOS build took 65 to 68 minutes (ADR 0092), and 106 to
+    // 107 by 2026-11-22 (run 45030876196 hit its old 120 and was cancelled). The gate
     // is the other: it waits for this commit's `ci`, which took up to 111 minutes on a push to
     // main in the first week of November 2026.
-    const most = { build: 120, gate: 150 }[name] ?? 90;
+    const most = { build: 150, gate: 150 }[name] ?? 90;
     assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }

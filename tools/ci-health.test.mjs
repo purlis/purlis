@@ -7,11 +7,23 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { parseQuarantine, problemsWith } from "./quarantine.mjs";
+
 import {
   ISSUE_TITLE,
   evidenceRed,
   findIssue,
+  flakeEvidence,
   flakyTests,
+  PRIORITY_LABEL,
+  planBudgetTickets,
+  appendEntry,
+  planFlakeTickets,
+  planQuarantine,
+  quarantineVerdict,
+  ticketFor,
+  queueDrops,
+  readyToMerged,
   headline,
   jobStats,
   locateIssue,
@@ -264,4 +276,211 @@ test("the report's one issue is found by its title and its label, open or not", 
   ];
   assert.equal(findIssue(issues).number, 3);
   assert.equal(findIssue(issues.slice(0, 2)), undefined);
+});
+
+// ---- the daily run: flake tickets, and the headline it is judged by (spec #7324) ----
+
+const flakeSuite = (runId, job, ...tests) => ({
+  workflowRun: { databaseId: runId, url: `https://github.com/purlis/purlis/actions/runs/${runId}` },
+  checkRuns: {
+    nodes: [
+      {
+        name: job,
+        conclusion: "SUCCESS",
+        annotations: { nodes: tests.map((test) => ({ title: `Flaky (passed on retry 1): ${test}` })) },
+      },
+    ],
+  },
+});
+
+test("a flake's evidence names the suite that ran it and each run it flaked in, once each", () => {
+  const found = flakeEvidence([
+    flakeSuite(11, "web (part 2/4)", "src/a.test.ts > a"),
+    flakeSuite(12, "web (part 2/4)", "src/a.test.ts > a", "src/b.test.ts > b"),
+  ]);
+  assert.deepEqual(found, [
+    {
+      test: "src/a.test.ts > a",
+      count: 2,
+      jobs: ["web (part 2/4)"],
+      runs: [
+        { id: 11, url: "https://github.com/purlis/purlis/actions/runs/11" },
+        { id: 12, url: "https://github.com/purlis/purlis/actions/runs/12" },
+      ],
+    },
+    {
+      test: "src/b.test.ts > b",
+      count: 1,
+      jobs: ["web (part 2/4)"],
+      runs: [{ id: 12, url: "https://github.com/purlis/purlis/actions/runs/12" }],
+    },
+  ]);
+});
+
+const flakes = flakeEvidence([flakeSuite(11, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+
+test("a new flake is filed as one area:ci ticket naming its test, its suite and its runs", () => {
+  const { create, comment } = planFlakeTickets(flakes, []);
+  assert.equal(comment.length, 0);
+  assert.equal(create.length, 1);
+  assert.equal(create[0].title, "Flaky test: purlis-core::it a_test");
+  assert.deepEqual(create[0].labels, ["area:ci"]);
+  assert.match(create[0].body, /purlis-core::it a_test/);
+  assert.match(create[0].body, /rust tests \(part 1 of 4\)/);
+  assert.match(create[0].body, /actions\/runs\/11/);
+});
+
+test("a flake already filed gets a comment on its ticket, never a second ticket", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const again = flakeEvidence([flakeSuite(13, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+  const plan = planFlakeTickets(again, [{ number: 42, state: "open", title: filed.title, body: filed.body, labels: [{ name: "area:ci" }] }]);
+  assert.equal(plan.create.length, 0);
+  assert.equal(plan.comment.length, 1);
+  assert.equal(plan.comment[0].number, 42);
+  assert.match(plan.comment[0].body, /actions\/runs\/13/);
+  assert.match(plan.comment[0].update, /11,13/);
+});
+
+test("a run a ticket already names is not said again", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const plan = planFlakeTickets(flakes, [{ number: 42, state: "open", title: filed.title, body: filed.body, labels: [{ name: "area:ci" }] }]);
+  assert.deepEqual(plan, { create: [], comment: [] });
+});
+
+test("a ticket is found by its test even when its title was edited, and a closed one is reopened", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const again = flakeEvidence([flakeSuite(13, "rust tests (part 1 of 4)", "purlis-core::it a_test")]);
+  const plan = planFlakeTickets(again, [{ number: 9, state: "closed", title: "renamed by hand", body: filed.body, labels: [{ name: "area:ci" }] }]);
+  assert.equal(plan.create.length, 0);
+  assert.equal(plan.comment[0].number, 9);
+  assert.equal(plan.comment[0].reopen, true);
+});
+
+const prAt = (number, createdAt, mergedAt, ...events) => ({
+  number,
+  createdAt,
+  mergedAt,
+  timelineItems: { nodes: events.map(([type, at, reason]) => ({ __typename: type, createdAt: at, reason })) },
+});
+const ready = (at) => ["ReadyForReviewEvent", at];
+const added = (at) => ["AddedToMergeQueueEvent", at];
+const removed = (at, reason) => ["RemovedFromMergeQueueEvent", at, reason];
+
+test("ready to merged runs from the last time a pull request was marked ready, or from its opening", () => {
+  const prs = [
+    prAt(1, "2026-11-15T00:00:00Z", "2026-11-15T01:00:00Z"), // never a draft: 60 min
+    prAt(2, "2026-11-15T00:00:00Z", "2026-11-15T10:00:00Z", ready("2026-11-15T05:00:00Z"), ready("2026-11-15T08:00:00Z")), // 120 min
+    prAt(3, "2026-11-15T00:00:00Z", "2026-11-15T05:00:00Z", ready("2026-11-15T00:00:00Z")), // 300 min
+  ];
+  assert.deepEqual(readyToMerged(prs), { n: 3, p50: 120 * 60, p90: 300 * 60 });
+});
+
+test("the queue drop rate counts only failed_checks, over every entry, on recorded reasons", () => {
+  const recorded = fixture("queue-reasons.graphql.json").data.search.nodes;
+  // four entries; a merge conflict builds no queue run, so only the first removal is a drop
+  assert.deepEqual(queueDrops(recorded), { entries: 4, drops: 1, rate: 0.25 });
+});
+
+test("no entries is no rate", () => {
+  assert.deepEqual(queueDrops([]), { entries: 0, drops: 0, rate: null });
+});
+
+test("the daily headline leads with ready to merged and the queue drop rate", () => {
+  const text = headline({ ...week, ready: { n: 173, p50: 291 * 60, p90: 1655 * 60 }, drops: { entries: 131, drops: 20, rate: 20 / 131 } });
+  assert.match(text, /^ready to merged p50 291\.0 min \/ p90 1655\.0 min, queue drop rate 15% \(20 of 131 entries\), 6 runs/);
+});
+
+// ---- quarantine: proposals, the cap, and the 14-day escalation (#7333) ----
+
+const flakedIn = (test, ...runIds) =>
+  flakeEvidence(runIds.map((id) => flakeSuite(id, "web (part 1/4)", test))).find((one) => one.test === test);
+const ticketed = (...tests) => tests.map((test, i) => ({ number: 100 + i, state: "open", title: `Flaky test: ${test}`, body: "", labels: [{ name: "area:ci" }] }));
+const TODAY = "2026-11-22";
+
+test("a test that flaked in three runs of the week is proposed for quarantine, one that flaked in two is not", () => {
+  const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3), flakedIn("src/b.test.ts > b", 4, 5)];
+  const proposals = planQuarantine({ flakes: flaky, entries: [], issues: ticketed("src/a.test.ts > a", "src/b.test.ts > b"), openBranches: [], today: TODAY });
+  assert.equal(proposals.length, 1);
+  assert.deepEqual(
+    { id: proposals[0].id, ticket: proposals[0].ticket, added: proposals[0].added },
+    { id: "src/a.test.ts > a", ticket: 100, added: TODAY },
+  );
+  assert.match(proposals[0].branch, /^ci-health\/quarantine-[0-9a-f]{12}$/);
+  assert.match(proposals[0].title, /Quarantine src\/a\.test\.ts > a/);
+  assert.match(proposals[0].body, /#100/);
+});
+
+test("a flake already in the quarantine, or with its proposal already open, is not proposed again", () => {
+  const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3)];
+  const issues = ticketed("src/a.test.ts > a");
+  const entries = [{ id: "src/a.test.ts > a", ticket: 100, added: "2026-11-01" }];
+  assert.deepEqual(planQuarantine({ flakes: flaky, entries, issues, openBranches: [], today: TODAY }), []);
+  const [open] = planQuarantine({ flakes: flaky, entries: [], issues, openBranches: [], today: TODAY });
+  assert.deepEqual(planQuarantine({ flakes: flaky, entries: [], issues, openBranches: [open.branch], today: TODAY }), []);
+});
+
+test("no proposal is made once the quarantine is full", () => {
+  const full = Array.from({ length: 10 }, (_, i) => ({ id: `t${i} x`, ticket: 400 + i, added: TODAY }));
+  const flaky = [flakedIn("src/a.test.ts > a", 1, 2, 3)];
+  assert.deepEqual(planQuarantine({ flakes: flaky, entries: full, issues: ticketed("src/a.test.ts > a"), openBranches: [], today: TODAY }), []);
+});
+
+test("a flake whose ticket is not filed yet waits for the next run", () => {
+  assert.deepEqual(planQuarantine({ flakes: [flakedIn("src/a.test.ts > a", 1, 2, 3)], entries: [], issues: [], openBranches: [], today: TODAY }), []);
+});
+
+test("a ticket is found for a flake by its test id, as the flake tickets are", () => {
+  assert.equal(ticketFor("src/a.test.ts > a", ticketed("src/a.test.ts > a"))?.number, 100);
+  assert.equal(ticketFor("src/zzz.test.ts > z", ticketed("src/a.test.ts > a")), undefined);
+});
+
+test("a proposal's entry is added to the list in a form the quarantine reads back", () => {
+  const text = appendEntry("# the list\n", { id: 'src/a.test.ts > says "hi"', ticket: 100, added: TODAY });
+  const [entry] = parseQuarantine(text);
+  assert.deepEqual(entry, { id: 'src/a.test.ts > says "hi"', ticket: 100, added: TODAY });
+  assert.deepEqual(problemsWith(parseQuarantine(appendEntry(text, { id: "b c", ticket: 101, added: TODAY }))), []);
+});
+
+const entriesOf = (n, added = "2026-11-20") => Array.from({ length: n }, (_, i) => ({ id: `t${i} x`, ticket: 200 + i, added }));
+
+test("more than ten quarantined tests is a red verdict, and ten is not", () => {
+  assert.equal(quarantineVerdict(entriesOf(11), { today: TODAY }).red, true);
+  assert.match(quarantineVerdict(entriesOf(11), { today: TODAY }).message, /11 tests are quarantined/);
+  assert.equal(quarantineVerdict(entriesOf(10), { today: TODAY }).red, false);
+});
+
+test("an entry 14 days old has its ticket labelled for priority, one 13 days old does not", () => {
+  const entries = [
+    { id: "old x", ticket: 300, added: "2026-11-08" },
+    { id: "young x", ticket: 301, added: "2026-11-09" },
+  ];
+  assert.deepEqual(quarantineVerdict(entries, { today: TODAY }).prioritise, [{ ticket: 300, label: PRIORITY_LABEL, days: 14 }]);
+});
+
+// ---- job budgets: a ticket for a job over its budget (#7334) ----
+
+const slow = { id: "rust", p50: 37.5, budget: 30, over: 0.25, n: 40 };
+
+test("a job 25% over its budget is filed as one area:ci ticket naming the job, its p50 and its budget", () => {
+  const { create } = planBudgetTickets([slow], []);
+  assert.equal(create.length, 1);
+  assert.equal(create[0].title, "Job over budget: rust");
+  assert.deepEqual(create[0].labels, ["area:ci"]);
+  assert.match(create[0].body, /rust/);
+  assert.match(create[0].body, /37\.5 min/);
+  assert.match(create[0].body, /budget of 30 min/);
+  assert.match(create[0].body, /ci\/job-budgets\.toml/);
+});
+
+test("a job whose budget ticket is still open gets no second one, and a closed ticket does not hold it", () => {
+  const filed = planBudgetTickets([slow], []).create[0];
+  const open = { number: 5, state: "open", title: filed.title, body: filed.body, labels: [{ name: "area:ci" }] };
+  assert.deepEqual(planBudgetTickets([slow], [open]), { create: [] });
+  assert.equal(planBudgetTickets([slow], [{ ...open, state: "closed" }]).create.length, 1);
+});
+
+test("the report names each job over its budget, and says when none is", () => {
+  assert.match(report({ ...week, over: [slow] }), /### Budgets[\s\S]*\| rust \| 37\.5 \| 30 \| \+25% \|/);
+  assert.match(report({ ...week, over: [] }), /### Budgets[\s\S]*No job is more than 20% over/);
+  assert.doesNotMatch(report(week), /### Budgets/);
 });

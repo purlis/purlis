@@ -122,7 +122,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: operator-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  # On `main` each commit has a group of its own (as in `ci.yml`): a group's one pending run is
+  # cancelled by the next push, and this run is that commit's only record.
+  group: operator-${{ github.event_name == 'schedule' && 'nightly' || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
