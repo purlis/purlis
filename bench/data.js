@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795336261146,
+  "lastUpdate": 1795339195698,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52038,6 +52038,48 @@ window.BENCHMARK_DATA = {
             "value": 102.5377235,
             "unit": "ms",
             "extra": "median of 5 runs: 101.562, 102.384, 102.538, 102.677, 102.700 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "355234864+purlis-purlis-agent[bot]@users.noreply.github.com",
+            "name": "purlis-purlis-agent[bot]",
+            "username": "purlis-purlis-agent[bot]"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3e251a4ae5550cda256489859a6e80c21fc91b59",
+          "message": "The Linux wrap reads a socket path-regex, so a chat under ports = off starts (#7351)\n\n* The Linux wrap reads a socket path-regex, so a chat under ports = off starts\n\nFixes the Linux side of #7105's ports-off socket deny. The ports family off writes\n(deny network-outbound (remote unix-socket (path-regex ...))) to hold purlis's own sockets; the\nLinux supervisor's reader knew only path-literal there and refused the whole profile, so no chat\nstarted. It now reads path-regex as a socket filter (a socket with no path matches none) and\nrefuses, with the pattern and why, one that does not compile: never an allow.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M805NSDGZANCHQ9Z2X780WY7\nPurlis-Persona: steward\n\n* Test the forge-root deny in the Linux reader; say the abstract connect is reached only at profile level\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M805NSDGZANCHQ9Z2X780WY7\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Aaron Yordanyan <aaron.yor@gmail.com>\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T07:54:32Z",
+          "tree_id": "c104c370c01351dd31f6d5196ff873c2ffc74c46",
+          "url": "https://github.com/purlis/purlis/commit/3e251a4ae5550cda256489859a6e80c21fc91b59"
+        },
+        "date": 1795339188690,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.691948,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.652, 0.686, 0.692, 0.696, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.646152999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.393, 16.526, 16.646, 16.761, 16.783 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.180252,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.611, 102.128, 103.180, 103.328, 104.040 ms"
           }
         ]
       }
