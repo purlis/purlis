@@ -74,7 +74,7 @@ const told = (mode: ModeDiffers | null): ChatNoticed => ({
   stuck: null,
   left_work: null,
   mode,
-  sign_in: null,
+  sign_in: [],
 });
 
 const PLAN: ModeDiffers = { set: "default", reported: "plan", harness: "claude" };

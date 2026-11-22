@@ -738,6 +738,15 @@ impl Notices for AppNotices {
         let Some(held) = self.open_at(project) else {
             return false;
         };
+        // A chat that has closed has no pane, and its entry is not made again.
+        if !held
+            .chats()
+            .open_now()
+            .iter()
+            .any(|open| open.session == session)
+        {
+            return false;
+        }
         held.noticed().sign_in_needed(
             session,
             crate::stuck::SignInNeeded {

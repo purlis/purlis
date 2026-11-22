@@ -26,27 +26,30 @@ export function signInNeededCause(session: number, needed: SignInNeeded): string
 }
 
 /**
- * **A forge sign-in this chat needs, on its pane** (ADR 0128, #7290): its route found the
- * project's sign-in for the host missing or ended. A standing fault until the person acts, so a
- * Notice: **Sign in** opens Settings at Accounts, and **Dismiss** puts it away until another host
- * or another state brings it back. A forge that merely could not be reached is never told.
+ * **The forge sign-ins this chat needs, on its pane** (ADR 0128, #7290): its route found the
+ * project's sign-in for a host missing or ended, and each host is a Notice of its own. A standing
+ * fault until the person acts, so a Notice: **Sign in** opens Settings at Accounts, and
+ * **Dismiss** puts that one away until its host's state changes. A forge that merely could not be
+ * reached is never told.
  */
 export function SignInNeededNotice({ plane, session }: { plane: PlaneId; session: number }) {
   const needed = useChatsSelect(useChatsHere(), (states) => signInNeededOf(states, session));
-  const [dismissed, setDismissed] = useState<string | null>(null);
-  if (needed === undefined) return null;
-  const cause = signInNeededCause(session, needed);
-  if (dismissed === cause) return null;
-  return (
-    <Notice
-      cause={cause}
-      at="pane"
-      label="Forge sign-in"
-      tone="trouble"
-      link={{ label: "Sign in", onPress: () => askSettingsLink(plane, ACCOUNTS) }}
-      onDismiss={() => setDismissed(cause)}
-    >
-      {signInNeededSaid(needed)}
-    </Notice>
-  );
+  const [dismissed, setDismissed] = useState<ReadonlySet<string>>(new Set());
+  return needed.map((one) => {
+    const cause = signInNeededCause(session, one);
+    if (dismissed.has(cause)) return null;
+    return (
+      <Notice
+        key={one.host}
+        cause={`forge-sign-in-needed:${session}:${one.host}:${one.ended ? "ended" : "missing"}`}
+        at="pane"
+        label="Forge sign-in"
+        tone="trouble"
+        link={{ label: "Sign in", onPress: () => askSettingsLink(plane, ACCOUNTS) }}
+        onDismiss={() => setDismissed(new Set(dismissed).add(cause))}
+      >
+        {signInNeededSaid(one)}
+      </Notice>
+    );
+  });
 }

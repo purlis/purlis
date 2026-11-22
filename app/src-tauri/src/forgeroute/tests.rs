@@ -1111,6 +1111,50 @@ fn a_successful_sign_in_takes_the_notice_down_and_a_later_loss_is_told_again() {
 }
 
 #[test]
+fn a_host_still_missing_is_told_again_after_another_hosts_sign_in() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+    comment(&scene, "run-1", &params.sentinel);
+    gitlab_note(&scene, "run-1", &params.sentinel);
+    // gitlab.com is signed in: its Notice goes, github.com's is still missing.
+    scene
+        .sign_ins
+        .sign_in("gitlab.com", "alice-gl", GITLAB_TOKEN);
+    gitlab_note(&scene, "run-1", &params.sentinel);
+    assert_eq!(*lock(&scene.notices.ok), vec![(5, "gitlab.com".to_owned())]);
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        lock(&scene.notices.needed).len(),
+        2,
+        "github.com's is not told again while it stands"
+    );
+}
+
+#[test]
+fn missing_then_ended_then_missing_on_one_host_is_told_each_time() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+    comment(&scene, "run-1", &params.sentinel);
+    scene
+        .sign_ins
+        .fail("github.com", "alice", SignInState::Ended);
+    comment(&scene, "run-1", &params.sentinel);
+    lock(&scene.sign_ins.failing).clear();
+    lock(&scene.sign_ins.tokens).clear();
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        *lock(&scene.notices.needed),
+        vec![
+            (5, "github.com".to_owned(), SignInState::Missing),
+            (5, "github.com".to_owned(), SignInState::Ended),
+            (5, "github.com".to_owned(), SignInState::Missing),
+        ]
+    );
+}
+
+#[test]
 fn a_notice_with_no_pane_to_say_it_on_is_not_counted_as_told() {
     let scene = Scene::new();
     lock(&scene.sign_ins.tokens).clear();

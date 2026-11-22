@@ -138,12 +138,12 @@ export type ChatStates = {
 
 /** What the core noticed of one chat (#6014): `null` is "no", for Stuck?, and "not known", for
  *  work left. `mode` is the mode purlis didn't set that it reported (R-243), or `null`.
- *  `signIn` is the forge sign-in its route found missing or ended (ADR 0128), or `null`. */
+ *  `signIn` is the forge sign-ins its route found missing or ended (ADR 0128), one per host. */
 export type Noticed = {
   readonly stuck: string | null;
   readonly leftWork: boolean | null;
   readonly mode: ModeDiffers | null;
-  readonly signIn: SignInNeeded | null;
+  readonly signIn: readonly SignInNeeded[];
 };
 
 /** One task that came to nothing, as its asking chat's item is told it (`Need`'s
@@ -898,14 +898,18 @@ export function modeDiffersOf(states: ChatStates, session: number): ModeDiffers 
   return states.noticed?.[session]?.mode ?? undefined;
 }
 
-/** **The forge sign-in chat `session`'s route found missing or ended** (ADR 0128, #7290), or
- *  nothing: the host, and whether it ended. */
-export function signInNeededOf(states: ChatStates, session: number): SignInNeeded | undefined {
-  return states.noticed?.[session]?.signIn ?? undefined;
+const NO_SIGN_INS: readonly SignInNeeded[] = [];
+
+/** **The forge sign-ins chat `session`'s route found missing or ended** (ADR 0128, #7290), one
+ *  per host: the host, and whether it ended. Empty when none. */
+export function signInNeededOf(states: ChatStates, session: number): readonly SignInNeeded[] {
+  return states.noticed?.[session]?.signIn ?? NO_SIGN_INS;
 }
 
-const sameSignIn = (a: SignInNeeded | null, b: SignInNeeded | null) =>
-  a === b || (a !== null && b !== null && a.host === b.host && a.ended === b.ended);
+const sameSignIns = (a: readonly SignInNeeded[], b: readonly SignInNeeded[]) =>
+  a === b ||
+  (a.length === b.length &&
+    a.every((one, i) => one.host === b[i].host && one.ended === b[i].ended));
 
 const sameMode = (a: ModeDiffers | null, b: ModeDiffers | null) =>
   a === b ||
@@ -923,14 +927,14 @@ export function noticed(states: ChatStates, told: ChatNoticed): ChatStates {
     stuck: told.stuck,
     leftWork: told.left_work,
     mode: told.mode ?? null,
-    signIn: told.sign_in ?? null,
+    signIn: told.sign_in ?? NO_SIGN_INS,
   };
   if (
     was !== undefined &&
     was.stuck === now.stuck &&
     was.leftWork === now.leftWork &&
     sameMode(was.mode, now.mode) &&
-    sameSignIn(was.signIn, now.signIn)
+    sameSignIns(was.signIn, now.signIn)
   )
     return states;
   return { ...states, noticed: { ...states.noticed, [told.session]: now } };

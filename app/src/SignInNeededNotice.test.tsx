@@ -8,7 +8,7 @@ import type { SignInNeeded } from "./bindings";
 import { SignInNeededNotice } from "./SignInNeededNotice";
 
 /** What the core last told of chat 4's sign-in, which the test sets and the pane re-reads. */
-const held = vi.hoisted(() => ({ needed: undefined as SignInNeeded | undefined }));
+const held = vi.hoisted(() => ({ needed: [] as SignInNeeded[] }));
 const listeners = vi.hoisted(() => new Set<() => void>());
 
 vi.mock("./chatState", async (importOriginal) => {
@@ -22,7 +22,7 @@ vi.mock("./chatState", async (importOriginal) => {
           listeners.add(on);
           return () => listeners.delete(on);
         },
-        () => select({ noticed: held.needed ? { 4: { signIn: held.needed } } : {} }),
+        () => select({ noticed: { 4: { signIn: held.needed } } }),
       ),
   };
 });
@@ -30,7 +30,7 @@ vi.mock("./chatState", async (importOriginal) => {
 const askSettingsLink = vi.hoisted(() => vi.fn());
 vi.mock("./settings/links", () => ({ askSettingsLink }));
 
-const tell = (needed: SignInNeeded | undefined) =>
+const tell = (...needed: SignInNeeded[]) =>
   act(() => {
     held.needed = needed;
     for (const on of listeners) on();
@@ -38,7 +38,7 @@ const tell = (needed: SignInNeeded | undefined) =>
 
 afterEach(() => {
   cleanup();
-  held.needed = undefined;
+  held.needed = [];
   askSettingsLink.mockClear();
 });
 
@@ -49,14 +49,14 @@ describe("SignInNeededNotice", () => {
   });
 
   it("opens Settings at Accounts on Sign in", async () => {
-    held.needed = { host: "github.com", ended: false };
+    held.needed = [{ host: "github.com", ended: false }];
     render(<SignInNeededNotice plane="/p" session={4} />);
     await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(askSettingsLink).toHaveBeenCalledWith("/p", { group: "you.accounts" });
   });
 
   it("is put away by Dismiss and brought back by a new cause", async () => {
-    held.needed = { host: "github.com", ended: false };
+    held.needed = [{ host: "github.com", ended: false }];
     render(<SignInNeededNotice plane="/p" session={4} />);
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText(/github\.com/)).toBeNull();
@@ -65,11 +65,24 @@ describe("SignInNeededNotice", () => {
     expect(await screen.findByText(/Your sign-in to github\.com has ended/)).toBeTruthy();
   });
 
-  it("goes when the core takes the sign-in down", () => {
-    held.needed = { host: "github.com", ended: false };
+  it("draws a Notice per host, and only the signed-in host's goes", () => {
+    held.needed = [
+      { host: "github.com", ended: false },
+      { host: "gitlab.com", ended: true },
+    ];
     render(<SignInNeededNotice plane="/p" session={4} />);
     expect(screen.getByText(/no sign-in to github\.com/)).toBeTruthy();
-    tell(undefined);
+    expect(screen.getByText(/sign-in to gitlab\.com has ended/)).toBeTruthy();
+    tell({ host: "github.com", ended: false });
+    expect(screen.getByText(/no sign-in to github\.com/)).toBeTruthy();
+    expect(screen.queryByText(/gitlab\.com/)).toBeNull();
+  });
+
+  it("goes when the core takes the sign-in down", () => {
+    held.needed = [{ host: "github.com", ended: false }];
+    render(<SignInNeededNotice plane="/p" session={4} />);
+    expect(screen.getByText(/no sign-in to github\.com/)).toBeTruthy();
+    tell();
     expect(screen.queryByText(/github\.com/)).toBeNull();
   });
 });

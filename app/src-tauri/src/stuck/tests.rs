@@ -98,8 +98,8 @@ fn a_missing_sign_in_is_told_to_the_window_once_and_goes_with_its_chat() {
         told.lock()
             .expect("held")
             .last()
-            .and_then(|one| one.sign_in.clone()),
-        Some(needed)
+            .map(|one| one.sign_in.clone()),
+        Some(vec![needed])
     );
 
     // The sign-in ends: that is another cause, told again.
@@ -137,5 +137,46 @@ fn a_credential_for_the_host_takes_its_sign_in_notice_down_and_another_hosts_sta
     noticed.sign_in_ok(CHAT, "github.com");
     let told = told.lock().expect("held");
     assert_eq!(told.len(), 2, "taken down once");
-    assert_eq!(told.last().and_then(|one| one.sign_in.clone()), None);
+    assert_eq!(told.last().map(|one| one.sign_in.clone()), Some(vec![]));
+}
+
+#[test]
+fn a_chat_holds_one_sign_in_per_host_and_one_hosts_fix_leaves_the_other_shown() {
+    let (noticed, told) = noticed();
+    let needs = |host: &str| SignInNeeded {
+        host: host.to_owned(),
+        ended: false,
+    };
+    noticed.sign_in_needed(CHAT, needs("github.com"));
+    noticed.sign_in_needed(CHAT, needs("gitlab.com"));
+    let shown = |noticed: &Noticed| {
+        noticed
+            .all()
+            .into_iter()
+            .find(|one| one.session == CHAT)
+            .map(|one| one.sign_in)
+    };
+    assert_eq!(
+        shown(&noticed),
+        Some(vec![needs("github.com"), needs("gitlab.com")])
+    );
+
+    noticed.sign_in_ok(CHAT, "gitlab.com");
+    assert_eq!(shown(&noticed), Some(vec![needs("github.com")]));
+    assert_eq!(
+        told.lock()
+            .expect("held")
+            .last()
+            .map(|one| one.sign_in.clone()),
+        Some(vec![needs("github.com")]),
+        "the window is told the one that is left"
+    );
+}
+
+#[test]
+fn a_closed_chat_gets_no_entry_back_from_a_fix_or_an_unchanged_look() {
+    let (noticed, _) = noticed();
+    noticed.sign_in_ok(CHAT, "github.com");
+    noticed.fine(CHAT);
+    assert!(noticed.all().is_empty());
 }

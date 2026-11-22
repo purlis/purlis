@@ -8390,10 +8390,11 @@ export type ChatNoticed = {
 	 */
 	mode: ModeDiffers | null,
 	/**
-	 *  The forge sign-in its route found missing or ended (ADR 0128, #7290): a standing fault its
-	 *  pane says in a Notice with a way into Settings › You › Accounts. None until it is found.
+	 *  The forge sign-ins its route found missing or ended (ADR 0128, #7290), one per host and
+	 *  in host order: each a standing fault its pane says in a Notice with a way into Settings ›
+	 *  You › Accounts. Empty until one is found.
 	 */
-	sign_in: SignInNeeded | null,
+	sign_in: SignInNeeded[],
 };
 
 /**  A chat on a device, as its row names it. */

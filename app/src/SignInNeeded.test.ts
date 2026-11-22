@@ -7,7 +7,7 @@ import { noticed, nothingKnown, signInNeededOf } from "./chatState";
 import { signInNeededCause, signInNeededSaid } from "./SignInNeededNotice";
 
 /** What the core noticed of chat 4: nothing of Stuck?, work left or mode, and `sign_in` as given. */
-const told = (sign_in: ChatNoticed["sign_in"]): ChatNoticed => ({
+const told = (...sign_in: ChatNoticed["sign_in"]): ChatNoticed => ({
   plane: "/p",
   session: 4,
   stuck: null,
@@ -19,14 +19,24 @@ const told = (sign_in: ChatNoticed["sign_in"]): ChatNoticed => ({
 describe("a forge sign-in a chat needs", () => {
   it("is held for its chat once the core tells it, and for no other chat", () => {
     const states = noticed(nothingKnown, told({ host: "github.com", ended: false }));
-    expect(signInNeededOf(states, 4)).toEqual({ host: "github.com", ended: false });
-    expect(signInNeededOf(states, 5)).toBeUndefined();
+    expect(signInNeededOf(states, 4)).toEqual([{ host: "github.com", ended: false }]);
+    expect(signInNeededOf(states, 5)).toEqual([]);
   });
 
   it("changes the states only when the host or the state changed", () => {
     const first = noticed(nothingKnown, told({ host: "github.com", ended: false }));
     expect(noticed(first, told({ host: "github.com", ended: false }))).toBe(first);
     expect(noticed(first, told({ host: "github.com", ended: true }))).not.toBe(first);
+  });
+
+  it("holds one sign-in per host, and drops one when the core stops telling it", () => {
+    const both = noticed(
+      nothingKnown,
+      told({ host: "github.com", ended: false }, { host: "gitlab.com", ended: true }),
+    );
+    expect(signInNeededOf(both, 4).map((one) => one.host)).toEqual(["github.com", "gitlab.com"]);
+    const one = noticed(both, told({ host: "github.com", ended: false }));
+    expect(signInNeededOf(one, 4)).toEqual([{ host: "github.com", ended: false }]);
   });
 
   it("says which forge, whether it is missing or ended, and where to sign in", () => {

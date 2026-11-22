@@ -1104,6 +1104,16 @@ describe("the window's standing lines", () => {
     expect(drawn[0].attrs).toMatch(/\b(?:fixes|link|onDismiss)=/);
   });
 
+  it("include the forge-sign-in-needed Notice, with its way out", () => {
+    // ADR 0128 (#7290): a forge sign-in a chat's route found missing or ended is a standing
+    // fault, drawn as a Notice with its cause key and a way out, never as a line by hand.
+    const drawn = sources()
+      .flatMap(({ text }) => tags(text, (tag) => tag === "Notice"))
+      .filter(({ attrs }) => /cause=\{`forge-sign-in-needed:/.test(attrs));
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0].attrs).toMatch(/\b(?:fixes|link|onDismiss)=/);
+  });
+
   it("would be caught if one came back", () => {
     // The readers above are what the guard rests on, so they are held to what a screen writes.
     const lines = (source: string) =>

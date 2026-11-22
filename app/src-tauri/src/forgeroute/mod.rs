@@ -474,13 +474,14 @@ pub struct ProjectCredentials {
     project: PathBuf,
     seams: Seams,
     trouble: Arc<SignInTrouble>,
-    /// What is already told: per open chat session, host and state, so a restarted chat's new
-    /// session, a second host and a sign-in that ends later are each told.
-    told: Arc<Mutex<HashSet<Told>>>,
+    /// What is already told, mirroring what the pane shows: per open chat session and host, the
+    /// state told. So a restarted chat's new session, a second host, and a state that changes
+    /// (missing, ended, missing again) are each told.
+    told: Arc<Mutex<Told>>,
 }
 
-/// One Notice told: the open chat session, the host and why.
-type Told = (u32, String, SignInState);
+/// The Notices told: the state of each open chat session's host.
+type Told = HashMap<(u32, String), SignInState>;
 
 impl ProjectCredentials {
     /// A credential was given for `host`: a Notice told to this chat for it is taken down.
@@ -490,9 +491,7 @@ impl ProjectCredentials {
         };
         let cleared = {
             let mut told = self.told.lock().unwrap_or_else(PoisonError::into_inner);
-            let before = told.len();
-            told.retain(|(s, h, _)| !(*s == session && h == host));
-            told.len() != before
+            told.remove(&(session, host.to_owned())).is_some()
         };
         if cleared {
             self.seams.notices.sign_in_ok(&self.project, session, host);
@@ -548,12 +547,13 @@ impl CredentialSource for ProjectCredentials {
         if state != SignInState::Unavailable
             && let Some(session) = self.sessions.session(&self.run)
         {
-            let key = (session, host.clone(), state);
-            let new = !self
+            let key = (session, host.clone());
+            let new = self
                 .told
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .contains(&key);
+                .get(&key)
+                != Some(&state);
             if new
                 && self
                     .seams
@@ -563,7 +563,16 @@ impl CredentialSource for ProjectCredentials {
                 self.told
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .insert(key);
+                    .insert(key, state);
+                // The chat may have closed while the pane was told, after its told state was
+                // forgotten: nothing of it stays, here or on its pane.
+                if !self.sessions.is_open(session) {
+                    self.told
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .remove(&(session, host.clone()));
+                    self.seams.notices.sign_in_ok(&self.project, session, &host);
+                }
             }
         }
         Err(CredentialError::Unavailable)
@@ -636,7 +645,7 @@ pub struct ForgeRoutes {
     seams: Seams,
     live: Mutex<HashMap<String, Live>>,
     sessions: Arc<Mutex<Sessions>>,
-    told: Arc<Mutex<HashSet<Told>>>,
+    told: Arc<Mutex<Told>>,
 }
 
 impl ForgeRoutes {
@@ -652,7 +661,7 @@ impl ForgeRoutes {
             seams,
             live: Mutex::new(HashMap::new()),
             sessions: Arc::new(Mutex::new(Sessions::default())),
-            told: Arc::new(Mutex::new(HashSet::new())),
+            told: Arc::new(Mutex::new(Told::new())),
         }
     }
 
@@ -909,7 +918,7 @@ impl ForgeRoutes {
         self.told
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .retain(|(session, _, _)| !ended.contains(session));
+            .retain(|(session, _), _| !ended.contains(session));
     }
 
     fn sessions(&self) -> std::sync::MutexGuard<'_, Sessions> {
