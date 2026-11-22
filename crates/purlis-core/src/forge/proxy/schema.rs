@@ -16,7 +16,7 @@
 //! are not on any table: a type that reaches *other* repos' content (`search`, `organization`,
 //! `user(login:)`, `topic`, `enterprise`, a fork's `forks`, GitLab's `group` and `namespace`), a
 //! type that holds the repo's administration (collaborators, rulesets, webhooks, keys, secrets,
-//! variables, protection rules, environments, merge queues), and any field this list was not
+//! variables, protection rules, environments, a merge queue's configuration), and any field this list was not
 //! told of. A field GitHub or GitLab adds tomorrow is refused until someone reads it and adds it.
 //!
 //! **A repo reached from an object** (a pull request's head repository, a fork's parent, an
@@ -295,6 +295,16 @@ const GITHUB: Table = &[
         ("contactLinks", Obj("ContactLink")),
         ("fundingLinks", Obj("FundingLink")),
         ("codeOfConduct", Obj("CodeOfConduct")),
+        ("mergeQueue", Obj("MergeQueue")),
+    ]),
+    // The state of a merge queue, read only (#7358): who is in it and where. Its `configuration`
+    // (the rule's settings) is left out. Enqueueing and dequeueing stay refused as merges.
+    ("MergeQueue", &["id", "url", "nextEntryEstimatedTimeToMerge"], &[
+        ("entries", Conn("MergeQueueEntry")),
+    ]),
+    ("MergeQueueEntry", &["id", "position", "state", "enqueuedAt", "estimatedTimeToMerge", "solo", "jump"], &[
+        ("enqueuer", Obj("Actor")),
+        ("pullRequest", Obj("PullRequest")),
     ]),
     ("IssueOrPullRequest", &["id", "number", "title", "url", "state", "body"], &[]),
     ("SearchResultItem", &[], &[]),
@@ -346,7 +356,9 @@ const GITHUB: Table = &[
         "authorAssociation", "isReadByViewer", "viewerCanUpdate", "viewerCanReact",
         "viewerDidAuthor", "viewerSubscription", "viewerCanApplySuggestion",
         "viewerCanDeleteHeadRef", "includesCreatedEdit", "lastEditedAt", "publishedAt",
+        "isInMergeQueue", "isMergeQueueEnabled",
     ], &[
+        ("mergeQueueEntry", Obj("MergeQueueEntry")),
         ("author", Obj("Actor")),
         ("editor", Obj("Actor")),
         ("mergedBy", Obj("Actor")),

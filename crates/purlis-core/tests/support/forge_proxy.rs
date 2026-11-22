@@ -203,6 +203,21 @@ impl Scene {
         )
     }
 
+    /// `chat-a` sends a write whose `Content-Type` the test names, whatever the body looks like.
+    pub fn send_typed(&self, host: &str, target: &str, content_type: &str, body: &[u8]) -> Outcome {
+        let head = RequestHead::new("POST", host, 443, target);
+        let mut headers = headers(Auth::Bearer(self.a_sentinel.expose()));
+        headers.push(("Content-Type".into(), content_type.into()));
+        self.proxy.handle(
+            &self.a,
+            &Inbound {
+                head: &head,
+                headers: &headers,
+                body,
+            },
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn send_as(
         &self,

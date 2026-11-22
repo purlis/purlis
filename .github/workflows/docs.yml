@@ -28,8 +28,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: docs-${{ github.ref }}
-  # As in ci.yml: a newer push supersedes a PR's run, and every run on `main` is kept.
+  group: docs-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  # As in ci.yml: a newer push supersedes a PR's run, and every run on `main` is kept: it is
+  # grouped by its commit there, because a group's one pending run is cancelled by the next push.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
