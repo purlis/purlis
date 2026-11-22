@@ -129,9 +129,7 @@ describe("the project's policy (Q308a)", () => {
   it("says the merge opt-in as a change of the forge route, held until accepted", async () => {
     core({
       ...QUIET,
-      waiting: [
-        { family: "merges through the forge route", accepted: "held", committed: "log" },
-      ],
+      waiting: [{ family: "merges through the forge route", accepted: "held", committed: "log" }],
     });
     render(<ProjectPolicyNotice plane={PLANE} canAccept />);
     await waitFor(() =>
