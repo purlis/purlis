@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795370275763,
+  "lastUpdate": 1795371775540,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52290,6 +52290,48 @@ window.BENCHMARK_DATA = {
             "value": 102.27927650000001,
             "unit": "ms",
             "extra": "median of 5 runs: 102.079, 102.201, 102.279, 102.574, 103.029 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dea276e096d37023ad803b2780d648ad78ec0d75",
+          "message": "release.yml: give the macOS build 150 minutes (run 45030876196 hit 120) (#7378)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8240VAX9RDYNEDT9QAJGPZN\nPurlis-Persona: steward",
+          "timestamp": "2026-11-22T17:47:27Z",
+          "tree_id": "8a700b465667c4c159e1f85d0b89041eedc97a40",
+          "url": "https://github.com/purlis/purlis/commit/dea276e096d37023ad803b2780d648ad78ec0d75"
+        },
+        "date": 1795371770017,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5627770000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.547, 0.551, 0.563, 0.568, 0.576 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.233325,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.170, 16.200, 16.233, 16.252, 16.394 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1723485,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.055, 101.062, 101.172, 101.737, 101.747 ms"
           }
         ]
       }
