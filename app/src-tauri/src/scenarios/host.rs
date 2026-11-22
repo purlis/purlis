@@ -916,6 +916,10 @@ impl Scenario {
             &shown.digest,
         )
         .expect("the Allow is kept");
+        // The Allow is the person's, made in setup: the leftover-grant check knows it was made.
+        scenario
+            .ledger
+            .made_in_setup(&scenario, crate::sandboxing::GrantWhat::PersonaHosts);
         Some(scenario)
     }
 
