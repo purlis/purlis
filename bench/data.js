@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795356509165,
+  "lastUpdate": 1795359391487,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52122,6 +52122,48 @@ window.BENCHMARK_DATA = {
             "value": 102.5127795,
             "unit": "ms",
             "extra": "median of 5 runs: 101.308, 101.837, 102.513, 102.967, 103.501 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9609e49d47bd09e1cbcb121c6e4ca83b1d07692c",
+          "message": "Onboarding: a late read before any press releases the hold, so the steps swap in (e2e flake) (#7345)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M7X6SP5TY6FTGY66JGMYJZKK\nPurlis-Persona: steward\n\n\nHypothesis confirmed: a place read answering after the 400 ms deadline froze guidingHeld from memory and never corrected it.",
+          "timestamp": "2026-11-22T14:17:56Z",
+          "tree_id": "e8c96cfad1c696a6bd199b03c924f215be44b2f5",
+          "url": "https://github.com/purlis/purlis/commit/9609e49d47bd09e1cbcb121c6e4ca83b1d07692c"
+        },
+        "date": 1795359384692,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6870645,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.674, 0.682, 0.687, 0.695, 0.697 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.701490999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.630, 16.652, 16.701, 16.733, 16.810 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.48335599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.742, 101.955, 102.483, 102.506, 102.805 ms"
           }
         ]
       }
