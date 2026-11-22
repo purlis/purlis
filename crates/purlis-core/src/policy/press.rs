@@ -454,6 +454,9 @@ pub enum Reason {
     PastTheCap,
     /// A tightening was taken out of the You level's local file: no commit, no author.
     LocalRemoval,
+    /// An update of purlis took a forbid out of the shipped default, or loosened one: no commit and
+    /// no author, since nothing in the project changed (spec §7.8).
+    ShippedDefault,
     /// The sealed store was lost: diffed against the shipped default.
     LostStore,
 }
@@ -478,7 +481,8 @@ pub struct Press {
     pub reason: Reason,
     /// What changes against the policy in force.
     pub diff: Diff,
-    /// The commit accepted: none for a local file's removal, which has none.
+    /// The commit accepted: none for a local file's removal or a shipped default's update, which
+    /// have none.
     pub commit: Option<Commit>,
     /// What was lost, for a [`Reason::LostStore`].
     pub lost: Option<RePress>,
@@ -492,6 +496,9 @@ fn git_out(root: &Path, args: &[&str]) -> Option<String> {
     let run = crate::worktree::git::run_as_written(root, args, GIT_WAIT).ok()?;
     run.ok().then(|| run.out.trim().to_owned())
 }
+
+/// The row for a sealed version whose shipped default does not read: an unread side, which denies.
+const UNREAD_SHIPPED: &str = "the shipped default this was judged under does not read";
 
 /// The commit `HEAD` names, read as history was written.
 fn commit_of(root: &Path) -> Option<Commit> {
@@ -547,6 +554,10 @@ pub fn of_head(
         held.push(none);
     } else {
         match force::accepted_in(entries) {
+            Ok(Some(accepted)) if !accepted.reads() => {
+                unread.push(UNREAD_SHIPPED);
+                held.push(none);
+            }
             Ok(accepted) => held.push(accepted.unwrap_or(none)),
             Err(()) => {
                 unread.push("the accepted copy does not read");
@@ -555,29 +566,66 @@ pub fn of_head(
         }
         for one in force::floor_in(entries) {
             match one {
+                Ok(version) if !version.reads() => unread.push(UNREAD_SHIPPED),
                 Ok(version) => held.push(version),
                 Err(()) => unread.push("a sealed version of the accepted floor does not read"),
             }
         }
     }
-    let diff = diff_all(sources, &held, &unread, version);
+    let mut diff = diff_all(sources, &held, &unread, version);
+    // What the project alone changes, each base under the shipped default this build ships: a
+    // shipped default's own change is the update's, never a commit's (spec §7.8).
+    let alone: Vec<Version> = held.iter().map(Version::unpinned).collect();
+    if diff.waits() && diff != diff_all(sources, &alone, &unread, version) {
+        diff.other.push(OtherChange {
+            part: format!(
+                "the shipped default, as purlis {} ships it",
+                env!("CARGO_PKG_VERSION")
+            ),
+        });
+    }
     // What the commit itself loosens, the local file left out of both sides: a commit's loosening
     // and a local file's removal are different presses (Q322).
-    let committed: Vec<Version> = held.iter().map(Version::committed).collect();
-    let commit_waits = diff_all(sources, &committed, &unread, &version.committed()).waits();
+    let committed_after = version.committed();
+    let commit_waits = diff_all(
+        sources,
+        &alone.iter().map(Version::committed).collect::<Vec<_>>(),
+        &unread,
+        &committed_after,
+    )
+    .waits();
+    let shipped_waits = diff_all(
+        sources,
+        &held.iter().map(Version::committed).collect::<Vec<_>>(),
+        &unread,
+        &committed_after,
+    )
+    .waits();
     let reason = if lost_store {
         Reason::LostStore
     } else if past_the_cap {
         Reason::PastTheCap
     } else if commit_waits {
         Reason::Loosening
+    } else if shipped_waits {
+        Reason::ShippedDefault
     } else if !diff.local.is_empty() {
         Reason::LocalRemoval
     } else {
         return None;
     };
+    // A commit is named only where one could have caused the press. Past the cap, a base that
+    // holds the project's own text under another shipped default says an update did (it counts
+    // toward the cap, spec §7.8), and no commit is blamed.
     let commit = match reason {
-        Reason::LocalRemoval => None,
+        Reason::LocalRemoval | Reason::ShippedDefault => None,
+        Reason::PastTheCap
+            if held
+                .iter()
+                .any(|base| base.unpinned().committed() == version.unpinned().committed()) =>
+        {
+            None
+        }
         _ => commit_of(root),
     };
     Some(Press {
@@ -602,10 +650,14 @@ fn digest_of(
     commit: Option<&Commit>,
 ) -> String {
     use sha2::Digest;
+    // A base that is the project as shown says nothing a row could: the app seals the version it
+    // sees, so the floor may gain exactly that between the press shown and Accept.
+    let shown = version.pinned();
+    let bases: Vec<&Version> = bases.iter().filter(|base| **base != shown).collect();
     let text = format!(
         "{reason:?}\n{}\n{}\n{diff:?}\n{}",
         serde_json::to_string(version).expect("a version is JSON"),
-        serde_json::to_string(bases).expect("versions are JSON"),
+        serde_json::to_string(&bases).expect("versions are JSON"),
         commit.map_or("", |one| one.sha.as_str()),
     );
     crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
@@ -668,6 +720,16 @@ fn with_sources<T>(root: &Path, then: impl FnOnce(&Sources<'_>) -> T) -> T {
     })
 }
 
+/// **The shipped rules an earlier purlis shipped and this one does not, that the plane at `root`
+/// holds a rule of the same `@id` for** ([`force::orphaned_replacements`]), judged with the same
+/// sources as the press, the Organisation in force included.
+pub fn orphaned(root: &Path) -> Vec<String> {
+    let standing = answers::standing(root);
+    with_sources(root, |sources| {
+        force::orphaned_replacements(sources, &standing)
+    })
+}
+
 /// **The press the plane at `root` raises now**, none where nothing waits.
 pub fn of(root: &Path) -> Option<Press> {
     let standing = answers::standing(root);
@@ -697,7 +759,9 @@ pub fn accept(root: &Path, press: &answers::Press, shown: &str) -> io::Result<()
              it again",
         ));
     }
-    let text = serde_json::to_string(version).expect("a version is JSON");
+    // Accepted under the shipped default this build ships, for good: a later purlis that loosens
+    // it waits for its own press.
+    let text = serde_json::to_string(&version.pinned()).expect("a version is JSON");
     if standing.is_deny() {
         let mut keep: Vec<answers::Entry> = Vec::new();
         // A commit past the cap leaves a store that verified: what it held but the floor, the

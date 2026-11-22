@@ -32,6 +32,7 @@ const meta = {
       waiting: [],
       refused: [],
       not_in_force: [],
+      orphaned: [],
       unsealed: false,
       digest: "d1",
       template: "watch",

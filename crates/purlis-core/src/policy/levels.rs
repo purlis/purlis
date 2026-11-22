@@ -1549,6 +1549,8 @@ pub struct Held<'a> {
     pub rules: Option<&'a str>,
     /// The You level's local file's text, which only tightens.
     pub local: Option<&'a str>,
+    /// The shipped default's text as the version was held under it; none is this build's.
+    pub shipped: Option<&'a str>,
 }
 
 /// **Loads every level's files** (spec §4, §5): the project as committed at the plane root's
@@ -1556,7 +1558,7 @@ pub struct Held<'a> {
 pub fn load(sources: &Sources<'_>) -> Loaded {
     let names: Vec<&'static str> = crate::names::PLANE_MANIFEST.spellings().collect();
     let committed = committed_files(sources.root, &[&names, &[RULES_FILE]]);
-    load_with(sources, committed, None)
+    load_with(sources, committed, None, None)
 }
 
 /// **Loads the policy of one version a project was held at** ([`Held`]): its own text for the
@@ -1582,7 +1584,12 @@ pub fn load_held(sources: &Sources<'_>, held: &Held<'_>) -> Loaded {
         },
         None => Committed::Absent,
     };
-    load_with(sources, vec![settings, rules], Some(held.local))
+    load_with(
+        sources,
+        vec![settings, rules],
+        Some(held.local),
+        held.shipped,
+    )
 }
 
 /// [`load`], the project's two files as `committed` says them and the local file as `held_local`
@@ -1591,6 +1598,7 @@ fn load_with(
     sources: &Sources<'_>,
     mut committed: Vec<Committed>,
     held_local: Option<Option<&str>>,
+    shipped_text: Option<&str>,
 ) -> Loaded {
     let mut notices = Vec::new();
     let mut broken = false;
@@ -1731,7 +1739,27 @@ fn load_with(
 
     // ── the rules, layered ───────────────────────────────────────────────────────────────
     let shipped = File::shipped_default().name;
-    let mut rules: Vec<Rule> = read_file(&File::shipped_default()).unwrap_or_default();
+    // The shipped default this version was held under, or this build's (spec §7.8).
+    let shipped_file = File {
+        text: shipped_text.unwrap_or(File::shipped_default().text),
+        ..File::shipped_default()
+    };
+    // A sealed text that does not read is never this build's default in its place: callers judge
+    // such a version as an unread side ([`crate::policy::shipped_reads`]); if one gets here anyway it
+    // runs under the full sandbox, with the Notice.
+    let mut rules: Vec<Rule> = match read_file(&shipped_file) {
+        Ok(rules) => rules,
+        Err(_) => {
+            broken = true;
+            notices.push(Notice {
+                file: shipped.to_owned(),
+                line: 1,
+                what: "The shipped default this was judged under does not read: this build's runs in its place, under the full sandbox".into(),
+                rules: Vec::new(),
+            });
+            read_file(&File::shipped_default()).unwrap_or_default()
+        }
+    };
     // What runs where the policy can't be assembled: the shipped default and the
     // Organisation's rules, as the Organisation's own modes leave them (S4).
     let mut fallback = Vec::new();

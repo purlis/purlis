@@ -11260,7 +11260,7 @@ export type PolicyOverride = {
 
 /**  **The loosening press** (M75-15): what Accept would accept, against the policy in force. */
 export type PolicyPress = {
-	/**  Why it is raised: `loosening`, `past-the-cap`, `local-removal` or `lost-store`. */
+	/**  Why it is raised: `loosening`, `past-the-cap`, `local-removal`, `shipped-default` or `lost-store`. */
 	reason: string,
 	/**  Each rule that differs. */
 	rules: PressRule[],
@@ -11333,6 +11333,11 @@ export type PolicyState = {
 	 *  tightening from your own file or a lost store waits for Accept.
 	 */
 	press: PolicyPress | null,
+	/**
+	 *  Each shipped rule an earlier purlis shipped and this one does not, that the project holds a
+	 *  rule of the same `@id` for (M75-17): it stays as a plain rule of the project.
+	 */
+	orphaned: string[],
 };
 
 /**  One family the project now runs looser than you accepted, or one dispatch deny it lifted. */

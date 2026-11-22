@@ -79,6 +79,13 @@ pub struct Version {
     /// The You level's local file's text, which only tightens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local: Option<String>,
+    /// **The shipped default this version was judged under** (spec §7.8): its text as the purlis
+    /// that sealed it shipped it, so a later purlis that takes a forbid out of its default does not
+    /// loosen what was accepted, and an earlier one does not drop what was sealed. None is the
+    /// shipped default of the build that reads it (what `HEAD` is judged by, and a version sealed
+    /// before this was kept).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shipped: Option<String>,
 }
 
 impl Default for Version {
@@ -92,6 +99,7 @@ impl Default for Version {
             workspaces: Vec::new(),
             personas: Vec::new(),
             local: None,
+            shipped: None,
         }
     }
 }
@@ -159,6 +167,7 @@ impl Version {
             workspaces: folders_at(root, sha, "workspaces")?,
             personas: folders_at(root, sha, "personas")?,
             local,
+            shipped: None,
         })
     }
 
@@ -170,8 +179,36 @@ impl Version {
         }
     }
 
+    /// This version as it is sealed: judged under the shipped default of this build for good.
+    pub(super) fn pinned(&self) -> Self {
+        Self {
+            shipped: Some(
+                self.shipped
+                    .clone()
+                    .unwrap_or_else(|| super::DEFAULT.to_owned()),
+            ),
+            ..self.clone()
+        }
+    }
+
+    /// This version judged under the shipped default of the build that reads it again: what the
+    /// project alone says, the shipped default's own changes left out.
+    pub(super) fn unpinned(&self) -> Self {
+        Self {
+            shipped: None,
+            ..self.clone()
+        }
+    }
+
+    /// Whether the shipped default this version was judged under reads. None is this build's,
+    /// which does; a sealed text that does not is an unread side, never this build's in its place.
+    pub(super) fn reads(&self) -> bool {
+        self.shipped.as_deref().is_none_or(super::shipped_reads)
+    }
+
     fn held(&self) -> Held<'_> {
         Held {
+            shipped: self.shipped.as_deref(),
             settings: self
                 .settings
                 .as_deref()
@@ -508,6 +545,9 @@ fn side(
     request: &Request<'_>,
     floor: Option<&Resolved>,
 ) -> Decision {
+    if !version.reads() {
+        return unread(request, floor);
+    }
     decided(&loaded_for(sources, version), version, root, request, floor)
 }
 
@@ -689,6 +729,7 @@ pub fn judge(
             } else {
                 version.committed()
             }
+            .pinned()
         })
         .filter(|version| {
             sealable(standing)
@@ -702,6 +743,51 @@ pub fn judge(
             local_tightens,
         }),
     )
+}
+
+/// **The shipped rules an earlier purlis shipped, that this one no longer does, which the project
+/// now holds a rule of the same `@id` for** (spec §7.8, Q316.10): the project's replacement stays
+/// as a plain rule of its own, and the window says so. Found in the shipped defaults the accepted
+/// copy and the floor were judged under.
+pub fn orphaned_replacements(sources: &Sources<'_>, standing: &Standing) -> Vec<String> {
+    let entries: &[answers::Entry] = if standing.is_deny() {
+        &standing.kept
+    } else {
+        &standing.entries
+    };
+    let shipped_now = super::shipped_ids(super::DEFAULT);
+    let held = accepted_in(entries)
+        .ok()
+        .flatten()
+        .into_iter()
+        .chain(floor_in(entries).into_iter().flatten());
+    // The ids an earlier default shipped and this one does not: most planes have none, and then
+    // the project is not loaded at all.
+    let mut dropped = BTreeSet::new();
+    for version in held {
+        let Some(text) = version.shipped.as_deref() else {
+            continue;
+        };
+        dropped.extend(
+            super::shipped_ids(text)
+                .into_iter()
+                .filter(|id| !shipped_now.contains(id)),
+        );
+    }
+    if dropped.is_empty() {
+        return Vec::new();
+    }
+    let loaded = levels::load(sources);
+    let found: BTreeSet<String> = dropped
+        .into_iter()
+        .filter(|id| {
+            loaded
+                .policy
+                .rule(id)
+                .is_some_and(|rule| rule.file != super::File::shipped_default().name)
+        })
+        .collect();
+    found.into_iter().collect()
 }
 
 /// One side that holds a limit: a version's own policy, or one that did not read.
@@ -727,6 +813,7 @@ fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
         sides.push(LimitSide::Read(Box::new(loaded_for(sources, &none))));
     } else {
         sides.push(match accepted_in(entries) {
+            Ok(Some(version)) if !version.reads() => LimitSide::Unread,
             Ok(version) => LimitSide::Read(Box::new(loaded_for(
                 sources,
                 version.as_ref().unwrap_or(&none),
@@ -735,6 +822,7 @@ fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
         });
     }
     sides.extend(floor_in(entries).into_iter().map(|held| match held {
+        Ok(version) if !version.reads() => LimitSide::Unread,
         Ok(version) => LimitSide::Read(Box::new(loaded_for(sources, &version))),
         Err(()) => LimitSide::Unread,
     }));
