@@ -1226,6 +1226,71 @@ pub(crate) const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     rows: 50,
 };
 
+/// A task the scenario started as the task runner does ([`Scenario::starts_as_task`]).
+pub(crate) struct Task {
+    /// Its chat's number.
+    pub chat: u32,
+    /// Its branch folder, where it works.
+    pub folder: PathBuf,
+    /// The branch cut for it.
+    pub branch: String,
+}
+
+/// What a dispatch adds to a chat's start: its lineage and its record.
+struct Handed {
+    from: purlis_core::reopen::HandedFrom,
+    label: String,
+    brief: String,
+    worktree: purlis_core::dispatchrecord::Worktree,
+}
+
+impl Handed {
+    /// Writes the dispatch's record for chat `id`, as `handoff::record_it` does for the app's.
+    fn is_recorded(
+        &self,
+        held: &Held,
+        id: u32,
+        chat: &purlis_core::reopen::Chat,
+        ready: &purlis_core::start::Ready,
+        root: &Path,
+    ) {
+        use purlis_core::dispatchrecord::{Asker, Mode, Opening, Place, Worker};
+        let asker = crate::dispatches::chat_ref(held, self.from.chat).expect("the asking chat");
+        let worker = crate::dispatches::chat_ref(held, id).expect("the task's chat");
+        crate::dispatches::opened(
+            held,
+            None,
+            Opening {
+                mode: Mode::Task,
+                asker: Asker {
+                    chat: asker,
+                    workspace: None,
+                    by_person: false,
+                    session_record: None,
+                },
+                persona: chat.persona.clone(),
+                worker: Worker {
+                    chat: worker,
+                    harness: ready.harness.map(|harness| harness.name().to_owned()),
+                    profile: chat.profile.clone(),
+                    session_record: None,
+                },
+                task: Some(self.label.clone()),
+                place: Place {
+                    workspace: None,
+                    folder: ready
+                        .cwd
+                        .as_deref()
+                        .map(|cwd| crate::dispatches::folder(root, cwd)),
+                    worktree: Some(self.worktree.clone()),
+                },
+                brief: self.brief.clone(),
+                report_owed: true,
+            },
+        );
+    }
+}
+
 impl Scenario {
     /// **Starts a chat of the scenario's dialect playing `script`**, as the person starts one
     /// from the window: on the sandbox-only profile `work` this machine signed in, its turn script
@@ -1241,6 +1306,146 @@ impl Scenario {
         &self,
         script: &serde_json::Value,
         grants: purlis_core::sandbox::grant::Grants,
+    ) -> u32 {
+        self.begins(
+            script,
+            |name| purlis_core::start::Start {
+                profile: Some(self.profile()),
+                persona: self.persona.clone(),
+                name: name.to_owned(),
+                cwd: Some(self.root.clone()),
+                made: purlis_core::sandbox::Made::Window,
+                grants,
+                ..Default::default()
+            },
+            None,
+        )
+    }
+
+    /// **Starts a chat as the task runner does** (§3.11, #7102): a task the chat `asker` (a chat
+    /// of this scenario) dispatched to this scenario's persona. It is [`Self::starts`] with what
+    /// `handoff::dispatch_noting` adds: the start is `Made::Asked` by a dispatch, over the chain
+    /// of the personas above it; it works in a branch folder cut off a clone of the project's
+    /// ([`Self::a_clone`], `chatpiece::cut`); it is handed from `asker` as a task owing a report,
+    /// and its dispatch has the record its report is written on. The kit, the homes, the wrap
+    /// and the teardown are the scenario's own. The persona is [`Scenario::new`]'s, which a task
+    /// needs.
+    pub(crate) fn starts_as_task(
+        &self,
+        asker: u32,
+        script: &serde_json::Value,
+        name: &str,
+        brief: &str,
+    ) -> Task {
+        let persona = self
+            .persona
+            .clone()
+            .expect("a dispatched chat runs as a persona: make the scenario with one");
+        let held = self.held();
+        let asking = crate::dispatches::chat_ref(&held, asker).expect("the asking chat is open");
+        let above: Vec<Option<String>> = std::iter::once(asking.persona.clone())
+            .chain(
+                held.chats()
+                    .handed_from(asker)
+                    .and_then(|from| from.above)
+                    .unwrap_or_default(),
+            )
+            .collect();
+        let (workspace, repo) = self.a_clone();
+        let cut = purlis_core::chatpiece::cut(
+            &self.root,
+            &workspace,
+            &repo,
+            &purlis_core::chatpiece::Naming::After(Some(name.to_owned())),
+        )
+        .expect("the task's branch folder is cut");
+        let from = purlis_core::reopen::HandedFrom {
+            chat: asker,
+            id: asking.id.clone(),
+            name: asking.name.clone(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Due,
+            mode: purlis_core::reopen::Mode::Task,
+            depth: 1,
+            root: asking.id.clone(),
+            above: Some(above.clone()),
+            by_person: false,
+            long: false,
+            policy: None,
+        };
+        let worktree = purlis_core::dispatchrecord::Worktree {
+            repo: cut.repo.clone(),
+            piece: cut.piece.clone(),
+            branch: Some(cut.branch.clone()),
+            removed: None,
+        };
+        let folder = cut.path.clone();
+        let chat = self.begins(
+            script,
+            |chat_name| purlis_core::start::Start {
+                profile: Some(self.profile()),
+                persona: Some(persona),
+                name: chat_name.to_owned(),
+                cwd: Some(folder),
+                made: purlis_core::sandbox::Made::Asked {
+                    how: purlis_core::sandbox::Asking::Dispatch,
+                    above: Some(above),
+                },
+                ..Default::default()
+            },
+            Some(Handed {
+                from,
+                label: name.to_owned(),
+                brief: brief.to_owned(),
+                worktree,
+            }),
+        );
+        Task {
+            chat,
+            folder: cut.path,
+            branch: cut.branch,
+        }
+    }
+
+    /// The clone `workspaces/work/repo` of this scenario's project, with one commit: made once,
+    /// as an operator's own clone is, for a task's branch folder to be cut off. Answers its
+    /// workspace and repo.
+    fn a_clone(&self) -> (String, String) {
+        let (workspace, repo) = ("work", "repo");
+        let clone = self.root.join("workspaces").join(workspace).join(repo);
+        if !clone.join(".git").exists() {
+            std::fs::create_dir_all(&clone).expect("the clone's folder");
+            for args in [
+                &["init", "--quiet", "--initial-branch", "main"][..],
+                &["config", "user.name", "scenario"],
+                &["config", "user.email", "scenario@example.test"],
+                &["config", "commit.gpgsign", "false"],
+                &["commit", "--quiet", "--allow-empty", "-m", "first"],
+            ] {
+                let done = purlis_core::forklock::output(
+                    std::process::Command::new("git")
+                        .args(args)
+                        .current_dir(&clone),
+                )
+                .expect("git runs");
+                assert!(
+                    done.status.success(),
+                    "git {args:?}: {}",
+                    String::from_utf8_lossy(&done.stderr)
+                );
+            }
+        }
+        (workspace.to_owned(), repo.to_owned())
+    }
+
+    /// **The one start every chat of a scenario goes through**: `start` composes the chat's
+    /// [`purlis_core::start::Start`] from the name it is given; `handed` is a task's lineage,
+    /// `None` for a chat the person started. Answers the chat's number.
+    fn begins(
+        &self,
+        script: &serde_json::Value,
+        start: impl FnOnce(&str) -> purlis_core::start::Start,
+        handed: Option<Handed>,
     ) -> u32 {
         self.profiled.call_once(|| {
             let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
@@ -1264,19 +1469,8 @@ impl Scenario {
             self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
         ));
         let name = format!("chat {number}");
-        let mut ready = purlis_core::start::ready(
-            &purlis_core::start::Start {
-                profile: Some(self.profile()),
-                persona: self.persona.clone(),
-                name: name.clone(),
-                cwd: Some(self.root.clone()),
-                made: purlis_core::sandbox::Made::Window,
-                grants,
-                ..Default::default()
-            },
-            &self.root,
-        )
-        .expect("the chat is ready to start");
+        let mut ready = purlis_core::start::ready(&start(&name), &self.root)
+            .expect("the chat is ready to start");
         let places = serde_json::json!({"work": self.root.display().to_string()});
         ready.env.extend(
             [
@@ -1298,7 +1492,7 @@ impl Scenario {
             ]
             .map(|(k, v)| (k.to_owned(), v)),
         );
-        let id = self.launches(&name, &ready, &transcript);
+        let id = self.launches(&name, &ready, &transcript, handed.as_ref());
         if let Some(prompt) = script["turns"][0]["prompt"].as_str() {
             // Typed once the harness says its session, as a person types at a harness that is
             // ready: a harness that takes the terminal raw drops what came before.
@@ -1326,6 +1520,7 @@ impl Scenario {
         name: &str,
         ready: &purlis_core::start::Ready,
         transcript: &std::path::Path,
+        handed: Option<&Handed>,
     ) -> u32 {
         let chat = purlis_core::reopen::Chat {
             program: ready.program.clone(),
@@ -1334,6 +1529,8 @@ impl Scenario {
             resume: ready.session.clone(),
             profile: Some(self.profile()),
             persona: self.persona.clone(),
+            from: handed.map(|handed| handed.from.clone()),
+            label: handed.map(|handed| handed.label.clone()),
             ..Default::default()
         };
         let launched = format!(
@@ -1381,6 +1578,9 @@ impl Scenario {
             .start_ready(&chat, ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
+        if let Some(handed) = handed {
+            handed.is_recorded(&held, id, &chat, ready, &self.root);
+        }
         self.transcripts
             .lock()
             .expect("transcripts")
@@ -1462,7 +1662,7 @@ impl Scenario {
             .map(str::to_owned),
         );
         model.attach(&transcript);
-        let id = self.launches(&name, &ready, &transcript);
+        let id = self.launches(&name, &ready, &transcript, None);
         self.note_running();
         id
     }
