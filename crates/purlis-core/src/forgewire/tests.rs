@@ -1063,3 +1063,40 @@ fn the_route_folder_is_one_answer_for_a_stale_runtime_directory_and_an_unset_tmp
         Some(PathBuf::from("/tmp").join(format!("pf-{who}")))
     );
 }
+
+#[test]
+fn a_repo_is_asked_by_its_own_https_address_and_no_other_spelling() {
+    let own = repo("github.com", "acme", "app", ForgeKind::GitHub);
+    for url in [
+        "https://github.com/acme/app",
+        "https://github.com/acme/app.git",
+        "https://github.com/acme/app/",
+        "https://GitHub.com/acme/app.git",
+        // The wire's repo is lower-cased; the address a person's git has is not.
+        "https://github.com/Acme/App.git",
+        "https://GITHUB.com/ACME/APP/",
+    ] {
+        assert!(own.is_url(url), "{url}");
+    }
+    for url in [
+        "",
+        "https://github.com/acme/app2",
+        "https://github.com/acme/app.git.git",
+        "https://github.com/acme/app/extra",
+        "https://github.com/acme/other",
+        "https://github.com.evil.example/acme/app",
+        "https://evil.example/github.com/acme/app",
+        "https://user@github.com/acme/app",
+        "https://github.com:8443/acme/app",
+        "https://github.com/acme/app?x=1",
+        "https://github.com/acme/app#x",
+        "http://github.com/acme/app",
+        "git@github.com:acme/app.git",
+        "ssh://git@github.com/acme/app.git",
+    ] {
+        assert!(!own.is_url(url), "{url}");
+    }
+    let lab = repo("gitlab.com", "group/sub", "proj", ForgeKind::GitLab);
+    assert!(lab.is_url("https://gitlab.com/group/sub/proj.git"));
+    assert!(!lab.is_url("https://gitlab.com/group/proj.git"));
+}
