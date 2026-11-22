@@ -1412,7 +1412,8 @@ impl Scenario {
     /// workspace and repo.
     fn a_clone(&self) -> (String, String) {
         let (workspace, repo) = ("work", "repo");
-        let clone = self.root.join("workspaces").join(workspace).join(repo);
+        let clone = purlis_core::repofolder::new_folder(&self.root, workspace, repo)
+            .expect("where the scenario's clone goes");
         if !clone.join(".git").exists() {
             std::fs::create_dir_all(&clone).expect("the clone's folder");
             for args in [
@@ -1422,17 +1423,13 @@ impl Scenario {
                 &["config", "commit.gpgsign", "false"],
                 &["commit", "--quiet", "--allow-empty", "-m", "first"],
             ] {
-                let done = purlis_core::forklock::output(
-                    std::process::Command::new("git")
-                        .args(args)
-                        .current_dir(&clone),
+                let done = purlis_core::worktree::git::run(
+                    &clone,
+                    args,
+                    purlis_core::worktree::git::WRITES_INDEX,
                 )
                 .expect("git runs");
-                assert!(
-                    done.status.success(),
-                    "git {args:?}: {}",
-                    String::from_utf8_lossy(&done.stderr)
-                );
+                assert!(done.ok(), "git {args:?}: {}", done.err);
             }
         }
         (workspace.to_owned(), repo.to_owned())
