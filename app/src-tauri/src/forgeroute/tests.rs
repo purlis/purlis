@@ -1556,14 +1556,23 @@ fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run
         "this chat has no forge route"
     );
     // The run's own repo passes the check and is asked on the run's route, never refused as
-    // unrecorded; nothing listens at the stand-in forge here, so the ask itself fails.
+    // unrecorded. The ask is a stand-in that answers nothing: git is never run here, so none of
+    // these can reach a real forge on the runner's network.
     for url in [
         own,
         "https://github.com/acme/app",
         "https://GitHub.com/acme/app/",
     ] {
-        let why = scene.routes.remote_refs(7, url).unwrap_err();
+        let mut asked = 0;
+        let why = scene
+            .routes
+            .remote_refs_asking(7, url, |_, _| {
+                asked += 1;
+                None
+            })
+            .unwrap_err();
         assert_ne!(why, not_recorded, "{url}");
+        assert_eq!(asked, 1, "{url}");
     }
     scene.routes.stop("run-1");
     assert_eq!(

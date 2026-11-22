@@ -555,12 +555,29 @@ impl Setup {
 
     /// Nothing the tools sent was refused, and the forge saw the real token and never the sentinel.
     fn assert_clean(&self) {
+        self.assert_clean_but(false);
+    }
+
+    /// [`Self::assert_clean`] for `git`, which sends its first request with no credential and is
+    /// **challenged** (`401`) for the helper's: each such challenge is audited as
+    /// `Refused(NoSentinel)` and is how git is meant to be answered, so it is not a refusal here.
+    /// A wrong credential, or any other refusal, still is.
+    fn assert_clean_after_git_challenges(&self) {
+        self.assert_clean_but(true);
+    }
+
+    fn assert_clean_but(&self, challenges_are_fine: bool) {
+        use purlis_core::forge::proxy::Refusal;
         let refused: Vec<_> = self
             .world
             .proxy
             .audit(&self.world.chat)
             .into_iter()
-            .filter(|r| matches!(r.verdict, Verdict::Refused(_)))
+            .filter(|r| match r.verdict {
+                Verdict::Refused(Refusal::NoSentinel) => !challenges_are_fine,
+                Verdict::Refused(_) => true,
+                _ => false,
+            })
             .collect();
         assert!(
             refused.is_empty(),
@@ -866,7 +883,7 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
     if !tool("git") {
         return;
     }
-    use purlis_core::worktree::git::{Isolated, NetworkRoute, isolated, run_network};
+    use purlis_core::worktree::git::{Isolated, isolated, run_network};
     let s = setup_with(Some(Arc::new(HoldsCiBranches)));
     let work = s.dir.path().join("clone");
     let (ok, text) = s.git(
@@ -884,22 +901,7 @@ fn the_apps_own_git_for_a_chat_pushes_through_the_listener_and_a_held_push_reach
 
     // What the app's git is given for the chat (`forgewire::git_network`), with the test's own
     // sentinel helper in place of purlis's binary: the proxy, the chat's authority, no login.
-    let proxy = format!("http://127.0.0.1:{}", s.app_port());
-    let sentinel = s.world.sentinel.expose().to_owned();
-    let route = NetworkRoute::new(
-        vec![
-            "credential.helper=".to_owned(),
-            format!(
-                "credential.https://github.com.helper=!f() {{ echo username=x-access-token; echo password={sentinel}; }}; f"
-            ),
-            format!("http.https://github.com/.sslCAInfo={}", s.ca_file.display()),
-            format!("http.https://github.com/.proxy={proxy}"),
-        ],
-        vec![
-            ("HTTPS_PROXY".into(), proxy.clone().into()),
-            ("https_proxy".into(), proxy.into()),
-        ],
-    );
+    let route = production_route(&s, s.app_port(), &s.ca_file);
     let isolation = Isolated::default().through_route(route);
     let push = |to: &str| {
         isolated(&isolation, || {
@@ -966,7 +968,7 @@ fn the_apps_own_git_for_a_chat_is_refused_a_pinned_forge_and_the_door_is_never_d
     if !tool("git") {
         return;
     }
-    use purlis_core::worktree::git::{Isolated, NetworkRoute, isolated, run_network};
+    use purlis_core::worktree::git::{Isolated, isolated, run_network};
     let mut s = setup();
     let EndpointKind::Loopback(door) = s.connect.kind().clone() else {
         unreachable!()
@@ -986,22 +988,7 @@ fn the_apps_own_git_for_a_chat_is_refused_a_pinned_forge_and_the_door_is_never_d
     std::fs::write(work.join("a.txt"), "a\n").unwrap();
     git_ok(&work, &["add", "-A"]);
     git_ok(&work, &["commit", "-q", "-m", "a"]);
-    let proxy = format!("http://127.0.0.1:{}", s.app_port());
-    let sentinel = s.world.sentinel.expose().to_owned();
-    let route = NetworkRoute::new(
-        vec![
-            "credential.helper=".to_owned(),
-            format!(
-                "credential.https://github.com.helper=!f() {{ echo username=x-access-token; echo password={sentinel}; }}; f"
-            ),
-            format!("http.https://github.com/.sslCAInfo={}", s.ca_file.display()),
-            format!("http.https://github.com/.proxy={proxy}"),
-        ],
-        vec![
-            ("HTTPS_PROXY".into(), proxy.clone().into()),
-            ("https_proxy".into(), proxy.into()),
-        ],
-    );
+    let route = production_route(&s, s.app_port(), &s.ca_file);
     let isolation = Isolated::default().through_route(route);
     let before = s.forge.seen.lock().unwrap().len();
     let pushed = isolated(&isolation, || {
@@ -1126,27 +1113,47 @@ fn more_commits_than_an_unasked_scan_reads(work: &Path) -> String {
     String::from_utf8_lossy(&id.stdout).trim().to_owned()
 }
 
-/// What a chat's own git is given for `github.com` (`forgewire::git_network`), the test's own
-/// sentinel helper in place of purlis's binary, its proxy the chat's egress stand-in and its
-/// authority the chat's.
-fn the_chats_route(s: &Setup, ca: &Path) -> purlis_core::worktree::git::NetworkRoute {
-    use purlis_core::worktree::git::NetworkRoute;
-    let proxy = format!("http://127.0.0.1:{}", s.port());
-    let sentinel = s.world.sentinel.expose().to_owned();
-    NetworkRoute::new(
-        vec![
-            "credential.helper=".to_owned(),
+/// What the app's git is given for a chat, **made by production's own builder**
+/// (`forgewire::git_network`), so a test proves the real route and not a copy of it. Only two
+/// things are the test's: the helper, a script that answers the sentinel from the variable the
+/// route passes (in place of purlis's binary), and the proxy and authority, which are the test's
+/// listeners'.
+fn production_route(
+    s: &Setup,
+    proxy_port: u16,
+    ca: &Path,
+) -> purlis_core::worktree::git::NetworkRoute {
+    use purlis_core::forge::gitcredential::SENTINEL_ENV;
+    use purlis_core::forgewire::{ForgeKind, Repo, Route, SecretString, git_network};
+    let helper = s.dir.path().join("sentinel-helper.sh");
+    if !helper.exists() {
+        std::fs::write(
+            &helper,
             format!(
-                "credential.https://github.com.helper=!f() {{ echo username=x-access-token; echo password={sentinel}; }}; f"
+                "#!/bin/sh\ncat >/dev/null\necho username=x-access-token\necho \"password=${SENTINEL_ENV}\"\n"
             ),
-            format!("http.https://github.com/.sslCAInfo={}", ca.display()),
-            format!("http.https://github.com/.proxy={proxy}"),
-        ],
-        vec![
-            ("HTTPS_PROXY".into(), proxy.clone().into()),
-            ("https_proxy".into(), proxy.into()),
-        ],
-    )
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&helper, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    let route = Route {
+        egress_url: format!("http://127.0.0.1:{proxy_port}"),
+        gh_socket: s.dir.path().join("unused.sock"),
+        ca_cert: ca.to_path_buf(),
+        sentinel: SecretString::from(s.world.sentinel.expose().to_owned()),
+        helper_exe: helper,
+        repos: vec![Repo::new("github.com", "acme", "app", ForgeKind::GitHub).unwrap()],
+    };
+    git_network(&route).expect("production's route for the app's git")
+}
+
+/// The route of the chat's own git stand-in (the test-support relay).
+fn the_chats_route(s: &Setup, ca: &Path) -> purlis_core::worktree::git::NetworkRoute {
+    production_route(s, s.port(), ca)
 }
 
 /// How many times the forge has been asked which commits it has. A test's own `clone` asks it
@@ -1197,7 +1204,13 @@ fn the_tips_the_app_asks_through_the_chats_route_are_what_a_pushs_scan_leaves_ou
     let scan = purlis_core::diffscan::pushed_told(&work, url, &updates, &|_| Some(tips.clone()))
         .expect("the remote's tips were told, so what it has is left out of the scan");
     assert!(scan.refused.is_empty(), "{:?}", scan.refused);
-    s.assert_clean();
+    // The ask carried the sentinel (it was challenged, then answered): the forge was sent the
+    // real token and the proxy refused nothing but git's own first, credential-less request.
+    assert!(
+        s.forge_saw_the_real_token(),
+        "the forge was not sent the real token"
+    );
+    s.assert_clean_after_git_challenges();
 }
 
 /// A route that is not the chat's own authority answers nothing, so nothing is told, and a hook
