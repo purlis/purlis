@@ -53,6 +53,7 @@ mod personas;
 mod plane;
 mod plugin;
 mod profiles;
+mod readiness;
 mod remote;
 mod repos_folder;
 mod rules;
@@ -424,6 +425,9 @@ pub struct Doctor {
     /// the hook spool look at, so from there they are not looked at: a look would be refused, and
     /// the refusal drafted as a Report of purlis's own block. Said in the rows, never silent.
     pub(crate) confined: bool,
+    /// Whether this doctor runs inside a chat's tree (`PURLIS_CHAT` is set). The `project
+    /// readiness` row refuses there: it reads the person's forge, which a chat has no login for.
+    pub(crate) in_chat: bool,
     /// What this machine's runner host looks like (RR-15, #724), where this purlis is a
     /// runner's: installed as a version (RR-14) or kept by a service manager. `None` on a
     /// desktop, and for a doctor a test names.
@@ -458,6 +462,7 @@ impl Doctor {
         d.host_log = host_log::HostLog::here();
         d.answers_here = true;
         d.confined = crate::sandbox::writes_are_sandboxed();
+        d.in_chat = crate::envvar::var(crate::hookwire::CHAT_ENV).is_some_and(|v| !v.is_empty());
         d.forges = Some((
             crate::forge::Caller::command(),
             std::sync::Arc::new(crate::forge::cli::Cli::default()),
@@ -537,6 +542,7 @@ impl Doctor {
             answers_here: false,
             host_log: None,
             confined: false,
+            in_chat: false,
             #[cfg(unix)]
             runner_host: None,
         }
@@ -593,6 +599,7 @@ impl Doctor {
         rows.push(git::plane_root(self));
         rows.push(git::index_lock(self));
         rows.extend(remote::project_remote(self));
+        rows.extend(readiness::project_readiness(self));
         rows.extend(capabilities::forge_capabilities(self));
         rows.extend(budget::budgets(self));
         rows.push(session::session_root(self));
@@ -631,6 +638,7 @@ impl Doctor {
         rows.extend(sandbox::local_ports(self));
         rows.extend(sandbox::grants_held(self));
         rows.extend(sandbox::relayed_internal(self));
+        rows.extend(sandbox::replaced_by_sign_in(self));
         rows.extend(sandbox::cache_home(self));
         rows.extend(known_gaps::known_gaps(self));
         rows.extend(answers::answers(self));

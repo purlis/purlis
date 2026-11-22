@@ -688,7 +688,7 @@ fn a_pin_this_charter_does_not_meet_is_drift() {
 
 // ---- plane root and index lock ----------------------------------------------------------------
 
-fn repo_plane() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn repo_plane() -> (tempfile::TempDir, PathBuf) {
     let (d, root) = plane("schema = 1\n");
     git(&root, &["init", "-q", "-b", "main", "."]);
     git(&root, &["add", "charter.toml"]);

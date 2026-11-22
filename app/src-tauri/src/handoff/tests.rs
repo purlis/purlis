@@ -3309,6 +3309,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
             Ask::Decide(_) => 28,
+            Ask::RemoteRefs(_) => 29,
         }
     }
     let asks = vec![
@@ -3496,10 +3497,14 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             tool: "Bash".to_owned(),
             cwd: None,
         }),
+        Ask::RemoteRefs(purlis_core::hookwire::RemoteRefsAsk {
+            chat,
+            url: "https://github.com/acme/app.git".to_owned(),
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=29).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -16053,4 +16058,12 @@ fn no_grant_with_no_sandbox() -> String {
         },
     )
     .say()
+}
+
+#[test]
+fn a_hook_asking_for_the_refs_of_a_chat_with_no_route_is_told_no() {
+    assert!(matches!(
+        remote_refs_answer(987_654, "https://github.com/acme/app.git"),
+        Answer::No { .. }
+    ));
 }

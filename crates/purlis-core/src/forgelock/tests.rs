@@ -5,12 +5,20 @@ use std::path::PathBuf;
 
 use super::*;
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_chat_is_claimed_where_it_holds_the_credentials_class_or_has_a_mint() {
     assert!(claimed(true, false));
     assert!(claimed(false, true));
     assert!(claimed(true, true));
     assert!(!claimed(false, false));
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn every_chat_is_claimed_whatever_it_holds_and_whether_or_not_it_mints() {
+    assert!(claimed(false, false));
+    assert!(claimed(true, false));
 }
 
 #[test]

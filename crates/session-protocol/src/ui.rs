@@ -249,6 +249,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // window draws, and read back. A link has no native window of its own here.
     "draw_native_window",
     "native_window_drawn",
+    // Whether the open project's forge would let everyone else sign in (one login, slice D):
+    // read over the person's own forge sign-in, which no chat has (ADR D5, D10.1), and shown
+    // in their Settings. A link is refused it, so a chat never reads the person's forge
+    // through it.
+    "plane_readiness",
     // Ends.
     "end_task",
     "task_ending",
@@ -321,6 +326,20 @@ pub const WINDOW_ONLY: &[&str] = &[
     // starts one or stops one.
     "forge_pkce_sign_in",
     "forge_pkce_sign_in_cancel",
+    // One login (ADR 0128 D5): provisioning is the person's press, in the window. An application an
+    // owner made, pinned with the owner the person expects (D1.3); which account serves a repo
+    // (D2); the repo's number recorded at a clone or a trust (D4); and the second, CI-file token
+    // (D1.1). No link and no chat presses any of them.
+    "forge_applications",
+    "forge_use_application",
+    "forge_remove_application",
+    "forge_application_request",
+    "forge_project_accounts",
+    "forge_choose_project_account",
+    "forge_trust_clone_repo",
+    "forge_ci_permission_start",
+    "forge_ci_permission_wait",
+    "forge_ci_permission_cancel",
     // This machine's profiles (#2034, ADR 0095): the list, and the person's make, import and
     // remove of one, each asked in the window. What a chat runs as is never a chat's to change.
     "machine_profiles",
@@ -417,6 +436,12 @@ pub const WINDOW_ONLY: &[&str] = &[
     "view_held_merge",
     "merge_held_request",
     "dont_merge_held_request",
+    // Press and Don't on a tag, release, CI-file push or fork a chat asked for (ADR 0128 D8): the
+    // app performs it with the person's own sign-in on the press of the window alone, twice. No
+    // chat answers its own ask.
+    "held_acts_waiting",
+    "press_held_act",
+    "dont_held_act",
     // What a chat's browser may reach, on its first browser call's Ask (#2013): the person's
     // answer alone. No chat answers its own Ask.
     "allow_chat_browser",

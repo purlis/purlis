@@ -31,6 +31,7 @@ const imported: ForgeAccountRow = {
   signed_in: true,
   scopes: ["repo", "read:org", "gist"],
   wider: ["gist"],
+  ci_allowed: false,
 };
 
 beforeEach(() => {

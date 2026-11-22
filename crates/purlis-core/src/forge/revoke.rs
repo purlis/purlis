@@ -14,7 +14,7 @@
 //! - **A pasted or imported token is never revoked.** It may be the person's for other uses.
 //!
 //! **The sign-out on this machine never waits on the forge's yes.** The keyring item is deleted
-//! and the account taken off the list first; only then is the forge asked, once, and what it
+//! and the account kept, signed out, first; only then is the forge asked, once, and what it
 //! said is answered beside the account ([`AtTheForge`]) so the window can say it. A forge that
 //! could not be reached, or that refused, leaves the person signed out here all the same.
 //!
@@ -140,7 +140,8 @@ mod tests {
         machine.kept().is_none()
             && accounts::list(machine.home.path(), keyring.as_ref())
                 .unwrap()
-                .is_empty()
+                .iter()
+                .all(|a| a.state != accounts::State::SignedIn)
     }
 
     #[test]

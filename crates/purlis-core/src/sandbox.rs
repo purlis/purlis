@@ -3000,6 +3000,21 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             }
         }
     }
+    // ...and the folder every run's forge route is made in (ADR 0128 D3a): no chat reads or writes
+    // it, and none lists it, and the window's own file reads leave it out by the same line. A chat
+    // with a route is given back its own socket, and nothing else in it
+    // ([`Applied::with_forge_route`]); every other chat reaches none. Held before the app makes
+    // the folder, so a chat that starts first finds it held once it is there.
+    if let Some(route_root) = crate::forgewire::route_root(machine) {
+        paths.push(Denial {
+            class: Class::Integrity,
+            path: route_root,
+            access: Access::ReadWrite,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: machine.os == Os::MacOs,
+        });
+    }
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {
@@ -4241,6 +4256,14 @@ pub struct Widened {
     /// `None` holds them as before. Off only, never `log` ([`crate::enforcement::Family::logs`]),
     /// and only where the app resolved it: every other process compiles it enforced.
     pub every_local: Option<Vec<u16>>,
+    /// **The one socket of this chat's forge route** (ADR 0128 D3a): its `gh` connects to it, and
+    /// it is read and connected to inside the route folder every chat is denied
+    /// ([`Applied::with_forge_route`]). Never another run's, and never a person's grant.
+    pub forge_socket: Option<PathBuf>,
+    /// The folder every run's forge route is made in, as this machine names it: held after the
+    /// `ports` family off lets every local socket by ([`seatbelt::widen`]), so a chat reaches its
+    /// own run's socket and no other's whatever `ports` says.
+    pub forge_root: Option<PathBuf>,
 }
 
 /// [`Widened::every_local`] for a chat starting in the project at `root`: purlis's own ports
@@ -4273,6 +4296,8 @@ impl Widened {
             unserved: Vec::new(),
             lifted: Vec::new(),
             every_local: every_local(root),
+            forge_socket: None,
+            forge_root: crate::forgewire::route_root(machine),
         }
     }
 
@@ -4552,6 +4577,7 @@ impl Compiled {
             trust: written.certificate_checks,
             own_terminal_only: written.own_terminal_only,
             every_local: every_local(root),
+            forge_root: crate::forgewire::route_root(machine),
             ..Widened::default()
         }
         .lifting(grant::still_lifted(
@@ -4924,6 +4950,10 @@ pub struct Applied {
     /// gh's and glab's folders as the person's environment names them by a relative path, which
     /// each is held at against the chat's own folder ([`forge_folders_relative`]).
     forge_relative: Vec<PathBuf>,
+    /// **This chat's forge route** (ADR 0128), where the app made one for its run: what its line
+    /// is wired from ([`Self::forge_route`]), what its egress proxy denies and hands over
+    /// ([`Self::forge_egress`]).
+    forge: Option<Box<crate::forgewire::Inputs>>,
     /// The persona's tools for this chat (#1407), written as its line is decided.
     tools: Option<Box<tools::Resolved>>,
     /// purlis's own program the wrap starts the chat under on Linux, as it was checked and held
@@ -5487,6 +5517,28 @@ impl Applied {
             )
             .map_err(|why| under(format!("the forge credential lock was not made: {why}")))?;
         }
+        // One login (ADR 0128 D3b, D3c): the chat's `gh`, git, `glab` and cargo are routed to
+        // the forge proxy and carry its sentinel, never a token. After the lock, whose marker it
+        // takes out, and before the PATH file below, which reads the folder it names.
+        #[cfg(feature = "forge-wiring")]
+        if let Some(route) = self.forge_route(at.confinement) {
+            // Written where no chat writes ([`crate::forgewire::wire_folder`]), never in the chat's
+            // own temporary folder: its `gh` goes first on the `PATH` of the harness, its hooks and
+            // its MCP servers, which run outside the chat's sandbox.
+            let wiring = crate::forgewire::compose(&route, &self.root)
+                .map_err(|why| under(format!("the forge route was not made: {why}")))?;
+            let already = line
+                .env
+                .iter()
+                .find(|(key, _)| key == tools::FIRST_ON_PATH)
+                .map(|(_, dir)| dir.clone());
+            line.env = crate::forgewire::apply(std::mem::take(&mut line.env), &wiring);
+            line.env.retain(|(key, _)| key != tools::FIRST_ON_PATH);
+            line.env.push((
+                tools::FIRST_ON_PATH.to_owned(),
+                crate::forgewire::first_on_path(already.as_deref(), &wiring.bin),
+            ));
+        }
         // ssh in a Claude Code chat (#1667): its route, written where no chat writes, goes
         // first on each command's `PATH` through the one file Claude Code reads before each
         // command, never on the harness's own `PATH`. The persona's tools go before it there.
@@ -5656,6 +5708,76 @@ impl Applied {
         )
     }
 
+    /// **This sandbox for a chat whose run has a forge route** (ADR 0128 D3a): its line is wired to
+    /// the route, its egress proxy denies the forges and hands their connections to the
+    /// route's listener, and the folder every run's route is made in is held from it (only its
+    /// own socket is reached, by the network rule that names it, never by listing the folder).
+    #[must_use]
+    pub fn with_forge_route(mut self, inputs: crate::forgewire::Inputs) -> Self {
+        // The folder is denied to every chat already ([`Denied::of`], on both systems). This chat
+        // is given back its own socket and no other path in it: its CA is a copy in its wire
+        // folder ([`crate::forgewire::CA_COPY`]), so nothing else is read there.
+        let socket = inputs.gh_socket.clone();
+        match &mut *self.form {
+            Form::ClaudeCode(settings) => *settings = settings.reaching_socket(&socket),
+            Form::ClaudeWrapped(claude_wrap::Wrap { widened, .. })
+            | Form::Codex(codex::Wrap { widened, .. })
+            | Form::Opencode(opencode::Wrap { widened, .. }) => {
+                widened.forge_socket = Some(socket);
+            }
+        }
+        self.forge = Some(Box::new(inputs));
+        self
+    }
+
+    /// **Where this chat's forge traffic goes** (ADR 0128 D3a), or none where it has no forge
+    /// route, or no proxy of its own to carry the route's `CONNECT`: its route's parts are the
+    /// app's ([`Self::with_forge_route`]) and its egress port is `confinement`'s.
+    #[cfg(feature = "forge-wiring")]
+    fn forge_route(&self, confinement: Option<&Confinement>) -> Option<crate::forgewire::Route> {
+        let inputs = self.forge.as_ref()?;
+        Some(inputs.route(confinement?.proxy_url()))
+    }
+
+    /// The forge hosts this chat's proxy never tunnels to ([`egress::Serving::forge_denied`]):
+    /// those of its route, none where it has none. **Only the local chat's proxy has a route:** a
+    /// chat planned on a runner has no forge endpoint there to go through (a plan with a forge
+    /// route does not fit one, [`plan::Plan::fits`]), so denying it a forge would only cut its
+    /// own `gh`.
+    fn forge_denied(&self) -> Vec<String> {
+        #[cfg(feature = "forge-wiring")]
+        if let Some(inputs) = &self.forge {
+            return crate::forgewire::denied_hosts(&inputs.repos);
+        }
+        Vec::new()
+    }
+
+    /// What this chat's proxy is told of its route ([`plan::ForgeEgress`]).
+    fn forge_egress(&self) -> Option<plan::ForgeEgress> {
+        #[cfg(feature = "forge-wiring")]
+        {
+            let inputs = self.forge.as_ref()?;
+            let mut hosts: Vec<String> = inputs
+                .hosts
+                .iter()
+                .map(|h| h.to_ascii_lowercase())
+                .collect();
+            hosts.sort();
+            hosts.dedup();
+            Some(plan::ForgeEgress {
+                denied: crate::forgewire::denied_hosts(&inputs.repos),
+                door: inputs.door.ip(),
+                port: inputs.door.port(),
+                hosts,
+                handoff: inputs.handoff.clone(),
+            })
+        }
+        #[cfg(not(feature = "forge-wiring"))]
+        {
+            None
+        }
+    }
+
     /// **A Claude Code chat's ssh route** (#1667), from `confinement`: only one written in this
     /// project's routes folder ([`tunnel::routes_folder`]), where no chat writes, and handed to
     /// the commands its sandbox runs alone ([`Self::line`]).
@@ -5732,6 +5854,7 @@ impl Applied {
                 plan::Beside::Wrapped
             },
             given: self.confines.widened.ports.clone(),
+            forge: self.forge_egress(),
         }
     }
 
@@ -5743,15 +5866,18 @@ impl Applied {
         refusals: egress::Refusals,
         reached: Option<egress::Reached>,
     ) -> egress::Serving {
-        self.planned().serving(
-            (*self.reach).clone(),
-            plan::Telling {
-                refusals,
-                reached,
-                asks: None,
-                network: None,
-            },
-        )
+        egress::Serving {
+            forge_denied: self.forge_denied(),
+            ..self.planned().serving(
+                (*self.reach).clone(),
+                plan::Telling {
+                    refusals,
+                    reached,
+                    asks: None,
+                    network: None,
+                },
+            )
+        }
     }
 }
 
@@ -8035,6 +8161,7 @@ pub(crate) fn applied_of(
         older: None,
         usual_folders: usual_home_folders(compiled.level, machine),
         forge_relative: forge_folders_relative(machine),
+        forge: None,
         tools: None,
         wrap: None,
     })
@@ -8909,6 +9036,7 @@ pub mod compile_cache;
 pub mod confined;
 pub mod door;
 pub mod egress;
+pub mod forgedeny;
 pub mod grant;
 pub mod held;
 pub mod hosted;
@@ -8956,6 +9084,8 @@ mod enforced_tests;
 mod floor_tests;
 #[cfg(test)]
 mod forge_moved_tests;
+#[cfg(test)]
+mod forge_route_tests;
 #[cfg(all(test, unix))]
 mod git_held_tests;
 #[cfg(test)]
