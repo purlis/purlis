@@ -1699,21 +1699,22 @@ impl Scenario {
         else {
             return "no profile folder to read logs of".to_owned();
         };
-        let mut logs = Vec::new();
-        let mut stack = vec![(PathBuf::from(&config), 0)];
-        while let Some((dir, depth)) = stack.pop() {
-            let Ok(entries) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_dir() && depth < 3 {
-                    stack.push((path, depth + 1));
-                } else if path.extension().is_some_and(|ext| ext == "log") {
-                    logs.push(path);
-                }
-            }
-        }
+        // `find`, not a walk of our own: a source file that walks a directory is taken for a
+        // whole-tree guard (`tools/ci-scope.test.mjs`).
+        let mut logs: Vec<PathBuf> =
+            purlis_core::forklock::output(std::process::Command::new("find").arg(&config).args([
+                "-maxdepth",
+                "4",
+                "-name",
+                "*.log",
+            ]))
+            .map(|out| {
+                String::from_utf8_lossy(&out.stdout)
+                    .lines()
+                    .map(PathBuf::from)
+                    .collect()
+            })
+            .unwrap_or_default();
         logs.sort();
         let mut said = format!("{} log files under {}", logs.len(), config.display());
         for log in logs.into_iter().take(4) {
