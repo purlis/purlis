@@ -199,9 +199,14 @@ fn every_step_of_the_build_reads_the_one_profile_plan_chose() {
 
     // `target/release` written out is a step that builds, collects or checks the stable
     // profile's output whatever this run built.
+    // The one place it is written is the bundling step, which links it to this run's profile:
+    // `tauri bundle` has no `--profile` and reads `target/release` unless it is given `--debug`.
+    let bundling = step(build, "Bundle the app");
     let fixed: Vec<&String> = build
         .body
         .iter()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter(|l| !(bundling.contains(l) && l.contains("../target/release")))
         .filter(|l| l.contains("target/release") || l.contains("--release"))
         .collect();
     assert!(fixed.is_empty(), "{fixed:#?}");
@@ -238,8 +243,8 @@ fn a_required_extra_bundle_is_made_by_the_one_build_and_a_dev_build_makes_no_dmg
     let jobs = release_jobs();
     let build = job(&jobs, "build");
 
-    // One `tauri build` for both bundles when the AppImage is required, on both channels.
-    let app = step(build, "Build the app");
+    // One `tauri bundle` for both bundles when the AppImage is required, on both channels.
+    let app = step(build, "Bundle the app");
     assert_eq!(
         step_value(&app, "env", "BUNDLES"),
         Some(
@@ -249,7 +254,7 @@ fn a_required_extra_bundle_is_made_by_the_one_build_and_a_dev_build_makes_no_dmg
 
     // The second build is only ever the optional one: skipped when the first made the bundle,
     // and for the `.dmg` of a dev channel build. So it may always fail.
-    let extra = step(build, "Build the extra bundle");
+    let extra = step(build, "Bundle the extra bundle");
     let value = |key: &str| {
         let prefix = format!("        {key}:");
         extra

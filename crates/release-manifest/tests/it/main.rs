@@ -19,6 +19,7 @@
 #[path = "../workflow/mod.rs"]
 mod workflow;
 
+mod a_dev_build_compiles_before_the_gate_and_signs_after_it;
 mod a_dev_channel_build_is_lighter_and_a_stable_build_is_not;
 mod a_failed_runs_leftover_images_are_listed_and_never_deleted;
 mod a_release_checks_the_notices_its_own_source_ships;

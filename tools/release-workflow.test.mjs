@@ -190,15 +190,27 @@ test("the gate answers green only when this commit's own ci, on its push to main
   assert.ok(gate.some((line) => line.startsWith('[ -n "$id" ] || { echo "::error::')));
 });
 
-test("plan runs only when the gate answered green, and a skipped plan builds and publishes nothing", () => {
+test("plan does not wait for the gate, and what signs, uploads or publishes runs only when the gate answered green", () => {
+  // R2 (#7381): `plan` and `keys` hold nothing, and `build` compiles while `ci` runs. The jobs
+  // that publish are behind the gate; `crates/release-manifest` holds each of them on a workflow
+  // broken on purpose.
   const plan = job("plan");
-  assert.equal(value(plan, 4, "needs"), "gate");
-  const condition = value(plan, 4, "if");
-  for (const [green, runs] of [["true", true], ["false", false], ["", false]]) {
-    assert.equal(evaluate(condition, {}, { gate: { outputs: { green } } }), runs, `green=${green}`);
+  for (const key of ["needs", "if", "environment"]) {
+    assert.ok(!plan.some((line) => line.startsWith(`    ${key}:`)), `plan has \`${key}:\``);
   }
-  assert.equal(value(job("build"), 4, "needs"), "plan");
-  assert.equal(value(job("runner-image"), 4, "needs"), "plan");
+  assert.equal(value(job("keys"), 4, "needs"), "plan");
+  assert.equal(value(job("build"), 4, "needs"), "[plan, keys]");
+  const condition = value(job("runner-image"), 4, "if");
+  assert.equal(value(job("runner-image"), 4, "needs"), "[gate, plan, keys]");
+  for (const [green, publish, runs] of [
+    ["true", "true", true],
+    ["false", "true", false],
+    ["", "true", false],
+    ["true", "false", false],
+  ]) {
+    const needs = { gate: { outputs: { green } }, keys: { outputs: { publish } } };
+    assert.equal(evaluate(condition, {}, needs), runs, `green=${green} publish=${publish}`);
+  }
 });
 
 test("a dev build's commit is checked against main's history before anything from the checkout runs", () => {
@@ -231,7 +243,7 @@ test("a dev build is the commit its green ci ran on, the run's own commit, and n
   // The first checkout of `plan`, and the `SHA` every later job checks out as `plan`'s `sha`.
   assert.equal(plan.find((line) => line.trim().startsWith("ref:"))?.trim(), `ref: ${sha}`);
   assert.ok(plan.includes(`          SHA: ${sha}`), "plan's SHA is not the ci run's commit");
-  assert.ok(plan.includes('            echo "sha=$SHA"; echo "tag=$tag"; echo "signed=$HAS_UPDATER_KEY"; echo "skip=$skip"'));
+  assert.ok(plan.includes('            echo "sha=$SHA"; echo "tag=$tag"; echo "skip=$skip"'));
   for (const name of ["build", "sbom", "manifest", "publish"]) {
     const refs = job(name).filter((line) => line.trim().startsWith("ref:"));
     assert.deepEqual(
@@ -262,10 +274,11 @@ test("plan asks whether the dev channel already serves this commit or a later on
   assert.ok(ask < plan.indexOf('} >> "$GITHUB_OUTPUT"'));
   assert.ok(plan.includes("GH_TOKEN: ${{ github.token }}"));
   // And `skip` is what keeps every build, and so every publish, from starting.
-  assert.equal(value(job("build"), 4, "if"), "needs.plan.outputs.skip != 'true'");
+  assert.equal(value(job("keys"), 4, "if"), "needs.plan.outputs.skip != 'true'");
+  assert.equal(value(job("build"), 4, "if"), "needs.keys.outputs.skip != 'true'");
   assert.equal(
     value(job("publish"), 4, "needs"),
-    "[plan, build, runner-binaries, manifest, provenance]",
+    "[gate, plan, keys, build, runner-binaries, manifest, provenance]",
   );
 });
 
@@ -308,6 +321,7 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
   assert.deepEqual(names, [
     "gate",
     "plan",
+    "keys",
     "build",
     "runner-image",
     "runner-image-signature",
@@ -342,7 +356,8 @@ test("every job has a deadline, so a hung one cannot hold the dev builds' group 
     // 107 by 2026-11-22 (run 45030876196 hit its old 120 and was cancelled). The gate
     // is the other: it waits for this commit's `ci`, which took up to 111 minutes on a push to
     // main in the first week of November 2026.
-    const most = { build: 150, gate: 150 }[name] ?? 90;
+    // `runner-binary-aarch64` is the third: it compiles, then waits for the same `ci` (R2).
+    const most = { build: 150, gate: 150, "runner-binary-aarch64": 150 }[name] ?? 90;
     assert.ok(Number.isInteger(minutes) && minutes >= 10 && minutes <= most, `${name}: ${minutes}`);
     minutesOf.set(name, minutes);
   }
@@ -436,18 +451,18 @@ test("the Linux build turns on more swap before anything compiles", () => {
   const name = head.lastIndexOf("- name:");
   assert.match(head.slice(name), /if: runner\.os == 'Linux'/);
   assert.ok(swap < steps.indexOf("rust-toolchain"), "the swap is turned on before the toolchain is installed");
-  assert.ok(swap < steps.indexOf("Build the app"), "the swap is turned on before the app is built");
+  assert.ok(swap < steps.indexOf("Compile the app, the purlis binary"), "the swap is turned on before anything compiles");
 });
 
 test("the debug symbols go up in a job of their own that never holds a release back (#5692)", () => {
   const symbols = job("symbols");
   // After the build, from what it saved, so the build's own time is untouched.
-  assert.deepEqual(needsOf(symbols), ["plan", "build"]);
+  assert.deepEqual(needsOf(symbols), ["gate", "plan", "keys", "build"]);
   // Whenever the run publishes, even when one platform's build failed and the other's saved
   // its symbols; never in a cancelled run.
   assert.equal(
     value(symbols, 4, "if"),
-    "${{ !cancelled() && needs.plan.outputs.publish == 'true' }}",
+    "${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' }}",
   );
   // A red here leaves the run green, and nothing that publishes waits on it.
   assert.equal(value(symbols, 4, "continue-on-error"), "true");
@@ -525,14 +540,11 @@ test("every compile of a build takes the Report intake's address from the releas
   const build = job("build");
   // The secret is reached only where the build publishes: the job's environment says so, on
   // both channels, a dev build too (its reports say channel=dev, from its profile).
-  assert.equal(value(build, 4, "environment"), "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}");
-  // `option_env!` reads it when purlis-core compiles: the command line's build and both of
-  // Tauri's. With the secret absent it is empty, which is no address, so nothing is sent.
-  for (const name of [
-    "The purlis binary the app's hooks run, its charter alias, and the built-in extensions",
-    "Build the app",
-    "Build the extra bundle",
-  ]) {
+  assert.equal(value(build, 4, "environment"), "${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}");
+  // `option_env!` reads it when purlis-core compiles: the one cargo run, Tauri's (R1, #7380).
+  // With the secret absent it is empty, which is no address, so nothing is sent. The bundling
+  // steps compile nothing, so they are not given it.
+  for (const name of ["Compile the app, the purlis binary and the built-in extensions"]) {
     assert.ok(
       step(build, name).includes("PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}"),
       `${name} builds without the intake's address`,
@@ -558,7 +570,7 @@ test("the runner binaries are build's own and one keyless job's, signed by a job
   assert.ok(!arm.some((line) => line.includes("cargo install")));
 
   const sign = job("runner-binaries");
-  assert.equal(value(sign, 4, "needs"), "[plan, build, runner-binary-aarch64]");
+  assert.equal(value(sign, 4, "needs"), "[gate, plan, keys, build, runner-binary-aarch64]");
   const signer = step(sign, "The signer, built with no key in reach");
   assert.ok(!signer.some((line) => line.includes("secrets.")), "no secret where it compiles");
   const signing = step(sign, "Signed with the updater's key for this version and platform");
