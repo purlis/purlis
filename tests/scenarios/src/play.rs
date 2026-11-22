@@ -398,10 +398,11 @@ pub fn step_assertions(
     step: &Step,
     events: &[Seen],
     later: &[Seen],
+    last: bool,
     hosts: &Hosts,
     seconds: &BTreeMap<&'static str, f64>,
 ) -> Vec<Assertion> {
-    let frame = Frame::of(events, later);
+    let frame = Frame::of(events, later, last);
     let one = |name: String, observed: Observed| Assertion {
         step: step_no,
         assertion: name,
@@ -442,8 +443,7 @@ pub fn step_assertions(
         out.push(one(format!("require[{i}]"), observed));
     }
     for (i, e) in step.forbid.iter().enumerate() {
-        // A forbidden event written late, after the window closed, is still the step's: a forbid
-        // reads the window and what followed it up to the next step's first call.
+        // The last step's forbid also reads what the run wrote after the window closed.
         let n = frame.matching_with_tail(e, hosts, seconds, true).len();
         let observed = match (frame.missing(e), n) {
             (Some(why), _) => Observed::Fail(why.into()),
@@ -459,7 +459,10 @@ pub fn step_assertions(
 struct Frame<'a> {
     events: &'a [Seen],
     later: &'a [Seen],
-    /// The part of `later` before the first call of whatever follows: the step's late lines.
+    /// What a forbid reads after the window: for the last step, everything the run wrote after
+    /// it (the teardown's lines included), which no other step's window holds. For any other
+    /// step, nothing: its late lines are in the next step's window, and where a step's own
+    /// first call is itself written late no line says where the next step's begin.
     tail: &'a [Seen],
     first_post: Option<u64>,
     first_stop: Option<u64>,
@@ -471,17 +474,14 @@ struct Frame<'a> {
 }
 
 impl<'a> Frame<'a> {
-    fn of(events: &'a [Seen], later: &'a [Seen]) -> Self {
+    fn of(events: &'a [Seen], later: &'a [Seen], last: bool) -> Self {
         let first = |pred: &dyn Fn(&Seen) -> bool| events.iter().find(|s| pred(s));
         let pre = first(&|s| s.kind == "hook.pretooluse");
         let first_stop = first(&|s| s.kind == "hook.stop").map(|s| s.seq);
         Frame {
             events,
             later,
-            tail: &later[..later
-                .iter()
-                .position(|s| s.kind == "hook.pretooluse")
-                .unwrap_or(later.len())],
+            tail: if last { later } else { &[] },
             first_post: first(&|s| s.kind.starts_with("hook.posttooluse")).map(|s| s.seq),
             first_stop,
             next_call: first_stop.and_then(|stop| {
@@ -509,8 +509,7 @@ impl<'a> Frame<'a> {
         self.matching_with_tail(e, hosts, seconds, false)
     }
 
-    /// [`Self::matching`], and with `tail` the events written after the window and before the
-    /// next step's first call too.
+    /// [`Self::matching`], and with `tail` the events after the last step's window too.
     fn matching_with_tail(
         &self,
         e: &Expect,
@@ -912,11 +911,11 @@ mod tests {
             seen(4, 1300, "hook.posttoolusefailure", json!({})),
             seen(5, 1400, "ask.raised", json!({"ask": "sandbox"})),
         ];
-        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], false, &hosts(), &seconds());
         assert!(got.iter().all(|a| a.observed == Observed::Pass), "{got:#?}");
         // Without `before`, the late duplicate would be a second ask; with it, one.
         let twice = step(json!({"require": [{"kind": "ask.raised", "count": 1}]}));
-        let got = step_assertions(1, &twice, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &twice, &log, &[], false, &hosts(), &seconds());
         assert_eq!(
             got[0].observed,
             Observed::Fail(2.into()),
@@ -925,7 +924,7 @@ mod tests {
         // A forbid that matched says how many.
         let mut loud = log.to_vec();
         loud.push(seen(6, 1500, "ask.answered", json!({})));
-        let got = step_assertions(1, &s, &loud, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &loud, &[], false, &hosts(), &seconds());
         assert_eq!(
             got[2],
             Assertion {
@@ -952,7 +951,7 @@ mod tests {
             seen(4, 46_000, "hook.stop", json!({})),
             seen(5, 76_000, "stop.block", json!({"args": "d2"})),
         ];
-        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], false, &hosts(), &seconds());
         // 35 s after the call, not within 2 * 1 + 1 = 3 s: the seconds are the observation.
         assert_eq!(got[0].observed, Observed::Fail(json!(35.0)));
         assert_eq!(
@@ -979,7 +978,7 @@ mod tests {
             seen(3, 2, "stop.block", json!({})),
         ];
         assert!(
-            step_assertions(1, &s, &log, &[], &hosts(), &seconds())
+            step_assertions(1, &s, &log, &[], false, &hosts(), &seconds())
                 .iter()
                 .all(|a| a.observed == Observed::Pass)
         );
@@ -987,7 +986,7 @@ mod tests {
             seen(1, 0, "stop.block", json!({})),
             seen(2, 1, "ask.raised", json!({})),
         ];
-        let got = step_assertions(1, &s, &backwards, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &backwards, &[], false, &hosts(), &seconds());
         assert_eq!(got[1].observed, Observed::Fail(0.into()));
     }
 
@@ -1035,10 +1034,10 @@ mod tests {
         // The ask came with the next prompt, 61 s after the call: not in this step, but its
         // seconds are what a mark pins.
         let later = [seen(9, 71_000, "ask.raised", json!({}))];
-        let got = step_assertions(1, &s, &log, &later, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &later, false, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Fail(json!(61.0)));
         // Never written at all: a count of none, which no range can pin.
-        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], false, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Fail(0.into()));
     }
 
@@ -1054,7 +1053,7 @@ mod tests {
         }));
         // An ask and nothing else: no call, no post line, no stop.
         let log = [seen(1, 1000, "ask.raised", json!({}))];
-        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], false, &hosts(), &seconds());
         let said: Vec<&Observed> = got.iter().map(|a| &a.observed).collect();
         assert_eq!(
             said,
@@ -1072,7 +1071,7 @@ mod tests {
             seen(3, 1200, "hook.posttoolusefailure-blocked", json!({})),
             seen(4, 1300, "hook.stop", json!({})),
         ];
-        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], false, &hosts(), &seconds());
         assert!(got.iter().all(|a| a.observed == Observed::Pass), "{got:#?}");
     }
 
@@ -1091,14 +1090,14 @@ mod tests {
             // The next step's own block is not this step's.
             seen(6, 1500, "stop.block", json!({})),
         ];
-        let got = step_assertions(1, &s, &log, &later, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &later, false, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Fail(1.into()));
         // Nothing before the next call: the forbid holds.
         let later = [
             seen(5, 1400, "hook.pretooluse", json!({})),
             seen(6, 1500, "stop.block", json!({})),
         ];
-        let got = step_assertions(1, &s, &log, &later, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &later, false, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Pass);
     }
 
@@ -1136,35 +1135,31 @@ mod tests {
             "calls": [{"tool": "Bash", "input": {"command": "true"}}],
             "forbid": [{"kind": "stop.block"}],
         }));
-        let got = step_assertions(1, &s, &[], &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &[], &[], false, &hosts(), &seconds());
         let calls = got.iter().find(|a| a.assertion == "calls").expect("calls");
         assert_eq!(calls.observed, Observed::Fail("no hook.pretooluse".into()));
         // The forbid on its own passes on nothing: the `calls` assertion is what fails the step.
         let log = [seen(1, 0, "hook.pretooluse", json!({"args": "d1"}))];
-        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &[], false, &hosts(), &seconds());
         assert!(got.iter().all(|a| a.assertion != "calls"), "{got:?}");
         // A step with no calls has none to see.
         let bare = step(json!({"forbid": [{"kind": "stop.block"}]}));
-        let got = step_assertions(1, &bare, &[], &[], &hosts(), &seconds());
+        let got = step_assertions(1, &bare, &[], &[], false, &hosts(), &seconds());
         assert!(got.iter().all(|a| a.assertion != "calls"), "{got:?}");
     }
 
     #[test]
-    fn a_forbidden_event_written_after_the_window_fails_up_to_the_next_call_and_no_further() {
+    fn only_the_last_steps_forbid_reads_what_the_run_wrote_after_its_window() {
         let s = step(json!({
             "calls": [{"tool": "Bash", "input": {"command": "true"}}],
             "forbid": [{"kind": "stop.block"}],
         }));
         let log = [seen(1, 0, "hook.pretooluse", json!({"args": "d1"}))];
         let late = [seen(5, 9, "stop.block", json!({}))];
-        let got = step_assertions(1, &s, &log, &late, &hosts(), &seconds());
+        let got = step_assertions(1, &s, &log, &late, true, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Fail(1.into()));
-        // After the next step's first call it is that step's.
-        let next = [
-            seen(4, 8, "hook.pretooluse", json!({"args": "d2"})),
-            seen(5, 9, "stop.block", json!({})),
-        ];
-        let got = step_assertions(1, &s, &log, &next, &hosts(), &seconds());
+        // Another step's late line is in the next step's window, not read here.
+        let got = step_assertions(1, &s, &log, &late, false, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Pass);
     }
 
@@ -1172,10 +1167,10 @@ mod tests {
     fn this_call_with_no_digest_fails_instead_of_matching_nothing() {
         let s = step(json!({"forbid": [{"kind": "stop.block", "args": "this_call"}]}));
         let none = [seen(1, 0, "hook.pretooluse", json!({"args": null}))];
-        let got = step_assertions(1, &s, &none, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &none, &[], false, &hosts(), &seconds());
         assert!(matches!(got[0].observed, Observed::Fail(_)), "{got:?}");
         let digest = [seen(1, 0, "hook.pretooluse", json!({"args": "d1"}))];
-        let got = step_assertions(1, &s, &digest, &[], &hosts(), &seconds());
+        let got = step_assertions(1, &s, &digest, &[], false, &hosts(), &seconds());
         assert_eq!(got[0].observed, Observed::Pass);
     }
 

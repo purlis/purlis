@@ -206,6 +206,14 @@
         }
       ],
       "expected_fail": [
+      {
+        "issue": 7353,
+        "leg": "fake",
+        "step": 1,
+        "assertion": "calls",
+        "observed": "no hook.pretooluse",
+        "note": "fake leg (CI run 44992641994): the step's call returned (status 200) but its window holds no pre line: ask.raised, stop.block, trust.sandbox.grant, ask.answered only; where the pre line was written was not read"
+      },
         {
           "issue": 6673,
           "leg": "fake",
@@ -308,6 +316,14 @@
         }
       ],
       "expected_fail": [
+      {
+        "issue": 7353,
+        "leg": "fake",
+        "step": 1,
+        "assertion": "calls",
+        "observed": "no hook.pretooluse",
+        "note": "fake leg (CI run 44992641994): the step's call returned (exit 1, tunnel 403) but its window holds no pre line: stop.block, ask.raised, ask.answered only; where the pre line was written was not read"
+      },
         {
           "issue": 6674,
           "leg": "fake",

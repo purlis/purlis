@@ -29,11 +29,11 @@
 //! events are those the log gained from the step's start to the next step's start, its chat lines
 //! those the transcript gained over the same time; the last step's end is taken before the
 //! runner's own teardown presses. An event written late, at the next prompt, is counted in the
-//! next step's window, but a step's `forbid` also reads what was written after its window up to
-//! the next step's first call (and, for the last step, to the end of the run, the teardown's
-//! lines included), so a forbidden event written late is not unjudged; `at: next_prompt` reads
-//! the same way for what the next prompt wrote (`purlis_scenarios::play`). A step that made calls
-//! and has no `hook.pretooluse` of its own in its window fails: it saw nothing to judge.
+//! next step's window (`at: next_prompt` reads past the window for what the next prompt wrote,
+//! `purlis_scenarios::play`), and the last step's `forbid` also reads what the run wrote after its
+//! window, the teardown's lines included, so nothing is judged by no step. A step that made calls
+//! and has no `hook.pretooluse` of its own in its window fails: it saw nothing to judge. A late
+//! line of a middle step is judged only where the next step's own forbids see it (#7364).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -691,11 +691,12 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
     };
     for cell in &playable {
         let mut assertions: Vec<Assertion> = Vec::new();
-        for ((p, end), transcript_end) in played
+        for (index, ((p, end), transcript_end)) in played
             .iter()
             .zip(&ends)
             .zip(&transcript_ends)
-            .filter(|((p, _), _)| p.cell == cell.id)
+            .enumerate()
+            .filter(|(_, ((p, _), _))| p.cell == cell.id)
         {
             let step = &cell.steps[p.step];
             let number = u32::try_from(p.step + 1).expect("a step number");
@@ -720,7 +721,13 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 assertions.push(play::outcome_assertion(number, want, came));
             }
             assertions.extend(play::step_assertions(
-                number, step, &seen, &later, &hosts, &seconds,
+                number,
+                step,
+                &seen,
+                &later,
+                index + 1 == played.len(),
+                &hosts,
+                &seconds,
             ));
             for (i, observed) in p.window.iter().enumerate() {
                 assertions.push(Assertion {
