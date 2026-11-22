@@ -101,6 +101,14 @@ impl Quarantine {
         Ok(quarantine)
     }
 
+    /// **Also holds commit `extra`**, with its history, as `from` gives it: the default branch's
+    /// tip, which a rebased push is read against ([`crate::heldact::Trees::compare_base`]) and
+    /// whose objects its pack leaves out because the forge has them.
+    pub fn also_have(&self, from: &dyn BaseObjects, extra: &HeadSha) -> Result<(), String> {
+        from.fetch(&self.path, extra)?;
+        self.has(extra)
+    }
+
     /// **Takes in the pack the chat pushed**, whose tip is `tip`: every object hashed and checked by
     /// git, completed against the base where the pack is thin, and refused where the tip is not a
     /// commit whose every object is here.

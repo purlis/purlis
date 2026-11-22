@@ -91,9 +91,14 @@ type Held = (TokenKind, &'static str);
 struct FakeRecorded {
     repos: Mutex<HashMap<PathBuf, Vec<Recorded3>>>,
     accounts: Mutex<HashMap<(PathBuf, String), String>>,
+    /// The branches purlis cut for a chat, by chat.
+    cut: Mutex<Vec<(String, String)>>,
 }
 
 impl FakeRecorded {
+    fn cut_for(&self, chat: &str, branch: &str) {
+        lock(&self.cut).push((chat.to_owned(), branch.to_owned()));
+    }
     fn record(&self, project: &str, repos: Vec<Recorded3>) {
         lock(&self.repos).insert(PathBuf::from(project), repos);
     }
@@ -106,6 +111,13 @@ impl FakeRecorded {
 }
 
 impl Recorded for FakeRecorded {
+    fn own_branches(&self, _: &Path, chat: &str, _: &AllowedRepo) -> Vec<String> {
+        lock(&self.cut)
+            .iter()
+            .filter(|(by, _)| by == chat)
+            .map(|(_, branch)| branch.clone())
+            .collect()
+    }
     fn repos(&self, project: &Path) -> Vec<AllowedRepo> {
         lock(&self.repos)
             .get(project)
@@ -1578,4 +1590,46 @@ fn the_apps_git_for_a_chat_goes_to_the_relay_that_proves_the_hand_off_and_never_
     let shown = format!("{route:?}");
     assert!(shown.contains(&format!("http://{relay}")), "{shown}");
     assert!(!shown.contains(&format!("http://{door}")), "{shown}");
+}
+
+// ---- a chat's own branches ----
+
+/// A push of `branch` (an update, so the branch exists on the forge already) through the run's
+/// route, as `git push` sends it.
+fn push_update(scene: &Scene, run: &str, sentinel: &str, branch: &str) -> Outcome {
+    send_raw(
+        scene,
+        run,
+        sentinel,
+        ("POST", "github.com", "/acme/app.git/git-receive-pack"),
+        "application/x-git-receive-pack-request",
+        &push_commands(&[(false, false, &format!("refs/heads/{branch}"))]),
+    )
+}
+
+#[test]
+fn a_branch_purlis_cut_for_the_chat_may_be_pushed_though_the_forge_has_it_already() {
+    let scene = Scene::new();
+    scene.recorded.cut_for("chat-1", "task/forms");
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    let pushed = push_update(&scene, "run-1", &params.sentinel, "task/forms");
+
+    assert!(matches!(pushed, Outcome::Forward(_)), "{pushed:?}");
+}
+
+#[test]
+fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
+    let scene = Scene::new();
+    scene.recorded.cut_for("chat-1", "task/forms");
+    scene.recorded.cut_for("chat-2", "task/other");
+    let params = scene.start("chat-1", "run-1", "/p/one");
+
+    for branch in ["main", "task/other", "colleague"] {
+        let pushed = push_update(&scene, "run-1", &params.sentinel, branch);
+        assert!(
+            matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+            "{branch}: {pushed:?}"
+        );
+    }
 }

@@ -163,6 +163,32 @@ fn holder(plane: &Path, at: &Located) -> Option<Holder> {
     held
 }
 
+/// **The branches the chat `chat` holds** in repo `repo` of workspace `ws`: of `pieces` (a
+/// folder's name and the branch it is on), those whose claim names this chat as the holder. A
+/// folder on no branch, one nobody claimed, one another chat holds, or one declared `done` or
+/// `abandoned` holds none. What the forge route enrols as the chat's own branches, so it may
+/// push a branch purlis cut for it that is on the forge already.
+pub fn branches_held_by(
+    plane: &Path,
+    ws: &str,
+    repo: &str,
+    pieces: &[(String, Option<String>)],
+    chat: &str,
+) -> Vec<String> {
+    pieces
+        .iter()
+        .filter_map(|(piece, branch)| {
+            let at = Located {
+                workspace: ws.to_owned(),
+                repo: repo.to_owned(),
+                piece: piece.clone(),
+            };
+            let held = holder(plane, &at)?;
+            (held.id == chat).then(|| branch.clone()).flatten()
+        })
+        .collect()
+}
+
 /// Whether the chat `me` (its stable id, where it has one) may `act` in the branch folder `at`,
 /// by the piece log and `live`: the chats the app has, or `None` where no app said.
 pub fn writer(

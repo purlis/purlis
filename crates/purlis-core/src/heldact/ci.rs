@@ -415,6 +415,32 @@ impl Trees for GitTrees {
     fn message(&self, tip: &HeadSha) -> Result<String, String> {
         super::TipFiles::message(self, tip)
     }
+
+    fn compare_base(
+        &self,
+        old: &HeadSha,
+        tip: &HeadSha,
+        default_tip: &HeadSha,
+    ) -> Result<HeadSha, String> {
+        let merge_base = |a: &HeadSha, b: &HeadSha| -> Result<HeadSha, String> {
+            let out = self
+                .git_capped(&["merge-base", a.as_str(), b.as_str()], 1024)
+                .map_err(|why| {
+                    format!(
+                        "purlis found no common commit of {} and {}: {why}",
+                        short(a),
+                        short(b)
+                    )
+                })?;
+            HeadSha::try_from(out.trim())
+                .map_err(|_| "git's merge base was not a commit id".to_owned())
+        };
+        // The merge base of a commit and a descendant of it is the commit: a fast-forward.
+        if merge_base(old, tip)?.as_str() == old.as_str() {
+            return Ok(old.clone());
+        }
+        merge_base(tip, default_tip)
+    }
 }
 
 #[cfg(test)]

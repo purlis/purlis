@@ -186,6 +186,47 @@ impl Recorded for ConfirmedRecorded {
         out
     }
 
+    /// The branches of the branch folders (`purlis worktree`) the chat `chat` holds, in the
+    /// clones that are `repo`: [`purlis_core::piececlaim::branches_held_by`], read from the piece
+    /// log and git's own list of the clone's worktrees.
+    fn own_branches(&self, project: &Path, chat: &str, repo: &AllowedRepo) -> Vec<String> {
+        let clones: Vec<PathBuf> = self
+            .confirmed_for(project)
+            .into_iter()
+            .filter(|(confirmed, _)| {
+                let (host, port) = confirmed::address_of(&confirmed.host);
+                host == repo.host() && port == repo.port() && confirmed.path == repo.path()
+            })
+            .map(|(_, clone)| clone)
+            .collect();
+        let Ok(workspaces) =
+            purlis_core::workspaces::Plane::open(project.to_path_buf()).workspaces()
+        else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for ws in workspaces {
+            let Ok(found) = purlis_core::repos::clones(project, &ws) else {
+                continue;
+            };
+            for held in found.repos {
+                let here = std::fs::canonicalize(&held.path).unwrap_or(held.path.clone());
+                if !clones.contains(&here) {
+                    continue;
+                }
+                let Ok(pieces) = purlis_core::worktree::list(project, &ws, &held.name) else {
+                    continue;
+                };
+                let pieces: Vec<(String, Option<String>)> =
+                    pieces.into_iter().map(|p| (p.piece, p.branch)).collect();
+                out.extend(purlis_core::piececlaim::branches_held_by(
+                    project, &ws, &held.name, &pieces, chat,
+                ));
+            }
+        }
+        out
+    }
+
     /// The account the person chose for the project's repos on `host`: one account, or none.
     fn account(&self, project: &Path, host: &str) -> Option<String> {
         let mut found: Option<String> = None;

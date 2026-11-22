@@ -182,6 +182,12 @@ pub trait Recorded: Send + Sync {
     fn repos(&self, project: &Path) -> Vec<AllowedRepo>;
     /// `host` is [`forge_host`]'s.
     fn account(&self, project: &Path, host: &str) -> Option<String>;
+    /// The branches of `repo` that purlis cut for the chat `chat` (its branch folders' branches),
+    /// which the chat may push although they exist on the forge already. Any doubt is none: a
+    /// branch not named here stays protected.
+    fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -629,6 +635,16 @@ impl ForgeRoutes {
         if repos.is_empty() {
             return Ok(None);
         }
+        // The branches purlis cut for this chat are its own from the start, so a task branch
+        // that is on the forge already (pushed before, or before a restart) may be pushed again.
+        let repos: Vec<AllowedRepo> = repos
+            .into_iter()
+            .map(|repo| {
+                let own = self.seams.recorded.own_branches(project, chat, &repo);
+                let own: Vec<&str> = own.iter().map(String::as_str).collect();
+                repo.with_own_branches(&own)
+            })
+            .collect();
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
         let trouble = Arc::new(SignInTrouble::default());

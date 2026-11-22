@@ -433,7 +433,21 @@ fn ci_push(
         }
     };
     let config = forge.ci_config_path(repo).map_err(forge_said)?;
-    let diff: CiDiff = match check_push(forge.kind(), config.as_deref(), world.trees, &base, tip) {
+    // A push that is not a fast-forward of the branch (a rebase) is read against where it leaves
+    // the default branch, so what the default branch gained since is not counted as the push's.
+    // `base` stays the branch's tip: it is what the push's lease holds the forge to.
+    let compare = match against {
+        Against::BranchTip => {
+            let (_, default_tip) = forge.default_branch(repo).map_err(forge_said)?;
+            world
+                .trees
+                .compare_base(&base, tip, &default_tip)
+                .map_err(Refused::CiDiff)?
+        }
+        Against::DefaultBranch(_) => base.clone(),
+    };
+    let diff: CiDiff = match check_push(forge.kind(), config.as_deref(), world.trees, &compare, tip)
+    {
         PushCheck::Hold(diff) => diff,
         PushCheck::NoCiFiles => return Err(Refused::NoCiFiles),
         PushCheck::Refuse(why) => return Err(Refused::CiDiff(why)),
@@ -470,7 +484,19 @@ fn ci_push(
         row("Repo", repo.as_str()),
         row("Branch", shown_text(branch.as_str(), MOST_ENTRY)),
         row("New tip", tip.as_str()),
-        row("Compared with", format!("{compared} ({})", base.as_str())),
+        row(
+            "Compared with",
+            if compare.as_str() == base.as_str() {
+                format!("{compared} ({})", base.as_str())
+            } else {
+                format!(
+                    "the commit where {} leaves the default branch ({}), as the push is not a \
+                     fast-forward of the branch on the forge",
+                    shown_text(branch.as_str(), MOST_ENTRY),
+                    compare.as_str()
+                )
+            },
+        ),
         row("CI files", diff.files.join(", ")),
         row("Commit message", message_row(&diff.message)?),
         row(

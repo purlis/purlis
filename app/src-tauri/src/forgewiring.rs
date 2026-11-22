@@ -514,13 +514,42 @@ impl PushGate for CiPushGate {
                     ));
                 }
             };
+            // A branch that is there already is pushed over, and a push that is not its
+            // fast-forward (a rebase) holds the default branch's new commits only by reference:
+            // its tip is read in too, to be read against where the push leaves it.
+            let default_tip = if created {
+                base.clone()
+            } else {
+                match forge.default_branch(&repo) {
+                    Ok((_, default_tip)) => default_tip,
+                    Err(why) => {
+                        return Self::refuse(format!(
+                            "purlis did not send this push: it could not read the default branch ({why})."
+                        ));
+                    }
+                }
+            };
+            if !created && let Err(why) = quarantine.also_have(&from, &default_tip) {
+                return Self::refuse(format!(
+                    "purlis did not send this push: it could not read the default branch's commits ({why})."
+                ));
+            }
             if let Err(why) = quarantine.take_in(push.pack.clone(), &tip, &base) {
                 return Self::refuse(format!(
                     "purlis did not send this push: git did not take its objects in ({why})."
                 ));
             }
             let kind = forge.kind();
-            match check_push(kind, config.as_deref(), &quarantine.trees(), &base, &tip) {
+            let trees = quarantine.trees();
+            let compare = match trees.compare_base(&base, &tip, &default_tip) {
+                Ok(compare) => compare,
+                Err(why) => {
+                    return Self::refuse(format!(
+                        "purlis did not send this push: it could not read what the push changes ({why})."
+                    ));
+                }
+            };
+            match check_push(kind, config.as_deref(), &trees, &compare, &tip) {
                 PushCheck::NoCiFiles => continue,
                 PushCheck::Refuse(why) => {
                     return Self::refuse(format!("purlis did not send this push: {why}"));
