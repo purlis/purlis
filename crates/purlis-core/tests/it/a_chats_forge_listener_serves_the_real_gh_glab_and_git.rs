@@ -121,7 +121,9 @@ impl Forge {
             ("GET", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5/trace") => {
                 Reply::new(200, "text/plain", b"Running with the runner\nJOBLOGLINE\n".to_vec())
             }
-            ("POST", "gitlab.com/api/v4/projects/group%2Fproj/jobs/5/retry") => self.json(JOB),
+            ("POST", "gitlab.com/api/v4/projects/group%2Fproj/pipelines/9/retry") => {
+                self.json(r#"{"id":9,"project_id":42,"status":"pending","ref":"main"}"#)
+            }
             ("GET", "gitlab.com/api/v4/projects/group%2Fproj") => self.json(
                 r#"{"id":42,"name":"proj","path_with_namespace":"group/proj","default_branch":"main"}"#,
             ),
@@ -707,8 +709,9 @@ fn glab_reaches_the_forge_through_connect_and_the_chats_own_authority() {
 }
 
 #[test]
-fn glab_lists_pipelines_reads_a_job_log_and_retries_a_job_through_the_route() {
+fn glab_lists_pipelines_reads_a_job_log_and_retries_a_pipeline_through_the_route() {
     purlis_core::unsteered!();
+    // `tool` fails a run that sets `PURLIS_PROXY_REAL_CLIENTS` (CI does) when `glab` is missing.
     if !tool("glab") {
         return;
     }
@@ -717,15 +720,28 @@ fn glab_lists_pipelines_reads_a_job_log_and_retries_a_job_through_the_route() {
     assert!(ok, "glab ci list: {text}");
     let (ok, text) = s.glab(&["ci", "trace", "5", "-R", "group/proj"]);
     assert!(ok && text.contains("JOBLOGLINE"), "glab ci trace: {text}");
-    let (ok, text) = s.glab(&["ci", "retry", "5", "-R", "group/proj"]);
-    assert!(ok, "glab ci retry: {text}");
+    let (ok, text) = s.glab(&[
+        "api",
+        "-X",
+        "POST",
+        "projects/group%2Fproj/pipelines/9/retry",
+    ]);
+    assert!(ok, "glab api pipeline retry: {text}");
     assert!(
-        s.forge_was_sent("jobs/5/retry"),
+        s.forge_was_sent("pipelines/9/retry"),
         "the retry did not reach the forge"
     );
     // Nothing a tool sent was refused, and the forge saw the real token only.
     s.assert_clean();
     assert!(s.forge_saw_the_real_token());
+    // A job's retry can start a manual job at once, so it is not carried: `glab ci retry` fails
+    // and the forge never hears of it.
+    let (ok, text) = s.glab(&["ci", "retry", "5", "-R", "group/proj"]);
+    assert!(!ok, "glab ci retry of a job succeeded: {text}");
+    assert!(
+        !s.forge_was_sent("jobs/5/retry"),
+        "a job retry reached the forge"
+    );
 }
 
 #[test]

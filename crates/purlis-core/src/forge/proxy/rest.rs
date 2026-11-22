@@ -98,16 +98,13 @@ const CI_WRITES: &[&[&str]] = &[
     &["actions", "runs", "#", "rerun-failed-jobs"],
 ];
 
-/// GitLab's writes: retry or cancel a pipeline or one job, with an empty body. **Never `play`**:
+/// GitLab's one write: retry a pipeline, with an empty body, as GitHub's rerun. **Never `play`**:
 /// it starts a manual job, which can carry variables, and a manual job is gated code (a deploy, a
-/// job on a protected ref) that is the person's to start, as GitHub's `approve` is. Never the
-/// trigger routes, which start a pipeline with variables of the caller's choosing.
-const GITLAB_CI_WRITES: &[&[&str]] = &[
-    &["pipelines", "#", "retry"],
-    &["pipelines", "#", "cancel"],
-    &["jobs", "#", "retry"],
-    &["jobs", "#", "cancel"],
-];
+/// job on a protected ref) that is the person's to start, as GitHub's `approve` is. Never a job's
+/// retry (it can enqueue a manual or delayed job at once) nor any cancel (GitHub has none, and it
+/// could stop a deploy mid-apply). Never the trigger routes, which start a pipeline with
+/// variables of the caller's choosing.
+const GITLAB_CI_WRITES: &[&[&str]] = &[&["pipelines", "#", "retry"]];
 
 fn is_ci_write(kind: Kind, method: &str, rel: &[String]) -> bool {
     let list = match kind {

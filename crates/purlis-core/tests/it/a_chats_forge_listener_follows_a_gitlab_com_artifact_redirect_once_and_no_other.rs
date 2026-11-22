@@ -27,6 +27,13 @@ fn gitlab(w: &World, ca: &ChatCa, host: &str, method: &str, target: &str) -> Rep
     tls(w, ca, host, 443, host, request.as_bytes()).expect("a handshake")
 }
 
+/// The same request with no credential at all: a public read, for which nothing was signed.
+fn gitlab_anonymous(w: &World, ca: &ChatCa, method: &str, target: &str) -> Reply {
+    let request =
+        format!("{method} {target} HTTP/1.1\r\nHost: gitlab.com\r\nContent-Length: 0\r\n\r\n");
+    tls(w, ca, "gitlab.com", 443, "gitlab.com", request.as_bytes()).expect("a handshake")
+}
+
 fn world() -> (World, ChatCa) {
     let w = World::new();
     let ca = ChatCa::new(&w.proxy.terminable_hosts(&w.chat)).unwrap();
@@ -138,7 +145,7 @@ fn a_second_redirect_and_one_after_a_write_are_not_followed() {
             .with_header("Location", SIGNED.replace("/9/", "/8/").as_str()),
     );
     let reply = gitlab(&w, &ca, "gitlab.com", "GET", ARTIFACTS);
-    assert!(reply.status >= 300, "{reply:?}");
+    assert_eq!(reply.status, 502, "{}", reply.text());
     assert_eq!(w.fake.requests().len(), 2);
     assert!(
         reply
@@ -156,10 +163,31 @@ fn a_second_redirect_and_one_after_a_write_are_not_followed() {
         &ca,
         "gitlab.com",
         "POST",
-        "/api/v4/projects/group%2Fproj/jobs/5/retry",
+        "/api/v4/projects/group%2Fproj/pipelines/9/retry",
     );
     assert_eq!(reply.status, 502, "{}", reply.text());
     assert_eq!(w.fake.requests().len(), 1);
+}
+
+#[test]
+fn a_head_and_an_uncredentialed_read_are_not_followed() {
+    purlis_core::unsteered!();
+    // A HEAD is not a GET, so it is not followed.
+    let (w, ca) = world();
+    w.fake
+        .answer(Answer::ok("").status(302).with_header("Location", SIGNED));
+    let reply = gitlab(&w, &ca, "gitlab.com", "HEAD", ARTIFACTS);
+    assert_eq!(reply.status, 502, "{}", reply.text());
+    assert_eq!(w.fake.requests().len(), 1);
+
+    // A read that sent no credential is not carried at all: the chat is told so with `401`, and
+    // the forge, so no signed address, is never asked.
+    let (w, ca) = world();
+    w.fake
+        .answer(Answer::ok("").status(302).with_header("Location", SIGNED));
+    let reply = gitlab_anonymous(&w, &ca, "GET", ARTIFACTS);
+    assert_eq!(reply.status, 401, "{}", reply.text());
+    assert!(w.fake.requests().is_empty());
 }
 
 #[test]
