@@ -346,11 +346,17 @@ impl Homes {
                 .to_path_buf(),
             None => repo().join("crates/fake-harness/shims"),
         };
-        let path = std::env::join_paths(std::iter::once(ahead).chain(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        )))
-        .expect("a PATH");
         let fake = crate::behaviour::fake_harness();
+        // The built fake harness's own folder goes last, so a persona's tool named
+        // `fake-harness` is found by its plain name (`Scenario::with_a_tunnel_vault`).
+        let path = std::env::join_paths(
+            std::iter::once(ahead)
+                .chain(std::env::split_paths(
+                    &std::env::var_os("PATH").unwrap_or_default(),
+                ))
+                .chain(fake.parent().map(Path::to_path_buf)),
+        )
+        .expect("a PATH");
         let mut env: Vec<(&str, OsString)> = vec![
             (HOME_VAR, homes.home.clone().into()),
             ("HOME", homes.user.clone().into()),
@@ -706,6 +712,12 @@ impl purlis_host::Confine for ConfinesInTheScenario {
     }
 }
 
+/// The persona, vault, host and port of the tunnel fixture ([`Scenario::with_a_tunnel_vault`]).
+pub(crate) const TUNNEL_PERSONA: &str = "steward";
+pub(crate) const TUNNEL_VAULT: &str = "tunnels";
+pub(crate) const TUNNEL_HOST: &str = "tunnel.example.test";
+pub(crate) const TUNNEL_PORT: u16 = 5432;
+
 /// How many variants `grant::What` has, as [`kind_of`] names them.
 pub(crate) const GRANT_KINDS: usize = 6;
 
@@ -845,7 +857,66 @@ impl Scenario {
         dialect: Dialect,
         template: Template,
     ) -> Option<Scenario> {
-        Scenario::built(homes, protection, persona, dialect, template, true)
+        Scenario::built(homes, protection, persona, dialect, template, true, "")
+    }
+
+    /// **The scenario host with a vault broker fixture** (#7101): [`Scenario::new`] at `protection`
+    /// as persona [`TUNNEL_PERSONA`], whose project holds a test vault [`TUNNEL_VAULT`] (a plain
+    /// file, tagged for that persona, holding a tunnel value for [`TUNNEL_HOST`]), a declared tool
+    /// `fake-harness` bound to its key, and the persona's hosts, all allowed on this machine as
+    /// the person's Allow keeps them. A chat that runs `fake-harness dial TUNNEL_DSN` is served
+    /// by the app's real broker (`vaults::run_brokered`), which opens the tunnel.
+    pub(crate) fn with_a_tunnel_vault(
+        homes: &Homes,
+        protection: Protection,
+        dialect: Dialect,
+    ) -> Option<Scenario> {
+        let more = format!(
+            "\n[sandbox.personas.{TUNNEL_PERSONA}]\nhosts = [\"{TUNNEL_HOST}:{TUNNEL_PORT}\"]\n\
+             tools = {{ fake-harness = {{ vault = \"{TUNNEL_VAULT}\", as = \"TUNNEL_DSN env\", \
+             key = \"DSN\" }} }}\n"
+        );
+        let scenario = Scenario::built(
+            homes,
+            protection,
+            Some(TUNNEL_PERSONA),
+            dialect,
+            DEFAULT_TEMPLATE,
+            true,
+            &more,
+        )?;
+        // The values live where no chat reads: the registry names them, the project holds none.
+        let values = scenario.a_folder_outside("vault").join("tunnels.json");
+        std::fs::write(
+            &values,
+            serde_json::json!({
+                "DSN": format!("postgres://app:test-only@{TUNNEL_HOST}:{TUNNEL_PORT}/orders")
+            })
+            .to_string(),
+        )
+        .expect("the test vault's values");
+        std::fs::write(
+            scenario.root.join("vaults.json"),
+            serde_json::json!({ "vaults": { TUNNEL_VAULT: {
+                "provider": "plain-file",
+                "config": {"file": values.display().to_string()},
+                "persona": TUNNEL_PERSONA,
+            }}})
+            .to_string(),
+        )
+        .expect("the vault registry");
+        // The person's Allow of the persona's hosts and tools, as the window keeps it.
+        let shown = purlis_core::sandbox::persona::shown(&scenario.root)
+            .into_iter()
+            .find(|one| one.persona == TUNNEL_PERSONA && one.asks())
+            .expect("the persona's hosts and tools are shown for an Allow");
+        purlis_core::sandbox::local::allow_persona_hosts(
+            &scenario.root,
+            TUNNEL_PERSONA,
+            &shown.digest,
+        )
+        .expect("the Allow is kept");
+        Some(scenario)
     }
 
     /// **The scenario host for the real Claude Code** (T1.1-10): `protection`, under `strict`,
@@ -866,6 +937,7 @@ impl Scenario {
             Dialect::Claude,
             DEFAULT_TEMPLATE,
             false,
+            "",
         )?;
         if protection == Protection::Full {
             scenario.owes_the_canary = true;
@@ -887,6 +959,7 @@ impl Scenario {
         dialect: Dialect,
         template: Template,
         with_the_fakes_canary: bool,
+        manifest_more: &str,
     ) -> Option<Scenario> {
         if let Err(why) = the_wrap_applies() {
             return cannot_run(&why);
@@ -920,7 +993,11 @@ impl Scenario {
         purlis_core::eventlog::ArgsKey::open(&log).expect("the args key");
         std::fs::write(
             root.join(purlis_core::plane::MANIFEST),
-            format!("{}{}", protection.manifest(), policy_of(template)),
+            format!(
+                "{}{}{manifest_more}",
+                protection.manifest(),
+                policy_of(template)
+            ),
         )
         .expect("the project's manifest");
         if let Some(persona) = persona {

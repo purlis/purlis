@@ -203,6 +203,18 @@ fn main() -> ExitCode {
     if script::wanted(&argv) {
         return script::main(&argv);
     }
+    // `dial <variable>`: the client a persona's tool runs in a scenario (`net::dial`).
+    if let [word, variable] = argv.as_slice()
+        && word == "dial"
+    {
+        return match net::dial(variable) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(message) => {
+                println!("{message}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let args = Args::parse();
     match run(&args) {
         Ok(()) => ExitCode::from(args.exit_code),
