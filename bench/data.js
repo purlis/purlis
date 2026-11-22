@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795383192782,
+  "lastUpdate": 1795385301312,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52374,6 +52374,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6377025,
             "unit": "ms",
             "extra": "median of 5 runs: 100.826, 101.274, 101.638, 101.752, 102.813 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d47991ff87a51664d9712eee0cac9a1aa4ece5b0",
+          "message": "Release R4: no dev build for a commit that ships nothing (#7383) (#7386)\n\nci-scope.mjs gains a ships answer, measured from the commit the published dev.json names, and release.yml's plan skips a dev build when nothing a build reads changed.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82GDYD0JM89RB5Y2FDB6Q7M\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-22T21:34:40Z",
+          "tree_id": "4a05647e407631b68c40729009e6352981f00ed8",
+          "url": "https://github.com/purlis/purlis/commit/d47991ff87a51664d9712eee0cac9a1aa4ece5b0"
+        },
+        "date": 1795385290055,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7019835000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.678, 0.692, 0.702, 0.710, 0.712 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6469105,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.565, 16.568, 16.647, 16.694, 16.733 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.61119350000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.000, 102.392, 102.611, 103.019, 103.547 ms"
           }
         ]
       }
