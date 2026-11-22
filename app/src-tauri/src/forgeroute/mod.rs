@@ -65,10 +65,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{
     AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
-    CredentialSource, ForgeProxy, HeldSink, Inbound, NoObjects, Outcome, Refusal, TokenKind,
+    CredentialSource, ForgeProxy, HeldSink, Inbound, Outcome, Refusal, TokenKind,
 };
 use purlis_core::secrets::keyring::Secret;
 
+pub mod objects;
 pub mod prod;
 
 #[cfg(test)]
@@ -640,18 +641,23 @@ impl ForgeRoutes {
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
         let trouble = Arc::new(SignInTrouble::default());
-        let mut proxy = ForgeProxy::new(
-            Box::new(ProjectCredentials {
-                chat: chat.to_owned(),
-                project: project.to_owned(),
-                seams: self.seams.clone(),
-                trouble: trouble.clone(),
-                told: self.told.clone(),
-            }),
-            Box::new(NoObjects),
-        )
-        .with_pin(pin.clone())
-        .with_merge_stance((self.seams.merges)(project));
+        let credentials = Arc::new(ProjectCredentials {
+            chat: chat.to_owned(),
+            project: project.to_owned(),
+            seams: self.seams.clone(),
+            trouble: trouble.clone(),
+            told: self.told.clone(),
+        });
+        // A GraphQL mutation that names a pull request by node id is tied to its repo by asking
+        // the forge, with this run's own credential (`objects`).
+        let objects = objects::RunObjects::new(
+            ChatId::new(run),
+            repos.clone(),
+            Arc::new(objects::ForgeLookup::new(credentials.clone())),
+        );
+        let mut proxy = ForgeProxy::new(Box::new(objects::Shared(credentials)), Box::new(objects))
+            .with_pin(pin.clone())
+            .with_merge_stance((self.seams.merges)(project));
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(

@@ -866,7 +866,7 @@ fn stub_seams_fail_closed_a_run_has_no_route_without_a_listener() {
                 root.path(),
                 Arc::new(ForgeProxy::new(
                     Box::new(NoCredentials),
-                    Box::new(NoObjects)
+                    Box::new(purlis_core::forge::proxy::NoObjects)
                 )),
                 Arc::new(BlindGate)
             )

@@ -506,8 +506,23 @@ fn body_values(body: &Body, key: &str) -> Vec<String> {
         .collect()
 }
 
-/// What a write's request may not say: a query at all, a merge command in any text, and, on
-/// GitLab, a merge request aimed at another project.
+/// Whether `target`'s query is GitLab's own `merge_when_pipeline_succeeds=true|false` and nothing
+/// else, on a merge request's merge (`PUT …/merge_requests/<iid>/merge`): the form `glab` and the
+/// API's own docs send it in, which `guards.merge` = `log` or `off` takes as the body's field.
+fn is_the_merge_flag(kind: Kind, method: &str, rel: &[String], target: &Target) -> bool {
+    kind == Kind::GitLab
+        && method == "PUT"
+        && matches(rel, &["merge_requests", "#", "merge"])
+        && !target.query.is_empty()
+        && target.query.iter().all(|(k, v)| {
+            k.eq_ignore_ascii_case("merge_when_pipeline_succeeds")
+                && matches!(v.as_str(), "true" | "false")
+        })
+}
+
+/// What a write's request may not say: a query at all (but the merge flag of
+/// [`is_the_merge_flag`], where `merging`), a merge command in any text, and, on GitLab, a merge
+/// request aimed at another project.
 fn check_body(
     kind: Kind,
     method: &str,
@@ -515,10 +530,11 @@ fn check_body(
     target: &Target,
     body: Option<&Body>,
     repo: &AllowedRepo,
+    merging: bool,
 ) -> Result<(), Refusal> {
     // No write carries a query: an unknown parameter is the forge reading something the proxy
     // did not.
-    if !target.query.is_empty() {
+    if !target.query.is_empty() && !(merging && is_the_merge_flag(kind, method, rel, target)) {
         return Err(Refusal::MalformedRequest);
     }
     let Some(body) = body else {
@@ -607,6 +623,6 @@ pub(crate) fn decide(
     let class = write_class(kind, method, rel)
         .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
         .ok_or(Refusal::NotOnList)?;
-    check_body(kind, method, rel, target, body, repo)?;
+    check_body(kind, method, rel, target, body, repo, merging)?;
     Ok(class)
 }

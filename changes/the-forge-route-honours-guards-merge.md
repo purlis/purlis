@@ -9,3 +9,7 @@
   `enforce` a merge is still asked in the window. A tag, a release, a ruleset, the repository's
   administration, another repo and a branch merge stay refused, an administrator's lock still
   wins, and a policy purlis cannot read is `enforce`.
+  A merge that names its pull request by id, as `gh pr merge` does, is checked against the repo the
+  forge says that pull request is in, so a pull request of another repo is still refused and one the
+  forge cannot place is too; `gh pr close` works for the same reason. GitLab's
+  `merge_when_pipeline_succeeds` is taken in the URL as well as in the body.
