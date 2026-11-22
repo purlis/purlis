@@ -27,6 +27,7 @@ import {
   namedIn,
   scopesOf,
   scopesOfPath,
+  storiesBrowsers,
   webParts,
 } from "./ci-scope.mjs";
 
@@ -978,7 +979,7 @@ test("a job that only asks whether it is needed is not started on a pull request
 
 // By the operator's choice of 2026-11-01: what the bars measure and the suite itself. A regression
 // from anywhere else shows on main's push, which always runs it.
-test("the outcome bars run on a pull request that touches what they measure, and on main; Linux's in the merge queue too", () => {
+test("the macOS outcome bars run on main and the nightly alone; Linux's run on a pull request its gate lets in and in the merge queue", () => {
   const on = (path) => gatesOf({ event: "pull_request", paths: [path] })["outcome-bars"];
   for (const path of [
     "app/src/SkillStudioTab.tsx",
@@ -1011,12 +1012,14 @@ test("the outcome bars run on a pull request that touches what they measure, and
 
   const ci = read(".github/workflows/ci.yml");
   const job = ci.slice(ci.indexOf("\n  outcome-bars:\n"), ci.indexOf("\n  outcome-bars-linux:\n"));
+  // The steward's ruling of 2026-11-23 (#7335): Macs are the queue's scarce resource, so the job
+  // is not in the merge group, and a pull request's run is a subset of the queue's, so it is not
+  // on a pull request either.
   assert.ok(
-    job.includes(
-      "github.event_name == 'push' || (github.event_name == 'pull_request' && needs.changes.outputs.outcome-bars != 'false')",
-    ),
-    "main's push and a pull request its gate lets in, and not the merge group",
+    job.includes("(github.event_name == 'push' || github.event_name == 'schedule')"),
+    "main's push and the nightly, and neither a pull request nor the merge group",
   );
+  assert.doesNotMatch(job, /\n    if:[^\n]*(merge_group|pull_request)/);
   assert.match(job, /\n        os: \[macos-latest\]\n/);
   assert.match(job, /\n    continue-on-error: true\n/);
   // The Linux leg is required since #5277, so it runs wherever a required check is read: every
@@ -1125,8 +1128,10 @@ test("a draft pull request runs no macOS job but app builds, and marking it read
   const nightly = (n) =>
     /\n    if: (github\.event_name == 'schedule'|\$\{\{ github\.event_name == 'schedule' \}\})\n/.test(body(n));
   // `scenario` runs on no pull request at all, the next test's claim.
-  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && !nightly(n));
-  assert.ok(gated.includes("outcome-bars") && onMac.includes("scenario"), gated.join(", "));
+  // `outcome-bars` runs on main's push and the nightly alone (the steward's ruling of 2026-11-23),
+  // so a pull request never reaches it and it needs no draft clause.
+  const gated = onMac.filter((n) => n !== "app" && n !== "scenario" && n !== "outcome-bars" && !nightly(n));
+  assert.ok(onMac.includes("outcome-bars") && onMac.includes("scenario") && gated.length > 0, gated.join(", "));
   // The draft clause must bind the whole condition: no `||` outside parentheses before it.
   const topLevelOr = (expr) => {
     let depth = 0;
@@ -1209,4 +1214,136 @@ test("a change that cannot be read runs every scope, part and gated job", () => 
   for (const key of [...SCOPES, ...Object.keys(GATES)]) assert.equal(said[key], "true", key);
   assert.equal(said["web-parts"], "[1,2,3,4]");
   rmSync(dir, { recursive: true });
+});
+
+// The ready gate (#7335, spec #7324): a draft pull request runs the fast guards and the web
+// tests, and marking it ready runs the heavy jobs the change's scopes name.
+const HEAVY = ["rust", "app", "scenario", "stories"];
+const draftOf = (paths, event = "pull_request") =>
+  [...scopesOf({ event, paths, ciToolNames: CI_TOOLS, draft: true }).scopes].sort();
+const readyOf = (paths) =>
+  [...scopesOf({ event: "pull_request", paths, ciToolNames: CI_TOOLS, draft: false }).scopes].sort();
+
+test("a draft turns every heavy scope off and keeps the web checks, the tools' tests and the docs", () => {
+  const fast = ["docs", "tools", "web"];
+  assert.deepEqual(draftOf(["app/src/App.tsx"]), ["tools", "web"]);
+  assert.deepEqual(draftOf(["crates/purlis-core/src/lib.rs"]), ["docs", "tools"]);
+  assert.deepEqual(draftOf(["docs/a.md"]), ["docs", "tools"]);
+  for (const path of ["app/src/App.tsx", "crates/purlis-core/src/lib.rs", "Cargo.lock", "app/package.json"]) {
+    for (const scope of HEAVY) assert.ok(!draftOf([path]).includes(scope), `${path}: ${scope}`);
+  }
+  assert.deepEqual(draftOf(["Cargo.lock"]), fast);
+});
+
+test("a draft that changes the workflows or CI config still runs no heavy scope: marking it ready runs them all", () => {
+  for (const path of [".github/workflows/ci.yml", ".github/actions/change-scope/action.yml", "ci/x.sh"]) {
+    for (const scope of HEAVY) assert.ok(!draftOf([path]).includes(scope), `${path}: ${scope}`);
+    assert.deepEqual(readyOf([path]), all, `${path} on a ready PR`);
+  }
+});
+
+test("a ready web-only change runs the web side and the stories, not Rust", () => {
+  assert.deepEqual(readyOf(["app/src/App.tsx"]), ["app", "scenario", "stories", "tools", "web"]);
+  assert.ok(!readyOf(["app/src/App.tsx"]).includes("rust"));
+  // Not a draft by default: a caller that names no draft state gets the ready PR's scopes.
+  assert.deepEqual(of(["app/src/App.tsx"]), readyOf(["app/src/App.tsx"]));
+});
+
+test("a merge group, a push and a nightly run every scope whatever the draft state says", () => {
+  for (const event of ["merge_group", "push", "schedule", "workflow_dispatch"]) {
+    assert.deepEqual(draftOf(["docs/a.md"], event), all, event);
+  }
+});
+
+test("a draft starts none of the gated jobs, and a ready pull request starts those its paths name", () => {
+  const paths = ["crates/purlis-core/src/sandbox/seatbelt.rs"];
+  const draft = gatesOf({ event: "pull_request", paths, draft: true });
+  for (const gate of Object.keys(GATES)) assert.equal(draft[gate], false, `${gate} on a draft`);
+  assert.equal(gatesOf({ event: "pull_request", paths, draft: false }).confinement, true);
+  assert.equal(gatesOf({ event: "pull_request", paths }).confinement, true);
+  for (const on of Object.values(gatesOf({ event: "merge_group", paths: [], draft: true }))) {
+    assert.equal(on, true);
+  }
+});
+
+test("stories run WebKit alone on a pull request and both browsers on every other run", () => {
+  assert.deepEqual(storiesBrowsers({ event: "pull_request" }), ["webkit"]);
+  for (const event of ["merge_group", "push", "schedule", "workflow_dispatch"]) {
+    assert.deepEqual(storiesBrowsers({ event }), ["chromium", "webkit"], event);
+  }
+});
+
+test("a pull request that asks for baselines runs Chromium's stories as well; a plain ready one stays WebKit-only", () => {
+  // The queue draws no baselines, so a Chromium-only picture change needs the PR's own run.
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "update-baselines" }), ["chromium", "webkit"]);
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "bug,update-baselines,fixes-main" }), [
+    "chromium",
+    "webkit",
+  ]);
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "" }), ["webkit"]);
+  assert.deepEqual(storiesBrowsers({ event: "pull_request" }), ["webkit"]);
+  // A label that only contains the name does not ask.
+  assert.deepEqual(storiesBrowsers({ event: "pull_request", labels: "update-baselines-later,no-update-baselines" }), [
+    "webkit",
+  ]);
+});
+
+test("the tool says the browsers from the labels it is handed, and the action and stories.yml pass and use them", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-labels-"));
+  const browsers = (labels) => {
+    const out = join(dir, `out-${labels || "none"}`);
+    execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), "pull_request", "HEAD", "false", labels], {
+      cwd: ROOT,
+      env: { ...process.env, GITHUB_OUTPUT: out },
+      stdio: "pipe",
+    });
+    return readFileSync(out, "utf8").split("\n").find((l) => l.startsWith("stories-browsers="));
+  };
+  assert.equal(browsers(""), 'stories-browsers=["webkit"]');
+  assert.equal(browsers("bug"), 'stories-browsers=["webkit"]');
+  assert.equal(browsers("bug,update-baselines"), 'stories-browsers=["chromium","webkit"]');
+  rmSync(dir, { recursive: true });
+  const action = readFileSync(join(ROOT, ".github/actions/change-scope/action.yml"), "utf8");
+  assert.match(action, /LABELS: \$\{\{ join\(github\.event\.pull_request\.labels\.\*\.name, ','\) \}\}/);
+  assert.match(action, /ci-scope\.mjs "\$EVENT" "\$BASE" "\$DRAFT" "\$LABELS"/);
+  // The label starts a stories run of its own, which `stories-baselines.yml` then waits for; any
+  // other label starts one that does nothing and cancels nothing.
+  const stories = readFileSync(join(ROOT, ".github/workflows/stories.yml"), "utf8");
+  assert.match(stories, /types: \[opened, synchronize, reopened, ready_for_review, labeled\]/);
+  assert.match(stories, /github\.event\.label\.name != 'update-baselines' && github\.run_id/);
+});
+
+test("the tool says a draft's scopes on the run, from the draft state it is handed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-draft-"));
+  const run = (event, draft) => {
+    const out = join(dir, `${event}-${draft}`);
+    execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), event, "HEAD", draft], {
+      cwd: ROOT,
+      env: { ...process.env, GITHUB_OUTPUT: out },
+      stdio: "pipe",
+    });
+    return Object.fromEntries(
+      readFileSync(out, "utf8").trim().split("\n").map((l) => l.split("=")),
+    );
+  };
+  // HEAD against HEAD: no paths, which runs everything unless the draft turns the heavy off.
+  const draft = run("pull_request", "true");
+  for (const scope of HEAVY) assert.equal(draft[scope], "false", `${scope} on a draft`);
+  for (const gate of Object.keys(GATES)) assert.equal(draft[gate], "false", gate);
+  assert.equal(draft.web, "true");
+  assert.equal(draft["stories-browsers"], '["webkit"]');
+  const ready = run("pull_request", "false");
+  for (const scope of SCOPES) assert.equal(ready[scope], "true", `${scope} when ready`);
+  assert.equal(ready["stories-browsers"], '["webkit"]');
+  const queue = run("merge_group", "true");
+  for (const scope of SCOPES) assert.equal(queue[scope], "true", `${scope} in the queue`);
+  assert.equal(queue["stories-browsers"], '["chromium","webkit"]');
+  rmSync(dir, { recursive: true });
+});
+
+test("a job that reads the scopes gets the draft state: the change-scope action passes it on", () => {
+  const action = readFileSync(join(ROOT, ".github/actions/change-scope/action.yml"), "utf8");
+  assert.match(action, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/);
+  assert.match(action, /ci-scope\.mjs "\$EVENT" "\$BASE" "\$DRAFT"/);
+  assert.match(action, /stories-browsers:/);
 });

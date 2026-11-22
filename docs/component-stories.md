@@ -267,6 +267,12 @@ add or change one:
      maintainer to approve them in the pull request's Checks, or run on the branch's next push
      (or `gh pr update-branch`).
 
+   **Chromium's baselines need the label.** A ready pull request's `stories` run is WebKit's alone
+   (the ready gate, ADR 0127), and the merge queue's run draws no baselines, so put the
+   `update-baselines` label on before you take them: it makes the pull request's run cover Chromium
+   too, and starts that run if the label comes after the last push. `workflow_dispatch` of
+   `stories.yml` runs both browsers as well. A draft runs no stories.
+
    Both refuse baselines drawn of another head, or of a head behind the base its run merged it
    with: update the branch, let `stories` run, and take that run's.
 3. Review the pictures in the pull request's diff, which shows each one beside the one it
