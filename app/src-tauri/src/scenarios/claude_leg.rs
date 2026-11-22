@@ -446,7 +446,7 @@ fn exit_of(text: &str, failed: bool) -> Option<i64> {
 /// **The canary's two commands**, as the fake's canary runs them: a write outside the project to
 /// `file` and a connect that does not go through the proxy, to `port` on this machine.
 pub(crate) fn canary_commands(file: &Path, port: u16) -> [String; 2] {
-    let script = super::checks::canary_script(file, port);
+    let script = super::checks::canary_script(file, std::net::Ipv4Addr::LOCALHOST.into(), port);
     let call = |at: usize| {
         script["turns"][0]["calls"][at]["run"]
             .as_str()
