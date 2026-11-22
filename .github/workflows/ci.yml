@@ -94,13 +94,20 @@ on:
 # after this lands; walking it back is this `if:` and `scenario-checks`'s `want`.
 
 concurrency:
-  # The nightly run keeps a group of its own, so it never displaces a merge's pending run on main.
-  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  # The nightly run keeps a group of its own, so it never displaces a merge's run on main.
+  # A push to `main` is grouped by its commit, not its ref: a group holds one running run and ONE
+  # pending run, and a third push cancels the pending one even with `cancel-in-progress: false`
+  # (2026-11-20: the runs on 74e80aac and 7d184670 ended `cancelled`, and `release.yml`'s gate
+  # builds nothing on a cancelled `ci`, so those commits lost their dev builds too). One group
+  # per commit leaves nothing to displace. A merge group's ref is unique to the group already
+  # (`refs/heads/gh-readonly-queue/main/pr-<n>-<sha>`), and a pull request keeps its branch's.
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   # Superseding a PR's run is right: only the newest push is a claim about that branch.
   # Superseding a run on `main` is NOT: every merge's run is the record for that commit, and
   # `main` is protected by nine required checks. Cancelling it leaves the commit with no
   # verified result at all — measured on 2026-09-20, three merges in a row cancelled the
-  # previous merge's run, so three commits on a protected branch were never checked.
+  # previous merge's run, so three commits on a protected branch were never checked. (The group
+  # key above is what keeps it from being cancelled by a later pending run, too.)
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:

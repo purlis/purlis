@@ -77,7 +77,9 @@ pub mod said;
 mod tag;
 mod tip;
 
-pub use ci::{CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, NoClone, PushCheck, check_push};
+pub use ci::{
+    CiDiff, GITLAB_DEFAULT, GitTrees, MOST_DIFF, NoClone, PushCheck, check_push, check_push_since,
+};
 pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
