@@ -234,6 +234,11 @@ fn a_redirection_in_front_of_the_command_or_after_a_reader_is_a_write() {
         format!("cat x > {root}/policy.cedar"),
         format!("cat x >| {root}/policy.cedar"),
         format!("cat x &> {root}/policy.cedar"),
+        format!("cat x >& {root}/policy.cedar"),
+        format!("cat x 2>& {root}/policy.cedar"),
+        "cat x > $ROOT/policy.cedar".to_owned(),
+        "cat x > ~/policy.cedar".to_owned(),
+        "cat x > \"$R\"/policy.cedar".to_owned(),
     ] {
         assert_eq!(p.shell(&command, &p.branch), Some(Held::File), "{command}");
     }

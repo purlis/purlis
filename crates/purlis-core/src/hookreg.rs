@@ -137,6 +137,8 @@ impl Handler {
         if !self.guards_a_call() {
             return None;
         }
+        // Since the policy hold, `pretooluse` and `pretooluse-edit` always block, so A7c's clause
+        // below only decides nothing today; it stays for a guard that reads the rules alone.
         let enforced = self.holds_the_policy()
             || (rules_name_a_program && self.reads_the_persons_rules())
             || self.judges().iter().any(|family| {

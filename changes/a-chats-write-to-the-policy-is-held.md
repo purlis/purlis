@@ -9,3 +9,5 @@
   The hold fails closed under every mode when its guard dies, reads case-folded spellings on
   macOS, sees a leading redirection, `--output` of a git reader and a settings file copied into the
   root, and holds any other tool's write by its path.
+  The default experience under `open` changes: a Bash or file-edit guard that fails to start now
+  refuses the call, where Claude Code's default let it run.

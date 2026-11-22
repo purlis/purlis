@@ -254,6 +254,14 @@ fn redirect_targets(toks: &[String]) -> Vec<String> {
             .trim_start_matches(|c: char| c.is_ascii_digit() || c == '&')
             .trim_start_matches('>')
             .trim_start_matches('|');
+        // `>&` takes the next word as a file; `>&1` copies a descriptor and writes nothing.
+        let bare = bare.strip_prefix('&').unwrap_or(bare);
+        if !bare.is_empty()
+            && tok.contains('&')
+            && bare.chars().all(|c| c.is_ascii_digit() || c == '-')
+        {
+            continue;
+        }
         if !bare.is_empty() {
             out.push(bare.to_owned());
         } else if let Some(next) = toks.get(i + 1) {
@@ -292,11 +300,16 @@ fn by_command_folding(fold: bool, root: &Path, cwd: &str, command: &str) -> Opti
         };
         // A redirection writes whatever the command is, and wherever it stands in the segment
         // (`> policy.cedar` alone has no program at all).
-        if let Some(held) = redirect_targets(toks)
+        let targets = redirect_targets(toks);
+        if let Some(held) = targets
             .iter()
             .find_map(|word| held_at(fold, &real, &resolved(&at, word)))
         {
             return Some(held);
+        }
+        // A target the shell expands (`$ROOT/policy.cedar`, `~/…`) cannot be resolved here.
+        if targets.iter().any(|word| maybe_a_policy_file(word)) {
+            return Some(Held::File);
         }
         if matches!(base.as_str(), "cd" | "pushd") {
             if let Some(folder) = args.iter().find(|arg| !arg.starts_with('-')) {
