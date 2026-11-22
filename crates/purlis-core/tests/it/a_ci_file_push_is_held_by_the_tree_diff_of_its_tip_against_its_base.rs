@@ -196,7 +196,8 @@ fn a_branch_the_forge_has_is_compared_with_its_own_tip_and_the_push_leases_it() 
     let (shown, digest) = held.shown(id).unwrap();
     assert!(
         shown.rows.iter().any(|r| r.label == "Compared with"
-            && r.value.starts_with("the tip of feature on the forge"))
+            && r.value.starts_with("the tip of the default branch")
+            && r.value.contains("feature is on the forge already"))
     );
     press(&held, &world, id, &digest).unwrap();
     press(&held, &world, id, &digest).unwrap();

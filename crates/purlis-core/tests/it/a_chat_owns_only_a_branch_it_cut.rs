@@ -157,6 +157,7 @@ fn a_remote_ref_that_is_deleted_or_never_fetched_lets_the_name_be_cut_and_still_
 
 #[test]
 fn a_branch_recorded_as_created_is_its_creating_chats_own_and_no_other_chats() {
+    purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
@@ -179,6 +180,7 @@ fn record_line(chat: &str, branch: &str) -> String {
 
 #[test]
 fn a_line_forged_for_another_chats_id_is_not_own_for_this_chat() {
+    purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
@@ -198,6 +200,7 @@ fn a_line_forged_for_another_chats_id_is_not_own_for_this_chat() {
 
 #[test]
 fn the_record_file_is_in_a_folder_the_floor_denies_a_chat_to_write() {
+    purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     let project = tempfile::tempdir().unwrap();
     let machine = Machine {
