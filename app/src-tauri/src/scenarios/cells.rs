@@ -25,12 +25,15 @@
 //! `not_run` and never `pass`: the gate must go red on it. The steps it plays are the steps it
 //! validated (a dialect's and an OS's patches and the pins applied).
 //!
-//! **A step has one window, and every event and chat line is in exactly one.** Its events are
-//! those the log gained from the step's start to the next step's start, its chat lines those the
-//! transcript gained over the same time; the last step's end is taken before the runner's own
-//! teardown presses. An event or a sentence written late, at the next prompt, lands in the next
-//! step's window: the step that expected it carries the mark that pins it, and `at: next_prompt`
-//! reads past the window for what the next prompt wrote (`purlis_scenarios::play`).
+//! **A step has one window, and every event and chat line is counted in exactly one.** Its
+//! events are those the log gained from the step's start to the next step's start, its chat lines
+//! those the transcript gained over the same time; the last step's end is taken before the
+//! runner's own teardown presses. An event written late, at the next prompt, is counted in the
+//! next step's window, but a step's `forbid` also reads what was written after its window up to
+//! the next step's first call (and, for the last step, to the end of the run, the teardown's
+//! lines included), so a forbidden event written late is not unjudged; `at: next_prompt` reads
+//! the same way for what the next prompt wrote (`purlis_scenarios::play`). A step that made calls
+//! and has no `hook.pretooluse` of its own in its window fails: it saw nothing to judge.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
@@ -729,9 +732,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
             for (i, line) in step.transcript.iter().enumerate() {
                 let to = (*transcript_end).min(all.len());
                 let from = p.transcript_from.min(to);
-                let said = all[from..to]
-                    .iter()
-                    .any(|entry| entry.to_string().contains(&line.says));
+                let said = all[from..to].iter().any(|entry| says(entry, &line.says));
                 assertions.push(Assertion {
                     step: number,
                     assertion: format!("transcript[{i}]"),
@@ -1069,4 +1070,34 @@ fn every_cell_plays_and_is_reported() {
         }
     }
     assert!(red.is_empty(), "{}", red.join("\n\n"));
+}
+
+/// **Whether a transcript line says `sentence`** in what it shows, never in how it is written: the
+/// text fields of the line (`text`, `stdout`, `stderr`), so a sentence is not found in a key, a
+/// step's name or the JSON's own punctuation.
+fn says(entry: &serde_json::Value, sentence: &str) -> bool {
+    ["text", "stdout", "stderr"]
+        .iter()
+        .filter_map(|field| entry.get(field).and_then(serde_json::Value::as_str))
+        .any(|text| text.contains(sentence))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::says;
+    use serde_json::json;
+
+    #[test]
+    fn a_chat_line_says_what_its_text_fields_say_and_never_its_keys_or_json() {
+        let line = json!({"kind": "tool_result", "step": "Allowed", "text": "Kept blocked",
+                          "stdout": "out", "stderr": ""});
+        assert!(says(&line, "Kept blocked"));
+        assert!(says(&line, "out"));
+        assert!(!says(&line, "Allowed"), "a step's name is not said");
+        assert!(!says(&line, "tool_result"), "a key is not said");
+        assert!(
+            !says(&line, "\"text\""),
+            "the JSON's punctuation is not said"
+        );
+    }
 }

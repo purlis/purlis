@@ -408,6 +408,14 @@ pub fn step_assertions(
         observed,
     };
     let mut out = Vec::new();
+    // A step that made calls has its own `hook.pretooluse` in its window: with none, the window
+    // is empty or another step's, and a forbid would pass on nothing seen.
+    if !step.calls.is_empty() && frame.started_ms.is_none() {
+        out.push(one(
+            "calls".to_owned(),
+            Observed::Fail("no hook.pretooluse".into()),
+        ));
+    }
     for (i, require) in step.require.iter().enumerate() {
         let observed = match require {
             Require::Event(e) => frame.counted(e, hosts, seconds, true),
@@ -434,7 +442,9 @@ pub fn step_assertions(
         out.push(one(format!("require[{i}]"), observed));
     }
     for (i, e) in step.forbid.iter().enumerate() {
-        let n = frame.matching(e, hosts, seconds).len();
+        // A forbidden event written late, after the window closed, is still the step's: a forbid
+        // reads the window and what followed it up to the next step's first call.
+        let n = frame.matching_with_tail(e, hosts, seconds, true).len();
         let observed = match (frame.missing(e), n) {
             (Some(why), _) => Observed::Fail(why.into()),
             (None, 0) => Observed::Pass,
@@ -449,6 +459,8 @@ pub fn step_assertions(
 struct Frame<'a> {
     events: &'a [Seen],
     later: &'a [Seen],
+    /// The part of `later` before the first call of whatever follows: the step's late lines.
+    tail: &'a [Seen],
     first_post: Option<u64>,
     first_stop: Option<u64>,
     /// The first call written after the step's `hook.stop`, in the step or after it: where the
@@ -466,6 +478,10 @@ impl<'a> Frame<'a> {
         Frame {
             events,
             later,
+            tail: &later[..later
+                .iter()
+                .position(|s| s.kind == "hook.pretooluse")
+                .unwrap_or(later.len())],
             first_post: first(&|s| s.kind.starts_with("hook.posttooluse")).map(|s| s.seq),
             first_stop,
             next_call: first_stop.and_then(|stop| {
@@ -490,6 +506,18 @@ impl<'a> Frame<'a> {
         hosts: &Hosts,
         seconds: &BTreeMap<&'static str, f64>,
     ) -> Vec<&Seen> {
+        self.matching_with_tail(e, hosts, seconds, false)
+    }
+
+    /// [`Self::matching`], and with `tail` the events written after the window and before the
+    /// next step's first call too.
+    fn matching_with_tail(
+        &self,
+        e: &Expect,
+        hosts: &Hosts,
+        seconds: &BTreeMap<&'static str, f64>,
+        tail: bool,
+    ) -> Vec<&Seen> {
         let limit = e
             .within
             .as_deref()
@@ -497,7 +525,13 @@ impl<'a> Frame<'a> {
             .and_then(|x| x.seconds(seconds));
         // `at: next_prompt` reads what the next prompt triggers, which may be written after the
         // step's window closed: it looks past it, up to the next call.
-        let later: &[Seen] = if e.at.is_some() { self.later } else { &[] };
+        let later: &[Seen] = if e.at.is_some() {
+            self.later
+        } else if tail {
+            self.tail
+        } else {
+            &[]
+        };
         self.events
             .iter()
             .chain(later)
@@ -531,6 +565,9 @@ impl<'a> Frame<'a> {
             Some("no hook.stop")
         } else if e.within.is_some() && self.started_ms.is_none() {
             Some("no hook.pretooluse")
+        } else if e.fields.get("args").is_some_and(|a| a == "this_call") && self.this_call.is_none()
+        {
+            Some("no args on the step's hook.pretooluse")
         } else {
             None
         }
@@ -1091,6 +1128,55 @@ mod tests {
         assert_eq!(malformed_cell(&templated.cells[0], &templated).len(), 1);
         let exempt = batch(json!({"id": "M-A", "steps": []}), json!(["R-1"]));
         assert_eq!(malformed_cell(&exempt.cells[0], &exempt).len(), 1);
+    }
+
+    #[test]
+    fn a_step_with_calls_and_no_pretooluse_of_its_own_fails_whatever_it_forbids() {
+        let s = step(json!({
+            "calls": [{"tool": "Bash", "input": {"command": "true"}}],
+            "forbid": [{"kind": "stop.block"}],
+        }));
+        let got = step_assertions(1, &s, &[], &[], &hosts(), &seconds());
+        let calls = got.iter().find(|a| a.assertion == "calls").expect("calls");
+        assert_eq!(calls.observed, Observed::Fail("no hook.pretooluse".into()));
+        // The forbid on its own passes on nothing: the `calls` assertion is what fails the step.
+        let log = [seen(1, 0, "hook.pretooluse", json!({"args": "d1"}))];
+        let got = step_assertions(1, &s, &log, &[], &hosts(), &seconds());
+        assert!(got.iter().all(|a| a.assertion != "calls"), "{got:?}");
+        // A step with no calls has none to see.
+        let bare = step(json!({"forbid": [{"kind": "stop.block"}]}));
+        let got = step_assertions(1, &bare, &[], &[], &hosts(), &seconds());
+        assert!(got.iter().all(|a| a.assertion != "calls"), "{got:?}");
+    }
+
+    #[test]
+    fn a_forbidden_event_written_after_the_window_fails_up_to_the_next_call_and_no_further() {
+        let s = step(json!({
+            "calls": [{"tool": "Bash", "input": {"command": "true"}}],
+            "forbid": [{"kind": "stop.block"}],
+        }));
+        let log = [seen(1, 0, "hook.pretooluse", json!({"args": "d1"}))];
+        let late = [seen(5, 9, "stop.block", json!({}))];
+        let got = step_assertions(1, &s, &log, &late, &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Fail(1.into()));
+        // After the next step's first call it is that step's.
+        let next = [
+            seen(4, 8, "hook.pretooluse", json!({"args": "d2"})),
+            seen(5, 9, "stop.block", json!({})),
+        ];
+        let got = step_assertions(1, &s, &log, &next, &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Pass);
+    }
+
+    #[test]
+    fn this_call_with_no_digest_fails_instead_of_matching_nothing() {
+        let s = step(json!({"forbid": [{"kind": "stop.block", "args": "this_call"}]}));
+        let none = [seen(1, 0, "hook.pretooluse", json!({"args": null}))];
+        let got = step_assertions(1, &s, &none, &[], &hosts(), &seconds());
+        assert!(matches!(got[0].observed, Observed::Fail(_)), "{got:?}");
+        let digest = [seen(1, 0, "hook.pretooluse", json!({"args": "d1"}))];
+        let got = step_assertions(1, &s, &digest, &[], &hosts(), &seconds());
+        assert_eq!(got[0].observed, Observed::Pass);
     }
 
     fn escape_cell(marked: bool) -> Cell {

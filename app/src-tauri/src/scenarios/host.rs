@@ -1653,14 +1653,22 @@ impl Scenario {
         self.try_events().unwrap_or_else(|why| panic!("{why}"))
     }
 
-    /// The number of the log's newest event, 0 for an empty log or one that cannot be read.
+    /// The number of the log's newest event: 0 for a log with no event yet. A log that cannot be
+    /// read fails the step, as [`Self::events`] does: a window opened at 0 would take every
+    /// earlier event for its own.
     pub(crate) fn latest_seq(&self) -> u64 {
         let mut newest = 0;
-        let _ = purlis_core::eventlog::read_back(&self.log, |event| {
+        match purlis_core::eventlog::read_back(&self.log, |event| {
             newest = event.seq;
             std::ops::ControlFlow::Break(())
-        });
-        newest
+        }) {
+            Ok(()) => newest,
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(why) => panic!(
+                "the event log at {} could not be read: {why}",
+                self.log.display()
+            ),
+        }
     }
 
     /// How many chats the scenario has started, the canary's included.
