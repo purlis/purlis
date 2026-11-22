@@ -214,7 +214,18 @@ pub struct GitUnavailable(#[from] std::io::Error);
 /// PATH. So the inherited `PATH` is searched here, in the parent, and what the child gets is
 /// the absolute path that search found plus the directory holding it.
 pub(crate) fn git_binary() -> (PathBuf, String) {
-    let found = git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref());
+    git_binary_by(&|_| None)
+}
+
+/// [`git_binary`] for a call that needs git [`MERGE_BASE_SINCE`] or newer: where more than one
+/// git is installed, the first new enough (#6846). Only such a call asks a git its version, so
+/// every other call, the guard's among them, starts no process to choose its git.
+pub(crate) fn git_binary_that_merges() -> (PathBuf, String) {
+    git_binary_by(&cached_version)
+}
+
+fn git_binary_by(version: &dyn Fn(&Path) -> Option<String>) -> (PathBuf, String) {
+    let found = git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref(), version);
     #[cfg(test)]
     if let Some(stand_in) = STAND_IN.with(|held| held.borrow().clone()) {
         return (stand_in, found.1);
@@ -246,18 +257,100 @@ pub(crate) fn with_stand_in<T>(binary: &Path, then: impl FnOnce() -> T) -> T {
 /// The git [`git_binary`] finds, by its full path, for a test's stand-in to hand calls on to.
 #[cfg(test)]
 pub(crate) fn real_binary() -> PathBuf {
-    git_binary_in(&GIT_DIRS, std::env::var_os("PATH").as_deref()).0
+    git_binary_in(
+        &GIT_DIRS,
+        std::env::var_os("PATH").as_deref(),
+        &cached_version,
+    )
+    .0
+}
+
+/// The oldest git purlis needs for its merges: `merge-tree --write-tree --merge-base` (#6846).
+pub(crate) const MERGE_BASE_SINCE: (u32, u32) = (2, 40);
+
+/// What `binary --version` says, asked once per binary for the life of the process: the
+/// runner resolves git on every call, and a git does not change version between two of them.
+/// The child gets an empty environment, so nothing the process inherited reaches it.
+fn cached_version(binary: &Path) -> Option<String> {
+    static SEEN: std::sync::Mutex<Vec<(PathBuf, Option<String>)>> =
+        std::sync::Mutex::new(Vec::new());
+    if let Some((_, said)) = SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter()
+        .find(|(seen, _)| seen == binary)
+    {
+        return said.clone();
+    }
+    let said = crate::forklock::output(
+        Command::new(binary)
+            .arg("--version")
+            .env_clear()
+            .stderr(Stdio::null()),
+    )
+    .ok()
+    .filter(|out| out.status.success())
+    .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned());
+    SEEN.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .push((binary.to_path_buf(), said.clone()));
+    said
+}
+
+/// `Ok` where the git purlis runs is `min` or newer (or says no version), else the one
+/// sentence that names it, its version and the version `what` needs, so a refusal never
+/// shows git's usage text (#6846).
+pub(crate) fn needs_git(min: (u32, u32), what: &str) -> Result<(), String> {
+    let (binary, _) = git_binary_that_merges();
+    let Some(said) = cached_version(&binary) else {
+        return Ok(());
+    };
+    match version_of(&said) {
+        Some(found) if found < min => Err(format!(
+            "{} is git {}, and {what} needs git {}.{} or later. Update that git, then try again",
+            binary.display(),
+            said.trim_start_matches("git version ").trim(),
+            min.0,
+            min.1
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// Whether `args` is a `merge-tree` given its merge base, which git has only since 2.40.
+fn needs_a_merge_base(args: &[&str]) -> bool {
+    verb_at(args).is_some_and(|at| args[at] == "merge-tree")
+        && args.iter().any(|word| word.starts_with("--merge-base"))
 }
 
 /// [`git_binary`] against `fixed` and an inherited `path`, so the search can be tested
 /// without the process's own environment.
-fn git_binary_in(fixed: &[&str], path: Option<&std::ffi::OsStr>) -> (PathBuf, String) {
+///
+/// **The first installed git that is new enough wins** (#6846): `/usr/bin` leads for the trust
+/// reasoning above, but on a Mac Apple's 2.39 there sits before a Homebrew git that has what a
+/// merge needs. `version` says what a candidate's `--version` answered; with one candidate, or
+/// none new enough, the first installed one is chosen as before.
+fn git_binary_in(
+    fixed: &[&str],
+    path: Option<&std::ffi::OsStr>,
+    version: &dyn Fn(&Path) -> Option<String>,
+) -> (PathBuf, String) {
     let mut dirs: Vec<String> = fixed.iter().map(|d| (*d).to_string()).collect();
-    for dir in fixed {
-        let candidate = Path::new(dir).join("git");
-        if candidate.is_file() {
-            return (candidate, path_value(&dirs));
-        }
+    let installed: Vec<PathBuf> = fixed
+        .iter()
+        .map(|dir| Path::new(dir).join("git"))
+        .filter(|candidate| candidate.is_file())
+        .collect();
+    if let Some(first) = installed.first() {
+        let chosen = if installed.len() > 1 {
+            installed
+                .iter()
+                .find(|c| version(c).and_then(|said| version_of(&said)) >= Some(MERGE_BASE_SINCE))
+                .unwrap_or(first)
+        } else {
+            first
+        };
+        return (chosen.clone(), path_value(&dirs));
     }
     // Searched in the PARENT, where `PATH` is still readable, and resolved to an absolute
     // path before the child is built. An attacker who controls the parent's `PATH` still
@@ -1867,7 +1960,11 @@ fn spawn_with(dir: &Path, args: &[&str], extra: &Extra) -> Result<Child, GitUnav
     // Before any git is chosen: on a Mac without developer tools `/usr/bin/git` is a stub
     // that opens the system's install dialog (#1813).
     presence::require()?;
-    let (binary, dirs) = git_binary();
+    let (binary, dirs) = if needs_a_merge_base(args) {
+        git_binary_that_merges()
+    } else {
+        git_binary()
+    };
     let mut cmd = Command::new(binary);
     for setting in NO_PROGRAMS {
         cmd.arg("-c").arg(setting);
