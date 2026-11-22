@@ -115,3 +115,27 @@ fn a_missing_sign_in_is_told_to_the_window_once_and_goes_with_its_chat() {
     noticed.forget(CHAT);
     assert!(noticed.all().is_empty(), "a closed chat keeps nothing");
 }
+
+#[test]
+fn a_credential_for_the_host_takes_its_sign_in_notice_down_and_another_hosts_stays() {
+    let (noticed, told) = noticed();
+    noticed.sign_in_needed(
+        CHAT,
+        crate::stuck::SignInNeeded {
+            host: "github.com".to_owned(),
+            ended: false,
+        },
+    );
+    noticed.sign_in_ok(CHAT, "gitlab.com");
+    assert_eq!(
+        told.lock().expect("held").len(),
+        1,
+        "another host changes nothing"
+    );
+
+    noticed.sign_in_ok(CHAT, "github.com");
+    noticed.sign_in_ok(CHAT, "github.com");
+    let told = told.lock().expect("held");
+    assert_eq!(told.len(), 2, "taken down once");
+    assert_eq!(told.last().and_then(|one| one.sign_in.clone()), None);
+}

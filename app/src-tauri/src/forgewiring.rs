@@ -724,12 +724,19 @@ impl AppNotices {
     }
 }
 
-impl Notices for AppNotices {
-    fn sign_in_needed(&self, project: &Path, session: u32, host: &str, state: SignInState) {
+impl AppNotices {
+    /// The open project at `project`, where one is open.
+    fn open_at(&self, project: &Path) -> Option<Arc<crate::planes::Held>> {
         use tauri::Manager as _;
+        self.app.state::<crate::planes::Planes>().held_at(project)
+    }
+}
+
+impl Notices for AppNotices {
+    fn sign_in_needed(&self, project: &Path, session: u32, host: &str, state: SignInState) -> bool {
         // A project that is not open has no pane to say it on.
-        let Some(held) = self.app.state::<crate::planes::Planes>().held_at(project) else {
-            return;
+        let Some(held) = self.open_at(project) else {
+            return false;
         };
         held.noticed().sign_in_needed(
             session,
@@ -738,6 +745,13 @@ impl Notices for AppNotices {
                 ended: state == SignInState::Ended,
             },
         );
+        true
+    }
+
+    fn sign_in_ok(&self, project: &Path, session: u32, host: &str) {
+        if let Some(held) = self.open_at(project) {
+            held.noticed().sign_in_ok(session, host);
+        }
     }
 }
 

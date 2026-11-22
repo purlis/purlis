@@ -42,7 +42,7 @@ export function SignInNeededNotice({ plane, session }: { plane: PlaneId; session
       cause={cause}
       at="pane"
       label="Forge sign-in"
-      tone="attention"
+      tone="trouble"
       link={{ label: "Sign in", onPress: () => askSettingsLink(plane, ACCOUNTS) }}
       onDismiss={() => setDismissed(cause)}
     >

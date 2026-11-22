@@ -257,6 +257,17 @@ impl Noticed {
         self.tell_if_changed(chat, |said| said.sign_in = Some(needed));
     }
 
+    /// Chat `chat`'s forge route gave a credential for `host`: a missing or ended sign-in told
+    /// for that host no longer stands. A Notice about another host stays.
+    pub fn sign_in_ok(&self, chat: u32, host: &str) {
+        if held_lock(&self.said)
+            .get(&chat)
+            .is_some_and(|said| said.sign_in.as_ref().is_some_and(|it| it.host == host))
+        {
+            self.tell_if_changed(chat, |said| said.sign_in = None);
+        }
+    }
+
     /// **"It's fine"**: chat `chat` is not stuck until it changes state.
     pub fn fine(&self, chat: u32) {
         held_lock(&self.watch).fine(chat);
