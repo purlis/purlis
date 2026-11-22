@@ -116,3 +116,10 @@ policy", the kill switch and a grader's lock bundles stay outside the policy.
 - The enforcement log is written by the app alone; a hook hands its line over the hook socket.
 - The floor's refusal of programs that would run outside the wrap, and the git arms that exist
   because of the wrap (A3c, A3d, A9, A9b), are the sandbox's and hold whenever a wrap is applied.
+
+## Amendments
+
+The amendments to this decision are files of their own in [`0125/`](0125/), one per
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

@@ -901,3 +901,31 @@ fn a_closed_chat_s_link_by_a_number_it_had_before_a_restart_is_seen_by_its_last_
         Some("#731 · Tidy the changelog")
     );
 }
+
+#[test]
+fn a_renumbered_task_s_link_by_either_number_shows_its_task_s_card_titled_as_it_closed() {
+    // #7145: dispatched as 702, renumbered 731 by a restart, then finished. Its card, from either
+    // link, is the task's, and says (was #702) where 702 was written.
+    let (_dir, _planes, held) = crate::planes::fixtures::a_project();
+    let id = crate::chatcard::fixtures::TIDY_THE_CHANGELOG;
+    crate::chatcard::fixtures::a_finished_task(held.root(), 702, id);
+    let closed = crate::chatcard::fixtures::tidy_the_changelog(vec![702]);
+    purlis_core::chatrecords::keep(held.root(), &closed).expect("kept");
+    let (links, chats) = for_project(Some(&*held), None);
+
+    let card = |link: &str| match seen_in(&links, &pane_of_652(held.root()), &chat(link), &chats)
+        .and_then(|seen| seen.chat)
+    {
+        Some(ChatSeen::Ended { card }) => *card,
+        other => panic!("no card for {link}: {other:?}"),
+    };
+
+    let by_earlier = card("chat 702");
+    let by_last = card("chat 731");
+    assert_eq!(by_earlier.shown(), "#731 · Tidy the changelog (was #702)");
+    assert_eq!(by_last.shown(), "#731 · Tidy the changelog");
+    assert!(
+        by_earlier.task.is_some() && by_last.task.is_some(),
+        "the task's card"
+    );
+}

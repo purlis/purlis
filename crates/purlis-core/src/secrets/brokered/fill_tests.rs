@@ -39,6 +39,7 @@ fn asker(root: &Path) -> Asker {
         root: root.to_path_buf(),
         env: Env::of(&[("PATH", "/usr/bin:/bin")]),
         chat: 7,
+        id: Some("01K6FILLINGCHAT00000000007".to_owned()),
         persona: None,
         folder: None,
         confines: None,

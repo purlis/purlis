@@ -40,6 +40,7 @@ const FINISHED: ChatCard = {
     asker: 0,
     name: "Signed commits #5607",
     chat: null,
+    chat_id: null,
     persona: "steward",
     how: "done",
     outcome: "done",

@@ -330,6 +330,20 @@ mod person {
 /// Whether `program` runs here. Where it does not, a scenario on CI fails and elsewhere returns
 /// with the reason printed (`host::cannot_run`), so a missing client is never a pass.
 #[cfg(test)]
+/// **The real `glab`, by its path**: a chat under the credentials class finds a shim named `glab`
+/// first, which refuses a `glab` no tool of its persona declares (#7230). What these cells test
+/// is the real program under the wrap (the proxy, the token it is given, the person's config it
+/// is kept from), so they run it by path; the shim's own words are `tools.rs`'s tests.
+fn real_glab() -> String {
+    std::env::var_os("PATH")
+        .and_then(|path| {
+            std::env::split_paths(&path)
+                .map(|folder| folder.join("glab"))
+                .find(|file| file.is_file())
+        })
+        .map_or_else(|| "glab".to_owned(), |file| file.display().to_string())
+}
+
 fn available(program: &str) -> bool {
     let runs = purlis_core::forklock::output(std::process::Command::new(program).arg("--version"))
         .is_ok_and(|out| out.status.success());
@@ -534,8 +548,9 @@ fn glab_merge_reaches_the_fake_forge_under_the_wrap() {
         let forge = ForgeHere::start(&scenario, wire);
         forge.fake.add_merge_request("group/project", 42, 4, HEAD);
         let read = format!(
-            "{} glab api projects/group%2Fproject/merge_requests/4 2>&1; echo \"glab exit $?\"",
-            forge.glab(Gitlab::SelfHosted, GLAB_TOKEN)
+            "{} {} api projects/group%2Fproject/merge_requests/4 2>&1; echo \"glab exit $?\"",
+            forge.glab(Gitlab::SelfHosted, GLAB_TOKEN),
+            real_glab()
         );
         let chat = scenario.starts_holding(&running(&[("read", read)]), forge.grants());
         scenario.until_played(chat, &["read"]);
@@ -688,17 +703,19 @@ fn a_chats_gh_and_glab_present_the_chats_token_and_never_the_persons() {
             (
                 "glab-given-no-token",
                 format!(
-                    "{} glab api projects/group%2Fproject/merge_requests/4 2>&1; \
+                    "{} {} api projects/group%2Fproject/merge_requests/4 2>&1; \
                      echo \"glab exit $?\"",
-                    forge.glab_route(Gitlab::SelfHosted, true)
+                    forge.glab_route(Gitlab::SelfHosted, true),
+                    real_glab()
                 ),
             ),
             (
                 "glab-given-the-chats",
                 format!(
-                    "{} glab api projects/group%2Fproject/merge_requests/5 2>&1; \
+                    "{} {} api projects/group%2Fproject/merge_requests/5 2>&1; \
                      echo \"glab exit $?\"",
-                    forge.glab(Gitlab::SelfHosted, GLAB_TOKEN)
+                    forge.glab(Gitlab::SelfHosted, GLAB_TOKEN),
+                    real_glab()
                 ),
             ),
         ];
@@ -831,10 +848,11 @@ fn glab_posts_usage_data_with_the_token_unless_told_not_to() {
         let forge = ForgeHere::start(&scenario, wire);
         forge.fake.add_merge_request("group/project", 42, 4, HEAD);
         let read = format!(
-            "GITLAB_TOKEN={GLAB_TOKEN} {} GLAB_CONFIG_DIR='{}/glab' glab api \
+            "GITLAB_TOKEN={GLAB_TOKEN} {} GLAB_CONFIG_DIR='{}/glab' {} api \
              projects/group%2Fproject/merge_requests/4 2>&1; echo \"glab exit $?\"",
             forge.glab_route(Gitlab::SelfHosted, false),
-            forge.config.display()
+            forge.config.display(),
+            real_glab()
         );
         let chat = scenario.starts_holding(&running(&[("read", read)]), forge.grants());
         scenario.until_played(chat, &["read"]);
@@ -901,8 +919,9 @@ fn a_chats_merge_is_held_before_it_reaches_the_fake_forge() {
         let forge = ForgeHere::start(&scenario, wire);
         forge.fake.add_merge_request("group/project", 42, 4, HEAD);
         let env = forge.glab(Gitlab::SelfHosted, GLAB_TOKEN);
+        let glab = real_glab();
         let read = format!(
-            "{env} glab api projects/group%2Fproject/merge_requests/4 2>&1; echo \"glab exit $?\""
+            "{env} {glab} api projects/group%2Fproject/merge_requests/4 2>&1; echo \"glab exit $?\""
         );
         let api = format!(
             "{env} glab api projects/group%2Fproject/merge_requests/4/merge --method PUT \
@@ -938,14 +957,14 @@ fn a_chats_merge_is_held_before_it_reaches_the_fake_forge() {
         // The merge by the API cannot be read for its request: no ask.
         let unreadable = refused_as_a_merge(&scenario, chat, "merge-api", at);
         assert!(
-            unreadable.contains("cannot tell which request"),
+            unreadable.contains("cannot name the request"),
             "{at}: `glab api … merge` was not the merge-unreadable refusal: {unreadable}"
         );
         // The merge by `glab mr merge 4` names its request: the hold reads it, and asks the
         // person where the app can read the forge (no app login on the fake, so it may not).
         let named = refused_as_a_merge(&scenario, chat, "merge-mr", at);
         assert!(
-            !named.contains("cannot tell which request"),
+            !named.contains("cannot name the request"),
             "{at}: `glab mr merge 4` was read as unreadable: {named}"
         );
         observed.push(format!(
@@ -1042,12 +1061,12 @@ fn a_chats_gh_merge_is_held_before_it_reaches_the_fake_forge() {
     );
     let unreadable = refused_as_a_merge(&scenario, chat, "merge-api", "gh api");
     assert!(
-        unreadable.contains("cannot tell which request"),
+        unreadable.contains("cannot name the request"),
         "`gh api -X PUT … merge` was not the merge-unreadable refusal: {unreadable}"
     );
     let named = refused_as_a_merge(&scenario, chat, "merge-pr", "gh pr merge");
     assert!(
-        !named.contains("cannot tell which request"),
+        !named.contains("cannot name the request"),
         "`gh pr merge 7` was read as unreadable: {named}"
     );
     for step in ["merge-api", "merge-pr"] {

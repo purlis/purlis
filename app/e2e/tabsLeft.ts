@@ -337,7 +337,13 @@ export const tabHooks = {
         faults.push(...(await judgeTheStripInFront(strip, spec)));
       } catch (trouble) {
         // Its project may be closed, and with it the strip: there is nothing there to judge.
-        console.warn(`${spec}: the strip at ${placeOf(strip)} was not read`, trouble);
+        // A warning, never a failure: a spec that closed its project leaves nothing to judge, so
+        // it reads this on a passing file. Say so, or a reader takes it for the failure (#7266).
+        console.warn(
+          `${spec}: the strip at ${placeOf(strip)} was not read, so it was not judged ` +
+            "(its project or workspace is gone; this does not fail the file)",
+          trouble,
+        );
       }
     }
     if (elsewhere.length > 0)

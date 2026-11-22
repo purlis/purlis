@@ -16,9 +16,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use crate::chatlookup::{self, Found, Known, OpenChat};
+use crate::chatlookup::{self, Ended, Found, Known, OpenChat};
 use crate::chatrecords::ChatRecord;
-use crate::dispatchrecord::Record;
 
 use super::{Kind, LinkKind, Opening, Pane, Resolved, Target};
 
@@ -55,8 +54,9 @@ pub enum Goes {
     ThisChat,
     /// Open, under [`ChatAt::number`]: opening it shows it in its tab or workspace.
     Open,
-    /// Ended: its newest dispatch record, which its card is drawn from.
-    Ended(Box<Record>),
+    /// Ended: its newest dispatch record, which its card is drawn from, and the record its chat
+    /// closed under where one was kept (#7145).
+    Ended(Box<Ended>),
     /// A chat no dispatch started has closed (#6304): the app's record of it, which its card is
     /// drawn from.
     Closed(Box<ChatRecord>),

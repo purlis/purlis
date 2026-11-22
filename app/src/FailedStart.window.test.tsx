@@ -65,6 +65,7 @@ const UNSTARTED: FinishedTask = {
   asker: 4,
   name: "check prod",
   chat: null,
+  chat_id: null,
   persona: "devops",
   how: "failed",
   outcome: "failed",

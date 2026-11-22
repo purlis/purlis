@@ -91,9 +91,8 @@ impl HarnessAdapter for Opencode {
                     crate::plugin::BINARY_ENV.to_owned(),
                     kit.binary.display().to_string(),
                 ),
-                (
-                    crate::opencode::CONFIG_ENV.to_owned(),
-                    crate::opencode::session_config(
+                (crate::opencode::CONFIG_ENV.to_owned(), {
+                    let config = crate::opencode::session_config(
                         &shim,
                         &skill_dirs(kit),
                         Some(kit.binary),
@@ -102,8 +101,18 @@ impl HarnessAdapter for Opencode {
                         // The operator's own rules, which an allow of purlis's yields to
                         // (#3794).
                         &crate::opencode::OperatorRules::read(&crate::opencode::Layers::here(cwd)),
-                    ),
-                ),
+                    );
+                    // A chat on a repo that claims the forge lock has no forge connector
+                    // (#7205).
+                    if sandbox
+                        .applied()
+                        .is_some_and(crate::sandbox::Applied::forge_locked)
+                    {
+                        crate::forgelock::opencode_config(&config)
+                    } else {
+                        config
+                    }
+                }),
                 (crate::opencode::PURE_ENV.to_owned(), "0".to_owned()),
             ],
             cannot_report: vec!["sessionend"],

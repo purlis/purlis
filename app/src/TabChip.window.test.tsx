@@ -136,6 +136,7 @@ function finishedTask(asker: number, name: string, more: Partial<FinishedTask> =
     name,
     persona: "devops",
     chat: null,
+    chat_id: null,
     did_not_start: false,
     attempts: 0,
     waits: null,

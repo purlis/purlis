@@ -50,6 +50,7 @@ pub mod etag;
 pub mod gitcredential;
 mod github;
 mod gitlab;
+pub mod gitlabaccess;
 pub mod http;
 pub mod loopback;
 #[cfg(unix)]
@@ -859,6 +860,10 @@ pub(super) fn cli_env_keeping(
         ("GLAB_NO_PROMPT".to_string(), "1".to_string()),
         ("GH_NO_UPDATE_NOTIFIER".to_string(), "1".to_string()),
         ("GLAB_CHECK_UPDATE".to_string(), "false".to_string()),
+        // No pager between the CLI and the pipe it writes JSON to (#7177).
+        ("PAGER".to_string(), "cat".to_string()),
+        ("GLAB_PAGER".to_string(), "cat".to_string()),
+        ("GH_PAGER".to_string(), "cat".to_string()),
     ];
     if let Some(home) = std::env::var_os("HOME") {
         env.push(("HOME".to_string(), home.to_string_lossy().into_owned()));
@@ -994,6 +999,24 @@ pub(super) fn parse(kind: Kind, out: &str, path: &str) -> Result<Value, ForgeErr
         return Ok(Value::Array(Vec::new()));
     }
     serde_json::from_str(out).map_err(|e| {
+        ForgeError::new(format!(
+            "{} API returned malformed JSON ({path}): {e}",
+            kind.display()
+        ))
+    })
+}
+
+/// [`parse`] of a reply, read as [`backend::read_reply`] does: a CLI's answer past a notice it
+/// wrote around its JSON (#7177).
+pub(super) fn parse_reply(
+    kind: Kind,
+    reply: &transport::Reply,
+    path: &str,
+) -> Result<Value, ForgeError> {
+    if reply.out.trim().is_empty() {
+        return Ok(Value::Array(Vec::new()));
+    }
+    backend::read_reply(reply).map_err(|e| {
         ForgeError::new(format!(
             "{} API returned malformed JSON ({path}): {e}",
             kind.display()

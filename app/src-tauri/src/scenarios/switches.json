@@ -918,6 +918,36 @@
       }
     },
     {
+      "file": "app/src-tauri/src/sandboxing.rs",
+      "at": "between_resolutions();",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "app/src-tauri/src/sandboxing.rs",
+      "at": "if let Some(machine) = MACHINE.with(|seam| seam.borrow().clone()) {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
       "file": "app/src-tauri/src/secretasksteps.rs",
       "at": "Told::Written(done) => {",
       "kind": "switch",
@@ -1226,6 +1256,51 @@
       "covers": {
         "linux": [
           "host-process",
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/enforcement.rs",
+      "at": "if let Some(here) = ANSWERED_HERE.with(|held| held.borrow().clone()) {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/enforcement.rs",
+      "at": "pub fn answered_on_this_thread(resolved: Option<Resolved>) {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "file": "crates/purlis-core/src/enforcement.rs",
+      "at": "thread_local! {",
+      "count": 1,
+      "kind": "switch",
+      "reason": "A test's own hook (a gate, latch, counter or stand-in a test may set, or a shorter wait): unset in a scenario, it changes no decision a scenario's path makes.",
+      "covers": {
+        "linux": [
           "linux-release-profile"
         ],
         "macos": [

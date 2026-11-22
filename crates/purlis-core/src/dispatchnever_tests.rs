@@ -262,7 +262,8 @@ fn a_record_that_does_not_read_lets_no_grant_cover_any_pair_of_two_personas() {
         "purlis could not read the list of pairs the person said never to on this machine, so \
          no dispatch grant counts until it reads, and nobody is here to ask. Nothing was \
          started. Do this work without another persona, or say in what you leave behind that \
-         it is waiting; a person mends the list on this machine."
+         it is waiting; a person mends the list on this machine, or opens purlis again if its \
+         keyring did not start."
     );
 }
 
