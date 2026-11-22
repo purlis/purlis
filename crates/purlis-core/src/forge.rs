@@ -57,6 +57,7 @@ pub mod gitlabaccess;
 pub mod held;
 pub mod http;
 pub mod loopback;
+pub mod mergestance;
 #[cfg(unix)]
 pub mod mintport;
 pub mod oauth;

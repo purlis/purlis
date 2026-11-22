@@ -95,7 +95,8 @@ pub use sentinel::{ChatId, Sentinel, SentinelRegistry};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use crate::forge::pin;
+use crate::enforcement::Mode;
+use crate::forge::{mergestance, pin};
 use crate::secrets::keyring::Secret;
 
 /// What a credential is, which decides the header the forge reads it from.
@@ -331,6 +332,8 @@ pub struct ForgeProxy {
     held: Option<Box<dyn HeldSink>>,
     /// The administrator's never-allow pin, asked on every request and connection (D3g).
     pin: Arc<dyn pin::Pin>,
+    /// How `guards.merge` runs, asked on every merge a chat sends (ADR 0128 D8, 2026-11-22).
+    merges: Arc<dyn mergestance::MergeStance>,
     /// Told the branches the forge confirmed a push made: the app's own record of them.
     created: Option<CreatedSink>,
 }
@@ -348,8 +351,19 @@ impl ForgeProxy {
             audit: AuditLog::default(),
             held: None,
             pin: Arc::new(pin::NoPin),
+            merges: Arc::new(mergestance::HoldMerges),
             created: None,
         }
+    }
+
+    /// Let a merge through where `merges` says `guards.merge` is `log` (and record it) or `off`,
+    /// asked on each merge and never kept. Without it, every merge is a held act. Only a recorded
+    /// repo of the chat's own run and a valid sentinel ever reach it, and an administrator's pin
+    /// and lock still win.
+    #[must_use]
+    pub fn with_merge_stance(mut self, merges: Arc<dyn mergestance::MergeStance>) -> Self {
+        self.merges = merges;
+        self
     }
 
     /// Tell `sink` each branch the forge confirms a chat's push made, so the app can keep its own
@@ -598,7 +612,32 @@ impl ForgeProxy {
             .head
             .clone()
             .with_content_type(header_value(inbound.headers, "content-type"));
-        let mut allowed = match policy.decide(&head, inbound.body, self.objects.as_ref()) {
+        // `guards.merge`, asked now: a merge is let through under `log` or `off` for a chat that
+        // proved itself, by the same recorded-repo checks as any write. Under `enforce`, and for
+        // anything that is not one of the merge routes, nothing changes.
+        //
+        // **No lookup before the sentinel is proved**: resolving a node id asks the forge with the
+        // person's credential, so a caller that has not proved itself is decided with
+        // [`NoObjects`] and costs the forge, and the person, nothing. It is refused the same way
+        // whatever the id is in.
+        let objects: &dyn ObjectRepo = if sentinel.is_ok() {
+            self.objects.as_ref()
+        } else {
+            &NoObjects
+        };
+        let mut logged_merge = false;
+        let mut decision = policy.decide(&head, inbound.body, objects);
+        if sentinel.is_ok()
+            && decision == Decision::Refuse(Refusal::Merge)
+            && let mode @ (Mode::Log | Mode::Off) = self.merges.mode()
+        {
+            let merging = policy.decide_merging(&head, inbound.body, objects);
+            if matches!(merging, Decision::Allow(_)) {
+                logged_merge = mode == Mode::Log;
+                decision = merging;
+            }
+        }
+        let mut allowed = match decision {
             Decision::Allow(allowed) => allowed,
             Decision::Refuse(refusal) => {
                 // Only a chat that proved itself asks, and only for a held route.
@@ -687,6 +726,11 @@ impl ForgeProxy {
         else {
             return self.refuse(chat, inbound, Some(&allowed), Refusal::NoCredential);
         };
+        // One quiet line for a merge `log` let through, once the credential is in and it is sent.
+        if logged_merge {
+            self.merges
+                .forwarded(chat.as_str(), &allowed.host, &allowed.repo);
+        }
         self.audit
             .record(chat, inbound.head, Some(&allowed), Verdict::Allowed);
         apply_canonical(&mut headers, &allowed);

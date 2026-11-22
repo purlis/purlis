@@ -126,6 +126,12 @@ impl AllowedRepo {
         self.port
     }
 
+    /// The forge's numeric id of the repo, where it was recorded: what a credential request
+    /// carries for it.
+    pub fn forge_id(&self) -> Option<u64> {
+        self.project_id
+    }
+
     /// The host this repo's API answers on: `api.github.com` for github.com, the same host
     /// elsewhere (GHES serves `/api/v3`, GitLab `/api/v4`).
     pub(crate) fn api_host(&self) -> &str {

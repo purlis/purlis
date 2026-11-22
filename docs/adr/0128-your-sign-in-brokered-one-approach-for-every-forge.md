@@ -1823,5 +1823,9 @@ liveness), and the held-act quarantine (app-owned, rebuildable).
     sandbox could not run. The shape is a `wire` op on the Rust bridge that returns `compose`'s
     environment, pairs and `bin`.
 
+## Amendments
+
 The amendments to this decision are files of their own in [`0128/`](0128/), one per
-change, named by its date.
+amendment, named `<yyyy-mm-dd>-<slug>.md`. A new amendment is a new file there and never a
+section added to this record, so two pull requests that amend it do not touch the same lines
+(#1982).

@@ -422,3 +422,15 @@ fn a_socket_pattern_that_does_not_compile_is_refused_never_allowed() {
     .expect_err("a pattern that does not compile is not read");
     assert!(why.to_string().contains("the socket pattern"), "{why}");
 }
+
+/// #7352: Codex's profile allows `file-lock` on its state stores for SQLite under Seatbelt. A
+/// Linux lock needs nothing beyond opening the file, so the rule reads and grants no path.
+#[test]
+fn a_file_lock_rule_reads_and_grants_no_path() {
+    let profile = read(
+        "(version 1)\n(deny default)\n(allow file-lock (regex \"^/d/[a-z_]+_[0-9]+\\\\.sqlite(-wal|-shm|-journal)?$\"))\n",
+    );
+    assert!(!profile.allows(&reads("/d/state_5.sqlite")));
+    assert!(!profile.allows(&write("/d/state_5.sqlite")));
+    assert!(profile.reach().written.is_empty());
+}
