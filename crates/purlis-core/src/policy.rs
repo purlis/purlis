@@ -45,6 +45,7 @@ pub mod limits;
 pub mod locality;
 pub mod organisation;
 pub mod press;
+pub mod selfchange;
 
 use cedar_policy::{
     ActionConstraint, Authorizer, Context, Decision as CedarDecision, Effect, Entities, EntityId,

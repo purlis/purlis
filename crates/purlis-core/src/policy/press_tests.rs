@@ -557,3 +557,31 @@ fn a_shipped_default_update_is_announced_once() {
         "and not again by the decision that sealed what it saw"
     );
 }
+
+#[test]
+fn a_chats_commit_of_a_loosening_changes_nothing_until_the_press() {
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &ban)]);
+    // The person pressed Accept on the project as it stands: the ban is what they accepted.
+    if let Some(first) = of(&root) {
+        accept(&root, &the_persons_press(), &first.digest).expect("the first press");
+    }
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+    // A chat commits the loosening: it drops the ban. Whoever the commit says wrote it, it is
+    // only a commit.
+    commit(&root, &[("policy.cedar", "-")]);
+    let said = host(&root, &merge(true));
+    assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
+    assert_eq!(said.ids(), ["guards-merge-ban"], "{said:?}");
+    // The window shows the loosening, with its row, and waits.
+    let press = of(&root).expect("a press for the commit");
+    assert_eq!(rule(&press, "guards-merge-ban").kind, Kind::Loosens);
+    assert!(press.commit.is_some());
+    // Still nothing changed for any chat…
+    assert_eq!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+    // …until the person's press, which accepts exactly what it showed.
+    accept(&root, &the_persons_press(), &press.digest).expect("the press");
+    assert_eq!(of(&root), None);
+    assert_ne!(host(&root, &merge(true)).after_mode, Outcome::Deny);
+}

@@ -559,6 +559,12 @@ pub fn pretooluse_edit(hook: &Hook) -> Answer {
         "" => hook.cwd.to_string_lossy().into_owned(),
         given => given.to_string(),
     };
+    // A chat never changes the policy that governs it (M75-16): fixed, under every mode.
+    if let Some(held) = hook.payload["tool_name"].as_str().and_then(|tool| {
+        crate::policy::selfchange::by_tool(hook.root, &cwd, tool, hook.tool_input(), &named)
+    }) {
+        return deny(held.said());
+    }
     let state = pypath::realpath(&crate::plane::state_dir(hook.root).to_string_lossy());
     for t in named {
         let joined = if pypath::is_abs(&t) {
