@@ -1697,21 +1697,24 @@ pub enum Ask {
     /// cannot. The rule, the family and the host alone. The app answers [`Answer::Policy`]. No
     /// ticket, for a record's reason.
     PolicyLog(PolicyLogAsk),
-    /// **A hook's ask for what it needs to reach its chat's forge as the chat's own git does**
-    /// (#7302): `pre-push`'s ask of the remote, which no environment or repository config of the
-    /// chat's can be trusted to name. The app answers [`Answer::GitRoute`] from its own record of
-    /// the chat's route, or [`Answer::No`] where the chat has none. No ticket: it hands over a
-    /// public certificate, a program's path and host names, and the line can only name the chat
-    /// whose token it carries.
-    GitRoute(GitRouteAsk),
+    /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
+    /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
+    /// outside the sandbox, on the chat's own run's route, and only for a repository recorded for
+    /// that run. It answers [`Answer::RemoteRefs`], or [`Answer::No`] where it will not or
+    /// cannot. No ticket: the line can only name the chat whose token it carries, and what it
+    /// hands over is what the forge says the repository's branches and tags are at.
+    RemoteRefs(RemoteRefsAsk),
 }
 
-/// **A hook's ask for its chat's git route** ([`Ask::GitRoute`]).
+/// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GitRouteAsk {
+pub struct RemoteRefsAsk {
     /// The chat asking, from [`CHAT_ENV`]: the chat whose token the line must carry.
     pub chat: u32,
+    /// The remote's HTTPS address, as the push names it. The app asks it only where its host
+    /// and repository are recorded for the chat's run.
+    pub url: String,
 }
 
 /// **A hook's ask for its chat's policy** ([`Ask::Policy`]).
@@ -2573,8 +2576,9 @@ pub enum Answer {
     /// **How each family runs for the asking chat** ([`Ask::Policy`], Q308): `family=mode` pairs,
     /// as [`crate::enforcement::Resolved::spelled`] writes them.
     Policy { spelled: String },
-    /// **What a hook needs to reach its chat's forge** ([`Ask::GitRoute`], #7302).
-    GitRoute { route: crate::forgewire::HookRoute },
+    /// **The commits a remote's branches and tags are at** ([`Ask::RemoteRefs`], #7302), full
+    /// object ids as `ls-remote` names them.
+    RemoteRefs { tips: Vec<String> },
     /// The app will not, and this is the sentence saying why. The asker prints the command
     /// to run in a terminal and says this underneath it: a refusal the operator cannot see
     /// is a handoff that vanished.
@@ -2915,7 +2919,7 @@ impl Ask {
             Self::Attendance(asked) => asked.chat,
             Self::Policy(asked) => asked.chat,
             Self::PolicyLog(line) => line.chat,
-            Self::GitRoute(asked) => asked.chat,
+            Self::RemoteRefs(asked) => asked.chat,
         }
     }
 }

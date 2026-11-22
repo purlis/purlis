@@ -134,7 +134,7 @@ fn push(args: &[String]) -> ExitCode {
     if let Err(e) = std::io::stdin().read_to_string(&mut updates) {
         return cannot(&format!("the refs git sent could not be read: {e}"));
     }
-    match diffscan::pushed_through(&repo, url, &updates, &chat_route).map(|mut scan| {
+    match diffscan::pushed_told(&repo, url, &updates, &tips_the_app_has).map(|mut scan| {
         under_policy(&mut scan.refused, &repo);
         scan
     }) {
@@ -152,61 +152,28 @@ fn push(args: &[String]) -> ExitCode {
     }
 }
 
-/// How long the app has to answer for the chat's route: it answers from what it holds.
-const ROUTE_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
+/// How long the app has to answer for a remote's refs: it asks a forge over the network.
+const REFS_ANSWERED_WITHIN: std::time::Duration = std::time::Duration::from_secs(20);
 
-/// **The route this chat's git reaches its forge by, for the scan's ask of the remote** (#7302):
-/// under a chat's one login its git goes only through the app's proxy, under the chat's own
-/// authority and with its sentinel, and an ask made any other way fails and reads the whole push.
-///
-/// The authority, the credential helper and the hosts are **the app's**, from its own record of
-/// the chat ([`Ask::GitRoute`]), never the environment's or a repository's config: what a chat
-/// can write could name an authority that answers for the remote. The one thing taken from the
-/// environment is the chat's own egress port, a proxy that reads nothing a certificate under the
-/// app's authority does not let it read; with the sentinel, which only that proxy is shown. `None`
-/// where the app does not answer, the chat has no route, or any part is unusable: the remote is
-/// then asked as before and, if it cannot be, the push is read in full.
-fn chat_route() -> Option<purlis_core::worktree::git::NetworkRoute> {
-    use purlis_core::hookwire::{Answer, Ask, GitRouteAsk};
-    let env = purlis_core::envvar::var;
-    let proxy = env("HTTPS_PROXY").or_else(|| env("https_proxy"))?;
-    let sentinel = env(purlis_core::forge::gitcredential::SENTINEL_ENV)?;
-    let Ok(Ok(Answer::GitRoute { route })) = crate::brokered::asked(
-        |chat| Ask::GitRoute(GitRouteAsk { chat }),
-        ROUTE_ANSWERED_WITHIN,
+/// **The ref tips the app says the remote at `url` has** (#7302): under a chat's one login the
+/// chat's sandbox cannot ask its forge, so the app asks it, outside the sandbox and on the chat's
+/// own route, and only for a repository recorded for the chat's run. `None` where the app does
+/// not answer, refuses, or fails: the remote is then asked as before and, if it cannot be, the
+/// push is read in full, up to [`diffscan::UNASKED_AT_MOST`] commits.
+fn tips_the_app_has(url: &str) -> Option<Vec<String>> {
+    use purlis_core::hookwire::{Answer, Ask, RemoteRefsAsk};
+    let Ok(Ok(Answer::RemoteRefs { tips })) = crate::brokered::asked(
+        |chat| {
+            Ask::RemoteRefs(RemoteRefsAsk {
+                chat,
+                url: url.to_owned(),
+            })
+        },
+        REFS_ANSWERED_WITHIN,
     ) else {
         return None;
     };
-    route_from(&route, &proxy, &sentinel)
-}
-
-/// [`chat_route`], once the app has answered. **The trust anchor is the app's own copy of its CA**,
-/// in the chat's wire folder, never a file this hook or a chat writes: a folder under `$TMPDIR`
-/// is the chat's to set and its processes can rewrite what is in it, so a chat's own authority
-/// could answer for the remote and its commits would read as already on the forge. The file is
-/// used only where [`hookwire::reach::kept_from_the_chat`] holds: the sandbox refuses writing the
-/// file and its folder, and no folder above it is one a chat can write and swap. Otherwise there
-/// is no route.
-fn route_from(
-    route: &purlis_core::forgewire::HookRoute,
-    proxy: &str,
-    sentinel: &str,
-) -> Option<purlis_core::worktree::git::NetworkRoute> {
-    route_from_where(route, proxy, sentinel, &hookwire::reach::kept_from_the_chat)
-}
-
-/// [`route_from`], with `kept` deciding whether a chat is kept from the CA file.
-fn route_from_where(
-    route: &purlis_core::forgewire::HookRoute,
-    proxy: &str,
-    sentinel: &str,
-    kept: &dyn Fn(&Path) -> bool,
-) -> Option<purlis_core::worktree::git::NetworkRoute> {
-    let ca = Path::new(&route.ca_path);
-    if !(ca.is_absolute() && kept(ca)) {
-        return None;
-    }
-    purlis_core::forgewire::git_network_in_hook(route, proxy, ca, sentinel).ok()
+    Some(tips)
 }
 
 /// The repository as a needs-you item names it: its directory's name.
@@ -252,67 +219,4 @@ fn tell_the_app(why: String) {
             commit_refused: why,
         },
     );
-}
-
-#[cfg(test)]
-mod route_tests {
-    use super::*;
-    use purlis_core::forgewire::HookRoute;
-
-    fn route_with_ca(ca: &Path) -> HookRoute {
-        HookRoute {
-            ca_path: ca.display().to_string(),
-            helper_exe: "/app/purlis-forge-helper".to_owned(),
-            hosts: vec!["github.com".to_owned()],
-        }
-    }
-
-    /// A CA file in a folder this process can write is one a chat can write: no route.
-    #[test]
-    fn a_ca_file_the_chat_can_write_gives_no_route() {
-        let dir = tempfile::tempdir().unwrap();
-        let ca = dir.path().join("ca.pem");
-        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").unwrap();
-        let found = route_from(&route_with_ca(&ca), "http://127.0.0.1:9", "sentinel");
-        assert!(found.is_none());
-    }
-
-    /// A CA file the sandbox keeps a chat from writing, read through a good proxy, is a route.
-    #[test]
-    fn a_ca_file_a_chat_can_read_and_not_write_gives_a_route() {
-        let dir = tempfile::tempdir().unwrap();
-        let ca = dir.path().join("ca.pem");
-        std::fs::write(&ca, "-----BEGIN CERTIFICATE-----\n").unwrap();
-        let route = route_with_ca(&ca);
-        let kept = |path: &Path| path == ca;
-        let found = route_from_where(&route, "http://127.0.0.1:9", "sentinel", &kept);
-        assert!(found.is_some());
-        // The same file, not kept from the chat, gives none.
-        let found = route_from_where(&route, "http://127.0.0.1:9", "sentinel", &|_| false);
-        assert!(found.is_none());
-    }
-
-    /// The CA is held (`kept` says so), so each of these is refused by the proxy check alone.
-    #[test]
-    fn a_non_loopback_proxy_gives_no_route() {
-        let dir = tempfile::tempdir().unwrap();
-        let ca = dir.path().join("ca.pem");
-        std::fs::write(&ca, "x").unwrap();
-        let route = route_with_ca(&ca);
-        assert!(route_from_where(&route, "http://127.0.0.1:9", "s", &|_| true).is_some());
-        for proxy in [
-            "http://evil.example:9",
-            "http://10.0.0.1:9",
-            "https://127.0.0.1:9",
-        ] {
-            assert!(
-                purlis_core::forgewire::git_network_in_hook(&route, proxy, &ca, "s").is_err(),
-                "{proxy}"
-            );
-            assert!(
-                route_from_where(&route, proxy, "s", &|_| true).is_none(),
-                "{proxy}"
-            );
-        }
-    }
 }

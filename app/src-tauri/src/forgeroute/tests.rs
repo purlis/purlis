@@ -1519,43 +1519,57 @@ fn the_apps_git_for_a_chat_takes_the_route_of_the_run_its_session_is_and_no_othe
 }
 
 #[test]
-fn a_hook_is_told_the_route_of_its_own_chat_by_the_path_of_its_wire_folders_ca_copy_and_no_other_chats()
- {
+fn the_refs_of_a_remote_are_asked_only_for_a_repo_recorded_for_the_chats_own_run() {
     let scene = Scene::new();
-    // The sandbox's own root: the wire folder is made under its state.
-    let project = tempfile::tempdir().expect("a project");
-    let at = project.path().to_str().expect("text").to_owned();
-    scene
-        .recorded
-        .record(&at, vec![(Kind::GitHub, "github.com", "acme/app")]);
-    scene.recorded.bind(&at, "github.com", "alice");
-    // A chat with no route, and one that has not committed a run, are told nothing.
-    assert!(scene.routes.hook_route(7).is_none());
-    let guard = scene.routes.guard("chat-1", "run-1", project.path());
-    let ca = guard.params().expect("params").ca.clone();
-    guard.commit(7);
-    // Its line is not wired yet: there is no copy of its CA to name.
-    assert!(scene.routes.hook_route(7).is_none());
-    // The line is wired: the copy is in a wire folder of its own, beside a stranger's with
-    // another CA, which is never named.
-    let wire = purlis_core::forgewire::wire_folder(project.path());
-    let own = wire.join("chat-1-aaaa");
-    let stranger = wire.join("chat-2-bbbb");
-    for (folder, pem) in [(&own, "PEM"), (&stranger, "OTHER")] {
-        std::fs::create_dir_all(folder).expect("a wire folder");
-        std::fs::write(folder.join(purlis_core::forgewire::CA_COPY), pem).expect("a copy");
-    }
-    let route = scene.routes.hook_route(7).expect("a route for the session");
+    let own = "https://github.com/acme/app.git";
+    // No run is committed to the session yet.
     assert_eq!(
-        Path::new(&route.ca_path),
-        own.join(purlis_core::forgewire::CA_COPY),
-        "the chat's copy in its wire folder, which its sandbox lets it open"
+        scene.routes.remote_refs(7, own).unwrap_err(),
+        "this chat has no forge route"
     );
-    assert_ne!(Path::new(&route.ca_path), ca, "not the app's own file");
-    // Another chat's number gets no route.
-    assert!(scene.routes.hook_route(8).is_none());
+    let guard = scene.routes.guard("chat-1", "run-1", Path::new("/p/one"));
+    assert!(guard.params().is_some());
+    guard.commit(7);
+    let not_recorded = "that remote is not a repository recorded for this chat";
+    // Another host or repository is refused before anything is asked, however it is spelled.
+    for url in [
+        "https://github.com/acme/other.git",
+        "https://github.com/other/app.git",
+        "https://gitlab.example/acme/app.git",
+        "https://evil.example/github.com/acme/app.git",
+        "http://github.com/acme/app.git",
+        "https://user@github.com/acme/app.git",
+        "https://github.com/acme/app.git?x=1",
+        "git@github.com:acme/app.git",
+        "-u",
+        "",
+    ] {
+        assert_eq!(
+            scene.routes.remote_refs(7, url).unwrap_err(),
+            not_recorded,
+            "{url}"
+        );
+    }
+    // Another chat's number has no route of its own to ask by.
+    assert_eq!(
+        scene.routes.remote_refs(8, own).unwrap_err(),
+        "this chat has no forge route"
+    );
+    // The run's own repo passes the check and is asked on the run's route, never refused as
+    // unrecorded; nothing listens at the stand-in forge here, so the ask itself fails.
+    for url in [
+        own,
+        "https://github.com/acme/app",
+        "https://GitHub.com/acme/app/",
+    ] {
+        let why = scene.routes.remote_refs(7, url).unwrap_err();
+        assert_ne!(why, not_recorded, "{url}");
+    }
     scene.routes.stop("run-1");
-    assert!(scene.routes.hook_route(7).is_none());
+    assert_eq!(
+        scene.routes.remote_refs(7, own).unwrap_err(),
+        "this chat has no forge route"
+    );
 }
 
 #[test]

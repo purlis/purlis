@@ -392,10 +392,10 @@ pub fn answer(
             },
             Err(why) => no(why),
         },
-        // What a chat's hook needs to ask its forge as the chat's git does (#7302): from the
-        // app's own record of the chat whose token the line carries, never from one the line
-        // names. A chat with no route has none to be told.
-        Ask::GitRoute(asked) => hook_route_answer(asked.chat),
+        // The ref tips a remote has, for the pre-push scan (#7302): asked by the app, outside the
+        // chat's sandbox, on the route of the run of the chat whose token the line carries, and
+        // only of a repository recorded for that run. Never a route or a chat the line names.
+        Ask::RemoteRefs(asked) => remote_refs_answer(asked.chat, &asked.url),
         // A brokered git action (#1335): no ticket, for the record's reason — the line names
         // only the chat whose token it carries, and what it asks is checked against the app's
         // record of that chat.
@@ -4863,13 +4863,17 @@ pub async fn close_chat_stopping(
 #[cfg(test)]
 mod tests;
 
-/// The answer to a hook's ask for its chat's forge route ([`Ask::GitRoute`], #7302).
-fn hook_route_answer(chat: u32) -> Answer {
-    #[cfg(feature = "forge-wiring")]
-    if let Some(route) = crate::forgeroute::hook_route(chat) {
-        return Answer::GitRoute { route };
+/// The answer to a hook's ask for a remote's ref tips ([`Ask::RemoteRefs`], #7302).
+#[cfg(feature = "forge-wiring")]
+fn remote_refs_answer(chat: u32, url: &str) -> Answer {
+    match crate::forgeroute::remote_refs(chat, url) {
+        Ok(tips) => Answer::RemoteRefs { tips },
+        Err(why) => Answer::No { why },
     }
-    let _ = chat;
+}
+
+#[cfg(not(feature = "forge-wiring"))]
+fn remote_refs_answer(_chat: u32, _url: &str) -> Answer {
     Answer::No {
         why: "this chat has no forge route".to_owned(),
     }

@@ -966,18 +966,34 @@ impl ForgeRoutes {
         Some(purlis_core::forgewire::git_network(&route))
     }
 
-    /// **What a hook in chat `session` is told of the chat's route** (#7302): the chat's copy of its
-    /// CA in its wire folder (the one file of the CA its sandbox lets it open), the app's
-    /// credential helper and the recorded hosts, from this run's own record. `None` where the
-    /// session has no live route, or its line is not wired yet. The chat's egress port is not here: the app does not hold
-    /// it, and the hook takes it from its own environment as a transport alone.
-    pub fn hook_route(&self, session: u32) -> Option<purlis_core::forgewire::HookRoute> {
-        let run = self.sessions().of_run.get(&session).cloned()?;
-        let (inputs, project) = self
+    /// **The ref tips of the remote at `url`, asked for chat `session`'s hook** (#7302): the
+    /// pre-push scan's ask of the remote, which a chat's sandbox cannot make under the one login.
+    /// The app asks it here, outside the sandbox, on the run's own route ([`Self::git_route`])
+    /// with the run's own CA, and only where `url` is the address of a repository recorded for the
+    /// run the session belongs to: never another host or repository, and never another run's
+    /// route. The error is the sentence the hook's chat is told.
+    pub fn remote_refs(&self, session: u32, url: &str) -> Result<Vec<String>, String> {
+        let no_route = || "this chat has no forge route".to_owned();
+        let run = self
+            .sessions()
+            .of_run
+            .get(&session)
+            .cloned()
+            .ok_or_else(no_route)?;
+        let recorded = self
             .live()
             .get(&run)
-            .map(|live| (live.inputs.clone(), live.project.clone()))?;
-        purlis_core::forgewire::HookRoute::of(&inputs.route(String::new()), &project)
+            .map(|live| live.inputs.repos.iter().any(|repo| repo.is_url(url)))
+            .ok_or_else(no_route)?;
+        if !recorded {
+            return Err("that remote is not a repository recorded for this chat".to_owned());
+        }
+        let route = self
+            .git_route(session)
+            .ok_or_else(no_route)?
+            .map_err(|why| why.to_string())?;
+        purlis_core::diffscan::remote_tips_through(url, route)
+            .ok_or_else(|| "the remote could not be asked which commits it has".to_owned())
     }
 
     /// The run's audit, a line per request: method, host, repo, class and verdict. The audit
@@ -1382,9 +1398,11 @@ pub fn git_route(session: u32) -> Option<io::Result<purlis_core::worktree::git::
     routes()?.git_route(session)
 }
 
-/// What a hook in chat `session` is told of the chat's route ([`ForgeRoutes::hook_route`]).
-pub fn hook_route(session: u32) -> Option<purlis_core::forgewire::HookRoute> {
-    routes()?.hook_route(session)
+/// The ref tips of a recorded remote, for chat `session`'s hook ([`ForgeRoutes::remote_refs`]).
+pub fn remote_refs(session: u32, url: &str) -> Result<Vec<String>, String> {
+    routes()
+        .ok_or_else(|| "this chat has no forge route".to_owned())?
+        .remote_refs(session, url)
 }
 
 /// A chat's session closes, or its program ends on its own (`chats.rs`).
