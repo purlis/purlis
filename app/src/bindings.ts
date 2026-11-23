@@ -8389,6 +8389,12 @@ export type ChatNoticed = {
 	 *  whose adapter reports no mode purlis can check.
 	 */
 	mode: ModeDiffers | null,
+	/**
+	 *  The forge sign-ins its route found missing or ended (ADR 0128, #7290), one per host and
+	 *  in host order: each a standing fault its pane says in a Notice with a way into Settings ›
+	 *  You › Accounts. Empty until one is found.
+	 */
+	sign_in: SignInNeeded[],
 };
 
 /**  A chat on a device, as its row names it. */
@@ -18711,6 +18717,15 @@ export type SidebarWorkspace = {
 	 *  (charter-app#301). Every place a workspace is drawn marks it.
 	 */
 	live: boolean,
+};
+
+/**
+ *  **A chat's forge route had no usable sign-in**: the host, and whether there never was one
+ *  (`missing`) or it ended (`ended`). Never told for a forge that merely could not be reached.
+ */
+export type SignInNeeded = {
+	host: string,
+	ended: boolean,
 };
 
 /**  A forge account setup adds the key to. */

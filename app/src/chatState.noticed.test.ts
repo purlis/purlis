@@ -11,6 +11,7 @@ const told = (more: Partial<ChatNoticed>): ChatNoticed => ({
   stuck: null,
   left_work: null,
   mode: null,
+  sign_in: [],
   ...more,
 });
 

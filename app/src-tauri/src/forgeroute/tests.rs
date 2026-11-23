@@ -193,10 +193,23 @@ impl Credentials for FakeSignIns {
 }
 
 #[derive(Default)]
-struct FakeNotices(Mutex<Vec<(String, String, SignInState)>>);
+struct FakeNotices {
+    needed: Mutex<Vec<(u32, String, SignInState)>>,
+    ok: Mutex<Vec<(u32, String)>>,
+    /// Whether the window takes what it is told (false: no pane to say it on).
+    refuse: Mutex<bool>,
+}
 impl Notices for FakeNotices {
-    fn sign_in_needed(&self, chat: &str, host: &str, state: SignInState) {
-        lock(&self.0).push((chat.to_owned(), host.to_owned(), state));
+    fn sign_in_needed(&self, _: &Path, session: u32, host: &str, state: SignInState) -> bool {
+        if *lock(&self.refuse) {
+            return false;
+        }
+        lock(&self.needed).push((session, host.to_owned(), state));
+        true
+    }
+
+    fn sign_in_ok(&self, _: &Path, session: u32, host: &str) {
+        lock(&self.ok).push((session, host.to_owned()));
     }
 }
 
@@ -314,6 +327,16 @@ impl Scene {
             .start(chat, run, Path::new(project))
             .expect("the route starts")
             .expect("the project records repos")
+    }
+
+    /// A route started and open as chat session `session`, as a committed run's is.
+    fn open(&self, chat: &str, run: &str, project: &str, session: u32) -> RouteParams {
+        let params = self.start(chat, run, project);
+        self.routes
+            .sessions()
+            .of_run
+            .insert(session, run.to_owned());
+        params
     }
 
     /// The folder the route of `run` is made in, while it is live.
@@ -1067,7 +1090,7 @@ fn another_runs_sentinel_is_refused_at_this_runs_endpoint() {
 fn a_missing_sign_in_is_refused_in_words_that_name_the_sign_in_step_and_noticed_once_per_chat() {
     let scene = Scene::new();
     lock(&scene.sign_ins.tokens).clear();
-    let params = scene.start("chat-1", "run-1", "/p/one");
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
 
     for _ in 0..3 {
         let outcome = comment(&scene, "run-1", &params.sentinel);
@@ -1083,19 +1106,171 @@ fn a_missing_sign_in_is_refused_in_words_that_name_the_sign_in_step_and_noticed_
         "{said}"
     );
     assert_eq!(
-        *lock(&scene.notices.0),
-        vec![(
-            "chat-1".to_owned(),
-            "github.com".to_owned(),
-            SignInState::Missing
-        )],
+        *lock(&scene.notices.needed),
+        vec![(5, "github.com".to_owned(), SignInState::Missing)],
         "one Notice for the chat, however many requests"
     );
 
-    // The chat restarts while it still has the first run: its second run is not told again.
-    let second = scene.start("chat-1", "run-2", "/p/one");
+    // The chat restarts while it still has the first run: its new session has a pane of its own
+    // that shows nothing yet, so it is told, once.
+    let second = scene.open("chat-1", "run-2", "/p/one", 6);
     comment(&scene, "run-2", &second.sentinel);
-    assert_eq!(lock(&scene.notices.0).len(), 1);
+    comment(&scene, "run-2", &second.sentinel);
+    assert_eq!(
+        *lock(&scene.notices.needed),
+        vec![
+            (5, "github.com".to_owned(), SignInState::Missing),
+            (6, "github.com".to_owned(), SignInState::Missing),
+        ]
+    );
+}
+
+fn gitlab_note(scene: &Scene, run: &str, sentinel: &str) -> Outcome {
+    send(
+        scene,
+        run,
+        sentinel,
+        "POST",
+        "gitlab.com",
+        "/api/v4/projects/group%2Fproj/issues/3/notes",
+    )
+}
+
+#[test]
+fn a_second_host_and_a_sign_in_that_ends_later_are_each_told() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+
+    comment(&scene, "run-1", &params.sentinel);
+    gitlab_note(&scene, "run-1", &params.sentinel);
+    comment(&scene, "run-1", &params.sentinel);
+    // github.com's sign-in was missing; now it is one that ended.
+    scene
+        .sign_ins
+        .fail("github.com", "alice", SignInState::Ended);
+    comment(&scene, "run-1", &params.sentinel);
+
+    assert_eq!(
+        *lock(&scene.notices.needed),
+        vec![
+            (5, "github.com".to_owned(), SignInState::Missing),
+            (5, "gitlab.com".to_owned(), SignInState::Missing),
+            (5, "github.com".to_owned(), SignInState::Ended),
+        ]
+    );
+}
+
+#[test]
+fn a_successful_sign_in_takes_the_notice_down_and_a_later_loss_is_told_again() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+    comment(&scene, "run-1", &params.sentinel);
+    assert!(lock(&scene.notices.ok).is_empty());
+
+    // The person signs in: the next request is given a credential, and the Notice goes.
+    scene.sign_ins.sign_in("github.com", "alice", GITHUB_TOKEN);
+    let outcome = comment(&scene, "run-1", &params.sentinel);
+    assert!(bearer(&outcome).is_some(), "{outcome:?}");
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        *lock(&scene.notices.ok),
+        vec![(5, "github.com".to_owned())],
+        "taken down once, not on every request"
+    );
+
+    // It ends again later: that is told again.
+    scene
+        .sign_ins
+        .fail("github.com", "alice", SignInState::Ended);
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(lock(&scene.notices.needed).len(), 2);
+}
+
+#[test]
+fn one_hosts_sign_in_leaves_another_hosts_told_state_alone() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+    comment(&scene, "run-1", &params.sentinel);
+    gitlab_note(&scene, "run-1", &params.sentinel);
+    // gitlab.com is signed in: its Notice goes, github.com's is still missing.
+    scene
+        .sign_ins
+        .sign_in("gitlab.com", "alice-gl", GITLAB_TOKEN);
+    gitlab_note(&scene, "run-1", &params.sentinel);
+    assert_eq!(*lock(&scene.notices.ok), vec![(5, "gitlab.com".to_owned())]);
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        lock(&scene.notices.needed).len(),
+        2,
+        "github.com's is not told again while it stands"
+    );
+}
+
+#[test]
+fn missing_then_ended_then_missing_on_one_host_is_told_each_time() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+    comment(&scene, "run-1", &params.sentinel);
+    scene
+        .sign_ins
+        .fail("github.com", "alice", SignInState::Ended);
+    comment(&scene, "run-1", &params.sentinel);
+    lock(&scene.sign_ins.failing).clear();
+    lock(&scene.sign_ins.tokens).clear();
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        *lock(&scene.notices.needed),
+        vec![
+            (5, "github.com".to_owned(), SignInState::Missing),
+            (5, "github.com".to_owned(), SignInState::Ended),
+            (5, "github.com".to_owned(), SignInState::Missing),
+        ]
+    );
+}
+
+#[test]
+fn a_notice_with_no_pane_to_say_it_on_is_not_counted_as_told() {
+    let scene = Scene::new();
+    lock(&scene.sign_ins.tokens).clear();
+    let params = scene.open("chat-1", "run-1", "/p/one", 5);
+    *lock(&scene.notices.refuse) = true;
+    comment(&scene, "run-1", &params.sentinel);
+    assert!(lock(&scene.notices.needed).is_empty());
+
+    *lock(&scene.notices.refuse) = false;
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        lock(&scene.notices.needed).len(),
+        1,
+        "told on the next request"
+    );
+}
+
+#[test]
+fn an_ended_sign_in_is_told_as_ended_and_a_chat_not_yet_open_is_told_when_it_opens() {
+    let scene = Scene::new();
+    scene
+        .sign_ins
+        .fail("github.com", "alice", SignInState::Ended);
+
+    // Before the chat opens there is no pane to say it on: nothing is told, and the chat is not
+    // counted as told.
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    comment(&scene, "run-1", &params.sentinel);
+    assert!(lock(&scene.notices.needed).is_empty());
+
+    // Once it is open, its next request tells it once, as ended.
+    scene.routes.sessions().of_run.insert(3, "run-1".to_owned());
+    comment(&scene, "run-1", &params.sentinel);
+    comment(&scene, "run-1", &params.sentinel);
+    assert_eq!(
+        *lock(&scene.notices.needed),
+        vec![(3, "github.com".to_owned(), SignInState::Ended)]
+    );
 }
 
 #[test]
@@ -1104,7 +1279,7 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
     scene
         .sign_ins
         .fail("github.com", "alice", SignInState::Ended);
-    let params = scene.start("chat-1", "run-1", "/p/one");
+    let params = scene.open("chat-1", "run-1", "/p/one", 1);
 
     assert!(matches!(
         comment(&scene, "run-1", &params.sentinel),
@@ -1118,7 +1293,7 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
     );
 
     lock(&scene.recorded.accounts).clear();
-    let other = scene.start("chat-2", "run-2", "/p/one");
+    let other = scene.open("chat-2", "run-2", "/p/one", 2);
     assert!(matches!(
         comment(&scene, "run-2", &other.sentinel),
         Outcome::Refused(Refusal::NoCredential)
@@ -1129,7 +1304,11 @@ fn an_ended_sign_in_says_it_ended_and_a_host_with_no_bound_account_is_missing() 
             .refusal_message("run-2", Refusal::NoCredential)
             .contains("no sign-in")
     );
-    assert_eq!(lock(&scene.notices.0).len(), 2, "each chat is told once");
+    assert_eq!(
+        lock(&scene.notices.needed).len(),
+        2,
+        "each chat is told once"
+    );
 }
 
 #[test]
@@ -1149,7 +1328,7 @@ fn a_forge_that_could_not_be_reached_is_unreachable_not_ended_and_raises_no_noti
         "{said}"
     );
     assert!(
-        lock(&scene.notices.0).is_empty(),
+        lock(&scene.notices.needed).is_empty(),
         "a network failure is not the person's to fix"
     );
 }

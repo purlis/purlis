@@ -43,7 +43,7 @@
 //!
 //! **Stubs, each filled by the slice named.** [`Listener`]: A2. [`RouteParams`] into the chat's
 //! environment: B. [`HeldActs`] and its list of held refusals: F (F2's registry replaces
-//! [`HeldAsks`]). [`Recorded`]: G. [`Notices`]'s real sink: G's settings group. [`RunnerLink`]:
+//! [`HeldAsks`]). [`Recorded`]: G. [`Notices`]'s sink: the app's ([`crate::forgewiring::AppNotices`]). [`RunnerLink`]:
 //! the pools' pairing: **a stub, owned by the pools follow-up**, so no runner is paired and a
 //! runner's chat keeps its token connections until that lands.
 //!
@@ -78,7 +78,7 @@ mod tests;
 // ---- the seams ----------------------------------------------------------------------------
 
 /// Why a person's sign-in could not be used.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SignInState {
     /// There is none on this host for this account.
     Missing,
@@ -276,18 +276,29 @@ impl Listener for NoListener {
     }
 }
 
-/// Where a Notice goes. The real sink is the Inbox's, with a way out into the sign-in settings
-/// (slice G's group); until then it is [`NoNotices`].
+/// Where a Notice goes. The app's sink ([`crate::forgewiring::AppNotices`]) tells the chat's
+/// pane, which draws it with a way out into Settings › You › Accounts; [`NoNotices`] is the stub
+/// of a test or a build with no window.
 pub trait Notices: Send + Sync {
-    /// Told once per chat, with the host that had no usable sign-in. Never for
-    /// [`SignInState::Unavailable`], which is not the person's to fix.
-    fn sign_in_needed(&self, chat: &str, host: &str, state: SignInState);
+    /// Told once per open chat `session` of `project`, host and state, with the host that had no
+    /// usable sign-in. Never for [`SignInState::Unavailable`], which is not the person's to fix.
+    /// **True where it was delivered**: a project with no pane to say it on returns false, and
+    /// the route tells it again on its next request.
+    fn sign_in_needed(&self, project: &Path, session: u32, host: &str, state: SignInState) -> bool;
+
+    /// A credential for `host` was given to chat `session` of `project`: a Notice told for that
+    /// host no longer stands.
+    fn sign_in_ok(&self, project: &Path, session: u32, host: &str);
 }
 
 pub struct NoNotices;
 
 impl Notices for NoNotices {
-    fn sign_in_needed(&self, _: &str, _: &str, _: SignInState) {}
+    fn sign_in_needed(&self, _: &Path, _: u32, _: &str, _: SignInState) -> bool {
+        false
+    }
+
+    fn sign_in_ok(&self, _: &Path, _: u32, _: &str) {}
 }
 
 /// **Slice F's** held acts, as the route needs them: where a project's held acts are asked. The
@@ -472,11 +483,34 @@ struct SignInTrouble {
 /// bound to. **A host with no bound account is a missing sign-in**, never another account's.
 pub struct ProjectCredentials {
     chat: String,
+    run: String,
+    sessions: Arc<dyn SessionOfRun>,
     project: PathBuf,
     seams: Seams,
     trouble: Arc<SignInTrouble>,
-    /// The chats already told, across their runs.
-    told: Arc<Mutex<HashSet<String>>>,
+    /// What is already told, mirroring what the pane shows: per open chat session and host, the
+    /// state told. So a restarted chat's new session, a second host, and a state that changes
+    /// (missing, ended, missing again) are each told.
+    told: Arc<Mutex<Told>>,
+}
+
+/// The Notices told: the state of each open chat session's host.
+type Told = HashMap<(u32, String), SignInState>;
+
+impl ProjectCredentials {
+    /// A credential was given for `host`: a Notice told to this chat for it is taken down.
+    fn signed_in(&self, host: &str) {
+        let Some(session) = self.sessions.session(&self.run) else {
+            return;
+        };
+        let cleared = {
+            let mut told = self.told.lock().unwrap_or_else(PoisonError::into_inner);
+            told.remove(&(session, host.to_owned())).is_some()
+        };
+        if cleared {
+            self.seams.notices.sign_in_ok(&self.project, session, host);
+        }
+    }
 }
 
 impl CredentialSource for ProjectCredentials {
@@ -491,6 +525,7 @@ impl CredentialSource for ProjectCredentials {
             .as_ref()
             .map(|gate| gate.credential(request));
         if let Some(Ok(credential)) = gated {
+            self.signed_in(&host);
             return Ok(credential);
         }
         let lookup = match self.seams.recorded.account(&self.project, &host) {
@@ -498,7 +533,10 @@ impl CredentialSource for ProjectCredentials {
             Some(account) => self.seams.credentials.credential(&host, &account),
         };
         let failure = match (gated, lookup) {
-            (None, Ok(credential)) => return Ok(credential),
+            (None, Ok(credential)) => {
+                self.signed_in(&host);
+                return Ok(credential);
+            }
             // A sign-in that is missing or ended names its step, as it always did.
             (_, Err(failure)) => failure,
             (Some(_), Ok(_)) => SignInFailure {
@@ -516,16 +554,40 @@ impl CredentialSource for ProjectCredentials {
             .last
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some((host.clone(), failure));
-        // One Notice per chat, however many requests and runs; none for a forge that could not
-        // be reached, which is not the person's to fix.
+        // One Notice per open chat, host and state, however many requests; none for a forge that
+        // could not be reached, which is not the person's to fix. A chat that is not open yet, or
+        // whose pane is not there, has nowhere to say it, so it is not counted as told: its next
+        // request tells it.
         if state != SignInState::Unavailable
-            && self
+            && let Some(session) = self.sessions.session(&self.run)
+        {
+            let key = (session, host.clone());
+            let new = self
                 .told
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .insert(self.chat.clone())
-        {
-            self.seams.notices.sign_in_needed(&self.chat, &host, state);
+                .get(&key)
+                != Some(&state);
+            if new
+                && self
+                    .seams
+                    .notices
+                    .sign_in_needed(&self.project, session, &host, state)
+            {
+                self.told
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .insert(key, state);
+                // The chat may have closed while the pane was told, after its told state was
+                // forgotten: nothing of it stays, here or on its pane.
+                if !self.sessions.is_open(session) {
+                    self.told
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner)
+                        .remove(&(session, host.clone()));
+                    self.seams.notices.sign_in_ok(&self.project, session, &host);
+                }
+            }
         }
         Err(CredentialError::Unavailable)
     }
@@ -597,7 +659,7 @@ pub struct ForgeRoutes {
     seams: Seams,
     live: Mutex<HashMap<String, Live>>,
     sessions: Arc<Mutex<Sessions>>,
-    told: Arc<Mutex<HashSet<String>>>,
+    told: Arc<Mutex<Told>>,
 }
 
 impl ForgeRoutes {
@@ -613,7 +675,7 @@ impl ForgeRoutes {
             seams,
             live: Mutex::new(HashMap::new()),
             sessions: Arc::new(Mutex::new(Sessions::default())),
-            told: Arc::new(Mutex::new(HashSet::new())),
+            told: Arc::new(Mutex::new(Told::new())),
         }
     }
 
@@ -670,6 +732,10 @@ impl ForgeRoutes {
         let trouble = Arc::new(SignInTrouble::default());
         let credentials = Arc::new(ProjectCredentials {
             chat: chat.to_owned(),
+            run: run.to_owned(),
+            sessions: Arc::new(RunSessions {
+                sessions: self.sessions.clone(),
+            }),
             project: project.to_owned(),
             seams: self.seams.clone(),
             trouble: trouble.clone(),
@@ -832,8 +898,14 @@ impl ForgeRoutes {
         let gone = self.live().remove(run);
         {
             let mut sessions = self.sessions();
+            let ended: Vec<u32> = sessions
+                .of_run
+                .iter()
+                .filter_map(|(session, r)| (r == run).then_some(*session))
+                .collect();
             sessions.of_run.retain(|_, r| r != run);
             self.forget_exits_if_none_pending(&mut sessions);
+            self.forget_told(&ended);
         }
         if let Some(mut live) = gone {
             live.proxy.retire(&ChatId::new(run));
@@ -842,14 +914,6 @@ impl ForgeRoutes {
             }
             drop(live.bound.take());
             let _ = std::fs::remove_dir_all(&live.dir);
-            // The chat is told again only by a run that starts after none of its runs is left.
-            let chat_has_another = self.live().values().any(|other| other.chat == live.chat);
-            if !chat_has_another {
-                self.told
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remove(&live.chat);
-            }
         }
     }
 
@@ -864,6 +928,7 @@ impl ForgeRoutes {
         let run = {
             let mut sessions = self.sessions();
             let run = sessions.of_run.remove(&session);
+            self.forget_told(&[session]);
             if run.is_none() && self.has_pending(&sessions) {
                 sessions.exited.insert(session);
             }
@@ -873,6 +938,15 @@ impl ForgeRoutes {
         if let Some(run) = run {
             self.stop(&run);
         }
+    }
+
+    /// What was told of `ended` sessions is no longer kept: a session's Notice goes with it, and a
+    /// restart's new session is told afresh.
+    fn forget_told(&self, ended: &[u32]) {
+        self.told
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|(session, _), _| !ended.contains(session));
     }
 
     fn sessions(&self) -> std::sync::MutexGuard<'_, Sessions> {
@@ -1422,7 +1496,7 @@ static ROUTES: std::sync::OnceLock<ForgeRoutes> = std::sync::OnceLock::new();
 
 /// The app's routes, made once at setup, after the one-per-user lock (so a sweep never meets a
 /// second app's folders). **Seams are the stubs until the slices named at the top fill them.**
-pub fn install(held: Arc<dyn HeldSinks>) {
+pub fn install(held: Arc<dyn HeldSinks>, notices: Arc<dyn Notices>) {
     let Some(root) = route_dir() else {
         tracing::warn!("purlis: no private folder for the forge route; chats keep their tokens");
         return;
@@ -1430,6 +1504,7 @@ pub fn install(held: Arc<dyn HeldSinks>) {
     let _ = ROUTES.get_or_init(|| {
         let mut seams = Seams::stubs();
         seams.held = held;
+        seams.notices = notices;
         // Slice C's sign-ins and slice G's confirmed repos, where this process may read them (only
         // the app's own, never a process a chat started) and a config root exists. Without them
         // no repo is recorded, so no chat has a route.

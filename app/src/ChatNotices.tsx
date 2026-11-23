@@ -22,6 +22,7 @@ import { HostLostNotice } from "./HostLostNotice";
 import { MoveNotice } from "./MoveNotice";
 import { TaskQuietNotice } from "./TaskQuietNotice";
 import { ModeDiffersNotice } from "./ModeDiffersNotice";
+import { SignInNeededNotice } from "./SignInNeededNotice";
 import { PersonaGrantsNotice } from "./PersonaGrantsNotice";
 import { DispatchGrantNotice } from "./DispatchGrantNotice";
 import { SigningRefusalNotice } from "./SigningRefusal";
@@ -476,6 +477,8 @@ export function ChatNotices({
       <TaskQuietNotice plane={plane} session={session} />
       {/* A mode purlis didn't set that its Claude Code reported (R-243): a standing fault. */}
       <ModeDiffersNotice session={session} />
+      {/* A forge sign-in its route found missing or ended (ADR 0128, #7290). */}
+      <SignInNeededNotice plane={plane} session={session} />
       {/* An extension's offer of its view about this chat (#4769): one quiet note. */}
       <ChatOffers session={session} pane={pane} />
       {restartSaid?.trouble !== undefined && (

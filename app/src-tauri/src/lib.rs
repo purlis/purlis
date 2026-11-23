@@ -4155,10 +4155,13 @@ pub fn run() {
             // a crashed app's folders never meets a second app's; it removes only those whose
             // app is gone.
             #[cfg(feature = "forge-wiring")]
-            forgeroute::install(std::sync::Arc::new(forgewiring::AppHeldSinks::new(
-                app.handle().clone(),
-                forgeroute::quarantine_dir(),
-            )));
+            forgeroute::install(
+                std::sync::Arc::new(forgewiring::AppHeldSinks::new(
+                    app.handle().clone(),
+                    forgeroute::quarantine_dir(),
+                )),
+                std::sync::Arc::new(forgewiring::AppNotices::new(app.handle().clone())),
+            );
             // This machine's local state moves to the purlis names (RN-5, V93f): after the
             // single-instance handoff and the one-per-user lock, so a second launch never
             // migrates, and before any project, chat or watch opens a file under one. Anything
