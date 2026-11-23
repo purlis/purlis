@@ -1713,6 +1713,25 @@ fn sandbox_policy_never_becomes_a_project_lock() {
 }
 
 #[test]
+fn sandbox_policy_never_raises_policy_sandbox_off_and_floor_to_full() {
+    purlis_core::unsteered!();
+    for word in ["off", "floor", "full"] {
+        let root = with_settings(&format!(
+            "[sandbox]\npolicy = \"never\"\n\n[policy]\nsandbox = \"{word}\"\n"
+        ));
+        let loaded = levels::load(&sources(root.path()));
+        assert_eq!(
+            loaded.sandbox_level_for(ANYONE),
+            SandboxLevel::Full,
+            "{word}"
+        );
+        // The live reader agrees with the levels reader.
+        let settings = purlis_core::enforcement::Settings::read(root.path());
+        assert_eq!(settings.level(), SandboxLevel::Full, "{word}");
+    }
+}
+
+#[test]
 fn sandbox_mode_reads_as_the_moved_policy_sandbox() {
     purlis_core::unsteered!();
     for (text, level) in [
@@ -1792,6 +1811,18 @@ fn floor_profile() -> String {
         &[],
         &[],
         &purlis_core::sandbox::seatbelt::Own::default(),
+        &[],
+        None,
+    )
+    .expect("a profile")
+}
+
+fn full_profile() -> String {
+    purlis_core::sandbox::seatbelt::profile(
+        &[],
+        &purlis_core::sandbox::seatbelt::Own::default(),
+        std::path::Path::new("/nonexistent/project"),
+        std::path::Path::new("/nonexistent/tmp"),
         &[],
         None,
     )
@@ -1884,8 +1915,11 @@ fn the_escape_denies_are_a_step_of_their_own_not_a_fixed_thing() {
     for service in sandbox_level::MACH_SERVICES {
         assert!(step.contains(service), "{service}");
     }
-    // And the floor's profile is made of it.
+    // And the floor's profile is made of it, as the full profile is, last among its rules
+    // (Seatbelt takes the last match, and the full profile's `BASE` allows every `process-exec`).
     assert!(floor_profile().contains(step));
+    assert!(full_profile().ends_with(step));
+    holds_the_process_escapes(&full_profile());
     // No `[policy]` word takes it away: no family mode, template or level but `off` reaches it.
     for template in Template::ALL {
         for family in ["processes", "network", "sandbox"] {

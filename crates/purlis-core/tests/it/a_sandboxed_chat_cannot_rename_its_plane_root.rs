@@ -101,3 +101,49 @@ fn the_floors_profile_refuses_the_move_of_a_plane_root_and_writes_below_it() {
     assert!(run("/usr/bin/touch", &[inside.as_path()]));
     assert!(inside.is_file());
 }
+
+/// The full profile's escape step, run for real (M75-11, round 2): `BASE` allows every
+/// `process-exec`, so only the step's denies, last among the rules, stop `osascript` and
+/// `launchctl`. `sandbox-exec` exits 71 where the `exec` itself is refused, so the exit code
+/// tells that refusal from the program's own failure, and the same profile without the step
+/// starts both.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_full_profile_refuses_to_start_osascript_and_launchctl() {
+    use purlis_core::enforcement::SandboxLevel;
+    purlis_core::unsteered!();
+    if !can_apply() {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "this process cannot apply a Seatbelt profile on CI"
+        );
+        return;
+    }
+    let dir = tempfile::tempdir().expect("a folder");
+    let cwd = dir.path().join("project");
+    let tmp = dir.path().join("tmp");
+    std::fs::create_dir(&cwd).expect("a project");
+    std::fs::create_dir(&tmp).expect("a temp folder");
+    let profile = seatbelt::profile(&[], &seatbelt::Own::default(), &cwd, &tmp, &[], None)
+        .expect("a profile");
+    let step = seatbelt::escape_step(SandboxLevel::Full);
+    assert!(profile.ends_with(step), "the step comes after every allow");
+    let without = profile.replace(step, "");
+    let code = |profile: &str, program: &str, args: &[&str]| {
+        purlis_core::forklock::status(
+            std::process::Command::new("/usr/bin/sandbox-exec")
+                .args(["-p", profile, program])
+                .args(args),
+        )
+        .expect("it runs")
+        .code()
+    };
+    assert_eq!(code(&profile, "/usr/bin/true", &[]), Some(0));
+    for (program, args) in [
+        ("/usr/bin/osascript", ["-e", "1"].as_slice()),
+        ("/bin/launchctl", ["list"].as_slice()),
+    ] {
+        assert_eq!(code(&profile, program, args), Some(71), "{program}");
+        assert_ne!(code(&without, program, args), Some(71), "{program}");
+    }
+}

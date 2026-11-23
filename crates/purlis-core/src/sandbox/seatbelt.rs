@@ -891,6 +891,9 @@ pub fn profile(
     for rule in vaults_everywhere_rules()? {
         line(rule);
     }
+    // The escape step holds at full as at the floor (M75-11, round 2): `BASE` allows every
+    // `process-exec`, so the denies come after every allow, where the last match wins.
+    out.push_str(escape_step(crate::enforcement::SandboxLevel::Full));
     if out.len() > MOST_PROFILE {
         return Err(TOO_LARGE);
     }

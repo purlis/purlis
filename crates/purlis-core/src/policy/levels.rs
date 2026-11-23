@@ -441,8 +441,14 @@ impl Loaded {
     /// `[policy] sandbox`, else its template's (the floor under `strict`; the stricter of the
     /// workspace's and the persona's where both set one), raised to a lock's minimum
     /// ([`Self::sandbox_lock_minimum`]), never below what your own file says, and never below
-    /// `full` where a file is broken ([`Self::sandbox_at_least`]). This is what the host records
-    /// for the chat, and `context.sandbox` carries.
+    /// `full` where a file is broken ([`Self::sandbox_at_least`]). This is what the policy says
+    /// the chat runs at.
+    ///
+    /// **Not yet what a real start applies**: the app does not call [`load`] (the follow-up
+    /// wires it into the host), so the locks, the workspace's and the persona's `sandbox =` and
+    /// the Organisation's level are not in force at a start today. A start's level is
+    /// [`crate::enforcement::sandbox_level`]'s, from the project's own file, and the host records
+    /// that in `ChatFacts.level`, which `context.sandbox` carries.
     pub fn sandbox_level_for(&self, chat: Chat<'_>) -> SandboxLevel {
         let organisation = Self::level_of(&self.organisation);
         let project = Self::level_of(&self.project).or(organisation);
@@ -466,6 +472,10 @@ impl Loaded {
 
     /// **The families not in force for `chat`**: `network`, `ports` and `processes` where its
     /// sandbox level is `off`, since there is no wrap to enforce them (Q308a).
+    ///
+    /// It reads the level the **policy** sets ([`Self::sandbox_level_for`]), not the one the host
+    /// applied. The Settings and doctor rows that show it (the follow-up) must read
+    /// `ChatFacts.level` through [`super::sandbox_level::not_in_force`] instead.
     pub fn not_in_force_for(&self, chat: Chat<'_>) -> &'static [&'static str] {
         super::sandbox_level::not_in_force(self.sandbox_level_for(chat))
     }
@@ -706,8 +716,9 @@ fn read_tables(
 }
 
 /// **`[sandbox] mode` and `[sandbox] policy` read as moved keys** (M75-11): `policy = "never"`
-/// is a Project lock on the `sandbox` family, which freezes its minimum level, at `full` where
-/// nothing says otherwise; `mode` is `[policy] sandbox` (`"off"` is the level `off`, any other
+/// is a Project lock on the `sandbox` family, which freezes its minimum level at `full`, whatever
+/// `[policy] sandbox` or the template says (`off` and `floor` are raised to it, and a lower level
+/// may only raise it); `mode` is `[policy] sandbox` (`"off"` is the level `off`, any other
 /// word is `full`, and `never` refuses the `off`). Each says so in a Notice naming its new
 /// spelling. A `[policy] sandbox` beside them wins, read after. Returns the line of a `never`,
 /// for [`raise_to_full`].
