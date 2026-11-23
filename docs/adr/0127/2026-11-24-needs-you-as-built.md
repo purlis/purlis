@@ -7,11 +7,15 @@ raised. Slice 19 built it, and settled what the text left open. Nothing here rev
 - **One item is a rule, a resource, a workspace and a request digest** (review round 2, S2-SF4).
   The digest is of the action, the resource and the request as the host made it, each
   length-prefixed. The item keeps the request, and an Allow recomputes the digest from it, so a
-  forged or damaged item grants nothing; the grant names the digest and is one JSON line, so it
-  covers the request the item showed and no other. A chat's sandbox is denied writing the store
-  (`<data>/needs-you`, Integrity, beside `app-state`).
+  damaged item grants nothing; the grant names the digest and is one JSON line, so it covers the
+  request the item showed and no other. The digest catches damage, not a forger who writes a
+  consistent item with a benign `said`: the defence against that is the sandbox, which denies a
+  chat reading and writing the store (`<data>/needs-you`, Integrity, beside `app-state`; read
+  too, as the store keeps the raw requests of other chats). So the window renders an Allow from
+  the item's action, resource and request, never from `said`.
 - **The caps' three limits read like this.** `asks.needs-you-max-items` keeps the most recently
-  raised, taking from the chat that holds the most items first so one chat cannot evict the others; `asks.needs-you-max-days` lets an item go that long after its first raise;
+  raised, taking from the chat that holds the most items first so one chat cannot evict the others, and the file's 4 MiB is held the same way, by bytes, from
+  the owner holding the most; `asks.needs-you-max-days` lets an item go that long after its first raise;
   `asks.needs-you-quiet-days` lets it go when nobody raised it again for that long. The spec named
   the numbers (50, 30, 7) and not which clock each reads.
 - **The wait's cap is `Deadline::below_hook_timeout(HOOK_TIMEOUT - ran_for)`**, 58 s for a fresh

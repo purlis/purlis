@@ -368,13 +368,17 @@ fn a_chat_never_writes_charters_integrity_state() {
     for data in Homes::data_homes(&machine(Os::Linux)) {
         let app_state = data.join(crate::appstate::DIR);
         let needs_you = data.join(crate::policy::needsyou::DIR);
-        held.extend([
-            app_state.clone(),
-            app_state,
-            needs_you.clone(),
-            needs_you,
-            data,
-        ]);
+        held.extend([app_state.clone(), app_state, data]);
+        // The needs-you folder is denied to reads as well, so it is not among the write-only.
+        assert!(
+            [needs_you.clone(), needs_you]
+                .iter()
+                .all(|folder| denied.paths.iter().any(|it| &it.path == folder
+                    && it.class == Class::Integrity
+                    && it.access == Access::ReadWrite)),
+            "{:?}",
+            denied.paths
+        );
     }
     // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
     for state in [".purlis", ".charter"] {
@@ -8304,7 +8308,7 @@ fn the_state_folder_is_held_whole_in_purlis_s_wrap() {
 /// decide. No chat writes it, nor renames or replaces it or the data home that holds it, in what
 /// every harness is compiled; every chat reads it (a Try it's chat reads its laid-out skill there).
 #[test]
-fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
+fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it_but_not_needs_you() {
     let plane = tempfile::tempdir().expect("a plane");
     let on = machine(Os::MacOs);
     let data = Homes::charter_data(&on).expect("a data home");
@@ -8387,6 +8391,21 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
                     "{:?}",
                     settings.deny
                 );
+                // The needs-you store keeps other chats' requests: denied to reads, by the
+                // sandbox and by the file tools.
+                let needs_you = super::real(&data.join(crate::policy::needsyou::DIR))
+                    .display()
+                    .to_string();
+                assert!(
+                    listed("denyRead").contains(&needs_you),
+                    "{needs_you} is not denied to reads: {:?}",
+                    listed("denyRead")
+                );
+                assert!(
+                    settings.deny.contains(&format!("Read(/{needs_you}/**)")),
+                    "{needs_you}: {:?}",
+                    settings.deny
+                );
             }
             // Codex and opencode: purlis's own wrap, which holds the folder and the data home as
             // entries too.
@@ -8413,6 +8432,18 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
                         .any(|line| line.contains("file-read*") && line.contains("[aA][pP][pP]-")),
                     "{harness:?}: the app state is denied to reads"
                 );
+                // The needs-you folder is the one thing below the data home read-denied.
+                let needs_you = app_state_held(&data)
+                    .into_iter()
+                    .find(|it| it.access == Access::ReadWrite && it.reach == Reach::AndBelow)
+                    .expect("needs-you is held against reads");
+                assert!(
+                    seatbelt::denial_rules(&needs_you)
+                        .expect("rules")
+                        .iter()
+                        .all(|rule| rule.contains("file-read*") && profile.contains(rule)),
+                    "{harness:?}: needs-you is not denied to reads"
+                );
             }
         }
     }
@@ -8420,10 +8451,11 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
 }
 
 #[test]
-fn a_chat_is_denied_writing_the_needs_you_store_so_it_cannot_forge_an_item() {
+fn a_chat_is_denied_reading_and_writing_the_needs_you_store() {
     // M75 slice 19, review round 2: `<data>/needs-you` holds the asks the person is to decide, so
     // a chat that could write it could put an item there to be allowed. It is Integrity, held
-    // below the folder and as an entry, under both names of the data home.
+    // below the folder and as an entry, under both names of the data home. Round 3: the store
+    // keeps the raw requests now, so reads are denied too, or a chat reads what others asked.
     let on = machine(Os::Linux);
     let denied = Denied::of(tempfile::tempdir().expect("a plane").path(), &on);
     let share = on.home.as_ref().expect("a home").join(".local/share");
@@ -8434,8 +8466,9 @@ fn a_chat_is_denied_writing_the_needs_you_store_so_it_cannot_forge_an_item() {
                 denied.paths.iter().any(|it| it.path == folder
                     && it.reach == reach
                     && it.class == Class::Integrity
-                    && it.access == Access::Write),
-                "{folder:?} {reach:?} is not held: {:?}",
+                    && it.access == Access::ReadWrite
+                    && it.any_case),
+                "{folder:?} {reach:?} is not held against reads and writes: {:?}",
                 denied.paths
             );
         }

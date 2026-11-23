@@ -14,7 +14,10 @@
 //!   chats that asked and the last time. The digest is in the key, and the item keeps the request
 //!   it is the digest of, so an Allow recomputes it and grants only what the item showed (review
 //!   round 2, S2-SF4): a file whose digest no longer matches its request grants nothing.
-//!   [`Grant::text`] carries it.
+//!   [`Grant::text`] carries it. The digest catches damage, not a forger who writes a consistent
+//!   item with a benign `said`: the defence against that is the sandbox, which denies a chat
+//!   reading and writing the folder. So what the person is shown to Allow is made from the
+//!   item's action, resource and request, never from `said`.
 //! - **The wait is capped below the harness's hook timeout, less what the hook already ran**
 //!   ([`cap`], through [`Deadline::below_hook_timeout`], as `harness/hooked.rs` does for a hook
 //!   that says `ran_for`, #1063). An ask unanswered at the cap, or with no time left at all, is
@@ -28,7 +31,8 @@
 //!   command layer, so a headless machine, `purlis inbox` included, can [`Record::deny`] and
 //!   [`Record::dismiss`] and cannot allow: it has no press to pass (Q314.5).
 //! - **Its caps are limits** ([`Caps`]): `asks.needs-you-max-items` (the chat holding the most
-//!   items loses its least recently raised first, so one chat cannot evict the others),
+//!   items loses its least recently raised first, so one chat cannot evict the others; the
+//!   file's 4 MiB is held the same way, by bytes, and one item is at most [`MOST_ITEM_BYTES`]),
 //!   `asks.needs-you-max-days` (past it from the first raise an item goes) and
 //!   `asks.needs-you-quiet-days` (an item nobody raised again for that long goes). They are held
 //!   on every read as well as every write, and every field is bounded ([`MOST_FIELD`] and
@@ -38,8 +42,9 @@
 //!
 //! `<data>/needs-you/items.json`, one JSON object for the machine, rewritten whole under a lock on
 //! its folder, `0600` ([`Store`]). It holds items and the notes chats are still to be told, and no
-//! grant: a grant is the sealed store's. A chat's sandbox is denied writing the folder
-//! (`sandbox::app_state_held`, Integrity), so a chat cannot forge an item. A file this build
+//! grant: a grant is the sealed store's. A chat's sandbox is denied reading and writing
+//! the folder (`sandbox::app_state_held`, Integrity), so a chat can neither forge an item nor
+//! read another chat's requests. A file this build
 //! cannot parse reads as nothing and is written over; any other failure to read it (permissions,
 //! a device error) refuses the change instead. Deferred Once grants are in memory only ([`Late`]), as a lapsed ask's pre-answer
 //! is: a restart drops them and the chat asks again.
@@ -82,6 +87,11 @@ pub const MOST_RESOURCE: usize = 1024;
 
 /// The most bytes of a request, the digest's preimage.
 pub const MOST_REQUEST: usize = 16 * 1024;
+
+/// **The most bytes one item takes in the file**, as serialised. A control character is six bytes
+/// in JSON (`\u0001`), so the field bounds alone allow about 100 KiB; an item past this is not
+/// kept, so the file's cap is shared among many items and not taken by one.
+pub const MOST_ITEM_BYTES: usize = 64 * 1024;
 
 /// The most chats one item names; a chat past it is not added.
 pub const MOST_CHATS: usize = 100;
@@ -243,6 +253,17 @@ impl Caps {
         Self::from_limits(&|_| None)
     }
 
+    /// **No cap at all**: nothing is held back and nothing goes. For a command that has no word of
+    /// the limits in force (`purlis inbox`), which must neither hide an item the window shows nor
+    /// evict one by a cap the window would not apply.
+    pub fn none() -> Self {
+        Self {
+            max_items: usize::MAX,
+            max_days: u64::MAX,
+            quiet_days: u64::MAX,
+        }
+    }
+
     /// The caps as `limit` reads them (the value in force for a key, `None` for no word of it:
     /// the shipped one then).
     pub fn from_limits(limit: &dyn Fn(&str) -> Option<i64>) -> Self {
@@ -256,10 +277,14 @@ impl Caps {
                 .expect("a needs-you limit ships a number");
             u64::try_from(said).unwrap_or(0)
         };
+        // A limit of 0 (or a negative one) must not empty needs-you on every read: each has a
+        // floor, so an item is held for at least a day and the box for at least one item.
         Self {
-            max_items: usize::try_from(number("asks.needs-you-max-items")).unwrap_or(usize::MAX),
-            max_days: number("asks.needs-you-max-days"),
-            quiet_days: number("asks.needs-you-quiet-days"),
+            max_items: usize::try_from(number("asks.needs-you-max-items"))
+                .unwrap_or(usize::MAX)
+                .max(1),
+            max_days: number("asks.needs-you-max-days").max(1),
+            quiet_days: number("asks.needs-you-quiet-days").max(1),
         }
     }
 }
@@ -538,6 +563,11 @@ fn fits(raise: &Raise<'_>) -> bool {
         && key.digest == digest_of(raise.action, &key.resource, raise.request)
 }
 
+/// The bytes `item` takes in the file.
+fn size_of(item: &Item) -> usize {
+    serde_json::to_vec(item).map_or(usize::MAX, |text| text.len())
+}
+
 /// The chat an item counts against when the items are over the cap: the first that asked.
 fn owner(item: &Item) -> &str {
     item.chats.first().map_or("", String::as_str)
@@ -585,23 +615,33 @@ impl Record {
         let said = crate::shown::one_line(raise.said, MOST_SAID);
         match self.items.iter_mut().find(|one| one.key == key) {
             Some(one) => {
-                if !one.chats.iter().any(|chat| chat == raise.chat) && one.chats.len() < MOST_CHATS
-                {
+                if !one.chats.iter().any(|chat| chat == raise.chat) {
+                    if one.chats.len() >= MOST_CHATS {
+                        // Past the most chats: this chat is not named, so it is not to be told
+                        // the item is there for it.
+                        return false;
+                    }
                     one.chats.push(raise.chat.to_owned());
                 }
                 one.last = one.last.max(now);
                 one.why = raise.why;
             }
-            None => self.items.push(Item {
-                key: key.clone(),
-                action: raise.action.to_owned(),
-                said,
-                request: raise.request.to_owned(),
-                why: raise.why,
-                chats: vec![raise.chat.to_owned()],
-                first: now,
-                last: now,
-            }),
+            None => {
+                let item = Item {
+                    key: key.clone(),
+                    action: raise.action.to_owned(),
+                    said,
+                    request: raise.request.to_owned(),
+                    why: raise.why,
+                    chats: vec![raise.chat.to_owned()],
+                    first: now,
+                    last: now,
+                };
+                if size_of(&item) > MOST_ITEM_BYTES {
+                    return false;
+                }
+                self.items.push(item);
+            }
         }
         self.hold_caps(now, caps);
         self.items.iter().any(|one| one.key == key)
@@ -638,6 +678,42 @@ impl Record {
                     *count -= 1;
                 }
             }
+        }
+    }
+
+    /// **Drops the least recently raised item of the owner holding the most bytes**, as
+    /// [`Record::hold_caps`] does by count, so a chat that floods needs-you loses its own items
+    /// and never another chat's. `false` when there is no item left to drop.
+    fn shed_heaviest_owner(&mut self) -> bool {
+        let mut bytes: std::collections::BTreeMap<String, usize> =
+            std::collections::BTreeMap::new();
+        for one in &self.items {
+            *bytes.entry(owner(one).to_owned()).or_default() += size_of(one);
+        }
+        // Of equal weights the first in name order, so the choice is the same on every run.
+        let Some((chat, _)) =
+            bytes
+                .into_iter()
+                .fold(None::<(String, usize)>, |best, now| match best {
+                    Some(best) if best.1 >= now.1 => Some(best),
+                    _ => Some(now),
+                })
+        else {
+            return false;
+        };
+        let least_recent = self
+            .items
+            .iter()
+            .enumerate()
+            .filter(|(_, one)| owner(one) == chat)
+            .min_by_key(|(_, one)| one.last)
+            .map(|(at, _)| at);
+        match least_recent {
+            Some(at) => {
+                self.items.remove(at);
+                true
+            }
+            None => false,
         }
     }
 
@@ -810,7 +886,8 @@ impl Store {
 
     /// Reads the record, lets `change` edit it and writes it back under the lock on its folder.
     /// A file that cannot be read for a reason other than being absent is not written over; one
-    /// that would pass [`MOST_BYTES`] is written without its least recently raised items first.
+    /// that would pass [`MOST_BYTES`] is written without items first, the least recently raised of the
+    /// owner holding the most bytes each time, so one chat's flood never evicts another's item.
     pub fn change(&self, now: u64, caps: Caps, change: impl FnOnce(&mut Record)) -> io::Result<()> {
         crate::rewrite::create_dir_all(&self.dir)?;
         let _held = crate::rewrite::Lock::bounded(&self.dir)?;
@@ -822,8 +899,8 @@ impl Store {
             if text.len() as u64 <= MOST_BYTES {
                 break text;
             }
-            if !record.items.is_empty() {
-                record.items.remove(0);
+            if record.shed_heaviest_owner() {
+                continue;
             } else if !record.told.is_empty() {
                 record.told.remove(0);
             } else {

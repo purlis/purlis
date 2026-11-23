@@ -16,6 +16,7 @@
 use std::process::ExitCode;
 
 use purlis_core::policy::needsyou::{Caps, Item, Store, Why};
+use purlis_core::shown;
 
 /// `purlis inbox`: the asks refused because nobody could be asked.
 #[derive(clap::Subcommand, Debug)]
@@ -52,10 +53,10 @@ pub fn run(command: &InboxCommand) -> ExitCode {
     match command {
         InboxCommand::List { json } => list(&store, *json),
         InboxCommand::Deny { id } => answer(&store, id, "Denied", |store, id| {
-            store.deny(id, now(), Caps::shipped())
+            store.deny(id, now(), Caps::none())
         }),
         InboxCommand::Dismiss { id } => answer(&store, id, "Dismissed", |store, id| {
-            store.dismiss(id, now(), Caps::shipped())
+            store.dismiss(id, now(), Caps::none())
         }),
     }
 }
@@ -67,7 +68,7 @@ fn now() -> u64 {
 }
 
 fn list(store: &Store, json: bool) -> ExitCode {
-    let record = match store.read(now(), Caps::shipped()) {
+    let record = match store.read(now(), Caps::none()) {
         Ok(record) => record,
         Err(why) => {
             eprintln!("purlis: could not read needs-you ({why})");
@@ -94,6 +95,11 @@ fn list(store: &Store, json: bool) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// How much of an item's action, resource and request `list` prints.
+const SHOWN_ACTION: usize = 64;
+const SHOWN_RESOURCE: usize = 160;
+const SHOWN_REQUEST: usize = 160;
+
 /// **One item as `list` prints it**: its id, what it asks, where, who and when.
 fn line(item: &Item, now: u64) -> String {
     let chats = if item.chat_count() == 1 {
@@ -101,15 +107,19 @@ fn line(item: &Item, now: u64) -> String {
     } else {
         format!("{} chats", item.chat_count())
     };
+    // What an Allow would cover is the action, the resource and the request, each marked and on
+    // one line; `said` is only what the chat's host called it.
     format!(
-        "{}  {}  [{} in {}; rule {}]  {chats}, last {} ago ({})",
+        "{}  {}  [{} in {}; rule {}]  {chats}, last {} ago ({})\n    resource: {}\n    request: {}",
         item.key.id(),
         item.said,
-        item.action,
+        shown::one_line(&item.action, SHOWN_ACTION),
         item.key.workspace,
         item.key.rule,
         ago(now.saturating_sub(item.last)),
         because(item.why),
+        shown::one_line(&item.key.resource, SHOWN_RESOURCE),
+        shown::one_line(&item.request, SHOWN_REQUEST),
     )
 }
 

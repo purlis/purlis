@@ -1591,24 +1591,26 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
 /// laid-out skill there. [`Class::Integrity`]: purlis's own records, which only purlis writes, as
 /// they were in the plane's state folder, and which no grant reaches (`grant`).
 ///
-/// **`<data>/needs-you` is held the same way** (M75 slice 19, review round 2): the asks that
-/// reached nobody are kept there ([`crate::policy::needsyou`]), and a chat that could write them
-/// could forge an item for the person to allow.
+/// **`<data>/needs-you` is held the same way, and read too** (M75 slice 19, review rounds 2 and
+/// 3): the asks that reached nobody are kept there ([`crate::policy::needsyou`]) with the requests
+/// themselves. A chat that could write them could forge an item for the person to allow; one that
+/// could read them could read what other chats asked.
 pub fn app_state_held(data: &Path) -> Vec<Denial> {
     let app_state = data.join(crate::appstate::DIR);
     let needs_you = data.join(crate::policy::needsyou::DIR);
     [
-        (app_state.clone(), Reach::AndBelow),
-        (app_state, Reach::Itself),
-        (needs_you.clone(), Reach::AndBelow),
-        (needs_you, Reach::Itself),
-        (data.to_path_buf(), Reach::Itself),
+        (app_state.clone(), Reach::AndBelow, Access::Write),
+        (app_state, Reach::Itself, Access::Write),
+        // Read as well: the store keeps the requests themselves, which are other chats' own.
+        (needs_you.clone(), Reach::AndBelow, Access::ReadWrite),
+        (needs_you, Reach::Itself, Access::ReadWrite),
+        (data.to_path_buf(), Reach::Itself, Access::Write),
     ]
     .into_iter()
-    .map(|(path, reach)| Denial {
+    .map(|(path, reach, access)| Denial {
         class: Class::Integrity,
         path,
-        access: Access::Write,
+        access,
         named: None,
         reach,
         any_case: true,

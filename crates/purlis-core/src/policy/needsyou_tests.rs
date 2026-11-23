@@ -637,6 +637,9 @@ fn one_item_names_at_most_the_most_chats() {
     }
     assert_eq!(record.items().len(), 1);
     assert_eq!(record.items()[0].chat_count(), MOST_CHATS);
+    // A chat past the most is not named, so it is not told the item is there for it.
+    assert!(!record.raise(raising("a", "late", Why::NoWindow), NOW, caps()));
+    assert!(record.raise(raising("a", "c1", Why::NoWindow), NOW, caps()));
 }
 
 #[test]
@@ -719,8 +722,28 @@ fn a_re_raise_past_the_most_days_is_not_said_to_be_in_needs_you() {
     assert!(refusal(Why::NoWindow, "merge", true).contains("It is in needs-you"));
 }
 
+/// Raises `n` items of a chat, each with a request of about `size` bytes, in one change.
+fn flood(record: &mut Record, chat: &str, from: u64, n: u64, size: usize, caps: Caps) {
+    for k in from..from + n {
+        let request = format!("{k:08}{}", "z".repeat(size - 8));
+        let digest = digest_of("merge", "acme/web#main", &request);
+        record.raise(
+            Raise {
+                key: Key::new("guards-merge-hold", "acme/web#main", "web", &digest),
+                action: "merge",
+                said: "merge",
+                request: &request,
+                why: Why::NoWindow,
+                chat,
+            },
+            NOW + k,
+            caps,
+        );
+    }
+}
+
 #[test]
-fn a_record_past_the_most_bytes_is_written_without_its_oldest_items() {
+fn one_chats_flood_never_evicts_another_chats_item_from_the_byte_cap() {
     let dir = tempfile::tempdir().expect("a folder");
     let store = Store::in_data(dir.path());
     let caps = Caps {
@@ -728,38 +751,67 @@ fn a_record_past_the_most_bytes_is_written_without_its_oldest_items() {
         max_days: 30,
         quiet_days: 7,
     };
-    // A request is up to 16 KiB, so 300 of them are past the 4 MiB the file is read to; they
-    // are raised in one change, so the file is written once.
+    // A quiet chat raises one item first, so it is the globally oldest. Then a flooding chat
+    // raises far more than the 4 MiB the file is read to (300 requests of 16 KiB), in one change.
     store
         .change(NOW, caps, |record| {
-            for n in 0..300u64 {
-                let request = format!("{n:08}{}", "z".repeat(MOST_REQUEST - 8));
-                let digest = digest_of("merge", "acme/web#main", &request);
-                let kept = record.raise(
-                    Raise {
-                        key: Key::new("guards-merge-hold", "acme/web#main", "web", &digest),
-                        action: "merge",
-                        said: "merge",
-                        request: &request,
-                        why: Why::NoWindow,
-                        chat: &format!("c{}", n % 200),
-                    },
-                    NOW + n,
-                    caps,
-                );
-                assert!(kept);
-            }
+            flood(record, "quiet", 0, 1, 1000, caps);
+            flood(record, "flood", 1, 300, MOST_REQUEST, caps);
         })
         .expect("written");
     let size = std::fs::metadata(store.file()).expect("written").len();
     assert!(size <= MOST_BYTES, "{size} bytes");
     let record = store.read(NOW + 300, caps).expect("read");
-    assert!(!record.items().is_empty(), "what fits is kept");
-    assert!(record.items().len() < 300, "the oldest went");
     assert!(
-        record.items().iter().any(|one| one.last == NOW + 299),
-        "the newest stayed"
+        record.items().iter().any(|one| owner(one) == "quiet"),
+        "the quiet chat's item, the oldest of all, stayed"
     );
+    let flooded = record
+        .items()
+        .iter()
+        .filter(|one| owner(one) == "flood")
+        .count();
+    assert!(
+        flooded > 0 && flooded < 300,
+        "{flooded} of the flood stayed"
+    );
+    assert!(
+        record.items().iter().any(|one| one.last == NOW + 300),
+        "the flood's newest stayed"
+    );
+}
+
+#[test]
+fn an_item_past_the_most_item_bytes_is_not_kept() {
+    // A control character is six bytes in JSON, so a request of them is six times its length.
+    let request = "\u{1}".repeat(MOST_REQUEST);
+    let digest = digest_of("merge", "acme/web#main", &request);
+    let mut record = Record::default();
+    let kept = record.raise(
+        Raise {
+            key: Key::new("guards-merge-hold", "acme/web#main", "web", &digest),
+            action: "merge",
+            said: "merge",
+            request: &request,
+            why: Why::NoWindow,
+            chat: "c1",
+        },
+        NOW,
+        caps(),
+    );
+    assert!(!kept);
+    assert!(record.items().is_empty());
+}
+
+#[test]
+fn a_limit_of_zero_or_less_still_holds_an_item() {
+    let caps = Caps::from_limits(&|_| Some(0));
+    assert_eq!((caps.max_items, caps.max_days, caps.quiet_days), (1, 1, 1));
+    let caps = Caps::from_limits(&|_| Some(-5));
+    assert_eq!((caps.max_items, caps.max_days, caps.quiet_days), (1, 1, 1));
+    let mut record = Record::default();
+    assert!(record.raise(raising("a", "c1", Why::NoWindow), NOW, caps));
+    assert_eq!(record.items().len(), 1);
 }
 
 #[test]

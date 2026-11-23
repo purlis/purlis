@@ -60,6 +60,19 @@ fn purlis_inbox_lists_what_is_waiting_with_its_chat_count() {
     assert!(stdout.contains("merge acme/web#7"), "{stdout}");
     assert!(stdout.contains("2 chats"), "{stdout}");
     assert!(stdout.contains("no window reachable"), "{stdout}");
+    // What an Allow would cover is shown: the resource and the request, on one line each.
+    assert!(stdout.contains("resource: acme/web#main"), "{stdout}");
+    assert!(stdout.contains("request: merge acme/web#7"), "{stdout}");
+}
+
+#[test]
+fn purlis_inbox_marks_a_line_end_in_a_request_so_it_is_one_line() {
+    let data = tempfile::tempdir().expect("data");
+    let store = Store::in_data(data.path());
+    raise(&store, "merge acme/web#7\nrequest: forged", "c1");
+    let (stdout, _) = said(&inbox(data.path(), &["list"]));
+    assert!(!stdout.contains("\nrequest: forged"), "{stdout}");
+    assert!(stdout.contains("U+000A"), "{stdout}");
 }
 
 #[test]
