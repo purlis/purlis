@@ -13,6 +13,9 @@
 //! apply its wrap fails there and, anywhere else, says why it did not run.
 
 #[cfg(unix)]
+#[path = "scenarios/cells.rs"]
+mod cells;
+#[cfg(unix)]
 #[path = "scenarios/checks.rs"]
 mod checks;
 #[cfg(unix)]
@@ -1312,8 +1315,8 @@ fn the_host_kill_is_observed() {
 /// and a tunnel on the chat's own reach to the granted host is dialled through the scenario's
 /// seam. A variant added to `grant::What` fails to compile in `host::kind_of`, and once it is
 /// named there, fails here until the maximal chat holds one. The chat's open browser is
-/// reported `not_run` (#7100); `purlis secret exec` run by the chat itself waits on the vault
-/// broker fixture (#7101).
+/// reported `not_run` (#7100); `purlis secret exec` run by the chat itself is
+/// `a_chats_own_secret_exec_dials_its_tunnel_through_the_seam` (#7101).
 #[cfg(unix)]
 #[test]
 fn the_maximal_chat_holds_every_grant_kind() {
@@ -1437,6 +1440,75 @@ fn the_maximal_chat_holds_every_grant_kind() {
     .expect("the leg's report");
 }
 
+/// **What the vault broker fixture's chat must have done** (#7101): its tunnel to the vault's
+/// host was dialled through the scenario's seam, once, and nothing else was. `Err` says what was
+/// recorded instead.
+#[cfg(unix)]
+fn its_tunnel_was_dialled(names: &purlis_core::sandbox::names::Names) -> Result<(), String> {
+    let wanted = vec![(host::TUNNEL_HOST.to_owned(), host::TUNNEL_PORT)];
+    let hits = names.origin_hits();
+    if hits == wanted {
+        Ok(())
+    } else {
+        Err(format!(
+            "the chat's tunnel was not dialled through the seam: expected {wanted:?}, recorded {hits:?}"
+        ))
+    }
+}
+
+/// **A tunnel the broker saw nowhere is red** (#7101): the check the fixture's test ends on
+/// fails where no connection reached the origin, as it does when the broker's routing is broken
+/// (a run served unpointed, or never served). Needs no socket and no wrap.
+#[test]
+fn a_tunnel_dialled_nowhere_fails_the_brokered_check() {
+    let names = purlis_core::sandbox::names::Names::new();
+    let why = its_tunnel_was_dialled(&names).expect_err("nothing was dialled");
+    assert!(why.contains("recorded []"), "{why}");
+}
+
+/// **A chat's own `purlis secret exec` dials its tunnel end to end** (#7101, T1.1-06's
+/// follow-up): the project holds a test vault with a tunnel value, tagged for the chat's persona,
+/// and the persona declares a tool, `fake-harness`, bound to it. The chat runs
+/// `fake-harness dial TUNNEL_DSN`: its shim asks the app over the hook socket, the real broker
+/// (`vaults::run_brokered`) resolves the value, opens a tunnel on the chat's own reach and points
+/// the value at it, and the tool dials it. The tunnel's dial goes through the scenario's seam and
+/// is recorded in `Names::origin_hits`.
+#[cfg(unix)]
+#[test]
+fn a_chats_own_secret_exec_dials_its_tunnel_through_the_seam() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    let Some(scenario) = Scenario::with_a_tunnel_vault(&homes, Protection::Full, Dialect::Codex)
+    else {
+        return;
+    };
+    let origin = purlis_scenarios::net::Origin::http().expect("an origin");
+    scenario
+        .names
+        .origin(host::TUNNEL_HOST, host::TUNNEL_PORT, origin.addr());
+    let _held = scenario.names.carry_tunnels();
+    let chat = scenario.starts(&serde_json::json!({
+        "turns": [{"prompt": "go", "calls": [
+            {"step": "dials", "tool": "bash", "run": "fake-harness dial TUNNEL_DSN"}
+        ]}]
+    }));
+    scenario.until_played(chat, &["dials"]);
+    let said = scenario.said();
+    let out = stdout_of(&scenario, chat, "dials");
+    assert!(
+        out.contains("DIALED"),
+        "the chat's tool did not dial its tunnel: {out:?}\n{said}"
+    );
+    if let Err(why) = its_tunnel_was_dialled(&scenario.names) {
+        panic!("{why}\n{said}");
+    }
+    assert!(
+        !out.contains("test-only"),
+        "the vault's value reached the chat's output: {out:?}"
+    );
+}
+
 /// Until `done`, within [`PLAYS_WITHIN`]: a chat's harness starts and plays first.
 #[cfg(unix)]
 fn until(scenario: &Scenario, what: &str, done: impl Fn() -> bool) {
@@ -1449,6 +1521,71 @@ fn until(scenario: &Scenario, what: &str, done: impl Fn() -> bool) {
         );
         std::thread::sleep(Duration::from_millis(100));
     }
+}
+
+/// **A chat a task runner starts runs in the scenario host** (§3.11, #7102): a task one chat
+/// dispatched to a persona, in a branch folder of its own, handed from its asker, with a dispatch
+/// record. It runs `git branch --show-current` where it stands and sends its report with the
+/// command a task sends it with; the scenario sees the branch folder it was cut, the asker it
+/// is handed from and the report on its record. The fixture rebuilds the runner's start rather
+/// than calling `handoff::dispatch_noting`, `start_on` or `record_it`, so a break there is not
+/// red here; a break in the pieces it shares with production is (the branch folder's cut, the
+/// start of a `Made::Asked` chat in a worktree under the wrap, the dispatch record's open, and
+/// the whole report path).
+#[cfg(unix)]
+#[test]
+fn a_dispatched_chat_starts_as_the_task_runner_starts_it_and_its_report_is_seen() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Codex)
+    else {
+        return;
+    };
+    let asker = scenario.starts(&serde_json::json!({
+        "turns": [{"prompt": "orchestrate", "calls": [{"step": "asks", "tool": "bash", "run": "echo asking"}]}]
+    }));
+    scenario.until_played(asker, &["asks"]);
+
+    let task = scenario.starts_as_task(
+        asker,
+        &serde_json::json!({
+            "turns": [{"prompt": "check the queue", "calls": [
+                {"step": "branch", "tool": "bash", "run": "git branch --show-current"},
+                {"step": "reports", "tool": "bash",
+                 "run": "purlis dispatch report --outcome done \"queue is empty\""}
+            ]}]
+        }),
+        "check the queue",
+        "Check the queue.",
+    );
+    scenario.until_played(task.chat, &["branch", "reports"]);
+
+    // Its own branch folder, cut off the clone: the chat stood in it.
+    assert!(
+        task.folder.join(".git").exists(),
+        "the branch folder {:?} is a worktree",
+        task.folder
+    );
+    assert_eq!(
+        stdout_of(&scenario, task.chat, "branch").trim(),
+        task.branch,
+        "the task worked on the branch cut for it"
+    );
+    // Handed from its asker, as the runner records a task.
+    let held = scenario.held();
+    let from = held
+        .chats()
+        .handed_from(task.chat)
+        .expect("the task is handed from its asker");
+    assert_eq!(from.chat, asker);
+    // Its report, on the dispatch's record.
+    let worker = crate::dispatches::chat_ref(&held, task.chat).expect("the task's chat");
+    until(&scenario, "the report on the task's record", || {
+        purlis_core::dispatchrecord::latest_for(held.root(), &worker)
+            .and_then(|record| record.report)
+            .is_some_and(|report| report.text == "queue is empty")
+    });
 }
 
 /// **The scenario host never uses `testgit`'s config** (T1.1-06): it sets

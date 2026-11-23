@@ -372,8 +372,14 @@ pub struct Mark {
     pub check: Option<String>,
     #[serde(default)]
     pub refusal: Option<String>,
+    /// What was observed: one value, a range for a `within` assertion, or an array, the set of
+    /// values a known race gives (any one of them is pinned, any other fails).
     #[serde(default)]
     pub observed: Option<Value>,
+    /// A race in the mark's issue that sometimes does not happen: the mark that excuses nothing
+    /// is not an unexpected pass. Never on an escape's mark.
+    #[serde(default)]
+    pub may_pass: bool,
     /// The observation pinned, cited from its run record.
     #[serde(default)]
     pub note: Option<String>,

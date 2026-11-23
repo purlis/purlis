@@ -180,6 +180,30 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
 - To undo a probe's mutations in a sandboxed chat, save them with `git diff > patch` and take them
   out with `git apply -R patch`: `git checkout` and `git restore` write the index, which is outside
   what the chat may write.
+- The cells runner (`app/src-tauri/src/scenarios/cells.rs`) plays only the cells a `scenario` cover
+  in `coverage.json` names, each batch and dialect in a child process of its own (scenarios of one
+  process share one device log, so a second batch is judged on the first's events). What a cell
+  means is `tests/scenarios/src/play.rs`, which needs no chat:
+  `cargo test -p purlis-scenarios --lib --locked -j 4 play::`. CI tests the merge with the current
+  base, so cells other pull requests landed run under yours.
+- The base-anchored gate tests run here, since they only read git:
+  `SCENARIOS_BASE=$(git rev-parse origin/phase-1-proven) cargo test -p purlis-scenarios --locked --test coverage -- --ignored the_marks_keep the_list_keeps`.
+  The ratchet allows no issue on an existing cell's marks that its base marks do not already name.
+- A red `sandbox-scenarios-linux` says why in its `sandbox-scenarios-report-linux` artifact: a
+  failing cell's `reason` lists what each step's window and the chat held. Download with
+  `gh api repos/purlis/purlis/actions/artifacts/<id>/zip` into a directory made by `mktemp -d`
+  (clearing a directory with `rm -rf *` is refused).
+- `purlis worktree push` pushes the branch under its own name only. The scenario workflows run on
+  pull requests into `phase-1-proven` or main, so a round branch with no pull request of its own
+  gets no CI: the pull request's head branch has to be moved to the round's commit (or a draft
+  pull request opened) before the cells can be played.
+- The scenario crate's tests need local port binding, which a sandboxed chat lacks: `fake_forge`
+  and `resolver_seam` fail there for that reason alone. `cargo test -p purlis-scenarios --locked
+  -j 4 --no-fail-fast` shows the rest, and `cargo fmt -p purlis-app -p purlis-scenarios` is quick.
+  `cargo test -p purlis-app --lib --locked -j 4 -- scenarios::window_person scenarios::report`
+  (about 8 minutes cold) runs the checks' planted-fault tests.
+- `gh api -X PATCH repos/purlis/purlis/pulls/<n> -F body=@<file>` edits a pull request's body;
+  `gh pr edit` fails on the classic-projects deprecation.
 - In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
   socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
   change. `settings::tests` and `sandbox::personal::tests` run here.
@@ -207,3 +231,6 @@ See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechan
 ### The daily Report intake routine
 
 See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.
+- `pgrep` and `ps` see no other process in the sandbox, so a wait written as `until ! pgrep …` ends at once. Wait on a background command's output file instead:
+  `timeout 585 bash -c "until grep -q 'Finished\|error' <file>; do sleep 20; done"`.
+- `git fetch` and `git merge` cannot write the worktree's git folder in the sandbox: bring the base in with `purlis worktree update --merge --base origin/<base>` (alone in its call), resolve, then `--continue`. The ratchet judges marks against the base's commit time, so after a merge a mark on an existing cell for an issue filed before that commit fails `the_marks_keep_their_ratchet_against_the_base`.

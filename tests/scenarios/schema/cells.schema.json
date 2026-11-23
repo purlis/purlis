@@ -257,7 +257,7 @@
       "properties": {"says": {"type": "string", "minLength": 1}, "forbid": {"type": "boolean"}}
     },
     "mark": {
-      "description": "One per failing assertion and issue. A step's assertion is require[i], forbid[i], window[i], transcript[i], outcome, calls or repeat_of; a global check's mark names the check and the refusal. A within assertion's observed value is a range in Timings units.",
+      "description": "One per failing assertion and issue. A step's assertion is require[i], forbid[i], window[i], transcript[i], outcome, calls or repeat_of; a global check's mark names the check and the refusal. A within assertion's observed value is a range in Timings units; any other may be an array, the set of values a known race gives.",
       "type": "object",
       "oneOf": [
         {"required": ["step", "assertion", "observed"], "not": {"anyOf": [{"required": ["check"]}, {"required": ["refusal"]}]}},
@@ -283,6 +283,7 @@
             {"not": {"type": "object"}}
           ]
         },
+        "may_pass": {"description": "A race in a known issue that sometimes does not happen: the mark that finds nothing to excuse is not an error. Only with a note naming the race.", "type": "boolean"},
         "leg": {"$ref": "#/$defs/leg"},
         "timings": {"$ref": "#/$defs/timings"},
         "dialect": {"$ref": "#/$defs/dialect"},

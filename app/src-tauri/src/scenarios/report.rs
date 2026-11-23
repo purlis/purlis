@@ -108,8 +108,20 @@ pub(crate) fn ran(
 /// canary's and earlier cells' events are left out), ordered by `seq` whatever order they were
 /// read in.
 pub(crate) fn kinds_since(events: &[purlis_core::eventlog::Event], since: u64) -> Vec<String> {
-    let mut ordered: Vec<&purlis_core::eventlog::Event> =
-        events.iter().filter(|event| event.seq > since).collect();
+    kinds_between(events, since, u64::MAX)
+}
+
+/// [`kinds_since`], up to and including the event `until`: a cell's record ends where the cell
+/// did, so the next cell's events and the runner's own teardown are not its.
+pub(crate) fn kinds_between(
+    events: &[purlis_core::eventlog::Event],
+    since: u64,
+    until: u64,
+) -> Vec<String> {
+    let mut ordered: Vec<&purlis_core::eventlog::Event> = events
+        .iter()
+        .filter(|event| event.seq > since && event.seq <= until)
+        .collect();
     ordered.sort_by_key(|event| event.seq);
     ordered.iter().map(|event| event.kind.clone()).collect()
 }
@@ -401,6 +413,11 @@ fn a_cell_that_ran_is_reported_with_its_event_kinds_in_log_order() {
         )
     };
 
+    // A cell's record ends where the cell did: the later events (seq 6) are the next cell's.
+    assert_eq!(
+        kinds_between(&read_back, 3, 5),
+        ["hook.pretooluse", "stop.block"]
+    );
     let plain = record(&batch.cells[0]);
     assert_eq!(plain.leg.kind, EntryKind::Cell);
     assert_eq!(plain.leg.row, "M-PLAIN");

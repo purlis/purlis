@@ -14,6 +14,8 @@
 //! - [`judge`]: a cell's verdict under its `expected_fail` marks.
 //! - [`legs`]: a run's leg reports read back for the run-result gate (T1.1-54).
 //! - [`plan`]: the derived production-timing set and which runs take a cell.
+//! - [`play`]: what a runner of the cells needs that touches no chat: the loader, the window
+//!   word list, a step's expectations against its events, and the verdict (#7322).
 //! - [`livepass`]: the live pass's brief generator and its live-versus-suite diff (T1.1-37).
 //! - [`net`]: the suite's local origins, direct-connection target and test CA (T1.1-02).
 
@@ -25,6 +27,7 @@ pub mod livepass;
 pub mod model;
 pub mod net;
 pub mod plan;
+pub mod play;
 pub mod timings;
 pub mod validate;
 

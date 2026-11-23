@@ -128,7 +128,6 @@ impl Protection {
     }
 
     /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
-    #[allow(dead_code)]
     pub(crate) fn in_report(self) -> purlis_scenarios::model::Protection {
         use purlis_scenarios::model::Protection as Report;
         match self {
@@ -160,7 +159,6 @@ impl Dialect {
     }
 
     /// The same, as a leg report's record holds it. Named by [`Scenario::report_cell`].
-    #[allow(dead_code)]
     pub(crate) fn in_report(self) -> purlis_scenarios::model::Dialect {
         use purlis_scenarios::model::Dialect as Report;
         match self {
@@ -348,11 +346,17 @@ impl Homes {
                 .to_path_buf(),
             None => repo().join("crates/fake-harness/shims"),
         };
-        let path = std::env::join_paths(std::iter::once(ahead).chain(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        )))
-        .expect("a PATH");
         let fake = crate::behaviour::fake_harness();
+        // The built fake harness's own folder goes last, so a persona's tool named
+        // `fake-harness` is found by its plain name (`Scenario::with_a_tunnel_vault`).
+        let path = std::env::join_paths(
+            std::iter::once(ahead)
+                .chain(std::env::split_paths(
+                    &std::env::var_os("PATH").unwrap_or_default(),
+                ))
+                .chain(fake.parent().map(Path::to_path_buf)),
+        )
+        .expect("a PATH");
         let mut env: Vec<(&str, OsString)> = vec![
             (HOME_VAR, homes.home.clone().into()),
             ("HOME", homes.user.clone().into()),
@@ -708,6 +712,12 @@ impl purlis_host::Confine for ConfinesInTheScenario {
     }
 }
 
+/// The persona, vault, host and port of the tunnel fixture ([`Scenario::with_a_tunnel_vault`]).
+pub(crate) const TUNNEL_PERSONA: &str = "steward";
+pub(crate) const TUNNEL_VAULT: &str = "tunnels";
+pub(crate) const TUNNEL_HOST: &str = "tunnel.example.test";
+pub(crate) const TUNNEL_PORT: u16 = 5432;
+
 /// How many variants `grant::What` has, as [`kind_of`] names them.
 pub(crate) const GRANT_KINDS: usize = 6;
 
@@ -772,6 +782,10 @@ pub(crate) struct Scenario {
     /// Each chat's own transcript file, by chat id: a step name is the scenario's, so two chats
     /// playing the same step name keep their results apart.
     transcripts: Mutex<Vec<(u32, std::path::PathBuf)>>,
+    /// The own folders of the tasks it started ([`Self::starts_as_task`]): a task works in its
+    /// branch folder and the wrap lets it write only there, so its transcript, state and
+    /// tool-group file are in one of its own, not in the project's.
+    task_owns: Mutex<Vec<PathBuf>>,
     /// How many chats it has started, the canary's included: a log with no event after one is
     /// read from the wrong place.
     started: std::sync::atomic::AtomicUsize,
@@ -851,7 +865,70 @@ impl Scenario {
         dialect: Dialect,
         template: Template,
     ) -> Option<Scenario> {
-        Scenario::built(homes, protection, persona, dialect, template, true)
+        Scenario::built(homes, protection, persona, dialect, template, true, "")
+    }
+
+    /// **The scenario host with a vault broker fixture** (#7101): [`Scenario::new`] at `protection`
+    /// as persona [`TUNNEL_PERSONA`], whose project holds a test vault [`TUNNEL_VAULT`] (a plain
+    /// file, tagged for that persona, holding a tunnel value for [`TUNNEL_HOST`]), a declared tool
+    /// `fake-harness` bound to its key, and the persona's hosts, all allowed on this machine as
+    /// the person's Allow keeps them. A chat that runs `fake-harness dial TUNNEL_DSN` is served
+    /// by the app's real broker (`vaults::run_brokered`), which opens the tunnel.
+    pub(crate) fn with_a_tunnel_vault(
+        homes: &Homes,
+        protection: Protection,
+        dialect: Dialect,
+    ) -> Option<Scenario> {
+        let more = format!(
+            "\n[sandbox.personas.{TUNNEL_PERSONA}]\nhosts = [\"{TUNNEL_HOST}:{TUNNEL_PORT}\"]\n\
+             tools = {{ fake-harness = {{ vault = \"{TUNNEL_VAULT}\", as = \"TUNNEL_DSN env\", \
+             key = \"DSN\" }} }}\n"
+        );
+        let scenario = Scenario::built(
+            homes,
+            protection,
+            Some(TUNNEL_PERSONA),
+            dialect,
+            DEFAULT_TEMPLATE,
+            true,
+            &more,
+        )?;
+        // The values live where no chat reads: the registry names them, the project holds none.
+        let values = scenario.a_folder_outside("vault").join("tunnels.json");
+        std::fs::write(
+            &values,
+            serde_json::json!({
+                "DSN": format!("postgres://app:test-only@{TUNNEL_HOST}:{TUNNEL_PORT}/orders")
+            })
+            .to_string(),
+        )
+        .expect("the test vault's values");
+        std::fs::write(
+            scenario.root.join("vaults.json"),
+            serde_json::json!({ "vaults": { TUNNEL_VAULT: {
+                "provider": "plain-file",
+                "config": {"file": values.display().to_string()},
+                "persona": TUNNEL_PERSONA,
+            }}})
+            .to_string(),
+        )
+        .expect("the vault registry");
+        // The person's Allow of the persona's hosts and tools, as the window keeps it.
+        let shown = purlis_core::sandbox::persona::shown(&scenario.root)
+            .into_iter()
+            .find(|one| one.persona == TUNNEL_PERSONA && one.asks())
+            .expect("the persona's hosts and tools are shown for an Allow");
+        purlis_core::sandbox::local::allow_persona_hosts(
+            &scenario.root,
+            TUNNEL_PERSONA,
+            &shown.digest,
+        )
+        .expect("the Allow is kept");
+        // The Allow is the person's, made in setup: the leftover-grant check knows it was made.
+        scenario
+            .ledger
+            .made_in_setup(&scenario, crate::sandboxing::GrantWhat::PersonaHosts);
+        Some(scenario)
     }
 
     /// **The scenario host for the real Claude Code** (T1.1-10): `protection`, under `strict`,
@@ -872,6 +949,7 @@ impl Scenario {
             Dialect::Claude,
             DEFAULT_TEMPLATE,
             false,
+            "",
         )?;
         scenario.real_harness = true;
         if protection == Protection::Full {
@@ -894,6 +972,7 @@ impl Scenario {
         dialect: Dialect,
         template: Template,
         with_the_fakes_canary: bool,
+        manifest_more: &str,
     ) -> Option<Scenario> {
         if let Err(why) = the_wrap_applies() {
             return cannot_run(&why);
@@ -927,7 +1006,11 @@ impl Scenario {
         purlis_core::eventlog::ArgsKey::open(&log).expect("the args key");
         std::fs::write(
             root.join(purlis_core::plane::MANIFEST),
-            format!("{}{}", protection.manifest(), policy_of(template)),
+            format!(
+                "{}{}{manifest_more}",
+                protection.manifest(),
+                policy_of(template)
+            ),
         )
         .expect("the project's manifest");
         if let Some(persona) = persona {
@@ -971,6 +1054,7 @@ impl Scenario {
             window: Some(window),
             chats: Mutex::default(),
             transcripts: Mutex::default(),
+            task_owns: Mutex::default(),
             started: std::sync::atomic::AtomicUsize::new(0),
             panes: Mutex::default(),
             launched: Mutex::default(),
@@ -1182,16 +1266,21 @@ pub(crate) fn of_the_quit(
 /// The file each chat of a scenario's fake harness writes the process group of every tool
 /// command it starts to, one per line (`FAKE_HARNESS_GROUPS`): a tool's command runs in a group
 /// of its own, which no chat's process is in.
-fn tool_groups_file(root: &Path) -> PathBuf {
-    own_folder(root).join("tool-groups")
+fn tool_groups_file(own: &Path) -> PathBuf {
+    own.join("tool-groups")
 }
 
-/// The process group of every tool command the chats of the project at `root` started.
-fn tool_groups(root: &Path) -> Vec<u32> {
-    std::fs::read_to_string(tool_groups_file(root))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| line.trim().parse().ok())
+/// The process group of every tool command the chats whose own folders are `own_folders` started.
+fn tool_groups(own_folders: &[PathBuf]) -> Vec<u32> {
+    own_folders
+        .iter()
+        .flat_map(|own| {
+            std::fs::read_to_string(tool_groups_file(own))
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| line.trim().parse().ok())
+                .collect::<Vec<u32>>()
+        })
         .collect()
 }
 
@@ -1234,6 +1323,72 @@ pub(crate) const SIZE: purlis_core::engine::Size = purlis_core::engine::Size {
     rows: 50,
 };
 
+/// A task the scenario started as the task runner does ([`Scenario::starts_as_task`]).
+pub(crate) struct Task {
+    /// Its chat's number.
+    pub chat: u32,
+    /// Its branch folder, where it works.
+    pub folder: PathBuf,
+    /// The branch cut for it.
+    pub branch: String,
+}
+
+/// What a dispatch adds to a chat's start: its lineage and its record.
+struct Handed {
+    from: purlis_core::reopen::HandedFrom,
+    label: String,
+    brief: String,
+    worktree: purlis_core::dispatchrecord::Worktree,
+}
+
+impl Handed {
+    /// Writes the dispatch's record for chat `id`: a copy of the shape `handoff::record_it`
+    /// writes, which a change there does not reach.
+    fn is_recorded(
+        &self,
+        held: &Held,
+        id: u32,
+        chat: &purlis_core::reopen::Chat,
+        ready: &purlis_core::start::Ready,
+        root: &Path,
+    ) {
+        use purlis_core::dispatchrecord::{Asker, Mode, Opening, Place, Worker};
+        let asker = crate::dispatches::chat_ref(held, self.from.chat).expect("the asking chat");
+        let worker = crate::dispatches::chat_ref(held, id).expect("the task's chat");
+        crate::dispatches::opened(
+            held,
+            None,
+            Opening {
+                mode: Mode::Task,
+                asker: Asker {
+                    chat: asker,
+                    workspace: None,
+                    by_person: false,
+                    session_record: None,
+                },
+                persona: chat.persona.clone(),
+                worker: Worker {
+                    chat: worker,
+                    harness: ready.harness.map(|harness| harness.name().to_owned()),
+                    profile: chat.profile.clone(),
+                    session_record: None,
+                },
+                task: Some(self.label.clone()),
+                place: Place {
+                    workspace: None,
+                    folder: ready
+                        .cwd
+                        .as_deref()
+                        .map(|cwd| crate::dispatches::folder(root, cwd)),
+                    worktree: Some(self.worktree.clone()),
+                },
+                brief: self.brief.clone(),
+                report_owed: true,
+            },
+        );
+    }
+}
+
 impl Scenario {
     /// **Starts a chat of the scenario's dialect playing `script`**, as the person starts one
     /// from the window: on the sandbox-only profile `work` this machine signed in, its turn script
@@ -1250,6 +1405,156 @@ impl Scenario {
         script: &serde_json::Value,
         grants: purlis_core::sandbox::grant::Grants,
     ) -> u32 {
+        self.begins(
+            script,
+            self.own_folder(),
+            |name| purlis_core::start::Start {
+                profile: Some(self.profile()),
+                persona: self.persona.clone(),
+                name: name.to_owned(),
+                cwd: Some(self.root.clone()),
+                made: purlis_core::sandbox::Made::Window,
+                grants,
+                ..Default::default()
+            },
+            None,
+        )
+    }
+
+    /// **Starts a chat as the task runner does** (§3.11, #7102): a task the chat `asker` (a chat
+    /// of this scenario) dispatched to this scenario's persona. It is [`Self::starts`] with the
+    /// pieces `handoff::dispatch_noting` adds, rebuilt here rather than called (production's start
+    /// does not take the fake harness's per-chat env): the start is `Made::Asked` by a dispatch,
+    /// over the chain of the personas above it; it works in a branch folder cut off a clone of the project's
+    /// ([`Self::a_clone`], `chatpiece::cut`, where production cuts with `dispatchplace::cut` and
+    /// names the piece after the dispatch); it is handed from `asker` as a task owing a report
+    /// (depth 1: the asker is a top-level chat), and its dispatch has the record its report is
+    /// written on, opened with no early record and no workspace. The kit, the homes, the wrap
+    /// and the teardown are the scenario's own. The persona is [`Scenario::new`]'s, which a task
+    /// needs.
+    pub(crate) fn starts_as_task(
+        &self,
+        asker: u32,
+        script: &serde_json::Value,
+        name: &str,
+        brief: &str,
+    ) -> Task {
+        let persona = self
+            .persona
+            .clone()
+            .expect("a dispatched chat runs as a persona: make the scenario with one");
+        let held = self.held();
+        let asking = crate::dispatches::chat_ref(&held, asker).expect("the asking chat is open");
+        let above: Vec<Option<String>> = std::iter::once(asking.persona.clone())
+            .chain(
+                held.chats()
+                    .handed_from(asker)
+                    .and_then(|from| from.above)
+                    .unwrap_or_default(),
+            )
+            .collect();
+        let (workspace, repo) = self.a_clone();
+        let cut = purlis_core::chatpiece::cut(
+            &self.root,
+            &workspace,
+            &repo,
+            &purlis_core::chatpiece::Naming::After(Some(name.to_owned())),
+        )
+        .expect("the task's branch folder is cut");
+        let from = purlis_core::reopen::HandedFrom {
+            chat: asker,
+            id: asking.id.clone(),
+            name: asking.name.clone(),
+            workspace: purlis_core::active::Place::PlaneRoot,
+            report: purlis_core::reopen::Owed::Due,
+            mode: purlis_core::reopen::Mode::Task,
+            depth: 1,
+            root: asking.id.clone(),
+            above: Some(above.clone()),
+            by_person: false,
+            long: false,
+            policy: None,
+        };
+        let worktree = purlis_core::dispatchrecord::Worktree {
+            repo: cut.repo.clone(),
+            piece: cut.piece.clone(),
+            branch: Some(cut.branch.clone()),
+            removed: None,
+        };
+        let folder = cut.path.clone();
+        // Inside the branch folder, the one place the task's wrap lets it write (its tmp aside).
+        let own = folder.join(".scenario");
+        self.task_owns.lock().expect("task owns").push(own.clone());
+        let chat = self.begins(
+            script,
+            own,
+            |chat_name| purlis_core::start::Start {
+                profile: Some(self.profile()),
+                persona: Some(persona),
+                name: chat_name.to_owned(),
+                cwd: Some(folder),
+                made: purlis_core::sandbox::Made::Asked {
+                    how: purlis_core::sandbox::Asking::Dispatch,
+                    above: Some(above),
+                },
+                ..Default::default()
+            },
+            Some(Handed {
+                from,
+                label: name.to_owned(),
+                brief: brief.to_owned(),
+                worktree,
+            }),
+        );
+        Task {
+            chat,
+            folder: cut.path,
+            branch: cut.branch,
+        }
+    }
+
+    /// The clone of repo `repo` in workspace `work` of this scenario's project, where the
+    /// resolver puts a new clone, with one commit: made once, as an operator's own clone is, for
+    /// a task's branch folder to be cut off. Answers its workspace and repo.
+    fn a_clone(&self) -> (String, String) {
+        let (workspace, repo) = ("work", "repo");
+        // The workspace's folder first: the resolver answers only inside one that is there.
+        std::fs::create_dir_all(self.root.join("workspaces").join(workspace))
+            .expect("the scenario's workspace folder");
+        let clone = purlis_core::repofolder::new_folder(&self.root, workspace, repo)
+            .expect("where the scenario's clone goes");
+        if !clone.join(".git").exists() {
+            std::fs::create_dir_all(&clone).expect("the clone's folder");
+            for args in [
+                &["init", "--quiet", "--initial-branch", "main"][..],
+                &["config", "user.name", "scenario"],
+                &["config", "user.email", "scenario@example.test"],
+                &["config", "commit.gpgsign", "false"],
+                &["commit", "--quiet", "--allow-empty", "-m", "first"],
+            ] {
+                let done = purlis_core::worktree::git::run(
+                    &clone,
+                    args,
+                    purlis_core::worktree::git::WRITES_INDEX,
+                )
+                .expect("git runs");
+                assert!(done.ok(), "git {args:?}: {}", done.err);
+            }
+        }
+        (workspace.to_owned(), repo.to_owned())
+    }
+
+    /// **The one start every chat of a scenario goes through**: `start` composes the chat's
+    /// [`purlis_core::start::Start`] from the name it is given; `handed` is a task's lineage,
+    /// `None` for a chat the person started. `own` is the folder its transcript, state and
+    /// tool groups are written in, which the chat's wrap lets it write. Answers the chat's number.
+    fn begins(
+        &self,
+        script: &serde_json::Value,
+        own: PathBuf,
+        start: impl FnOnce(&str) -> purlis_core::start::Start,
+        handed: Option<Handed>,
+    ) -> u32 {
         self.profiled.call_once(|| {
             let homes = purlis_core::profilestore::Homes::here().expect("the scenario's homes");
             // Once per machine: a scenario before this one in the same test made it already.
@@ -1264,7 +1569,6 @@ impl Scenario {
         });
         let number = self.chats.lock().expect("chats").len() + 1;
         let at = self.script(&format!("chat-{number}"), script);
-        let own = own_folder(&self.root);
         std::fs::create_dir_all(&own).expect("the chat's own folder");
         let transcript = own.join(format!(
             "{}-{}.jsonl",
@@ -1272,19 +1576,8 @@ impl Scenario {
             self.started.load(std::sync::atomic::Ordering::SeqCst) + 1
         ));
         let name = format!("chat {number}");
-        let mut ready = purlis_core::start::ready(
-            &purlis_core::start::Start {
-                profile: Some(self.profile()),
-                persona: self.persona.clone(),
-                name: name.clone(),
-                cwd: Some(self.root.clone()),
-                made: purlis_core::sandbox::Made::Window,
-                grants,
-                ..Default::default()
-            },
-            &self.root,
-        )
-        .expect("the chat is ready to start");
+        let mut ready = purlis_core::start::ready(&start(&name), &self.root)
+            .expect("the chat is ready to start");
         let places = serde_json::json!({"work": self.root.display().to_string()});
         ready.env.extend(
             [
@@ -1301,12 +1594,12 @@ impl Scenario {
                 ("FAKE_HARNESS_PLACES", places.to_string()),
                 (
                     "FAKE_HARNESS_GROUPS",
-                    tool_groups_file(&self.root).display().to_string(),
+                    tool_groups_file(&own).display().to_string(),
                 ),
             ]
             .map(|(k, v)| (k.to_owned(), v)),
         );
-        let id = self.launches(&name, &ready, &transcript);
+        let id = self.launches(&name, &ready, &transcript, handed.as_ref());
         if let Some(prompt) = script["turns"][0]["prompt"].as_str() {
             // Typed once the harness says its session, as a person types at a harness that is
             // ready: a harness that takes the terminal raw drops what came before.
@@ -1334,6 +1627,7 @@ impl Scenario {
         name: &str,
         ready: &purlis_core::start::Ready,
         transcript: &std::path::Path,
+        handed: Option<&Handed>,
     ) -> u32 {
         let chat = purlis_core::reopen::Chat {
             program: ready.program.clone(),
@@ -1342,6 +1636,8 @@ impl Scenario {
             resume: ready.session.clone(),
             profile: Some(self.profile()),
             persona: self.persona.clone(),
+            from: handed.map(|handed| handed.from.clone()),
+            label: handed.map(|handed| handed.label.clone()),
             ..Default::default()
         };
         let launched = format!(
@@ -1389,6 +1685,9 @@ impl Scenario {
             .start_ready(&chat, ready, SIZE)
             .expect("the chat starts");
         self.chats.lock().expect("chats").push(id);
+        if let Some(handed) = handed {
+            handed.is_recorded(&held, id, &chat, ready, &self.root);
+        }
         self.transcripts
             .lock()
             .expect("transcripts")
@@ -1470,9 +1769,21 @@ impl Scenario {
             .map(str::to_owned),
         );
         model.attach(&transcript);
-        let id = self.launches(&name, &ready, &transcript);
+        let id = self.launches(&name, &ready, &transcript, None);
         self.note_running();
         id
+    }
+
+    /// The project's own folder, then each task's: where chats write what the harness keeps.
+    fn own_folders(&self) -> Vec<PathBuf> {
+        std::iter::once(own_folder(&self.root))
+            .chain(self.task_owns.lock().expect("task owns").iter().cloned())
+            .collect()
+    }
+
+    /// The project's own folder, where a chat working in the project writes.
+    fn own_folder(&self) -> PathBuf {
+        own_folder(&self.root)
     }
 
     /// Where the next chat's transcript is written: outside the project, in the run's scripts
@@ -1635,15 +1946,16 @@ impl Scenario {
     /// **Writes the record of `cell`, which this scenario ran** (#7224, #7229), to the leg's
     /// report with the kinds of the events its log gained after `since`, the [`Self::latest_seq`]
     /// taken when the cell began: the canary's and earlier cells' events are not the cell's. A log
-    /// that cannot be read is an error, never a record with no events. Named by the runner of the cells format, which no scenario has yet:
-    /// the cells that run today are Rust tests that name no cell.
-    #[expect(dead_code)]
+    /// that cannot be read is an error, never a record with no events. The events end at `until`,
+    /// the cell's own last: the next cell's are not the cell's. Called by the runner of
+    /// the cells format (`cells.rs`).
     pub(crate) fn report_cell(
         &self,
         cell: &purlis_scenarios::model::Cell,
         verdict: purlis_scenarios::model::ReportVerdict,
         reason: Option<String>,
         since: u64,
+        until: u64,
     ) -> Result<(), String> {
         let record = super::report::ran(
             cell,
@@ -1652,7 +1964,7 @@ impl Scenario {
             purlis_scenarios::model::TimingsMode::Scaled,
             verdict,
             reason,
-            super::report::kinds_since(&self.try_events()?, since),
+            super::report::kinds_between(&self.try_events()?, since, until),
         );
         super::report::write(&[record]).map_err(|why| format!("the report: {why}"))?;
         Ok(())
@@ -1664,14 +1976,22 @@ impl Scenario {
         self.try_events().unwrap_or_else(|why| panic!("{why}"))
     }
 
-    /// The number of the log's newest event, 0 for an empty log or one that cannot be read.
+    /// The number of the log's newest event: 0 for a log with no event yet. A log that cannot be
+    /// read fails the step, as [`Self::events`] does: a window opened at 0 would take every
+    /// earlier event for its own.
     pub(crate) fn latest_seq(&self) -> u64 {
         let mut newest = 0;
-        let _ = purlis_core::eventlog::read_back(&self.log, |event| {
+        match purlis_core::eventlog::read_back(&self.log, |event| {
             newest = event.seq;
             std::ops::ControlFlow::Break(())
-        });
-        newest
+        }) {
+            Ok(()) => newest,
+            Err(why) if why.kind() == std::io::ErrorKind::NotFound => 0,
+            Err(why) => panic!(
+                "the event log at {} could not be read: {why}",
+                self.log.display()
+            ),
+        }
     }
 
     /// How many chats the scenario has started, the canary's included.
@@ -1888,7 +2208,8 @@ impl Drop for Scenario {
         }
         // A tool command whose group never reached the file is said, never skipped (#7197).
         if !self.real_harness
-            && let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len())
+            && let Some(lost) =
+                tool_groups_lost(&self.transcript(), tool_groups(&self.own_folders()).len())
         {
             left.unwatched.push(lost);
         }
@@ -1899,7 +2220,7 @@ impl Drop for Scenario {
             .iter()
             .filter_map(|(_, group)| *group)
             .chain(process_groups(&left.pids))
-            .chain(tool_groups(&self.root))
+            .chain(tool_groups(&self.own_folders()))
         {
             if group > 1 && Some(group) != own && !groups.contains(&group) {
                 groups.push(group);
