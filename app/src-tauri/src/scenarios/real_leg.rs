@@ -525,27 +525,19 @@ impl Model {
     /// its own, kept for its transcript.
     pub(crate) fn plays(&self, steps: &[(&str, String)]) -> String {
         let mut chats = self.chats.lock().expect("the chats");
-        // **OpenCode on macOS first asks for a command that prints nothing** (`warmup`): the
-        // first command of a chat there came back with no output at all, not even the exit
-        // marker, in three runs (macos-15 and macos-26: the canary's write, a later chat's
-        // `hello`), while every command after it was read whole. No step is judged on the
-        // warm-up; its own result stays in the transcript, so a red run says whether it was the
-        // one lost.
-        let warmed: Vec<(&str, String)> =
-            if cfg!(target_os = "macos") && self.dialect == Dialect::OpenCode {
-                std::iter::once(("warmup", "true".to_owned()))
-                    .chain(steps.iter().cloned())
-                    .collect()
-            } else {
-                steps.to_vec()
-            };
         let script = script_of(
             self.dialect,
             &format!("leg chat {}", chats.len() + 1),
-            &warmed,
+            steps,
         );
         let prompt = script.prompt.clone();
-        let stand_in = Arc::new(StandIn::new(self.dialect.word(), script));
+        let mut stand_in = StandIn::new(self.dialect.word(), script);
+        // A real OpenCode on macOS sometimes shows the model "(no output)" for a bash call whose
+        // command ran (#7407): that step is asked once more, and the retry is judged. A result
+        // with any output is never retried, and a retry lost too fails as it did.
+        stand_in.retries_lost_output =
+            cfg!(target_os = "macos") && self.dialect == Dialect::OpenCode;
+        let stand_in = Arc::new(stand_in);
         *self.current.lock().expect("the stand-in") = Arc::clone(&stand_in);
         chats.push(Chat {
             stand_in,
@@ -669,11 +661,32 @@ fn script_of(dialect: Dialect, name: &str, steps: &[(&str, String)]) -> Script {
 /// alike. A result with no exit, such as a call a hook denied, never ran.
 pub(crate) fn transcript_of(dialect: Dialect, stand_in: &StandIn) -> Vec<Value> {
     let sequence = stand_in.script.sequence();
-    stand_in
+    let mut lines: Vec<Value> = stand_in
         .shown()
         .into_iter()
         .map(|shown| line_of(dialect, &sequence, &shown))
-        .collect()
+        .collect();
+    // A call asked once more because its result came back empty (`StandIn::retries_lost_output`,
+    // #7407): the retry is the step's result, named as a retry; the lost first try stays in the
+    // transcript as `<step>-lost`, so no reader takes it for the step's own.
+    let retried: Vec<String> = lines
+        .iter()
+        .filter_map(|line| line["tool_use_id"].as_str())
+        .filter_map(|id| id.strip_suffix("_retry").map(str::to_owned))
+        .collect();
+    for line in &mut lines {
+        let Some(id) = line["tool_use_id"].as_str().map(str::to_owned) else {
+            continue;
+        };
+        if retried.contains(&id) {
+            if let Some(step) = line["step"].as_str().map(str::to_owned) {
+                line["step"] = json!(format!("{step}-lost"));
+            }
+        } else if id.ends_with("_retry") {
+            line["retry"] = json!(true);
+        }
+    }
+    lines
 }
 
 /// One thing the model was shown, as a line of the transcript.
@@ -1678,6 +1691,85 @@ mod tests {
         }
     }
 
+    /// **A step whose result came back as "(no output)" is asked once more, and the retry is
+    /// the step's result** (#7407): only a result of exactly that, only once, only where the
+    /// stand-in is set to; the lost first try stays named `<step>-lost`. Needs no harness.
+    #[test]
+    fn a_step_that_came_back_with_no_output_is_asked_once_more_and_the_retry_is_judged() {
+        let dialect = Dialect::OpenCode;
+        let steps = [("only", "echo one".to_owned())];
+        let play = |retrying: bool| {
+            let mut stand_in =
+                StandIn::new(dialect.word(), script_of(dialect, "leg chat 1", &steps));
+            stand_in.retries_lost_output = retrying;
+            stand_in
+        };
+        let asked = |stand_in: &StandIn, earlier: &[(&str, &str, bool)]| {
+            let (path, body) = request(dialect, "Run the steps of leg chat 1.", earlier);
+            stand_in.answer("POST", path, &body);
+            let heard = stand_in.heard.lock().expect("the log");
+            heard
+                .last()
+                .expect("a request")
+                .asked
+                .iter()
+                .map(|call| call.tool_use_id.clone())
+                .collect::<Vec<_>>()
+        };
+        let lost = "(no output)";
+
+        let stand_in = play(true);
+        assert_eq!(asked(&stand_in, &[]), ["call_cs_0_0"]);
+        assert_eq!(
+            asked(&stand_in, &[("call_cs_0_0", lost, false)]),
+            ["call_cs_0_0_retry"],
+            "a result of no output is asked for again"
+        );
+        assert!(
+            asked(
+                &stand_in,
+                &[
+                    ("call_cs_0_0", lost, false),
+                    ("call_cs_0_0_retry", lost, false)
+                ]
+            )
+            .is_empty(),
+            "a retry lost too is not asked for again"
+        );
+        let (output, _) = result_of_a_command(dialect, 0, "one");
+        assert!(
+            asked(&stand_in, &[("call_cs_0_0", output.as_str(), false)]).is_empty(),
+            "a result with output is never retried"
+        );
+        let off = play(false);
+        asked(&off, &[]);
+        assert!(
+            asked(&off, &[("call_cs_0_0", lost, false)]).is_empty(),
+            "where the stand-in is not set to retry, a result is a result"
+        );
+
+        // The transcript names the retry as the step's result and the lost try as `-lost`.
+        let stand_in = play(true);
+        asked(&stand_in, &[]);
+        asked(&stand_in, &[("call_cs_0_0", lost, false)]);
+        asked(
+            &stand_in,
+            &[
+                ("call_cs_0_0", lost, false),
+                ("call_cs_0_0_retry", output.as_str(), false),
+            ],
+        );
+        let lines = transcript_of(dialect, &stand_in);
+        let results: Vec<&Value> = lines
+            .iter()
+            .filter(|l| l["kind"] == "tool_result")
+            .collect();
+        assert_eq!(results.len(), 2, "{lines:?}");
+        assert_eq!(results[0]["step"], "only-lost", "{lines:?}");
+        assert_eq!(results[1]["step"], "only", "{lines:?}");
+        assert_eq!(results[1]["retry"], true, "{lines:?}");
+    }
+
     /// **The transcript of a chat survives the next chat's start** (T1.1-10, review F3, and
     /// each harness here): each chat has a stand-in and a file of its own, so a two-chat cell
     /// reads chat 1's result after chat 2 began. Needs no harness.
@@ -1694,33 +1786,11 @@ mod tests {
             let prompt = model.plays(&[("only", "echo one".to_owned())]);
             model.attach(&first);
             let stand_in = Arc::clone(&model.current.lock().expect("the stand-in"));
+            let id = stand_in.id(purlis_recordings::standin::Conversation::Main, 0, 0);
             let (path, body) = request(dialect, &prompt, &[]);
             stand_in.answer("POST", path, &body);
-            // OpenCode on macOS first asks for its warm-up ([`Model::plays`]): its result comes
-            // before the step's.
-            let warmed = cfg!(target_os = "macos") && dialect == Dialect::OpenCode;
-            let mut heard: Vec<(String, String)> = Vec::new();
-            if warmed {
-                let id = stand_in.id(purlis_recordings::standin::Conversation::Main, 0, 0);
-                heard.push((id, result_of_a_command(dialect, 0, "").0));
-                let earlier: Vec<(&str, &str, bool)> = heard
-                    .iter()
-                    .map(|(id, output)| (id.as_str(), output.as_str(), false))
-                    .collect();
-                let (path, body) = request(dialect, &prompt, &earlier);
-                stand_in.answer("POST", path, &body);
-            }
-            let id = stand_in.id(
-                purlis_recordings::standin::Conversation::Main,
-                usize::from(warmed),
-                0,
-            );
-            heard.push((id, result_of_a_command(dialect, 0, "one").0));
-            let earlier: Vec<(&str, &str, bool)> = heard
-                .iter()
-                .map(|(id, output)| (id.as_str(), output.as_str(), false))
-                .collect();
-            let (path, body) = request(dialect, &prompt, &earlier);
+            let (output, _) = result_of_a_command(dialect, 0, "one");
+            let (path, body) = request(dialect, &prompt, &[(&id, &output, false)]);
             stand_in.answer("POST", path, &body);
             let read = |file: &Path| {
                 std::fs::read_to_string(file)

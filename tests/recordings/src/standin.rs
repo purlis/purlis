@@ -88,7 +88,14 @@ pub struct StandIn {
     /// them: the chat's next response after the sub-agent call waits for it too, so the
     /// sub-agent's hooks never interleave with the next call's. Always, when not set.
     pub subagent_settled: Mutex<Option<Settled>>,
+    /// Whether a call whose result came back as exactly [`LOST_OUTPUT`] is asked for once more,
+    /// under the id `<id>_retry` (T1.1-53, a real OpenCode on macOS). Never a result that came
+    /// back with any output: that could hide a real refusal. Off, a result is a result.
+    pub retries_lost_output: bool,
 }
+
+/// What OpenCode shows the model for a bash call that printed nothing.
+pub const LOST_OUTPUT: &str = "(no output)";
 
 /// A tool a request offers: its name and whether it is a free-form (`custom`) tool.
 #[derive(Debug, Clone)]
@@ -104,6 +111,7 @@ impl StandIn {
             script,
             heard: Mutex::new(Vec::new()),
             subagent_settled: Mutex::new(None),
+            retries_lost_output: false,
         }
     }
 
@@ -159,6 +167,19 @@ impl StandIn {
             Conversation::Side => Vec::new(),
         };
         let answered = results_in(api, &body);
+        // A call whose result was exactly "no output" is owed one retry, once (it is asked again
+        // under `<id>_retry`, and that result is the one that counts, whatever it is).
+        let lost: Vec<String> = if self.retries_lost_output {
+            project(api, &body)
+                .into_iter()
+                .filter(|s| s.kind == "tool_result" && s.text.trim() == LOST_OUTPUT)
+                .filter_map(|s| s.tool_use_id)
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let retry_of = |id: &str| format!("{id}_retry");
+        let owed = |id: &str| lost.iter().any(|l| l == id) && !answered.contains(&retry_of(id));
         // A sub-agent runs beside the chat (Claude Code 2.1's agents are asynchronous): the chat's
         // next response waits until the sub-agent's turn has ended and its closing hooks have
         // answered (Claude Code's SubagentStop), so the two never interleave and a recording's
@@ -170,7 +191,10 @@ impl StandIn {
             }
         }
         let unanswered = |at: usize, r: &Response| {
-            (0..r.calls.len()).any(|i| !answered.contains(&self.id(conversation, at, i)))
+            (0..r.calls.len()).any(|i| {
+                let id = self.id(conversation, at, i);
+                !answered.contains(&id) || owed(&id)
+            })
         };
         let mut ended_turn = None;
         let next = (conversation != Conversation::Side).then(|| {
@@ -214,10 +238,9 @@ impl StandIn {
                 .iter()
                 .enumerate()
                 .map(|(i, step)| {
-                    (
-                        native(api, step, &offers, self.id(conversation, at, i)),
-                        step,
-                    )
+                    let id = self.id(conversation, at, i);
+                    let id = if owed(&id) { retry_of(&id) } else { id };
+                    (native(api, step, &offers, id), step)
                 })
                 .collect()
         });
