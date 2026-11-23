@@ -258,10 +258,12 @@ export const ClonesToConfirm: Story = {
     });
     confirm.focus();
     await untilFocused(() => confirm, "the first Confirm");
-    await userEvent.tab();
+    // The table is a grid, one Tab stop (building-ui.md): ↓ moves to the button below, which
+    // WebKit's Tab never would between a grid's cells.
+    await userEvent.keyboard("{ArrowDown}");
     await untilFocused(
       () => within(clones).getByRole("button", { name: "Confirm workspaces/ws/web" }),
-      "Tab reaches the second Confirm",
+      "↓ reaches the second Confirm",
     );
     expectFocusInSight();
   },
