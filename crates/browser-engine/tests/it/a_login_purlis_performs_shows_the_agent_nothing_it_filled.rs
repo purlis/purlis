@@ -487,10 +487,17 @@ fn a_login_fills_no_password_beside_a_window_its_page_opened_on_its_site() {
         }
         other => panic!("refused otherwise: {}", ended_as(other)),
     }
-    assert!(
-        titles(&browser).iter().any(|title| title == "Opened"),
-        "the window opened, so this is what refused it"
-    );
+    // The window is the page's own, loading on its own process: on a slow runner its title comes
+    // after the refusal does, so it is waited for, and the refusal above is what says it opened.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !titles(&browser).iter().any(|title| title == "Opened") {
+        assert!(
+            std::time::Instant::now() < until,
+            "the window opened, so this is what refused it: {:?}",
+            titles(&browser)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(250));
+    }
 }
 
 /// The person's ruling of 2026-11-05: a window a login's page opened on another site closes once the
