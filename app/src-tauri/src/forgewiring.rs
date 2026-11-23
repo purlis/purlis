@@ -468,9 +468,22 @@ pub struct CiPushGate {
     proxy: Arc<ForgeProxy>,
     quarantines: Arc<Quarantines>,
     parent: PathBuf,
+    /// Where the forge repos' object caches are: the machine's data folder, which no chat reads or
+    /// writes. `None` where the machine has none, and a push then fetches into its quarantine.
+    cache_parent: Option<PathBuf>,
 }
 
 impl CiPushGate {
+    /// The object cache of the repo `served` names.
+    fn cache_of(&self, served: &Served) -> Option<Arc<purlis_core::heldact::ObjectCache>> {
+        let parent = self.cache_parent.as_ref()?;
+        Some(purlis_core::heldact::ObjectCache::of(
+            parent,
+            &served.repo.host,
+            &served.repo.path,
+        ))
+    }
+
     fn refuse(why: impl Into<String>) -> PushVerdict {
         PushVerdict::Refuse(why.into())
     }
@@ -500,7 +513,10 @@ impl PushGate for CiPushGate {
                 "purlis did not send this push: it is reading other pushes now, so try again in a moment.",
             );
         };
+        // One deadline for every fetch of this push, whatever the number of branches it updates.
+        let started = std::time::Instant::now();
         for update in &push.updates {
+            let budget = purlis_core::heldact::PUSH.saturating_sub(started.elapsed());
             // A delete moves no file; a tag or another ref is not a branch the policy lets by.
             let created = update.old.bytes().all(|b| b == b'0');
             if update.new.bytes().all(|b| b == b'0') {
@@ -520,7 +536,12 @@ impl PushGate for CiPushGate {
             };
             let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
             let from = match self.context.fetch_source(&served, &url) {
-                Ok(from) => from,
+                // Each push fetches what changed since the last into the repo's own cache, all
+                // its fetches within one deadline (inside the listener's connection total).
+                Ok(from) => purlis_core::heldact::FromForge {
+                    cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
+                    ..from
+                },
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
             let one = Update {
@@ -697,6 +718,7 @@ impl ProjectContext {
         Ok(purlis_core::heldact::FromForge {
             url: url.to_owned(),
             helper: Some(helper),
+            cache: None,
         })
     }
 }
@@ -707,17 +729,24 @@ pub struct AppHeldSinks {
     app: tauri::AppHandle,
     quarantines: Arc<Quarantines>,
     parent: PathBuf,
+    cache_parent: Option<PathBuf>,
 }
 
 impl AppHeldSinks {
-    pub fn new(app: tauri::AppHandle, parent: PathBuf) -> Self {
+    pub fn new(app: tauri::AppHandle, parent: PathBuf, cache_parent: Option<PathBuf>) -> Self {
         // A quarantine an earlier app left (it ended without dropping them) is gone before a
         // new one is made: the one-per-user lock means none belongs to a live app.
         purlis_core::heldact::sweep_quarantines(&parent);
+        // The folder exists from the start, so a native Linux read denial (which applies to a path
+        // that is there) has one to apply to before the first push makes a cache in it.
+        if let Some(folder) = &cache_parent {
+            let _ = std::fs::create_dir_all(folder);
+        }
         Self {
             app,
             quarantines: Arc::new(Quarantines::default()),
             parent,
+            cache_parent,
         }
     }
 
@@ -764,6 +793,7 @@ impl HeldSinks for AppHeldSinks {
             proxy,
             quarantines: self.quarantines.clone(),
             parent: self.parent.clone(),
+            cache_parent: self.cache_parent.clone(),
         }))
     }
 }

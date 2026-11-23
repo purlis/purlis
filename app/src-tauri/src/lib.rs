@@ -4160,6 +4160,7 @@ pub fn run() {
                 std::sync::Arc::new(forgewiring::AppHeldSinks::new(
                     app.handle().clone(),
                     forgeroute::quarantine_dir(),
+                    forgeroute::object_cache_dir(),
                 )),
                 std::sync::Arc::new(forgewiring::AppNotices::new(app.handle().clone())),
             );

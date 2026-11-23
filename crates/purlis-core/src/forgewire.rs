@@ -563,6 +563,16 @@ pub fn route_root(machine: &crate::sandbox::Machine) -> Option<PathBuf> {
     )
 }
 
+/// **Where the forge repos' object caches are kept on `machine`** (ADR 0128, amended 2026-11-24):
+/// `object-cache` in purlis's data home, which a reboot does not clear. Held out of every chat by
+/// the sandbox, reading and writing ([`crate::sandbox`]), under every spelling of the data home.
+pub fn object_cache_root(machine: &crate::sandbox::Machine) -> Option<PathBuf> {
+    crate::sandbox::Homes::charter_data(machine).map(|data| data.join(OBJECT_CACHE_DIR))
+}
+
+/// The folder of [`object_cache_root`], in a data home.
+pub const OBJECT_CACHE_DIR: &str = "object-cache";
+
 /// **Composes and writes** the wiring for `route`, in a folder made new inside the project's
 /// [`wire_folder`], which must be a folder of its own with no link on the way to it from `root`
 /// ([`crate::contain::no_link_on_the_way`], [`crate::sandbox::tunnel::make_own_folder`]). The
