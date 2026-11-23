@@ -98,6 +98,7 @@
 
 import { execFileSync } from "node:child_process";
 import { appendFileSync, readFileSync } from "node:fs";
+import { matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { readPublished } from "./dev-build-order.mjs";
@@ -536,6 +537,86 @@ function mainShips([kind, sha]) {
   console.log(`ships=${answer.ships}: ${answer.why}`);
 }
 
+/**
+ * The path filter of a workflow's `pull_request` trigger, in order, or `null` when it has none
+ * (#7420). Read line by line as the other tools read workflows: the `paths:` list under
+ * `pull_request:` in the `on:` block, a comment and the quotes around a pattern dropped.
+ */
+export function pullRequestPathsOf(text) {
+  const lines = text.split("\n");
+  const on = lines.findIndex((line) => /^on:\s*$/.test(line));
+  if (on < 0) return null;
+  let at = -1;
+  for (let i = on + 1; i < lines.length; i++) {
+    if (/^\S/.test(lines[i]) && !/^#/.test(lines[i])) break;
+    if (/^ {2}pull_request:/.test(lines[i])) {
+      at = i;
+      break;
+    }
+  }
+  if (at < 0) return null;
+  const patterns = [];
+  let inPaths = false;
+  for (const line of lines.slice(at + 1)) {
+    if (/^ {0,2}\S/.test(line) && !/^ {0,2}#/.test(line)) break;
+    if (/^ {4}paths:\s*$/.test(line)) {
+      inPaths = true;
+      continue;
+    }
+    if (/^ {4}\S/.test(line)) inPaths = false;
+    const item = inPaths ? /^ {6}- +(['"]?)(.+?)\1\s*(#.*)?$/.exec(line) : null;
+    if (item) patterns.push(item[2]);
+  }
+  return patterns.length > 0 ? patterns : null;
+}
+
+/**
+ * Whether a change to `paths` starts a workflow whose `pull_request` filter is `patterns`, as
+ * GitHub reads it: a path is in when the last line it matches is not a `!` one. No filter, and a
+ * change with no paths (one that could not be read), start it: a fault runs more.
+ */
+export function workflowNeeded(patterns, paths) {
+  if (patterns === null || paths.length === 0) return true;
+  // GitHub's `*` and `**` match a name that starts with a dot; `matchesGlob`'s do not. A leading
+  // dot of any segment is swapped for a letter no path holds, on both sides, so they do.
+  const plain = (text) => text.replace(/(^|\/)\./g, "$1\u0001");
+  return paths.some((path) => {
+    let hit = false;
+    for (const pattern of patterns) {
+      const negated = pattern.startsWith("!");
+      if (matchesGlob(plain(path), plain(negated ? pattern.slice(1) : pattern))) hit = !negated;
+    }
+    return hit;
+  });
+}
+
+// `workflow <file> <base>`: writes `run=true|false` to `$GITHUB_OUTPUT` (or stdout), for a merge
+// group's run of a workflow that a pull request starts by `paths:` (#7420). A merge group's event
+// has no `paths`, so the queue run reads the workflow's own filter against what the change
+// touches since `base` (`change-base`): the two cannot drift. Any failure to read says `true`.
+function workflowRuns([file, base]) {
+  const out = process.env.GITHUB_OUTPUT;
+  const say = (line) => (out ? appendFileSync(out, `${line}\n`) : console.log(line));
+  let run = true;
+  let why = "";
+  try {
+    const patterns = pullRequestPathsOf(readFileSync(file, "utf8"));
+    const paths = execFileSync("git", ["diff", "--name-only", "--no-renames", base, "HEAD"], {
+      encoding: "utf8",
+      maxBuffer: 1 << 28,
+    })
+      .split("\n")
+      .filter(Boolean);
+    run = workflowNeeded(patterns, paths);
+    const hits = patterns === null ? [] : paths.filter((p) => workflowNeeded(patterns, [p]));
+    why = run ? `: ${hits.slice(0, 5).join(", ") || "no filter"}` : ` (nothing of ${paths.length} changed paths is in its filter)`;
+  } catch (error) {
+    console.log(`::warning::the change could not be read, so the workflow runs: ${error.message}`);
+  }
+  say(`run=${run}`);
+  console.log(`::notice title=Scope::${file} ${run ? "runs" : "is skipped"}${why}`);
+}
+
 function main([event, base, draftArg, labels = ""]) {
   const draft = draftArg === "true";
   const out = process.env.GITHUB_OUTPUT;
@@ -591,5 +672,6 @@ function main([event, base, draftArg, labels = ""]) {
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [first, ...rest] = process.argv.slice(2);
   if (first === "ships") mainShips(rest);
+  else if (first === "workflow") workflowRuns(rest);
   else main([first, ...rest]);
 }

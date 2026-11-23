@@ -828,6 +828,16 @@ fn pushed_within(
     known: &[String],
     at_most: Option<(usize, TooMuch)>,
 ) -> Result<Scan, String> {
+    git::with_scratch_objects(repo, || pushed_reading(repo, updates, known, at_most))
+}
+
+/// [`pushed_within`], reading through git as it is set up.
+fn pushed_reading(
+    repo: &Path,
+    updates: &str,
+    known: &[String],
+    at_most: Option<(usize, TooMuch)>,
+) -> Result<Scan, String> {
     let commit_of = |oid: &str| {
         git::run_in_hook(
             repo,

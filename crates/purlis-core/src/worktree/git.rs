@@ -2615,11 +2615,23 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
         .map(|(name, value)| ((*name).to_owned(), (*value).into()))
         .collect();
     pass.extend(config_location_env(|name| std::env::var_os(name)));
+    let scratch = SCRATCH_OBJECTS.with(|held| held.borrow().clone());
     pass.extend(
         HOOK_REPOSITORY_ENV
             .iter()
+            .filter(|name| {
+                scratch.is_none()
+                    || !matches!(
+                        **name,
+                        "GIT_OBJECT_DIRECTORY" | "GIT_ALTERNATE_OBJECT_DIRECTORIES"
+                    )
+            })
             .filter_map(|name| std::env::var_os(name).map(|value| ((*name).to_owned(), value))),
     );
+    if let Some((writable, borrowed)) = scratch {
+        pass.push(("GIT_OBJECT_DIRECTORY".to_owned(), writable.into()));
+        pass.push(("GIT_ALTERNATE_OBJECT_DIRECTORIES".to_owned(), borrowed));
+    }
     let extra = Extra {
         pass,
         ..Extra::default()
@@ -2631,6 +2643,97 @@ pub fn run_in_hook(dir: &Path, args: &[&str], timeout: Duration) -> Result<RawRu
     counted(dir, args, || {
         Ok(wait_raw(spawn_with(dir, args, &extra)?, timeout)?)
     })
+}
+
+thread_local! {
+    /// The object directory a scan's git calls write to, and the real ones they read through.
+    static SCRATCH_OBJECTS: std::cell::RefCell<Option<(PathBuf, std::ffi::OsString)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Runs `then` with every [`run_in_hook`] this thread makes given **a writable object directory
+/// of its own that borrows the repository's** (`GIT_OBJECT_DIRECTORY` and
+/// `GIT_ALTERNATE_OBJECT_DIRECTORIES`), removed after.
+///
+/// `git log -p --diff-merges=remerge` makes a temporary object directory under the repository's
+/// even where no merge is in range, and fails where that directory is not writable: in a task
+/// chat's sandbox the shared clone's objects are read-only. Reads still see every object; only
+/// what git writes lands in the scratch directory.
+///
+/// A repository whose object directory the caller's own environment already names (a quarantine)
+/// is left as it is, and so is one that cannot be asked: `then` runs as it would have.
+///
+/// The scratch directory is searched first and git does not check a loose object's hash on
+/// read, so a process of the same user that writes into it while the scan runs could stand an
+/// object in for another. The scan is a check on what a chat sends, not a boundary against a
+/// process racing it (a chat can already name its own object directory).
+pub fn with_scratch_objects<T>(repo: &Path, then: impl FnOnce() -> T) -> T {
+    struct Restore(Option<(PathBuf, std::ffi::OsString)>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let before = self.0.take();
+            SCRATCH_OBJECTS.with(|held| *held.borrow_mut() = before);
+        }
+    }
+    if std::env::var_os("GIT_OBJECT_DIRECTORY").is_some() {
+        return then();
+    }
+    let Ok(scratch) = tempfile::Builder::new()
+        .prefix("purlis-scan-objects-")
+        .tempdir()
+    else {
+        return then();
+    };
+    let Some(objects) = run_in_hook(repo, &["rev-parse", "--git-common-dir"], READ)
+        .ok()
+        .filter(|run| run.code == Some(0))
+        .map(|run| String::from_utf8_lossy(&run.out).trim().to_owned())
+        .filter(|common| !common.is_empty())
+        .map(|common| repo.join(common).join("objects"))
+        .and_then(|objects| std::path::absolute(objects).ok())
+    else {
+        return then();
+    };
+    // git reads this list `:`-separated, and a path that holds a `:` or starts with `"` is
+    // written in its quoted form; a list the caller already names is in git's form and is
+    // kept as it is.
+    let mut borrowed = alternate_entry(&objects);
+    if let Some(already) = std::env::var_os("GIT_ALTERNATE_OBJECT_DIRECTORIES") {
+        borrowed.push(":");
+        borrowed.push(already);
+    }
+    let before = SCRATCH_OBJECTS.with(|held| {
+        held.borrow_mut()
+            .replace((scratch.path().to_path_buf(), borrowed))
+    });
+    let _restore = Restore(before);
+    then()
+}
+
+/// **One entry of `GIT_ALTERNATE_OBJECT_DIRECTORIES`**, as git reads it: the path as it is, or,
+/// where it holds a `:` or starts with `"`, in git's C-style quoted form.
+fn alternate_entry(path: &Path) -> std::ffi::OsString {
+    let raw = path.as_os_str();
+    let Some(text) = raw.to_str() else {
+        return raw.to_owned();
+    };
+    if !text.contains(':') && !text.starts_with('"') {
+        return raw.to_owned();
+    }
+    let mut quoted = String::from("\"");
+    for c in text.chars() {
+        match c {
+            '"' | '\\' => {
+                quoted.push('\\');
+                quoted.push(c);
+            }
+            '\n' => quoted.push_str("\\n"),
+            '\t' => quoted.push_str("\\t"),
+            _ => quoted.push(c),
+        }
+    }
+    quoted.push('"');
+    quoted.into()
 }
 
 /// Run `git -C <dir> <args>` across a network, under the one-credential rule.
