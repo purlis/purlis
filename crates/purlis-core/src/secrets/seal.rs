@@ -67,6 +67,9 @@ pub(crate) enum Found {
     Foreign,
     /// None could be read or made.
     Unread,
+    /// The Windows Hello opt-in is on and the person did not confirm (cancelled, refused, none
+    /// set up, or a signature that unwraps nothing): the key stays locked ([`super::hello`]).
+    Unconfirmed,
     /// No keyring started for this process: nothing is sealed or kept now, which is said (the
     /// review of #7113). A plane where a seal was kept reads it as a keyring that failed
     /// ([`no_keyring`], #7153).
@@ -84,6 +87,8 @@ pub(crate) trait KeyItems {
     fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String>;
     /// A new item of this program's own ([`super::keyhold::make_own`]).
     fn make_own(&self, service: &str, account: &str, value: &str) -> Result<(), String>;
+    /// Deletes the item; nothing where there is none.
+    fn forget(&self, service: &str, account: &str) -> Result<(), String>;
 }
 
 /// Why a key item could not be read.
@@ -128,6 +133,13 @@ impl KeyItems for OsKeyItems {
             .map(|_| ())
             .map_err(|why| why.to_string())
     }
+
+    fn forget(&self, service: &str, account: &str) -> Result<(), String> {
+        match ::keyring::Entry::new(service, account).and_then(|entry| entry.delete_credential()) {
+            Ok(()) | Err(::keyring::Error::NoEntry) => Ok(()),
+            Err(why) => Err(why.to_string()),
+        }
+    }
 }
 
 /// **What the app found of the seal's key, kept for the process's life** but read again at the
@@ -139,11 +151,18 @@ pub(crate) struct KeyCache(Option<Found>);
 impl KeyCache {
     /// What was found, read from `items` the first time, and again where `again` and it was not
     /// [`Found::Held`]. A key the app holds is never read again.
-    pub(crate) fn found(&mut self, again: bool, items: &dyn KeyItems) -> Found {
+    pub(crate) fn found(
+        &mut self,
+        again: bool,
+        items: &dyn KeyItems,
+        hello: &dyn super::hello::Confirm,
+    ) -> Found {
         if again && !matches!(self.0, Some(Found::Held(_))) {
             self.0 = None;
         }
-        self.0.get_or_insert_with(|| read_or_make(items)).clone()
+        self.0
+            .get_or_insert_with(|| read_or_make(items, hello))
+            .clone()
     }
 }
 
@@ -156,7 +175,7 @@ fn found(again: bool) -> Found {
     FOUND
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .found(again, &OsKeyItems)
+        .found(again, &OsKeyItems, super::hello::this_machine())
 }
 
 /// The seal's key, made the first time the app asks; none in any other process, in a fenced
@@ -165,7 +184,10 @@ fn found(again: bool) -> Found {
 fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
     #[cfg(test)]
     {
-        if TEST_FOREIGN.with(std::cell::Cell::get) || TEST_NO_KEYRING.with(std::cell::Cell::get) {
+        if TEST_FOREIGN.with(std::cell::Cell::get)
+            || TEST_NO_KEYRING.with(std::cell::Cell::get)
+            || TEST_UNCONFIRMED.with(std::cell::Cell::get)
+        {
             return None;
         }
         TEST_KEY.with(|held| held.borrow().clone().map(zeroize::Zeroizing::new))
@@ -177,7 +199,7 @@ fn key() -> Option<zeroize::Zeroizing<Vec<u8>>> {
         }
         match found(false) {
             Found::Held(key) => Some(key),
-            Found::Foreign | Found::Unread | Found::NoKeyring => None,
+            Found::Foreign | Found::Unread | Found::NoKeyring | Found::Unconfirmed => None,
         }
     }
 }
@@ -209,6 +231,11 @@ pub const FOREIGN_KEY: &str = "another program made the keychain item purlis kee
 /// What the press says where the keyring could not be read or the key made.
 pub const KEY_UNREAD: &str = "purlis could not read or make its seal key in the keyring, so it \
      accepted nothing. Unlock the keychain and press Accept again";
+
+/// What the press says where the Windows Hello opt-in is on and was not confirmed at the start.
+pub const HELLO_UNCONFIRMED: &str = "Windows Hello was not confirmed when purlis started, so \
+     purlis's seal key stays locked and it accepted nothing. Quit purlis, open it again and \
+     confirm with Windows Hello";
 
 /// What the press says on a machine with no keyring purlis can use (the review of #7113): purlis
 /// looks for the keyring once, as it starts, so a press finds none until it is opened again
@@ -248,6 +275,7 @@ fn said(found: &Found) -> Result<(), &'static str> {
     match found {
         Found::Held(_) => Ok(()),
         Found::Foreign => Err(FOREIGN_KEY),
+        Found::Unconfirmed => Err(HELLO_UNCONFIRMED),
         Found::Unread => Err(KEY_UNREAD),
         Found::NoKeyring => Err(NO_KEYRING),
     }
@@ -266,7 +294,13 @@ fn said(found: &Found) -> Result<(), &'static str> {
 /// short between its delete and its add left the key at rest there (#7073). The app's own spare
 /// is made the key again, so every seal made with it still holds; a spare another program made
 /// is [`Found::Foreign`], never a key.
-pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
+pub(crate) fn read_or_make(items: &dyn KeyItems, hello: &dyn super::hello::Confirm) -> Found {
+    // **With the Windows Hello opt-in on, the key is kept wrapped** ([`super::hello`]) and the
+    // plain item is gone: the wrapped item is looked for first, and a plain item put back beside
+    // it is never taken for the key.
+    if let Ok(Some(wrapped)) = items.read(SERVICE, HELLO_ACCOUNT) {
+        return unwrapped(items, hello, &wrapped);
+    }
     match items.read(SERVICE, ACCOUNT) {
         Ok(Some(hex)) => checked(items, SERVICE, &hex),
         Ok(None) => {
@@ -295,6 +329,150 @@ pub(crate) fn read_or_make(items: &dyn KeyItems) -> Found {
             Found::Unread
         }
     }
+}
+
+/// The keyring account the key is kept wrapped under with the Windows Hello opt-in on. **Its
+/// presence is the opt-in.**
+const HELLO_ACCOUNT: &str = "answers-hello";
+
+/// The key, unwrapped by a Windows Hello confirmation, held only where this program owns the item.
+fn unwrapped(items: &dyn KeyItems, hello: &dyn super::hello::Confirm, wrapped: &str) -> Found {
+    match items.owned_here(SERVICE, HELLO_ACCOUNT, wrapped) {
+        Ok(true) => {}
+        Ok(false) => return Found::Foreign,
+        Err(why) => {
+            tracing::warn!("purlis: the wrapped seal key could not be checked ({why})");
+            return Found::Unread;
+        }
+    }
+    match hello.confirm(super::hello::CHALLENGE) {
+        super::hello::Answer::Yes(signature) => super::hello::unwrap(&signature, wrapped)
+            .filter(|key| key.len() == KEY_BYTES)
+            .map_or(Found::Unconfirmed, Found::Held),
+        super::hello::Answer::No
+        | super::hello::Answer::Cancelled
+        | super::hello::Answer::Unavailable => Found::Unconfirmed,
+    }
+}
+
+/// **Turns the Windows Hello opt-in on**: the key is wrapped by what Hello signs, the wrapped item
+/// is read back and unwrapped to prove it, and only then are the plain key and its spare deleted.
+/// **Needs a confirmation** (Hello must sign) **and the person's [`super::answers::Press`]**: a
+/// chat's request is never a press. Nothing is changed where any step fails.
+pub(crate) fn enable_hello(
+    _press: &super::answers::Press,
+    items: &dyn KeyItems,
+    hello: &dyn super::hello::Confirm,
+) -> Result<(), String> {
+    if items.read(SERVICE, HELLO_ACCOUNT).ok().flatten().is_some() {
+        return Ok(());
+    }
+    let Found::Held(key) = read_or_make(items, hello) else {
+        return Err(KEY_UNREAD.to_owned());
+    };
+    let super::hello::Answer::Yes(signature) = hello.confirm(super::hello::CHALLENGE) else {
+        return Err(HELLO_UNCONFIRMED.to_owned());
+    };
+    let wrapped = super::hello::wrap(&signature, &key)
+        .ok_or_else(|| "the seal key could not be wrapped".to_owned())?;
+    items.make_own(SERVICE, HELLO_ACCOUNT, &wrapped)?;
+    let proved = items
+        .read(SERVICE, HELLO_ACCOUNT)
+        .ok()
+        .flatten()
+        .and_then(|read| super::hello::unwrap(&signature, &read));
+    if proved.as_deref().map(Vec::as_slice) != Some(key.as_slice()) {
+        let _ = items.forget(SERVICE, HELLO_ACCOUNT);
+        return Err(
+            "Windows Hello signed differently the second time, so the key stays as it was; \
+             Windows Hello cannot be used for the seal on this device"
+                .to_owned(),
+        );
+    }
+    let [spare, other] = super::keyhold::spares_of(SERVICE);
+    for service in [SERVICE, spare.as_str(), other.as_str()] {
+        items.forget(service, ACCOUNT)?;
+    }
+    Ok(())
+}
+
+/// **Turns the Windows Hello opt-in off, a loosening**: the key is unwrapped (Hello must sign),
+/// kept plain again, and the wrapped item deleted. **Needs the person's
+/// [`super::answers::Press`]**, and the window's command layer is the only maker of one, so a chat
+/// can never ask for it (spec §9.4). Nothing is changed where Hello does not confirm.
+pub(crate) fn disable_hello(
+    _press: &super::answers::Press,
+    items: &dyn KeyItems,
+    hello: &dyn super::hello::Confirm,
+) -> Result<(), String> {
+    let Ok(Some(wrapped)) = items.read(SERVICE, HELLO_ACCOUNT) else {
+        return Ok(());
+    };
+    let Found::Held(key) = unwrapped(items, hello, &wrapped) else {
+        return Err(HELLO_UNCONFIRMED.to_owned());
+    };
+    items.make_own(SERVICE, ACCOUNT, &crate::extension::hex(&key))?;
+    items.forget(SERVICE, HELLO_ACCOUNT)
+}
+
+/// **The person turns the Windows Hello opt-in on or off**, for the real keyring and the real
+/// Windows Hello. Only Windows has it; anywhere else this says so and changes nothing. Hello is
+/// asked in the call, which waits for the person. The window's command layer is the only maker of
+/// the [`super::answers::Press`], so a chat can never ask (spec §9.4).
+pub fn set_hello(press: &super::answers::Press, on: bool) -> Result<(), String> {
+    #[cfg(not(test))]
+    {
+        if !cfg!(windows) {
+            return Err("Windows Hello is only on Windows".to_owned());
+        }
+        if on {
+            enable_hello(press, &OsKeyItems, super::hello::this_machine())
+        } else {
+            disable_hello(press, &OsKeyItems, super::hello::this_machine())
+        }
+    }
+    #[cfg(test)]
+    {
+        let _ = (press, on);
+        Err(
+            "a test turns Windows Hello on and off through enable_hello and disable_hello"
+                .to_owned(),
+        )
+    }
+}
+
+/// **Whether the Windows Hello opt-in is on**, from the presence of the wrapped item alone, so
+/// doctor can say so outside the app. Only Windows has the opt-in.
+pub fn hello_is_on() -> bool {
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(all(not(test), windows))]
+    {
+        matches!(
+            ::keyring::Entry::new(SERVICE, HELLO_ACCOUNT).and_then(|entry| entry.get_password()),
+            Ok(_)
+        )
+    }
+    #[cfg(all(not(test), not(windows)))]
+    {
+        false
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's key is locked because Hello was not confirmed.
+    static TEST_UNCONFIRMED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// **A test's Hello was not confirmed**: the key stays locked ([`KeyState::Unconfirmed`]).
+#[cfg(test)]
+pub(crate) fn set_unconfirmed_for_this_test(unconfirmed: bool) {
+    TEST_UNCONFIRMED.with(|held| held.set(unconfirmed));
+    // A key that stays locked reads as no item at all.
+    TEST_LOCKED.with(|held| held.set(unconfirmed));
 }
 
 /// The key `hex` read from `service`, held only where this program owns its item.
@@ -360,7 +538,7 @@ pub fn no_keyring() -> bool {
     }
 }
 
-fn decode(hex: &str) -> Option<zeroize::Zeroizing<Vec<u8>>> {
+pub(super) fn decode(hex: &str) -> Option<zeroize::Zeroizing<Vec<u8>>> {
     let bytes: Option<Vec<u8>> = (0..hex.len())
         .step_by(2)
         .map(|at| u8::from_str_radix(hex.get(at..at + 2)?, 16).ok())
@@ -514,6 +692,10 @@ pub(crate) enum KeyState {
     /// The keyring is there and the key does not read (a cancelled Hello, a wrong password, a
     /// key item another program made).
     Locked,
+    /// The Windows Hello opt-in is on and was not confirmed at the start: the key stays locked.
+    /// Told from [`Self::Locked`] because on a fresh install the shipped default applies, where a
+    /// locked key on an anchored plane is the deny state (review round 5, FB5-B1).
+    Unconfirmed,
     /// No keyring started for this process.
     NoKeyring,
     /// This process is not the app, or is fenced.
@@ -538,6 +720,8 @@ pub(crate) fn key_state() -> KeyState {
     {
         if TEST_NO_KEYRING.with(std::cell::Cell::get) {
             KeyState::NoKeyring
+        } else if TEST_UNCONFIRMED.with(std::cell::Cell::get) {
+            KeyState::Unconfirmed
         } else if TEST_LOCKED.with(std::cell::Cell::get) || TEST_FOREIGN.with(std::cell::Cell::get)
         {
             KeyState::Locked
@@ -555,6 +739,7 @@ pub(crate) fn key_state() -> KeyState {
         match found(false) {
             Found::Held(_) => KeyState::Usable,
             Found::Foreign | Found::Unread => KeyState::Locked,
+            Found::Unconfirmed => KeyState::Unconfirmed,
             Found::NoKeyring => KeyState::NoKeyring,
         }
     }
@@ -639,6 +824,7 @@ pub(crate) fn item_forget_for_this_test(account: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secrets::hello::{FakeHello, Refusal};
 
     #[test]
     fn a_seal_holds_for_its_own_answer_and_no_other() {
@@ -702,6 +888,14 @@ mod tests {
             self
         }
 
+        fn with_wrapped(self, value: &str) -> Self {
+            self.0.borrow_mut().insert(
+                (SERVICE.to_owned(), HELLO_ACCOUNT.to_owned()),
+                (value.to_owned(), true),
+            );
+            self
+        }
+
         fn value(&self, service: &str) -> Option<String> {
             self.0
                 .borrow()
@@ -717,8 +911,19 @@ mod tests {
     }
 
     impl KeyItems for Items {
-        fn read(&self, service: &str, _account: &str) -> Result<Option<String>, Unreadable> {
-            Ok(self.value(service))
+        fn read(&self, service: &str, account: &str) -> Result<Option<String>, Unreadable> {
+            Ok(self
+                .0
+                .borrow()
+                .get(&(service.to_owned(), account.to_owned()))
+                .map(|(value, _)| value.clone()))
+        }
+
+        fn forget(&self, service: &str, account: &str) -> Result<(), String> {
+            self.0
+                .borrow_mut()
+                .remove(&(service.to_owned(), account.to_owned()));
+            Ok(())
         }
 
         fn owned_here(&self, service: &str, account: &str, value: &str) -> Result<bool, String> {
@@ -746,6 +951,7 @@ mod tests {
             Found::Foreign => panic!("held, not foreign"),
             Found::Unread => panic!("held, not unread"),
             Found::NoKeyring => panic!("held, not no keyring"),
+            Found::Unconfirmed => panic!("held, not unconfirmed"),
         }
     }
 
@@ -758,9 +964,12 @@ mod tests {
         // The re-review of #6992, S4, and #7073: the ownership check is what turns a key whose
         // maker may know it into no key at all.
         let items = Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), false);
-        assert!(matches!(read_or_make(&items), Found::Foreign));
+        assert!(matches!(read_or_make(&items, &no_hello()), Found::Foreign));
         let ours = Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), true);
-        assert_eq!(held(read_or_make(&ours)), vec![0xab; KEY_BYTES]);
+        assert_eq!(
+            held(read_or_make(&ours, &no_hello())),
+            vec![0xab; KEY_BYTES]
+        );
     }
 
     #[test]
@@ -768,11 +977,14 @@ mod tests {
         // #7073: a crash between the delete and the add leaves the key in the spare alone; a new
         // key would break every seal made with it.
         let items = Items::default().with(&spare(), &"cd".repeat(KEY_BYTES), true);
-        assert_eq!(held(read_or_make(&items)), vec![0xcd; KEY_BYTES]);
+        assert_eq!(
+            held(read_or_make(&items, &no_hello())),
+            vec![0xcd; KEY_BYTES]
+        );
         assert_eq!(items.value(SERVICE), Some("cd".repeat(KEY_BYTES)));
         // A spare another program made is never taken for the key.
         let theirs = Items::default().with(&spare(), &"cd".repeat(KEY_BYTES), false);
-        assert!(matches!(read_or_make(&theirs), Found::Foreign));
+        assert!(matches!(read_or_make(&theirs, &no_hello()), Found::Foreign));
     }
 
     #[test]
@@ -781,18 +993,21 @@ mod tests {
         // and makes one, without a restart.
         let items = Items::default().with(SERVICE, &"ab".repeat(KEY_BYTES), false);
         let mut cache = KeyCache::default();
-        assert!(matches!(cache.found(false, &items), Found::Foreign));
+        assert!(matches!(
+            cache.found(false, &items, &no_hello()),
+            Found::Foreign
+        ));
         items.forget(SERVICE);
         assert!(
-            matches!(cache.found(false, &items), Found::Foreign),
+            matches!(cache.found(false, &items, &no_hello()), Found::Foreign),
             "kept until a press"
         );
-        let made = held(cache.found(true, &items));
+        let made = held(cache.found(true, &items, &no_hello()));
         assert_eq!(items.value(SERVICE), Some(crate::extension::hex(&made)));
         // The app's own key is never read again, whatever is put where it was.
         items.forget(SERVICE);
         let items = items.with(SERVICE, &"ef".repeat(KEY_BYTES), false);
-        assert_eq!(held(cache.found(true, &items)), made);
+        assert_eq!(held(cache.found(true, &items, &no_hello())), made);
     }
 
     /// A machine whose keyring service is missing altogether.
@@ -809,6 +1024,10 @@ mod tests {
 
         fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
             panic!("nothing is made where there is no keyring")
+        }
+
+        fn forget(&self, _: &str, _: &str) -> Result<(), String> {
+            panic!("nothing is deleted where there is no keyring")
         }
     }
 
@@ -833,6 +1052,10 @@ mod tests {
         fn make_own(&self, _: &str, _: &str, _: &str) -> Result<(), String> {
             panic!("no key is made where what is there did not read")
         }
+
+        fn forget(&self, _: &str, _: &str) -> Result<(), String> {
+            panic!("nothing is deleted that did not read")
+        }
     }
 
     #[test]
@@ -841,29 +1064,122 @@ mod tests {
         // holds what it cannot show, never as none, and no new key is made over what may be
         // there: the key's read failing, or the key gone and its spare's read failing.
         let locked = Failing { key_gone: false };
-        assert!(matches!(read_or_make(&locked), Found::Unread));
+        assert!(matches!(read_or_make(&locked, &no_hello()), Found::Unread));
         assert!(matches!(
-            read_or_make(&Failing { key_gone: true }),
+            read_or_make(&Failing { key_gone: true }, &no_hello()),
             Found::Unread
         ));
-        assert_eq!(said(&read_or_make(&locked)), Err(KEY_UNREAD));
+        assert_eq!(said(&read_or_make(&locked, &no_hello())), Err(KEY_UNREAD));
     }
 
     #[test]
     fn the_press_on_no_keyring_says_to_open_purlis_again_never_to_press_again() {
         // #7153: keyring 4 looks for the keyring once a process, so a press cannot find one
         // started since: only opening purlis again does.
-        assert_eq!(said(&read_or_make(&NoStore)), Err(NO_KEYRING));
+        assert_eq!(said(&read_or_make(&NoStore, &no_hello())), Err(NO_KEYRING));
         assert!(NO_KEYRING.contains("open purlis again"), "{NO_KEYRING}");
         assert!(!NO_KEYRING.contains("press Accept again"), "{NO_KEYRING}");
         assert_eq!(said(&Found::Foreign), Err(FOREIGN_KEY));
+    }
+
+    /// A machine with no Windows Hello.
+    fn no_hello() -> FakeHello {
+        FakeHello::refusing(Refusal::Unavailable)
+    }
+
+    fn press() -> super::super::answers::Press {
+        super::super::answers::tests::press()
+    }
+
+    fn plain(items: &Items) -> Option<String> {
+        items.value(SERVICE)
+    }
+
+    fn wrapped(items: &Items) -> Option<String> {
+        items
+            .0
+            .borrow()
+            .get(&(SERVICE.to_owned(), HELLO_ACCOUNT.to_owned()))
+            .map(|(value, _)| value.clone())
+    }
+
+    #[test]
+    fn with_windows_hello_on_the_seal_key_needs_the_persons_confirmation_at_start() {
+        let key_hex = "ab".repeat(KEY_BYTES);
+        let items = Items::default().with(SERVICE, &key_hex, true);
+        let yes = FakeHello::yes(b"signature");
+        enable_hello(&press(), &items, &yes).expect("turned on");
+
+        // The key no longer sits readable in the keyring: the plain item and its spares are gone,
+        // and the wrapped item does not hold the key.
+        assert_eq!(plain(&items), None, "the plain key is deleted");
+        let kept = wrapped(&items).expect("the wrapped key is kept");
+        assert!(!kept.contains(&key_hex));
+
+        // Started again: only a confirmation releases the key.
+        for refusal in [Refusal::No, Refusal::Cancelled, Refusal::Unavailable] {
+            let hello = FakeHello::refusing(refusal);
+            assert!(matches!(read_or_make(&items, &hello), Found::Unconfirmed));
+            assert_eq!(hello.asked(), 1, "Hello was asked at the start");
+            assert_eq!(plain(&items), None, "no key is made over a locked one");
+        }
+        let hello = FakeHello::yes(b"signature");
+        assert_eq!(held(read_or_make(&items, &hello)), vec![0xab; KEY_BYTES]);
+        assert_eq!(hello.asked(), 1);
+        // A Hello that signs differently releases nothing.
+        let other = FakeHello::yes(b"another signature");
+        assert!(matches!(read_or_make(&items, &other), Found::Unconfirmed));
+        // A plain item put back beside the wrapped one is never taken for the key.
+        let planted = Items::default()
+            .with(SERVICE, &"cd".repeat(KEY_BYTES), false)
+            .with_wrapped(&kept);
+        assert!(matches!(
+            read_or_make(&planted, &FakeHello::refusing(Refusal::Cancelled)),
+            Found::Unconfirmed
+        ));
+    }
+
+    #[test]
+    fn a_hello_that_does_not_sign_leaves_the_key_as_it_was_when_turning_on() {
+        let key_hex = "ab".repeat(KEY_BYTES);
+        let items = Items::default().with(SERVICE, &key_hex, true);
+        let cancelled = FakeHello::refusing(Refusal::Cancelled);
+        assert!(enable_hello(&press(), &items, &cancelled).is_err());
+        assert_eq!(plain(&items), Some(key_hex));
+        assert_eq!(wrapped(&items), None);
+    }
+
+    #[test]
+    fn turning_windows_hello_off_waits_for_the_press() {
+        let key_hex = "ab".repeat(KEY_BYTES);
+        let items = Items::default().with(SERVICE, &key_hex, true);
+        enable_hello(&press(), &items, &FakeHello::yes(b"signature")).expect("on");
+        // `disable_hello` takes the person's press as a value (the compiler refuses a call from
+        // a host with none), and Hello must sign too: with either missing, it stays on.
+        let cancelled = FakeHello::refusing(Refusal::Cancelled);
+        assert!(disable_hello(&press(), &items, &cancelled).is_err());
+        assert!(
+            wrapped(&items).is_some(),
+            "still on after a cancelled Hello"
+        );
+        assert_eq!(plain(&items), None);
+        disable_hello(&press(), &items, &FakeHello::yes(b"signature")).expect("off");
+        assert_eq!(
+            plain(&items),
+            Some(key_hex),
+            "the same key, so every seal still holds"
+        );
+        assert_eq!(wrapped(&items), None);
     }
 
     #[test]
     fn a_machine_with_no_keyring_is_said_and_never_taken_for_one_that_failed() {
         // The review of #7113: no keyring at all is a declared gap, never `Unread`, which reads
         // as a keyring that holds what it cannot show.
-        assert!(matches!(read_or_make(&NoStore), Found::NoKeyring));
+        assert!(matches!(
+            read_or_make(&NoStore, &no_hello()),
+            Found::NoKeyring
+        ));
         // A keyring that is there and fails says its own reason.
         assert_eq!(
             Unreadable::Failed("locked".to_owned()).to_string(),

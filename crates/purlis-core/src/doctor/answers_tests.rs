@@ -11,7 +11,7 @@ use crate::secrets::answers::Lost;
 
 #[test]
 fn doctor_declares_the_seal_gap_on_linux_and_windows() {
-    let linux = seal_gap_row(Os::Linux).expect("a row");
+    let linux = seal_gap_row(Os::Linux, false).expect("a row");
     assert_eq!(linux.status, Status::Ok, "a declared gap, not a fault");
     assert!(
         linux.detail.contains("declared gap")
@@ -19,7 +19,7 @@ fn doctor_declares_the_seal_gap_on_linux_and_windows() {
         "{}",
         linux.detail
     );
-    let windows = seal_gap_row(Os::Windows).expect("a row");
+    let windows = seal_gap_row(Os::Windows, false).expect("a row");
     assert_eq!(windows.status, Status::Ok);
     assert!(
         windows.detail.contains("no Windows sandbox yet")
@@ -28,7 +28,23 @@ fn doctor_declares_the_seal_gap_on_linux_and_windows() {
         windows.detail
     );
     // The Keychain holds the key to the app on a Mac: no gap to declare.
-    assert_eq!(seal_gap_row(Os::MacOs), None);
+    assert_eq!(seal_gap_row(Os::MacOs, false), None);
+}
+
+#[test]
+fn with_windows_hello_on_doctor_declares_a_narrowed_seal_gap() {
+    let off = seal_gap_row(Os::Windows, false).expect("a row");
+    assert!(off.detail.contains("hand edits only"), "{}", off.detail);
+    assert!(!off.detail.contains("narrowed,"), "{}", off.detail);
+    let on = seal_gap_row(Os::Windows, true).expect("a row");
+    assert_eq!(on.status, Status::Ok, "a declared gap, not a fault");
+    assert!(
+        on.detail.contains("declared gap, narrowed") && on.detail.contains("second purlis"),
+        "narrowed and never closed: {}",
+        on.detail
+    );
+    // The opt-in is Windows's own: a Mac has no gap to narrow.
+    assert_eq!(seal_gap_row(Os::MacOs, true), None);
 }
 
 #[test]

@@ -397,6 +397,11 @@ trash = { version = "5", default-features = false, features = ["freedesktop"] }
 # any other version does not compile. Both are already in this workspace's lockfile.
 dirs-sys = "0.5"
 windows-sys = { version = "0.61", default-features = false, features = ["Win32_UI_Shell"] }
+# Windows Hello for the seal's opt-in (M75-43, #7052): the WinRT `KeyCredentialManager`, through
+# this crate's safe wrappers, so no `unsafe` is written. Version 0.61 is the one `dirs-sys` and
+# `windows-sys` come from, already in this workspace's lockfile through the window's own
+# dependencies; only the three features it needs are asked for.
+windows = { version = "0.61", default-features = false, features = ["Security_Credentials", "Storage_Streams", "Foundation"] }
 
 [target."cfg(target_os = \"macos\")".dependencies]
 # Keyring items held to charter's app (ruling V90a): the helper that writes them turns the

@@ -4999,6 +4999,30 @@ write into this folder cannot make its own text arrive as the person's.
   read an item, so there the seal stops a hand edit and a sandboxed chat only; with no keyring,
   nothing is sealed and the shipped default holds.
 
+### The wrapped seal key — the keyring item `purlis-seal`, account `answers-hello` (Windows Hello at each start)
+- **What:** the seal's key **wrapped by what Windows Hello signs**, kept instead of the plain key
+  when the person turns on "Confirm with Windows Hello each time purlis starts" in Settings
+  (M75-43, #7052; spec §9.4; Q319 C6; Q320a N1). **Its presence is the opt-in**: doctor and
+  Settings read it to say the gap is narrowed. Off by default, and only on Windows.
+- **Format:** a generic password under the service `purlis-seal`, account `answers-hello`: 64
+  bytes as 128 hex digits, the 32-byte key XOR a pad derived from Hello's signature of the fixed
+  challenge `purlis seal key v1`, then a 32-byte check of the key under that signature. Hello
+  signs with a non-exportable key Windows keeps under the name `purlis-seal`. **With the opt-in
+  on the plain item and its spares are deleted**, after the wrapped item has been read back and
+  unwrapped to prove it; a plain item put back beside the wrapped one is never taken for the key.
+- **Status:** **internal** — **purlis only**.
+- **Tier:** Keyring — device-bound; never synced, never backed up. Lost, or with Windows Hello
+  reset, the key counts as locked, so every sealed answer counts as none and the shipped default
+  stands until the person accepts again.
+- **Written by:** `purlis_core::secrets::seal::set_hello`, in the app's own process, on the
+  person's press in Settings (the window's command layer alone makes the press). Turning it off
+  is a loosening: it needs the press and a Windows Hello confirmation, and puts the plain key back.
+- **Read by:** the app at its start, which asks Windows Hello and unwraps the key. A Hello that
+  is cancelled, refused or signs differently leaves the key locked: **on an anchored plane that is
+  the deny state, and only on a fresh install does the shipped default apply** (spec §4.6).
+  **Narrowed, not closed:** a program of the person's can still read purlis's memory once the key
+  is unwrapped, or start a second purlis and be offered the same prompt.
+
 ### `~/.config/purlis/app/answers/<clone key>/` — the sealed answer store (outside the plane)
 - **What:** the one sealed store of what the person answered on this machine that decides what a
   chat may do (M75 spec §8.10, #7015): the accepted policy, acceptances, grants of every scope,

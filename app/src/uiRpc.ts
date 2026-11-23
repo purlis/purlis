@@ -1705,6 +1705,7 @@ export const commands = {
 	chatKnownGaps: (plane: PlaneId, session: number) => typedError<KnownGapShown[], string>(__TAURI_INVOKE("chat_known_gaps", { plane, session })),
 	answersShown: __WINDOW_ONLY_RESULT,
 	confirmDeviceId: __WINDOW_ONLY_RESULT,
+	setWindowsHello: __WINDOW_ONLY_RESULT,
 	tellChatBlocked: __WINDOW_ONLY_RESULT,
 	taskQuestion: __WINDOW_ONLY_RESULT,
 	taskQuestionAnswered: __WINDOW_ONLY_RESULT,

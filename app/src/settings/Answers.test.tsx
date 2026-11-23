@@ -7,7 +7,15 @@ import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { Answers, AnswersView, deviceSaid, stateSaid } from "./Answers";
 import { AnswersNotices } from "../AnswersNotices";
 import { SETTINGS_LINK, type SettingsLinkAsk } from "./links";
-import { DENIED, HOLDS, IMPORTED, IMPORT_FAILED, WAITING_FOR_CONFIRM } from "./answersFixture";
+import {
+  DENIED,
+  HELLO_OFF,
+  HELLO_ON,
+  HOLDS,
+  IMPORTED,
+  IMPORT_FAILED,
+  WAITING_FOR_CONFIRM,
+} from "./answersFixture";
 
 afterEach(() => {
   cleanup();
@@ -38,14 +46,14 @@ describe("the device id in Settings", () => {
   });
 
   it("the_id_is_a_label_with_no_rename", () => {
-    render(<AnswersView shown={WAITING_FOR_CONFIRM} busy={false} onConfirm={() => {}} ids={IDS} />);
+    render(<AnswersView shown={WAITING_FOR_CONFIRM} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />);
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByRole("button", { name: /rename/i })).toBeNull();
     expect(screen.getByText(/01JABCDEFGHJKMNPQRSTVWXYZ0/)).toBeTruthy();
   });
 
   it("an_unset_id_has_nothing_to_confirm_and_says_why", () => {
-    render(<AnswersView shown={DENIED} busy={false} onConfirm={() => {}} ids={IDS} />);
+    render(<AnswersView shown={DENIED} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />);
     expect(screen.queryByRole("button", { name: "Confirm device id" })).toBeNull();
     expect(screen.getByText(/no device id yet/)).toBeTruthy();
   });
@@ -71,6 +79,45 @@ describe("the device id in Settings", () => {
     ].map(stateSaid);
     expect(new Set(said).size).toBe(4);
     expect(deviceSaid(HOLDS)).toContain("Rules can name it");
+  });
+});
+
+describe("Windows Hello at each start in Settings", () => {
+  it("a_machine_without_windows_hello_offers_nothing", () => {
+    render(<AnswersView shown={HOLDS} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />);
+    expect(screen.queryByRole("button", { name: /Windows Hello/ })).toBeNull();
+  });
+
+  it("with_the_opt_in_off_the_full_gap_is_declared_and_turning_it_on_is_a_press", async () => {
+    const sent: unknown[] = [];
+    mockIPC((cmd, args) => {
+      if (cmd === "answers_shown") return HELLO_OFF;
+      if (cmd === "set_windows_hello") {
+        sent.push(args);
+        return HELLO_ON.hello;
+      }
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<Answers plane={PLANE} ids={IDS} />);
+    const turnOn = await screen.findByRole("button", { name: "Turn on Windows Hello…" });
+    expect(screen.getByText(/isn't asked for when purlis starts/)).toBeTruthy();
+    expect(screen.getByText(/Declared gap: on Windows any program/)).toBeTruthy();
+    fireEvent.click(turnOn);
+    await screen.findByRole("button", { name: "Turn off Windows Hello…" });
+    expect(sent).toEqual([{ on: true }]);
+    expect(screen.getByText(/Declared gap, narrowed/)).toBeTruthy();
+  });
+
+  it("a_hello_that_does_not_confirm_is_said_and_leaves_the_opt_in_as_it_was", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "answers_shown") return HELLO_ON;
+      if (cmd === "set_windows_hello") throw "Windows Hello was not confirmed";
+      throw new Error(`unexpected ${cmd}`);
+    });
+    render(<Answers plane={PLANE} ids={IDS} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Turn off Windows Hello…" }));
+    await screen.findByText(/was not confirmed/);
+    expect(screen.getByRole("button", { name: "Turn off Windows Hello…" })).toBeTruthy();
   });
 });
 

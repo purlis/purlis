@@ -207,6 +207,9 @@ pub const WINDOW_ONLY: &[&str] = &[
     // The person's press that confirms the device id (M75-07a, spec §9.4): only a press in a
     // window accepts, so no link and no chat reaches it.
     "confirm_device_id",
+    // The person's press that turns Windows Hello at each start on or off (M75-43, spec §9.4):
+    // turning it off is a loosening, so only a press in a window does either.
+    "set_windows_hello",
     "answer_ask",
     // A hunk of a branch's file put back (#5406): the person's edit, recorded as theirs.
     "discard_hunk",

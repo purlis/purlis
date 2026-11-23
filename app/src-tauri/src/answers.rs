@@ -11,6 +11,9 @@
 //!   [`answers::Press`]. It names the id the window showed, so an id that changed since is never
 //!   confirmed unseen. It is the window's alone, never a link's: a chat's request is not the
 //!   person's press.
+//! - [`set_windows_hello`] is **the person's press** too (M75-43, #7052): it turns "Confirm with
+//!   Windows Hello each time purlis starts" on or off, and Windows Hello is asked in the call.
+//!   Turning it off is a loosening, so only this window's press does it.
 
 use purlis_core::secrets::answers::{self, Device, Import, State};
 
@@ -24,6 +27,37 @@ pub struct DeviceShown {
     pub state: String,
     /// The id, where one is sealed.
     pub id: Option<String>,
+}
+
+/// The Windows Hello opt-in, as Settings shows it (M75-43).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct HelloShown {
+    /// `unavailable` (not Windows: the row offers nothing), `off` or `on`.
+    pub state: String,
+    /// The seal's declared gap in force, full with the opt-in off and narrowed with it on, never
+    /// closed; none where the machine has no such gap to declare.
+    pub gap: Option<String>,
+}
+
+fn hello_shown() -> HelloShown {
+    if !cfg!(windows) {
+        return HelloShown {
+            state: "unavailable".to_owned(),
+            gap: None,
+        };
+    }
+    let on = purlis_core::secrets::seal::hello_is_on();
+    HelloShown {
+        state: if on { "on" } else { "off" }.to_owned(),
+        gap: Some(
+            if on {
+                purlis_core::secrets::hello::NARROWED
+            } else {
+                purlis_core::secrets::hello::FULL
+            }
+            .to_owned(),
+        ),
+    }
 }
 
 /// Where the open project's sealed answers stand.
@@ -45,6 +79,8 @@ pub struct AnswersShown {
     pub notices: Vec<String>,
     /// The device id.
     pub device: DeviceShown,
+    /// The Windows Hello opt-in.
+    pub hello: HelloShown,
 }
 
 fn state_word(state: &State) -> &'static str {
@@ -103,6 +139,7 @@ fn read(root: &std::path::Path) -> AnswersShown {
         import_failed,
         notices: standing.notices.clone(),
         device: device_shown(),
+        hello: hello_shown(),
     }
 }
 
@@ -141,9 +178,39 @@ pub(crate) async fn confirm_device_id(
     .await
 }
 
+/// **The person turns Windows Hello at each start on or off.** Made here and nowhere else, as
+/// the device id's press is: the window's alone (`session_protocol::ui::WINDOW_ONLY`), so no
+/// chat's request is a press. Windows Hello is asked in the call, which waits for the person, so
+/// it runs off the window's thread. Refused, with the reason, where Hello does not confirm.
+#[tauri::command]
+#[specta::specta]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the window's command layer is the one place that makes the person's press"
+)]
+pub(crate) async fn set_windows_hello(on: bool) -> Result<HelloShown, String> {
+    crate::off_the_window("setting Windows Hello for the seal", move || {
+        purlis_core::secrets::seal::set_hello(&answers::Press::of_the_persons_press(), on)?;
+        Ok(hello_shown())
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_hello_is_offered_only_on_windows_and_declares_its_gap() {
+        let shown = hello_shown();
+        if cfg!(windows) {
+            assert!(["on", "off"].contains(&shown.state.as_str()));
+            assert!(shown.gap.is_some_and(|gap| gap.contains("declared gap")));
+        } else {
+            assert_eq!(shown.state, "unavailable");
+            assert_eq!(shown.gap, None);
+        }
+    }
 
     #[test]
     fn the_device_is_said_in_one_of_three_words() {
