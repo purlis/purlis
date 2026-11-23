@@ -720,16 +720,17 @@ fn a_plain_api_read_inside_a_substitution_is_no_merge() {
     }
 }
 
-/// What a substitution holds stays held: a write whose endpoint the shell builds, a merge path or
-/// command, `eval` and `bash -c`.
+/// What a substitution holds stays held: a write whose endpoint the shell builds, a write whose
+/// method or body the guard cannot read, a merge path or command, and a merge run through `eval`
+/// or `bash -c`.
 #[test]
-fn a_write_a_merge_or_an_unreadable_call_inside_a_substitution_is_held() {
+fn a_write_or_a_merge_inside_a_substitution_is_held() {
     for cmd in [
         "P=$(gh api -X POST repos/o/r/issues/$N/comments -f body=x)",
         "P=$(glab api -X POST projects/:id/pipeline/$X)",
         "P=$(gh api -X $M repos/o/r/pulls/5)",
         "P=$(gh api --input f.json repos/o/r/pulls/5)",
-        "glab api projects/:id/pipelines/$(glab api projects/:id/pipelines | jq -r '.[0].id')/jobs",
+        "P=$(gh api -X POST repos/o/r/issues/$(cat n)/comments -f body=x)",
         "P=$(glab api -X PUT projects/:id/merge_requests/5/merge)",
         "P=$(gh api repos/o/r/pulls/5/merge -X PUT); echo $P",
         "P=$(gh pr merge 5)",
