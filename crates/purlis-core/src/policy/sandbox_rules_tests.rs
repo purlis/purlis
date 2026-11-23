@@ -634,6 +634,24 @@ fn the_shipped_default_and_a_plain_policy_have_no_sandbox_problems() {
 }
 
 #[test]
+fn the_shipped_default_has_no_path_literal_problems() {
+    let policy = load(&[File::shipped_default()]).expect("the shipped default loads");
+    assert!(policy.path_literal_problems().is_empty());
+    assert!(policy.sandbox_problems().is_empty());
+}
+
+#[test]
+fn a_rule_added_to_the_shipped_default_is_still_checked_at_load() {
+    // The shipped default's own rules skip the compiles; any rule beside them does not.
+    let found = refused_at_load(
+        "@id(\"sandbox-attended\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"write\", resource) when { context.attended };\n",
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].rule.as_deref(), Some("sandbox-attended"));
+}
+
+#[test]
 fn a_rule_outside_the_subset_for_the_workspace_it_names_is_refused_at_load() {
     // For any other workspace the first condition folds the rule away: only a chat in `qa`
     // would meet the `&&`, so the load check probes the workspaces the rules name.

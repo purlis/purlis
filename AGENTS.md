@@ -236,6 +236,6 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   reader must take both. Its tests are lib tests: `cargo test -p purlis-core --lib --
   policy::sandbox_rules` (about 10 s warm). loading a policy (`levels::load_with`, `assemble_checked`) refuses `attended`,
   `harness_mode`, `like`, a residual outside the subset (`Policy::sandbox_problems_cached`, about 24
-  compiles, so cached per rule set) and a `Path` literal not spelt normally, on any action; `force::world_of` builds a `Path`'s world
+  compiles: free when every sandbox rule is the shipped default's, else cached per rule set) and a `Path` literal not spelt normally, on any action; `force::world_of` builds a `Path`'s world
   with the same resolver. An unguarded `context.machine` does not validate, so no loaded rule errs
   on a missing device: build `ActionRules.erred` by hand to test it.

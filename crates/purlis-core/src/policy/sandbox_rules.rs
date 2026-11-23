@@ -784,6 +784,32 @@ fn any_node(expr: &pst::Expr, found: &dyn Fn(&pst::Expr) -> bool) -> bool {
 }
 
 impl Rule {
+    /// Whether the rule is, id and text, one of this build's shipped default's: the default is
+    /// pinned clean by `the_shipped_default_and_a_plain_policy_have_no_sandbox_problems` and
+    /// `the_shipped_default_has_no_path_literal_problems`, so load need not check it again.
+    fn is_the_shipped_defaults(&self) -> bool {
+        use std::sync::OnceLock;
+        static SHIPPED: OnceLock<std::collections::HashSet<(String, String)>> = OnceLock::new();
+        let shipped = SHIPPED.get_or_init(|| {
+            super::read_file(&super::File::shipped_default())
+                .unwrap_or_default()
+                .iter()
+                .map(Rule::signature)
+                .collect()
+        });
+        shipped.contains(&self.signature())
+    }
+
+    /// The rule's id and its policy as JSON: what makes two rules the same rule.
+    fn signature(&self) -> (String, String) {
+        (
+            self.id.clone(),
+            self.policy
+                .to_json()
+                .map_or_else(|_| String::new(), |json| json.to_string()),
+        )
+    }
+
     /// Whether the rule applies to `read` or `write`: it names no action, or one of the two, or
     /// the `sandbox` family they are in.
     fn applies_to_the_sandbox(&self) -> bool {
@@ -859,14 +885,30 @@ impl Policy {
         problems
     }
 
-    /// [`Self::sandbox_problems`], remembered per set of sandbox rules: the check is about 24 or
-    /// more compiles, and `load` runs on every decision's version, so a rule set already checked
-    /// answers from the cache. The key is each sandbox rule's place and text.
+    /// [`Self::sandbox_problems`], without the cost where it need not be paid. `load` runs on
+    /// every decision's version, and the check is 24 or more TPE compiles (a cold first load
+    /// held a host's answer past its caller's budget), so:
+    ///
+    /// 1. a policy whose sandbox rules are all this build's shipped default's has none to find
+    ///    (a test pins the shipped default clean), and answers at once;
+    /// 2. any other set is checked once and remembered, keyed by each sandbox rule's place and
+    ///    text.
+    ///
+    /// A rule that is not the shipped default's is still checked before a chat starts: the
+    /// fail-closed refusal at load is unchanged.
     pub(super) fn sandbox_problems_cached(&self) -> Vec<Problem> {
         use std::hash::{Hash, Hasher};
         use std::sync::{Mutex, OnceLock};
         static CHECKED: OnceLock<Mutex<std::collections::HashMap<u64, Vec<Problem>>>> =
             OnceLock::new();
+        if self
+            .rules
+            .iter()
+            .filter(|rule| rule.applies_to_the_sandbox())
+            .all(Rule::is_the_shipped_defaults)
+        {
+            return Vec::new();
+        }
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         for rule in self
             .rules
@@ -915,7 +957,11 @@ impl Policy {
             }
         }
         let mut problems = Vec::new();
-        for rule in &self.rules {
+        for rule in self
+            .rules
+            .iter()
+            .filter(|rule| !rule.is_the_shipped_defaults())
+        {
             let Ok(json) = rule.policy.to_json() else {
                 continue;
             };
