@@ -395,18 +395,20 @@ pub struct RunnerPeer {
 pub trait RunnerLink: Send + Sync {
     /// Whether `peer` is a runner this desktop is paired with (its key pinned at pairing).
     fn paired(&self, peer: &RunnerPeer) -> bool;
-    /// The project `run` of a chat on `peer` belongs to, from the pairing's records.
-    fn project_of(&self, peer: &RunnerPeer, run: &str) -> Option<PathBuf>;
+    /// The project `run` of `chat` on `peer` belongs to, from the pairing's records. None where
+    /// the pairing records no project, or records it for another chat than `chat`.
+    fn project_of(&self, peer: &RunnerPeer, chat: &str, run: &str) -> Option<PathBuf>;
 }
 
-/// The stub until the pools carry the pairing: no runner is paired.
+/// No runner is paired: only [`Seams::stubs`]'s default. The app installs
+/// [`pairings::DesktopPairings`].
 pub struct NoRunnerLink;
 
 impl RunnerLink for NoRunnerLink {
     fn paired(&self, _: &RunnerPeer) -> bool {
         false
     }
-    fn project_of(&self, _: &RunnerPeer, _: &str) -> Option<PathBuf> {
+    fn project_of(&self, _: &RunnerPeer, _: &str, _: &str) -> Option<PathBuf> {
         None
     }
 }
@@ -1080,15 +1082,25 @@ impl ForgeRoutes {
 
     /// A runner's chat run, forwarded to this app's proxy (D9). **Only a runner paired with
     /// this desktop is served**, and the project is the pairing's record of the run, never the
-    /// caller's word: an unpaired caller, or a run the pairing does not know, is refused. Its
+    /// caller's word: an unpaired caller, a chat the pairing does not name for that runner, or a
+    /// run the pairing does not know, is refused. **A runner never takes another route**: a
+    /// `run` already live for another peer or for a desktop chat is refused, so a runner cannot
+    /// stop or replace it (a run of the same peer starting again replaces its own route). Its
     /// route stops with [`Self::stop`] or [`Self::stop_peer`].
     pub fn for_runner(&self, peer: &RunnerPeer, chat: &str, run: &str) -> RunnerForward {
         if !self.seams.runner_link.paired(peer) {
             return RunnerForward::Refused;
         }
-        let Some(project) = self.seams.runner_link.project_of(peer, run) else {
+        let Some(project) = self.seams.runner_link.project_of(peer, chat, run) else {
             return RunnerForward::Refused;
         };
+        let taken = self
+            .live()
+            .get(run)
+            .is_some_and(|live| live.peer.as_deref() != Some(peer.device.as_str()));
+        if taken {
+            return RunnerForward::Refused;
+        }
         // A project whose every repo is on a pinned forge keeps no token connection either: the
         // pin is the administrator's, and the runner's chat is refused, not left to its tokens.
         let pin = (self.seams.pin)(&project);

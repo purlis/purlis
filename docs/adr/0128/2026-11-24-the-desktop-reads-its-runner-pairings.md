@@ -12,9 +12,18 @@ It is installed by `forgeroute::install` and reads the machine store on each ask
   runner (unless it answered that this desktop is out of its peers), a cluster pool's runner, or a
   chat's fresh runner.
 - **The project is the pairing's.** Only a chat's fresh runner records one, the checkout its chat
-  started from. A pool's own runner serves any project, so it names none and `for_runner` refuses
-  it: its chats keep their token connections. A fresh runner's row with no checkout is refused
-  the same way.
+  started from, and **by id**: the checkout counts only while it still holds the project the row
+  names (`planefile::id_to_hold_by` equals the row's plane, as `FreshOf::is_of` holds it), so a
+  project moved away or replaced at the same path names none. A pool's own runner serves any
+  project, so it names none and `for_runner` refuses it: its chats keep their token connections.
+  A fresh runner's row with no checkout is refused the same way.
+- **The chat is the pairing's.** A fresh runner is its one chat's: `RunnerLink::project_of` takes
+  the chat, and a runner asking as another chat is refused.
+- **A run is never another's.** `for_runner` refuses a run already live for another peer or for a
+  desktop chat, so a runner cannot stop or take over another route; a run of the same peer
+  starting again replaces its own.
+- **Rows that disagree pair none.** Where more than one row matches a device and key and they
+  differ on project or chat, nothing says which is right, so none is served.
 
 ## What did not change
 
