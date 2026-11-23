@@ -48,6 +48,10 @@ pub(super) struct Segment {
     pub also: Option<Vec<String>>,
     /// Why this segment could not be read exactly, where it speaks of a forge CLI.
     pub refusal: Option<String>,
+    /// The same segment read as zsh reads `>!`, `>>!`, `&>!` and `>&!`: one operator, whose
+    /// target is the word after the `!`. Bash and dash read the `!` as the target, so both are
+    /// read, and a refusal of either stands (#7423, round 7).
+    pub clobber: Option<Box<Segment>>,
 }
 
 /// What a refusal of a segment the reader could not place says to do.
@@ -72,7 +76,25 @@ pub(super) fn of_reading(reading: &shellseg::Reading) -> Segment {
             glued: reading.own_glued.get(k).copied().unwrap_or(false),
         })
         .collect();
-    read(words, measured)
+    build(words, measured)
+}
+
+/// [`read`] of the words as they stand, and again as zsh's clobber operators read them.
+fn build(words: Vec<Word>, measured: bool) -> Segment {
+    let mut seg = read(&words, measured, false);
+    if words.windows(2).any(clobbers) {
+        seg.clobber = Some(Box::new(read(&words, measured, true)));
+    }
+    seg
+}
+
+/// Whether two neighbouring words are an operator and the `!` of zsh's clobber form of it.
+fn clobbers(pair: &[Word]) -> bool {
+    pair[0].bare
+        && matches!(pair[0].text.as_str(), ">" | ">>" | "&>" | ">&" | "&>>")
+        && pair[1].bare
+        && pair[1].glued
+        && pair[1].text == "!"
 }
 
 /// [`read`] of words nothing measured (what a `find` runs, a hedged line): every word is taken
@@ -87,7 +109,7 @@ pub(super) fn of_words(toks: &[String]) -> Segment {
             glued: false,
         })
         .collect();
-    read(words, false)
+    build(words, false)
 }
 
 /// Whether a word is an all-digit file descriptor or a named one, `{fd}`.
@@ -119,7 +141,9 @@ fn feeds_stdin(op: &str) -> bool {
 }
 
 /// The segment's redirections taken out as the shell reads them, and its program placed.
-fn read(words: Vec<Word>, measured: bool) -> Segment {
+///
+/// With `clobber`, a `!` glued to a redirection operator is part of it (zsh).
+fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
     // A definition's header is no part of the command.
     let texts: Vec<String> = words.iter().map(|w| w.text.clone()).collect();
     let from = shellwrap::past_function_headers(&texts).unwrap_or(0);
@@ -134,7 +158,15 @@ fn read(words: Vec<Word>, measured: bool) -> Segment {
         if word.bare && shellwrap::is_redirection(&word.text) {
             let feeds = feeds_stdin(&word.text);
             let mut span = vec![i];
-            if i + 1 < n {
+            let mut width = 2;
+            if clobber && i + 1 < n && clobbers(&words[i..=i + 1]) {
+                // `>! file`: the operator, its `!`, and the target.
+                span.push(i + 1);
+                width = 3;
+                if i + 2 < n {
+                    span.push(i + 2);
+                }
+            } else if i + 1 < n {
                 span.push(i + 1);
             }
             if word.glued
@@ -149,7 +181,7 @@ fn read(words: Vec<Word>, measured: bool) -> Segment {
                 redirected[k] = true;
                 stdin[k] = feeds;
             }
-            i += 2;
+            i += width;
             continue;
         }
         i += 1;
@@ -224,11 +256,58 @@ fn read(words: Vec<Word>, measured: bool) -> Segment {
         && (inv.prog.bytes().all(|b| b.is_ascii_digit()) || shellwrap::is_redirection(&inv.prog));
     let refusal = (speaks_of_one && (inv.unplaced || ambiguous || odd_program))
         .then(|| format!("{} {WAY_OUT}", super::merge::UNREADABLE));
+    // A forge call behind a program no table knows says nothing of what it runs (`ssh h gh pr
+    // merge 5`, `fd -x gh pr merge 5`): held, whatever stands before the CLI.
+    let refusal = refusal.or_else(|| {
+        wraps_a_held_forge_call(&inv).then(|| format!("{} {WAY_OUT}", super::merge::UNREADABLE))
+    });
     Segment {
         words: texts,
         spelled,
         call,
         also,
         refusal,
+        clobber: None,
     }
+}
+
+/// Programs that only print or search the words they are handed, so a forge CLI named among
+/// them runs nothing.
+const TEXT_PROGRAMS: [&str; 15] = [
+    "echo", "printf", "cat", "grep", "egrep", "fgrep", "rg", "ag", "sed", "awk", "head", "tail",
+    "wc", "type", "whereis",
+];
+
+/// **The general wrapper rule** (#7423, round 7). The program placed is not a forge CLI, and a
+/// later word is one followed by a call the floor holds: whatever the program is (`taskset 1`,
+/// `chronic`, `ssh h`, `fd -x`, a wrapper no table lists), it may run that call. Only the plain
+/// printers of [`TEXT_PROGRAMS`], and the words of a `for … in` list, are left alone.
+fn wraps_a_held_forge_call(inv: &shellwrap::Invocation) -> bool {
+    let argv = &inv.argv;
+    if argv.len() < 2 || names_a_forge(&inv.prog) {
+        return false;
+    }
+    if TEXT_PROGRAMS.contains(&shellwrap::base_lower(&inv.prog).as_str()) {
+        return false;
+    }
+    let in_a_list = argv[1] == "in"
+        && inv
+            .taken
+            .iter()
+            .any(|t| matches!(t.as_str(), "for" | "select" | "case"));
+    if in_a_list {
+        return false;
+    }
+    // One pass from the end: whether a held verb stands at or after each word.
+    let mut later = vec![false; argv.len() + 1];
+    for k in (0..argv.len()).rev() {
+        later[k] = later[k + 1] || super::merge::speaks_of_a_held_verb(&argv[k]);
+    }
+    (1..argv.len()).any(|k| {
+        if !names_a_forge(&argv[k]) {
+            return false;
+        }
+        let name = shellwrap::base_lower(argv[k].strip_prefix('=').unwrap_or(&argv[k]));
+        super::merge::held_behind_an_unknown_program(&name, &argv[k + 1..], &|i| later[k + 1 + i])
+    })
 }

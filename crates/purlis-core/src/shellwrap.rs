@@ -56,8 +56,12 @@ use crate::shellseg;
 /// The REDIRECTION operators, longest first — `_REDIRECTIONS`. A redirection is not a control
 /// operator and not a word: it is the shell's own file plumbing, and it may sit anywhere in a
 /// simple command, the front included.
-const REDIRECTIONS: [&str; 11] = [
-    "&>>", "&>", "<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">",
+///
+/// zsh's clobber forms (`>!`, `>>!`, `>|`, `>>|`, `&>!`, `&>|`, `>&!`, `>&|`) are one operator
+/// each, as is `>>|`: their target is the next word (#7423, round 7).
+const REDIRECTIONS: [&str; 18] = [
+    "&>>", "&>|", "&>!", "&>", "<<<", "<<", "<>", "<&", ">>|", ">>!", ">>", ">&|", ">&!", ">&",
+    ">|", ">!", "<", ">",
 ];
 
 /// The subset that opens a PATH FOR READING. `<<` and `<<<` name a heredoc delimiter and a
@@ -136,6 +140,32 @@ pub(crate) fn past_function_headers(toks: &[String]) -> Option<usize> {
     }
     found.then_some(at)
 }
+
+/// Long wrapper flags that take NO value, per wrapper (#7423, round 7). A long flag no table lists
+/// is unplaced, so a read behind one that takes nothing is held until it is listed here.
+const WRAPPER_NOVALUE_LONG: [(&str, &[&str]); 5] = [
+    (
+        "timeout",
+        &["--foreground", "--preserve-status", "--verbose"],
+    ),
+    (
+        "gtimeout",
+        &["--foreground", "--preserve-status", "--verbose"],
+    ),
+    (
+        "sudo",
+        &[
+            "--preserve-env",
+            "--login",
+            "--non-interactive",
+            "--background",
+            "--stdin",
+            "--set-home",
+        ],
+    ),
+    ("env", &["--ignore-environment", "--null"]),
+    ("watch", &["--no-title", "--color", "--nocolor", "--beep"]),
+];
 
 /// Wrapper flags whose VALUE is a SEPARATE token, per wrapper — `_WRAPPER_VALUE_FLAGS`.
 ///
@@ -318,7 +348,9 @@ const WRAPPER_VALUE_FLAGS: [(&str, &[&str]); 18] = [
 /// disjoint for every wrapper that appears in both (swept here, zero overlaps), no no-value table
 /// holds a `-`, and no value table holds a bare `--`. Those three are what would make the order,
 /// and [`wrapper_option`]'s comment about a long option needing no branch, start mattering again.
-const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 18] = [
+const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 19] = [
+    // legacy `nice -10 cmd`: the adjustment is the digits of the flag itself
+    ("nice", "0123456789"),
     ("env", "0iv"), // BSD: `env [-0iv] [-C workdir] [-P utilpath] [-S string]`
     ("sudo", "ABbEeHiKklNnPSsVv"),
     ("doas", "Lns"),
@@ -495,9 +527,12 @@ const SPLIT_STRING_FLAGS: [&str; 2] = ["-S", "--split-string"];
 
 /// Bare POSITIONAL operands a wrapper takes BEFORE the program — `_WRAPPER_LEADING_OPERANDS`.
 /// `chrt 5 cat <vault>` and `su-exec root cat <vault>` both named the operand as the program.
-/// `timeout`'s duration is the same shape and keeps its own branch, because "the token looks
-/// like a duration" is what a count would lose.
-const WRAPPER_LEADING_OPERANDS: [(&str, usize); 4] = [
+/// `timeout`'s duration is the same shape: one operand, read as it stands.
+const WRAPPER_LEADING_OPERANDS: [(&str, usize); 6] = [
+    // `timeout`'s duration is whatever word stands there (`.5`, `5.`, `1e1`, `0x10`, `+5`, `inf`),
+    // never a guess about its spelling (#7423, round 7).
+    ("timeout", 1),
+    ("gtimeout", 1),
     ("chrt", 1),
     ("su-exec", 1),
     // the lock file, and the file the session is written to
@@ -578,13 +613,16 @@ pub fn is_env_assignment(tok: &str) -> bool {
         Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
         _ => return false,
     }
-    for c in chars {
-        if c == '=' {
+    // `A+=1` appends: the same assignment, its name ending at the `+` (#7423, round 7).
+    let mut rest = chars.as_str();
+    while let Some(c) = rest.chars().next() {
+        if c == '=' || rest.starts_with("+=") {
             return true;
         }
         if !(c.is_ascii_alphanumeric() || c == '_') {
             return false;
         }
+        rest = &rest[c.len_utf8()..];
     }
     false
 }
@@ -749,6 +787,13 @@ pub fn wrapper_option(base: &str, tok: &str) -> WrapperOption {
         // it would come back UNPLACED and put the whole rest of the segment into `reads` for a
         // token that means nothing more than "the options stop here".
         return placed_nothing(true);
+    }
+    if let Some(long) = table(&WRAPPER_NOVALUE_LONG, base) {
+        let name = tok.split('=').next().unwrap_or(tok);
+        // Only sudo's `--preserve-env` takes an attached list; no other long flag here has a value.
+        if long.contains(&name) && (name == tok || (base == "sudo" && name == "--preserve-env")) {
+            return placed_nothing(true);
+        }
     }
     let mut takes: Vec<&str> = table(&WRAPPER_VALUE_FLAGS, base).unwrap_or(&[]).to_vec();
     if base == "env" {
@@ -1044,6 +1089,11 @@ fn place(toks: &[String], exact: bool) -> Invocation {
                     // `env -S 'cat <vault>'` packs a whole command into one token, and `env -iS…`
                     // packs it behind a bundled `-i`. Treated as tokens rather than skipped,
                     // because skipping leaves an empty argv and the guard sees no program at all.
+                    // `env` reads a backslash-underscore as a separator and expands a braced
+                    // variable itself: the first is split as it does, and the second cannot
+                    // be read here, so it is unplaced (#7423).
+                    unplaced |= value.contains("${");
+                    let value = value.replace("\\_", " ");
                     let unpacked = shellseg::posix_split(&value)
                         .unwrap_or_else(|_| shellseg::py_split(&value));
                     for (k, word) in unpacked.into_iter().enumerate() {
@@ -1074,11 +1124,12 @@ fn place(toks: &[String], exact: bool) -> Invocation {
             }
             if leading > 0 {
                 leading -= 1;
+                if (base == "timeout" || base == "gtimeout") && !duration_re().is_match(&nxt) {
+                    // Not a duration spelling the guard knows: the word is taken as the duration
+                    // all the same, and what follows stays reported as files this may open.
+                    reads.extend(toks.iter().cloned());
+                }
                 take(&mut toks, &mut taken); // the wrapper's own operand, not the program
-                continue;
-            }
-            if (base == "timeout" || base == "gtimeout") && duration_re().is_match(&nxt) {
-                take(&mut toks, &mut taken); // the duration, not the program
                 continue;
             }
             break;

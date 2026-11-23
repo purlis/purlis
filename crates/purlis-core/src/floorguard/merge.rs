@@ -1155,6 +1155,68 @@ fn flag_before_command_is_known(flag: &str) -> bool {
         || matches!(flag, "-h" | "--help" | "--version")
 }
 
+/// Whether a word is one that makes a forge call after it a held one: a merge, or the words of
+/// the commands the floor holds beyond the table.
+pub(super) fn speaks_of_a_held_verb(word: &str) -> bool {
+    speaks_of_merging(word)
+        || matches!(
+            word.to_lowercase().as_str(),
+            "api" | "alias" | "accept" | "create" | "new" | "land"
+        )
+}
+
+/// **A forge call behind a program that is no wrapper the tables know** (#7423, round 7):
+/// `ssh h gh pr merge 5`, `fd -x gh pr merge 5`. `name` is the CLI and `args` the words after it.
+/// True where the call is one the floor holds, read from its words alone: `api`, `alias`, a noun
+/// and verb of [`held_commands`] (`auth` and `config` read the token, not a merge), a noun or
+/// verb the shell fills in, or a flag before the noun that may take the noun for its value while
+/// a held verb stands after it. `later(i)` says whether a held verb stands at or after word `i`
+/// of `args`, known from one pass over the segment, so that no word is read twice.
+pub(super) fn held_behind_an_unknown_program(
+    name: &str,
+    args: &[String],
+    later: &dyn Fn(usize) -> bool,
+) -> bool {
+    let mut noun: Option<&str> = None;
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        if arg == "-R" || arg == "--repo" {
+            i += 2;
+            continue;
+        }
+        if arg.starts_with('-') {
+            if noun.is_none() && !flag_before_command_is_known(arg) && later(i + 1) {
+                return true;
+            }
+            i += 1;
+            continue;
+        }
+        let Some(n) = noun else {
+            if opaque(arg) {
+                return true;
+            }
+            let rows = held_commands(name);
+            if !matches!(arg.as_str(), "auth" | "config")
+                && rows.iter().any(|r| r == &[arg.as_str()])
+            {
+                return true;
+            }
+            noun = Some(arg);
+            i += 1;
+            continue;
+        };
+        if super::NOUNS_THAT_MERGE.contains(&n) && opaque(arg) {
+            return true;
+        }
+        let verb = canonical_verb(name, n, arg);
+        return n != "config"
+            && held_commands(name)
+                .iter()
+                .any(|r| r.len() == 2 && r[0] == n && r[1] == verb);
+    }
+    false
+}
+
 /// **A `gh api` / `glab api` call whose arguments the shell fills in** (#7416, #7423), read or
 /// not. The reader cannot know what an unquoted `$…`, `$(…)`, backtick, glob or brace expansion
 /// becomes: more words, one of them `-XPUT`. `gh api repos/o/r/pulls/5/merge $(cat n)` merges

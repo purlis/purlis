@@ -313,6 +313,7 @@ mod round_five_write_path_braces_and_heredoc_delimiter;
 mod round_fives_case_word_is_read_with_its_quotes;
 mod round_fours_readings_close_the_last_routes;
 mod round_seven_b_time_heredoc_stdin;
+mod round_sevens_a_forge_call_behind_any_program_is_held;
 mod round_sevens_hold_when_unsure;
 mod round_sixes_a_case_the_reader_does_not_parse_is_held;
 mod round_threes_leaks_are_closed_by_grammar;

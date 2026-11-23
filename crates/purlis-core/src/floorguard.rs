@@ -778,7 +778,12 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         // the segments' own reasons, which name more.
         let exact = exact::of_reading(&reading);
         if filled.is_none() {
-            filled = merge::shell_filled_api_reason(&exact, cmd);
+            filled = merge::shell_filled_api_reason(&exact, cmd).or_else(|| {
+                exact
+                    .clobber
+                    .as_deref()
+                    .and_then(|c| merge::shell_filled_api_reason(c, cmd))
+            });
         }
         exact_segments.push(exact);
         let (prog, ..) = shellwrap::split_env(&reading.own);
@@ -1010,9 +1015,13 @@ fn exact_reason(
     {
         return Some(said);
     }
-    seg.refusal
-        .as_ref()
-        .map(|why| format!("{RELEASE_FLOOR_FIX}{why}"))
+    if let Some(said) = seg.refusal.as_ref() {
+        return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+    }
+    // The reading zsh's clobber operators make of the same words (#7423, round 7).
+    seg.clobber
+        .as_deref()
+        .and_then(|c| exact_reason(c, cmd, unattended, depth, a_shell_reads_stdin, read))
 }
 
 /// [`segment_reason`] of words nothing measured (what a `find` runs, a hedged line), and of those
@@ -1078,6 +1087,14 @@ fn segment_reason(
         {
             return Some(said);
         }
+        // dash (`sh` on Linux) reads `&>` as `&` and then `>`: the command after it is a
+        // command of its own, with a redirection in front (#7423, round 7). Both readings.
+        if inner.contains("&>")
+            && matches!(base_lower(&prog).as_str(), "sh" | "dash" | "ash")
+            && let Some(said) = inner_floor(&inner.replace("&>", "& >"))
+        {
+            return Some(said);
+        }
     }
     // What a `find` runs for each file it finds is a command of its own (#7423).
     for run in shellwrap::commands_a_find_runs(&prog, &argv) {
@@ -1114,6 +1131,19 @@ fn segment_reason(
             .chain(argv.iter().skip(1).cloned())
             .collect();
         return segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin);
+    }
+    // The words a script was handed, as the program (`"$@"`, `$*`), are any command (#7423,
+    // round 7), as the script's own name followed by them already is.
+    if prog.starts_with("$@")
+        || prog.starts_with("$*")
+        || prog.starts_with("${@")
+        || prog.starts_with("${*")
+    {
+        return Some(format!(
+            "{fix}{} The program `{prog}` is the words this script was handed, so purlis can't \
+             read which command this is. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
     }
     // A program the shell fills in is read as each CLI it could be (#7124).
     // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.

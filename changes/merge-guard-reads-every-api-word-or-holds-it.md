@@ -30,4 +30,11 @@
   set` with a redirection or stdin, zsh's `env =gh` and `sudo =gh`, a program word the shell
   fills in before `api`, and an escaped `\$` inside backticks (a quoted backtick opens nothing,
   and `\\` before one escapes the backslash) are held (#7423). A run of values and descriptors
-  in front of a call is read in time proportional to its length.
+  in front of a call is read in time proportional to its length. A forge call behind any program
+  that is no known wrapper (`taskset 1`, `chronic`, `ssh h`, `fd -x`) is held when it merges or
+  uses `api`, whatever the program is, and `timeout` takes its first operand as the duration
+  however it is spelled (`.5`, `1e1`, `0x10`). zsh's clobber operators (`>!`, `>>|`, `&>!`, …), `A+=1`
+  assignments, `repeat`, short `for` and `if`, dash's `&>` in an inner `sh -c`, `env -S`'s `\_`
+  separator and a bare `"$@"` as the program are read as the shell reads them. The no-value flags
+  `timeout --foreground`, `sudo --login`, `env --ignore-environment`, `watch --no-title` and
+  `nice -10` no longer hold a read.
