@@ -50,10 +50,7 @@ fn every_rust_binary_the_release_ships_is_built_with_its_dependency_list() {
         .flat_map(|s| run_lines(s))
         .filter(|l| l.contains("cargo install"))
         .collect();
-    assert!(
-        installs.is_empty(),
-        "build compiles a tool: {installs:#?}"
-    );
+    assert!(installs.is_empty(), "build compiles a tool: {installs:#?}");
 
     // ONE cargo run, Tauri's own, through the wrapper so every binary it links carries its
     // dependency list. The app, the command line and the extensions are one feature set and
@@ -70,12 +67,16 @@ fn every_rust_binary_the_release_ships_is_built_with_its_dependency_list() {
 
     // The bundles are made by `tauri bundle`, which runs no cargo.
     assert_eq!(
-        run_lines(&step(build, "Bundle the app")).last().map(String::as_str),
+        run_lines(&step(build, "Bundle the app"))
+            .last()
+            .map(String::as_str),
         Some(r#"npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles "$BUNDLES""#)
     );
     assert_eq!(
         run_lines(&step(build, "Bundle the extra bundle")),
-        [r#"npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }}"#]
+        [
+            r#"npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }}"#
+        ]
     );
 
     // Nothing else in the job compiles: one `tauri build`, and no `cargo`, `--runner` or
@@ -83,7 +84,9 @@ fn every_rust_binary_the_release_ships_is_built_with_its_dependency_list() {
     let others: Vec<String> = build
         .steps()
         .iter()
-        .filter(|s| s[0].trim() != "- name: Compile the app, the purlis binary and the built-in extensions")
+        .filter(|s| {
+            s[0].trim() != "- name: Compile the app, the purlis binary and the built-in extensions"
+        })
         .flat_map(|s| run_lines(s))
         .filter(|l| l.contains("cargo") || l.contains("--runner") || l.contains("tauri build"))
         .collect();

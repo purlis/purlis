@@ -114,7 +114,7 @@ jobs:
           while :; do
             run=$(gh api -X GET "repos/$GH_REPO/actions/workflows/stories.yml/runs" \
               -f head_sha="$HEAD_SHA" -f per_page=20 \
-              --jq '[.workflow_runs[] | select(.head_sha == env.HEAD_SHA and .event == "pull_request" and .head_repository.full_name == env.GH_REPO)] | sort_by([.run_number, .run_attempt]) | last // empty | "\(.id) \(.status) \(.conclusion)"')
+              --jq '[.workflow_runs[] | select(.head_sha == env.HEAD_SHA and .event == "pull_request" and .conclusion != "skipped" and .head_repository.full_name == env.GH_REPO)] | sort_by([.run_number, .run_attempt]) | last // empty | "\(.id) \(.status) \(.conclusion)"')
             if [ -z "$run" ]; then
               echo "::error::no stories run has tested $HEAD_SHA: push again, or start one with gh workflow run stories.yml --ref $HEAD_REF"
               exit 1
