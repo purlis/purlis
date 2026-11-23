@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { describe, expect, it } from "vitest";
-import { OPEN_HANG_MS, opensVerdict } from "./openTimes";
+import { OPEN_HANG_MS, OPEN_MEDIAN_MS, opensVerdict } from "./openTimes";
 
 const steady = (n: number, ms: number): number[] => Array.from({ length: n }, () => ms);
 
@@ -14,8 +14,15 @@ describe("the fifty-sessions opening's times", () => {
     expect(opensVerdict([...steady(46, 3400), 8100, 8300, 8800, 9000])).toBeNull();
   });
 
-  it("fail when every open got slower, though none is over the old per-open line", () => {
-    expect(opensVerdict(steady(50, 5600))).toContain("a start is slower than it was");
+  it("pass the two attempts of main's run 45144506452, whose medians were 5,586 and 5,545 ms", () => {
+    expect(opensVerdict([...steady(24, 4600), ...steady(21, 5586), ...steady(5, 6797)])).toBeNull();
+    expect(opensVerdict([...steady(24, 4700), ...steady(21, 5545), ...steady(5, 6191)])).toBeNull();
+  });
+
+  it("fail when every open got slower than the median limit, though none is over the old per-open line", () => {
+    expect(opensVerdict(steady(50, OPEN_MEDIAN_MS))).toBeNull();
+    expect(opensVerdict(steady(50, OPEN_MEDIAN_MS + 1))).toContain("a start is slower than it was");
+    expect(opensVerdict(steady(50, 7500))).toContain("a start is slower than it was");
   });
 
   it("fail when more than one open in ten is slow", () => {
