@@ -1937,9 +1937,11 @@ impl State {
 
     /// The session of a process of its own that holds `frame` of `target`'s page, if the engine
     /// told of one.
-    fn session_of_frame(&self, target: &str, frame: &str) -> Option<String> {
+    fn session_of_frame(&self, target: &str, frame: &str, besides: &str) -> Option<String> {
         self.sessions.iter().find_map(|(session, kind)| match kind {
-            Session::Frame { page, frame: of } if page == target && of == frame => {
+            Session::Frame { page, frame: of }
+                if page == target && of == frame && session != besides =>
+            {
                 Some(session.clone())
             }
             _ => None,

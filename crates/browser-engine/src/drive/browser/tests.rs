@@ -367,6 +367,12 @@ impl Engine {
                 );
                 Ok(json!({}))
             }
+            "Target.getTargetInfo" if p["targetId"] == "PAYMENT-FRAME" && self.oopif_is_gone() => {
+                Err(CallError::Engine {
+                    code: -32602,
+                    message: "No target with given id found".into(),
+                })
+            }
             "Target.attachToTarget" if p["targetId"] == "PAYMENT-FRAME" => {
                 let gone = self.oopif_is_gone();
                 let freezing = &super::lock(&self.model).freezing;

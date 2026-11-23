@@ -927,6 +927,12 @@ impl Browser {
                 self.devtools()
                     .call("Page.stopLoading", json!({}), on)
                     .map_err(|why| self.would_not_hold_still(&page, "stopping its loads", &why))?;
+                // A frame in a process of its own has loads of its own.
+                for own in self.frame_sessions_of(&page, &session) {
+                    let _ = self
+                        .devtools()
+                        .call("Page.stopLoading", json!({}), Some(own.as_str()));
+                }
                 if let Some(why) = self.arm_freeze_watch(&page) {
                     arming.insert(page.clone(), why);
                 }
@@ -1057,12 +1063,14 @@ impl Browser {
     /// (its id) itself. A frame in no tree is gone, and forgotten as the engine's word that it
     /// detached would forget it; one that is in a tree and cannot be reached is not confirmed.
     fn owner_of(&self, page: &str, frame: &str, refused: &str) -> Owner {
-        let told = lock(&self.inner.state).session_of_frame(page, frame);
-        if let Some(owner) = told.filter(|owner| owner != refused) {
+        let told = lock(&self.inner.state).session_of_frame(page, frame, refused);
+        if let Some(owner) = told {
             self.rehome(page, frame, &owner);
             return Owner::Session(owner);
         }
-        let sessions = lock(&self.inner.state).sessions_of_page(page);
+        let own = self.page_session(page).ok();
+        let mut sessions = lock(&self.inner.state).sessions_of_page(page);
+        sessions.sort_by_key(|session| Some(session) != own.as_ref());
         let mut listed = false;
         for session in &sessions {
             match self
@@ -1078,8 +1086,23 @@ impl Browser {
                         }
                     }
                 }
-                Err(why) => return Owner::Unreachable(why),
+                // A session of a frame that went since says nothing; the page's own must answer.
+                Err(why) if Some(session) == own.as_ref() => return Owner::Unreachable(why),
+                Err(_) => {}
             }
+        }
+        // A frame in no tree may still be a target the engine has: not gone, only not reached.
+        if !listed
+            && self
+                .devtools()
+                .call("Target.getTargetInfo", json!({ "targetId": frame }), None)
+                .is_ok()
+        {
+            return Owner::Unreachable(CallError::Engine {
+                code: 0,
+                message: "the frame is in no tree the driver can read, and its target exists"
+                    .into(),
+            });
         }
         if !listed {
             let mut state = lock(&self.inner.state);
@@ -1098,15 +1121,31 @@ impl Browser {
         ) {
             Ok(attached) => match attached.get("sessionId").and_then(Value::as_str) {
                 Some(owner) => {
-                    lock(&self.inner.state).sessions.insert(
-                        owner.to_owned(),
-                        super::Session::Frame {
-                            page: page.to_owned(),
-                            frame: frame.to_owned(),
-                        },
-                    );
-                    self.rehome(page, frame, owner);
-                    Owner::Session(owner.to_owned())
+                    // The engine's own word of the attach is the one that records it (and
+                    // releases a session it cannot place): wait for it.
+                    let until = Instant::now() + Duration::from_secs(2);
+                    let mut state = lock(&self.inner.state);
+                    loop {
+                        if state.session_of_frame(page, frame, "") == Some(owner.to_owned()) {
+                            drop(state);
+                            self.rehome(page, frame, owner);
+                            return Owner::Session(owner.to_owned());
+                        }
+                        let now = Instant::now();
+                        if now >= until || state.ended {
+                            return Owner::Unreachable(CallError::Engine {
+                                code: 0,
+                                message: "the engine's word of the frame's session did not come"
+                                    .into(),
+                            });
+                        }
+                        state = self
+                            .inner
+                            .changed
+                            .wait_timeout(state, until - now)
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .0;
+                    }
                 }
                 None => Owner::Unreachable(CallError::Engine {
                     code: 0,
