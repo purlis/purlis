@@ -38,7 +38,7 @@ serde_json.workspace = true
 serde.workspace = true
 # `O_NOFOLLOW` for the host's lock and its host record, and the signal that ends what a host
 # left running (#2007): the version purlis-same-user already links.
-nix = { version = "0.31", default-features = false, features = ["fs", "signal"] }
+nix = { version = "0.32", default-features = false, features = ["fs", "signal"] }
 # Where a bundle of code is kept while it crosses the link (#2046), removed with it.
 tempfile.workspace = true
 
