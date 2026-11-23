@@ -26,12 +26,11 @@
 //! that made it.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use std::sync::Arc;
-
 use super::ci::GitTrees;
-use super::objectcache::{self, FILL, Lease, ObjectCache};
+use super::objectcache::{self, Fetch, Lease, ObjectCache, PushCache};
 use crate::diffscan::KNOWN_AT_MOST;
 use crate::mergehold::HeadSha;
 use crate::worktree::git;
@@ -45,7 +44,8 @@ const TIPS_PER_FETCH: usize = 256;
 #[derive(Debug, Clone, Copy)]
 pub struct FetchLimits {
     /// The most time all the fetches of one run may take together. Checked before each `git fetch`,
-    /// so a run can end one fetch (at most [`git::NETWORK`]) past it.
+    /// and each fetch is given no more than what is left of it (and at least one second), so a run
+    /// ends at it and not a whole fetch past it.
     pub deadline: Duration,
     /// The most the quarantine's object store may grow by during one run, checked after each chunk.
     pub growth: u64,
@@ -54,7 +54,7 @@ pub struct FetchLimits {
 }
 
 impl FetchLimits {
-    /// Two fetches' worth of [`git::NETWORK`], and half a gibibyte of objects the base did not
+    /// Four minutes in all (two fetches' worth of [`git::NETWORK`]), and half a gibibyte of objects the base did not
     /// have. With the tips fetched incrementally (each chunk is negotiated against the ones before
     /// it) a repository of a thousand branches takes a few chunks and well inside both.
     pub const DEFAULT: FetchLimits = FetchLimits {
@@ -102,55 +102,36 @@ pub trait BaseObjects {
 pub struct FromForge {
     pub url: String,
     pub helper: Option<String>,
-    /// The forge repo's object cache: what a push fetches into, so that it is sent only what is
-    /// new. `None` fetches the whole base into the quarantine, on the per-call limit alone.
-    pub cache: Option<Arc<ObjectCache>>,
+    /// The forge repo's object cache as this push uses it: what a push fetches into, so that it is
+    /// sent only what is new, within the push's one deadline ([`super::objectcache::PUSH`]). `None`
+    /// fetches the whole base into the quarantine, on the per-call limit alone.
+    pub cache: Option<PushCache>,
 }
 
 impl FromForge {
-    /// One `git fetch` of `tips`, each into a private ref of the quarantine. A commit fetched by
-    /// its id alone lands only in `FETCH_HEAD`, which git does not negotiate from; a ref does, so
-    /// every later fetch tells the forge what the quarantine holds already (`have` lines) and is
-    /// sent only what is new. The name is the id, so a tip fetched twice is one ref.
-    fn fetch_into_refs(
-        &self,
-        into: &Path,
-        tips: &[HeadSha],
-        ref_dir: &str,
-        otherwise: &str,
-    ) -> Result<(), String> {
-        let specs: Vec<String> = tips
-            .iter()
-            .map(|tip| format!("+{0}:refs/quarantine/{ref_dir}/{0}", tip.as_str()))
-            .collect();
-        let mut args = vec!["fetch", "--quiet", "--no-tags", "--", self.url.as_str()];
-        args.extend(specs.iter().map(String::as_str));
-        // A fetch into the cache may be the first, of a whole history: it has a bound of its own.
-        let bound = if self.cache.is_some() {
-            FILL
-        } else {
-            git::NETWORK
-        };
-        let run = git::run_network_within(into, self.helper.as_deref(), &args, bound)
-            .map_err(|why| why.to_string())?;
-        if run.ok() {
-            Ok(())
-        } else {
-            Err(first_line(&run.err, otherwise))
-        }
-    }
-
-    /// [`BaseObjects::fetch_all`] within `limits`.
-    ///
-    /// A tip the forge no longer has (a branch deleted since it was listed) fails its whole `git
-    /// fetch`, so that chunk is taken again one tip at a time and the tip is skipped: a pack that
-    /// needed it is refused by git afterwards, so nothing is let through by skipping. A run that
-    /// fetched no tip at all is an error.
+    /// [`BaseObjects::fetch_all`] within `limits`, each `git fetch` on [`git::NETWORK`] at most.
     pub fn fetch_all_within(
         &self,
         into: &Path,
         tips: &[HeadSha],
         limits: &FetchLimits,
+    ) -> Result<(), String> {
+        self.fetch_all_bounded(into, tips, limits, git::NETWORK)
+    }
+
+    /// [`BaseObjects::fetch_all`] within `limits`, each `git fetch` taking `bound` at most (and
+    /// never past what is left of `limits.deadline`).
+    ///
+    /// A tip the forge no longer has (a branch deleted since it was listed) fails its whole `git
+    /// fetch`, so that chunk is taken again one tip at a time and the tip is skipped: a pack that
+    /// needed it is refused by git afterwards, so nothing is let through by skipping. A run that
+    /// fetched no tip at all is an error.
+    fn fetch_all_bounded(
+        &self,
+        into: &Path,
+        tips: &[HeadSha],
+        limits: &FetchLimits,
+        bound: Duration,
     ) -> Result<(), String> {
         if self.url.contains('@') {
             return Err("a forge's address carries no user information".to_owned());
@@ -161,25 +142,30 @@ impl FromForge {
         let mut first_failure = None;
         for chunk in tips.chunks(limits.per_fetch.max(1)) {
             check_deadline(started, limits)?;
-            match self.fetch_into_refs(
+            match fetch_into_refs(
+                &self.url,
+                self.helper.as_deref(),
                 into,
                 chunk,
                 "tips",
                 "git could not fetch the advertised tips from the forge",
+                left(started, limits, bound),
             ) {
                 Ok(()) => fetched_any = true,
                 Err(why) => {
                     first_failure.get_or_insert(why);
                     for tip in chunk {
                         check_deadline(started, limits)?;
-                        if self
-                            .fetch_into_refs(
-                                into,
-                                std::slice::from_ref(tip),
-                                "tips",
-                                "git could not fetch the advertised tip from the forge",
-                            )
-                            .is_ok()
+                        if fetch_into_refs(
+                            &self.url,
+                            self.helper.as_deref(),
+                            into,
+                            std::slice::from_ref(tip),
+                            "tips",
+                            "git could not fetch the advertised tip from the forge",
+                            left(started, limits, bound),
+                        )
+                        .is_ok()
                         {
                             fetched_any = true;
                         }
@@ -211,6 +197,43 @@ fn check_deadline(started: Instant, limits: &FetchLimits) -> Result<(), String> 
     }
 }
 
+/// How long the next `git fetch` of a run may take: `bound`, and no more than is left of the run.
+fn left(started: Instant, limits: &FetchLimits, bound: Duration) -> Duration {
+    limits
+        .deadline
+        .saturating_sub(started.elapsed())
+        .min(bound)
+        .max(Duration::from_secs(1))
+}
+
+/// One `git fetch` of `tips`, each into a private ref of the repository at `into`. A commit
+/// fetched by its id alone lands only in `FETCH_HEAD`, which git does not negotiate from; a ref
+/// does, so every later fetch tells the forge what the repository holds already (`have` lines) and
+/// is sent only what is new. The name is the id, so a tip fetched twice is one ref. It may take
+/// `bound`.
+fn fetch_into_refs(
+    url: &str,
+    helper: Option<&str>,
+    into: &Path,
+    tips: &[HeadSha],
+    ref_dir: &str,
+    otherwise: &str,
+    bound: Duration,
+) -> Result<(), String> {
+    let specs: Vec<String> = tips
+        .iter()
+        .map(|tip| format!("+{0}:refs/quarantine/{ref_dir}/{0}", tip.as_str()))
+        .collect();
+    let mut args = vec!["fetch", "--quiet", "--no-tags", "--", url];
+    args.extend(specs.iter().map(String::as_str));
+    let run = git::run_network_within(into, helper, &args, bound).map_err(|why| why.to_string())?;
+    if run.ok() {
+        Ok(())
+    } else {
+        Err(first_line(&run.err, otherwise))
+    }
+}
+
 /// The bytes under a repository's object store (links are not followed).
 fn store_size(repository: &Path) -> u64 {
     objectcache::size(&repository.join(".git").join("objects"))
@@ -221,28 +244,48 @@ impl BaseObjects for FromForge {
         if self.url.contains('@') {
             return Err("a forge's address carries no user information".to_owned());
         }
-        let fetch = |dir: &Path| {
-            self.fetch_into_refs(
-                dir,
+        const OTHERWISE: &str = "git could not fetch the base from the forge";
+        let Some(cache) = &self.cache else {
+            return fetch_into_refs(
+                &self.url,
+                self.helper.as_deref(),
+                into,
                 std::slice::from_ref(base),
                 "base",
-                "git could not fetch the base from the forge",
-            )
+                OTHERWISE,
+                git::NETWORK,
+            );
         };
-        match &self.cache {
-            Some(cache) => cache.update(fetch),
-            None => fetch(into),
-        }
+        let (url, helper, tip) = (self.url.clone(), self.helper.clone(), base.clone());
+        let fetch: Fetch = Arc::new(move |dir, bound| {
+            fetch_into_refs(
+                &url,
+                helper.as_deref(),
+                dir,
+                std::slice::from_ref(&tip),
+                "base",
+                OTHERWISE,
+                bound,
+            )
+        });
+        cache.update(fetch)?;
+        cache.cache().keep_base(base.as_str());
+        Ok(())
     }
 
     fn advertised(&self, into: &Path) -> Option<Vec<String>> {
         if self.url.contains('@') {
             return None;
         }
-        let run = git::run_network(
+        // Inside the push's one deadline where there is a cache.
+        let bound = self.cache.as_ref().map_or(git::NETWORK, |cache| {
+            cache.left().min(git::NETWORK).max(Duration::from_secs(1))
+        });
+        let run = git::run_network_within(
             into,
             self.helper.as_deref(),
             &["ls-remote", "--heads", "--", &self.url],
+            bound,
         )
         .ok()?;
         crate::diffscan::tips(run)
@@ -252,18 +295,31 @@ impl BaseObjects for FromForge {
         let Some(cache) = &self.cache else {
             return self.fetch_all_within(into, tips, &FetchLimits::DEFAULT);
         };
-        cache.update(|dir| self.fetch_all_within(dir, tips, &FetchLimits::DEFAULT))?;
+        let (url, helper) = (self.url.clone(), self.helper.clone());
+        let wanted = tips.to_vec();
+        let fetch: Fetch = Arc::new(move |dir, bound| {
+            let alone = FromForge {
+                url: url.clone(),
+                helper: helper.clone(),
+                cache: None,
+            };
+            let limits = FetchLimits {
+                deadline: bound,
+                ..FetchLimits::DEFAULT
+            };
+            alone.fetch_all_bounded(dir, &wanted, &limits, bound)
+        });
+        cache.update(fetch)?;
         let ids: Vec<String> = tips.iter().map(|tip| tip.as_str().to_owned()).collect();
-        cache.keep_tips(&ids);
+        cache.cache().keep_tips(&ids);
         Ok(())
     }
 
     fn cache(&self) -> Option<Arc<ObjectCache>> {
-        self.cache.clone()
+        self.cache.as_ref().map(|cache| cache.cache().clone())
     }
 }
 
-/// Why a pack was not taken in: for want of objects the forge may hold, or otherwise.
 enum Refused {
     ForWantOfObjects(String),
     Otherwise(String),

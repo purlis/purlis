@@ -1872,7 +1872,7 @@ and its tab says so (#3787).
 
 - **Format:** a git repository with nothing checked out, in a folder of the app's own that no chat
   can write. It reads the forge's base commit and its history (from the
-  [object cache](#quarantineobject-cachehash--what-a-forge-repo-holds-for-the-pushes-read-against-it)
+  [object cache](#object-cachehash--what-a-forge-repo-holds-for-the-pushes-read-against-it)
   below, as an alternate), fetched with the person's
   credential, and the pack a chat pushed, taken in by `git index-pack --stdin --fix-thin
   --strict` so that git hashes every object itself. The diff of a held push, and the files its
@@ -1892,23 +1892,30 @@ and its tab says so (#3787).
 - **Read by:** `purlis_core::heldact::GitTrees`, only through `Quarantine::trees`; a test fails
   on any other use of `GitTrees::of_trusted_store` in the source.
 
-### `quarantine/object-cache/<hash>/` — what a forge repo holds, for the pushes read against it
+### `object-cache/<hash>/` — what a forge repo holds, for the pushes read against it
 
-- **Format:** a git repository with nothing checked out, one per forge repo (the folder is the
-  SHA-256 of the host and the repo's path, lower-cased, so no name from a forge or a chat reaches a
-  path), in a folder of the app's own that no chat can write. It holds the forge's base commits and
-  history, fetched with the person's credential and topped up by each push: the forge is sent only
-  what the cache lacks. A quarantine (above) names its object store as an alternate, so the
-  quarantine's own store holds only the pushed pack. Its private refs are `refs/quarantine/base/*`
-  (the newest 32) and `refs/quarantine/tips/*` (the forge's advertised tips of the last run). The
-  file `.git/purlis-filled` says a fetch into it has finished once (ADR 0128, amended 2026-11-23).
+- **Format:** `object-cache/<hash>/` in purlis's data home on the machine (not the route folder,
+  which is RAM-backed or purged): a git repository with nothing checked out, one per forge repo
+  (the folder is the SHA-256 of the host and the repo's path, lower-cased, so no name from a forge
+  or a chat reaches a path), in a folder of the app's own that the sandbox denies every chat to
+  read and to write. It holds the forge's base commits and history, fetched with the person's
+  credential and topped up by each push: the forge is sent only what the cache lacks. A quarantine
+  (above) names its object store as an alternate, so the quarantine's own store holds only the
+  pushed pack. Its private refs are `refs/quarantine/base/*` (the 32 last used) and
+  `refs/quarantine/tips/*` (the forge's advertised tips of the last run). Two files in `.git`:
+  `purlis-filled`, which says a fill has finished once (it holds the size of the object store
+  then, in bytes), and `purlis-bases`, the bases used last, newest first, one id to a line (ADR
+  0128, amended 2026-11-23).
 - **Status:** **purlis only**.
 - **Tier:** Machine, device-bound, rebuildable — nothing in it is not on the forge, so it is
-  fetched again from the forge when it is missing. It is kept between pushes and between app runs,
-  tidied by `git gc --auto` after an update, and **made again** when its objects pass 10 GiB and no
-  quarantine is reading through it. One lock per cache in the app, and git's own locks, keep two
-  pushes from corrupting it; a push that arrives while it is filled for the first time is refused
-  with the reason. **The token is on no disk**, as for a quarantine.
+  fetched again from the forge when it is missing. It is kept between pushes and between app runs
+  and reboots, tidied by `git gc --auto` after an update (and `tmp_pack_*` a killed fetch left
+  removed), and **made again** when its objects pass 10 GiB and no quarantine is reading through
+  it, or when git does not take it for a repository. A repo whose history alone passes 10 GiB is
+  refused with the reason and kept. The first fill runs on a thread of the app's own, never on a
+  chat's connection, and a push that arrives meanwhile is refused with the reason. One lock per
+  cache in the app, and git's own locks, keep two pushes from corrupting it. **The token is on no
+  disk**, as for a quarantine.
 - **Written by:** `purlis_core::heldact::ObjectCache`.
 - **Read by:** a quarantine, as an alternate, and nothing else.
 

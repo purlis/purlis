@@ -2999,6 +2999,19 @@ fn kept_by_purlis(root: &Path, machine: &Machine) -> KeptList {
             any_case: machine.os == Os::MacOs,
         });
     }
+    // ...and the forge repos' object caches (ADR 0128, amended 2026-11-24), a held push's base
+    // read through an alternate: no chat reads or writes it, under every spelling of the data
+    // home, so none plants an object a push is then read against.
+    for data in Homes::data_homes(machine) {
+        paths.push(Denial {
+            class: Class::Integrity,
+            path: data.join(crate::forgewire::OBJECT_CACHE_DIR),
+            access: Access::ReadWrite,
+            named: None,
+            reach: Reach::AndBelow,
+            any_case: machine.os == Os::MacOs,
+        });
+    }
     // A list that is not whole is never held by the store alone.
     keyring |= unresolved.is_some();
     KeptList {

@@ -85,7 +85,7 @@ pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
 };
-pub use objectcache::ObjectCache;
+pub use objectcache::{FILL, Fetch, MOST, ObjectCache, PUSH, PushCache};
 pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FetchLimits, FromForge, Quarantine, sweep as sweep_quarantines};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};

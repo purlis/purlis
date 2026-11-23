@@ -709,6 +709,50 @@ fn every_harness_denies_a_chat_reading_or_writing_the_dispatch_records() {
     }
 }
 
+/// ADR 0128, amended 2026-11-24: the forge repos' object caches are in the data home, and a held
+/// push's base is read through them as an alternate. A chat that wrote one could plant an object a
+/// push is then read against, and one that read one would read what the person's credential
+/// fetched. Denied for reading and writing, in what every harness is compiled, on both systems.
+#[test]
+fn every_harness_denies_a_chat_reading_or_writing_the_forge_object_caches() {
+    for os in [Os::MacOs, Os::Linux] {
+        let (_plane, denied) = denied_with(None, os);
+        let machine = machine(os);
+        let cache = crate::forgewire::object_cache_root(&machine).expect("a data home");
+        let held = paths(&denied, Class::Integrity, Access::ReadWrite);
+        assert!(held.contains(&cache), "{} not in {held:?}", cache.display());
+
+        let settings = claude::settings(&compiled(denied.clone(), os)).expect("compiles");
+        let listed = |key: &str| -> Vec<String> {
+            settings.sandbox["filesystem"][key]
+                .as_array()
+                .expect("a list")
+                .iter()
+                .filter_map(|path| path.as_str().map(str::to_owned))
+                .collect()
+        };
+        let named = super::real(&cache).display().to_string();
+        assert!(listed("denyRead").contains(&named), "{os:?}: {named}");
+        assert!(listed("denyWrite").contains(&named), "{os:?}: {named}");
+
+        if os == Os::MacOs {
+            let cwd = std::path::Path::new("/Users/someone/work");
+            let profile = seatbelt::profile(
+                &denied.paths,
+                &seatbelt::Own::default(),
+                cwd,
+                std::path::Path::new("/private/tmp/chat"),
+                &[4040],
+                None,
+            )
+            .expect("a profile");
+            for rule in held_rules(&cache, Access::ReadWrite, true) {
+                assert!(profile.contains(&rule), "{rule} missing:\n{profile}");
+            }
+        }
+    }
+}
+
 /// What decides what a person is told of a chat's folders ([`super::arrived`]) is no chat's to
 /// write, its own or another's, under both names of the state folder, for every harness.
 #[test]

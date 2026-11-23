@@ -1712,6 +1712,14 @@ pub fn quarantine_dir() -> PathBuf {
         .unwrap_or_else(|| std::env::temp_dir().join("purlis-quarantine"))
 }
 
+/// Where the forge repos' object caches are kept (ADR 0128, amended 2026-11-24): in the app's data
+/// folder on this machine, which survives a reboot and is no chat's (the sandbox holds every chat
+/// out of it, reading and writing, by the same resolver). `None` where the machine has no data
+/// folder: a push then fetches its base into its own quarantine.
+pub fn object_cache_dir() -> Option<PathBuf> {
+    purlis_core::forgewire::object_cache_root(&purlis_core::sandbox::Machine::this())
+}
+
 /// The app's routes, once [`install`] has run.
 pub fn routes() -> Option<&'static ForgeRoutes> {
     ROUTES.get()
