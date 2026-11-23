@@ -986,6 +986,7 @@ export const commands = {
 	forgeProjectAccounts: __WINDOW_ONLY_RESULT,
 	forgeChooseProjectAccount: __WINDOW_ONLY_RESULT,
 	forgeTrustCloneRepo: __WINDOW_ONLY_RESULT,
+	forgeUnconfirmedClones: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionStart: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionWait: __WINDOW_ONLY_RESULT,
 	forgeCiPermissionCancel: __WINDOW_ONLY,
@@ -17979,6 +17980,14 @@ undo: string[] | null };
 export type TurnPick = {
 	chat: string,
 	number: number,
+};
+
+/**  A clone the person trusted that is not confirmed with the forge, so no chat's route serves it. */
+export type UnconfirmedClone = {
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**  The `<host>/<owner>/<repo>` the trust list holds for it. */
+	place: string,
 };
 
 /**  What an undo came to. */

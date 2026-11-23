@@ -828,12 +828,12 @@ const NOT_NOTICES: Record<string, { count: number; why: string }> = {
       "device code on the clipboard (#4045), beside the button",
   },
   "settings/oneLogin.tsx": {
-    count: 3,
+    count: 4,
     why:
       ACTION +
       ". The Accounts group's one-login rows (ADR 0128): what Use this application, Copy a request " +
-      "and Remove just did, and a refusal said in the dialog that asked, beside the press that " +
-      "retries it",
+      "and Remove just did, what Confirm is asking the forge, then its answer, and a refusal said " +
+      "in the dialog that asked, beside the press that retries it",
   },
   "settings/accounts.tsx": {
     count: 2,

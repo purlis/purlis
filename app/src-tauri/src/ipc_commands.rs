@@ -402,6 +402,7 @@ macro_rules! app_commands {
                 onelogin::forge_project_accounts,
                 onelogin::forge_choose_project_account,
                 onelogin::forge_trust_clone_repo,
+                onelogin::forge_unconfirmed_clones,
                 onelogin::forge_ci_permission_start,
                 onelogin::forge_ci_permission_wait,
                 onelogin::forge_ci_permission_cancel,
