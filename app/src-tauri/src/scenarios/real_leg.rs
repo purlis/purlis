@@ -525,10 +525,24 @@ impl Model {
     /// its own, kept for its transcript.
     pub(crate) fn plays(&self, steps: &[(&str, String)]) -> String {
         let mut chats = self.chats.lock().expect("the chats");
+        // **OpenCode on macOS first asks for a command that prints nothing** (`warmup`): the
+        // first command of a chat there came back with no output at all, not even the exit
+        // marker, in three runs (macos-15 and macos-26: the canary's write, a later chat's
+        // `hello`), while every command after it was read whole. No step is judged on the
+        // warm-up; its own result stays in the transcript, so a red run says whether it was the
+        // one lost.
+        let warmed: Vec<(&str, String)> =
+            if cfg!(target_os = "macos") && self.dialect == Dialect::OpenCode {
+                std::iter::once(("warmup", "true".to_owned()))
+                    .chain(steps.iter().cloned())
+                    .collect()
+            } else {
+                steps.to_vec()
+            };
         let script = script_of(
             self.dialect,
             &format!("leg chat {}", chats.len() + 1),
-            steps,
+            &warmed,
         );
         let prompt = script.prompt.clone();
         let stand_in = Arc::new(StandIn::new(self.dialect.word(), script));
