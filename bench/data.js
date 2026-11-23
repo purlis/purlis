@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795394309778,
+  "lastUpdate": 1795395817250,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52542,6 +52542,48 @@ window.BENCHMARK_DATA = {
             "value": 102.4311275,
             "unit": "ms",
             "extra": "median of 5 runs: 101.410, 102.151, 102.431, 102.460, 102.756 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1a978103d91a90bdfed6e4d24adaad5205419f90",
+          "message": "Release R5: release jobs get time budgets (#7384) (#7398)\n\nThe release build jobs (macOS, Linux) and the linux-aarch64 runner binary\njoin ci/job-budgets.toml, one budget per Cargo profile (dev-release and\nrelease kept apart), each naming the run it was measured from. ci-health's\ndaily budget check reads release.yml runs and files a ticket when a job's\n7-day p50 is more than 20% over.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82TSQ8VYB55Y5813QDCHM0Y\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T00:30:12Z",
+          "tree_id": "0313f8654bdbb8e848b58271290a9a92330c319a",
+          "url": "https://github.com/purlis/purlis/commit/1a978103d91a90bdfed6e4d24adaad5205419f90"
+        },
+        "date": 1795395806873,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7051285,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.682, 0.692, 0.705, 0.730, 0.731 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.548424,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.314, 16.357, 16.548, 16.826, 17.019 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.81857500000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.731, 102.753, 102.819, 102.874, 103.145 ms"
           }
         ]
       }
