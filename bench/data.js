@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795446577363,
+  "lastUpdate": 1795446847865,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53046,6 +53046,48 @@ window.BENCHMARK_DATA = {
             "value": 102.05957849999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.549, 101.927, 102.060, 102.438, 103.274 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a54e3204f2f87db8c351610077ea9d114f2163e2",
+          "message": "Release: a red main ci stops the dev build without a red job (#7426)\n\n* Release: a red ci ends the dev build as skipped, not failed\n\nThe wait step sets green=false and exits 0 when the commit's main ci ended\nfailure, cancelled or timed_out, with a notice and a job summary; every later\nstep of build and runner-binary-aarch64 skips on that output. Faults (gh\nerrors, timeout, ci never listed, an unreadable conclusion) still exit non-zero.\n\nThe release-manifest rules hold both: every step after the wait carries the\noutput as a top-level && term, the wait id is unique, and the wait still has no\ncontinue-on-error. tools/release-wait.test.mjs covers green, ended red and\ncould-not-determine.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M841GPFTXM5G7H0W72G70YN0\nPurlis-Persona: steward\n\n* Release wait: rename the output path variable, update comments, amend ADR 0042 in a file of its own\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M841GPFTXM5G7H0W72G70YN0\nPurlis-Persona: steward\n\n* ADR 0042 amendment: a red ci stops the dev build without a red job\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M841GPFTXM5G7H0W72G70YN0\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T14:37:38Z",
+          "tree_id": "d40569be7a04e62e59154ec7ed753811d876183c",
+          "url": "https://github.com/purlis/purlis/commit/a54e3204f2f87db8c351610077ea9d114f2163e2"
+        },
+        "date": 1795446842221,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6952564999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.663, 0.669, 0.695, 0.708, 0.715 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.639103499999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.408, 16.471, 16.639, 16.707, 16.742 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.1523915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.479, 102.076, 102.152, 102.216, 103.172 ms"
           }
         ]
       }
