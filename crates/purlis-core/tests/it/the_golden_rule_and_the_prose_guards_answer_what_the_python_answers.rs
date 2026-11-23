@@ -171,6 +171,14 @@ fn tables(cmd: &str) -> Value {
 /// The sentence of the one refusal round 7 of #7131 adds to a line the Python let through.
 const ROUND_SEVEN_HOLD: &str = "A substitution here holds a comment, a heredoc or a `$'` quote";
 
+/// The sentences of the two holds round 3 of #7423 adds to a line the Python let through: a flag
+/// before a forge CLI's noun that may take the noun as its value (`gh -c x merge`), and a word
+/// of a line the lexer rejects that holds an expansion character.
+const ROUND_THREE_HOLDS: [&str; 2] = [
+    "stands before the command and may take the next word as its value",
+    "is filled in by the shell, which may split it",
+];
+
 #[test]
 fn the_recorded_python_answer_is_the_answer_these_guards_give() {
     purlis_core::unsteered!();
@@ -200,6 +208,15 @@ fn the_recorded_python_answer_is_the_answer_these_guards_give() {
                 && got
                     .as_str()
                     .is_some_and(|said| said.contains(ROUND_SEVEN_HOLD))
+            {
+                return;
+            }
+            // Round 3 of #7423 holds those, only where the Python let the line through.
+            if what == "rfr"
+                && want.is_null()
+                && got
+                    .as_str()
+                    .is_some_and(|said| ROUND_THREE_HOLDS.iter().any(|hold| said.contains(hold)))
             {
                 return;
             }

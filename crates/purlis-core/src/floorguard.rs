@@ -861,9 +861,15 @@ fn segment_reason(
     // Each segment is split once, and every reading below shares it: at every level the
     // floor reads, a segment is as long as the line, so a second split is a second line
     // (#1355).
-    // zsh's `-` precommand runs the command after it (#7423).
-    if toks.first().is_some_and(|w| w == "-") && toks.len() > 1 {
-        return segment_reason(&toks[1..], cmd, unattended, depth, a_shell_reads_stdin);
+    // A redirection with its descriptor and target, and zsh's `-` precommand (repeated, or after
+    // assignments and wrappers), are no part of the command: read it without them first
+    // (#7423). The words left have none of either, so this runs once.
+    let (plain, _) = merge::plain_words(toks, None, true);
+    if plain.len() != toks.len()
+        && !plain.is_empty()
+        && let Some(said) = segment_reason(&plain, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
     }
     let (prog, env, argv) = shellwrap::split_env(toks);
     // A string a shell runs is read as the command it is (#866).
@@ -1089,6 +1095,11 @@ fn segment_reason(
             }
             let why = merge::forge_reason(&name, args, cmd, unattended, depth);
             if let Some(why) = why {
+                return Some(format!("{fix}{why}"));
+            }
+            // A flag before the noun may take the noun for its value (#7423). Said after the
+            // reasons above, which name more.
+            if let Some(why) = merge::unplaced_flag_reason(args) {
                 return Some(format!("{fix}{why}"));
             }
         }

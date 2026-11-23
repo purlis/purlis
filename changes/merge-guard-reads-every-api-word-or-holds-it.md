@@ -7,9 +7,16 @@
   rather than its place (`>gh gh api …`, `env -u gh gh api …`), a flag before `api`
   (`gh -X PUT api …`), a function body, zsh's `noglob` and `-`, `xargs` and `find -exec` into
   `gh`, an `env -S` string, a shell alias for `gh`, and an inner shell's string that the outer
-  shell fills in. A word is now let through only when it has no expansion, glob or brace outside
-  single quotes, or is one literal start and one double-quoted span of a plain `$name` or `$(…)`,
-  and the call is found where the reader finds the program. `&>` is one redirection, not a `&`.
-  A line of thousands of references reads in one pass, not one scan of the line per reference.
+  shell fills in. A word is now let through only when it has no expansion outside single quotes,
+  or is one literal start and one double-quoted span of a plain `$name` or `$(…)`, and the call
+  is found where the reader finds the program. A glob or a brace is let through after a literal
+  start that is no `-` (`pulls?state=open`, `pulls/{1,2}`), since every word it makes begins with
+  that start, and held when it begins the word (`*`, `?XPUT`, `{-X,PUT}`). `&>` is one redirection, not a `&`.
+  A redirection with a descriptor (`gh 2>/dev/null api …`, `gh pr 2>/dev/null merge 5`), zsh's
+  `-` after `noglob` or an assignment, a quoted `'>'` that is an argument, a `'` inside double
+  quotes, and a flag before the noun that may take a value (`gh -b x pr merge 5`) no longer hide
+  the call. A line of tens of thousands of `$N` references reads in linear time. The text guard
+  is an early warning, not the boundary: the forge route is, under `guards.merge = enforce`.
   The refusal says to write the endpoint out, or to use one double-quoted word with a literal
-  start (#7423).
+  start; for a held glob it names the character (`?`, `*` or `[`) and says to quote the whole
+  word (#7423).

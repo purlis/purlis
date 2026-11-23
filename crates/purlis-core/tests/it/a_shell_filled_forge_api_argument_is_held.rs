@@ -248,7 +248,27 @@ fn a_glob_is_held() {
         "gh api repos/o/r/pulls/5/merge ?XPUT",
         "gh api repos/o/r/pulls/5/merge [-]XPUT",
         "gh api repos/o/r/pulls/5/merge {-XPUT,}",
+        "gh api repos/o/r/pulls/5/merge {-X,PUT}",
+        "gh api repos/o/r/pulls/5/merge -*",
+        "gh api repos/o/r/pulls/5/merge \"x\"*",
+        "gh api repos/o/r/pulls/5/merge \"\"?XPUT",
+        "gh api repos/o/r/pulls/5/merge -X?UT",
+        "gh api repos/o/r/pulls/5/merge a*$F",
+    ]);
+}
+
+/// Every word a pattern or a brace makes begins with the literal text before it, so after a
+/// plain start that is no `-` it is another path under the same prefix, never a flag (#7423).
+#[test]
+fn a_glob_or_brace_after_a_plain_literal_start_passes() {
+    purlis_core::unsteered!();
+    passes(&[
         "gh api repos/o/r/pulls?state=open",
+        "gh api repos/o/r/pulls/*",
+        "gh api repos/o/r/pulls/[5]",
+        "gh api repos/o/r/pulls/{1,2}",
+        "gh api repos/o/r/actions/runs?head_sha=abc | head -n 1",
+        "gh api repos/o/r/pulls/5 -f title=a*b",
     ]);
 }
 
@@ -327,4 +347,134 @@ fn a_line_padded_with_thousands_of_words_and_references_is_read_in_time() {
     // The same line with one held word at the end is held, whatever its length.
     cmd.push_str(" $F");
     assert!(merge_reason(&cmd).is_some());
+}
+
+#[test]
+fn a_literal_start_the_shell_deletes_is_no_literal_start() {
+    purlis_core::unsteered!();
+    held(&["gh api repos/o/r/pulls/5/merge \"\\\n$M\""]);
+    // A continuation after a literal start leaves the start as it was.
+    passes(&["gh api repos/o/r/pulls/5 -f title=\"\\\n$M\""]);
+}
+
+#[test]
+fn a_quoted_operator_word_is_an_argument_and_not_a_redirection() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh api repos/o/r/pulls/5/merge --jq '>' $F",
+        "gh api repos/o/r/pulls/5/merge --jq \">\" $F",
+        "gh api repos/o/r/pulls/5/merge --jq '2>' $F",
+        "gh api repos/o/r/pulls/5/merge \\> $F",
+    ]);
+}
+
+#[test]
+fn a_line_the_lexer_rejects_is_held_when_it_fills_in_a_word() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh api repos/o/r/pulls/5/merge 'x $F",
+        "gh api repos/o/r/pulls/5/merge \"x $(cat n)",
+        "find . -exec gh api repos/o/r/pulls/5/merge $F \\;",
+        "find . -exec gh api repos/o/r/pulls/5/merge \"$F\" \\;",
+        "find . -exec gh api \"repos/o/r/pulls/$N\" \\;",
+        "find . -exec gh api repos/o/r/pulls/5/merge $(cat n) \\;",
+    ]);
+}
+
+#[test]
+fn a_single_quote_inside_double_quotes_opens_nothing() {
+    purlis_core::unsteered!();
+    held(&[
+        "sh -c \"gh api repos/o/r/pulls/5/merge '$F'\"",
+        "bash -c \"gh api repos/o/r/pulls/5/merge '$(cat n)'\"",
+        "eval \"gh api repos/o/r/pulls/5/merge '$F'\"",
+    ]);
+}
+
+#[test]
+fn a_redirection_with_a_descriptor_does_not_hide_the_call() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh 2>/dev/null api repos/o/r/pulls/5/merge $F",
+        "2>/dev/null gh api repos/o/r/pulls/5/merge $F",
+        "gh 2>&1 api repos/o/r/pulls/5/merge $F",
+        "gh 10>e api repos/o/r/pulls/5/merge $F",
+        "glab 2>/dev/null api projects/:id/merge_requests/5/merge $F",
+        "gh 2>/dev/null pr merge 5",
+        "gh pr 2>/dev/null merge 5",
+        "1>/dev/null gh pr merge 5",
+        "gh 2>&1 pr merge 5",
+        "gh 10>e pr merge 5",
+        "glab 2>/dev/null mr merge 5",
+        "glab mr 2>/dev/null merge 5",
+        "2>/dev/null glab mr merge 5",
+    ]);
+}
+
+#[test]
+fn zsh_dash_is_seen_through_after_a_precommand_and_when_repeated() {
+    purlis_core::unsteered!();
+    held(&[
+        "noglob - gh api repos/o/r/pulls/5/merge $F",
+        "nocorrect - gh api repos/o/r/pulls/5/merge $F",
+        "FOO=1 - gh api repos/o/r/pulls/5/merge $F",
+        "- - gh api repos/o/r/pulls/5/merge $F",
+        "noglob - gh pr merge 5",
+        "nocorrect - gh pr merge 5",
+        "FOO=1 - gh pr merge 5",
+        "- - gh pr merge 5",
+        "- noglob - gh pr merge 5",
+    ]);
+}
+
+#[test]
+fn a_flag_before_the_noun_that_may_take_a_value_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh -b x pr merge 5",
+        "gh --body x pr merge 5",
+        "glab -m x mr merge 5",
+        "gh --unknown-flag x pr merge 5",
+    ]);
+    passes(&[
+        "gh -R o/r pr view 5",
+        "gh --repo o/r pr view 5",
+        "gh pr view 5 --json title",
+    ]);
+}
+
+#[test]
+fn the_refusal_for_a_glob_names_the_character_and_says_to_quote_the_word() {
+    purlis_core::unsteered!();
+    for (cmd, ch) in [
+        ("gh api repos/o/r/pulls/5/merge ?XPUT", "`?`"),
+        ("gh api repos/o/r/pulls/5/merge *", "`*`"),
+        ("gh api repos/o/r/pulls/5/merge [-]XPUT", "`[`"),
+    ] {
+        let said = release_floor_reason(cmd, true).expect("a refusal");
+        assert!(said.contains(ch), "{cmd}: {said}");
+        assert!(said.contains("Quote the whole word"), "{cmd}: {said}");
+        assert!(!said.contains("`$name`"), "{cmd}: {said}");
+    }
+    passes(&["gh api 'repos/o/r/pulls?state=open'"]);
+}
+
+/// 60,000 `$N` references on one line read in linear time (#7423): the hook's budget is ten
+/// seconds, and a hook that times out may let the command through.
+#[test]
+fn sixty_thousand_references_to_one_digit_variable_are_read_in_time() {
+    purlis_core::unsteered!();
+    let mut cmd = String::from("N=5; gh api repos/o/r/pulls/5");
+    for _ in 0..60_000 {
+        cmd.push_str(" repos/o/r/pulls/$N/c");
+    }
+    let start = std::time::Instant::now();
+    assert_eq!(merge_reason(&cmd), None);
+    assert_eq!(release_floor_reason(&cmd, true), None);
+    let took = start.elapsed();
+    let bound = if cfg!(debug_assertions) { 8 } else { 3 };
+    assert!(
+        took < std::time::Duration::from_secs(bound),
+        "60,000 references took {took:?}"
+    );
 }
