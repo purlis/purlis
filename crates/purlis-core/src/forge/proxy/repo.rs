@@ -45,8 +45,9 @@ pub struct AllowedRepo {
     /// source checks the person's confirmation against, and which a GitLab REST path may use
     /// instead of the path.
     pub(crate) project_id: Option<u64>,
-    /// Branches the chat may move and delete from the start: the ones purlis made for it.
-    pub(crate) own_branches: Vec<String>,
+    /// Branches the chat may move from the start, each with the tip it stands at: the ones purlis
+    /// made for it. An update is let through only from that tip.
+    pub(crate) own_branches: Vec<(String, String)>,
 }
 
 impl AllowedRepo {
@@ -102,11 +103,15 @@ impl AllowedRepo {
         self
     }
 
-    /// Branches the chat owns from the start (the one purlis cut for its task). A branch the chat
-    /// creates later is recorded as it is pushed; any other it may not move or delete.
+    /// Branches the chat owns from the start, each as `(name, tip)`. A branch the chat creates
+    /// later is recorded as it is pushed; any other it may not move or delete, and an owned one it
+    /// may move only from its tip.
     #[must_use]
-    pub fn with_own_branches(mut self, names: &[&str]) -> Self {
-        self.own_branches = names.iter().map(|n| (*n).to_string()).collect();
+    pub fn with_own_branches(mut self, own: &[(&str, &str)]) -> Self {
+        self.own_branches = own
+            .iter()
+            .map(|(n, t)| ((*n).to_string(), t.to_ascii_lowercase()))
+            .collect();
         self
     }
 

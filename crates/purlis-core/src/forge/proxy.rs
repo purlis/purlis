@@ -84,8 +84,8 @@ pub use graphql::mutation_repo;
 pub use held::{Held, HeldSink};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
-    NoObjects, ObjectRepo, Refusal, TouchedRepo, is_ci_storage_host, is_download_host,
-    is_gitlab_ci_storage,
+    NoObjects, ObjectRepo, RecordedBranches, Refusal, TipSource, TouchedRepo, is_ci_storage_host,
+    is_download_host, is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -96,6 +96,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::enforcement::Mode;
+use crate::forge::createdbranches::CreatedBranch;
 use crate::forge::{mergestance, pin};
 use crate::secrets::keyring::Secret;
 
@@ -252,8 +253,8 @@ pub struct Forwarded {
     /// The body to send in place of the chat's, when the chat's was read: the canonical
     /// re-serialisation of what was checked. `headers` already carry its `Content-Length`.
     pub body: Option<Vec<u8>>,
-    /// Branches a push makes, for [`ForgeProxy::confirm_push`].
-    pub(crate) created: Vec<(String, String, String)>,
+    /// Branches a push makes or moves, for [`ForgeProxy::confirm_push`].
+    pub(crate) created: Vec<CreatedBranch>,
     /// What the answer must never hold: the real credential, as it is sent and in the other forms
     /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
     /// and zeroed with the request.
@@ -342,10 +343,20 @@ pub struct ForgeProxy {
     merges: Arc<dyn mergestance::MergeStance>,
     /// Told the branches the forge confirmed a push made: the app's own record of them.
     created: Option<CreatedSink>,
+    gone: Option<GoneSink>,
+    /// Where each chat's policy reads the tip it last put on a branch, at every update.
+    tips: Option<TipSource>,
+    /// Where each chat's policy lists the branches the record holds for it, when an advertisement
+    /// is noted.
+    recorded: Option<RecordedBranches>,
 }
 
-/// What is told the `(host, repo path, branch)` triples a confirmed push made.
-pub type CreatedSink = Box<dyn Fn(&[(String, String, String)]) + Send + Sync>;
+/// What is told the branches, and the tips, a confirmed push made or moved.
+pub type CreatedSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
+
+/// Told which recorded branches the forge no longer lists ([`ForgeProxy::note_advertised`]), so
+/// their record ends ([`crate::forge::createdbranches::forget`]).
+pub type GoneSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
 
 impl ForgeProxy {
     pub fn new(credentials: Box<dyn CredentialSource>, objects: Box<dyn ObjectRepo>) -> Self {
@@ -359,6 +370,9 @@ impl ForgeProxy {
             pin: Arc::new(pin::NoPin),
             merges: Arc::new(mergestance::HoldMerges),
             created: None,
+            gone: None,
+            tips: None,
+            recorded: None,
         }
     }
 
@@ -372,11 +386,35 @@ impl ForgeProxy {
         self
     }
 
-    /// Tell `sink` each branch the forge confirms a chat's push made, so the app can keep its own
+    /// Tell `sink` each branch the forge confirms a chat's push made or moved, so the app can keep its own
     /// record of what the chat created ([`crate::forge::createdbranches`]).
     #[must_use]
     pub fn with_created(mut self, sink: CreatedSink) -> Self {
         self.created = Some(sink);
+        self
+    }
+
+    /// Where each update's old id is checked: the tip the chat last put on the branch, asked of
+    /// `tips` at every update (the app's record, which every chat's confirmed push moves).
+    /// Without it a policy checks against what it saw itself.
+    #[must_use]
+    pub fn with_tips(mut self, tips: TipSource) -> Self {
+        self.tips = Some(tips);
+        self
+    }
+
+    /// Where each chat's policy lists the branches the record holds for it, asked when an
+    /// advertisement is noted, so a recorded branch gone from the forge ends its record.
+    #[must_use]
+    pub fn with_recorded(mut self, recorded: RecordedBranches) -> Self {
+        self.recorded = Some(recorded);
+        self
+    }
+
+    /// Where a recorded branch the forge no longer lists is told, so its record ends.
+    #[must_use]
+    pub fn with_gone(mut self, sink: GoneSink) -> Self {
+        self.gone = Some(sink);
         self
     }
 
@@ -442,10 +480,17 @@ impl ForgeProxy {
     /// Whatever it enrols, the pin is read on every request and connection all the same, so a pin
     /// set later reaches the chat at once.
     pub fn enrol(&self, chat: &ChatId, repos: Vec<AllowedRepo>) -> Sentinel {
+        let mut policy = ChatPolicy::new(repos);
+        if let Some(tips) = &self.tips {
+            policy = policy.with_tips(tips.clone());
+        }
+        if let Some(recorded) = &self.recorded {
+            policy = policy.with_recorded(recorded.clone());
+        }
         self.policies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(chat.clone(), Arc::new(ChatPolicy::new(repos)));
+            .insert(chat.clone(), Arc::new(policy));
         self.sentinels.issue(chat)
     }
 
@@ -474,12 +519,17 @@ impl ForgeProxy {
             .get(chat)
             .cloned();
         if let Some(policy) = policy {
-            policy.note_advertised(host, repo_path, branches);
+            let gone = policy.note_advertised(host, repo_path, branches);
+            if let Some(sink) = &self.gone
+                && !gone.is_empty()
+            {
+                sink(&gone);
+            }
         }
     }
 
-    /// The forge's report of a push `forwarded` says it made its branches: only now are they the
-    /// chat's own to move. A push the forge refused, or one never sent, makes no branch the chat
+    /// The forge's report of a push `forwarded` says it made or moved its branches: only now are
+    /// they the chat's own to move, and their tip the one the next update must name. A push the forge refused, or one never sent, makes no branch the chat
     /// owns, so a branch cannot be claimed by asking for it.
     pub fn confirm_push(&self, chat: &ChatId, forwarded: &Forwarded) {
         let policy = self

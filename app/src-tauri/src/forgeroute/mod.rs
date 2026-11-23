@@ -62,6 +62,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use purlis_core::forge::createdbranches::CreatedBranch;
 use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{
     AllowedRepo, AuditRecord, ChatId, Class, Credential, CredentialError, CredentialRequest,
@@ -184,17 +185,40 @@ pub trait Recorded: Send + Sync {
     fn repos(&self, project: &Path) -> Vec<AllowedRepo>;
     /// `host` is [`forge_host`]'s.
     fn account(&self, project: &Path, host: &str) -> Option<String>;
-    /// The branches of `repo` that the chat `chat` itself created through the route, from the
-    /// app's own record of them: which the chat may push although they exist on the forge. Any
-    /// doubt is none: the route refuses any update to a branch not named here (the person pushes it),
-    /// and the project and the chat's id are the key, so a chat with another id, or of another
-    /// project, owns none of them.
-    fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
+    /// The tip the chat `chat` itself last put on `branch` of the repo with forge id `repo_id`
+    /// on `host` through the route, from the app's own record, **asked at every update** and
+    /// never kept: the route lets an update through only from this tip, so a branch another chat
+    /// moved, or one made again, is refused. Any doubt is none (the person pushes it), and the
+    /// project and the chat's id are the key, so a chat with another id, or of another project,
+    /// owns none of them.
+    fn own_tip(
+        &self,
+        _project: &Path,
+        _chat: &str,
+        _host: &str,
+        _repo_id: u64,
+        _branch: &str,
+    ) -> Option<String> {
+        None
+    }
+    /// The branches of the repo with forge id `repo_id` on `host` whose record is `chat`'s now,
+    /// **asked each time the forge's advertisement is read**: any of them the forge no longer
+    /// lists has its record ended. Any doubt is none.
+    fn own_branches(
+        &self,
+        _project: &Path,
+        _chat: &str,
+        _host: &str,
+        _repo_id: u64,
+    ) -> Vec<String> {
         Vec::new()
     }
-    /// The forge confirmed that `chat` made these `(host, repo path, branch)` branches: keep that
-    /// where no chat can write, keyed by the project and the chat.
-    fn record_created(&self, _project: &Path, _chat: &str, _created: &[(String, String, String)]) {}
+    /// The forge confirmed that `chat` made or moved these branches, to these tips: keep that
+    /// where no chat can write, keyed by the project's stable id, the chat and the forge's id of
+    /// the repo.
+    fn record_created(&self, _project: &Path, _chat: &str, _created: &[CreatedBranch]) {}
+    /// The forge no longer lists these recorded branches: their record ends.
+    fn forget_created(&self, _gone: &[CreatedBranch]) {}
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -717,17 +741,6 @@ impl ForgeRoutes {
         if repos.is_empty() {
             return Ok(None);
         }
-        // The branches this chat created through the route are its own from the start, from the
-        // app's own record, so one that is on the forge already (pushed before, or before a
-        // restart) may be pushed again. Nothing else is: not the piece log, not a clone's refs.
-        let repos: Vec<AllowedRepo> = repos
-            .into_iter()
-            .map(|repo| {
-                let own = self.seams.recorded.own_branches(project, chat, &repo);
-                let own: Vec<&str> = own.iter().map(String::as_str).collect();
-                repo.with_own_branches(&own)
-            })
-            .collect();
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
         let trouble = Arc::new(SignInTrouble::default());
@@ -758,9 +771,25 @@ impl ForgeRoutes {
             let recorded = self.seams.recorded.clone();
             let chat = chat.to_owned();
             let project = project.to_owned();
-            proxy = proxy.with_created(Box::new(move |created| {
-                recorded.record_created(&project, &chat, created);
-            }));
+            let forgets = recorded.clone();
+            let tips = recorded.clone();
+            let listed = recorded.clone();
+            let (tip_chat, tip_project) = (chat.clone(), project.clone());
+            let (list_chat, list_project) = (chat.clone(), project.clone());
+            // A branch is this chat's to move only from the tip it last put there, read from the
+            // app's record at each update: a push of another chat through the route moves it, so
+            // a branch someone made again is refused, whatever this run read or was told at start.
+            proxy = proxy
+                .with_tips(Arc::new(move |host, repo_id, branch| {
+                    tips.own_tip(&tip_project, &tip_chat, host, repo_id, branch)
+                }))
+                .with_recorded(Arc::new(move |host, repo_id| {
+                    listed.own_branches(&list_project, &list_chat, host, repo_id)
+                }))
+                .with_created(Box::new(move |created| {
+                    recorded.record_created(&project, &chat, created);
+                }))
+                .with_gone(Box::new(move |gone| forgets.forget_created(gone)));
         }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.

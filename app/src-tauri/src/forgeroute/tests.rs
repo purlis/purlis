@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use purlis_core::forge::proxy::{Kind, NoCredentials, RequestHead, TokenKind};
+use purlis_core::forge::proxy::{ForgeRepoId, Kind, NoCredentials, RequestHead, TokenKind};
 use purlis_core::secrets::keyring::Secret;
 
 use super::*;
@@ -91,20 +91,52 @@ type Held = (TokenKind, &'static str);
 struct FakeRecorded {
     repos: Mutex<HashMap<PathBuf, Vec<Recorded3>>>,
     accounts: Mutex<HashMap<(PathBuf, String), String>>,
-    /// The branches the app recorded a chat as having created, by chat id.
-    cut: Mutex<Vec<(PathBuf, String, String)>>,
+    /// The lines the app recorded, oldest first: `(project, chat, branch, tip)`. For one branch
+    /// the last line decides, as the real record does; a line with no chat is a `gone` line.
+    cut: Mutex<Vec<(PathBuf, String, String, String)>>,
 }
 
 impl FakeRecorded {
+    /// The branches whose last recorded line is `chat`'s.
     fn own_of(&self, chat: &str) -> Vec<String> {
-        lock(&self.cut)
-            .iter()
-            .filter(|(_, by, _)| by == chat)
-            .map(|(_, _, branch)| branch.clone())
+        let lines = lock(&self.cut);
+        let mut branches: Vec<String> = Vec::new();
+        for (_, _, branch, _) in lines.iter() {
+            if !branches.contains(branch) {
+                branches.push(branch.clone());
+            }
+        }
+        branches
+            .into_iter()
+            .filter(|branch| {
+                lines
+                    .iter()
+                    .rev()
+                    .find(|(_, _, b, _)| b == branch)
+                    .is_some_and(|(_, by, _, _)| by == chat)
+            })
             .collect()
     }
+    /// The tip `chat` last left on `branch`, as `None` if the last line is not `chat`'s.
+    fn tip_of(&self, project: &Path, chat: &str, branch: &str) -> Option<String> {
+        lock(&self.cut)
+            .iter()
+            .rev()
+            .find(|(_, _, b, _)| b == branch)
+            .filter(|(of, by, _, _)| of == project && by == chat)
+            .map(|(_, _, _, tip)| tip.clone())
+    }
+    /// `chat`'s route made `branch` earlier, and left it at `a` * 40, the id a pushed update names.
     fn cut_for(&self, project: &str, chat: &str, branch: &str) {
-        lock(&self.cut).push((PathBuf::from(project), chat.to_owned(), branch.to_owned()));
+        self.cut_at(project, chat, branch, &"a".repeat(40));
+    }
+    fn cut_at(&self, project: &str, chat: &str, branch: &str, tip: &str) {
+        lock(&self.cut).push((
+            PathBuf::from(project),
+            chat.to_owned(),
+            branch.to_owned(),
+            tip.to_owned(),
+        ));
     }
     fn record(&self, project: &str, repos: Vec<Recorded3>) {
         lock(&self.repos).insert(PathBuf::from(project), repos);
@@ -118,16 +150,41 @@ impl FakeRecorded {
 }
 
 impl Recorded for FakeRecorded {
-    fn own_branches(&self, project: &Path, chat: &str, _: &AllowedRepo) -> Vec<String> {
-        lock(&self.cut)
-            .iter()
-            .filter(|(of, by, _)| of == project && by == chat)
-            .map(|(_, _, branch)| branch.clone())
+    fn own_tip(
+        &self,
+        project: &Path,
+        chat: &str,
+        _host: &str,
+        _repo_id: u64,
+        branch: &str,
+    ) -> Option<String> {
+        self.tip_of(project, chat, branch)
+    }
+    fn own_branches(&self, project: &Path, chat: &str, _host: &str, _repo_id: u64) -> Vec<String> {
+        self.own_of(chat)
+            .into_iter()
+            .filter(|branch| self.tip_of(project, chat, branch).is_some())
             .collect()
     }
-    fn record_created(&self, project: &Path, chat: &str, created: &[(String, String, String)]) {
-        for (_, _, branch) in created {
-            lock(&self.cut).push((project.to_owned(), chat.to_owned(), branch.clone()));
+    fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
+        // As the real record: a branch whose repo id the route does not know is not recorded.
+        for made in created.iter().filter(|made| made.repo_id.is_some()) {
+            lock(&self.cut).push((
+                project.to_owned(),
+                chat.to_owned(),
+                made.branch.clone(),
+                made.tip.clone(),
+            ));
+        }
+    }
+    fn forget_created(&self, gone: &[CreatedBranch]) {
+        for ended in gone {
+            lock(&self.cut).push((
+                PathBuf::new(),
+                String::new(),
+                ended.branch.clone(),
+                String::new(),
+            ));
         }
     }
     fn repos(&self, project: &Path) -> Vec<AllowedRepo> {
@@ -135,7 +192,14 @@ impl Recorded for FakeRecorded {
             .get(project)
             .into_iter()
             .flatten()
-            .map(|(kind, host, path)| AllowedRepo::new(*kind, host, 443, path, "main").unwrap())
+            .map(|(kind, host, path)| {
+                // As the app's own: a recorded repo carries the forge's id, the record's key.
+                AllowedRepo::new(*kind, host, 443, path, "main")
+                    .unwrap()
+                    .with_forge_id(ForgeRepoId::for_a_test(
+                        7_000 + u64::from(*kind == Kind::GitLab),
+                    ))
+            })
             .collect()
     }
     fn account(&self, project: &Path, host: &str) -> Option<String> {
@@ -2232,6 +2296,168 @@ fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_f
     // A chat with another id (a resumed chat gets one) owns nothing: the route refuses its update.
     let other = scene.start("chat-2", "run-3", "/p/one");
     let refused = push_update(&scene, "run-3", &other.sentinel, "task/new");
+    assert!(
+        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        "{refused:?}"
+    );
+}
+
+/// The forge's advertisement for a push to the repo, as the listener reads it: `main` only, so a
+/// push that makes a branch is decided against it.
+fn advertise_main(scene: &Scene, run: &str) {
+    lock_live(scene, run).note_advertised(
+        &ChatId::new(run),
+        "github.com",
+        "acme/app",
+        vec!["main".into()],
+    );
+}
+
+/// A push of `branch` from `old` to `new` through the run's route, as `git push` sends it.
+fn push_ids(
+    scene: &Scene,
+    run: &str,
+    sentinel: &str,
+    branch: &str,
+    old: &str,
+    new: &str,
+) -> Outcome {
+    let line = format!("{old} {new} refs/heads/{branch}\0 report-status\n");
+    let mut body = format!("{:04x}{line}", line.len() + 4).into_bytes();
+    body.extend(b"0000");
+    send_raw(
+        scene,
+        run,
+        sentinel,
+        ("POST", "github.com", "/acme/app.git/git-receive-pack"),
+        "application/x-git-receive-pack-request",
+        &body,
+    )
+}
+
+#[test]
+fn a_live_run_may_not_push_a_branch_another_chat_made_again_through_the_route() {
+    let scene = Scene::new();
+    let (one, two) = ("1".repeat(40), "2".repeat(40));
+    let a = scene.start("chat-1", "run-1", "/p/one");
+    let b = scene.start("chat-2", "run-2", "/p/one");
+
+    // Chat 1 makes `task/new` through its route (after the advertisement a push is decided by);
+    // the forge takes it.
+    advertise_main(&scene, "run-1");
+    let Outcome::Forward(made) = push_ids(
+        &scene,
+        "run-1",
+        &a.sentinel,
+        "task/new",
+        &"0".repeat(40),
+        &one,
+    ) else {
+        panic!("a push that makes a branch is forwarded");
+    };
+    lock_live(&scene, "run-1").confirm_push(&ChatId::new("run-1"), &made);
+    assert_eq!(scene.recorded.own_of("chat-1"), ["task/new"]);
+
+    // A colleague deletes it. Chat 2's route reads the advertisement without the name and makes
+    // it again, at another commit, and the forge takes that push.
+    advertise_main(&scene, "run-2");
+    let Outcome::Forward(again) = push_ids(
+        &scene,
+        "run-2",
+        &b.sentinel,
+        "task/new",
+        &"0".repeat(40),
+        &two,
+    ) else {
+        panic!("chat 2 may make the name again");
+    };
+    lock_live(&scene, "run-2").confirm_push(&ChatId::new("run-2"), &again);
+    assert_eq!(scene.recorded.own_of("chat-2"), ["task/new"]);
+    assert!(scene.recorded.own_of("chat-1").is_empty());
+
+    // Chat 1's run is still live, and read its ownership at its start. It never saw an
+    // advertisement without the name; its update from the tip it left is refused all the same.
+    let refused = push_ids(
+        &scene,
+        "run-1",
+        &a.sentinel,
+        "task/new",
+        &one,
+        &"3".repeat(40),
+    );
+    assert!(
+        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        "{refused:?}"
+    );
+    // And chat 2, whose push is the last, moves it from the tip it left.
+    let moved = push_ids(
+        &scene,
+        "run-2",
+        &b.sentinel,
+        "task/new",
+        &two,
+        &"3".repeat(40),
+    );
+    assert!(matches!(moved, Outcome::Forward(_)), "{moved:?}");
+}
+
+#[test]
+fn consecutive_confirmed_pushes_each_move_the_tip_and_a_stale_one_is_refused() {
+    let scene = Scene::new();
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    let (one, two, three) = ("1".repeat(40), "2".repeat(40), "3".repeat(40));
+    let confirm = |out: Outcome| {
+        let Outcome::Forward(sent) = out else {
+            panic!("forwarded: {out:?}");
+        };
+        lock_live(&scene, "run-1").confirm_push(&ChatId::new("run-1"), &sent);
+    };
+    advertise_main(&scene, "run-1");
+    confirm(push_ids(
+        &scene,
+        "run-1",
+        &params.sentinel,
+        "task/new",
+        &"0".repeat(40),
+        &one,
+    ));
+    confirm(push_ids(
+        &scene,
+        "run-1",
+        &params.sentinel,
+        "task/new",
+        &one,
+        &two,
+    ));
+    // The first tip is stale now.
+    let stale = push_ids(&scene, "run-1", &params.sentinel, "task/new", &one, &three);
+    assert!(
+        matches!(stale, Outcome::Refused(Refusal::ProtectedRef)),
+        "{stale:?}"
+    );
+    confirm(push_ids(
+        &scene,
+        "run-1",
+        &params.sentinel,
+        "task/new",
+        &two,
+        &three,
+    ));
+}
+
+#[test]
+fn a_branch_the_forge_no_longer_lists_ends_its_record_and_the_next_update_is_refused() {
+    let scene = Scene::new();
+    scene.recorded.cut_for("/p/one", "chat-1", "task/forms");
+    let params = scene.start("chat-1", "run-1", "/p/one");
+    lock_live(&scene, "run-1").note_advertised(
+        &ChatId::new("run-1"),
+        "github.com",
+        "acme/app",
+        vec!["main".into()],
+    );
+    assert!(scene.recorded.own_of("chat-1").is_empty());
+    let refused = push_update(&scene, "run-1", &params.sentinel, "task/forms");
     assert!(
         matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
         "{refused:?}"

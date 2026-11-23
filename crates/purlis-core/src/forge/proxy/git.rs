@@ -113,6 +113,10 @@ pub(crate) struct RefCommand {
     /// The new id is all zeros: the ref is removed.
     pub(crate) delete: bool,
     pub(crate) name: String,
+    /// The old id: the commit the client says the ref is at (all zeros for a create).
+    pub(crate) old_id: String,
+    /// The new id: the commit the ref is moved to (all zeros for a delete).
+    pub(crate) new_id: String,
 }
 
 /// A push's command list.
@@ -173,6 +177,8 @@ pub(crate) fn pushed_commands(body: &[u8]) -> Result<PushCommands, PushError> {
             create: old.bytes().all(|b| b == b'0'),
             delete: new.bytes().all(|b| b == b'0'),
             name: name.to_string(),
+            old_id: old.to_string(),
+            new_id: new.to_string(),
         });
     }
     if commands.is_empty() {

@@ -137,7 +137,7 @@ impl Scene {
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(42))
-                .with_own_branches(&["work"]),
+                .with_own_branches(&[("work", &"1".repeat(40))]),
             AllowedRepo::new(Kind::GitLab, GITLAB_SELF, 8443, "grp/sub/proj", "main").unwrap(),
         ];
         if ghes {
@@ -274,10 +274,11 @@ pub fn push_body(commands: &[(&str, &str)]) -> Vec<u8> {
     let zero = "0".repeat(40);
     let mut out = Vec::new();
     for (i, (kind, name)) in commands.iter().enumerate() {
+        // An update names the tip the chat's own create (or its given branch) left: `1` * 40.
         let old = if *kind == "create" {
             zero.clone()
         } else {
-            "2".repeat(40)
+            "1".repeat(40)
         };
         let new = if *kind == "delete" {
             zero.clone()
