@@ -5465,6 +5465,18 @@ impl Applied {
             .adapter()
             .sandboxed_line(&self.with(chain), words, at)
             .map_err(under)?;
+        // The web tools are judged at the full sandbox alone (T1.1-39), and a chat's hooks read
+        // its level by whether it is named a proxy ([`crate::hookwire::PROXY_ENV`]): the basic
+        // level names none, and a full one with no proxy to name says so by naming it empty.
+        if matches!(*self.form, Form::ClaudeCode(_)) {
+            let proxy = crate::hookwire::PROXY_ENV;
+            let named = line.env.iter().any(|(key, _)| key == proxy);
+            if floor {
+                line.env.retain(|(key, _)| key != proxy);
+            } else if !named {
+                line.env.push((proxy.to_owned(), String::new()));
+            }
+        }
         // What a Claude Code chat's sandbox needs there before it starts (the home's git config
         // on Linux at the floor): made here, outside the sandbox.
         if let Form::ClaudeCode(settings) = &*self.form {

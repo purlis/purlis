@@ -399,13 +399,22 @@ pub const WEB_JUDGE_WAIT: std::time::Duration = std::time::Duration::from_secs(1
 /// chat, asks the person as it does for a command's connection, and records. A refusal is this
 /// hook's deny, which the host writes as a block and the window raises as a Notice.
 ///
-/// **Fails closed** in a sandboxed chat: a `url` that is missing or will not parse, a scheme
+/// **Judged at the full sandbox only** (a chat is named a proxy, [`crate::hookwire::PROXY_ENV`],
+/// at that level alone): the basic one never held a chat's web tools, and judging there would
+/// refuse a `WebFetch` that was allowed before.
+///
+/// **Fails closed** at the full sandbox: a `url` that is missing or will not parse, a scheme
 /// other than `http` and `https`, no proxy named for the chat, or a proxy that does not answer
-/// is a refusal. A chat the app did not sandbox is none of its business: no proxy holds it.
+/// is a refusal. A chat the app did not sandbox, or started at the basic level, is none of its
+/// business.
 ///
 /// A cross-host redirect comes back to the model as the new URL, and its next call is judged as
 /// any other.
 pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -> Answer {
+    // The basic sandbox names no proxy at all; the full one always does, empty where it has none.
+    let Some(proxy) = (hook.env)(crate::hookwire::PROXY_ENV) else {
+        return Answer::Nothing;
+    };
     if !crate::sandbox::chat_is_sandboxed_in(hook.env) {
         return Answer::Nothing;
     }
@@ -421,13 +430,12 @@ pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -
                 .to_owned(),
         );
     };
-    let Some(proxy) = (hook.env)(crate::hookwire::PROXY_ENV).filter(|proxy| !proxy.is_empty())
-    else {
+    if proxy.is_empty() {
         return deny(format!(
             "WebFetch of {host} was refused: this chat's proxy is not named, so purlis cannot ask \
              whether the host is allowed."
         ));
-    };
+    }
     match tunnel(&proxy, &host, port) {
         Tunnel::Open => Answer::Nothing,
         Tunnel::Refused(said) => deny(format!(
@@ -467,7 +475,13 @@ pub fn ask_proxy(proxy: &str, host: &str, port: u16, wait: std::time::Duration) 
     else {
         return refused("the proxy's address is not one purlis wrote");
     };
-    let Ok(address) = address.parse::<std::net::SocketAddr>() else {
+    // Loopback only: the chat's proxy is purlis's own, on this machine, and a hook that was
+    // pointed anywhere else would send the host it judges to a stranger.
+    let Some(address) = address
+        .parse::<std::net::SocketAddr>()
+        .ok()
+        .filter(|address| address.ip().is_loopback())
+    else {
         return refused("the proxy's address is not one purlis wrote");
     };
     let Ok(stream) = std::net::TcpStream::connect_timeout(&address, wait) else {

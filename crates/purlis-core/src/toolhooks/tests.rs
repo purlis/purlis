@@ -1655,13 +1655,31 @@ mod web {
 
     #[test]
     fn a_sandboxed_chat_with_no_proxy_named_has_its_web_fetch_refused() {
-        let plane = Plane::without_a_vault().with_env(crate::hookwire::SANDBOXED_ENV, "1");
+        let plane = Plane::without_a_vault()
+            .with_env(crate::hookwire::SANDBOXED_ENV, "1")
+            .with_env(crate::hookwire::PROXY_ENV, "");
         let (said, asked) = judged(&plane, fetch("https://example.com/"), Tunnel::Open);
         assert!(denial(&said).starts_with("WebFetch of example.com was refused"));
         assert!(asked.is_empty());
         let empty = sandboxed().with_env(crate::hookwire::PROXY_ENV, "");
         let (said, _) = judged(&empty, fetch("https://example.com/"), Tunnel::Open);
         assert!(denial(&said).starts_with("WebFetch of example.com was refused"));
+    }
+
+    /// The basic sandbox names no proxy and never held the web tools: judging there would refuse
+    /// every `WebFetch` that was allowed before. The full sandbox always names one, empty where
+    /// Claude Code (older than 2.1.285, or of a version that cannot be read) has none, and
+    /// fails closed on it.
+    #[test]
+    fn at_the_basic_sandbox_a_web_fetch_is_not_judged_and_at_full_with_no_proxy_it_is_refused() {
+        let basic = Plane::without_a_vault().with_env(crate::hookwire::SANDBOXED_ENV, "1");
+        let (said, asked) = judged(&basic, fetch("https://example.com/"), Tunnel::Open);
+        assert_eq!(said, Answer::Nothing);
+        assert!(asked.is_empty());
+        let full_with_none = basic.with_env(crate::hookwire::PROXY_ENV, "");
+        let (said, asked) = judged(&full_with_none, fetch("https://example.com/"), Tunnel::Open);
+        assert!(denial(&said).starts_with("WebFetch of example.com was refused"));
+        assert!(asked.is_empty());
     }
 
     #[test]
@@ -1741,6 +1759,20 @@ mod web {
             std::time::Duration::from_secs(1),
         );
         assert!(matches!(gone, Tunnel::Refused(_)), "{gone:?}");
+        // Loopback only: a proxy named anywhere else is never connected to.
+        for address in ["http://192.0.2.1:3128", "http://[2001:db8::1]:3128"] {
+            let said = ask_proxy(
+                address,
+                "example.com",
+                443,
+                std::time::Duration::from_secs(1),
+            );
+            assert_eq!(
+                said,
+                Tunnel::Refused("the proxy's address is not one purlis wrote".into()),
+                "{address}"
+            );
+        }
         assert!(matches!(
             ask_proxy(
                 "socks5://x",

@@ -2319,15 +2319,23 @@ mod tests {
         );
     }
 
-    /// The kinds of the events the log gained after `since`, once one of `kind` is among them (the
-    /// judge's line reaches the host after the call's result is in, and the proxy's own block
-    /// before it), or when 20 seconds have passed.
-    fn kinds_once(scenario: &Scenario, since: u64, kind: &str) -> Vec<String> {
+    /// The events the log gained after `since`, once `done` holds of them (the judge's line
+    /// reaches the host after the call's result is in), or when 20 seconds have passed.
+    fn events_once(
+        scenario: &Scenario,
+        since: u64,
+        done: impl Fn(&[purlis_core::eventlog::Event]) -> bool,
+    ) -> Vec<purlis_core::eventlog::Event> {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
-            let kinds = super::super::report::kinds_since(&scenario.events(), since);
-            if kinds.iter().any(|one| one == kind) || Instant::now() > deadline {
-                return kinds;
+            let mut gained: Vec<_> = scenario
+                .events()
+                .into_iter()
+                .filter(|event| event.seq > since)
+                .collect();
+            gained.sort_by_key(|event| event.seq);
+            if done(&gained) || Instant::now() > deadline {
+                return gained;
             }
             std::thread::sleep(Duration::from_millis(200));
         }
@@ -2335,13 +2343,17 @@ mod tests {
 
     /// **M-ASK-13, M-TOOL-08** (T1.1-39, #6886; R-094, R-353): a `WebFetch` of a host nothing lists
     /// is judged by `pretooluse-web`, which asks the chat's proxy. The proxy holds it and the
-    /// window asks; the person keeps it blocked; the hook refuses, and the log says so: a
-    /// `hook.pretooluse-web` line and a block, with the proxy's own refusal of the host. The
-    /// fetch never ran (no result an exit would say), and the log is read from outside.
+    /// window asks; the person keeps it blocked; **the hook refuses**. Proved by the hook's own
+    /// marks, none of which the proxy's refusal of the host or a fetch that failed for any other
+    /// reason can leave: the `hook.pretooluse-web` line's decision is `deny`; a `stop.block`
+    /// whose source is the guard names `WebFetch` (the proxy's own block is the sandbox's); and
+    /// the result the model was shown carries the hook's words. A judge that answered nothing for
+    /// a refusal leaves the line `none`, no guard block, and a fetch that fails as DNS does.
     #[test]
-    fn a_deny_rule_tool_call_writes_hook_permissiondenied_and_a_block() {
-        let homes =
-            the_claude_leg!("a_deny_rule_tool_call_writes_hook_permissiondenied_and_a_block");
+    fn a_web_fetch_of_a_refused_host_at_full_is_denied_by_the_hook_and_recorded() {
+        let homes = the_claude_leg!(
+            "a_web_fetch_of_a_refused_host_at_full_is_denied_by_the_hook_and_recorded"
+        );
         let model = Model::serve(Dialect::Claude);
         let Some(scenario) =
             Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
@@ -2362,32 +2374,52 @@ mod tests {
         kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
         scenario.until_played(chat, &["denied-fetch"]);
 
-        let kinds = kinds_once(&scenario, since, "hook.pretooluse-web");
-        assert!(
-            kinds.iter().any(|kind| kind == "hook.pretooluse-web"),
-            "the fetch left no line of the web judge: {kinds:?}\n{}",
+        let guard_block = |event: &purlis_core::eventlog::Event| {
+            event.kind == "stop.block"
+                && event.body["source"] == "guard"
+                && event.body["tool"] == "WebFetch"
+        };
+        let gained = events_once(&scenario, since, |events| events.iter().any(guard_block));
+        let kinds: Vec<&str> = gained.iter().map(|event| event.kind.as_str()).collect();
+        let judged: Vec<&str> = gained
+            .iter()
+            .filter(|event| event.kind == "hook.pretooluse-web")
+            .filter_map(|event| event.body["decision"].as_str())
+            .collect();
+        assert_eq!(
+            judged,
+            ["deny"],
+            "the web judge's line did not say it refused: {kinds:?}\n{}",
             scenario.said()
         );
         assert!(
-            kinds.iter().any(|kind| kind == "stop.block"),
-            "the refusal was not recorded as a block: {kinds:?}\n{}",
+            gained.iter().any(guard_block),
+            "the hook's refusal was not recorded as a guard's block of WebFetch: {kinds:?}\n{}",
             scenario.said()
         );
-        let result = StepResult::of(scenario.result_of(chat, "denied-fetch").as_ref());
+        let result = scenario
+            .result_of(chat, "denied-fetch")
+            .map(|line| line.to_string())
+            .unwrap_or_default();
         assert!(
-            !result.ran,
-            "the denied fetch ran: {result:?}\n{}",
+            result.contains(&format!("WebFetch of {host} was refused"))
+                && result.contains("this chat may not reach it"),
+            "the model was not shown the hook's refusal: {result}\n{}",
             scenario.said()
         );
         scenario.keeps_listed_asks_blocked();
     }
 
-    /// **An allowed host is fetched** (T1.1-39): the person allows the host for the chat when the
-    /// proxy asks; the judge lets the call run, the proxy carried a connection to the host (the
-    /// names seam's origin heard it), and the log holds the judge's line and no block.
+    /// **An allowed host is let through by the hook** (T1.1-39): the person allows the host for
+    /// the chat when the proxy asks; the judge lets the call go on and records no block, and the
+    /// model is shown no refusal of purlis's. The origin heard one connection to the host: the
+    /// proxy carrying **the hook's own probe** (its `CONNECT`), not the fetch, which Claude Code
+    /// makes from its own process. So this proves the judge's allow path, not that a fetch ran.
     #[test]
-    fn a_web_fetch_of_an_allowed_host_runs_and_leaves_no_block() {
-        let homes = the_claude_leg!("a_web_fetch_of_an_allowed_host_runs_and_leaves_no_block");
+    fn a_web_fetch_of_an_allowed_host_is_let_through_by_the_hook_and_leaves_no_block() {
+        let homes = the_claude_leg!(
+            "a_web_fetch_of_an_allowed_host_is_let_through_by_the_hook_and_leaves_no_block"
+        );
         let model = Model::serve(Dialect::Claude);
         let Some(scenario) =
             Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
@@ -2411,7 +2443,7 @@ mod tests {
         scenario.until_played(chat, &["allowed-fetch"]);
 
         // An allowed call's line is recorded with its call's end, which a web tool has no hook
-        // for: the proof it ran is the tool's own result, which is not a refusal of purlis's.
+        // for: all the result shows is that it is not a refusal of purlis's.
         let kinds = super::super::report::kinds_since(&scenario.events(), since);
         let result = scenario
             .result_of(chat, "allowed-fetch")
@@ -2430,7 +2462,7 @@ mod tests {
         assert_eq!(
             scenario.names.origin_hits(),
             vec![(host.to_owned(), 443)],
-            "the proxy carried no connection to the allowed host\n{}",
+            "the proxy carried no probe of the hook to the allowed host\n{}",
             scenario.said()
         );
     }
