@@ -18,3 +18,8 @@
 #   id = "e2e/specs/thing.e2e.ts"               # wdio: the spec file, from app/
 #   ticket = 7001                               # the flake's ticket
 #   added = "2026-11-21"                        # the day it went in
+
+[[test]]
+id = "purlis-browser-engine::it a_login_purlis_performs_shows_the_agent_nothing_it_filled::a_login_fills_the_form_of_a_site_with_no_earlier_session"
+ticket = 7435
+added = "2026-11-23"
