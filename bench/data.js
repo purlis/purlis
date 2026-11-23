@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795412371480,
+  "lastUpdate": 1795416358613,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52836,6 +52836,48 @@ window.BENCHMARK_DATA = {
             "value": 101.6691125,
             "unit": "ms",
             "extra": "median of 5 runs: 101.267, 101.472, 101.669, 101.893, 102.683 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "2a3f8fe3275269f6a786489d0c9b71eda49589bb",
+          "message": "One login: created-branch records keyed by the project id and the forge's repo id (#7363) (#7403)\n\n* Key created-branch records by project id and forge repo id; end them with the branch (Refs #7363)\n\nThe forge route's record of branches a chat created was keyed by project path\nand repo path, and never expired. It is now keyed by the plane's stable project\nid and the forge's numeric repo id, carries the tip the branch was made at, and\nends (a gone line) when the forge's advertisement no longer lists the branch.\nLines without a project id or repo id are owned by nobody.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M831KA6EFBWJXNTT4GQR31QF\nPurlis-Persona: steward\n\n* Created-branch records: an update is let through only from the tip the chat last put on the branch (Refs #7363)\n\nThe record keeps a tip line per confirmed push, and the route reads the last line for\n(host, repo id, branch) at every update, not at run start. An update whose old id is not that\ntip is refused: a branch deleted and made again, pushed to by anyone else or by another chat\nthrough the route, or one whose advertisement the chat never read. A garbled or missing tip\nfails closed. The gone line stays as an earlier end of the record. Docs say so.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M833RNYZESEWNFB2RKKW0ZTX\nPurlis-Persona: steward\n\n* One login: keep AGENTS.md out of this change\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: check_push's doc says a branch moves only from the chat's last tip\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: the listener test updates from the tip the chat put there, and a stale old id is refused\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: a record from an earlier run ends with its branch, and the route fakes carry the forge id and the advertisement a push needs (Refs #7363)\n\nThe app route tests failed in CI for three reasons, none of them a loosened tip rule:\n- the fake Recorded gave repos no forge id, so the tip lookup (which needs one) refused\n  every update;\n- two of round 2's tests pushed a branch-creating push with no advertisement read, which\n  the route refuses (NoAdvertisement);\n- round 2 stopped seeding the policy from the record, so note_advertised only ended\n  records the run itself had made. It now also asks the record for the chat's branches of\n  the repo and ends any the forge no longer lists.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8374VFTN36CE2PVXYBZE7J7\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T06:05:13Z",
+          "tree_id": "f56d56a39f61621a949613fb0ab6471fc66041f0",
+          "url": "https://github.com/purlis/purlis/commit/2a3f8fe3275269f6a786489d0c9b71eda49589bb"
+        },
+        "date": 1795416352307,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5520179999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.548, 0.550, 0.552, 0.564, 0.583 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2144265,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.098, 16.158, 16.214, 16.266, 16.334 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.4695695,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.383, 99.967, 100.470, 100.837, 105.000 ms"
           }
         ]
       }
