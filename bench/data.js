@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795446847865,
+  "lastUpdate": 1795447023213,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53088,6 +53088,48 @@ window.BENCHMARK_DATA = {
             "value": 102.1523915,
             "unit": "ms",
             "extra": "median of 5 runs: 101.479, 102.076, 102.152, 102.216, 103.172 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "7056372dbf4aa81f239f1e6d531b19e3e96e755c",
+          "message": "CI: the 13 PR-only workflows get a queue decision (#7420) (#7422)\n\nFour path-filtered workflows join the merge queue, scoped by their own\npull_request.paths through workflow-scope; nine stay PR-only, each with a\nreason of at least 40 characters that a test holds.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83XPBYZQ7PTYE4JRXCDC9SV\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T14:42:14Z",
+          "tree_id": "eb31e639804fae7499cc7b1c6bb07fa52b1798a2",
+          "url": "https://github.com/purlis/purlis/commit/7056372dbf4aa81f239f1e6d531b19e3e96e755c"
+        },
+        "date": 1795447015902,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5478765000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.533, 0.543, 0.548, 0.549, 0.565 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.371910999999997,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.125, 16.294, 16.372, 16.482, 17.210 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7873235,
+            "unit": "ms",
+            "extra": "median of 5 runs: 99.760, 101.384, 101.787, 101.914, 102.751 ms"
           }
         ]
       }
