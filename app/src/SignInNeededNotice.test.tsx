@@ -65,6 +65,19 @@ describe("SignInNeededNotice", () => {
     expect(await screen.findByText(/Your sign-in to github\.com has ended/)).toBeTruthy();
   });
 
+  it("tells a state again when it comes back after a dismissal and a change", async () => {
+    held.needed = [{ host: "github.com", ended: false }];
+    render(<SignInNeededNotice plane="/p" session={4} />);
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/github\.com/)).toBeNull();
+
+    tell({ host: "github.com", ended: true });
+    expect(await screen.findByText(/Your sign-in to github\.com has ended/)).toBeTruthy();
+
+    tell({ host: "github.com", ended: false });
+    expect(await screen.findByText(/no sign-in to github\.com/)).toBeTruthy();
+  });
+
   it("draws a Notice per host, and only the signed-in host's goes", () => {
     held.needed = [
       { host: "github.com", ended: false },

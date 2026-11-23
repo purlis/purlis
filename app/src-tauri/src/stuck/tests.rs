@@ -62,7 +62,10 @@ fn a_working_chat_whose_command_fails_three_times_is_told_stuck_until_it_s_fine(
     );
     noticed.fine(CHAT);
     assert_eq!(last_stuck(&told), None, "It's fine clears it");
-    assert_eq!(noticed.all().len(), 1, "what a window that opens is told");
+    assert!(
+        noticed.all().is_empty(),
+        "nothing stands, so a window that opens is told nothing"
+    );
 }
 
 #[test]

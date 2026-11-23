@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PlaneId, SignInNeeded } from "./bindings";
 import { signInNeededOf, useChatsHere, useChatsSelect } from "./chatState";
 import { Notice } from "./Notice";
@@ -39,9 +39,7 @@ export function SignInNeededNotice({ plane, session }: { plane: PlaneId; session
   // return to that state is told again.
   const standing = new Set(needed.map((one) => signInNeededCause(session, one)));
   const stale = [...dismissed].some((cause) => !standing.has(cause));
-  useEffect(() => {
-    if (stale) setDismissed((was) => new Set([...was].filter((cause) => standing.has(cause))));
-  });
+  if (stale) setDismissed(new Set([...dismissed].filter((cause) => standing.has(cause))));
   return needed.map((one) => {
     const cause = signInNeededCause(session, one);
     if (dismissed.has(cause)) return null;
