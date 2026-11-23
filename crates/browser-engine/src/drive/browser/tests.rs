@@ -549,7 +549,7 @@ impl Engine {
                 } else {
                     model.freezing.asked.remove(&session);
                     if model.freezing.thaw_lag > 0 {
-                        model.freezing.thawing.insert(session, 0);
+                        model.freezing.thawing.entry(session).or_insert(0);
                     }
                 }
                 Ok(json!({}))
