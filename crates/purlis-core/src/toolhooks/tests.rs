@@ -1760,7 +1760,12 @@ mod web {
         );
         assert!(matches!(gone, Tunnel::Refused(_)), "{gone:?}");
         // Loopback only: a proxy named anywhere else is never connected to.
-        for address in ["http://192.0.2.1:3128", "http://[2001:db8::1]:3128"] {
+        // 0.0.0.0 is "any", not the loopback: it is refused by its address alone.
+        for address in [
+            "http://192.0.2.1:3128",
+            "http://[2001:db8::1]:3128",
+            "http://0.0.0.0:3128",
+        ] {
             let said = ask_proxy(
                 address,
                 "example.com",
@@ -1772,6 +1777,24 @@ mod web {
                 Tunnel::Refused("the proxy's address is not one purlis wrote".into()),
                 "{address}"
             );
+        }
+        // Both loopback addresses are connected to: the IPv6 one where this machine has it.
+        if let Ok(listener) = std::net::TcpListener::bind("[::1]:0") {
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut seen = [0u8; 512];
+                let _ = socket.read(&mut seen).unwrap();
+                let _ = socket.write_all(b"HTTP/1.1 200 Connection established\r\n\r\n");
+            });
+            let said = ask_proxy(
+                &format!("http://[::1]:{port}"),
+                "example.com",
+                443,
+                std::time::Duration::from_secs(5),
+            );
+            server.join().unwrap();
+            assert_eq!(said, Tunnel::Open);
         }
         assert!(matches!(
             ask_proxy(

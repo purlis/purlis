@@ -5065,6 +5065,87 @@ fn a_hook_word_that_names_the_chat_s_own_folder_refuses_a_chat_there_only() {
     assert!(line(&root.join("ws/repo")).is_ok());
 }
 
+/// The value `PURLIS_CHAT_PROXY` has on the line of a Claude Code chat at `level`, started
+/// `with_proxy` or not: `None` where the line does not name it at all (T1.1-39: the hooks read
+/// the chat's level by that).
+fn chat_proxy_on_the_line(
+    os: Os,
+    level: Level,
+    with_proxy: bool,
+) -> (Option<String>, Option<String>, Form) {
+    let plane = match level {
+        Level::Full => plane_saying(ON_WITHOUT_CACHES),
+        Level::Floor => plane_saying("schema = 1\n"),
+    };
+    let root = plane.path().canonicalize().expect("the plane");
+    let cwd = root.join("workspaces/real");
+    std::fs::create_dir_all(&cwd).expect("a real folder");
+    let applied = match decide(
+        Harness::ClaudeCode,
+        &root,
+        &machine(os),
+        &|_| true,
+        None,
+        None,
+    )
+    .expect("decided")
+    {
+        Some(Decided::Sandboxed(applied)) => applied,
+        other => panic!("not sandboxed: {other:?}"),
+    };
+    assert_eq!(applied.level(), level);
+    let confinement = with_proxy.then(|| Confinement::start(Vec::new()).expect("a proxy"));
+    let line = applied
+        .line(
+            Words {
+                program: "claude".to_owned(),
+                command: Vec::new(),
+                armed: Vec::new(),
+                charters: Vec::new(),
+            },
+            &At {
+                cwd: Some(&cwd),
+                confinement: confinement.as_ref(),
+                ..At::default()
+            },
+        )
+        .expect("starts");
+    let named = line
+        .env
+        .iter()
+        .find(|(key, _)| key == crate::hookwire::PROXY_ENV)
+        .map(|(_, value)| value.clone());
+    (
+        named,
+        confinement.as_ref().map(Confinement::proxy_url),
+        applied.form().clone(),
+    )
+}
+
+#[test]
+fn a_claude_code_chat_at_the_full_sandbox_with_no_proxy_is_named_an_empty_one() {
+    // The hook reads an empty name as "full, nothing to ask" and refuses; no name at all would
+    // read as a level that is not judged, and the web tools would pass unseen (fail open).
+    let (named, _, form) = chat_proxy_on_the_line(Os::MacOs, Level::Full, false);
+    assert!(matches!(form, Form::ClaudeCode(_)), "{form:?}");
+    assert_eq!(named, Some(String::new()));
+}
+
+#[test]
+fn a_claude_code_chat_at_the_full_sandbox_is_named_its_proxy() {
+    let (named, url, _) = chat_proxy_on_the_line(Os::MacOs, Level::Full, true);
+    assert_eq!(named, Some(url.expect("a proxy url")));
+}
+
+#[test]
+fn a_claude_code_chat_at_the_floor_is_named_no_proxy() {
+    // The floor's web tools are never judged, whatever proxy the chat has.
+    let (named, url, form) = chat_proxy_on_the_line(Os::MacOs, Level::Floor, true);
+    assert!(url.is_some());
+    assert!(matches!(form, Form::ClaudeCode(_)), "{form:?}");
+    assert_eq!(named, None);
+}
+
 #[test]
 fn a_jq_hook_leaves_the_chat_s_folder_and_its_workspace_writable() {
     // #1327, as seen: the hook below made every chat in the project read-only.
