@@ -217,7 +217,9 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
             stops::BLOCK => {
                 // Every block the marker's tally reads back (`chatlog::Tally`), whoever blocked it
                 // and however much its report is worth (Q280).
-                if let Ok(block) = serde_json::from_value::<Block>(event.body.clone()) {
+                if let Ok(block) = serde_json::from_value::<Block>(event.body.clone())
+                    && !block.repeats_the_proxys()
+                {
                     turn.blocked(block, &harness);
                 }
             }

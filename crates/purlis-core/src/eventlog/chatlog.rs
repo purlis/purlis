@@ -427,6 +427,8 @@ impl Tally {
     fn add(&mut self, event: &Event) {
         let count = match event.kind.as_str() {
             stops::BLOCK => match serde_json::from_value::<Block>(event.body.clone()) {
+                // The guard's deny of a refusal the proxy's block already holds (#7465).
+                Ok(block) if block.repeats_the_proxys() => return,
                 Ok(Block { qualifier, .. }) => match qualifier {
                     None => &mut self.blocks,
                     Some(Qualifier::Unverified) => &mut self.unverified_blocks,

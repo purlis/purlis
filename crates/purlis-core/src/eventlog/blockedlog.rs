@@ -57,7 +57,11 @@ pub fn listed(events: &[Event], now_ms: u64, is_ours: &dyn Fn(&str) -> bool) -> 
         .filter_map(|event| {
             let chat = event.chat.as_deref().filter(|chat| is_ours(chat))?;
             let at_ms = super::written_at_ms(&event.ulid).filter(|at| *at >= since)?;
-            let block = serde_json::from_value(event.body.clone()).ok()?;
+            let block: Block = serde_json::from_value(event.body.clone()).ok()?;
+            // The guard's deny of a refusal the proxy's block lists already (#7465).
+            if block.repeats_the_proxys() {
+                return None;
+            }
             Some(Listed {
                 at_ms,
                 seq: event.seq,

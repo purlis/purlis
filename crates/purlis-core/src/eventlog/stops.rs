@@ -27,6 +27,13 @@ use super::{Event, Recorder};
 
 /// A block: a refusal that does not stop the chat on its own.
 pub const BLOCK: &str = "stop.block";
+/// **The guard-arm target of a `WebFetch` deny that repeats the proxy's block** (#7465): the
+/// `pretooluse-web` hook asks the chat's proxy for the host, the proxy refuses and writes a
+/// sandbox block, and the hook's deny is written as a guard's block beside it. Both stay in the
+/// log (two causes); [`Block::repeats_the_proxys`] is how the Blocked count and list tell the one
+/// refusal from two.
+pub const PROXY_REFUSAL_ARM: &str = "web-proxy";
+
 /// A hold: an action purlis refuses to the chat and raises as an ask.
 pub const HOLD: &str = "stop.hold";
 /// A loop pause: the chat paused for going round and round.
@@ -264,6 +271,14 @@ pub struct Block {
     pub target: Option<Target>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub args: Option<String>,
+}
+
+impl Block {
+    /// Whether this is a guard's deny that repeats a refusal the chat's proxy wrote as a sandbox
+    /// block ([`PROXY_REFUSAL_ARM`]): recorded, and left out of every count of blocks.
+    pub fn repeats_the_proxys(&self) -> bool {
+        self.source == Source::Guard && self.target == Target::guard_arm(PROXY_REFUSAL_ARM).ok()
+    }
 }
 
 /// **A hold**: the tool purlis refused to the chat and raised as an ask, what it was aimed at,
@@ -515,11 +530,14 @@ fn guard_block(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block
         tool: line_tool(call),
         source: Source::Guard,
         qualifier: (!verified).then_some(Qualifier::Unverified),
-        target: call
-            .arm
-            .as_deref()
-            .and_then(crate::toolgate::Arm::of_id)
-            .and_then(|arm| Target::guard_arm(arm.id()).ok()),
+        target: if call.rule.as_deref() == Some(crate::toolhooks::WEB_PROXY_REFUSED) {
+            Target::guard_arm(PROXY_REFUSAL_ARM).ok()
+        } else {
+            call.arm
+                .as_deref()
+                .and_then(crate::toolgate::Arm::of_id)
+                .and_then(|arm| Target::guard_arm(arm.id()).ok())
+        },
         args: call.args.clone(),
     })
 }
@@ -580,3 +598,7 @@ mod harness_check_tests;
 #[cfg(test)]
 #[path = "stops/guard_tests.rs"]
 mod guard_tests;
+
+#[cfg(test)]
+#[path = "stops/web_judge_tests.rs"]
+mod web_judge_tests;

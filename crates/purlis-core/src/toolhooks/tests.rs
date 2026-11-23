@@ -1617,6 +1617,23 @@ mod web {
     }
 
     #[test]
+    fn a_proxy_refusal_is_the_one_deny_that_names_the_proxy_as_its_rule() {
+        let rule =
+            |answer| match judged(&sandboxed(), fetch("https://never.example.com/"), answer).0 {
+                Answer::Deny(verdict) => verdict.reason,
+                other => panic!("not refused: {other:?}"),
+            };
+        assert_eq!(
+            rule(Tunnel::Refused("HTTP/1.1 403 Forbidden".into())),
+            WEB_PROXY_REFUSED
+        );
+        assert_ne!(
+            rule(Tunnel::Unreached("the proxy did not answer".into())),
+            WEB_PROXY_REFUSED
+        );
+    }
+
+    #[test]
     fn a_web_fetch_names_its_own_port_and_an_http_scheme_is_judged_as_https_is() {
         let (_, asked) = judged(
             &sandboxed(),
@@ -1751,14 +1768,15 @@ mod web {
         );
         let (said, _) = answer("HTTP/1.1 403 Forbidden\r\n\r\n");
         assert_eq!(said, Tunnel::Refused("HTTP/1.1 403 Forbidden".into()));
-        // Nothing listening is a refusal, never a pass.
+        // Nothing listening is a refusal, never a pass; and one the proxy never heard, so it
+        // recorded none (`Unreached`).
         let gone = ask_proxy(
             "http://127.0.0.1:1",
             "example.com",
             443,
             std::time::Duration::from_secs(1),
         );
-        assert!(matches!(gone, Tunnel::Refused(_)), "{gone:?}");
+        assert!(matches!(gone, Tunnel::Unreached(_)), "{gone:?}");
         // Loopback only: a proxy named anywhere else is never connected to.
         // 0.0.0.0 is "any", not the loopback: it is refused by its address alone.
         for address in [
@@ -1774,7 +1792,7 @@ mod web {
             );
             assert_eq!(
                 said,
-                Tunnel::Refused("the proxy's address is not one purlis wrote".into()),
+                Tunnel::Unreached("the proxy's address is not one purlis wrote".into()),
                 "{address}"
             );
         }

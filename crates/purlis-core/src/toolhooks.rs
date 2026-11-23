@@ -380,9 +380,20 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
 pub enum Tunnel {
     /// `200`: the proxy carries the host, as it would a command's connection to it.
     Open,
-    /// Any other status, or nothing: refused, with the proxy's word for it.
+    /// Any other status: the proxy answered and refused, with its word for it. It records the
+    /// refusal itself, as a sandbox block.
     Refused(String),
+    /// No answer at all (the hook could not connect, write or read within its wait): refused,
+    /// fail closed. The proxy heard nothing, so it recorded nothing, and the hook's deny is the
+    /// refusal's only record.
+    Unreached(String),
 }
+
+/// **The rule of a `WebFetch` deny that is the chat's proxy's own refusal** (#7465): the proxy
+/// answered and said no, and it wrote that as a sandbox block. The host writes the hook's deny
+/// as a block too, aimed at [`crate::eventlog::stops::PROXY_REFUSAL_ARM`], which the Blocked
+/// count and list leave out, since the same refusal is already there once.
+pub const WEB_PROXY_REFUSED: &str = "the chat's proxy refused the host of a WebFetch";
 
 /// How long the web tools' judge waits on the proxy, which holds a connection to a host nothing
 /// lists while the person is asked: a little under the hook's own timeout
@@ -438,7 +449,15 @@ pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -
     }
     match tunnel(&proxy, &host, port) {
         Tunnel::Open => Answer::Nothing,
-        Tunnel::Refused(said) => deny(format!(
+        Tunnel::Refused(said) => Answer::Deny(Verdict {
+            reason: WEB_PROXY_REFUSED.to_owned(),
+            ..refused(format!(
+                "WebFetch of {host} was refused: this chat may not reach it ({said}). The \
+                 person can allow the host if it is needed."
+            ))
+        }),
+        // No proxy heard it, so no proxy block holds it: this deny is the only record.
+        Tunnel::Unreached(said) => deny(format!(
             "WebFetch of {host} was refused: this chat may not reach it ({said}). The person \
              can allow the host if it is needed."
         )),
@@ -468,7 +487,7 @@ fn web_target(url: &str) -> Option<(String, u16)> {
 /// Any failure to connect, write or read an answer within `wait` is a refusal, never a pass.
 pub fn ask_proxy(proxy: &str, host: &str, port: u16, wait: std::time::Duration) -> Tunnel {
     use std::io::{BufRead, Read, Write};
-    let refused = |why: &str| Tunnel::Refused(why.to_owned());
+    let refused = |why: &str| Tunnel::Unreached(why.to_owned());
     let Some(address) = proxy
         .strip_prefix("http://")
         .map(|a| a.trim_end_matches('/'))
