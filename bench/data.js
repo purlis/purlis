@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795396859182,
+  "lastUpdate": 1795397237002,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52626,6 +52626,48 @@ window.BENCHMARK_DATA = {
             "value": 101.516974,
             "unit": "ms",
             "extra": "median of 5 runs: 100.895, 101.491, 101.517, 101.974, 102.032 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "291ded03c7e587b285ca4bd74e194d34ee42a2e0",
+          "message": "One login J: a missing or ended forge sign-in raises a Notice (#7290) (#7387)\n\n* One login J: a chat's missing or ended forge sign-in raises a Notice on its pane (#7290)\n\nThe route's Notices seam defaulted to NoNotices, so a refused request for a missing or ended\nsign-in told the window nothing. AppNotices tells the chat's project (stuck::Noticed, memory\nonly, gone with the chat); the pane draws one Notice per chat, host and state, with Sign in\nopening Settings > You > Accounts. A chat not yet open is not counted as told.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82F9XP1CA3TYE0Z9G7260RK\nPurlis-Persona: steward\n\n* One login J: the Notice's component, its test and its changelog fragment (#7290)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82F9XP1CA3TYE0Z9G7260RK\nPurlis-Persona: steward\n\n* One login J round 2: the sign-in Notice clears on sign-in, is told per session, host and state, and counts as told only once delivered\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82HJDRHZZYJCD11T4MZQFS4\nPurlis-Persona: steward\n\n* One login J round 2: a render test of SignInNeededNotice\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82HJDRHZZYJCD11T4MZQFS4\nPurlis-Persona: steward\n\n* One login J round 3: a chat's sign-in Notices are held and told per host\n\nNoticed holds a chat's sign-ins as a map host -> SignInNeeded and the window draws one\nNotice per host; sign_in_ok takes down only that host's. The route's told set mirrors\nwhat is shown, one state per (session, host), so Missing -> Ended -> Missing and a host\nstill missing after another host's fix are told again. A told Notice for a chat that\nclosed meanwhile is taken down, a closed chat's entry is not made again, and\nforge-sign-in-needed is named in noticeKinds and the Notice guard.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82M6Y7PPF8VJC5KBSN2752N\nPurlis-Persona: steward\n\n* One login J round 3: uiRpc.ts follows the per-host sign-ins, a dismissal ends when its cause does, an entry back to nothing is dropped\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Round 4: merge main; no-entry stuck assertion, render-time dismissal prune, re-shown-after-ended test\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82SYEPB3YT6WABKEC16NBWY\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T00:50:47Z",
+          "tree_id": "9492496093602a086458359ed422c357c2d46968",
+          "url": "https://github.com/purlis/purlis/commit/291ded03c7e587b285ca4bd74e194d34ee42a2e0"
+        },
+        "date": 1795397229263,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5134719999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.512, 0.513, 0.513, 0.520, 0.542 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.274448,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.157, 16.208, 16.274, 16.289, 16.570 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8947165,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.644, 101.706, 101.895, 102.647, 102.720 ms"
           }
         ]
       }
