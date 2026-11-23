@@ -18,11 +18,13 @@ history into the same quarantine, and takes the pack in once more (`Quarantine::
 The tips come from the forge, never from the chat.
 
 - **Only a shortage of objects fetches.** The pack was short when `index-pack --fix-thin` stops
-  with git's own "unresolved delta" failure (a thin pack's base is not here), or when `rev-list
+  with git's own "unresolved delta" failure (a thin pack's base is not here) or, under `--strict`,
+  "did not receive expected object" (a small change with no delta misses its parent), or when `rev-list
   --objects --missing=error` fails on the tip and the same walk with `--missing=allow-any` does not
   (an object the pack left out because the forge has it is missing; one git could not read is not).
   A truncated or garbage pack, and any other `index-pack` failure, is refused at once, with no
-  `ls-remote` and no fetch, so a chat cannot make the app download anything by sending a bad pack.
+  `ls-remote` and no fetch. A well-formed pack that names an absent base still fetches, so a chat
+  can make the app fetch the forge's tips; what bounds it is the limits below, not the trigger.
 - **Incremental.** The base (`open`, `also_have`) and every tip are fetched into private refs of
   the quarantine (`refs/quarantine/base/<id>`, `refs/quarantine/tips/<id>`), which no chat can
   write. Git negotiates `have` lines from refs and not from `FETCH_HEAD`, so each chunk of 256

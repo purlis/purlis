@@ -208,6 +208,17 @@ fn a_thin_pack_on_an_integration_branch_is_taken_in_and_a_plain_change_is_clean(
 }
 
 #[test]
+fn a_small_change_with_no_delta_on_an_integration_branch_is_taken_in() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // A new small file: the pack carries no delta, so `index-pack --strict` misses the parent
+    // commit itself, not a delta base.
+    let tip = task_commit(&s, |chat| write(chat, "notes.txt", "small\n"));
+    let checked = through_the_route(&s, &forge_of(&s, false), &tip).expect("it takes in");
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+#[test]
 fn a_thin_pack_on_an_integration_branch_is_refused_where_the_forge_advertises_nothing() {
     purlis_core::unsteered!();
     let s = scene();

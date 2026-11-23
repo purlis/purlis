@@ -108,7 +108,7 @@ impl FromForge {
             .iter()
             .map(|tip| format!("+{0}:refs/quarantine/{ref_dir}/{0}", tip.as_str()))
             .collect();
-        let mut args = vec!["fetch", "--quiet", "--no-tags", self.url.as_str()];
+        let mut args = vec!["fetch", "--quiet", "--no-tags", "--", self.url.as_str()];
         args.extend(specs.iter().map(String::as_str));
         let run =
             git::run_network(into, self.helper.as_deref(), &args).map_err(|why| why.to_string())?;
@@ -304,9 +304,13 @@ impl Quarantine {
         if done.code != Some(0) {
             let said = String::from_utf8_lossy(&done.err);
             let why = first_line(&said, "git did not take the pushed objects in");
-            // git's own failure for a thin pack whose base is not here (`LC_ALL=C`). A truncated
+            // git's own failures for a pack built on objects that are not here (`LC_ALL=C`): a
+            // thin delta whose base is missing, or, under `--strict`, a commit or tree whose
+            // parent or entry is missing (a small change carries no delta at all). A truncated
             // pack ("early EOF") or garbage ("pack signature mismatch") is another failure.
-            return Err(if said.contains("unresolved delta") {
+            return Err(if said.contains("unresolved delta")
+                || said.contains("did not receive expected object")
+            {
                 Refused::ForWantOfObjects(why)
             } else {
                 Refused::Otherwise(why)
