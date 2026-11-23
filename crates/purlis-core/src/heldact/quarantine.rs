@@ -308,13 +308,15 @@ impl Quarantine {
             // thin delta whose base is missing, or, under `--strict`, a commit or tree whose
             // parent or entry is missing (a small change carries no delta at all). A truncated
             // pack ("early EOF") or garbage ("pack signature mismatch") is another failure.
-            return Err(if said.contains("unresolved delta")
-                || said.contains("did not receive expected object")
-            {
-                Refused::ForWantOfObjects(why)
-            } else {
-                Refused::Otherwise(why)
-            });
+            return Err(
+                if said.contains("unresolved delta")
+                    || said.contains("did not receive expected object")
+                {
+                    Refused::ForWantOfObjects(why)
+                } else {
+                    Refused::Otherwise(why)
+                },
+            );
         }
         self.has(tip).map_err(Refused::Otherwise)?;
         // Every object of the push is here: a tip whose tree or blobs are missing has no diff.
