@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795468978196,
+  "lastUpdate": 1795472073231,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53256,6 +53256,48 @@ window.BENCHMARK_DATA = {
             "value": 101.924672,
             "unit": "ms",
             "extra": "median of 5 runs: 100.775, 101.066, 101.925, 101.974, 102.196 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8d942e85cc39c6f6b5fcb934df27b8484afbfea6",
+          "message": "One login: the person can let a chat push a branch it has no record of (#7415)\n\n* One login: a refused push says why in git's output, and a chat follows up its task's branch (#7363)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83NF39Q2CB3X608PZBNY691\nPurlis-Persona: steward\n\n* One login: commit the refusal module, its ADR amendment and change note; ref names bounded to printable ASCII; the docs say what a reason may name and that no sandboxed chat writes the dispatch records\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: the no-sign-in refusal names Settings › You › Accounts; the listener tests expect git's own ERR refusal\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: the person can let a chat push a branch it has no record of (#7363)\n\nAn update to an existing, unprotected branch that no chat owns, or another does, raises one\nask in the window, Let this chat push it, with Allow and Keep blocked. Allow records the chat\nas the owner at the commit the forge shows the person when they press; the tip rule applies\nfrom there. Never for a protected, default, deploy or pages branch. Also carries\nlistener/gitsay.rs, which the previous commit declared but did not add.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83QA4R1HY61BMPGF82BCWE2\nPurlis-Persona: steward\n\n* One login: the ADR says no sandboxed chat writes the dispatch records; a test pins that an unrepeatable ref name is left to the caller\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: the ask's sentence names its control, Let this chat push it\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83QA4R1HY61BMPGF82BCWE2\nPurlis-Persona: steward\n\n* One login: the ask to let a chat push is raised only for a listed, sayable branch, capped, and says who owns it\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83XY5TQYCGFE4QQ8K2QM44B\nPurlis-Persona: steward\n\n* Let this chat push: the cap on waiting asks is counted and raised under one lock, so pushes served at once cannot pass it\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Let this chat push: the route test advertises the branch it asks about, as an ask now needs\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Let this chat push: the ask's owner is read through the Recorded seam, so a test reads its fake and the app its own config\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T21:12:46Z",
+          "tree_id": "dd4132c8c125449e7da334dd6e8a73264a367535",
+          "url": "https://github.com/purlis/purlis/commit/8d942e85cc39c6f6b5fcb934df27b8484afbfea6"
+        },
+        "date": 1795472065902,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3474425,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.336, 0.342, 0.347, 0.355, 0.356 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2229805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.156, 16.163, 16.223, 16.242, 16.650 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.048382,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.619, 100.906, 101.048, 101.216, 101.450 ms"
           }
         ]
       }
