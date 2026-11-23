@@ -76,7 +76,7 @@ tauri-plugin-single-instance = "2.4.4"
 tauri-plugin-dialog = "2"
 # The one dialog shown before Tauri is built (`refuse_beside_the_old_app`): the native dialog
 # the dialog plugin itself draws through, at the version it already brings in.
-rfd = { version = "0.16", default-features = false }
+rfd = { version = "0.17", default-features = false }
 # The app moving itself (ADR 0042). Its signature check is an ordinary dependency
 # of the plugin, not a feature, so there is no build of it that skips verification.
 tauri-plugin-updater = "2"
@@ -134,7 +134,7 @@ objc2-user-notifications = { version = "0.3.2", default-features = false, featur
 # nothing new is in the tree.
 [target.'cfg(target_os = "linux")'.dependencies]
 # rfd's GTK backend on Linux, as the dialog plugin enables it.
-rfd = { version = "0.16", default-features = false, features = ["gtk3"] }
+rfd = { version = "0.17", default-features = false, features = ["gtk3"] }
 zbus = "5.19"
 # Whose charter the instance lock is (`instance.rs`), by user id: rustix, under unix above.
 # The theme specimen's picture (#2330, `specimen.rs`): WebKitGTK's snapshot of the hidden
