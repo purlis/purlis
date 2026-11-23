@@ -98,3 +98,22 @@ fn a_push_containing_a_merge_is_still_read_as_its_remerge_diff() {
         "the token a merge's resolution added was not read: {found:?}"
     );
 }
+
+#[test]
+fn a_push_from_a_repository_whose_path_holds_a_colon_is_still_scanned() {
+    purlis_core::unsteered!();
+    let parent = tempfile::tempdir().unwrap();
+    let dir = parent.path().join("a:b");
+    std::fs::create_dir(&dir).unwrap();
+    let (_, tip) = with_a_merge(&dir);
+    let objects = dir.join(".git/objects");
+    std::fs::set_permissions(&objects, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let read = scan(&dir, &tip);
+    std::fs::set_permissions(&objects, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let found = read.expect("scanned from a path with a colon");
+    assert!(
+        !found.is_empty(),
+        "the merge's token was not read: {found:?}"
+    );
+}
