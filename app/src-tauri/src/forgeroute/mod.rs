@@ -44,8 +44,9 @@
 //! **Stubs, each filled by the slice named.** [`Listener`]: A2. [`RouteParams`] into the chat's
 //! environment: B. [`HeldActs`] and its list of held refusals: F (F2's registry replaces
 //! [`HeldAsks`]). [`Recorded`]: G. [`Notices`]'s sink: the app's ([`crate::forgewiring::AppNotices`]). [`RunnerLink`]:
-//! the pools' pairing: **a stub, owned by the pools follow-up**, so no runner is paired and a
-//! runner's chat keeps its token connections until that lands.
+//! the pools' pairing, read by [`pairings::DesktopPairings`]; **nothing calls [`ForgeRoutes::for_runner`]
+//! yet** (the forwarding channel is ADR 0078's, not built), so a runner's chat keeps its token
+//! connections.
 //!
 //! **Tier** (ADR 0069): the root is Machine, device-bound, transient, named in
 //! `docs/plane-format.md`. The sentinels, policies, asks and audit are memory only.
@@ -71,6 +72,7 @@ use purlis_core::forge::proxy::{
 use purlis_core::secrets::keyring::Secret;
 
 pub mod objects;
+pub mod pairings;
 pub mod prod;
 
 #[cfg(test)]
@@ -1689,6 +1691,7 @@ pub fn install(held: Arc<dyn HeldSinks>, notices: Arc<dyn Notices>) {
                 purlis_core::forge::credential::chatroute::ChatRoute::new(&scope, &config),
             )));
             seams.listener = Arc::new(prod::CoreListener);
+            seams.runner_link = Arc::new(pairings::DesktopPairings::from_store(&config));
             // Read from policy on each ask: a pin set while a chat is open reaches it at once.
             seams.pin =
                 Arc::new(|project| Arc::new(purlis_core::forge::pin::PolicyPin::of(project)));
