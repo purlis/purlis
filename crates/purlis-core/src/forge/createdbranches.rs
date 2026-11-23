@@ -8,26 +8,35 @@
 //! chat's sandbox can write, and nowhere a chat can influence: not the piece log (a chat can
 //! write a `claimed` line into it), not a clone's refs (a chat can delete or never fetch them).
 //!
-//! One line of JSON per creation, appended: `{"project_id","chat","host","repo","repo_id",
-//! "branch","tip"}`. **Every part of the key is a stable identity, none a name a person can
-//! reuse:** the plane's project id (a path can later hold another project), the chat's id, and
-//! the forge's numeric id of the repo (a repo deleted and made again at the same path has
-//! another one). `tip` is the commit the branch was made at.
+//! One line of JSON per push the forge confirmed, appended (the creation first, then each later
+//! push): `{"project_id","chat","host","repo","repo_id","branch","tip"}`. **Every part of the key
+//! is a stable identity, none a name a person can reuse:** the plane's project id (a path can later
+//! hold another project), the chat's id, and the forge's numeric id of the repo (a repo deleted and
+//! made again at the same path has another one). `tip` is the commit that push left the branch at.
+//!
+//! **A chat may move a branch only from the tip it last put there.** For one `(host, repo id,
+//! branch)` **the last line decides** ([`tip_of`]): a push line makes its project and chat the
+//! owner and its `tip` the branch's tip; a `gone` line makes nobody. The route reads this at every
+//! update it checks, not once at a run's start, and lets an update through only when its old id
+//! *is* that tip. So a branch deleted and made again (by a colleague, or by another chat through
+//! the route, whose push line becomes the last), or pushed to by anyone else, has another tip and
+//! the update is refused, whether or not a `gone` line was written and whether or not the chat's
+//! run read an advertisement.
 //!
 //! **A record is never inherited**: a chat with another id (a resumed chat gets one) owns none of
 //! them, and neither does a chat of another project with the same id; the route refuses every
 //! update it makes to such a branch: the person pushes it.
 //!
-//! **A record dies with the branch it names.** The route reads the forge's advertisement of the
-//! repo before every push; a recorded branch that the advertisement does not list is gone, and
-//! a `gone` line is appended for it ([`forget`]). A branch made again, by this chat or another
-//! through the route, is a new creation line. For one `(host, repo id, branch)` **the last line
-//! decides**: a creation line makes its chat the owner, a `gone` line makes nobody. So a name
-//! someone re-creates after the forge deleted it is not the chat's, unless this chat made it again.
+//! **A `gone` line is an earlier end of the record**, not the guard: the route reads the forge's
+//! advertisement of the repo before a push, and a recorded branch it does not list gets a `gone`
+//! line ([`forget`]). A branch made again, by this chat or another through the route, is a new
+//! push line.
 //!
-//! A line with no project id or no repo id (written before they were keys) is owned by nobody: it
-//! fails closed. A line that does not read is skipped, which only ever loses ownership, never
-//! grants it.
+//! **Fail closed.** A line with no project id or no repo id (written before they were keys) is
+//! owned by nobody. A line whose `tip` is not a full commit id (missing, empty or garbled) leaves
+//! the branch with no tip to match, so every update to it is refused. A line that does not parse
+//! as JSON is skipped; what an update needs is a tip that line would have had to supply, so the
+//! worst a skipped line does is leave an older tip that the forge itself no longer holds.
 
 use std::fs::OpenOptions;
 use std::io::{self, Write as _};
@@ -41,7 +50,8 @@ pub fn file_in(config_root: &Path) -> PathBuf {
     crate::machine::dir(config_root).join("forge-created-branches.jsonl")
 }
 
-/// One branch the forge confirmed a push made, as the policy read it from the push's command.
+/// One branch the forge confirmed a push made or moved, as the policy read it from the push's
+/// command.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreatedBranch {
     pub host: String,
@@ -51,7 +61,7 @@ pub struct CreatedBranch {
     /// nothing is recorded.
     pub repo_id: Option<u64>,
     pub branch: String,
-    /// The commit the push made the branch at.
+    /// The commit the push left the branch at.
     pub tip: String,
 }
 
@@ -94,7 +104,8 @@ fn append(config_root: &Path, lines: &[Line]) -> io::Result<()> {
     file.flush()
 }
 
-/// Records that `chat` of the project with the stable id `project_id` made each of `created`. A
+/// Records that `chat` of the project with the stable id `project_id` made, or moved to a new tip,
+/// each of `created`. A
 /// branch whose repo id is not known is not recorded: it could never be matched.
 pub fn record(
     config_root: &Path,
@@ -138,22 +149,25 @@ pub fn forget(config_root: &Path, gone: &[CreatedBranch]) -> io::Result<()> {
     append(config_root, &lines)
 }
 
-/// The branches of the repo with forge id `repo_id` on `host` that `chat` of the project
-/// `project_id` itself made and that have not been seen gone since. Any doubt (no file, an
-/// unreadable one, a line with no project id or no repo id) is none.
-pub fn created_by(
+/// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
+fn is_commit_id(id: &str) -> bool {
+    matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// For each branch of the repo `repo_id` on `host`, in the order first seen: the tip `chat` of
+/// `project_id` last put on it, or `None` where the last line is nobody's, someone else's, gone
+/// or has no tip that reads. Any doubt (no file, an unreadable one) is no branch.
+fn decided(
     config_root: &Path,
     project_id: &str,
     chat: &str,
     host: &str,
     repo_id: u64,
-) -> Vec<String> {
+) -> Vec<(String, Option<String>)> {
     let Ok(text) = std::fs::read_to_string(file_in(config_root)) else {
         return Vec::new();
     };
-    // The last line for a branch decides: `Some(true)` is this chat's, `Some(false)` nobody's or
-    // someone else's.
-    let mut decided: Vec<(String, bool)> = Vec::new();
+    let mut decided: Vec<(String, Option<String>)> = Vec::new();
     for line in text.lines() {
         let Ok(line) = serde_json::from_str::<Line>(line) else {
             continue;
@@ -163,15 +177,46 @@ pub fn created_by(
         }
         let mine = !line.gone
             && line.project_id.as_deref() == Some(project_id)
-            && line.chat == chat;
+            && line.chat == chat
+            && is_commit_id(&line.tip);
+        let tip = mine.then(|| line.tip.to_ascii_lowercase());
         match decided.iter_mut().find(|(b, _)| *b == line.branch) {
-            Some(entry) => entry.1 = mine,
-            None => decided.push((line.branch, mine)),
+            Some(entry) => entry.1 = tip,
+            None => decided.push((line.branch, tip)),
         }
     }
     decided
+}
+
+/// The tip `chat` of the project `project_id` last put on `branch` of the repo with forge id
+/// `repo_id` on `host`, **read from the file now**: `None` unless the last line for the branch is
+/// this chat's push with a tip that reads. An update to the branch is allowed only from this id.
+pub fn tip_of(
+    config_root: &Path,
+    project_id: &str,
+    chat: &str,
+    host: &str,
+    repo_id: u64,
+    branch: &str,
+) -> Option<String> {
+    decided(config_root, project_id, chat, host, repo_id)
         .into_iter()
-        .filter_map(|(branch, mine)| mine.then_some(branch))
+        .find(|(b, _)| b == branch)
+        .and_then(|(_, tip)| tip)
+}
+
+/// The branches of the repo with forge id `repo_id` on `host` that `chat` of the project
+/// `project_id` itself made or last pushed, and that have not been seen gone since.
+pub fn created_by(
+    config_root: &Path,
+    project_id: &str,
+    chat: &str,
+    host: &str,
+    repo_id: u64,
+) -> Vec<String> {
+    decided(config_root, project_id, chat, host, repo_id)
+        .into_iter()
+        .filter_map(|(branch, tip)| tip.map(|_| branch))
         .collect()
 }
 

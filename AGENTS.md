@@ -177,3 +177,10 @@ See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechan
 ### The daily Report intake routine
 
 See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.
+
+## Workflow notes
+
+- In a sandboxed chat, tests that bind a socket (`forgeroute::tests`, `gitcredential` over http, the
+  chat-endpoint tests) fail with `Operation not permitted`; they compile and run in the app's own
+  terminal. Clippy: `CARGO_INCREMENTAL=0 RUSTC_WRAPPER= cargo clippy -j 4 -p purlis-app --features
+  forge-wiring --all-targets -- -D warnings` (and `-p purlis-core --all-targets`).

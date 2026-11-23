@@ -201,6 +201,17 @@ impl World {
                 purlis_core::forge::createdbranches::forget(&forgets, gone)
                     .expect("the record ends");
             }));
+            let tips = config.clone();
+            proxy = proxy.with_tips(std::sync::Arc::new(move |host, repo_id, branch| {
+                purlis_core::forge::createdbranches::tip_of(
+                    &tips,
+                    PROJECT_ID,
+                    "chat-listener",
+                    host,
+                    repo_id,
+                    branch,
+                )
+            }));
             proxy = proxy.with_created(Box::new(move |created| {
                 purlis_core::forge::createdbranches::record(
                     &config,

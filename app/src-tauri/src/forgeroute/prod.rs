@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::forge::accounts;
-use purlis_core::forge::createdbranches::CreatedBranch;
 use purlis_core::forge::confirmed::{self, Admission, AsThePerson, ConfirmedRepo, Serving};
+use purlis_core::forge::createdbranches::CreatedBranch;
 use purlis_core::forge::credential::chatroute::ChatRoute;
 use purlis_core::forge::proxy::listener::PushGate;
 use purlis_core::forge::proxy::{
@@ -187,23 +187,25 @@ impl Recorded for ConfirmedRecorded {
         out
     }
 
-    /// The branches of `repo` that `chat` created through the route: the app's own record under
-    /// the machine config root ([`purlis_core::forge::createdbranches`]), keyed by the project's
-    /// stable id and the forge's id of the repo. A project with no stored id, or a repo whose id
-    /// the route does not know, owns none.
-    fn own_branches(&self, project: &Path, chat: &str, repo: &AllowedRepo) -> Vec<String> {
-        let (Some(project_id), Some(repo_id)) = (
-            purlis_core::scaffold::planefile::project_id(project),
-            repo.forge_id(),
-        ) else {
-            return Vec::new();
-        };
-        purlis_core::forge::createdbranches::created_by(
+    /// The tip `chat` last put on `branch`: the app's own record under the machine config root
+    /// ([`purlis_core::forge::createdbranches`]), read now, keyed by the project's stable id and
+    /// the forge's id of the repo. A project with no stored id owns none.
+    fn own_tip(
+        &self,
+        project: &Path,
+        chat: &str,
+        host: &str,
+        repo_id: u64,
+        branch: &str,
+    ) -> Option<String> {
+        let project_id = purlis_core::scaffold::planefile::project_id(project)?;
+        purlis_core::forge::createdbranches::tip_of(
             &self.config_root,
             &project_id,
             chat,
-            repo.host(),
+            host,
             repo_id,
+            branch,
         )
     }
 

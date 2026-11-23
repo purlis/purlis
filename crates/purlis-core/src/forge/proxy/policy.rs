@@ -12,7 +12,7 @@
 //! encoding never reach the forge.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::forge::createdbranches::CreatedBranch;
 
@@ -171,8 +171,9 @@ pub struct Allowed {
     pub canonical_body: Option<Vec<u8>>,
     /// The `Content-Type` that body is sent with, said once.
     pub canonical_media: Option<String>,
-    /// Branches this push makes, as `(host, repo, branch)`. They become the chat's own only when
-    /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge made them.
+    /// Branches this push makes or moves, with the tip it leaves them at. They are recorded, and
+    /// the tip moves, only when
+    /// [`ForgeProxy::confirm_push`](super::ForgeProxy::confirm_push) is told the forge took the push.
     pub(crate) created: Vec<CreatedBranch>,
     pub(crate) surface: Surface,
     /// Every repo a GraphQL document named (empty for any other request): the credential is asked
@@ -352,15 +353,24 @@ impl GithubAlias {
 }
 
 /// A chat's repos, the branches it created, and the rule that decides every request against them.
-#[derive(Debug)]
 pub struct ChatPolicy {
     repos: Vec<AllowedRepo>,
-    /// `(host, repo path, branch)`, the branch's case exact: the branches the chat may move.
-    own_branches: Mutex<HashSet<(String, String, String)>>,
+    /// `(host, repo path, branch)`, the branch's case exact, and the tip this chat last put on it:
+    /// the branches the chat may move, from that tip. Decides only where there is no `tips`.
+    own_branches: Mutex<HashMap<(String, String, String), String>>,
+    /// Where the tip the chat last put on a branch is read from at each update, when the app
+    /// keeps it where every chat's pushes land. It decides over `own_branches`, so a push by
+    /// another chat moves it under this one.
+    tips: Option<TipSource>,
     /// The branches each repo's last advertisement for a push named, as the listener told the
     /// proxy, keyed by `(host, repo path)`.
     advertised: Mutex<HashMap<(String, String), HashSet<String>>>,
 }
+
+/// The tip the chat last put on a branch, `(host, forge repo id, branch)`: asked at **every update**
+/// and never kept, so another chat's push, a branch made again, or a record that ended is seen at
+/// once. `None` is not this chat's, or no tip that reads: the update is refused.
+pub type TipSource = Arc<dyn Fn(&str, u64, &str) -> Option<String> + Send + Sync>;
 
 /// The kind, path segments, query and host of a request, for the hand-off of a held act.
 pub(super) type HeldRoute = (Kind, Vec<String>, Vec<(String, String)>, String);
@@ -379,6 +389,15 @@ pub(crate) fn body_need(head: &RequestHead) -> BodyNeed {
     }
 }
 
+impl std::fmt::Debug for ChatPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatPolicy")
+            .field("repos", &self.repos)
+            .field("tips", &self.tips.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
 impl ChatPolicy {
     pub fn new(repos: Vec<AllowedRepo>) -> Self {
         let own = repos
@@ -386,14 +405,22 @@ impl ChatPolicy {
             .flat_map(|r| {
                 r.own_branches
                     .iter()
-                    .map(|b| (r.host.clone(), r.path.clone(), b.clone()))
+                    .map(|(b, tip)| ((r.host.clone(), r.path.clone(), b.clone()), tip.clone()))
             })
             .collect();
         Self {
             repos,
             own_branches: Mutex::new(own),
+            tips: None,
             advertised: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Read the tip of a branch from `tips` at each update, in place of what this policy kept.
+    #[must_use]
+    pub fn with_tips(mut self, tips: TipSource) -> Self {
+        self.tips = Some(tips);
+        self
     }
 
     /// The forge kind, path segments, query and host a request of this chat is for, where one of
@@ -441,7 +468,7 @@ impl ChatPolicy {
             self.own_branches
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .retain(|(h, p, branch)| {
+                .retain(|(h, p, branch), _| {
                     let ours = *h == host && *p == repo_path;
                     if ours && !listed.contains(branch) {
                         gone.push(CreatedBranch {
@@ -463,16 +490,18 @@ impl ChatPolicy {
         gone
     }
 
-    /// The forge made these branches (a push's report said so): they are the chat's own now.
+    /// The forge made or moved these branches (a push's report said so): they are the chat's own
+    /// now, at the tip that push left them at.
     pub(crate) fn confirm_created(&self, created: &[CreatedBranch]) {
         self.own_branches
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend(
-                created
-                    .iter()
-                    .map(|c| (c.host.clone(), c.repo.clone(), c.branch.clone())),
-            );
+            .extend(created.iter().map(|c| {
+                (
+                    (c.host.clone(), c.repo.clone(), c.branch.clone()),
+                    c.tip.to_ascii_lowercase(),
+                )
+            }));
     }
 
     /// What `gh`'s `GH_HOST=github.localhost` means for this chat (ADR 0128 D3c): the one GitHub
@@ -865,11 +894,7 @@ impl ChatPolicy {
     /// anyone else's branch: the proxy sees old and new ids, never history. Push options are
     /// refused. The branches this push makes are **returned, not recorded**: they are the chat's
     /// own once the forge says it made them ([`Self::confirm_created`]).
-    fn check_push(
-        &self,
-        repo: &AllowedRepo,
-        body: &[u8],
-    ) -> Result<Vec<CreatedBranch>, Refusal> {
+    fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<Vec<CreatedBranch>, Refusal> {
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
         })?;
@@ -914,7 +939,7 @@ impl ChatPolicy {
         repo: &AllowedRepo,
         command: &git::RefCommand,
         known: Option<&HashSet<String>>,
-        own: &HashSet<(String, String, String)>,
+        own: &HashMap<(String, String, String), String>,
     ) -> Result<Option<CreatedBranch>, Refusal> {
         let name = &command.name;
         if name.starts_with("refs/tags/") {
@@ -940,10 +965,27 @@ impl ChatPolicy {
                 branch: branch.to_string(),
                 tip: command.new_id.clone(),
             }))
-        } else if !own.contains(&key) {
-            Err(Refusal::ProtectedRef)
         } else {
-            Ok(None)
+            // **An update is let through only from the tip this chat last put on the branch**, read
+            // now: a branch deleted and made again, pushed to by anyone else (another chat
+            // through the route included), or never advertised to this chat has another tip.
+            // Nothing here depends on an advertisement having been read.
+            let tip = match (&self.tips, repo.project_id) {
+                (Some(tips), Some(repo_id)) => tips(&repo.host, repo_id, branch),
+                (Some(_), None) => None,
+                (None, _) => own.get(&key).cloned(),
+            };
+            if tip.is_some_and(|tip| tip.eq_ignore_ascii_case(&command.old_id)) {
+                Ok(Some(CreatedBranch {
+                    host: repo.host.clone(),
+                    repo: repo.path.clone(),
+                    repo_id: repo.project_id,
+                    branch: branch.to_string(),
+                    tip: command.new_id.clone(),
+                }))
+            } else {
+                Err(Refusal::ProtectedRef)
+            }
         }
     }
 }
