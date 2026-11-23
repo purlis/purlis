@@ -123,12 +123,13 @@ const WORDCHARS: &str = concat!(
 /// never reached the tokenizer, so the parsed and the unparseable paths cannot disagree about
 /// what a boundary is. The regex ends in the character class `[(){}]`, which is
 /// [`GROUPING_SPLIT`] here.
-const OPERATOR_ALTERNATION: [&str; 22] = [
+const OPERATOR_ALTERNATION: [&str; 25] = [
     // `&>>` and `&>` send both streams to a file: one redirection, and no `&` that ends the
     // command before it (#7423). Before the `&` they begin with. zsh's clobber forms that end in
-    // a pipe (`>>|`, `&>|`, `>&|`) are one operator, and no `|` that ends the command (round 7).
-    "&>>", "&>|", ">>|", ">&|", "&>", "<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<",
-    ">", // the redirections, first
+    // a pipe (`>>|`, `&>|`, `>&|`) are one operator, and no `|` that ends the command (round 7),
+    // and so are the append-both forms `>>&`, `>>&|` and `&>>|` (round 8).
+    "&>>|", ">>&|", "&>>", "&>|", ">>&", ">>|", ">&|", "&>", "<<<", "<<", "<>", "<&", ">>", ">&",
+    ">|", "<", ">", // the redirections, first
     "||", "&&", ";;", ";", "|&", "|", "&", "\n", // the control operators
 ];
 

@@ -1018,6 +1018,21 @@ fn exact_reason(
     if let Some(said) = seg.refusal.as_ref() {
         return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
     }
+    // A forge call behind a program no table knows is the call it would be without the program
+    // (#7423, round 8).
+    for call in &seg.behind {
+        let words = call.call().unwrap_or(&call.words);
+        let held = (!read.contains(words)
+            && segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin).is_some())
+            || merge::shell_filled_api_reason(call, cmd).is_some();
+        if held {
+            return Some(format!(
+                "{RELEASE_FLOOR_FIX}{} {}",
+                merge::UNREADABLE,
+                exact::WAY_OUT
+            ));
+        }
+    }
     // The reading zsh's clobber operators make of the same words (#7423, round 7).
     seg.clobber
         .as_deref()

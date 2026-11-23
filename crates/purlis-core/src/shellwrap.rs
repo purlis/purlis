@@ -58,10 +58,11 @@ use crate::shellseg;
 /// simple command, the front included.
 ///
 /// zsh's clobber forms (`>!`, `>>!`, `>|`, `>>|`, `&>!`, `&>|`, `>&!`, `>&|`) are one operator
-/// each, as is `>>|`: their target is the next word (#7423, round 7).
-const REDIRECTIONS: [&str; 18] = [
-    "&>>", "&>|", "&>!", "&>", "<<<", "<<", "<>", "<&", ">>|", ">>!", ">>", ">&|", ">&!", ">&",
-    ">|", ">!", "<", ">",
+/// each, as is `>>|`: their target is the next word (#7423, round 7). The append-both forms
+/// `>>&`, `>>&|`, `>>&!`, `&>>|` and `&>>!` are too (round 8).
+const REDIRECTIONS: [&str; 23] = [
+    "&>>|", "&>>!", "&>>", "&>|", "&>!", "&>", "<<<", "<<", "<>", "<&", ">>&|", ">>&!", ">>&",
+    ">>|", ">>!", ">>", ">&|", ">&!", ">&", ">|", ">!", "<", ">",
 ];
 
 /// The subset that opens a PATH FOR READING. `<<` and `<<<` name a heredoc delimiter and a

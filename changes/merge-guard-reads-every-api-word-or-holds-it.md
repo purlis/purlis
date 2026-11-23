@@ -38,3 +38,16 @@
   separator and a bare `"$@"` as the program are read as the shell reads them. The no-value flags
   `timeout --foreground`, `sudo --login`, `env --ignore-environment`, `watch --no-title` and
   `nice -10` no longer hold a read.
+  A forge word that is a path (`/opt/homebrew/bin/gh`, `~/.config/gh`, `crates/gh`), or is followed
+  by a word the shell fills in, is a call only where a held verb stands after it, so `cp
+  /opt/homebrew/bin/gh ~/bin/`, `ls ~/.config/gh ~/.config/glab` and `git add crates/gh src/*.rs`
+  pass. Behind a program no table knows, the call is read as it is without it: `op run -- gh api
+  repos/o/r`, `ssh host gh repo sync` and `op run -- glab mr create` pass, and a write, a
+  shell-filled argument or `--input` is held. A word the shell fills in (`$(which gh)`, `$GH`,
+  `{gh,pr}`, `g[h]`) before a held noun and verb, and `purlis change land` or `charter change land`
+  behind a program, are held. zsh's append-both operators (`>>&`, `>>&|`, `>>&!`, `&>>|`, `&>>!`)
+  are one operator. A note whose words are a merge call (`purlis memory add never run gh pr merge
+  yourself`) is still held.
+  A `for` over `$(gh api … --jq …)` may use its variable in a flag-less `gh api` read
+  (`for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api repos/o/r/pulls/$id; done`);
+  any other list, quoted list or flag still holds.

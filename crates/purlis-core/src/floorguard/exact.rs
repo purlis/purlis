@@ -52,10 +52,14 @@ pub(super) struct Segment {
     /// target is the word after the `!`. Bash and dash read the `!` as the target, so both are
     /// read, and a refusal of either stands (#7423, round 7).
     pub clobber: Option<Box<Segment>>,
+    /// The words of each forge call that stands behind a program no table knows (`ssh h gh pr
+    /// merge 5`), from the CLI on. The segment is held where the floor holds one of them read as
+    /// a direct call: what a wrapper may run is what the call would be without it (round 8).
+    pub behind: Vec<Segment>,
 }
 
 /// What a refusal of a segment the reader could not place says to do.
-const WAY_OUT: &str = "purlis could not tell which word runs here; put gh first in the command, \
+pub(super) const WAY_OUT: &str = "purlis could not tell which word runs here; put gh first in the command, \
      or run it without the wrapper.";
 
 impl Segment {
@@ -91,7 +95,10 @@ fn build(words: Vec<Word>, measured: bool) -> Segment {
 /// Whether two neighbouring words are an operator and the `!` of zsh's clobber form of it.
 fn clobbers(pair: &[Word]) -> bool {
     pair[0].bare
-        && matches!(pair[0].text.as_str(), ">" | ">>" | "&>" | ">&" | "&>>")
+        && matches!(
+            pair[0].text.as_str(),
+            ">" | ">>" | "&>" | ">&" | "&>>" | ">>&"
+        )
         && pair[1].bare
         && pair[1].glued
         && pair[1].text == "!"
@@ -257,10 +264,16 @@ fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
     let refusal = (speaks_of_one && (inv.unplaced || ambiguous || odd_program))
         .then(|| format!("{} {WAY_OUT}", super::merge::UNREADABLE));
     // A forge call behind a program no table knows says nothing of what it runs (`ssh h gh pr
-    // merge 5`, `fd -x gh pr merge 5`): held, whatever stands before the CLI.
-    let refusal = refusal.or_else(|| {
-        wraps_a_held_forge_call(&inv).then(|| format!("{} {WAY_OUT}", super::merge::UNREADABLE))
-    });
+    // merge 5`, `fd -x gh pr merge 5`): read as the direct call is, whatever stands before the
+    // CLI. A word the shell fills in, followed by a held command, may be the CLI: held.
+    let spelled_argv: Vec<String> = if placed {
+        spelled[at..].to_vec()
+    } else {
+        vec![String::new(); inv.argv.len()]
+    };
+    let (shell_filled, behind) = behind_an_unknown_program(&inv, &spelled_argv);
+    let refusal =
+        refusal.or_else(|| shell_filled.then(|| format!("{} {WAY_OUT}", super::merge::UNREADABLE)));
     Segment {
         words: texts,
         spelled,
@@ -268,6 +281,7 @@ fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
         also,
         refusal,
         clobber: None,
+        behind,
     }
 }
 
@@ -278,17 +292,28 @@ const TEXT_PROGRAMS: [&str; 15] = [
     "wc", "type", "whereis",
 ];
 
-/// **The general wrapper rule** (#7423, round 7). The program placed is not a forge CLI, and a
-/// later word is one followed by a call the floor holds: whatever the program is (`taskset 1`,
-/// `chronic`, `ssh h`, `fd -x`, a wrapper no table lists), it may run that call. Only the plain
-/// printers of [`TEXT_PROGRAMS`], and the words of a `for … in` list, are left alone.
-fn wraps_a_held_forge_call(inv: &shellwrap::Invocation) -> bool {
+/// **The general wrapper rule** (#7423, rounds 7 and 8). The program placed is not a forge CLI,
+/// and a later word is one: whatever the program is (`taskset 1`, `chronic`, `ssh h`, `fd -x`, a
+/// wrapper no table lists), it may run that call. Only the plain printers of [`TEXT_PROGRAMS`],
+/// and the words of a `for … in` list, are left alone.
+///
+/// Answers whether a shell-filled word stands before a held command, and the calls to read, each
+/// as a segment of its own. A
+/// forge word that is a path (`/opt/homebrew/bin/gh`, `crates/gh`), or is followed by a word the
+/// shell fills in, is a call only where a held verb stands after it, as a flag the reader cannot
+/// place is. A word the shell fills in (`$(which gh)`, `$GH`, `{gh,pr}`, `g[h]`) followed by a
+/// held noun and verb may be the CLI. `purlis change land` is a held call as `gh pr merge` is.
+fn behind_an_unknown_program(
+    inv: &shellwrap::Invocation,
+    spelled: &[String],
+) -> (bool, Vec<Segment>) {
     let argv = &inv.argv;
+    let mut none = (false, Vec::new());
     if argv.len() < 2 || names_a_forge(&inv.prog) {
-        return false;
+        return none;
     }
     if TEXT_PROGRAMS.contains(&shellwrap::base_lower(&inv.prog).as_str()) {
-        return false;
+        return none;
     }
     let in_a_list = argv[1] == "in"
         && inv
@@ -296,18 +321,64 @@ fn wraps_a_held_forge_call(inv: &shellwrap::Invocation) -> bool {
             .iter()
             .any(|t| matches!(t.as_str(), "for" | "select" | "case"));
     if in_a_list {
-        return false;
+        return none;
     }
     // One pass from the end: whether a held verb stands at or after each word.
     let mut later = vec![false; argv.len() + 1];
     for k in (0..argv.len()).rev() {
         later[k] = later[k + 1] || super::merge::speaks_of_a_held_verb(&argv[k]);
     }
-    (1..argv.len()).any(|k| {
-        if !names_a_forge(&argv[k]) {
-            return false;
+    for k in 1..argv.len() {
+        let word = argv[k].strip_prefix('=').unwrap_or(&argv[k]);
+        let base = shellwrap::base_lower(word);
+        if names_a_forge(word) || matches!(base.as_str(), "purlis" | "charter") {
+            let a_path = word.contains('/') || word.starts_with('~');
+            let opaque_next = argv.get(k + 1).is_some_and(|w| super::merge::opaque(w));
+            if (a_path || opaque_next) && !later[k + 1] {
+                continue;
+            }
+            let mut call: Vec<Word> = (k..argv.len())
+                .map(|j| Word {
+                    text: argv[j].clone(),
+                    spelled: spelled.get(j).cloned().unwrap_or_default(),
+                    bare: true,
+                    glued: false,
+                })
+                .collect();
+            call[0].text = word.to_owned();
+            let measured = call.iter().any(|w| !w.spelled.is_empty());
+            none.1.push(build(call, measured));
+        } else if super::merge::opaque(word) && fills_in_a_forge_call(word, &argv[k + 1..]) {
+            none.0 = true;
         }
-        let name = shellwrap::base_lower(argv[k].strip_prefix('=').unwrap_or(&argv[k]));
-        super::merge::held_behind_an_unknown_program(&name, &argv[k + 1..], &|i| later[k + 1 + i])
-    })
+    }
+    none
+}
+
+/// Whether a word the shell fills in stands before a held noun and verb, or, if it is a brace
+/// expansion (`{gh,pr}`), before a held verb its words may complete.
+fn fills_in_a_forge_call(word: &str, after: &[String]) -> bool {
+    let rows: Vec<(&str, &str, &str)> = if super::only_merges() {
+        super::MERGE_ROWS.to_vec()
+    } else {
+        super::PUBLISH_FORGE
+            .iter()
+            .chain(super::PUBLISH_SINCE.iter())
+            .copied()
+            .collect()
+    };
+    let held = |cli: &str, noun: &str, verb: &str| {
+        let verb = super::merge::canonical_verb(cli, noun, verb);
+        rows.iter()
+            .any(|r| r.0 == cli && r.1 == noun && r.2 == verb)
+    };
+    let pair = match after {
+        [noun, verb, ..] => rows.iter().any(|r| r.1 == noun && held(r.0, noun, verb)),
+        _ => false,
+    };
+    let completes = super::merge::brace_expansion(word)
+        && after
+            .first()
+            .is_some_and(|verb| rows.iter().any(|r| held(r.0, r.1, verb)));
+    pair || completes
 }

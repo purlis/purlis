@@ -309,6 +309,7 @@ mod rename_local_moves_local_state_and_puts_it_back;
 mod rename_local_moves_the_harness_plugin;
 mod rename_plane_is_one_commit;
 mod resuming_a_session_record;
+mod round_eights_a_path_that_names_gh_passes_and_a_shell_filled_forge_word_is_held;
 mod round_five_write_path_braces_and_heredoc_delimiter;
 mod round_fives_case_word_is_read_with_its_quotes;
 mod round_fours_readings_close_the_last_routes;

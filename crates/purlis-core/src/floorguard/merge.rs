@@ -729,15 +729,30 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
     ))
     .expect("compiles");
     let looped = Regex::new(&format!(
-        r"^for[ \t]+{esc}[ \t]+in(?:[ \t]+[0-9]+)+[ \t]*(?:;|\n)[ \t\n]*do[ \t\n]+([^;\n]+?)[ \t]*(?:;|\n)[ \t\n]*done$"
+        r"^for[ \t]+{esc}[ \t]+in(?:(?:[ \t]+[0-9]+)+|([ \t]+{LOOP_SUBSTITUTION}))[ \t]*(?:;|\n)[ \t\n]*do[ \t\n]+([^;\n]+?)[ \t]*(?:;|\n)[ \t\n]*done$"
     ))
     .expect("compiles");
     let cmd = cmd.trim_matches([' ', '\t', '\n']);
-    one.captures(cmd)
-        .or_else(|| looped.captures(cmd))
-        .and_then(|c| c.get(1))
-        .is_some_and(|call| lone_api_call(call.as_str(), name))
+    if let Some(c) = one.captures(cmd) {
+        return c
+            .get(1)
+            .is_some_and(|call| lone_api_call(call.as_str(), name));
+    }
+    // The variable of a `for` over a list the shell makes (`for id in $(gh api … --jq
+    // '.[].number')`) is one word with no space in it, whatever it holds: the shell splits the
+    // list, and does not split the variable. It need not be digits, so only a call with no flag
+    // is read as one: a call without `-X`, `-f` or `--input` cannot write (round 8).
+    looped.captures(cmd).is_some_and(|c| {
+        let call = c.get(2).map_or("", |m| m.as_str());
+        (c.get(1).is_none() || !call.split_whitespace().any(|w| w.starts_with('-')))
+            && lone_api_call(call, name)
+    })
 }
+
+/// A `for` list made of one `gh api` or `glab api` call's substitution, of plain words and
+/// single-quoted strings: no nesting, no double quote, no backtick, no `$`, no backslash. What it
+/// runs is read as a command of its own. Any other command's output (`$(cat ids)`) stays held.
+const LOOP_SUBSTITUTION: &str = r#"\$\((?:gh|glab)[ \t]+api[ \t](?:[^()'"`$\\\n]|'[^']*')*\)"#;
 
 /// True when `call` is one `gh api` or `glab api` call whose only variable is `name`, as plain
 /// whole-segment references (see [`digit_bound`]).
@@ -829,8 +844,10 @@ fn digit_bound_name(cmd: &str) -> Option<String> {
             .expect("compiles")
     });
     let looped = LOOPED.get_or_init(|| {
-        Regex::new(r"^for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in(?:[ \t]+[0-9]+)+[ \t]*(?:;|\n)")
-            .expect("compiles")
+        Regex::new(&format!(
+            r"^for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in(?:(?:[ \t]+[0-9]+)+|[ \t]+{LOOP_SUBSTITUTION})[ \t]*(?:;|\n)"
+        ))
+        .expect("compiles")
     });
     let trimmed = cmd.trim_matches([' ', '\t', '\n']);
     let name = one
@@ -1163,58 +1180,6 @@ pub(super) fn speaks_of_a_held_verb(word: &str) -> bool {
             word.to_lowercase().as_str(),
             "api" | "alias" | "accept" | "create" | "new" | "land"
         )
-}
-
-/// **A forge call behind a program that is no wrapper the tables know** (#7423, round 7):
-/// `ssh h gh pr merge 5`, `fd -x gh pr merge 5`. `name` is the CLI and `args` the words after it.
-/// True where the call is one the floor holds, read from its words alone: `api`, `alias`, a noun
-/// and verb of [`held_commands`] (`auth` and `config` read the token, not a merge), a noun or
-/// verb the shell fills in, or a flag before the noun that may take the noun for its value while
-/// a held verb stands after it. `later(i)` says whether a held verb stands at or after word `i`
-/// of `args`, known from one pass over the segment, so that no word is read twice.
-pub(super) fn held_behind_an_unknown_program(
-    name: &str,
-    args: &[String],
-    later: &dyn Fn(usize) -> bool,
-) -> bool {
-    let mut noun: Option<&str> = None;
-    let mut i = 0;
-    while let Some(arg) = args.get(i) {
-        if arg == "-R" || arg == "--repo" {
-            i += 2;
-            continue;
-        }
-        if arg.starts_with('-') {
-            if noun.is_none() && !flag_before_command_is_known(arg) && later(i + 1) {
-                return true;
-            }
-            i += 1;
-            continue;
-        }
-        let Some(n) = noun else {
-            if opaque(arg) {
-                return true;
-            }
-            let rows = held_commands(name);
-            if !matches!(arg.as_str(), "auth" | "config")
-                && rows.iter().any(|r| r == &[arg.as_str()])
-            {
-                return true;
-            }
-            noun = Some(arg);
-            i += 1;
-            continue;
-        };
-        if super::NOUNS_THAT_MERGE.contains(&n) && opaque(arg) {
-            return true;
-        }
-        let verb = canonical_verb(name, n, arg);
-        return n != "config"
-            && held_commands(name)
-                .iter()
-                .any(|r| r.len() == 2 && r[0] == n && r[1] == verb);
-    }
-    false
 }
 
 /// **A `gh api` / `glab api` call whose arguments the shell fills in** (#7416, #7423), read or
