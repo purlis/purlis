@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795464177475,
+  "lastUpdate": 1795464216458,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53172,6 +53172,48 @@ window.BENCHMARK_DATA = {
             "value": 102.124292,
             "unit": "ms",
             "extra": "median of 5 runs: 100.698, 101.991, 102.124, 102.378, 103.350 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b8bbb649cb394aaf55efe3a4eb4c0f9917dc3f79",
+          "message": "Merge guard: tests pin that gh/glab api reads in substitutions pass and built endpoints stay held (#7411)\n\n* Merge guard: pin that a gh/glab api read inside a substitution is no merge, and what stays held\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83NFMBNCMXXRBV5A5Z8FPZY\nPurlis-Persona: steward\n\n* Merge guard tests: the held list pins a write with a built endpoint, not a plain read\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T19:12:53Z",
+          "tree_id": "16cd5a21e14abdb029750cdfb85ac50db9903d9e",
+          "url": "https://github.com/purlis/purlis/commit/b8bbb649cb394aaf55efe3a4eb4c0f9917dc3f79"
+        },
+        "date": 1795464210650,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.578851,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.574, 0.575, 0.579, 0.585, 0.642 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.303185,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.243, 16.266, 16.303, 16.416, 16.424 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8640145,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.859, 101.756, 101.864, 102.251, 102.318 ms"
           }
         ]
       }
