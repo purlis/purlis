@@ -1523,6 +1523,71 @@ fn until(scenario: &Scenario, what: &str, done: impl Fn() -> bool) {
     }
 }
 
+/// **A chat a task runner starts runs in the scenario host** (§3.11, #7102): a task one chat
+/// dispatched to a persona, in a branch folder of its own, handed from its asker, with a dispatch
+/// record. It runs `git branch --show-current` where it stands and sends its report with the
+/// command a task sends it with; the scenario sees the branch folder it was cut, the asker it
+/// is handed from and the report on its record. The fixture rebuilds the runner's start rather
+/// than calling `handoff::dispatch_noting`, `start_on` or `record_it`, so a break there is not
+/// red here; a break in the pieces it shares with production is (the branch folder's cut, the
+/// start of a `Made::Asked` chat in a worktree under the wrap, the dispatch record's open, and
+/// the whole report path).
+#[cfg(unix)]
+#[test]
+fn a_dispatched_chat_starts_as_the_task_runner_starts_it_and_its_report_is_seen() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    let Some(scenario) = Scenario::new(&homes, Protection::Full, Some("steward"), Dialect::Codex)
+    else {
+        return;
+    };
+    let asker = scenario.starts(&serde_json::json!({
+        "turns": [{"prompt": "orchestrate", "calls": [{"step": "asks", "tool": "bash", "run": "echo asking"}]}]
+    }));
+    scenario.until_played(asker, &["asks"]);
+
+    let task = scenario.starts_as_task(
+        asker,
+        &serde_json::json!({
+            "turns": [{"prompt": "check the queue", "calls": [
+                {"step": "branch", "tool": "bash", "run": "git branch --show-current"},
+                {"step": "reports", "tool": "bash",
+                 "run": "purlis dispatch report --outcome done \"queue is empty\""}
+            ]}]
+        }),
+        "check the queue",
+        "Check the queue.",
+    );
+    scenario.until_played(task.chat, &["branch", "reports"]);
+
+    // Its own branch folder, cut off the clone: the chat stood in it.
+    assert!(
+        task.folder.join(".git").exists(),
+        "the branch folder {:?} is a worktree",
+        task.folder
+    );
+    assert_eq!(
+        stdout_of(&scenario, task.chat, "branch").trim(),
+        task.branch,
+        "the task worked on the branch cut for it"
+    );
+    // Handed from its asker, as the runner records a task.
+    let held = scenario.held();
+    let from = held
+        .chats()
+        .handed_from(task.chat)
+        .expect("the task is handed from its asker");
+    assert_eq!(from.chat, asker);
+    // Its report, on the dispatch's record.
+    let worker = crate::dispatches::chat_ref(&held, task.chat).expect("the task's chat");
+    until(&scenario, "the report on the task's record", || {
+        purlis_core::dispatchrecord::latest_for(held.root(), &worker)
+            .and_then(|record| record.report)
+            .is_some_and(|report| report.text == "queue is empty")
+    });
+}
+
 /// **The scenario host never uses `testgit`'s config** (T1.1-06): it sets
 /// `safe.bareRepository=all` (`purlis_core::testgit`), which would mask ticket 21's
 /// embedded-bare-repo cell. Neither the scenario host's sources nor the suite's name it.
