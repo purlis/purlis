@@ -256,10 +256,14 @@ export const ClonesToConfirm: Story = {
     const confirm = await within(clones).findByRole("button", {
       name: "Confirm workspaces/ws/api",
     });
-    confirm.focus();
-    await untilFocused(() => confirm, "the first Confirm");
-    // The table is a grid, one Tab stop (building-ui.md): ↓ moves to the button below, which
-    // WebKit's Tab never would between a grid's cells.
+    // The table is a grid, one Tab stop (building-ui.md), walked with the arrows as the grid
+    // keeps it: the first row's header cell, → along the row to its button, ↓ to the button
+    // below (WebKit's Tab never moves between a grid's cells).
+    await userEvent.click(within(clones).getAllByRole("rowheader")[0]);
+    for (let step = 0; step < 6 && document.activeElement !== confirm; step++) {
+      await userEvent.keyboard("{ArrowRight}");
+    }
+    await untilFocused(() => confirm, "→ reaches the first Confirm");
     await userEvent.keyboard("{ArrowDown}");
     await untilFocused(
       () => within(clones).getByRole("button", { name: "Confirm workspaces/ws/web" }),
