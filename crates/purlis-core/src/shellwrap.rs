@@ -318,7 +318,7 @@ const WRAPPER_VALUE_FLAGS: [(&str, &[&str]); 18] = [
 /// disjoint for every wrapper that appears in both (swept here, zero overlaps), no no-value table
 /// holds a `-`, and no value table holds a bare `--`. Those three are what would make the order,
 /// and [`wrapper_option`]'s comment about a long option needing no branch, start mattering again.
-const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 17] = [
+const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 18] = [
     ("env", "0iv"), // BSD: `env [-0iv] [-C workdir] [-P utilpath] [-S string]`
     ("sudo", "ABbEeHiKklNnPSsVv"),
     ("doas", "Lns"),
@@ -327,6 +327,7 @@ const WRAPPER_NOVALUE_LETTERS: [(&str, &str); 17] = [
     ("exec", "cl"), // bash: `exec [-cl] [-a name]`
     ("command", "pvV"),
     ("setsid", "cfw"),
+    ("chrt", "bfiordRamv"), // the policies, `-R`, `-a`, `-m`, `-v`; `-p` takes a pid
     ("time", "alpqv"),
     ("ionice", "th"),
     ("gtimeout", "v"),
@@ -843,6 +844,10 @@ pub struct Invocation {
     pub taken: Vec<String>,
     /// More wrappers than [`MAX_LAYERS`] stand in front of the program.
     pub too_deep: bool,
+    /// **The prefix could not be walked exactly** (#7423): a wrapper flag that no table lists
+    /// (it may take the next word as its value), or a wrapper no table says anything about. The
+    /// word read as the program may then be a flag's value, and what runs is another.
+    pub unplaced: bool,
 }
 
 impl Invocation {
@@ -889,18 +894,51 @@ pub fn split_env(toks: &[String]) -> (String, Vec<String>, Vec<String>) {
 /// keeps scanning rightward for a program, and reading a stray `-i` as a flag steps over a token
 /// that cannot be a reader. Neither can hand the guard a program that is not there.
 pub fn split_env_chdir(toks: &[String]) -> Invocation {
+    place(toks, false)
+}
+
+/// [`split_env_chdir`] of words whose redirections are already gone (#7423): the caller read
+/// them off the lexer's own facts (an operator that was written unquoted, and a descriptor that
+/// is glued to it), so a word that looks like an operator is a word here, and is a flag's value
+/// where a flag takes one. A `-` is zsh's precommand, and goes.
+pub fn split_env_chdir_exact(toks: &[String]) -> Invocation {
+    place(toks, true)
+}
+
+/// Wrappers that take no flag at all, so none of [`WRAPPER_VALUE_FLAGS`] and
+/// [`WRAPPER_NOVALUE_LETTERS`] has a row for them and nothing is unplaced by their silence.
+const FLAGLESS_WRAPPERS: [&str; 4] = ["builtin", "nohup", "noglob", "nocorrect"];
+
+/// Whether some table says what a wrapper's words are.
+fn has_a_grammar(base: &str) -> bool {
+    FLAGLESS_WRAPPERS.contains(&base)
+        || table(&WRAPPER_VALUE_FLAGS, base).is_some()
+        || table(&WRAPPER_NOVALUE_LETTERS, base).is_some()
+        || table(&WRAPPER_LEADING_OPERANDS, base).is_some()
+}
+
+fn place(toks: &[String], exact: bool) -> Invocation {
     let mut env: Vec<String> = Vec::new();
     let mut chdir = String::new();
+    let mut unplaced = false;
     // Computed on the ORIGINAL tokens, before anything is popped: a redirection binds to its
     // command from either side, so the whole segment is the scan.
-    let mut reads: Vec<String> = redirect_reads(toks);
+    let mut reads: Vec<String> = if exact {
+        Vec::new()
+    } else {
+        redirect_reads(toks)
+    };
     let mut toks: VecDeque<String> = toks.iter().cloned().collect();
     let mut layers: Vec<usize> = Vec::new();
     let mut taken: Vec<String> = Vec::new();
     let mut too_deep = false;
 
     while let Some(front) = toks.front().cloned() {
-        if redirect_re().is_match(&front) {
+        if exact && front == "-" {
+            take(&mut toks, &mut taken); // zsh's precommand: the word after it is the command
+            continue;
+        }
+        if !exact && redirect_re().is_match(&front) {
             // A redirection in FRONT of the command — `< <vault> cat`, `2>/dev/null env …`.
             // Neither it nor its target is the program; the target is already in `reads`.
             take(&mut toks, &mut taken);
@@ -966,6 +1004,7 @@ pub fn split_env_chdir(toks: &[String]) -> Invocation {
         }
         if WRAPPERS.contains(&base.as_str()) {
             record_layer(&mut layers, &mut too_deep, taken.len());
+            unplaced |= !has_a_grammar(&base);
         }
         take(&mut toks, &mut taken);
         let mut leading = table(&WRAPPER_LEADING_OPERANDS, base.as_str()).unwrap_or(0);
@@ -990,6 +1029,7 @@ pub fn split_env_chdir(toks: &[String]) -> Invocation {
                     }
                 }
                 if !opt.placed {
+                    unplaced = true;
                     // An option this wrapper's grammar could not account for. The token after it
                     // is NOT reliably the program — a value flag nobody listed is
                     // indistinguishable from one that takes nothing, which is how
@@ -1054,6 +1094,7 @@ pub fn split_env_chdir(toks: &[String]) -> Invocation {
         layers,
         taken,
         too_deep,
+        unplaced,
     }
 }
 

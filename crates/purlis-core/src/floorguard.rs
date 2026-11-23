@@ -51,6 +51,7 @@
 //!   dropped from `words` before the table is read. The table entry alone would have been a
 //!   dead line: the lookup used to live under `elif base in ("gh", "glab")`.
 
+mod exact;
 mod merge;
 mod token;
 
@@ -432,7 +433,9 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
     } else {
         is_sole_call(cmd)
     });
+    let outer_scripts = SCRIPTS_READ.take();
     let said = floor(cmd, unattended, 0);
+    SCRIPTS_READ.replace(outer_scripts);
     SOLE_CALL.set(sole);
     // **A reading cut short never ends as an allow** (#7245, round 4): whichever way a limit
     // was crossed (the work meter, the depth, the nesting), it set this flag, and no one clears
@@ -447,6 +450,22 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
 fn closed_on_a_cutoff(said: Option<String>, cut: bool, unattended: bool) -> Option<String> {
     said.or_else(|| {
         (unattended && cut).then(|| format!("{RELEASE_FLOOR_FIX}{}", merge::UNREADABLE))
+    })
+}
+
+std::thread_local! {
+    /// The scripts the floor has read in this reading, with the depth and whether as a hedge:
+    /// one that was read and let through is not read again ([`first_read_of_script`]).
+    static SCRIPTS_READ: std::cell::RefCell<std::collections::HashSet<(String, usize, bool)>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Whether `script` is read now for the first time at `depth` in this reading. A script that
+/// refused is never asked about twice, since the reading ends at its refusal.
+fn first_read_of_script(script: &str, depth: usize) -> bool {
+    SCRIPTS_READ.with(|read| {
+        read.borrow_mut()
+            .insert((script.to_owned(), depth, reading_a_hedge()))
     })
 }
 
@@ -517,7 +536,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     if said.is_some() || !unattended || depth > MAX_DEPTH {
         return said;
     }
-    unescape_backtick_bodies(cmd).and_then(|unescaped| floor(&unescaped, unattended, depth + 1))
+    rewrite_backticks(cmd).and_then(|rewritten| floor(&rewritten, unattended, depth + 1))
 }
 
 /// [`floor`] of the line as written.
@@ -735,6 +754,8 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // quoted-substitution's heredoc body) is held for a literal merge by the segments above,
     // never for "could print any command" (#7131, the ruling on the large commit body).
     let mut filled = None;
+    // Each segment's words read once, exactly, with its redirections taken out (#7423).
+    let mut exact_segments: Vec<exact::Segment> = Vec::new();
     for reading in shellseg::segment_readings(&lines)
         .into_iter()
         .filter(|_| !reading_a_hedge())
@@ -755,9 +776,11 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         }
         // A forge API call whose arguments the shell fills in, read or not (#7416). Said after
         // the segments' own reasons, which name more.
+        let exact = exact::of_reading(&reading);
         if filled.is_none() {
-            filled = merge::shell_filled_api_reason(&reading.own, &reading.own_source, cmd);
+            filled = merge::shell_filled_api_reason(&exact, cmd);
         }
+        exact_segments.push(exact);
         let (prog, ..) = shellwrap::split_env(&reading.own);
         if program_built_by_the_shell(&prog) {
             return Some(format!(
@@ -787,6 +810,23 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             return said;
         }
     }
+    // The segments of the commands a shell runs, read as the lexer's facts say they are: the
+    // words past their redirections, and the call from its program on.
+    if runs != lines {
+        for reading in shellseg::segment_readings(&runs)
+            .into_iter()
+            .filter(|_| !reading_a_hedge())
+        {
+            exact_segments.push(exact::of_reading(&reading));
+        }
+    }
+    let read: std::collections::HashSet<&[String]> = segments.iter().map(Vec::as_slice).collect();
+    for exact in &exact_segments {
+        let said = exact_reason(exact, cmd, unattended, depth, a_shell_reads_stdin, &read);
+        if said.is_some() {
+            return said;
+        }
+    }
     if let Some(why) = filled {
         return Some(format!("{fix}{why}"));
     }
@@ -795,7 +835,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     if !hedge_segments.is_empty() {
         let _hedge = ReadingAHedge::on();
         for toks in &hedge_segments {
-            let said = segment_reason(toks, cmd, unattended, depth, the_hedge_reads_stdin);
+            let said = words_reason(toks, cmd, unattended, depth, the_hedge_reads_stdin);
             if said.is_some() {
                 return said;
             }
@@ -834,7 +874,7 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                     ));
                 }
                 for toks in commands_of(&body) {
-                    let said = segment_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
+                    let said = words_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
                     if said.is_some() {
                         return said;
                     }
@@ -861,36 +901,70 @@ fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     None
 }
 
-/// `text` with each backtick substitution's body as the shell reads it: a backslash before `$`,
-/// a backtick or another backslash is dropped. A backtick opens or closes a body unless a
-/// backslash stands before it, as [`shellseg::unbacktick`] pairs them. `None` where nothing
-/// changes.
-fn unescape_backtick_bodies(text: &str) -> Option<String> {
-    if !text.contains('`') || !text.contains('\\') {
+/// `text` with each backtick substitution written `$( … )` and its body as the shell reads it: a
+/// backslash before `$`, a backtick or another backslash is dropped.
+///
+/// Which backticks are live is the lexer's quoting ([`shellseg::backticks`], #7423): a quoted
+/// backtick (`'`'`) flips nothing, and `\\` before one is an escaped backslash, not an escaped
+/// backtick. A quoted backtick is respelled (`'$'\x60''`) so that no later pairing of backticks
+/// sees it. `None` where the text has no backtick the shell reads.
+fn rewrite_backticks(text: &str) -> Option<String> {
+    if !text.contains('`') {
+        return None;
+    }
+    let ticks = shellseg::backticks(text);
+    if ticks.is_empty() {
         return None;
     }
     let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
-    let (mut inside, mut changed) = (false, false);
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        if c == '`' && (i == 0 || chars[i - 1] != '\\') {
-            inside = !inside;
-        } else if inside
-            && c == '\\'
-            && let Some(&next) = chars.get(i + 1)
+    let mut out = String::with_capacity(text.len() + 8);
+    // Where the body of the substitution being read starts in `out`.
+    let mut body_at: Option<usize> = None;
+    let mut at = 0;
+    for (i, kind) in ticks {
+        out.extend(&chars[at..i]);
+        at = i + 1;
+        match kind {
+            shellseg::Backtick::Live => match body_at.take() {
+                Some(start) => {
+                    let body = out.split_off(start);
+                    out.push_str(&unescape_in_backticks(&body));
+                    out.push(')');
+                }
+                None => {
+                    out.push_str("$(");
+                    body_at = Some(out.len());
+                }
+            },
+            shellseg::Backtick::Single => out.push_str("'$'\\x60''"),
+            shellseg::Backtick::Ansi => out.push_str("\\x60"),
+        }
+    }
+    out.extend(&chars[at..]);
+    if let Some(start) = body_at {
+        let body = out.split_off(start);
+        out.push_str(&unescape_in_backticks(&body));
+    }
+    Some(out)
+}
+
+/// A backtick body as the shell reads it: a backslash before `$`, a backtick or another
+/// backslash is dropped.
+fn unescape_in_backticks(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
             && matches!(next, '$' | '`' | '\\')
         {
             out.push(next);
-            changed = true;
-            i += 2;
-            continue;
+            chars.next();
+        } else {
+            out.push(c);
         }
-        out.push(c);
-        i += 1;
     }
-    changed.then_some(out)
+    out
 }
 
 /// `text` as the inner shell reads what a double-quoted string left it: a backslash before `$`,
@@ -912,6 +986,57 @@ fn unescape_double_quoted(text: &str) -> String {
     out
 }
 
+/// The floor's refusal of a segment whose words the lexer's facts were read for (#7423): its
+/// call from the program on, where a forge CLI runs, or else its words past their redirections,
+/// and, where a forge CLI is named and the words in front of it cannot be placed exactly, the
+/// refusal for that. A segment already read as it stands (`read`) is not read again.
+fn exact_reason(
+    seg: &exact::Segment,
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+    read: &std::collections::HashSet<&[String]>,
+) -> Option<String> {
+    let words = seg.call().unwrap_or(&seg.words);
+    if !read.contains(words)
+        && let Some(said) = segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
+    }
+    if let Some(also) = &seg.also
+        && !read.contains(also.as_slice())
+        && let Some(said) = segment_reason(also, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
+    }
+    seg.refusal
+        .as_ref()
+        .map(|why| format!("{RELEASE_FLOOR_FIX}{why}"))
+}
+
+/// [`segment_reason`] of words nothing measured (what a `find` runs, a hedged line), and of those
+/// words read exactly as far as that can be done ([`exact::of_words`]).
+fn words_reason(
+    toks: &[String],
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+) -> Option<String> {
+    segment_reason(toks, cmd, unattended, depth, a_shell_reads_stdin).or_else(|| {
+        let read = std::iter::once(toks).collect();
+        exact_reason(
+            &exact::of_words(toks),
+            cmd,
+            unattended,
+            depth,
+            a_shell_reads_stdin,
+            &read,
+        )
+    })
+}
+
 /// The floor's refusal of one segment of `cmd` at `depth`, read as its program's command.
 fn segment_reason(
     toks: &[String],
@@ -925,46 +1050,6 @@ fn segment_reason(
     // Each segment is split once, and every reading below shares it: at every level the
     // floor reads, a segment is as long as the line, so a second split is a second line
     // (#1355).
-    // A redirection with its descriptor and target, and zsh's `-` precommand (repeated, or after
-    // assignments and wrappers), are no part of the command: read it without them first
-    // (#7423). The lexer keeps neither which digit is a descriptor (`2>` against `nice -n 5 >f`)
-    // nor which `-` is a precommand (`env -u -`), and a redirection that reads can stand before
-    // the program as well as in a heredoc's place, so the words are read each way, and the
-    // segment is refused if any reading is. A reading no different from the words, or from one
-    // already read, is not read again.
-    if toks
-        .iter()
-        .any(|w| w == "-" || shellwrap::is_redirection(w))
-    {
-        let mut read: Vec<Vec<String>> = Vec::new();
-        for reads in [merge::Reads::Late, merge::Reads::Kept] {
-            for digit_fd in [true, false] {
-                for drop_dash in [true, false] {
-                    for value_after_flag in [false, true] {
-                        let (plain, _) = merge::plain_words_with(
-                            toks,
-                            None,
-                            merge::Reading {
-                                digit_fd,
-                                drop_dash,
-                                value_after_flag,
-                                reads,
-                            },
-                        );
-                        if plain.len() != toks.len() && !plain.is_empty() && !read.contains(&plain)
-                        {
-                            read.push(plain);
-                        }
-                    }
-                }
-            }
-        }
-        for plain in &read {
-            if let Some(said) = segment_reason(plain, cmd, unattended, depth, a_shell_reads_stdin) {
-                return Some(said);
-            }
-        }
-    }
     let (prog, env, argv) = shellwrap::split_env(toks);
     // A string a shell runs is read as the command it is (#866).
     let scripts = shellwrap::shell_scripts_of(&prog, &argv)
@@ -976,6 +1061,12 @@ fn segment_reason(
         Vec::new()
     };
     for inner in scripts.chain(fed) {
+        // A script read once at this depth, and let through, is let through again: the same
+        // string reached by the line as written and by the line read exactly is one read, which
+        // keeps a chain of nested shells linear (#7423).
+        if !first_read_of_script(&inner, depth) {
+            continue;
+        }
         if let Some(said) = inner_floor(&inner) {
             return Some(said);
         }
@@ -990,7 +1081,7 @@ fn segment_reason(
     }
     // What a `find` runs for each file it finds is a command of its own (#7423).
     for run in shellwrap::commands_a_find_runs(&prog, &argv) {
-        if let Some(said) = segment_reason(&run, cmd, unattended, depth, a_shell_reads_stdin) {
+        if let Some(said) = words_reason(&run, cmd, unattended, depth, a_shell_reads_stdin) {
             return Some(said);
         }
     }

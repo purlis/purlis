@@ -33,6 +33,21 @@ quotes, a redirection with a descriptor number before the call (`gh 2>/dev/null 
 repeated, and a flag before the noun that may take the noun as its value (`gh -b x pr merge 5`).
 A line of tens of thousands of `$N` references reads in linear time.
 
+## What round 6 of #7423 changed
+
+Rounds 4 and 5 read each line several ways, because the lexer split `2>` into `2` and `>` and
+lost whether a word was quoted, and the readings multiplied (a run of `env -u - 3<f 5 >f - `
+took seconds, where one pass takes milliseconds) and still disagreed with the shell on a digit
+that is a value beside one that is a descriptor. The lexer now keeps both facts (the word was
+quoted; it is glued to the one before), and a redirection is exactly what bash reads: an
+unquoted operator, optionally after a glued all-digit word or `{name}`, and its target word. It
+is taken out once, everywhere in the segment, before the program is placed by the wrapper
+grammar (`shellwrap`'s tables, one copy). **What cannot be placed exactly is held**, for a
+segment that names `gh` or `glab`: a wrapper flag no table lists, a wrapper no table knows, and,
+for words nothing measured, a digit before an operator. A backtick is read from the lexer's
+quoting, so a quoted one flips nothing and `\\` before one is an escaped backslash. `watch`
+runs its words as a shell string and is read as one.
+
 ## Known limits of the text layer
 
 Not closed, and held at the boundary by the route under `guards.merge = enforce`:
@@ -43,4 +58,6 @@ Not closed, and held at the boundary by the route under `guards.merge = enforce`
 - a heredoc with an unquoted delimiter into a shell;
 - `trap '…' EXIT`;
 - nested escaped backticks;
-- a program or alias spelled `GH`, `g\h`, or made with `alias -g`.
+- a program or alias spelled `GH`, `g\h`, or made with `alias -g`;
+- `"$@"` and a command carried in a variable, `su -c '…'`, `xargs sh -c`, and differently
+  spelled aliases (#7430).

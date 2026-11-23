@@ -226,29 +226,7 @@ pub(super) fn forge_reason(
         (Some("api"), _) => api_reason(&args[words[0].0 + 1..], cmd, name == "glab"),
         (Some("alias"), Some("import")) => unreadable(),
         (Some("alias"), Some("set")) => {
-            let rest = &args[words[1].0 + 1..];
-            // A redirection among the words (`alias set m <<<x 'pr merge'`, `alias set m -
-            // <<'EOF'`) is no name or expansion, and the stdin it feeds is what a `-` reads:
-            // read the words as written, and without each (a digit before an operator is a
-            // descriptor only when attached, so both ways).
-            let mut readings = vec![rest.to_vec()];
-            for digit_fd in [true, false] {
-                let (plain, _) = plain_words_with(
-                    rest,
-                    None,
-                    Reading {
-                        digit_fd,
-                        drop_dash: false,
-                        ..Reading::default()
-                    },
-                );
-                if plain.len() != rest.len() && !readings.contains(&plain) {
-                    readings.push(plain);
-                }
-            }
-            readings
-                .iter()
-                .find_map(|rest| alias_reason(name, rest, unattended, depth))
+            alias_reason(name, &args[words[1].0 + 1..], unattended, depth)
         }
         (Some("repo"), Some("sync")) if name == "gh" => repo_sync_reason(&args[words[1].0 + 1..]),
         (Some("mr"), Some("create" | "new")) if name == "glab" && sets_auto_merge(args) => {
@@ -1195,46 +1173,20 @@ fn flag_before_command_is_known(flag: &str) -> bool {
 /// `own` and `source` are one segment's [`crate::shellseg::Reading::own`] and
 /// [`crate::shellseg::Reading::own_source`]: the source has the quotes `own` has lost.
 pub(super) fn shell_filled_api_reason(
-    own: &[String],
-    source: &[String],
+    segment: &super::exact::Segment,
     cmd: &str,
 ) -> Option<String> {
-    let from = shellwrap::past_function_headers(own).unwrap_or(0);
-    let (own, source) = (&own[from..], source.get(from..).unwrap_or(&[]));
-    // The redirections and zsh's `-` precommands are no part of the call: read it without them.
-    // A digit before an operator is a descriptor only when it is attached (`2>`), and the lexer
-    // does not keep which, so it is read both ways, and as written: a `-` or a digit that is an
-    // option's value (`env -u -`, `nice -n 5 >f`) is a word of the call, not a precommand or a
-    // descriptor (#7423).
-    let mut readings: Vec<(Vec<String>, Vec<String>)> = Vec::new();
-    for digit_fd in [true, false] {
-        for drop_dash in [true, false] {
-            for value_after_flag in [false, true] {
-                readings.push(plain_words_with(
-                    own,
-                    Some(source),
-                    Reading {
-                        digit_fd,
-                        drop_dash,
-                        value_after_flag,
-                        reads: Reads::Stripped,
-                    },
-                ));
-            }
-        }
-    }
-    readings.sort();
-    readings.dedup();
-    readings
-        .iter()
-        .find_map(|(own, source)| shell_filled_api_reason_of(own, source, cmd))
+    shell_filled_api_reason_of(&segment.words, &segment.spelled, cmd).or_else(|| {
+        let also = segment.also.as_ref()?;
+        shell_filled_api_reason_of(also, &[], cmd)
+    })
 }
 
-/// [`shell_filled_api_reason`] of one reading of the segment's words.
+/// [`shell_filled_api_reason`] of a segment's words, its redirections already taken out.
 fn shell_filled_api_reason_of(own: &[String], source: &[String], cmd: &str) -> Option<String> {
     // The one name the line binds to digits, read at most once for the whole call.
     let bound: std::cell::OnceCell<Option<String>> = std::cell::OnceCell::new();
-    let inv = shellwrap::split_env_chdir(own);
+    let inv = shellwrap::split_env_chdir_exact(own);
     let (prog, argv) = (&inv.prog, &inv.argv);
     // What a `find` runs is a command of its own.
     for run in shellwrap::commands_a_find_runs(prog, argv) {
@@ -1244,7 +1196,7 @@ fn shell_filled_api_reason_of(own: &[String], source: &[String], cmd: &str) -> O
                 "{UNREADABLE} `find` fills in a file name as an argument of `{inner}`, which could be a flag. {PLACE_WAY_OUT}"
             ));
         }
-        if let Some(said) = shell_filled_api_reason(&run, &[], cmd) {
+        if let Some(said) = shell_filled_api_reason(&super::exact::of_words(&run), cmd) {
             return Some(said);
         }
     }
@@ -1332,10 +1284,6 @@ fn shell_filled_api_reason_of(own: &[String], source: &[String], cmd: &str) -> O
     // the CLI reads as its command cannot be placed.
     let mut j = 1;
     while let Some(word) = argv.get(j) {
-        if shellwrap::is_redirection(word) {
-            j += 2;
-            continue;
-        }
         if !word.starts_with('-') {
             break;
         }
@@ -1392,169 +1340,6 @@ fn shell_filled_api_reason_of(own: &[String], source: &[String], cmd: &str) -> O
 /// What a refusal of an argument that is only a pattern says to do (#7423).
 const GLOB_WAY_OUT: &str = "Quote the whole word, or start it with literal text that is no flag \
      (`repos/o/r/pulls?state=open`), so the shell leaves it one word that cannot begin a flag.";
-
-/// Whether a word is a shell's named descriptor, `{fd}` (as in `{fd}>file`).
-fn named_descriptor(word: &str) -> bool {
-    word.strip_prefix('{')
-        .and_then(|w| w.strip_suffix('}'))
-        .is_some_and(|name| {
-            name.chars()
-                .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
-                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-        })
-}
-
-/// How [`plain_words_with`] reads: whether a digit word or a `{name}` before an operator is its
-/// descriptor and goes with it, whether a `-` in the prefix is zsh's precommand and goes, which
-/// redirections that read stay, and whether a digit or a `-` right after a wrapper's flag is that
-/// flag's value. The lexer splits `2>` into `2` and `>` as it does `2 >`, and a `-` or a digit can
-/// be an option's value (`env -u -`, `nice -n 5 >f`), so a caller reads each way (#7423).
-#[derive(Clone, Copy)]
-pub(super) struct Reading {
-    pub digit_fd: bool,
-    pub drop_dash: bool,
-    /// A digit, a `-` or an operator-shaped word (a quoted `'<'` the lexer has not marked)
-    /// standing right after a flag in front of the program is that flag's value, whatever
-    /// `digit_fd` and `drop_dash` say of the other words: `nice -n 5 >f gh 2>g pr` has a value
-    /// `5` and a descriptor `2`, and `env -u '<' gh </dev/null pr` a value `<`.
-    pub value_after_flag: bool,
-    pub reads: Reads,
-}
-
-/// Which redirections that read (`<`, `<<`, `<<<`, `<>`) a reading keeps, for a reader that takes
-/// a heredoc body or a stdin from them.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Reads {
-    /// None: every redirection goes.
-    Stripped,
-    /// Those after the call's noun and verb are placed, counted from where its program really
-    /// is (`env -u A -u B gh`), past a `-R o/r`: from there a heredoc or here-string is the body
-    /// or the stdin of what the call reads (`--input -`).
-    Late,
-    /// All of them: the reading round three made, for a redirection that stands before the
-    /// program (`nice -n 5 </dev/null gh pr merge 5`), where the words are not yet placed.
-    Kept,
-}
-
-impl Default for Reading {
-    fn default() -> Self {
-        Self {
-            digit_fd: true,
-            drop_dash: true,
-            value_after_flag: false,
-            reads: Reads::Stripped,
-        }
-    }
-}
-
-/// `own` without what is no part of a command's own words (#7423): a redirection (an optional
-/// descriptor number, the operator and its target) wherever it stands, and zsh's `-`
-/// precommand, repeated, or after assignments and wrappers (`noglob - gh …`).
-///
-/// With `source`, each word's spelling, only an operator written unquoted is a redirection
-/// (`--jq '>' $F` has none), and a word the line did not measure never is one. Without it, every
-/// operator-shaped word is. Answers the source words in step with the words kept.
-///
-/// `how` says how a digit before an operator, a `-` and the redirections that read are read
-/// ([`Reading`]).
-pub(super) fn plain_words_with(
-    own: &[String],
-    source: Option<&[String]>,
-    how: Reading,
-) -> (Vec<String>, Vec<String>) {
-    let keep_reads_from = match how.reads {
-        Reads::Stripped => usize::MAX,
-        Reads::Kept => 0,
-        Reads::Late => verb_at(own, source, how).map_or(usize::MAX, |at| at + 1),
-    };
-    let (words, spellings, _) = walk_plain(own, source, how, keep_reads_from);
-    (words, spellings)
-}
-
-/// The index in `own` of the word the call's verb is: the second word after its program that is
-/// no flag and no `-R`/`--repo` value, read with every redirection gone. `None` where the
-/// program, or the verb, cannot be placed.
-fn verb_at(own: &[String], source: Option<&[String]>, how: Reading) -> Option<usize> {
-    let (words, _, origin) = walk_plain(own, source, how, usize::MAX);
-    let argv = shellwrap::split_env_chdir(&words).argv;
-    let start = words.len().checked_sub(argv.len())?;
-    if words[start..] != argv[..] {
-        return None;
-    }
-    let (mut placed, mut j) = (0, 1);
-    while let Some(word) = argv.get(j) {
-        if word == "-R" || word == "--repo" {
-            j += 2;
-            continue;
-        }
-        if !word.starts_with('-') {
-            placed += 1;
-            if placed == 2 {
-                return origin.get(start + j).copied();
-            }
-        }
-        j += 1;
-    }
-    None
-}
-
-/// [`plain_words_with`]'s walk: the words kept, their spellings and where each stood in `own`.
-/// The redirections that read stay from index `keep_reads_from` on.
-fn walk_plain(
-    own: &[String],
-    source: Option<&[String]>,
-    how: Reading,
-    keep_reads_from: usize,
-) -> (Vec<String>, Vec<String>, Vec<usize>) {
-    let operator = |k: usize, keep_reads: bool| {
-        own.get(k).is_some_and(|w| {
-            shellwrap::is_redirection(w) && !(keep_reads && w.starts_with('<') && w != "<&")
-        }) && source.is_none_or(|s| s.get(k).is_some_and(|spelled| *spelled == own[k]))
-    };
-    let (mut words, mut spellings, mut origin) = (Vec::new(), Vec::new(), Vec::new());
-    let mut prefix = true;
-    // Whether the last word kept is a flag in front of the program, whose value may come next.
-    let mut after_flag = false;
-    let mut i = 0;
-    while i < own.len() {
-        let word = own[i].as_str();
-        let keep_reads = i >= keep_reads_from;
-        let is_value = how.value_after_flag
-            && prefix
-            && after_flag
-            && (word == "-"
-                || (!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()))
-                || shellwrap::is_redirection(word));
-        if is_value {
-            after_flag = false;
-        } else {
-            let fd = how.digit_fd
-                && ((!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()))
-                    || named_descriptor(word))
-                && operator(i + 1, keep_reads);
-            if fd || operator(i, keep_reads) {
-                i += if fd { 3 } else { 2 };
-                continue;
-            }
-            if prefix {
-                if word == "-" && how.drop_dash {
-                    i += 1;
-                    continue;
-                }
-                prefix = shellwrap::is_env_assignment(word)
-                    || shellwrap::is_wrapper(&shellwrap::base_lower(word))
-                    || (word.starts_with('-') && word.len() > 1);
-                after_flag = prefix && word.starts_with('-') && word.len() > 1;
-            }
-        }
-        words.push(own[i].clone());
-        spellings.push(source.and_then(|s| s.get(i).cloned()).unwrap_or_default());
-        origin.push(i);
-        i += 1;
-    }
-    (words, spellings, origin)
-}
 
 /// What a refusal of a shell-filled `gh api` argument says to do.
 const FILLED_IN_WAY_OUT: &str = "Write the endpoint out, or put the shell-filled part in one \

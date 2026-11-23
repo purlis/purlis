@@ -754,3 +754,171 @@ fn the_reads_the_round_five_readings_could_swallow_still_pass() {
         "sudo =gh pr list",
     ]);
 }
+
+// Round 6: one exact reading. The lexer keeps whether a word was quoted and whether it is glued to
+// the one before it, so a redirection is read as the shell reads it, once, and what cannot be
+// placed exactly is held.
+
+/// Round 6, regressions from round 4 to round 5: a descriptor and a value are told apart by the
+/// source, not guessed.
+#[test]
+fn a_digit_or_dash_that_is_a_value_next_to_a_descriptor_is_told_apart_by_the_source() {
+    purlis_core::unsteered!();
+    held(&[
+        "timeout 3</dev/null 5 env -u '<' gh pr merge 5",
+        "sudo -u a </dev/null -g b env -u '<' gh pr merge 5",
+        "sudo -u a -g 3<f b nice -n 5 <>f gh pr merge 5",
+        "watch -n 5 gh <<< 'a b' api repos/o/r/pulls/5/merge $F",
+        "watch -n 5 gh <<<'a b' alias set --shell m 'gh pr merge'",
+    ]);
+}
+
+/// Round 6, regressions from round 3 to round 4: a named descriptor, and a redirection with its
+/// target, stand between the wrapper and its program.
+#[test]
+fn a_named_descriptor_between_a_wrapper_and_its_program_is_stripped() {
+    purlis_core::unsteered!();
+    held(&[
+        "sudo -u a nice -n 5 >f {fd}>g gh pr merge 5",
+        "if true; then nice -n 5 >f {fd}>g gh pr merge 5; fi",
+        "exec -a x caffeinate -t 5 >&2 {fd}>f gh api repos/o/r/pulls/5/merge -X PUT",
+    ]);
+}
+
+/// Round 6, siblings: after a leading keyword, behind several wrappers, with a quoted operator or a
+/// descriptor on either side of a value.
+#[test]
+fn a_redirection_after_a_keyword_or_a_wrapper_chain_is_stripped_exactly() {
+    purlis_core::unsteered!();
+    held(&[
+        "if true; then nice -n 5 >/dev/null 2>&1 gh pr merge 5; fi",
+        "for p in 1 2; do nice -n 5 >/dev/null 2>&1 gh pr merge $p; done",
+        "! nice -n 5 >/dev/null 2>&1 gh pr merge 5",
+        "sudo -u a nice -n 5 >/dev/null 2>&1 gh pr merge 5",
+        "timeout 30 nice -n 5 >/dev/null 2>&1 gh pr merge 5",
+        "env -u A -u '>' gh >/dev/null pr merge 5",
+        "sudo -u a -g '>' gh >/dev/null pr merge 5",
+        "env -u 2>/dev/null '>' gh pr merge 5",
+        "timeout </dev/null 5 env -u '<' gh pr merge 5",
+        "env -u X 2>&- watch -n 5 <&0 glab mr merge 5 || true",
+        "while true; do nice -n 5 2>/dev/null gh pr merge 5; done",
+        "until false; do nice -n 5 2>/dev/null gh pr merge 5; done",
+        "time nice -n 5 2>/dev/null gh pr merge 5",
+    ]);
+}
+
+/// Round 6: a backtick the shell reads is found by the lexer's quoting, not by a scan of the text.
+#[test]
+fn a_quoted_backtick_flips_nothing_and_a_doubled_backslash_escapes_itself() {
+    purlis_core::unsteered!();
+    held(&[
+        "echo '`' `gh api repos/o/r/pulls/5/merge \\$F`",
+        "echo \\\\`gh api repos/o/r/pulls/5/merge \\$F`",
+    ]);
+    passes(&[
+        "echo '`' `gh api repos/o/r/pulls/5`",
+        "echo \\\\`gh api repos/o/r/pulls/5`",
+    ]);
+}
+
+/// Round 6, rule B: where the words in front of a forge CLI cannot be placed exactly, the call is
+/// held, and the refusal says what to do.
+#[test]
+fn a_prefix_that_cannot_be_walked_exactly_is_held_and_says_what_to_do() {
+    purlis_core::unsteered!();
+    held(&[
+        // A wrapper flag no table lists may take the next word as its value.
+        "env --nonesuch gh pr view 5",
+        "nice --nonesuch x gh pr merge 5",
+        // A wrapper no table knows.
+        "unbuffer gh pr view 5",
+        "busybox gh pr view 5",
+        "env --nonesuch echo gh",
+    ]);
+    let said = release_floor_reason("env --nonesuch gh pr view 5", true).expect("a refusal");
+    assert!(
+        said.contains("could not tell which word runs here")
+            && said.contains("put gh first in the command"),
+        "{said}"
+    );
+    // A plain read at the start of a segment is untouched, and so is a program that only names gh.
+    passes(&[
+        "gh pr view 5",
+        "echo gh pr merge 5",
+        "git log --grep gh",
+        "env -u X echo gh",
+    ]);
+}
+
+/// Round 6: the reads of the brief, quoted or not, with redirections, in a loop and in a
+/// substitution, still pass.
+#[test]
+fn the_plain_reads_of_every_round_still_pass() {
+    purlis_core::unsteered!();
+    passes(&[
+        "gh pr view 5",
+        "gh pr list --state open",
+        "gh api repos/o/r/pulls/5",
+        "gh api \"repos/o/r/pulls?state=open\"",
+        "gh api repos/o/r/pulls?state=open",
+        "gh run view 123 --log",
+        "gh pr checks 5",
+        "glab mr view 5",
+        "gh api repos/o/r/actions/runs --jq '.workflow_runs[0].id'",
+        "gh pr -R o/r view 5",
+        "bash -c \"gh pr view \\$N\"",
+        "gh pr view 5 2>/dev/null",
+        "gh pr view 5 2>&1 | head",
+        "s=$(gh api repos/o/r/pulls/5 --jq .head.sha)",
+        "for p in 1 2; do gh api repos/o/r/pulls/$p --jq .title; done",
+        "gh api \"repos/o/r/commits/$s/check-runs?per_page=100\" --jq '.check_runs[]|.name'",
+        "nice -n 5 </dev/null 2>&1 gh pr view 5",
+        "env -u - gh 2>/dev/null pr view 5",
+        "env -u '<' gh >/dev/null pr view 5",
+        "timeout 3</dev/null 5 env -u '<' gh pr view 5",
+        "sudo -u a </dev/null -g b env -u '<' gh pr view 5",
+        "if true; then nice -n 5 >/dev/null 2>&1 gh pr view 5; fi",
+        "watch -n 5 gh pr view 5",
+    ]);
+}
+
+/// How long the verdicts of one line take.
+fn time_of(cmd: &str) -> std::time::Duration {
+    let start = std::time::Instant::now();
+    let _ = merge_reason(cmd);
+    let _ = release_floor_reason(cmd, true);
+    let _ = mergehold::held(cmd);
+    start.elapsed()
+}
+
+/// Round 5 read each line sixteen ways, and `env -u - 3<f 5 >f - ` twelve times took seconds.
+/// One exact reading is one pass: the line is read in time proportional to its length, nested in
+/// substitutions and in an inner shell's string too.
+#[test]
+fn a_run_of_values_and_descriptors_is_read_in_time_proportional_to_its_length() {
+    purlis_core::unsteered!();
+    let bound = if cfg!(debug_assertions) {
+        std::time::Duration::from_secs(4)
+    } else {
+        std::time::Duration::from_secs(1)
+    };
+    for n in [4, 8, 12, 16, 32, 64] {
+        let run = "env -u - 3<f 5 >f - ".repeat(n);
+        let plain = format!("{run}gh pr view 5");
+        let nested = format!("echo $(echo $({run}gh pr view 5))");
+        let inner = format!("bash -c '{run}gh pr view 5'");
+        let merging = format!("{run}gh pr merge 5");
+        for cmd in [&plain, &nested, &inner] {
+            let took = time_of(cmd);
+            assert!(took < bound, "n = {n}: {took:?} for {} chars", cmd.len());
+        }
+        assert!(time_of(&merging) < bound, "n = {n}: a merge took too long");
+        // The wrappers in front of a call that could merge are read in the same time.
+        let held_line = format!("{}gh pr merge 5", "nice -n 5 >f {fd}>g ".repeat(n));
+        assert!(
+            time_of(&held_line) < bound,
+            "n = {n}: wrappers took too long"
+        );
+        assert!(merge_reason(&held_line).is_some(), "not held at n = {n}");
+    }
+}
