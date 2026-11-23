@@ -2481,6 +2481,14 @@ fn an_update_of_a_branch_the_open_chat_has_no_record_of_raises_one_ask_in_the_wi
         .record(project, vec![(Kind::GitHub, "github.com", "acme/app")]);
     scene.recorded.bind(project, "github.com", "alice");
     let params = scene.open("chat-1", "run-1", project, 5);
+    // The forge lists the branch: an ask is raised only for a branch the repo's advertisement
+    // names.
+    lock_live(&scene, "run-1").note_advertised(
+        &ChatId::new("run-1"),
+        "github.com",
+        "acme/app",
+        vec!["main".into(), "colleague".into()],
+    );
 
     let said = |pushed: Outcome| match pushed {
         Outcome::Held(held) => held.said,
