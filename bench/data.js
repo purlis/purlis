@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795464216458,
+  "lastUpdate": 1795468978196,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53214,6 +53214,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8640145,
             "unit": "ms",
             "extra": "median of 5 runs: 100.859, 101.756, 101.864, 102.251, 102.318 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "e25e7955df4b1bc8e550b71b30459ef6e8e37dfd",
+          "message": "One login: a clone trusted before one-login can be confirmed for chats from Accounts (#7408)\n\n* One login: a clone trusted but not confirmed is listed in Accounts with a Confirm button, and the doctor says so\n\nA clone on the old trust list (push-remotes.json) with no entry in forge-repos.json was\nnever shown by the clone Notice, so no press could confirm it and the route served no\nchat from it. Settings > You > Accounts now lists such clones (Trusted, not confirmed for\nchats) and Confirm runs forge_trust_clone_repo in the window; a failed confirm says why.\nThe doctor has a 'forge confirmation' row.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83KHJV1X45MM7D8569VK5Q5\nPurlis-Persona: steward\n\n* One login: the unconfirmed listing matches the route, the last row's answer stays, copy, a story (#7408)\n\nThe list of unconfirmed clones now uses the comparison confirmed::serves makes: a clone\nconfirmed at one address and trusted again at another is listed. The setting stays drawn while\nthe answer to a press stands, says 'Asking <host>…' while the forge is asked, and words its\nerror 'purlis could not confirm <folder>: <reason>'. The doctor row is made only by the full\ndoctor, as it walks every workspace's clones. Adds the ClonesToConfirm story.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83QF2G0E76GX421MG386KR7\nPurlis-Persona: steward\n\n* One login: Confirm clones walked by arrow in the grid, the status line listed, the palette count (#7408)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83T0T9NE9QAE6B4JD59X9MH\nPurlis-Persona: steward\n\n* Accounts story: the clones grid is walked with the arrows from its first header cell, as the grid keeps focus in WebKit\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Accounts story: the ClonesToConfirm baselines its stories run drew (WebKit)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Doctor: the forge confirmation row's test lives in a cfg(test) module of its own, as a test that trusts a clone must\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T20:24:07Z",
+          "tree_id": "accfef294a2fd38cf7dfce0682ad8fbc97ebac78",
+          "url": "https://github.com/purlis/purlis/commit/e25e7955df4b1bc8e550b71b30459ef6e8e37dfd"
+        },
+        "date": 1795468969304,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6401254999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.619, 0.636, 0.640, 0.641, 0.659 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6536885,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.504, 16.634, 16.654, 16.699, 16.774 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.924672,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.775, 101.066, 101.925, 101.974, 102.196 ms"
           }
         ]
       }
