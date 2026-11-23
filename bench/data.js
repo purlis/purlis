@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795474712922,
+  "lastUpdate": 1795475767696,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53340,6 +53340,48 @@ window.BENCHMARK_DATA = {
             "value": 102.106674,
             "unit": "ms",
             "extra": "median of 5 runs: 101.779, 101.789, 102.107, 102.218, 103.356 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "846c77f5330fdae20d16d9c048140daaa0856f9e",
+          "message": "P0: a push's base is read through an object cache that each push tops up (#7464) (#7467)\n\n* P0: a push's base is read through an object cache each push tops up, so a large repo no longer times out\n\nEvery push fetched the forge repo's whole history into an empty quarantine under the\n120 s network limit, and a large repo was refused. Each forge repo now has an app-owned\nobject cache, fetched into incrementally (own 15 min bound, one lock per cache, a clear\nrefusal during the first fill); the quarantine reads through it as an alternate, so it\nholds only the pushed pack. A git stopped by its deadline now says it took longer than\nits limit. ADR 0128 amendment, plane-format tier, changelog fragment.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M84XJWM4T17SFF9TZM2Z0NGJ\nPurlis-Persona: steward\n\n* P0: the cache's new module, its tests, the ADR amendment and the changelog fragment\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M84XJWM4T17SFF9TZM2Z0NGJ\nPurlis-Persona: steward\n\n* P0 round 2: the fill leaves the connection, the cache moves to the data home and repairs itself\n\nThe first fill of a forge repo's object cache runs on the cache's own thread and the push is refused at once; all of a push's fetches share 240 s, inside the listener's 10 minutes. The cache is object-cache/<hash> in the data home, denied to chats for read and write. A damaged cache is made again; tmp_pack_* are removed; a repo past the cap by its history alone is refused and kept; bases are trimmed by last use.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M850JQKJDG310HP56MAMVSBW\nPurlis-Persona: steward\n\n* P0 round 3: no wedge, no lease race, panic-safe fill, stale git locks, cache folder at start\n\n- the fill marker is written for a first fill or a rebuild only, never after a top-up; a cache over its cap is made again once, then refused\n- the cache's thread requires zero leases to rebuild; leftovers are removed before the size is measured\n- a drop guard resets filling on panic or early return; a thread that cannot start refuses with its reason\n- stale git locks are removed; a failure naming the cache folder is told as a fixed text\n- gc --auto runs on the cache's own thread after the push's verdict\n- tests for each; the security test asserts the first pack is taken in; the denial test checks Read() and codex::wrap\n- the object-cache folder is made at app start\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M853AYGK60825V25K8H97770\nPurlis-Persona: steward\n\n* Format the object cache and its tests (rustfmt)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* forgewiring tests: the push gate's test fixture names no cache parent\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T22:36:16Z",
+          "tree_id": "7d974c24b8ceb66272b6d36b69309d57007c57dd",
+          "url": "https://github.com/purlis/purlis/commit/846c77f5330fdae20d16d9c048140daaa0856f9e"
+        },
+        "date": 1795475760651,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33675900000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.314, 0.319, 0.337, 0.342, 0.351 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.583642,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.134, 16.559, 16.584, 16.595, 16.757 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.2996535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.770, 100.969, 101.300, 101.825, 102.346 ms"
           }
         ]
       }
