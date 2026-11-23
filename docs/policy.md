@@ -33,7 +33,8 @@ guards.release = "log"     # one family, apart from the template
 The families, and what each covers, are listed in
 [`docs/plane-format.md`](plane-format.md#policy--which-of-purliss-refusals-run). In this release
 the git, merge, release, save and credential guards, `secrets`, the sandbox level, `network`,
-`ports` (off or enforce only), `dispatch` (a pair nothing covers starts with no grant) and `asks`
+`ports` (off or enforce only; on macOS, `off` also lets a chat reach this machine's own network
+addresses, because Seatbelt cannot tell them from loopback), `dispatch` (a pair nothing covers starts with no grant) and `asks`
 (a host and a folder are answered Allow; a socket only under `off`) switch, and so do the nine
 families ruling Q308b added (`guards.forge`, `guards.shape`, `guards.plane`, `mode`, `tools`,
 `trust`, `runners`, `consents` and `limits`; under `limits = "log"` a limit is counted, not
