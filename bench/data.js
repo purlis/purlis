@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795408030035,
+  "lastUpdate": 1795408779345,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52752,6 +52752,48 @@ window.BENCHMARK_DATA = {
             "value": 101.75296399999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.294, 101.528, 101.753, 102.651, 102.837 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4fd39511c58c291d0f35fb536a22b8bd34b8c6a7",
+          "message": "Release R2: compile before the gate, sign after it (#7381) (#7397)\n\n* Release R2 so far, on R1's base\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82SPTTHQ5YNDSBZVB1JHGCD\nPurlis-Persona: steward\n\n* Fix the security review findings on R2\n\nThe wait is inlined in the workflow (no checkout file runs it), reads status and conclusion in one retried call, and runs in a shell without BASH_ENV with a fixed PATH. The release-manifest rules now hold the wait exact, job-level secrets, a top-level green, keys' booleans and permissions, wider sign and upload detectors, and symbols' keys result, each proved on a workflow broken on purpose.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82SPTTHQ5YNDSBZVB1JHGCD\nPurlis-Persona: steward\n\n* Review R2: drop the compile's environment before the wait asks, no sleep after the last try\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82SPTTHQ5YNDSBZVB1JHGCD\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T04:02:42Z",
+          "tree_id": "18c91dc7b45c377f4e8f8717176deb9a00074e48",
+          "url": "https://github.com/purlis/purlis/commit/4fd39511c58c291d0f35fb536a22b8bd34b8c6a7"
+        },
+        "date": 1795408772756,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5604465000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.533, 0.555, 0.560, 0.567, 0.589 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.518002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.263, 16.495, 16.518, 16.608, 16.638 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 103.14409549999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.719, 102.921, 103.144, 104.014, 104.963 ms"
           }
         ]
       }
