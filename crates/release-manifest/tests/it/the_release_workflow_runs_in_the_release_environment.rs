@@ -6,7 +6,7 @@
 //!
 //! The environment is where the secrets live, and its deployment policy is what keeps them off
 //! any ref but `main` and `v*` tags. A job that reads `secrets.*` without naming it gets an
-//! empty string: `plan` would read "no updater key" and skip every dev build, and `build` would
+//! empty string: `keys` would read "no updater key" and skip every dev build, and `build` would
 //! bundle unsigned. So the rule is checked on the file, the way it is written, rather than
 //! found out on the next release.
 //!
@@ -18,21 +18,24 @@ use workflow::{Job, release_jobs};
 
 /// What each guarded job's `environment:` says, exactly.
 ///
-/// `plan` keys on the event, and NAMES the one that can publish: a push, of a `v*` tag or to
-/// `main` (whose `plan` runs only once the gate saw that commit's `ci` green). A hand-started build and the nightly
+/// `plan` takes none (R2, #7381): it runs the commit's own tools. `keys` asks which secrets are
+/// set, so it keys on the event, and NAMES the one that can publish: a push, of a `v*` tag or to
+/// `main` (the jobs that sign, upload or publish run only once the gate saw that commit's `ci`
+/// green, and `build` waits for it itself before it does). A hand-started build and the nightly
 /// profile guard get no environment, and neither does an event added to `on:` later, until
-/// this line says so (ADR 0092). `build` keys on what `plan` decided. `publish` only runs
+/// this line says so (ADR 0092). `build` keys on what `keys` decided. `publish` only runs
 /// when the run publishes, so it names the environment outright. And `x && 'release' || ''`,
 /// never `x && '' || 'release'`: an empty string is falsy in a workflow expression, so the
 /// second form is `release` every time.
 const EXPECTED: [(&str, &str); 7] = [
+    // Reads the secrets as booleans: is the updater key set, is a Developer ID.
     (
-        "plan",
-        "${{ github.event_name == 'push' && 'release' || '' }}",
+        "keys",
+        "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
     ),
     (
         "build",
-        "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
+        "${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}",
     ),
     // Signs the runner image's line with the updater's key (#2749).
     ("runner-image-signature", "release"),
@@ -40,12 +43,12 @@ const EXPECTED: [(&str, &str); 7] = [
     // `build` does, keyed on what `plan` decided as `build` is (#723).
     (
         "runner-binary-aarch64",
-        "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
+        "${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}",
     ),
     // Signs each runner platform's purlis with the updater's key when the run publishes (#723).
     (
         "runner-binaries",
-        "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}",
+        "${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}",
     ),
     ("publish", "release"),
     // Reads the Report intake's upload token, which lives in the environment beside the signing

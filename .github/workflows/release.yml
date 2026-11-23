@@ -18,9 +18,10 @@ run-name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 
 #
 #   a `v*` tag             -> the STABLE channel: a GitHub Release for that tag, `latest.json`
 #                             beside its bundles. Only the operator pushes a `v*` tag.
-#   a push to `main`       -> the DEV channel, once that commit's own `ci` ended green (`gate`):
-#                             the bundles and `dev.json` replace the assets of the one
-#                             prerelease named `dev`. One at a time, never cancelled once
+#   a push to `main`       -> the DEV channel, once that commit's own `ci` ended green (`gate`,
+#                             and a step of `build` before it signs): it COMPILES while `ci`
+#                             runs and SIGNS after it (ADR 0042, 2026-11-23). The bundles and
+#                             `dev.json` replace the assets of the one prerelease named `dev`. One at a time, never cancelled once
 #                             started, and never an older commit over a newer one
 #                             (`concurrency` and `plan`).
 #   `workflow_dispatch`    -> a build of any branch, uploaded as run artifacts and published
@@ -46,7 +47,7 @@ run-name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 
 #
 # **Two signatures, and they do different jobs.**
 #   minisign (TAURI_SIGNING_PRIVATE_KEY) — mandatory, free, and the thing the updater checks
-#     before it installs anything. No key, no publish: the `plan` job refuses first, and
+#     before it installs anything. No key, no publish: the `keys` job refuses first, and
 #     `release-manifest` refuses again over the actual bytes against the key the app ships.
 #   Developer ID (APPLE_CERTIFICATE…) — what macOS checks. **Optional** (ADR 0042, amended
 #     2026-09-23), because it costs an Apple Developer account and the updater's trust does not
@@ -85,8 +86,8 @@ on:
   # end. A run that another run's end starts gets main's head at that moment
   # as `github.sha`, and its OIDC token, so its build provenance, names that commit, though the
   # run built an earlier one whenever a merge landed while `ci` ran. Started by the push, the
-  # run's commit, the commit it builds and the commit its provenance names are one. `gate`
-  # holds the build until that commit's `ci` has ended green.
+  # run's commit, the commit it builds and the commit its provenance names are one. `gate`, and
+  # a step of the build before it signs, hold the build until that commit's `ci` has ended green.
   push:
     tags: ["v*"]
     branches: [main]
@@ -126,13 +127,21 @@ env:
   # PR; a new warning out of a dependency must not be the thing that stops a release.
 
 jobs:
-  # **A dev build waits for its commit's own `ci` to end green.** It used to be started by that
-  # end; now the push starts it (see `on:`), so this job is the gate: it finds the `ci` run of
-  # this very commit on its push to `main`, waits for it to end, and answers `green` only when
-  # it ended `success`. Red, cancelled or timed out, it answers `false`, `plan` is skipped, and
-  # nothing is built or published, as a red `ci` published nothing before. A `ci` run that never
-  # appears, or that has not ended when the wait does, is an error: nothing is built then
-  # either. Every other way in (a tag, the profile guard, a build by hand) passes at once.
+  # **A dev build compiles before the gate and signs after it** (R2, #7381; ADR 0042 amended
+  # 2026-11-23). The push starts the run, and this job finds the `ci` run of this very commit on its
+  # push to `main`, waits for it to end, and answers `green` only when it ended `success`. Red,
+  # cancelled or timed out, it answers `false`; a `ci` run that never appears, or that has not
+  # ended when the wait does, is an error.
+  #
+  # **Who waits for it.** Every job that signs, uploads or publishes needs `gate` and runs only
+  # on its `green`: the runner image and its signature, the runner binaries, `sbom`, `manifest`,
+  # `provenance`, `publish` and `symbols`. Two jobs do not, so they can compile while `ci` runs:
+  # `build` and `runner-binary-aarch64` start at once and each has a step that makes the same wait
+  # (a step of its own, written out in the workflow) before its first step that signs or uploads,
+  # which ends the job on a red `ci`. `plan` and `keys` hold nothing and publish nothing, so they do not wait either.
+  # `crates/release-manifest` holds each of those rules on a workflow broken on purpose. Every
+  # other way in (a tag, the profile guard, a build by hand) passes at once, here and in those
+  # steps.
   #
   # It holds only the right to read runs, checks nothing out and takes no environment, so the
   # hour it may spend waiting holds no key. One thing is lost with the old trigger: a red `ci` on
@@ -159,10 +168,23 @@ jobs:
             echo "green=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # One call reads status and conclusion, tried three times: an API error is not an answer.
+          ask() {
+            for try in 1 2 3; do
+              if out=$(gh run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then
+                echo "$out"
+                return 0
+              fi
+              if [ "$try" -lt 3 ]; then
+                sleep $((try * 15))
+              fi
+            done
+            return 1
+          }
           # The push started `ci` and this run together; give its run a few minutes to be listed.
           id=""
           for _ in $(seq 1 30); do
-            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+            id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id=""
             [ -n "$id" ] && break
             sleep 10
           done
@@ -171,9 +193,10 @@ jobs:
           # The watch's own exit says little (it ends nonzero for a red run and for a lost
           # connection alike), so the run's state is read again after it.
           gh run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
-          status=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json status --jq .status)
-          conclusion=$(gh run view "$id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq .conclusion)
+          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is built"; exit 1; }
+          read -r status conclusion <<< "$state"
           [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is built"; exit 1; }
+          # A cancelled or red `ci` is `green=false`, never green.
           if [ "$conclusion" = success ]; then
             echo "green=true" >> "$GITHUB_OUTPUT"
           else
@@ -181,39 +204,28 @@ jobs:
             echo "green=false" >> "$GITHUB_OUTPUT"
           fi
 
+  # **`plan` holds nothing and waits for nothing** (R2, #7381). It runs the commit's own tools
+  # (`tools/ci-scope.mjs`, `tools/dev-build-order.mjs`, the changelog tool for a tag), so it takes
+  # no environment and reads no secret, and it starts the moment the push does. Whether a key is
+  # set is asked by `keys`, which runs nothing from the commit.
   plan:
     name: what this run makes
-    needs: gate
     runs-on: ubuntu-24.04
     # **Every job has a deadline.** A job with none may run for six hours, and a hung one
     # would hold the dev builds' group, and every build waiting behind it, for all of them.
-    # Each is several times what the job takes (the gate apart, which waits for `ci`): `plan` seconds (minutes for a tag, which
+    # Each is several times what the job takes (the gate apart, which waits for `ci`, and the
+    # two that wait for it before they sign): `plan` seconds (minutes for a tag, which
     # compiles the changelog tool), a dev `build` about 20 minutes and a stable one about 35,
     # `manifest` 5, `sbom`, `provenance` and `publish` under 2 (2026-10-13). A whole dev run is
     # about half an hour. `tools/release-workflow.test.mjs` holds every job to having one.
     timeout-minutes: 15
-    # Only a green gate lets a run build. For a dev build that is its commit's `ci` ended green
-    # on its push to `main`; for every other way in the gate passes at once.
-    if: needs.gate.outputs.green == 'true'
-    # **The signing secrets live in the `release` environment, not the repository** (#344).
-    # Its deployment policy admits `main` (a push to it) and `v*` tags, so a job on any other ref gets no secret at all. `plan` only asks whether
-    # they are SET, but it has to ask inside the environment to get a true answer. An
-    # on-demand `workflow_dispatch` build publishes nowhere, so it takes no environment and no
-    # key, whatever branch it builds, and comes out unsigned (see `This build's config`). So
-    # does the nightly profile guard. The two events that publish are NAMED, so an event added
-    # to `on:` later holds no key until this line says it does.
-    # `x && 'release' || ''` and never `x && '' || 'release'`: an empty string is falsy, so
-    # the second form is `release` every time.
-    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     outputs:
       channel: ${{ steps.plan.outputs.channel }}
       publish: ${{ steps.plan.outputs.publish }}
       version: ${{ steps.plan.outputs.version }}
       sha: ${{ steps.plan.outputs.sha }}
       tag: ${{ steps.plan.outputs.tag }}
-      signed: ${{ steps.plan.outputs.signed }}
       skip: ${{ steps.plan.outputs.skip }}
-      macos_signing: ${{ steps.plan.outputs.macos_signing }}
       profile: ${{ steps.plan.outputs.profile }}
       dmg: ${{ steps.plan.outputs.dmg }}
       appimage_required: ${{ steps.plan.outputs.appimage_required }}
@@ -234,18 +246,10 @@ jobs:
           # For `tools/dev-build-order.mjs`, which reads the dev release and compares two
           # commits. The workflow's `contents: read`, and nothing more.
           GH_TOKEN: ${{ github.token }}
-          HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          # Passed as three booleans and counted in the shell below, rather than and-ed here,
-          # so a HALF-configured certificate is a case of its own instead of reading the same
-          # as no certificate at all. (Counting them in a `${{ }}` expression is possible but
-          # has to fit on one line: a folded YAML scalar keeps the newlines of its
-          # more-indented lines, and they end up inside the expression.)
-          HAS_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
-          HAS_CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
-          HAS_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
         run: |
+
           set -euo pipefail
-          # **Hardening: a second gate, independent of the `if:` above, before anything from
+          # **Hardening: a second check, independent of the trigger, before anything from
           # the checkout runs.** A dev build's commit has to be in `main`'s history NOW, by the
           # forge's own comparison: `ahead` or `identical` is `main` standing at or after it.
           # The trigger and the environment's policy say `main`; this reads the repository.
@@ -307,16 +311,6 @@ jobs:
               esac ;;
           esac
           skip=false
-          # Before the operator has generated the updater key, every merge to `main` would
-          # otherwise start a twenty-minute build that fails red at the end. The automatic
-          # trigger builds NOTHING instead and says why, once per merge, as a warning. This
-          # skips a publish; it does not weaken one — nothing unsigned is built or published.
-          # A `v*` tag is different: it is the operator's deliberate act, and a tag that
-          # quietly did nothing would be worse than a red run, so it still fails below.
-          if [ "$DEV" = true ] && [ "$HAS_UPDATER_KEY" != "true" ]; then
-            echo "::warning::no TAURI_SIGNING_PRIVATE_KEY in the release environment, so this green main is not published to the dev channel. docs/updating.md, steps 0 and 1, is the setup."
-            skip=true; publish=false
-          fi
           # **A commit that ships nothing gets no dev build** (R4). `tools/ci-scope.mjs ships`
           # measures the push from the commit the published `dev.json` names, never from the
           # push's parent: a displaced run's crate change is still in that range when the commit
@@ -361,26 +355,12 @@ jobs:
               *) echo "::error::tools/dev-build-order.mjs answered neither publish nor skip: $order"; exit 1 ;;
             esac
           fi
-          # Which macOS signing this run does, decided ONCE and carried to the build and to the
-          # check that verifies it. Developer ID needs all three secrets; with none of them the
-          # build is ad-hoc signed, which is a weaker Gatekeeper story and not a weaker updater
-          # (ADR 0042 §3). A partial group is neither, and is handled as an error below.
-          apple_parts=0
-          for present in "$HAS_CERT" "$HAS_CERT_PASSWORD" "$HAS_IDENTITY"; do
-            if [ "$present" = "true" ]; then apple_parts=$((apple_parts + 1)); fi
-          done
-          case "$apple_parts" in
-            3) macos_signing=developer-id ;;
-            0) macos_signing=ad-hoc ;;
-            *) macos_signing=partial ;;
-          esac
           {
             echo "channel=$channel"; echo "publish=$publish"; echo "version=$version"
-            echo "sha=$SHA"; echo "tag=$tag"; echo "signed=$HAS_UPDATER_KEY"; echo "skip=$skip"
-            echo "macos_signing=$macos_signing"
+            echo "sha=$SHA"; echo "tag=$tag"; echo "skip=$skip"
             echo "profile=$profile"; echo "dmg=$dmg"; echo "appimage_required=$appimage_required"
           } >> "$GITHUB_OUTPUT"
-          echo "channel=$channel publish=$publish version=$version sha=$SHA updater-key=$HAS_UPDATER_KEY macos-signing=$macos_signing profile=$profile dmg=$dmg appimage-required=$appimage_required"
+          echo "channel=$channel publish=$publish version=$version sha=$SHA profile=$profile dmg=$dmg appimage-required=$appimage_required"
 
       # A stable release says what it brought, and says it from CHANGELOG.md: the section is
       # the GitHub release's body and `latest.json`'s notes, and About purlis in the build
@@ -414,33 +394,96 @@ jobs:
         if: steps.plan.outputs.channel == 'stable'
         run: node tools/theme-parts-release.mjs --check
 
-      # Everything a publish needs that a human has to provide, checked BEFORE twenty minutes
-      # of building, each failure naming the one thing to do. See docs/updating.md.
-      - name: A publish has everything the operator must provide
-        if: steps.plan.outputs.publish == 'true'
+  # **Which secrets this run has, asked where they live and nowhere that runs the commit's code**
+  # (R2, #7381). `plan` runs the commit's own tools, so it holds no secret and cannot say whether
+  # the updater key or the Apple certificate is set; this job can. It checks nothing out, runs
+  # nothing from the commit and holds no write permission, only `secrets.X != ''` as booleans, so
+  # it takes no wait for the gate, and the build that needs its answer starts at once. A secret's
+  # VALUE is read by `build`'s `Signing material` step and by the signing jobs, after the gate.
+  #
+  # What `plan` decided before R2 and nothing else about it changed: a dev build with no updater
+  # key is not built, with a warning, as `plan` skipped it before the operator generated the key
+  # (nothing unsigned is built or published); a tag with no key is an error; a half-set Developer
+  # ID is an error; and every consumer reads `publish`, `skip`, `signed` and `macos_signing` here
+  # in place of in `plan`.
+  keys:
+    name: which signing this run has
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # The environment the secrets live in, whenever the run publishes (see `build`); a hand-started
+    # build and the nightly take none, ask an empty repository and answer `signed=false`.
+    # `x && 'release' || ''` and never `x && '' || 'release'`: an empty string is falsy.
+    environment: ${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.keys.outputs.publish }}
+      skip: ${{ steps.keys.outputs.skip }}
+      signed: ${{ steps.keys.outputs.signed }}
+      macos_signing: ${{ steps.keys.outputs.macos_signing }}
+    steps:
+      - name: Which signing this run does, and what a publish still needs from the operator
+        id: keys
         env:
           GH_TOKEN: ${{ github.token }}
-          CHANNEL: ${{ steps.plan.outputs.channel }}
+          DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          PUBLISH: ${{ needs.plan.outputs.publish }}
+          CHANNEL: ${{ needs.plan.outputs.channel }}
           HAS_UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
-          MACOS_SIGNING: ${{ steps.plan.outputs.macos_signing }}
+          # Passed as three booleans and counted in the shell below, rather than and-ed here,
+          # so a HALF-configured certificate is a case of its own instead of reading the same
+          # as no certificate at all. (Counting them in a `${{ }}` expression is possible but
+          # has to fit on one line: a folded YAML scalar keeps the newlines of its
+          # more-indented lines, and they end up inside the expression.)
           HAS_CERT: ${{ secrets.APPLE_CERTIFICATE != '' }}
           HAS_CERT_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD != '' }}
           HAS_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY != '' }}
         run: |
           set -euo pipefail
+          publish=$PUBLISH
+          skip=false
+          # Before the operator has generated the updater key, every merge to `main` would
+          # otherwise start a twenty-minute build that fails red at the end. The automatic
+          # trigger builds NOTHING instead and says why, once per merge, as a warning. This
+          # skips a publish; it does not weaken one — nothing unsigned is built or published.
+          # A `v*` tag is different: it is the operator's deliberate act, and a tag that
+          # quietly did nothing would be worse than a red run, so it still fails below.
+          if [ "$DEV" = true ] && [ "$HAS_UPDATER_KEY" != "true" ]; then
+            echo "::warning::no TAURI_SIGNING_PRIVATE_KEY in the release environment, so this green main is not published to the dev channel. docs/updating.md, steps 0 and 1, is the setup."
+            skip=true; publish=false
+          fi
+          # Which macOS signing this run does, decided ONCE and carried to the build and to the
+          # check that verifies it. Developer ID needs all three secrets; with none of them the
+          # build is ad-hoc signed, which is a weaker Gatekeeper story and not a weaker updater
+          # (ADR 0042 §3). A partial group is neither, and is handled as an error below.
+          apple_parts=0
+          for present in "$HAS_CERT" "$HAS_CERT_PASSWORD" "$HAS_IDENTITY"; do
+            if [ "$present" = "true" ]; then apple_parts=$((apple_parts + 1)); fi
+          done
+          case "$apple_parts" in
+            3) macos_signing=developer-id ;;
+            0) macos_signing=ad-hoc ;;
+            *) macos_signing=partial ;;
+          esac
+          {
+            echo "publish=$publish"; echo "skip=$skip"; echo "signed=$HAS_UPDATER_KEY"
+            echo "macos_signing=$macos_signing"
+          } >> "$GITHUB_OUTPUT"
+          echo "publish=$publish skip=$skip updater-key=$HAS_UPDATER_KEY macos-signing=$macos_signing"
+          # Everything a publish needs that a human has to provide, checked BEFORE twenty minutes
+          # of building, each failure naming the one thing to do. See docs/updating.md. (The
+          # updater's public key in `tauri.conf.json` is checked by `build`, which has the checkout.)
+          [ "$publish" = true ] || exit 0
           fail=0
           if [ "$HAS_UPDATER_KEY" != "true" ]; then
             echo "::error::TAURI_SIGNING_PRIVATE_KEY is not set. Without it the bundler signs nothing, in silence, and no app could verify this release. It has to be a secret of the release environment, not of the repository. See docs/updating.md, steps 0 and 1."
             fail=1
           fi
-          pubkey=$(jq -r '.plugins.updater.pubkey' app/src-tauri/tauri.conf.json)
-          if [ "$pubkey" = "UNSET-THE-OPERATOR-GENERATES-THIS-SEE-docs-updating.md" ] || [ -z "$pubkey" ]; then
-            echo "::error::tauri.conf.json still carries the placeholder updater public key. An app built from it refuses every update. See docs/updating.md, step 2."
-            fail=1
-          fi
           # Developer ID is OPTIONAL (ADR 0042, amended 2026-09-23). What is NOT optional is
           # knowing which signing this run does, so it is said once, here, before the build.
-          case "$MACOS_SIGNING" in
+          case "$macos_signing" in
             developer-id)
               echo "::notice::macOS: Developer ID signed. Not notarized (ADR 0042), so a browser-downloaded first install still meets Gatekeeper once."
               ;;
@@ -473,11 +516,21 @@ jobs:
     # The platform and the bundles this run makes of it: a dev channel build makes no `.dmg`
     # (`plan`'s `dmg`), so its job does not say it does (#1433).
     name: ${{ format('{0} ({1}{2})', matrix.platform, matrix.made, (matrix.extra_bundles != 'dmg' || needs.plan.outputs.dmg == 'true') && matrix.extra_made || '') }}
-    needs: plan
-    if: needs.plan.outputs.skip != 'true'
+    # **Starts at once and compiles before the gate** (R2, #7381, ADR 0042 amended 2026-11-23): it
+    # needs `keys` and not `gate`, so it compiles while this commit's `ci` is still running. The
+    # step `Wait for this commit's ci on main, before anything is signed or uploaded` comes before
+    # the first step that signs or uploads, and a red or cancelled `ci` ends the job there. The
+    # compile reads one secret, the Report intake's address, which the shipped binary carries in
+    # the clear; the signing keys are read after the wait and not before.
+    needs: [plan, keys]
+    if: needs.keys.outputs.skip != 'true'
     # The job that reads the signing keys, so it runs in the `release` environment whenever
-    # it builds something that is published — and only then (see `plan`).
-    environment: ${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}
+    # it builds something that is published — and only then (see `keys`).
+    environment: ${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}
+    # To ask which `ci` run is this commit's.
+    permissions:
+      contents: read
+      actions: read
     strategy:
       # Neither platform's bundle is worth losing because the other one broke.
       fail-fast: false
@@ -517,7 +570,7 @@ jobs:
     timeout-minutes: 150
     env:
       VERSION: ${{ needs.plan.outputs.version }}
-      PUBLISH: ${{ needs.plan.outputs.publish }}
+      PUBLISH: ${{ needs.keys.outputs.publish }}
       # Every binary says the version the app announces (#2749): `purlis --version` of a dev
       # build is `<version>-dev.<run>`, as its runner image's is (`runner-image.yml`), so a
       # pool's runner is held to the desktop's own version.
@@ -531,6 +584,18 @@ jobs:
         with:
           ref: ${{ needs.plan.outputs.sha }}
           persist-credentials: false
+
+      # What a publish needs from the operator that `keys` could not read without a checkout, and
+      # before twenty minutes of building. No secret is read here.
+      - name: A publish has the updater's public key
+        if: needs.keys.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          pubkey=$(jq -r '.plugins.updater.pubkey' app/src-tauri/tauri.conf.json)
+          if [ "$pubkey" = "UNSET-THE-OPERATOR-GENERATES-THIS-SEE-docs-updating.md" ] || [ -z "$pubkey" ]; then
+            echo "::error::tauri.conf.json still carries the placeholder updater public key. An app built from it refuses every update. See docs/updating.md, step 2."
+            exit 1
+          fi
 
       # Bounded and tried twice, as in `ci.yml`, but from the mirror every time: this job holds
       # the signing keys and restores no cache, so it runs the script itself, without `--cache`
@@ -663,7 +728,7 @@ jobs:
       # refused it.
       - name: This build's config
         env:
-          SIGNED: ${{ needs.plan.outputs.signed }}
+          SIGNED: ${{ needs.keys.outputs.signed }}
         run: |
           set -euo pipefail
           jq -n --arg v "$VERSION" '{version: $v, build: {beforeBuildCommand: ""}}' \
@@ -730,6 +795,71 @@ jobs:
           mkdir -p runner
           cp "target/$PROFILE/purlis" "runner/purlis-$VERSION-${{ matrix.runner_target }}"
 
+      # **The gate, inside the job.** Everything above compiled while this commit's `ci` was still
+      # running; nothing below signs or uploads until it has ended green (R2, #7381). A red or
+      # cancelled `ci`, or one that never ended, ends the job here, so nothing is signed, nothing is
+      # uploaded and `publish` never runs. Every other way in (a tag, a build by hand, the nightly)
+      # passes at once, as `gate` passes it. The step is a copy of `gate`'s asking, hardened (a shell
+      # without `BASH_ENV`, a fixed `PATH`, the runner's own `gh`), and written out here and not run
+      # from a file: the commit's code has already run in this job. A test holds the step's text.
+      - name: Wait for this commit's ci on main, before anything is signed or uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        # The script is this step's own text, never a file of the checkout, which the commit's
+        # code has already run beside. The shell is the runner's own, without the file
+        # `BASH_ENV` names or a profile, and the script fixes `PATH` and takes `gh` from it.
+        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          if [ "$DEV" != true ]; then
+            echo "Not a push to main: nothing to wait for."
+            exit 0
+          fi
+          # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
+          # `$GITHUB_ENV`) reaches `gh`: everything but what the step needs is dropped.
+          for v in $(compgen -e); do
+            case "$v" in
+              GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;
+              *) unset "$v" 2>/dev/null || true ;;
+            esac
+          done
+          PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
+          gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }
+          case "$gh" in
+            /usr/bin/gh | /usr/local/bin/gh | /opt/homebrew/bin/gh) ;;
+            *) echo "::error::gh resolves to $gh, which is not the runner's own, so nothing is signed or uploaded"; exit 1 ;;
+          esac
+          # One call reads status and conclusion, tried three times: an API error is not an answer.
+          ask() {
+            for try in 1 2 3; do
+              if out=$("$gh" run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then
+                echo "$out"
+                return 0
+              fi
+              if [ "$try" -lt 3 ]; then
+                sleep $((try * 15))
+              fi
+            done
+            return 1
+          }
+          # The push started `ci` and this run together; give its run a few minutes to be listed.
+          id=""
+          for _ in $(seq 1 30); do
+            id=$("$gh" run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id=""
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
+          echo "Waiting for ci run $id of $GITHUB_SHA."
+          # The watch's own exit says little (it ends nonzero for a red run and for a lost
+          # connection alike), so the run's state is read again after it.
+          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
+          read -r status conclusion <<< "$state"
+          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          [ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }
+          echo "ci run $id of $GITHUB_SHA ended success."
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: purlis-runner-unsigned-${{ matrix.runner_target }}-${{ needs.plan.outputs.version }}
@@ -763,7 +893,7 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          MACOS_SIGNING: ${{ needs.plan.outputs.macos_signing }}
+          MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
         run: |
           set -euo pipefail
           for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD \
@@ -904,7 +1034,7 @@ jobs:
       # A publish carries the signed updater artifact, or this build is not one. The manifest
       # step would refuse later anyway; this says which platform, while its log is on screen.
       - name: The updater artifact and its signature are both here
-        if: needs.plan.outputs.publish == 'true'
+        if: needs.keys.outputs.publish == 'true'
         run: |
           set -euo pipefail
           up=${{ steps.names.outputs.updater }}
@@ -927,9 +1057,9 @@ jobs:
       # bundle ad-hoc" from "nobody signed the bundle and its executables merely carry the
       # linker's ad-hoc signature". Those two print the same `Signature=adhoc`.
       - name: The macOS bundle carries the signature this run asked for, sidecar included
-        if: runner.os == 'macOS' && needs.plan.outputs.publish == 'true'
+        if: runner.os == 'macOS' && needs.keys.outputs.publish == 'true'
         env:
-          MACOS_SIGNING: ${{ needs.plan.outputs.macos_signing }}
+          MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
         run: |
           set -euo pipefail
           bundle=target/$PROFILE/bundle/macos/purlis.app
@@ -983,7 +1113,7 @@ jobs:
       # Once a guard night is green this exemption goes (#1180).
       - name: The app keeps the hardened runtime and carries no entitlement
         if: runner.os == 'macOS'
-        continue-on-error: ${{ needs.plan.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}
+        continue-on-error: ${{ needs.keys.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}
         run: |
           set -euo pipefail
           bundle=target/$PROFILE/bundle/macos/purlis.app
@@ -1171,8 +1301,8 @@ jobs:
           ARTIFACT: ${{ steps.names.outputs.artifact }}
           SLUG: ${{ steps.names.outputs.slug }}
           CHANNEL: ${{ needs.plan.outputs.channel }}
-          SIGNED: ${{ needs.plan.outputs.signed }}
-          MACOS_SIGNING: ${{ needs.plan.outputs.macos_signing }}
+          SIGNED: ${{ needs.keys.outputs.signed }}
+          MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
         run: |
           set -euo pipefail
           {
@@ -1317,8 +1447,8 @@ jobs:
   # its own.
   runner-image:
     name: runner image
-    needs: plan
-    if: needs.plan.outputs.publish == 'true'
+    needs: [gate, plan, keys]
+    if: needs.keys.outputs.publish == 'true' && needs.gate.outputs.green == 'true'
     permissions:
       attestations: write
       contents: read
@@ -1336,8 +1466,8 @@ jobs:
   # release.
   runner-image-signature:
     name: runner image signature
-    needs: [plan, runner-image]
-    if: needs.plan.outputs.publish == 'true'
+    needs: [gate, plan, keys, runner-image]
+    if: needs.keys.outputs.publish == 'true' && needs.gate.outputs.green == 'true'
     environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -1383,13 +1513,17 @@ jobs:
   # whose macOS job is the longest chain, so a cold build here holds no publish back.
   runner-binary-aarch64:
     name: runner binary (linux-aarch64)
-    needs: plan
-    if: needs.plan.outputs.skip != 'true'
-    environment: ${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}
+    # Starts at once, as `build` does, and waits for `ci` before it uploads (R2, #7381).
+    needs: [plan, keys]
+    if: needs.keys.outputs.skip != 'true'
+    environment: ${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}
     runs-on: ubuntu-24.04-arm
-    timeout-minutes: 90
+    # The build is about 20 minutes, and the wait for `ci` is added to it: `build`'s 150 (a push's
+    # `ci` took up to 111 minutes in November 2026).
+    timeout-minutes: 150
     permissions:
       contents: read
+      actions: read
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       PROFILE: ${{ needs.plan.outputs.profile }}
@@ -1418,6 +1552,64 @@ jobs:
           tools/runner-binary-check.sh "target/$PROFILE/purlis" linux-aarch64 "$VERSION"
           mkdir -p runner
           cp "target/$PROFILE/purlis" "runner/purlis-$VERSION-linux-aarch64"
+      # Before this job uploads: this commit's `ci`, green (see `build`).
+      - name: Wait for this commit's ci on main, before anything is signed or uploaded
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        # The script is this step's own text, never a file of the checkout, which the commit's
+        # code has already run beside. The shell is the runner's own, without the file
+        # `BASH_ENV` names or a profile, and the script fixes `PATH` and takes `gh` from it.
+        shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
+        run: |
+          if [ "$DEV" != true ]; then
+            echo "Not a push to main: nothing to wait for."
+            exit 0
+          fi
+          # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
+          # `$GITHUB_ENV`) reaches `gh`: everything but what the step needs is dropped.
+          for v in $(compgen -e); do
+            case "$v" in
+              GH_TOKEN | GITHUB_REPOSITORY | GITHUB_SHA | DEV | HOME | PATH | TMPDIR) ;;
+              *) unset "$v" 2>/dev/null || true ;;
+            esac
+          done
+          PATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin
+          gh=$(command -v gh) || { echo "::error::no gh on the runner, so nothing is signed or uploaded"; exit 1; }
+          case "$gh" in
+            /usr/bin/gh | /usr/local/bin/gh | /opt/homebrew/bin/gh) ;;
+            *) echo "::error::gh resolves to $gh, which is not the runner's own, so nothing is signed or uploaded"; exit 1 ;;
+          esac
+          # One call reads status and conclusion, tried three times: an API error is not an answer.
+          ask() {
+            for try in 1 2 3; do
+              if out=$("$gh" run view "$1" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + " " + (.conclusion // "none")'); then
+                echo "$out"
+                return 0
+              fi
+              if [ "$try" -lt 3 ]; then
+                sleep $((try * 15))
+              fi
+            done
+            return 1
+          }
+          # The push started `ci` and this run together; give its run a few minutes to be listed.
+          id=""
+          for _ in $(seq 1 30); do
+            id=$("$gh" run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --event push --branch main --limit 1 --json databaseId --jq '.[0].databaseId // empty') || id=""
+            [ -n "$id" ] && break
+            sleep 10
+          done
+          [ -n "$id" ] || { echo "::error::no ci run of $GITHUB_SHA on its push to main was listed within five minutes, so nothing is signed or uploaded"; exit 1; }
+          echo "Waiting for ci run $id of $GITHUB_SHA."
+          # The watch's own exit says little (it ends nonzero for a red run and for a lost
+          # connection alike), so the run's state is read again after it.
+          "$gh" run watch "$id" --repo "$GITHUB_REPOSITORY" --interval 30 --exit-status > /dev/null || true
+          state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
+          read -r status conclusion <<< "$state"
+          [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
+          [ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }
+          echo "ci run $id of $GITHUB_SHA ended success."
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: purlis-runner-unsigned-linux-aarch64-${{ needs.plan.outputs.version }}
@@ -1447,16 +1639,16 @@ jobs:
   # In the `release` environment only when it publishes, as `build` is: it reads the key then.
   runner-binaries:
     name: runner binaries, signed
-    needs: [plan, build, runner-binary-aarch64]
-    if: needs.plan.outputs.skip != 'true'
-    environment: ${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}
+    needs: [gate, plan, keys, build, runner-binary-aarch64]
+    if: needs.keys.outputs.skip != 'true' && needs.gate.outputs.green == 'true'
+    environment: ${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
     env:
       VERSION: ${{ needs.plan.outputs.version }}
-      PUBLISH: ${{ needs.plan.outputs.publish }}
+      PUBLISH: ${{ needs.keys.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -1477,7 +1669,7 @@ jobs:
           name: purlis-runner-unsigned-macos-arm64-${{ needs.plan.outputs.version }}
           path: runner/macos-arm64
       - name: The signer, built with no key in reach
-        if: needs.plan.outputs.publish == 'true'
+        if: needs.keys.outputs.publish == 'true'
         run: cargo build --locked --release -p release-manifest --bin sign-runner-binary
       - name: Signed with the updater's key for this version and platform
         env:
@@ -1544,7 +1736,8 @@ jobs:
   # `purlis-<platform>.cdx.json`.
   sbom:
     name: SBOM
-    needs: [plan, build]
+    needs: [gate, plan, build]
+    if: needs.gate.outputs.green == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
@@ -1631,11 +1824,11 @@ jobs:
   # would reject.
   manifest:
     name: update manifest
-    needs: [plan, build, runner-image-signature]
+    needs: [gate, plan, keys, build, runner-image-signature]
     # **A runner image that failed never holds the desktop back** (#2880): this runs whatever
     # became of the image, naming it only where it was signed, and asks for each job the desktop
     # needs by name.
-    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -1736,10 +1929,10 @@ jobs:
   # A hand-started build publishes nothing, so it is not attested.
   provenance:
     name: build provenance
-    needs: [plan, build, runner-binaries, sbom, manifest]
+    needs: [gate, plan, keys, build, runner-binaries, sbom, manifest]
     # Asked of each job it needs by name, so a runner image that failed before it holds nothing
     # back (#2880), and a runner binary that did not build or sign holds everything back (#723).
-    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.sbom.result == 'success' && needs.manifest.result == 'success' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.sbom.result == 'success' && needs.manifest.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # `id-token` mints the token Sigstore signs with; `attestations` stores the result. Nothing
@@ -1840,10 +2033,10 @@ jobs:
 
   publish:
     name: publish to the ${{ needs.plan.outputs.channel }} channel
-    needs: [plan, build, runner-binaries, manifest, provenance]
+    needs: [gate, plan, keys, build, runner-binaries, manifest, provenance]
     # Asked of each job it needs by name, so a runner image that failed before it holds nothing
     # back (#2880), and a runner binary that did not build or sign holds everything back (#723).
-    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.plan.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.manifest.result == 'success' && needs.provenance.result == 'success' }}
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.plan.result == 'success' && needs.keys.result == 'success' && needs.build.result == 'success' && needs.runner-binaries.result == 'success' && needs.manifest.result == 'success' && needs.provenance.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # It holds no signing key, but it is what a release IS, so it runs under the same
@@ -2050,8 +2243,8 @@ jobs:
   # its digest as GitHub lists it; moving to a new one is both lines, by hand.
   symbols:
     name: debug symbols to the Report intake
-    needs: [plan, build]
-    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' }}
+    needs: [gate, plan, keys, build]
+    if: ${{ !cancelled() && needs.gate.outputs.green == 'true' && needs.keys.outputs.publish == 'true' && needs.keys.result == 'success' }}
     environment: release
     continue-on-error: true
     runs-on: ubuntu-24.04

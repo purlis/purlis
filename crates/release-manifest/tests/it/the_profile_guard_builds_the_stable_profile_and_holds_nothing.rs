@@ -52,25 +52,27 @@ fn the_release_workflow_runs_every_night() {
 fn a_scheduled_run_holds_no_key_and_publishes_nowhere() {
     let jobs = release_jobs();
 
-    // `plan` names the events that get the `release` environment, and the schedule is not one
-    // of them. The secrets live in that environment and nowhere else (#344), so every
-    // `secrets.*` a scheduled `plan` reads is empty, which is what makes its build unsigned.
+    // `plan` takes no environment at all (R2, #7381). The jobs that read the secrets take the
+    // `release` environment only when `plan` said the run publishes, and `plan` says a scheduled
+    // run does not (the test beside this one holds that arm). The secrets live in that
+    // environment and nowhere else (#344), so every `secrets.*` a scheduled `keys` or `build`
+    // reads is empty, which is what makes its build unsigned.
+    assert_eq!(job(&jobs, "plan").environment(), None);
     assert_eq!(
-        job(&jobs, "plan").environment(),
-        Some("${{ github.event_name == 'push' && 'release' || '' }}")
+        job(&jobs, "keys").environment(),
+        Some("${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}")
     );
-    // `build` takes the environment only when `plan` said the run publishes, and `plan` says
-    // a scheduled run does not (the test beside this one holds that arm).
+    // `build` takes it on what `keys` answered: a publish that has its key.
     assert_eq!(
         job(&jobs, "build").environment(),
-        Some("${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}")
+        Some("${{ needs.keys.outputs.publish == 'true' && 'release' || '' }}")
     );
     // The two jobs that sign provenance and write the release run only for a publish.
     for name in ["provenance", "publish"] {
         assert!(
             job(&jobs, name)
                 .condition()
-                .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+                .is_some_and(|said| said.contains("needs.keys.outputs.publish == 'true'")),
             "job `{name}`"
         );
     }

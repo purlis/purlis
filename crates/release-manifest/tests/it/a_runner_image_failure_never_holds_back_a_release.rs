@@ -32,11 +32,20 @@ fn the_desktop_is_published_whatever_became_of_the_runner_image() {
         // Run even where a job before it failed, unless the run was cancelled…
         assert!(said.starts_with("!cancelled() && "), "{name}: {said}");
         assert!(
-            said.contains("needs.plan.outputs.publish == 'true'"),
+            said.contains("needs.keys.outputs.publish == 'true'"),
             "{name}: {said}"
         );
         // …and only once each job it needs for the desktop has succeeded, the image's aside.
+        // The gate is asked by its answer, `needs.gate.outputs.green`, not by its result: it
+        // succeeds for a red `ci` too (`a_dev_build_compiles_before_the_gate_and_signs_after_it`).
+        assert!(
+            said.contains("needs.gate.outputs.green == 'true'"),
+            "{name}: {said}"
+        );
         for need in job.needs() {
+            if need == "gate" {
+                continue;
+            }
             if need.starts_with("runner-image") {
                 assert!(
                     !said.contains(&format!("needs.{need}.result")),

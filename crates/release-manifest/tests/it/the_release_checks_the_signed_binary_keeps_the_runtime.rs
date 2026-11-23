@@ -79,7 +79,7 @@ fn the_check_blocks_everywhere_but_a_dev_publish_until_a_runner_has_measured_it(
     );
     assert_eq!(
         exempt[0].trim(),
-        "continue-on-error: ${{ needs.plan.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}"
+        "continue-on-error: ${{ needs.keys.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}"
     );
 }
 
