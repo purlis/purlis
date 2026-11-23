@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795395817250,
+  "lastUpdate": 1795396859182,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52584,6 +52584,48 @@ window.BENCHMARK_DATA = {
             "value": 102.81857500000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.731, 102.753, 102.819, 102.874, 103.145 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "fa1437a4d7293556bfc0b45e9459f216d4839be9",
+          "message": "Build: take rfd 0.17, the version the dialog plugin already brings in (#7382) (#7399)\n\nOne rfd in the tree instead of two; drops 11 lock packages (rfd 0.16.1 and\nits windows-sys 0.60 / windows-targets 0.53 chain). Duplicate names in\nCargo.lock 107 -> 105.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82VBN6FX35N5HR02WXJRYJR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T00:47:13Z",
+          "tree_id": "79f5efdad485e75fe2352cde6aa87e6ed4daff8a",
+          "url": "https://github.com/purlis/purlis/commit/fa1437a4d7293556bfc0b45e9459f216d4839be9"
+        },
+        "date": 1795396851415,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.340983,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.322, 0.334, 0.341, 0.349, 0.352 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2463245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.046, 16.220, 16.246, 16.417, 16.819 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.516974,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.895, 101.491, 101.517, 101.974, 102.032 ms"
           }
         ]
       }
