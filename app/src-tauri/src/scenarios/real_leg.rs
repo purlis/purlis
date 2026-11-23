@@ -566,12 +566,17 @@ impl Model {
                     format!(
                         "{}: {}",
                         item.kind,
-                        item.text.chars().take(120).collect::<String>()
+                        item.text.chars().take(400).collect::<String>()
                     )
                 })
                 .collect();
             if let Some(raw) = &one.raw {
-                said.push_str(&format!("\n  its request, bar what it said: {raw}"));
+                // A harness's system prompt is thousands of characters and would use up the cap
+                // before the tool results this is read for: only its start is kept.
+                said.push_str(&format!(
+                    "\n  its request, bar what it said: {}",
+                    raw.to_string().chars().take(300).collect::<String>()
+                ));
             }
             said.push_str(&format!(
                 "\n  {} as {:?}, response {:?}, offered {:?}, asked {:?}, shown {:?}",
