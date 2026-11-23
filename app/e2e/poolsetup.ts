@@ -130,3 +130,61 @@ export async function pickTheMachine(name: string, timeout = 30_000): Promise<vo
       throw new Error(`no machine ${name} to pick: ${await theStepSays()}`);
     });
 }
+
+/**
+ * **Pool setup's walk to Docker on another machine, to a real chat** (#6266, #7188): from Add a
+ * pool… to Try it's last screen against the fixture of `tests/remote-docker/up.sh`. Shared by the
+ * walk's own spec and the link-down notice's, which needs the pool made and a chat running before
+ * it puts a fault on the link. The window must be open and past the trust question.
+ */
+export async function addAndTryARemoteDockerPool(of: {
+  pool: string;
+  image: string;
+  address: string;
+}): Promise<void> {
+  // Where chats run: another machine with Docker.
+  await on("Where chats run");
+  await press("Another machine with Docker");
+  await press("Set up Docker on another machine");
+
+  // Connect: the address typed, the key read, then trusted.
+  await on("Connect");
+  // Another machine than those this one's SSH settings or Podman connections name, where it
+  // names any.
+  await pickTheMachine("Another machine");
+  const address = await $("aria/Its address");
+  await address.waitForDisplayed();
+  await address.setValue(of.address);
+  await press("Connect to 127.0.0.1", MAKING);
+  await press("Trust this machine", MAKING);
+
+  // Every check passed, the machine is trusted, and setup goes on to the pool.
+  // Pool: its name and the image, made on the other machine.
+  await on("Pool", MAKING);
+  const name = await $("aria/Name");
+  await name.waitForDisplayed();
+  await name.setValue(of.pool);
+  const image = await $("aria/Image, by digest");
+  if (!(await image.isDisplayed().catch(() => false))) {
+    const options = await $("aria/Options");
+    if ((await options.getAttribute("aria-expanded")) !== "true") await options.click();
+    await press("My team's own image");
+  }
+  await image.waitForDisplayed();
+  await image.setValue(of.image);
+  await press("Create the pool");
+
+  await on("Sign-ins", MAKING);
+  await pressTheOneOf(["Sign in 1 profile", "Save and continue", "Continue"], MAKING);
+
+  await on("Agent identity", MAKING);
+  await press("Skip for now");
+
+  await on("Try it");
+  await press("Start a test chat");
+  await $(`aria/${of.pool} works, except for this`)
+    .waitForDisplayed({ timeout: TRYING, interval: 1_000 })
+    .catch(async () => {
+      throw new Error(`Try it never passed: ${await theStepSays()}`);
+    });
+}
