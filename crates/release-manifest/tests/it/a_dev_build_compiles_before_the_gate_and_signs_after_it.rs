@@ -70,11 +70,11 @@ const WAIT_ENV: [(&str, &str); 2] = [
 /// `tools/release-wait.test.mjs` runs it against a fake `gh`. A line added to it, such as a
 /// `|| true`, is a change to this constant too.
 const WAIT_RUN: [&str; 62] = [
-    r###"out=$GITHUB_OUTPUT"###,
+    r###"gh_output=$GITHUB_OUTPUT"###,
     r###"summary=$GITHUB_STEP_SUMMARY"###,
     r###"if [ "$DEV" != true ]; then"###,
     r###"echo "Not a push to main: nothing to wait for.""###,
-    r###"echo "green=true" >> "$out""###,
+    r###"echo "green=true" >> "$gh_output""###,
     r###"exit 0"###,
     r###"fi"###,
     r###"for v in $(compgen -e); do"###,
@@ -115,11 +115,11 @@ const WAIT_RUN: [&str; 62] = [
     r###"[ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }"###,
     r###"case "$conclusion" in"###,
     r###"success)"###,
-    r###"echo "green=true" >> "$out""###,
+    r###"echo "green=true" >> "$gh_output""###,
     r###"echo "ci run $id of $GITHUB_SHA ended success.""###,
     r###";;"###,
     r###"failure | cancelled | timed_out)"###,
-    r###"echo "green=false" >> "$out""###,
+    r###"echo "green=false" >> "$gh_output""###,
     r###"echo "::notice::this commit's main ci ended $conclusion, so this dev build stops here: nothing signed, uploaded or published""###,
     r###"{"###,
     r###"echo "## This dev build stopped: the commit's main ci ended $conclusion""###,
@@ -967,7 +967,7 @@ fn a_wait_whose_script_is_neutered_is_refused() {
             ),
             // The non-dev answer.
             (
-                "echo \"green=true\" >> \"$out\"\n            exit 0",
+                "echo \"green=true\" >> \"$gh_output\"\n            exit 0",
                 "exit 0",
             ),
         ] {

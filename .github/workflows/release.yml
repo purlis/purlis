@@ -138,7 +138,7 @@ jobs:
   # `provenance`, `publish` and `symbols`. Two jobs do not, so they can compile while `ci` runs:
   # `build` and `runner-binary-aarch64` start at once and each has a step that makes the same wait
   # (a step of its own, written out in the workflow) before its first step that signs or uploads,
-  # which ends the job on a red `ci`. `plan` and `keys` hold nothing and publish nothing, so they do not wait either.
+  # which stops the job on a red `ci`. `plan` and `keys` hold nothing and publish nothing, so they do not wait either.
   # `crates/release-manifest` holds each of those rules on a workflow broken on purpose. Every
   # other way in (a tag, the profile guard, a build by hand) passes at once, here and in those
   # steps.
@@ -519,7 +519,7 @@ jobs:
     # **Starts at once and compiles before the gate** (R2, #7381, ADR 0042 amended 2026-11-23): it
     # needs `keys` and not `gate`, so it compiles while this commit's `ci` is still running. The
     # step `Wait for this commit's ci on main, before anything is signed or uploaded` comes before
-    # the first step that signs or uploads, and a red or cancelled `ci` ends the job there. The
+    # the first step that signs or uploads, and a red or cancelled `ci` stops the job there: it ends green, every later step skips. The
     # compile reads one secret, the Report intake's address, which the shipped binary carries in
     # the clear; the signing keys are read after the wait and not before.
     needs: [plan, keys]
@@ -797,8 +797,9 @@ jobs:
 
       # **The gate, inside the job.** Everything above compiled while this commit's `ci` was still
       # running; nothing below signs or uploads until it has ended green (R2, #7381). A red or
-      # cancelled `ci`, or one that never ended, ends the job here, so nothing is signed, nothing is
-      # uploaded and `publish` never runs. Every other way in (a tag, a build by hand, the nightly)
+      # cancelled `ci` ends the step green with `green=false` and every later step of the job skips (#7405),
+      # while one that never ended, or that the step cannot read, ends the job red: either way nothing is signed,
+      # nothing is uploaded and `publish` never runs. Every other way in (a tag, a build by hand, the nightly)
       # passes at once, as `gate` passes it. The step is a copy of `gate`'s asking, hardened (a shell
       # without `BASH_ENV`, a fixed `PATH`, the runner's own `gh`), and written out here and not run
       # from a file: the commit's code has already run in this job. A test holds the step's text.
@@ -814,11 +815,11 @@ jobs:
         run: |
           # The runner's own files for this step's output and summary, taken before the loop
           # below drops every other variable.
-          out=$GITHUB_OUTPUT
+          gh_output=$GITHUB_OUTPUT
           summary=$GITHUB_STEP_SUMMARY
           if [ "$DEV" != true ]; then
             echo "Not a push to main: nothing to wait for."
-            echo "green=true" >> "$out"
+            echo "green=true" >> "$gh_output"
             exit 0
           fi
           # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
@@ -869,11 +870,11 @@ jobs:
           # cannot read, an API error, a timeout, no run listed) exits non-zero above or here.
           case "$conclusion" in
             success)
-              echo "green=true" >> "$out"
+              echo "green=true" >> "$gh_output"
               echo "ci run $id of $GITHUB_SHA ended success."
               ;;
             failure | cancelled | timed_out)
-              echo "green=false" >> "$out"
+              echo "green=false" >> "$gh_output"
               echo "::notice::this commit's main ci ended $conclusion, so this dev build stops here: nothing signed, uploaded or published"
               {
                 echo "## This dev build stopped: the commit's main ci ended $conclusion"
@@ -1588,7 +1589,7 @@ jobs:
           tools/runner-binary-check.sh "target/$PROFILE/purlis" linux-aarch64 "$VERSION"
           mkdir -p runner
           cp "target/$PROFILE/purlis" "runner/purlis-$VERSION-linux-aarch64"
-      # Before this job uploads: this commit's `ci`, green (see `build`).
+      # Before this job uploads: this commit's `ci`, green, or the upload skips (see `build`).
       - name: Wait for this commit's ci on main, before anything is signed or uploaded
         id: ci
         env:
@@ -1601,11 +1602,11 @@ jobs:
         run: |
           # The runner's own files for this step's output and summary, taken before the loop
           # below drops every other variable.
-          out=$GITHUB_OUTPUT
+          gh_output=$GITHUB_OUTPUT
           summary=$GITHUB_STEP_SUMMARY
           if [ "$DEV" != true ]; then
             echo "Not a push to main: nothing to wait for."
-            echo "green=true" >> "$out"
+            echo "green=true" >> "$gh_output"
             exit 0
           fi
           # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
@@ -1656,11 +1657,11 @@ jobs:
           # cannot read, an API error, a timeout, no run listed) exits non-zero above or here.
           case "$conclusion" in
             success)
-              echo "green=true" >> "$out"
+              echo "green=true" >> "$gh_output"
               echo "ci run $id of $GITHUB_SHA ended success."
               ;;
             failure | cancelled | timed_out)
-              echo "green=false" >> "$out"
+              echo "green=false" >> "$gh_output"
               echo "::notice::this commit's main ci ended $conclusion, so this dev build stops here: nothing signed, uploaded or published"
               {
                 echo "## This dev build stopped: the commit's main ci ended $conclusion"
