@@ -95,7 +95,12 @@ pub const LOGIN_WAIT: Duration = Duration::from_secs(30);
 const LOOK_AGAIN: Duration = Duration::from_millis(250);
 
 /// How long one read of whether a page is held still may take, in a login that waits for it.
-const HELD_READ_WITHIN: Duration = Duration::from_millis(1000);
+/// A busy runner can take seconds to answer a page it has just frozen or thawed, and a read that
+/// does not come back is asked again, so this bounds one ask and not the wait.
+const HELD_READ_WITHIN: Duration = Duration::from_secs(3);
+
+/// How long, in all, a login waits for the pages it held to say they run again as it answers.
+const RELEASE_WITHIN: Duration = Duration::from_secs(5);
 
 /// The script that arms a document to say it was frozen: a constant, run in purlis's own world.
 /// The engine tells a document it is frozen with a `freeze` event, and that it is running again
@@ -130,6 +135,8 @@ enum Held {
     Running,
     /// The frame's document is not one purlis armed: another loaded, or the world went.
     Unarmed,
+    /// The read did not come back in time: it says nothing, and is asked again.
+    Unread,
 }
 
 /// The script that finds the page's first shown password field: a constant.
@@ -235,8 +242,11 @@ struct HeldStill<'a> {
     pages: Vec<(String, String)>,
 }
 
-impl Drop for HeldStill<'_> {
-    fn drop(&mut self) {
+impl HeldStill<'_> {
+    /// **Lets every page held run again, and waits until each says it does** (bounded by
+    /// [`RELEASE_WITHIN`]): the engine thaws a page later than it says, and a page of another site
+    /// is left as it was only once it runs, not once it was asked to.
+    fn release(&self) {
         for (_, session) in &self.pages {
             let _ = self.browser.devtools().call(
                 "Page.setWebLifecycleState",
@@ -244,6 +254,27 @@ impl Drop for HeldStill<'_> {
                 Some(session.as_str()),
             );
         }
+        let until = Instant::now() + RELEASE_WITHIN;
+        loop {
+            let waiting = self.pages.iter().any(|(page, _)| {
+                self.browser.frames_of(page).iter().any(|(frame, on)| {
+                    matches!(
+                        self.browser.held_state(on, frame),
+                        Held::Frozen | Held::Unread
+                    )
+                })
+            });
+            if !waiting || Instant::now() >= until || lock(&self.browser.inner.state).ended {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
+
+impl Drop for HeldStill<'_> {
+    fn drop(&mut self) {
+        self.release();
     }
 }
 
@@ -727,8 +758,8 @@ impl Browser {
                 worlds.forget(session, frame, &world);
                 Held::Unarmed
             }
-            // A read that did not come back says nothing of the page: it is not held still.
-            _ => Held::Running,
+            // A read that did not come back says nothing of the page: it is not known held still.
+            _ => Held::Unread,
         }
     }
 
@@ -752,7 +783,14 @@ impl Browser {
                     continue;
                 }
                 // A page held before this call is never let run again: it may be cleared by now.
-                if at < first_new {
+                // One that said it runs (or is another document) fails at once; one that said
+                // nothing in time is asked again until the time is up.
+                if at < first_new
+                    && (frames.is_empty()
+                        || states
+                            .iter()
+                            .any(|state| matches!(state, Held::Running | Held::Unarmed)))
+                {
                     return Err(not_held());
                 }
                 waiting.push((page, session, states.contains(&Held::Unarmed)));

@@ -1604,6 +1604,63 @@ fn a_page_that_runs_again_while_the_sites_are_cleared_fails_the_login() {
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
+/// A page of another site is left as it was (#5272): the engine thaws it later than it says, and
+/// the login answers only once the page runs again, so what the person reads next is a page that
+/// runs.
+#[test]
+fn a_page_of_another_site_runs_again_by_the_time_the_login_answers() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model).freezing.thaw_lag = 2;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let said = super::super::lock(&engine.model)
+        .freezing
+        .said
+        .get("S-PAGE-1")
+        .copied();
+    assert_eq!(
+        said,
+        Some("running"),
+        "its last word, as the login answered"
+    );
+}
+
+/// A read that does not come back on a busy runner says nothing of the page: it is asked again
+/// until the time is up, and only a page that said it runs, or that never answered, fails the login.
+#[test]
+fn a_read_that_does_not_come_back_after_the_clear_is_asked_again() {
+    let (browser, engine) = browser_with(Limits {
+        login_within: Duration::from_secs(3),
+        ..limits()
+    });
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model)
+        .freezing
+        .unanswered_after_clear = 2;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+}
+
+#[test]
+fn a_read_that_never_comes_back_after_the_clear_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model)
+        .freezing
+        .unanswered_after_clear = u32::MAX;
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
 #[test]
 fn a_page_of_its_site_that_comes_back_after_the_clearing_fills_nothing() {
     let (browser, engine) = browser_with(quick());

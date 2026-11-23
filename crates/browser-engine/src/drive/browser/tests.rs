@@ -136,6 +136,14 @@ struct Freezing {
     thaws_when_cleared: bool,
     /// The sessions asked to freeze, and how often each was read since.
     asked: HashMap<String, u32>,
+    /// How many times a document's state is read before a thaw takes effect in it.
+    thaw_lag: u32,
+    /// The sessions asked to run again, and how often each was read since.
+    thawing: HashMap<String, u32>,
+    /// How many reads, once the sites are cleared, never come back (a runner too busy to answer).
+    unanswered_after_clear: u32,
+    /// What each session's document said last.
+    said: HashMap<String, &'static str>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -540,6 +548,9 @@ impl Engine {
                     model.freezing.asked.entry(session).or_insert(0);
                 } else {
                     model.freezing.asked.remove(&session);
+                    if model.freezing.thaw_lag > 0 {
+                        model.freezing.thawing.insert(session, 0);
+                    }
                 }
                 Ok(json!({}))
             }
@@ -550,6 +561,10 @@ impl Engine {
                 let cleared = !self.sent("Storage.clearDataForOrigin").is_empty();
                 let mut model = super::lock(&self.model);
                 let freezing = &mut model.freezing;
+                if cleared && freezing.unanswered_after_clear > 0 {
+                    freezing.unanswered_after_clear -= 1;
+                    return Err(CallError::TimedOut);
+                }
                 let thawed = cleared && freezing.thaws_when_cleared;
                 // A frame in a process of its own is frozen with the page that holds it.
                 let page = match on.unwrap_or_default() {
@@ -563,7 +578,19 @@ impl Engine {
                     }
                     _ => false,
                 };
-                let said = if frozen { "frozen" } else { "running" };
+                let still_thawing = match freezing.thawing.get_mut(page) {
+                    Some(reads) => {
+                        *reads += 1;
+                        *reads <= freezing.thaw_lag
+                    }
+                    None => false,
+                };
+                let said = if frozen || still_thawing {
+                    "frozen"
+                } else {
+                    "running"
+                };
+                freezing.said.insert(page.to_owned(), said);
                 Ok(json!({"result":{"type":"string","value":said}}))
             }
             "Runtime.evaluate" if p["expression"] == FOCUSED_HERE => {
