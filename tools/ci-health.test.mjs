@@ -484,3 +484,13 @@ test("the report names each job over its budget, and says when none is", () => {
   assert.match(report({ ...week, over: [] }), /### Budgets[\s\S]*No job is more than 20% over/);
   assert.doesNotMatch(report(week), /### Budgets/);
 });
+
+test("a release job over its budget is filed under release.yml and its profile, apart from a ci job of the same name", () => {
+  const job = { id: "release-macos-release", workflow: "release", profile: "release", p50: 120.6, budget: 91, over: 0.325, n: 5 };
+  const { create } = planBudgetTickets([job], []);
+  assert.equal(create[0].title, "Job over budget: release-macos-release");
+  assert.match(create[0].body, /job of `release\.yml`/);
+  assert.match(create[0].body, /`release` profile/);
+  assert.doesNotMatch(planBudgetTickets([slow], []).create[0].body, /profile/);
+  assert.match(planBudgetTickets([slow], []).create[0].body, /job of `ci\.yml`/);
+});

@@ -3,7 +3,9 @@
 
 // The CI jobs' p50 budgets (spec #7324, ADR 0127, in line with ADR 0086: every budget names the
 // job that measures it). `ci/job-budgets.toml` holds one budget in minutes for each job of
-// `ci.yml`, by the job's id. A test refuses a job without one, so a new job brings its budget;
+// `ci.yml`, by the job's id; a budget with `workflow = "release"` is for a check run of
+// `release.yml` instead (#7384), named in full and kept apart by the Cargo profile its runs built
+// with. A test refuses a ci job without one, so a new job brings its budget;
 // `tools/ci-health.mjs` reads each job's p50 of the last seven days against it every day and files
 // a ticket when a job runs more than `OVER` above it. Raising a budget takes a pull request that
 // says why, so a slow job is a decision and never a drift.
@@ -25,6 +27,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** The checked-in budgets, and the workflow they are for. */
 export const BUDGETS_FILE = join(ROOT, "ci", "job-budgets.toml");
 export const CI_FILE = join(ROOT, ".github", "workflows", "ci.yml");
+export const RELEASE_PROFILES = ["dev-release", "release"];
 
 /** A job's p50 may run this far above its budget before ci-health files a ticket: 20%. */
 export const OVER = 0.2;
@@ -77,7 +80,11 @@ export function jobIdOf(checkName, jobs) {
   return best?.id;
 }
 
-/** The budgets of a file: `[[job]]` tables of an `id` and a `p50` in minutes. Throws on any other line. */
+/**
+ * The budgets of a file: `[[job]]` tables of an `id` and a `p50` in minutes. A release budget adds
+ * `workflow = "release"`, the `profile` its runs build with, the `check` run's name and the `run` it
+ * was measured from. Throws on any other line.
+ */
 export function parseBudgets(text) {
   const budgets = [];
   for (const [i, raw] of text.split("\n").entries()) {
@@ -87,7 +94,7 @@ export function parseBudgets(text) {
       budgets.push({});
       continue;
     }
-    const pair = /^(?:(id)\s*=\s*"([^"]*)"|(p50)\s*=\s*(\d+(?:\.\d+)?))\s*(?:#.*)?$/.exec(line);
+    const pair = /^(?:(id|workflow|profile|check)\s*=\s*"([^"]*)"|(p50|run)\s*=\s*(\d+(?:\.\d+)?))\s*(?:#.*)?$/.exec(line);
     if (!pair || budgets.length === 0) throw new Error(`ci/job-budgets.toml line ${i + 1}: cannot read "${raw.trim()}"`);
     const key = pair[1] ?? pair[3];
     if (key in budgets.at(-1)) throw new Error(`ci/job-budgets.toml line ${i + 1}: ${key} twice in one budget`);
@@ -107,9 +114,20 @@ export function budgetProblems(jobs, budgets) {
     else if (seen.has(budget.id)) problems.push(`${name} is listed twice`);
     else {
       seen.add(budget.id);
-      if (!known.has(budget.id)) problems.push(`budget for "${budget.id}": no such job in ci.yml`);
+      if (budget.workflow === "release") {
+        if (!RELEASE_PROFILES.includes(budget.profile)) problems.push(`${name} has no profile: ${RELEASE_PROFILES.join(" or ")}`);
+        if (!budget.check) problems.push(`${name} names no check run`);
+        if (!(budget.run > 0)) problems.push(`${name} names no run it was measured from (ADR 0086)`);
+      } else if (budget.workflow !== undefined && budget.workflow !== "ci") problems.push(`${name} is for workflow "${budget.workflow}", which is neither ci nor release`);
+      else if (!known.has(budget.id)) problems.push(`budget for "${budget.id}": no such job in ci.yml`);
     }
     if (!(budget.p50 > 0)) problems.push(`${name} has no p50: write its budget in minutes`);
+  }
+  const checks = new Set();
+  for (const budget of budgets.filter((b) => b.workflow === "release" && b.check && b.profile)) {
+    const key = `${budget.profile}: ${budget.check}`;
+    if (checks.has(key)) problems.push(`"${budget.id}" budgets ${key} a second time`);
+    checks.add(key);
   }
   for (const job of jobs) {
     if (!seen.has(job.id)) {
@@ -126,6 +144,7 @@ export function budgetProblems(jobs, budgets) {
  * and a job with fewer than `MIN_RUNS` of them is not judged.
  */
 export function overBudget(suites, budgets, jobs) {
+  budgets = budgets.filter((budget) => (budget.workflow ?? "ci") === "ci");
   const minutes = new Map();
   for (const job of suites.flatMap((suite) => suite?.checkRuns?.nodes ?? [])) {
     if (job.conclusion !== "SUCCESS" || !job.startedAt || !job.completedAt) continue;
@@ -138,10 +157,59 @@ export function overBudget(suites, budgets, jobs) {
   for (const budget of budgets) {
     const seen = minutes.get(budget.id) ?? [];
     if (seen.length < MIN_RUNS) continue;
-    const p50 = percentile(seen, 0.5);
-    if (p50 > budget.p50 * (1 + OVER)) over.push({ id: budget.id, p50, budget: budget.p50, over: p50 / budget.p50 - 1, n: seen.length });
+    judge(over, budget, seen);
   }
-  return over.sort((a, b) => b.over - a.over || a.id.localeCompare(b.id));
+  return worstFirst(over);
+}
+
+const worstFirst = (over) => over.sort((a, b) => b.over - a.over || a.id.localeCompare(b.id));
+
+function judge(over, budget, seen) {
+  const p50 = percentile(seen, 0.5);
+  if (p50 <= budget.p50 * (1 + OVER)) return;
+  over.push({
+    id: budget.id,
+    ...(budget.workflow ? { workflow: budget.workflow, profile: budget.profile } : {}),
+    p50,
+    budget: budget.p50,
+    over: p50 / budget.p50 - 1,
+    n: seen.length,
+  });
+}
+
+/**
+ * The Cargo profile a `release.yml` run built with, read from its title (`run-name`): a dev build of
+ * main is `dev-release`, the nightly profile guard and a stable tag are `release`. A build started
+ * by hand may ask for either, so it is neither and no budget judges it.
+ */
+export function releaseProfile(title) {
+  if (/^dev build of /.test(title ?? "")) return "dev-release";
+  if (title === "profile guard" || /^stable /.test(title ?? "")) return "release";
+  return undefined;
+}
+
+/**
+ * `overBudget` for `release.yml`: the release budgets whose p50 over the week's `runs` (REST
+ * workflow runs, with their `display_title`) and `suites` (their check suites, matched by
+ * `workflowRun.databaseId`) is more than `OVER` above. A job is read in the runs of its budget's
+ * profile only, by its check run's exact name, so a dev build never counts against the `release`
+ * profile's budget.
+ */
+export function overReleaseBudget(runs, suites, budgets) {
+  const profileOf = new Map(runs.map((run) => [run.id, releaseProfile(run.display_title)]));
+  const over = [];
+  for (const budget of budgets.filter((b) => b.workflow === "release")) {
+    const seen = [];
+    for (const suite of suites) {
+      if (profileOf.get(suite?.workflowRun?.databaseId) !== budget.profile) continue;
+      for (const job of suite.checkRuns?.nodes ?? []) {
+        if (job.name !== budget.check || job.conclusion !== "SUCCESS" || !job.startedAt || !job.completedAt) continue;
+        seen.push((Date.parse(job.completedAt) - Date.parse(job.startedAt)) / 60_000);
+      }
+    }
+    if (seen.length >= MIN_RUNS) judge(over, budget, seen);
+  }
+  return worstFirst(over);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

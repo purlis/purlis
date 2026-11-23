@@ -15,6 +15,13 @@
 # nightly runs), which is the same number `ci-health` computes (`overBudget`). A job that did not
 # run in them says so beside its budget.
 
+# The jobs of `.github/workflows/release.yml` (#7384, train R5) are budgeted below the ci ones, each
+# with `workflow = "release"`, the Cargo `profile` its runs build with, the `check` run's name in
+# full and the `run` its number was measured from (ADR 0086). A dev build of `main` is `dev-release`
+# and the nightly profile guard and a stable tag are `release`; the two are budgeted apart, and a
+# build started by hand (which may ask for either) is judged by neither. `ci-health` reads
+# `release.yml` runs as it reads `ci.yml` runs.
+
 [[job]]
 id = "changes"
 p50 = 1
@@ -150,3 +157,61 @@ p50 = 20  # added on main after seeding, no runs measured: seeded from the parit
 [[job]]
 id = "forgeroute-macos"
 p50 = 30  # added on main after seeding, no runs measured: seeded above its Linux leg for macOS; measure after a week
+
+# ---- release.yml (#7384) ----
+#
+# Every number below is the job's minutes in one measured run, rounded up (the convention above).
+# The macOS jobs are the one-cargo-run job (R1, #7396): run 45069994116 took 90.2 min on the
+# `release` profile, which it was started by hand with. No dev-release run of the one-run job is
+# measured yet, so the dev budget borrows that run as a ceiling (the lighter profile cannot be
+# slower, ADR 0092); R0's run 45069887140 measured the old two-run job at 101 min on dev-release,
+# which no longer exists. Reset each on the median of its first clean runs once R1's pull
+# requests have landed.
+
+[[job]]
+id = "release-macos-dev"
+workflow = "release"
+profile = "dev-release"
+check = "macOS (.app)"
+run = 45069994116  # 90.2 min, `release` profile: a ceiling for dev-release
+p50 = 91
+
+[[job]]
+id = "release-macos-release"
+workflow = "release"
+profile = "release"
+check = "macOS (.app, .dmg)"
+run = 45069994116  # 90.2 min (compile 84.5)
+p50 = 91
+
+[[job]]
+id = "release-linux-dev"
+workflow = "release"
+profile = "dev-release"
+check = "Linux (.deb, AppImage)"
+run = 45069887140  # R0's linux-base, dev-release: 35 min
+p50 = 35
+
+[[job]]
+id = "release-linux-release"
+workflow = "release"
+profile = "release"
+check = "Linux (.deb, AppImage)"
+run = 45069994116  # 37 min
+p50 = 37
+
+[[job]]
+id = "release-runner-binary-aarch64-dev"
+workflow = "release"
+profile = "dev-release"
+check = "runner binary (linux-aarch64)"
+run = 45069994116  # 10.1 min, `release` profile: a ceiling for dev-release
+p50 = 11
+
+[[job]]
+id = "release-runner-binary-aarch64-release"
+workflow = "release"
+profile = "release"
+check = "runner binary (linux-aarch64)"
+run = 45069994116  # 10.1 min
+p50 = 11
