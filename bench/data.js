@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795443051685,
+  "lastUpdate": 1795446577363,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53004,6 +53004,48 @@ window.BENCHMARK_DATA = {
             "value": 101.69649799999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.314, 101.560, 101.696, 101.877, 102.151 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "76b520a04ffbed0855a5a7e80b0b46e7f7efcb0f",
+          "message": "Scenarios: the fifty-opens median limit comes from measured CI runs (6700 ms) (#7424)\n\nThe 5000 ms median was a guess and failed main twice (run 45144506452: 5586 and 5545 ms).\nLimit is the observed median plus 20%; p90 and hang limits unchanged.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83ZERKT8VZH414CKTJWA4VR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T14:34:06Z",
+          "tree_id": "a0397568a2a0a9db3204ed370f1a35af8e748428",
+          "url": "https://github.com/purlis/purlis/commit/76b520a04ffbed0855a5a7e80b0b46e7f7efcb0f"
+        },
+        "date": 1795446570272,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6959155,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.666, 0.676, 0.696, 0.705, 0.713 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.732644,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.546, 16.655, 16.733, 16.750, 16.774 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.05957849999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.549, 101.927, 102.060, 102.438, 103.274 ms"
           }
         ]
       }
