@@ -803,6 +803,7 @@ jobs:
       # without `BASH_ENV`, a fixed `PATH`, the runner's own `gh`), and written out here and not run
       # from a file: the commit's code has already run in this job. A test holds the step's text.
       - name: Wait for this commit's ci on main, before anything is signed or uploaded
+        id: ci
         env:
           GH_TOKEN: ${{ github.token }}
           DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -811,8 +812,13 @@ jobs:
         # `BASH_ENV` names or a profile, and the script fixes `PATH` and takes `gh` from it.
         shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
         run: |
+          # The runner's own files for this step's output and summary, taken before the loop
+          # below drops every other variable.
+          out=$GITHUB_OUTPUT
+          summary=$GITHUB_STEP_SUMMARY
           if [ "$DEV" != true ]; then
             echo "Not a push to main: nothing to wait for."
+            echo "green=true" >> "$out"
             exit 0
           fi
           # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
@@ -857,10 +863,32 @@ jobs:
           state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
           read -r status conclusion <<< "$state"
           [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
-          [ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }
-          echo "ci run $id of $GITHUB_SHA ended success."
+          # A `ci` that ended red or cancelled is not a fault of this build: it did its job, which is
+          # to sign and publish nothing for that commit. It ends green, with `green=false`, and
+          # every later step of the job skips on that output. Anything else (a state this step
+          # cannot read, an API error, a timeout, no run listed) exits non-zero above or here.
+          case "$conclusion" in
+            success)
+              echo "green=true" >> "$out"
+              echo "ci run $id of $GITHUB_SHA ended success."
+              ;;
+            failure | cancelled | timed_out)
+              echo "green=false" >> "$out"
+              echo "::notice::this commit's main ci ended $conclusion, so this dev build stops here: nothing signed, uploaded or published"
+              {
+                echo "## This dev build stopped: the commit's main ci ended $conclusion"
+                echo
+                echo "ci run $id of $GITHUB_SHA ended $conclusion, so this dev build stops here: nothing signed, uploaded or published. The red is ci's, to fix there."
+              } >> "$summary"
+              ;;
+            *)
+              echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, which this step cannot read as green or red, so nothing is signed or uploaded"
+              exit 1
+              ;;
+          esac
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.ci.outputs.green == 'true'
         with:
           name: purlis-runner-unsigned-${{ matrix.runner_target }}-${{ needs.plan.outputs.version }}
           path: runner/
@@ -887,6 +915,7 @@ jobs:
       # Deliberately absent: APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID, APPLE_API_KEY,
       # APPLE_API_ISSUER, APPLE_API_KEY_PATH. Those are notarization, which ADR 0042 declines.
       - name: Signing material
+        if: steps.ci.outputs.green == 'true'
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -920,7 +949,7 @@ jobs:
       # github.com in two dev releases running, with no retry. A CLI that wants other files
       # downloads them itself, as before.
       - name: The AppImage bundler's tools, fetched ahead
-        if: runner.os == 'Linux'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'Linux'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -951,6 +980,7 @@ jobs:
       # bundling run would bundle the app twice for a bundle that was not optional anyway. Today
       # that is the AppImage, on a publish and on the profile guard.
       - name: Bundle the app
+        if: steps.ci.outputs.green == 'true'
         working-directory: app
         env:
           BUNDLES: ${{ (matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && format('{0},{1}', matrix.bundles, matrix.extra_bundles) || matrix.bundles }}
@@ -973,7 +1003,7 @@ jobs:
       # this workflow lost the .app it had already built. Naming both keeps both.
       - name: Bundle the extra bundle
         id: extra
-        if: ${{ !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}
+        if: ${{ steps.ci.outputs.green == 'true' && !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}
         continue-on-error: true
         working-directory: app
         run: npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }}
@@ -986,7 +1016,7 @@ jobs:
       # that drops the executable bit. `ditto -c -k` writes the archive Apple's own tools read
       # back, permissions and all.
       - name: Collect what was built (macOS)
-        if: runner.os == 'macOS'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'
         env:
           DMG: ${{ needs.plan.outputs.dmg }}
         run: |
@@ -1015,7 +1045,7 @@ jobs:
           ls -l dist
 
       - name: Collect what was built (Linux)
-        if: runner.os == 'Linux'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'Linux'
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -1034,7 +1064,7 @@ jobs:
       # A publish carries the signed updater artifact, or this build is not one. The manifest
       # step would refuse later anyway; this says which platform, while its log is on screen.
       - name: The updater artifact and its signature are both here
-        if: needs.keys.outputs.publish == 'true'
+        if: steps.ci.outputs.green == 'true' && needs.keys.outputs.publish == 'true'
         run: |
           set -euo pipefail
           up=${{ steps.names.outputs.updater }}
@@ -1057,7 +1087,7 @@ jobs:
       # bundle ad-hoc" from "nobody signed the bundle and its executables merely carry the
       # linker's ad-hoc signature". Those two print the same `Signature=adhoc`.
       - name: The macOS bundle carries the signature this run asked for, sidecar included
-        if: runner.os == 'macOS' && needs.keys.outputs.publish == 'true'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS' && needs.keys.outputs.publish == 'true'
         env:
           MACOS_SIGNING: ${{ needs.keys.outputs.macos_signing }}
         run: |
@@ -1112,7 +1142,7 @@ jobs:
       # blocks. The guard runs every night before any tag, so it is where a red shows first.
       # Once a guard night is green this exemption goes (#1180).
       - name: The app keeps the hardened runtime and carries no entitlement
-        if: runner.os == 'macOS'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'
         continue-on-error: ${{ needs.keys.outputs.publish == 'true' && needs.plan.outputs.channel == 'dev' }}
         run: |
           set -euo pipefail
@@ -1136,6 +1166,7 @@ jobs:
       # prove it — every runner here has Xcode — but a binary that links only what ships with
       # the OS cannot be missing a developer-tools library. Printed, never hidden.
       - name: What the built app links against
+        if: steps.ci.outputs.green == 'true'
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -1158,6 +1189,7 @@ jobs:
       # starts every chat unarmed — no state, no guard, no skills — so its absence fails the
       # build rather than reaching anyone.
       - name: The bundle carries charter's own plugin
+        if: steps.ci.outputs.green == 'true'
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -1187,6 +1219,7 @@ jobs:
       # and the bundler copied in (`tauri.release.conf.json`). A build that could not find a
       # package's licence text failed before it got here.
       - name: The bundle carries purlis's LICENSE and NOTICE, and the third-party notices
+        if: steps.ci.outputs.green == 'true'
         run: |
           set -euo pipefail
           grep -q '^tauri [0-9][^ ]* (Rust crate' app/dist/THIRD-PARTY-NOTICES
@@ -1210,6 +1243,7 @@ jobs:
       # so the bundle's seal (checked above) covers its bytes as it covers every resource, and
       # the updater's `.app.tar.gz` is that same directory.
       - name: The bundle carries charter's built-in extensions, runnable
+        if: steps.ci.outputs.green == 'true'
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -1246,6 +1280,7 @@ jobs:
           fi
 
       - name: Upload
+        if: steps.ci.outputs.green == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ steps.names.outputs.artifact }}
@@ -1272,7 +1307,7 @@ jobs:
       #
       # macOS alone, where the crash handler is (#5691). Linux and Windows follow their own.
       - name: Collect the debug symbols (macOS)
-        if: runner.os == 'macOS'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'
         run: |
           set -euo pipefail
           mkdir -p symbols
@@ -1287,7 +1322,7 @@ jobs:
           ls -la symbols
 
       - name: Save the debug symbols
-        if: runner.os == 'macOS'
+        if: steps.ci.outputs.green == 'true' && runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: purlis-${{ steps.names.outputs.slug }}-symbols-${{ needs.plan.outputs.version }}
@@ -1296,7 +1331,7 @@ jobs:
           retention-days: 90
 
       - name: What a person sees when they install it
-        if: always()
+        if: steps.ci.outputs.green == 'true' && always()
         env:
           ARTIFACT: ${{ steps.names.outputs.artifact }}
           SLUG: ${{ steps.names.outputs.slug }}
@@ -1412,6 +1447,7 @@ jobs:
       # leaves every chat at `unknown`; a sidecar that IS the app's own executable makes every
       # hook launch a second GUI. Both are invisible until run.
       - name: The purlis binary and its charter alias really are beside the app, and are not the app
+        if: steps.ci.outputs.green == 'true'
         run: |
           set -euo pipefail
           if [ "$RUNNER_OS" = "Linux" ]; then
@@ -1554,6 +1590,7 @@ jobs:
           cp "target/$PROFILE/purlis" "runner/purlis-$VERSION-linux-aarch64"
       # Before this job uploads: this commit's `ci`, green (see `build`).
       - name: Wait for this commit's ci on main, before anything is signed or uploaded
+        id: ci
         env:
           GH_TOKEN: ${{ github.token }}
           DEV: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
@@ -1562,8 +1599,13 @@ jobs:
         # `BASH_ENV` names or a profile, and the script fixes `PATH` and takes `gh` from it.
         shell: /usr/bin/env -u BASH_ENV /bin/bash --noprofile --norc -eo pipefail {0}
         run: |
+          # The runner's own files for this step's output and summary, taken before the loop
+          # below drops every other variable.
+          out=$GITHUB_OUTPUT
+          summary=$GITHUB_STEP_SUMMARY
           if [ "$DEV" != true ]; then
             echo "Not a push to main: nothing to wait for."
+            echo "green=true" >> "$out"
             exit 0
           fi
           # Nothing the compile put in the environment (a `GH_HOST`, a proxy, `LD_PRELOAD`, through
@@ -1608,9 +1650,31 @@ jobs:
           state=$(ask "$id") || { echo "::error::could not read ci run $id of $GITHUB_SHA, so nothing is signed or uploaded"; exit 1; }
           read -r status conclusion <<< "$state"
           [ "$status" = completed ] || { echo "::error::ci run $id of $GITHUB_SHA is $status after the wait, so nothing is signed or uploaded"; exit 1; }
-          [ "$conclusion" = success ] || { echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, so nothing is signed or uploaded"; exit 1; }
-          echo "ci run $id of $GITHUB_SHA ended success."
+          # A `ci` that ended red or cancelled is not a fault of this build: it did its job, which is
+          # to sign and publish nothing for that commit. It ends green, with `green=false`, and
+          # every later step of the job skips on that output. Anything else (a state this step
+          # cannot read, an API error, a timeout, no run listed) exits non-zero above or here.
+          case "$conclusion" in
+            success)
+              echo "green=true" >> "$out"
+              echo "ci run $id of $GITHUB_SHA ended success."
+              ;;
+            failure | cancelled | timed_out)
+              echo "green=false" >> "$out"
+              echo "::notice::this commit's main ci ended $conclusion, so this dev build stops here: nothing signed, uploaded or published"
+              {
+                echo "## This dev build stopped: the commit's main ci ended $conclusion"
+                echo
+                echo "ci run $id of $GITHUB_SHA ended $conclusion, so this dev build stops here: nothing signed, uploaded or published. The red is ci's, to fix there."
+              } >> "$summary"
+              ;;
+            *)
+              echo "::error::ci run $id of $GITHUB_SHA ended $conclusion, which this step cannot read as green or red, so nothing is signed or uploaded"
+              exit 1
+              ;;
+          esac
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: steps.ci.outputs.green == 'true'
         with:
           name: purlis-runner-unsigned-linux-aarch64-${{ needs.plan.outputs.version }}
           path: runner/
