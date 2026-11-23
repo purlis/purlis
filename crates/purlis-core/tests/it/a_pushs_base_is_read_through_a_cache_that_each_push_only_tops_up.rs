@@ -448,11 +448,15 @@ fn a_cache_is_not_made_again_while_another_quarantine_reads_through_it() {
 }
 
 #[test]
-fn a_repo_whose_history_alone_is_past_the_cap_is_refused_and_not_deleted_every_push() {
+fn a_repo_whose_history_alone_is_past_the_cap_is_made_again_once_and_then_refused() {
     purlis_core::unsteered!();
     let parent = tempfile::tempdir().unwrap();
     let cache = ObjectCache::of_capped(parent.path(), "forge.test", "owner/huge", 5_000);
     cache.update(soon(), grows_by(20_000)).unwrap_err();
+    wait_until_idle(&cache);
+    // Once: made again, and filled again (to the same size, as the history is what it is).
+    let again = cache.update(soon(), grows_by(20_000)).unwrap_err();
+    assert!(again.contains("again"), "{again}");
     wait_until_idle(&cache);
     for _ in 0..3 {
         let refused = cache.update(soon(), ok_fetch()).unwrap_err();
@@ -463,6 +467,111 @@ fn a_repo_whose_history_alone_is_past_the_cap_is_refused_and_not_deleted_every_p
             "not deleted to be fetched again"
         );
     }
+}
+
+/// A fetch that grows the cache by `bytes` and fails at the push's deadline, as a slow top-up
+/// does, then succeeds on the cache's own thread.
+fn grows_then_runs_out(bytes: usize) -> purlis_core::heldact::Fetch {
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    std::sync::Arc::new(move |dir, bound| {
+        if calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+            let pack = dir.join(".git/objects/pack");
+            std::fs::create_dir_all(&pack).unwrap();
+            std::fs::write(pack.join("grown"), vec![0u8; bytes]).unwrap();
+            std::thread::sleep(bound);
+            Err("git took longer than it was given and was stopped".to_owned())
+        } else {
+            Ok(())
+        }
+    })
+}
+
+#[test]
+fn a_top_up_on_the_cache_thread_that_passes_the_cap_does_not_wedge_every_later_push() {
+    purlis_core::unsteered!();
+    let parent = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(parent.path(), "forge.test", "owner/topped", 5_000);
+    cache.update(soon(), grows_by(1_000)).unwrap_err();
+    wait_until_idle(&cache);
+    // Two pushes read through the cache, so nothing makes it again: a top-up runs out of the
+    // push's time, grows the cache past its cap, and ends on the thread.
+    let (a, b) = (cache.lease(), cache.lease());
+    let deadline = std::time::Instant::now() + Duration::from_millis(300);
+    let refused = cache.update(deadline, grows_then_runs_out(10_000)).unwrap_err();
+    assert!(refused.contains("in the background"), "{refused}");
+    wait_until_idle(&cache);
+    drop((a, b));
+    // Over the cap by a top-up, not by its history: made again (once), never "more history than".
+    let _opening = cache.lease();
+    let next = cache.update(soon(), grows_by(1_000)).unwrap_err();
+    assert!(!next.contains("more history than"), "{next}");
+    assert!(next.contains("again"), "{next}");
+    wait_until_idle(&cache);
+    cache.update(soon(), ok_fetch()).unwrap();
+}
+
+#[test]
+fn a_top_up_on_the_cache_thread_does_not_make_the_cache_again_under_another_pushs_lease() {
+    purlis_core::unsteered!();
+    let parent = tempfile::tempdir().unwrap();
+    let cache = ObjectCache::of_capped(parent.path(), "forge.test", "owner/held", 5_000);
+    cache.update(soon(), grows_by(1_000)).unwrap_err();
+    wait_until_idle(&cache);
+    // Another push's quarantine reads through the cache: its one lease.
+    let _other = cache.lease();
+    let deadline = std::time::Instant::now() + Duration::from_millis(300);
+    // This top-up grows the cache past its cap, then finishes on the cache's thread, which holds
+    // no lease of its own: the one lease is the other push's.
+    cache.update(deadline, grows_then_runs_out(10_000)).unwrap_err();
+    wait_until_idle(&cache);
+    assert_eq!(
+        std::fs::metadata(cache.objects().join("pack/grown")).unwrap().len(),
+        10_000,
+        "not made again from under the push that holds a lease"
+    );
+}
+
+#[test]
+fn a_fetch_that_panics_on_the_cache_thread_does_not_leave_every_push_refused_as_still_reading() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let cache = s.cache();
+    let panics: purlis_core::heldact::Fetch = std::sync::Arc::new(|_, _| panic!("a bug"));
+    cache.update(soon(), panics).unwrap_err();
+    wait_until_idle(&cache);
+    assert!(!cache.is_filling());
+    assert!(!cache.is_filled());
+    let next = cache.update(soon(), ok_fetch()).unwrap_err();
+    assert!(next.contains("again"), "{next}");
+    wait_until_idle(&cache);
+    assert!(cache.is_filled(), "the next fill, which did not panic");
+}
+
+#[test]
+fn stale_git_locks_are_removed_and_a_failure_does_not_name_the_cache_folder() {
+    purlis_core::unsteered!();
+    let s = scene();
+    s.fill();
+    let dot = s.cache().path().join(".git");
+    let nested = dot.join("refs/quarantine/base");
+    std::fs::create_dir_all(&nested).unwrap();
+    let locks = [
+        dot.join("packed-refs.lock"),
+        dot.join("index.lock"),
+        dot.join("shallow.lock"),
+        nested.join("abc.lock"),
+    ];
+    for lock in &locks {
+        std::fs::write(lock, b"").unwrap();
+    }
+    let path = s.cache().path().display().to_string();
+    let failing: purlis_core::heldact::Fetch = std::sync::Arc::new(move |dir, _| {
+        Err(format!("error: cannot lock ref in {}", dir.display()))
+    });
+    let refused = s.cache().update(soon(), failing).unwrap_err();
+    assert!(locks.iter().all(|lock| !lock.exists()), "stale locks are gone");
+    assert!(!refused.contains(&path), "{refused}");
+    assert!(refused.contains("forge.test"), "{refused}");
 }
 
 #[test]
@@ -585,17 +694,18 @@ fn a_push_of_commits_the_cache_holds_but_the_base_does_not_is_still_held_for_its
     );
     // The chat pushes that commit with a pack that leaves out everything the cache holds.
     git(&s.chat, &["fetch", "-q", "origin", "other"]);
-    for pack in [pack_of(&s.chat, &evil, &evil), Vec::new()] {
-        let quarantine = Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
-        // A pack git will not take is not let through.
-        if quarantine.take_in(pack, &evil, &s.base).is_err() {
-            continue;
-        }
-        match check_push_since(Kind::GitHub, None, &quarantine.trees(), &s.base, None, &evil) {
-            PushCheck::Hold(diff) => assert_eq!(diff.files, vec![WORKFLOW.to_owned()]),
-            other => panic!("held, got {other:?}"),
-        }
+    let quarantine = Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
+    // The pack is taken in: the check below is of what the cache supplies, not of a refusal.
+    quarantine
+        .take_in(pack_of(&s.chat, &evil, &evil), &evil, &s.base)
+        .expect("git takes the pack in");
+    match check_push_since(Kind::GitHub, None, &quarantine.trees(), &s.base, None, &evil) {
+        PushCheck::Hold(diff) => assert_eq!(diff.files, vec![WORKFLOW.to_owned()]),
+        other => panic!("held, got {other:?}"),
     }
+    // No pack at all is no push: git does not take it in.
+    let empty = Quarantine::open(s.quarantines.path(), &s.base, &s.from()).unwrap();
+    assert!(empty.take_in(Vec::new(), &evil, &s.base).is_err());
 }
 
 #[test]

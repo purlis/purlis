@@ -734,6 +734,24 @@ fn every_harness_denies_a_chat_reading_or_writing_the_forge_object_caches() {
         let named = super::real(&cache).display().to_string();
         assert!(listed("denyRead").contains(&named), "{os:?}: {named}");
         assert!(listed("denyWrite").contains(&named), "{os:?}: {named}");
+        // The file tools' own denial.
+        assert!(
+            settings.deny.contains(&format!("Read(/{named}/**)")),
+            "{os:?}: {named}: {:?}",
+            settings.deny
+        );
+
+        // Codex and opencode: purlis's own wrap denies both.
+        let codex = codex::wrap(&compiled(denied.clone(), os)).expect("compiles");
+        assert!(
+            codex
+                .denied
+                .iter()
+                .any(|it| it.path == cache && it.access == Access::ReadWrite),
+            "{os:?}: {}: {:?}",
+            cache.display(),
+            codex.denied
+        );
 
         if os == Os::MacOs {
             let cwd = std::path::Path::new("/Users/someone/work");

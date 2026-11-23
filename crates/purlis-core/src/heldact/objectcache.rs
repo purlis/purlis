@@ -37,8 +37,9 @@
 //!
 //! **Size and repair.** `git gc --auto` after an update; a cache past its cap ([`MOST`]) is made
 //! again, but only when no quarantine is using it, since a held push's quarantine reads through
-//! it until the ask ends. A repo whose history alone is past the cap is refused with that reason
-//! and left alone, not deleted and fetched again on every push. A cache that git does not
+//! it until the ask ends. A repo whose history alone is past the cap is made again once, and
+//! refused with that reason and left alone after that, not deleted and fetched again on every push.
+//! The size a fill finished at is written for a first fill or a rebuild only, never after a top-up. A cache that git does not
 //! recognise as a repository is made again, when no quarantine is using it. A `tmp_pack_*` a
 //! killed fetch left is removed before the next one.
 //!
@@ -101,7 +102,29 @@ pub struct ObjectCache {
     filling: AtomicBool,
     /// A fill failed, or the cache was made again: the text says "again", not "for the first time".
     tried: AtomicBool,
+    /// The cache was made again once because its history alone is past the cap: a second time it
+    /// is refused, not made again.
+    rebuilt_for_history: AtomicBool,
     failure: Mutex<Option<String>>,
+}
+
+/// Resets [`ObjectCache::filling`] when the cache's thread ends, however it ends: a panic or an
+/// early return must not leave every later push refused as "still reading".
+struct Filling(Arc<ObjectCache>);
+
+impl Drop for Filling {
+    fn drop(&mut self) {
+        if std::thread::panicking() {
+            self.0.tried.store(true, Ordering::Release);
+            *self
+                .0
+                .failure
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner) =
+                Some("the read stopped unexpectedly".to_owned());
+        }
+        self.0.filling.store(false, Ordering::Release);
+    }
 }
 
 /// A quarantine's claim on a cache: while one is held the cache is not made again.
@@ -169,6 +192,7 @@ impl ObjectCache {
                     leases: AtomicUsize::new(0),
                     filling: AtomicBool::new(false),
                     tried: AtomicBool::new(false),
+                    rebuilt_for_history: AtomicBool::new(false),
                     failure: Mutex::new(None),
                 })
             })
@@ -246,9 +270,10 @@ impl ObjectCache {
         if self.is_filling() {
             return Err(self.reading());
         }
-        self.make_ready()?;
+        // The quarantine being opened holds one lease already.
+        self.make_ready(1)?;
         if !self.is_filled() {
-            self.fill_in_background(fetch);
+            self.fill_in_background(fetch)?;
             return Err(self.reading());
         }
         let left = deadline.saturating_duration_since(Instant::now());
@@ -259,18 +284,43 @@ impl ObjectCache {
             return Err(if Instant::now() >= deadline {
                 self.timed_out(fetch)
             } else {
-                why
+                self.scrub(why)
             });
         }
-        self.tidy();
         drop(held);
+        self.tidy_later();
         Ok(())
+    }
+
+    /// What a push may be told of a failed fetch: git's first line names the cache's folder, a path
+    /// of the app's own that no chat is told.
+    fn scrub(&self, why: String) -> String {
+        let named = |path: &Path| why.contains(path.to_string_lossy().as_ref());
+        if named(&self.path) || self.path.canonicalize().is_ok_and(|real| named(&real)) {
+            format!("git could not update purlis's copy of {}", self.label)
+        } else {
+            why
+        }
+    }
+
+    /// `git gc --auto` on a thread of the cache's own, after the push has its verdict: it takes the
+    /// lock, so the next push waits for it only within its own bound.
+    fn tidy_later(self: &Arc<Self>) {
+        let cache = self.clone();
+        let _ = std::thread::Builder::new()
+            .name("object-cache-tidy".to_owned())
+            .spawn(move || {
+                let _held = cache.lock.lock().unwrap_or_else(PoisonError::into_inner);
+                cache.tidy();
+            });
     }
 
     /// A top-up that outran its push's time: finished on the cache's own thread, and the push told.
     fn timed_out(self: &Arc<Self>, fetch: Fetch) -> String {
         self.tried.store(true, Ordering::Release);
-        self.fill_in_background(fetch);
+        if let Err(why) = self.fill_in_background(fetch) {
+            return why;
+        }
         format!(
             "purlis could not finish reading {} from the forge within {} s, and is reading on in the background; try the push again in a few minutes",
             self.label,
@@ -299,22 +349,32 @@ impl ObjectCache {
     }
 
     /// Starts the fill on a thread of the app's own: it takes the lock, makes the cache ready,
-    /// fetches within [`FILL`] and says it is filled. A failure leaves the cache **not filled**.
-    fn fill_in_background(self: &Arc<Self>, fetch: Fetch) {
+    /// fetches within [`FILL`] and, for a first fill or a rebuild, says it is filled (a top-up
+    /// never rewrites that: the size it holds is what the cap is judged against). A failure leaves
+    /// the cache **not filled**. A thread that cannot start is the push's refusal, with its reason.
+    fn fill_in_background(self: &Arc<Self>, fetch: Fetch) -> Result<(), String> {
         if self.filling.swap(true, Ordering::AcqRel) {
-            return;
+            return Ok(());
         }
+        // Moved into the thread; dropped with the closure where the thread does not start.
+        let ending = Filling(self.clone());
         let cache = self.clone();
         let started = std::thread::Builder::new()
             .name("object-cache-fill".to_owned())
             .spawn(move || {
+                let _ending = ending;
                 let done = {
                     let _held = cache.lock.lock().unwrap_or_else(PoisonError::into_inner);
-                    cache
-                        .make_ready()
-                        .and_then(|()| fetch(&cache.path, FILL))
-                        .and_then(|()| cache.mark_filled())
-                        .inspect(|()| cache.tidy())
+                    // No lease of this thread's own: one held is another push's quarantine.
+                    cache.make_ready(0).and_then(|()| {
+                        let first = !cache.is_filled();
+                        fetch(&cache.path, FILL).map_err(|why| cache.scrub(why))?;
+                        if first {
+                            cache.mark_filled()?;
+                        }
+                        cache.tidy();
+                        Ok(())
+                    })
                 };
                 match done {
                     Ok(()) => {
@@ -332,10 +392,16 @@ impl ObjectCache {
                             .unwrap_or_else(PoisonError::into_inner) = Some(why);
                     }
                 }
-                cache.filling.store(false, Ordering::Release);
             });
-        if started.is_err() {
-            self.filling.store(false, Ordering::Release);
+        match started {
+            Ok(_) => Ok(()),
+            Err(why) => {
+                self.tried.store(true, Ordering::Release);
+                Err(format!(
+                    "purlis could not start reading {} from the forge ({why}); try the push again in a few minutes",
+                    self.label
+                ))
+            }
         }
     }
 
@@ -375,36 +441,49 @@ impl ObjectCache {
             .is_ok_and(|run| run.ok() && run.out.trim() == ".git")
     }
 
-    /// Removes what a killed fetch left in the object store.
+    /// Removes what a killed fetch or git left: `tmp_pack_*` in the object store and stale `*.lock`
+    /// files of the refs, the index and `shallow`. Called with the cache's lock held, when no git of
+    /// ours is running in it, so a lock still there is a killed git's. (A `gc` that git detached may
+    /// still be running, as for the `tmp_pack_*` of F6 in the ADR amendment.)
     fn remove_leftovers(&self) {
-        let Ok(entries) = std::fs::read_dir(self.objects().join("pack")) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            if entry.file_name().to_string_lossy().starts_with("tmp_pack_") {
-                let _ = std::fs::remove_file(entry.path());
+        if let Ok(entries) = std::fs::read_dir(self.objects().join("pack")) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with("tmp_pack_") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
             }
         }
+        let dot = self.path.join(".git");
+        for lock in ["packed-refs.lock", "index.lock", "shallow.lock"] {
+            let _ = std::fs::remove_file(dot.join(lock));
+        }
+        remove_locks(&dot.join("refs"));
     }
 
     /// The repository exists and git takes it for one, and is made again where it is damaged or
-    /// has outgrown its cap while no quarantine is using it. A repo whose history alone is past the
-    /// cap is refused, not made again.
-    fn make_ready(&self) -> Result<(), String> {
+    /// has outgrown its cap while no quarantine is using it. `own` is the leases the caller holds
+    /// itself (a push's quarantine, one; the cache's own thread, none): any more are another push's.
+    /// A repo whose history alone is past the cap is made again once, and refused after that.
+    fn make_ready(&self, own: usize) -> Result<(), String> {
         let exists = self.path.exists();
-        if exists && self.filled_at().is_some_and(|filled| filled > self.most) {
-            return Err(format!(
-                "{} holds more history than the {} GiB purlis keeps for one repo, so it cannot read it for a push",
-                self.label,
-                self.most / (1024 * 1024 * 1024)
-            ));
+        if exists {
+            // Before the size is measured, so a killed fetch's leftovers do not count.
+            self.remove_leftovers();
         }
-        // The quarantine being opened holds one lease already.
-        let alone = self.leases.load(Ordering::Acquire) <= 1;
+        let alone = self.leases.load(Ordering::Acquire) <= own;
         let sound = exists && self.is_sound();
         let too_big = sound && size(&self.objects()) > self.most;
+        if sound && too_big && alone {
+            let history = self.filled_at().is_some_and(|filled| filled > self.most);
+            if history && self.rebuilt_for_history.swap(true, Ordering::AcqRel) {
+                return Err(format!(
+                    "{} holds more history than the {} GiB purlis keeps for one repo, so it cannot read it for a push",
+                    self.label,
+                    self.most / (1024 * 1024 * 1024)
+                ));
+            }
+        }
         if sound && !(too_big && alone) {
-            self.remove_leftovers();
             return Ok(());
         }
         if exists && !alone {
@@ -480,6 +559,23 @@ impl ObjectCache {
             if !keep.iter().any(|tip| tip.eq_ignore_ascii_case(id)) {
                 let _ = git::run(&self.path, &["update-ref", "-d", name], git::READ);
             }
+        }
+    }
+}
+
+/// Removes every `*.lock` file under `dir` (links are not followed).
+fn remove_locks(dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_dir() {
+            remove_locks(&entry.path());
+        } else if kind.is_file() && entry.file_name().to_string_lossy().ends_with(".lock") {
+            let _ = std::fs::remove_file(entry.path());
         }
     }
 }

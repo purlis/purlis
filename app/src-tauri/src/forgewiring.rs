@@ -682,6 +682,11 @@ impl AppHeldSinks {
         // A quarantine an earlier app left (it ended without dropping them) is gone before a
         // new one is made: the one-per-user lock means none belongs to a live app.
         purlis_core::heldact::sweep_quarantines(&parent);
+        // The folder exists from the start, so a native Linux read denial (which applies to a path
+        // that is there) has one to apply to before the first push makes a cache in it.
+        if let Some(folder) = &cache_parent {
+            let _ = std::fs::create_dir_all(folder);
+        }
         Self {
             app,
             quarantines: Arc::new(Quarantines::default()),

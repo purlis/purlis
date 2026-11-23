@@ -56,9 +56,19 @@ amendment) cost the same.
   removed before the next one. The base refs kept are the 32 **last used**, never the commit date's
   newest, and the base just fetched is always among them; the tip refs are the forge's advertised
   tips of the last run. A cache past 10 GiB is made again, but only when no quarantine holds a
-  lease on it, since a held push reads through it until its ask ends. A repo whose history alone
-  is past 10 GiB is **refused with that reason and kept**, not deleted and fetched again on every
-  push.
+  lease on it, since a held push reads through it until its ask ends. The cache's own thread
+  holds no lease, so any lease it sees is another push's and it never makes the cache again under
+  one. The size a fill finished at (`purlis-filled`) is written for a first fill or a rebuild only,
+  never after a top-up. A repo whose history alone is past 10 GiB is made again **once** and then
+  **refused with that reason and kept**, not deleted and fetched again on every push. `gc --auto`
+  runs on a thread of the cache's own after the push's verdict. Stale git locks (`packed-refs`,
+  `index`, `shallow`, `refs/**`) are removed with the `tmp_pack_*` files, under the cache's lock,
+  and a failure that names the cache's folder is told to the chat as "git could not update
+  purlis's copy of <host/repo>".
+- **Known limits.** A `tmp_pack_*` of a `gc` that git detached is removed by the next push's
+  cleanup, so a detached gc may lose a temporary pack and fail once (it repacks on the next run).
+  The size cap is checked at the start of a push, not while a fetch runs, so one fetch can pass it
+  until the next push; and a cache's size is the whole object store, counted on every push.
 - **Self-repair.** A cache whose folder git does not take for a repository (an empty `.git`, a
   missing `HEAD`) is made again when no quarantine other than the one being opened reads it, and
   filled again on the cache's thread; while one does, the push is refused with the reason.
