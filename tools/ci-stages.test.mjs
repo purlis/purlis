@@ -13,7 +13,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { MERGE_GROUP, PULL_REQUEST, evaluate } from "./ci-push-jobs.mjs";
-import { PR_ONLY, canRunOn, strandedOnQueue, triggersOf, workflowProblems } from "./ci-stages.mjs";
+import { MIN_REASON, PR_ONLY, canRunOn, strandedOnQueue, triggersOf, workflowProblems } from "./ci-stages.mjs";
 
 const WORKFLOWS = fileURLToPath(new URL("../.github/workflows", import.meta.url));
 
@@ -80,7 +80,10 @@ test("a job's run on the queue is read with its needs", () => {
 test("a workflow that triggers on a pull request and not the queue is named unless it is listed with its reason", () => {
   const text = workflow(["pull_request"], job("a", ""));
   assert.match(workflowProblems({ "x.yml": text }, {}).join("\n"), /x\.yml.*merge_group/);
-  assert.deepEqual(workflowProblems({ "x.yml": text }, { "x.yml": "path-filtered" }), []);
+  assert.deepEqual(
+    workflowProblems({ "x.yml": text }, { "x.yml": "an informational probe that gates nothing, so a queue run would cost a runner for no check" }),
+    [],
+  );
 });
 
 test("a listed workflow that runs in the queue now, or is gone, is refused: the listing does nothing", () => {
@@ -122,4 +125,43 @@ test("the stories workflow runs in the queue, and ci.yml and stories.yml start a
     assert.ok(triggersOf(all[name]).has("merge_group"), `${name} runs in the queue`);
     assert.match(all[name], /pull_request:\n {4}types: \[[^\]]*\bready_for_review\b[^\]]*\]/, name);
   }
+});
+
+test("a PR_ONLY reason is a sentence that says why, not a label: a short one is refused", () => {
+  const text = workflow(["pull_request"], job("a", ""));
+  for (const reason of ["", "   ", "path-filtered", "runs on pull requests"]) {
+    assert.match(workflowProblems({ "x.yml": text }, { "x.yml": reason }).join("\n"), /x\.yml.*reason/, JSON.stringify(reason));
+  }
+});
+
+test("every PR_ONLY entry of this repository carries its own reason, none of them a copy of another's", () => {
+  const reasons = Object.values(PR_ONLY);
+  for (const [name, reason] of Object.entries(PR_ONLY)) {
+    assert.equal(typeof reason, "string", name);
+    assert.ok(reason.trim().length >= MIN_REASON, `${name}: a reason is at least ${MIN_REASON} characters`);
+  }
+  assert.equal(new Set(reasons).size, reasons.length, "no two entries share a reason");
+});
+
+const GATED = "${{ !cancelled() && (github.event_name != 'merge_group' || needs.scope.outputs.run != 'false') }}";
+const filtered = (extra = "") =>
+  `name: w\non:\n  pull_request:\n    paths:\n      - a/**\n  merge_group:\n    types: [checks_requested]\njobs:\n${job("a", GATED, "scope")}${extra}`;
+const scopeJob = (file) =>
+  `  scope:\n    runs-on: ubuntu-24.04\n    steps:\n      - uses: ./.github/actions/workflow-scope\n        with:\n          workflow: ${file}\n`;
+
+test("a workflow a pull request starts by paths and the queue starts always must scope its queue run", () => {
+  assert.match(workflowProblems({ "x.yml": filtered() }, {}).join("\n"), /x\.yml.*paths.*workflow-scope/);
+  assert.deepEqual(workflowProblems({ "x.yml": filtered(scopeJob("x.yml")) }, {}), []);
+  assert.match(workflowProblems({ "x.yml": filtered(scopeJob("y.yml")) }, {}).join("\n"), /x\.yml.*workflow-scope/);
+});
+
+test("a workflow with no path filter needs no scope job in the queue", () => {
+  assert.deepEqual(workflowProblems({ "x.yml": workflow(["pull_request", "merge_group"], job("a", "")) }, {}), []);
+});
+
+test("a scoped workflow's jobs must need the scope job and its answer; its filter must be a block list", () => {
+  const ungated = filtered(scopeJob("x.yml")).replace(`    needs: [scope]\n    if: ${GATED}\n`, "");
+  assert.match(workflowProblems({ "x.yml": ungated }, {}).join("\n"), /job "a" must need `scope`/);
+  const inline = filtered(scopeJob("x.yml")).replace("    paths:\n      - a/**\n", "    paths: [a/**]\n");
+  assert.match(workflowProblems({ "x.yml": inline }, {}).join("\n"), /not a block/);
 });
