@@ -18,3 +18,8 @@
 #   id = "e2e/specs/thing.e2e.ts"               # wdio: the spec file, from app/
 #   ticket = 7001                               # the flake's ticket
 #   added = "2026-11-21"                        # the day it went in
+
+[[test]]
+id = "purlis-app handoff::tests::across_restart::noting_a_chat_s_strays_ends_nothing_that_is_not_its_harness_s"
+ticket = 7431
+added = "2026-11-23"
