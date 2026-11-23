@@ -40,6 +40,7 @@
 //! more of them.
 
 mod ca;
+mod gitsay;
 mod http;
 mod lfs;
 mod scrub;

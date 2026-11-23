@@ -165,6 +165,7 @@ impl World {
             Arc::new(purlis_core::forge::pin::NoPin),
             Some(stance),
             None,
+            None,
         )
     }
 
@@ -172,7 +173,7 @@ impl World {
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
     ) -> Self {
-        Self::build(repos, pin, None, None)
+        Self::build(repos, pin, None, None, None)
     }
 
     /// [`Self::new`]'s repos, with each branch the forge confirms the chat made recorded in the
@@ -183,6 +184,22 @@ impl World {
             Arc::new(purlis_core::forge::pin::NoPin),
             None,
             Some(config),
+            None,
+        )
+    }
+
+    /// [`Self::recording_to`], where the chat may also move a branch a chat it dispatched made,
+    /// by the dispatch records of the project at `project`, as the app reads them.
+    pub fn recording_with_dispatches(
+        config: std::path::PathBuf,
+        project: std::path::PathBuf,
+    ) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            Some(project),
         )
     }
 
@@ -191,6 +208,7 @@ impl World {
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
         stance: Option<Arc<dyn purlis_core::forge::mergestance::MergeStance>>,
         record_to: Option<std::path::PathBuf>,
+        dispatches: Option<std::path::PathBuf>,
     ) -> Self {
         let mut proxy = ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin);
         if let Some(stance) = stance {
@@ -204,13 +222,22 @@ impl World {
             }));
             let tips = config.clone();
             proxy = proxy.with_tips(std::sync::Arc::new(move |host, repo_id, branch| {
-                purlis_core::forge::createdbranches::tip_of(
+                purlis_core::forge::createdbranches::tip_for(
                     &tips,
                     PROJECT_ID,
                     "chat-listener",
                     host,
                     repo_id,
                     branch,
+                    &|owner| {
+                        dispatches.as_ref().is_some_and(|project| {
+                            purlis_core::dispatchrecord::dispatched_by(
+                                &purlis_core::dispatchrecord::list(project),
+                                "chat-listener",
+                                owner,
+                            )
+                        })
+                    },
                 )
             }));
             proxy = proxy.with_created(Box::new(move |created| {
