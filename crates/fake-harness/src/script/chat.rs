@@ -1173,7 +1173,9 @@ impl Chat {
                     c.tool, r.reason
                 )
             }
-            Dialect::Claude => r.reason.clone(),
+            // A refusal by a hook's JSON answer is shown the same way, without the hook's command:
+            // measured on claude 2.1.325, a `WebFetch` the web judge refused (T1.1-39).
+            Dialect::Claude => format!("PreToolUse:{} hook error: {}", c.tool, r.reason),
             Dialect::Codex => {
                 let command = match &c.action {
                     Action::Shell(cmd) => cmd.clone(),

@@ -475,7 +475,16 @@ impl Budget {
     /// The budget, from now.
     pub(crate) fn start() -> Self {
         Self {
-            ends: Instant::now() + budget(),
+            ends: Instant::now() + budget_of(BUDGET),
+        }
+    }
+
+    /// A budget of `lasting`, from now: the web tools' judge waits on the person's ask through the
+    /// chat's proxy ([`purlis_core::toolhooks::WEB_JUDGE_WAIT`]), which the guards' two seconds
+    /// would cut off and refuse for being slow.
+    pub(crate) fn lasting(lasting: Duration) -> Self {
+        Self {
+            ends: Instant::now() + budget_of(lasting),
         }
     }
 
@@ -485,7 +494,8 @@ impl Budget {
     }
 }
 
-fn budget() -> Duration {
+/// `usual`, or what the tests set in its place in a debug build.
+fn budget_of(usual: Duration) -> Duration {
     #[cfg(debug_assertions)]
     if let Some(ms) = std::env::var(BUDGET_ON_PURPOSE_ENV)
         .ok()
@@ -493,7 +503,7 @@ fn budget() -> Duration {
     {
         return Duration::from_millis(ms);
     }
-    BUDGET
+    usual
 }
 
 /// The hook ran out of its budget: refused, by the panic hook ([`refuse_on_a_crash`]), which

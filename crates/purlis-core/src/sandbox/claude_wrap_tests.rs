@@ -290,7 +290,8 @@ fn claude_code_s_own_sandbox_is_off_and_its_tools_keep_their_rules() {
     let settings = wrap_of(&applied).settings();
     assert_eq!(settings.sandbox, serde_json::json!({ "enabled": false }));
     assert!(settings.is_off());
-    assert!(settings.deny.iter().any(|rule| rule == "WebFetch"));
+    // Its web tools are judged by the `pretooluse-web` hook, not denied (T1.1-39).
+    assert!(!settings.deny.iter().any(|rule| rule == "WebFetch"));
     // Its sign-in is read by the harness, and the tools it offers a model are still denied it.
     let sign_in = format!("Read(/{}/.credentials.json)", home.display());
     assert!(settings.deny.contains(&sign_in), "{:?}", settings.deny);

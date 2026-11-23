@@ -111,13 +111,13 @@ fn write_allows(profile: &str) -> Vec<&str> {
 
 /// R-353 on Claude Code at the full sandbox: Bash runs in its sandbox, which lets it write no
 /// folder outside the chat's and connects only to listed hosts, strictly; its file tools are
-/// denied what a denial class holds (the vaults here); and its web tools are denied, since no
+/// denied what a denial class holds (the vaults here); and its web tools are judged by a hook, since no
 /// setting holds them to the sandbox's hosts. A file tool's write elsewhere outside the chat's
 /// folders is Claude Code's own permission check's, not a deny rule purlis writes, so this test
 /// claims no deny for it.
 ///
 /// A pin of `claude::rules`; its mutations, each red here: `strictAllowlist` set to false;
-/// `allowUnsandboxedCommands` set to true; `WEB_TOOLS` dropped from the deny chain; the vaults'
+/// `allowUnsandboxedCommands` set to true; the judge's matcher dropped; the vaults'
 /// `deny_write` (and their `Edit` rules) dropped.
 #[test]
 fn files_and_egress_are_enforced_on_claude_code() {
@@ -173,14 +173,17 @@ fn files_and_egress_are_enforced_on_claude_code() {
         );
     }
 
-    // And its web tools are denied: no setting holds them to the sandbox's hosts.
+    // And its web tools are no deny rule's: no setting holds them to the sandbox's hosts, so the
+    // `pretooluse-web` hook judges `WebFetch` by the chat's proxy (T1.1-39).
     for tool in claude::WEB_TOOLS {
         assert!(
-            settings.deny.iter().any(|rule| rule == tool),
+            !settings.deny.iter().any(|rule| rule == tool),
             "{tool} in {:?}",
             settings.deny
         );
     }
+    let judge = crate::hookreg::find(crate::hookreg::WEB_JUDGE).expect("a registered hook");
+    assert_eq!(judge.matcher, Some("WebFetch|WebSearch"));
 }
 
 /// R-353 on a harness purlis wraps whole: the harness itself is the program `sandbox-exec`

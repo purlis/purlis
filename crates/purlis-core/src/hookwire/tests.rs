@@ -1571,6 +1571,8 @@ fn the_variables_a_session_must_not_inherit_are_the_ones_that_name_a_harness() {
     assert!(NOT_INHERITED.contains(&crate::noterminal::RELAUNCHED_ENV));
     // Nor the launcher's chat's id, which its harness's figure is kept under.
     assert!(NOT_INHERITED.contains(&CHAT_ID_ENV));
+    // Nor the launcher's chat's proxy: whether a chat's web tools are judged is its own level's.
+    assert!(NOT_INHERITED.contains(&PROXY_ENV));
     // charter's own two are set per session, after these are removed, so they are not
     // here — removing them would remove what the app just put in.
     assert!(!NOT_INHERITED.contains(&SOCKET_ENV));

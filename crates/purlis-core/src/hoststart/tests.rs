@@ -619,7 +619,7 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
     let tmp = tempfile::tempdir().unwrap();
     let root = plane_in(&tmp);
     std::fs::write(root.join("charter.toml"), "[policy]\ntemplate = \"open\"\n").unwrap();
-    let failing = |pairs: [(&str, &str); 4]| -> Vec<(String, String)> {
+    let failing = |pairs: [(&str, &str); 5]| -> Vec<(String, String)> {
         pairs
             .iter()
             .map(|(w, f)| ((*w).to_owned(), (*f).to_owned()))
@@ -633,6 +633,7 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
             ("pretooluse-edit", "continue"),
+            ("pretooluse-web", "block"),
             ("pretooluse-dispatch", "continue"),
         ])
     );
@@ -645,6 +646,7 @@ fn a_chats_start_fails_its_guards_open_or_closed_as_the_projects_policy_runs_the
             ("pretooluse", "continue"),
             ("pretooluse-read", "continue"),
             ("pretooluse-edit", "continue"),
+            ("pretooluse-web", "block"),
             ("pretooluse-dispatch", "continue"),
         ])
     );

@@ -126,7 +126,10 @@ impl Handler {
         if !self.guards_a_call() {
             return None;
         }
-        let enforced = (rules_name_a_program && self.reads_the_persons_rules())
+        // The web tools' judge fails closed in every mode (T1.1-39): the tool reaches the
+        // network from Claude Code's own process, so a dead judge would leave nothing holding it.
+        let enforced = self.name == WEB_JUDGE
+            || (rules_name_a_program && self.reads_the_persons_rules())
             || self.judges().iter().any(|family| {
                 family.switchable() && policy.mode(*family) == crate::enforcement::Mode::Enforce
             });
@@ -138,8 +141,11 @@ impl Handler {
 /// which it fires when its own check refuses a call (its auto-mode classifier among them).
 pub const HARNESS_DENIED: &str = "permissiondenied";
 
+/// **The word of the hook that judges Claude Code's web tools** (T1.1-39).
+pub const WEB_JUDGE: &str = "pretooluse-web";
+
 /// Every hook the Rust `charter` answers, in the order a session meets them.
-pub const HANDLERS: [Handler; 20] = [
+pub const HANDLERS: [Handler; 21] = [
     Handler {
         name: "sessionstart",
         event: "SessionStart",
@@ -177,6 +183,16 @@ pub const HANDLERS: [Handler; 20] = [
         event: "PreToolUse",
         matcher: Some("Write|Edit|MultiEdit"),
         timeout: 5,
+    },
+    // Claude Code's own web tools, which reach the network from its unsandboxed process and so
+    // never through the chat's proxy (T1.1-39, R-094, R-353). `WebFetch` is judged here by
+    // asking that proxy about the URL's host, which waits on a person's ask as a held connection
+    // does: the timeout is the ask's, not a hook's usual five seconds.
+    Handler {
+        name: WEB_JUDGE,
+        event: "PreToolUse",
+        matcher: Some("WebFetch|WebSearch"),
+        timeout: 120,
     },
     // The harness's own sub-agent tools, and purlis's `dispatch` chat tools (#1436), which a
     // sub-agent may not call (`dispatchguard`). The tools are named whole: a matcher is the
@@ -469,6 +485,7 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "block"),
                 ("pretooluse-edit", "continue"),
+                ("pretooluse-web", "block"),
                 // `guards.shape` switches since Q308b's nine did (#7104).
                 ("pretooluse-dispatch", "block"),
             ]
@@ -479,6 +496,7 @@ mod tests {
                 ("pretooluse", "continue"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -489,6 +507,7 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "block"),
                 ("pretooluse-edit", "continue"),
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -502,6 +521,8 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                // The web judge fails closed in every mode (T1.1-39).
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -514,6 +535,7 @@ mod tests {
                 ("pretooluse", "continue"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );
@@ -526,6 +548,8 @@ mod tests {
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                // The web judge fails closed in every mode (T1.1-39).
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]
         );

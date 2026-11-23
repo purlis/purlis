@@ -312,7 +312,7 @@ fn a_project_that_turned_the_sandbox_on_keeps_the_full_sandbox() {
     assert_eq!(applied.level(), Level::Full);
     let settings = settings_of(&applied);
     assert!(settings.sandbox["network"].get("allowedDomains").is_some());
-    assert!(settings.deny.iter().any(|rule| rule == "WebFetch"));
+    assert!(!settings.deny.iter().any(|rule| rule == "WebFetch"));
 }
 
 /// The floor profile of a wrapped harness for a chat in `root`, reporting on `socket`, with its

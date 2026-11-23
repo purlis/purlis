@@ -119,7 +119,9 @@ fn both_names(path: &Path) -> Vec<std::path::PathBuf> {
 pub const SHARED_TEMP: [&str; 2] = ["/tmp/claude", "/private/tmp/claude"];
 
 /// Claude Code's own tools that reach the network from its process rather than through its
-/// sandbox, so the sandbox's allowed hosts do not hold them.
+/// sandbox, so the sandbox's allowed hosts do not hold them. Not denied since T1.1-39: the
+/// `pretooluse-web` hook judges `WebFetch`'s host by the chat's proxy, and `WebSearch`, which runs
+/// on Anthropic's side, is allowed and recorded ([`crate::hookreg::WEB_JUDGE`]).
 pub const WEB_TOOLS: [&str; 2] = ["WebFetch", "WebSearch"];
 
 /// Claude Code's own browser tools, by the permission rule that names every tool of their
@@ -533,9 +535,8 @@ pub(super) fn rules(compiled: &Compiled) -> Settings {
     if compiled.level == Level::Floor {
         return floor(filesystem, read_rules, edit_rules, compiled);
     }
-    let deny = WEB_TOOLS
+    let deny = BROWSER_TOOLS
         .iter()
-        .chain(BROWSER_TOOLS.iter())
         .map(|tool| (*tool).to_owned())
         .chain(read_rules)
         .chain(edit_rules)

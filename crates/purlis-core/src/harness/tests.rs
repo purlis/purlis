@@ -1460,6 +1460,7 @@ fn the_settings_arm_the_permission_hook_and_the_guards_failing_closed() {
                 guard("Bash", "pretooluse", 10),
                 guard("Read|Grep", "pretooluse-read", 5),
                 guard("Write|Edit|MultiEdit", "pretooluse-edit", 5),
+                guard("WebFetch|WebSearch", "pretooluse-web", 120),
                 guard(
                     crate::hookreg::find("pretooluse-dispatch")
                         .and_then(|h| h.matcher)

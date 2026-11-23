@@ -2682,11 +2682,17 @@ fn a_sandboxed_claude_code_chat_offers_no_browser_tools_of_its_own() {
 }
 
 #[test]
-fn claude_codes_web_tools_are_denied_because_the_allowed_hosts_do_not_hold_them() {
+fn claude_codes_web_tools_are_judged_by_a_hook_not_denied_because_the_allowed_hosts_do_not_hold_them()
+ {
     let settings = claude::settings(&compiled(Denied::default(), Os::MacOs)).expect("compiles");
-    assert_eq!(settings.deny[..2], ["WebFetch", "WebSearch"]);
-    // Then its own browser's tools (#2013), and then the paths.
-    assert_eq!(settings.deny[2], "mcp__claude-in-chrome");
+    for tool in claude::WEB_TOOLS {
+        assert!(!settings.deny.iter().any(|rule| rule == tool), "{tool}");
+    }
+    // Its own browser's tools lead the list (#2013), and then the paths.
+    assert_eq!(settings.deny[0], "mcp__claude-in-chrome");
+    // The judge is armed on the tools by name (T1.1-39).
+    let judge = crate::hookreg::find(crate::hookreg::WEB_JUDGE).expect("a registered hook");
+    assert_eq!(judge.matcher, Some("WebFetch|WebSearch"));
 }
 
 /// `rules` without the later-code class's, which name a path at any depth (`**/`).
@@ -2730,7 +2736,7 @@ fn a_path_denied_to_read_is_denied_to_the_sandbox_and_to_claude_codes_own_tools(
     );
     // One rule a tool: Claude Code holds what is below a path its rule names (#6961).
     assert_eq!(
-        by_path(&settings.deny)[3..],
+        by_path(&settings.deny)[1..],
         ["Read(//p/.charter/vaults)", "Edit(//p/.charter/vaults)"]
     );
 }
@@ -2749,7 +2755,7 @@ fn a_path_denied_to_write_stays_readable() {
         filesystem_by_path(&settings),
         (Vec::new(), vec!["/p/.charter/app".to_owned()])
     );
-    assert_eq!(by_path(&settings.deny)[3..], ["Edit(//p/.charter/app)"]);
+    assert_eq!(by_path(&settings.deny)[1..], ["Edit(//p/.charter/app)"]);
 }
 
 /// A Claude Code sandbox's `denyWrite`, the later-code class's included.
@@ -5057,6 +5063,101 @@ fn a_hook_word_that_names_the_chat_s_own_folder_refuses_a_chat_there_only() {
         .to_string())
     );
     assert!(line(&root.join("ws/repo")).is_ok());
+}
+
+/// The value `PURLIS_CHAT_PROXY` has on the line of a Claude Code chat at `level`, started
+/// `with_proxy` or not: `None` where the line does not name it at all (T1.1-39: the hooks read
+/// the chat's level by that).
+fn chat_proxy_on_the_line(
+    os: Os,
+    level: Level,
+    with_proxy: bool,
+) -> (Option<String>, Option<String>, Form) {
+    let plane = match level {
+        Level::Full => plane_saying(ON_WITHOUT_CACHES),
+        Level::Floor => plane_saying("schema = 1\n"),
+    };
+    let root = plane.path().canonicalize().expect("the plane");
+    let cwd = root.join("workspaces/real");
+    std::fs::create_dir_all(&cwd).expect("a real folder");
+    let applied = match decide(
+        Harness::ClaudeCode,
+        &root,
+        &machine(os),
+        &|_| true,
+        None,
+        None,
+    )
+    .expect("decided")
+    {
+        Some(Decided::Sandboxed(applied)) => applied,
+        other => panic!("not sandboxed: {other:?}"),
+    };
+    assert_eq!(applied.level(), level);
+    let confinement = with_proxy.then(|| Confinement::start(Vec::new()).expect("a proxy"));
+    // The chat's `--settings` carry the sandbox compiled for it, as the adapter arms them: the
+    // proxy's ports are only added to a sandbox this adapter compiled.
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
+        panic!("compiled for Claude Code");
+    };
+    let armed = vec![
+        "--settings".to_owned(),
+        serde_json::json!({
+            "enabledPlugins": {},
+            "permissions": { "allow": [], "deny": settings.deny },
+            "sandbox": settings.sandbox,
+        })
+        .to_string(),
+    ];
+    let line = applied
+        .line(
+            Words {
+                program: "claude".to_owned(),
+                command: Vec::new(),
+                armed,
+                charters: Vec::new(),
+            },
+            &At {
+                cwd: Some(&cwd),
+                confinement: confinement.as_ref(),
+                ..At::default()
+            },
+        )
+        .expect("starts");
+    let named = line
+        .env
+        .iter()
+        .find(|(key, _)| key == crate::hookwire::PROXY_ENV)
+        .map(|(_, value)| value.clone());
+    (
+        named,
+        confinement.as_ref().map(Confinement::proxy_url),
+        applied.form().clone(),
+    )
+}
+
+#[test]
+fn a_claude_code_chat_at_the_full_sandbox_with_no_proxy_is_named_an_empty_one() {
+    // The hook reads an empty name as "full, nothing to ask" and refuses; no name at all would
+    // read as a level that is not judged, and the web tools would pass unseen (fail open).
+    let (named, _, form) = chat_proxy_on_the_line(Os::MacOs, Level::Full, false);
+    assert!(matches!(form, Form::ClaudeCode(_)), "{form:?}");
+    assert_eq!(named, Some(String::new()));
+}
+
+#[test]
+fn a_claude_code_chat_at_the_full_sandbox_is_named_its_proxy() {
+    let (named, url, _) = chat_proxy_on_the_line(Os::MacOs, Level::Full, true);
+    assert_eq!(named, Some(url.expect("a proxy url")));
+}
+
+#[test]
+fn a_claude_code_chat_at_the_floor_is_named_no_proxy() {
+    // The floor's web tools are never judged, whatever proxy the chat has.
+    let (named, url, form) = chat_proxy_on_the_line(Os::MacOs, Level::Floor, true);
+    assert!(url.is_some());
+    assert!(matches!(form, Form::ClaudeCode(_)), "{form:?}");
+    assert_eq!(named, None);
 }
 
 #[test]

@@ -2125,7 +2125,7 @@ fn guards_failing(args: &[String]) -> Vec<(String, String)> {
         .collect()
 }
 
-fn pairs(list: [(&str, &str); 4]) -> Vec<(String, String)> {
+fn pairs(list: [(&str, &str); 5]) -> Vec<(String, String)> {
     list.iter()
         .map(|(word, failure)| ((*word).to_owned(), (*failure).to_owned()))
         .collect()
@@ -2140,6 +2140,7 @@ fn a_start_that_skips_the_policy_arms_every_guard_failing_closed() {
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
             ("pretooluse-edit", "block"),
+            ("pretooluse-web", "block"),
             ("pretooluse-dispatch", "block"),
         ])
     );
@@ -2158,6 +2159,8 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
             ("pretooluse", "continue"),
             ("pretooluse-read", "continue"),
             ("pretooluse-edit", "continue"),
+            // The web tools' judge fails closed under every policy (T1.1-39).
+            ("pretooluse-web", "block"),
             ("pretooluse-dispatch", "continue"),
         ])
     );
@@ -2171,6 +2174,7 @@ fn a_start_loosens_each_guard_s_failure_to_the_chat_s_policy() {
             ("pretooluse", "block"),
             ("pretooluse-read", "block"),
             ("pretooluse-edit", "continue"),
+            ("pretooluse-web", "block"),
             // `guards.shape`, the dispatch guard's family, switches since Q308b's nine did
             // (#7104), so where it is enforced a dead dispatch guard refuses too.
             ("pretooluse-dispatch", "block"),
@@ -2203,6 +2207,7 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
                 ("pretooluse", bash_alone),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]),
             "{text}, no rule names a program"
@@ -2213,6 +2218,7 @@ fn a_dead_bash_guard_refuses_where_the_persons_rules_name_a_program_under_every_
                 ("pretooluse", "block"),
                 ("pretooluse-read", "continue"),
                 ("pretooluse-edit", "continue"),
+                ("pretooluse-web", "block"),
                 ("pretooluse-dispatch", "continue"),
             ]),
             "{text}, a rule names a program"

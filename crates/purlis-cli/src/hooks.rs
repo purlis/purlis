@@ -143,6 +143,7 @@ pub fn handler(name: &str) -> Option<Handler> {
     Some(match name {
         "pretooluse-read" => pretooluse_read,
         "pretooluse-edit" => pretooluse_edit,
+        purlis_core::hookreg::WEB_JUDGE => pretooluse_web,
         "pretooluse-dispatch" => toolhooks::pretooluse_dispatch,
         "posttooluse" => toolhooks::posttooluse,
         "posttooluse-skill" => toolhooks::posttooluse_skill,
@@ -201,6 +202,14 @@ fn pretooluse_read(hook: &Hook) -> Answer {
 fn pretooluse_edit(hook: &Hook) -> Answer {
     toolhooks::pretooluse_edit_proposing(hook, &|ask| {
         crate::brokered::proposal_taken(purlis_core::hookwire::Ask::Propose(Box::new(ask)))
+    })
+}
+
+/// `pretooluse-web`: Claude Code's web tools, judged by the chat's own proxy
+/// ([`toolhooks::pretooluse_web`]).
+fn pretooluse_web(hook: &Hook) -> Answer {
+    toolhooks::pretooluse_web(hook, &|proxy, host, port| {
+        toolhooks::ask_proxy(proxy, host, port, toolhooks::WEB_JUDGE_WAIT)
     })
 }
 

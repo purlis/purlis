@@ -373,6 +373,148 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
     ))
 }
 
+// ---- the web tools (T1.1-39) ---------------------------------------------------------------
+
+/// What the chat's proxy answered a request for a tunnel to a host.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tunnel {
+    /// `200`: the proxy carries the host, as it would a command's connection to it.
+    Open,
+    /// Any other status, or nothing: refused, with the proxy's word for it.
+    Refused(String),
+}
+
+/// How long the web tools' judge waits on the proxy, which holds a connection to a host nothing
+/// lists while the person is asked: a little under the hook's own timeout
+/// ([`crate::hookreg::WEB_JUDGE`]), so a hook that waited too long refuses and is never cut off.
+pub const WEB_JUDGE_WAIT: std::time::Duration = std::time::Duration::from_secs(110);
+
+/// **`pretooluse-web`: Claude Code's web tools in a sandboxed chat** (T1.1-39, R-094, R-353).
+///
+/// They reach the network from Claude Code's own process, so neither its sandbox nor the chat's
+/// proxy ever sees them. `WebSearch` runs on Anthropic's side and is allowed: the hook's line is
+/// its record. `WebFetch` is judged by the host of its `url`, structured input and nothing
+/// parsed out of output, by asking the chat's own proxy for a tunnel to it (`tunnel`, given the
+/// proxy's URL, the host and the port): the proxy decides by the host policy it holds for the
+/// chat, asks the person as it does for a command's connection, and records. A refusal is this
+/// hook's deny, which the host writes as a block and the window raises as a Notice.
+///
+/// **Judged at the full sandbox only** (a chat is named a proxy, [`crate::hookwire::PROXY_ENV`],
+/// at that level alone): the basic one never held a chat's web tools, and judging there would
+/// refuse a `WebFetch` that was allowed before.
+///
+/// **Fails closed** at the full sandbox: a `url` that is missing or will not parse, a scheme
+/// other than `http` and `https`, no proxy named for the chat, or a proxy that does not answer
+/// is a refusal. A chat the app did not sandbox, or started at the basic level, is none of its
+/// business.
+///
+/// A cross-host redirect comes back to the model as the new URL, and its next call is judged as
+/// any other.
+pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -> Answer {
+    // The basic sandbox names no proxy at all; the full one always does, empty where it has none.
+    let Some(proxy) = (hook.env)(crate::hookwire::PROXY_ENV) else {
+        return Answer::Nothing;
+    };
+    if !crate::sandbox::chat_is_sandboxed_in(hook.env) {
+        return Answer::Nothing;
+    }
+    match hook.tool_name() {
+        "WebSearch" => return Answer::Nothing,
+        "WebFetch" => {}
+        _ => return Answer::Nothing,
+    }
+    let Some((host, port)) = web_target(hook.input_text("url")) else {
+        return deny(
+            "WebFetch was refused: its url is missing or is not an http or https address, so \
+             purlis cannot say which host it would reach."
+                .to_owned(),
+        );
+    };
+    if proxy.is_empty() {
+        return deny(format!(
+            "WebFetch of {host} was refused: this chat's proxy is not named, so purlis cannot ask \
+             whether the host is allowed."
+        ));
+    }
+    match tunnel(&proxy, &host, port) {
+        Tunnel::Open => Answer::Nothing,
+        Tunnel::Refused(said) => deny(format!(
+            "WebFetch of {host} was refused: this chat may not reach it ({said}). The person \
+             can allow the host if it is needed."
+        )),
+    }
+}
+
+/// The host and port a `WebFetch`'s `url` reaches: its explicit port or 443, since the tool
+/// fetches over `https` whatever the scheme says. None for a url that is empty, will not parse,
+/// is not `http` or `https`, or names no host.
+fn web_target(url: &str) -> Option<(String, u16)> {
+    let parsed = url::Url::parse(url.trim()).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = parsed
+        .host_str()?
+        .trim_matches(['[', ']'])
+        .to_ascii_lowercase();
+    if host.is_empty() {
+        return None;
+    }
+    Some((host, parsed.port().unwrap_or(443)))
+}
+
+/// **Asks the proxy at `proxy` (`http://127.0.0.1:<port>`) for a tunnel to `host:port`**, and says
+/// what it answered: the request every client makes through a proxy, with nothing sent after it.
+/// Any failure to connect, write or read an answer within `wait` is a refusal, never a pass.
+pub fn ask_proxy(proxy: &str, host: &str, port: u16, wait: std::time::Duration) -> Tunnel {
+    use std::io::{BufRead, Read, Write};
+    let refused = |why: &str| Tunnel::Refused(why.to_owned());
+    let Some(address) = proxy
+        .strip_prefix("http://")
+        .map(|a| a.trim_end_matches('/'))
+    else {
+        return refused("the proxy's address is not one purlis wrote");
+    };
+    // Loopback only: the chat's proxy is purlis's own, on this machine, and a hook that was
+    // pointed anywhere else would send the host it judges to a stranger.
+    let Some(address) = address
+        .parse::<std::net::SocketAddr>()
+        .ok()
+        .filter(|address| address.ip().is_loopback())
+    else {
+        return refused("the proxy's address is not one purlis wrote");
+    };
+    let Ok(stream) = std::net::TcpStream::connect_timeout(&address, wait) else {
+        return refused("the proxy did not answer");
+    };
+    let _ = stream.set_read_timeout(Some(wait));
+    let _ = stream.set_write_timeout(Some(wait));
+    let target = if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    };
+    if (&stream)
+        .write_all(format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n").as_bytes())
+        .is_err()
+    {
+        return refused("the proxy did not take the request");
+    }
+    let mut status = String::new();
+    if std::io::BufReader::new(&stream)
+        .take(256)
+        .read_line(&mut status)
+        .is_err()
+    {
+        return refused("the proxy did not answer in time");
+    }
+    let mut words = status.split_whitespace();
+    match (words.next(), words.next()) {
+        (Some(version), Some("200")) if version.starts_with("HTTP/1.") => Tunnel::Open,
+        _ => Tunnel::Refused(status.trim().to_owned()),
+    }
+}
+
 /// **What a judge's read guard refuses by, and the rule a call it refused is recorded under**
 /// (SK-55): a grade tells a judge's own reach from a fault of purlis's by this word. Within what a
 /// refusal's reason keeps.
