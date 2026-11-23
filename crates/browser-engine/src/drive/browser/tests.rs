@@ -120,6 +120,22 @@ struct Model {
     /// The element that has the focus of each session's document, where a test says it apart
     /// from `focused_backend` (#3043): `None` where that document does not have the focus.
     focused_on: HashMap<String, Option<i64>>,
+    /// How a page takes a request to freeze (#5272): the engine freezes later than it says.
+    freezing: Freezing,
+}
+
+/// How the stand-in engine freezes a page it was asked to freeze: it answers the request at once
+/// and the page's documents are told only later, as the real engine's are.
+#[derive(Default)]
+struct Freezing {
+    /// How many times a document's state is read before the freeze takes effect in it.
+    lag: u32,
+    /// Whether the freeze never takes effect.
+    never: bool,
+    /// Whether the pages run again once the login's sites are cleared.
+    thaws_when_cleared: bool,
+    /// The sessions asked to freeze, and how often each was read since.
+    asked: HashMap<String, u32>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -516,6 +532,39 @@ impl Engine {
                     "loading"
                 };
                 Ok(json!({"result":{"type":"string","value":lie}}))
+            }
+            "Page.setWebLifecycleState" => {
+                let mut model = super::lock(&self.model);
+                let session = on.unwrap_or_default().to_owned();
+                if p["state"] == "frozen" {
+                    model.freezing.asked.entry(session).or_insert(0);
+                } else {
+                    model.freezing.asked.remove(&session);
+                }
+                Ok(json!({}))
+            }
+            "Runtime.evaluate" if p["expression"] == super::login::ARM_FREEZE_WATCH => {
+                Ok(json!({"result":{"type":"string","value":"armed"}}))
+            }
+            "Runtime.evaluate" if p["expression"] == super::login::READ_FREEZE_WATCH => {
+                let cleared = !self.sent("Storage.clearDataForOrigin").is_empty();
+                let mut model = super::lock(&self.model);
+                let freezing = &mut model.freezing;
+                let thawed = cleared && freezing.thaws_when_cleared;
+                // A frame in a process of its own is frozen with the page that holds it.
+                let page = match on.unwrap_or_default() {
+                    "S-PAYMENT" => "S-PAGE-1",
+                    other => other,
+                };
+                let frozen = match freezing.asked.get_mut(page) {
+                    Some(reads) if !freezing.never && !thawed => {
+                        *reads += 1;
+                        *reads > freezing.lag
+                    }
+                    _ => false,
+                };
+                let said = if frozen { "frozen" } else { "running" };
+                Ok(json!({"result":{"type":"string","value":said}}))
             }
             "Runtime.evaluate" if p["expression"] == FOCUSED_HERE => {
                 Ok(match self.focused_on(on) {
@@ -924,6 +973,7 @@ fn browser_over(limits: Limits, judge: Option<crate::drive::Judge>) -> (StandIn,
             drag_told_when_asked: false,
             held_drag: None,
             ax_takes: None,
+            freezing: Freezing::default(),
             slow: HashMap::new(),
             focused_on: HashMap::new(),
         }),
