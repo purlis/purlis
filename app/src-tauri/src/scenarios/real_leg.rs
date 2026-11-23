@@ -547,6 +547,30 @@ impl Model {
         prompt
     }
 
+    /// **The next chat's script, one `WebFetch` call** of `url`: the tool a `permissions.deny`
+    /// rule takes away at Full, asked for as its own step ([`Model::plays`] asks for Bash only).
+    pub(crate) fn plays_a_fetch(&self, step: &str, url: &str) -> String {
+        let mut chats = self.chats.lock().expect("the chats");
+        let mut script = script_of(
+            self.dialect,
+            &format!("leg chat {}", chats.len() + 1),
+            &[(step, String::new())],
+        );
+        let call = &mut script.responses[0].calls[0];
+        call.kind = "web".to_owned();
+        call.command = None;
+        call.url = Some(url.to_owned());
+        let prompt = script.prompt.clone();
+        let stand_in = Arc::new(StandIn::new(self.dialect.word(), script));
+        *self.current.lock().expect("the stand-in") = Arc::clone(&stand_in);
+        chats.push(Chat {
+            stand_in,
+            file: None,
+            last: String::new(),
+        });
+        prompt
+    }
+
     /// The transcript of the chat just played ([`Model::plays`]) is `file`, written from its
     /// request log. An earlier chat's file is left as it was.
     pub(crate) fn attach(&self, file: &Path) {
@@ -2292,6 +2316,122 @@ mod tests {
         assert!(
             result.ran && result.exit == Some(0) && result.said.contains("hello-from-the-leg"),
             "{result:?}\n{said}"
+        );
+    }
+
+    /// The kinds of the events the log gained after `since`, once one of `kind` is among them (the
+    /// judge's line reaches the host after the call's result is in, and the proxy's own block
+    /// before it), or when 20 seconds have passed.
+    fn kinds_once(scenario: &Scenario, since: u64, kind: &str) -> Vec<String> {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        loop {
+            let kinds = super::super::report::kinds_since(&scenario.events(), since);
+            if kinds.iter().any(|one| one == kind) || Instant::now() > deadline {
+                return kinds;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+    }
+
+    /// **M-ASK-13, M-TOOL-08** (T1.1-39, #6886; R-094, R-353): a `WebFetch` of a host nothing lists
+    /// is judged by `pretooluse-web`, which asks the chat's proxy. The proxy holds it and the
+    /// window asks; the person keeps it blocked; the hook refuses, and the log says so: a
+    /// `hook.pretooluse-web` line and a block, with the proxy's own refusal of the host. The
+    /// fetch never ran (no result an exit would say), and the log is read from outside.
+    #[test]
+    fn a_deny_rule_tool_call_writes_hook_permissiondenied_and_a_block() {
+        let homes =
+            the_claude_leg!("a_deny_rule_tool_call_writes_hook_permissiondenied_and_a_block");
+        let model = Model::serve(Dialect::Claude);
+        let Some(scenario) =
+            Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
+        else {
+            return;
+        };
+        let since = scenario.latest_seq();
+        let host = "denied-fetch.example.test";
+        let prompt = model.plays_a_fetch("denied-fetch", &format!("https://{host}/"));
+        let chat = scenario.starts_real(&model, &prompt);
+        // The hook's tunnel request is held by the chat's proxy and the window lists its ask.
+        let (_, kept) = scenario.person().when_listed(
+            chat,
+            host,
+            &Press::Keep(None),
+            Duration::from_millis(50),
+        );
+        kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
+        scenario.until_played(chat, &["denied-fetch"]);
+
+        let kinds = kinds_once(&scenario, since, "hook.pretooluse-web");
+        assert!(
+            kinds.iter().any(|kind| kind == "hook.pretooluse-web"),
+            "the fetch left no line of the web judge: {kinds:?}\n{}",
+            scenario.said()
+        );
+        assert!(
+            kinds.iter().any(|kind| kind == "stop.block"),
+            "the refusal was not recorded as a block: {kinds:?}\n{}",
+            scenario.said()
+        );
+        let result = StepResult::of(scenario.result_of(chat, "denied-fetch").as_ref());
+        assert!(
+            !result.ran,
+            "the denied fetch ran: {result:?}\n{}",
+            scenario.said()
+        );
+        scenario.keeps_listed_asks_blocked();
+    }
+
+    /// **An allowed host is fetched** (T1.1-39): the person allows the host for the chat when the
+    /// proxy asks; the judge lets the call run, the proxy carried a connection to the host (the
+    /// names seam's origin heard it), and the log holds the judge's line and no block.
+    #[test]
+    fn a_web_fetch_of_an_allowed_host_runs_and_leaves_no_block() {
+        let homes = the_claude_leg!("a_web_fetch_of_an_allowed_host_runs_and_leaves_no_block");
+        let model = Model::serve(Dialect::Claude);
+        let Some(scenario) =
+            Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
+        else {
+            return;
+        };
+        let host = "allowed-fetch.example.test";
+        let origin = purlis_scenarios::net::Origin::http().expect("an origin");
+        scenario.names.origin(host, 443, origin.addr());
+        let _carried = scenario.names.carry_tunnels();
+        let since = scenario.latest_seq();
+        let prompt = model.plays_a_fetch("allowed-fetch", &format!("https://{host}/"));
+        let chat = scenario.starts_real(&model, &prompt);
+        let (_, allowed) = scenario.person().when_listed(
+            chat,
+            host,
+            &Press::Allow(crate::sandboxing::GrantLevel::Chat),
+            Duration::from_millis(50),
+        );
+        allowed.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
+        scenario.until_played(chat, &["allowed-fetch"]);
+
+        // An allowed call's line is recorded with its call's end, which a web tool has no hook
+        // for: the proof it ran is the tool's own result, which is not a refusal of purlis's.
+        let kinds = super::super::report::kinds_since(&scenario.events(), since);
+        let result = scenario
+            .result_of(chat, "allowed-fetch")
+            .map(|line| line.to_string())
+            .unwrap_or_default();
+        assert!(
+            !result.is_empty() && !result.contains("was refused"),
+            "the allowed fetch was refused or left no result: {result}\n{}",
+            scenario.said()
+        );
+        assert!(
+            !kinds.iter().any(|kind| kind == "stop.block"),
+            "an allowed host's fetch was blocked: {kinds:?}\n{}",
+            scenario.said()
+        );
+        assert_eq!(
+            scenario.names.origin_hits(),
+            vec![(host.to_owned(), 443)],
+            "the proxy carried no connection to the allowed host\n{}",
+            scenario.said()
         );
     }
 
