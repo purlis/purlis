@@ -628,12 +628,18 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
         pkt("ok refs/heads/mine\n")
     )));
     assert_eq!(send(&push(&command("mine", &zero))).status, 200);
+    // An update moves on only from the tip the chat put there, never from any other old id.
+    assert_eq!(
+        send(&push(&command("mine", &"2".repeat(40)))).status,
+        403,
+        "an update from an old id the chat did not put there"
+    );
     w.fake.answer(Answer::ok(&format!(
         "{}{}0000",
         pkt("unpack ok\n"),
         pkt("ok refs/heads/mine\n")
     )));
-    assert_eq!(send(&push(&command("mine", &"2".repeat(40)))).status, 200);
+    assert_eq!(send(&push(&command("mine", &new))).status, 200);
 
     // The same report inside side-band, as GitHub sends it.
     let inner = format!(
@@ -646,7 +652,7 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
     assert_eq!(send(&push(&command("banded", &zero))).status, 200);
     w.fake.answer(Answer::ok("{}"));
     assert_eq!(
-        send(&push(&command("banded", &"2".repeat(40)))).status,
+        send(&push(&command("banded", &new))).status,
         200,
         "owned after a banded report"
     );
