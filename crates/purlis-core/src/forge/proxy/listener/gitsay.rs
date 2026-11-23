@@ -74,7 +74,9 @@ pub(crate) fn reason_for(refusal: Refusal) -> &'static str {
         Refusal::OtherRepo | Refusal::HostNotAllowed | Refusal::AmbiguousHost => {
             "purlis: this repo is not one of this chat's"
         }
-        Refusal::NoCredential => "purlis: no sign-in for this repo; sign in from the window",
+        Refusal::NoCredential => {
+            "purlis: no sign-in for this repo; sign in under Settings › You › Accounts"
+        }
         Refusal::Pinned => "purlis: an administrator turned this forge off for chats",
         _ => "purlis: a chat may not make this request",
     }
