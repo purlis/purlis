@@ -1694,11 +1694,33 @@ mod tests {
             let prompt = model.plays(&[("only", "echo one".to_owned())]);
             model.attach(&first);
             let stand_in = Arc::clone(&model.current.lock().expect("the stand-in"));
-            let id = stand_in.id(purlis_recordings::standin::Conversation::Main, 0, 0);
             let (path, body) = request(dialect, &prompt, &[]);
             stand_in.answer("POST", path, &body);
-            let (output, _) = result_of_a_command(dialect, 0, "one");
-            let (path, body) = request(dialect, &prompt, &[(&id, &output, false)]);
+            // OpenCode on macOS first asks for its warm-up ([`Model::plays`]): its result comes
+            // before the step's.
+            let warmed = cfg!(target_os = "macos") && dialect == Dialect::OpenCode;
+            let mut heard: Vec<(String, String)> = Vec::new();
+            if warmed {
+                let id = stand_in.id(purlis_recordings::standin::Conversation::Main, 0, 0);
+                heard.push((id, result_of_a_command(dialect, 0, "").0));
+                let earlier: Vec<(&str, &str, bool)> = heard
+                    .iter()
+                    .map(|(id, output)| (id.as_str(), output.as_str(), false))
+                    .collect();
+                let (path, body) = request(dialect, &prompt, &earlier);
+                stand_in.answer("POST", path, &body);
+            }
+            let id = stand_in.id(
+                purlis_recordings::standin::Conversation::Main,
+                usize::from(warmed),
+                0,
+            );
+            heard.push((id, result_of_a_command(dialect, 0, "one").0));
+            let earlier: Vec<(&str, &str, bool)> = heard
+                .iter()
+                .map(|(id, output)| (id.as_str(), output.as_str(), false))
+                .collect();
+            let (path, body) = request(dialect, &prompt, &earlier);
             stand_in.answer("POST", path, &body);
             let read = |file: &Path| {
                 std::fs::read_to_string(file)
