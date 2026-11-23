@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795416358613,
+  "lastUpdate": 1795425145960,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52878,6 +52878,48 @@ window.BENCHMARK_DATA = {
             "value": 100.4695695,
             "unit": "ms",
             "extra": "median of 5 runs: 99.383, 99.967, 100.470, 100.837, 105.000 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "d8095adced0659990465f0b12724bfc767616a4a",
+          "message": "Landing skill: lanes open drafts and mark ready once (#7336) (#7410)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83QDG9Q8B8Q24YRTDVG6FFR\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T08:39:29Z",
+          "tree_id": "7f1ddcad1e61b4739f33ed7abb2d3765d35e9911",
+          "url": "https://github.com/purlis/purlis/commit/d8095adced0659990465f0b12724bfc767616a4a"
+        },
+        "date": 1795425140740,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.689667,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.671, 0.690, 0.690, 0.700 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.629500999999998,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.421, 16.456, 16.630, 16.683, 17.069 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2834585,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.747, 102.174, 102.283, 102.555, 104.108 ms"
           }
         ]
       }
