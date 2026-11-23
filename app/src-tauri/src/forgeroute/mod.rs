@@ -221,6 +221,11 @@ pub trait Recorded: Send + Sync {
     fn record_created(&self, _project: &Path, _chat: &str, _created: &[CreatedBranch]) {}
     /// The forge no longer lists these recorded branches: their record ends.
     fn forget_created(&self, _gone: &[CreatedBranch]) {}
+    /// The chat that owns the branch `branch` of the repo with forge id `repo_id` on `host` now,
+    /// for the Let this chat push ask to name. Any doubt is none.
+    fn branch_owner(&self, _host: &str, _repo_id: u64, _branch: &str) -> Option<String> {
+        None
+    }
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -801,14 +806,13 @@ impl ForgeRoutes {
                 sessions: self.sessions.clone(),
             };
             let run = run.to_owned();
+            let owners = self.seams.recorded.clone();
             proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
                 root: project.to_owned(),
                 chat: chat.to_owned(),
                 session: Box::new(move || sessions.session(&run)),
-                owner_of: Box::new(|host, repo_id, branch| {
-                    let config = purlis_core::machine::config_root()?;
-                    purlis_core::forge::createdbranches::owner_of(&config, host, repo_id, branch)
-                        .map(|(_, chat, _)| chat)
+                owner_of: Box::new(move |host, repo_id, branch| {
+                    owners.branch_owner(host, repo_id, branch)
                 }),
             }));
         }
