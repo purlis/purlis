@@ -774,7 +774,8 @@ impl Settings {
     /// file names one, else the legacy `[sandbox] mode`, else the template's (the floor under
     /// `strict`).
     pub fn level(&self) -> SandboxLevel {
-        self.sandbox.unwrap_or_else(|| self.template.sandbox_level())
+        self.sandbox
+            .unwrap_or_else(|| self.template.sandbox_level())
     }
 
     /// How the settings run `family`, before any lock or acceptance.
@@ -1181,9 +1182,10 @@ impl Resolved {
         );
         // What the hooks do with the `read` and `write` forbids follows the level and the
         // template (M75-11): `log` at the level `off` under any template but `open`.
-        resolved
-            .modes
-            .insert(Family::Sandbox, mode_of_level_under(level, settings.template));
+        resolved.modes.insert(
+            Family::Sandbox,
+            mode_of_level_under(level, settings.template),
+        );
         resolved
     }
 

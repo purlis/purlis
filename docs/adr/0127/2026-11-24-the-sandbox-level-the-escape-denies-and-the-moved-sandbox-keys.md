@@ -29,7 +29,11 @@ marked **proposed**:
   list a start compiles the sandbox from, so a chat cannot `mv` its plane away and link the old
   path to it. Where a sandbox cannot hold a rename, or at `off`, it is a declared gap (slice 37).
 
+**`context.sandbox` is the level the host applied.** The host records it when it starts a chat
+(`Confines::level`), `ChatFacts` carries it, and a rule reads it as `context.sandbox`. A chat with
+no sandbox is `off` whatever is recorded, and a sandboxed chat with no level recorded is the floor,
+so a chat never claims more confinement than it has.
+
 What this slice leaves in place, for the slices that follow: the legacy readers of `[sandbox]`
 in `sandbox::team` and `enforcement::Settings` still run beside the new reading until slice 13
-and slice 22 retire them, and the app records `context.sandbox` as `floor` for a sandboxed chat
-until the host records the level a start applied.
+and slice 22 retire them.

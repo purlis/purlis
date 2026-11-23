@@ -1227,10 +1227,7 @@ mod the_level_a_start_applied {
     fn context_sandbox_is_the_level_the_host_recorded_for_a_sandboxed_chat() {
         purlis_core::unsteered!();
         let full = merge_under(true, Some(SandboxLevel::Full));
-        assert!(
-            full.ids().contains(&"guards-merge-full-only"),
-            "{full:?}"
-        );
+        assert!(full.ids().contains(&"guards-merge-full-only"), "{full:?}");
         for level in [Some(SandboxLevel::Floor), None] {
             let held = merge_under(true, level);
             assert!(

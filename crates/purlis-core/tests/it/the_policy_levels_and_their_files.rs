@@ -1498,7 +1498,11 @@ fn policy_sandbox_takes_a_level_never_off_log_or_enforce() {
     for level in SandboxLevel::ALL {
         let root = with_settings(&format!("[policy]\nsandbox = \"{}\"\n", level.word()));
         let loaded = levels::load(&sources(root.path()));
-        assert!(loaded.notices.is_empty(), "{level:?}: {:#?}", loaded.notices);
+        assert!(
+            loaded.notices.is_empty(),
+            "{level:?}: {:#?}",
+            loaded.notices
+        );
         assert_eq!(loaded.sandbox_at_least, None, "{level:?}");
     }
     // A mode, a word that is none or a value of another type is no level: the file is broken, so
@@ -1507,9 +1511,17 @@ fn policy_sandbox_takes_a_level_never_off_log_or_enforce() {
         let root = with_settings(&format!("[policy]\nsandbox = {bad}\n"));
         let loaded = levels::load(&sources(root.path()));
         let said = notice(&loaded, "is not one of off, floor or full");
-        assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2), "{bad}");
+        assert_eq!(
+            (said.file.as_str(), said.line),
+            ("charter.toml", 2),
+            "{bad}"
+        );
         assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full), "{bad}");
-        assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Full, "{bad}");
+        assert_eq!(
+            loaded.sandbox_level_for(ANYONE),
+            SandboxLevel::Full,
+            "{bad}"
+        );
     }
 }
 
@@ -1526,7 +1538,11 @@ fn at_level_full_and_floor_hook_side_read_and_write_forbids_enforce() {
             );
             let root = with_settings(&settings);
             let loaded = levels::load(&sources(root.path()));
-            assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Enforce, "{settings}");
+            assert_eq!(
+                loaded.mode_for("sandbox", ANYONE),
+                Mode::Enforce,
+                "{settings}"
+            );
             assert_eq!(
                 purlis_core::enforcement::Settings::from_text(Some(&settings))
                     .mode(purlis_core::enforcement::Family::Sandbox),
@@ -1564,14 +1580,23 @@ fn at_level_off_under_open_hook_side_read_and_write_forbids_are_off() {
 #[test]
 fn at_level_off_under_another_template_hook_side_read_and_write_forbids_log() {
     purlis_core::unsteered!();
-    for template in [Template::Watch, Template::Hold, Template::Team, Template::Strict] {
+    for template in [
+        Template::Watch,
+        Template::Hold,
+        Template::Team,
+        Template::Strict,
+    ] {
         let settings = format!(
             "[policy]\ntemplate = \"{}\"\nsandbox = \"off\"\n",
             template.word()
         );
         let root = with_settings(&settings);
         let loaded = levels::load(&sources(root.path()));
-        assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Off, "{settings}");
+        assert_eq!(
+            loaded.sandbox_level_for(ANYONE),
+            SandboxLevel::Off,
+            "{settings}"
+        );
         assert_eq!(loaded.mode_for("sandbox", ANYONE), Mode::Log, "{settings}");
         assert_eq!(
             purlis_core::enforcement::Settings::from_text(Some(&settings))
@@ -1588,9 +1613,15 @@ fn with_the_sandbox_level_off_network_ports_and_processes_are_reported_not_in_fo
     let all = ["network", "ports", "processes"];
     for (settings, reported) in [
         ("[policy]\ntemplate = \"open\"\n", &all[..]),
-        ("[policy]\ntemplate = \"watch\"\nsandbox = \"off\"\n", &all[..]),
+        (
+            "[policy]\ntemplate = \"watch\"\nsandbox = \"off\"\n",
+            &all[..],
+        ),
         ("[policy]\ntemplate = \"watch\"\n", &[][..]),
-        ("[policy]\ntemplate = \"open\"\nsandbox = \"floor\"\n", &[][..]),
+        (
+            "[policy]\ntemplate = \"open\"\nsandbox = \"floor\"\n",
+            &[][..],
+        ),
         ("[policy]\ntemplate = \"team\"\n", &[][..]),
     ] {
         let root = with_settings(settings);
@@ -1607,9 +1638,8 @@ fn a_sandbox_lock_freezes_the_minimum_level() {
             "[policy]\nsandbox = \"floor\"\n\n[policy.locks]\nfamilies = [\"sandbox\"]\n\n{lower}"
         )
     };
-    let workspace = |level: &str| {
-        project(&format!("[policy.workspace.web]\nsandbox = \"{level}\"\n"))
-    };
+    let workspace =
+        |level: &str| project(&format!("[policy.workspace.web]\nsandbox = \"{level}\"\n"));
     let web = Chat {
         workspace: Some("web"),
         persona: None,
@@ -1646,7 +1676,11 @@ fn sandbox_policy_never_becomes_a_project_lock() {
     let loaded = levels::load(&sources(root.path()));
     let said = notice(&loaded, "has moved");
     assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2));
-    assert!(said.what.contains("lock on the sandbox family"), "{}", said.what);
+    assert!(
+        said.what.contains("lock on the sandbox family"),
+        "{}",
+        said.what
+    );
     // The lock holds: it names its owner, and it freezes the level at full.
     assert!(loaded.lock_on("sandbox", "read").is_some());
     assert_eq!(loaded.sandbox_level_for(ANYONE), SandboxLevel::Full);
@@ -1686,14 +1720,21 @@ fn sandbox_mode_reads_as_the_moved_policy_sandbox() {
         ("[sandbox]\nmode = \"off\"\n", SandboxLevel::Off),
         ("[sandbox]\nmode = \"maybe\"\n", SandboxLevel::Full),
         // The new spelling beside the old wins.
-        ("[sandbox]\nmode = \"on\"\n\n[policy]\nsandbox = \"floor\"\n", SandboxLevel::Floor),
+        (
+            "[sandbox]\nmode = \"on\"\n\n[policy]\nsandbox = \"floor\"\n",
+            SandboxLevel::Floor,
+        ),
     ] {
         let root = with_settings(text);
         let loaded = levels::load(&sources(root.path()));
         assert_eq!(loaded.sandbox_level_for(ANYONE), level, "{text}");
         if text.starts_with("[sandbox]") {
             let said = notice(&loaded, "[sandbox] mode has moved to [policy] sandbox");
-            assert_eq!((said.file.as_str(), said.line), ("charter.toml", 2), "{text}");
+            assert_eq!(
+                (said.file.as_str(), said.line),
+                ("charter.toml", 2),
+                "{text}"
+            );
         }
     }
 }
@@ -1723,10 +1764,7 @@ fn a_rule_naming_an_escape_deny_is_refused_at_load() {
             "forbid (principal, action == Action::\"dial\", resource == Socket::\"com.apple.coreservices.launchservicesd\");",
         ),
     ] {
-        let root = plane(&[(
-            "policy.cedar",
-            &format!("{VERSION}@id(\"{id}\")\n{rule}\n"),
-        )]);
+        let root = plane(&[("policy.cedar", &format!("{VERSION}@id(\"{id}\")\n{rule}\n"))]);
         let loaded = levels::load(&sources(root.path()));
         let said = notice(&loaded, "an escape deny");
         assert_eq!((said.file.as_str(), said.line), ("policy.cedar", 2), "{id}");

@@ -8305,7 +8305,10 @@ impl Chats {
     /// ([`purlis_core::sandbox::Confines::level`]), for the `context.sandbox` its rules read
     /// (M75-11); `None` where [`Self::runs_sandboxed`] is false, so a chat never claims more
     /// confinement than it has.
-    pub fn applied_sandbox_level(&self, session: u32) -> Option<purlis_core::enforcement::SandboxLevel> {
+    pub fn applied_sandbox_level(
+        &self,
+        session: u32,
+    ) -> Option<purlis_core::enforcement::SandboxLevel> {
         use purlis_core::enforcement::SandboxLevel;
         use purlis_core::sandbox::Level;
         if !self.runs_sandboxed(session) {
