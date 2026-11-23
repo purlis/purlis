@@ -557,12 +557,24 @@ fn a_frame_of_the_logins_site_in_another_page_runs_nothing_during_the_login() {
         }
         // The form shows 3 s after the clean load begins: a second inside that, the frame is
         // looked at twice, a second apart.
-        let ticked = std::thread::scope(|scope| {
+        let (ticked, written) = std::thread::scope(|scope| {
             let watch = scope.spawn(|| {
                 std::thread::sleep(std::time::Duration::from_millis(1500));
                 let then = site.sent_count("third.test");
-                std::thread::sleep(std::time::Duration::from_millis(1000));
-                site.sent_count("third.test") - then
+                // The site is cleared by now: the engine's own jar, read straight through
+                // devtools, holds no cookie the frame wrote since (#7429).
+                let mut written = Vec::new();
+                let end = std::time::Instant::now() + std::time::Duration::from_millis(1000);
+                while std::time::Instant::now() < end {
+                    let names = browser
+                        .cookie_names_reaching("fixture.test")
+                        .expect("the engine's cookies are read");
+                    if names.iter().any(|name| name == "earlier") {
+                        written.push(names);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                (site.sent_count("third.test") - then, written)
             });
             let ended = browser
                 .log_in(&in_a_used_browser("clean-late-site.html"), binds())
@@ -570,6 +582,10 @@ fn a_frame_of_the_logins_site_in_another_page_runs_nothing_during_the_login() {
             assert!(ended.outcome.is_ok(), "{top}: {}", ended_as(&ended.outcome));
             watch.join().unwrap()
         });
+        assert!(
+            written.is_empty(),
+            "{top}: the frame wrote a cookie after the site was cleared: {written:?}"
+        );
         assert!(
             ticked <= 1,
             "{top}: the frame ran {ticked} times while the login held it still"

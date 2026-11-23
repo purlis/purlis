@@ -612,6 +612,21 @@ impl Browser {
                         on,
                     )
                     .map_err(wont)?;
+                // The engine's answer says the freeze was sent, not that the renderer has taken
+                // it: a timer already due may still run. A round trip into the page's own thread
+                // comes after the freeze there, so once it answers, no tick of the page is
+                // still to run (#7429). One that doesn't answer is a page not held.
+                let reply = self
+                    .devtools()
+                    .call(
+                        "Runtime.evaluate",
+                        json!({ "expression": "1", "returnByValue": true }),
+                        on,
+                    )
+                    .map_err(wont)?;
+                if reply.get("exceptionDetails").is_some() || reply.get("result").is_none() {
+                    return Err("a page of this browser would not hold still".to_owned());
+                }
                 still.pages.push((page, session));
             }
         }

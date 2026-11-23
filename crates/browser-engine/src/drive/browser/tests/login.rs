@@ -108,6 +108,8 @@ enum Twist {
     PageComesBack,
     /// A page won't hold still (#5272).
     WontHoldStill,
+    /// A page takes the freeze but its thread never answers a round trip after it (#7429).
+    FreezeUnconfirmed,
     /// A page opens as the clean load begins (#5272).
     PopupOnCleanLoad,
     /// The login's page opens a window it can reach, on the login's site, as it loads.
@@ -206,6 +208,14 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                 Some(Err(crate::cdp::CallError::Engine {
                     code: -32000,
                     message: "not now".into(),
+                }))
+            }
+            "Runtime.evaluate"
+                if twist == Twist::FreezeUnconfirmed && p["expression"] == "1" =>
+            {
+                Some(Err(crate::cdp::CallError::Engine {
+                    code: -32000,
+                    message: "not frozen yet".into(),
                 }))
             }
             "Storage.getCookies" if matches!(twist, Twist::HoldsCookies | Twist::CookiesStay) => {
@@ -1548,6 +1558,50 @@ fn a_page_of_its_site_that_comes_back_after_the_clearing_fills_nothing() {
         "{}",
         ended_as(&ended.outcome)
     );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// #7429: the engine's answer to a freeze is not the page being frozen; the clearing waits for a
+/// round trip into the page, after the freeze, to answer.
+#[test]
+fn a_page_is_confirmed_frozen_by_a_round_trip_before_the_site_is_cleared() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::None);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let on_the_page = |method: &str, expression: Option<&str>| {
+        all.iter()
+            .position(|sent| {
+                sent.method == method
+                    && sent.session.as_deref() == Some("S-PAGE-1")
+                    && expression.is_none_or(|e| sent.params["expression"] == e)
+            })
+            .unwrap_or_else(|| panic!("{method}"))
+    };
+    let frozen = on_the_page("Page.setWebLifecycleState", None);
+    let confirmed = on_the_page("Runtime.evaluate", Some("1"));
+    let cleared = all
+        .iter()
+        .position(|sent| sent.method == "Storage.clearDataForOrigin")
+        .expect("cleared");
+    assert!(frozen < confirmed && confirmed < cleared);
+}
+
+/// #7429: a page whose freeze can't be confirmed is not held: nothing is cleared or filled.
+#[test]
+fn a_page_whose_freeze_is_not_confirmed_clears_and_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::FreezeUnconfirmed);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 

@@ -575,6 +575,30 @@ impl Browser {
         self.inner.copy_apart(text)
     }
 
+    /// **For the tests: the names of every cookie the engine holds for `host`** or a parent
+    /// domain of it, read from the engine's own jar and not from a page (#7429).
+    #[doc(hidden)]
+    pub fn cookie_names_reaching(&self, host: &str) -> Result<Vec<String>, String> {
+        let read = self
+            .devtools()
+            .call("Storage.getCookies", serde_json::json!({}), None)
+            .map_err(|why| why.to_string())?;
+        let all = read
+            .get("cookies")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("no cookies in the answer")?;
+        Ok(all
+            .iter()
+            .filter(|cookie| {
+                cookie
+                    .get("domain")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|domain| super::login::reaches(domain, host))
+            })
+            .filter_map(|cookie| cookie.get("name")?.as_str().map(str::to_owned))
+            .collect())
+    }
+
     /// What the engine told of the open DevTools' own page, by method, and which of purlis's
     /// calls on it it refused: for the host's log and the tests, never anything they showed.
     pub fn inspector_told(&self) -> Vec<String> {
