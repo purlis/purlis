@@ -85,7 +85,7 @@ pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
 };
 pub use prepare::{pinned, prepare};
-pub use quarantine::{BaseObjects, FromForge, Quarantine, sweep as sweep_quarantines};
+pub use quarantine::{BaseObjects, FetchLimits, FromForge, Quarantine, sweep as sweep_quarantines};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};
 pub use tag::{InvalidTag, TagName};
 pub use tip::{MOST_BYTES, MOST_FILES, TipChange, TipFiles};
