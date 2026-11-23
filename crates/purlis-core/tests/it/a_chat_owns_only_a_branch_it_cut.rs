@@ -7,11 +7,11 @@
 //! or never fetched). The cut also refuses a name a remote has, as a courtesy.
 
 use crate::support;
-use crate::support::forge_listener::{Answer, World, basic, pkt};
+use crate::support::forge_listener::{ACME_APP_ID, Answer, PROJECT_ID, World, basic, pkt};
 
 use std::path::Path;
 
-use purlis_core::forge::createdbranches;
+use purlis_core::forge::createdbranches::{self, CreatedBranch};
 use purlis_core::piececlaim::{self, Act, Live, Writer};
 use purlis_core::pieces::Who;
 use purlis_core::sandbox::{self, Compiled, Level, Machine, Os, grant};
@@ -19,7 +19,8 @@ use purlis_core::worktree::{self, Located, Refusal};
 
 const CHAT: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2A";
 const OTHER: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2B";
-const PROJECT: &str = "/work/project";
+const PROJECT: &str = PROJECT_ID;
+const REPO_ID: u64 = ACME_APP_ID;
 const HOST: &str = "github.com";
 const REPO: &str = "acme/app";
 
@@ -71,7 +72,17 @@ fn a_cut_may_not_take_the_name_of_a_branch_a_remote_has() {
 }
 
 fn own(config: &Path, chat: &str) -> Vec<String> {
-    createdbranches::created_by(config, Path::new(PROJECT), chat, HOST, REPO)
+    createdbranches::created_by(config, PROJECT, chat, HOST, REPO_ID)
+}
+
+fn made(branch: &str) -> CreatedBranch {
+    CreatedBranch {
+        host: HOST.to_owned(),
+        repo: REPO.to_owned(),
+        repo_id: Some(REPO_ID),
+        branch: branch.to_owned(),
+        tip: "1".repeat(40),
+    }
 }
 
 fn located(f: &support::Fixture, piece: &str) -> Located {
@@ -162,9 +173,9 @@ fn a_branch_recorded_as_created_is_its_creating_chats_own_and_no_other_chats() {
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
-        Path::new(PROJECT),
+        PROJECT,
         CHAT,
-        &[(HOST.to_owned(), REPO.to_owned(), "task/one".to_owned())],
+        &[made("task/one")],
     )
     .unwrap();
 
@@ -174,34 +185,34 @@ fn a_branch_recorded_as_created_is_its_creating_chats_own_and_no_other_chats() {
 }
 
 #[test]
-fn another_projects_chat_with_the_same_id_and_an_old_line_with_no_project_own_nothing() {
+fn another_projects_chat_with_the_same_id_and_an_old_line_with_no_project_id_own_nothing() {
     purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
-        Path::new(PROJECT),
+        PROJECT,
         CHAT,
-        &[(HOST.to_owned(), REPO.to_owned(), "task/one".to_owned())],
+        &[made("task/one")],
     )
     .unwrap();
     let file = createdbranches::file_in(config.path());
     let mut text = std::fs::read_to_string(&file).unwrap();
     text.push_str(&format!(
         "{}\n",
-        serde_json::json!({"chat": CHAT, "host": HOST, "repo": REPO, "branch": "task/old"})
+        serde_json::json!({"project": "/work/project", "chat": CHAT, "host": HOST, "repo": REPO, "branch": "task/old"})
     ));
     std::fs::write(&file, text).unwrap();
 
     assert_eq!(own(config.path(), CHAT), ["task/one"]);
     let elsewhere =
-        createdbranches::created_by(config.path(), Path::new("/work/other"), CHAT, HOST, REPO);
+        createdbranches::created_by(config.path(), "01J9ZQ3V5N8X4T2K7M6P0R1S2Q", CHAT, HOST, REPO_ID);
     assert!(elsewhere.is_empty());
 }
 
 fn record_line(chat: &str, branch: &str) -> String {
     format!(
         "{}\n",
-        serde_json::json!({"project": PROJECT, "chat": chat, "host": HOST, "repo": REPO, "branch": branch})
+        serde_json::json!({"project_id": PROJECT, "chat": chat, "host": HOST, "repo": REPO, "repo_id": REPO_ID, "branch": branch})
     )
 }
 
@@ -211,9 +222,9 @@ fn a_line_forged_for_another_chats_id_is_not_own_for_this_chat() {
     let config = tempfile::tempdir().unwrap();
     createdbranches::record(
         config.path(),
-        Path::new(PROJECT),
+        PROJECT,
         OTHER,
-        &[(HOST.to_owned(), REPO.to_owned(), "task/theirs".to_owned())],
+        &[made("task/theirs")],
     )
     .unwrap();
     // A line a chat appended by hand, naming the other chat, in the file the route reads.
@@ -323,4 +334,92 @@ fn a_create_that_differs_from_a_branch_the_forge_has_only_in_case_is_refused() {
     assert_eq!(push_through(&w, "Fix", &"0".repeat(40), ok), 403);
     assert!(w.fake.requests().is_empty(), "never sent");
     assert!(!createdbranches::file_in(config.path()).exists());
+}
+
+/// The forge's answer to a push that makes `branch`.
+fn accepted(branch: &str) -> Answer {
+    Answer::ok(&format!(
+        "{}{}0000",
+        pkt("unpack ok\n"),
+        pkt(&format!("ok refs/heads/{branch}\n"))
+    ))
+}
+
+#[test]
+fn the_normal_case_a_chat_creates_a_branch_through_the_route_and_owns_it_next_run() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    assert_eq!(
+        push_through(&w, "mine", &"0".repeat(40), accepted("mine")),
+        200
+    );
+
+    assert_eq!(own(config.path(), "chat-listener"), ["mine"]);
+    // The line names the forge's repo id and the tip the push made the branch at.
+    let text = std::fs::read_to_string(createdbranches::file_in(config.path())).unwrap();
+    let line: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(line["repo_id"], REPO_ID);
+    assert_eq!(line["project_id"], PROJECT);
+    assert_eq!(line["tip"], "1".repeat(40));
+}
+
+#[test]
+fn a_repo_made_again_at_the_same_path_owns_nothing_the_old_repo_recorded() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    push_through(&w, "mine", &"0".repeat(40), accepted("mine"));
+    assert_eq!(own(config.path(), "chat-listener"), ["mine"]);
+
+    // Same host and path, another forge id.
+    let again = createdbranches::created_by(
+        config.path(),
+        PROJECT,
+        "chat-listener",
+        HOST,
+        REPO_ID + 1,
+    );
+    assert!(again.is_empty());
+}
+
+#[test]
+fn a_different_project_at_the_same_path_owns_nothing_the_first_recorded() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    push_through(&w, "mine", &"0".repeat(40), accepted("mine"));
+
+    // Another project (another stable id), whatever path it sits at, with the same chat id.
+    let other = createdbranches::created_by(
+        config.path(),
+        "01J9ZQ3V5N8X4T2K7M6P0R1S2Q",
+        "chat-listener",
+        HOST,
+        REPO_ID,
+    );
+    assert!(other.is_empty());
+}
+
+#[test]
+fn a_branch_deleted_and_made_again_by_someone_else_is_not_the_chats() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    push_through(&w, "mine", &"0".repeat(40), accepted("mine"));
+    assert_eq!(own(config.path(), "chat-listener"), ["mine"]);
+
+    // The forge's next advertisement for a push does not list `mine`: it was deleted. A
+    // colleague makes the name again outside the route; the route never sees that.
+    w.proxy.note_advertised(&w.chat, HOST, REPO, vec!["main".into()]);
+    assert!(own(config.path(), "chat-listener").is_empty());
+
+    // The chat's own later update of the name is refused, though the forge has it again.
+    w.proxy
+        .note_advertised(&w.chat, HOST, REPO, vec!["main".into(), "mine".into()]);
+    assert_eq!(
+        push_through(&w, "mine", &"2".repeat(40), accepted("mine")),
+        403
+    );
+    assert!(own(config.path(), "chat-listener").is_empty());
 }

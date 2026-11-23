@@ -62,6 +62,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use purlis_core::forge::createdbranches::CreatedBranch;
 use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{
     AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
@@ -191,9 +192,11 @@ pub trait Recorded: Send + Sync {
     fn own_branches(&self, _project: &Path, _chat: &str, _repo: &AllowedRepo) -> Vec<String> {
         Vec::new()
     }
-    /// The forge confirmed that `chat` made these `(host, repo path, branch)` branches: keep that
-    /// where no chat can write, keyed by the project and the chat.
-    fn record_created(&self, _project: &Path, _chat: &str, _created: &[(String, String, String)]) {}
+    /// The forge confirmed that `chat` made these branches: keep that where no chat can write,
+    /// keyed by the project's stable id, the chat and the forge's id of the repo.
+    fn record_created(&self, _project: &Path, _chat: &str, _created: &[CreatedBranch]) {}
+    /// The forge no longer lists these recorded branches: their record ends.
+    fn forget_created(&self, _gone: &[CreatedBranch]) {}
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -691,9 +694,12 @@ impl ForgeRoutes {
             let recorded = self.seams.recorded.clone();
             let chat = chat.to_owned();
             let project = project.to_owned();
-            proxy = proxy.with_created(Box::new(move |created| {
-                recorded.record_created(&project, &chat, created);
-            }));
+            let forgets = recorded.clone();
+            proxy = proxy
+                .with_created(Box::new(move |created| {
+                    recorded.record_created(&project, &chat, created);
+                }))
+                .with_gone(Box::new(move |gone| forgets.forget_created(gone)));
         }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.

@@ -125,9 +125,9 @@ impl Recorded for FakeRecorded {
             .map(|(_, _, branch)| branch.clone())
             .collect()
     }
-    fn record_created(&self, project: &Path, chat: &str, created: &[(String, String, String)]) {
-        for (_, _, branch) in created {
-            lock(&self.cut).push((project.to_owned(), chat.to_owned(), branch.clone()));
+    fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
+        for made in created {
+            lock(&self.cut).push((project.to_owned(), chat.to_owned(), made.branch.clone()));
         }
     }
     fn repos(&self, project: &Path) -> Vec<AllowedRepo> {

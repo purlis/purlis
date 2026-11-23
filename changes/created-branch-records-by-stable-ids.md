@@ -1,0 +1,3 @@
+### Security
+
+- **A chat's right to force-push a branch it created through the forge route now follows stable identities, and ends with the branch.** The record of created branches is keyed by the plane's project id and the forge's own id of the repo (GitHub's numeric id, GitLab's project id), no longer by paths a person can reuse. A repo deleted and created again at the same path, or another project placed at the same project path, owns none of the old records. A branch the forge no longer lists is dropped from the record, so a name someone re-creates is not the original chat's. Records written before this (no project id or repo id) are owned by nobody; the person pushes those branches (#7363).

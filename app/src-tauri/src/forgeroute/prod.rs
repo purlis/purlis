@@ -21,6 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use purlis_core::forge::accounts;
+use purlis_core::forge::createdbranches::CreatedBranch;
 use purlis_core::forge::confirmed::{self, Admission, AsThePerson, ConfirmedRepo, Serving};
 use purlis_core::forge::credential::chatroute::ChatRoute;
 use purlis_core::forge::proxy::listener::PushGate;
@@ -187,23 +188,45 @@ impl Recorded for ConfirmedRecorded {
     }
 
     /// The branches of `repo` that `chat` created through the route: the app's own record under
-    /// the machine config root ([`purlis_core::forge::createdbranches`]).
+    /// the machine config root ([`purlis_core::forge::createdbranches`]), keyed by the project's
+    /// stable id and the forge's id of the repo. A project with no stored id, or a repo whose id
+    /// the route does not know, owns none.
     fn own_branches(&self, project: &Path, chat: &str, repo: &AllowedRepo) -> Vec<String> {
+        let (Some(project_id), Some(repo_id)) = (
+            purlis_core::scaffold::planefile::project_id(project),
+            repo.forge_id(),
+        ) else {
+            return Vec::new();
+        };
         purlis_core::forge::createdbranches::created_by(
             &self.config_root,
-            project,
+            &project_id,
             chat,
             repo.host(),
-            repo.path(),
+            repo_id,
         )
     }
 
-    fn record_created(&self, project: &Path, chat: &str, created: &[(String, String, String)]) {
-        if let Err(why) =
-            purlis_core::forge::createdbranches::record(&self.config_root, project, chat, created)
-        {
+    fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
+        let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
+            tracing::warn!("purlis: a branch a chat created was not recorded: no project id");
+            return;
+        };
+        if let Err(why) = purlis_core::forge::createdbranches::record(
+            &self.config_root,
+            &project_id,
+            chat,
+            created,
+        ) {
             // Unrecorded, the route refuses every later update to the branch: safe, and said here.
             tracing::warn!("purlis: a branch a chat created was not recorded ({why})");
+        }
+    }
+
+    fn forget_created(&self, gone: &[CreatedBranch]) {
+        if let Err(why) = purlis_core::forge::createdbranches::forget(&self.config_root, gone) {
+            // Still recorded, but the in-memory ownership is already dropped for this run.
+            tracing::warn!("purlis: a branch gone from the forge was not forgotten ({why})");
         }
     }
 

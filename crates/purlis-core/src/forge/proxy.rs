@@ -96,6 +96,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::enforcement::Mode;
+use crate::forge::createdbranches::CreatedBranch;
 use crate::forge::{mergestance, pin};
 use crate::secrets::keyring::Secret;
 
@@ -247,7 +248,7 @@ pub struct Forwarded {
     /// re-serialisation of what was checked. `headers` already carry its `Content-Length`.
     pub body: Option<Vec<u8>>,
     /// Branches a push makes, for [`ForgeProxy::confirm_push`].
-    pub(crate) created: Vec<(String, String, String)>,
+    pub(crate) created: Vec<CreatedBranch>,
     /// What the answer must never hold: the real credential, as it is sent and in the other forms
     /// a forge or a proxy may give it back. The listener reads the answer for these; memory only,
     /// and zeroed with the request.
@@ -336,10 +337,15 @@ pub struct ForgeProxy {
     merges: Arc<dyn mergestance::MergeStance>,
     /// Told the branches the forge confirmed a push made: the app's own record of them.
     created: Option<CreatedSink>,
+    gone: Option<GoneSink>,
 }
 
 /// What is told the `(host, repo path, branch)` triples a confirmed push made.
-pub type CreatedSink = Box<dyn Fn(&[(String, String, String)]) + Send + Sync>;
+pub type CreatedSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
+
+/// Told which recorded branches the forge no longer lists ([`ForgeProxy::note_advertised`]), so
+/// their record ends ([`crate::forge::createdbranches::forget`]).
+pub type GoneSink = Box<dyn Fn(&[CreatedBranch]) + Send + Sync>;
 
 impl ForgeProxy {
     pub fn new(credentials: Box<dyn CredentialSource>, objects: Box<dyn ObjectRepo>) -> Self {
@@ -353,6 +359,7 @@ impl ForgeProxy {
             pin: Arc::new(pin::NoPin),
             merges: Arc::new(mergestance::HoldMerges),
             created: None,
+            gone: None,
         }
     }
 
@@ -371,6 +378,13 @@ impl ForgeProxy {
     #[must_use]
     pub fn with_created(mut self, sink: CreatedSink) -> Self {
         self.created = Some(sink);
+        self
+    }
+
+    /// Where a recorded branch the forge no longer lists is told, so its record ends.
+    #[must_use]
+    pub fn with_gone(mut self, sink: GoneSink) -> Self {
+        self.gone = Some(sink);
         self
     }
 
@@ -468,7 +482,12 @@ impl ForgeProxy {
             .get(chat)
             .cloned();
         if let Some(policy) = policy {
-            policy.note_advertised(host, repo_path, branches);
+            let gone = policy.note_advertised(host, repo_path, branches);
+            if let Some(sink) = &self.gone
+                && !gone.is_empty()
+            {
+                sink(&gone);
+            }
         }
     }
 

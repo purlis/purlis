@@ -123,6 +123,11 @@ pub struct World {
     pub wiring: Wiring,
 }
 
+/// The plane's project id the recording world's chat belongs to.
+pub const PROJECT_ID: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2P";
+/// The forge's id of `acme/app` in [`World`].
+pub const ACME_APP_ID: u64 = 41;
+
 impl World {
     /// One chat with a repo on github.com and one on gitlab.com.
     pub fn new() -> Self {
@@ -142,7 +147,8 @@ impl World {
         vec![
             AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "main")
                 .unwrap()
-                .with_node_id("R_acme_app"),
+                .with_node_id("R_acme_app")
+                .with_forge_id(ForgeRepoId::for_a_test(41)),
             AllowedRepo::new(Kind::GitLab, "gitlab.com", 443, "group/proj", "main")
                 .unwrap()
                 .with_forge_id(ForgeRepoId::for_a_test(42)),
@@ -190,10 +196,15 @@ impl World {
             proxy = proxy.with_merge_stance(stance);
         }
         if let Some(config) = record_to {
+            let forgets = config.clone();
+            proxy = proxy.with_gone(Box::new(move |gone| {
+                purlis_core::forge::createdbranches::forget(&forgets, gone)
+                    .expect("the record ends");
+            }));
             proxy = proxy.with_created(Box::new(move |created| {
                 purlis_core::forge::createdbranches::record(
                     &config,
-                    std::path::Path::new("/work/project"),
+                    PROJECT_ID,
                     "chat-listener",
                     created,
                 )
