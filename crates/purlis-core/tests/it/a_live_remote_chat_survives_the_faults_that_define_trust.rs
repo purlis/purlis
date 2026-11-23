@@ -340,10 +340,13 @@ impl Rig {
         .await
     }
 
-    /// Puts fault `args` on the machine; the clock of the outage starts here.
+    /// Puts fault `args` on the machine; the clock of the outage starts here, **before** the verb
+    /// is sent: `restart-sshd` kills the sessions first, so the link says it is down while the
+    /// verb is still running, and a mark taken after it returns sits past that `Down`.
     fn fault(&self, args: &[&str]) -> Duration {
+        let at = self.began.elapsed();
         fault(&self.machine, args);
-        self.began.elapsed()
+        at
     }
 
     /// Takes every fault off; the clock of the restore starts here.
@@ -805,24 +808,28 @@ fn a_pool_forgotten_during_a_chat_ends_it_as_pool_forgotten_and_lists_what_is_le
 }
 
 #[test]
-fn a_15_second_slow_link_still_links_inside_the_budgets_and_the_chat_works() {
+fn a_15_second_slow_link_keeps_a_live_link_up_inside_the_budgets_and_the_chat_works() {
     purlis_core::unsteered!();
     let Some(rig) = Rig::up() else { return };
     let rt = runtime();
     rt.block_on(async {
-        let began = Instant::now();
-        rig.fault(&["slow", "15"]);
-        // Every round trip costs 15 s each way, so the first link may take a minute or two: the
-        // budget is the 3-minute limit.
-        let kept = rig.keep_within(START_LIMIT).await;
-        assert!(
-            began.elapsed() <= START_LIMIT,
-            "the link took {:?}",
-            began.elapsed()
-        );
+        // The budgets are the product's: a link is made inside `HANDSHAKE_TIMEOUT` (10 s, over
+        // ssh's own sign-in and the three exchanges after it) and a call answers inside 30 s.
+        // So a link is made before the slowness, as a link is made in a window that was fine
+        // a moment ago; beyond the budgets is case 9's (`a_link_slower_than_the_budgets_...`).
+        let kept = rig.keep().await;
         let client = kept.client().expect("linked");
+        // 7 s a packet is a 14 s round trip, the whole-second verb's nearest to 15 s without
+        // passing it: a ping or a call is answered after 14 s, inside the 30 s deadline and the
+        // 30 s a call may take, so the link is never told down.
+        let fault_at = rig.fault(&["slow", "7"]);
         let chat = a_chat(&rig, &client, "slow15").await;
         assert_eq!(running(&client).await, vec![chat]);
+        let told = kept.told();
+        assert!(
+            first_down_after(&told, fault_at).is_none(),
+            "a slow link is not a down one: {told:?}"
+        );
         kept.task.abort();
     });
     rt.shutdown_timeout(Duration::from_secs(5));
