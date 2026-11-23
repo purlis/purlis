@@ -770,6 +770,10 @@ pub(crate) struct Scenario {
     /// Each chat's own transcript file, by chat id: a step name is the scenario's, so two chats
     /// playing the same step name keep their results apart.
     transcripts: Mutex<Vec<(u32, std::path::PathBuf)>>,
+    /// The own folders of the tasks it started ([`Self::starts_as_task`]): a task works in its
+    /// branch folder and the wrap lets it write only there, so its transcript, state and
+    /// tool-group file are in one of its own, not in the project's.
+    task_owns: Mutex<Vec<PathBuf>>,
     /// How many chats it has started, the canary's included: a log with no event after one is
     /// read from the wrong place.
     started: std::sync::atomic::AtomicUsize,
@@ -964,6 +968,7 @@ impl Scenario {
             window: Some(window),
             chats: Mutex::default(),
             transcripts: Mutex::default(),
+            task_owns: Mutex::default(),
             started: std::sync::atomic::AtomicUsize::new(0),
             panes: Mutex::default(),
             launched: Mutex::default(),
@@ -1174,16 +1179,21 @@ pub(crate) fn of_the_quit(
 /// The file each chat of a scenario's fake harness writes the process group of every tool
 /// command it starts to, one per line (`FAKE_HARNESS_GROUPS`): a tool's command runs in a group
 /// of its own, which no chat's process is in.
-fn tool_groups_file(root: &Path) -> PathBuf {
-    own_folder(root).join("tool-groups")
+fn tool_groups_file(own: &Path) -> PathBuf {
+    own.join("tool-groups")
 }
 
-/// The process group of every tool command the chats of the project at `root` started.
-fn tool_groups(root: &Path) -> Vec<u32> {
-    std::fs::read_to_string(tool_groups_file(root))
-        .unwrap_or_default()
-        .lines()
-        .filter_map(|line| line.trim().parse().ok())
+/// The process group of every tool command the chats whose own folders are `own_folders` started.
+fn tool_groups(own_folders: &[PathBuf]) -> Vec<u32> {
+    own_folders
+        .iter()
+        .flat_map(|own| {
+            std::fs::read_to_string(tool_groups_file(own))
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| line.trim().parse().ok())
+                .collect::<Vec<u32>>()
+        })
         .collect()
 }
 
@@ -1309,6 +1319,7 @@ impl Scenario {
     ) -> u32 {
         self.begins(
             script,
+            self.own_folder(),
             |name| purlis_core::start::Start {
                 profile: Some(self.profile()),
                 persona: self.persona.clone(),
@@ -1380,8 +1391,12 @@ impl Scenario {
             removed: None,
         };
         let folder = cut.path.clone();
+        // Inside the branch folder, the one place the task's wrap lets it write (its tmp aside).
+        let own = folder.join(".scenario");
+        self.task_owns.lock().expect("task owns").push(own.clone());
         let chat = self.begins(
             script,
+            own,
             |chat_name| purlis_core::start::Start {
                 profile: Some(self.profile()),
                 persona: Some(persona),
@@ -1440,10 +1455,12 @@ impl Scenario {
 
     /// **The one start every chat of a scenario goes through**: `start` composes the chat's
     /// [`purlis_core::start::Start`] from the name it is given; `handed` is a task's lineage,
-    /// `None` for a chat the person started. Answers the chat's number.
+    /// `None` for a chat the person started. `own` is the folder its transcript, state and
+    /// tool groups are written in, which the chat's wrap lets it write. Answers the chat's number.
     fn begins(
         &self,
         script: &serde_json::Value,
+        own: PathBuf,
         start: impl FnOnce(&str) -> purlis_core::start::Start,
         handed: Option<Handed>,
     ) -> u32 {
@@ -1461,7 +1478,6 @@ impl Scenario {
         });
         let number = self.chats.lock().expect("chats").len() + 1;
         let at = self.script(&format!("chat-{number}"), script);
-        let own = own_folder(&self.root);
         std::fs::create_dir_all(&own).expect("the chat's own folder");
         let transcript = own.join(format!(
             "{}-{}.jsonl",
@@ -1487,7 +1503,7 @@ impl Scenario {
                 ("FAKE_HARNESS_PLACES", places.to_string()),
                 (
                     "FAKE_HARNESS_GROUPS",
-                    tool_groups_file(&self.root).display().to_string(),
+                    tool_groups_file(&own).display().to_string(),
                 ),
             ]
             .map(|(k, v)| (k.to_owned(), v)),
@@ -1665,6 +1681,18 @@ impl Scenario {
         let id = self.launches(&name, &ready, &transcript, None);
         self.note_running();
         id
+    }
+
+    /// The project's own folder, then each task's: where chats write what the harness keeps.
+    fn own_folders(&self) -> Vec<PathBuf> {
+        std::iter::once(own_folder(&self.root))
+            .chain(self.task_owns.lock().expect("task owns").iter().cloned())
+            .collect()
+    }
+
+    /// The project's own folder, where a chat working in the project writes.
+    fn own_folder(&self) -> PathBuf {
+        own_folder(&self.root)
     }
 
     /// Where the next chat's transcript is written: outside the project, in the run's scripts
@@ -2088,7 +2116,9 @@ impl Drop for Scenario {
             }
         }
         // A tool command whose group never reached the file is said, never skipped (#7197).
-        if let Some(lost) = tool_groups_lost(&self.transcript(), tool_groups(&self.root).len()) {
+        if let Some(lost) =
+            tool_groups_lost(&self.transcript(), tool_groups(&self.own_folders()).len())
+        {
             left.unwatched.push(lost);
         }
         // Read while they run: a group the quit left can be #7103's only if it is one of these.
@@ -2098,7 +2128,7 @@ impl Drop for Scenario {
             .iter()
             .filter_map(|(_, group)| *group)
             .chain(process_groups(&left.pids))
-            .chain(tool_groups(&self.root))
+            .chain(tool_groups(&self.own_folders()))
         {
             if group > 1 && Some(group) != own && !groups.contains(&group) {
                 groups.push(group);
