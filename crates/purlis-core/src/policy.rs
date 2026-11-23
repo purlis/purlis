@@ -846,7 +846,7 @@ pub fn load(files: &[File<'_>]) -> Result<Policy, Vec<Problem>> {
     // A rule on a sandbox action that names `attended` or `harness_mode`, uses `like` or leaves
     // the residual subset is refused here, naming it (M75-22, spec §11.2, §11.3): a fixed
     // profile cannot follow any of them.
-    let named = policy.sandbox_problems();
+    let named = policy.sandbox_problems_cached();
     if named.is_empty() {
         Ok(policy)
     } else {

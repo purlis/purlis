@@ -17,13 +17,16 @@ what building them found.
   admitted as `E` for the same reason: the shipped default's `sandbox-secret-stores` names one.
 - **Refused at load:** a rule on a sandbox action (one that names `read`, `write`, the
   `sandbox` family, or no action) that names `context.attended` or `context.harness_mode`, uses
-  `like`, or leaves the residual subset (`Policy::sandbox_problems`, run by `load`, so `policy
-  check` too). A fixed profile cannot follow them, and a hook fallback would leave shell commands
+  `like`, or leaves the residual subset (`Policy::sandbox_problems`, run where a policy is
+  assembled, `levels::load_with` and `policy::load`, and cached per set of sandbox rules, since it
+  is some 24 compiles; a refused rule is a load Notice and the project reads as strict, under the
+  full sandbox) A fixed profile cannot follow them, and a hook fallback would leave shell commands
   unguarded. The residual check compiles for each sandbox level, with a device id and without,
   at a shallow and a deep chain, and for each workspace and persona the rules name; a rule that
-  branches on another constant is caught by the start's own refusal. A `Path` literal in such a
-  rule must be spelt normally (absolute, no `.`, `..`, doubled or trailing slash): the hook's
-  paths are normalised, so another spelling would match nowhere there and be held in the profile.
+  branches on another constant is caught by the start's own refusal. A `Path` literal in any
+  rule, on any action that takes a path (`read`, `write`, `expose`, `propose`, `upload`,
+  `download`), must be spelt normally (absolute, no `.`, `..`, doubled or trailing slash): paths
+  are normalised, so another spelling would match nowhere there and be held in the profile.
 - **`@ask` on a Path** compiles to a deny in the profile plus a Block, which the person's Allow
   lifts.
 - **One path resolver** (`policy::resolver`) serves the compile and the live authorizer

@@ -859,6 +859,85 @@ impl Policy {
         problems
     }
 
+    /// [`Self::sandbox_problems`], remembered per set of sandbox rules: the check is about 24 or
+    /// more compiles, and `load` runs on every decision's version, so a rule set already checked
+    /// answers from the cache. The key is each sandbox rule's place and text.
+    pub(super) fn sandbox_problems_cached(&self) -> Vec<Problem> {
+        use std::hash::{Hash, Hasher};
+        use std::sync::{Mutex, OnceLock};
+        static CHECKED: OnceLock<Mutex<std::collections::HashMap<u64, Vec<Problem>>>> =
+            OnceLock::new();
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for rule in self
+            .rules
+            .iter()
+            .filter(|rule| rule.applies_to_the_sandbox())
+        {
+            (&rule.id, &rule.file, rule.line).hash(&mut hasher);
+            rule.policy
+                .to_json()
+                .map_or_else(|_| String::new(), |json| json.to_string())
+                .hash(&mut hasher);
+        }
+        let key = hasher.finish();
+        let cache = CHECKED.get_or_init(Default::default);
+        if let Some(found) = cache.lock().ok().and_then(|held| held.get(&key).cloned()) {
+            return found;
+        }
+        let problems = self.sandbox_problems();
+        if let Ok(mut held) = cache.lock() {
+            held.insert(key, problems.clone());
+        }
+        problems
+    }
+
+    /// **What load refuses of a `Path` literal** on any action that takes one (`read`, `write`,
+    /// `expose`, `propose`, `upload`, `download`): one that is relative, or not in its normal form
+    /// (`.`, `..`, `//`, a trailing `/`). The resolver reads a path as its normal form, so a
+    /// literal spelt another way would name a different path from the one asked about. Names the
+    /// rule.
+    pub(super) fn path_literal_problems(&self) -> Vec<Problem> {
+        fn literals(value: &serde_json::Value, found: &mut Vec<String>) {
+            match value {
+                serde_json::Value::Object(map) => {
+                    if let (
+                        Some(serde_json::Value::String(ty)),
+                        Some(serde_json::Value::String(id)),
+                    ) = (map.get("type"), map.get("id"))
+                        && ty == "Path"
+                    {
+                        found.push(id.clone());
+                    }
+                    map.values().for_each(|v| literals(v, found));
+                }
+                serde_json::Value::Array(items) => items.iter().for_each(|v| literals(v, found)),
+                _ => {}
+            }
+        }
+        let mut problems = Vec::new();
+        for rule in &self.rules {
+            let Ok(json) = rule.policy.to_json() else {
+                continue;
+            };
+            let mut found = Vec::new();
+            literals(&json, &mut found);
+            for id in found {
+                if resolver::normalise(&id).as_deref() != Some(id.as_str()) {
+                    problems.push(Problem {
+                        file: rule.file.clone(),
+                        line: rule.line,
+                        rule: Some(rule.id.clone()),
+                        what: format!(
+                            "the path literal \"{id}\" is not an absolute, normal path (no `.`, \
+                             `..`, `//` or trailing `/`): a rule names a path as the policy reads it"
+                        ),
+                    });
+                }
+            }
+        }
+        problems
+    }
+
     /// The workspaces and personas the sandbox rules name outright, sorted and each once.
     fn named_workspaces_and_personas(&self) -> (Vec<String>, Vec<String>) {
         let found = std::cell::RefCell::new((

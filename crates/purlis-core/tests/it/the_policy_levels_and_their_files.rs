@@ -1418,3 +1418,82 @@ fn a_project_cannot_replace_a_rule_the_organisation_names_in_its_rule_modes() {
     });
     assert!(merge(&loaded).allows(), "{:?}", merge(&loaded));
 }
+
+/// The project's `policy.cedar` as `text`, loaded as the host loads a version.
+fn load_rules(text: &str) -> Loaded {
+    let rules = format!("{VERSION}{text}");
+    levels::load_held(
+        &sources(Path::new("/nonexistent-plane")),
+        &levels::Held {
+            settings: None,
+            rules: Some(&rules),
+            local: None,
+            shipped: None,
+        },
+    )
+}
+
+#[test]
+fn a_sandbox_rule_outside_the_subset_is_refused_at_load_under_the_full_sandbox() {
+    purlis_core::unsteered!();
+    let loaded = load_rules(
+        "@id(\"sandbox-web-only\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource) when { \
+         principal.workspace == Workspace::\"web\" && resource in Workspace::\"api\" \
+         && resource in Path::\"/plane/x\" };\n",
+    );
+    assert!(
+        loaded
+            .notices
+            .iter()
+            .any(|n| n.rules.iter().any(|r| r.id == "sandbox-web-only")),
+        "{:?}",
+        loaded.notices
+    );
+    assert_eq!(loaded.sandbox_at_least, Some(SandboxLevel::Full));
+    assert!(loaded.policy.rule("sandbox-web-only").is_none());
+}
+
+#[test]
+fn a_path_literal_not_spelt_normally_is_refused_at_load_on_every_action_that_takes_a_path() {
+    purlis_core::unsteered!();
+    for (action, family) in [
+        ("read", "sandbox"),
+        ("write", "sandbox"),
+        ("expose", "guards-credential"),
+        ("propose", "guards-plane"),
+        ("upload", "browser"),
+        ("download", "browser"),
+    ] {
+        for literal in ["/plane/a/../b", "relative/path", "/plane/a/"] {
+            let id = format!("{family}-dotted");
+            let loaded = load_rules(&format!(
+                "@id(\"{id}\") @level(\"project\")\n\
+                 forbid (principal, action == Action::\"{action}\", resource) \
+                 when {{ resource == Path::\"{literal}\" }};\n"
+            ));
+            let said = notice(&loaded, "path literal");
+            assert_eq!(
+                said.rules.first().map(|r| r.id.as_str()),
+                Some(id.as_str()),
+                "{action} {literal}"
+            );
+            assert!(
+                loaded.policy.rule(&id).is_none(),
+                "{action} {literal}: the rule is refused"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_normal_absolute_path_literal_loads_clean() {
+    purlis_core::unsteered!();
+    let loaded = load_rules(
+        "@id(\"sandbox-normal\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource) \
+         when { resource == Path::\"/plane/a/b\" };\n",
+    );
+    assert!(loaded.notices.is_empty(), "{:?}", loaded.notices);
+    assert!(loaded.policy.rule("sandbox-normal").is_some());
+}

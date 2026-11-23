@@ -186,10 +186,12 @@ pub fn workspace_folder(layout: &Layout, workspace: &str) -> String {
 
 /// A named set's member, as a folder: absolute, or relative to the plane's root.
 pub fn member_folder(layout: &Layout, member: &str) -> Option<String> {
-    let member = member.trim_end_matches('/');
+    // Absolute first: trimming `"/"` would leave an empty, relative member. `normalise` already
+    // drops a trailing slash.
     if member.starts_with('/') {
         normalise(member)
     } else {
+        let member = member.trim_end_matches('/');
         normalise(&format!("{}/{member}", layout.root.trim_end_matches('/')))
     }
 }

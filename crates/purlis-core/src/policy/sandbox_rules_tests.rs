@@ -240,6 +240,16 @@ fn generated_path() -> impl Strategy<Value = String> {
         .prop_map(|(root, parts)| format!("/plane/{root}/{}", parts.join("/")))
 }
 
+/// A path that may also lie outside the plane's root, where only a rule on the root of the
+/// filesystem or on the path itself reaches it.
+fn generated_path_anywhere() -> impl Strategy<Value = String> {
+    prop_oneof![
+        4 => generated_path(),
+        1 => prop::collection::vec(prop::sample::select(vec!["elsewhere", "x", "etc"]), 1..4)
+            .prop_map(|parts| format!("/{}", parts.join("/"))),
+    ]
+}
+
 /// A chat to compile for: its workspace, persona and device, and how deep it is.
 fn generated_chat() -> impl Strategy<Value = Chat<'static>> {
     (
@@ -264,6 +274,16 @@ fn generated_chat() -> impl Strategy<Value = Chat<'static>> {
 fn over_generated_policies(
     check: impl Fn(&Policy, &Chat<'_>, &Compiled, &[String], &str) -> Result<(), TestCaseError>,
 ) {
+    over_generated_policies_from(true, check);
+}
+
+/// [`over_generated_policies`] with or without the shipped default's catch-all permit under the
+/// generated rules: without it the policy permits only what a generated permit does, so
+/// `allowed()` is what the profile holds, not the whole tree less the forbids.
+fn over_generated_policies_from(
+    with_shipped_default: bool,
+    check: impl Fn(&Policy, &Chat<'_>, &Compiled, &[String], &str) -> Result<(), TestCaseError>,
+) {
     for seed in [1u8, 7, 42] {
         let mut runner = TestRunner::new_with_rng(
             Config {
@@ -275,7 +295,7 @@ fn over_generated_policies(
         );
         let strategy = (
             prop::collection::vec(rule_spec(), 0..6),
-            prop::collection::vec(generated_path(), 1..10),
+            prop::collection::vec(generated_path_anywhere(), 1..10),
             generated_chat(),
         );
         runner
@@ -283,10 +303,12 @@ fn over_generated_policies(
                 let text = text_of(&specs);
                 // Out of the subset (a negation, an `unless`, a literal not spelt normally, a
                 // second condition): refused at load, naming a rule of this policy.
-                let policy = match load(&[
-                    File::shipped_default(),
-                    File::at("policy.cedar", &format!("{HEADER}{text}"), Level::Project),
-                ]) {
+                let rules_text = format!("{HEADER}{text}");
+                let mut files = vec![File::at("policy.cedar", &rules_text, Level::Project)];
+                if with_shipped_default {
+                    files.insert(0, File::shipped_default());
+                }
+                let policy = match load(&files) {
                     Ok(policy) => policy,
                     Err(problems) => {
                         prop_assert!(!problems.is_empty());
@@ -332,6 +354,36 @@ fn the_compiled_sandbox_equals_the_authorizer_on_generated_trees() {
                 prop_assert_eq!(
                     rules.decide(&resolved),
                     authorizer_says(policy, chat, action, &resolved),
+                    "{} {} for {:?} under\n{}",
+                    action,
+                    path_text,
+                    chat,
+                    text
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn the_compiled_sandbox_equals_the_authorizer_without_the_shipped_catch_all() {
+    over_generated_policies_from(false, |policy, chat, compiled, paths, text| {
+        for path_text in paths {
+            let resolved = path(path_text);
+            for (action, rules) in [("read", &compiled.read), ("write", &compiled.write)] {
+                prop_assert_eq!(
+                    rules.decide(&resolved),
+                    authorizer_says(policy, chat, action, &resolved),
+                    "{} {} for {:?} under\n{}",
+                    action,
+                    path_text,
+                    chat,
+                    text
+                );
+                prop_assert_eq!(
+                    rules.profile_allows(&layout(), &sets(), &resolved.path),
+                    authorizer_says(policy, chat, action, &resolved).allows(),
                     "{} {} for {:?} under\n{}",
                     action,
                     path_text,
@@ -456,6 +508,26 @@ fn a_path_is_spelt_one_way_whatever_dots_and_slashes_it_came_with() {
         Some("billing"),
         "a path that climbs out of one workspace into another is owned by the one it lands in"
     );
+}
+
+#[test]
+fn the_root_of_the_filesystem_as_a_set_member_holds_every_path() {
+    let layout = layout();
+    assert_eq!(
+        crate::policy::resolver::member_folder(&layout, "/").as_deref(),
+        Some("/"),
+        "an absolute `/` is the root of the filesystem, not the plane's"
+    );
+    let sets = BTreeMap::from([("everything".to_owned(), vec!["/".to_owned()])]);
+    for text in ["/plane/workspaces/qa/a", "/elsewhere/x", "/"] {
+        let resolved = resolve(&layout, &sets, text).expect("an absolute path");
+        assert!(
+            resolved
+                .members
+                .contains(&Entity::new(Kind::PathSet, "everything")),
+            "{text} is in the set"
+        );
+    }
 }
 
 // ---- the subset, refused at load ----------------------------------------------------------
