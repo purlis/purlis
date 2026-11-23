@@ -18,3 +18,8 @@
 #   id = "e2e/specs/thing.e2e.ts"               # wdio: the spec file, from app/
 #   ticket = 7001                               # the flake's ticket
 #   added = "2026-11-21"                        # the day it went in
+
+[[test]]
+id = "purlis-app browsers::tests::sign_in_provider::a_logged_in_browser_reaches_its_sign_in_provider_and_the_chat_is_kept_off_its_pages"
+ticket = 7433
+added = "2026-11-23"
