@@ -38,7 +38,10 @@ fn sets() -> BTreeMap<String, Vec<String>> {
                 "workspaces/billing/vault".to_owned(),
             ],
         ),
-        ("secret-stores".to_owned(), vec!["/plane/other/x".to_owned()]),
+        (
+            "secret-stores".to_owned(),
+            vec!["/plane/other/x".to_owned()],
+        ),
     ])
 }
 
@@ -112,22 +115,36 @@ fn compiled(policy: &Policy, chat: &Chat<'_>) -> Compiled {
 
 // ---- the differential ---------------------------------------------------------------------
 
-/// Each a condition inside the subset, over the generated tree's names.
-const SUBJECTS: [&str; 13] = [
+/// Each a condition over the generated tree's names: inside the subset, or (the negations and the
+/// literals not spelt normally) outside it, which the compile must refuse naming the rule.
+const SUBJECTS: [&str; 22] = [
     "resource in Path::\"/plane/workspaces/qa/a\"",
     "resource in Path::\"/plane/other\"",
     "resource == Path::\"/plane/other/x\"",
     "resource in Workspace::\"billing\"",
     "resource in Workspace::\"qa\"",
+    "resource in Workspace::\"ghost\"",
     "resource in Repo::\"qa/repo\"",
+    "resource in Repo::\"billing/repo\"",
     "resource in Branch::\"qa/repo#p1\"",
     "resource in PathSet::\"secrets\"",
+    "resource in PathSet::\"missing\"",
     "resource in Workspace::\"web\" || resource in Path::\"/plane/other/y\"",
     "resource has workspace && resource.workspace != principal.workspace",
     "resource has workspace && resource.workspace != Workspace::\"web\"",
+    "resource has workspace && resource.workspace == principal.workspace",
+    "resource has workspace && resource.workspace == Workspace::\"billing\"",
     "true",
     "false",
+    // Not spelt normally: refused, since the hook would never match them.
+    "resource in Path::\"/plane/other/../other/z\"",
+    "resource in Path::\"/plane/other/\"",
+    "resource == Path::\"/plane//other/x\"",
+    "resource in Workspace::\"billing\" && resource in Path::\"/plane/other\"",
 ];
+
+/// How a rule's subject is guarded, or wrapped in an `unless`.
+const GUARDS: u8 = 9;
 
 #[derive(Debug, Clone)]
 struct RuleSpec {
@@ -144,7 +161,7 @@ fn rule_spec() -> impl Strategy<Value = RuleSpec> {
         any::<bool>(),
         0u8..3,
         0..SUBJECTS.len(),
-        0u8..3,
+        0..GUARDS,
     )
         .prop_map(|(permit, ask, actions, subject, guard)| RuleSpec {
             permit,
@@ -159,10 +176,22 @@ fn text_of(specs: &[RuleSpec]) -> String {
     let mut text = String::new();
     for (n, spec) in specs.iter().enumerate() {
         let subject = format!("({})", SUBJECTS[spec.subject]);
-        let condition = match spec.guard {
-            1 => format!("context.sandbox == \"full\" && {subject}"),
-            2 => format!("{subject} && context.depth < 3"),
-            _ => subject,
+        let body = match spec.guard {
+            1 => format!("when {{ context.sandbox == \"full\" && {subject} }}"),
+            2 => format!("when {{ {subject} && context.depth < 3 }}"),
+            3 => format!("when {{ principal.persona == Persona::\"builder\" && {subject} }}"),
+            4 => format!("when {{ principal.persona != Persona::\"builder\" && {subject} }}"),
+            5 => {
+                format!("when {{ context has machine && context.machine == \"m1\" && {subject} }}")
+            }
+            // Another device than the one named (an unguarded read of `machine` does not
+            // validate, so no loaded rule errs on an unset device; `erred` is built by hand below).
+            6 => {
+                format!("when {{ context has machine && context.machine != \"m1\" && {subject} }}")
+            }
+            7 => format!("unless {{ {subject} }}"),
+            8 => format!("when {{ context.depth > 3 && {subject} }}"),
+            _ => format!("when {{ {subject} }}"),
         };
         let actions = match spec.actions {
             0 => "action == Action::\"read\"",
@@ -171,7 +200,7 @@ fn text_of(specs: &[RuleSpec]) -> String {
         };
         text.push_str(&format!(
             "@id(\"sandbox-gen-{n}\") @level(\"project\"){} {} (principal, {actions}, resource) \
-             when {{ {condition} }};\n",
+             {body};\n",
             if spec.ask { " @ask(\"you\")" } else { "" },
             if spec.permit { "permit" } else { "forbid" },
         ));
@@ -185,12 +214,25 @@ fn generated_path() -> impl Strategy<Value = String> {
             "workspaces/qa",
             "workspaces/billing",
             "workspaces/web",
+            "workspaces/ghost",
+            "workspaces",
             "other",
             "elsewhere",
         ]),
         prop::collection::vec(
             prop::sample::select(vec![
-                "a", "b", "repo", ".worktrees", "p1", "p2", "secret", "x", "vault", "y", "f",
+                "a",
+                "b",
+                "repo",
+                ".worktrees",
+                "p1",
+                "p2",
+                "secret",
+                "x",
+                "vault",
+                "y",
+                "z",
+                "f",
             ]),
             0..5,
         ),
@@ -198,8 +240,30 @@ fn generated_path() -> impl Strategy<Value = String> {
         .prop_map(|(root, parts)| format!("/plane/{root}/{}", parts.join("/")))
 }
 
-#[test]
-fn the_compiled_sandbox_equals_the_authorizer_on_generated_trees() {
+/// A chat to compile for: its workspace, persona and device, and how deep it is.
+fn generated_chat() -> impl Strategy<Value = Chat<'static>> {
+    (
+        prop::sample::select(vec!["qa", "billing", "web"]),
+        prop::sample::select(vec!["builder", "auditor"]),
+        prop::sample::select(vec!["off", "floor", "full"]),
+        prop::sample::select(vec![None, Some("m1"), Some("m2")]),
+        prop::sample::select(vec![0i64, 2, 5]),
+    )
+        .prop_map(|(workspace, persona, sandbox, machine, depth)| Chat {
+            chat: "chat-1",
+            workspace,
+            persona,
+            sandbox,
+            machine,
+            depth,
+        })
+}
+
+/// The seeded runs of the differential and the profile property: `check` is told what the
+/// policy compiled to for the generated chat, and the generated paths.
+fn over_generated_policies(
+    check: impl Fn(&Policy, &Chat<'_>, &Compiled, &[String], &str) -> Result<(), TestCaseError>,
+) {
     for seed in [1u8, 7, 42] {
         let mut runner = TestRunner::new_with_rng(
             Config {
@@ -212,30 +276,99 @@ fn the_compiled_sandbox_equals_the_authorizer_on_generated_trees() {
         let strategy = (
             prop::collection::vec(rule_spec(), 0..6),
             prop::collection::vec(generated_path(), 1..10),
-            prop::sample::select(vec!["off", "floor", "full"]),
+            generated_chat(),
         );
         runner
-            .run(&strategy, |(specs, paths, sandbox)| {
-                let policy = policy_with(&text_of(&specs));
-                let chat = qa(sandbox);
-                let compiled = compiled(&policy, &chat);
-                for text in &paths {
-                    let resolved = path(text);
-                    for (action, rules) in [("read", &compiled.read), ("write", &compiled.write)] {
-                        prop_assert_eq!(
-                            rules.decide(&resolved),
-                            authorizer_says(&policy, &chat, action, &resolved),
-                            "{} {} under\n{}",
-                            action,
-                            text,
-                            text_of(&specs)
-                        );
+            .run(&strategy, |(specs, paths, chat)| {
+                let text = text_of(&specs);
+                // Out of the subset (a negation, an `unless`, a literal not spelt normally, a
+                // second condition): refused at load, naming a rule of this policy.
+                let policy = match load(&[
+                    File::shipped_default(),
+                    File::at("policy.cedar", &format!("{HEADER}{text}"), Level::Project),
+                ]) {
+                    Ok(policy) => policy,
+                    Err(problems) => {
+                        prop_assert!(!problems.is_empty());
+                        for problem in &problems {
+                            prop_assert!(
+                                problem
+                                    .rule
+                                    .as_deref()
+                                    .is_some_and(|rule| rule.starts_with("sandbox-gen-")),
+                                "a load problem names its rule: {problem:?} under\n{text}"
+                            );
+                        }
+                        return Ok(());
+                    }
+                };
+                match compile(&policy, &chat) {
+                    Ok(compiled) => check(&policy, &chat, &compiled, &paths, &text),
+                    Err(refused) => {
+                        // Refused, never compiled wrongly: each refusal names a rule of this
+                        // policy, and the same text is refused at the start only, not loaded
+                        // past a rule it cannot follow.
+                        prop_assert!(!refused.is_empty());
+                        for refusal in &refused {
+                            prop_assert!(
+                                refusal.rule.starts_with("sandbox-gen-"),
+                                "a refusal names its rule: {refusal} under\n{text}"
+                            );
+                        }
+                        Ok(())
                     }
                 }
-                Ok(())
             })
             .unwrap_or_else(|e| panic!("seed {seed}: {e}"));
     }
+}
+
+#[test]
+fn the_compiled_sandbox_equals_the_authorizer_on_generated_trees() {
+    over_generated_policies(|policy, chat, compiled, paths, text| {
+        for path_text in paths {
+            let resolved = path(path_text);
+            for (action, rules) in [("read", &compiled.read), ("write", &compiled.write)] {
+                prop_assert_eq!(
+                    rules.decide(&resolved),
+                    authorizer_says(policy, chat, action, &resolved),
+                    "{} {} for {:?} under\n{}",
+                    action,
+                    path_text,
+                    chat,
+                    text
+                );
+            }
+        }
+        Ok(())
+    });
+}
+
+#[test]
+fn the_profile_never_lets_through_what_decide_does_not_and_lets_through_what_it_does() {
+    over_generated_policies(|policy, chat, compiled, paths, text| {
+        for path_text in paths {
+            let resolved = path(path_text);
+            for (action, rules) in [("read", &compiled.read), ("write", &compiled.write)] {
+                let said = rules.decide(&resolved);
+                prop_assert_eq!(
+                    rules.profile_allows(&layout(), &sets(), &resolved.path),
+                    said.allows(),
+                    "{} {} for {:?}: {:?} under\n{}",
+                    action,
+                    path_text,
+                    chat,
+                    said,
+                    text
+                );
+                prop_assert_eq!(
+                    said.allows(),
+                    authorizer_says(policy, chat, action, &resolved).allows()
+                );
+            }
+        }
+        Ok(())
+    });
 }
 
 // ---- the resolver -------------------------------------------------------------------------
@@ -258,12 +391,18 @@ fn cedar_ancestors_equal_folder_prefixes_plus_owning_workspace_repo_and_branch_f
             let parts: Vec<&str> = text.split('/').filter(|p| !p.is_empty()).collect();
             let mut expected: Vec<Entity> = vec![Entity::new(Kind::Path, "/")];
             for n in 1..=parts.len() {
-                expected.push(Entity::new(Kind::Path, format!("/{}", parts[..n].join("/"))));
+                expected.push(Entity::new(
+                    Kind::Path,
+                    format!("/{}", parts[..n].join("/")),
+                ));
             }
             // The owning workspace, repo and branch folder, from the plane's layout.
             if let ["plane", "workspaces", ws, rest @ ..] = parts.as_slice() {
-                expected.push(Entity::new(Kind::Workspace, *ws));
-                if let [".worktrees", repo, piece, ..] = rest {
+                let known = layout().workspaces.iter().any(|name| name == ws);
+                if known {
+                    expected.push(Entity::new(Kind::Workspace, *ws));
+                }
+                if let ([".worktrees", repo, piece, ..], true) = (rest, known) {
                     expected.push(Entity::new(Kind::Repo, format!("{ws}/{repo}")));
                     expected.push(Entity::new(Kind::Branch, format!("{ws}/{repo}#{piece}")));
                 }
@@ -272,9 +411,7 @@ fn cedar_ancestors_equal_folder_prefixes_plus_owning_workspace_repo_and_branch_f
                 }
             }
             // The named sets that list the path or a folder above it.
-            let listed = |folder: &str| {
-                text == folder || text.starts_with(&format!("{folder}/"))
-            };
+            let listed = |folder: &str| text == folder || text.starts_with(&format!("{folder}/"));
             if listed("/plane/workspaces/qa/a/secret") || listed("/plane/workspaces/billing/vault")
             {
                 expected.push(Entity::new(Kind::PathSet, "secrets"));
@@ -289,7 +426,8 @@ fn cedar_ancestors_equal_folder_prefixes_plus_owning_workspace_repo_and_branch_f
             prop_assert_eq!(
                 resolved.workspace.as_deref(),
                 match parts.as_slice() {
-                    ["plane", "workspaces", ws, ..] if layout().workspaces.contains(&ws.to_string()) =>
+                    ["plane", "workspaces", ws, ..]
+                        if layout().workspaces.contains(&ws.to_string()) =>
                         Some(*ws),
                     _ => None,
                 }
@@ -305,10 +443,16 @@ fn a_path_is_spelt_one_way_whatever_dots_and_slashes_it_came_with() {
         normalise("/plane//workspaces/qa/./a/../b").as_deref(),
         Some("/plane/workspaces/qa/b")
     );
-    assert_eq!(normalise("/a/../.."), None, "a path cannot climb above the root");
+    assert_eq!(
+        normalise("/a/../.."),
+        None,
+        "a path cannot climb above the root"
+    );
     assert_eq!(normalise("relative/path"), None, "a path is absolute");
     assert_eq!(
-        path("/plane/workspaces/qa/../billing/ledger").workspace.as_deref(),
+        path("/plane/workspaces/qa/../billing/ledger")
+            .workspace
+            .as_deref(),
         Some("billing"),
         "a path that climbs out of one workspace into another is owned by the one it lands in"
     );
@@ -380,7 +524,7 @@ fn a_rule_on_another_family_may_name_attended_without_being_refused() {
 fn a_residual_outside_the_subset_is_refused_naming_the_rule() {
     // Valid Cedar that the validator accepts, and that no profile can follow: two conditions on
     // the path joined by `&&`.
-    let found = problems_of(
+    let found = refused_at_load(
         "@id(\"sandbox-only-billing\") @level(\"project\")\n\
          forbid (principal, action == Action::\"read\", resource) \
          when { resource in Workspace::\"billing\" && resource in Path::\"/plane/x\" };\n",
@@ -406,12 +550,141 @@ fn an_own_workspace_permit_written_with_an_equality_compiles_to_the_workspace() 
         .iter()
         .find(|rule| rule.id == "sandbox-own-workspace-files")
         .expect("the permit compiles");
-    assert_eq!(permit.terms, vec![Term::In(Entity::new(Kind::Workspace, "qa"))]);
+    assert_eq!(
+        permit.terms,
+        vec![Term::In(Entity::new(Kind::Workspace, "qa"))]
+    );
 }
 
 #[test]
 fn the_shipped_default_and_a_plain_policy_have_no_sandbox_problems() {
     assert!(problems_of("").is_empty());
+}
+
+#[test]
+fn a_rule_outside_the_subset_for_the_workspace_it_names_is_refused_at_load() {
+    // For any other workspace the first condition folds the rule away: only a chat in `qa`
+    // would meet the `&&`, so the load check probes the workspaces the rules name.
+    let found = refused_at_load(
+        "@id(\"sandbox-qa-only\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource) when { \
+         principal.workspace == Workspace::\"qa\" && resource in Workspace::\"billing\" \
+         && resource in Path::\"/plane/x\" };\n",
+    );
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].rule.as_deref(), Some("sandbox-qa-only"));
+}
+
+#[test]
+fn a_path_literal_not_spelt_normally_is_refused_naming_the_rule() {
+    for literal in [
+        "/plane/other/../x",
+        "/plane/other/",
+        "/plane//x",
+        "/plane/./x",
+    ] {
+        let found = refused_at_load(&format!(
+            "@id(\"sandbox-dotted\") @level(\"project\")\n\
+             forbid (principal, action == Action::\"read\", resource) \
+             when {{ resource in Path::\"{literal}\" }};\n"
+        ));
+        assert_eq!(found.len(), 1, "{literal}: {found:?}");
+        assert_eq!(found[0].rule.as_deref(), Some("sandbox-dotted"));
+        assert!(
+            found[0].what.contains("not spelt normally"),
+            "{}",
+            found[0].what
+        );
+    }
+}
+
+#[test]
+fn a_rule_that_erred_at_the_start_leaves_the_profile_allowing_nothing() {
+    let rules = ActionRules {
+        permits: vec![RuleTerms {
+            id: "permit-all".into(),
+            ask: false,
+            terms: vec![Term::Always],
+        }],
+        erred: vec!["sandbox-needs-a-device".into()],
+        ..ActionRules::default()
+    };
+    assert_eq!(
+        rules.decide(&path("/plane/x")),
+        Decision::Erred {
+            rules: vec!["sandbox-needs-a-device".into()]
+        }
+    );
+    assert!(rules.allowed(&layout(), &sets()).is_empty());
+    assert_eq!(rules.forbidden(&layout(), &sets()), vec![Reach::Everything]);
+    assert!(!rules.profile_allows(&layout(), &sets(), "/plane/x"));
+}
+
+#[test]
+fn a_rule_on_the_device_follows_the_start_and_folds_away_where_none_is_confirmed() {
+    let policy = policy_with(
+        "@id(\"sandbox-by-device\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource)\n\
+         when { context has machine && context.machine == \"m1\" && \
+         resource in Path::\"/plane/elsewhere\" };\n",
+    );
+    let allows = |compiled: &Compiled| {
+        compiled
+            .read
+            .profile_allows(&layout(), &sets(), "/plane/elsewhere/x")
+    };
+    assert!(allows(&compiled(&policy, &qa("full"))));
+    let mut chat = qa("full");
+    chat.machine = Some("m1");
+    assert!(!allows(&compiled(&policy, &chat)));
+    chat.machine = Some("m2");
+    assert!(allows(&compiled(&policy, &chat)));
+}
+
+#[test]
+fn a_workspace_the_plane_does_not_have_holds_nothing_and_a_repos_worktrees_folder_is_not_in_it() {
+    let policy = policy_with(
+        "@id(\"sandbox-ghost-or-repo\") @level(\"project\")\n\
+         permit (principal, action == Action::\"read\", resource)\n\
+         when { resource in Workspace::\"ghost\" || resource in Repo::\"billing/repo\" };\n",
+    );
+    // Only this rule: the shipped default's catch-all permit would allow every path.
+    let mut rules = compiled(&policy, &qa("full")).read;
+    rules
+        .permits
+        .retain(|rule| rule.id == "sandbox-ghost-or-repo");
+    rules.forbids.clear();
+    let allowed = |text: &str| rules.profile_allows(&layout(), &sets(), text);
+    let decides = |text: &str| rules.decide(&path(text)).allows();
+    for text in [
+        "/plane/workspaces/ghost/a",
+        "/plane/workspaces/billing/.worktrees/repo",
+        "/plane/workspaces/billing/.worktrees/other/p1/f",
+    ] {
+        assert!(!allowed(text) && !decides(text), "{text}");
+    }
+    let nested = "/plane/workspaces/billing/.worktrees/repo/p1/f";
+    assert!(
+        allowed(nested) && decides(nested),
+        "a branch folder of the repo is in it"
+    );
+}
+
+#[test]
+fn a_path_spelt_in_another_case_fails_closed() {
+    for spelt in [
+        "/plane/Workspaces/billing/ledger",
+        "/plane/workspaces/Billing/ledger",
+        "/plane/workspaces/qa/.Worktrees/repo/p1",
+        "/plane/workspaces/qa/Repo/x",
+        "/plane/WORKSPACES/qa/a/secret/k",
+    ] {
+        assert!(
+            resolve(&layout(), &sets(), spelt).is_none(),
+            "{spelt} names the plane's folders in another case, so it reads as no path"
+        );
+    }
+    assert!(resolve(&layout(), &sets(), "/plane/workspaces/qa/Notes.md").is_some());
 }
 
 // ---- the cross-workspace forms ------------------------------------------------------------
@@ -478,7 +751,10 @@ fn the_guarded_cross_workspace_form_is_admitted_and_compiled() {
             guarded: true
         }]
     );
-    assert!(held.ask, "the shipped default asks before another workspace is read");
+    assert!(
+        held.ask,
+        "the shipped default asks before another workspace is read"
+    );
     assert!(
         compiled
             .write
@@ -490,7 +766,7 @@ fn the_guarded_cross_workspace_form_is_admitted_and_compiled() {
 }
 
 #[test]
-fn another_workspaces_file_is_unreadable_when_the_policy_forbids_it_in_every_harness() {
+fn another_workspaces_file_is_denied_by_decide_and_held_by_forbidden_when_the_policy_forbids_it() {
     let policy = policy_with(
         "@id(\"sandbox-no-cross-workspace-read\") @level(\"project\")\n\
          forbid (principal, action == Action::\"read\", resource)\n\
@@ -508,9 +784,8 @@ fn another_workspaces_file_is_unreadable_when_the_policy_forbids_it_in_every_har
         compiled.read.decide(&billing)
     );
     assert!(compiled.read.decide(&own).allows());
-    // The one compiled form every harness's compiler reads: the folders held are every other
-    // workspace's, never qa's own. Seatbelt and Landlock deny them under a read allow-list;
-    // Claude Code's sandbox takes them as deny paths.
+    // The compiled form a harness compiler will read (none does yet): the folders held are every
+    // other workspace's, never qa's own.
     let held = compiled.read.forbidden(&layout(), &sets());
     assert!(held.contains(&Reach::Folder("/plane/workspaces/billing".into())));
     assert!(held.contains(&Reach::Folder("/plane/workspaces/web".into())));
@@ -570,7 +845,10 @@ fn the_start_context_folds_into_the_compiled_rules() {
             .any(|rule| rule.id == "sandbox-full-only")
     };
     assert!(holds("full"));
-    assert!(!holds("floor"), "a level the rule does not name folds it away");
+    assert!(
+        !holds("floor"),
+        "a level the rule does not name folds it away"
+    );
     assert!(!holds("off"));
 }
 
@@ -606,7 +884,8 @@ fn the_start_event_records_the_compiled_rule_set() {
             .as_array()
             .expect("a list")
             .iter()
-            .any(|r| r["id"] == "policy-everything-else" && r["terms"] == serde_json::json!(["always"])),
+            .any(|r| r["id"] == "policy-everything-else"
+                && r["terms"] == serde_json::json!(["always"])),
         "{text}"
     );
     assert!(

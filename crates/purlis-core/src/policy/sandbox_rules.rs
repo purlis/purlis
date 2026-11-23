@@ -138,6 +138,24 @@ pub enum Reach {
     Folder(String),
     /// One path alone (`resource == Path::"…"`).
     Entry(String),
+    /// What is inside a folder, the folder itself not: a repo's branch folders, which are the
+    /// folders below `.worktrees/<repo>`.
+    Inside(String),
+    /// Every path outside all of these folders: what no workspace owns.
+    Unowned(Vec<String>),
+}
+
+impl Reach {
+    /// Whether the place holds `path`, normalised as [`resolver::resolve`] gives it.
+    pub fn covers(&self, path: &str) -> bool {
+        match self {
+            Reach::Everything => true,
+            Reach::Folder(folder) => resolver::within(path, folder),
+            Reach::Entry(entry) => path == entry,
+            Reach::Inside(folder) => path != folder && resolver::within(path, folder),
+            Reach::Unowned(folders) => !folders.iter().any(|folder| resolver::within(path, folder)),
+        }
+    }
 }
 
 impl ActionRules {
@@ -207,85 +225,131 @@ impl ActionRules {
     }
 
     /// What the permits let through, as places (the allow-list of a deny-by-default profile).
-    pub fn allowed(
-        &self,
-        layout: &Layout,
-        sets: &BTreeMap<String, Vec<String>>,
-    ) -> Vec<Reach> {
-        reach_of(&self.permits, layout, sets)
+    /// **Empty when a rule erred at the start**: every answer is then a deny
+    /// ([`Self::decide`]), so the profile allows nothing.
+    pub fn allowed(&self, layout: &Layout, sets: &BTreeMap<String, Vec<String>>) -> Vec<Reach> {
+        if self.erred.is_empty() {
+            reach_of(&self.permits, layout, sets)
+        } else {
+            Vec::new()
+        }
     }
 
-    /// What the forbids hold, asks included, as places: denied in every profile.
-    pub fn forbidden(
+    /// What the forbids hold, asks included, as places: denied in every profile. **Everything
+    /// when a rule erred at the start**, as [`Self::allowed`] is nothing then.
+    pub fn forbidden(&self, layout: &Layout, sets: &BTreeMap<String, Vec<String>>) -> Vec<Reach> {
+        if self.erred.is_empty() {
+            reach_of(&self.forbids, layout, sets)
+        } else {
+            vec![Reach::Everything]
+        }
+    }
+
+    /// Whether the profile (the allowed places less the forbidden ones) lets `path` through: never
+    /// more than [`Self::decide`] allows, and exactly what it allows for a path the resolver
+    /// reads (the property test holds both). An `@ask` forbid holds the path here: the person's
+    /// Allow lifts its Block, which is not the profile's.
+    pub fn profile_allows(
         &self,
         layout: &Layout,
         sets: &BTreeMap<String, Vec<String>>,
-    ) -> Vec<Reach> {
-        reach_of(&self.forbids, layout, sets)
+        path: &str,
+    ) -> bool {
+        let covered = |places: Vec<Reach>| places.iter().any(|place| place.covers(path));
+        covered(self.allowed(layout, sets)) && !covered(self.forbidden(layout, sets))
     }
 }
 
-/// The places `rules` name, folders as the plane has them.
+/// Whether `name` is one component of a path, as a repo's folder or a piece is.
+fn is_component(name: &str) -> bool {
+    !name.is_empty() && !name.contains('/') && name != "." && name != ".."
+}
+
+/// The places `rules` name, folders as the plane has them: **what the resolver would put in an
+/// entity, found from the other side** (a path is in the entity exactly when a place covers it).
 fn reach_of(
     rules: &[RuleTerms],
     layout: &Layout,
     sets: &BTreeMap<String, Vec<String>>,
 ) -> Vec<Reach> {
+    let known = |workspace: &str| layout.workspaces.iter().any(|name| name == workspace);
+    let workspace_folder =
+        |workspace: &str| resolver::normalise(&resolver::workspace_folder(layout, workspace));
     let mut reach = Vec::new();
     for term in rules.iter().flat_map(|rule| &rule.terms) {
         match term {
             Term::Always => reach.push(Reach::Everything),
             Term::In(entity) | Term::Is(entity) => {
                 let whole = matches!(term, Term::In(_));
-                let folder = |path: String| {
-                    if whole {
-                        Reach::Folder(path)
-                    } else {
-                        Reach::Entry(path)
-                    }
-                };
                 match entity.kind {
-                    Kind::Path => reach.extend(resolver::normalise(&entity.id).map(folder)),
-                    Kind::Workspace if whole => reach.push(Reach::Folder(
-                        resolver::workspace_folder(layout, &entity.id),
-                    )),
+                    // A literal that is not spelt as the resolver spells a path holds none.
+                    Kind::Path => {
+                        if resolver::normalise(&entity.id).as_deref() == Some(entity.id.as_str()) {
+                            reach.push(if whole {
+                                Reach::Folder(entity.id.clone())
+                            } else {
+                                Reach::Entry(entity.id.clone())
+                            });
+                        }
+                    }
+                    // A workspace the plane does not have holds nothing.
+                    Kind::Workspace if whole && known(&entity.id) => {
+                        reach.extend(workspace_folder(&entity.id).map(Reach::Folder));
+                    }
                     Kind::Repo if whole => {
                         for clone in &layout.clones {
                             if format!("{}/{}", clone.workspace, clone.repo) == entity.id {
-                                reach.push(Reach::Folder(clone.folder.clone()));
+                                reach.extend(resolver::normalise(&clone.folder).map(Reach::Folder));
                             }
                         }
-                        if let Some((workspace, repo)) = entity.id.split_once('/') {
-                            reach.push(Reach::Folder(format!(
-                                "{}/.worktrees/{repo}",
-                                resolver::workspace_folder(layout, workspace)
-                            )));
+                        // A repo's branch folders: what is inside `.worktrees/<repo>`.
+                        if let Some((workspace, repo)) = entity.id.split_once('/')
+                            && known(workspace)
+                            && is_component(repo)
+                        {
+                            reach.extend(workspace_folder(workspace).map(|folder| {
+                                Reach::Inside(format!("{folder}/.worktrees/{repo}"))
+                            }));
                         }
                     }
                     Kind::Branch if whole => {
                         let folder = entity.id.split_once('#').and_then(|(repo, piece)| {
                             let (workspace, repo) = repo.split_once('/')?;
-                            Some(format!(
-                                "{}/.worktrees/{repo}/{piece}",
-                                resolver::workspace_folder(layout, workspace)
-                            ))
+                            (known(workspace)
+                                && is_component(repo)
+                                && !repo.contains('#')
+                                && is_component(piece))
+                            .then(|| {
+                                workspace_folder(workspace)
+                                    .map(|folder| format!("{folder}/.worktrees/{repo}/{piece}"))
+                            })
+                            .flatten()
                         });
                         reach.extend(folder.map(Reach::Folder));
                     }
                     Kind::PathSet if whole => {
                         for member in sets.get(&entity.id).into_iter().flatten() {
-                            reach.extend(
-                                resolver::member_folder(layout, member).map(Reach::Folder),
-                            );
+                            reach
+                                .extend(resolver::member_folder(layout, member).map(Reach::Folder));
                         }
                     }
                     // A path is never equal to a workspace, repo, branch or set.
                     _ => {}
                 }
             }
-            Term::NotWorkspace { workspace, .. } => {
+            Term::NotWorkspace { workspace, guarded } => {
                 for other in layout.workspaces.iter().filter(|name| *name != workspace) {
-                    reach.push(Reach::Folder(resolver::workspace_folder(layout, other)));
+                    reach.extend(workspace_folder(other).map(Reach::Folder));
+                }
+                // Unguarded, a path no workspace owns is an evaluation error: a deny.
+                if !guarded {
+                    reach.push(Reach::Unowned(
+                        layout
+                            .workspaces
+                            .iter()
+                            .filter_map(|name| workspace_folder(name))
+                            .collect(),
+                    ));
                 }
             }
         }
@@ -485,19 +549,21 @@ fn compile_action(
             .chain(response.error_forbids())
             .map(|id| id.to_string()),
     );
-    let mut residual = |id: &PolicyId, ask: bool, into: &mut Vec<RuleTerms>| {
-        match residual_terms(&response, id, chat.workspace) {
-            Ok(terms) => into.push(RuleTerms {
-                id: id.to_string(),
-                ask,
-                terms,
-            }),
-            Err(what) => refusals.push(Refusal {
-                rule: id.to_string(),
-                action: action.to_owned(),
-                what,
-            }),
-        }
+    let mut residual = |id: &PolicyId, ask: bool, into: &mut Vec<RuleTerms>| match residual_terms(
+        &response,
+        id,
+        chat.workspace,
+    ) {
+        Ok(terms) => into.push(RuleTerms {
+            id: id.to_string(),
+            ask,
+            terms,
+        }),
+        Err(what) => refusals.push(Refusal {
+            rule: id.to_string(),
+            action: action.to_owned(),
+            what,
+        }),
     };
     for id in response.residual_permits() {
         residual(id, false, &mut out.permits);
@@ -550,9 +616,7 @@ pub fn terms_of(expr: &pst::Expr, workspace: &str) -> Result<Vec<Term>, String> 
             terms.extend(terms_of(right, workspace)?);
             Ok(terms)
         }
-        Expr::BinaryOp { op, left, right }
-            if resource(left) && matches!(op, Op::In | Op::Eq) =>
-        {
+        Expr::BinaryOp { op, left, right } if resource(left) && matches!(op, Op::In | Op::Eq) => {
             let entity = entity_of(right)?;
             Ok(vec![if matches!(op, Op::In) {
                 Term::In(entity)
@@ -584,10 +648,25 @@ pub fn terms_of(expr: &pst::Expr, workspace: &str) -> Result<Vec<Term>, String> 
                 if resource(expr) && attrs.iter().map(|a| a.as_str()).eq(["workspace"]));
             // `(negated, left, right)` of the comparison the guard stands before.
             let comparison = match &**right {
-                Expr::BinaryOp { op: Op::NotEq, left, right } => Some((true, left, right)),
-                Expr::BinaryOp { op: Op::Eq, left, right } => Some((false, left, right)),
-                Expr::UnaryOp { op: pst::UnaryOp::Not, expr } => match &**expr {
-                    Expr::BinaryOp { op: Op::Eq, left, right } => Some((true, left, right)),
+                Expr::BinaryOp {
+                    op: Op::NotEq,
+                    left,
+                    right,
+                } => Some((true, left, right)),
+                Expr::BinaryOp {
+                    op: Op::Eq,
+                    left,
+                    right,
+                } => Some((false, left, right)),
+                Expr::UnaryOp {
+                    op: pst::UnaryOp::Not,
+                    expr,
+                } => match &**expr {
+                    Expr::BinaryOp {
+                        op: Op::Eq,
+                        left,
+                        right,
+                    } => Some((true, left, right)),
                     _ => None,
                 },
                 _ => None,
@@ -624,9 +703,7 @@ fn workspace_comparison(
     negated: bool,
 ) -> Result<Term, String> {
     use pst::{Expr, Literal, Var};
-    let attribute_of = |e: &Expr, var: Var| {
-        matches!(e, Expr::GetAttr { expr, attr } if **expr == Expr::Var(var) && attr.as_str() == "workspace")
-    };
+    let attribute_of = |e: &Expr, var: Var| matches!(e, Expr::GetAttr { expr, attr } if **expr == Expr::Var(var) && attr.as_str() == "workspace");
     if !attribute_of(left, Var::Resource) {
         return Err("it compares something but the path's workspace".to_owned());
     }
@@ -635,7 +712,11 @@ fn workspace_comparison(
         Expr::Literal(Literal::EntityUID(uid)) if uid.ty.to_string() == "Workspace" => {
             uid.eid.to_string()
         }
-        _ => return Err("it compares the path's workspace with something but a workspace".to_owned()),
+        _ => {
+            return Err(
+                "it compares the path's workspace with something but a workspace".to_owned(),
+            );
+        }
     };
     if negated {
         Ok(Term::NotWorkspace {
@@ -654,16 +735,26 @@ fn entity_of(expr: &pst::Expr) -> Result<Entity, String> {
     match expr {
         pst::Expr::Literal(pst::Literal::EntityUID(uid)) => {
             let ty = uid.ty.to_string();
-            Kind::of_type(&ty)
-                .map(|kind| Entity::new(kind, uid.eid.to_string()))
-                .ok_or_else(|| {
-                    format!(
-                        "it names a {ty}, and a sandbox rule names a Path, Workspace, Repo, \
-                         Branch or PathSet"
-                    )
-                })
+            let kind = Kind::of_type(&ty).ok_or_else(|| {
+                format!(
+                    "it names a {ty}, and a sandbox rule names a Path, Workspace, Repo, \
+                     Branch or PathSet"
+                )
+            })?;
+            let id = uid.eid.to_string();
+            // The hook's paths are normalised, so a literal spelt another way would never match
+            // there and would be held in the profile: refused, so the two cannot differ.
+            if kind == Kind::Path && resolver::normalise(&id).as_deref() != Some(id.as_str()) {
+                return Err(format!(
+                    "it names the path `{id}`, which is not spelt normally (absolute, with no \
+                     `.`, `..`, doubled or trailing slash)"
+                ));
+            }
+            Ok(Entity::new(kind, id))
         }
-        other => Err(format!("`{other}` is not an entity a sandbox rule may name")),
+        other => Err(format!(
+            "`{other}` is not an entity a sandbox rule may name"
+        )),
     }
 }
 
@@ -705,30 +796,52 @@ impl Rule {
 }
 
 impl Policy {
-    /// **The problems a policy has as a sandbox's rules** (§11.3): [`Self::sandbox_names_problems`]
-    /// and, by compiling for each level a chat starts at and with the device id known and not,
-    /// any rule outside the subset. Each names its rule. A chat's start refuses the same rules
-    /// ([`compile`]); this finds them before one starts.
+    /// **The problems a policy has as a sandbox's rules** (§11.2, §11.3):
+    /// [`Self::sandbox_names_problems`] and, by compiling for each level a chat starts at, with
+    /// the device id known and not, at a shallow and a deep chain, and for the workspaces and
+    /// personas the rules themselves name, any rule outside the subset. Each names its rule. A
+    /// chat's start refuses the same rules ([`compile`]); this finds them before one starts.
+    ///
+    /// **Its limit:** a residual's shape depends on the chat only through the constants the
+    /// rules compare it with, so those are the values probed (and one the rules do not name); a
+    /// rule that branches on another constant, a device id or a depth threshold, is not folded
+    /// every way, and the start's own refusal stands behind it.
     pub fn sandbox_problems(&self) -> Vec<Problem> {
         let mut problems = self.sandbox_names_problems();
         if !problems.is_empty() {
             return problems;
         }
-        // The residual subset, for each level a chat starts at and with the device id known and
-        // not: what a start folds, tried before any chat starts.
-        for sandbox in ["off", "floor", "full"] {
-            for machine in [None, Some("device")] {
-                let chat = Chat {
-                    chat: "load-check",
-                    workspace: "load-check",
-                    persona: "load-check",
-                    sandbox,
-                    machine,
-                    depth: 0,
-                };
-                if let Err(refused) = compile(self, &chat) {
-                    for refusal in refused {
-                        if let Some(rule) = self.rule(&refusal.rule) {
+        let (workspaces, personas) = self.named_workspaces_and_personas();
+        let mut chats: Vec<(String, String)> = vec![("load-check".into(), "load-check".into())];
+        chats.extend(
+            workspaces
+                .into_iter()
+                .map(|workspace| (workspace, "load-check".to_owned())),
+        );
+        chats.extend(
+            personas
+                .into_iter()
+                .map(|persona| ("load-check".to_owned(), persona)),
+        );
+        for (workspace, persona) in &chats {
+            for sandbox in ["off", "floor", "full"] {
+                for machine in [None, Some("device")] {
+                    for depth in [0, 1_000] {
+                        let chat = Chat {
+                            chat: "load-check",
+                            workspace,
+                            persona,
+                            sandbox,
+                            machine,
+                            depth,
+                        };
+                        let Err(refused) = compile(self, &chat) else {
+                            continue;
+                        };
+                        for refusal in refused {
+                            let Some(rule) = self.rule(&refusal.rule) else {
+                                continue;
+                            };
                             let problem = Problem {
                                 file: rule.file.clone(),
                                 line: rule.line,
@@ -746,6 +859,42 @@ impl Policy {
         problems
     }
 
+    /// The workspaces and personas the sandbox rules name outright, sorted and each once.
+    fn named_workspaces_and_personas(&self) -> (Vec<String>, Vec<String>) {
+        let found = std::cell::RefCell::new((
+            std::collections::BTreeSet::new(),
+            std::collections::BTreeSet::new(),
+        ));
+        for rule in self
+            .rules
+            .iter()
+            .filter(|rule| rule.applies_to_the_sandbox())
+        {
+            let Ok(policy) = rule.policy.to_pst() else {
+                continue;
+            };
+            for clause in policy.body().clauses() {
+                let (pst::Clause::When(expr) | pst::Clause::Unless(expr)) = clause;
+                any_node(expr, &|e| {
+                    if let pst::Expr::Literal(pst::Literal::EntityUID(uid)) = e {
+                        let (workspaces, personas) = &mut *found.borrow_mut();
+                        match uid.ty.to_string().as_str() {
+                            "Workspace" => workspaces.insert(uid.eid.to_string()),
+                            "Persona" => personas.insert(uid.eid.to_string()),
+                            _ => false,
+                        };
+                    }
+                    false
+                });
+            }
+        }
+        let (workspaces, personas) = found.into_inner();
+        (
+            workspaces.into_iter().collect(),
+            personas.into_iter().collect(),
+        )
+    }
+
     /// **What load refuses of a sandbox action's rules** (§11.3): one that names `attended` or
     /// `harness_mode`, or uses `like`. Read from the rule's text alone, so it is cheap enough for
     /// every load; the rest of the subset is [`Self::sandbox_problems`]'s and the start's.
@@ -757,7 +906,11 @@ impl Policy {
             rule: Some(rule.id.clone()),
             what,
         };
-        for rule in self.rules.iter().filter(|rule| rule.applies_to_the_sandbox()) {
+        for rule in self
+            .rules
+            .iter()
+            .filter(|rule| rule.applies_to_the_sandbox())
+        {
             let Ok(policy) = rule.policy.to_pst() else {
                 continue;
             };

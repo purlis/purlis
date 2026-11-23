@@ -15,8 +15,18 @@
 //!
 //! **Spelling.** A path is absolute and `/`-separated; `.`, `..` and doubled slashes are folded
 //! away, and a `..` above the root is no path ([`normalise`]). A repo is `<workspace>/<folder>`
-//! and a branch folder `<workspace>/<folder>#<piece>`. Windows paths are not read: the compile
-//! serves Seatbelt, Landlock and Claude Code's sandbox.
+//! and a branch folder `<workspace>/<folder>#<piece>`; a repo folder with a `#` in its name is a
+//! repo but has no branch folders, since its branch ids would read two ways. Windows paths are
+//! not read: the compile serves Seatbelt, Landlock and Claude Code's sandbox.
+//!
+//! **Case and Unicode form** (spec §11.8). Names are compared as the bytes they are spelt in: a
+//! caller hands the path as the filesystem spells it (a `realpath`, which on macOS's
+//! case-insensitive APFS gives the stored case). So that a path spelt another way never reads as
+//! outside the plane's own folders, [`resolve`] refuses (`None`, which every caller treats as a
+//! deny) a path that names one of the layout's folders (`workspaces`, a workspace, its
+//! `.worktrees`, a clone or a set member) with another case. It cannot do the same for a folder a
+//! rule names only in its own text, nor for NFC against NFD, so those stay the caller's: a path
+//! must reach the resolver in the filesystem's own form.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -168,7 +178,10 @@ pub fn within(path: &str, folder: &str) -> bool {
 
 /// The folder a workspace is at in `layout`.
 pub fn workspace_folder(layout: &Layout, workspace: &str) -> String {
-    format!("{}/workspaces/{workspace}", layout.root.trim_end_matches('/'))
+    format!(
+        "{}/workspaces/{workspace}",
+        layout.root.trim_end_matches('/')
+    )
 }
 
 /// A named set's member, as a folder: absolute, or relative to the plane's root.
@@ -189,6 +202,9 @@ pub fn resolve(
     path: &str,
 ) -> Option<Resolved> {
     let path = normalise(path)?;
+    if spelt_in_another_case(layout, sets, &path) {
+        return None;
+    }
     let mut members = BTreeSet::new();
     // Every folder above, and the path itself.
     let mut folder = String::new();
@@ -212,7 +228,9 @@ pub fn resolve(
                 && *dir == ".worktrees"
             {
                 members.insert(Entity::new(Kind::Repo, format!("{name}/{repo}")));
-                members.insert(Entity::new(Kind::Branch, format!("{name}/{repo}#{piece}")));
+                if !repo.contains('#') {
+                    members.insert(Entity::new(Kind::Branch, format!("{name}/{repo}#{piece}")));
+                }
             }
         }
     }
@@ -237,4 +255,29 @@ pub fn resolve(
         workspace,
         members,
     })
+}
+
+/// Whether `path` is inside one of the layout's own folders when read without regard to case, and
+/// not when read exactly: spelt as the filesystem may take it, and as the plane does not.
+fn spelt_in_another_case(
+    layout: &Layout,
+    sets: &BTreeMap<String, Vec<String>>,
+    path: &str,
+) -> bool {
+    let lowered = path.to_lowercase();
+    let other = |folder: &str| !within(path, folder) && within(&lowered, &folder.to_lowercase());
+    let mut folders = vec![format!("{}/workspaces", layout.root.trim_end_matches('/'))];
+    for name in &layout.workspaces {
+        let folder = workspace_folder(layout, name);
+        folders.push(format!("{folder}/.worktrees"));
+        folders.push(folder);
+    }
+    folders.extend(layout.clones.iter().map(|clone| clone.folder.clone()));
+    for member in sets.values().flatten() {
+        folders.extend(member_folder(layout, member));
+    }
+    folders
+        .iter()
+        .filter_map(|folder| normalise(folder))
+        .any(|folder| other(&folder))
 }

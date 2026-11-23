@@ -843,9 +843,10 @@ pub fn load(files: &[File<'_>]) -> Result<Policy, Vec<Problem>> {
         return Err(problems);
     }
     let policy = assemble(rules).map_err(|problem| vec![problem])?;
-    // A rule on a sandbox action that names `attended` or `harness_mode`, or uses `like`, is
-    // refused here, naming it (M75-22, spec §11.3): a fixed profile cannot follow any of them.
-    let named = policy.sandbox_names_problems();
+    // A rule on a sandbox action that names `attended` or `harness_mode`, uses `like` or leaves
+    // the residual subset is refused here, naming it (M75-22, spec §11.2, §11.3): a fixed
+    // profile cannot follow any of them.
+    let named = policy.sandbox_problems();
     if named.is_empty() {
         Ok(policy)
     } else {

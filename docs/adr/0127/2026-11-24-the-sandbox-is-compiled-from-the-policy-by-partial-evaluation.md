@@ -16,16 +16,28 @@ what building them found.
   a read allow-list under deny-by-default cannot be written without it. A named `PathSet` is
   admitted as `E` for the same reason: the shipped default's `sandbox-secret-stores` names one.
 - **Refused at load:** a rule on a sandbox action (one that names `read`, `write`, the
-  `sandbox` family, or no action) that names `context.attended` or `context.harness_mode` or uses
-  `like`. A fixed profile cannot follow them, and a hook fallback would leave shell commands
-  unguarded. This check reads the rule's text and runs on every load; the residual subset is
-  checked at the start, and by `Policy::sandbox_problems` before one.
+  `sandbox` family, or no action) that names `context.attended` or `context.harness_mode`, uses
+  `like`, or leaves the residual subset (`Policy::sandbox_problems`, run by `load`, so `policy
+  check` too). A fixed profile cannot follow them, and a hook fallback would leave shell commands
+  unguarded. The residual check compiles for each sandbox level, with a device id and without,
+  at a shallow and a deep chain, and for each workspace and persona the rules name; a rule that
+  branches on another constant is caught by the start's own refusal. A `Path` literal in such a
+  rule must be spelt normally (absolute, no `.`, `..`, doubled or trailing slash): the hook's
+  paths are normalised, so another spelling would match nowhere there and be held in the profile.
 - **`@ask` on a Path** compiles to a deny in the profile plus a Block, which the person's Allow
   lifts.
-- **One path resolver** (`policy::resolver`) serves the compile and the hook. A `Path`'s
-  ancestors are every folder above it (the root included), its owning workspace, the repo whose
-  clone holds it, the branch folder it is in, and the named sets that list it or a folder above
-  it. It reads no file and runs nothing.
+- **One path resolver** (`policy::resolver`) serves the compile and the live authorizer
+  (`force::world_of` builds a `Path`'s world from it). A `Path`'s ancestors are every folder above
+  it (the root included), its owning workspace (`<root>/workspaces/<ws>` only, as the plane
+  format has it), the repo whose clone or `.worktrees/<repo>` holds it, the branch folder it is
+  in, and the named sets that list it or a folder above it (a member is absolute or relative to
+  the plane's root). It reads no file and runs nothing. A path spelt in another case than the
+  plane's own folders reads as no path, which is a deny; NFC against NFD is the caller's.
+- **The profile is never more permissive than the decision**: `ActionRules::allowed` is empty
+  and `forbidden` everything when a rule erred at the start; an unknown workspace holds nothing;
+  a repo's worktrees are what is inside `.worktrees/<repo>`. A property test holds
+  `allowed − forbidden` equal to `decide` over the generator. A workspace made after the start
+  is not in the layout the compile read; covering it is a follow-up.
 - **The start event records the compiled rule set**: each rule's `@id` and the shape of its terms
   (`always`, `in workspace billing`, `in path`), never a path.
 - **Reads** are an allow-list under deny-by-default on Seatbelt and Landlock. Claude Code's

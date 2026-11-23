@@ -289,6 +289,110 @@ fn deleting_an_entity_a_forbid_names_keeps_the_forbid() {
     assert_eq!(said.ids(), ["sandbox-no-web-read"], "{said:?}");
 }
 
+/// The hook and the sandbox compile read one resolver (M75-22): a path nested under a forbidden
+/// folder, or under a member of a named set (written relative to the root), is held by both.
+#[test]
+fn the_hook_and_the_sandbox_compile_agree_on_paths_under_a_forbidden_folder_and_set_members() {
+    use crate::policy::resolver::{Layout, resolve};
+    use crate::policy::sandbox_rules::{self, compile};
+    let m = machine();
+    let root = plane(
+        &m,
+        &[
+            (
+                "purlis.toml",
+                &format!(
+                    "{STRICT}\n[policy.sets]\nvaults = [\"workspaces/web/vault\", \"/outside/store\"]\n"
+                ),
+            ),
+            ("workspaces/web/README.md", "web\n"),
+        ],
+    );
+    let held = |folder: &str| format!("{}/{folder}", root.display());
+    let rule = format!(
+        "{HEADER}@id(\"sandbox-no-ledger\") @level(\"project\")\n\
+         forbid (principal, action == Action::\"read\", resource) when {{ \
+         resource in Path::\"{}\" || resource in PathSet::\"vaults\" }};\n",
+        held("workspaces/web/ledger")
+    );
+    commit(&root, &[("policy.cedar", &rule)]);
+    let policy = crate::policy::load(&[
+        crate::policy::File::shipped_default(),
+        crate::policy::File::at("policy.cedar", &rule, crate::policy::Level::Project),
+    ])
+    .expect("the rule loads");
+    let layout = Layout {
+        root: root.display().to_string(),
+        workspaces: vec!["web".into()],
+        clones: Vec::new(),
+    };
+    let sets = std::collections::BTreeMap::from([(
+        "vaults".to_owned(),
+        vec![
+            "workspaces/web/vault".to_owned(),
+            "/outside/store".to_owned(),
+        ],
+    )]);
+    let compiled = compile(
+        &policy,
+        &sandbox_rules::Chat {
+            chat: "1",
+            workspace: "web",
+            persona: "builder",
+            sandbox: "floor",
+            machine: None,
+            depth: 0,
+        },
+    )
+    .expect("the policy compiles");
+    for folder in [
+        held("workspaces/web/ledger"),
+        held("workspaces/web/ledger/2026.csv"),
+        held("workspaces/web/ledger/a/b/c.csv"),
+        held("workspaces/web/vault"),
+        held("workspaces/web/vault/key.txt"),
+        "/outside/store/deep/file".to_owned(),
+    ] {
+        let hook = host(&root, &request("read", ("Path", &folder), base(true)));
+        let resolved = resolve(&layout, &sets, &folder).expect("an absolute path");
+        assert_eq!(
+            hook.after_mode,
+            Outcome::Deny,
+            "the hook holds {folder}: {hook:?}"
+        );
+        assert!(
+            matches!(
+                compiled.read.decide(&resolved),
+                crate::policy::Decision::Deny { .. }
+            ),
+            "the compile holds {folder}"
+        );
+        assert!(!compiled.read.profile_allows(&layout, &sets, &resolved.path));
+    }
+    for free in [
+        held("workspaces/web/README.md"),
+        held("workspaces/web/ledger-old/x"),
+    ] {
+        let hook = host(&root, &request("read", ("Path", &free), base(true)));
+        let resolved = resolve(&layout, &sets, &free).expect("an absolute path");
+        assert_ne!(
+            hook.after_mode,
+            Outcome::Deny,
+            "the hook lets {free} by: {hook:?}"
+        );
+        assert!(
+            compiled.read.decide(&resolved).allows(),
+            "the compile lets {free} by"
+        );
+    }
+    // A path spelt with dots reaches the same answer as the one it folds to.
+    let dotted = held("workspaces/web/other/../ledger/./2026.csv");
+    assert_eq!(
+        host(&root, &request("read", ("Path", &dotted), base(true))).after_mode,
+        Outcome::Deny
+    );
+}
+
 #[test]
 fn a_widened_keep_waits_for_the_press() {
     let m = machine();
