@@ -1458,8 +1458,11 @@ fn until(scenario: &Scenario, what: &str, done: impl Fn() -> bool) {
 /// dispatched to a persona, in a branch folder of its own, handed from its asker, with a dispatch
 /// record. It runs `git branch --show-current` where it stands and sends its report with the
 /// command a task sends it with; the scenario sees the branch folder it was cut, the asker it
-/// is handed from and the report on its record. A break of what the runner does at a task's
-/// start (no branch folder, no lineage, no record) is red here.
+/// is handed from and the report on its record. The fixture rebuilds the runner's start rather
+/// than calling `handoff::dispatch_noting`, `start_on` or `record_it`, so a break there is not
+/// red here; a break in the pieces it shares with production is (the branch folder's cut, the
+/// start of a `Made::Asked` chat in a worktree under the wrap, the dispatch record's open, and
+/// the whole report path).
 #[cfg(unix)]
 #[test]
 fn a_dispatched_chat_starts_as_the_task_runner_starts_it_and_its_report_is_seen() {

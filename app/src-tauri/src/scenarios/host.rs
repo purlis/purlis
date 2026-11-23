@@ -1255,7 +1255,8 @@ struct Handed {
 }
 
 impl Handed {
-    /// Writes the dispatch's record for chat `id`, as `handoff::record_it` does for the app's.
+    /// Writes the dispatch's record for chat `id`: a copy of the shape `handoff::record_it`
+    /// writes, which a change there does not reach.
     fn is_recorded(
         &self,
         held: &Held,
@@ -1334,11 +1335,14 @@ impl Scenario {
     }
 
     /// **Starts a chat as the task runner does** (§3.11, #7102): a task the chat `asker` (a chat
-    /// of this scenario) dispatched to this scenario's persona. It is [`Self::starts`] with what
-    /// `handoff::dispatch_noting` adds: the start is `Made::Asked` by a dispatch, over the chain
-    /// of the personas above it; it works in a branch folder cut off a clone of the project's
-    /// ([`Self::a_clone`], `chatpiece::cut`); it is handed from `asker` as a task owing a report,
-    /// and its dispatch has the record its report is written on. The kit, the homes, the wrap
+    /// of this scenario) dispatched to this scenario's persona. It is [`Self::starts`] with the
+    /// pieces `handoff::dispatch_noting` adds, rebuilt here rather than called (production's start
+    /// does not take the fake harness's per-chat env): the start is `Made::Asked` by a dispatch,
+    /// over the chain of the personas above it; it works in a branch folder cut off a clone of the project's
+    /// ([`Self::a_clone`], `chatpiece::cut`, where production cuts with `dispatchplace::cut` and
+    /// names the piece after the dispatch); it is handed from `asker` as a task owing a report
+    /// (depth 1: the asker is a top-level chat), and its dispatch has the record its report is
+    /// written on, opened with no early record and no workspace. The kit, the homes, the wrap
     /// and the teardown are the scenario's own. The persona is [`Scenario::new`]'s, which a task
     /// needs.
     pub(crate) fn starts_as_task(
