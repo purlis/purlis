@@ -787,6 +787,58 @@ fn is_repository(segs: &[String]) -> bool {
     under_repository(segs).is_some_and(|rest| rest.is_empty())
 }
 
+/// **Whether a substitution body only reads** (#7404): every command of it is one `gh api` or
+/// `glab api` read, or a plain filter of what it printed (`jq` with a path alone, `head`, `tail`
+/// with a count), and nothing in it is filled in by the shell. What such a body prints is the
+/// forge's data, so the word it stands in is one the outer call reads as written, as it reads
+/// the same word in double quotes.
+pub(super) fn reads_only(body: &str) -> bool {
+    let mut reads = false;
+    for toks in shellseg::segment_argv(body) {
+        if toks.is_empty()
+            || toks
+                .iter()
+                .any(|w| w.contains(['$', '`', '(', ')', '{', '<', '>']))
+        {
+            return false;
+        }
+        match toks.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+            [prog @ ("gh" | "glab"), "api", ref args @ ..] => {
+                let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+                if !ApiCall::parse(&args, prog == "glab").is_read() {
+                    return false;
+                }
+                reads = true;
+            }
+            ["jq", ref args @ ..] => {
+                let flags = args.iter().take_while(|a| a.starts_with('-'));
+                let mut program = args.iter().skip_while(|a| a.starts_with('-'));
+                if flags.clone().any(|f| {
+                    !matches!(
+                        *f,
+                        "-r" | "-c" | "-e" | "-j" | "--raw-output" | "--compact-output"
+                    )
+                }) || !program.next().is_some_and(|p| {
+                    !p.is_empty()
+                        && p.chars().all(|c| {
+                            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '[' | ']')
+                        })
+                }) || program.next().is_some()
+                {
+                    return false;
+                }
+            }
+            ["head" | "tail", ref args @ ..]
+                if args.iter().all(|a| {
+                    a.strip_prefix('-')
+                        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                }) => {}
+            _ => return false,
+        }
+    }
+    reads
+}
+
 /// The refusal for one `gh api` / `glab api` call, or `None` when it can neither merge nor
 /// publish.
 fn api_reason(args: &[String], cmd: &str, glab_api: bool) -> Option<String> {

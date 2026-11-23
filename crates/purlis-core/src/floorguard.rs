@@ -2256,12 +2256,32 @@ fn commands_of(line: &str) -> Vec<Vec<String>> {
                 commands.push(toks[at..].to_vec());
             }
         }
-        if runs_a_program && reading.outward != reading.own {
+        if runs_a_program && reading.outward != reading.own && !substitutions_only_read(&reading) {
             commands.push(reading.outward);
         }
         commands.push(reading.own);
     }
     commands
+}
+
+/// **Whether every substitution of a segment only reads** (#7404), so its words need not be handed
+/// out to the command around it: `glab api projects/:id/pipelines/$(glab api … | jq -r …)/jobs`
+/// is read as `glab api projects/:id/pipelines/"$(…)"/jobs` is, a read of one endpoint. A
+/// substitution that could print a flag or a program (`$(echo -XPUT)`) is never one.
+fn substitutions_only_read(reading: &shellseg::Reading) -> bool {
+    let mut any = false;
+    for (word, source) in reading.own.iter().zip(&reading.own_source) {
+        let marks = word.matches(shellseg::SUBSTITUTED).count();
+        if marks == 0 {
+            continue;
+        }
+        let (bodies, unclosed) = substitution_bodies(source, false);
+        if unclosed || bodies.len() != marks || !bodies.iter().all(|b| merge::reads_only(b)) {
+            return false;
+        }
+        any = true;
+    }
+    any && reading.own_source.len() == reading.own.len()
 }
 
 /// Whether a segment is a shell, or a program the shell builds that could be one, which runs a

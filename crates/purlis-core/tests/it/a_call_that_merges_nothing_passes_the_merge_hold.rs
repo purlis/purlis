@@ -794,3 +794,27 @@ fn the_refusal_of_an_unread_body_says_to_run_the_call_alone() {
     assert!(said.contains("quoted heredoc"), "{said}");
     assert!(said.contains("absolute path"), "{said}");
 }
+
+// #7404: an unquoted substitution that only reads is read as the quoted one is.
+#[test]
+fn an_unquoted_nested_read_in_an_endpoint_passes_as_the_quoted_one_does() {
+    purlis_core::unsteered!();
+    passes(&[
+        "glab api projects/:id/pipelines/$(glab api projects/:id/pipelines | jq -r '.[0].id')/jobs",
+        "glab api \"projects/:id/pipelines/$(glab api projects/:id/pipelines | jq -r '.[0].id')/jobs\"",
+        "gh api repos/o/r/actions/runs/$(gh api repos/o/r/actions/runs | jq -r '.workflow_runs[0].id')/jobs",
+        "glab api projects/:id/pipelines/$(cat n)/jobs",
+    ]);
+}
+
+#[test]
+fn an_unquoted_nested_write_or_merge_stays_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh api -X POST repos/o/r/issues/$(gh api repos/o/r/issues | jq -r '.[0].number')/comments -f body=x",
+        "glab api projects/:id/merge_requests/$(glab api -X PUT projects/:id/merge_requests/5/merge | jq -r .iid)/notes",
+        "glab api projects/:id/pipelines/$(glab mr merge 5 | jq -r .iid)/jobs",
+        "gh api $(echo -XPUT) repos/o/r/pulls/5/merge",
+        "gh api repos/o/r/pulls/$(gh api repos/o/r/pulls | jq -r '.[0].number')/merge -X PUT",
+    ]);
+}
