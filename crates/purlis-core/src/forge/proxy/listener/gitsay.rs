@@ -17,8 +17,9 @@
 //!
 //! **Nothing here lets a request through.** It runs only after the core refused, writes only what
 //! it builds, and never reads the forge. A reason is purlis's own sentence for the refusal, a
-//! fixed one per kind, or the sentence a held act or a pin already tells the chat: **never a
-//! token, the sentinel, a path or any text of the request**. It is one short line (control
+//! fixed one per kind, or the sentence a held act or a pin already tells the chat (which may
+//! name the branch, tag or repo it is about, and a forge's own error): **never a token, the
+//! sentinel or a path**. It is one short line (control
 //! characters made spaces, cut at [`MOST_REASON`]). A push whose commands cannot be read, or a
 //! request that is not one of these two, is answered as it was, `403`.
 
@@ -76,7 +77,9 @@ pub(crate) fn reason_for(refusal: Refusal) -> &'static str {
         Refusal::OtherRepo | Refusal::HostNotAllowed | Refusal::AmbiguousHost => {
             "purlis: this repo is not one of this chat's"
         }
-        Refusal::NoCredential => "purlis: no sign-in for this repo; sign in from the window",
+        Refusal::NoCredential => {
+            "purlis: no sign-in for this repo; sign in under Settings › You › Accounts"
+        }
         Refusal::Pinned => "purlis: an administrator turned this forge off for chats",
         _ => "purlis: a chat may not make this request",
     }
@@ -95,6 +98,10 @@ pub(crate) fn one_line(said: &str) -> String {
     }
     flat[..end].to_owned()
 }
+
+/// The longest ref name repeated in a report: git itself refuses far shorter, and a pkt-line's
+/// length is four hex digits.
+const MOST_REF: usize = 4096;
 
 /// One pkt-line holding `data`.
 fn pkt(out: &mut Vec<u8>, data: &[u8]) {
@@ -146,7 +153,8 @@ fn report_status(body: &[u8], reason: &str) -> Option<Vec<u8>> {
     for command in &pushed.commands {
         // A ref name is the client's, and may hold anything: only a well-formed one is repeated.
         let name = &command.name;
-        if name.bytes().any(|b| b.is_ascii_control() || b == b' ') {
+        // Printable ASCII only, and short enough that the line's four-digit length holds it.
+        if name.len() > MOST_REF || !name.bytes().all(|b| b.is_ascii_graphic()) {
             return None;
         }
         pkt(&mut report, format!("ng {name} {reason}\n").as_bytes());
