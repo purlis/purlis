@@ -5095,12 +5095,26 @@ fn chat_proxy_on_the_line(
     };
     assert_eq!(applied.level(), level);
     let confinement = with_proxy.then(|| Confinement::start(Vec::new()).expect("a proxy"));
+    // The chat's `--settings` carry the sandbox compiled for it, as the adapter arms them: the
+    // proxy's ports are only added to a sandbox this adapter compiled.
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&cwd)) else {
+        panic!("compiled for Claude Code");
+    };
+    let armed = vec![
+        "--settings".to_owned(),
+        serde_json::json!({
+            "enabledPlugins": {},
+            "permissions": { "allow": [], "deny": settings.deny },
+            "sandbox": settings.sandbox,
+        })
+        .to_string(),
+    ];
     let line = applied
         .line(
             Words {
                 program: "claude".to_owned(),
                 command: Vec::new(),
-                armed: Vec::new(),
+                armed,
                 charters: Vec::new(),
             },
             &At {
