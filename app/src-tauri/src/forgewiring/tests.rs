@@ -138,6 +138,7 @@ fn gate(context: Arc<ProjectContext>) -> CiPushGate {
         )),
         quarantines: Arc::new(Quarantines::default()),
         parent: PathBuf::from("/no/such/quarantine"),
+        cache_parent: None,
     }
 }
 

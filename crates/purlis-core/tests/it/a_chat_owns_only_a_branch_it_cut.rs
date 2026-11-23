@@ -253,8 +253,36 @@ fn push_through(w: &World, branch: &str, old: &str, answer: Answer) -> u16 {
     push_moving(w, branch, old, &"1".repeat(40), answer)
 }
 
-/// The same push, from `old` to `new`.
+/// What [`push_moving`] says of a push the route refused: git is answered `200` with a
+/// report-status that rejects each ref ([`refused_in_gits_words`]), which this stands for.
+const REFUSED: u16 = 403;
+
+/// The same push, from `old` to `new`: the forge's status where the route let it through, and
+/// [`REFUSED`] where the route answered it itself.
 fn push_moving(w: &World, branch: &str, old: &str, new: &str, answer: Answer) -> u16 {
+    let reply = push_reply(w, branch, old, new, answer);
+    if refused_in_gits_words(&reply, branch) {
+        REFUSED
+    } else {
+        reply.status
+    }
+}
+
+/// Whether the route answered the push itself, with a report-status that rejects `branch`.
+fn refused_in_gits_words(reply: &support::forge_listener::Reply, branch: &str) -> bool {
+    reply.status == 200
+        && reply
+            .text()
+            .contains(&format!("ng refs/heads/{branch} purlis: "))
+}
+
+fn push_reply(
+    w: &World,
+    branch: &str,
+    old: &str,
+    new: &str,
+    answer: Answer,
+) -> support::forge_listener::Reply {
     let line = format!("{old} {new} refs/heads/{branch}\0 report-status side-band-64k agent=git/2");
     let body = format!("{}0000PACK....", pkt(&line));
     let request = format!(
@@ -267,7 +295,6 @@ fn push_moving(w: &World, branch: &str, old: &str, new: &str, answer: Answer) ->
     w.fake.answer(answer);
     support::forge_listener::tls(w, &ca, "github.com", 443, "github.com", request.as_bytes())
         .expect("a handshake")
-        .status
 }
 
 #[test]
@@ -570,4 +597,241 @@ fn a_tip_line_that_is_garbled_or_missing_fails_closed() {
         ),
         403
     );
+}
+
+#[test]
+fn a_refused_push_is_answered_in_gits_own_words_and_never_reaches_the_forge() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    // A branch no record says the chat made: an update of it is refused.
+    let reply = push_reply(
+        &w,
+        "theirs",
+        &"3".repeat(40),
+        &"4".repeat(40),
+        accepted("theirs"),
+    );
+    assert_eq!(reply.status, 200, "git reads a report-status, not an error");
+    assert_eq!(
+        reply.header("content-type"),
+        Some("application/x-git-receive-pack-result")
+    );
+    // Side-band channel 1 carries the report: `unpack ok` and one `ng` with purlis's reason.
+    assert_eq!(reply.body[4], 1, "the side-band the client asked for");
+    let text = reply.text();
+    assert!(text.contains("unpack ok\n"), "{text}");
+    assert!(
+        text.contains(
+            "ng refs/heads/theirs purlis: this branch is not one this chat made, so the push is refused; ask the person to push it\n"
+        ),
+        "{text}"
+    );
+    assert!(reply.body.ends_with(b"0000"));
+    // Nothing went to the forge, and what git is told carries no credential, sentinel or path.
+    assert!(w.fake.requests().is_empty(), "never sent");
+    assert!(!text.contains(w.sentinel.expose()), "{text}");
+    assert!(!text.contains(config.path().to_str().unwrap()), "{text}");
+    assert!(!createdbranches::file_in(config.path()).exists());
+}
+
+#[test]
+fn a_refused_advertisement_is_an_err_line_git_prints_and_the_forge_never_sees_it() {
+    purlis_core::unsteered!();
+    let w = World::new();
+    let request = format!(
+        "GET /acme/other.git/info/refs?service=git-receive-pack HTTP/1.1\r\nHost: github.com\r\nAuthorization: {}\r\n\r\n",
+        basic("x-access-token", w.sentinel.expose()),
+    );
+    let ca = purlis_core::forge::proxy::listener::ChatCa::new(&w.proxy.terminable_hosts(&w.chat))
+        .unwrap();
+    let reply =
+        support::forge_listener::tls(&w, &ca, "github.com", 443, "github.com", request.as_bytes())
+            .expect("a handshake");
+    assert_eq!(reply.status, 200);
+    assert_eq!(
+        reply.header("content-type"),
+        Some("application/x-git-receive-pack-advertisement")
+    );
+    let text = reply.text();
+    assert!(
+        text.starts_with("001f# service=git-receive-pack\n0000"),
+        "{text}"
+    );
+    assert!(
+        text.ends_with("ERR purlis: this repo is not one of this chat's\n"),
+        "{text}"
+    );
+    assert!(w.fake.requests().is_empty(), "never sent");
+}
+
+/// The chat in [`World`] (`chat-listener`) asked for a task, which made `work` and ended.
+fn a_world_whose_chat_dispatched_the_task_that_made(
+    config: &Path,
+    project: &Path,
+    branch: &str,
+) -> World {
+    use purlis_core::dispatchrecord::{self, Asker, ChatRef, Mode, Opening, Place, Worker};
+    // As the app's own project path: a store is read through no link.
+    let project = &std::fs::canonicalize(project).unwrap();
+    let chat = |id: &str| ChatRef {
+        chat: 1,
+        id: Some(id.to_owned()),
+        name: "a chat".to_owned(),
+        persona: None,
+    };
+    let opening = |asker: &str, worker: &str| Opening {
+        mode: Mode::Task,
+        asker: Asker {
+            chat: chat(asker),
+            ..Asker::default()
+        },
+        persona: None,
+        worker: Worker {
+            chat: chat(worker),
+            ..Worker::default()
+        },
+        task: None,
+        place: Place::default(),
+        brief: "do it".to_owned(),
+        report_owed: true,
+    };
+    let now = "2026-11-23T10:00:00Z".parse().unwrap();
+    dispatchrecord::open(project, opening("chat-listener", "task-chat"), now).unwrap();
+    // The task made the branch through the route, then ended.
+    createdbranches::record(
+        config,
+        PROJECT,
+        "task-chat",
+        &[CreatedBranch {
+            tip: "1".repeat(40),
+            ..made(branch)
+        }],
+    )
+    .unwrap();
+    World::recording_with_dispatches(config.to_owned(), project.to_owned())
+}
+
+#[test]
+fn a_chat_may_push_the_branch_a_task_it_dispatched_made_from_the_recorded_tip_and_then_owns_it() {
+    purlis_core::unsteered!();
+    let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let w = a_world_whose_chat_dispatched_the_task_that_made(
+        config.path(),
+        project.path(),
+        "task/work",
+    );
+    let (one, two) = ("1".repeat(40), "2".repeat(40));
+    assert_eq!(
+        push_moving(&w, "task/work", &one, &two, accepted("task/work")),
+        200
+    );
+    // The confirmed push is recorded under the dispatcher: the task owns nothing of it any more.
+    assert_eq!(
+        createdbranches::owner_of(config.path(), HOST, REPO_ID, "task/work"),
+        Some((PROJECT.to_owned(), "chat-listener".to_owned(), two.clone()))
+    );
+    let task_may = createdbranches::tip_for(
+        config.path(),
+        PROJECT,
+        "task-chat",
+        HOST,
+        REPO_ID,
+        "task/work",
+        &|_| false,
+    );
+    assert_eq!(
+        task_may, None,
+        "a task does not move what its dispatcher took up"
+    );
+    // And the dispatcher goes on from the new tip.
+    assert_eq!(
+        push_moving(
+            &w,
+            "task/work",
+            &two,
+            &"3".repeat(40),
+            accepted("task/work")
+        ),
+        200
+    );
+}
+
+#[test]
+fn a_chat_may_not_push_a_tasks_branch_from_a_stale_tip_or_a_branch_of_an_undispatched_chat() {
+    purlis_core::unsteered!();
+    let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let w = a_world_whose_chat_dispatched_the_task_that_made(
+        config.path(),
+        project.path(),
+        "task/work",
+    );
+    // A stale tip: the task's recorded tip is `1…`, the chat names another.
+    let requests = w.fake.requests().len();
+    assert_eq!(
+        push_moving(
+            &w,
+            "task/work",
+            &"9".repeat(40),
+            &"2".repeat(40),
+            accepted("task/work")
+        ),
+        REFUSED
+    );
+    // A branch whose owner no dispatch record ties to the chat.
+    createdbranches::record(
+        config.path(),
+        PROJECT,
+        "stranger",
+        &[CreatedBranch {
+            tip: "5".repeat(40),
+            ..made("task/theirs")
+        }],
+    )
+    .unwrap();
+    assert_eq!(
+        push_moving(
+            &w,
+            "task/theirs",
+            &"5".repeat(40),
+            &"6".repeat(40),
+            accepted("task/theirs")
+        ),
+        REFUSED
+    );
+    assert_eq!(w.fake.requests().len(), requests, "never sent");
+}
+
+#[test]
+fn a_task_does_not_move_the_branch_of_the_chat_that_dispatched_it() {
+    purlis_core::unsteered!();
+    let (config, project) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let _w = a_world_whose_chat_dispatched_the_task_that_made(
+        config.path(),
+        project.path(),
+        "task/work",
+    );
+    // The dispatcher's own branch, as the task would see it: the link runs one way.
+    createdbranches::record(
+        config.path(),
+        PROJECT,
+        "chat-listener",
+        &[CreatedBranch {
+            tip: "7".repeat(40),
+            ..made("asker/own")
+        }],
+    )
+    .unwrap();
+    let records =
+        purlis_core::dispatchrecord::list(&std::fs::canonicalize(project.path()).unwrap());
+    let tip = createdbranches::tip_for(
+        config.path(),
+        PROJECT,
+        "task-chat",
+        HOST,
+        REPO_ID,
+        "asker/own",
+        &|owner| purlis_core::dispatchrecord::dispatched_by(&records, "task-chat", owner),
+    );
+    assert_eq!(tip, None);
 }

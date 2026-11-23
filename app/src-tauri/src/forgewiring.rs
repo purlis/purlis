@@ -334,6 +334,61 @@ impl ProjectContext {
     }
 }
 
+/// Nobody's session: for a read made outside a chat's run.
+struct NoSessions;
+
+impl SessionOfRun for NoSessions {
+    fn session(&self, _: &str) -> Option<u32> {
+        None
+    }
+
+    fn is_open(&self, _: u32) -> bool {
+        false
+    }
+}
+
+/// **The tip of `branch` in the repo `repo_id` at `host` as the forge shows it to the person
+/// now** (ADR 0128, amended 2026-11-23): what Let this chat push records as the branch's tip.
+/// Read with the sign-in of the account the person chose for the repo, never a chat's, and only
+/// for a repo the project confirmed **by the numeric id the ask was raised at**, so a repo made
+/// again under the name is not the one the person was asked about. A branch the forge no longer
+/// has is an error, not a tip.
+pub fn branch_tip_as_the_person(
+    project: &Path,
+    config_root: &Path,
+    host: &str,
+    repo_path: &str,
+    repo_id: u64,
+    branch: &str,
+) -> Result<String, String> {
+    let context = ProjectContext {
+        project: project.to_owned(),
+        config_root: config_root.to_owned(),
+        sessions: Arc::new(NoSessions),
+        quarantines: Arc::new(Quarantines::default()),
+        held: std::sync::Weak::new(),
+    };
+    let repo = Repo::try_from(repo_path).map_err(|_| format!("{repo_path} is not a repo name"))?;
+    let base = Base::try_from(branch).map_err(|_| format!("{branch} is not a branch name"))?;
+    let served = context.served(&repo)?;
+    if !confirmed::address_of(&served.repo.host)
+        .0
+        .eq_ignore_ascii_case(host)
+        || served.repo.repo_id != repo_id
+    {
+        return Err(format!(
+            "{repo_path} is not the repo this ask was raised for, so no branch of it is recorded"
+        ));
+    }
+    let (forge, _) = context.forge_of(&served, None)?;
+    match forge.branch_tip(&repo, &base)? {
+        Some(tip) => Ok(tip.as_str().to_owned()),
+        None => Err(format!(
+            "{branch} is not on {repo_path} any more, so there is nothing to record"
+        )),
+    }
+}
+
 impl HeldContext for ProjectContext {
     fn session(&self, chat: &ChatId) -> Option<u32> {
         self.sessions.session(chat.as_str())
@@ -413,9 +468,22 @@ pub struct CiPushGate {
     proxy: Arc<ForgeProxy>,
     quarantines: Arc<Quarantines>,
     parent: PathBuf,
+    /// Where the forge repos' object caches are: the machine's data folder, which no chat reads or
+    /// writes. `None` where the machine has none, and a push then fetches into its quarantine.
+    cache_parent: Option<PathBuf>,
 }
 
 impl CiPushGate {
+    /// The object cache of the repo `served` names.
+    fn cache_of(&self, served: &Served) -> Option<Arc<purlis_core::heldact::ObjectCache>> {
+        let parent = self.cache_parent.as_ref()?;
+        Some(purlis_core::heldact::ObjectCache::of(
+            parent,
+            &served.repo.host,
+            &served.repo.path,
+        ))
+    }
+
     fn refuse(why: impl Into<String>) -> PushVerdict {
         PushVerdict::Refuse(why.into())
     }
@@ -445,7 +513,10 @@ impl PushGate for CiPushGate {
                 "purlis did not send this push: it is reading other pushes now, so try again in a moment.",
             );
         };
+        // One deadline for every fetch of this push, whatever the number of branches it updates.
+        let started = std::time::Instant::now();
         for update in &push.updates {
+            let budget = purlis_core::heldact::PUSH.saturating_sub(started.elapsed());
             // A delete moves no file; a tag or another ref is not a branch the policy lets by.
             let created = update.old.bytes().all(|b| b == b'0');
             if update.new.bytes().all(|b| b == b'0') {
@@ -465,7 +536,12 @@ impl PushGate for CiPushGate {
             };
             let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
             let from = match self.context.fetch_source(&served, &url) {
-                Ok(from) => from,
+                // Each push fetches what changed since the last into the repo's own cache, all
+                // its fetches within one deadline (inside the listener's connection total).
+                Ok(from) => purlis_core::heldact::FromForge {
+                    cache: self.cache_of(&served).map(|cache| cache.for_a_push(budget)),
+                    ..from
+                },
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
             let one = Update {
@@ -642,6 +718,7 @@ impl ProjectContext {
         Ok(purlis_core::heldact::FromForge {
             url: url.to_owned(),
             helper: Some(helper),
+            cache: None,
         })
     }
 }
@@ -652,17 +729,24 @@ pub struct AppHeldSinks {
     app: tauri::AppHandle,
     quarantines: Arc<Quarantines>,
     parent: PathBuf,
+    cache_parent: Option<PathBuf>,
 }
 
 impl AppHeldSinks {
-    pub fn new(app: tauri::AppHandle, parent: PathBuf) -> Self {
+    pub fn new(app: tauri::AppHandle, parent: PathBuf, cache_parent: Option<PathBuf>) -> Self {
         // A quarantine an earlier app left (it ended without dropping them) is gone before a
         // new one is made: the one-per-user lock means none belongs to a live app.
         purlis_core::heldact::sweep_quarantines(&parent);
+        // The folder exists from the start, so a native Linux read denial (which applies to a path
+        // that is there) has one to apply to before the first push makes a cache in it.
+        if let Some(folder) = &cache_parent {
+            let _ = std::fs::create_dir_all(folder);
+        }
         Self {
             app,
             quarantines: Arc::new(Quarantines::default()),
             parent,
+            cache_parent,
         }
     }
 
@@ -709,6 +793,7 @@ impl HeldSinks for AppHeldSinks {
             proxy,
             quarantines: self.quarantines.clone(),
             parent: self.parent.clone(),
+            cache_parent: self.cache_parent.clone(),
         }))
     }
 }

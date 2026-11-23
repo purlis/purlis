@@ -714,6 +714,47 @@ describe("answering through the path an ask names", () => {
     ]);
   });
 
+  it("lets a chat push a branch it has no record of with Allow, and leaves it refused with Keep blocked, each for the one ask and never with a tip of its own (#7363)", async () => {
+    const calls = sent({ allow_chat_push: "4".repeat(40), keep_chat_push_blocked: null });
+    const ask: Shown = {
+      session: 4,
+      ask: "let-chat-push:4:github.com|41|theirs",
+      says: "theirs in acme/app is not a branch this chat made through purlis.",
+      options: [
+        { id: "press", label: "Allow", allows: true },
+        { id: "keep-blocked", label: "Keep blocked", allows: false },
+      ],
+      source: "let-chat-push",
+      chain: [],
+      answer: {
+        via: "let-chat-push",
+        chat: "01J9ZQ3V5N8X4T2K7M6P0R1S2A",
+        host: "github.com",
+        repo: "acme/app",
+        repo_id: "41",
+        branch: "theirs",
+      },
+    };
+
+    expect(await answerThrough(PLANE, ask, "press")).toBeUndefined();
+    expect(await answerThrough(PLANE, ask, "keep-blocked")).toBeUndefined();
+
+    // The tip is the core's to read from the forge as the person: the window sends none.
+    const same = {
+      plane: PLANE,
+      session: 4,
+      chat: "01J9ZQ3V5N8X4T2K7M6P0R1S2A",
+      host: "github.com",
+      repo: "acme/app",
+      repoId: "41",
+      branch: "theirs",
+    };
+    expect(calls.map((one) => [one.cmd, one.args])).toEqual([
+      ["allow_chat_push", same],
+      ["keep_chat_push_blocked", same],
+    ]);
+  });
+
   it("names the clone Trust all could not trust because its remote names several addresses (R-336)", async () => {
     const calls = sent();
     const clones: Shown = {

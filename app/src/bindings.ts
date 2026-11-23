@@ -2427,6 +2427,12 @@ export const commands = {
 	 */
 	forgeTrustCloneRepo: (plane: PlaneId, folder: string, accountId: string | null) => typedError<ConfirmedAnswer, string>(__TAURI_INVOKE("forge_trust_clone_repo", { plane, folder, accountId })),
 	/**
+	 *  The project's clones that are on the trust list and not confirmed with the forge: what Settings ›
+	 *  You › Accounts offers *Confirm* for. None in a fenced build, whose config home is not the
+	 *  person's.
+	 */
+	forgeUnconfirmedClones: (plane: PlaneId) => typedError<UnconfirmedClone[], string>(__TAURI_INVOKE("forge_unconfirmed_clones", { plane })),
+	/**
 	 *  **Ask GitHub for CI-file permission** on the press a held CI-file push needs (D1.1, D8.3): a
 	 *  device flow asking for what the account holds and `workflow`. The code and the forge's page
 	 *  are answered for the window to show. Waited on with [`forge_ci_permission_wait`].
@@ -3968,6 +3974,13 @@ export const commands = {
 	 *  `place`, the address the Notice showed. Answers the address trusted, or why nothing was.
 	 */
 	vouchClone: (plane: PlaneId, folder: string, place: string) => typedError<string, string>(__TAURI_INVOKE("vouch_clone", { plane, folder, place })),
+	/**
+	 *  **Allow**: records chat `chat` (session `session`) as the owner of `branch` in `repo` at the
+	 *  tip the forge has on it now. Answers that tip, or why nothing was recorded.
+	 */
+	allowChatPush: (plane: PlaneId, session: number, chat: string, host: string, repo: string, repoId: string, branch: string) => typedError<string, string>(__TAURI_INVOKE("allow_chat_push", { plane, session, chat, host, repo, repoId, branch })),
+	/**  **Keep blocked**: the push stays refused, and the chat is not asked again. */
+	keepChatPushBlocked: (plane: PlaneId, session: number, chat: string, host: string, repo: string, repoId: string, branch: string) => typedError<null, string>(__TAURI_INVOKE("keep_chat_push_blocked", { plane, session, chat, host, repo, repoId, branch })),
 	/**
 	 *  Make a workspace: `charter workspace create <name>`, with the vision when one was typed.
 	 * 
@@ -6702,6 +6715,13 @@ export type AnswerPath =
  */
 { via: "trust-clone"; folder: string; place: string } | 
 /**
+ *  `allow_chat_push` for Allow and `keep_chat_push_blocked` for Keep blocked, each for the
+ *  ask the refusal raised: chat `chat`'s update of `branch` in `repo` (lower case) at `host`,
+ *  the repo the forge numbers `repo_id`. Allow records the chat as the owner at the branch's
+ *  tip **read from the forge as the person when pressed**, never one the chat said.
+ */
+{ via: "let-chat-push"; chat: string; host: string; repo: string; repo_id: string; branch: string } | 
+/**
  *  `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
  *  clone Notice's own command, and each clone it trusts leaves the ask (R-336).
  */
@@ -7207,6 +7227,14 @@ export type AskSource =
  *  as the clone's own Notice does, and the chat's next mint goes through.
  */
 "trust-clone" | 
+/**
+ *  **A chat refused an update of a branch it has no record of** (ADR 0128, amended
+ *  2026-11-23, #7363): pushed before the route existed, or by another chat. Allow records the
+ *  chat as its owner at the commit the forge holds when pressed, and Keep blocked leaves it
+ *  refused. One per chat and branch, and never for a protected, default, deploy or pages
+ *  branch.
+ */
+"let-chat-push" | 
 /**
  *  **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
  *  never one per clone. Trust all records each, as its Notice's Trust this clone does.
@@ -21365,6 +21393,14 @@ undo: string[] | null };
 export type TurnPick = {
 	chat: string,
 	number: number,
+};
+
+/**  A clone the person trusted that is not confirmed with the forge, so no chat's route serves it. */
+export type UnconfirmedClone = {
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**  The `<host>/<owner>/<repo>` the trust list holds for it. */
+	place: string,
 };
 
 /**  What an undo came to. */

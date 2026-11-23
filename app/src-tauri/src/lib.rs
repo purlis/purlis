@@ -51,6 +51,7 @@ mod chatcard;
 mod chatevents;
 mod chatlisting;
 mod chatmoves;
+mod chatpush;
 mod chats;
 mod clipath;
 mod clonevouch;
@@ -4159,6 +4160,7 @@ pub fn run() {
                 std::sync::Arc::new(forgewiring::AppHeldSinks::new(
                     app.handle().clone(),
                     forgeroute::quarantine_dir(),
+                    forgeroute::object_cache_dir(),
                 )),
                 std::sync::Arc::new(forgewiring::AppNotices::new(app.handle().clone())),
             );

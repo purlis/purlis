@@ -13,6 +13,7 @@ import { expect, within } from "storybook/test";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import type {
   ForgeAccountRow,
+  UnconfirmedClone,
   ForgeApplicationRow,
   ProjectAccountRow,
   SigningAccount,
@@ -144,6 +145,12 @@ const PROJECT_ACCOUNTS: ProjectAccountRow[] = [
   },
 ];
 
+/** Two clones the person trusted that no confirmed repo serves, in one project. */
+const UNCONFIRMED: UnconfirmedClone[] = [
+  { folder: "workspaces/ws/api", place: "github.com/acme/api" },
+  { folder: "workspaces/ws/web", place: "github.com/acme/web" },
+];
+
 /** The core, faked: these accounts, signing on with these keys, and no gh or glab to import. */
 function theCore(accounts: ForgeAccountRow[]) {
   mockIPC(
@@ -155,6 +162,7 @@ function theCore(accounts: ForgeAccountRow[]) {
         return { fingerprint: "SHA256:q3VbT1sMk2pQ1", public_key: "ssh-ed25519 AAAA example" };
       if (cmd === "forge_cli_logins") return [];
       if (cmd === "forge_applications") return accounts.length > 0 ? APPLICATIONS : [];
+      if (cmd === "forge_unconfirmed_clones") return UNCONFIRMED;
       if (cmd === "forge_project_accounts") return accounts.length > 0 ? PROJECT_ACCOUNTS : [];
       return null;
     },
@@ -162,8 +170,8 @@ function theCore(accounts: ForgeAccountRow[]) {
   );
 }
 
-function Page() {
-  return <OnItsPage group={accountsGroup()} />;
+function Page({ plane }: { plane?: string }) {
+  return <OnItsPage group={accountsGroup(plane)} />;
 }
 
 const meta = {
@@ -228,5 +236,39 @@ export const NoAccount: Story = {
   play: async ({ canvas }) => {
     const group = await canvas.findByRole("region", { name: "Accounts" });
     await within(group).findByText("No forge account is signed in on this machine.");
+  },
+};
+
+/**
+ * **Trusted clones to confirm**: a project with two clones trusted that chats cannot use yet, each
+ * with its remote and a Confirm button the keyboard reaches.
+ */
+export const ClonesToConfirm: Story = {
+  args: { plane: "project-1" },
+  play: async ({ canvas, userEvent }) => {
+    const clones = await canvas.findByRole("grid", { name: "Clones to confirm" });
+    await expect(
+      within(clones)
+        .getAllByRole("rowheader")
+        .map((one) => one.textContent),
+    ).toEqual(["workspaces/ws/api", "workspaces/ws/web"]);
+    await within(clones).findByText("github.com/acme/web");
+    const confirm = await within(clones).findByRole("button", {
+      name: "Confirm workspaces/ws/api",
+    });
+    // The table is a grid, one Tab stop (building-ui.md), walked with the arrows as the grid
+    // keeps it: the first row's header cell, → along the row to its button, ↓ to the button
+    // below (WebKit's Tab never moves between a grid's cells).
+    await userEvent.click(within(clones).getAllByRole("rowheader")[0]);
+    for (let step = 0; step < 6 && document.activeElement !== confirm; step++) {
+      await userEvent.keyboard("{ArrowRight}");
+    }
+    await untilFocused(() => confirm, "→ reaches the first Confirm");
+    await userEvent.keyboard("{ArrowDown}");
+    await untilFocused(
+      () => within(clones).getByRole("button", { name: "Confirm workspaces/ws/web" }),
+      "↓ reaches the second Confirm",
+    );
+    expectFocusInSight();
   },
 };

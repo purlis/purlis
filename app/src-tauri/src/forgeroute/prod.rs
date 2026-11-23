@@ -199,14 +199,29 @@ impl Recorded for ConfirmedRecorded {
         branch: &str,
     ) -> Option<String> {
         let project_id = purlis_core::scaffold::planefile::project_id(project)?;
-        purlis_core::forge::createdbranches::tip_of(
+        // The branch of a chat this one dispatched is its to follow up too, from the app's own
+        // dispatch records (read only when the branch is another chat's), never a file a chat
+        // writes.
+        purlis_core::forge::createdbranches::tip_for(
             &self.config_root,
             &project_id,
             chat,
             host,
             repo_id,
             branch,
+            &|owner| {
+                purlis_core::dispatchrecord::dispatched_by(
+                    &purlis_core::dispatchrecord::list(project),
+                    chat,
+                    owner,
+                )
+            },
         )
+    }
+
+    fn branch_owner(&self, host: &str, repo_id: u64, branch: &str) -> Option<String> {
+        purlis_core::forge::createdbranches::owner_of(&self.config_root, host, repo_id, branch)
+            .map(|(_, chat, _)| chat)
     }
 
     fn own_branches(&self, project: &Path, chat: &str, host: &str, repo_id: u64) -> Vec<String> {

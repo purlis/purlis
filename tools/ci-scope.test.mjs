@@ -24,6 +24,8 @@ import {
   WINDOW_SOURCE_GUARDS,
   ciToolsOf,
   gatesOf,
+  pullRequestPathsOf,
+  workflowNeeded,
   namedIn,
   scopesOf,
   scopesOfPath,
@@ -1478,4 +1480,85 @@ test("a job that reads the scopes gets the draft state: the change-scope action 
   assert.match(action, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/);
   assert.match(action, /ci-scope\.mjs "\$EVENT" "\$BASE" "\$DRAFT"/);
   assert.match(action, /stories-browsers:/);
+});
+
+// **A path-filtered workflow's queue run is scoped by the filter it already has** (#7420): a merge
+// group's event carries no `paths`, so `workflow-scope` reads the workflow's own
+// `pull_request.paths` and the paths the group changes, and the workflow's jobs run when they meet.
+const FILTERED = [
+  "name: w",
+  "on:",
+  "  pull_request:",
+  "    paths:",
+  "      # a comment",
+  "      - crates/a/**",
+  "      - 'tools/b*'",
+  '      - "docs/c.md"',
+  "      - '!crates/a/skip/**'",
+  "  merge_group:",
+  "    types: [checks_requested]",
+  "  schedule:",
+  '    - cron: "1 2 * * *"',
+  "jobs:",
+  "  j:",
+  "    runs-on: ubuntu-24.04",
+  "",
+].join("\n");
+
+test("a workflow's path filter is read from its pull_request block, comments and quotes aside", () => {
+  assert.deepEqual(pullRequestPathsOf(FILTERED), ["crates/a/**", "tools/b*", "docs/c.md", "!crates/a/skip/**"]);
+  assert.equal(pullRequestPathsOf("name: w\non:\n  pull_request:\n    branches: [main]\n  merge_group:\njobs:\n"), null);
+  assert.equal(pullRequestPathsOf("name: w\non: [push]\njobs:\n"), null);
+});
+
+test("a change meets a path filter as GitHub's does: a later line decides, and `!` takes a path out", () => {
+  const filter = pullRequestPathsOf(FILTERED);
+  assert.equal(workflowNeeded(filter, ["crates/a/src/x.rs"]), true);
+  assert.equal(workflowNeeded(filter, ["tools/bee.mjs"]), true);
+  assert.equal(workflowNeeded(filter, ["docs/c.md"]), true);
+  assert.equal(workflowNeeded(filter, ["crates/a/skip/y.rs"]), false);
+  assert.equal(workflowNeeded(filter, ["crates/b/src/x.rs", "README.md"]), false);
+  assert.equal(workflowNeeded(filter, ["README.md", "crates/a/skip/y.rs", "crates/a/ok.rs"]), true);
+});
+
+test("a dotfile is in a filter's `**` and `*`, as on GitHub", () => {
+  assert.equal(workflowNeeded(["operator/**"], ["operator/.cargo/config.toml"]), true);
+  assert.equal(workflowNeeded(["runner-image/**"], ["runner-image/.dockerignore"]), true);
+  assert.equal(workflowNeeded([".github/workflows/w.yml"], [".github/workflows/w.yml"]), true);
+  assert.equal(workflowNeeded(["a/**", "!a/.x/**"], ["a/.x/f"]), false);
+});
+
+test("a change that cannot be read, and a workflow with no filter, are needed: a fault runs more", () => {
+  assert.equal(workflowNeeded(pullRequestPathsOf(FILTERED), []), true);
+  assert.equal(workflowNeeded(null, ["README.md"]), true);
+});
+
+test("`workflow <file> <base>` says whether the change since base meets the workflow's filter", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ci-scope-workflow-"));
+  try {
+    const git = (...args) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" });
+    git("init", "-q", "-b", "main");
+    git("config", "user.email", "t@example.com");
+    git("config", "user.name", "t");
+    git("config", "commit.gpgsign", "false");
+    execFileSync("sh", ["-c", `mkdir -p ${dir}/crates/a ${dir}/other && echo 1 > ${dir}/other/f && echo 1 > ${dir}/crates/a/f`]);
+    execFileSync("sh", ["-c", `cat > ${dir}/w.yml`], { input: FILTERED });
+    git("add", "-A");
+    git("commit", "-qm", "base");
+    const base = git("rev-parse", "HEAD").trim();
+    const run = () =>
+      execFileSync("node", [join(ROOT, "tools/ci-scope.mjs"), "workflow", join(dir, "w.yml"), base], {
+        cwd: dir,
+        encoding: "utf8",
+        env: { ...process.env, GITHUB_OUTPUT: "" },
+      });
+    execFileSync("sh", ["-c", `echo 2 > ${dir}/other/f`]);
+    git("commit", "-qam", "unrelated");
+    assert.match(run(), /^run=false$/m);
+    execFileSync("sh", ["-c", `echo 2 > ${dir}/crates/a/f`]);
+    git("commit", "-qam", "related");
+    assert.match(run(), /^run=true$/m);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

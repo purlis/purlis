@@ -331,6 +331,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_project_accounts",
     "forge_choose_project_account",
     "forge_trust_clone_repo",
+    "forge_unconfirmed_clones",
     "forge_ci_permission_start",
     "forge_ci_permission_wait",
     "forge_ci_permission_cancel",
@@ -610,6 +611,11 @@ pub const WINDOW_ONLY: &[&str] = &[
     // Grant commands (#1927): a consent given, answered or taken back.
     "allow_refused_vault",
     "keep_vault_blocked",
+    // Let a chat push a branch it has no record of (ADR 0128, amended 2026-11-23): Allow records
+    // the chat as the branch's owner, so it is the person's press in the window alone, and Keep
+    // blocked is its answer.
+    "allow_chat_push",
+    "keep_chat_push_blocked",
     "put_away_refused_vault",
     "allow_persona_grants",
     "confirm_sandbox_host",

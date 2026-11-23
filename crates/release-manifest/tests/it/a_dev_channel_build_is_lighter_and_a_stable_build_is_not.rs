@@ -265,7 +265,7 @@ fn a_required_extra_bundle_is_made_by_the_one_build_and_a_dev_build_makes_no_dmg
     assert_eq!(
         value("if"),
         Some(
-            "${{ !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}"
+            "${{ steps.ci.outputs.green == 'true' && !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}"
         )
     );
     assert_eq!(value("continue-on-error"), Some("true"));
