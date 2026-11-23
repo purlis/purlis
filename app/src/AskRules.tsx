@@ -2,30 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useState } from "react";
-import { commands, type Offered, type RuleMade, type RuleMadeShown, type Shown } from "./bindings";
+import { commands, type RuleMadeShown, type Shown } from "./bindings";
 import { asksMoved, onAsksMoved } from "./asks";
-import { highRisk } from "./asksSame";
 import { backAtSaid } from "./AsksSnooze";
 import { chainSaid } from "./inboxRowParts";
 import { counted } from "./dispatches";
-import { FixWay } from "./Notice";
-import { Button, ButtonRow } from "./ui/button/Button";
+import { Button } from "./ui/button/Button";
 import { Dialog } from "./ui/dialog/Dialog";
-import { MessageForm } from "./ui/message/Message";
-import { SecretAskToolLine } from "./ui/secret-ask/SecretAsk";
 
 /**
  * **Ask less** (ADR 0121 decision 7, #6010), as Asks draws it:
  *
- * - **A rule offered on a row** ({@link RuleOffer}): after the same Allow to the same request
- *   twice in a week, the ask offers its own wider grants as a rule, the narrowest that would have
- *   prevented the asks first (the core's `asking::with_rules`). A press answers the ask with that
- *   grant, through the path the ask names, checked by the row's settle guard as any Allow is,
- *   and keeps it in Rules I made. A rule is offered only where its source writes it and Rules I
- *   made can undo it: a sandbox's host, folder or service, and a reviewed program for its chat or,
- *   with Always allow, as its persona's tool (ADR 0112, #6177), whose line the offer shows before
- *   it is pressed; never an arbitrary command, never a high-risk ask ({@link highRisk}), and never
- *   a harness's own saved rule, which the window never writes.
+ * - **No rule is offered** (M75 slice 19, Q314.15): a chat is no longer offered a rule after the
+ *   same Allow twice. What stays of a rule made before is listed in Rules I made.
  * - **Rules I made** ({@link RulesIMade}): each rule made, with what it allows and for whom, and
  *   Undo, which takes its grant away as Revoke on Settings' Granted list does, or takes the tool
  *   line an Always allow wrote out of the persona's tools again.
@@ -39,90 +28,6 @@ export const RULES_I_MADE = "Rules I made";
 
 /** What a cool-off's way out says. */
 export const END_COOL_OFF = "End cool-off";
-
-/** **The rule `ask` offers**: its grants, the suggested one first, as its options offer them. */
-export function offeredRules(ask: Shown): Offered[] {
-  const offer = ask.rule?.offer;
-  if (offer == null) return [];
-  return offer.options.flatMap((id) => ask.options.filter((one) => one.id === id && one.allows));
-}
-
-/** The id of a run's Always allow, which writes its persona's tool line (ADR 0112). */
-export const ALWAYS_ALLOW = "allow-always";
-
-/** What the offer says above the tool line an Always allow would write. */
-export const alwaysLineSaid = (persona: string) =>
-  `Always allow adds this line to ${persona}'s tools in the project's committed file:`;
-
-/** What the offer's line says. */
-export const offerSaid = (times: number) =>
-  `You gave this the same Allow ${times} times this week. Make it a rule, and it isn't asked again:`;
-
-/** **The rule an ask's row offers**, under its answers. Nothing where it offers none. */
-export function RuleOffer({
-  ask,
-  who,
-  busy,
-  mayAct,
-  onMake,
-}: {
-  ask: Shown;
-  /** Whose ask it is, as the row names it. */
-  who: string;
-  busy: boolean;
-  /** The row's settle guard (ADR 0097): whether a press on `way` may act now. */
-  mayAct: (way: Element) => boolean;
-  /** A grant was pressed: the row answers its ask with it, as a rule. */
-  onMake: (option: Offered) => void;
-}) {
-  const offer = ask.rule?.offer;
-  const grants = highRisk(ask) ? [] : offeredRules(ask);
-  if (offer == null || grants.length === 0) return null;
-  // The line Always allow writes is read before it is pressed (#5116).
-  const always = grants.some((one) => one.id === ALWAYS_ALLOW) ? ask.run?.always : undefined;
-  return (
-    <MessageForm>
-      <p className="inbox-secondary ui-text-secondary">{offerSaid(offer.times)}</p>
-      {always != null && ask.run != null && (
-        <>
-          <p className="inbox-secondary ui-text-secondary">{alwaysLineSaid(ask.run.persona)}</p>
-          <SecretAskToolLine text={always.line} />
-        </>
-      )}
-      <ButtonRow size="sm" role="group" aria-label={`Make a rule for ${who}`}>
-        {grants.map((one) => (
-          <FixWay
-            key={one.id}
-            fix={{ label: one.label, allows: true, busy, onPress: () => onMake(one) }}
-            mayAct={mayAct}
-            variant="grants"
-          />
-        ))}
-      </ButtonRow>
-    </MessageForm>
-  );
-}
-
-/** **What the core is told of a rule made from `ask`'s offer with `option`.** */
-export function ruleMadeOf(ask: Shown, option: Offered): RuleMade {
-  const path = ask.answer;
-  return {
-    session: ask.session,
-    request: ask.rule?.request ?? "",
-    source: ask.source,
-    says: ask.says,
-    option: option.id,
-    label: option.label,
-    scope: option.scope ?? "chat",
-    what: path.via === "sandbox-block" ? path.shown.what : null,
-    target: path.via === "sandbox-block" ? path.shown.target : null,
-    // The line Always allow wrote, for Undo to take out (#6177).
-    declared:
-      option.id === ALWAYS_ALLOW && ask.run?.always != null
-        ? { persona: ask.run.persona, line: ask.run.always.line }
-        : null,
-  };
-}
 
 /** What a cool-off's line says: whose asks, and until when. */
 export function coolingSaid(cooling: readonly Shown[], until: number | null, now: Date): string {

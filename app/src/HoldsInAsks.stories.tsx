@@ -5,7 +5,7 @@
  * **Holds in Asks** (T1-39; Q239, R-142, R-143): a merge a chat's hook held is an ask of its own
  * sort, of the Merge risk class. Two chats holding the same merge are two rows, never one
  * answered once for all (#6009), and a hold's row offers nothing to remember (#6010), even where
- * a rule offer reached it.
+ * a rule offer reached it. No rule is offered any more (M75 slice 19, Q314.15).
  */
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -17,7 +17,7 @@ import { expectFocusInSight, untilFocused } from "./stories.testkit";
 const HEAD = "0123456789abcdef0123456789abcdef01234567";
 
 /** The merge chat `session`'s hook held: request 12 of `o/r` at one head, into main. */
-const hold = (session: number, since: number, offered = false): Shown => ({
+const hold = (session: number, since: number): Shown => ({
   session,
   ask: `merge:${session}:o/r#12@${HEAD}`,
   says: "Merge request 12 of o/r at 0123456789ab? There is no undo.",
@@ -52,21 +52,11 @@ const hold = (session: number, since: number, offered = false): Shown => ({
     confirm: "Merge request 12 of o/r at 0123456 into main?",
   },
   since,
-  // A rule offer the window must never draw on a hold.
-  ...(offered
-    ? {
-        rule: {
-          request: '["merge-hold","o/r#12"]',
-          offer: { answered: "merge", times: 2, options: ["merge"] },
-        },
-      }
-    : {}),
 });
 
-function Holds({ kind }: { kind: "twice" | "offered" }) {
+function Holds({ kind }: { kind: "twice" | "single" }) {
   const [now] = useState(() => Math.floor(Date.now() / 1000));
-  const asks =
-    kind === "twice" ? [hold(3, now - 600), hold(5, now - 120)] : [hold(3, now - 600, true)];
+  const asks = kind === "twice" ? [hold(3, now - 600), hold(5, now - 120)] : [hold(3, now - 600)];
   return (
     <div style={{ inlineSize: 420 }}>
       <Inbox plane="/plane" asks={asks} onGo={() => {}} onLeave={() => {}} />
@@ -105,7 +95,7 @@ export const TwoIdenticalHoldsAreTwoRows: Story = {
 /** **A hold row offers no remembering option** (R-143): no rule to make, and no answer with a
  *  scope, on its row or behind its Answer. */
 export const AHoldOffersNothingToRemember: Story = {
-  args: { kind: "offered" },
+  args: { kind: "single" },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const row = holdRows(canvasElement)[0];

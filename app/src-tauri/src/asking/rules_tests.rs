@@ -1,8 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! **Ask less** on the ✋'s list (ADR 0121 decision 7, #6010): which asks offer a rule, which
-//! grants it suggests first, and which a cool-off holds apart.
+//! **Ask less** on the ✋'s list (ADR 0121 decision 7, #6010): which asks a cool-off holds apart.
 
 use super::*;
 use crate::sandboxing::GrantWhat;
@@ -63,7 +62,9 @@ fn a_hosts_ask_is_named_by_its_source_and_host() {
 }
 
 #[test]
-fn a_hosts_ask_after_the_same_allow_from_two_chats_suggests_the_project_on_this_machine() {
+fn no_ask_is_offered_a_rule_however_often_its_allow_was_given() {
+    // M75 slice 19, Q314.15: the rule offer after two Allows is gone. An ask is still named by
+    // its request, so its answer is noted against it, and carries nothing more.
     let ask = host_ask(3);
     let record = Record {
         answered: vec![
@@ -72,52 +73,17 @@ fn a_hosts_ask_after_the_same_allow_from_two_chats_suggests_the_project_on_this_
         ],
         ..Record::default()
     };
-    let listed = with_rules(listing(vec![ask]), &record, PROJECT, NOW);
-    let offer = listed.asks[0]
-        .rule
-        .as_ref()
-        .and_then(|rule| rule.offer.clone())
-        .expect("a rule offered");
-    assert_eq!(offer.times, 2);
-    // Every chat here on this machine is the narrowest that would have prevented both; for
-    // everyone in the project, committed, is the other.
-    assert_eq!(offer.options, ["you", "project"]);
-}
-
-#[test]
-fn a_hosts_ask_answered_once_offers_no_rule_but_is_named() {
-    let ask = host_ask(3);
-    let record = Record {
-        answered: vec![answered(&ask, 1, "chat", true, NOW - 60)],
-        ..Record::default()
-    };
-    let listed = with_rules(listing(vec![ask]), &record, PROJECT, NOW);
-    let rule = listed.asks[0].rule.as_ref().expect("named");
-    assert_eq!(rule.offer, None);
-}
-
-#[test]
-fn an_allow_given_at_the_widest_scope_offers_nothing_wider() {
-    let ask = host_ask(3);
-    let record = Record {
-        answered: vec![
-            answered(&ask, 1, "project", true, NOW - 600),
-            answered(&ask, 2, "project", true, NOW - 60),
-        ],
-        ..Record::default()
-    };
-    let listed = with_rules(listing(vec![ask]), &record, PROJECT, NOW);
+    let listed = with_rules(listing(vec![ask.clone()]), &record, PROJECT, NOW);
     assert_eq!(
-        listed.asks[0]
-            .rule
-            .as_ref()
-            .and_then(|one| one.offer.clone()),
-        None
+        listed.asks[0].rule,
+        Some(RuleShown {
+            request: request_of(&ask).expect("named"),
+        })
     );
 }
 
 #[test]
-fn a_question_is_never_named_nor_offered_a_rule() {
+fn a_question_is_never_named() {
     let ask = question(1, None, Vec::new());
     assert_eq!(request_of(&ask), None);
     let listed = with_rules(listing(vec![ask]), &Record::default(), PROJECT, NOW);
@@ -158,7 +124,7 @@ fn a_second_dont_allow_holds_that_chats_ask_apart_until_the_cool_off_ends() {
 }
 
 #[test]
-fn a_budget_or_loop_pause_is_never_named_offered_a_rule_nor_cooled_off() {
+fn a_budget_or_loop_pause_is_never_named_nor_cooled_off() {
     use crate::pausing::{Paused, Why};
     let budget = Paused {
         why: Why::Budget(purlis_core::dispatchlimits::Reached::Time {
@@ -257,15 +223,6 @@ fn run_ask(session: u32) -> Shown {
     )
 }
 
-fn offered_options(ask: Shown, record: &Record) -> Option<Vec<String>> {
-    let listed = with_rules(listing(vec![ask]), record, PROJECT, NOW);
-    listed.asks[0]
-        .rule
-        .as_ref()
-        .and_then(|rule| rule.offer.clone())
-        .map(|offer| offer.options)
-}
-
 #[test]
 fn a_runs_always_allow_is_a_rule_for_this_project() {
     let ask = run_ask(1);
@@ -283,65 +240,4 @@ fn a_runs_always_allow_is_a_rule_for_this_project() {
             (KEEP, None),
         ]
     );
-}
-
-/// **A run grant that allows a program is a vault use** (#6178): it hands the vault's values to
-/// the chat's run, so it is risky and, as every risky ask, is never offered a rule (#6177), what
-/// the same Allow was given before. Its own Always allow stays among its answers.
-#[test]
-fn a_run_grant_that_hands_a_program_vault_values_is_never_offered_a_rule() {
-    let ask = run_ask(3);
-    assert_eq!(
-        ask.risk.as_ref().map(|risk| risk.class),
-        Some(RiskClass::VaultUse)
-    );
-    assert!(ask.options.iter().any(|one| one.id == RUN_ALLOW_ALWAYS));
-    let from_two_chats = Record {
-        answered: vec![
-            answered(&ask, 1, RUN_ALLOW_CHAT, true, NOW - 600),
-            answered(&ask, 2, RUN_ALLOW_CHAT, true, NOW - 60),
-        ],
-        ..Record::default()
-    };
-    let twice_in_one = Record {
-        answered: vec![
-            answered(&ask, 3, RUN_ALLOW_ONCE, true, NOW - 600),
-            answered(&ask, 3, RUN_ALLOW_ONCE, true, NOW - 60),
-        ],
-        ..Record::default()
-    };
-    assert_eq!(offered_options(ask.clone(), &from_two_chats), None);
-    assert_eq!(offered_options(ask, &twice_in_one), None);
-}
-
-/// The same ask offered a rule unmarked offers none once it carries a risk, of every class.
-#[test]
-fn an_ask_marked_risky_is_never_offered_a_rule() {
-    let ask = host_ask(3);
-    let record = Record {
-        answered: vec![
-            answered(&ask, 1, "chat", true, NOW - 600),
-            answered(&ask, 2, "chat", true, NOW - 60),
-        ],
-        ..Record::default()
-    };
-    assert!(
-        offered_options(ask.clone(), &record).is_some(),
-        "unmarked, it is offered a rule"
-    );
-    for class in [
-        RiskClass::ProtectedPush,
-        RiskClass::ProductionHost,
-        RiskClass::OutsideProject,
-        RiskClass::Delete,
-        RiskClass::VaultUse,
-    ] {
-        let mut risky = ask.clone();
-        risky.risk = Some(RiskShown {
-            class,
-            why: "Risky".to_owned(),
-            confirm: "Allow it?".to_owned(),
-        });
-        assert_eq!(offered_options(risky, &record), None, "{class:?}");
-    }
 }

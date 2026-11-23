@@ -206,34 +206,17 @@ pub struct Shown {
     /// large. Absent for any other ask.
     #[specta(optional)]
     pub fill: Option<FillShown>,
-    /// **What its request is called, and the rule it offers** (ADR 0121 decision 7, #6010):
-    /// present where its request can be named, so its answer is noted against it. Absent on an
-    /// ask that is never offered a rule nor cooled off.
+    /// **What its request is called** (ADR 0121 decision 7, #6010): present where its request
+    /// can be named, so its answer is noted against it. Absent on an ask that is never cooled off.
     #[specta(optional)]
     pub rule: Option<RuleShown>,
 }
 
-/// **An ask's request, and the rule it offers** (#6010).
+/// **An ask's request** (#6010): no rule is offered for it any more (M75 slice 19, Q314.15).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
 pub struct RuleShown {
     /// The request's name: two asks with the same are the same request.
     pub request: String,
-    /// The rule offered, where the same Allow was given it twice in a week.
-    #[specta(optional)]
-    pub offer: Option<RuleOffered>,
-}
-
-/// **A rule an ask offers** (#6010): the Allow given each time, how often, and its wider grants
-/// that a rule may be made of, the one suggested first.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
-pub struct RuleOffered {
-    /// The id of the Allow given each time.
-    pub answered: String,
-    /// How many times, in the last week.
-    pub times: u32,
-    /// The option ids of the grants a rule may be made of, the suggested one first: the
-    /// narrowest that would have prevented every ask, else the widest there is.
-    pub options: Vec<String>,
 }
 
 /// **An ask's risk, as its row says it** (#6011): a mirror of `purlis_core::askrisk::Risk`,
@@ -1303,13 +1286,6 @@ fn level_scope(level: crate::sandboxing::GrantLevel) -> Option<RuleScope> {
     }
 }
 
-/// **Whether `ask` is high-risk** (ADR 0121 decision 8, #6011): one is never offered a rule. It
-/// is so where its row carries a risk (#6178), the same predicate as `asksSame.ts`'s `highRisk`
-/// (#6177).
-pub fn high_risk(ask: &Shown) -> bool {
-    ask.risk.is_some()
-}
-
 /// **What `ask`'s request is called** (#6010), where it can be named: two asks with the same name
 /// are the same request, as identical requests are one row of Asks (`asksSame.ts`, #6009). A
 /// sandbox's host, folder or service by its target; a permission by its line (an edit's change
@@ -1345,50 +1321,8 @@ pub fn request_of(ask: &Shown) -> Option<String> {
     serde_json::to_string(&[serde_json::to_value(ask.source).ok()?, asked.into()]).ok()
 }
 
-/// **The rule `ask` offers** under `offer` (#6010): its grants wider than the Allow given each
-/// time that a rule may be made of, the suggested one first: the narrowest that would have
-/// prevented every ask, else the widest there is. None where it has no such grant, or is
-/// high-risk.
-fn offered(ask: &Shown, offer: purlis_core::askrules::Offer) -> Option<RuleOffered> {
-    if high_risk(ask) {
-        return None;
-    }
-    let given = ask
-        .options
-        .iter()
-        .find(|one| one.id == offer.answered)?
-        .scope;
-    let wider: Vec<(&Offered, RuleScope)> = ask
-        .options
-        .iter()
-        .filter(|one| one.allows)
-        .filter_map(|one| Some((one, one.scope?)))
-        .filter(|(_, scope)| given.is_none_or(|given| *scope > given))
-        .collect();
-    let needs = RuleScope::from(offer.needs);
-    let suggested = wider
-        .iter()
-        .filter(|(_, scope)| *scope >= needs)
-        .min_by_key(|(_, scope)| *scope)
-        .or_else(|| wider.iter().max_by_key(|(_, scope)| *scope))?
-        .0;
-    Some(RuleOffered {
-        answered: offer.answered,
-        times: offer.times,
-        options: std::iter::once(suggested)
-            .chain(
-                wider
-                    .iter()
-                    .map(|(one, _)| *one)
-                    .filter(|one| one.id != suggested.id),
-            )
-            .map(|one| one.id.clone())
-            .collect(),
-    })
-}
-
-/// **Asks less** (#6010): each ask of `asking` named by its request, with the rule it offers
-/// under `record` at `now`; and the asks a cool-off holds put apart, in [`Asking::cooling`].
+/// **Asks less** (#6010): each ask of `asking` named by its request; and the asks a cool-off holds
+/// put apart, in [`Asking::cooling`] under `record` at `now`.
 pub fn with_rules(
     mut asking: Asking,
     record: &purlis_core::askrules::Record,
@@ -1407,8 +1341,7 @@ pub fn with_rules(
             session: ask.session,
             request: request.clone(),
         };
-        let offer = askrules::offer(record, &asked, now).and_then(|offer| offered(&ask, offer));
-        ask.rule = Some(RuleShown { request, offer });
+        ask.rule = Some(RuleShown { request });
         match askrules::cooling(record, &asked, now) {
             Some(until) => {
                 let until = u32::try_from(until).unwrap_or(u32::MAX);
