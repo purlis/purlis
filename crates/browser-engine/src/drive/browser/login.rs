@@ -328,7 +328,7 @@ impl Unconfirmed {
 
     fn said(&self) -> String {
         format!(
-            "{}, {}, {} frame{}: {}{}",
+            "{}, {}, {} {}: {}{}",
             self.kind.name(),
             if self.opener {
                 "has an opener"
@@ -336,7 +336,7 @@ impl Unconfirmed {
                 "no opener"
             },
             self.frames,
-            if self.frames == 1 { "" } else { "s" },
+            if self.frames == 1 { "frame" } else { "frames" },
             self.steps_said(),
             self.waited.map_or(String::new(), |waited| format!(
                 ", waited {:.1} s",
