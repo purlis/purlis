@@ -70,6 +70,7 @@ use crate::secrets::keyring::Secret;
 mod ci;
 mod handoff;
 mod holds;
+mod objectcache;
 mod prepare;
 mod quarantine;
 mod recognise;
@@ -84,6 +85,7 @@ pub use handoff::{Handoff, HeldContext, OwnedWorld};
 pub use holds::{
     Asked, HeldActs, NotDone, Performed, Pressed, Waiting, holds_global_limit, holds_limits,
 };
+pub use objectcache::ObjectCache;
 pub use prepare::{pinned, prepare};
 pub use quarantine::{BaseObjects, FetchLimits, FromForge, Quarantine, sweep as sweep_quarantines};
 pub use recognise::{Call, Recognised, Recorded, Requested, Why, recognise, valid_rev};

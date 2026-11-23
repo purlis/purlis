@@ -1686,6 +1686,26 @@ fn a_network_call_hands_the_forge_cli_its_credential_and_no_other_call_does() {
 }
 
 #[test]
+fn a_call_stopped_at_its_deadline_says_it_took_longer_than_the_deadline() {
+    // A stopped git writes nothing, and a caller reading the first line of its stderr reported
+    // "could not fetch" with no cause (the 120 s a push's base fetch is given).
+    let dir = repo();
+    let answer = run(
+        dir.path(),
+        &["-c", "alias.hang=!sleep 30", "hang"],
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    assert_eq!(answer.code, None);
+    assert_eq!(
+        answer.err.lines().next(),
+        Some("git took longer than 1 s and was stopped"),
+        "{:?}",
+        answer.err
+    );
+}
+
+#[test]
 fn a_call_stopped_at_its_deadline_returns_then_and_what_git_started_is_ended_with_it() {
     // `clone` runs `git-remote-https`, which runs the credential helper. Ending git alone
     // left them running, holding the pipes, and a reader that waits for every writer

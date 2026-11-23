@@ -2753,6 +2753,18 @@ pub fn run_network(dir: &Path, helper: Option<&str>, args: &[&str]) -> Result<Ru
     run_network_with(dir, helper, args, Vec::new())
 }
 
+/// [`run_network`] with a deadline of the caller's own instead of [`NETWORK`]: for the one call
+/// that may rightly take longer, a fetch that fills an app-owned object cache for the first time
+/// (ADR 0128, amended 2026-11-23). Every other rule of [`run_network`] holds.
+pub fn run_network_within(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(dir, helper, args, Vec::new(), false, timeout)
+}
+
 /// [`run_network`] in **no repository at all**, for a call that names its remote by address and
 /// needs none (`ls-remote <url>`): `GIT_DIR` names `/dev/null`, so git reads no repository's
 /// configuration, not even one a `.git` in `dir` would be found as.
@@ -2786,6 +2798,7 @@ pub fn run_network_in_no_repository_trusting_the_system(
         args,
         vec![("GIT_DIR".to_owned(), "/dev/null".into())],
         true,
+        NETWORK,
     )
 }
 
@@ -2796,7 +2809,7 @@ fn run_network_with(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, more, false)
+    run_network_shaped(dir, helper, args, more, false, NETWORK)
 }
 
 /// [`run_network_with`], trusting only the system where `system_trust` says so ([`is_trust`]).
@@ -2806,6 +2819,7 @@ fn run_network_shaped(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
     system_trust: bool,
+    timeout: Duration,
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     // Under a chat's route there is no helper but the sentinel one it names, and none of the
@@ -2836,7 +2850,7 @@ fn run_network_shaped(
     };
     let started = Instant::now();
     let run = counted(dir, args, || {
-        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, NETWORK)?)
+        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, timeout)?)
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
     // place git sent it, read as git reads it (#1853, #1828).
@@ -3174,12 +3188,14 @@ fn wait_raw_until(
     });
 
     let deadline = Instant::now() + timeout;
+    let mut timed_out = false;
     let code = loop {
         match child.try_wait()? {
             Some(status) => break status.code(),
             None if Instant::now() >= deadline
                 || called_off.is_some_and(|off| off.load(Ordering::Relaxed)) =>
             {
+                timed_out = Instant::now() >= deadline;
                 stop(&mut child);
                 break None;
             }
@@ -3198,7 +3214,18 @@ fn wait_raw_until(
         None => rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default(),
     };
     let out = collect(out_rx);
-    let err = collect(err_rx);
+    let mut err = collect(err_rx);
+    if timed_out {
+        // A stopped git says nothing of why, so a caller reading the first line of its stderr
+        // would otherwise report a failure with no cause. The cause leads, for the same reason.
+        let mut said = format!(
+            "git took longer than {} s and was stopped\n",
+            timeout.as_secs()
+        )
+        .into_bytes();
+        said.append(&mut err);
+        err = said;
+    }
     Ok(RawRun { code, out, err })
 }
 

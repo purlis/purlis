@@ -70,6 +70,7 @@ fn from(path: &Path) -> FromForge {
     FromForge {
         url: path.to_string_lossy().into_owned(),
         helper: None,
+        cache: None,
     }
 }
 
@@ -113,6 +114,7 @@ fn an_address_with_user_information_lists_nothing_and_fetches_nothing() {
     let forge = FromForge {
         url: format!("user:secret@{}", s.forge.to_string_lossy()),
         helper: None,
+        cache: None,
     };
     assert!(forge.advertised(&s.quarantine).is_none());
     assert!(forge.fetch(&s.quarantine, &s.tips[0]).is_err());

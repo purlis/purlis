@@ -1871,7 +1871,9 @@ and its tab says so (#3787).
 ### `quarantine-<random>/` — where a held CI-file push is read
 
 - **Format:** a git repository with nothing checked out, in a folder of the app's own that no chat
-  can write. It holds the forge's base commit and its history, fetched with the person's
+  can write. It reads the forge's base commit and its history (from the
+  [object cache](#quarantineobject-cachehash--what-a-forge-repo-holds-for-the-pushes-read-against-it)
+  below, as an alternate), fetched with the person's
   credential, and the pack a chat pushed, taken in by `git index-pack --stdin --fix-thin
   --strict` so that git hashes every object itself. The diff of a held push, and the files its
   commit is made from, are read here and never from a chat's clone, whose loose objects a chat can
@@ -1889,6 +1891,26 @@ and its tab says so (#3787).
 - **Written by:** `purlis_core::heldact::Quarantine`.
 - **Read by:** `purlis_core::heldact::GitTrees`, only through `Quarantine::trees`; a test fails
   on any other use of `GitTrees::of_trusted_store` in the source.
+
+### `quarantine/object-cache/<hash>/` — what a forge repo holds, for the pushes read against it
+
+- **Format:** a git repository with nothing checked out, one per forge repo (the folder is the
+  SHA-256 of the host and the repo's path, lower-cased, so no name from a forge or a chat reaches a
+  path), in a folder of the app's own that no chat can write. It holds the forge's base commits and
+  history, fetched with the person's credential and topped up by each push: the forge is sent only
+  what the cache lacks. A quarantine (above) names its object store as an alternate, so the
+  quarantine's own store holds only the pushed pack. Its private refs are `refs/quarantine/base/*`
+  (the newest 32) and `refs/quarantine/tips/*` (the forge's advertised tips of the last run). The
+  file `.git/purlis-filled` says a fetch into it has finished once (ADR 0128, amended 2026-11-23).
+- **Status:** **purlis only**.
+- **Tier:** Machine, device-bound, rebuildable — nothing in it is not on the forge, so it is
+  fetched again from the forge when it is missing. It is kept between pushes and between app runs,
+  tidied by `git gc --auto` after an update, and **made again** when its objects pass 10 GiB and no
+  quarantine is reading through it. One lock per cache in the app, and git's own locks, keep two
+  pushes from corrupting it; a push that arrives while it is filled for the first time is refused
+  with the reason. **The token is on no disk**, as for a quarantine.
+- **Written by:** `purlis_core::heldact::ObjectCache`.
+- **Read by:** a quarantine, as an alternate, and nothing else.
 
 ### `workspaces/<ws>/skills/` and `personas/<name>/skills/` — workspace and persona skills
 

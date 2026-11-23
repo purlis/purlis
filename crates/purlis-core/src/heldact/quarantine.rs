@@ -11,7 +11,10 @@
 //! 1. A fresh **repository** (never checked out) under a folder of the app's own
 //!    ([`Quarantine::open`]). Not a bare one: git's `safe.bareRepository` setting may refuse to find it.
 //! 2. **The base, fetched from the forge** with the person's credential ([`BaseObjects`]): what a
-//!    thin pack is a delta against, and what the diff is made against.
+//!    thin pack is a delta against, and what the diff is made against. Into the forge repo's
+//!    [`ObjectCache`] where the source has one, which the quarantine names as an **alternate**, so
+//!    a push fetches only what changed and the quarantine's own store holds the pushed pack alone
+//!    (ADR 0128, amended 2026-11-23; why that is safe is in [`super::objectcache`]).
 //! 3. **The chat's pack** taken in by `git index-pack --stdin --fix-thin --strict` ([`Quarantine::take_in`]):
 //!    git hashes every object and checks its form, so an object is its content and nothing else, and
 //!    a pack that leaves the tip without its objects is refused.
@@ -25,7 +28,10 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use std::sync::Arc;
+
 use super::ci::GitTrees;
+use super::objectcache::{self, FILL, Lease, ObjectCache};
 use crate::diffscan::KNOWN_AT_MOST;
 use crate::mergehold::HeadSha;
 use crate::worktree::git;
@@ -79,6 +85,12 @@ pub trait BaseObjects {
     fn fetch_all(&self, into: &Path, tips: &[HeadSha]) -> Result<(), String> {
         tips.iter().try_for_each(|tip| self.fetch(into, tip))
     }
+
+    /// The object cache this source fetches into, which a quarantine reads through as an
+    /// alternate. `None` where it fetches into the quarantine itself.
+    fn cache(&self) -> Option<Arc<ObjectCache>> {
+        None
+    }
 }
 
 /// **The forge's own objects**, fetched over HTTPS with the person's credential and no other
@@ -90,6 +102,9 @@ pub trait BaseObjects {
 pub struct FromForge {
     pub url: String,
     pub helper: Option<String>,
+    /// The forge repo's object cache: what a push fetches into, so that it is sent only what is
+    /// new. `None` fetches the whole base into the quarantine, on the per-call limit alone.
+    pub cache: Option<Arc<ObjectCache>>,
 }
 
 impl FromForge {
@@ -110,8 +125,14 @@ impl FromForge {
             .collect();
         let mut args = vec!["fetch", "--quiet", "--no-tags", "--", self.url.as_str()];
         args.extend(specs.iter().map(String::as_str));
-        let run =
-            git::run_network(into, self.helper.as_deref(), &args).map_err(|why| why.to_string())?;
+        // A fetch into the cache may be the first, of a whole history: it has a bound of its own.
+        let bound = if self.cache.is_some() {
+            FILL
+        } else {
+            git::NETWORK
+        };
+        let run = git::run_network_within(into, self.helper.as_deref(), &args, bound)
+            .map_err(|why| why.to_string())?;
         if run.ok() {
             Ok(())
         } else {
@@ -190,22 +211,9 @@ fn check_deadline(started: Instant, limits: &FetchLimits) -> Result<(), String> 
     }
 }
 
-/// The bytes under the quarantine's object store (links are not followed).
-fn store_size(quarantine: &Path) -> u64 {
-    fn walk(dir: &Path) -> u64 {
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            return 0;
-        };
-        entries
-            .flatten()
-            .map(|entry| match entry.metadata() {
-                Ok(meta) if meta.is_dir() => walk(&entry.path()),
-                Ok(meta) => meta.len(),
-                Err(_) => 0,
-            })
-            .sum()
-    }
-    walk(&quarantine.join(".git").join("objects"))
+/// The bytes under a repository's object store (links are not followed).
+fn store_size(repository: &Path) -> u64 {
+    objectcache::size(&repository.join(".git").join("objects"))
 }
 
 impl BaseObjects for FromForge {
@@ -213,12 +221,18 @@ impl BaseObjects for FromForge {
         if self.url.contains('@') {
             return Err("a forge's address carries no user information".to_owned());
         }
-        self.fetch_into_refs(
-            into,
-            std::slice::from_ref(base),
-            "base",
-            "git could not fetch the base from the forge",
-        )
+        let fetch = |dir: &Path| {
+            self.fetch_into_refs(
+                dir,
+                std::slice::from_ref(base),
+                "base",
+                "git could not fetch the base from the forge",
+            )
+        };
+        match &self.cache {
+            Some(cache) => cache.update(fetch),
+            None => fetch(into),
+        }
     }
 
     fn advertised(&self, into: &Path) -> Option<Vec<String>> {
@@ -235,7 +249,17 @@ impl BaseObjects for FromForge {
     }
 
     fn fetch_all(&self, into: &Path, tips: &[HeadSha]) -> Result<(), String> {
-        self.fetch_all_within(into, tips, &FetchLimits::DEFAULT)
+        let Some(cache) = &self.cache else {
+            return self.fetch_all_within(into, tips, &FetchLimits::DEFAULT);
+        };
+        cache.update(|dir| self.fetch_all_within(dir, tips, &FetchLimits::DEFAULT))?;
+        let ids: Vec<String> = tips.iter().map(|tip| tip.as_str().to_owned()).collect();
+        cache.keep_tips(&ids);
+        Ok(())
+    }
+
+    fn cache(&self) -> Option<Arc<ObjectCache>> {
+        self.cache.clone()
     }
 }
 
@@ -248,6 +272,8 @@ enum Refused {
 /// **A repository of the app's own, with nothing checked out**, removed when this is dropped.
 pub struct Quarantine {
     path: PathBuf,
+    /// The cache this reads through, kept from being made again while this is held.
+    _lease: Option<Lease>,
 }
 
 impl Quarantine {
@@ -269,10 +295,28 @@ impl Quarantine {
         if !made.ok() {
             return Err(first_line(&made.err, "git could not make the quarantine"));
         }
-        let quarantine = Quarantine { path };
+        let cache = from.cache();
+        let quarantine = Quarantine {
+            path,
+            _lease: cache.as_ref().map(ObjectCache::lease),
+        };
+        if let Some(cache) = &cache {
+            quarantine.read_through(cache)?;
+        }
         from.fetch(&quarantine.path, base)?;
         quarantine.has(base)?;
         Ok(quarantine)
+    }
+
+    /// Names the cache's object store as this quarantine's alternate.
+    fn read_through(&self, cache: &ObjectCache) -> Result<(), String> {
+        let info = self.path.join(".git").join("objects").join("info");
+        std::fs::create_dir_all(&info).map_err(|why| why.to_string())?;
+        std::fs::write(
+            info.join("alternates"),
+            format!("{}\n", cache.objects().display()),
+        )
+        .map_err(|why| why.to_string())
     }
 
     /// **Also holds commit `extra`**, with its history, as `from` gives it: the default branch's

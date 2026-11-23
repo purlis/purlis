@@ -465,7 +465,15 @@ impl PushGate for CiPushGate {
             };
             let url = format!("https://{}/{}.git", served.repo.host, served.repo.path);
             let from = match self.context.fetch_source(&served, &url) {
-                Ok(from) => from,
+                // Each push fetches what changed since the last into the repo's own cache.
+                Ok(from) => purlis_core::heldact::FromForge {
+                    cache: Some(purlis_core::heldact::ObjectCache::of(
+                        &self.parent.join("object-cache"),
+                        &served.repo.host,
+                        &served.repo.path,
+                    )),
+                    ..from
+                },
                 Err(why) => return Self::refuse(format!("purlis did not send this push: {why}.")),
             };
             let one = Update {
@@ -642,6 +650,7 @@ impl ProjectContext {
         Ok(purlis_core::heldact::FromForge {
             url: url.to_owned(),
             helper: Some(helper),
+            cache: None,
         })
     }
 }
