@@ -53,6 +53,7 @@ pub const PROVISIONING_COMMANDS: &[&str] = &[
     "forge_ci_permission_wait",
     "forge_ci_permission_cancel",
     "vouch_clone",
+    "allow_chat_push",
 ];
 
 /// The entry points of this crate that provision, by name: what a source that is not the window's
@@ -79,6 +80,7 @@ pub const PROVISIONING_ENTRY_POINTS: &[&str] = &[
     "for_ci_push(",
     "vouch_clone(",
     "trust_this_clone(",
+    "let_chat_push(",
     "on_the_persons_press(",
     "HostScope::claim(",
 ];

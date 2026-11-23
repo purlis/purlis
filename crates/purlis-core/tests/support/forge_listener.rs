@@ -126,6 +126,14 @@ pub struct World {
 
 /// The plane's project id the recording world's chat belongs to.
 pub const PROJECT_ID: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2P";
+/// The branches a [`World::asking_in`] repo's advertisement lists: the ones a test may be asked
+/// about, and two the ask must not say (a name that is not ASCII, one that starts with `-`).
+pub const ASKING_ADVERTISES: &[&str] = &[
+    "main", "theirs", "other", "b1", "b2", "b3", "b4", "b5", "naïve", "-dash",
+];
+
+/// The session [`World::asking_in`]'s chat is.
+pub const SESSION: u32 = 7;
 /// The forge's id of `acme/app` in [`World`].
 pub const ACME_APP_ID: u64 = 41;
 
@@ -166,6 +174,7 @@ impl World {
             Some(stance),
             None,
             None,
+            None,
         )
     }
 
@@ -173,7 +182,7 @@ impl World {
         repos: Vec<AllowedRepo>,
         pin: Arc<dyn purlis_core::forge::pin::Pin>,
     ) -> Self {
-        Self::build(repos, pin, None, None, None)
+        Self::build(repos, pin, None, None, None, None)
     }
 
     /// [`Self::new`]'s repos, with each branch the forge confirms the chat made recorded in the
@@ -184,6 +193,7 @@ impl World {
             Arc::new(purlis_core::forge::pin::NoPin),
             None,
             Some(config),
+            None,
             None,
         )
     }
@@ -200,6 +210,21 @@ impl World {
             None,
             Some(config),
             Some(project),
+            None,
+        )
+    }
+
+    /// [`Self::recording_to`], where an update of a branch the chat has no record of raises the
+    /// ask to let it push, in the project at `project`, as the app wires it
+    /// ([`purlis_core::windowonly::PushAsks`]): the chat is session [`SESSION`] of that project.
+    pub fn asking_in(config: std::path::PathBuf, project: std::path::PathBuf) -> Self {
+        Self::build(
+            Self::default_repos(),
+            Arc::new(purlis_core::forge::pin::NoPin),
+            None,
+            Some(config),
+            None,
+            Some(project),
         )
     }
 
@@ -209,6 +234,7 @@ impl World {
         stance: Option<Arc<dyn purlis_core::forge::mergestance::MergeStance>>,
         record_to: Option<std::path::PathBuf>,
         dispatches: Option<std::path::PathBuf>,
+        asking: Option<std::path::PathBuf>,
     ) -> Self {
         let mut proxy = ForgeProxy::new(Box::new(Creds), Box::new(NoObjects)).with_pin(pin);
         if let Some(stance) = stance {
@@ -250,6 +276,15 @@ impl World {
                 .expect("the record is written");
             }));
         }
+        let asking_world = asking.is_some();
+        if let Some(root) = asking {
+            proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
+                root,
+                chat: "chat-listener".to_owned(),
+                session: Box::new(|| Some(SESSION)),
+                owner_of: Box::new(|_, _, _| None),
+            }));
+        }
         let proxy = Arc::new(proxy);
         let chat = ChatId::new("chat-listener");
         let advertised: Vec<(String, String)> = repos
@@ -258,7 +293,12 @@ impl World {
             .collect();
         let sentinel = proxy.enrol(&chat, repos);
         for (host, path) in &advertised {
-            proxy.note_advertised(&chat, host, path, vec![]);
+            let listed = if asking_world {
+                ASKING_ADVERTISES.iter().map(|b| (*b).to_owned()).collect()
+            } else {
+                vec![]
+            };
+            proxy.note_advertised(&chat, host, path, listed);
         }
         let fake = Arc::new(Fake::default());
         let wiring = Wiring {

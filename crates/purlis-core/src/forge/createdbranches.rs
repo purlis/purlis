@@ -161,7 +161,7 @@ pub fn forget(config_root: &Path, gone: &[CreatedBranch]) -> io::Result<()> {
 }
 
 /// A full commit id: 40 (SHA-1) or 64 (SHA-256) hex digits.
-fn is_commit_id(id: &str) -> bool {
+pub fn is_commit_id(id: &str) -> bool {
     matches!(id.len(), 40 | 64) && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
 

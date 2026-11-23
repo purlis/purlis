@@ -66,6 +66,9 @@ pub(crate) fn reason_for(refusal: Refusal) -> &'static str {
         Refusal::ProtectedRef => {
             "purlis: a chat pushes only a branch it made, from the tip it last pushed; ask the person to push this one"
         }
+        Refusal::NotYourBranch => {
+            "purlis: this branch is not one this chat made, so the push is refused; ask the person to push it"
+        }
         Refusal::ReleaseOrTag => "purlis: a chat does not push tags or releases; ask the person",
         Refusal::PushOption => "purlis: push options are not carried; push without them",
         Refusal::NoAdvertisement => {

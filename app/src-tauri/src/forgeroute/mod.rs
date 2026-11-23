@@ -221,6 +221,11 @@ pub trait Recorded: Send + Sync {
     fn record_created(&self, _project: &Path, _chat: &str, _created: &[CreatedBranch]) {}
     /// The forge no longer lists these recorded branches: their record ends.
     fn forget_created(&self, _gone: &[CreatedBranch]) {}
+    /// The chat that owns the branch `branch` of the repo with forge id `repo_id` on `host` now,
+    /// for the Let this chat push ask to name. Any doubt is none.
+    fn branch_owner(&self, _host: &str, _repo_id: u64, _branch: &str) -> Option<String> {
+        None
+    }
 }
 
 /// The stub until G lands: nothing is recorded, so no chat has a route.
@@ -792,6 +797,24 @@ impl ForgeRoutes {
                     recorded.record_created(&project, &chat, created);
                 }))
                 .with_gone(Box::new(move |gone| forgets.forget_created(gone)));
+        }
+        // An update of a branch this chat has no record of raises one ask, Let this chat push it
+        // (ADR 0128, amended 2026-11-23): in the window, where only the person's press records
+        // an owner. The chat is its session while it is open.
+        {
+            let sessions = RunSessions {
+                sessions: self.sessions.clone(),
+            };
+            let run = run.to_owned();
+            let owners = self.seams.recorded.clone();
+            proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
+                root: project.to_owned(),
+                chat: chat.to_owned(),
+                session: Box::new(move || sessions.session(&run)),
+                owner_of: Box::new(move |host, repo_id, branch| {
+                    owners.branch_owner(host, repo_id, branch)
+                }),
+            }));
         }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
@@ -1449,6 +1472,9 @@ fn refusal_words(refusal: Refusal) -> &'static str {
         Refusal::Admin => "administering the repo is not allowed from a chat",
         Refusal::ProtectedRef => {
             "the push is to a protected branch or a branch the chat did not create"
+        }
+        Refusal::NotYourBranch => {
+            "the push updates a branch this chat has no record of (the person can let it)"
         }
         Refusal::PushOption => "the push carried push options",
         Refusal::BodyUnreadable => "the body was missing, too big or could not be read",

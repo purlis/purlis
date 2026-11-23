@@ -219,6 +219,11 @@ impl Recorded for ConfirmedRecorded {
         )
     }
 
+    fn branch_owner(&self, host: &str, repo_id: u64, branch: &str) -> Option<String> {
+        purlis_core::forge::createdbranches::owner_of(&self.config_root, host, repo_id, branch)
+            .map(|(_, chat, _)| chat)
+    }
+
     fn own_branches(&self, project: &Path, chat: &str, host: &str, repo_id: u64) -> Vec<String> {
         let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
             return Vec::new();

@@ -623,7 +623,7 @@ fn a_refused_push_is_answered_in_gits_own_words_and_never_reaches_the_forge() {
     assert!(text.contains("unpack ok\n"), "{text}");
     assert!(
         text.contains(
-            "ng refs/heads/theirs purlis: a chat pushes only a branch it made, from the tip it last pushed; ask the person to push this one\n"
+            "ng refs/heads/theirs purlis: this branch is not one this chat made, so the push is refused; ask the person to push it\n"
         ),
         "{text}"
     );

@@ -334,6 +334,61 @@ impl ProjectContext {
     }
 }
 
+/// Nobody's session: for a read made outside a chat's run.
+struct NoSessions;
+
+impl SessionOfRun for NoSessions {
+    fn session(&self, _: &str) -> Option<u32> {
+        None
+    }
+
+    fn is_open(&self, _: u32) -> bool {
+        false
+    }
+}
+
+/// **The tip of `branch` in the repo `repo_id` at `host` as the forge shows it to the person
+/// now** (ADR 0128, amended 2026-11-23): what Let this chat push records as the branch's tip.
+/// Read with the sign-in of the account the person chose for the repo, never a chat's, and only
+/// for a repo the project confirmed **by the numeric id the ask was raised at**, so a repo made
+/// again under the name is not the one the person was asked about. A branch the forge no longer
+/// has is an error, not a tip.
+pub fn branch_tip_as_the_person(
+    project: &Path,
+    config_root: &Path,
+    host: &str,
+    repo_path: &str,
+    repo_id: u64,
+    branch: &str,
+) -> Result<String, String> {
+    let context = ProjectContext {
+        project: project.to_owned(),
+        config_root: config_root.to_owned(),
+        sessions: Arc::new(NoSessions),
+        quarantines: Arc::new(Quarantines::default()),
+        held: std::sync::Weak::new(),
+    };
+    let repo = Repo::try_from(repo_path).map_err(|_| format!("{repo_path} is not a repo name"))?;
+    let base = Base::try_from(branch).map_err(|_| format!("{branch} is not a branch name"))?;
+    let served = context.served(&repo)?;
+    if !confirmed::address_of(&served.repo.host)
+        .0
+        .eq_ignore_ascii_case(host)
+        || served.repo.repo_id != repo_id
+    {
+        return Err(format!(
+            "{repo_path} is not the repo this ask was raised for, so no branch of it is recorded"
+        ));
+    }
+    let (forge, _) = context.forge_of(&served, None)?;
+    match forge.branch_tip(&repo, &base)? {
+        Some(tip) => Ok(tip.as_str().to_owned()),
+        None => Err(format!(
+            "{branch} is not on {repo_path} any more, so there is nothing to record"
+        )),
+    }
+}
+
 impl HeldContext for ProjectContext {
     fn session(&self, chat: &ChatId) -> Option<u32> {
         self.sessions.session(chat.as_str())

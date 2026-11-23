@@ -28,6 +28,19 @@ pub trait HeldSink: Send + Sync {
     fn ask(&self, chat: &ChatId, requested: &Requested) -> String;
 }
 
+/// **Where the ask to let a chat push a branch it has no record of is raised**: the app's
+/// [`crate::windowonly`] ask, or a test's stand-in. Asked once for each push refused for
+/// [`Refusal::NotYourBranch`], with only branches the policy read from the push itself
+/// ([`ChatPolicy::unowned_updates`]): never a protected or default branch, and never a branch
+/// the chat said.
+pub trait BranchAsk: Send + Sync {
+    /// Chat `chat` was refused an update to each of `branches`. Raises the ask (once for each
+    /// chat and branch, however often it is refused), and answers the one sentence the chat is
+    /// told; `None` where no ask is raised (the person's policy does not ask, or the chat is
+    /// not open), and the chat is refused as it was.
+    fn ask(&self, chat: &ChatId, branches: &[super::policy::NotYours]) -> Option<String>;
+}
+
 /// A request answered with a held act's sentence, and forwarded nowhere.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Held {
