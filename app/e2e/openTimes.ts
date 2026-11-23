@@ -18,8 +18,15 @@
 
 /** A start that is slower than this on its own is a hang, not load: it fails by its number. */
 export const OPEN_HANG_MS = 20_000;
-/** What the median open stays under: about 3.4 s measured, so this is half again above it. */
-export const OPEN_MEDIAN_MS = 5_000;
+/**
+ * What the median open stays under: the CI median plus 20% headroom, from measured runs, not a
+ * guess (#7404's 5,000 was one, and failed twice). Basis: `main`, run 45144506452 (macos-latest,
+ * part 2, job 137590652671), both attempts failed on the median alone, each open steady between
+ * 4.6 and 7.4 s: attempt 1 median 5,586 ms (p90 6,797, slowest 7,387); attempt 2 median 5,545 ms
+ * (p90 6,191, slowest 7,131). 5,586 x 1.2 = 6,703, so 6,700. The p90 (8,000) and the hang (20,000)
+ * limits hold: the worst measured p90 is 6,797 and the worst open 7,387.
+ */
+export const OPEN_MEDIAN_MS = 6_700;
 /**
  * What the p90 of the opens stays under: the old per-open ceiling. Of fifty opens, the four
  * slowest may pass it (nearest rank, so the fifth slowest is the p90).
