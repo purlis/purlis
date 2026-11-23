@@ -44,7 +44,7 @@
     },
     {
       "name": "the Claude Code leg's variables: the stand-in model's address and key, and two that keep its start-up traffic in",
-      "reason": "The leg's chats start from the keep-list, and `ANTHROPIC_*` is among the credentials it drops: ANTHROPIC_BASE_URL (the stand-in model's loopback address), ANTHROPIC_API_KEY (a literal that is no credential), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC and DISABLE_AUTOUPDATER (Claude Code's unsandboxed main process does not use purlis's proxy, so its own start-up traffic would go out) are named in the test plane's `charter.local.toml` `[chat_env] pass`, with their values in the host's environment. A person's chat is given none of them (T1.1-10, `scenarios::claude_leg::ADDED`).",
+      "reason": "The leg's chats start from the keep-list, and `ANTHROPIC_*` is among the credentials it drops: ANTHROPIC_BASE_URL (the stand-in model's loopback address), ANTHROPIC_API_KEY (a literal that is no credential), CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC and DISABLE_AUTOUPDATER (Claude Code's unsandboxed main process does not use purlis's proxy, so its own start-up traffic would go out) are named in the test plane's `charter.local.toml` `[chat_env] pass`, with their values in the host's environment. A person's chat is given none of them (T1.1-10, `scenarios::real_leg::added`).",
       "covers": {
         "linux": [
           "linux-release-profile"
@@ -55,8 +55,8 @@
       }
     },
     {
-      "name": "the first-run state seeded for Claude Code on macOS, with the bypass-permissions warning accepted",
-      "reason": "purlis seeds a Claude Code profile's first-run state (onboarding, the trusted folder, the approved key and the accepted bypass-permissions warning: `bypassPermissionsModeAccepted` in `.claude.json` and `skipDangerousModePermissionPrompt` in the profile's `settings.json`) for the Linux wrap alone (`claude_wrap.rs`); the Claude Code leg writes it itself in the sandbox-only profile's own folder (`scenarios::claude_leg::seed_first_run`), as a person who had answered the questions would have, so an interactive start does not stop at them. The two bypass entries are there because the leg starts under `--permission-mode bypassPermissions` (the next entry); without them the start stops at the warning.",
+      "name": "the first-run state seeded for Claude Code, with its key approved and the bypass-permissions warning accepted",
+      "reason": "purlis seeds a Claude Code profile's first-run state (onboarding, the trusted folder, the approved key and the accepted bypass-permissions warning: `bypassPermissionsModeAccepted` in `.claude.json` and `skipDangerousModePermissionPrompt` in the profile's `settings.json`) only for the Linux wrap's onboarding and folder (`claude_wrap.rs`), and never a key's approval or the warning; the Claude Code leg writes all of it itself, on macOS and on Linux, in the sandbox-only profile's own folder (`scenarios::real_leg::seed_first_run`), as a person who had answered the questions would have, so an interactive start does not stop at them. The two bypass entries are there because the leg starts under `--permission-mode bypassPermissions` (the next entry); without them the start stops at the warning.",
       "covers": {
         "linux": [
           "linux-release-profile"
@@ -68,7 +68,67 @@
     },
     {
       "name": "`--permission-mode bypassPermissions` and the prompt, appended to the Claude Code leg's launch line",
-      "reason": "`purlis_core::start::ready` composes the launch line the window uses; the leg appends `--permission-mode bypassPermissions` and the chat's prompt after it (`scenarios::host::Scenario::starts_claude_code`). Bypass is for the stand-in model's sake: an auto mode would send its permission judgements to Anthropic's servers, and the recordings were made under it (`tests/recordings/README.md`). The cost: Claude Code's `ask` rules and its permission prompts are never reached on this leg, so it says nothing of them; what it can show is Claude Code's own sandbox and purlis's `permissions.deny` rules. A person's chat is started in whatever mode they chose.",
+      "reason": "`purlis_core::start::ready` composes the launch line the window uses; the leg appends `--permission-mode bypassPermissions` and the chat's prompt after it (`scenarios::host::Scenario::starts_real`). Bypass is for the stand-in model's sake: an auto mode would send its permission judgements to Anthropic's servers, and the recordings were made under it (`tests/recordings/README.md`). The cost: Claude Code's `ask` rules and its permission prompts are never reached on this leg, so it says nothing of them; what it can show is Claude Code's own sandbox and purlis's `permissions.deny` rules. A person's chat is started in whatever mode they chose.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the Codex leg's API key, and the model provider its launch words name",
+      "reason": "The leg's chats start from the keep-list, and `OPENAI_*` is among the credentials it drops: OPENAI_API_KEY (a literal that is no credential) is named in the test plane's `charter.local.toml` `[chat_env] pass` with its value in the host's environment, and Codex is told its model provider (the stand-in model's loopback address, over the Responses API, with no retry) in `-c` words beside purlis's own on its launch line, as the recordings are made (`scenarios::real_leg::launch_words`, T1.1-53). A person's chat is given neither.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the OpenCode leg's configuration file and its start-up switches",
+      "reason": "The leg's chats start from the keep-list: OPENCODE_CONFIG (a file in the temp folder naming the stand-in model's loopback address as OpenCode's one provider, over Chat Completions, with a literal that is no credential as its key; not OPENCODE_CONFIG_CONTENT, which purlis sets itself for the plugin that carries its hooks), OPENCODE_DISABLE_AUTOUPDATE, _MODELS_FETCH, _DEFAULT_PLUGINS and _LSP_DOWNLOAD (its start-up traffic to its model list, the npm registry and its language servers' hosts) are named in the test plane's `charter.local.toml` `[chat_env] pass`, with their values in the host's environment (`scenarios::real_leg::opencode_config_path`, T1.1-53). A person's chat is given none of them.",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the stand-in model's loopback port, granted to a wrapped chat",
+      "reason": "A chat purlis wraps reaches no host the project does not list, and no model is called in the leg: the stand-in model's loopback port is granted to the chat (`sandbox::local::grant_port`), as the recordings' chats are granted theirs, where a person's chat reaches its vendor through the proxy with the host the project lists (`Scenario::starts_real`, T1.1-53).",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "OpenCode's commands end by saying their own exit status",
+      "reason": "OpenCode's Bash tool result carries no exit status, and a cell reads whether a command ran and how it ended: the leg asks OpenCode for each command inside a group that ends by echoing its own status, so the cells read the same exit in every harness. A person's chat is asked no such thing (`scenarios::real_leg::command_for`, T1.1-53).",
+      "covers": {
+        "linux": [
+          "linux-release-profile"
+        ],
+        "macos": [
+          "macos-live-check"
+        ]
+      }
+    },
+    {
+      "name": "the person keeps a harness's start-up traffic blocked at once",
+      "reason": "A real harness's own start-up traffic (what its switches do not silence) reaches purlis's proxy as a held ask for a host the project does not list, and the proxy holds it for the person for the length of the hold: the leg's person answers every such ask at once with Keep blocked, as a person who wants none of it would, so the harness is refused now and the leg does not wait out each hold. The one host a cell itself asks about is left to the cell (`Scenario::answers_until_played`, T1.1-53).",
       "covers": {
         "linux": [
           "linux-release-profile"

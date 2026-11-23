@@ -19,9 +19,6 @@ mod cells;
 #[path = "scenarios/checks.rs"]
 mod checks;
 #[cfg(unix)]
-#[path = "scenarios/claude_leg.rs"]
-mod claude_leg;
-#[cfg(unix)]
 #[path = "scenarios/forge.rs"]
 mod forge;
 #[cfg(unix)]
@@ -33,6 +30,9 @@ mod person;
 #[cfg(unix)]
 #[path = "scenarios/queries.rs"]
 mod queries;
+#[cfg(unix)]
+#[path = "scenarios/real_leg.rs"]
+mod real_leg;
 #[cfg(unix)]
 #[path = "scenarios/report.rs"]
 mod report;

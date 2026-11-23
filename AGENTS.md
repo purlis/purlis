@@ -179,7 +179,20 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   A CI job ending "runner has received a shutdown signal" (exit 143) is a lost runner: re-run it.
 - To undo a probe's mutations in a sandboxed chat, save them with `git diff > patch` and take them
   out with `git apply -R patch`: `git checkout` and `git restore` write the index, which is outside
-  what the chat may write.
+  what the chat may write. For a file `git diff` does not hold (a new one), copy it aside first.
+- A running CI run's finished job can be read before the run ends:
+  `gh api repos/purlis/purlis/actions/jobs/<job id>/logs` (`gh run view --log` waits for the whole
+  run). A push cancels the run before it: the macOS jobs run an hour, so read them first.
+- A PR whose base moved under it (`CONFLICTING`) gets no workflow runs at all: `purlis worktree
+  update --base <branch>` rebases it; on a conflict, write each file's resolution and run
+  `purlis worktree update --continue` (it stages for you). `git merge-file -p mine base theirs`
+  three-way merges a file without touching the index.
+- A heredoc whose body a guard reads as a merge is refused: write the script with the Write tool
+  into the scratchpad and run it, with `python3 -I`.
+- The real-harness legs (`scenarios/real_leg.rs`) are only CI's to prove; every finding came from
+  the failed job's log. Make a red run say what the harness saw (the stand-in's request log, the
+  screen's tail, the profile's logs) before guessing: a Codex stand-in request that offers no tool
+  was the model offer's Enter, found in the request's own `model`.
 - The cells runner (`app/src-tauri/src/scenarios/cells.rs`) plays only the cells a `scenario` cover
   in `coverage.json` names, each batch and dialect in a child process of its own (scenarios of one
   process share one device log, so a second batch is judged on the first's events). What a cell

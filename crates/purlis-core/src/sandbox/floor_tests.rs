@@ -2720,6 +2720,118 @@ fn the_socket_and_localhost_holds_lift_only_for_a_pressed_ports_off_and_purlis_o
     }
 }
 
+/// **What a chat's direct dials reach under the profiles purlis really generates, with `ports`
+/// off and enforced** (#7105, T1.1-53's template canary): a TCP connect to 127.0.0.1 and one to
+/// this machine's own non-loopback address, from inside each profile applied for real, to a
+/// listener of this process on every address. With `ports` enforced both are refused. With it
+/// off, loopback is let through by design (`EVERY_LOCAL`) and so is this machine's own address:
+/// Seatbelt's `localhost:*` cannot tell them apart (measured on macos-15, job 137402800500). That
+/// is no new grant: a service bound to every address is reachable on loopback anyway, and `ports`
+/// off already lets a chat reach this machine's services; the scenario canary therefore dials an
+/// address that is not this machine's. The failure says what each of the four dials came to.
+/// CI's `macos-sandbox-tests` runs it; it skips where a profile cannot be applied.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_chat_with_ports_off_reaches_this_machines_own_address_as_it_does_loopback_on_macos() {
+    let can_apply =
+        crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
+            "-p",
+            "(version 1)(allow default)",
+            "/usr/bin/true",
+        ]))
+        .is_ok_and(|status| status.success());
+    if !can_apply {
+        let _ = writeln!(
+            std::io::stderr(),
+            "skipped: this process is already sandboxed, so no second profile applies"
+        );
+        return;
+    }
+    // This machine's own address on its outbound interface: a UDP connect sends nothing, it only
+    // asks the routing table (192.0.2.0/24 is TEST-NET-1, never routed).
+    let own = std::net::UdpSocket::bind("0.0.0.0:0")
+        .and_then(|socket| {
+            socket.connect("192.0.2.1:9")?;
+            socket.local_addr()
+        })
+        .map(|address| address.ip())
+        .expect("this machine has an address to dial");
+    assert!(
+        !own.is_loopback() && !own.is_unspecified(),
+        "this machine has no address but loopback to dial: {own}"
+    );
+    let listener = std::net::TcpListener::bind("0.0.0.0:0").expect("a listener on every address");
+    let port = listener.local_addr().expect("its address").port();
+    // The control, from this process and outside any profile: both addresses reach the listener,
+    // so a refusal below is the profile's.
+    for address in ["127.0.0.1".to_owned(), own.to_string()] {
+        std::net::TcpStream::connect((address.as_str(), port))
+            .unwrap_or_else(|why| panic!("the control dial to {address} failed: {why}"));
+    }
+    const DIAL: &str = r#"
+use Socket;
+my ($ip, $port) = @ARGV;
+alarm 8;
+socket(my $s, PF_INET, SOCK_STREAM, 0) or do { print "socket ", $! + 0; exit };
+if (connect($s, pack_sockaddr_in($port, inet_aton($ip)))) { print "reached" }
+else { print "refused ", $! + 0 }
+"#;
+    let outcomes = |pressed: bool| -> (String, String) {
+        let _home = super::local::OwnConfigHome::new();
+        let (_dir, root) = project();
+        if pressed {
+            std::fs::write(
+                root.join("charter.toml"),
+                "schema = 1\n[policy]\nports = \"off\"\n",
+            )
+            .expect("charter.toml");
+            crate::enforcement::press(&root, &crate::enforcement::digest_of(&root))
+                .expect("pressed");
+        }
+        let bin = tempfile::tempdir().expect("a bin");
+        let machine = machine_with(bin.path());
+        let profile = wrapped_floor(Harness::Codex, &root, &machine, &[], None);
+        assert_eq!(
+            profile.contains(super::seatbelt::EVERY_LOCAL.lines().nth(1).expect("a rule")),
+            pressed,
+            "the profile's lift of loopback is there exactly where ports is off"
+        );
+        let dial = |address: &str| {
+            let out = crate::forklock::output(
+                std::process::Command::new(backend::SANDBOX_EXEC)
+                    .args(["-p", &profile, "/usr/bin/perl", "-e", DIAL, address])
+                    .arg(port.to_string())
+                    .current_dir(&root),
+            )
+            .expect("it runs");
+            String::from_utf8_lossy(&out.stdout).trim().to_owned()
+        };
+        (dial("127.0.0.1"), dial(&own.to_string()))
+    };
+    let (enforced_loopback, enforced_own) = outcomes(false);
+    let (off_loopback, off_own) = outcomes(true);
+    let said = format!(
+        "own address {own}, listener on port {port}:\n  ports enforced: 127.0.0.1 {enforced_loopback}, \
+         {own} {enforced_own}\n  ports off:      127.0.0.1 {off_loopback}, {own} {off_own}"
+    );
+    // Seatbelt's own refusal is EPERM (1).
+    assert!(
+        enforced_loopback == "refused 1" && enforced_own == "refused 1",
+        "with ports enforced, both direct dials must be refused\n{said}"
+    );
+    assert_eq!(
+        off_loopback, "reached",
+        "with ports off, loopback is let through by design\n{said}"
+    );
+    assert_eq!(
+        off_own, "reached",
+        "with ports off, this machine's own address is reached as loopback is: Seatbelt's \
+         `localhost:*` cannot tell them apart\n{said}"
+    );
+    drop(listener);
+    crate::secrets::test_really_ran("ports-off-reaches-this-machines-own-address");
+}
+
 /// **Under a pressed `ports = "off"`, a chat reaches another program's socket and none of
 /// purlis's own** (the review of #7105): the floor's profile applied for real, where this machine
 /// can apply one. A container engine's socket is reached (ruling Q328); another plane's hook
