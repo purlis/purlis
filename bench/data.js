@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795391640785,
+  "lastUpdate": 1795394309778,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52500,6 +52500,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9718465,
             "unit": "ms",
             "extra": "median of 5 runs: 100.376, 101.683, 101.972, 102.548, 104.449 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5b40a9674941b7918b9c828531d1f870e932e36f",
+          "message": "Release R1: one cargo run in the release build (#7380) (#7396)\n\n* Release build: one cargo run, Tauri's own, then a bundling step that runs no cargo (#7380)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82GDGTFFR1K2C0FK0VT853H\nPurlis-Persona: steward\n\n* Bundle step: refuse a dangling target/release link; the profile-guard test exempts only the link's own lines\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82GDGTFFR1K2C0FK0VT853H\nPurlis-Persona: steward\n\n* Release R1: rustfmt the release-manifest test (#7380)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T00:05:38Z",
+          "tree_id": "1ec4e23306de05a9abb06be3a6b3dc98b56db0bf",
+          "url": "https://github.com/purlis/purlis/commit/5b40a9674941b7918b9c828531d1f870e932e36f"
+        },
+        "date": 1795394302349,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.3748965,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.360, 0.366, 0.375, 0.376, 0.387 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2903525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.231, 16.236, 16.290, 16.378, 16.762 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.4311275,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.410, 102.151, 102.431, 102.460, 102.756 ms"
           }
         ]
       }
