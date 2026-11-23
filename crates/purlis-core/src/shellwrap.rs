@@ -56,7 +56,9 @@ use crate::shellseg;
 /// The REDIRECTION operators, longest first — `_REDIRECTIONS`. A redirection is not a control
 /// operator and not a word: it is the shell's own file plumbing, and it may sit anywhere in a
 /// simple command, the front included.
-const REDIRECTIONS: [&str; 9] = ["<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">"];
+const REDIRECTIONS: [&str; 11] = [
+    "&>>", "&>", "<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">",
+];
 
 /// The subset that opens a PATH FOR READING. `<<` and `<<<` name a heredoc delimiter and a
 /// here-string, and `<&` duplicates a descriptor that is already open; none is a path.
@@ -73,13 +75,15 @@ const REDIRECT_READS: [&str; 2] = ["<>", "<"];
 /// handed, and none is listed: one is unplaced, and the rest of the segment is then reported as
 /// files it may open.
 #[rustfmt::skip]
-const WRAPPERS: [&str; 25] = [
+const WRAPPERS: [&str; 27] = [
     "env", "command", "builtin", "exec", "time", "nice", "ionice", "chrt", "nohup", "setsid",
     "stdbuf", "timeout", "unbuffer", "sudo", "doas", "su-exec",
     // `xargs` is here for the same reason the rest are: `xargs cat` is a `cat`.
     "xargs",
     // charter's own (#1325); see [`STRING_RUNNERS`] for the first four.
     "watch", "flock", "script", "parallel", "caffeinate", "gtimeout", "arch", "busybox",
+    // zsh's precommand modifiers: each runs the command after it (#7423).
+    "noglob", "nocorrect",
 ];
 
 /// Whether a program's lowercased basename is one of [`WRAPPERS`]: a program that runs the

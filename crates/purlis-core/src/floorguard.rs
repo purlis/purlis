@@ -861,6 +861,10 @@ fn segment_reason(
     // Each segment is split once, and every reading below shares it: at every level the
     // floor reads, a segment is as long as the line, so a second split is a second line
     // (#1355).
+    // zsh's `-` precommand runs the command after it (#7423).
+    if toks.first().is_some_and(|w| w == "-") && toks.len() > 1 {
+        return segment_reason(&toks[1..], cmd, unattended, depth, a_shell_reads_stdin);
+    }
     let (prog, env, argv) = shellwrap::split_env(toks);
     // A string a shell runs is read as the command it is (#866).
     let scripts = shellwrap::shell_scripts_of(&prog, &argv)
@@ -873,6 +877,12 @@ fn segment_reason(
     };
     for inner in scripts.chain(fed) {
         if let Some(said) = inner_floor(&inner) {
+            return Some(said);
+        }
+    }
+    // What a `find` runs for each file it finds is a command of its own (#7423).
+    for run in shellwrap::commands_a_find_runs(&prog, &argv) {
+        if let Some(said) = segment_reason(&run, cmd, unattended, depth, a_shell_reads_stdin) {
             return Some(said);
         }
     }

@@ -707,10 +707,14 @@ fn a_quoted_funsub_is_no_sole_call_and_a_parameter_expansion_is_() {
         ),
         &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=${{ cd /elsewhere; }}"),
     ]);
-    passes(&[
-        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{TITLE}}\""),
-        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{#}}${{1}}${{?}}\""),
-    ]);
+    passes(&[&format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{TITLE}}\""
+    )]);
+    // Special and positional parameters are not a plain name (#7423): `$1` or `$@` may be
+    // several words, or more than the reader can place, so these are held now.
+    held(&[&format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{#}}${{1}}${{?}}\""
+    )]);
 }
 
 /// Round 9 (#7195): an output redirection is no other command, so a body is still read beside

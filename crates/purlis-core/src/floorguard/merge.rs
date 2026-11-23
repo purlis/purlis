@@ -760,21 +760,64 @@ fn lone_api_call(call: &str, name: &str) -> bool {
     !rest.split(|c: char| !is_word(c)).any(|w| w == name)
 }
 
+/// The one name the line binds to digits ([`digit_bound`]), or `None`, found **once per line**:
+/// a line has at most one, since the two shapes it may have bind one name and hold no other
+/// variable. The last line read is kept, so a line of thousands of references costs one reading
+/// of the line and a comparison per reference (#7423).
+fn digit_bound_name(cmd: &str) -> Option<String> {
+    use std::cell::RefCell;
+    thread_local! {
+        static LAST: RefCell<Option<(String, Option<String>)>> = const { RefCell::new(None) };
+    }
+    if let Some(name) = LAST.with(|last| {
+        last.borrow()
+            .as_ref()
+            .filter(|(text, _)| text == cmd)
+            .map(|(_, name)| name.clone())
+    }) {
+        return name;
+    }
+    static ONE: OnceLock<Regex> = OnceLock::new();
+    static LOOPED: OnceLock<Regex> = OnceLock::new();
+    let one = ONE.get_or_init(|| {
+        Regex::new(r"^([A-Za-z_][A-Za-z0-9_]*)=[0-9]+(?:[ \t]*;[ \t]*|[ \t]*\n[ \t]*)[^;\n]+$")
+            .expect("compiles")
+    });
+    let looped = LOOPED.get_or_init(|| {
+        Regex::new(r"^for[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]+in(?:[ \t]+[0-9]+)+[ \t]*(?:;|\n)")
+            .expect("compiles")
+    });
+    let trimmed = cmd.trim_matches([' ', '\t', '\n']);
+    let name = one
+        .captures(trimmed)
+        .or_else(|| looped.captures(trimmed))
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
+        .filter(|name| digit_bound(cmd, name))
+        .map(str::to_owned);
+    LAST.with(|last| *last.borrow_mut() = Some((cmd.to_owned(), name.clone())));
+    name
+}
+
 /// `endpoint` with each `$name` or `${name}` that [`digit_bound`] says holds only digits written
-/// as `0`, so the rest of the reader sees the path the shell will make. A reference left in it is
-/// one the line does not bind to digits.
+/// as `fill`, so the rest of the reader sees the path the shell will make. A reference left in it
+/// is one the line does not bind to digits.
 fn with_digit_variables(endpoint: &str, cmd: &str, fill: &str) -> String {
+    if !endpoint.contains('$') {
+        return endpoint.to_owned();
+    }
     static RE: OnceLock<Regex> = OnceLock::new();
     let re = RE.get_or_init(|| {
         Regex::new(r"\$(?:([A-Za-z_][A-Za-z0-9_]*)|\{([A-Za-z_][A-Za-z0-9_]*)\})")
             .expect("compiles")
     });
+    let bound = digit_bound_name(cmd);
     re.replace_all(endpoint, |caps: &regex::Captures<'_>| {
         let name = caps
             .get(1)
             .or_else(|| caps.get(2))
             .map_or("", |m| m.as_str());
-        if digit_bound(cmd, name) {
+        if bound.as_deref() == Some(name) {
             fill.to_owned()
         } else {
             caps[0].to_owned()
@@ -783,120 +826,215 @@ fn with_digit_variables(endpoint: &str, cmd: &str, fill: &str) -> String {
     .into_owned()
 }
 
-/// How the shell may fill in one word of a call (see [`shell_filled_api_reason`]).
-#[derive(PartialEq, Eq)]
-enum Fill {
-    /// No expansion that could add a word or begin a flag.
-    Nothing,
-    /// An expansion outside quotes, or one the scan could not close: it may add words.
-    Unquoted,
-    /// An expansion inside double quotes that begins the word, or follows a `-`: one word, but it
-    /// may be a flag.
-    Flag,
-}
-
-/// What the shell may fill in of `word`, as the source spells it, quotes and all. A variable the
-/// line binds to digits is read as `0` ([`with_digit_variables`]).
-fn fill_of(word: &str, cmd: &str) -> Fill {
-    let word = with_digit_variables(word, cmd, "0");
-    let chars: Vec<char> = word.chars().collect();
-    let (mut single, mut double) = (false, false);
-    let mut prefix = String::new();
-    let mut flag = false;
-    let mut seen = false;
-    let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
-        let next = chars.get(i + 1).copied();
-        if single {
-            single = c != '\'';
-            if !seen && single {
-                prefix.push(c);
-            }
-            i += 1;
-            continue;
-        }
+/// Whether a word's source spelling has an expansion outside single quotes: a `$` or a backtick.
+fn expands(spelled: &str) -> bool {
+    let mut chars = spelled.chars();
+    while let Some(c) = chars.next() {
         match c {
             '\\' => {
-                if !seen {
-                    prefix.extend(next);
-                }
-                i += 2;
+                chars.next();
             }
-            '\'' if !double => {
-                single = true;
+            '\'' => {
+                if !chars.by_ref().any(|q| q == '\'') {
+                    return true;
+                }
+            }
+            '$' | '`' => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Where the construct that opens before `chars[i]` ends: the index past its `close`. It reads
+/// the quotes inside it, so a `(` or a `"` in a quoted string is no bracket, and a nested `$(`,
+/// `${` or backtick is read to its own end. `None` where it cannot be sure: no close, a comment
+/// or a heredoc (which hide a `)`), `$'`, or a `case`, whose patterns end in a `)`.
+fn closes_at(chars: &[char], mut i: usize, close: char) -> Option<usize> {
+    let opener = if close == ')' { '(' } else { '{' };
+    let mut depth = 0usize;
+    while let Some(&c) = chars.get(i) {
+        match c {
+            '\\' => i += 2,
+            '\'' if close != '"' => {
+                i += 1 + chars.get(i + 1..)?.iter().position(|&q| q == '\'')? + 1;
+            }
+            '"' if close == '"' => return Some(i + 1),
+            '"' => i = closes_at(chars, i + 1, '"')?,
+            '`' => {
+                i += 1 + chars.get(i + 1..)?.iter().position(|&q| q == '`')? + 1;
+            }
+            '$' => match chars.get(i + 1) {
+                Some('(') => i = closes_at(chars, i + 2, ')')?,
+                Some('{') => i = closes_at(chars, i + 2, '}')?,
+                Some('\'') => return None,
+                _ => i += 1,
+            },
+            '#' if close != '"' && (i == 0 || chars[i - 1].is_whitespace()) => return None,
+            '<' if close == ')' && chars.get(i + 1) == Some(&'<') => return None,
+            'c' if close == ')'
+                && chars[i..].starts_with(&['c', 'a', 's', 'e', ' '])
+                && (i == 0 || !chars[i - 1].is_alphanumeric()) =>
+            {
+                return None;
+            }
+            c if close != '"' && c == opener => {
+                depth += 1;
                 i += 1;
             }
+            c if close != '"' && c == close => {
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+                depth -= 1;
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Whether the inside of a double-quoted span holds only expansions that make one word: a plain
+/// `$name`, `${name}` or `$(…)` (read to its true close, [`closes_at`]). A backtick, `$@`, `$*`,
+/// a digit or special parameter, a `${…}` with an operator, flag or subscript, and a `$name[…]`
+/// (zsh's subscript) are not.
+fn plain_expansions_only(body: &[char]) -> bool {
+    let is_name = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut i = 0;
+    while i < body.len() {
+        match body[i] {
+            '\\' => i += 2,
+            '`' => return false,
+            '$' => match body.get(i + 1) {
+                Some('(') => match closes_at(body, i + 2, ')') {
+                    Some(end) => i = end,
+                    None => return false,
+                },
+                Some('{') => {
+                    let start = i + 2;
+                    let len = body[start..].iter().take_while(|&&c| is_name(c)).count();
+                    let named = body
+                        .get(start)
+                        .is_some_and(|c| c.is_ascii_alphabetic() || *c == '_');
+                    if !named || body.get(start + len) != Some(&'}') {
+                        return false;
+                    }
+                    i = start + len + 1;
+                }
+                Some(c) if c.is_ascii_alphabetic() || *c == '_' => {
+                    let len = body[i + 1..].iter().take_while(|&&c| is_name(c)).count();
+                    i += 1 + len;
+                    if body.get(i) == Some(&'[') {
+                        return false;
+                    }
+                }
+                _ => return false,
+            },
+            _ => i += 1,
+        }
+    }
+    true
+}
+
+/// **Whether the shell may make something other than one plain word of this one**: more words (a
+/// split or a glob), or a word that begins with `-`. A word is let through when it holds no
+/// expansion, glob or brace expansion outside single quotes, or when it is one literal start
+/// and one double-quoted span, `"repos/o/r/pulls/$N"` or `title="$T"`, that holds only plain
+/// expansions ([`plain_expansions_only`]): the literal start is no `-` and no expansion, and
+/// nothing else is next to the quotes. A variable the line binds to digits is read as `0`.
+fn filled_in(spelled: &str, cmd: &str) -> bool {
+    let spelled = with_digit_variables(spelled, cmd, "0");
+    let chars: Vec<char> = spelled.chars().collect();
+    let mut bare = String::new();
+    let mut i = 0;
+    while let Some(&c) = chars.get(i) {
+        match c {
+            '\\' => i += 2,
+            '\'' => match chars
+                .get(i + 1..)
+                .and_then(|r| r.iter().position(|&q| q == '\''))
+            {
+                Some(at) => i += at + 2,
+                // A quote that never closes is no shell line: what is left is read as quoted.
+                None => break,
+            },
             '"' => {
-                double = !double;
-                i += 1;
-            }
-            '`' => return Fill::Unquoted,
-            '$' if next.is_some_and(|n| n.is_ascii_alphanumeric() || "_{(@*?#$!-".contains(n)) => {
-                if !double {
-                    return Fill::Unquoted;
+                // One literal start (no quote, escape or expansion in it, no `-` to begin it)
+                // and one span to the end of the word.
+                let plain_start = bare.chars().count() == i && !chars[..i].contains(&'\\');
+                let end = closes_at(&chars, i + 1, '"');
+                if plain_start && end == Some(chars.len()) {
+                    let body = &chars[i + 1..chars.len() - 1];
+                    let first = if i > 0 {
+                        Some(chars[0])
+                    } else {
+                        body.first().copied()
+                    };
+                    let literal_start = match first {
+                        Some('\\') => body.get(1).copied().filter(|&c| c != '-'),
+                        Some(c) => Some(c),
+                        None => None,
+                    };
+                    return !(literal_start.is_some_and(|c| c != '-' && c != '$' && c != '`')
+                        && plain_expansions_only(body)
+                        && !brace_expansion(&bare));
                 }
-                if !seen {
-                    flag = prefix.is_empty() || prefix.starts_with('-');
-                    seen = true;
-                }
-                // Past the expansion, so its own quotes do not turn this scan's.
-                i += 1;
-                match chars.get(i) {
-                    Some(&open @ ('(' | '{')) => {
-                        let close = if open == '(' { ')' } else { '}' };
-                        let mut depth = 0usize;
-                        let mut end = None;
-                        for (at, &ch) in chars.iter().enumerate().skip(i) {
-                            if ch == open {
-                                depth += 1;
-                            } else if ch == close {
-                                depth -= 1;
-                                if depth == 0 {
-                                    end = Some(at);
-                                    break;
-                                }
-                            }
+                // A span with something else beside it: any expansion in it is not alone.
+                match end {
+                    Some(at) => {
+                        if chars[i + 1..at - 1].iter().any(|&q| q == '$' || q == '`') {
+                            return true;
                         }
-                        match end {
-                            Some(at) => i = at + 1,
-                            None => return Fill::Unquoted,
-                        }
+                        i = at;
                     }
-                    Some(ch) if ch.is_ascii_alphanumeric() || *ch == '_' => {
-                        while chars
-                            .get(i)
-                            .is_some_and(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
-                        {
-                            i += 1;
-                        }
-                    }
-                    _ => i += 1,
+                    None => return chars[i + 1..].iter().any(|&q| q == '$' || q == '`'),
                 }
             }
+            '$' | '`' | '*' | '?' | '[' => return true,
             _ => {
-                if !seen {
-                    prefix.push(c);
-                }
+                bare.push(c);
                 i += 1;
             }
         }
     }
-    if single || double {
-        Fill::Unquoted
-    } else if flag {
-        Fill::Flag
-    } else {
-        Fill::Nothing
+    brace_expansion(&bare)
+}
+
+/// The base name of a call's program if it is a forge CLI.
+fn forge_program(prog: &str) -> Option<&'static str> {
+    match shellwrap::base_lower(prog).as_str() {
+        "gh" => Some("gh"),
+        "glab" => Some("glab"),
+        _ => None,
     }
 }
 
-/// **A `gh api` / `glab api` call whose arguments the shell fills in** (#7416), read or not. An
-/// unquoted `$…`, `$(…)` or backtick may add words, and a word that begins with an expansion, or
-/// follows a `-` with one, may be a flag: `gh api repos/o/r/pulls/5/merge $(cat n)` merges when
-/// `n` holds `-XPUT`, and a merge request's title or a user's bio can hold it. A variable the
-/// line binds to digits, and a quoted expansion after a literal prefix that is no flag, are one
-/// word that is no flag, and pass.
+/// What a refusal of a call the reader could not place says to do.
+const PLACE_WAY_OUT: &str = "Write the program first, then `api`, with the flags after them.";
+
+/// The flags a forge CLI may have before its command: the repository's, and help and version.
+fn flag_before_command_is_known(flag: &str) -> bool {
+    flag.starts_with("-R")
+        || flag == "--repo"
+        || flag.starts_with("--repo=")
+        || matches!(flag, "-h" | "--help" | "--version")
+}
+
+/// **A `gh api` / `glab api` call whose arguments the shell fills in** (#7416, #7423), read or
+/// not. The reader cannot know what an unquoted `$…`, `$(…)`, backtick, glob or brace expansion
+/// becomes: more words, one of them `-XPUT`. `gh api repos/o/r/pulls/5/merge $(cat n)` merges
+/// when `n` holds `-XPUT`, and a merge request's title or a user's bio can hold it. So the rule
+/// is not a list of the spellings that do: **every word of the call is held unless it is plainly
+/// one word** ([`filled_in`]): no expansion, glob or brace outside single quotes, or one literal
+/// start and one double-quoted span of plain `$name` and `$(…)` expansions. A variable the line
+/// binds to digits, as the whole line's one statement, is digits.
+///
+/// The call is found as the segment's reading finds the program ([`shellwrap::split_env_chdir`]):
+/// past a wrapper and its options, a definition's header, an assignment and a redirection, and
+/// into what a `find -exec` runs. Where the program, or its command, cannot be placed for
+/// certain, the call is held: a flag before `api`, a program that `xargs` hands words from its
+/// stdin, words `env -S` unpacks, and a shell's string whose own words the outer shell fills in.
 ///
 /// `own` and `source` are one segment's [`crate::shellseg::Reading::own`] and
 /// [`crate::shellseg::Reading::own_source`]: the source has the quotes `own` has lost.
@@ -905,19 +1043,109 @@ pub(super) fn shell_filled_api_reason(
     source: &[String],
     cmd: &str,
 ) -> Option<String> {
-    let (prog, ..) = shellwrap::split_env(own);
-    let name = shellwrap::base_lower(&prog);
-    if name != "gh" && name != "glab" {
+    let from = shellwrap::past_function_headers(own).unwrap_or(0);
+    // zsh's `-` precommand runs the command after it.
+    let from = from + usize::from(own.get(from).is_some_and(|w| w == "-"));
+    let (own, source) = (&own[from..], source.get(from..).unwrap_or(&[]));
+    let inv = shellwrap::split_env_chdir(own);
+    let (prog, argv) = (&inv.prog, &inv.argv);
+    // What a `find` runs is a command of its own.
+    for run in shellwrap::commands_a_find_runs(prog, argv) {
+        let (inner, ..) = shellwrap::split_env(&run);
+        if forge_program(&inner).is_some() && run.iter().any(|w| w.contains("{}")) {
+            return Some(format!(
+                "{UNREADABLE} `find` fills in a file name as an argument of `{inner}`, which could be a flag. {PLACE_WAY_OUT}"
+            ));
+        }
+        if let Some(said) = shell_filled_api_reason(&run, &[], cmd) {
+            return Some(said);
+        }
+    }
+    // A shell alias that stands for a forge command, or for the start of one, is the command it
+    // stands for on a later line, whose words this reader does not join to it.
+    if shellwrap::basename(prog) == "alias"
+        && let Some(def) = argv.iter().skip(1).find(|def| {
+            def.split_once('=').is_some_and(|(_, value)| {
+                value
+                    .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .any(|w| matches!(w, "gh" | "glab"))
+            })
+        })
+    {
+        return Some(format!(
+            "{UNREADABLE} The alias `{def}` stands for a forge command, which purlis reads only where it is written out whole. {PLACE_WAY_OUT}"
+        ));
+    }
+    // An inner shell's string is read as its own command, with the outer shell's quoting ignored:
+    // what the outer shell fills in of it is unseen.
+    let names_forge =
+        |script: &str| shellwrap::may_name(script, "gh") || shellwrap::may_name(script, "glab");
+    if (shellwrap::is_string_shell(prog) || shellwrap::basename(prog) == "eval")
+        && shellwrap::shell_scripts_of(prog, argv)
+            .iter()
+            .any(|script| names_forge(script) && script.contains("api"))
+    {
+        let outer = own.iter().enumerate().find(|(i, word)| {
+            let spelled = source
+                .get(*i)
+                .filter(|s| !s.is_empty())
+                .map_or(word.as_str(), String::as_str);
+            expands(spelled)
+        });
+        if let Some((_, word)) = outer {
+            return Some(format!(
+                "{UNREADABLE} The shell fills in part of the string `{word}` before the inner shell reads it, so purlis can't read the `api` call in it. Write the call out, or single-quote the string."
+            ));
+        }
+    }
+    forge_program(prog)?;
+    // The words of a layer that hands the program more words are unseen.
+    let fed_by = (0..inv.layers.len())
+        .filter_map(|k| inv.layer_program(k))
+        .map(shellwrap::base_lower)
+        .find(|layer| layer == "xargs" || layer == "parallel");
+    if let Some(layer) = fed_by {
+        return Some(format!(
+            "{UNREADABLE} `{layer}` hands `{prog}` words read from its input, which purlis cannot see. {PLACE_WAY_OUT}"
+        ));
+    }
+    // The argv is the tail of the segment, unless a wrapper unpacked a string into it (`env -S`).
+    let at = own.len().saturating_sub(argv.len());
+    if argv.len() > own.len() || own[at..] != argv[..] {
+        return Some(format!(
+            "{UNREADABLE} The words of `{prog}` are unpacked from a string, which purlis cannot read. {PLACE_WAY_OUT}"
+        ));
+    }
+    // The command is the first word that is no flag. A flag before it may take a value, so what
+    // the CLI reads as its command cannot be placed.
+    let mut j = 1;
+    while let Some(word) = argv.get(j) {
+        if shellwrap::is_redirection(word) {
+            j += 2;
+            continue;
+        }
+        if !word.starts_with('-') {
+            break;
+        }
+        // Only where `api` stands after it: a flag before any other command is read as that
+        // command's own (`gh -c x commit`), and left to the rest of the reader.
+        if !flag_before_command_is_known(word) && argv[j..].iter().any(|w| w == "api") {
+            return Some(format!(
+                "{UNREADABLE} The flag `{word}` stands before the command, so purlis can't tell which command this is. {PLACE_WAY_OUT}"
+            ));
+        }
+        j += if word == "-R" || word == "--repo" {
+            2
+        } else {
+            1
+        };
+    }
+    if argv.get(j).map(String::as_str) != Some("api") {
         return None;
     }
-    let at = own.iter().position(|w| *w == prog)?;
-    let after = &own[at + 1..];
-    let api = forge_words(after)
-        .first()
-        .filter(|(_, w)| *w == "api")
-        .map(|(i, _)| at + 1 + i + 1)?;
     let mut target = false;
-    for (i, word) in own.iter().enumerate().skip(api) {
+    let mut open_quote: Option<char> = None;
+    for (i, word) in argv.iter().enumerate().skip(j + 1) {
         // A redirection's target is no argument: the shell opens it, or refuses it as ambiguous.
         if std::mem::take(&mut target) {
             continue;
@@ -926,28 +1154,34 @@ pub(super) fn shell_filled_api_reason(
             target = true;
             continue;
         }
-        // A word the line did not measure is read as it came, as if unquoted.
-        let fill = match source.get(i).filter(|s| !s.is_empty()) {
-            Some(spelled) => fill_of(spelled, cmd),
-            None if word.contains(['$', '`']) => Fill::Unquoted,
-            None => Fill::Nothing,
-        };
-        let why = match fill {
-            Fill::Nothing => continue,
-            Fill::Unquoted => "which may split it into more words",
-            Fill::Flag => "which could be a flag, such as the method",
-        };
-        return Some(format!(
-            "{UNREADABLE} The argument `{word}` is filled in by the shell, {why}. {FILLED_IN_WAY_OUT}"
-        ));
+        // A word the line did not measure is read as it came, but one that follows a quote the
+        // line never closes is inside it: no shell fills it in, it has no line to run.
+        let measured = source.get(at + i).filter(|s| !s.is_empty());
+        if measured.is_none() {
+            if let Some(q) = open_quote {
+                if word.contains(q) {
+                    open_quote = None;
+                }
+                continue;
+            }
+            open_quote = ['\'', '"']
+                .into_iter()
+                .find(|q| word.matches(*q).count() % 2 == 1);
+        }
+        let spelled = measured.map_or(word.as_str(), String::as_str);
+        if filled_in(spelled, cmd) {
+            return Some(format!(
+                "{UNREADABLE} The argument `{word}` is filled in by the shell, which may split it into words or begin a flag, such as the method. {FILLED_IN_WAY_OUT}"
+            ));
+        }
     }
     None
 }
 
 /// What a refusal of a shell-filled `gh api` argument says to do.
-const FILLED_IN_WAY_OUT: &str = "Write the endpoint out, or put the shell-filled part inside \
-     double quotes after a literal start of the same word (`\"repos/o/r/pulls/$N/comments\"`), \
-     so it is one word that cannot be a flag.";
+const FILLED_IN_WAY_OUT: &str = "Write the endpoint out, or put the shell-filled part in one \
+     double-quoted word that begins with literal text and holds only a plain `$name` or `$(…)` \
+     (`\"repos/o/r/pulls/$N/comments\"`), so it is one word that cannot be a flag.";
 
 /// True when a path is a repository or project itself, whose settings include auto-merge.
 fn is_repository(segs: &[String]) -> bool {

@@ -123,8 +123,11 @@ const WORDCHARS: &str = concat!(
 /// never reached the tokenizer, so the parsed and the unparseable paths cannot disagree about
 /// what a boundary is. The regex ends in the character class `[(){}]`, which is
 /// [`GROUPING_SPLIT`] here.
-const OPERATOR_ALTERNATION: [&str; 17] = [
-    "<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">", // the redirections, first
+const OPERATOR_ALTERNATION: [&str; 19] = [
+    // `&>>` and `&>` send both streams to a file: one redirection, and no `&` that ends the
+    // command before it (#7423). Before the `&` they begin with.
+    "&>>", "&>", "<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<",
+    ">", // the redirections, first
     "||", "&&", ";;", ";", "|&", "|", "&", "\n", // the control operators
 ];
 
