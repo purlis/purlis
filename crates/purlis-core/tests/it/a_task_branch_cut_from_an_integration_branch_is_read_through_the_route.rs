@@ -10,6 +10,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::forge::Kind;
 use purlis_core::heldact::{BaseObjects, PushCheck, Quarantine, check_push_since};
@@ -36,10 +37,18 @@ fn sha_of(root: &Path, rev: &str) -> HeadSha {
     HeadSha::try_from(String::from_utf8(out.stdout).unwrap().trim()).unwrap()
 }
 
-/// The forge, as a local repository. It advertises its branches, unless it is `silent`.
+/// The forge, as a local repository. It advertises its branches, unless it is `silent`, and counts
+/// how often it was asked to list or to fetch every tip.
 struct LocalForge {
     path: PathBuf,
     silent: bool,
+    listed: AtomicUsize,
+}
+
+impl LocalForge {
+    fn asked_to_list(&self) -> usize {
+        self.listed.load(Ordering::SeqCst)
+    }
 }
 
 impl BaseObjects for LocalForge {
@@ -58,6 +67,7 @@ impl BaseObjects for LocalForge {
     }
 
     fn advertised(&self, _into: &Path) -> Option<Vec<String>> {
+        self.listed.fetch_add(1, Ordering::SeqCst);
         if self.silent {
             return None;
         }
@@ -178,6 +188,7 @@ fn forge_of(s: &Scene, silent: bool) -> LocalForge {
     LocalForge {
         path: s.forge.clone(),
         silent,
+        listed: AtomicUsize::new(0),
     }
 }
 
@@ -237,20 +248,208 @@ fn a_ci_file_change_on_a_branch_cut_from_an_integration_branch_is_held() {
 }
 
 #[test]
-fn a_pack_whose_objects_are_missing_is_refused_though_the_forge_advertises_tips() {
+fn a_truncated_pack_is_refused_at_once_and_the_forge_is_not_asked_for_its_tips() {
     purlis_core::unsteered!();
     let s = scene();
     let tip = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
-    // A pack of the tip alone, over a base the forge has no commit for: git cannot complete it.
     let parent = tempfile::tempdir().unwrap();
     let forge = forge_of(&s, false);
     let quarantine = Quarantine::open(parent.path(), &s.default_tip, &forge).unwrap();
     let pack = pack_of(&s.chat, &tip, &s.integration);
-    // Truncated: git hashes the pack and refuses it, advertised tips or not.
     let cut = &pack[..pack.len() / 2];
     assert!(
         quarantine
             .take_in_known(cut, &tip, &s.default_tip, &forge)
             .is_err()
+    );
+    assert_eq!(
+        forge.asked_to_list(),
+        0,
+        "a truncated pack triggers no fetch"
+    );
+}
+
+#[test]
+fn a_garbage_pack_is_refused_at_once_and_the_forge_is_not_asked_for_its_tips() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let tip = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_of(&s, false);
+    let quarantine = Quarantine::open(parent.path(), &s.default_tip, &forge).unwrap();
+    let garbage: Vec<u8> = (0..4096u32).map(|i| (i * 31 % 251) as u8).collect();
+    assert!(
+        quarantine
+            .take_in_known(&garbage, &tip, &s.default_tip, &forge)
+            .is_err()
+    );
+    assert_eq!(forge.asked_to_list(), 0, "a garbage pack triggers no fetch");
+}
+
+#[test]
+fn a_pack_short_of_objects_asks_the_forge_for_its_tips_once() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let tip = task_commit(&s, |chat| {
+        write(
+            chat,
+            "src/big.txt",
+            &format!("{}integration\ntask\n", lines(300)),
+        )
+    });
+    let forge = forge_of(&s, false);
+    through_the_route(&s, &forge, &tip).expect("it takes in");
+    assert_eq!(forge.asked_to_list(), 1);
+}
+
+#[test]
+fn a_pack_built_on_a_commit_the_forge_does_not_advertise_is_refused_after_the_fetch() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // A commit of the chat's own, never pushed, and a task commit on top of it: the pack leaves
+    // the first out, as `git push` does of what it thinks the forge has.
+    git(
+        &s.chat,
+        &["checkout", "-q", "-B", "task", s.integration.as_str()],
+    );
+    write(
+        &s.chat,
+        "src/big.txt",
+        &format!("{}integration\nlocal\n", lines(300)),
+    );
+    let local = commit(&s.chat, "chat-local work");
+    write(
+        &s.chat,
+        "src/big.txt",
+        &format!("{}integration\nlocal\ntask\n", lines(300)),
+    );
+    let tip = commit(&s.chat, "task work");
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_of(&s, false);
+    let quarantine = Quarantine::open(parent.path(), &s.default_tip, &forge).unwrap();
+    let pack = pack_of(&s.chat, &tip, &local);
+    let refused = quarantine.take_in_known(&pack, &tip, &s.default_tip, &forge);
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(
+        forge.asked_to_list(),
+        1,
+        "the forge's tips were fetched first"
+    );
+}
+
+/// A push to a branch that is there (`created == false`): the quarantine holds the branch's old
+/// tip and the default branch's tip, and the pack is read against the old tip.
+#[test]
+fn a_push_to_an_existing_branch_on_an_integration_base_is_read_against_the_default_branch() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // `task` is on the forge already, one commit on the integration branch.
+    git(
+        &s.forge,
+        &["checkout", "-q", "-b", "task", s.integration.as_str()],
+    );
+    write(&s.forge, "src/other.txt", "other\n");
+    let old = commit(&s.forge, "task on the forge");
+    git(&s.forge, &["checkout", "-q", "main"]);
+    // The chat adds a commit on it.
+    git(&s.chat, &["fetch", "-q", "origin", "task"]);
+    git(&s.chat, &["checkout", "-q", "-B", "task", old.as_str()]);
+    write(
+        &s.chat,
+        "src/big.txt",
+        &format!("{}integration\nmore\n", lines(300)),
+    );
+    let tip = commit(&s.chat, "more task work");
+
+    let parent = tempfile::tempdir().unwrap();
+    let forge = forge_of(&s, false);
+    let quarantine = Quarantine::open(parent.path(), &old, &forge).unwrap();
+    quarantine.also_have(&forge, &s.default_tip).unwrap();
+    let pack = pack_of(&s.chat, &tip, &old);
+    quarantine
+        .take_in_known(&pack, &tip, &old, &forge)
+        .expect("it takes in");
+    assert_eq!(
+        forge.asked_to_list(),
+        0,
+        "the old tip holds what the pack is built on"
+    );
+    let checked = check_push_since(
+        Kind::GitHub,
+        None,
+        &quarantine.trees(),
+        &s.default_tip,
+        Some(&old),
+        &tip,
+    );
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+/// A forge that advertises a list with repeats, other cases, junk and more tips than the cap,
+/// and records the tips it was asked to fetch.
+struct Noisy {
+    inner: LocalForge,
+    list: Vec<String>,
+    asked: std::sync::Mutex<Vec<HeadSha>>,
+    real: HeadSha,
+}
+
+impl BaseObjects for Noisy {
+    fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
+        self.inner.fetch(into, base)
+    }
+
+    fn advertised(&self, _into: &Path) -> Option<Vec<String>> {
+        Some(self.list.clone())
+    }
+
+    fn fetch_all(&self, into: &Path, tips: &[HeadSha]) -> Result<(), String> {
+        *self.asked.lock().unwrap() = tips.to_vec();
+        self.inner.fetch(into, &self.real)
+    }
+}
+
+#[test]
+fn the_tips_fetched_are_distinct_full_ids_and_at_most_the_cap() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let tip = task_commit(&s, |chat| {
+        write(
+            chat,
+            "src/big.txt",
+            &format!("{}integration\ntask\n", lines(300)),
+        )
+    });
+    let real = s.integration.as_str().to_owned();
+    let mut list = vec![
+        real.clone(),
+        real.to_ascii_uppercase(),
+        real.clone(),
+        "not-a-sha".to_owned(),
+        "abc123".to_owned(),
+    ];
+    list.extend((0..purlis_core::diffscan::KNOWN_AT_MOST + 50).map(|i| format!("{i:040x}")));
+    let noisy = Noisy {
+        inner: forge_of(&s, false),
+        list,
+        asked: std::sync::Mutex::new(Vec::new()),
+        real: s.integration.clone(),
+    };
+    let parent = tempfile::tempdir().unwrap();
+    let quarantine = Quarantine::open(parent.path(), &s.default_tip, &noisy).unwrap();
+    let pack = pack_of(&s.chat, &tip, &s.integration);
+    quarantine
+        .take_in_known(&pack, &tip, &s.default_tip, &noisy)
+        .expect("it takes in");
+    let asked = noisy.asked.lock().unwrap();
+    assert!(asked.len() <= purlis_core::diffscan::KNOWN_AT_MOST);
+    let mut distinct: Vec<&str> = asked.iter().map(HeadSha::as_str).collect();
+    distinct.sort_unstable();
+    distinct.dedup();
+    assert_eq!(distinct.len(), asked.len(), "no tip twice");
+    assert_eq!(
+        asked.iter().filter(|t| t.as_str() == real).count(),
+        1,
+        "a tip listed in two cases is one"
     );
 }
