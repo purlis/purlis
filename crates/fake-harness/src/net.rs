@@ -96,3 +96,60 @@ fn say(line: &str) -> Result<(), String> {
         .and_then(|()| stdout.flush())
         .map_err(|err| format!("cannot write output: {err}"))
 }
+
+/// `dial <variable>`: connects to the host and port the variable's value names (a database URL
+/// or a bare `host:port`) and says `DIALED`, or why it could not. A tool of a persona in a
+/// scenario: the value a vault hands `purlis secret exec` is pointed at a tunnel, and this is the
+/// client that dials it.
+pub fn dial(variable: &str) -> Result<(), String> {
+    use std::net::ToSocketAddrs as _;
+    let value = std::env::var(variable).map_err(|_| format!("{variable} is not set"))?;
+    let target = dialled(&value).ok_or_else(|| format!("{variable} names no host and port"))?;
+    let address = target
+        .to_socket_addrs()
+        .map_err(|err| format!("cannot resolve {target}: {err}"))?
+        .next()
+        .ok_or_else(|| format!("{target} has no address"))?;
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_secs(5))
+        .map_err(|err| format!("cannot reach {target}: {err}"))?;
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+    let _ = write!(
+        stream,
+        "GET / HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n"
+    );
+    let _ = stream.read_to_end(&mut Vec::new());
+    say("DIALED")
+}
+
+/// The `host:port` a value names: the authority of a URL (after any `user:password@`), or the
+/// value itself.
+fn dialled(value: &str) -> Option<String> {
+    let rest = value.split_once("://").map_or(value, |(_, rest)| rest);
+    let authority = rest.split(['/', '?']).next()?;
+    let authority = authority.rsplit_once('@').map_or(authority, |(_, at)| at);
+    let (host, port) = authority.rsplit_once(':')?;
+    (!host.is_empty() && port.parse::<u16>().is_ok()).then(|| authority.to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dialled;
+
+    #[test]
+    fn a_database_urls_authority_is_what_it_dials() {
+        assert_eq!(
+            dialled("postgres://app:pw@127.0.0.1:41234/orders?sslmode=disable").as_deref(),
+            Some("127.0.0.1:41234")
+        );
+    }
+
+    #[test]
+    fn a_bare_host_and_port_is_dialled_as_it_is() {
+        assert_eq!(dialled("db.test:5432").as_deref(), Some("db.test:5432"));
+    }
+
+    #[test]
+    fn a_value_with_no_port_dials_nothing() {
+        assert_eq!(dialled("postgres://app@db.test/orders"), None);
+    }
+}
