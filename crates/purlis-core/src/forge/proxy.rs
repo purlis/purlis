@@ -84,8 +84,8 @@ pub use graphql::mutation_repo;
 pub use held::{Held, HeldSink};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
-    NoObjects, ObjectRepo, Refusal, TipSource, TouchedRepo, is_ci_storage_host, is_download_host,
-    is_gitlab_ci_storage,
+    NoObjects, ObjectRepo, RecordedBranches, Refusal, TipSource, TouchedRepo, is_ci_storage_host,
+    is_download_host, is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -340,6 +340,9 @@ pub struct ForgeProxy {
     gone: Option<GoneSink>,
     /// Where each chat's policy reads the tip it last put on a branch, at every update.
     tips: Option<TipSource>,
+    /// Where each chat's policy lists the branches the record holds for it, when an advertisement
+    /// is noted.
+    recorded: Option<RecordedBranches>,
 }
 
 /// What is told the branches, and the tips, a confirmed push made or moved.
@@ -363,6 +366,7 @@ impl ForgeProxy {
             created: None,
             gone: None,
             tips: None,
+            recorded: None,
         }
     }
 
@@ -390,6 +394,14 @@ impl ForgeProxy {
     #[must_use]
     pub fn with_tips(mut self, tips: TipSource) -> Self {
         self.tips = Some(tips);
+        self
+    }
+
+    /// Where each chat's policy lists the branches the record holds for it, asked when an
+    /// advertisement is noted, so a recorded branch gone from the forge ends its record.
+    #[must_use]
+    pub fn with_recorded(mut self, recorded: RecordedBranches) -> Self {
+        self.recorded = Some(recorded);
         self
     }
 
@@ -465,6 +477,9 @@ impl ForgeProxy {
         let mut policy = ChatPolicy::new(repos);
         if let Some(tips) = &self.tips {
             policy = policy.with_tips(tips.clone());
+        }
+        if let Some(recorded) = &self.recorded {
+            policy = policy.with_recorded(recorded.clone());
         }
         self.policies
             .lock()

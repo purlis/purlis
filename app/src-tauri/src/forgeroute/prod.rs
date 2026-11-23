@@ -209,6 +209,19 @@ impl Recorded for ConfirmedRecorded {
         )
     }
 
+    fn own_branches(&self, project: &Path, chat: &str, host: &str, repo_id: u64) -> Vec<String> {
+        let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
+            return Vec::new();
+        };
+        purlis_core::forge::createdbranches::created_by(
+            &self.config_root,
+            &project_id,
+            chat,
+            host,
+            repo_id,
+        )
+    }
+
     fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
         let Some(project_id) = purlis_core::scaffold::planefile::project_id(project) else {
             tracing::warn!("purlis: a branch a chat created was not recorded: no project id");

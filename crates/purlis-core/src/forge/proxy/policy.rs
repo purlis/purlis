@@ -362,6 +362,10 @@ pub struct ChatPolicy {
     /// keeps it where every chat's pushes land. It decides over `own_branches`, so a push by
     /// another chat moves it under this one.
     tips: Option<TipSource>,
+    /// Where the branches the app's record holds for this chat are read from when an
+    /// advertisement is noted, so a branch recorded before this run, and gone from the forge
+    /// since, has its record ended too.
+    recorded: Option<RecordedBranches>,
     /// The branches each repo's last advertisement for a push named, as the listener told the
     /// proxy, keyed by `(host, repo path)`.
     advertised: Mutex<HashMap<(String, String), HashSet<String>>>,
@@ -371,6 +375,10 @@ pub struct ChatPolicy {
 /// and never kept, so another chat's push, a branch made again, or a record that ended is seen at
 /// once. `None` is not this chat's, or no tip that reads: the update is refused.
 pub type TipSource = Arc<dyn Fn(&str, u64, &str) -> Option<String> + Send + Sync>;
+
+/// The branches of a repo the chat's record holds, `(host, forge repo id)`: asked each time an
+/// advertisement is noted, never kept.
+pub type RecordedBranches = Arc<dyn Fn(&str, u64) -> Vec<String> + Send + Sync>;
 
 /// The kind, path segments, query and host of a request, for the hand-off of a held act.
 pub(super) type HeldRoute = (Kind, Vec<String>, Vec<(String, String)>, String);
@@ -412,6 +420,7 @@ impl ChatPolicy {
             repos,
             own_branches: Mutex::new(own),
             tips: None,
+            recorded: None,
             advertised: Mutex::new(HashMap::new()),
         }
     }
@@ -420,6 +429,14 @@ impl ChatPolicy {
     #[must_use]
     pub fn with_tips(mut self, tips: TipSource) -> Self {
         self.tips = Some(tips);
+        self
+    }
+
+    /// Read the branches the record holds for this chat from `recorded` when an advertisement is
+    /// noted, so one gone from the forge ends its record whichever run recorded it.
+    #[must_use]
+    pub fn with_recorded(mut self, recorded: RecordedBranches) -> Self {
+        self.recorded = Some(recorded);
         self
     }
 
@@ -482,6 +499,30 @@ impl ChatPolicy {
                     }
                     true
                 });
+        }
+        // The record may hold branches this run never saw made (an earlier run's): any of them the
+        // advertisement does not list is gone from the forge too. Needs the repo's forge id, the
+        // record's key, and an advertisement that read.
+        if !listed.is_empty()
+            && let (Some(recorded), Some(repo)) = (
+                &self.recorded,
+                self.repos
+                    .iter()
+                    .find(|r| r.host == host && r.path == repo_path),
+            )
+            && let Some(repo_id) = repo.project_id
+        {
+            for branch in recorded(&host, repo_id) {
+                if !listed.contains(&branch) && !gone.iter().any(|g| g.branch == branch) {
+                    gone.push(CreatedBranch {
+                        host: host.clone(),
+                        repo: repo_path.clone(),
+                        repo_id: Some(repo_id),
+                        branch,
+                        tip: String::new(),
+                    });
+                }
+            }
         }
         self.advertised
             .lock()

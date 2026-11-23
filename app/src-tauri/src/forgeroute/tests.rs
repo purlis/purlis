@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use purlis_core::forge::proxy::{Kind, NoCredentials, RequestHead, TokenKind};
+use purlis_core::forge::proxy::{ForgeRepoId, Kind, NoCredentials, RequestHead, TokenKind};
 use purlis_core::secrets::keyring::Secret;
 
 use super::*;
@@ -126,7 +126,7 @@ impl FakeRecorded {
             .filter(|(of, by, _, _)| of == project && by == chat)
             .map(|(_, _, _, tip)| tip.clone())
     }
-    /// `branch` was cut for `chat` and pushed at `a` * 40, the id a pushed update names.
+    /// `chat`'s route made `branch` earlier, and left it at `a` * 40, the id a pushed update names.
     fn cut_for(&self, project: &str, chat: &str, branch: &str) {
         self.cut_at(project, chat, branch, &"a".repeat(40));
     }
@@ -160,8 +160,15 @@ impl Recorded for FakeRecorded {
     ) -> Option<String> {
         self.tip_of(project, chat, branch)
     }
+    fn own_branches(&self, project: &Path, chat: &str, _host: &str, _repo_id: u64) -> Vec<String> {
+        self.own_of(chat)
+            .into_iter()
+            .filter(|branch| self.tip_of(project, chat, branch).is_some())
+            .collect()
+    }
     fn record_created(&self, project: &Path, chat: &str, created: &[CreatedBranch]) {
-        for made in created {
+        // As the real record: a branch whose repo id the route does not know is not recorded.
+        for made in created.iter().filter(|made| made.repo_id.is_some()) {
             lock(&self.cut).push((
                 project.to_owned(),
                 chat.to_owned(),
@@ -185,7 +192,14 @@ impl Recorded for FakeRecorded {
             .get(project)
             .into_iter()
             .flatten()
-            .map(|(kind, host, path)| AllowedRepo::new(*kind, host, 443, path, "main").unwrap())
+            .map(|(kind, host, path)| {
+                // As the app's own: a recorded repo carries the forge's id, the record's key.
+                AllowedRepo::new(*kind, host, 443, path, "main")
+                    .unwrap()
+                    .with_forge_id(ForgeRepoId::for_a_test(
+                        7_000 + u64::from(*kind == Kind::GitLab),
+                    ))
+            })
             .collect()
     }
     fn account(&self, project: &Path, host: &str) -> Option<String> {
@@ -1962,6 +1976,17 @@ fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_f
     );
 }
 
+/// The forge's advertisement for a push to the repo, as the listener reads it: `main` only, so a
+/// push that makes a branch is decided against it.
+fn advertise_main(scene: &Scene, run: &str) {
+    lock_live(scene, run).note_advertised(
+        &ChatId::new(run),
+        "github.com",
+        "acme/app",
+        vec!["main".into()],
+    );
+}
+
 /// A push of `branch` from `old` to `new` through the run's route, as `git push` sends it.
 fn push_ids(
     scene: &Scene,
@@ -1991,7 +2016,9 @@ fn a_live_run_may_not_push_a_branch_another_chat_made_again_through_the_route() 
     let a = scene.start("chat-1", "run-1", "/p/one");
     let b = scene.start("chat-2", "run-2", "/p/one");
 
-    // Chat 1 makes `task/new` through its route; the forge takes it.
+    // Chat 1 makes `task/new` through its route (after the advertisement a push is decided by);
+    // the forge takes it.
+    advertise_main(&scene, "run-1");
     let Outcome::Forward(made) = push_ids(
         &scene,
         "run-1",
@@ -2007,12 +2034,7 @@ fn a_live_run_may_not_push_a_branch_another_chat_made_again_through_the_route() 
 
     // A colleague deletes it. Chat 2's route reads the advertisement without the name and makes
     // it again, at another commit, and the forge takes that push.
-    lock_live(&scene, "run-2").note_advertised(
-        &ChatId::new("run-2"),
-        "github.com",
-        "acme/app",
-        vec!["main".into()],
-    );
+    advertise_main(&scene, "run-2");
     let Outcome::Forward(again) = push_ids(
         &scene,
         "run-2",
@@ -2064,6 +2086,7 @@ fn consecutive_confirmed_pushes_each_move_the_tip_and_a_stale_one_is_refused() {
         };
         lock_live(&scene, "run-1").confirm_push(&ChatId::new("run-1"), &sent);
     };
+    advertise_main(&scene, "run-1");
     confirm(push_ids(
         &scene,
         "run-1",

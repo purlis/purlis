@@ -200,6 +200,18 @@ pub trait Recorded: Send + Sync {
     ) -> Option<String> {
         None
     }
+    /// The branches of the repo with forge id `repo_id` on `host` whose record is `chat`'s now,
+    /// **asked each time the forge's advertisement is read**: any of them the forge no longer
+    /// lists has its record ended. Any doubt is none.
+    fn own_branches(
+        &self,
+        _project: &Path,
+        _chat: &str,
+        _host: &str,
+        _repo_id: u64,
+    ) -> Vec<String> {
+        Vec::new()
+    }
     /// The forge confirmed that `chat` made or moved these branches, to these tips: keep that
     /// where no chat can write, keyed by the project's stable id, the chat and the forge's id of
     /// the repo.
@@ -694,13 +706,18 @@ impl ForgeRoutes {
             let project = project.to_owned();
             let forgets = recorded.clone();
             let tips = recorded.clone();
+            let listed = recorded.clone();
             let (tip_chat, tip_project) = (chat.clone(), project.clone());
+            let (list_chat, list_project) = (chat.clone(), project.clone());
             // A branch is this chat's to move only from the tip it last put there, read from the
             // app's record at each update: a push of another chat through the route moves it, so
             // a branch someone made again is refused, whatever this run read or was told at start.
             proxy = proxy
                 .with_tips(Arc::new(move |host, repo_id, branch| {
                     tips.own_tip(&tip_project, &tip_chat, host, repo_id, branch)
+                }))
+                .with_recorded(Arc::new(move |host, repo_id| {
+                    listed.own_branches(&list_project, &list_chat, host, repo_id)
                 }))
                 .with_created(Box::new(move |created| {
                     recorded.record_created(&project, &chat, created);
