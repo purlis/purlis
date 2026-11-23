@@ -279,3 +279,19 @@ fn a_trusted_clone_with_no_confirmed_repo_is_listed_and_a_confirmed_one_is_not()
     assert_eq!(listed[0].folder, "workspaces/ws/old");
     assert_eq!(listed[0].place, "github.com/acme/old");
 }
+
+#[test]
+fn a_clone_confirmed_at_one_address_and_trusted_again_at_another_is_listed() {
+    let plane = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let moved = a_clone(plane.path(), "ws", "moved", "https://github.com/acme/a.git");
+    super::super::remote::record(home.path(), &moved, "github.com/acme/a".to_owned()).unwrap();
+    confirmed_as(home.path(), &moved, "acme/a");
+    assert!(unconfirmed_clones(plane.path(), home.path()).is_empty());
+
+    super::super::remote::record(home.path(), &moved, "github.com/acme/b".to_owned()).unwrap();
+
+    let listed = unconfirmed_clones(plane.path(), home.path());
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].place, "github.com/acme/b");
+}

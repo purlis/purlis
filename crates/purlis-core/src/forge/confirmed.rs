@@ -608,6 +608,15 @@ pub fn admission(
     })
 }
 
+/// Whether the address the person trusted a clone at (`<host>/<owner>/<repo>`, as the trust list
+/// holds it) is the `host` and `path` of a confirmed repo. The one comparison [`serves`] and the
+/// list of unconfirmed clones both make.
+pub(crate) fn trusted_address_is(place: &str, host: &str, path: &str) -> bool {
+    let place = place.trim_end_matches('/').to_ascii_lowercase();
+    let place = place.strip_suffix(".git").unwrap_or(&place);
+    place == format!("{host}/{path}")
+}
+
 /// **Whether the proxy may serve a request for `path` on `host`** from `clone`: the person trusts
 /// the clone (a clone from the window, or *Trust this clone*: [`super::gitcredential::vouch`]) **and**
 /// this list holds the repo by numeric id ([`admission`]). Either alone is not enough: a trusted
@@ -632,11 +641,9 @@ pub fn serves(
     // recorded again or moved since (`remote::record`, `remote::moved`) is another repo's address,
     // and what was read from the forge for the old one says nothing of it.
     let recorded = super::gitcredential::vouch::recorded_remote(config_root, clone);
-    let same = recorded.as_deref().is_some_and(|place| {
-        let place = place.trim_end_matches('/').to_ascii_lowercase();
-        let place = place.strip_suffix(".git").unwrap_or(&place);
-        place == format!("{}/{}", repo.host, repo.path)
-    });
+    let same = recorded
+        .as_deref()
+        .is_some_and(|place| trusted_address_is(place, &repo.host, &repo.path));
     if !same {
         return Ok(Admission::NotConfirmed);
     }

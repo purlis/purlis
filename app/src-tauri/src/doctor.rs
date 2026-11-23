@@ -612,7 +612,13 @@ fn report_in(
         .chain(config_root.and_then(|config_root| local_project(root, config_root)))
         .chain(forge_route(root))
         .chain(forge_refusals(root))
-        .chain(config_root.and_then(|config_root| unconfirmed_clones(root, config_root)))
+        // A walk of every workspace's clones, so only the full doctor makes it, not the
+        // preflight at project open.
+        .chain(
+            config_root
+                .filter(|_| full)
+                .and_then(|config_root| unconfirmed_clones(root, config_root)),
+        )
         .chain(
             config_root
                 .map(purlis_core::pools::cluster_deletion_notices)

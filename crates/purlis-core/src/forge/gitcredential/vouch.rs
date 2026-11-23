@@ -116,7 +116,7 @@ pub struct Unconfirmed {
 }
 
 /// Every clone in the workspaces of the project at `root` that the trust list at `config_root`
-/// holds and no confirmed repo names, by workspace and then name. A confirmed list that cannot be
+/// holds and no confirmed repo serves at its trusted address, by workspace and then name. A confirmed list that cannot be
 /// read lists nothing: a clone is never shown as unconfirmed on a guess.
 pub fn unconfirmed_clones(root: &Path, config_root: &Path) -> Vec<Unconfirmed> {
     let recorded = super::read_push_remotes(config_root);
@@ -134,7 +134,13 @@ pub fn unconfirmed_clones(root: &Path, config_root: &Path) -> Vec<Unconfirmed> {
             let Some(place) = recorded.get(&key) else {
                 continue;
             };
-            if confirmed.iter().any(|c| c.clone_key == key) {
+            // Served only when an entry names this clone at the address it is trusted at, as
+            // `confirmed::serves` requires: one confirmed at A and trusted again at B is served
+            // nothing.
+            if confirmed.iter().any(|c| {
+                c.clone_key == key
+                    && crate::forge::confirmed::trusted_address_is(place, &c.host, &c.path)
+            }) {
                 continue;
             }
             let folder = repo

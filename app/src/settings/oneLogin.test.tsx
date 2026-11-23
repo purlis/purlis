@@ -276,7 +276,15 @@ describe("You › Accounts › Account for each project", () => {
 
 describe("You › Accounts › Trusted, not confirmed for chats", () => {
   const OLD: UnconfirmedClone = { folder: "workspaces/ws/old", place: "github.com/acme/old" };
-  const setting = unconfirmedClones("plane-1");
+  // A plane of its own per test: what the last press said is kept by plane.
+  let planes = 0;
+  let plane = "plane-0";
+  let setting = unconfirmedClones(plane);
+  beforeEach(() => {
+    planes += 1;
+    plane = `plane-${planes}`;
+    setting = unconfirmedClones(plane);
+  });
 
   function Shown() {
     const shown = setting.useShown?.() ?? true;
@@ -292,12 +300,36 @@ describe("You › Accounts › Trusted, not confirmed for chats", () => {
     await userEvent.click(within(table).getByRole("button", { name: "Confirm workspaces/ws/old" }));
     await waitFor(() =>
       expect(sent.find((one) => one.cmd === "forge_trust_clone_repo")?.args).toEqual({
-        plane: "plane-1",
+        plane,
         folder: "workspaces/ws/old",
         accountId: null,
       }),
     );
-    expect(await screen.findByText("nothing to confirm")).toBeTruthy();
+    expect(await screen.findByText(/^workspaces\/ws\/old is confirmed\.$/)).toBeTruthy();
+  });
+
+  it("keeps the answer to the press that confirmed the last clone, and says which account to choose", async () => {
+    unconfirmed = [OLD];
+    confirmAnswer = { state: "choose", path: "acme/old", host: "github.com" };
+    render(<Shown />);
+    await userEvent.click(await screen.findByRole("button", { name: /^Confirm workspaces/ }));
+    expect(await screen.findByText(/choose which one serves it/)).toBeTruthy();
+    expect(screen.queryByText("nothing to confirm")).toBeNull();
+  });
+
+  it("says which host it is asking while the forge answers", async () => {
+    unconfirmed = [OLD];
+    let answer: (value: unknown) => void = () => {};
+    mockIPC((cmd) => {
+      if (cmd === "forge_unconfirmed_clones") return structuredClone(unconfirmed);
+      if (cmd === "forge_trust_clone_repo") return new Promise((resolve) => (answer = resolve));
+      return null;
+    });
+    render(<Shown />);
+    await userEvent.click(await screen.findByRole("button", { name: /^Confirm workspaces/ }));
+    expect(await screen.findByText("Asking github.com…")).toBeTruthy();
+    answer({ state: "recorded", path: "acme/old", host: "github.com" });
+    expect(await screen.findByText(/is confirmed\./)).toBeTruthy();
   });
 
   it("is not drawn when every trusted clone is confirmed", async () => {
@@ -320,6 +352,10 @@ describe("You › Accounts › Trusted, not confirmed for chats", () => {
     confirmAnswer = "github.com did not answer. Check your connection, then try again.";
     render(<Shown />);
     await userEvent.click(await screen.findByRole("button", { name: /^Confirm workspaces/ }));
-    expect(await screen.findByText(/was not confirmed\. github\.com did not answer/)).toBeTruthy();
+    expect(
+      await screen.findByText(
+        /purlis could not confirm workspaces\/ws\/old: github\.com did not answer/,
+      ),
+    ).toBeTruthy();
   });
 });

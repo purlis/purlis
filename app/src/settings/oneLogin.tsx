@@ -1,7 +1,7 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
   commands,
   type ForgeApplicationRow,
@@ -489,36 +489,63 @@ function confirmSaid(clone: UnconfirmedClone, state: string, recorded: boolean):
 }
 
 /**
+ * What the last Confirm said, by project. Kept outside the setting so that it outlives the last
+ * clone: the setting is hidden once nothing is left to confirm, and the answer to the press that
+ * confirmed it (such as "choose which account serves it") must still be seen.
+ */
+const confirmSays = new Map<PlaneId, string>();
+const confirmListeners = new Set<() => void>();
+
+function sayConfirm(plane: PlaneId, text: string | undefined) {
+  if (text === undefined) confirmSays.delete(plane);
+  else confirmSays.set(plane, text);
+  for (const listener of confirmListeners) listener();
+}
+
+function useConfirmSays(plane: PlaneId): string | undefined {
+  return useSyncExternalStore(
+    (listener) => {
+      confirmListeners.add(listener);
+      return () => void confirmListeners.delete(listener);
+    },
+    () => confirmSays.get(plane),
+  );
+}
+
+/**
  * **Trusted, not confirmed for chats**: the project's clones on the trust list that no confirmed
- * repo names (every clone trusted before one login recorded repos). A chat's route serves a repo
- * only when both name it, so such a clone is unusable to a chat until the person presses Confirm,
- * here in the window, which reads the repo from the forge as them and records it (ADR 0128 D4,
- * D5). Nothing else asks for it: the clone Notice skips a clone already trusted.
+ * repo serves (every clone trusted before one login recorded repos, and any clone whose confirm
+ * after cloning failed). A chat's route serves a repo only when both name it, so such a clone is
+ * unusable to a chat until the person presses Confirm, here in the window, which reads the repo
+ * from the forge as them and records it (ADR 0128 D4, D5). Nothing else asks for it: the clone
+ * Notice skips a clone already trusted. The setting stays drawn while the answer to a press
+ * stands, so the last row's message is seen.
  */
 export function unconfirmedClones(plane: PlaneId): LiveSetting {
   return {
     id: "you.accounts.unconfirmed-clones",
     label: "Trusted, not confirmed for chats",
-    help: "Clones you trusted before purlis recorded repos. A chat can use your sign-in with a clone only after you confirm it here.",
+    help: "Clones you trusted that chats can't use yet. A chat can use your sign-in with a clone only after you confirm it here.",
     writes: "this machine",
-    // Drawn only while there is a clone to confirm.
+    // Drawn while there is a clone to confirm, or an answer to show.
     useShown: function useAny() {
-      return useUnconfirmed(plane).clones.length > 0;
+      const said = useConfirmSays(plane);
+      return useUnconfirmed(plane).clones.length > 0 || said !== undefined;
     },
     useControl: function useUnconfirmedClones() {
       const { clones, read } = useUnconfirmed(plane);
-      const [busy, setBusy] = useState<string>();
-      const [said, setSaid] = useState<string>();
+      const [asking, setAsking] = useState<UnconfirmedClone>();
+      const said = useConfirmSays(plane);
 
       const confirm = async (clone: UnconfirmedClone) => {
-        setBusy(clone.folder);
-        setSaid(undefined);
+        setAsking(clone);
+        sayConfirm(plane, undefined);
         const done = await commands.forgeTrustCloneRepo(plane, clone.folder, null).catch(failure);
-        setBusy(undefined);
+        setAsking(undefined);
         if (done.status === "error") {
-          setSaid(`${clone.folder} was not confirmed. ${done.error}`);
+          sayConfirm(plane, `purlis could not confirm ${clone.folder}: ${done.error}`);
         } else {
-          setSaid(confirmSaid(clone, done.data.state, done.data.path !== null));
+          sayConfirm(plane, confirmSaid(clone, done.data.state, done.data.path !== null));
           forgeAccountsChanged();
         }
         read();
@@ -528,43 +555,45 @@ export function unconfirmedClones(plane: PlaneId): LiveSetting {
         grouped: true,
         control: (ids) => (
           <div role="group" aria-labelledby={ids.labelledBy} aria-describedby={ids.describedBy}>
-            <Table
-              className="ui-record-table"
-              aria-label="Clones to confirm"
-              aria-describedby={ids.describedBy}
-              stacks
-            >
-              <TableHeader>
-                <TableColumn id="clone" isRowHeader>
-                  Clone
-                </TableColumn>
-                <TableColumn id="remote">Remote</TableColumn>
-                <TableColumn id="confirm">Confirm</TableColumn>
-              </TableHeader>
-              <TableBody>
-                {clones.map((clone) => (
-                  <TableRow key={clone.folder} id={clone.folder} textValue={clone.folder}>
-                    <TableCell>{clone.folder}</TableCell>
-                    <TableCell heading="Remote">
-                      <span className="ui-record-where ui-text-meta">{clone.place}</span>
-                    </TableCell>
-                    <TableCell heading="Confirm">
-                      <Button
-                        size="sm"
-                        aria-label={`Confirm ${clone.folder}`}
-                        isDisabled={busy !== undefined}
-                        onPress={() => void confirm(clone)}
-                      >
-                        Confirm
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            {said !== undefined && (
+            {clones.length > 0 && (
+              <Table
+                className="ui-record-table"
+                aria-label="Clones to confirm"
+                aria-describedby={ids.describedBy}
+                stacks
+              >
+                <TableHeader>
+                  <TableColumn id="clone" isRowHeader>
+                    Clone
+                  </TableColumn>
+                  <TableColumn id="remote">Remote</TableColumn>
+                  <TableColumn id="confirm">Confirm</TableColumn>
+                </TableHeader>
+                <TableBody>
+                  {clones.map((clone) => (
+                    <TableRow key={clone.folder} id={clone.folder} textValue={clone.folder}>
+                      <TableCell>{clone.folder}</TableCell>
+                      <TableCell heading="Remote">
+                        <span className="ui-record-where ui-text-meta">{clone.place}</span>
+                      </TableCell>
+                      <TableCell heading="Confirm">
+                        <Button
+                          size="sm"
+                          aria-label={`Confirm ${clone.folder}`}
+                          isDisabled={asking !== undefined}
+                          onPress={() => void confirm(clone)}
+                        >
+                          Confirm
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+            {(asking !== undefined || said !== undefined) && (
               <p className="ui-setting-help ui-text-secondary" role="status">
-                {said}
+                {asking !== undefined ? `Asking ${asking.place.split("/", 1)[0]}…` : said}
               </p>
             )}
           </div>
