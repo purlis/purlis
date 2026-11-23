@@ -296,3 +296,36 @@ fn a_project_whose_consents_are_logged_or_off_raises_no_push_ask() {
         assert!(every(root.path()).is_empty(), "{consents}");
     }
 }
+
+#[test]
+fn pushes_served_at_once_never_raise_more_push_asks_than_the_cap() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().to_path_buf();
+    let raised: usize = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..32)
+            .map(|n| {
+                let path = path.clone();
+                s.spawn(move || {
+                    let control = Control::LetChatPush {
+                        chat: "chat-1".to_owned(),
+                        host: "github.com".to_owned(),
+                        repo: "acme/app".to_owned(),
+                        repo_id: 7,
+                        branch: format!("work-{n}"),
+                    };
+                    usize::from(raise_push_capped(
+                        &path,
+                        9,
+                        control,
+                        None,
+                        MAX_PUSH_ASKS_WAITING,
+                    ))
+                })
+            })
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).sum()
+    });
+    assert_eq!(raised, MAX_PUSH_ASKS_WAITING);
+    assert_eq!(every(root.path()).len(), MAX_PUSH_ASKS_WAITING);
+    forget(root.path(), 9);
+}

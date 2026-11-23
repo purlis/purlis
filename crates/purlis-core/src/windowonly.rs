@@ -231,6 +231,48 @@ pub fn raise_owned(root: &Path, session: u32, control: Control, owner: Option<St
     new
 }
 
+/// **Raises chat `session`'s Let this chat push ask `control` only while fewer than `at_most` of
+/// its push asks wait**, counting and adding under the one lock, so pushes served at once on
+/// several threads cannot each see room and all raise. Answers whether it raised it.
+fn raise_push_capped(
+    root: &Path,
+    session: u32,
+    control: Control,
+    owner: Option<String>,
+    at_most: usize,
+) -> bool {
+    let new = {
+        let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
+        let waiting = raised
+            .iter()
+            .filter(|one| {
+                one.root == root
+                    && one.session == session
+                    && matches!(one.control, Control::LetChatPush { .. })
+            })
+            .count();
+        let already = raised
+            .iter()
+            .any(|one| one.root == root && one.session == session && one.control == control);
+        if already || waiting >= at_most {
+            false
+        } else {
+            raised.push(Refusal {
+                root: root.to_path_buf(),
+                session,
+                control,
+                since: now(),
+                owner,
+            });
+            true
+        }
+    };
+    if new {
+        tell(root);
+    }
+    new
+}
+
 /// **Every refusal raised in the project at `root`** and not yet cleared, oldest first.
 pub fn every(root: &Path) -> Vec<Refusal> {
     RAISED
@@ -460,11 +502,6 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
             return None;
         }
         let session = (self.session)()?;
-        let is_push_ask = |one: &Refusal| {
-            one.root == self.root
-                && one.session == session
-                && matches!(one.control, Control::LetChatPush { .. })
-        };
         let mut waiting: Vec<&crate::forge::proxy::NotYours> = Vec::new();
         let mut kept: Vec<&crate::forge::proxy::NotYours> = Vec::new();
         let mut raised_now = 0;
@@ -482,17 +519,17 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
             } else if is_waiting(&self.root, session, &control) {
                 waiting.push(branch);
             } else {
-                let held = every(&self.root)
-                    .iter()
-                    .filter(|one| is_push_ask(one))
-                    .count();
-                if raised_now >= MAX_PUSH_ASKS_PER_PUSH || held >= MAX_PUSH_ASKS_WAITING {
+                if raised_now >= MAX_PUSH_ASKS_PER_PUSH {
                     held_back = true;
                     continue;
                 }
+                // The owner is read before the lock: it reads a file.
                 let owner = (self.owner_of)(&branch.host, branch.repo_id, &branch.branch)
                     .filter(|chat| *chat != self.chat);
-                raise_owned(&self.root, session, control, owner);
+                if !raise_push_capped(&self.root, session, control, owner, MAX_PUSH_ASKS_WAITING) {
+                    held_back = true;
+                    continue;
+                }
                 raised_now += 1;
                 waiting.push(branch);
             }
