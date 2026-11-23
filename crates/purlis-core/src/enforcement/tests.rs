@@ -45,7 +45,7 @@ fn a_project_that_says_nothing_runs_the_watch_template() {
             assert_eq!(settings.mode(family), want, "{}", family.key());
         }
     }
-    assert_eq!(Template::Watch.sandbox_level(), Some(SandboxLevel::Floor));
+    assert_eq!(Template::Watch.sandbox_level(), SandboxLevel::Floor);
 }
 
 #[test]
@@ -91,11 +91,11 @@ fn each_template_runs_each_family_as_the_ruling_says() {
             template
         );
     }
-    assert_eq!(Template::Open.sandbox_level(), Some(SandboxLevel::Off));
-    assert_eq!(Template::Hold.sandbox_level(), Some(SandboxLevel::Floor));
-    assert_eq!(Template::Team.sandbox_level(), Some(SandboxLevel::Full));
+    assert_eq!(Template::Open.sandbox_level(), SandboxLevel::Off);
+    assert_eq!(Template::Hold.sandbox_level(), SandboxLevel::Floor);
+    assert_eq!(Template::Team.sandbox_level(), SandboxLevel::Full);
     // Strict is today's purlis: `[sandbox]` decides, the floor unless its mode is on (Q316).
-    assert_eq!(Template::Strict.sandbox_level(), None);
+    assert_eq!(Template::Strict.sandbox_level(), SandboxLevel::Floor);
 }
 
 /// Q325: the person's own credential files are held at the floor by `team` and `strict` alone;
@@ -219,10 +219,17 @@ fn vaults_are_never_logged() {
 }
 
 #[test]
-fn the_sandbox_is_no_key_of_policy() {
-    let settings = said("[policy]\ntemplate = \"strict\"\nsandbox = \"off\"\n");
-    assert_eq!(settings.mode(Family::Sandbox), Mode::Enforce);
-    assert_eq!(settings.refused.len(), 1);
+fn policy_sandbox_takes_a_level_never_a_mode() {
+    let off = said("[policy]\ntemplate = \"strict\"\nsandbox = \"off\"\n");
+    assert_eq!(off.level(), SandboxLevel::Off);
+    assert!(off.refused.is_empty(), "{:?}", off.refused);
+    for word in ["log", "enforce", "on", "never"] {
+        let bad = said(&format!(
+            "[policy]\ntemplate = \"open\"\nsandbox = \"{word}\"\n"
+        ));
+        assert_eq!(bad.level(), SandboxLevel::Full, "{word}");
+        assert_eq!(bad.refused.len(), 1, "{word}");
+    }
 }
 
 #[test]
@@ -936,7 +943,7 @@ fn the_sandbox_level_is_the_sandbox_mode_else_the_templates() {
         assert_eq!(settings.level(), level, "{text:?}");
         assert_eq!(
             settings.mode(Family::Sandbox),
-            mode_of_level(level),
+            mode_of_level_under(level, settings.template),
             "{text:?}"
         );
         assert_eq!(

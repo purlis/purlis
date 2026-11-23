@@ -28,13 +28,14 @@
 //! about. A broken file is never skipped: a broken Project falls back to the accepted copy, or
 //! else reads as `strict`; a broken Organisation reads as `strict` plus every lock; and under
 //! either the sandbox is `full` (Q310.7; review round 1, S4). Every [`Notice`] names its file and
-//! line, and the level and owner of each rule it names. `[policy.limits]` (slice 12),
-//! `[policy] sandbox` (slice 11) and `[tools.<name>]` (slice 35) are left unread here.
+//! line, and the level and owner of each rule it names. `[policy.limits]` (slice 12) and
+//! `[tools.<name>]` (slice 35) are left unread here. `[policy] sandbox` (slice 11) is read here:
+//! see [`Loaded::sandbox_level_for`].
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use cedar_policy::{ActionConstraint, Effect, EntityUid, PrincipalConstraint};
+use cedar_policy::{ActionConstraint, Effect, EntityUid, PrincipalConstraint, ResourceConstraint};
 
 use crate::enforcement::{Committed, Family, Mode, SandboxLevel, Template, committed_files};
 
@@ -224,6 +225,8 @@ struct Said<T> {
 struct Defaults {
     template: Option<Said<Template>>,
     modes: BTreeMap<String, Said<Mode>>,
+    /// `[policy] sandbox`: the sandbox level this level sets apart from its template (M75-11).
+    sandbox: Option<Said<SandboxLevel>>,
 }
 
 /// What a file's `[policy]` tables say.
@@ -259,6 +262,7 @@ impl Tables {
                     line: 1,
                 }),
                 modes: BTreeMap::new(),
+                sandbox: None,
             },
             ..Tables::default()
         }
@@ -302,8 +306,9 @@ impl Defaults {
             .map(|(family, said)| (family, said.value.word()))
             .collect();
         format!(
-            "template {:?}, modes {modes:?}",
-            self.template.map(|said| said.value.word())
+            "template {:?}, modes {modes:?}, sandbox {:?}",
+            self.template.map(|said| said.value.word()),
+            self.sandbox.map(|said| said.value.word())
         )
     }
 }
@@ -404,6 +409,67 @@ impl Loaded {
         }
     }
 
+    /// The level `defaults` sets: its `[policy] sandbox`, else its template's.
+    fn level_of(defaults: &Defaults) -> Option<SandboxLevel> {
+        defaults
+            .sandbox
+            .map(|said| said.value)
+            .or_else(|| defaults.template.map(|said| said.value.sandbox_level()))
+    }
+
+    /// **The least level a lock on the `sandbox` family freezes** (M75-11; Q315 point 2): the
+    /// locking level's own, the wider level's where both lock. A lower level may raise the level
+    /// above it, never lower it.
+    fn sandbox_lock_minimum(&self) -> Option<SandboxLevel> {
+        let shipped = Template::default().sandbox_level();
+        let organisation = Self::level_of(&self.organisation);
+        let project = Self::level_of(&self.project).or(organisation);
+        let from_organisation = self
+            .organisation_locks
+            .families
+            .contains("sandbox")
+            .then(|| organisation.unwrap_or(shipped));
+        let from_project = self
+            .project_locks
+            .families
+            .contains("sandbox")
+            .then(|| project.unwrap_or(shipped));
+        from_organisation.into_iter().chain(from_project).max()
+    }
+
+    /// **The sandbox level `chat` runs at** (M75-11; Q318 point 9): the nearest level's
+    /// `[policy] sandbox`, else its template's (the floor under `strict`; the stricter of the
+    /// workspace's and the persona's where both set one), raised to a lock's minimum
+    /// ([`Self::sandbox_lock_minimum`]), never below what your own file says, and never below
+    /// `full` where a file is broken ([`Self::sandbox_at_least`]). This is what the host records
+    /// for the chat, and `context.sandbox` carries.
+    pub fn sandbox_level_for(&self, chat: Chat<'_>) -> SandboxLevel {
+        let organisation = Self::level_of(&self.organisation);
+        let project = Self::level_of(&self.project).or(organisation);
+        let lower = self
+            .lower(chat)
+            .into_iter()
+            .flatten()
+            .filter_map(Self::level_of)
+            .max();
+        let mut level = lower
+            .or(project)
+            .unwrap_or_else(|| Template::default().sandbox_level());
+        if let Some(least) = self.sandbox_lock_minimum() {
+            level = level.max(least);
+        }
+        if let Some(mine) = Self::level_of(&self.you) {
+            level = level.max(mine);
+        }
+        level.max(self.sandbox_at_least.unwrap_or(SandboxLevel::Off))
+    }
+
+    /// **The families not in force for `chat`**: `network`, `ports` and `processes` where its
+    /// sandbox level is `off`, since there is no wrap to enforce them (Q308a).
+    pub fn not_in_force_for(&self, chat: Chat<'_>) -> &'static [&'static str] {
+        super::sandbox_level::not_in_force(self.sandbox_level_for(chat))
+    }
+
     /// The two lower levels' defaults for `chat`, if it has them.
     fn lower(&self, chat: Chat<'_>) -> [Option<&Defaults>; 2] {
         [
@@ -435,6 +501,15 @@ impl Loaded {
     /// and its persona's), `enforce` where a level locks it, and never looser than your own
     /// file says (Q310.3–5, Q308a).
     pub fn mode_for(&self, family: &str, chat: Chat<'_>) -> Mode {
+        // **The `sandbox` family has one switch, its level** (M75-11): the hooks enforce the
+        // `read` and `write` forbids at `floor` and `full`, and at `off` they follow the
+        // template: off under `open`, `log` under any other.
+        if family == "sandbox" {
+            return crate::enforcement::mode_of_level_under(
+                self.sandbox_level_for(chat),
+                self.template_for(chat),
+            );
+        }
         let organisation = self.organisation.mode(family);
         let project = self.project.mode(family).or(organisation);
         let lower = self
@@ -527,7 +602,16 @@ fn read_tables(
             return (tables, problems);
         }
     };
+    // `[sandbox] mode` and `[sandbox] policy` have moved to `[policy]` (M75-11), read first so a
+    // `[policy] sandbox` beside them wins.
+    let never = if place == Level::You {
+        None
+    } else {
+        read_moved_sandbox(doc.as_table(), text, &mut tables, &mut warn)
+    };
     let Some((_, policy)) = doc.as_table().get_key_value("policy") else {
+        raise_to_full(&mut tables.defaults, never);
+        tables.warnings = warnings;
         return (tables, problems);
     };
     let at = |key: &toml_edit::Key, item: &toml_edit::Item| {
@@ -601,12 +685,10 @@ fn read_tables(
                     into.insert(named.to_owned(), defaults);
                 }
             }
-            // `[policy.limits]` is typed against the limits key table (slice 12); `sandbox` is
-            // slice 11's.
+            // `[policy.limits]` is typed against the limits key table (slice 12).
             "limits" if item.is_table_like() => {
                 read_limits(item, name, &at, &mut problem, &mut tables.limits);
             }
-            "sandbox" => {}
             _ => read_default(
                 name,
                 item,
@@ -618,8 +700,76 @@ fn read_tables(
             ),
         }
     }
+    raise_to_full(&mut tables.defaults, never);
     tables.warnings = warnings;
     (tables, problems)
+}
+
+/// **`[sandbox] mode` and `[sandbox] policy` read as moved keys** (M75-11): `policy = "never"`
+/// is a Project lock on the `sandbox` family, which freezes its minimum level, at `full` where
+/// nothing says otherwise; `mode` is `[policy] sandbox` (`"off"` is the level `off`, any other
+/// word is `full`, and `never` refuses the `off`). Each says so in a Notice naming its new
+/// spelling. A `[policy] sandbox` beside them wins, read after. Returns the line of a `never`,
+/// for [`raise_to_full`].
+fn read_moved_sandbox(
+    top: &toml_edit::Table,
+    text: &str,
+    tables: &mut Tables,
+    warn: &mut dyn FnMut(usize, String),
+) -> Option<usize> {
+    let table = top.get("sandbox")?.as_table_like()?;
+    let line = |name: &str| {
+        table
+            .get_key_value(name)
+            .and_then(|(key, item)| key.span().or_else(|| item.span()))
+            .map_or(1, |span| line_of(text, span.start))
+    };
+    // As `sandbox::team::Policy::of_value` reads it: absent is `local`, and any word that is
+    // not `local` is `never`, the stricter, so a typo never loosens anyone.
+    let never = table
+        .get("policy")
+        .is_some_and(|item| item.as_str() != Some("local"));
+    let never_at = never.then(|| line("policy"));
+    if let Some(at) = never_at {
+        tables.locks.families.insert("sandbox".to_owned());
+        tables.lock_lines.entry("families".to_owned()).or_insert(at);
+        warn(
+            at,
+            "[sandbox] policy = \"never\" has moved: it reads as a Project lock on the sandbox \
+             family, which freezes its minimum level at full"
+                .to_owned(),
+        );
+    }
+    if let Some(mode) = table.get("mode") {
+        let at = line("mode");
+        let value = match mode.as_str() {
+            Some("off") if !never => SandboxLevel::Off,
+            _ => SandboxLevel::Full,
+        };
+        tables.defaults.sandbox = Some(Said { value, line: at });
+        warn(
+            at,
+            format!(
+                "[sandbox] mode has moved to [policy] sandbox: it reads as sandbox = \"{}\"",
+                value.word()
+            ),
+        );
+    }
+    never_at
+}
+
+/// A `never` lifts the level its level sets to `full` (see [`read_moved_sandbox`]).
+fn raise_to_full(defaults: &mut Defaults, never: Option<usize>) {
+    let Some(line) = never else { return };
+    if defaults
+        .sandbox
+        .is_none_or(|said| said.value < SandboxLevel::Full)
+    {
+        defaults.sandbox = Some(Said {
+            value: SandboxLevel::Full,
+            line,
+        });
+    }
 }
 
 /// **`[policy.limits]`**: each key a row of the limits key table, each value a whole number from
@@ -724,7 +874,24 @@ fn read_default(
         defaults.template = Some(Said { value, line });
         return;
     }
-    if name == "sandbox" || !FAMILIES.contains(&name) {
+    // **`sandbox` is the family's one switch, and takes a level** (M75-11): `off`, `floor` or
+    // `full`. `log` and `enforce` are modes, which this family has none of, so either breaks the
+    // file, and a broken file runs the full sandbox.
+    if name == "sandbox" {
+        match word.and_then(SandboxLevel::of_policy_word) {
+            Some(value) => defaults.sandbox = Some(Said { value, line }),
+            None => problem(
+                line,
+                format!(
+                    "sandbox = {} is not one of off, floor or full: the sandbox takes a level, \
+                     never off, log or enforce as a mode",
+                    item.to_string().trim()
+                ),
+            ),
+        }
+        return;
+    }
+    if !FAMILIES.contains(&name) {
         problem(line, format!("\"{name}\" is no key of [policy]"));
         return;
     }
@@ -1113,7 +1280,8 @@ fn read_level(
         Some((file, text)) => match read_file(&File::at(file, text, place)) {
             Ok(rules) => {
                 for rule in &rules {
-                    if let Some(what) = own_chats(rule, sources) {
+                    let wrong = own_chats(rule, sources).or_else(|| names_an_escape_deny(rule));
+                    if let Some(what) = wrong {
                         problems.push(Problem {
                             file: rule.file.clone(),
                             line: rule.line,
@@ -1137,6 +1305,28 @@ fn read_level(
         rules,
         problems,
     }
+}
+
+/// **A rule names no escape deny** (M75-11; **proposed**): the floor's process denies and the
+/// session-bus and mach-service `dial`s are a step of their own, applied wherever the sandbox
+/// level is `floor` or `full`, and no rule's permit or forbid, mode or lock moves them
+/// ([`super::sandbox_level`]). So a rule whose scope is one of them is refused at load.
+fn names_an_escape_deny(rule: &Rule) -> Option<String> {
+    let uid = match rule.policy.resource_constraint() {
+        ResourceConstraint::Eq(uid)
+        | ResourceConstraint::In(uid)
+        | ResourceConstraint::IsIn(_, uid) => uid,
+        _ => return None,
+    };
+    let kind = uid.type_name().to_string();
+    let id = uid.id().unescaped().to_owned();
+    let escape = actions_of(rule)
+        .iter()
+        .find_map(|action| super::sandbox_level::named_by(action, &kind, &id))?;
+    Some(format!(
+        "a rule cannot name {escape}, an escape deny: it holds whenever the sandbox level is \
+         floor or full, whatever any rule or mode says"
+    ))
 }
 
 /// The concrete actions a rule names: every one where it names none, a family's members where it

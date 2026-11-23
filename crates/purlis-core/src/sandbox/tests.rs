@@ -373,6 +373,8 @@ fn a_chat_never_writes_charters_integrity_state() {
     for state in [".purlis", ".charter"] {
         held.extend(SKILL_STUDIO_RECORDS.map(|record| plane.path().join(state).join(record)));
     }
+    // The plane root's own entry, held against rename (M75-11).
+    held.push(plane.path().to_path_buf());
     assert_eq!(paths(&denied, Class::Integrity, Access::Write), held);
 }
 
@@ -8885,7 +8887,11 @@ fn a_cluster_pools_program_whose_package_is_inside_the_project_is_held_with_its_
     assert!(held(&plugin, Reach::Itself), "{:?}", denied.paths);
     assert!(held(&package, Reach::AndBelow), "{:?}", denied.paths);
     assert!(
-        !denied.paths.iter().any(|it| it.path == project),
+        // Its own entry is held against rename (M75-11), never what is below it.
+        !denied
+            .paths
+            .iter()
+            .any(|it| it.path == project && it.reach == Reach::AndBelow),
         "the project itself is the chat's: {:?}",
         denied.paths
     );
