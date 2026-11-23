@@ -48,8 +48,8 @@
 //! 2026-11-05): before the browser is held to the login, every page showing those sites goes blank
 //! and every other page is held still until the login answers, as nothing else could put back what
 //! goes. A page is held once each document in it has said it is frozen, not once the engine took the
-//! request, and one that has not said so in time fails the login before anything is cleared. Once it's held, and before anything is filled, all they store is gone (the cookies they would be sent, a parent
-//! domain's too, their service workers, local storage, IndexedDB and caches), and the login's page
+//! request, and one that has not said so in time fails the login before anything is cleared. Once it's held, and before anything is filled, all
+//! they store is gone (the cookies they would be sent, a parent domain's too, their service workers, local storage, IndexedDB and caches), and the login's page
 //! loads in a new tab of its own, past the browser's HTTP cache, which has no way to clear one site.
 //! Where that can't be done, nothing is filled. Other sites are left as they are. A page that asks
 //! for nothing, in a browser holding this login, clears nothing, and a browser that has held nothing
@@ -99,15 +99,19 @@ const HELD_READ_WITHIN: Duration = Duration::from_millis(1000);
 
 /// The script that arms a document to say it was frozen: a constant, run in purlis's own world.
 /// The engine tells a document it is frozen with a `freeze` event, and that it is running again
-/// with `resume`; a listener in a world of purlis's own keeps that where the page's scripts
-/// cannot reach it, and a document that this never ran in says nothing.
+/// with `resume`; a listener in a world of purlis's own keeps the state out of the page's reach, and only
+/// the engine's own events (`isTrusted`) count, never one a page dispatches. A page may still
+/// strip the listeners; that reads as running, and the login fails. A document that this never
+/// ran in says nothing. Each arming adds the same listeners again, which the engine ignores.
 pub(crate) const ARM_FREEZE_WATCH: &str = r"(() => {
-  if (!globalThis.purlisHeldStill) {
-    const held = { frozen: false };
-    document.addEventListener('freeze', () => { held.frozen = true; }, true);
-    document.addEventListener('resume', () => { held.frozen = false; }, true);
-    globalThis.purlisHeldStill = held;
-  }
+  const held = globalThis.purlisHeldStill || (globalThis.purlisHeldStill = {
+    frozen: false,
+    froze: (e) => { if (e.isTrusted) held.frozen = true; },
+    thawed: (e) => { if (e.isTrusted) held.frozen = false; },
+  });
+  held.frozen = false;
+  document.addEventListener('freeze', held.froze, true);
+  document.addEventListener('resume', held.thawed, true);
   return 'armed';
 })()";
 
@@ -641,6 +645,7 @@ impl Browser {
             if new.is_empty() {
                 return Ok(());
             }
+            let first_new = still.pages.len();
             for page in new {
                 let session = self.page_session(&page).map_err(|why| why.to_string())?;
                 let on = Some(session.as_str());
@@ -657,7 +662,7 @@ impl Browser {
                     .map_err(wont)?;
                 still.pages.push((page, session));
             }
-            self.confirm_held_still(still, true)?;
+            self.confirm_held_still(still, first_new)?;
         }
     }
 
@@ -729,15 +734,15 @@ impl Browser {
 
     /// **Waits until every page `still` holds has said it is frozen** (the engine takes a request
     /// to freeze and freezes later), asking again for a page that has not and arming a document
-    /// that came in since, and failing where one has not by `login_within`. With `rearm` false it
-    /// asks nothing and arms nothing: a page that was frozen and is not now is a failure at once,
-    /// as it ran since.
-    fn confirm_held_still(&self, still: &HeldStill<'_>, rearm: bool) -> Result<(), String> {
+    /// that came in since, and failing where one has not by `login_within`. A page
+    /// before `first_new` is only read: one that is not frozen now is a failure at once, as it ran
+    /// since, and no page is let run again once sites may be cleared.
+    fn confirm_held_still(&self, still: &HeldStill<'_>, first_new: usize) -> Result<(), String> {
         let not_held = || "a page of this browser did not stay held still".to_owned();
         let deadline = Instant::now() + self.inner.limits.login_within;
         loop {
             let mut waiting = Vec::new();
-            for (page, session) in &still.pages {
+            for (at, (page, session)) in still.pages.iter().enumerate() {
                 let frames = self.frames_of(page);
                 let states: Vec<Held> = frames
                     .iter()
@@ -746,7 +751,8 @@ impl Browser {
                 if !frames.is_empty() && states.iter().all(|state| *state == Held::Frozen) {
                     continue;
                 }
-                if !rearm {
+                // A page held before this call is never let run again: it may be cleared by now.
+                if at < first_new {
                     return Err(not_held());
                 }
                 waiting.push((page, session, states.contains(&Held::Unarmed)));
@@ -881,7 +887,7 @@ impl Browser {
         // page that ran meanwhile could have put a cookie back, and one read after this that
         // finds none is read of pages that did not run.
         if let Some(still) = still {
-            self.confirm_held_still(still, false)?;
+            self.confirm_held_still(still, usize::MAX)?;
         }
         if !cookies()?.is_empty() {
             return Err("a cookie of its did not go".to_owned());
