@@ -26,8 +26,12 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::ci::GitTrees;
+use crate::diffscan::KNOWN_AT_MOST;
 use crate::mergehold::HeadSha;
 use crate::worktree::git;
+
+/// The tips fetched in one `git fetch`: an argument list that stays well inside a platform's limit.
+const TIPS_PER_FETCH: usize = 256;
 
 /// How long git takes a pack in and checks it.
 const TAKING_IN: Duration = Duration::from_secs(300);
@@ -36,6 +40,19 @@ const TAKING_IN: Duration = Duration::from_secs(300);
 pub trait BaseObjects {
     /// Fetches commit `base`, with its history, into the repository at `into`.
     fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String>;
+
+    /// **The branch tips the forge advertises now**, as full object ids, at most
+    /// [`KNOWN_AT_MOST`] (ADR 0128, amended 2026-11-23): what a thin pack's base may be. `None`
+    /// where the forge did not answer, and the default says nothing: a source that does not
+    /// list leaves a thin pack on an integration branch refused, as before.
+    fn advertised(&self, _into: &Path) -> Option<Vec<String>> {
+        None
+    }
+
+    /// Fetches every commit of `tips`, with its history, into the repository at `into`.
+    fn fetch_all(&self, into: &Path, tips: &[HeadSha]) -> Result<(), String> {
+        tips.iter().try_for_each(|tip| self.fetch(into, tip))
+    }
 }
 
 /// **The forge's own objects**, fetched over HTTPS with the person's credential and no other
@@ -68,6 +85,38 @@ impl BaseObjects for FromForge {
                 "git could not fetch the base from the forge",
             ))
         }
+    }
+
+    fn advertised(&self, into: &Path) -> Option<Vec<String>> {
+        if self.url.contains('@') {
+            return None;
+        }
+        let run = git::run_network(
+            into,
+            self.helper.as_deref(),
+            &["ls-remote", "--heads", "--", &self.url],
+        )
+        .ok()?;
+        crate::diffscan::tips(run)
+    }
+
+    fn fetch_all(&self, into: &Path, tips: &[HeadSha]) -> Result<(), String> {
+        if self.url.contains('@') {
+            return Err("a forge's address carries no user information".to_owned());
+        }
+        for chunk in tips.chunks(TIPS_PER_FETCH) {
+            let mut args = vec!["fetch", "--quiet", "--no-tags", self.url.as_str()];
+            args.extend(chunk.iter().map(HeadSha::as_str));
+            let run = git::run_network(into, self.helper.as_deref(), &args)
+                .map_err(|why| why.to_string())?;
+            if !run.ok() {
+                return Err(first_line(
+                    &run.err,
+                    "git could not fetch the advertised tips from the forge",
+                ));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -149,6 +198,43 @@ impl Quarantine {
         } else {
             Err(first_line(&walked.err, "the pushed objects are not whole"))
         }
+    }
+
+    /// **[`Self::take_in`], where a thin pack may be built on any branch the forge advertises**
+    /// (ADR 0128, amended 2026-11-23): a task branch cut from an integration branch is a pack
+    /// whose deltas are against that branch's objects, which the quarantine does not hold. When
+    /// the pack is refused for want of them, the forge's advertised branch tips, at most
+    /// [`KNOWN_AT_MOST`] and nothing a chat names, are fetched with their history from `from`,
+    /// and the pack is tried once more. **The pack is verified either way**: git hashes and checks
+    /// every object, and `tip` must be a commit whose objects are all here. What the objects
+    /// are read against is the caller's: a pack built on an integration branch is judged against
+    /// the default branch's tip like any other.
+    pub fn take_in_known(
+        &self,
+        pack: &[u8],
+        tip: &HeadSha,
+        base: &HeadSha,
+        from: &dyn BaseObjects,
+    ) -> Result<(), String> {
+        let first = match self.take_in(pack.to_vec(), tip, base) {
+            Ok(()) => return Ok(()),
+            Err(first) => first,
+        };
+        let Some(advertised) = from.advertised(&self.path) else {
+            return Err(first);
+        };
+        let mut seen = std::collections::HashSet::new();
+        let tips: Vec<HeadSha> = advertised
+            .iter()
+            .filter(|id| seen.insert(id.to_ascii_lowercase()))
+            .take(KNOWN_AT_MOST)
+            .filter_map(|id| HeadSha::try_from(id.as_str()).ok())
+            .collect();
+        if tips.is_empty() {
+            return Err(first);
+        }
+        from.fetch_all(&self.path, &tips)?;
+        self.take_in(pack.to_vec(), tip, base)
     }
 
     fn has(&self, commit: &HeadSha) -> Result<(), String> {

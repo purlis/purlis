@@ -661,7 +661,7 @@ fn only_tips(told: Vec<String>) -> Vec<String> {
 /// `None` where it did not answer. Distinct before the cap: an annotated tag is listed twice
 /// (itself and its `^{}`), and a branch and a tag may sit at one commit, so counting repeats
 /// would push real tips past the cap.
-fn tips(asked: git::Run) -> Option<Vec<String>> {
+pub(crate) fn tips(asked: git::Run) -> Option<Vec<String>> {
     if !asked.ok() {
         return None;
     }

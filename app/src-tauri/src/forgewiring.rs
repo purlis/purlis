@@ -574,7 +574,9 @@ impl CiPushGate {
                 "it could not read the default branch's commits ({why})."
             ));
         }
-        if let Err(why) = quarantine.take_in((*pack).to_vec(), tip, &base) {
+        // A thin pack may be built on any branch the forge advertises (an integration branch a
+        // task branch is cut from): those tips are fetched only if the pack needs them.
+        if let Err(why) = quarantine.take_in_known(pack, tip, &base, from) {
             return refuse(format!("git did not take its objects in ({why})."));
         }
         let trees = quarantine.trees();
