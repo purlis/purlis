@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795398715274,
+  "lastUpdate": 1795408030035,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52710,6 +52710,48 @@ window.BENCHMARK_DATA = {
             "value": 102.80587750000001,
             "unit": "ms",
             "extra": "median of 5 runs: 101.595, 101.824, 102.806, 103.162, 103.344 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "f1ba805a3ebec731cac18f274523f4cd746ca93c",
+          "message": "One login: a task branch cut from an integration branch pushes through the route (#7363) (#7402)\n\n* Route: a thin pack on an integration branch is taken in (Refs #7363)\n\nWhen the quarantine refuses a pack for want of its base, fetch the forge's advertised\nbranch tips and take it in once more. The tree is still read against the default tip, so a\nCI-file change on such a branch is held.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M831J29SQZ245AH2MDSEZ2QY\nPurlis-Persona: steward\n\n* Quarantine: fetch the forge's tips incrementally, only for missing objects, within limits (Refs #7363)\n\nTips and the base are fetched into private refs so each chunk negotiates\nagainst what is held; the retry fires only when git reports missing objects\n(unresolved delta, or a tip walk that meets a missing object); fetch_all has a\n240 s deadline and a 512 MiB growth budget; a vanished tip is skipped.\nAdds tests for FromForge, the dedup and cap, and the missing cases.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M832ZA7DRKXAE7VWHK19ATJR\nPurlis-Persona: steward\n\n* One login: a small change with no delta on an integration branch fetches its base too; the fetch ends its options before the URL\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: rustfmt\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T03:47:22Z",
+          "tree_id": "fd1a6fee8aa959a2cdf66a8d26a407d432f6cae4",
+          "url": "https://github.com/purlis/purlis/commit/f1ba805a3ebec731cac18f274523f4cd746ca93c"
+        },
+        "date": 1795408022632,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6835925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.670, 0.672, 0.684, 0.702, 0.710 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.617794,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.409, 16.419, 16.618, 16.618, 16.654 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.75296399999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.294, 101.528, 101.753, 102.651, 102.837 ms"
           }
         ]
       }
