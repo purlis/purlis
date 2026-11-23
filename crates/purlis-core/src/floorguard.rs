@@ -848,6 +848,25 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     None
 }
 
+/// `text` as the inner shell reads what a double-quoted string left it: a backslash before `$`,
+/// a backtick, `"` or another backslash is dropped.
+fn unescape_double_quoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && matches!(next, '$' | '`' | '"' | '\\')
+        {
+            out.push(next);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// The floor's refusal of one segment of `cmd` at `depth`, read as its program's command.
 fn segment_reason(
     toks: &[String],
@@ -864,12 +883,25 @@ fn segment_reason(
     // A redirection with its descriptor and target, and zsh's `-` precommand (repeated, or after
     // assignments and wrappers), are no part of the command: read it without them first
     // (#7423). The words left have none of either, so this runs once.
-    let (plain, _) = merge::plain_words(toks, None, true);
-    if plain.len() != toks.len()
-        && !plain.is_empty()
-        && let Some(said) = segment_reason(&plain, cmd, unattended, depth, a_shell_reads_stdin)
-    {
-        return Some(said);
+    // Every redirection goes, the ones that read too until the noun and verb are placed: the
+    // heredoc or here-string they open is read below from the words as written. A digit before an operator is a descriptor only
+    // when it is attached (`2>`), which the lexer does not keep, so both readings are made.
+    for digit_fd in [true, false] {
+        let (plain, _) = merge::plain_words_with(
+            toks,
+            None,
+            merge::Reading {
+                digit_fd,
+                drop_dash: true,
+                reads_kept_late: true,
+            },
+        );
+        if plain.len() != toks.len()
+            && !plain.is_empty()
+            && let Some(said) = segment_reason(&plain, cmd, unattended, depth, a_shell_reads_stdin)
+        {
+            return Some(said);
+        }
     }
     let (prog, env, argv) = shellwrap::split_env(toks);
     // A string a shell runs is read as the command it is (#866).
@@ -883,6 +915,14 @@ fn segment_reason(
     };
     for inner in scripts.chain(fed) {
         if let Some(said) = inner_floor(&inner) {
+            return Some(said);
+        }
+        // Inside double quotes the outer shell turns `\$` into `$`, so the inner shell expands
+        // what the lexer kept escaped (#7423).
+        let unescaped = unescape_double_quoted(&inner);
+        if unescaped != inner
+            && let Some(said) = inner_floor(&unescaped)
+        {
             return Some(said);
         }
     }

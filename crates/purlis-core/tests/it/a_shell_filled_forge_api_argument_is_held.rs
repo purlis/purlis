@@ -444,6 +444,81 @@ fn a_flag_before_the_noun_that_may_take_a_value_is_held() {
 }
 
 #[test]
+fn a_zsh_qualifier_or_a_tilde_in_an_allowed_pattern_word_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh api repos/o/r/pulls/5 a*(e:'gh pr merge 7':)",
+        "gh api repos/o/r/pulls/5 a*(+f)",
+        "gh api repos/o/r/pulls/5 a*(e:gh\\ pr\\ merge\\ 7:)",
+        "gh api repos/o/r/pulls/5 !(a)",
+        "gh api repos/o/r/pulls/5 ^a",
+        "gh api repos/o/r/pulls/5/merge ~-",
+        "gh api repos/o/r/pulls/5/merge ~+",
+        "gh api repos/o/r/pulls/5/merge ~name",
+    ]);
+    passes(&[
+        "gh api 'repos/o/r/pulls?state=open'",
+        "gh api repos/o/r/pulls/5 a*",
+    ]);
+}
+
+#[test]
+fn an_option_value_that_looks_like_a_dash_or_a_digit_does_not_hide_the_program() {
+    purlis_core::unsteered!();
+    held(&[
+        "env -u - gh api repos/o/r/pulls/5/merge $F",
+        "exec -a - gh api repos/o/r/pulls/5/merge $F",
+        "sudo -u - gh api repos/o/r/pulls/5/merge $F",
+        "env -C - gh api repos/o/r/pulls/5/merge $F",
+        "nice -n - gh api repos/o/r/pulls/5/merge $F",
+        "nice -n 5 >/dev/null gh api repos/o/r/pulls/5/merge $F",
+        "env -u 2 >/dev/null gh api repos/o/r/pulls/5/merge $F",
+    ]);
+}
+
+#[test]
+fn a_flag_between_the_noun_and_the_verb_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh pr -b x merge 5",
+        "gh pr --body x merge 5",
+        "gh -R o/r pr -b x merge 5",
+        "glab mr -m x merge 5",
+        "glab mr -m x accept 5",
+        "gh repo -b x edit --enable-auto-merge",
+    ]);
+    passes(&["gh pr -R o/r view 5", "gh pr view 5 --json title"]);
+}
+
+#[test]
+fn an_input_redirection_does_not_hide_the_noun_the_verb_or_api() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh </dev/null pr merge 5",
+        "gh pr </dev/null merge 5",
+        "gh 0</dev/null pr merge 5",
+        "gh pr <<<x merge 5",
+        "gh pr <>e merge 5",
+        "gh </dev/null api -X PUT repos/o/r/pulls/5/merge",
+        "gh <<'EOF' api graphql --input -\n{\"query\":\"mutation { mergePullRequest(input:{pullRequestId:\\\"x\\\"}) { clientMutationId } }\"}\nEOF",
+        "gh {fd}>/dev/null pr merge 5",
+    ]);
+}
+
+#[test]
+fn an_escaped_expansion_in_an_inner_shell_string_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "sh -c \"gh api repos/o/r/pulls/5/merge \\$F\"",
+        "bash -c \"gh api repos/o/r/pulls/5/merge \\$F\"",
+        "eval \"gh api repos/o/r/pulls/5/merge \\$F\"",
+        "sh -c \"gh api repos/o/r/pulls/5/merge \\$(cat n)\"",
+        "sh -c \"gh api repos/o/r/pulls/5/merge \\`cat n\\`\"",
+        "sh -c \"gh api \\$F\"",
+    ]);
+}
+
+#[test]
 fn the_refusal_for_a_glob_names_the_character_and_says_to_quote_the_word() {
     purlis_core::unsteered!();
     for (cmd, ch) in [

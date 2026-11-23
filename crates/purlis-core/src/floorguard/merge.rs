@@ -171,13 +171,20 @@ pub(super) fn forge_words(args: &[String]) -> Vec<(usize, &str)> {
 /// a publish), so `gh -b x pr view 5` is left alone.
 pub(super) fn unplaced_flag_reason(args: &[String]) -> Option<String> {
     let mut i = 0;
+    let mut noun = false;
     while let Some(arg) = args.get(i) {
         if arg == "-R" || arg == "--repo" {
             i += 2;
             continue;
         }
         if !arg.starts_with('-') {
-            return None;
+            // The noun; the verb is the next word that is no flag. `api` has no verb.
+            if noun || arg == "api" {
+                return None;
+            }
+            noun = true;
+            i += 1;
+            continue;
         }
         if !flag_before_command_is_known(arg) {
             let verbs: Vec<&str> = if super::only_merges() {
@@ -1094,6 +1101,11 @@ fn filled_in(spelled: &str, bound: Option<&str>) -> bool {
                 }
             }
             '$' | '`' => return true,
+            // A zsh glob qualifier (`a*(e:cmd:)`, `a*(+f)`) runs code, and `!(…)` and a leading
+            // `^` are patterns that begin with no literal text. A leading `~` is tilde expansion
+            // (`~-`, `~+`, `~name`), which can come out as a flag.
+            '(' => return true,
+            '^' | '~' if i == 0 => return true,
             // Every word a pattern makes begins with the literal text before it, so a pattern
             // after a plain start that is no `-` is another path, never a flag. A word that
             // begins with one, or has a quote or an escape before it, could be anything.
@@ -1166,9 +1178,33 @@ pub(super) fn shell_filled_api_reason(
     cmd: &str,
 ) -> Option<String> {
     let from = shellwrap::past_function_headers(own).unwrap_or(0);
+    let (own, source) = (&own[from..], source.get(from..).unwrap_or(&[]));
     // The redirections and zsh's `-` precommands are no part of the call: read it without them.
-    let (own, source) = plain_words(&own[from..], Some(source.get(from..).unwrap_or(&[])), false);
-    let (own, source) = (&own[..], &source[..]);
+    // A digit before an operator is a descriptor only when it is attached (`2>`), and the lexer
+    // does not keep which, so it is read both ways, and as written: a `-` or a digit that is an
+    // option's value (`env -u -`, `nice -n 5 >f`) is a word of the call, not a precommand or a
+    // descriptor (#7423).
+    let mut readings: Vec<(Vec<String>, Vec<String>)> = Vec::new();
+    for (digit_fd, drop_dash) in [(true, true), (false, true), (true, false), (false, false)] {
+        readings.push(plain_words_with(
+            own,
+            Some(source),
+            Reading {
+                digit_fd,
+                drop_dash,
+                reads_kept_late: false,
+            },
+        ));
+    }
+    readings.sort();
+    readings.dedup();
+    readings
+        .iter()
+        .find_map(|(own, source)| shell_filled_api_reason_of(own, source, cmd))
+}
+
+/// [`shell_filled_api_reason`] of one reading of the segment's words.
+fn shell_filled_api_reason_of(own: &[String], source: &[String], cmd: &str) -> Option<String> {
     // The one name the line binds to digits, read at most once for the whole call.
     let bound: std::cell::OnceCell<Option<String>> = std::cell::OnceCell::new();
     let inv = shellwrap::split_env_chdir(own);
@@ -1305,6 +1341,42 @@ pub(super) fn shell_filled_api_reason(
 const GLOB_WAY_OUT: &str = "Quote the whole word, or start it with literal text that is no flag \
      (`repos/o/r/pulls?state=open`), so the shell leaves it one word that cannot begin a flag.";
 
+/// Whether a word is a shell's named descriptor, `{fd}` (as in `{fd}>file`).
+fn named_descriptor(word: &str) -> bool {
+    word.strip_prefix('{')
+        .and_then(|w| w.strip_suffix('}'))
+        .is_some_and(|name| {
+            name.chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+}
+
+/// How [`plain_words_with`] reads: whether a digit word or a `{name}` before an operator is its
+/// descriptor and goes with it, and whether a `-` in the prefix is zsh's precommand and goes. The
+/// lexer splits `2>` into `2` and `>` as it does `2 >`, and a `-` can be an option's value
+/// (`env -u -`), so a caller reads each way (#7423).
+#[derive(Clone, Copy)]
+pub(super) struct Reading {
+    pub digit_fd: bool,
+    pub drop_dash: bool,
+    /// A redirection that reads (`<`, `<<`, `<<<`, `<>`) is kept once the program has two words
+    /// after it (its noun and verb are placed): from there a heredoc or here-string is the body
+    /// or the stdin of what the call reads (`--input -`), and the reader needs it.
+    pub reads_kept_late: bool,
+}
+
+impl Default for Reading {
+    fn default() -> Self {
+        Self {
+            digit_fd: true,
+            drop_dash: true,
+            reads_kept_late: false,
+        }
+    }
+}
+
 /// `own` without what is no part of a command's own words (#7423): a redirection (an optional
 /// descriptor number, the operator and its target) wherever it stands, and zsh's `-`
 /// precommand, repeated, or after assignments and wrappers (`noglob - gh …`).
@@ -1313,36 +1385,49 @@ const GLOB_WAY_OUT: &str = "Quote the whole word, or start it with literal text 
 /// (`--jq '>' $F` has none), and a word the line did not measure never is one. Without it, every
 /// operator-shaped word is. Answers the source words in step with the words kept.
 ///
-/// `outputs_only` leaves the redirections that read (`<`, `<<`, `<<<`, `<>`) in place, for a
-/// reader that takes a heredoc body or a stdin from them.
-pub(super) fn plain_words(
+/// `how` says how a digit before an operator, a `-` and the redirections that read are read
+/// ([`Reading`]).
+pub(super) fn plain_words_with(
     own: &[String],
     source: Option<&[String]>,
-    outputs_only: bool,
+    how: Reading,
 ) -> (Vec<String>, Vec<String>) {
-    let operator = |k: usize| {
+    let operator = |k: usize, keep_reads: bool| {
         own.get(k).is_some_and(|w| {
-            shellwrap::is_redirection(w) && !(outputs_only && w.starts_with('<') && w != "<&")
+            shellwrap::is_redirection(w) && !(keep_reads && w.starts_with('<') && w != "<&")
         }) && source.is_none_or(|s| s.get(k).is_some_and(|spelled| *spelled == own[k]))
     };
     let (mut words, mut spellings) = (Vec::new(), Vec::new());
     let mut prefix = true;
+    // The words kept after the program, that are no flag.
+    let (mut seen_prog, mut after_prog) = (false, 0);
     let mut i = 0;
     while i < own.len() {
         let word = own[i].as_str();
-        let fd = !word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()) && operator(i + 1);
-        if fd || operator(i) {
+        let keep_reads = how.reads_kept_late && after_prog >= 2;
+        let fd = how.digit_fd
+            && ((!word.is_empty() && word.bytes().all(|b| b.is_ascii_digit()))
+                || named_descriptor(word))
+            && operator(i + 1, keep_reads);
+        if fd || operator(i, keep_reads) {
             i += if fd { 3 } else { 2 };
             continue;
         }
         if prefix {
-            if word == "-" {
+            if word == "-" && how.drop_dash {
                 i += 1;
                 continue;
             }
             prefix = shellwrap::is_env_assignment(word)
                 || shellwrap::is_wrapper(&shellwrap::base_lower(word))
                 || (word.starts_with('-') && word.len() > 1);
+        }
+        if !prefix {
+            if !seen_prog {
+                seen_prog = true;
+            } else if !word.starts_with('-') {
+                after_prog += 1;
+            }
         }
         words.push(own[i].clone());
         spellings.push(source.and_then(|s| s.get(i).cloned()).unwrap_or_default());
