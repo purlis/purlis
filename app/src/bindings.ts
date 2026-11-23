@@ -3760,8 +3760,8 @@ export const commands = {
 	/**
 	 *  **The person turns Windows Hello at each start on or off.** Made here and nowhere else, as
 	 *  the device id's press is: the window's alone (`session_protocol::ui::WINDOW_ONLY`), so no
-	 *  chat's request is a press. Windows Hello is asked in the call, which waits for the person,
-	 *  so it runs off the window's thread. Refused, with the reason, where Hello does not confirm.
+	 *  chat's request is a press. Windows Hello is asked in the call, which waits for the person, so
+	 *  it runs off the window's thread. Refused, with the reason, where Hello does not confirm.
 	 */
 	setWindowsHello: (on: boolean) => typedError<HelloShown, string>(__TAURI_INVOKE("set_windows_hello", { on })),
 	/**
@@ -9102,17 +9102,6 @@ export type DeletesCutShort = {
 	unsettled: string[],
 };
 
-/**  The Windows Hello opt-in, as Settings shows it (M75-43). */
-export type HelloShown = {
-	/**  `unavailable` (not Windows: the row offers nothing), `off` or `on`. */
-	state: string,
-	/**
-	 *  The seal's declared gap in force, full with the opt-in off and narrowed with it on, never
-	 *  closed; none where the machine has no such gap to declare.
-	 */
-	gap: string | null,
-};
-
 /**  The device id, as Settings shows it: a display label only, with no rename. */
 export type DeviceShown = {
 	/**
@@ -11638,6 +11627,17 @@ export type HeldRemoval = {
 export type HeldRowShown = {
 	label: string,
 	value: string,
+};
+
+/**  The Windows Hello opt-in, as Settings shows it (M75-43). */
+export type HelloShown = {
+	/**  `unavailable` (not Windows: the row offers nothing), `off` or `on`. */
+	state: string,
+	/**
+	 *  The seal's declared gap in force, full with the opt-in off and narrowed with it on, never
+	 *  closed; none where the machine has no such gap to declare.
+	 */
+	gap: string | null,
 };
 
 /**

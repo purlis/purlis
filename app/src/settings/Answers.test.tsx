@@ -46,14 +46,24 @@ describe("the device id in Settings", () => {
   });
 
   it("the_id_is_a_label_with_no_rename", () => {
-    render(<AnswersView shown={WAITING_FOR_CONFIRM} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />);
+    render(
+      <AnswersView
+        shown={WAITING_FOR_CONFIRM}
+        busy={false}
+        onConfirm={() => {}}
+        onHello={() => {}}
+        ids={IDS}
+      />,
+    );
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByRole("button", { name: /rename/i })).toBeNull();
     expect(screen.getByText(/01JABCDEFGHJKMNPQRSTVWXYZ0/)).toBeTruthy();
   });
 
   it("an_unset_id_has_nothing_to_confirm_and_says_why", () => {
-    render(<AnswersView shown={DENIED} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />);
+    render(
+      <AnswersView shown={DENIED} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />,
+    );
     expect(screen.queryByRole("button", { name: "Confirm device id" })).toBeNull();
     expect(screen.getByText(/no device id yet/)).toBeTruthy();
   });
@@ -84,7 +94,9 @@ describe("the device id in Settings", () => {
 
 describe("Windows Hello at each start in Settings", () => {
   it("a_machine_without_windows_hello_offers_nothing", () => {
-    render(<AnswersView shown={HOLDS} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />);
+    render(
+      <AnswersView shown={HOLDS} busy={false} onConfirm={() => {}} onHello={() => {}} ids={IDS} />,
+    );
     expect(screen.queryByRole("button", { name: /Windows Hello/ })).toBeNull();
   });
 
