@@ -596,13 +596,21 @@ jobs:
             echo "artifact=purlis-$slug-${VERSION}"
           } >> "$GITHUB_OUTPUT"
 
-      # The `purlis` binary hooks run, built with the same profile and shipped INSIDE the
-      # bundle. The app looks for it beside its own executable and deliberately ignores PATH
-      # (`charter_binary()` in app/src-tauri/src/lib.rs): the command on PATH may be an older
-      # install or the Python one, and a hook pointed at either answers a different program's
-      # idea of these events. An app launched from Finder has no shell PATH to read anyway.
+      # **Every crate is compiled once, by Tauri's own cargo run** (R1, #7380). The app, the
+      # `purlis` binary the app's hooks run, its `charter` alias and the built-in extensions are
+      # one `tauri build --no-bundle -- -p purlis-app -p purlis-cli -p persona-statistics`, so one
+      # feature set is resolved for all of them. Two cargo runs resolved two (26 crates differed,
+      # `proc-macro2`, `serde`, `tokio` and `url` among them), and the second recompiled most of
+      # what the first had built: 32 minutes, then 86, on a macOS runner. Tauri's own `build`
+      # also adds `tauri/custom-protocol`, tracks `TAURI_CONFIG` in `tauri-build` and
+      # `tauri-utils`, and sets `MACOSX_DEPLOYMENT_TARGET` for `cc`, so any cargo run beside it
+      # is a second compile. Nothing here runs cargo but that one command.
       #
-      # And purlis's built-in extensions (charter-app#339), built with the same profile and
+      # The `purlis` binary is shipped INSIDE the bundle. The app looks for it beside its own
+      # executable and deliberately ignores PATH (`charter_binary()` in app/src-tauri/src/lib.rs):
+      # the command on PATH may be an older install or the Python one, and a hook pointed at
+      # either answers a different program's idea of these events. An app launched from Finder
+      # has no shell PATH to read anyway. And purlis's built-in extensions (charter-app#339) are
       # put in the bundle's resources, where the app looks for them and nowhere else
       # (`find_built_in` in app/src-tauri/src/extensions.rs). `assemble` is the program copying
       # itself beside its manifest, the same directory an operator used to add by hand.
@@ -612,29 +620,88 @@ jobs:
       # the `sbom` job reads back out of the bundle, and what `cargo audit bin` checks against
       # the advisory database on anyone's machine. It changes no name, no profile and no
       # signing step: codesign and the minisign signature both run after linking, over the
-      # binary as it now is.
+      # binary as it now is. Tauri runs `<runner> build …` itself, so `--runner` hands it
+      # `tools/auditable-cargo`, which says `cargo auditable`.
       #
       # **The first third-party compiled tool in the job that holds the signing keys.** It runs
-      # as the rustc wrapper for every crate this job compiles, so it is pinned as tightly as
-      # `cargo install` allows: one exact version, built from its own lockfile (`--locked`).
-      # `cargo install` takes no checksum for the crate it installs; what holds the bytes is
-      # crates.io never replacing a published version, and Cargo checking every crate it
-      # downloads against the index. Moving to a new version is a reviewed change to this line.
-      - name: cargo-auditable
-        env:
-          CARGO_AUDITABLE_VERSION: 0.7.6
-        run: cargo install --locked cargo-auditable --version "$CARGO_AUDITABLE_VERSION"
+      # as the rustc wrapper for every crate this job compiles. It is the release's one pinned
+      # binary, the one `runner-binary-aarch64` installs too, checked against the digest
+      # install-action's manifest holds for it, in place of compiling it with `cargo install`
+      # (which takes no checksum): one exact version, and moving to a new one is a reviewed
+      # change to this line.
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-auditable@0.7.6
 
-      # `purlis` is the command line; `charter` is its alias for the rename's window, a small
-      # program that runs the `purlis` beside it (RN-3). Both ship, each as a file of its own.
-      - name: The purlis binary the app's hooks run, its charter alias, and the built-in extensions
+      # What `cc`-built crates (ring, libsqlite3-sys, objc2-exception-helper, mac-notification-sys)
+      # track, so it is the same on every cargo step: Tauri sets it from
+      # `bundle.macOS.minimumSystemVersion` (10.13 unless the config says), and the compile below
+      # would otherwise hear it from Tauri and a standalone build would not. Read from the same
+      # config, so the two cannot differ.
+      - name: The macOS deployment target every compile uses
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          target=$(jq -r '.bundle.macOS.minimumSystemVersion // "10.13"' app/src-tauri/tauri.conf.json)
+          echo "MACOSX_DEPLOYMENT_TARGET=$target" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=$target"
+
+      # The two configs this run hands Tauri. `tauri.compile.conf.json` is for the compile: it sets
+      # only the version the binaries announce and an EMPTY `beforeBuildCommand`, so Tauri runs no
+      # front-end command (the front end is built by the step before it), and it names no
+      # `externalBin` or extra resource, so the app's build script needs no `purlis` before it
+      # compiles. `tauri.build.conf.json` is for the bundle: `tauri.release.conf.json` (which adds
+      # `bundle.externalBin` and the resources) and the version. The bundle's version is what the
+      # installed app compares a manifest against, and what the bundler writes into each
+      # signature's trusted comment — the pairing `requireSignedVersion` and `release-manifest`
+      # both check.
+      #
+      # One exception, and it is the ONLY way this workflow ever builds without updater
+      # artifacts: a `workflow_dispatch` build. It runs outside the `release` environment, so
+      # it never has the signing key. It publishes nothing, its summary says it is unsigned,
+      # and `release-manifest` never sees it. A publish with no key never gets here — `plan`
+      # refused it.
+      - name: This build's config
+        env:
+          SIGNED: ${{ needs.plan.outputs.signed }}
+        run: |
+          set -euo pipefail
+          jq -n --arg v "$VERSION" '{version: $v, build: {beforeBuildCommand: ""}}' \
+            > app/src-tauri/tauri.compile.conf.json
+          cat app/src-tauri/tauri.compile.conf.json
+          if [ "$PUBLISH" != "true" ] && [ "$SIGNED" != "true" ]; then
+            echo "::warning::no TAURI_SIGNING_PRIVATE_KEY — this on-demand build makes no updater artifacts and is published nowhere"
+            jq --arg v "$VERSION" '. + {version: $v} | .bundle.createUpdaterArtifacts = false' \
+              app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
+          else
+            jq --arg v "$VERSION" '. + {version: $v}' \
+              app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
+          fi
+          cat app/src-tauri/tauri.build.conf.json
+
+      # The app embeds `app/dist`, and `tauri build` checks it exists, so the front end is built
+      # before cargo starts and Tauri's `beforeBuildCommand` is empty (above).
+      - name: The front end the app embeds
+        working-directory: app
+        run: npm run build
+
+      # **The one cargo run.** No `--debug`, and the profile is named: `-- --profile` is handed
+      # to Cargo. No `--features e2e`: that feature puts a WebDriver server inside the app and
+      # belongs in no build anyone is given. `--no-bundle` stops after linking; `--locked` is the
+      # lockfile the CLI's old run was held to. `CARGO_TERM_VERBOSE` makes cargo print each
+      # compile, so a crate built twice is a line anyone can count in this log (R1's evidence).
+      - name: Compile the app, the purlis binary and the built-in extensions
+        working-directory: app
         env:
           # The Report intake's address (#5687, ADR 0118), read by purlis-core's `option_env!` as it
           # compiles. Empty where the secret is not set, which is no address: the build succeeds
           # and sends nothing.
           PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
-        run: cargo auditable build --profile "$PROFILE" --locked -p purlis-cli -p persona-statistics
+          CARGO_TERM_VERBOSE: "true"
+        run: npx tauri build --no-bundle --config src-tauri/tauri.compile.conf.json --runner "$GITHUB_WORKSPACE/tools/auditable-cargo" -- --profile "$PROFILE" --locked -p purlis-app -p purlis-cli -p persona-statistics
 
+      # `purlis` is the command line; `charter` is its alias for the rename's window, a small
+      # program that runs the `purlis` beside it (RN-3). Both ship, each as a file of its own.
       - name: Stage them where Tauri's bundler picks them up
         run: |
           set -euo pipefail
@@ -669,31 +736,6 @@ jobs:
           path: runner/
           if-no-files-found: error
           retention-days: 1
-
-      # `tauri.release.conf.json` adds only `bundle.externalBin`; this run adds the version it
-      # announces. The bundle's version is what the installed app compares a manifest against,
-      # and what `tauri build` writes into each signature's trusted comment — the pairing
-      # `requireSignedVersion` and `release-manifest` both check.
-      #
-      # One exception, and it is the ONLY way this workflow ever builds without updater
-      # artifacts: a `workflow_dispatch` build. It runs outside the `release` environment, so
-      # it never has the signing key. It publishes nothing, its summary says it is unsigned,
-      # and `release-manifest` never sees it. A publish with no key never gets here — `plan`
-      # refused it.
-      - name: This build's config
-        env:
-          SIGNED: ${{ needs.plan.outputs.signed }}
-        run: |
-          set -euo pipefail
-          if [ "$PUBLISH" != "true" ] && [ "$SIGNED" != "true" ]; then
-            echo "::warning::no TAURI_SIGNING_PRIVATE_KEY — this on-demand build makes no updater artifacts and is published nowhere"
-            jq --arg v "$VERSION" '. + {version: $v} | .bundle.createUpdaterArtifacts = false' \
-              app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
-          else
-            jq --arg v "$VERSION" '. + {version: $v}' \
-              app/src-tauri/tauri.release.conf.json > app/src-tauri/tauri.build.conf.json
-          fi
-          cat app/src-tauri/tauri.build.conf.json
 
       # Only the variables that are SET reach the bundler. Tauri reads the Apple variables'
       # presence as "sign", so an empty APPLE_CERTIFICATE makes it try to import nothing and
@@ -766,42 +808,45 @@ jobs:
           fetch apprun-old AppRun-x86_64 AppRun-x86_64
           fetch linuxdeploy-07333c6 linuxdeploy-x86_64.AppImage linuxdeploy-07333c6-x86_64.AppImage
 
-      # No `--debug`, and the profile is named: `-- --profile` hands it to Cargo, and Tauri
-      # reads the same words to find the binary under `target/<profile>/` and put the bundles
-      # in `target/<profile>/bundle/`. No `--features e2e`: that feature puts a WebDriver server
-      # inside the app and belongs in no build anyone is given.
+      # **The bundles, and no cargo.** `tauri bundle` takes the binaries the compile linked, the
+      # staged `purlis`, `charter` and extensions, and makes the bundles, signs them and writes the
+      # updater's signature: there is no compile in it, so this log has none. It has no
+      # `--profile`: it looks in `target/release/` unless it is given `--debug`. A stable build's
+      # profile is `release` and it finds its binaries; a dev channel build's is `dev-release`
+      # (ADR 0092), so `target/release` is made a link to it, and the bundles land in
+      # `target/$PROFILE/bundle/` as every later step reads them. Nothing else in this job builds
+      # `release`, so the link replaces nothing; the step fails if something is there.
       #
       # **When the extra bundle is required, this one run makes it too** (ADR 0092). A second
-      # `tauri build` rebuilds the front end, and the app binary with it, so the two-step
-      # shape below cost a second link of the whole app for a bundle that was not optional
-      # anyway. Today that is the AppImage, on a publish and on the profile guard.
-      - name: Build the app
+      # bundling run would bundle the app twice for a bundle that was not optional anyway. Today
+      # that is the AppImage, on a publish and on the profile guard.
+      - name: Bundle the app
         working-directory: app
         env:
           BUNDLES: ${{ (matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && format('{0},{1}', matrix.bundles, matrix.extra_bundles) || matrix.bundles }}
-          PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
-        # `--runner`: Tauri runs `<runner> build …` in place of `cargo build …`, so the app
-        # binary is linked through `cargo auditable` too (tools/auditable-cargo says why a
-        # wrapper). An absolute path, so it resolves the same wherever Tauri starts it.
-        run: npx tauri build --config src-tauri/tauri.build.conf.json --bundles "$BUNDLES" --runner "$GITHUB_WORKSPACE/tools/auditable-cargo" -- --profile "$PROFILE"
+        run: |
+          set -euo pipefail
+          if [ "$PROFILE" != release ]; then
+            if [ -e ../target/release ] || [ -L ../target/release ]; then echo "::error::target/release exists: \`tauri bundle\` would read it in place of target/$PROFILE"; exit 1; fi
+            ln -s "$PROFILE" ../target/release
+          fi
+          npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles "$BUNDLES"
 
       # The extra bundle as a step of its own, which is allowed to fail: a build that lost
       # its `.dmg`, or a try-a-branch build that lost its AppImage, still has the bundle the
       # step above made. Skipped when that step already made it, and for the `.dmg` of a dev
-      # channel build, which has none.
+      # channel build, which has none. It runs no cargo either.
       #
       # Both targets, not just the extra one: Tauri DELETES a bundle it had to build only as
       # an intermediate. Asking for `dmg` alone builds `purlis.app`, wraps it, then prints
       # "Cleaning .../bundle/macos/purlis.app" and removes it — which is how the first run of
       # this workflow lost the .app it had already built. Naming both keeps both.
-      - name: Build the extra bundle
+      - name: Bundle the extra bundle
         id: extra
         if: ${{ !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}
         continue-on-error: true
         working-directory: app
-        env:
-          PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}
-        run: npx tauri build --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }} --runner "$GITHUB_WORKSPACE/tools/auditable-cargo" -- --profile "$PROFILE"
+        run: npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }}
 
       # Fixed names, so the dev release's assets are REPLACED build after build rather than
       # accumulating one per version, and so a manifest's url never has to guess a bundler's
@@ -1077,6 +1122,9 @@ jobs:
           path: dist/
           if-no-files-found: error
           retention-days: 90
+          # `.app.zip`, `.dmg`, `.app.tar.gz`, `.deb` and the AppImage are compressed already: a
+          # second pass over them costs minutes and saves nothing.
+          compression-level: 0
 
       # **The debug symbols, saved apart from the bundles** (#5692): the `symbols` job below sends
       # them to the Report intake, after this job and from this artifact, so the build spends

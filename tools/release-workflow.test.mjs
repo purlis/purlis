@@ -436,7 +436,7 @@ test("the Linux build turns on more swap before anything compiles", () => {
   const name = head.lastIndexOf("- name:");
   assert.match(head.slice(name), /if: runner\.os == 'Linux'/);
   assert.ok(swap < steps.indexOf("rust-toolchain"), "the swap is turned on before the toolchain is installed");
-  assert.ok(swap < steps.indexOf("Build the app"), "the swap is turned on before the app is built");
+  assert.ok(swap < steps.indexOf("Compile the app, the purlis binary"), "the swap is turned on before anything compiles");
 });
 
 test("the debug symbols go up in a job of their own that never holds a release back (#5692)", () => {
@@ -526,13 +526,10 @@ test("every compile of a build takes the Report intake's address from the releas
   // The secret is reached only where the build publishes: the job's environment says so, on
   // both channels, a dev build too (its reports say channel=dev, from its profile).
   assert.equal(value(build, 4, "environment"), "${{ needs.plan.outputs.publish == 'true' && 'release' || '' }}");
-  // `option_env!` reads it when purlis-core compiles: the command line's build and both of
-  // Tauri's. With the secret absent it is empty, which is no address, so nothing is sent.
-  for (const name of [
-    "The purlis binary the app's hooks run, its charter alias, and the built-in extensions",
-    "Build the app",
-    "Build the extra bundle",
-  ]) {
+  // `option_env!` reads it when purlis-core compiles: the one cargo run, Tauri's (R1, #7380).
+  // With the secret absent it is empty, which is no address, so nothing is sent. The bundling
+  // steps compile nothing, so they are not given it.
+  for (const name of ["Compile the app, the purlis binary and the built-in extensions"]) {
     assert.ok(
       step(build, name).includes("PURLIS_REPORT_INTAKE_DSN: ${{ secrets.PURLIS_REPORT_INTAKE_DSN }}"),
       `${name} builds without the intake's address`,

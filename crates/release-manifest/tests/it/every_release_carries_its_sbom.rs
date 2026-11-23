@@ -30,60 +30,67 @@ fn every_rust_binary_the_release_ships_is_built_with_its_dependency_list() {
     let jobs = release_jobs();
     let build = job(&jobs, "build");
 
-    // One exact cargo-auditable, from its own lockfile. `cargo install` takes no checksum for
-    // the crate it installs; crates.io never replaces a published version, and Cargo checks
-    // every crate it downloads against the index.
-    let install = step(build, "cargo-auditable");
-    let version = step_value(&install, "env", "CARGO_AUDITABLE_VERSION").expect("a version");
-    assert!(
-        version.split('.').count() == 3
-            && version
-                .split('.')
-                .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit())),
-        "CARGO_AUDITABLE_VERSION is one exact version: {version}"
-    );
+    // One exact cargo-auditable, the pinned prebuilt `runner-binary-aarch64` installs too,
+    // checked against the digest install-action's manifest holds for it: nothing in the job
+    // that holds the signing keys compiles a tool.
+    let install = step_with(build, "taiki-e/install-action");
     assert_eq!(
-        run_lines(&install),
-        [r#"cargo install --locked cargo-auditable --version "$CARGO_AUDITABLE_VERSION""#]
+        step_value(&install, "with", "tool"),
+        Some("cargo-auditable@0.7.6")
     );
-
+    let arm = job(&jobs, "runner-binary-aarch64");
     assert_eq!(
-        run_lines(&step(
-            build,
-            "The purlis binary the app's hooks run, its charter alias, and the built-in extensions"
-        )),
-        [
-            r#"cargo auditable build --profile "$PROFILE" --locked -p purlis-cli -p persona-statistics"#
-        ]
+        step_uses(&step_with(arm, "taiki-e/install-action")),
+        step_uses(&install),
+        "build and the aarch64 runner binary install the same pinned release"
     );
-
-    // Tauri runs `<runner> build …` itself, so the app binary goes through the wrapper. Both
-    // `tauri build` calls, or the one that makes the published bundle may be the plain one.
-    // `-- --profile` is the same profile the command line above was built with (ADR 0092).
-    assert_eq!(
-        run_lines(&step(build, "Build the app")),
-        [format!(
-            r#"npx tauri build --config src-tauri/tauri.build.conf.json --bundles "$BUNDLES" --runner "$GITHUB_WORKSPACE/{RUNNER}" -- --profile "$PROFILE""#
-        )]
-    );
-    assert_eq!(
-        run_lines(&step(build, "Build the extra bundle")),
-        [format!(
-            r#"npx tauri build --config src-tauri/tauri.build.conf.json --bundles ${{{{ matrix.bundles }}}},${{{{ matrix.extra_bundles }}}} --runner "$GITHUB_WORKSPACE/{RUNNER}" -- --profile "$PROFILE""#
-        )]
-    );
-
-    // And nothing in the job compiles around it.
-    let plain: Vec<String> = build
+    let installs: Vec<String> = build
         .steps()
         .iter()
         .flat_map(|s| run_lines(s))
-        .filter(|l| l.starts_with("cargo build") || l.contains(" cargo build"))
+        .filter(|l| l.contains("cargo install"))
         .collect();
-    assert!(
-        plain.is_empty(),
-        "build runs a plain `cargo build`: {plain:#?}"
+    assert!(installs.is_empty(), "build compiles a tool: {installs:#?}");
+
+    // ONE cargo run, Tauri's own, through the wrapper so every binary it links carries its
+    // dependency list. The app, the command line and the extensions are one feature set and
+    // one compile (R1, #7380); `-- --profile` is the profile every later step reads (ADR 0092).
+    assert_eq!(
+        run_lines(&step(
+            build,
+            "Compile the app, the purlis binary and the built-in extensions"
+        )),
+        [format!(
+            r#"npx tauri build --no-bundle --config src-tauri/tauri.compile.conf.json --runner "$GITHUB_WORKSPACE/{RUNNER}" -- --profile "$PROFILE" --locked -p purlis-app -p purlis-cli -p persona-statistics"#
+        )]
     );
+
+    // The bundles are made by `tauri bundle`, which runs no cargo.
+    assert_eq!(
+        run_lines(&step(build, "Bundle the app"))
+            .last()
+            .map(String::as_str),
+        Some(r#"npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles "$BUNDLES""#)
+    );
+    assert_eq!(
+        run_lines(&step(build, "Bundle the extra bundle")),
+        [
+            r#"npx tauri bundle --config src-tauri/tauri.build.conf.json --bundles ${{ matrix.bundles }},${{ matrix.extra_bundles }}"#
+        ]
+    );
+
+    // Nothing else in the job compiles: one `tauri build`, and no `cargo`, `--runner` or
+    // `tauri build` in any other step's commands.
+    let others: Vec<String> = build
+        .steps()
+        .iter()
+        .filter(|s| {
+            s[0].trim() != "- name: Compile the app, the purlis binary and the built-in extensions"
+        })
+        .flat_map(|s| run_lines(s))
+        .filter(|l| l.contains("cargo") || l.contains("--runner") || l.contains("tauri build"))
+        .collect();
+    assert!(others.is_empty(), "a second compile in build: {others:#?}");
 }
 
 #[test]
@@ -113,6 +120,14 @@ fn step(job: &Job, name: &str) -> Vec<String> {
         .into_iter()
         .find(|s| s[0].trim() == format!("- name: {name}"))
         .unwrap_or_else(|| panic!("job `{}` has no step `{name}`", job.name))
+}
+
+/// The step of `job` that uses `action`.
+fn step_with(job: &Job, action: &str) -> Vec<String> {
+    job.steps()
+        .into_iter()
+        .find(|s| step_uses(s).is_some_and(|u| u.starts_with(action)))
+        .unwrap_or_else(|| panic!("job `{}` has no step using `{action}`", job.name))
 }
 
 fn position(lines: &[String], want: &str) -> usize {
