@@ -563,6 +563,20 @@ impl Ledger {
         made.push(one);
     }
 
+    /// A grant the scenario's own setup made for the person, as the person's Allow keeps it (a
+    /// fixture's, before any step): every grant of `what` that Settings lists now is made, at the
+    /// level Settings lists it at. The check then still fails on one nobody made.
+    pub(crate) fn made_in_setup(&self, scenario: &Scenario, what: crate::sandboxing::GrantWhat) {
+        let kind = grant_kind(what);
+        let mut made = MADE.lock().expect("made");
+        for (k, target, level) in Self::settings_now(scenario) {
+            if k == kind {
+                made.retain(|(mk, mt, _)| !(mk == &k && mt == &target));
+                made.push((k, target, level));
+            }
+        }
+    }
+
     /// The person revoked `grant` in Settings.
     pub(crate) fn revoked(&self, grant: &crate::sandboxing::SandboxGrant) {
         let (kind, target) = (grant_kind(grant.what), grant.target.clone());

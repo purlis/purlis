@@ -1315,8 +1315,8 @@ fn the_host_kill_is_observed() {
 /// and a tunnel on the chat's own reach to the granted host is dialled through the scenario's
 /// seam. A variant added to `grant::What` fails to compile in `host::kind_of`, and once it is
 /// named there, fails here until the maximal chat holds one. The chat's open browser is
-/// reported `not_run` (#7100); `purlis secret exec` run by the chat itself waits on the vault
-/// broker fixture (#7101).
+/// reported `not_run` (#7100); `purlis secret exec` run by the chat itself is
+/// `a_chats_own_secret_exec_dials_its_tunnel_through_the_seam` (#7101).
 #[cfg(unix)]
 #[test]
 fn the_maximal_chat_holds_every_grant_kind() {
@@ -1438,6 +1438,75 @@ fn the_maximal_chat_holds_every_grant_kind() {
         "the maximal chat's open browser: the scenario host has no browser driver yet (#7100)",
     )])
     .expect("the leg's report");
+}
+
+/// **What the vault broker fixture's chat must have done** (#7101): its tunnel to the vault's
+/// host was dialled through the scenario's seam, once, and nothing else was. `Err` says what was
+/// recorded instead.
+#[cfg(unix)]
+fn its_tunnel_was_dialled(names: &purlis_core::sandbox::names::Names) -> Result<(), String> {
+    let wanted = vec![(host::TUNNEL_HOST.to_owned(), host::TUNNEL_PORT)];
+    let hits = names.origin_hits();
+    if hits == wanted {
+        Ok(())
+    } else {
+        Err(format!(
+            "the chat's tunnel was not dialled through the seam: expected {wanted:?}, recorded {hits:?}"
+        ))
+    }
+}
+
+/// **A tunnel the broker saw nowhere is red** (#7101): the check the fixture's test ends on
+/// fails where no connection reached the origin, as it does when the broker's routing is broken
+/// (a run served unpointed, or never served). Needs no socket and no wrap.
+#[test]
+fn a_tunnel_dialled_nowhere_fails_the_brokered_check() {
+    let names = purlis_core::sandbox::names::Names::new();
+    let why = its_tunnel_was_dialled(&names).expect_err("nothing was dialled");
+    assert!(why.contains("recorded []"), "{why}");
+}
+
+/// **A chat's own `purlis secret exec` dials its tunnel end to end** (#7101, T1.1-06's
+/// follow-up): the project holds a test vault with a tunnel value, tagged for the chat's persona,
+/// and the persona declares a tool, `fake-harness`, bound to it. The chat runs
+/// `fake-harness dial TUNNEL_DSN`: its shim asks the app over the hook socket, the real broker
+/// (`vaults::run_brokered`) resolves the value, opens a tunnel on the chat's own reach and points
+/// the value at it, and the tool dials it. The tunnel's dial goes through the scenario's seam and
+/// is recorded in `Names::origin_hits`.
+#[cfg(unix)]
+#[test]
+fn a_chats_own_secret_exec_dials_its_tunnel_through_the_seam() {
+    let Some(homes) = Homes::of_this_scenario() else {
+        return;
+    };
+    let Some(scenario) = Scenario::with_a_tunnel_vault(&homes, Protection::Full, Dialect::Codex)
+    else {
+        return;
+    };
+    let origin = purlis_scenarios::net::Origin::http().expect("an origin");
+    scenario
+        .names
+        .origin(host::TUNNEL_HOST, host::TUNNEL_PORT, origin.addr());
+    let _held = scenario.names.carry_tunnels();
+    let chat = scenario.starts(&serde_json::json!({
+        "turns": [{"prompt": "go", "calls": [
+            {"step": "dials", "tool": "bash", "run": "fake-harness dial TUNNEL_DSN"}
+        ]}]
+    }));
+    scenario.until_played(chat, &["dials"]);
+    let said = scenario.said();
+    let out = stdout_of(&scenario, chat, "dials");
+    assert!(
+        out.contains("DIALED"),
+        "the chat's tool did not dial its tunnel: {out:?}\n{said}"
+    );
+    if let Err(why) = its_tunnel_was_dialled(&scenario.names) {
+        panic!("{why}\n{said}");
+    }
+    assert!(
+        !out.contains("test-only"),
+        "the vault's value reached the chat's output: {out:?}"
+    );
 }
 
 /// Until `done`, within [`PLAYS_WITHIN`]: a chat's harness starts and plays first.
