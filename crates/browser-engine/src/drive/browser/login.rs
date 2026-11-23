@@ -154,6 +154,16 @@ enum Held {
     Failed(String),
 }
 
+/// Who owns a frame the page's session said it has no such frame of.
+enum Owner {
+    /// The session of the process the frame lives in.
+    Session(String),
+    /// The frame is in no session's tree: it no longer exists.
+    Gone,
+    /// The frame is there and no session of it could be had.
+    Unreachable(CallError),
+}
+
 /// Why a frame's watch is not armed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Unarmed {
@@ -474,12 +484,8 @@ impl HeldStill<'_> {
     /// [`RELEASE_WITHIN`]): the engine thaws a page later than it says, and a page of another site
     /// is left as it was only once it runs, not once it was asked to.
     fn release(&self) {
-        for (_, session) in &self.pages {
-            let _ = self.browser.devtools().call(
-                "Page.setWebLifecycleState",
-                json!({ "state": "active" }),
-                Some(session.as_str()),
-            );
+        for (page, session) in &self.pages {
+            let _ = self.browser.set_lifecycle(page, session, "active");
         }
         let until = Instant::now() + RELEASE_WITHIN;
         loop {
@@ -499,11 +505,7 @@ impl HeldStill<'_> {
                 });
                 if still {
                     waiting = true;
-                    let _ = self.browser.devtools().call(
-                        "Page.setWebLifecycleState",
-                        json!({ "state": "active" }),
-                        Some(session.as_str()),
-                    );
+                    let _ = self.browser.set_lifecycle(page, session, "active");
                 }
             }
             if !waiting || lock(&self.browser.inner.state).ended {
@@ -928,12 +930,7 @@ impl Browser {
                 if let Some(why) = self.arm_freeze_watch(&page) {
                     arming.insert(page.clone(), why);
                 }
-                self.devtools()
-                    .call(
-                        "Page.setWebLifecycleState",
-                        json!({ "state": "frozen" }),
-                        on,
-                    )
+                self.set_lifecycle(&page, &session, "frozen")
                     .map_err(|why| self.would_not_hold_still(&page, "freezing it", &why))?;
                 still.pages.push((page, session));
             }
@@ -1011,29 +1008,157 @@ impl Browser {
         .map_err(|_| wont())
     }
 
-    /// Arms every frame of `page` to say when it is frozen ([`ARM_FREEZE_WATCH`]). A frame that
-    /// cannot be armed is left unarmed, which [`Self::confirm_held_still`] refuses; how the first
-    /// such frame failed is said, for that refusal.
+    /// Arms every frame of `page` to say when it is frozen ([`ARM_FREEZE_WATCH`]), each through
+    /// the session that owns it: the page's for a frame in its process, a frame's own for one in a
+    /// process of its own. A frame the session refused as having no such frame is found its owner,
+    /// or found gone (a frame that no longer exists runs nothing). A frame that cannot be armed
+    /// is left unarmed, which [`Self::confirm_held_still`] refuses; how the first such frame
+    /// failed is said, for that refusal.
     fn arm_freeze_watch(&self, page: &str) -> Option<String> {
         let mut failed = None;
         for (frame, session) in self.frames_of(page) {
-            let armed = self.in_world(&session, &frame, |world| {
-                self.devtools().call_within(
-                    "Runtime.evaluate",
-                    json!({
-                        "expression": ARM_FREEZE_WATCH,
-                        "uniqueContextId": world.unique,
-                        "returnByValue": true,
-                    }),
-                    Some(session.as_str()),
-                    HELD_READ_WITHIN,
-                )
-            });
+            let armed = match self.arm_frame(&frame, &session) {
+                Err(CallError::Engine { code: -32602, .. }) => {
+                    match self.owner_of(page, &frame, &session) {
+                        Owner::Gone => Ok(Value::Null),
+                        Owner::Session(owner) => self.arm_frame(&frame, &owner),
+                        Owner::Unreachable(why) => Err(why),
+                    }
+                }
+                done => done,
+            };
             if let Err(why) = armed {
                 failed.get_or_insert_with(|| said_of(&why));
             }
         }
         failed
+    }
+
+    /// Arms `frame` through `session`.
+    fn arm_frame(&self, frame: &str, session: &str) -> Result<Value, CallError> {
+        self.in_world(session, frame, |world| {
+            self.devtools().call_within(
+                "Runtime.evaluate",
+                json!({
+                    "expression": ARM_FREEZE_WATCH,
+                    "uniqueContextId": world.unique,
+                    "returnByValue": true,
+                }),
+                Some(session),
+                HELD_READ_WITHIN,
+            )
+        })
+    }
+
+    /// Who owns `frame` of `page` now that `refused`, the session purlis held it by, said it has
+    /// no such frame: the frame lives in a process of its own, as a cross-site frame does, and
+    /// its session is its own. The session the engine told of is used; where the engine told of
+    /// none and the frame is still in the page's tree, purlis attaches to the frame's target
+    /// (its id) itself. A frame in no tree is gone, and forgotten as the engine's word that it
+    /// detached would forget it; one that is in a tree and cannot be reached is not confirmed.
+    fn owner_of(&self, page: &str, frame: &str, refused: &str) -> Owner {
+        let told = lock(&self.inner.state).session_of_frame(page, frame);
+        if let Some(owner) = told.filter(|owner| owner != refused) {
+            self.rehome(page, frame, &owner);
+            return Owner::Session(owner);
+        }
+        let sessions = lock(&self.inner.state).sessions_of_page(page);
+        let mut listed = false;
+        for session in &sessions {
+            match self
+                .devtools()
+                .call("Page.getFrameTree", json!({}), Some(session.as_str()))
+            {
+                Ok(tree) => {
+                    let mut stack = vec![&tree["frameTree"]];
+                    while let Some(node) = stack.pop() {
+                        listed |= node["frame"]["id"].as_str() == Some(frame);
+                        if let Some(children) = node.get("childFrames").and_then(Value::as_array) {
+                            stack.extend(children);
+                        }
+                    }
+                }
+                Err(why) => return Owner::Unreachable(why),
+            }
+        }
+        if !listed {
+            let mut state = lock(&self.inner.state);
+            let gone = state.frame_gone(page, frame);
+            if let Some(held) = state.page_mut(page) {
+                held.settle.frames_gone(refused, &gone, Instant::now());
+            }
+            drop(state);
+            self.inner.changed.notify_all();
+            return Owner::Gone;
+        }
+        match self.devtools().call(
+            "Target.attachToTarget",
+            json!({ "targetId": frame, "flatten": true }),
+            None,
+        ) {
+            Ok(attached) => match attached.get("sessionId").and_then(Value::as_str) {
+                Some(owner) => {
+                    lock(&self.inner.state).sessions.insert(
+                        owner.to_owned(),
+                        super::Session::Frame {
+                            page: page.to_owned(),
+                            frame: frame.to_owned(),
+                        },
+                    );
+                    self.rehome(page, frame, owner);
+                    Owner::Session(owner.to_owned())
+                }
+                None => Owner::Unreachable(CallError::Engine {
+                    code: 0,
+                    message: "the engine did not give the frame a session".into(),
+                }),
+            },
+            Err(why) => Owner::Unreachable(why),
+        }
+    }
+
+    /// `frame` of `page` is held by `owner` from now on.
+    fn rehome(&self, page: &str, frame: &str, owner: &str) {
+        if let Some(entry) = lock(&self.inner.state)
+            .page_mut(page)
+            .and_then(|page| page.frames.get_mut(frame))
+        {
+            entry.session = owner.to_owned();
+        }
+    }
+
+    /// Every session that holds a frame of `page` besides `page`'s own: a frame in a process of
+    /// its own, which the page's freeze or stop of loads may not reach.
+    fn frame_sessions_of(&self, page: &str, own: &str) -> Vec<String> {
+        let mut sessions: Vec<String> = self
+            .frames_of(page)
+            .into_iter()
+            .map(|(_, session)| session)
+            .filter(|session| session != own)
+            .collect();
+        sessions.sort();
+        sessions.dedup();
+        sessions
+    }
+
+    /// Asks `page`, through its session and then through each frame's own, to be in `state`
+    /// (`frozen` or `active`). The page's answer is the one that counts; a frame in a process of
+    /// its own is asked too, as the page's request may not reach it, and a refusal there is not
+    /// a failure: what each frame says of itself is what is read back.
+    fn set_lifecycle(&self, page: &str, session: &str, state: &str) -> Result<(), CallError> {
+        let asked = self.devtools().call(
+            "Page.setWebLifecycleState",
+            json!({ "state": state }),
+            Some(session),
+        );
+        for own in self.frame_sessions_of(page, session) {
+            let _ = self.devtools().call(
+                "Page.setWebLifecycleState",
+                json!({ "state": state }),
+                Some(own.as_str()),
+            );
+        }
+        asked.map(|_| ())
     }
 
     /// Each frame of `page`, with the session that holds it.
@@ -1154,15 +1279,10 @@ impl Browser {
                 return Err(self.not_held(&late));
             }
             for (page, session, states) in waiting {
-                let on = Some(session.as_str());
                 if states.iter().any(Held::unarmed) {
                     // A document that came in since never saw a freeze: let the page run again,
                     // before anything is cleared, arm it, and freeze it once more.
-                    let _ = self.devtools().call(
-                        "Page.setWebLifecycleState",
-                        json!({ "state": "active" }),
-                        on,
-                    );
+                    let _ = self.set_lifecycle(page, session, "active");
                     match self.arm_freeze_watch(page) {
                         Some(why) => {
                             arming.insert(page.clone(), why);
@@ -1172,11 +1292,7 @@ impl Browser {
                         }
                     }
                 }
-                let _ = self.devtools().call(
-                    "Page.setWebLifecycleState",
-                    json!({ "state": "frozen" }),
-                    on,
-                );
+                let _ = self.set_lifecycle(page, session, "frozen");
             }
             self.pause(LOOK_AGAIN).map_err(|why| why.to_string())?;
         }

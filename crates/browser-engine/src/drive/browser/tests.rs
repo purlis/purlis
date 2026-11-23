@@ -153,6 +153,20 @@ struct Freezing {
     unreadable: std::collections::HashSet<String>,
     /// The sessions whose state is never answered in time.
     unanswered: std::collections::HashSet<String>,
+    /// Whether the engine keeps each frame to the session that owns it, as it does for a frame in
+    /// a process of its own: a world is made only on the owner's session, and any other answers
+    /// that it has no such frame (-32602).
+    frames_owned: bool,
+    /// Whether the page's cross-site frame is never announced to the driver by auto-attach: its
+    /// session is known only to one that attaches to it by its id.
+    oopif_unannounced: bool,
+    /// Whether the engine refuses to attach to the cross-site frame's target.
+    attach_refused: bool,
+    /// Whether the cross-site frame is gone from the page, in every session's tree.
+    oopif_gone: bool,
+    /// Whether the cross-site frame, in a process of its own, freezes only when its own session
+    /// is asked, never with the page that holds it.
+    oopif_apart: bool,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -183,6 +197,12 @@ struct StandWorld {
 }
 
 impl Engine {
+    /// Whether the page's cross-site frame has gone, as a test says it does: from the moment the
+    /// login first stops a page's loads, so after the driver knew of it and before it is armed.
+    fn oopif_is_gone(&self) -> bool {
+        super::lock(&self.model).freezing.oopif_gone && !self.sent("Page.stopLoading").is_empty()
+    }
+
     fn emit(&self, method: &str, params: Value, session: Option<&str>) {
         if matches!(method, "Target.targetCreated" | "Target.targetInfoChanged")
             && let (Some(target), Some(title)) = (
@@ -347,6 +367,23 @@ impl Engine {
                 );
                 Ok(json!({}))
             }
+            "Target.attachToTarget" if p["targetId"] == "PAYMENT-FRAME" => {
+                let gone = self.oopif_is_gone();
+                let freezing = &super::lock(&self.model).freezing;
+                if freezing.attach_refused || gone {
+                    return Err(CallError::Engine {
+                        code: -32602,
+                        message: "No target with given id found".into(),
+                    });
+                }
+                // Told of with no session: the driver's own attach, not an auto-attach.
+                self.emit(
+                    "Target.attachedToTarget",
+                    json!({"sessionId":"S-PAYMENT","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://other.test/pay.html","attached":true},"waitingForDebugger":false}),
+                    None,
+                );
+                Ok(json!({ "sessionId": "S-PAYMENT" }))
+            }
             "Target.attachToTarget" => {
                 let target = p["targetId"].as_str().unwrap();
                 let session = format!("S-{target}");
@@ -358,6 +395,9 @@ impl Engine {
                 Ok(json!({ "sessionId": session }))
             }
             "Target.setAutoAttach" if on == Some("S-PAGE-1") => {
+                if super::lock(&self.model).freezing.oopif_unannounced {
+                    return Ok(json!({}));
+                }
                 self.emit(
                     "Target.attachedToTarget",
                     json!({"sessionId":"S-PAYMENT","targetInfo":{"targetId":"PAYMENT-FRAME","type":"iframe","title":"","url":"http://other.test/pay.html","attached":true},"waitingForDebugger":false}),
@@ -368,7 +408,13 @@ impl Engine {
             "Page.getFrameTree" => Ok(match on {
                 Some("S-PAGE-1") => json!({"frameTree":{
                     "frame":{"id":"PAGE-1","loaderId":"LOADER-1","url":"http://fixture.test/frames.html","domainAndRegistry":"","securityOrigin":"http://fixture.test","mimeType":"text/html","name":""},
-                    "childFrames":[{"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-2","name":"payment","url":"http://other.test/pay.html","securityOrigin":"http://other.test","mimeType":"text/html"}}]}}),
+                    "childFrames":(if self.oopif_is_gone() { vec![] } else { vec![json!({"frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-2","name":"payment","url":"http://other.test/pay.html","securityOrigin":"http://other.test","mimeType":"text/html"}})] })}}),
+                Some("S-PAYMENT") if self.oopif_is_gone() => {
+                    return Err(CallError::Engine {
+                        code: -32602,
+                        message: "No session with given id".into(),
+                    });
+                }
                 Some("S-PAYMENT") => json!({"frameTree":{
                     "frame":{"id":"PAYMENT-FRAME","parentId":"PAGE-1","loaderId":"LOADER-2","name":"payment","url":"http://other.test/pay.html","securityOrigin":"http://other.test","mimeType":"text/html"}}}),
                 Some(other) => {
@@ -515,6 +561,23 @@ impl Engine {
                     }),
                 }
             }
+            "Page.createIsolatedWorld"
+                if {
+                    let gone = self.oopif_is_gone();
+                    let freezing = &super::lock(&self.model).freezing;
+                    let owner = match p["frameId"].as_str() {
+                        Some("PAYMENT-FRAME") if gone => None,
+                        Some("PAYMENT-FRAME") => Some("S-PAYMENT"),
+                        _ => on,
+                    };
+                    freezing.frames_owned && owner != on
+                } =>
+            {
+                Err(CallError::Engine {
+                    code: -32602,
+                    message: "No frame for given id found".into(),
+                })
+            }
             "Page.createIsolatedWorld" => {
                 let id = {
                     let mut worlds = super::lock(&self.worlds);
@@ -596,7 +659,7 @@ impl Engine {
                 let thawed = cleared && freezing.thaws_when_cleared;
                 // A frame in a process of its own is frozen with the page that holds it.
                 let page = match on.unwrap_or_default() {
-                    "S-PAYMENT" => "S-PAGE-1",
+                    "S-PAYMENT" if !freezing.oopif_apart => "S-PAGE-1",
                     other => other,
                 };
                 let frozen = match freezing.asked.get_mut(page) {

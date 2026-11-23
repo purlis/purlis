@@ -2125,3 +2125,112 @@ fn the_refusal_names_each_page_and_leaves_an_error_text_no_address() {
         "a page of this browser did not stay held still (page 1: blank page, no opener, 0 frames: no frame known, waited 3.0 s; page 2: extension page, has an opener, 2 frames: no freeze event in 2 frames, waited 10.2 s)"
     );
 }
+
+/// A page's cross-site frames live in processes of their own, each with a session that owns it:
+/// a world made for such a frame on the page's session is refused as there being no such frame.
+/// The login arms and reads every frame through the session that owns it.
+fn with_a_frame_in_a_process_of_its_own(
+    set: impl FnOnce(&mut super::Freezing),
+) -> (super::StandIn, Arc<Engine>) {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.freezing.frames_owned = true;
+        set(&mut model.freezing);
+    }
+    let _ = snapshot(&browser, 1);
+    if super::super::lock(&engine.model).freezing.oopif_unannounced {
+        // The driver never heard of the frame's session: it holds the frame as its page's own.
+        let mut state = super::super::lock(&browser.inner.state);
+        state.sessions.remove("S-PAYMENT");
+        state
+            .page_mut("PAGE-1")
+            .and_then(|page| page.frames.get_mut("PAYMENT-FRAME"))
+            .expect("the frame is known")
+            .session = "S-PAGE-1".to_owned();
+    }
+    (browser, engine)
+}
+
+#[test]
+fn a_frame_in_a_process_of_its_own_is_armed_and_read_through_the_session_that_owns_it() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|_| {});
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let worlds = engine.sent("Page.createIsolatedWorld");
+    assert!(
+        worlds
+            .iter()
+            .any(|sent| sent.params["frameId"] == "PAYMENT-FRAME"
+                && sent.session.as_deref() == Some("S-PAYMENT")),
+        "the frame's world is made on its own session"
+    );
+}
+
+#[test]
+fn a_frame_whose_process_the_driver_was_never_told_of_is_attached_to_and_armed_there() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_unannounced = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(
+        engine
+            .sent("Target.attachToTarget")
+            .iter()
+            .any(
+                |sent| sent.params["targetId"] == "PAYMENT-FRAME" && sent.params["flatten"] == true
+            )
+    );
+    assert!(!engine.sent("Storage.clearDataForOrigin").is_empty());
+}
+
+#[test]
+fn a_frame_in_a_process_that_the_pages_freeze_does_not_reach_is_frozen_through_its_own_session() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_apart = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let frozen_own = all
+        .iter()
+        .position(|sent| {
+            sent.method == "Page.setWebLifecycleState"
+                && sent.params["state"] == "frozen"
+                && sent.session.as_deref() == Some("S-PAYMENT")
+        })
+        .expect("frozen on the frame's own session");
+    let cleared = all
+        .iter()
+        .position(|sent| sent.method == "Storage.clearDataForOrigin")
+        .expect("cleared");
+    assert!(frozen_own < cleared);
+}
+
+#[test]
+fn a_frame_that_goes_while_it_is_armed_runs_nothing_and_does_not_fail_the_login() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_unannounced = true;
+        freezing.oopif_gone = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    assert!(!engine.sent("Storage.clearDataForOrigin").is_empty());
+}
+
+#[test]
+fn a_frame_that_still_exists_and_cannot_be_reached_fails_the_login_before_anything_is_cleared() {
+    let (browser, engine) = with_a_frame_in_a_process_of_its_own(|freezing| {
+        freezing.oopif_unannounced = true;
+        freezing.attach_refused = true;
+    });
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let Err(Refusal::NotLoggedIn(why)) = &ended.outcome else {
+        panic!("{}", ended_as(&ended.outcome));
+    };
+    assert!(why.contains("watch not armed"), "{why}");
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
