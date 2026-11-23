@@ -190,7 +190,9 @@ pub trait Recorded: Send + Sync {
     /// never kept: the route lets an update through only from this tip, so a branch another chat
     /// moved, or one made again, is refused. Any doubt is none (the person pushes it), and the
     /// project and the chat's id are the key, so a chat with another id, or of another project,
-    /// owns none of them.
+    /// owns none of them. **One exception**: a branch recorded to a chat `chat` dispatched
+    /// (directly, or up the chain, by the app's dispatch records) is `chat`'s to update from the
+    /// recorded tip, and its confirmed push is then recorded under `chat`.
     fn own_tip(
         &self,
         _project: &Path,

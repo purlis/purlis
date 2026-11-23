@@ -613,13 +613,13 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
     let first = send(&push(&command("mine", &zero)));
     assert_eq!(first.status, 200, "{}", first.text());
     let moved = send(&push(&command("mine", &"2".repeat(40))));
-    assert_eq!(
-        moved.status,
-        403,
+    // Refused by the route in git's words: a report-status that rejects the ref with the reason.
+    assert_eq!(moved.status, 200, "{}", moved.text());
+    assert!(
+        moved.text().contains("ng refs/heads/mine purlis: "),
         "a branch the forge refused is not owned: {}",
         moved.text()
     );
-    assert!(moved.text().contains("ProtectedRef"), "{}", moved.text());
 
     // The forge takes it: now it is.
     w.fake.answer(Answer::ok(&format!(
@@ -629,10 +629,11 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
     )));
     assert_eq!(send(&push(&command("mine", &zero))).status, 200);
     // An update moves on only from the tip the chat put there, never from any other old id.
-    assert_eq!(
-        send(&push(&command("mine", &"2".repeat(40)))).status,
-        403,
-        "an update from an old id the chat did not put there"
+    let stale = send(&push(&command("mine", &"2".repeat(40))));
+    assert!(
+        stale.status == 200 && stale.text().contains("ng refs/heads/mine purlis: "),
+        "an update from an old id the chat did not put there: {}",
+        stale.text()
     );
     w.fake.answer(Answer::ok(&format!(
         "{}{}0000",
@@ -664,7 +665,12 @@ fn a_push_is_decided_on_its_commands_and_its_branch_is_owned_only_when_the_forge
         command("release", &zero),
         command("release-1", &zero),
     ] {
-        assert_eq!(send(&push(&body)).status, 403, "{body}");
+        let reply = send(&push(&body));
+        assert!(
+            reply.status == 200 && reply.text().contains(" purlis: "),
+            "{body}: {}",
+            reply.text()
+        );
     }
     assert_eq!(w.fake.requests().len(), seen_before);
 }
@@ -724,7 +730,12 @@ fn a_push_advertisement_is_read_so_a_branch_that_exists_is_not_made() {
         push.as_bytes(),
     )
     .unwrap();
-    assert_eq!(reply.status, 403, "{}", reply.text());
+    assert_eq!(reply.status, 200, "{}", reply.text());
+    assert!(
+        reply.text().contains("ng refs/heads/taken purlis: "),
+        "{}",
+        reply.text()
+    );
 }
 
 /// An upstream whose answer arrives in pieces, with a pause before each: a long clone.

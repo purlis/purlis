@@ -980,6 +980,11 @@ fn git_clones_fetches_and_pushes_a_branch_it_made_but_not_the_default_branch() {
     ] {
         let (ok, text) = s.git(&work, &args);
         assert!(!ok, "git {args:?} was allowed: {text}");
+        // Git says why, in its own output, and not "RPC failed; HTTP 403".
+        assert!(
+            text.contains("[remote rejected]") && !text.contains("RPC failed"),
+            "git {args:?}: {text}"
+        );
     }
     let posts = s
         .forge
