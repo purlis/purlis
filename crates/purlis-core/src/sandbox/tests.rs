@@ -367,7 +367,14 @@ fn a_chat_never_writes_charters_integrity_state() {
     // folder is held twice, below it and itself (`app_state_held`).
     for data in Homes::data_homes(&machine(Os::Linux)) {
         let app_state = data.join(crate::appstate::DIR);
-        held.extend([app_state.clone(), app_state, data]);
+        let needs_you = data.join(crate::policy::needsyou::DIR);
+        held.extend([
+            app_state.clone(),
+            app_state,
+            needs_you.clone(),
+            needs_you,
+            data,
+        ]);
     }
     // The Skill studio's records (SK-9, SK-16, SK-58, SK-59), under both names.
     for state in [".purlis", ".charter"] {
@@ -8410,6 +8417,29 @@ fn every_harness_denies_a_chat_writing_the_app_state_and_lets_it_read_it() {
         }
     }
     assert_eq!(compiled_harnesses, 3, "Claude Code, Codex and opencode");
+}
+
+#[test]
+fn a_chat_is_denied_writing_the_needs_you_store_so_it_cannot_forge_an_item() {
+    // M75 slice 19, review round 2: `<data>/needs-you` holds the asks the person is to decide, so
+    // a chat that could write it could put an item there to be allowed. It is Integrity, held
+    // below the folder and as an entry, under both names of the data home.
+    let on = machine(Os::Linux);
+    let denied = Denied::of(tempfile::tempdir().expect("a plane").path(), &on);
+    let share = on.home.as_ref().expect("a home").join(".local/share");
+    for name in ["purlis", "charter"] {
+        let folder = share.join(name).join(crate::policy::needsyou::DIR);
+        for reach in [Reach::AndBelow, Reach::Itself] {
+            assert!(
+                denied.paths.iter().any(|it| it.path == folder
+                    && it.reach == reach
+                    && it.class == Class::Integrity
+                    && it.access == Access::Write),
+                "{folder:?} {reach:?} is not held: {:?}",
+                denied.paths
+            );
+        }
+    }
 }
 
 #[test]

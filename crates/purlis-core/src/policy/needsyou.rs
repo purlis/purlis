@@ -11,11 +11,14 @@
 //! needs-you ([`Record::raise`]).
 //!
 //! - **One item per rule, resource, workspace and request digest** ([`Key`]), with a count of the
-//!   chats that asked and the last time. The digest is in the key, so an Allow grants only what the
-//!   item showed (review round 2, S2-SF4): [`Grant::text`] carries it.
-//! - **The wait is capped below the harness's hook timeout** ([`cap`], through
-//!   [`Deadline::below_hook_timeout`]). An ask unanswered at the cap is refused and raised
-//!   ([`wait`], [`Why::NoAnswer`]); the harness's own prompt never decides it.
+//!   chats that asked and the last time. The digest is in the key, and the item keeps the request
+//!   it is the digest of, so an Allow recomputes it and grants only what the item showed (review
+//!   round 2, S2-SF4): a file whose digest no longer matches its request grants nothing.
+//!   [`Grant::text`] carries it.
+//! - **The wait is capped below the harness's hook timeout, less what the hook already ran**
+//!   ([`cap`], through [`Deadline::below_hook_timeout`], as `harness/hooked.rs` does for a hook
+//!   that says `ran_for`, #1063). An ask unanswered at the cap, or with no time left at all, is
+//!   refused and raised ([`wait`], [`Why::NoAnswer`]); the harness's own prompt never decides it.
 //! - **An answer from needs-you** ([`Record::allow`], [`Record::deny`]) leaves the item and is
 //!   kept for each chat that asked, to be told at its next call ([`Record::take_told`]); nothing
 //!   is run again. An Allow becomes a grant for next time ([`Grant`], sealed by slice 20's store),
@@ -24,16 +27,21 @@
 //! - **Only the person allows.** [`Record::allow`] takes a [`Press`], made only by the window's
 //!   command layer, so a headless machine, `purlis inbox` included, can [`Record::deny`] and
 //!   [`Record::dismiss`] and cannot allow: it has no press to pass (Q314.5).
-//! - **Its caps are limits** ([`Caps`]): `asks.needs-you-max-items` (the least recently raised go
-//!   first), `asks.needs-you-max-days` (past it from the first raise an item goes) and
-//!   `asks.needs-you-quiet-days` (an item nobody raised again for that long goes).
+//! - **Its caps are limits** ([`Caps`]): `asks.needs-you-max-items` (the chat holding the most
+//!   items loses its least recently raised first, so one chat cannot evict the others),
+//!   `asks.needs-you-max-days` (past it from the first raise an item goes) and
+//!   `asks.needs-you-quiet-days` (an item nobody raised again for that long goes). They are held
+//!   on every read as well as every write, and every field is bounded ([`MOST_FIELD`] and
+//!   its kin).
 //!
 //! # Where and how
 //!
 //! `<data>/needs-you/items.json`, one JSON object for the machine, rewritten whole under a lock on
 //! its folder, `0600` ([`Store`]). It holds items and the notes chats are still to be told, and no
-//! grant: a grant is the sealed store's. A file this build cannot read reads as nothing and is
-//! written over. Deferred Once grants are in memory only ([`Late`]), as a lapsed ask's pre-answer
+//! grant: a grant is the sealed store's. A chat's sandbox is denied writing the folder
+//! (`sandbox::app_state_held`, Integrity), so a chat cannot forge an item. A file this build
+//! cannot parse reads as nothing and is written over; any other failure to read it (permissions,
+//! a device error) refuses the change instead. Deferred Once grants are in memory only ([`Late`]), as a lapsed ask's pre-answer
 //! is: a restart drops them and the chat asks again.
 
 use std::io;
@@ -64,6 +72,23 @@ pub const MOST_TOLD: usize = 500;
 
 /// The most characters of what an item says.
 const MOST_SAID: usize = 400;
+
+/// The most characters of a rule id, an action, a chat id or a workspace; of a resource or a
+/// request, [`MOST_RESOURCE`] and [`MOST_REQUEST`]. A raise past one is not kept.
+pub const MOST_FIELD: usize = 128;
+
+/// The most bytes of a resource, as the host names it.
+pub const MOST_RESOURCE: usize = 1024;
+
+/// The most bytes of a request, the digest's preimage.
+pub const MOST_REQUEST: usize = 16 * 1024;
+
+/// The most chats one item names; a chat past it is not added.
+pub const MOST_CHATS: usize = 100;
+
+/// The fewest characters of an id [`Record::find`] takes: the empty prefix must not stand for
+/// the only item.
+pub const MIN_PREFIX: usize = 4;
 
 const DAY: u64 = 24 * 60 * 60;
 
@@ -122,26 +147,34 @@ pub fn route(reach: Reach) -> Route {
 }
 
 /// **What a refused chat is told**: what happened and what to do, naming the request.
-pub fn refusal(why: Why, said: &str) -> String {
+/// `kept` is [`Record::raise`]'s answer: only an item that is in needs-you is said to be.
+pub fn refusal(why: Why, said: &str, kept: bool) -> String {
     let cause = match why {
         Why::Unattended => "Nobody is at this chat to answer, so purlis did not ask.",
         Why::NoWindow => "No purlis window could be reached to ask in, so purlis did not ask.",
         Why::NoAnswer => "Nobody answered in time, so purlis refused it.",
     };
-    format!(
-        "Refused: {said}. {cause} It is in needs-you for the person to decide. Do not retry \
-         it now; if they allow it, you are told at your next call and can ask again."
-    )
+    if kept {
+        format!(
+            "Refused: {said}. {cause} It is in needs-you for the person to decide. Do not retry \
+             it now; if they allow it, you are told at your next call and can ask again."
+        )
+    } else {
+        format!(
+            "Refused: {said}. {cause} It could not be kept in needs-you, so the person has not \
+             been told of it. Do not retry it; ask the person to allow it another way."
+        )
+    }
 }
 
 // ---- the wait's cap -----------------------------------------------------------------------
 
-/// **How long an ask waits for the person**: below the harness's hook timeout by the margin
+/// **How long an ask waits for the person**: below the harness's hook timeout, less what the hook
+/// had already run (`ran_for`, as `harness/hooked.rs` takes it), by the margin
 /// ([`Deadline::below_hook_timeout`]), so the refusal lands before the harness stops waiting.
-pub fn cap() -> Duration {
-    Deadline::below_hook_timeout(HOOK_TIMEOUT)
-        .and_then(Deadline::duration)
-        .expect("the hook timeout leaves room below it")
+/// `None` when no time is left: the ask is then refused at once, never left to the pane.
+pub fn cap(ran_for: Duration) -> Option<Duration> {
+    Deadline::below_hook_timeout(HOOK_TIMEOUT.saturating_sub(ran_for)).and_then(Deadline::duration)
 }
 
 /// **How a wait on the person ended.**
@@ -176,13 +209,19 @@ pub fn wait<H>(
     settle(askwait::waited(heard, at_most, gone, last))
 }
 
-/// [`wait`], for the cap ([`cap`]): what an ask on a hook waits.
+/// [`wait`], for the cap ([`cap`]): what an ask on a hook that had run `ran_for` waits. With no
+/// time left it does not wait: it is refused at once ([`Why::NoAnswer`]), as an ask unanswered at
+/// the cap is.
 pub fn wait_for_the_person<H>(
     heard: &mpsc::Receiver<H>,
+    ran_for: Duration,
     gone: &dyn Fn() -> bool,
     last: &dyn Fn() -> Option<H>,
 ) -> Settled<H> {
-    wait(heard, cap(), gone, last)
+    match cap(ran_for) {
+        Some(at_most) => wait(heard, at_most, gone, last),
+        None => Settled::Refused(Why::NoAnswer),
+    }
 }
 
 // ---- the caps -----------------------------------------------------------------------------
@@ -227,11 +266,21 @@ impl Caps {
 
 // ---- items --------------------------------------------------------------------------------
 
-/// **The digest of a request**, as the host made it (its line, its change), in the item's key.
-pub fn digest_of(action: &str, resource: &str, request: &str) -> String {
+/// **A digest of `parts`, each length-prefixed**, so no value can run into the next one.
+fn digest_parts(parts: &[&str]) -> String {
     use sha2::Digest as _;
-    let text = format!("{action}\u{0}{resource}\u{0}{request}");
-    crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))
+    let mut hash = sha2::Sha256::new();
+    for part in parts {
+        hash.update((part.len() as u64).to_be_bytes());
+        hash.update(part.as_bytes());
+    }
+    crate::extension::hex(&hash.finalize())
+}
+
+/// **The digest of a request**, as the host made it (its line, its change), in the item's key.
+/// Each part is length-prefixed, so `("a", "bc")` and `("ab", "c")` are not the same request.
+pub fn digest_of(action: &str, resource: &str, request: &str) -> String {
+    digest_parts(&[action, resource, request])
 }
 
 /// **What one needs-you item is for**: a rule, a resource, a workspace and a request digest.
@@ -260,12 +309,7 @@ impl Key {
 
     /// **The id `purlis inbox` names it by**: the start of a digest of the whole key.
     pub fn id(&self) -> String {
-        use sha2::Digest as _;
-        let text = format!(
-            "{}\u{0}{}\u{0}{}\u{0}{}",
-            self.rule, self.resource, self.workspace, self.digest
-        );
-        crate::extension::hex(&sha2::Sha256::digest(text.as_bytes()))[..12].to_owned()
+        digest_parts(&[&self.rule, &self.resource, &self.workspace, &self.digest])[..12].to_owned()
     }
 }
 
@@ -278,6 +322,10 @@ pub struct Item {
     pub action: String,
     /// What it asks, in one masked line.
     pub said: String,
+    /// The request the key's digest is the digest of ([`digest_of`]): an Allow recomputes it, so
+    /// what is granted is what was raised. Empty (and so never allowed) where a file lacks it.
+    #[serde(default)]
+    pub request: String,
     /// Why it is here (the cause of the last raise).
     pub why: Why,
     /// The chats that asked, each once.
@@ -304,6 +352,8 @@ pub struct Raise<'a> {
     pub action: &'a str,
     /// What it asks, in one line (cut where long).
     pub said: &'a str,
+    /// The request itself, which the key's digest is the digest of ([`digest_of`]).
+    pub request: &'a str,
     /// Why the ask did not reach the person.
     pub why: Why,
     /// The chat that asked.
@@ -368,21 +418,22 @@ pub struct Grant {
 }
 
 impl Grant {
-    /// **The grant as one line of the sealed store** ([`crate::secrets::answers::GRANT`]).
+    /// **The grant as one line of the sealed store** ([`crate::secrets::answers::GRANT`]): one
+    /// JSON object, so a value holding a space, an `=` or a quote cannot pass for another field.
     pub fn text(&self) -> String {
-        let mut text = format!(
-            "needs-you {} rule={} action={} resource={} workspace={} digest={}",
-            self.scope.word(),
-            self.key.rule,
-            self.action,
-            self.key.resource,
-            self.key.workspace,
-            self.key.digest
-        );
+        let mut fields = serde_json::json!({
+            "kind": "needs-you",
+            "scope": self.scope.word(),
+            "rule": self.key.rule,
+            "action": self.action,
+            "resource": self.key.resource,
+            "workspace": self.key.workspace,
+            "digest": self.key.digest,
+        });
         if let Some(chat) = self.scope.chat() {
-            text.push_str(&format!(" chat={chat}"));
+            fields["chat"] = serde_json::Value::from(chat);
         }
-        text
+        fields.to_string()
     }
 }
 
@@ -474,8 +525,22 @@ pub struct Record {
     told: Vec<Told>,
 }
 
-fn cut(text: &str) -> String {
-    text.chars().take(MOST_SAID).collect()
+/// Whether `raise` is within every bound and its digest is that of its request.
+fn fits(raise: &Raise<'_>) -> bool {
+    let key = &raise.key;
+    let within = |text: &str, most: usize| text.chars().count() <= most;
+    within(&key.rule, MOST_FIELD)
+        && within(&key.workspace, MOST_FIELD)
+        && within(raise.action, MOST_FIELD)
+        && within(raise.chat, MOST_FIELD)
+        && key.resource.len() <= MOST_RESOURCE
+        && raise.request.len() <= MOST_REQUEST
+        && key.digest == digest_of(raise.action, &key.resource, raise.request)
+}
+
+/// The chat an item counts against when the items are over the cap: the first that asked.
+fn owner(item: &Item) -> &str {
+    item.chats.first().map_or("", String::as_str)
 }
 
 impl Record {
@@ -489,8 +554,12 @@ impl Record {
         &self.told
     }
 
-    /// The only item whose id starts with `prefix`; none where several or none do.
+    /// The only item whose id starts with `prefix` (at least [`MIN_PREFIX`] characters); none
+    /// where several or none do.
     pub fn find(&self, prefix: &str) -> Option<&Item> {
+        if prefix.chars().count() < MIN_PREFIX {
+            return None;
+        }
         let mut found = self
             .items
             .iter()
@@ -500,20 +569,34 @@ impl Record {
     }
 
     /// **Raises an item at `now`**: a new one, or the chat added to the one with the same key and
-    /// its last time moved. Then the caps are held.
-    pub fn raise(&mut self, raise: Raise<'_>, now: u64, caps: Caps) {
-        match self.items.iter_mut().find(|one| one.key == raise.key) {
+    /// its last time moved. Then the caps are held. `true` when the item is in needs-you after
+    /// that: not where a field is past its bound or the digest is not the request's, nor where
+    /// the caps let it go at once (a re-raise past the most days), and the chat is not to be told
+    /// it is there.
+    pub fn raise(&mut self, raise: Raise<'_>, now: u64, caps: Caps) -> bool {
+        if !fits(&raise) {
+            return false;
+        }
+        // What a reader sees is marked, so a line end or a bidirectional control cannot forge a
+        // line. A rule or workspace that needed it is no real one, and its item is its own.
+        let mut key = raise.key;
+        key.rule = crate::shown::one_line(&key.rule, MOST_FIELD);
+        key.workspace = crate::shown::one_line(&key.workspace, MOST_FIELD);
+        let said = crate::shown::one_line(raise.said, MOST_SAID);
+        match self.items.iter_mut().find(|one| one.key == key) {
             Some(one) => {
-                if !one.chats.iter().any(|chat| chat == raise.chat) {
+                if !one.chats.iter().any(|chat| chat == raise.chat) && one.chats.len() < MOST_CHATS
+                {
                     one.chats.push(raise.chat.to_owned());
                 }
                 one.last = one.last.max(now);
                 one.why = raise.why;
             }
             None => self.items.push(Item {
-                key: raise.key,
+                key: key.clone(),
                 action: raise.action.to_owned(),
-                said: cut(raise.said),
+                said,
+                request: raise.request.to_owned(),
                 why: raise.why,
                 chats: vec![raise.chat.to_owned()],
                 first: now,
@@ -521,16 +604,41 @@ impl Record {
             }),
         }
         self.hold_caps(now, caps);
+        self.items.iter().any(|one| one.key == key)
     }
 
-    fn hold_caps(&mut self, now: u64, caps: Caps) {
+    /// **Holds the caps at `now`**: what is too old or too quiet goes, then, while there are too
+    /// many, the least recently raised item of the chat holding the most (so one chat cannot
+    /// push the others out). Each [`Store`] read and write does it.
+    pub fn hold_caps(&mut self, now: u64, caps: Caps) {
         self.items.retain(|one| {
             now.saturating_sub(one.first) <= caps.max_days.saturating_mul(DAY)
                 && now.saturating_sub(one.last) <= caps.quiet_days.saturating_mul(DAY)
         });
         self.items.sort_by_key(|one| one.last);
-        let past = self.items.len().saturating_sub(caps.max_items);
-        self.items.drain(..past);
+        let mut held: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
+        for one in &self.items {
+            *held.entry(owner(one).to_owned()).or_default() += 1;
+        }
+        while self.items.len() > caps.max_items {
+            // The heaviest chat; of equals, the one whose item is the least recent.
+            let heaviest = self
+                .items
+                .iter()
+                .map(|one| (held[owner(one)], owner(one)))
+                .fold(None::<(usize, &str)>, |best, now| match best {
+                    Some(best) if best.0 >= now.0 => Some(best),
+                    _ => Some(now),
+                })
+                .map(|(_, chat)| chat.to_owned());
+            let Some(chat) = heaviest else { break };
+            if let Some(at) = self.items.iter().position(|one| owner(one) == chat) {
+                self.items.remove(at);
+                if let Some(count) = held.get_mut(&chat) {
+                    *count -= 1;
+                }
+            }
+        }
     }
 
     fn take(&mut self, key: &Key) -> Option<Item> {
@@ -556,10 +664,15 @@ impl Record {
     }
 
     /// **Allows the item `key`, on the person's press** (`_press`): the item leaves needs-you,
-    /// each chat that asked is to be told, and the answer is a grant for next time. A This-chat or
-    /// Once scope must name a chat that asked, or nothing changes and none is answered.
+    /// the chats it concerns are to be told (every chat that asked, or for a Once or This-chat
+    /// scope only that chat), and the answer is a grant for next time. A This-chat or Once scope
+    /// must name a chat that asked, and the item's digest must be the digest of the request it
+    /// keeps: otherwise nothing changes and none is answered, so what was shown is what is granted.
     pub fn allow(&mut self, _press: &Press, key: &Key, scope: Scope, now: u64) -> Option<Allowed> {
         let item = self.items.iter().find(|one| &one.key == key)?;
+        if digest_of(&item.action, &item.key.resource, &item.request) != item.key.digest {
+            return None;
+        }
         if let Some(chat) = scope.chat()
             && !item.chats.iter().any(|asked| asked == chat)
         {
@@ -574,7 +687,7 @@ impl Record {
             }),
             _ => None,
         };
-        self.tell(&item, &Answer::Allowed(scope.clone()), None, now);
+        self.tell(&item, &Answer::Allowed(scope.clone()), scope.chat(), now);
         Some(Allowed {
             grant: Grant {
                 key: item.key,
@@ -638,30 +751,38 @@ impl Store {
         self.dir.join(FILE)
     }
 
-    /// The record as kept; nothing where it is missing, cannot be read, or is too large.
-    pub fn read(&self) -> Record {
+    /// The record as kept at `now`, its caps held ([`Record::hold_caps`]). Nothing where the file
+    /// is missing, too large or not something this build parses; any other failure to read it
+    /// (permissions, a device error) is an error, and a change is then refused rather than
+    /// written over what could not be read.
+    pub fn read(&self, now: u64, caps: Caps) -> io::Result<Record> {
         use std::io::Read as _;
-        let Ok(file) = std::fs::File::open(self.file()) else {
-            return Record::default();
+        let file = match std::fs::File::open(self.file()) {
+            Ok(file) => file,
+            Err(why) if why.kind() == io::ErrorKind::NotFound => return Ok(Record::default()),
+            Err(why) => return Err(why),
         };
         let mut text = Vec::new();
-        if file.take(MOST_BYTES + 1).read_to_end(&mut text).is_err()
-            || text.len() as u64 > MOST_BYTES
-        {
-            return Record::default();
+        file.take(MOST_BYTES + 1).read_to_end(&mut text)?;
+        if text.len() as u64 > MOST_BYTES {
+            return Ok(Record::default());
         }
-        serde_json::from_slice(&text).unwrap_or_default()
+        let mut record: Record = serde_json::from_slice(&text).unwrap_or_default();
+        record.hold_caps(now, caps);
+        Ok(record)
     }
 
-    /// Raises an item ([`Record::raise`]).
-    pub fn raise(&self, raise: Raise<'_>, now: u64, caps: Caps) -> io::Result<()> {
-        self.change(|record| record.raise(raise, now, caps))
+    /// Raises an item ([`Record::raise`]); `true` when it is in needs-you after the caps.
+    pub fn raise(&self, raise: Raise<'_>, now: u64, caps: Caps) -> io::Result<bool> {
+        let mut kept = false;
+        self.change(now, caps, |record| kept = record.raise(raise, now, caps))?;
+        Ok(kept)
     }
 
     /// Denies the item whose id starts with `id` ([`Record::deny`]); none where no one item does.
-    pub fn deny(&self, id: &str, now: u64) -> io::Result<Option<Item>> {
+    pub fn deny(&self, id: &str, now: u64, caps: Caps) -> io::Result<Option<Item>> {
         let mut gone = None;
-        self.change(|record| {
+        self.change(now, caps, |record| {
             if let Some(key) = record.find(id).map(|one| one.key.clone()) {
                 gone = record.deny(&key, now);
             }
@@ -670,9 +791,9 @@ impl Store {
     }
 
     /// Dismisses the item whose id starts with `id` ([`Record::dismiss`]).
-    pub fn dismiss(&self, id: &str) -> io::Result<Option<Item>> {
+    pub fn dismiss(&self, id: &str, now: u64, caps: Caps) -> io::Result<Option<Item>> {
         let mut gone = None;
-        self.change(|record| {
+        self.change(now, caps, |record| {
             if let Some(key) = record.find(id).map(|one| one.key.clone()) {
                 gone = record.dismiss(&key);
             }
@@ -681,23 +802,38 @@ impl Store {
     }
 
     /// The notes `chat` is to be told, taken ([`Record::take_told`]).
-    pub fn take_told(&self, chat: &str) -> io::Result<Vec<Told>> {
+    pub fn take_told(&self, chat: &str, now: u64, caps: Caps) -> io::Result<Vec<Told>> {
         let mut mine = Vec::new();
-        self.change(|record| mine = record.take_told(chat))?;
+        self.change(now, caps, |record| mine = record.take_told(chat))?;
         Ok(mine)
     }
 
     /// Reads the record, lets `change` edit it and writes it back under the lock on its folder.
-    pub fn change(&self, change: impl FnOnce(&mut Record)) -> io::Result<()> {
+    /// A file that cannot be read for a reason other than being absent is not written over; one
+    /// that would pass [`MOST_BYTES`] is written without its least recently raised items first.
+    pub fn change(&self, now: u64, caps: Caps, change: impl FnOnce(&mut Record)) -> io::Result<()> {
         crate::rewrite::create_dir_all(&self.dir)?;
         let _held = crate::rewrite::Lock::bounded(&self.dir)?;
-        let mut record = self.read();
+        let mut record = self.read(now, caps)?;
         change(&mut record);
-        let text = serde_json::to_string(&record).map_err(io::Error::other)?;
+        record.hold_caps(now, caps);
+        let text = loop {
+            let text = serde_json::to_vec(&record).map_err(io::Error::other)?;
+            if text.len() as u64 <= MOST_BYTES {
+                break text;
+            }
+            if !record.items.is_empty() {
+                record.items.remove(0);
+            } else if !record.told.is_empty() {
+                record.told.remove(0);
+            } else {
+                return Err(io::Error::other("needs-you cannot be made small enough"));
+            }
+        };
         crate::rewrite::replace(
             &self.dir,
             &self.file(),
-            text.as_bytes(),
+            &text,
             crate::rewrite::Mode::Private,
         )
     }

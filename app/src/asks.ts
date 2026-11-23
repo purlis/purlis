@@ -399,11 +399,11 @@ export async function answerThrough(
 }
 
 /**
- * **An answer noted against its request** (ADR 0121 decision 7, #6010): what offers a rule after
- * the same Allow twice, and starts a cool-off after Don't allow twice. Every answer is noted, with
+ * **An answer noted against its request** (ADR 0121 decision 7, #6010): what starts a cool-off
+ * after Don't allow twice. Every answer is noted, with
  * when its ask was raised, for the week's measures All chats shows (ADR 0121 decision 18, #6021);
- * one the core names no request of counts there alone. A note that fails loses an offer or a
- * count, never an answer.
+ * one the core names no request of counts there alone. A note that fails loses a count,
+ * never an answer.
  */
 function notedAgainst(plane: string, ask: Shown, option: string): void {
   const allows = ask.options.some((one) => one.id === option && one.allows);

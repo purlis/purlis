@@ -18,6 +18,7 @@ fn raise(store: &Store, request: &str, chat: &str) {
                 key: Key::new("guards-merge-hold", "acme/web#main", "web", &digest),
                 action: "merge",
                 said: request,
+                request,
                 why: Why::NoWindow,
                 chat,
             },
@@ -73,12 +74,20 @@ fn purlis_inbox_denies_an_item_by_the_start_of_its_id() {
     let data = tempfile::tempdir().expect("data");
     let store = Store::in_data(data.path());
     raise(&store, "merge acme/web#7", "c1");
-    let id = store.read().items()[0].key.id();
+    let id = store.read(NOW, Caps::shipped()).expect("read").items()[0]
+        .key
+        .id();
     let out = inbox(data.path(), &["deny", &id[..6]]);
     assert!(out.status.success(), "{}", said(&out).1);
-    assert!(store.read().items().is_empty());
+    assert!(
+        store
+            .read(NOW, Caps::shipped())
+            .expect("read")
+            .items()
+            .is_empty()
+    );
     // The chat is told it was denied, at its next call.
-    let told = store.take_told("c1").expect("read");
+    let told = store.take_told("c1", NOW, Caps::shipped()).expect("read");
     assert_eq!(told.len(), 1);
     assert!(told[0].words().contains("denied"), "{}", told[0].words());
 }
@@ -88,11 +97,24 @@ fn purlis_inbox_dismisses_an_item_and_tells_nobody() {
     let data = tempfile::tempdir().expect("data");
     let store = Store::in_data(data.path());
     raise(&store, "merge acme/web#7", "c1");
-    let id = store.read().items()[0].key.id();
+    let id = store.read(NOW, Caps::shipped()).expect("read").items()[0]
+        .key
+        .id();
     let out = inbox(data.path(), &["dismiss", &id]);
     assert!(out.status.success(), "{}", said(&out).1);
-    assert!(store.read().items().is_empty());
-    assert!(store.take_told("c1").expect("read").is_empty());
+    assert!(
+        store
+            .read(NOW, Caps::shipped())
+            .expect("read")
+            .items()
+            .is_empty()
+    );
+    assert!(
+        store
+            .take_told("c1", NOW, Caps::shipped())
+            .expect("read")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -112,7 +134,9 @@ fn purlis_inbox_has_no_allow_verb() {
     let data = tempfile::tempdir().expect("data");
     let store = Store::in_data(data.path());
     raise(&store, "merge acme/web#7", "c1");
-    let id = store.read().items()[0].key.id();
+    let id = store.read(NOW, Caps::shipped()).expect("read").items()[0]
+        .key
+        .id();
     for verb in ["allow", "approve", "grant", "accept"] {
         let out = inbox(data.path(), &[verb, &id]);
         assert!(!out.status.success(), "{verb} was taken");
@@ -126,5 +150,13 @@ fn purlis_inbox_has_no_allow_verb() {
     let (help, _) = said(&inbox(data.path(), &["--help"]));
     assert!(help.contains("deny") && help.contains("dismiss"), "{help}");
     assert!(!help.to_lowercase().contains("  allow"), "{help}");
-    assert_eq!(store.read().items().len(), 1, "nothing was answered");
+    assert_eq!(
+        store
+            .read(NOW, Caps::shipped())
+            .expect("read")
+            .items()
+            .len(),
+        1,
+        "nothing was answered"
+    );
 }

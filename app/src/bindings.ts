@@ -1736,8 +1736,8 @@ export const commands = {
 	/**
 	 *  **Notes an answer the person gave in Asks** (#6010): to request `request` of chat `session`,
 	 *  the option `option`, which `allows` it or not, to an ask raised at `raised` (seconds since
-	 *  1970) where its source knows. What offers a rule, starts a cool-off, and counts in the week's
-	 *  measures (#6021). `request` is empty where the ask names none: it counts in the measures alone.
+	 *  1970) where its source knows. What starts a cool-off, and counts in the week's measures
+	 *  (#6021). `request` is empty where the ask names none: it counts in the measures alone.
 	 */
 	askAnswered: (plane: PlaneId, session: number, request: string, option: string, allows: boolean, raised: number | null) => typedError<null, string>(__TAURI_INVOKE("ask_answered", { plane, session, request, option, allows, raised })),
 	/**

@@ -2,14 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Ask less** (ADR 0121 decision 7, #6010): the answers the person gave to requests in Asks,
-//! the rules they made from an offer, and the cool-offs repeated Don't allow started.
+//! the rules they made, and the cool-offs repeated Don't allow started. There is no offer of a
+//! rule after two Allows any more (Q314.15, M75 slice 19): a rule is the person's own.
 //!
-//! - **An offer.** After the same Allow to the same request twice within
-//!   [`ANSWERS_KEPT_SECS`], the request's next ask offers a rule ([`offer`]). What it needs to
-//!   have prevented the asks is said as a [`Scope`]: this chat where every ask was its, this
-//!   project where every ask was the project's, this machine otherwise. Which grants the ask may
-//!   offer as a rule, and where each is written, are its source's: this module only counts.
-//! - **Rules I made.** Each rule made from an offer is kept ([`Rule`]) with the grant it wrote,
+//! - **Rules I made.** Each rule the person made is kept ([`Rule`]) with the grant it wrote,
 //!   so it can be reviewed and undone. How many asks it saved is read, never kept
 //!   ([`measures::saved_by`]).
 //! - **The measures** (ADR 0121 decision 18, #6021): each project's asks this week, the median
@@ -23,7 +19,7 @@
 //!
 //! # Where and how
 //!
-//! `<data>/inbox/rules.json`, one JSON object for the whole machine (an offer may need every
+//! `<data>/inbox/rules.json`, one JSON object for the whole machine (a rule may reach every
 //! project), rewritten whole under the same lock on its folder as the Inbox's updates, `0600`. A
 //! write lets go of answers past the window and past [`AT_MOST_ANSWERS`], of endings past a day,
 //! and of rules past [`AT_MOST_RULES`], oldest first. A file this build cannot read, or one
@@ -94,7 +90,7 @@ pub struct Asked {
 pub struct Answered {
     pub project: String,
     pub session: u32,
-    /// The request's name; empty where the ask names none, which offers no rule and starts no
+    /// The request's name; empty where the ask names none, which starts no
     /// cool-off, and counts only in the week's measures (#6021).
     pub request: String,
     /// The answer's id, as its ask offered it.

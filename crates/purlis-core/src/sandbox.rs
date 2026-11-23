@@ -1590,11 +1590,18 @@ pub fn skills_held(root: &Path) -> Vec<Denial> {
 /// spelling a case-folding disk takes for it. Read, never written: a Try it's chat reads its
 /// laid-out skill there. [`Class::Integrity`]: purlis's own records, which only purlis writes, as
 /// they were in the plane's state folder, and which no grant reaches (`grant`).
+///
+/// **`<data>/needs-you` is held the same way** (M75 slice 19, review round 2): the asks that
+/// reached nobody are kept there ([`crate::policy::needsyou`]), and a chat that could write them
+/// could forge an item for the person to allow.
 pub fn app_state_held(data: &Path) -> Vec<Denial> {
     let app_state = data.join(crate::appstate::DIR);
+    let needs_you = data.join(crate::policy::needsyou::DIR);
     [
         (app_state.clone(), Reach::AndBelow),
         (app_state, Reach::Itself),
+        (needs_you.clone(), Reach::AndBelow),
+        (needs_you, Reach::Itself),
         (data.to_path_buf(), Reach::Itself),
     ]
     .into_iter()

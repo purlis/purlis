@@ -15,7 +15,7 @@
 
 use std::process::ExitCode;
 
-use purlis_core::policy::needsyou::{Item, Store, Why};
+use purlis_core::policy::needsyou::{Caps, Item, Store, Why};
 
 /// `purlis inbox`: the asks refused because nobody could be asked.
 #[derive(clap::Subcommand, Debug)]
@@ -51,12 +51,12 @@ pub fn run(command: &InboxCommand) -> ExitCode {
     };
     match command {
         InboxCommand::List { json } => list(&store, *json),
-        InboxCommand::Deny { id } => {
-            answer(&store, id, "Denied", |store, id| store.deny(id, now()))
-        }
-        InboxCommand::Dismiss { id } => {
-            answer(&store, id, "Dismissed", |store, id| store.dismiss(id))
-        }
+        InboxCommand::Deny { id } => answer(&store, id, "Denied", |store, id| {
+            store.deny(id, now(), Caps::shipped())
+        }),
+        InboxCommand::Dismiss { id } => answer(&store, id, "Dismissed", |store, id| {
+            store.dismiss(id, now(), Caps::shipped())
+        }),
     }
 }
 
@@ -67,7 +67,13 @@ fn now() -> u64 {
 }
 
 fn list(store: &Store, json: bool) -> ExitCode {
-    let record = store.read();
+    let record = match store.read(now(), Caps::shipped()) {
+        Ok(record) => record,
+        Err(why) => {
+            eprintln!("purlis: could not read needs-you ({why})");
+            return ExitCode::FAILURE;
+        }
+    };
     if json {
         match serde_json::to_string(record.items()) {
             Ok(text) => println!("{text}"),
