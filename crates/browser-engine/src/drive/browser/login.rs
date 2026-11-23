@@ -73,6 +73,7 @@
 //! other related window, one opened since included, closes once the page shows another document or
 //! is closed ([`super::leaving`]).
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -139,14 +140,224 @@ pub(crate) const READ_FREEZE_WATCH: &str = r"(() => {
 })()";
 
 /// What one frame of a held page says of itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Held {
     Frozen,
+    /// The document answered, and was never told of a freeze (no trusted `freeze` event).
     Running,
     /// The frame's document is not one purlis armed: another loaded, or the world went.
-    Unarmed,
-    /// The read timed out: it says nothing, and is asked again. Any other failure is `Running`.
+    Unarmed(Unarmed),
+    /// The read timed out: it says nothing, and is asked again.
     Unread,
+    /// The read failed in another way (a lost session, a script that threw): not a frame known
+    /// held. Says how, in words that name no page.
+    Failed(String),
+}
+
+/// Why a frame's watch is not armed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Unarmed {
+    /// purlis has no world of its own in the frame.
+    NoWorld,
+    /// The world answered, and the document has no watch in it.
+    NoWatch,
+    /// The engine refused the read, which forgets the world: how it said so.
+    Refused(String),
+}
+
+impl Held {
+    /// Whether the frame has said it runs, or said nothing that shows it does not: a frame that
+    /// is neither frozen, nor still being asked after, nor another document.
+    fn ran(&self) -> bool {
+        matches!(self, Self::Running | Self::Failed(_))
+    }
+
+    fn unarmed(&self) -> bool {
+        matches!(self, Self::Unarmed(_))
+    }
+
+    /// The step that did not confirm this frame, for a refusal and a log line: never an address.
+    fn step(&self) -> String {
+        match self {
+            Self::Frozen => "frozen".to_owned(),
+            Self::Running => "no freeze event".to_owned(),
+            Self::Unarmed(Unarmed::NoWorld) => {
+                "watch not armed (no world of purlis's own)".to_owned()
+            }
+            Self::Unarmed(Unarmed::NoWatch) => "watch not armed (the document has none)".to_owned(),
+            Self::Unarmed(Unarmed::Refused(why)) => {
+                format!("watch not armed (read refused: {why})")
+            }
+            Self::Unread => "a read timed out".to_owned(),
+            Self::Failed(why) => format!("a read errored ({why})"),
+        }
+    }
+}
+
+/// A call's failure in words that name no page: the engine's code and its words with anything
+/// that could be an address (it has a `/` or a `.` inside) left out.
+pub(super) fn said_of(error: &CallError) -> String {
+    match error {
+        CallError::Engine { code, message } => {
+            let words: Vec<&str> = message
+                .split_whitespace()
+                .map(|word| {
+                    let word = word.trim_end_matches(['.', ',', ';']);
+                    if word.contains(['/', '.']) {
+                        "…"
+                    } else {
+                        word
+                    }
+                })
+                .take(16)
+                .collect();
+            format!("CDP error {code}: {}", words.join(" "))
+        }
+        CallError::Ended => "the engine had ended".to_owned(),
+        CallError::TimedOut => "no answer in time".to_owned(),
+        CallError::Write(_) => "the call could not be written".to_owned(),
+        CallError::TooLarge { .. } => "the answer was too large".to_owned(),
+    }
+}
+
+/// What kind of page a page is, as a refusal and a log line say it: never its address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Kind {
+    Blank,
+    Site,
+    Popup,
+    Extension,
+    Devtools,
+    Other,
+}
+
+impl Kind {
+    fn of(address: &str, has_opener: bool) -> Self {
+        let scheme = address
+            .split(':')
+            .next()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        match scheme.as_str() {
+            "chrome-extension" => Self::Extension,
+            "devtools" => Self::Devtools,
+            _ if has_opener => Self::Popup,
+            _ if takes_the_origin_around(address) => Self::Blank,
+            "http" | "https" => Self::Site,
+            _ => Self::Other,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Blank => "blank page",
+            Self::Site => "site page",
+            Self::Popup => "popup",
+            Self::Extension => "extension page",
+            Self::Devtools => "devtools page",
+            Self::Other => "other page",
+        }
+    }
+}
+
+/// **One page that did not confirm it is held still**, as a refusal and a warn-level log line say
+/// it: what it is and the step that failed in it, never an address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Unconfirmed {
+    kind: Kind,
+    opener: bool,
+    frames: usize,
+    /// The step that failed in each frame that did not confirm, once each with how many.
+    steps: Vec<(String, usize)>,
+    waited: Duration,
+}
+
+impl Unconfirmed {
+    pub(super) fn new(
+        kind: Kind,
+        opener: bool,
+        frames: usize,
+        steps: Vec<String>,
+        waited: Duration,
+    ) -> Self {
+        let mut counted: Vec<(String, usize)> = Vec::new();
+        for step in steps {
+            match counted.iter_mut().find(|(seen, _)| *seen == step) {
+                Some((_, times)) => *times += 1,
+                None => counted.push((step, 1)),
+            }
+        }
+        Self {
+            kind,
+            opener,
+            frames,
+            steps: counted,
+            waited,
+        }
+    }
+
+    fn steps_said(&self) -> String {
+        if self.frames == 0 {
+            return "no frame known".to_owned();
+        }
+        self.steps
+            .iter()
+            .map(|(step, times)| {
+                if *times > 1 {
+                    format!("{step} in {times} frames")
+                } else {
+                    step.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn said(&self) -> String {
+        format!(
+            "{}, {}, {} frame{}: {}, waited {:.1} s",
+            self.kind.name(),
+            if self.opener {
+                "has an opener"
+            } else {
+                "no opener"
+            },
+            self.frames,
+            if self.frames == 1 { "" } else { "s" },
+            self.steps_said(),
+            self.waited.as_secs_f64(),
+        )
+    }
+
+    fn log(&self) {
+        tracing::warn!(
+            kind = self.kind.name(),
+            opener = self.opener,
+            frames = self.frames,
+            step = %self.steps_said(),
+            waited_ms = u64::try_from(self.waited.as_millis()).unwrap_or(u64::MAX),
+            "a page of this browser did not confirm it was held still"
+        );
+    }
+}
+
+/// The refusal for the pages that did not confirm.
+pub(super) fn not_held_said(pages: &[Unconfirmed]) -> String {
+    let said: Vec<String> = pages
+        .iter()
+        .enumerate()
+        .map(|(at, page)| {
+            if pages.len() > 1 {
+                format!("page {}: {}", at + 1, page.said())
+            } else {
+                page.said()
+            }
+        })
+        .collect();
+    format!(
+        "a page of this browser did not stay held still ({})",
+        said.join("; ")
+    )
 }
 
 /// The script that finds the page's first shown password field: a constant.
@@ -691,7 +902,7 @@ impl Browser {
     /// it has said it is frozen (a request to freeze is not the page frozen), and one that has not
     /// said so in time is a failure, so nothing is cleared while it might still run.
     fn hold_still_any_new(&self, target: &str, still: &mut HeldStill<'_>) -> Result<(), String> {
-        let wont = |_| "a page of this browser would not hold still".to_owned();
+        let mut arming: HashMap<String, String> = HashMap::new();
         loop {
             let new: Vec<String> = self
                 .targets()
@@ -707,19 +918,50 @@ impl Browser {
                 let on = Some(session.as_str());
                 self.devtools()
                     .call("Page.stopLoading", json!({}), on)
-                    .map_err(wont)?;
-                self.arm_freeze_watch(&page);
+                    .map_err(|why| self.would_not_hold_still(&page, "stopping its loads", &why))?;
+                if let Some(why) = self.arm_freeze_watch(&page) {
+                    arming.insert(page.clone(), why);
+                }
                 self.devtools()
                     .call(
                         "Page.setWebLifecycleState",
                         json!({ "state": "frozen" }),
                         on,
                     )
-                    .map_err(wont)?;
+                    .map_err(|why| self.would_not_hold_still(&page, "freezing it", &why))?;
                 still.pages.push((page, session));
             }
-            self.confirm_held_still(still, first_new)?;
+            self.confirm_held_still(still, first_new, &mut arming)?;
         }
+    }
+
+    /// The failure of a page that would not take a request to hold it still: what kind of page it
+    /// was and which request the engine refused, never its address. Logged, and the refusal.
+    fn would_not_hold_still(&self, page: &str, step: &str, why: &CallError) -> String {
+        let (kind, opener, frames) = self.what_is(page);
+        let step = format!(
+            "the engine would not take the request of {step} ({})",
+            said_of(why)
+        );
+        let page = Unconfirmed::new(kind, opener, frames, vec![step], Duration::ZERO);
+        page.log();
+        format!(
+            "a page of this browser would not hold still ({})",
+            page.said()
+        )
+    }
+
+    /// What kind of page `page` is, whether it has an opener and how many frames it has.
+    fn what_is(&self, page: &str) -> (Kind, bool, usize) {
+        let state = lock(&self.inner.state);
+        state.page(page).map_or((Kind::Other, false, 0), |page| {
+            let top = page
+                .frames
+                .get(&page.target)
+                .map_or(page.url.as_str(), |top| top.url.as_str());
+            let opener = page.opener.is_some();
+            (Kind::of(top, opener), opener, page.frames.len())
+        })
     }
 
     /// Whether `page` is a blank page no page opened, every frame of it blank: it shows nothing
@@ -754,10 +996,12 @@ impl Browser {
     }
 
     /// Arms every frame of `page` to say when it is frozen ([`ARM_FREEZE_WATCH`]). A frame that
-    /// cannot be armed is left unarmed, which [`Self::confirm_held_still`] refuses.
-    fn arm_freeze_watch(&self, page: &str) {
+    /// cannot be armed is left unarmed, which [`Self::confirm_held_still`] refuses; how the first
+    /// such frame failed is said, for that refusal.
+    fn arm_freeze_watch(&self, page: &str) -> Option<String> {
+        let mut failed = None;
         for (frame, session) in self.frames_of(page) {
-            let _ = self.in_world(&session, &frame, |world| {
+            let armed = self.in_world(&session, &frame, |world| {
                 self.devtools().call_within(
                     "Runtime.evaluate",
                     json!({
@@ -769,7 +1013,11 @@ impl Browser {
                     HELD_READ_WITHIN,
                 )
             });
+            if let Err(why) = armed {
+                failed.get_or_insert_with(|| said_of(&why));
+            }
         }
+        failed
     }
 
     /// Each frame of `page`, with the session that holds it.
@@ -790,7 +1038,7 @@ impl Browser {
     fn held_state(&self, session: &str, frame: &str, within: Duration) -> Held {
         let worlds = &self.inner.worlds;
         let Some(world) = worlds.get(session, frame) else {
-            return Held::Unarmed;
+            return Held::Unarmed(Unarmed::NoWorld);
         };
         let read = self.devtools().call_within(
             "Runtime.evaluate",
@@ -807,17 +1055,19 @@ impl Browser {
                 match answer.pointer("/result/value").and_then(Value::as_str) {
                     Some("frozen") => Held::Frozen,
                     Some("running") => Held::Running,
-                    _ => Held::Unarmed,
+                    _ => Held::Unarmed(Unarmed::NoWatch),
                 }
             }
-            Err(CallError::Engine { .. }) => {
+            // The script threw.
+            Ok(_) => Held::Failed("the script threw".to_owned()),
+            Err(error @ CallError::Engine { .. }) => {
                 worlds.forget(session, frame, &world);
-                Held::Unarmed
+                Held::Unarmed(Unarmed::Refused(said_of(&error)))
             }
             // A read that timed out says nothing of the page: asked again until the time is up.
             Err(CallError::TimedOut) => Held::Unread,
-            // Any other failure (a lost session, a script that threw) is not a page known held.
-            _ => Held::Running,
+            // Any other failure (a lost session) is not a page known held.
+            Err(error) => Held::Failed(said_of(&error)),
         }
     }
 
@@ -826,14 +1076,19 @@ impl Browser {
     /// that came in since, and failing where one has not by `login_within`. A page
     /// before `first_new` is only read: one that is not frozen now is a failure at once, as it ran
     /// since, and no page is let run again once sites may be cleared.
-    fn confirm_held_still(&self, still: &HeldStill<'_>, first_new: usize) -> Result<(), String> {
-        let not_held = || "a page of this browser did not stay held still".to_owned();
+    fn confirm_held_still(
+        &self,
+        still: &HeldStill<'_>,
+        first_new: usize,
+        arming: &mut HashMap<String, String>,
+    ) -> Result<(), String> {
         let started = Instant::now();
         let deadline = started + self.inner.limits.login_within;
         let grace = (self.inner.limits.login_within / 3).min(FREEZE_GRACE);
         loop {
             let mut waiting = Vec::new();
             let mut nothing_to_keep = Vec::new();
+            let mut ran = Vec::new();
             for (at, (page, session)) in still.pages.iter().enumerate() {
                 // A page that is gone runs nothing: closed, crashed or ended, it is as held as
                 // one can be.
@@ -856,11 +1111,10 @@ impl Browser {
                 // nothing in time is asked again until the time is up.
                 if at < first_new
                     && (frames.is_empty()
-                        || states
-                            .iter()
-                            .any(|state| matches!(state, Held::Running | Held::Unarmed)))
+                        || states.iter().any(|state| state.ran() || state.unarmed()))
                 {
-                    return Err(not_held());
+                    ran.push(self.unconfirmed(page, &states, arming, started));
+                    continue;
                 }
                 // A blank page that has not said it is frozen by now never will: its document
                 // is not one the engine tells, and it holds nothing of anyone's. It is closed,
@@ -870,7 +1124,10 @@ impl Browser {
                     nothing_to_keep.push(page);
                     continue;
                 }
-                waiting.push((page, session, states.contains(&Held::Unarmed)));
+                waiting.push((page, session, states));
+            }
+            if !ran.is_empty() {
+                return Err(self.not_held(&ran));
             }
             for page in nothing_to_keep {
                 self.close_page(page)?;
@@ -879,20 +1136,15 @@ impl Browser {
                 return Ok(());
             }
             if Instant::now() >= deadline {
-                // What kind of page it was, never its address.
-                for (page, _, _) in &waiting {
-                    let (frames, blank) = (self.frames_of(page).len(), self.nothing_to_keep(page));
-                    tracing::warn!(
-                        frames,
-                        blank,
-                        "a page of this browser did not say it was frozen in time"
-                    );
-                }
-                return Err(not_held());
+                let late: Vec<Unconfirmed> = waiting
+                    .iter()
+                    .map(|(page, _, states)| self.unconfirmed(page, states, arming, started))
+                    .collect();
+                return Err(self.not_held(&late));
             }
-            for (page, session, unarmed) in waiting {
+            for (page, session, states) in waiting {
                 let on = Some(session.as_str());
-                if unarmed {
+                if states.iter().any(Held::unarmed) {
                     // A document that came in since never saw a freeze: let the page run again,
                     // before anything is cleared, arm it, and freeze it once more.
                     let _ = self.devtools().call(
@@ -900,7 +1152,14 @@ impl Browser {
                         json!({ "state": "active" }),
                         on,
                     );
-                    self.arm_freeze_watch(page);
+                    match self.arm_freeze_watch(page) {
+                        Some(why) => {
+                            arming.insert(page.clone(), why);
+                        }
+                        None => {
+                            arming.remove(page);
+                        }
+                    }
                 }
                 let _ = self.devtools().call(
                     "Page.setWebLifecycleState",
@@ -910,6 +1169,39 @@ impl Browser {
             }
             self.pause(LOOK_AGAIN).map_err(|why| why.to_string())?;
         }
+    }
+
+    /// What `page` came to, given what each of its frames last said: for the refusal and the log.
+    fn unconfirmed(
+        &self,
+        page: &str,
+        states: &[Held],
+        arming: &HashMap<String, String>,
+        started: Instant,
+    ) -> Unconfirmed {
+        let (kind, opener, frames) = self.what_is(page);
+        let mut steps: Vec<String> = states
+            .iter()
+            .filter(|state| **state != Held::Frozen)
+            .map(|state| match (state, arming.get(page)) {
+                (Held::Unarmed(_), Some(why)) => {
+                    format!("{} after arming failed ({why})", state.step())
+                }
+                _ => state.step(),
+            })
+            .collect();
+        if frames == 0 {
+            steps.clear();
+        }
+        Unconfirmed::new(kind, opener, frames, steps, started.elapsed())
+    }
+
+    /// The refusal for pages that did not confirm, each one logged first.
+    fn not_held(&self, pages: &[Unconfirmed]) -> String {
+        for page in pages {
+            page.log();
+        }
+        not_held_said(pages)
     }
 
     /// Lets the HTTP cache serve `target`'s page again, whoever drives it now.
@@ -1014,7 +1306,7 @@ impl Browser {
         // page that ran meanwhile could have put a cookie back, and one read after this that
         // finds none is read of pages that did not run.
         if let Some(still) = still {
-            self.confirm_held_still(still, usize::MAX)?;
+            self.confirm_held_still(still, usize::MAX, &mut HashMap::new())?;
         }
         if !cookies()?.is_empty() {
             return Err("a cookie of its did not go".to_owned());

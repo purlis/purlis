@@ -149,6 +149,10 @@ struct Freezing {
     unanswered_after_clear: u32,
     /// What each session's document said last.
     said: HashMap<String, &'static str>,
+    /// The sessions whose state the engine refuses to read: a page whose script cannot run.
+    unreadable: std::collections::HashSet<String>,
+    /// The sessions whose state is never answered in time.
+    unanswered: std::collections::HashSet<String>,
 }
 
 /// A stand-in engine: answers the driver's calls and sends it events, as the real one would.
@@ -576,6 +580,15 @@ impl Engine {
                 let cleared = !self.sent("Storage.clearDataForOrigin").is_empty();
                 let mut model = super::lock(&self.model);
                 let freezing = &mut model.freezing;
+                if freezing.unreadable.contains(on.unwrap_or_default()) {
+                    return Err(CallError::Engine {
+                        code: -32000,
+                        message: "Cannot find context with specified id".into(),
+                    });
+                }
+                if freezing.unanswered.contains(on.unwrap_or_default()) {
+                    return Err(CallError::TimedOut);
+                }
                 if cleared && freezing.unanswered_after_clear > 0 {
                     freezing.unanswered_after_clear -= 1;
                     return Err(CallError::TimedOut);

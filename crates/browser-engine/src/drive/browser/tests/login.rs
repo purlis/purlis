@@ -1973,3 +1973,149 @@ fn a_window_a_logins_page_opened_elsewhere_closes_once_the_page_is_done() {
         "the chat is told"
     );
 }
+
+/// What a refusal says of a page that did not confirm it is held still, so a run that fails on a
+/// machine nobody can reach says which page and which step: its kind, its opener, its frames, the
+/// step and the wait, and no address. The refusal around it names the login's own site, which the
+/// chat asked for; what is said of the page is the part from "a page of this browser".
+fn refused_for_a_page(ended: &crate::drive::browser::login::LoginEnded) -> String {
+    match &ended.outcome {
+        Err(Refusal::NotLoggedIn(said)) => {
+            let at = said
+                .find("a page of this browser")
+                .expect("it names the page");
+            let page = said[at..]
+                .strip_suffix("), so nothing was filled")
+                .expect("it is what the login's refusal wraps")
+                .to_owned();
+            for address in ["http", "://", "fixture.test", "other.test", "about:"] {
+                assert!(!page.contains(address), "{page} names {address}");
+            }
+            page
+        }
+        _ => panic!("{}", ended_as(&ended.outcome)),
+    }
+}
+
+/// A page of another site, open and never told it is frozen.
+fn a_site_page_that_stays_silent(engine: &Arc<Engine>) {
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"http://other.test/","attached":false}}),
+        None,
+    );
+    super::super::lock(&engine.model)
+        .freezing
+        .silent
+        .insert("S-PAGE-6".to_owned());
+}
+
+#[test]
+fn a_site_page_that_never_says_it_is_frozen_is_named_by_kind_and_step_in_the_refusal() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    a_site_page_that_stays_silent(&engine);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.starts_with("a page of this browser did not stay held still (site page, no opener, 1 frame: no freeze event, waited "),
+        "{said}"
+    );
+    assert!(said.ends_with(" s)"), "{said}");
+}
+
+#[test]
+fn a_page_whose_state_the_engine_will_not_read_says_which_error_in_the_refusal() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    a_site_page_that_stays_silent(&engine);
+    super::super::lock(&engine.model)
+        .freezing
+        .unreadable
+        .insert("S-PAGE-6".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.contains("site page, no opener, 1 frame: watch not armed (read refused: CDP error -32000: Cannot find context with specified id)"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_page_whose_state_is_never_answered_says_a_read_timed_out_in_the_refusal() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    a_site_page_that_stays_silent(&engine);
+    super::super::lock(&engine.model)
+        .freezing
+        .unanswered
+        .insert("S-PAGE-6".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.contains("site page, no opener, 1 frame: a read timed out, waited "),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_popup_that_never_freezes_is_named_a_popup_with_an_opener_and_an_unarmed_page_says_so() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"http://other.test/","attached":false,"openerId":"PAGE-1"}}),
+        None,
+    );
+    super::super::lock(&engine.model)
+        .freezing
+        .silent
+        .insert("S-PAGE-6".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.contains("popup, has an opener, 1 frame: no freeze event, waited "),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_request_to_freeze_the_engine_refuses_is_named_with_the_page_and_the_error() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::WontHoldStill);
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    let said = refused_for_a_page(&ended);
+    assert!(
+        said.starts_with("a page of this browser would not hold still (blank page, no opener, 2 frames: the engine would not take the request of freezing it (CDP error -32000: not now)"),
+        "{said}"
+    );
+}
+
+#[test]
+fn the_refusal_names_each_page_and_leaves_an_error_text_no_address() {
+    use super::super::login::{Kind, Unconfirmed, not_held_said, said_of};
+    let engine_said = said_of(&crate::cdp::CallError::Engine {
+        code: -32000,
+        message: "Cannot navigate to http://fixture.test/a?b=c for fixture.test.".into(),
+    });
+    assert_eq!(engine_said, "CDP error -32000: Cannot navigate to … for …");
+    let pages = [
+        Unconfirmed::new(Kind::Blank, false, 0, vec![], Duration::from_millis(3000)),
+        Unconfirmed::new(
+            Kind::Extension,
+            true,
+            2,
+            vec!["no freeze event".into(), "no freeze event".into()],
+            Duration::from_millis(10_250),
+        ),
+    ];
+    assert_eq!(
+        not_held_said(&pages),
+        "a page of this browser did not stay held still (page 1: blank page, no opener, 0 frames: no frame known, waited 3.0 s; page 2: extension page, has an opener, 2 frames: no freeze event in 2 frames, waited 10.2 s)"
+    );
+}
