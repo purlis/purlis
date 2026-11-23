@@ -79,19 +79,28 @@ impl Control {
         }
     }
 
-    /// What the ask says, in purlis's words.
-    pub fn says(&self) -> String {
+    /// What the ask says, in purlis's words. `owner` is the other chat the record names as the
+    /// owner of a branch, when there is one ([`Refusal::owner`]).
+    pub fn says(&self, owner: Option<&str>) -> String {
         match self {
             Self::TrustClone { folder, place } => format!(
                 "{TRUST_SO_CHATS_CAN_USE_GITHUB}: {folder} was not cloned by purlis, and its \
                  remote is {place}. Trust it only if you made this clone yourself."
             ),
-            Self::LetChatPush { repo, branch, .. } => format!(
-                "{branch} in {repo} is not a branch this chat made through purlis: nobody owns \
-                 it in purlis's record, or another chat does. Allow records this chat as its \
-                 owner at the commit the forge has on it when you press, so it can push \
-                 {branch} from there. Keep blocked leaves the push refused."
-            ),
+            Self::LetChatPush {
+                host, repo, branch, ..
+            } => {
+                let whose = match owner {
+                    None => "Nobody owns it in purlis's record".to_owned(),
+                    Some(chat) => format!("Chat {chat} owns it in purlis's record, not this chat"),
+                };
+                format!(
+                    "{branch} in {repo} on {host} is not a branch this chat made through purlis. \
+                     {whose}. Allow records this chat as its owner at the commit the forge has \
+                     on it when you press, and then it can replace the branch's history, not \
+                     only add to it. Keep blocked leaves the push refused."
+                )
+            }
         }
     }
 }
@@ -116,6 +125,16 @@ pub struct Refusal {
     pub session: u32,
     pub control: Control,
     pub since: u64,
+    /// For a Let this chat push ask: the other chat the record names as the branch's owner,
+    /// `None` where nobody owns it. Said in the ask; never part of what an ask is (its key).
+    pub owner: Option<String>,
+}
+
+impl Refusal {
+    /// What the ask says, in purlis's words.
+    pub fn says(&self) -> String {
+        self.control.says(self.owner.as_deref())
+    }
 }
 
 /// Told that a project's asks moved, so the window reads them again.
@@ -174,6 +193,11 @@ pub fn asks(root: &Path) -> bool {
 /// another place goes: its remote changed, so that ask's press would trust nothing, and the new
 /// ask replaces it rather than stacking. Answers whether it is new.
 pub fn raise(root: &Path, session: u32, control: Control) -> bool {
+    raise_owned(root, session, control, None)
+}
+
+/// [`raise`], for a Let this chat push ask that names the other chat `owner` as the owner.
+pub fn raise_owned(root: &Path, session: u32, control: Control, owner: Option<String>) -> bool {
     let new = {
         let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
         if let Control::TrustClone { folder, .. } = &control {
@@ -196,6 +220,7 @@ pub fn raise(root: &Path, session: u32, control: Control) -> bool {
                 session,
                 control,
                 since: now(),
+                owner,
             });
         }
         !already
@@ -395,10 +420,22 @@ pub fn let_chat_push(
     Ok(tip)
 }
 
+/// How many Let this chat push asks may wait for one chat at once: past it a push raises no
+/// new ask, and git's reason says asks are already waiting.
+pub const MAX_PUSH_ASKS_WAITING: usize = 3;
+
+/// How many new asks one push may raise.
+pub const MAX_PUSH_ASKS_PER_PUSH: usize = 1;
+
+/// Who the record names as the owner of `(host, repo id, branch)`.
+pub type OwnerOf = Box<dyn Fn(&str, u64, &str) -> Option<String> + Send + Sync>;
+
 /// **The route's ask to let a chat push a branch it has no record of**
-/// ([`crate::forge::proxy::BranchAsk`]) for one chat of one project: raises one ask per branch
+/// ([`crate::forge::proxy::BranchAsk`]) for one chat of one project: raises an ask for a branch
 /// ([`Control::LetChatPush`], one per chat and branch however often it is refused), and says
-/// in git's output that it is waiting in the window. **Nothing here answers it**: only the
+/// in git's output that it is waiting in the window. **At most [`MAX_PUSH_ASKS_PER_PUSH`] new ask
+/// for a push and [`MAX_PUSH_ASKS_WAITING`] waiting for the chat**: past either, nothing new is
+/// raised and the chat is told asks are already waiting. **Nothing here answers it**: only the
 /// person's press does ([`let_chat_push`], [`keep_push_blocked`]).
 pub struct PushAsks {
     /// The project's folder.
@@ -407,6 +444,9 @@ pub struct PushAsks {
     pub chat: String,
     /// The chat's session while it is open, read at each ask: a chat that has ended asks nothing.
     pub session: Box<dyn Fn() -> Option<u32> + Send + Sync>,
+    /// Who the record names as the owner of `(host, repo_id, branch)`, for the ask to say: a
+    /// chat's name, or `None` where nobody owns it.
+    pub owner_of: OwnerOf,
 }
 
 impl crate::forge::proxy::BranchAsk for PushAsks {
@@ -420,8 +460,15 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
             return None;
         }
         let session = (self.session)()?;
+        let is_push_ask = |one: &Refusal| {
+            one.root == self.root
+                && one.session == session
+                && matches!(one.control, Control::LetChatPush { .. })
+        };
         let mut waiting: Vec<&crate::forge::proxy::NotYours> = Vec::new();
         let mut kept: Vec<&crate::forge::proxy::NotYours> = Vec::new();
+        let mut raised_now = 0;
+        let mut held_back = false;
         for branch in branches {
             let control = Control::LetChatPush {
                 chat: self.chat.clone(),
@@ -432,8 +479,21 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
             };
             if is_kept_blocked(&self.root, session, &control) {
                 kept.push(branch);
+            } else if is_waiting(&self.root, session, &control) {
+                waiting.push(branch);
             } else {
-                raise(&self.root, session, control);
+                let held = every(&self.root)
+                    .iter()
+                    .filter(|one| is_push_ask(one))
+                    .count();
+                if raised_now >= MAX_PUSH_ASKS_PER_PUSH || held >= MAX_PUSH_ASKS_WAITING {
+                    held_back = true;
+                    continue;
+                }
+                let owner = (self.owner_of)(&branch.host, branch.repo_id, &branch.branch)
+                    .filter(|chat| *chat != self.chat);
+                raise_owned(&self.root, session, control, owner);
+                raised_now += 1;
                 waiting.push(branch);
             }
         }
@@ -441,17 +501,26 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
             [one] => format!("{} in {}", one.branch, one.repo),
             _ => format!("{} branches", of.len()),
         };
-        Some(if waiting.is_empty() {
+        Some(if !waiting.is_empty() {
+            format!(
+                "purlis: the ask Let this chat push it is waiting in the window for {}; push \
+                 again once the person has pressed Allow{}",
+                names(&waiting),
+                if held_back {
+                    ". No ask was raised for the other branches: asks are already waiting"
+                } else {
+                    ""
+                }
+            )
+        } else if !kept.is_empty() {
             format!(
                 "purlis: the person kept {} blocked for this chat; ask the person to push it",
                 names(&kept)
             )
         } else {
-            format!(
-                "purlis: the ask Let this chat push it is waiting in the window for {}; push \
-                 again once the person has pressed Allow",
-                names(&waiting)
-            )
+            "purlis: asks to let this chat push a branch are already waiting in the window, so \
+             no new one was raised; push again once the person has answered them"
+                .to_owned()
         })
     }
 }

@@ -6,4 +6,5 @@
   push it*, with **Allow** and **Keep blocked**, and git's output says an ask is waiting. Allow
   records the chat as the branch's owner at the commit the forge shows you when you press, and
   the chat pushes again from there. Only your press does it: the default branch, protected,
-  deploy and pages branches are never asked about (ADR 0128, #7363).
+  deploy and pages branches are never asked about, nor a branch the repo does not have, and a
+  chat has at most three of these asks waiting (ADR 0128, #7363).

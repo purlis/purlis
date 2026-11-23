@@ -2314,7 +2314,7 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
     Shown {
         session: refused.session,
         ask: window_only_key(refused.session, control),
-        says: said_inertly(&control.says()),
+        says: said_inertly(&refused.says()),
         options,
         source,
         chain: Vec::new(),

@@ -828,11 +828,10 @@ fn a_token_mint_refused_for_an_unrecorded_clone_raises_trust_this_clone() {
     assert_eq!((raised[0].session, &raised[0].control), (7, &trust));
     assert!(
         raised[0]
-            .control
             .says()
             .starts_with("Trust this clone so chats can use GitHub"),
         "{}",
-        raised[0].control.says()
+        raised[0].says()
     );
     // The chat is told what was asked and where, never "from the window" alone.
     assert!(said.contains("Trust this clone"), "{said}");

@@ -126,6 +126,12 @@ pub struct World {
 
 /// The plane's project id the recording world's chat belongs to.
 pub const PROJECT_ID: &str = "01J9ZQ3V5N8X4T2K7M6P0R1S2P";
+/// The branches a [`World::asking_in`] repo's advertisement lists: the ones a test may be asked
+/// about, and two the ask must not say (a name that is not ASCII, one that starts with `-`).
+pub const ASKING_ADVERTISES: &[&str] = &[
+    "main", "theirs", "other", "b1", "b2", "b3", "b4", "b5", "naïve", "-dash",
+];
+
 /// The session [`World::asking_in`]'s chat is.
 pub const SESSION: u32 = 7;
 /// The forge's id of `acme/app` in [`World`].
@@ -270,11 +276,13 @@ impl World {
                 .expect("the record is written");
             }));
         }
+        let asking_world = asking.is_some();
         if let Some(root) = asking {
             proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
                 root,
                 chat: "chat-listener".to_owned(),
                 session: Box::new(|| Some(SESSION)),
+                owner_of: Box::new(|_, _, _| None),
             }));
         }
         let proxy = Arc::new(proxy);
@@ -285,7 +293,12 @@ impl World {
             .collect();
         let sentinel = proxy.enrol(&chat, repos);
         for (host, path) in &advertised {
-            proxy.note_advertised(&chat, host, path, vec![]);
+            let listed = if asking_world {
+                ASKING_ADVERTISES.iter().map(|b| (*b).to_owned()).collect()
+            } else {
+                vec![]
+            };
+            proxy.note_advertised(&chat, host, path, listed);
         }
         let fake = Arc::new(Fake::default());
         let wiring = Wiring {

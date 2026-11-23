@@ -805,6 +805,11 @@ impl ForgeRoutes {
                 root: project.to_owned(),
                 chat: chat.to_owned(),
                 session: Box::new(move || sessions.session(&run)),
+                owner_of: Box::new(|host, repo_id, branch| {
+                    let config = purlis_core::machine::config_root()?;
+                    purlis_core::forge::createdbranches::owner_of(&config, host, repo_id, branch)
+                        .map(|(_, chat, _)| chat)
+                }),
             }));
         }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own

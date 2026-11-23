@@ -3843,6 +3843,7 @@ fn trust_this(session: u32, name: &str) -> purlis_core::windowonly::Refusal {
             place: format!("github.com/acme/{name}"),
         },
         since: 1_700_000_000,
+        owner: None,
     }
 }
 
@@ -3948,6 +3949,7 @@ fn letting_a_chat_push_a_branch_is_one_ask_with_allow_and_keep_blocked_and_carri
             branch: branch.to_owned(),
         },
         since: 0,
+        owner: None,
     };
     let one = window_only(&refused("theirs"));
     assert_eq!(one.source, AskSource::LetChatPush);

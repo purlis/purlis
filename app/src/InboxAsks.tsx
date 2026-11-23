@@ -354,7 +354,7 @@ export function questionOf(ask: Shown): string {
       : `Allow ${program} to use vault ${run.vault}?`;
   }
   if (ask.answer.via === "let-chat-push")
-    return `Let this chat push ${ask.answer.branch} in ${ask.answer.repo}?`;
+    return `Let this chat push ${ask.answer.branch} in ${ask.answer.host}/${ask.answer.repo}?`;
   return QUESTION[ask.source] ?? "Allow this?";
 }
 

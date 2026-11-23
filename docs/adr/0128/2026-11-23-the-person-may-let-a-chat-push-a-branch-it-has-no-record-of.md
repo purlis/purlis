@@ -33,6 +33,17 @@ blocked**.
   names only an ask this app raised, in this project, for this session: a control that was never
   raised, was answered, or belongs to another project grants nothing, and the project in the
   record is the pressing window's own. The CLI and a chat have no way to write the line.
+- **Only a branch the repo lists, and a name that can be said.** The route raises the ask only for
+  a branch in the repo's advertisement, read when the chat fetched; any other name is invented,
+  raises nothing and is refused as before. A name is also checked as a base branch is (1 to 255
+  bytes, no space or control character, not starting with `-`) and must be printable ASCII.
+- **A cap, so a crafted push cannot flood the window.** A push raises **at most one** ask (the
+  first branch that qualifies), and a chat has **at most three** waiting at once. Past either, no
+  new ask is raised and git's output says asks are already waiting; answering one makes room.
+- **The ask says enough to decide.** It names the branch, the repo and the host; says whether
+  nobody owns the branch in purlis's record or another chat does (naming it); and says that after
+  Allow the chat can replace the branch's history, not only add to it. The branch's tip is read
+  only at the press, never when the ask is raised.
 - **One ask per chat and branch**, however often the chat is refused. Under `[policy] consents`
   set to `log` or `off` no ask is raised, as for every window-only refusal (Q308b), and the
   refusal is as it was.

@@ -37,8 +37,22 @@ fn project(id: &str) -> (tempfile::TempDir, PathBuf) {
 }
 
 fn reply(w: &World, branch: &str, old: &str, new: &str) -> crate::support::forge_listener::Reply {
-    let line = format!("{old} {new} refs/heads/{branch}\0 report-status side-band-64k agent=git/2");
-    let body = format!("{}0000PACK....", pkt(&line));
+    reply_to(w, &[(old, new, &format!("refs/heads/{branch}"))])
+}
+
+/// A push of `commands`, `(old, new, ref name)` each, through the listener.
+fn reply_to(w: &World, commands: &[(&str, &str, &str)]) -> crate::support::forge_listener::Reply {
+    let mut body = String::new();
+    for (i, (old, new, name)) in commands.iter().enumerate() {
+        let caps = if i == 0 {
+            "\0 report-status side-band-64k agent=git/2"
+        } else {
+            ""
+        };
+        body.push_str(&pkt(&format!("{old} {new} {name}{caps}")));
+    }
+    body.push_str("0000PACK....");
+    let branch = commands[0].2.trim_start_matches("refs/heads/");
     let request = format!(
         "POST /acme/app.git/git-receive-pack HTTP/1.1\r\nHost: github.com\r\nAuthorization: {}\r\nContent-Type: application/x-git-receive-pack-request\r\nContent-Length: {}\r\n\r\n{body}",
         basic("x-access-token", w.sentinel.expose()),
@@ -337,5 +351,96 @@ fn a_forge_that_does_not_answer_a_commit_records_nothing_and_the_ask_still_waits
         1,
         "the person may press again"
     );
+    windowonly::project_ended(&root);
+}
+
+fn ask_count(root: &Path) -> usize {
+    windowonly::every(root).len()
+}
+
+#[test]
+fn one_push_raises_one_ask_and_a_chat_has_three_waiting_at_most() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let (_p, root) = project(PROJECT_ID);
+    let w = World::asking_in(config.path().to_owned(), root.clone());
+    let (old, new) = ("3".repeat(40), "5".repeat(40));
+    let update = |b: &'static str| (old.as_str(), new.as_str(), format!("refs/heads/{b}"));
+
+    // Three branches in one push: one ask, for the first, and git says which.
+    let cmds: Vec<_> = ["b1", "b2", "b3"].map(update).into();
+    let refs: Vec<_> = cmds.iter().map(|(o, n, r)| (*o, *n, r.as_str())).collect();
+    let text = reply_to(&w, &refs).text();
+    assert!(text.contains("b1 in acme/app"), "{text}");
+    assert_eq!(ask_count(&root), 1);
+
+    // Each push after it raises one more, until three wait; the fourth raises none.
+    reply_to(&w, &refs);
+    assert_eq!(ask_count(&root), 2);
+    reply_to(&w, &refs);
+    assert_eq!(ask_count(&root), 3);
+    let four = [update("b4")];
+    let refs: Vec<_> = four.iter().map(|(o, n, r)| (*o, *n, r.as_str())).collect();
+    let text = reply_to(&w, &refs).text();
+    assert_eq!(ask_count(&root), 3, "past the cap no ask is raised");
+    assert!(text.contains("already waiting"), "git says why: {text}");
+    assert!(w.fake.requests().is_empty(), "never sent");
+
+    // Answering one makes room for the next.
+    windowonly::keep_push_blocked(&root, SESSION, &control("b1")).unwrap();
+    reply_to(&w, &refs);
+    assert_eq!(ask_count(&root), 3);
+    assert!(
+        windowonly::every(&root)
+            .iter()
+            .any(|r| r.control == control("b4"))
+    );
+    windowonly::project_ended(&root);
+}
+
+#[test]
+fn an_invented_name_raises_no_ask() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let (_p, root) = project(PROJECT_ID);
+    let w = World::asking_in(config.path().to_owned(), root.clone());
+    let (old, new) = ("3".repeat(40), "5".repeat(40));
+    for branch in ["invented", "-dash"] {
+        let text = refused(&w, branch, &old, &new).unwrap_or_else(|| panic!("{branch} refused"));
+        assert!(
+            !text.contains("is waiting in the window"),
+            "{branch}: {text}"
+        );
+    }
+    assert_eq!(ask_count(&root), 0);
+    windowonly::project_ended(&root);
+}
+
+#[test]
+fn a_delete_a_tag_or_a_protected_ref_beside_an_unowned_branch_raises_no_ask() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let (_p, root) = project(PROJECT_ID);
+    let w = World::asking_in(config.path().to_owned(), root.clone());
+    let (old, new, zero) = ("3".repeat(40), "5".repeat(40), "0".repeat(40));
+    let theirs = (old.as_str(), new.as_str(), "refs/heads/theirs");
+    for beside in [
+        (old.as_str(), zero.as_str(), "refs/heads/other"),
+        (old.as_str(), new.as_str(), "refs/tags/v1"),
+        (old.as_str(), new.as_str(), "refs/heads/main"),
+    ] {
+        let alone = reply_to(&w, &[beside]).text();
+        assert!(
+            !alone.contains("is waiting in the window"),
+            "{beside:?}: {alone}"
+        );
+        let mixed = reply_to(&w, &[theirs, beside]).text();
+        assert!(
+            !mixed.contains("is waiting in the window"),
+            "{beside:?}: {mixed}"
+        );
+    }
+    assert_eq!(ask_count(&root), 0);
+    assert!(w.fake.requests().is_empty(), "never sent");
     windowonly::project_ended(&root);
 }

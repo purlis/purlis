@@ -1102,6 +1102,15 @@ impl ChatPolicy {
         let (Some(repo_id), Ok(pushed)) = (repo.project_id, git::pushed_commands(body)) else {
             return Vec::new();
         };
+        let advertised = self
+            .advertised
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        // A branch the repo does not list is not one to ask about: an invented name raises
+        // nothing, and the push is refused as it was.
+        let Some(listed) = advertised.get(&(repo.host.clone(), repo.path.clone())) else {
+            return Vec::new();
+        };
         let mut out: Vec<NotYours> = Vec::new();
         for command in &pushed.commands {
             let Some(branch) = command.name.strip_prefix("refs/heads/") else {
@@ -1111,6 +1120,8 @@ impl ChatPolicy {
                 || command.delete
                 || branch.is_empty()
                 || repo.protects(branch)
+                || !listed.contains(branch)
+                || !is_askable_branch(branch)
                 || tips(&repo.host, repo_id, branch).is_some()
                 || out.iter().any(|one| one.branch == branch)
             {
@@ -1125,6 +1136,12 @@ impl ChatPolicy {
         }
         out
     }
+}
+
+/// Whether a branch name a chat sent may be said in an ask: the base branch rule
+/// ([`crate::mergehold::Base`]), and printable ASCII only, so a name cannot dress up the ask.
+fn is_askable_branch(branch: &str) -> bool {
+    crate::mergehold::Base::try_from(branch).is_ok() && branch.bytes().all(|b| b.is_ascii_graphic())
 }
 
 /// How severe a push command's refusal is; a push is refused as its most severe. A tag is the
