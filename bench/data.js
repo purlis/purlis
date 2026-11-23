@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795472073231,
+  "lastUpdate": 1795474712922,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53298,6 +53298,48 @@ window.BENCHMARK_DATA = {
             "value": 101.048382,
             "unit": "ms",
             "extra": "median of 5 runs: 100.619, 100.906, 101.048, 101.216, 101.450 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "12bac7d5a7581daabac8cacc16637b099aeab44a",
+          "message": "One login J: the desktop reads its runner pairings (Refs #7290) (#7468)\n\n* One login J: the desktop reads its runner pairings (#7290)\n\nRunnerLink gets its desktop side, installed by forgeroute::install: paired from\nthe pinned runner keys in the machine store, the project from a fresh runner's\ncheckout. Pool runners name none, so they keep token connections. No wire change.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M84ZEPWRTHVHQ1EWQR1NAAQB\nPurlis-Persona: steward\n\n* One login J: DesktopPairings, its changelog fragment and ADR 0128 amendment (#7290)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M84ZEPWRTHVHQ1EWQR1NAAQB\nPurlis-Persona: steward\n\n* One login J round 2: bind a runner's pairing to its project id, chat and run (#7290)\n\nA fresh runner's project counts only while its checkout still holds the row's plane id; the\npairing carries its chat and for_runner refuses another chat's; a run live for another peer or\na desktop chat is refused; rows that disagree pair none. read_store is tested over a temporary\nconfig root, and the ADR 0128 amendment states the bindings.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M852CX73G0BNJYARX22NF46E\nPurlis-Persona: steward\n\n* One login J round 3: start lock makes the owner check and insert atomic; honest wording on id and for_runner\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8546PQN6BR2CH3MCVBZ53V5\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T22:16:59Z",
+          "tree_id": "ed1028aaef891030af5d24314c93af8727e9208b",
+          "url": "https://github.com/purlis/purlis/commit/12bac7d5a7581daabac8cacc16637b099aeab44a"
+        },
+        "date": 1795474705728,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.699292,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.655, 0.682, 0.699, 0.700, 0.703 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.653344,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.462, 16.514, 16.653, 16.713, 16.745 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.106674,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.779, 101.789, 102.107, 102.218, 103.356 ms"
           }
         ]
       }
