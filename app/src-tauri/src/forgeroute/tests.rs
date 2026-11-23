@@ -1263,9 +1263,10 @@ fn the_doctor_lists_what_a_projects_running_chats_were_refused_and_never_a_token
     merge(&scene, "run-1", &params.sentinel);
     let row = scene.routes.refusals_row(Path::new("/p/one"));
 
-    // The refusal and its rule, under the chat's name; the allowed comment is not listed.
+    // The refusal and its rule, under the chat's name; the allowed comment is not listed. A
+    // merge is refused before its repo and kind are read, so both show as `-`.
     assert!(
-        row.detail.contains("chat-1: POST api.github.com acme/app")
+        row.detail.contains("chat-1: PUT api.github.com - -")
             && row
                 .detail
                 .contains("blocked (merging is not allowed from a chat)"),
