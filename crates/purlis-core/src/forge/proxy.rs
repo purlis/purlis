@@ -81,11 +81,11 @@ pub use commands::has_merge_command;
 pub use endpoint::UnixEndpoint;
 pub use endpoint::{ChatEndpoint, EndpointKind, LoopbackEndpoint, pick_endpoint};
 pub use graphql::mutation_repo;
-pub use held::{Held, HeldSink};
+pub use held::{BranchAsk, Held, HeldSink};
 pub use policy::{
     Allowed, BodyNeed, ChatPolicy, Class, ConnectVerdict, Decision, GITLAB_COM, GithubAlias,
-    NoObjects, ObjectRepo, RecordedBranches, Refusal, TipSource, TouchedRepo, is_ci_storage_host,
-    is_download_host, is_gitlab_ci_storage,
+    NoObjects, NotYours, ObjectRepo, RecordedBranches, Refusal, TipSource, TouchedRepo,
+    is_ci_storage_host, is_download_host, is_gitlab_ci_storage,
 };
 pub use repo::{AddressError, AllowedRepo, ForgeRepoId, Kind};
 pub use request::RequestHead;
@@ -337,6 +337,8 @@ pub struct ForgeProxy {
     objects: Box<dyn ObjectRepo>,
     audit: AuditLog,
     held: Option<Box<dyn HeldSink>>,
+    /// Where the ask to let a chat push a branch it has no record of is raised.
+    branch_ask: Option<Box<dyn BranchAsk>>,
     /// The administrator's never-allow pin, asked on every request and connection (D3g).
     pin: Arc<dyn pin::Pin>,
     /// How `guards.merge` runs, asked on every merge a chat sends (ADR 0128 D8, 2026-11-22).
@@ -367,6 +369,7 @@ impl ForgeProxy {
             objects,
             audit: AuditLog::default(),
             held: None,
+            branch_ask: None,
             pin: Arc::new(pin::NoPin),
             merges: Arc::new(mergestance::HoldMerges),
             created: None,
@@ -459,6 +462,14 @@ impl ForgeProxy {
     #[must_use]
     pub fn with_held(mut self, sink: Box<dyn HeldSink>) -> Self {
         self.held = Some(sink);
+        self
+    }
+
+    /// Raise an ask, through `sink`, for a push refused only because its branch is not the chat's
+    /// ([`Refusal::NotYourBranch`]). Without one the push is refused as it was, with no ask.
+    #[must_use]
+    pub fn with_branch_ask(mut self, sink: Box<dyn BranchAsk>) -> Self {
+        self.branch_ask = Some(sink);
         self
     }
 
@@ -707,6 +718,21 @@ impl ForgeProxy {
                         refusal,
                         said: told,
                     });
+                }
+                // Only a chat that proved itself asks, and only for a branch the policy read
+                // from this push as unowned and unprotected.
+                if sentinel.is_ok()
+                    && refusal == Refusal::NotYourBranch
+                    && let Some(sink) = &self.branch_ask
+                {
+                    let unowned = policy.unowned_updates(&head, inbound.body);
+                    if !unowned.is_empty()
+                        && let Some(said) = sink.ask(chat, &unowned)
+                    {
+                        self.audit
+                            .record(chat, inbound.head, None, Verdict::Refused(refusal));
+                        return Outcome::Held(Held { refusal, said });
+                    }
                 }
                 return self.refuse(chat, inbound, None, refusal);
             }

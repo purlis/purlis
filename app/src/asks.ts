@@ -929,6 +929,17 @@ export async function answerTaken(
         const trusted = await commands.vouchClone(plane, path.folder, path.place);
         return trusted.status === "error" ? trusted : { status: "ok" };
       }
+      case "let-chat-push": {
+        // A chat refused an update of a branch it has no record of (ADR 0128, amended
+        // 2026-11-23): Allow records it as the owner at the commit the forge shows the person
+        // now, read by the core and never sent from here; Keep blocked leaves it refused.
+        const { chat, host, repo, repo_id: repoId, branch } = path;
+        if (option === "press")
+          return commands.allowChatPush(plane, ask.session, chat, host, repo, repoId, branch);
+        if (option === "keep-blocked")
+          return commands.keepChatPushBlocked(plane, ask.session, chat, host, repo, repoId, branch);
+        break;
+      }
       case "trust-clones": {
         // The clones purlis has no record of, one ask for all of them (R-336): Trust all is the
         // clone Notice's own press on each, at the one address its remote names. Each clone it

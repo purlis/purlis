@@ -51,6 +51,7 @@ mod chatcard;
 mod chatevents;
 mod chatlisting;
 mod chatmoves;
+mod chatpush;
 mod chats;
 mod clipath;
 mod clonevouch;

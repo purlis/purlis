@@ -2218,10 +2218,17 @@ fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
     scene.recorded.cut_for("/p/one", "chat-2", "task/other");
     let params = scene.start("chat-1", "run-1", "/p/one");
 
-    for branch in ["main", "task/other", "colleague"] {
+    // The default branch is protected. Another chat's branch and a colleague's are not this
+    // chat's: refused as such (and, where its chat is open, asked about in the window).
+    let pushed = push_update(&scene, "run-1", &params.sentinel, "main");
+    assert!(
+        matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+        "main: {pushed:?}"
+    );
+    for branch in ["task/other", "colleague"] {
         let pushed = push_update(&scene, "run-1", &params.sentinel, branch);
         assert!(
-            matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+            matches!(pushed, Outcome::Refused(Refusal::NotYourBranch)),
             "{branch}: {pushed:?}"
         );
     }
@@ -2240,7 +2247,7 @@ fn another_projects_chat_with_the_same_id_owns_none_of_a_branch_cut_in_this_one(
     let pushed = push_update(&scene, "run-1", &params.sentinel, "task/forms");
 
     assert!(
-        matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(pushed, Outcome::Refused(Refusal::NotYourBranch)),
         "{pushed:?}"
     );
 }
@@ -2297,7 +2304,7 @@ fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_f
     let other = scene.start("chat-2", "run-3", "/p/one");
     let refused = push_update(&scene, "run-3", &other.sentinel, "task/new");
     assert!(
-        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(refused, Outcome::Refused(Refusal::NotYourBranch)),
         "{refused:?}"
     );
 }
@@ -2386,7 +2393,7 @@ fn a_live_run_may_not_push_a_branch_another_chat_made_again_through_the_route() 
         &"3".repeat(40),
     );
     assert!(
-        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(refused, Outcome::Refused(Refusal::NotYourBranch)),
         "{refused:?}"
     );
     // And chat 2, whose push is the last, moves it from the tip it left.
@@ -2459,7 +2466,49 @@ fn a_branch_the_forge_no_longer_lists_ends_its_record_and_the_next_update_is_ref
     assert!(scene.recorded.own_of("chat-1").is_empty());
     let refused = push_update(&scene, "run-1", &params.sentinel, "task/forms");
     assert!(
-        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(refused, Outcome::Refused(Refusal::NotYourBranch)),
         "{refused:?}"
     );
+}
+
+#[test]
+fn an_update_of_a_branch_the_open_chat_has_no_record_of_raises_one_ask_in_the_window_and_the_chat_is_told()
+ {
+    let scene = Scene::new();
+    let project = "/p/let-chat-push";
+    scene
+        .recorded
+        .record(project, vec![(Kind::GitHub, "github.com", "acme/app")]);
+    scene.recorded.bind(project, "github.com", "alice");
+    let params = scene.open("chat-1", "run-1", project, 5);
+
+    let said = |pushed: Outcome| match pushed {
+        Outcome::Held(held) => held.said,
+        other => panic!("an ask is raised and the chat told: {other:?}"),
+    };
+    // A branch pushed before the route existed: the chat is told an ask is waiting, however
+    // often it tries again, and the window has the one ask.
+    let told = said(push_update(&scene, "run-1", &params.sentinel, "colleague"));
+    assert!(told.contains("an ask is waiting in the window"), "{told}");
+    said(push_update(&scene, "run-1", &params.sentinel, "colleague"));
+    let raised = purlis_core::windowonly::every(Path::new(project));
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].session, 5);
+    assert!(
+        matches!(
+            &raised[0].control,
+            purlis_core::windowonly::Control::LetChatPush { chat, branch, .. }
+                if chat == "chat-1" && branch == "colleague"
+        ),
+        "{raised:?}"
+    );
+
+    // The default branch raises no ask, and no other is added.
+    let main = push_update(&scene, "run-1", &params.sentinel, "main");
+    assert!(
+        matches!(main, Outcome::Refused(Refusal::ProtectedRef)),
+        "{main:?}"
+    );
+    assert_eq!(purlis_core::windowonly::every(Path::new(project)).len(), 1);
+    purlis_core::windowonly::project_ended(Path::new(project));
 }

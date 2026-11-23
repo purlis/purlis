@@ -793,6 +793,20 @@ impl ForgeRoutes {
                 }))
                 .with_gone(Box::new(move |gone| forgets.forget_created(gone)));
         }
+        // An update of a branch this chat has no record of raises one ask, Let this chat push it
+        // (ADR 0128, amended 2026-11-23): in the window, where only the person's press records
+        // an owner. The chat is its session while it is open.
+        {
+            let sessions = RunSessions {
+                sessions: self.sessions.clone(),
+            };
+            let run = run.to_owned();
+            proxy = proxy.with_branch_ask(Box::new(purlis_core::windowonly::PushAsks {
+                root: project.to_owned(),
+                chat: chat.to_owned(),
+                session: Box::new(move || sessions.session(&run)),
+            }));
+        }
         // Held acts (ADR 0128 D8) are asked by the proxy itself, through the project's own
         // registry of them, so no request reaches the forge by a way that skips the hold.
         if let Some(sink) = self.seams.held.sink(
@@ -1449,6 +1463,9 @@ fn refusal_words(refusal: Refusal) -> &'static str {
         Refusal::Admin => "administering the repo is not allowed from a chat",
         Refusal::ProtectedRef => {
             "the push is to a protected branch or a branch the chat did not create"
+        }
+        Refusal::NotYourBranch => {
+            "the push updates a branch this chat has no record of (the person can let it)"
         }
         Refusal::PushOption => "the push carried push options",
         Refusal::BodyUnreadable => "the body was missing, too big or could not be read",

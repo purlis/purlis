@@ -752,6 +752,12 @@ pub enum AskSource {
     /// that couldn't be minted for a clone purlis has no record of. Trust this clone records it,
     /// as the clone's own Notice does, and the chat's next mint goes through.
     TrustClone,
+    /// **A chat refused an update of a branch it has no record of** (ADR 0128, amended
+    /// 2026-11-23, #7363): pushed before the route existed, or by another chat. Allow records the
+    /// chat as its owner at the commit the forge holds when pressed, and Keep blocked leaves it
+    /// refused. One per chat and branch, and never for a protected, default, deploy or pages
+    /// branch.
+    LetChatPush,
     /// **The clones purlis has no record of** (R-336, Q184): one ask for all of them, no chat's,
     /// never one per clone. Trust all records each, as its Notice's Trust this clone does.
     TrustClones,
@@ -887,6 +893,17 @@ pub enum AnswerPath {
     /// at `place`, the address its remote named when the refusal was raised (R-330): the clone
     /// Notice's own command, which clears the ask.
     TrustClone { folder: String, place: String },
+    /// `allow_chat_push` for Allow and `keep_chat_push_blocked` for Keep blocked, each for the
+    /// ask the refusal raised: chat `chat`'s update of `branch` in `repo` (lower case) at `host`,
+    /// the repo the forge numbers `repo_id`. Allow records the chat as the owner at the branch's
+    /// tip **read from the forge as the person when pressed**, never one the chat said.
+    LetChatPush {
+        chat: String,
+        host: String,
+        repo: String,
+        repo_id: String,
+        branch: String,
+    },
     /// `vouch_clone` for Trust all, on each of `clones` at the one address its remote names: the
     /// clone Notice's own command, and each clone it trusts leaves the ask (R-336).
     TrustClones {
@@ -2225,8 +2242,17 @@ fn window_only_key(session: u32, control: &purlis_core::windowonly::Control) -> 
         purlis_core::windowonly::Control::TrustClone { folder, place } => {
             format!("trust-clone:{session}:{folder}|{place}")
         }
+        purlis_core::windowonly::Control::LetChatPush {
+            host,
+            repo_id,
+            branch,
+            ..
+        } => format!("let-chat-push:{session}:{host}|{repo_id}|{branch}"),
     }
 }
+
+/// The option id of Keep blocked on a Let this chat push ask.
+pub const KEEP_BLOCKED: &str = "keep-blocked";
 
 /// **The window-only refusal adapter** (R-328): a refusal whose only way out is a press in the
 /// window, as one ask with that control on its row. Every word is purlis's; the folder and the
@@ -2238,19 +2264,59 @@ pub fn window_only(refused: &purlis_core::windowonly::Refusal) -> Shown {
             folder: folder.clone(),
             place: place.clone(),
         },
+        purlis_core::windowonly::Control::LetChatPush {
+            chat,
+            host,
+            repo,
+            repo_id,
+            branch,
+        } => AnswerPath::LetChatPush {
+            chat: chat.clone(),
+            host: host.clone(),
+            repo: repo.clone(),
+            repo_id: repo_id.to_string(),
+            branch: branch.clone(),
+        },
+    };
+    let (options, source) = match control {
+        purlis_core::windowonly::Control::TrustClone { .. } => (
+            vec![Offered {
+                id: PRESS.to_owned(),
+                label: control.label().to_owned(),
+                allows: true,
+                preselected: None,
+                scope: None,
+            }],
+            AskSource::TrustClone,
+        ),
+        // Allow records an owner, so it waits for its row to settle as every grant does; Keep
+        // blocked changes nothing.
+        purlis_core::windowonly::Control::LetChatPush { .. } => (
+            vec![
+                Offered {
+                    id: PRESS.to_owned(),
+                    label: control.label().to_owned(),
+                    allows: true,
+                    preselected: None,
+                    scope: None,
+                },
+                Offered {
+                    id: KEEP_BLOCKED.to_owned(),
+                    label: purlis_core::windowonly::KEEP_BLOCKED.to_owned(),
+                    allows: false,
+                    preselected: None,
+                    scope: None,
+                },
+            ],
+            AskSource::LetChatPush,
+        ),
     };
     Shown {
         session: refused.session,
         ask: window_only_key(refused.session, control),
         says: said_inertly(&control.says()),
-        options: vec![Offered {
-            id: PRESS.to_owned(),
-            label: control.label().to_owned(),
-            allows: true,
-            preselected: None,
-            scope: None,
-        }],
-        source: AskSource::TrustClone,
+        options,
+        source,
         chain: Vec::new(),
         answer,
         // Since when is the registry's to say, as for every ask (`Waiting::since`).
@@ -2377,8 +2443,11 @@ fn not_asked_by_a_chat(
     let mut ask = unrecorded?.clone();
     ask.clones.retain(|clone| {
         !window_only.iter().any(|one| {
-            let purlis_core::windowonly::Control::TrustClone { folder, .. } = &one.control;
-            *folder == clone.folder
+            matches!(
+                &one.control,
+                purlis_core::windowonly::Control::TrustClone { folder, .. }
+                    if *folder == clone.folder
+            )
         })
     });
     (!ask.clones.is_empty()).then_some(ask)
@@ -4570,7 +4639,7 @@ pub fn derive(waiting: &Waiting<'_>) -> Vec<Shown> {
     // chat's finish row.
     let said: std::collections::HashSet<u32> = asks
         .iter()
-        .filter(|ask| ask.source != AskSource::TrustClone)
+        .filter(|ask| !matches!(ask.source, AskSource::TrustClone | AskSource::LetChatPush))
         .filter(|ask| {
             ask.source != AskSource::Permission || (waiting.timed_out)(&ask.ask).is_none()
         })

@@ -62,9 +62,14 @@ pub enum Refusal {
     Ruleset,
     /// The repo's administration: settings, hooks, keys, secrets, collaborators.
     Admin,
-    /// A push to the default branch, a protected one, a ref that is not a branch, or a branch the
-    /// chat did not create.
+    /// A push to the default branch, a protected one, a ref that is not a branch, a delete, or a
+    /// branch the chat owns but from a tip it did not leave there.
     ProtectedRef,
+    /// An update to a branch that is not protected and that this chat has no record of owning:
+    /// no one's, or another chat's. **The one push refusal the person may answer**: an ask in the
+    /// window lets this chat push it ([`crate::windowonly::Control::LetChatPush`]); nothing else
+    /// about the push has changed. A push with any other refusal in it is that refusal.
+    NotYourBranch,
     /// A push that carries push options, which a forge reads as commands (`merge_request.*`).
     PushOption,
     /// A push whose ref commands were not read, or a request body that is too big or missing.
@@ -1019,18 +1024,106 @@ impl ChatPolicy {
                 (Some(_), None) => None,
                 (None, _) => own.get(&key).cloned(),
             };
-            if tip.is_some_and(|tip| tip.eq_ignore_ascii_case(&command.old_id)) {
-                Ok(Some(CreatedBranch {
+            match tip {
+                Some(tip) if tip.eq_ignore_ascii_case(&command.old_id) => Ok(Some(CreatedBranch {
                     host: repo.host.clone(),
                     repo: repo.path.clone(),
                     repo_id: repo.project_id,
                     branch: branch.to_string(),
                     tip: command.new_id.clone(),
-                }))
-            } else {
-                Err(Refusal::ProtectedRef)
+                })),
+                // The chat owns it, but not at this tip: someone moved it since. Not the person's
+                // to answer here; the chat fetches, or the person pushes.
+                Some(_) => Err(Refusal::ProtectedRef),
+                // No tip of this chat's: the branch has no owner here, or another's. Where the
+                // app keeps the record (`tips`) and the repo has its forge id, the person can let
+                // this chat push it ([`Self::unowned_updates`]).
+                None if self.tips.is_some() && repo.project_id.is_some() => {
+                    Err(Refusal::NotYourBranch)
+                }
+                None => Err(Refusal::ProtectedRef),
             }
         }
+    }
+}
+
+/// One branch of a push whose update the chat is refused for having no tip of its own on it
+/// ([`Refusal::NotYourBranch`]): what the ask in the window names, and what its Allow records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotYours {
+    pub host: String,
+    /// The lower-case repo path.
+    pub repo: String,
+    /// The forge's numeric id of the repo: the record's key.
+    pub repo_id: u64,
+    pub branch: String,
+}
+
+impl ChatPolicy {
+    /// **The branches a push is refused for** ([`Refusal::NotYourBranch`]): each update, in a
+    /// push to one of the chat's repos, of a branch that is not protected and that the chat has no
+    /// tip of its own on. Read the way [`Self::decide`] reads the push, from the request alone and
+    /// nothing a chat can add: a protected or default branch, a deploy or pages branch, a delete,
+    /// a tag, a branch the chat owns at another tip and a branch made are never in it, so none of
+    /// them raises an ask. Each branch once.
+    pub fn unowned_updates(&self, head: &RequestHead, body: &[u8]) -> Vec<NotYours> {
+        let (Some(method), Ok(host), Ok(target), Some(tips)) = (
+            request::method(head),
+            request::host(head),
+            request::parse_target(&head.target),
+            &self.tips,
+        ) else {
+            return Vec::new();
+        };
+        let candidates: Vec<&AllowedRepo> = self
+            .repos
+            .iter()
+            .filter(|r| r.serves(&host, head.port))
+            .collect();
+        let Some(first) = candidates.first() else {
+            return Vec::new();
+        };
+        let kind = first.kind;
+        let Some((repo_segments, GitOp::ReceivePack)) =
+            git::classify(method, &target.segments, &target)
+        else {
+            return Vec::new();
+        };
+        let Ok(path) = normalise_repo_path(kind, &repo_segments.join("/")) else {
+            return Vec::new();
+        };
+        let Some(repo) = candidates
+            .iter()
+            .filter(|r| r.kind == kind)
+            .find(|r| r.path == path)
+        else {
+            return Vec::new();
+        };
+        let (Some(repo_id), Ok(pushed)) = (repo.project_id, git::pushed_commands(body)) else {
+            return Vec::new();
+        };
+        let mut out: Vec<NotYours> = Vec::new();
+        for command in &pushed.commands {
+            let Some(branch) = command.name.strip_prefix("refs/heads/") else {
+                continue;
+            };
+            if command.create
+                || command.delete
+                || branch.is_empty()
+                || repo.protects(branch)
+                || tips(&repo.host, repo_id, branch).is_some()
+                || out.iter().any(|one| one.branch == branch)
+            {
+                continue;
+            }
+            out.push(NotYours {
+                host: repo.host.clone(),
+                repo: repo.path.clone(),
+                repo_id,
+                branch: branch.to_owned(),
+            });
+        }
+        out
     }
 }
 
@@ -1039,6 +1132,9 @@ impl ChatPolicy {
 /// protected, deleted or non-branch ref the most.
 fn push_severity(refusal: Refusal) -> u8 {
     match refusal {
+        // The only one the person may answer, so it is only ever the refusal of a push whose
+        // every other command is fine: any other refusal in the push is the push's.
+        Refusal::NotYourBranch => 0,
         Refusal::ReleaseOrTag => 1,
         Refusal::NoAdvertisement => 2,
         _ => 3,

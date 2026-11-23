@@ -20,6 +20,16 @@
 //! ([`look_at_clones`]) and no chat's, never one per clone and never trusted automatically. Each
 //! clone the person trusts ([`trust_this_clone`]) leaves it, and it goes with the last.
 //!
+//! **A chat's push to a branch it has no record of** is the second ([`Control::LetChatPush`],
+//! ADR 0128, amended 2026-11-23): an update to an existing, unprotected branch that no chat owns
+//! in the app's record, or another does (pushed before the route existed, by the person, a
+//! watcher or an ended chat), raises **Let this chat push it**. The person's **Allow** records
+//! the chat as the branch's owner at the tip the forge holds *when they press*, read as the
+//! person ([`let_chat_push`]), and from then on the tip rule applies as to any branch the chat
+//! made. **Keep blocked** ([`keep_push_blocked`]) leaves it refused for the chat's life, and the
+//! chat is not asked again. Never a protected, default, deploy or pages branch: those raise no
+//! ask. No chat, and not the CLI, can record an owner: only this press does.
+//!
 //! The refusals and the clones' ask are kept in memory alone, by project, as the tokens they
 //! stand in for are ([`crate::forge::apptoken`]): they are this run's, a chat's go when it ends
 //! ([`forget`]), and a project's when it ends ([`project_ended`]).
@@ -44,6 +54,20 @@ pub enum Control {
         /// `<host>/<owner>/<repo>`, the address it is trusted at.
         place: String,
     },
+    /// **Let this chat push a branch it has no record of** (ADR 0128, amended 2026-11-23): what
+    /// [`let_chat_push`] records, keyed as the created-branch record is
+    /// ([`crate::forge::createdbranches`]), by the chat's id, the forge's id of the repo and the
+    /// branch. The project is the ask's own, never part of what is pressed.
+    LetChatPush {
+        /// The id the route records the chat's pushes under.
+        chat: String,
+        host: String,
+        /// The lower-case repo path, for the person reading the ask.
+        repo: String,
+        /// The forge's numeric id of the repo.
+        repo_id: u64,
+        branch: String,
+    },
 }
 
 impl Control {
@@ -51,6 +75,7 @@ impl Control {
     pub fn label(&self) -> &'static str {
         match self {
             Self::TrustClone { .. } => TRUST_THIS_CLONE,
+            Self::LetChatPush { .. } => ALLOW,
         }
     }
 
@@ -61,9 +86,21 @@ impl Control {
                 "{TRUST_SO_CHATS_CAN_USE_GITHUB}: {folder} was not cloned by purlis, and its \
                  remote is {place}. Trust it only if you made this clone yourself."
             ),
+            Self::LetChatPush { repo, branch, .. } => format!(
+                "{branch} in {repo} is not a branch this chat made through purlis: nobody owns \
+                 it in purlis's record, or another chat does. Allow records this chat as its \
+                 owner at the commit the forge has on it when you press, so it can push \
+                 {branch} from there. Keep blocked leaves the push refused."
+            ),
         }
     }
 }
+
+/// The label of the control that lets a chat push a branch it has no record of.
+pub const ALLOW: &str = "Allow";
+
+/// The label of the answer that leaves such a push refused.
+pub const KEEP_BLOCKED: &str = "Keep blocked";
 
 /// The label of the control that trusts a clone made outside purlis.
 pub const TRUST_THIS_CLONE: &str = "Trust this clone";
@@ -86,6 +123,10 @@ type Told = Arc<dyn Fn() + Send + Sync>;
 
 /// Every refusal raised, over every project.
 static RAISED: Mutex<Vec<Refusal>> = Mutex::new(Vec::new());
+
+/// What the person **kept blocked**, by project and chat ([`keep_push_blocked`]): in memory, for
+/// the chat's life, so a chat refused again is not asked again.
+static KEPT: Mutex<Vec<(PathBuf, u32, Control)>> = Mutex::new(Vec::new());
 
 /// Who is told, by project, that its refusals moved ([`telling`]).
 static TOLD: Mutex<Vec<(PathBuf, Told)>> = Mutex::new(Vec::new());
@@ -135,14 +176,17 @@ pub fn asks(root: &Path) -> bool {
 pub fn raise(root: &Path, session: u32, control: Control) -> bool {
     let new = {
         let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
-        let Control::TrustClone { folder, .. } = &control;
-        raised.retain(|one| {
-            let Control::TrustClone { folder: theirs, .. } = &one.control;
-            !(one.root == root
-                && one.session == session
-                && theirs == folder
-                && one.control != control)
-        });
+        if let Control::TrustClone { folder, .. } = &control {
+            raised.retain(|one| {
+                let Control::TrustClone { folder: theirs, .. } = &one.control else {
+                    return true;
+                };
+                !(one.root == root
+                    && one.session == session
+                    && theirs == folder
+                    && one.control != control)
+            });
+        }
         let already = raised
             .iter()
             .any(|one| one.root == root && one.session == session && one.control == control);
@@ -187,8 +231,12 @@ fn pressed(root: &Path, control: &Control) {
     }
 }
 
-/// **Chat `session` of the project at `root` ended**: its refusals go with it.
+/// **Chat `session` of the project at `root` ended**: its refusals go with it, and what the
+/// person kept blocked for it.
 pub fn forget(root: &Path, session: u32) {
+    KEPT.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(at, one, _)| !(at == root && *one == session));
     let gone = {
         let mut raised = RAISED.lock().unwrap_or_else(|e| e.into_inner());
         let before = raised.len();
@@ -207,6 +255,9 @@ pub fn project_ended(root: &Path) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .retain(|one| one.root != root);
+    KEPT.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .retain(|(at, _, _)| at != root);
     UNRECORDED
         .lock()
         .unwrap_or_else(|e| e.into_inner())
@@ -252,6 +303,157 @@ pub fn trust_this_clone(
     );
     clone_trusted(root, folder);
     Ok(trusted)
+}
+
+/// **Whether the person kept `control` blocked for chat `session`** of the project at `root`: the
+/// route does not raise it again, and tells the chat so.
+pub fn is_kept_blocked(root: &Path, session: u32, control: &Control) -> bool {
+    KEPT.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|(at, one, kept)| at == root && *one == session && kept == control)
+}
+
+/// Whether `control` is waiting for `session` of the project at `root`.
+fn is_waiting(root: &Path, session: u32, control: &Control) -> bool {
+    RAISED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .any(|one| one.root == root && one.session == session && one.control == *control)
+}
+
+/// **The person's Keep blocked** on a Let this chat push ask: the ask goes, nothing is recorded,
+/// and it is not raised again for this chat. Refused unless the ask is waiting in this project
+/// for this chat.
+pub fn keep_push_blocked(root: &Path, session: u32, control: &Control) -> Result<(), String> {
+    if !matches!(control, Control::LetChatPush { .. }) || !is_waiting(root, session, control) {
+        return Err("This ask is not waiting any more.".to_owned());
+    }
+    KEPT.lock().unwrap_or_else(|e| e.into_inner()).push((
+        root.to_path_buf(),
+        session,
+        control.clone(),
+    ));
+    pressed(root, control);
+    Ok(())
+}
+
+/// **The person's Allow** on a Let this chat push ask (ADR 0128, amended 2026-11-23): records the
+/// chat as the owner of the branch at the tip `read_tip(host, repo, branch)` answers, **read from
+/// the forge as the person now** and never the chat's word, and clears the ask. From then on the
+/// tip rule applies as to a branch the chat made. Answers the tip recorded.
+///
+/// **Refused** (and nothing recorded) unless the ask is waiting for `session` in the project at
+/// `root`: the control is a key to an ask this process raised, so another project's ask, one that
+/// was answered, or one a chat made up grants nothing; unless the project has its stable id; and
+/// unless the forge answers a full commit id. The project in the record is `root`'s own. Like
+/// every provisioning act it takes the person's scope ([`HostScope`]), which no chat's process
+/// tree can claim.
+pub fn let_chat_push(
+    _host: &HostScope,
+    config_root: &Path,
+    root: &Path,
+    session: u32,
+    control: &Control,
+    read_tip: &dyn Fn(&str, &str, &str) -> Result<String, String>,
+) -> Result<String, String> {
+    let Control::LetChatPush {
+        chat,
+        host,
+        repo,
+        repo_id,
+        branch,
+    } = control
+    else {
+        return Err("This ask does not let a chat push.".to_owned());
+    };
+    if !is_waiting(root, session, control) {
+        return Err("This ask is not waiting any more.".to_owned());
+    }
+    let project_id = crate::scaffold::planefile::project_id(root).ok_or_else(|| {
+        "This project has no stored id, so a branch cannot be recorded.".to_owned()
+    })?;
+    let tip = read_tip(host, repo, branch)?;
+    if !crate::forge::createdbranches::is_commit_id(&tip) {
+        return Err(format!("The forge did not give a commit for {branch}."));
+    }
+    crate::forge::createdbranches::record(
+        config_root,
+        &project_id,
+        chat,
+        &[crate::forge::createdbranches::CreatedBranch {
+            host: host.clone(),
+            repo: repo.clone(),
+            repo_id: Some(*repo_id),
+            branch: branch.clone(),
+            tip: tip.clone(),
+        }],
+    )
+    .map_err(|why| format!("purlis could not record the branch: {why}"))?;
+    pressed(root, control);
+    Ok(tip)
+}
+
+/// **The route's ask to let a chat push a branch it has no record of**
+/// ([`crate::forge::proxy::BranchAsk`]) for one chat of one project: raises one ask per branch
+/// ([`Control::LetChatPush`], one per chat and branch however often it is refused), and says
+/// in git's output that it is waiting in the window. **Nothing here answers it**: only the
+/// person's press does ([`let_chat_push`], [`keep_push_blocked`]).
+pub struct PushAsks {
+    /// The project's folder.
+    pub root: PathBuf,
+    /// The id the route records this chat's pushes under.
+    pub chat: String,
+    /// The chat's session while it is open, read at each ask: a chat that has ended asks nothing.
+    pub session: Box<dyn Fn() -> Option<u32> + Send + Sync>,
+}
+
+impl crate::forge::proxy::BranchAsk for PushAsks {
+    fn ask(
+        &self,
+        _: &crate::forge::proxy::ChatId,
+        branches: &[crate::forge::proxy::NotYours],
+    ) -> Option<String> {
+        // `[policy] consents` decides whether a window-only refusal is raised (Q308b).
+        if !asks(&self.root) {
+            return None;
+        }
+        let session = (self.session)()?;
+        let mut waiting: Vec<&crate::forge::proxy::NotYours> = Vec::new();
+        let mut kept: Vec<&crate::forge::proxy::NotYours> = Vec::new();
+        for branch in branches {
+            let control = Control::LetChatPush {
+                chat: self.chat.clone(),
+                host: branch.host.clone(),
+                repo: branch.repo.clone(),
+                repo_id: branch.repo_id,
+                branch: branch.branch.clone(),
+            };
+            if is_kept_blocked(&self.root, session, &control) {
+                kept.push(branch);
+            } else {
+                raise(&self.root, session, control);
+                waiting.push(branch);
+            }
+        }
+        let names = |of: &[&crate::forge::proxy::NotYours]| match of {
+            [one] => format!("{} in {}", one.branch, one.repo),
+            _ => format!("{} branches", of.len()),
+        };
+        Some(if waiting.is_empty() {
+            format!(
+                "purlis: the person kept {} blocked for this chat; ask the person to push it",
+                names(&kept)
+            )
+        } else {
+            format!(
+                "purlis: an ask is waiting in the window to let this chat push {}; try the push \
+                 again after the person answers it",
+                names(&waiting)
+            )
+        })
+    }
 }
 
 /// The label of the one ask for the project's clones purlis has no record of (R-336).
