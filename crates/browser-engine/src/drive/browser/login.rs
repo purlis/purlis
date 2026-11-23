@@ -187,6 +187,9 @@ pub struct LoginEnded {
     pub outcome: Result<Answer, Refusal>,
 }
 
+/// How many times a login clears its sites, while a cookie is still found after (#7429).
+const CLEARING_TRIES: usize = 5;
+
 /// The pages held still while a login clears its sites and fills them, let go of as it's dropped.
 struct HeldStill<'a> {
     browser: &'a Browser,
@@ -673,23 +676,17 @@ impl Browser {
     }
 
     /// **Clears what the login's sites hold** (module docs): all that its origin and its page's,
-    /// where that's another's, store, and every cookie either would be sent. Read again after: one
-    /// that's still there is a failure.
+    /// where that's another's, store, and every cookie either would be sent. A cookie set by a
+    /// page before it was held still travels from its renderer to the engine's jar on its own
+    /// time, and may land after the clearing (#7429), so the clearing is repeated until the jar
+    /// holds none of them in a read that follows deleting them and a round trip into a page, at most
+    /// [`CLEARING_TRIES`] times. One still there after that is a failure.
     fn clear_sites(&self, target: &str, login: &Login) -> Result<(), String> {
         let session = self.page_session(target).map_err(|why| why.to_string())?;
         let on = Some(session.as_str());
         let origins: Vec<&str> = std::iter::once(login.origin.as_str())
             .chain(login.back_to.as_deref())
             .collect();
-        for origin in &origins {
-            self.devtools()
-                .call(
-                    "Storage.clearDataForOrigin",
-                    json!({ "origin": origin, "storageTypes": "all" }),
-                    on,
-                )
-                .map_err(|_| format!("what {origin} stores did not go"))?;
-        }
         let hosts: Vec<&str> = origins.iter().filter_map(|one| host_of(one)).collect();
         if hosts.len() != origins.len() {
             return Err("its address names no host".to_owned());
@@ -712,23 +709,44 @@ impl Browser {
                 .cloned()
                 .collect())
         };
-        for cookie in cookies()? {
-            let mut named = json!({
-                "name": cookie.get("name"),
-                "domain": cookie.get("domain"),
-                "path": cookie.get("path"),
-            });
-            if let Some(key) = cookie.get("partitionKey") {
-                named["partitionKey"] = key.clone();
+        for _ in 0..CLEARING_TRIES {
+            for origin in &origins {
+                self.devtools()
+                    .call(
+                        "Storage.clearDataForOrigin",
+                        json!({ "origin": origin, "storageTypes": "all" }),
+                        on,
+                    )
+                    .map_err(|_| format!("what {origin} stores did not go"))?;
             }
+            let left = cookies()?;
+            for cookie in &left {
+                let mut named = json!({
+                    "name": cookie.get("name"),
+                    "domain": cookie.get("domain"),
+                    "path": cookie.get("path"),
+                });
+                if let Some(key) = cookie.get("partitionKey") {
+                    named["partitionKey"] = key.clone();
+                }
+                self.devtools()
+                    .call("Network.deleteCookies", named, on)
+                    .map_err(|_| "a cookie of its did not go".to_owned())?;
+            }
+            // A round trip into a page, then the jar again: a write in flight lands in
+            // between, or not at all.
             self.devtools()
-                .call("Network.deleteCookies", named, on)
-                .map_err(|_| "a cookie of its did not go".to_owned())?;
+                .call(
+                    "Runtime.evaluate",
+                    json!({ "expression": "1", "returnByValue": true }),
+                    on,
+                )
+                .map_err(|_| "its cookies could not be read".to_owned())?;
+            if cookies()?.is_empty() {
+                return Ok(());
+            }
         }
-        if !cookies()?.is_empty() {
-            return Err("a cookie of its did not go".to_owned());
-        }
-        Ok(())
+        Err("a cookie of its did not go".to_owned())
     }
 
     /// Fills the user name where the page asks for one and the password, submits, and waits

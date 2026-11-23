@@ -102,6 +102,8 @@ enum Twist {
     HoldsCookies,
     /// Those cookies don't go when they're deleted (#5121).
     CookiesStay,
+    /// A cookie lands in the jar once, after the site was cleared and read empty (#7429).
+    CookieLandsLate,
     /// Its service workers can't be cleared (#5121).
     WorkersStay,
     /// Another page shows the login's site once it's cleared (#5272).
@@ -141,6 +143,7 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
     let typed = Arc::new(AtomicUsize::new(0));
     let reused = AtomicBool::new(false);
     let loads = AtomicUsize::new(0);
+    let reads_after_clearing = AtomicUsize::new(0);
     let navigated = |engine: &Engine, session: &str, loader: &str, url: &str| {
         let frame = session.trim_start_matches("S-");
         engine.emit(
@@ -229,6 +232,18 @@ fn as_a_login_form_that(engine: &Arc<Engine>, goes: bool, twist: Twist) -> Arc<A
                         { "name": "under", "domain": "under.fixture.test", "path": "/" },
                         { "name": "other", "domain": "other.test", "path": "/" }
                     ] })
+                }))
+            }
+            "Storage.getCookies"
+                if twist == Twist::CookieLandsLate
+                    && !engine.sent("Storage.clearDataForOrigin").is_empty() =>
+            {
+                let late = reads_after_clearing.fetch_add(1, Ordering::SeqCst) >= 1
+                    && engine.sent("Network.deleteCookies").is_empty();
+                Some(Ok(if late {
+                    json!({ "cookies": [{ "name": "earlier", "domain": "fixture.test", "path": "/" }] })
+                } else {
+                    json!({ "cookies": [] })
                 }))
             }
             "Storage.clearDataForOrigin" if twist == Twist::WorkersStay => {
@@ -1414,6 +1429,35 @@ fn a_cookie_that_will_not_go_fills_nothing() {
         "{}",
         ended_as(&ended.outcome)
     );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
+/// #7429: a cookie a held page wrote before it was held may land after the clearing; it's cleared
+/// again, and the login goes on once the jar stays empty.
+#[test]
+fn a_cookie_that_lands_after_the_clearing_is_cleared_again() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::CookieLandsLate);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let deleted: Vec<_> = engine
+        .sent("Network.deleteCookies")
+        .iter()
+        .map(|sent| sent.params["name"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(deleted, ["earlier"]);
+    assert_eq!(engine.sent("Storage.clearDataForOrigin").len(), 2);
+    assert_eq!(inserted(&engine).len(), 1, "and only then filled");
+}
+
+/// #7429: a cookie that keeps coming back is cleared a few times, then the login fails closed.
+#[test]
+fn a_cookie_that_keeps_coming_back_is_cleared_a_few_times_and_fills_nothing() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::CookiesStay);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))));
+    assert_eq!(engine.sent("Storage.clearDataForOrigin").len(), 5);
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
