@@ -31,7 +31,7 @@
 //! *task* made is the dispatching chat's to follow up after the task ends, so an update is also
 //! let through when the branch's recorded owner is a chat the pusher dispatched, directly or up
 //! the chain ([`tip_for`]), from the same tip rule: the old id is the recorded tip. **The link is
-//! the app's own dispatch record** ([`crate::dispatchrecord`], which no chat can write), never a
+//! the app's own dispatch record** ([`crate::dispatchrecord`], which no sandboxed chat can write), never a
 //! session record or any file a chat writes; where the record shows no such link the update is
 //! refused. **The confirmed push is then recorded under the pusher** ([`record`]'s one line,
 //! which makes the last line the dispatcher's): the task, if it still runs, is no longer the
