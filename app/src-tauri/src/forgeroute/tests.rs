@@ -282,13 +282,15 @@ impl Notices for FakeNotices {
 struct FakePairing {
     paired: RunnerPeer,
     runs: Mutex<HashMap<String, PathBuf>>,
+    /// The one chat the runner is paired for; none serves any chat.
+    chat: Mutex<Option<String>>,
 }
 impl RunnerLink for FakePairing {
     fn paired(&self, peer: &RunnerPeer) -> bool {
         *peer == self.paired
     }
-    fn project_of(&self, peer: &RunnerPeer, run: &str) -> Option<PathBuf> {
-        (*peer == self.paired)
+    fn project_of(&self, peer: &RunnerPeer, chat: &str, run: &str) -> Option<PathBuf> {
+        (*peer == self.paired && lock(&self.chat).as_deref().is_none_or(|own| own == chat))
             .then(|| lock(&self.runs).get(run).cloned())
             .flatten()
     }
@@ -348,6 +350,7 @@ impl Scene {
         let pairing = Arc::new(FakePairing {
             paired: runner(),
             runs: Mutex::new(HashMap::new()),
+            chat: Mutex::new(None),
         });
         recorded.record(
             "/p/one",
@@ -1448,6 +1451,110 @@ fn an_unpaired_caller_or_a_run_the_pairing_does_not_know_is_refused_and_no_route
 
     assert!(!scene.routes.is_live("job-1") && !scene.routes.is_live("job-404"));
     assert_eq!(scene.listener.alive.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn a_paired_runner_of_one_chat_asking_as_another_is_refused_and_no_route_is_made() {
+    let scene = Scene::new();
+    lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+    *lock(&scene.pairing.chat) = Some("chat-x".to_owned());
+
+    let other = scene.routes.for_runner(&runner(), "chat-y", "job-1");
+    assert!(matches!(other, RunnerForward::Refused), "{other:?}");
+    assert!(!scene.routes.is_live("job-1"));
+
+    let own = scene.routes.for_runner(&runner(), "chat-x", "job-1");
+    assert!(matches!(own, RunnerForward::Desktop(_)), "{own:?}");
+}
+
+#[test]
+fn a_run_live_for_a_desktop_chat_or_another_peer_is_not_taken_over_by_a_runner() {
+    let scene = Scene::new();
+    lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+    lock(&scene.pairing.runs).insert("job-2".to_owned(), PathBuf::from("/p/one"));
+
+    // A desktop chat's run: the runner asking for its id is refused, and the route stays.
+    let desktop = scene
+        .routes
+        .start("chat-d", "job-1", Path::new("/p/one"))
+        .unwrap()
+        .expect("a route");
+    let taken = scene.routes.for_runner(&runner(), "chat-9", "job-1");
+    assert!(matches!(taken, RunnerForward::Refused), "{taken:?}");
+    assert!(scene.routes.is_live("job-1"));
+    assert!(matches!(
+        comment(&scene, "job-1", &desktop.sentinel),
+        Outcome::Forward(_)
+    ));
+
+    // Another peer's run, held live by a route of its own device.
+    scene
+        .routes
+        .start_for(
+            "chat-o",
+            "job-2",
+            Path::new("/p/one"),
+            Some("runner-2".to_owned()),
+            None,
+        )
+        .unwrap();
+    let taken = scene.routes.for_runner(&runner(), "chat-9", "job-2");
+    assert!(matches!(taken, RunnerForward::Refused), "{taken:?}");
+    scene.routes.stop_peer("runner-2");
+    assert!(!scene.routes.is_live("job-2"));
+
+    // Its own run, asked again, replaces its own route.
+    let first = scene.routes.for_runner(&runner(), "chat-9", "job-2");
+    assert!(matches!(first, RunnerForward::Desktop(_)), "{first:?}");
+    let again = scene.routes.for_runner(&runner(), "chat-9", "job-2");
+    assert!(matches!(again, RunnerForward::Desktop(_)), "{again:?}");
+}
+
+#[test]
+fn two_peers_asking_for_one_run_at_once_leave_it_to_exactly_one() {
+    // The check of who owns a run and the insert of its route are one step under `starting`: of
+    // two peers starting the same run together, one makes the route and the other finds it taken,
+    // and the route that stays is the winner's. Without the lock both pass the check.
+    for _ in 0..25 {
+        let scene = Scene::new();
+        lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+        let barrier = std::sync::Barrier::new(2);
+        let outcomes: Vec<(&str, bool)> = std::thread::scope(|scope| {
+            let routes = &scene.routes;
+            let barrier = &barrier;
+            ["runner-a", "runner-b"]
+                .into_iter()
+                .map(|device| {
+                    scope.spawn(move || {
+                        barrier.wait();
+                        let started = routes
+                            .start_for(
+                                "chat-9",
+                                "job-1",
+                                Path::new("/p/one"),
+                                Some(device.to_owned()),
+                                None,
+                            )
+                            .unwrap();
+                        (device, matches!(started, Started::Route(Some(_))))
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect()
+        });
+        let made: Vec<&str> = outcomes
+            .iter()
+            .filter(|(_, made)| *made)
+            .map(|(device, _)| *device)
+            .collect();
+        assert_eq!(made.len(), 1, "{outcomes:?}");
+        assert_eq!(
+            scene.routes.live().get("job-1").unwrap().peer.as_deref(),
+            Some(made[0])
+        );
+    }
 }
 
 #[test]
