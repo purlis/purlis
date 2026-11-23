@@ -11,8 +11,10 @@
 //! - **The project is the pairing's, never the caller's.** Only a chat's fresh runner records one
 //!   (the checkout its chat started from, [`purlis_core::runners::FreshOf::root`]), and only
 //!   while that checkout still holds the project the row names, by id (as `FreshOf::is_of` holds
-//!   it): a project moved away or replaced at the same path names none. A pool's own runner
-//!   serves any project's chats, so no pairing names one: it is refused, and its chats keep
+//!   it): a project moved away names none, and one replaced at the same path names none **only
+//!   where it holds a stored `[project] id`**; with none stored, `id_to_hold_by` is a hash of the
+//!   path, which a replacement at that path shares. A known limit, the same as
+//!   `FreshOf::is_of`'s. A pool's own runner serves any project's chats, so no pairing names one: it is refused, and its chats keep
 //!   their token connections. A fresh runner's row with no checkout (written before it) is
 //!   refused the same way.
 //! - **The chat is the pairing's too.** A fresh runner is its one chat's, so it is served for
@@ -88,7 +90,8 @@ fn read_store(config: &Path) -> Vec<Pairing> {
     }
     for kept in runners::fresh_runners(config).unwrap_or_default() {
         // The checkout counts only while it still holds the project the row names, by id: a
-        // row outlives a project moved away, or one replaced at the same path.
+        // row outlives a project moved away, or (with a stored `[project] id`) one replaced at
+        // the same path. With none stored the id is a path hash: a known limit, as in `is_of`.
         let project = kept.of.as_ref().and_then(|of| {
             let root = Path::new(of.root.as_deref()?);
             (purlis_core::scaffold::planefile::id_to_hold_by(root).ok()? == of.plane)

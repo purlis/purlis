@@ -686,9 +686,31 @@ pub struct ForgeRoutes {
     root: PathBuf,
     helper_exe: PathBuf,
     seams: Seams,
+    /// Held for the whole of [`Self::start_for`], so the check of who a run belongs to and the
+    /// insert of its route are one step. **Lock order: `starting`, then `live`, then
+    /// `sessions`.** Nothing under it starts a route (the seams are called, none re-enter), and
+    /// `stop` and the others never take it.
+    starting: Mutex<()>,
     live: Mutex<HashMap<String, Live>>,
     sessions: Arc<Mutex<Sessions>>,
     told: Arc<Mutex<Told>>,
+}
+
+/// How a start ended: it made a route (or had nothing to proxy), or the run was another owner's.
+enum Started {
+    Route(Option<RouteParams>),
+    /// A runner asked for a run live for another peer or a desktop chat: nothing was changed.
+    Taken,
+}
+
+impl Started {
+    /// The route made. A start with no peer never finds its run taken, so `Taken` is `None`.
+    fn into_route(self) -> Option<RouteParams> {
+        match self {
+            Self::Route(params) => params,
+            Self::Taken => None,
+        }
+    }
 }
 
 impl ForgeRoutes {
@@ -702,6 +724,7 @@ impl ForgeRoutes {
             root,
             helper_exe,
             seams,
+            starting: Mutex::new(()),
             live: Mutex::new(HashMap::new()),
             sessions: Arc::new(Mutex::new(Sessions::default())),
             told: Arc::new(Mutex::new(Told::new())),
@@ -725,6 +748,7 @@ impl ForgeRoutes {
     /// nothing else is stopped for it. An error leaves nothing behind.
     pub fn start(&self, chat: &str, run: &str, project: &Path) -> io::Result<Option<RouteParams>> {
         self.start_for(chat, run, project, None, None)
+            .map(Started::into_route)
     }
 
     fn start_for(
@@ -734,7 +758,21 @@ impl ForgeRoutes {
         project: &Path,
         peer: Option<String>,
         chain: Option<&str>,
-    ) -> io::Result<Option<RouteParams>> {
+    ) -> io::Result<Started> {
+        // One start at a time: the check below and the insert at the end are atomic against
+        // another start, so two peers asking for one run cannot both pass the check.
+        let _starting = self.starting.lock().unwrap_or_else(PoisonError::into_inner);
+        // **A runner never takes another route**: a run live for another peer or a desktop chat
+        // is refused before anything of it is stopped.
+        if let Some(device) = peer.as_deref() {
+            let taken = self
+                .live()
+                .get(run)
+                .is_some_and(|live| live.peer.as_deref() != Some(device));
+            if taken {
+                return Ok(Started::Taken);
+            }
+        }
         // The same run starting again replaces its route, or ends it where nothing is recorded
         // now: the old sentinel stops working either way.
         self.stop(run);
@@ -743,7 +781,7 @@ impl ForgeRoutes {
         // administrator pinned, and its authority is made for no name of it.
         let repos = self.unpinned(project, pin.as_ref());
         if repos.is_empty() {
-            return Ok(None);
+            return Ok(Started::Route(None));
         }
         ensure_root(&self.root)?;
         let run_dir = make_run_dir(&self.root)?;
@@ -901,7 +939,7 @@ impl ForgeRoutes {
                 relay,
             },
         );
-        Ok(Some(params))
+        Ok(Started::Route(Some(params)))
     }
 
     /// A start holding its route until it is committed: stopped if the start returns early.
@@ -913,7 +951,7 @@ impl ForgeRoutes {
         chain: Option<&str>,
     ) -> RouteGuard<'_> {
         let params = match self.start_for(chat, run, project, None, chain) {
-            Ok(params) => params,
+            Ok(started) => started.into_route(),
             Err(refused) => {
                 tracing::warn!("purlis: the forge route of a chat did not start ({refused})");
                 None
@@ -1081,12 +1119,14 @@ impl ForgeRoutes {
     }
 
     /// A runner's chat run, forwarded to this app's proxy (D9). **Only a runner paired with
-    /// this desktop is served**, and the project is the pairing's record of the run, never the
-    /// caller's word: an unpaired caller, a chat the pairing does not name for that runner, or a
-    /// run the pairing does not know, is refused. **A runner never takes another route**: a
-    /// `run` already live for another peer or for a desktop chat is refused, so a runner cannot
-    /// stop or replace it (a run of the same peer starting again replaces its own route). Its
-    /// route stops with [`Self::stop`] or [`Self::stop_peer`].
+    /// this desktop is served**, and the project is the link's record of the run, never the
+    /// caller's word. The link ([`RunnerLink`]) refuses an unpaired caller, a chat the pairing
+    /// does not name for that runner, and a project it has none for; it knows no runs, so a
+    /// `run` it has no project for is refused only by being unnamed. **A runner never takes
+    /// another route**: `start_for` refuses, under its lock, a `run` already live for another
+    /// peer or for a desktop chat, so a runner cannot stop or replace it (a run of the same peer
+    /// starting again replaces its own route). Its route stops with [`Self::stop`] or
+    /// [`Self::stop_peer`].
     pub fn for_runner(&self, peer: &RunnerPeer, chat: &str, run: &str) -> RunnerForward {
         if !self.seams.runner_link.paired(peer) {
             return RunnerForward::Refused;
@@ -1094,13 +1134,6 @@ impl ForgeRoutes {
         let Some(project) = self.seams.runner_link.project_of(peer, chat, run) else {
             return RunnerForward::Refused;
         };
-        let taken = self
-            .live()
-            .get(run)
-            .is_some_and(|live| live.peer.as_deref() != Some(peer.device.as_str()));
-        if taken {
-            return RunnerForward::Refused;
-        }
         // A project whose every repo is on a pinned forge keeps no token connection either: the
         // pin is the administrator's, and the runner's chat is refused, not left to its tokens.
         let pin = (self.seams.pin)(&project);
@@ -1117,8 +1150,9 @@ impl ForgeRoutes {
             // A runner's chat carries no record of its chain here, so its merges are held.
             Some(&purlis_core::enforcement::Resolved::strict().spelled()),
         ) {
-            Ok(Some(params)) => RunnerForward::Desktop(params),
-            Ok(None) | Err(_) => RunnerForward::TokenConnections,
+            Ok(Started::Route(Some(params))) => RunnerForward::Desktop(params),
+            Ok(Started::Taken) => RunnerForward::Refused,
+            Ok(Started::Route(None)) | Err(_) => RunnerForward::TokenConnections,
         }
     }
 

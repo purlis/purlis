@@ -14,7 +14,9 @@ It is installed by `forgeroute::install` and reads the machine store on each ask
 - **The project is the pairing's.** Only a chat's fresh runner records one, the checkout its chat
   started from, and **by id**: the checkout counts only while it still holds the project the row
   names (`planefile::id_to_hold_by` equals the row's plane, as `FreshOf::is_of` holds it), so a
-  project moved away or replaced at the same path names none. A pool's own runner serves any
+  project moved away names none, and one replaced at the same path names none only when the
+  project holds a stored `[project] id`. For a project with none, `id_to_hold_by` is a hash of
+  the path, which a replacement shares: a known limit, the same one `FreshOf::is_of` has. A pool's own runner serves any
   project, so it names none and `for_runner` refuses it: its chats keep their token connections.
   A fresh runner's row with no checkout is refused the same way.
 - **The chat is the pairing's.** A fresh runner is its one chat's: `RunnerLink::project_of` takes
@@ -30,3 +32,9 @@ It is installed by `forgeroute::install` and reads the machine store on each ask
 Nothing calls `for_runner` yet. **The channel is still not built**: the forwarded-request message
 on ADR 0078's link, and Open item 11's confirmation against ADR 0078, stay open. No wire format and
 no store changed, so there is no new tier.
+
+## Open for the wiring slice
+
+- **No cap on routes per peer.** A paired runner may start a route for each run the link names
+  for it, and each holds a listener, a folder and a relay until `stop` or `stop_peer`. The wiring
+  slice decides a limit before anything calls `for_runner`.

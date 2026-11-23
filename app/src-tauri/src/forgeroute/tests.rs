@@ -1511,6 +1511,53 @@ fn a_run_live_for_a_desktop_chat_or_another_peer_is_not_taken_over_by_a_runner()
 }
 
 #[test]
+fn two_peers_asking_for_one_run_at_once_leave_it_to_exactly_one() {
+    // The check of who owns a run and the insert of its route are one step under `starting`: of
+    // two peers starting the same run together, one makes the route and the other finds it taken,
+    // and the route that stays is the winner's. Without the lock both pass the check.
+    for _ in 0..25 {
+        let scene = Scene::new();
+        lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+        let barrier = std::sync::Barrier::new(2);
+        let outcomes: Vec<(&str, bool)> = std::thread::scope(|scope| {
+            let routes = &scene.routes;
+            let barrier = &barrier;
+            ["runner-a", "runner-b"]
+                .into_iter()
+                .map(|device| {
+                    scope.spawn(move || {
+                        barrier.wait();
+                        let started = routes
+                            .start_for(
+                                "chat-9",
+                                "job-1",
+                                Path::new("/p/one"),
+                                Some(device.to_owned()),
+                                None,
+                            )
+                            .unwrap();
+                        (device, matches!(started, Started::Route(Some(_))))
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect()
+        });
+        let made: Vec<&str> = outcomes
+            .iter()
+            .filter(|(_, made)| *made)
+            .map(|(device, _)| *device)
+            .collect();
+        assert_eq!(made.len(), 1, "{outcomes:?}");
+        assert_eq!(
+            scene.routes.live().get("job-1").unwrap().peer.as_deref(),
+            Some(made[0])
+        );
+    }
+}
+
+#[test]
 fn a_paired_runner_with_nothing_to_proxy_or_no_proxy_keeps_token_connections() {
     let scene = Scene::new();
     lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/none"));
