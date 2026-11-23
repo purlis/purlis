@@ -48,7 +48,8 @@
 //! 2026-11-05): before the browser is held to the login, every page showing those sites goes blank
 //! and every other page is held still until the login answers, as nothing else could put back what
 //! goes. A page is held once each document in it has said it is frozen, not once the engine took the
-//! request, and one that has not said so in time fails the login before anything is cleared. Once it's held, and before anything is filled, all
+//! request, and one that has not said so in time fails the login before anything is cleared, except a blank page no page opened,
+//! which holds nothing and is closed instead. Once it's held, and before anything is filled, all
 //! they store is gone (the cookies they would be sent, a parent domain's too, their service workers, local storage, IndexedDB and caches), and the login's page
 //! loads in a new tab of its own, past the browser's HTTP cache, which has no way to clear one site.
 //! Where that can't be done, nothing is filled. Other sites are left as they are. A page that asks
@@ -81,9 +82,9 @@ use super::super::kept::Kept;
 use super::super::keys::key_events;
 use super::super::scrub::SHORTEST_SCRUBBED;
 use super::super::tree::NodeKey;
-use super::Browser;
 use super::fill::{GUARD_FIELD, too_short_to_keep_out};
 use super::takeover::Carrying;
+use super::{Browser, takes_the_origin_around};
 use crate::cdp::CallError;
 use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
@@ -98,6 +99,11 @@ const LOOK_AGAIN: Duration = Duration::from_millis(250);
 /// A busy runner can take seconds to answer a page it has just frozen or thawed, and a read that
 /// does not come back is asked again, so this bounds one ask and not the wait.
 const HELD_READ_WITHIN: Duration = Duration::from_secs(3);
+
+/// How long a blank page may go without saying it is frozen before it is closed instead: the
+/// engine tells the documents it freezes, and a document that is not told (a blank page, one with
+/// nothing in it to tell) never says. A third of the login's time at most.
+const FREEZE_GRACE: Duration = Duration::from_secs(3);
 
 /// How long, in all, a login waits for the pages it held to say they run again as it answers.
 const RELEASE_WITHIN: Duration = Duration::from_secs(5);
@@ -716,6 +722,37 @@ impl Browser {
         }
     }
 
+    /// Whether `page` is a blank page no page opened, every frame of it blank: it shows nothing
+    /// of anyone's (no document, and none written into it by an opener), so closing it loses
+    /// nothing. An address says only so much, so a page that has an opener is never one.
+    fn nothing_to_keep(&self, page: &str) -> bool {
+        let state = lock(&self.inner.state);
+        state.page(page).is_some_and(|page| {
+            let top = page
+                .frames
+                .get(&page.target)
+                .map_or(page.url.as_str(), |top| top.url.as_str());
+            page.opener.is_none()
+                && takes_the_origin_around(top)
+                && page
+                    .frames
+                    .values()
+                    .all(|frame| takes_the_origin_around(&frame.url))
+        })
+    }
+
+    /// Closes `page`, and waits until the engine says it is gone.
+    fn close_page(&self, page: &str) -> Result<(), String> {
+        let wont = || "a page of this browser would not close".to_owned();
+        self.devtools()
+            .call("Target.closeTarget", json!({ "targetId": page }), None)
+            .map_err(|_| wont())?;
+        self.wait_until(self.inner.limits.login_within, 1, || {
+            Ok(!self.targets().contains(page))
+        })
+        .map_err(|_| wont())
+    }
+
     /// Arms every frame of `page` to say when it is frozen ([`ARM_FREEZE_WATCH`]). A frame that
     /// cannot be armed is left unarmed, which [`Self::confirm_held_still`] refuses.
     fn arm_freeze_watch(&self, page: &str) {
@@ -791,10 +828,18 @@ impl Browser {
     /// since, and no page is let run again once sites may be cleared.
     fn confirm_held_still(&self, still: &HeldStill<'_>, first_new: usize) -> Result<(), String> {
         let not_held = || "a page of this browser did not stay held still".to_owned();
-        let deadline = Instant::now() + self.inner.limits.login_within;
+        let started = Instant::now();
+        let deadline = started + self.inner.limits.login_within;
+        let grace = (self.inner.limits.login_within / 3).min(FREEZE_GRACE);
         loop {
             let mut waiting = Vec::new();
+            let mut nothing_to_keep = Vec::new();
             for (at, (page, session)) in still.pages.iter().enumerate() {
+                // A page that is gone runs nothing: closed, crashed or ended, it is as held as
+                // one can be.
+                if !self.targets().contains(page) {
+                    continue;
+                }
                 let frames = self.frames_of(page);
                 let states: Vec<Held> = frames
                     .iter()
@@ -817,12 +862,32 @@ impl Browser {
                 {
                     return Err(not_held());
                 }
+                // A blank page that has not said it is frozen by now never will: its document
+                // is not one the engine tells, and it holds nothing of anyone's. It is closed,
+                // which is the engine's own word that nothing of it runs. Any other page that
+                // has not said so keeps being asked, and fails the login at the deadline.
+                if at >= first_new && started.elapsed() >= grace && self.nothing_to_keep(page) {
+                    nothing_to_keep.push(page);
+                    continue;
+                }
                 waiting.push((page, session, states.contains(&Held::Unarmed)));
+            }
+            for page in nothing_to_keep {
+                self.close_page(page)?;
             }
             if waiting.is_empty() {
                 return Ok(());
             }
             if Instant::now() >= deadline {
+                // What kind of page it was, never its address.
+                for (page, _, _) in &waiting {
+                    let (frames, blank) = (self.frames_of(page).len(), self.nothing_to_keep(page));
+                    tracing::warn!(
+                        frames,
+                        blank,
+                        "a page of this browser did not say it was frozen in time"
+                    );
+                }
                 return Err(not_held());
             }
             for (page, session, unarmed) in waiting {

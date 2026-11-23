@@ -1604,6 +1604,64 @@ fn a_page_that_runs_again_while_the_sites_are_cleared_fails_the_login() {
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
+/// A blank page, which the engine takes the request to freeze for and never tells it is frozen
+/// (a document nothing was armed in), has nothing to keep: it is closed, and the login goes on
+/// once it is gone. Nothing is cleared while it is there (#5272).
+#[test]
+fn a_blank_page_the_engine_never_says_is_frozen_is_closed_before_anything_is_cleared() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    engine.emit(
+        "Target.targetCreated",
+        json!({"targetInfo":{"targetId":"PAGE-6","type":"page","title":"","url":"about:blank","attached":false}}),
+        None,
+    );
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.freezing.silent.insert("S-PAGE-6".to_owned());
+        model.freezing.closing_ends_pages = true;
+    }
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(ended.outcome.is_ok(), "{}", ended_as(&ended.outcome));
+    let all = super::super::lock(&engine.sent).clone();
+    let closed = all
+        .iter()
+        .position(|sent| sent.method == "Target.closeTarget" && sent.params["targetId"] == "PAGE-6")
+        .expect("the blank page was closed");
+    let cleared = all
+        .iter()
+        .position(|sent| sent.method == "Storage.clearDataForOrigin")
+        .expect("cleared");
+    assert!(closed < cleared, "closed at {closed}, cleared at {cleared}");
+}
+
+/// A page of another site that never says it is frozen is not closed to make the login go: it
+/// may be the person's, and it may take the browser to the login's site. The login fails, and
+/// the page is still there (#5272).
+#[test]
+fn a_page_of_another_site_that_never_says_it_is_frozen_is_left_open_and_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form(&engine, true);
+    super::super::lock(&engine.model)
+        .freezing
+        .silent
+        .insert("S-PAGE-1".to_owned());
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(
+        engine.sent("Target.closeTarget").is_empty(),
+        "nothing closed"
+    );
+    assert!(engine.sent("Storage.clearDataForOrigin").is_empty());
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
 /// A page of another site is left as it was (#5272): the engine thaws it later than it says, and
 /// the login answers only once the page runs again, so what the person reads next is a page that
 /// runs.

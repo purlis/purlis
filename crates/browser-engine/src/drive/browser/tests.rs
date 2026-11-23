@@ -132,6 +132,11 @@ struct Freezing {
     lag: u32,
     /// Whether the freeze never takes effect.
     never: bool,
+    /// The sessions of pages the engine never tells they are frozen, though it takes the
+    /// request: a kind of page whose documents do not hear of it. The rest freeze as asked.
+    silent: std::collections::HashSet<String>,
+    /// Whether a page asked to close is gone at once, as the engine's event says.
+    closing_ends_pages: bool,
     /// Whether the pages run again once the login's sites are cleared.
     thaws_when_cleared: bool,
     /// The sessions asked to freeze, and how often each was read since.
@@ -541,6 +546,16 @@ impl Engine {
                 };
                 Ok(json!({"result":{"type":"string","value":lie}}))
             }
+            // A page closed is gone, as the engine says once it is, where a test says so.
+            "Target.closeTarget" if super::lock(&self.model).freezing.closing_ends_pages => {
+                let target = p["targetId"].as_str().unwrap_or_default().to_owned();
+                self.emit(
+                    "Target.targetDestroyed",
+                    json!({ "targetId": target }),
+                    None,
+                );
+                Ok(json!({ "success": true }))
+            }
             "Page.setWebLifecycleState" => {
                 let mut model = super::lock(&self.model);
                 let session = on.unwrap_or_default().to_owned();
@@ -572,7 +587,9 @@ impl Engine {
                     other => other,
                 };
                 let frozen = match freezing.asked.get_mut(page) {
-                    Some(reads) if !freezing.never && !thawed => {
+                    Some(reads)
+                        if !freezing.never && !thawed && !freezing.silent.contains(page) =>
+                    {
                         *reads += 1;
                         *reads > freezing.lag
                     }
