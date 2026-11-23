@@ -45,6 +45,8 @@ pub mod limits;
 pub mod locality;
 pub mod organisation;
 pub mod press;
+pub mod resolver;
+pub mod sandbox_rules;
 pub mod selfchange;
 
 use cedar_policy::{
@@ -840,7 +842,15 @@ pub fn load(files: &[File<'_>]) -> Result<Policy, Vec<Problem>> {
     if !problems.is_empty() {
         return Err(problems);
     }
-    assemble(rules).map_err(|problem| vec![problem])
+    let policy = assemble(rules).map_err(|problem| vec![problem])?;
+    // A rule on a sandbox action that names `attended` or `harness_mode`, or uses `like`, is
+    // refused here, naming it (M75-22, spec §11.3): a fixed profile cannot follow any of them.
+    let named = policy.sandbox_names_problems();
+    if named.is_empty() {
+        Ok(policy)
+    } else {
+        Err(named)
+    }
 }
 
 /// The policy `rules` make, each `@id` held once.

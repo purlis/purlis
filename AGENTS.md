@@ -231,3 +231,8 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
 - The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
   registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
   unreadable outside the app.
+- The sandbox compile (M75-22) is `policy/sandbox_rules.rs` (Cedar TPE; `compile`, `terms_of`) over
+  `policy/resolver.rs` (the one path resolver). TPE writes `a != b` as `!(a == b)`, so a residual
+  reader must take both. Its tests are lib tests: `cargo test -p purlis-core --lib --
+  policy::sandbox_rules` (about 10 s warm). `load` refuses `attended`, `harness_mode` and `like`
+  on a sandbox action; the residual subset is `Policy::sandbox_problems` and the start's.
