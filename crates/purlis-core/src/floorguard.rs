@@ -508,7 +508,20 @@ fn may_read(text: &str) -> bool {
 pub const MAX_DEPTH: usize = crate::guardcaps::MAX_COMMAND_DEPTH;
 
 /// [`release_floor_reason`] at `depth` commands in.
+///
+/// Inside backticks the shell turns `\$` into `$`, so what the lexer kept as an escaped dollar is
+/// an expansion in the substitution it runs (#7423): where the line as written is let through,
+/// it is read as that shell reads it too. A refusal of the line as written is the one said.
 pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
+    let said = floor_as_written(cmd, unattended, depth);
+    if said.is_some() || !unattended || depth > MAX_DEPTH {
+        return said;
+    }
+    unescape_backtick_bodies(cmd).and_then(|unescaped| floor(&unescaped, unattended, depth + 1))
+}
+
+/// [`floor`] of the line as written.
+fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
     if !unattended {
         return None;
     }
@@ -848,6 +861,38 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     None
 }
 
+/// `text` with each backtick substitution's body as the shell reads it: a backslash before `$`,
+/// a backtick or another backslash is dropped. A backtick opens or closes a body unless a
+/// backslash stands before it, as [`shellseg::unbacktick`] pairs them. `None` where nothing
+/// changes.
+fn unescape_backtick_bodies(text: &str) -> Option<String> {
+    if !text.contains('`') || !text.contains('\\') {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let (mut inside, mut changed) = (false, false);
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '`' && (i == 0 || chars[i - 1] != '\\') {
+            inside = !inside;
+        } else if inside
+            && c == '\\'
+            && let Some(&next) = chars.get(i + 1)
+            && matches!(next, '$' | '`' | '\\')
+        {
+            out.push(next);
+            changed = true;
+            i += 2;
+            continue;
+        }
+        out.push(c);
+        i += 1;
+    }
+    changed.then_some(out)
+}
+
 /// `text` as the inner shell reads what a double-quoted string left it: a backslash before `$`,
 /// a backtick, `"` or another backslash is dropped.
 fn unescape_double_quoted(text: &str) -> String {
@@ -882,25 +927,42 @@ fn segment_reason(
     // (#1355).
     // A redirection with its descriptor and target, and zsh's `-` precommand (repeated, or after
     // assignments and wrappers), are no part of the command: read it without them first
-    // (#7423). The words left have none of either, so this runs once.
-    // Every redirection goes, the ones that read too until the noun and verb are placed: the
-    // heredoc or here-string they open is read below from the words as written. A digit before an operator is a descriptor only
-    // when it is attached (`2>`), which the lexer does not keep, so both readings are made.
-    for digit_fd in [true, false] {
-        let (plain, _) = merge::plain_words_with(
-            toks,
-            None,
-            merge::Reading {
-                digit_fd,
-                drop_dash: true,
-                reads_kept_late: true,
-            },
-        );
-        if plain.len() != toks.len()
-            && !plain.is_empty()
-            && let Some(said) = segment_reason(&plain, cmd, unattended, depth, a_shell_reads_stdin)
-        {
-            return Some(said);
+    // (#7423). The lexer keeps neither which digit is a descriptor (`2>` against `nice -n 5 >f`)
+    // nor which `-` is a precommand (`env -u -`), and a redirection that reads can stand before
+    // the program as well as in a heredoc's place, so the words are read each way, and the
+    // segment is refused if any reading is. A reading no different from the words, or from one
+    // already read, is not read again.
+    if toks
+        .iter()
+        .any(|w| w == "-" || shellwrap::is_redirection(w))
+    {
+        let mut read: Vec<Vec<String>> = Vec::new();
+        for reads in [merge::Reads::Late, merge::Reads::Kept] {
+            for digit_fd in [true, false] {
+                for drop_dash in [true, false] {
+                    for value_after_flag in [false, true] {
+                        let (plain, _) = merge::plain_words_with(
+                            toks,
+                            None,
+                            merge::Reading {
+                                digit_fd,
+                                drop_dash,
+                                value_after_flag,
+                                reads,
+                            },
+                        );
+                        if plain.len() != toks.len() && !plain.is_empty() && !read.contains(&plain)
+                        {
+                            read.push(plain);
+                        }
+                    }
+                }
+            }
+        }
+        for plain in &read {
+            if let Some(said) = segment_reason(plain, cmd, unattended, depth, a_shell_reads_stdin) {
+                return Some(said);
+            }
         }
     }
     let (prog, env, argv) = shellwrap::split_env(toks);
@@ -936,6 +998,21 @@ fn segment_reason(
         && let Some(said) = token::keychain_read_reason(&prog, &argv)
     {
         return Some(said);
+    }
+    // zsh expands a word that begins with `=` to a program's path before any wrapper runs, so
+    // `env =gh pr merge 5` runs `gh`, though the wrapper's own rule reads `=gh` as an assignment
+    // (#7423): the word, with what follows it, is the command.
+    if let Some(at) = env.iter().position(|e| e.starts_with('=') && e.len() > 1) {
+        let toks: Vec<String> = env[..at]
+            .iter()
+            .cloned()
+            .chain(std::iter::once(env[at][1..].to_owned()))
+            .chain(env[at + 1..].iter().cloned())
+            .chain(argv.iter().cloned())
+            .collect();
+        if let Some(said) = segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin) {
+            return Some(said);
+        }
     }
     // zsh reads `=gh` as the path of `gh`, so it is that program (#7131).
     if let Some(named) = prog.strip_prefix('=').filter(|named| !named.is_empty()) {

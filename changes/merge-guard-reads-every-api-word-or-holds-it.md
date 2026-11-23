@@ -19,4 +19,8 @@
   is an early warning, not the boundary: the forge route is, under `guards.merge = enforce`.
   The refusal says to write the endpoint out, or to use one double-quoted word with a literal
   start; for a held glob it names the character (`?`, `*` or `[`) and says to quote the whole
-  word (#7423).
+  word. A redirection before the program or after `-R o/r`, a wrapper's numeric or quoted option
+  value (`nice -n 5 </dev/null 2>&1 gh …`, `env -u '<' gh >/dev/null …`), several option values, an
+  `alias set` with a redirection or stdin, zsh's `env =gh` and `sudo =gh`, a program word the shell
+  fills in before `api`, and an escaped `\$` inside backticks are read, each way the lexer's
+  split allows, and held (#7423).

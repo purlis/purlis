@@ -553,3 +553,204 @@ fn sixty_thousand_references_to_one_digit_variable_are_read_in_time() {
         "60,000 references took {took:?}"
     );
 }
+
+/// Round 5, regression A: a wrapper's numeric option value (`nice -n 5`) is no descriptor, and an
+/// input redirection before the program is no part of the command, whichever way the lexer's split
+/// of `2>` is read. Round three held every one of these.
+#[test]
+fn a_numeric_option_value_and_redirections_before_the_program_are_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "nice -n 5 </dev/null 2>&1 gh pr merge 5",
+        "nice -n 5 </dev/null gh 2>&1 pr merge 5",
+        "nice -n 5 <<<x 2>/dev/null gh pr merge 5",
+        "nice -n 5 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "nice -n 5 </dev/null 2>/dev/null glab mr merge 5",
+        "nice -n 5 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+        "ionice -c 2 </dev/null 2>&1 gh pr merge 5",
+        "ionice -c 2 </dev/null gh 2>&1 pr merge 5",
+        "ionice -c 2 <<<x 2>/dev/null gh pr merge 5",
+        "ionice -c 2 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "ionice -c 2 </dev/null 2>/dev/null glab mr merge 5",
+        "ionice -c 2 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+        "env -u 2 </dev/null 2>&1 gh pr merge 5",
+        "env -u 2 </dev/null gh 2>&1 pr merge 5",
+        "env -u 2 <<<x 2>/dev/null gh pr merge 5",
+        "env -u 2 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "env -u 2 </dev/null 2>/dev/null glab mr merge 5",
+        "env -u 2 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+        "stdbuf -o 0 </dev/null 2>&1 gh pr merge 5",
+        "stdbuf -o 0 </dev/null gh 2>&1 pr merge 5",
+        "stdbuf -o 0 <<<x 2>/dev/null gh pr merge 5",
+        "stdbuf -o 0 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "stdbuf -o 0 </dev/null 2>/dev/null glab mr merge 5",
+        "stdbuf -o 0 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+        "caffeinate -t 5 </dev/null 2>&1 gh pr merge 5",
+        "caffeinate -t 5 </dev/null gh 2>&1 pr merge 5",
+        "caffeinate -t 5 <<<x 2>/dev/null gh pr merge 5",
+        "caffeinate -t 5 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "caffeinate -t 5 </dev/null 2>/dev/null glab mr merge 5",
+        "caffeinate -t 5 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+        "sudo -u 0 </dev/null 2>&1 gh pr merge 5",
+        "sudo -u 0 </dev/null gh 2>&1 pr merge 5",
+        "sudo -u 0 <<<x 2>/dev/null gh pr merge 5",
+        "sudo -u 0 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "sudo -u 0 </dev/null 2>/dev/null glab mr merge 5",
+        "sudo -u 0 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+        "chrt -f 5 </dev/null 2>&1 gh pr merge 5",
+        "chrt -f 5 </dev/null gh 2>&1 pr merge 5",
+        "chrt -f 5 <<<x 2>/dev/null gh pr merge 5",
+        "chrt -f 5 </dev/null 2>&1 gh api -X PUT repos/o/r/pulls/5/merge",
+        "chrt -f 5 </dev/null 2>/dev/null glab mr merge 5",
+        "chrt -f 5 </dev/null 2>&1 sh -c 'gh pr merge 5'",
+    ]);
+}
+
+/// Round 5, regression B: a quoted `<` that is a wrapper option's value is a word, not an operator
+/// that takes the program for its target.
+#[test]
+fn a_quoted_operator_as_a_wrappers_option_value_is_a_word_and_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "env -u '<' gh >/dev/null pr merge 5",
+        "env -u '<' gh 2>&1 pr merge 5",
+        "env -u '<<<' gh >/dev/null pr merge 5",
+        "exec -a '<' gh >/dev/null pr merge 5",
+        "sudo -u '<' gh 2>/dev/null pr merge 5",
+        "env -C '<' gh 2>/dev/null pr merge 5",
+        "env -u '<' gh >/dev/null api -X PUT repos/o/r/pulls/5/merge",
+        "env -u '<' sh >/dev/null -c 'gh pr merge 5'",
+        "- env -u '<' gh pr merge 5",
+    ]);
+}
+
+/// Round 5, sibling 1: the value of `-R o/r` is no noun or verb, so a redirection before the verb
+/// is stripped wherever it stands.
+#[test]
+fn a_redirection_after_the_repo_flag_stands_in_no_word_count() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh -R o/r pr </dev/null merge 5",
+        "gh pr -R o/r </dev/null merge 5",
+        "gh pr --repo o/r <<<x merge 5",
+        "gh pr -R o/r {fd}</dev/null merge 5",
+        "glab mr -R o/r </dev/null merge 5",
+        "glab -R o/r mr </dev/null merge 5",
+    ]);
+}
+
+/// Round 5, sibling 2: the words are counted from where the program really is, past every option
+/// value of the wrappers in front of it.
+#[test]
+fn a_wrapper_with_several_option_values_places_the_program_where_it_is() {
+    purlis_core::unsteered!();
+    held(&[
+        "env -u A -u B gh </dev/null pr merge 5",
+        "sudo -u root -g wheel gh </dev/null pr merge 5",
+        "timeout -s KILL 5 gh </dev/null pr merge 5",
+        "env -C /tmp -u A gh </dev/null pr merge 5",
+        "env -u A -u B gh </dev/null api -X PUT repos/o/r/pulls/5/merge",
+        "env -u A -u B gh <<'EOF' api graphql --input -\n{\"query\":\"mutation { mergePullRequest(input:{pullRequestId:\\\"x\\\"}) { clientMutationId } }\"}\nEOF",
+        "sudo -u root -g wheel gh <<'EOF' api graphql --input -\n{\"query\":\"mutation { mergePullRequest(input:{pullRequestId:\\\"x\\\"}) { clientMutationId } }\"}\nEOF",
+        "timeout -s KILL 5 gh <<'EOF' api graphql --input -\n{\"query\":\"mutation { mergePullRequest(input:{pullRequestId:\\\"x\\\"}) { clientMutationId } }\"}\nEOF",
+        "env -C /tmp -u A gh <<'EOF' api graphql --input -\n{\"query\":\"mutation { mergePullRequest(input:{pullRequestId:\\\"x\\\"}) { clientMutationId } }\"}\nEOF",
+    ]);
+}
+
+/// Round 5, sibling 3: a redirection is no alias name or expansion, and a `-` reads the stdin it
+/// feeds.
+#[test]
+fn an_alias_set_with_a_redirection_or_stdin_is_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "gh alias set </dev/null m 'pr merge'",
+        "gh alias set m <<<x 'pr merge'",
+        "gh alias set m - <<<'pr merge'",
+        "gh alias set m - <<'EOF'\npr merge\nEOF",
+    ]);
+}
+
+/// Round 5, sibling 4: one segment can have a `-` that is zsh's precommand and another that is a
+/// value, a digit that is a value and another that is a descriptor.
+#[test]
+fn a_dash_or_a_digit_that_is_an_option_value_and_a_redirection_together_are_held() {
+    purlis_core::unsteered!();
+    held(&[
+        "env -u - gh 2>/dev/null pr merge 5",
+        "env -u - gh >/dev/null pr merge 5",
+        "env -u - gh pr 2>/dev/null merge 5",
+        "env -u - gh 2>/dev/null api -X PUT repos/o/r/pulls/5/merge",
+        "- env -u - gh pr merge 5",
+        "nice -n 5 >/dev/null gh 2>/dev/null pr merge 5",
+        "nice -n 5 >/dev/null gh 2>/dev/null api repos/o/r/pulls/5/merge $F",
+        "- env -u - gh api repos/o/r/pulls/5/merge $F",
+    ]);
+}
+
+/// Round 5, sibling 5: a program word that is `=gh`, an expansion, or behind a wrapper or an
+/// assignment is a forge CLI that could run `api`; zsh expands `=gh` before `env` or `sudo` runs it.
+#[test]
+fn a_forge_program_the_reader_does_not_place_is_held_before_a_shell_filled_api_argument() {
+    purlis_core::unsteered!();
+    held(&[
+        "=gh api repos/o/r/pulls/5/merge $F",
+        "=glab api projects/:id/merge_requests/5/merge $F",
+        "$G api repos/o/r/pulls/5/merge $F",
+        "${GH:-gh} api repos/o/r/pulls/5/merge $F",
+        "\"$(which gh)\" api repos/o/r/pulls/5/merge $F",
+        "env $G api repos/o/r/pulls/5/merge $F",
+        "command $G api repos/o/r/pulls/5/merge $F",
+        "noglob $G api repos/o/r/pulls/5/merge $F",
+        "X=1 $G api repos/o/r/pulls/5/merge $F",
+        "env =gh api repos/o/r/pulls/5/merge $F",
+        "env =gh pr merge 5",
+        "sudo =gh pr merge 5",
+        "=gh pr merge 5",
+    ]);
+}
+
+/// Round 5, sibling 6: inside backticks the shell turns `\$` into `$`, in a command, an assignment
+/// and an unquoted heredoc body.
+#[test]
+fn a_backtick_substitution_turns_an_escaped_dollar_into_an_expansion() {
+    purlis_core::unsteered!();
+    held(&[
+        "echo `gh api repos/o/r/pulls/5/merge \\$F`",
+        "x=`gh api repos/o/r/pulls/5/merge \\$F`",
+        "cat <<EOF\n`gh api repos/o/r/pulls/5/merge \\$F`\nEOF",
+        "cat <<EOF\nx=`gh api repos/o/r/pulls/5/merge \\$F`\nEOF",
+    ]);
+}
+
+/// Round 5: the readings made to hold the shapes above hold nothing that reads.
+#[test]
+fn the_reads_the_round_five_readings_could_swallow_still_pass() {
+    purlis_core::unsteered!();
+    passes(&[
+        "gh pr view 5",
+        "gh pr list --state open",
+        "gh api repos/o/r/pulls/5",
+        "gh api \"repos/o/r/pulls?state=open\"",
+        "gh api repos/o/r/pulls?state=open",
+        "gh run view 123 --log",
+        "gh pr checks 5",
+        "glab mr view 5",
+        "gh api repos/o/r/actions/runs --jq '.workflow_runs[0].id'",
+        "gh pr -R o/r view 5",
+        "bash -c \"gh pr view \\$N\"",
+        "gh pr view 5 2>/dev/null",
+        "gh pr view 5 2>&1 | head",
+        "gh pr list 2>&1 | head",
+        "$EDITOR file",
+        "nice -n 5 </dev/null 2>&1 gh pr view 5",
+        "env -u - gh 2>/dev/null pr view 5",
+        "env -u '<' gh >/dev/null pr view 5",
+        "env -u A -u B gh </dev/null pr view 5",
+        "gh pr -R o/r </dev/null view 5",
+        "gh alias set </dev/null m 'pr view'",
+        "env =gh pr view 5",
+        "=gh pr view 5",
+        "echo `gh api repos/o/r/pulls/5`",
+        "sudo =gh pr list",
+    ]);
+}
