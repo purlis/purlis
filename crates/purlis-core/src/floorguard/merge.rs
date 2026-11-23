@@ -29,6 +29,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 use crate::shellseg;
+use crate::shellwrap;
 
 /// The sentence a refusal of a merge or an auto-merge setting ends with.
 pub(super) const MERGES: &str =
@@ -781,6 +782,172 @@ fn with_digit_variables(endpoint: &str, cmd: &str, fill: &str) -> String {
     })
     .into_owned()
 }
+
+/// How the shell may fill in one word of a call (see [`shell_filled_api_reason`]).
+#[derive(PartialEq, Eq)]
+enum Fill {
+    /// No expansion that could add a word or begin a flag.
+    Nothing,
+    /// An expansion outside quotes, or one the scan could not close: it may add words.
+    Unquoted,
+    /// An expansion inside double quotes that begins the word, or follows a `-`: one word, but it
+    /// may be a flag.
+    Flag,
+}
+
+/// What the shell may fill in of `word`, as the source spells it, quotes and all. A variable the
+/// line binds to digits is read as `0` ([`with_digit_variables`]).
+fn fill_of(word: &str, cmd: &str) -> Fill {
+    let word = with_digit_variables(word, cmd, "0");
+    let chars: Vec<char> = word.chars().collect();
+    let (mut single, mut double) = (false, false);
+    let mut prefix = String::new();
+    let mut flag = false;
+    let mut seen = false;
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let next = chars.get(i + 1).copied();
+        if single {
+            single = c != '\'';
+            if !seen && single {
+                prefix.push(c);
+            }
+            i += 1;
+            continue;
+        }
+        match c {
+            '\\' => {
+                if !seen {
+                    prefix.extend(next);
+                }
+                i += 2;
+            }
+            '\'' if !double => {
+                single = true;
+                i += 1;
+            }
+            '"' => {
+                double = !double;
+                i += 1;
+            }
+            '`' => return Fill::Unquoted,
+            '$' if next.is_some_and(|n| n.is_ascii_alphanumeric() || "_{(@*?#$!-".contains(n)) => {
+                if !double {
+                    return Fill::Unquoted;
+                }
+                if !seen {
+                    flag = prefix.is_empty() || prefix.starts_with('-');
+                    seen = true;
+                }
+                // Past the expansion, so its own quotes do not turn this scan's.
+                i += 1;
+                match chars.get(i) {
+                    Some(&open @ ('(' | '{')) => {
+                        let close = if open == '(' { ')' } else { '}' };
+                        let mut depth = 0usize;
+                        let mut end = None;
+                        for (at, &ch) in chars.iter().enumerate().skip(i) {
+                            if ch == open {
+                                depth += 1;
+                            } else if ch == close {
+                                depth -= 1;
+                                if depth == 0 {
+                                    end = Some(at);
+                                    break;
+                                }
+                            }
+                        }
+                        match end {
+                            Some(at) => i = at + 1,
+                            None => return Fill::Unquoted,
+                        }
+                    }
+                    Some(ch) if ch.is_ascii_alphanumeric() || *ch == '_' => {
+                        while chars
+                            .get(i)
+                            .is_some_and(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+                        {
+                            i += 1;
+                        }
+                    }
+                    _ => i += 1,
+                }
+            }
+            _ => {
+                if !seen {
+                    prefix.push(c);
+                }
+                i += 1;
+            }
+        }
+    }
+    if single || double {
+        Fill::Unquoted
+    } else if flag {
+        Fill::Flag
+    } else {
+        Fill::Nothing
+    }
+}
+
+/// **A `gh api` / `glab api` call whose arguments the shell fills in** (#7416), read or not. An
+/// unquoted `$…`, `$(…)` or backtick may add words, and a word that begins with an expansion, or
+/// follows a `-` with one, may be a flag: `gh api repos/o/r/pulls/5/merge $(cat n)` merges when
+/// `n` holds `-XPUT`, and a merge request's title or a user's bio can hold it. A variable the
+/// line binds to digits, and a quoted expansion after a literal prefix that is no flag, are one
+/// word that is no flag, and pass.
+///
+/// `own` and `source` are one segment's [`crate::shellseg::Reading::own`] and
+/// [`crate::shellseg::Reading::own_source`]: the source has the quotes `own` has lost.
+pub(super) fn shell_filled_api_reason(
+    own: &[String],
+    source: &[String],
+    cmd: &str,
+) -> Option<String> {
+    let (prog, ..) = shellwrap::split_env(own);
+    let name = shellwrap::base_lower(&prog);
+    if name != "gh" && name != "glab" {
+        return None;
+    }
+    let at = own.iter().position(|w| *w == prog)?;
+    let after = &own[at + 1..];
+    let api = forge_words(after)
+        .first()
+        .filter(|(_, w)| *w == "api")
+        .map(|(i, _)| at + 1 + i + 1)?;
+    let mut target = false;
+    for (i, word) in own.iter().enumerate().skip(api) {
+        // A redirection's target is no argument: the shell opens it, or refuses it as ambiguous.
+        if std::mem::take(&mut target) {
+            continue;
+        }
+        if shellwrap::is_redirection(word) {
+            target = true;
+            continue;
+        }
+        // A word the line did not measure is read as it came, as if unquoted.
+        let fill = match source.get(i).filter(|s| !s.is_empty()) {
+            Some(spelled) => fill_of(spelled, cmd),
+            None if word.contains(['$', '`']) => Fill::Unquoted,
+            None => Fill::Nothing,
+        };
+        let why = match fill {
+            Fill::Nothing => continue,
+            Fill::Unquoted => "which may split it into more words",
+            Fill::Flag => "which could be a flag, such as the method",
+        };
+        return Some(format!(
+            "{UNREADABLE} The argument `{word}` is filled in by the shell, {why}. {FILLED_IN_WAY_OUT}"
+        ));
+    }
+    None
+}
+
+/// What a refusal of a shell-filled `gh api` argument says to do.
+const FILLED_IN_WAY_OUT: &str = "Write the endpoint out, or put the shell-filled part inside \
+     double quotes after a literal start of the same word (`\"repos/o/r/pulls/$N/comments\"`), \
+     so it is one word that cannot be a flag.";
 
 /// True when a path is a repository or project itself, whose settings include auto-merge.
 fn is_repository(segs: &[String]) -> bool {

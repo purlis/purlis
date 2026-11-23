@@ -528,6 +528,12 @@ fn redirect_re() -> &'static Regex {
     ONCE.get_or_init(|| anchored(&REDIRECTIONS))
 }
 
+/// Whether a whole token is a redirection operator (`>`, `2>>`, `<`), whose next token is its
+/// target and no argument of the command.
+pub fn is_redirection(tok: &str) -> bool {
+    redirect_re().is_match(tok)
+}
+
 /// `_REDIRECT_READ_RE`: the same, for the redirections that open a path FOR READING.
 fn redirect_read_re() -> &'static Regex {
     static ONCE: OnceLock<Regex> = OnceLock::new();

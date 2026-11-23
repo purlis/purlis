@@ -721,6 +721,7 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // text: a body line that is read as commands merely as bash 3.2's hedge (a `)` in a
     // quoted-substitution's heredoc body) is held for a literal merge by the segments above,
     // never for "could print any command" (#7131, the ruling on the large commit body).
+    let mut filled = None;
     for reading in shellseg::segment_readings(&lines)
         .into_iter()
         .filter(|_| !reading_a_hedge())
@@ -738,6 +739,11 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                     ));
                 }
             }
+        }
+        // A forge API call whose arguments the shell fills in, read or not (#7416). Said after
+        // the segments' own reasons, which name more.
+        if filled.is_none() {
+            filled = merge::shell_filled_api_reason(&reading.own, &reading.own_source, cmd);
         }
         let (prog, ..) = shellwrap::split_env(&reading.own);
         if program_built_by_the_shell(&prog) {
@@ -767,6 +773,9 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         if said.is_some() {
             return said;
         }
+    }
+    if let Some(why) = filled {
+        return Some(format!("{fix}{why}"));
     }
     // The hedged lines' own segments, and the substitutions on each line (the outer `$( … )`
     // steps over a quoted body, so `echo "$(gh pr merge 7)"` in one is found line by line).
