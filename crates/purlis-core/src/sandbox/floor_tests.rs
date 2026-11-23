@@ -2724,15 +2724,15 @@ fn the_socket_and_localhost_holds_lift_only_for_a_pressed_ports_off_and_purlis_o
 /// off and enforced** (#7105, T1.1-53's template canary): a TCP connect to 127.0.0.1 and one to
 /// this machine's own non-loopback address, from inside each profile applied for real, to a
 /// listener of this process on every address. With `ports` enforced both are refused. With it
-/// off, loopback is let through by design (`EVERY_LOCAL`) and this machine's own address must
-/// still be refused: the scenario canary dials it there, on the claim that the wrap refuses it.
-/// The failure says what each of the four dials came to, so one macOS run tells which case holds:
-/// a refusal of the own address (the canary is right), or `localhost:*` taking this machine's own
-/// addresses with it (ports off reaches every service this machine listens on, by its address).
+/// off, loopback is let through by design (`EVERY_LOCAL`) and so is this machine's own address:
+/// Seatbelt's `localhost:*` cannot tell them apart (measured on macos-15, job 137402800500). That
+/// is no new grant: a service bound to every address is reachable on loopback anyway, and `ports`
+/// off already lets a chat reach this machine's services; the scenario canary therefore dials an
+/// address that is not this machine's. The failure says what each of the four dials came to.
 /// CI's `macos-sandbox-tests` runs it; it skips where a profile cannot be applied.
 #[cfg(target_os = "macos")]
 #[test]
-fn a_chat_with_ports_off_is_refused_this_machines_own_address_though_loopback_is_let_through() {
+fn a_chat_with_ports_off_reaches_this_machines_own_address_as_it_does_loopback_on_macos() {
     let can_apply =
         crate::forklock::status(std::process::Command::new(backend::SANDBOX_EXEC).args([
             "-p",
@@ -2824,11 +2824,12 @@ else { print "refused ", $! + 0 }
         "with ports off, loopback is let through by design\n{said}"
     );
     assert_eq!(
-        off_own, "refused 1",
-        "with ports off, this machine's own address is still refused\n{said}"
+        off_own, "reached",
+        "with ports off, this machine's own address is reached as loopback is: Seatbelt's \
+         `localhost:*` cannot tell them apart\n{said}"
     );
     drop(listener);
-    crate::secrets::test_really_ran("ports-off-refuses-this-machines-own-address");
+    crate::secrets::test_really_ran("ports-off-reaches-this-machines-own-address");
 }
 
 /// **Under a pressed `ports = "off"`, a chat reaches another program's socket and none of

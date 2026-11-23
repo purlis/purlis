@@ -989,37 +989,20 @@ pub(crate) fn canary_script(
     })
 }
 
-/// **Where the canary's direct dial goes** under a template that lifts local reach.
-///
-/// A `ports` family that is off lets a chat connect to every port of this machine's loopback
-/// (#7105: `EVERY_LOCAL`, `(remote ip "localhost:*")`), so a dial to 127.0.0.1 gets through by
-/// design and proves nothing about the wrap. The dial then goes to this machine's own address on
-/// its outbound interface, which that lift does not name and the wrap still refuses. Where
-/// `ports` is enforced, loopback is refused and stays the target. A machine with no address but
-/// loopback has no such target, and the canary is red, never green.
-pub(crate) fn canary_target(ports_off: bool) -> Result<std::net::IpAddr, String> {
-    use std::net::{IpAddr, Ipv4Addr, UdpSocket};
-    if !ports_off {
-        return Ok(IpAddr::V4(Ipv4Addr::LOCALHOST));
+/// **Where the canary's direct dial goes.** Where `ports` is enforced, loopback: refused, and a
+/// listener there sees an unwrapped dial arrive. Where it is off (`watch`, `hold`, `open`), a
+/// chat reaches every port of loopback **and of this machine's own addresses** (on macOS,
+/// Seatbelt's `localhost:*` cannot tell them apart; #7105), so a dial to either proves nothing
+/// about the wrap. The dial then goes to an address that is not this machine, TEST-NET-1
+/// (192.0.2.1, never routed), which the wrap refuses on every OS. No listener can stand there, so
+/// the dial's proof is curl's own refusal (exit 7, [`judge_canary`]) and not a dial seen.
+pub(crate) fn canary_target(ports_off: bool) -> std::net::IpAddr {
+    use std::net::{IpAddr, Ipv4Addr};
+    if ports_off {
+        IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1))
+    } else {
+        IpAddr::V4(Ipv4Addr::LOCALHOST)
     }
-    // A UDP connect sends nothing: it only asks the routing table which address would be used
-    // (192.0.2.0/24 is TEST-NET-1, never routed).
-    UdpSocket::bind("0.0.0.0:0")
-        .and_then(|socket| {
-            socket.connect("192.0.2.1:9")?;
-            socket.local_addr()
-        })
-        .map(|address| address.ip())
-        .map_err(|why| format!("no address of this machine but loopback to dial: {why}"))
-        .and_then(|ip| {
-            if ip.is_loopback() || ip.is_unspecified() {
-                Err(format!(
-                    "no address of this machine but loopback to dial: {ip}"
-                ))
-            } else {
-                Ok(ip)
-            }
-        })
 }
 
 /// A listener and the connections it has accepted: one per scenario, so two scenarios running at
@@ -1053,35 +1036,37 @@ impl Scenario {
         let ports_off = super::host::resolved_under(self.template, &self.root)
             .mode(purlis_core::enforcement::Family::Ports)
             == purlis_core::enforcement::Mode::Off;
-        let target = canary_target(ports_off).expect("the canary's target");
-        // Bound on every address when the target is not loopback, so a dial to it arrives.
-        let listener = TcpListener::bind(if target.is_loopback() {
-            "127.0.0.1:0"
-        } else {
-            "0.0.0.0:0"
-        })
-        .expect("the canary's listener");
+        let target = canary_target(ports_off);
+        // The listener stands on loopback: it is the target's only where the target is loopback.
+        let listener = TcpListener::bind("127.0.0.1:0").expect("the canary's listener");
         listener.set_nonblocking(true).expect("non-blocking");
-        let port = listener.local_addr().expect("its address").port();
+        let port = if target.is_loopback() {
+            listener.local_addr().expect("its address").port()
+        } else {
+            9
+        };
         let mut dials = Dials {
             listener,
             accepted: 0,
         };
 
         // The positive controls, from this process, outside any wrap: it can write there and
-        // dial there, so a refusal below is the wrap's.
+        // (to loopback) dial there, so a refusal below is the wrap's.
         let control = outside.join("written-by-the-test");
         std::fs::write(&control, "control").expect("the control write is allowed");
-        TcpStream::connect((target, port)).expect("the control dial is allowed");
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while dials.count() == 0 {
-            assert!(
-                Instant::now() < deadline,
-                "the canary's listener never saw its own control dial"
-            );
-            std::thread::sleep(Duration::from_millis(10));
+        let mut controls = 0;
+        if target.is_loopback() {
+            TcpStream::connect((target, port)).expect("the control dial is allowed");
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while dials.count() == 0 {
+                assert!(
+                    Instant::now() < deadline,
+                    "the canary's listener never saw its own control dial"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            controls = dials.count();
         }
-        let controls = dials.count();
 
         let chat = self.starts(&canary_script(&file, target, port));
         self.until_played(chat, &["canary-write", "canary-connect"]);

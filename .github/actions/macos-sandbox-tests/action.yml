@@ -57,9 +57,9 @@ runs:
       shell: bash
       run: |
         rm -rf target/tests-that-really-ran
-        tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::floor_tests::under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own sandbox::floor_tests::a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pressed sandbox::floor_tests::a_chat_with_ports_off_is_refused_this_machines_own_address_though_loopback_is_let_through
+        tools/tests-ran.sh -- cargo test --locked -p purlis-core --lib -- sandbox::floor_tests::under_a_pressed_ports_off_a_chat_reaches_another_programs_socket_and_none_of_purlis_own sandbox::floor_tests::a_purlis_socket_moved_at_the_plain_floor_is_not_reached_once_ports_off_is_pressed sandbox::floor_tests::a_chat_with_ports_off_reaches_this_machines_own_address_as_it_does_loopback_on_macos
         test -f target/tests-that-really-ran/ports-off-holds-purlis-own-sockets || { echo "::error::the ports-off socket test did not really run"; exit 1; }
-        test -f target/tests-that-really-ran/ports-off-refuses-this-machines-own-address || { echo "::error::the ports-off own-address test did not really run"; exit 1; }
+        test -f target/tests-that-really-ran/ports-off-reaches-this-machines-own-address || { echo "::error::the ports-off own-address test did not really run"; exit 1; }
         test -f target/tests-that-really-ran/a-moved-purlis-socket-stays-held || { echo "::error::the moved-socket test did not really run"; exit 1; }
     # A wrapped chat's ssh under its own line for real (#5897): its route's `ProxyCommand`, this
     # build's `purlis _ssh-proxy`, runs inside Seatbelt and reaches the chat's SOCKS port; a

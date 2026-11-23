@@ -1377,9 +1377,8 @@ fn a_python_urllib_refusal_in_a_scenario_is_a_black_hole_until_6675_is_fixed() {
 }
 
 /// **The canary's dial does not go where a template lifts reach** (#7105): where `ports` is
-/// enforced it is loopback, and where it is off (`watch`, `hold`, `open`) it is an address of this
-/// machine that `localhost:*` does not name. It is still a dial the canary sees: an unwrapped
-/// connect to it arrives, so the canary goes red when the wrap is off.
+/// enforced it is loopback, and where it is off (`watch`, `hold`, `open`) it is an address that
+/// is not this machine's, which the wrap refuses on every OS.
 #[test]
 fn the_canary_dials_what_the_template_still_refuses() {
     use purlis_core::enforcement::{Family, Mode};
@@ -1387,16 +1386,10 @@ fn the_canary_dials_what_the_template_still_refuses() {
         let off = super::host::resolved_under(template, std::path::Path::new("/nonexistent"))
             .mode(Family::Ports)
             == Mode::Off;
-        let Ok(target) = checks::canary_target(off) else {
-            assert!(off, "{}: loopback is always there", template.word());
-            return; // a machine with no address but loopback: CI's
-        };
+        let target = checks::canary_target(off);
         assert_eq!(target.is_loopback(), !off, "{}: {target}", template.word());
         if off {
-            let listener = std::net::TcpListener::bind("0.0.0.0:0").expect("a listener");
-            let port = listener.local_addr().expect("address").port();
-            std::net::TcpStream::connect((target, port))
-                .expect("unwrapped, a dial to the target arrives");
+            assert_eq!(target.to_string(), "192.0.2.1", "{}", template.word());
         }
     }
 }
