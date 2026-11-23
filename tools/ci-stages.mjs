@@ -23,28 +23,44 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { MERGE_GROUP, PULL_REQUEST, evaluate, jobsOf } from "./ci-push-jobs.mjs";
+import { pullRequestPathsOf } from "./ci-scope.mjs";
+
+/** The shortest reason, in characters, that can say why: a label such as "path-filtered" cannot. */
+export const MIN_REASON = 40;
 
 /**
- * The workflows that run on a pull request and not in the queue, each with why. Each is a check of
- * one area, started by a path filter, and none of them is a job of the `ci` run the queue makes:
- * a pull request that touches the area gets it, and the queue never repeats it. That is a gap in
- * the rule that predates it, listed so a new one is a choice. A listing the workflow outgrows
- * (it gains a `merge_group` trigger, or is deleted) is refused.
+ * The workflows kept on pull requests alone **on purpose**, each with why (#7420). Every other
+ * workflow a pull request starts by `paths:` runs in the queue too, on the paths of its own
+ * filter (`workflow-scope`, below). A workflow is listed here only when a queue run would add
+ * nothing a pull request's run, `main`'s or the nightly's does not, or has nothing to run on:
+ *
+ * - it reports and gates nothing (`continue-on-error`, or a dry run of a publish);
+ * - the paths it watches are its own, so no other change can break it between a pull request's
+ *   run and the queue's;
+ * - what it needs is not a merge group's: a label, a model's paid answer.
+ *
+ * A listing the workflow outgrows (it gains a `merge_group` trigger, or is deleted) is refused,
+ * and so is a reason too short to be one (`MIN_REASON`).
  */
 export const PR_ONLY = {
-  "artifact-isolation.yml": "path-filtered probe of the artifact isolation; also runs by hand",
-  "codeql.yml": "code scanning on the pull request's branch; it also runs weekly and on main",
-  "docker-pool-hosts.yml": "path-filtered check of the Docker pool hosts; also runs nightly",
-  "image-leftovers.yml": "path-filtered check of the image clean-up tool; also runs nightly",
-  "one-login-e2e.yml": "path-filtered end-to-end check of the one login; also runs by hand",
-  "one-login-proxy-listener.yml": "path-filtered check of the proxy listener; also runs by hand",
-  "one-login-proxy-spike.yml": "path-filtered spike of the proxy; also runs by hand",
-  "operator-image.yml": "path-filtered build of the operator image; also called by other workflows",
-  "operator.yml": "path-filtered check of the operator workspace; also runs nightly and on main",
-  "runner-image.yml": "path-filtered build of the runner image; also called by other workflows",
-  "skill-grades.yml": "path-filtered grading of the skills; also runs nightly",
-  "stories-baselines.yml": "starts on a label, to commit the baselines a pull request's stories drew",
-  "stress.yml": "path-filtered stress run; also runs nightly and on main",
+  "artifact-isolation.yml":
+    "an informational probe (continue-on-error) of three operating systems that gates nothing, on paths no other change touches: a queue run would hold a macOS and a Windows runner for no check",
+  "codeql.yml":
+    "its alerts belong to the pull request's branch and to main's own scan after the merge (it also runs weekly); a merge group's branch is not one code scanning reports on",
+  "image-leftovers.yml":
+    "a report of what a failed run left in the registry, kept continue-on-error so it gates nothing; the tool's own tests run in the queue's ci run, and the report runs nightly",
+  "one-login-proxy-spike.yml":
+    "the spike's own tests/one-login-spike tree and nothing else starts it, so no sibling can break it between a pull request's run and the queue's, and it gates no shipped code",
+  "operator-image.yml":
+    "a dry run of the operator image's publish, whose real run is main's, called by operator.yml after its checks pass; the queue's operator.yml run covers what the build reads",
+  "runner-image.yml":
+    "a dry run of the runner image's publish, whose real run is the release's call; nothing is published from a pull request, and the queue's ci run builds what the image holds",
+  "skill-grades.yml":
+    "it grades the skills with a paid model's answers, from an environment's keys that carry a spend limit; it runs nightly, and a queue run would spend them on every merge",
+  "stories-baselines.yml":
+    "it starts on a label, to commit the baselines a pull request's stories drew: a merge group has no labels and no pull request branch to commit to",
+  "stress.yml":
+    "the one job a pull request runs is a timing measurement at 300,000 files that a shared queue runner would make flaky; main's push and the nightly record the rest",
 };
 
 /** The events a workflow triggers on, from its `on:` block. */
@@ -64,6 +80,10 @@ export function triggersOf(text) {
   }
   return events;
 }
+
+/** The workflow a file's `workflow-scope` step names, or `undefined` when it has none. */
+const scopedBy = (text) =>
+  /uses: \.\/\.github\/actions\/workflow-scope\s*\n\s*with:\s*\n\s*workflow: (\S+)/.exec(text)?.[1];
 
 const STATUS = /\b(always|cancelled|failure|success)\(\)/;
 
@@ -108,6 +128,22 @@ export function workflowProblems(workflows, prOnly = PR_ONLY) {
       }
       continue;
     }
+    if (pullRequestPathsOf(text) !== null && scopedBy(text) !== name) {
+      problems.push(
+        `${name} starts a pull request's run by \`paths:\` and a merge group's by nothing, so every queue run would pay for it. ` +
+          `Add a job that uses ./.github/actions/workflow-scope with \`workflow: ${name}\`, and give the jobs \`github.event_name != 'merge_group' || needs.scope.outputs.run != 'false'\` (#7420).`,
+      );
+    }
+    if (scopedBy(text) !== undefined) {
+      if (/^ {4}paths-ignore:|^ {4}paths:[ \t]*\S/m.test(text)) {
+        problems.push(`${name}: its pull_request filter is not a block \`paths:\` list, which workflow-scope cannot read (#7420).`);
+      }
+      for (const one of jobsOf(text).filter((j) => j.id !== "scope" && canRunOn(text, j.id, MERGE_GROUP))) {
+        if (!one.needs.includes("scope") || !/needs\.scope\.outputs\.run/.test(one.if ?? "")) {
+          problems.push(`${name}: job "${one.id}" must need \`scope\` and run only when \`needs.scope.outputs.run != 'false'\` in a merge group (#7420).`);
+        }
+      }
+    }
     for (const id of strandedOnQueue(text)) {
       problems.push(
         `${name}: job "${id}" can run on a pull request and cannot in the merge queue. ` +
@@ -120,8 +156,10 @@ export function workflowProblems(workflows, prOnly = PR_ONLY) {
     const events = text === undefined ? undefined : triggersOf(text);
     if (events === undefined || !events.has("pull_request") || events.has("merge_group")) {
       problems.push(`${name} is in PR_ONLY but is not a pull request's alone now (gone, or it runs in the queue): take it off.`);
-    } else if (!reason || reason.trim() === "") {
-      problems.push(`${name} is in PR_ONLY with no reason: say why a pull request may run it and the queue not.`);
+    } else if (!reason || reason.trim().length < MIN_REASON) {
+      problems.push(
+        `${name} is in PR_ONLY with no reason (a sentence of at least ${MIN_REASON} characters): say why a pull request may run it and the queue not.`,
+      );
     }
   }
   return problems;

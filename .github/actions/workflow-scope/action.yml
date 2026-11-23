@@ -1,0 +1,31 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+# Whether a merge group's change meets the `pull_request` `paths:` filter of the workflow that asks
+# (#7420). A merge group's event carries no `paths`, so a workflow a pull request starts by path
+# would otherwise run in full on every queue run, or not at all. `tools/ci-scope.mjs workflow`
+# reads the workflow's own filter against what the group changes since its base (`change-base`),
+# so the pull request's filter and the queue's cannot drift. Any failure to read says `true`.
+#
+# The job's checkout must have `fetch-depth: 2`. The runner's own Node runs the script.
+name: Workflow scope
+description: Says whether the change meets a workflow's own pull_request paths filter, for a merge group's run.
+inputs:
+  workflow:
+    description: The workflow's file name under .github/workflows, e.g. operator.yml.
+    required: true
+outputs:
+  run:
+    description: "`true` when the change touches a path of the workflow's filter (or could not be read), else `false`."
+    value: ${{ steps.scope.outputs.run }}
+runs:
+  using: composite
+  steps:
+    - id: base
+      uses: ./.github/actions/change-base
+    - id: scope
+      shell: bash
+      env:
+        WORKFLOW: ${{ inputs.workflow }}
+        BASE: ${{ steps.base.outputs.sha }}
+      run: node tools/ci-scope.mjs workflow ".github/workflows/$WORKFLOW" "$BASE"
