@@ -1661,6 +1661,27 @@ fn a_read_that_never_comes_back_after_the_clear_fails_the_login() {
     assert!(inserted(&engine).is_empty(), "nothing filled");
 }
 
+/// A page that ran after the sites were cleared is not taken for held by a later read that
+/// times out and a freeze asked again: it ran.
+#[test]
+fn a_page_that_ran_after_the_clear_and_then_goes_unread_still_fails_the_login() {
+    let (browser, engine) = browser_with(quick());
+    as_a_login_form_that(&engine, true, Twist::HoldsCookies);
+    {
+        let mut model = super::super::lock(&engine.model);
+        model.freezing.thaws_when_cleared = true;
+        model.freezing.unanswered_after_clear = 1;
+    }
+    let _ = snapshot(&browser, 1);
+    let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
+    assert!(
+        matches!(ended.outcome, Err(Refusal::NotLoggedIn(_))),
+        "{}",
+        ended_as(&ended.outcome)
+    );
+    assert!(inserted(&engine).is_empty(), "nothing filled");
+}
+
 #[test]
 fn a_page_of_its_site_that_comes_back_after_the_clearing_fills_nothing() {
     let (browser, engine) = browser_with(quick());

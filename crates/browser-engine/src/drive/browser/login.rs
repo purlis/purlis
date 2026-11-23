@@ -111,21 +111,25 @@ const RELEASE_WITHIN: Duration = Duration::from_secs(5);
 pub(crate) const ARM_FREEZE_WATCH: &str = r"(() => {
   const held = globalThis.purlisHeldStill || (globalThis.purlisHeldStill = {
     frozen: false,
+    ran: false,
     froze: (e) => { if (e.isTrusted) held.frozen = true; },
-    thawed: (e) => { if (e.isTrusted) held.frozen = false; },
+    thawed: (e) => { if (e.isTrusted) { held.frozen = false; held.ran = true; } },
   });
   held.frozen = false;
+  held.ran = false;
   document.addEventListener('freeze', held.froze, true);
   document.addEventListener('resume', held.thawed, true);
   return 'armed';
 })()";
 
 /// The script that says whether the document was told it is frozen, and not since told it runs
-/// again: `frozen`, `running`, or `unarmed` where [`ARM_FREEZE_WATCH`] never ran in it. A constant.
+/// again: `frozen`, `running`, or `unarmed` where [`ARM_FREEZE_WATCH`] never ran in it. A document
+/// that was ever told to resume since it was armed reads `running` from then on, even if it was
+/// frozen again: it ran, and what it did is not known. A constant.
 pub(crate) const READ_FREEZE_WATCH: &str = r"(() => {
   const held = globalThis.purlisHeldStill;
   if (!held) return 'unarmed';
-  return held.frozen ? 'frozen' : 'running';
+  return held.frozen && !held.ran ? 'frozen' : 'running';
 })()";
 
 /// What one frame of a held page says of itself.
@@ -135,7 +139,7 @@ enum Held {
     Running,
     /// The frame's document is not one purlis armed: another loaded, or the world went.
     Unarmed,
-    /// The read did not come back in time: it says nothing, and is asked again.
+    /// The read timed out: it says nothing, and is asked again. Any other failure is `Running`.
     Unread,
 }
 
@@ -256,15 +260,30 @@ impl HeldStill<'_> {
         }
         let until = Instant::now() + RELEASE_WITHIN;
         loop {
-            let waiting = self.pages.iter().any(|(page, _)| {
-                self.browser.frames_of(page).iter().any(|(frame, on)| {
+            let mut waiting = false;
+            for (page, session) in &self.pages {
+                let left = until.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return;
+                }
+                // An `Unarmed` frame (another document, or its world gone) cannot be read, and
+                // is not waited for.
+                let still = self.browser.frames_of(page).iter().any(|(frame, on)| {
                     matches!(
-                        self.browser.held_state(on, frame),
+                        self.browser.held_state(on, frame, left),
                         Held::Frozen | Held::Unread
                     )
-                })
-            });
-            if !waiting || Instant::now() >= until || lock(&self.browser.inner.state).ended {
+                });
+                if still {
+                    waiting = true;
+                    let _ = self.browser.devtools().call(
+                        "Page.setWebLifecycleState",
+                        json!({ "state": "active" }),
+                        Some(session.as_str()),
+                    );
+                }
+            }
+            if !waiting || lock(&self.browser.inner.state).ended {
                 return;
             }
             std::thread::sleep(Duration::from_millis(50));
@@ -731,7 +750,7 @@ impl Browser {
 
     /// What `frame`, held by `session`, says of itself now: read in the world purlis armed it in,
     /// never in one made now, which could not have seen the page freeze.
-    fn held_state(&self, session: &str, frame: &str) -> Held {
+    fn held_state(&self, session: &str, frame: &str, within: Duration) -> Held {
         let worlds = &self.inner.worlds;
         let Some(world) = worlds.get(session, frame) else {
             return Held::Unarmed;
@@ -744,7 +763,7 @@ impl Browser {
                 "returnByValue": true,
             }),
             Some(session),
-            HELD_READ_WITHIN,
+            within.min(HELD_READ_WITHIN),
         );
         match read {
             Ok(answer) if answer.get("exceptionDetails").is_none() => {
@@ -758,8 +777,10 @@ impl Browser {
                 worlds.forget(session, frame, &world);
                 Held::Unarmed
             }
-            // A read that did not come back says nothing of the page: it is not known held still.
-            _ => Held::Unread,
+            // A read that timed out says nothing of the page: asked again until the time is up.
+            Err(CallError::TimedOut) => Held::Unread,
+            // Any other failure (a lost session, a script that threw) is not a page known held.
+            _ => Held::Running,
         }
     }
 
@@ -777,7 +798,10 @@ impl Browser {
                 let frames = self.frames_of(page);
                 let states: Vec<Held> = frames
                     .iter()
-                    .map(|(frame, on)| self.held_state(on, frame))
+                    .map(|(frame, on)| {
+                        let left = deadline.saturating_duration_since(Instant::now());
+                        self.held_state(on, frame, left.max(Duration::from_millis(50)))
+                    })
                     .collect();
                 if !frames.is_empty() && states.iter().all(|state| *state == Held::Frozen) {
                     continue;
