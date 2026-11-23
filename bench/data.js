@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795447023213,
+  "lastUpdate": 1795464177475,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53130,6 +53130,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7873235,
             "unit": "ms",
             "extra": "median of 5 runs: 99.760, 101.384, 101.787, 101.914, 102.751 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "ae745814e0fc60a83b1b7509edf73f5f1a05dd16",
+          "message": "One login: a refused push says why in git's output; a chat may push its task's branch (#7409)\n\n* One login: a refused push says why in git's output, and a chat follows up its task's branch (#7363)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83NF39Q2CB3X608PZBNY691\nPurlis-Persona: steward\n\n* One login: commit the refusal module, its ADR amendment and change note; ref names bounded to printable ASCII; the docs say what a reason may name and that no sandboxed chat writes the dispatch records\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: the no-sign-in refusal names Settings › You › Accounts; the listener tests expect git's own ERR refusal\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login: the ADR says no sandboxed chat writes the dispatch records; a test pins that an unrepeatable ref name is left to the caller\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T19:12:37Z",
+          "tree_id": "cfcb08d109543e36694730787ca939184e259951",
+          "url": "https://github.com/purlis/purlis/commit/ae745814e0fc60a83b1b7509edf73f5f1a05dd16"
+        },
+        "date": 1795464172279,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.457474,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.447, 0.455, 0.457, 0.467, 0.476 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3225805,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.214, 16.307, 16.323, 16.526, 16.879 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.124292,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.698, 101.991, 102.124, 102.378, 103.350 ms"
           }
         ]
       }
