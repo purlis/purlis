@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795427133030,
+  "lastUpdate": 1795443051685,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52962,6 +52962,48 @@ window.BENCHMARK_DATA = {
             "value": 102.002881,
             "unit": "ms",
             "extra": "median of 5 runs: 101.479, 101.902, 102.003, 102.205, 102.760 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "6d3ee7c2847ce8e5ce28386e353fdc212062760e",
+          "message": "Update cookie to 0.18.3 for RUSTSEC-2026-0594 (#7417)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83WKQ3RM81TX253E0MAGPF6\nPurlis-Persona: steward",
+          "timestamp": "2026-11-23T13:36:06Z",
+          "tree_id": "a480e6f6600d782d5785bf88da781529e9bb22b5",
+          "url": "https://github.com/purlis/purlis/commit/6d3ee7c2847ce8e5ce28386e353fdc212062760e"
+        },
+        "date": 1795443042066,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.344109,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.326, 0.336, 0.344, 0.345, 0.350 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.616787000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.003, 16.168, 16.617, 16.746, 16.785 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.69649799999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.314, 101.560, 101.696, 101.877, 102.151 ms"
           }
         ]
       }
