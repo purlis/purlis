@@ -220,6 +220,14 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   segment, a shell or string runner, a substitution or here-document, an unnameable repo or any
   `gh api` without a `repos/o/r` path is `Unreadable`, and `guard::judged_without_a_chat` refuses it
   wherever `answers::anchored_roots()` is not empty.
+- The proof infrastructure (M75-09) is `crates/purlis-core/tests/it/policy_proof/`: `PolicyInput`,
+  `Batch`/`Cell`, `engine` (over `decide::decide`) and `oracle` (`oracle.rs`: its own Cedar
+  request, policy set and outcome derivation, straight to `Authorizer::is_authorized`; it shares
+  only `policy::load`, as a gate). A cell must be one the schema can ask: every context field its
+  action declares (`merge` needs `via`), the right types. The oracle panics on one that is not,
+  because the host answers an unfit request with a deny and no rule, which would agree with an
+  oracle that said the same. Its test run is
+  `cargo test -p purlis-core --test it -- policy_proof the_policy_proof`, about 30 s warm.
 - The anchored planes the hook can read are `app/anchored-planes/` (the app writes it as the
   registry gains a plane, `answers::anchored_roots` reads the union): the sealed registry is
   unreadable outside the app.
