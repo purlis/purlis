@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795425145960,
+  "lastUpdate": 1795427133030,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52920,6 +52920,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2834585,
             "unit": "ms",
             "extra": "median of 5 runs: 101.747, 102.174, 102.283, 102.555, 104.108 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "9c0c798193d71bbf680a22284fc93be2dd2cd6a2",
+          "message": "P0: a task chat's push is scanned with a scratch object directory, so it no longer fails (#7412)\n\n* Push scan: give git a scratch object directory that borrows the clone's, so a read-only objects dir no longer refuses every push\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83PKJKHPMBQRMMMVGPZ7BW2\nPurlis-Persona: steward\n\n* Push scan: the borrowed object path is quoted where it holds a colon and made absolute; the doc says the scan is no boundary against a racing process\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward",
+          "timestamp": "2026-11-23T08:59:52Z",
+          "tree_id": "825cb5b20c6692795ae48ed4013b82b9b207f181",
+          "url": "https://github.com/purlis/purlis/commit/9c0c798193d71bbf680a22284fc93be2dd2cd6a2"
+        },
+        "date": 1795427125955,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6935344999999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.676, 0.693, 0.694, 0.719, 0.723 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.556189,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.468, 16.542, 16.556, 16.600, 16.743 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.002881,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.479, 101.902, 102.003, 102.205, 102.760 ms"
           }
         ]
       }
