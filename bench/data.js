@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795397237002,
+  "lastUpdate": 1795398715274,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52668,6 +52668,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8947165,
             "unit": "ms",
             "extra": "median of 5 runs: 101.644, 101.706, 101.895, 102.647, 102.720 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "522491e403b7e9d790f3ae3d75110a21c4739bb5",
+          "message": "One login: sign-in and wiring follow-ups, and the route's refusals in the doctor (#7301) (#7395)\n\n* One login follow-ups: CI flow pending until expiry, accounts compared by id, resolver wait, route refusals row (#7301, #7358)\n\nG: a CI-permission code stays approvable after a cancel or quit, so the account\nrecords it (ci_flow_until) and a sign-in meanwhile records scopes as not known;\na dead code (expired or refused) ends the record. The messages after begin no\nlonger say nothing changed. The proxy compares the account id of each repo a\nGraphQL document names, not token bytes, and keyring::Secret::expose is gone\nfrom the public API.\nB: a forge name's lookup waits at most three seconds and a timeout is a failed\nlookup; credential-sources.md says a forge with no published ranges is not held\nby address while its lookups fail.\n#7358 item 3: the doctor has a forge refusals row from the route's audit.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82MB21QXB4CYX86C0TFTBBH\nPurlis-Persona: steward\n\n* One login round 2: every live CI-permission code holds the account, true wait copy, safe doctor row\n\n- ci_flows records each issued code's expiry; a code (denied, expired, used) ends only its own entry, a second never shortens the first, an unreadable record counts as pending.\n- Approving a later code while an earlier one is live keeps the second token but leaves the scopes unknown (Outcome::KeptAccountHeld).\n- While a code is live the copy says to wait about N minutes, then sign in again, instead of try again or sign in again.\n- The doctor's forge blocks row shows a host only when it is a host name, says blocked in plain words, no type names.\n- A GraphQL request across repos no longer treats two accounts of None as the same account.\n- One resolver thread in flight per name.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M82QYRBD2DW3R6HQ6QV52J70\nPurlis-Persona: steward\n\n* One login follow-ups: the account-comparison tests shed the shell's steering\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login follow-ups: the doctor's blocks row never shows a chat's sentinel or an over-long label as a host\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* One login follow-ups: the doctor test expects the line a refused merge really writes\n\nAssisted-by: claude-code:claude-opus-5-5\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T01:12:19Z",
+          "tree_id": "2e1070687f63d872021584eba1ac39a6ef7499c5",
+          "url": "https://github.com/purlis/purlis/commit/522491e403b7e9d790f3ae3d75110a21c4739bb5"
+        },
+        "date": 1795398707058,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7009525,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.662, 0.692, 0.701, 0.707, 0.711 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7153385,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.533, 16.589, 16.715, 16.891, 16.912 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.80587750000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.595, 101.824, 102.806, 103.162, 103.344 ms"
           }
         ]
       }
