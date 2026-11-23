@@ -1481,7 +1481,7 @@ fn a_dispatched_chat_starts_as_the_task_runner_starts_it_and_its_report_is_seen(
             "turns": [{"prompt": "check the queue", "calls": [
                 {"step": "branch", "tool": "bash", "run": "git branch --show-current"},
                 {"step": "reports", "tool": "bash",
-                 "run": "\"$CHARTER_HOOK_BINARY\" dispatch report --outcome done \"queue is empty\""}
+                 "run": "purlis dispatch report --outcome done \"queue is empty\""}
             ]}]
         }),
         "check the queue",
