@@ -378,18 +378,12 @@ impl ObjectCache {
                 };
                 match done {
                     Ok(()) => {
-                        *cache
-                            .failure
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner) = None;
+                        *cache.failure.lock().unwrap_or_else(PoisonError::into_inner) = None;
                     }
                     Err(why) => {
                         cache.tried.store(true, Ordering::Release);
                         let _ = std::fs::remove_file(cache.path.join(".git").join(FILLED));
-                        *cache
-                            .failure
-                            .lock()
-                            .unwrap_or_else(PoisonError::into_inner) = Some(why);
+                        *cache.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(why);
                     }
                 }
             });
@@ -433,7 +427,9 @@ impl ObjectCache {
     /// and git would otherwise look for one in a folder above).
     fn is_sound(&self) -> bool {
         let dot = self.path.join(".git");
-        if !dot.join("HEAD").is_file() || !dot.join("objects").is_dir() || !dot.join("refs").is_dir()
+        if !dot.join("HEAD").is_file()
+            || !dot.join("objects").is_dir()
+            || !dot.join("refs").is_dir()
         {
             return false;
         }
@@ -528,7 +524,11 @@ impl ObjectCache {
         let _ = std::fs::write(&list, recent.join("\n"));
         let Ok(listed) = git::run(
             &self.path,
-            &["for-each-ref", "--format=%(refname)", "refs/quarantine/base"],
+            &[
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/quarantine/base",
+            ],
             git::READ,
         ) else {
             return;
