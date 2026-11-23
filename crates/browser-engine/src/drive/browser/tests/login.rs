@@ -2062,7 +2062,7 @@ fn a_page_whose_state_is_never_answered_says_a_read_timed_out_in_the_refusal() {
 }
 
 #[test]
-fn a_popup_that_never_freezes_is_named_a_popup_with_an_opener_and_an_unarmed_page_says_so() {
+fn a_popup_that_never_freezes_is_named_a_popup_with_an_opener() {
     let (browser, engine) = browser_with(quick());
     as_a_login_form(&engine, true);
     engine.emit(
@@ -2091,7 +2091,7 @@ fn a_request_to_freeze_the_engine_refuses_is_named_with_the_page_and_the_error()
     let ended = browser.log_in(&in_a_used_browser(), holds()).unwrap();
     let said = refused_for_a_page(&ended);
     assert!(
-        said.starts_with("a page of this browser would not hold still (blank page, no opener, 2 frames: the engine would not take the request of freezing it (CDP error -32000: not now)"),
+        said.starts_with("a page of this browser would not hold still (site page, no opener, 2 frames: the engine would not take the request of freezing it (CDP error -32000)"),
         "{said}"
     );
 }
@@ -2101,17 +2101,23 @@ fn the_refusal_names_each_page_and_leaves_an_error_text_no_address() {
     use super::super::login::{Kind, Unconfirmed, not_held_said, said_of};
     let engine_said = said_of(&crate::cdp::CallError::Engine {
         code: -32000,
-        message: "Cannot navigate to http://fixture.test/a?b=c for fixture.test.".into(),
+        message: "Navigation to intranet:8443 blocked".into(),
     });
-    assert_eq!(engine_said, "CDP error -32000: Cannot navigate to … for …");
+    assert_eq!(engine_said, "CDP error -32000");
     let pages = [
-        Unconfirmed::new(Kind::Blank, false, 0, vec![], Duration::from_millis(3000)),
+        Unconfirmed::new(
+            Kind::Blank,
+            false,
+            0,
+            vec![],
+            Some(Duration::from_millis(3000)),
+        ),
         Unconfirmed::new(
             Kind::Extension,
             true,
             2,
             vec!["no freeze event".into(), "no freeze event".into()],
-            Duration::from_millis(10_250),
+            Some(Duration::from_millis(10_250)),
         ),
     ];
     assert_eq!(

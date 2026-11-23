@@ -194,24 +194,23 @@ impl Held {
     }
 }
 
-/// A call's failure in words that name no page: the engine's code and its words with anything
-/// that could be an address (it has a `/` or a `.` inside) left out.
+/// A call's failure in words that name no page: the engine's code, and its words only where they
+/// are among those known to name nothing.
 pub(super) fn said_of(error: &CallError) -> String {
     match error {
+        // The engine's words are echoed only where they are known to name nothing: any other
+        // could carry an address.
         CallError::Engine { code, message } => {
-            let words: Vec<&str> = message
-                .split_whitespace()
-                .map(|word| {
-                    let word = word.trim_end_matches(['.', ',', ';']);
-                    if word.contains(['/', '.']) {
-                        "…"
-                    } else {
-                        word
-                    }
-                })
-                .take(16)
-                .collect();
-            format!("CDP error {code}: {}", words.join(" "))
+            const KNOWN: [&str; 4] = [
+                "Cannot find context with specified id",
+                "No frame for given id found",
+                "Session with given id not found",
+                "Target closed",
+            ];
+            match KNOWN.iter().find(|known| message.trim() == **known) {
+                Some(known) => format!("CDP error {code}: {known}"),
+                None => format!("CDP error {code}"),
+            }
         }
         CallError::Ended => "the engine had ended".to_owned(),
         CallError::TimedOut => "no answer in time".to_owned(),
@@ -269,7 +268,8 @@ pub(super) struct Unconfirmed {
     frames: usize,
     /// The step that failed in each frame that did not confirm, once each with how many.
     steps: Vec<(String, usize)>,
-    waited: Duration,
+    /// How long the login waited, where it did.
+    waited: Option<Duration>,
 }
 
 impl Unconfirmed {
@@ -278,7 +278,7 @@ impl Unconfirmed {
         opener: bool,
         frames: usize,
         steps: Vec<String>,
-        waited: Duration,
+        waited: Option<Duration>,
     ) -> Self {
         let mut counted: Vec<(String, usize)> = Vec::new();
         for step in steps {
@@ -300,6 +300,9 @@ impl Unconfirmed {
         if self.frames == 0 {
             return "no frame known".to_owned();
         }
+        if self.steps.is_empty() {
+            return "no step recorded".to_owned();
+        }
         self.steps
             .iter()
             .map(|(step, times)| {
@@ -315,7 +318,7 @@ impl Unconfirmed {
 
     fn said(&self) -> String {
         format!(
-            "{}, {}, {} frame{}: {}, waited {:.1} s",
+            "{}, {}, {} frame{}: {}{}",
             self.kind.name(),
             if self.opener {
                 "has an opener"
@@ -325,7 +328,10 @@ impl Unconfirmed {
             self.frames,
             if self.frames == 1 { "" } else { "s" },
             self.steps_said(),
-            self.waited.as_secs_f64(),
+            self.waited.map_or(String::new(), |waited| format!(
+                ", waited {:.1} s",
+                waited.as_secs_f64()
+            )),
         )
     }
 
@@ -335,7 +341,7 @@ impl Unconfirmed {
             opener = self.opener,
             frames = self.frames,
             step = %self.steps_said(),
-            waited_ms = u64::try_from(self.waited.as_millis()).unwrap_or(u64::MAX),
+            waited_ms = self.waited.map_or(0, |waited| u64::try_from(waited.as_millis()).unwrap_or(u64::MAX)),
             "a page of this browser did not confirm it was held still"
         );
     }
@@ -943,7 +949,7 @@ impl Browser {
             "the engine would not take the request of {step} ({})",
             said_of(why)
         );
-        let page = Unconfirmed::new(kind, opener, frames, vec![step], Duration::ZERO);
+        let page = Unconfirmed::new(kind, opener, frames, vec![step], None);
         page.log();
         format!(
             "a page of this browser would not hold still ({})",
@@ -960,6 +966,16 @@ impl Browser {
                 .get(&page.target)
                 .map_or(page.url.as_str(), |top| top.url.as_str());
             let opener = page.opener.is_some();
+            // Blank only where every frame is, as a page that is closed for it is.
+            let top = if page
+                .frames
+                .values()
+                .all(|frame| takes_the_origin_around(&frame.url))
+            {
+                top
+            } else {
+                "https:"
+            };
             (Kind::of(top, opener), opener, page.frames.len())
         })
     }
@@ -1088,7 +1104,6 @@ impl Browser {
         loop {
             let mut waiting = Vec::new();
             let mut nothing_to_keep = Vec::new();
-            let mut ran = Vec::new();
             for (at, (page, session)) in still.pages.iter().enumerate() {
                 // A page that is gone runs nothing: closed, crashed or ended, it is as held as
                 // one can be.
@@ -1113,8 +1128,7 @@ impl Browser {
                     && (frames.is_empty()
                         || states.iter().any(|state| state.ran() || state.unarmed()))
                 {
-                    ran.push(self.unconfirmed(page, &states, arming, started));
-                    continue;
+                    return Err(self.not_held(&[self.unconfirmed(page, &states, arming, started)]));
                 }
                 // A blank page that has not said it is frozen by now never will: its document
                 // is not one the engine tells, and it holds nothing of anyone's. It is closed,
@@ -1125,9 +1139,6 @@ impl Browser {
                     continue;
                 }
                 waiting.push((page, session, states));
-            }
-            if !ran.is_empty() {
-                return Err(self.not_held(&ran));
             }
             for page in nothing_to_keep {
                 self.close_page(page)?;
@@ -1193,7 +1204,7 @@ impl Browser {
         if frames == 0 {
             steps.clear();
         }
-        Unconfirmed::new(kind, opener, frames, steps, started.elapsed())
+        Unconfirmed::new(kind, opener, frames, steps, Some(started.elapsed()))
     }
 
     /// The refusal for pages that did not confirm, each one logged first.
