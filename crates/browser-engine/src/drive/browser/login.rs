@@ -47,7 +47,8 @@
 //! **Every login that fills starts clean on its own site** (#5272, the person's ruling of
 //! 2026-11-05): before the browser is held to the login, every page showing those sites goes blank
 //! and every other page is held still until the login answers, as nothing else could put back what
-//! goes. Once it's held, and before anything is filled, all they store is gone (the cookies they would be sent, a parent
+//! goes. A page is held once each document in it has said it is frozen, not once the engine took the
+//! request, and one that has not said so in time fails the login before anything is cleared. Once it's held, and before anything is filled, all they store is gone (the cookies they would be sent, a parent
 //! domain's too, their service workers, local storage, IndexedDB and caches), and the login's page
 //! loads in a new tab of its own, past the browser's HTTP cache, which has no way to clear one site.
 //! Where that can't be done, nothing is filled. Other sites are left as they are. A page that asks
@@ -83,6 +84,7 @@ use super::super::tree::NodeKey;
 use super::Browser;
 use super::fill::{GUARD_FIELD, too_short_to_keep_out};
 use super::takeover::Carrying;
+use crate::cdp::CallError;
 use crate::drive::{Answer, Content, Driver, Hold, Login, Refusal, Why, lock};
 
 /// How long a login waits for its form to show, and then for the password field to go, unless
@@ -91,6 +93,40 @@ pub const LOGIN_WAIT: Duration = Duration::from_secs(30);
 
 /// How often a login looks at its page again while it waits.
 const LOOK_AGAIN: Duration = Duration::from_millis(250);
+
+/// How long one read of whether a page is held still may take, in a login that waits for it.
+const HELD_READ_WITHIN: Duration = Duration::from_millis(1000);
+
+/// The script that arms a document to say it was frozen: a constant, run in purlis's own world.
+/// The engine tells a document it is frozen with a `freeze` event, and that it is running again
+/// with `resume`; a listener in a world of purlis's own keeps that where the page's scripts
+/// cannot reach it, and a document that this never ran in says nothing.
+pub(crate) const ARM_FREEZE_WATCH: &str = r"(() => {
+  if (!globalThis.purlisHeldStill) {
+    const held = { frozen: false };
+    document.addEventListener('freeze', () => { held.frozen = true; }, true);
+    document.addEventListener('resume', () => { held.frozen = false; }, true);
+    globalThis.purlisHeldStill = held;
+  }
+  return 'armed';
+})()";
+
+/// The script that says whether the document was told it is frozen, and not since told it runs
+/// again: `frozen`, `running`, or `unarmed` where [`ARM_FREEZE_WATCH`] never ran in it. A constant.
+pub(crate) const READ_FREEZE_WATCH: &str = r"(() => {
+  const held = globalThis.purlisHeldStill;
+  if (!held) return 'unarmed';
+  return held.frozen ? 'frozen' : 'running';
+})()";
+
+/// What one frame of a held page says of itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Held {
+    Frozen,
+    Running,
+    /// The frame's document is not one purlis armed: another loaded, or the world went.
+    Unarmed,
+}
 
 /// The script that finds the page's first shown password field: a constant.
 pub(crate) const PASSWORD_FIELD: &str = r#"(() => {
@@ -434,7 +470,9 @@ impl Browser {
         let target = if login.clean_already {
             target
         } else {
-            self.clean_load(&target, login, &|page| shows_form(self, page))?
+            self.clean_load(&target, login, still.as_ref(), &|page| {
+                shows_form(self, page)
+            })?
         };
         *lock(&self.inner.sign_in_page) = Some(target.clone());
         // A page that opened since runs no more than the rest.
@@ -518,12 +556,14 @@ impl Browser {
         &self,
         opened: &str,
         login: &Login,
+        still: Option<&HeldStill<'_>>,
         shows_form: &dyn Fn(&str) -> Result<Option<bool>, Refusal>,
     ) -> Result<String, Refusal> {
         let origin = login.origin.as_str();
         let within = self.inner.limits.login_within;
         let not_cleared = |why: String| not_cleared(origin, &why);
-        self.clear_sites(opened, login).map_err(not_cleared)?;
+        self.clear_sites(opened, login, still)
+            .map_err(not_cleared)?;
         let target = self.own_blank_page()?;
         let session = self.page_session(&target)?;
         self.devtools()
@@ -587,7 +627,9 @@ impl Browser {
     }
 
     /// Holds still every page but `target` that `still` doesn't hold yet, until none is left: its
-    /// loads stopped, as a load in flight would run on.
+    /// loads stopped, as a load in flight would run on. A page is held only once each document in
+    /// it has said it is frozen (a request to freeze is not the page frozen), and one that has not
+    /// said so in time is a failure, so nothing is cleared while it might still run.
     fn hold_still_any_new(&self, target: &str, still: &mut HeldStill<'_>) -> Result<(), String> {
         let wont = |_| "a page of this browser would not hold still".to_owned();
         loop {
@@ -605,6 +647,7 @@ impl Browser {
                 self.devtools()
                     .call("Page.stopLoading", json!({}), on)
                     .map_err(wont)?;
+                self.arm_freeze_watch(&page);
                 self.devtools()
                     .call(
                         "Page.setWebLifecycleState",
@@ -614,6 +657,125 @@ impl Browser {
                     .map_err(wont)?;
                 still.pages.push((page, session));
             }
+            self.confirm_held_still(still, true)?;
+        }
+    }
+
+    /// Arms every frame of `page` to say when it is frozen ([`ARM_FREEZE_WATCH`]). A frame that
+    /// cannot be armed is left unarmed, which [`Self::confirm_held_still`] refuses.
+    fn arm_freeze_watch(&self, page: &str) {
+        for (frame, session) in self.frames_of(page) {
+            let _ = self.in_world(&session, &frame, |world| {
+                self.devtools().call_within(
+                    "Runtime.evaluate",
+                    json!({
+                        "expression": ARM_FREEZE_WATCH,
+                        "uniqueContextId": world.unique,
+                        "returnByValue": true,
+                    }),
+                    Some(session.as_str()),
+                    HELD_READ_WITHIN,
+                )
+            });
+        }
+    }
+
+    /// Each frame of `page`, with the session that holds it.
+    fn frames_of(&self, page: &str) -> Vec<(String, String)> {
+        lock(&self.inner.state)
+            .page(page)
+            .map(|page| {
+                page.frames
+                    .iter()
+                    .map(|(id, frame)| (id.clone(), frame.session.clone()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// What `frame`, held by `session`, says of itself now: read in the world purlis armed it in,
+    /// never in one made now, which could not have seen the page freeze.
+    fn held_state(&self, session: &str, frame: &str) -> Held {
+        let worlds = &self.inner.worlds;
+        let Some(world) = worlds.get(session, frame) else {
+            return Held::Unarmed;
+        };
+        let read = self.devtools().call_within(
+            "Runtime.evaluate",
+            json!({
+                "expression": READ_FREEZE_WATCH,
+                "uniqueContextId": world.unique,
+                "returnByValue": true,
+            }),
+            Some(session),
+            HELD_READ_WITHIN,
+        );
+        match read {
+            Ok(answer) if answer.get("exceptionDetails").is_none() => {
+                match answer.pointer("/result/value").and_then(Value::as_str) {
+                    Some("frozen") => Held::Frozen,
+                    Some("running") => Held::Running,
+                    _ => Held::Unarmed,
+                }
+            }
+            Err(CallError::Engine { .. }) => {
+                worlds.forget(session, frame, &world);
+                Held::Unarmed
+            }
+            // A read that did not come back says nothing of the page: it is not held still.
+            _ => Held::Running,
+        }
+    }
+
+    /// **Waits until every page `still` holds has said it is frozen** (the engine takes a request
+    /// to freeze and freezes later), asking again for a page that has not and arming a document
+    /// that came in since, and failing where one has not by `login_within`. With `rearm` false it
+    /// asks nothing and arms nothing: a page that was frozen and is not now is a failure at once,
+    /// as it ran since.
+    fn confirm_held_still(&self, still: &HeldStill<'_>, rearm: bool) -> Result<(), String> {
+        let not_held = || "a page of this browser did not stay held still".to_owned();
+        let deadline = Instant::now() + self.inner.limits.login_within;
+        loop {
+            let mut waiting = Vec::new();
+            for (page, session) in &still.pages {
+                let frames = self.frames_of(page);
+                let states: Vec<Held> = frames
+                    .iter()
+                    .map(|(frame, on)| self.held_state(on, frame))
+                    .collect();
+                if !frames.is_empty() && states.iter().all(|state| *state == Held::Frozen) {
+                    continue;
+                }
+                if !rearm {
+                    return Err(not_held());
+                }
+                waiting.push((page, session, states.contains(&Held::Unarmed)));
+            }
+            if waiting.is_empty() {
+                return Ok(());
+            }
+            if Instant::now() >= deadline {
+                return Err(not_held());
+            }
+            for (page, session, unarmed) in waiting {
+                let on = Some(session.as_str());
+                if unarmed {
+                    // A document that came in since never saw a freeze: let the page run again,
+                    // before anything is cleared, arm it, and freeze it once more.
+                    let _ = self.devtools().call(
+                        "Page.setWebLifecycleState",
+                        json!({ "state": "active" }),
+                        on,
+                    );
+                    self.arm_freeze_watch(page);
+                }
+                let _ = self.devtools().call(
+                    "Page.setWebLifecycleState",
+                    json!({ "state": "frozen" }),
+                    on,
+                );
+            }
+            self.pause(LOOK_AGAIN).map_err(|why| why.to_string())?;
         }
     }
 
@@ -658,9 +820,14 @@ impl Browser {
     }
 
     /// **Clears what the login's sites hold** (module docs): all that its origin and its page's,
-    /// where that's another's, store, and every cookie either would be sent. Read again after: one
-    /// that's still there is a failure.
-    fn clear_sites(&self, target: &str, login: &Login) -> Result<(), String> {
+    /// where that's another's, store, and every cookie either would be sent. Read again after, with the
+    /// pages held asked once more that they are still: one that's still there is a failure.
+    fn clear_sites(
+        &self,
+        target: &str,
+        login: &Login,
+        still: Option<&HeldStill<'_>>,
+    ) -> Result<(), String> {
         let session = self.page_session(target).map_err(|why| why.to_string())?;
         let on = Some(session.as_str());
         let origins: Vec<&str> = std::iter::once(login.origin.as_str())
@@ -709,6 +876,12 @@ impl Browser {
             self.devtools()
                 .call("Network.deleteCookies", named, on)
                 .map_err(|_| "a cookie of its did not go".to_owned())?;
+        }
+        // Every page held is asked once more, after the deleting and before the last read: a
+        // page that ran meanwhile could have put a cookie back, and one read after this that
+        // finds none is read of pages that did not run.
+        if let Some(still) = still {
+            self.confirm_held_still(still, false)?;
         }
         if !cookies()?.is_empty() {
             return Err("a cookie of its did not go".to_owned());
