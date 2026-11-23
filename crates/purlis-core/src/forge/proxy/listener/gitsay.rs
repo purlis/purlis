@@ -253,6 +253,18 @@ mod tests {
     }
 
     #[test]
+    fn a_ref_name_with_a_space_a_control_or_too_many_bytes_is_left_to_the_caller() {
+        let long = format!("refs/heads/{}", "a".repeat(5000));
+        for name in ["refs/heads/a\u{7}b", "refs/heads/é", long.as_str()] {
+            assert!(
+                report_status(&push("report-status", &[name]), "purlis: no").is_none(),
+                "{name:.40}"
+            );
+        }
+        assert!(report_status(&push("report-status", &["refs/heads/ok"]), "purlis: no").is_some());
+    }
+
+    #[test]
     fn a_push_whose_commands_do_not_read_is_left_to_the_caller() {
         let mut out = Vec::new();
         assert!(!answer(&mut out, &Call::ReceivePack, b"0000", "purlis: no").unwrap());

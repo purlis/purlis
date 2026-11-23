@@ -47,7 +47,7 @@ the pusher **dispatched as a task, directly or up the chain** (at most eight lin
 tip rule: the old id is the recorded tip (#7403).
 
 - **The link is app-owned.** It is read from the dispatch records the app writes
-  (`dispatchrecord::dispatched_by`, matching chats by ULID), which no chat can read or write. Never
+  (`dispatchrecord::dispatched_by`, matching chats by ULID), which no sandboxed chat can write. Never
   a session record's frontmatter, never a file a chat writes. No such record means refused.
 - **A handoff is not a link**: the work moved, and the asker gave it up.
 - **Recording.** The confirmed push is recorded under the pusher, as any push is, so its line is
