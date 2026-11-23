@@ -331,6 +331,7 @@ pub const WINDOW_ONLY: &[&str] = &[
     "forge_project_accounts",
     "forge_choose_project_account",
     "forge_trust_clone_repo",
+    "forge_unconfirmed_clones",
     "forge_ci_permission_start",
     "forge_ci_permission_wait",
     "forge_ci_permission_cancel",

@@ -102,6 +102,57 @@ pub fn unvouched_clones(root: &Path, config_root: &Path) -> Vec<Unvouched> {
     out
 }
 
+/// A clone the trust list holds and the list of confirmed repos does not: trusted, but not
+/// confirmed with the forge, so the route serves no chat from it (one login, ADR 0128 D4). Every
+/// clone trusted before the confirmed list existed is one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unconfirmed {
+    /// The workspace that holds it.
+    pub workspace: String,
+    /// Its folder, relative to the project.
+    pub folder: String,
+    /// The `<host>/<owner>/<repo>` the trust list holds for it.
+    pub place: String,
+}
+
+/// Every clone in the workspaces of the project at `root` that the trust list at `config_root`
+/// holds and no confirmed repo names, by workspace and then name. A confirmed list that cannot be
+/// read lists nothing: a clone is never shown as unconfirmed on a guess.
+pub fn unconfirmed_clones(root: &Path, config_root: &Path) -> Vec<Unconfirmed> {
+    let recorded = super::read_push_remotes(config_root);
+    let Ok(confirmed) = crate::forge::confirmed::all(config_root) else {
+        return Vec::new();
+    };
+    let plane = crate::workspaces::Plane::open(root.to_path_buf());
+    let mut out = Vec::new();
+    for workspace in plane.workspaces().unwrap_or_default() {
+        let Ok(clones) = crate::repos::clones(root, &workspace) else {
+            continue;
+        };
+        for repo in clones.repos {
+            let key = crate::sandbox::local::clone_key(&repo.path);
+            let Some(place) = recorded.get(&key) else {
+                continue;
+            };
+            if confirmed.iter().any(|c| c.clone_key == key) {
+                continue;
+            }
+            let folder = repo
+                .path
+                .strip_prefix(root)
+                .unwrap_or(&repo.path)
+                .to_string_lossy()
+                .into_owned();
+            out.push(Unconfirmed {
+                workspace: workspace.clone(),
+                folder,
+                place: place.clone(),
+            });
+        }
+    }
+    out
+}
+
 /// When the folder at `path` was made, in seconds since 1970, where its disk keeps a creation
 /// time.
 fn created_at(path: &Path) -> Option<u64> {

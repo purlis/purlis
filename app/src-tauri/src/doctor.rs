@@ -612,6 +612,7 @@ fn report_in(
         .chain(config_root.and_then(|config_root| local_project(root, config_root)))
         .chain(forge_route(root))
         .chain(forge_refusals(root))
+        .chain(config_root.and_then(|config_root| unconfirmed_clones(root, config_root)))
         .chain(
             config_root
                 .map(purlis_core::pools::cluster_deletion_notices)
@@ -671,6 +672,35 @@ fn forge_refusals(root: &std::path::Path) -> Option<DoctorRow> {
 #[cfg(not(feature = "forge-wiring"))]
 fn forge_refusals(_: &std::path::Path) -> Option<DoctorRow> {
     None
+}
+
+/// `forge confirmation`: clones the person trusted that are not confirmed with the forge, which no
+/// chat's route serves until the person confirms them (Settings › You › Accounts). None when
+/// there is nothing to confirm.
+fn unconfirmed_clones(root: &std::path::Path, config_root: &std::path::Path) -> Option<DoctorRow> {
+    let clones = crate::onelogin::unconfirmed_in(root, config_root);
+    if clones.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = clones.iter().map(|c| c.folder.as_str()).collect();
+    Some(DoctorRow {
+        name: "forge confirmation".to_owned(),
+        status: DoctorStatus::Warn,
+        detail: format!(
+            "{} not confirmed with the forge, so chats cannot use {}: {}",
+            if clones.len() == 1 {
+                "A clone you trusted is"
+            } else {
+                "Clones you trusted are"
+            },
+            if clones.len() == 1 { "it" } else { "them" },
+            purlis_core::personas::one_line(&names.join(", ")),
+        ),
+        hint: "open Settings › You › Accounts and press Confirm on each".to_owned(),
+        checked: true,
+        settings: None,
+        fix: None,
+    })
 }
 
 /// `chat footer`: can the chats this app starts record what a turn cost?
@@ -958,6 +988,45 @@ mod tests {
         assert_eq!(row.status, DoctorStatus::Warn);
         assert!(row.checked, "the Inbox notes only a check this build runs");
         assert_eq!(row.detail, "it is deleted at noon");
+    }
+
+    #[test]
+    fn a_trusted_clone_that_is_not_confirmed_is_a_warning_naming_it_and_where_to_confirm() {
+        let (_dir, root) = plane();
+        let home = tempfile::tempdir().expect("a config home");
+        let clone = root.join("workspaces/ws/api");
+        std::fs::create_dir_all(&clone).expect("a clone folder");
+        for args in [
+            vec!["init", "-q"],
+            vec!["remote", "add", "origin", "https://github.com/acme/api.git"],
+        ] {
+            let mut git = std::process::Command::new("git");
+            git.arg("-C").arg(&clone).args(args);
+            assert!(
+                purlis_core::forklock::output(&mut git)
+                    .expect("git runs")
+                    .status
+                    .success()
+            );
+        }
+        assert!(
+            unconfirmed_clones(&root, home.path()).is_none(),
+            "a clone nobody trusted is the clone Notice's to show, not this row's"
+        );
+        purlis_core::forge::gitcredential::vouch::vouch_clone(
+            &purlis_core::forge::route::HostScope::for_a_test(),
+            home.path(),
+            &root,
+            &clone,
+            "github.com/acme/api",
+        )
+        .expect("trusted");
+
+        let row = unconfirmed_clones(&root, home.path()).expect("a row");
+
+        assert_eq!(row.status, DoctorStatus::Warn);
+        assert!(row.detail.contains("workspaces/ws/api"), "{row:?}");
+        assert!(row.hint.contains("Settings"), "{row:?}");
     }
 
     /// [`super::report`] reading no machine store: the real one reaches the operator's own

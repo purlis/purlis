@@ -2427,6 +2427,12 @@ export const commands = {
 	 */
 	forgeTrustCloneRepo: (plane: PlaneId, folder: string, accountId: string | null) => typedError<ConfirmedAnswer, string>(__TAURI_INVOKE("forge_trust_clone_repo", { plane, folder, accountId })),
 	/**
+	 *  The project's clones that are on the trust list and not confirmed with the forge: what Settings ›
+	 *  You › Accounts offers *Confirm* for. None in a fenced build, whose config home is not the
+	 *  person's.
+	 */
+	forgeUnconfirmedClones: (plane: PlaneId) => typedError<UnconfirmedClone[], string>(__TAURI_INVOKE("forge_unconfirmed_clones", { plane })),
+	/**
 	 *  **Ask GitHub for CI-file permission** on the press a held CI-file push needs (D1.1, D8.3): a
 	 *  device flow asking for what the account holds and `workflow`. The code and the forge's page
 	 *  are answered for the window to show. Waited on with [`forge_ci_permission_wait`].
@@ -21365,6 +21371,14 @@ undo: string[] | null };
 export type TurnPick = {
 	chat: string,
 	number: number,
+};
+
+/**  A clone the person trusted that is not confirmed with the forge, so no chat's route serves it. */
+export type UnconfirmedClone = {
+	/**  Its folder, relative to the project. */
+	folder: string,
+	/**  The `<host>/<owner>/<repo>` the trust list holds for it. */
+	place: string,
 };
 
 /**  What an undo came to. */
