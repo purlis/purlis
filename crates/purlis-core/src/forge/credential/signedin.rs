@@ -138,7 +138,7 @@ impl SignedIn {
                 crate::forge::refresh::raise_once(account, &Trouble::ScopesUnknown);
                 return Err(CredentialError::SignInAgain {
                     host: host.to_string(),
-                    said: accounts::workflow::scopes_unknown_said(account),
+                    said: accounts::workflow::scopes_unknown_said(&self.config_root, account),
                 });
             }
             accounts::WorkflowDoubt::Unknown => {}

@@ -64,8 +64,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use purlis_core::forge::proxy::listener::{PushGate, PushRead, PushVerdict};
 use purlis_core::forge::proxy::{
-    AllowedRepo, AuditRecord, ChatId, Credential, CredentialError, CredentialRequest,
-    CredentialSource, ForgeProxy, HeldSink, Inbound, Outcome, Refusal, TokenKind,
+    AllowedRepo, AuditRecord, ChatId, Class, Credential, CredentialError, CredentialRequest,
+    CredentialSource, ForgeProxy, HeldSink, Inbound, Outcome, Refusal, TokenKind, Verdict,
 };
 use purlis_core::secrets::keyring::Secret;
 
@@ -171,6 +171,7 @@ impl Credentials for AccountCredentials {
                 _ => TokenKind::Pat,
             },
             secret: Secret::new(got.expose().to_owned()),
+            account: Some(account.to_owned()),
         })
     }
     fn check(&self, host: &str, account: &str) -> Result<(), SignInFailure> {
@@ -1153,16 +1154,51 @@ impl ForgeRoutes {
     /// The run's audit, a line per request: method, host, repo, class and verdict. The audit
     /// holds no token and no path, so nor does a line.
     pub fn audit_lines(&self, run: &str) -> Vec<String> {
+        self.audit_records(run).iter().map(audit_line).collect()
+    }
+
+    fn audit_records(&self, run: &str) -> Vec<AuditRecord> {
         let proxy = self.live().get(run).map(|live| live.proxy.clone());
         proxy
-            .map(|proxy| {
-                proxy
-                    .audit(&ChatId::new(run))
-                    .iter()
-                    .map(audit_line)
-                    .collect()
-            })
+            .map(|proxy| proxy.audit(&ChatId::new(run)))
             .unwrap_or_default()
+    }
+
+    /// **The doctor's `forge blocks` row for `project`**: the newest [`MOST_REFUSALS`] requests
+    /// its running chats' routes refused, a line each with the chat's name and the rule that
+    /// stopped it, so a person can read why `gh` or `git` in a chat was refused. The audit keeps
+    /// no token and no path (the lines [`audit_lines`](Self::audit_lines) shows), and it lives
+    /// in memory: a chat that ended has no lines.
+    pub fn refusals_row(&self, project: &Path) -> RouteRow {
+        let runs: Vec<(String, String)> = self
+            .live()
+            .iter()
+            .filter(|(_, live)| live.project == project)
+            .map(|(run, live)| (run.clone(), live.chat.clone()))
+            .collect();
+        let mut refused: Vec<String> = Vec::new();
+        for (run, chat) in runs {
+            for record in self.audit_records(&run) {
+                if matches!(record.verdict, Verdict::Refused(_)) {
+                    refused.push(format!("{chat}: {}", audit_line(&record)));
+                }
+            }
+        }
+        if refused.is_empty() {
+            return RouteRow::ok("no running chat has had a request blocked by its forge route");
+        }
+        let skipped = refused.len().saturating_sub(MOST_REFUSALS);
+        let mut shown = refused.split_off(skipped);
+        if skipped > 0 {
+            shown.insert(0, format!("{skipped} older blocked requests not shown"));
+        }
+        RouteRow {
+            problem: false,
+            detail: shown.join("; "),
+            hint: "each line is a chat, the request (method, host, repo, kind) and why it was \
+                   blocked; a chat's route blocks anything it does not list"
+                .to_owned(),
+        }
     }
 
     /// The doctor's `forge route` row for `project`: the proxy up, and a sign-in for every
@@ -1255,6 +1291,9 @@ impl Drop for RouteGuard<'_> {
     }
 }
 
+/// How many blocked requests the doctor's `forge blocks` row lists, the newest.
+pub const MOST_REFUSALS: usize = 5;
+
 /// The doctor's row, before the doctor draws it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouteRow {
@@ -1296,17 +1335,118 @@ fn sign_in_words(host: &str, state: SignInState) -> String {
     }
 }
 
+/// The host a line shows: only a host name (`[A-Za-z0-9.-]`, at most 80 bytes, labels of at most
+/// 63, never the sentinel's prefix) with an optional `:port`, else a fixed placeholder. The host
+/// is the chat's own word, and a path, a query, its sentinel, bidi controls or `; …` in it would
+/// forge a line of the doctor's row.
+const UNREADABLE_HOST: &str = "(unreadable host)";
+
+fn shown_host(host: &str) -> &str {
+    let (name, port) = match host.split_once(':') {
+        Some((name, port)) => (name, Some(port)),
+        None => (host, None),
+    };
+    // A DNS label is at most 63 bytes, and the chat's own sentinel (80 bytes of host-name
+    // characters) is refused by its prefix, so neither reaches the row.
+    let name_ok = !name.is_empty()
+        && name.len() <= 80
+        && name.split('.').all(|label| label.len() <= 63)
+        && !name.to_ascii_lowercase().starts_with("purlis-sentinel-")
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-');
+    let port_ok = port.is_none_or(|port| {
+        (1..=5).contains(&port.len()) && port.bytes().all(|b| b.is_ascii_digit())
+    });
+    if name_ok && port_ok {
+        host
+    } else {
+        UNREADABLE_HOST
+    }
+}
+
+/// The method as a word: letters only, else a placeholder (it is the chat's own word too).
+fn shown_method(method: &str) -> &str {
+    if !method.is_empty() && method.bytes().all(|b| b.is_ascii_alphabetic()) {
+        method
+    } else {
+        "(unreadable method)"
+    }
+}
+
+fn class_words(class: &Class) -> &'static str {
+    match class {
+        Class::GitRefs => "git ref listing",
+        Class::GitFetch => "git fetch",
+        Class::GitPush => "git push",
+        Class::ApiRead => "API read",
+        Class::PublicRead => "archive or release download",
+        Class::PullRequestWrite => "pull request change",
+        Class::MergeWrite => "merge",
+        Class::CommentWrite => "comment",
+        Class::IssueWrite => "issue change",
+        Class::LabelWrite => "label change",
+        Class::CiWrite => "CI rerun or cancel",
+        Class::GraphqlQuery => "GraphQL query",
+        Class::LfsBatch => "Git LFS download request",
+        Class::UploadWrite => "file upload",
+        Class::GraphqlMutation(_) => "GraphQL mutation",
+    }
+}
+
+fn refusal_words(refusal: Refusal) -> &'static str {
+    match refusal {
+        Refusal::NoSentinel => "it carried no credential",
+        Refusal::WrongSentinel => "its credential was not this chat's",
+        Refusal::Locked => {
+            "too many wrong credentials, so the chat is locked out until it restarts"
+        }
+        Refusal::UnknownChat => "the chat has no route any more",
+        Refusal::MalformedRequest => "the request could not be read one way",
+        Refusal::HostNotAllowed => "the host is not one of the chat's repos' hosts",
+        Refusal::AmbiguousHost => {
+            "the chat has repos on more than one host, so which is meant is unclear"
+        }
+        Refusal::OtherRepo => "the repo is not one of the chat's",
+        Refusal::Merge => "merging is not allowed from a chat",
+        Refusal::MergeCommand => "the text tells the forge or a bot to merge or approve",
+        Refusal::QuickAction => "the text holds a quick action",
+        Refusal::LabelById => "labels were named by id",
+        Refusal::Approval => "approving or reviewing is not allowed from a chat",
+        Refusal::ReleaseOrTag => "releases and tags are not allowed from a chat",
+        Refusal::Ruleset => "rules over the repo are not allowed from a chat",
+        Refusal::Admin => "administering the repo is not allowed from a chat",
+        Refusal::ProtectedRef => {
+            "the push is to a protected branch or a branch the chat did not create"
+        }
+        Refusal::PushOption => "the push carried push options",
+        Refusal::BodyUnreadable => "the body was missing, too big or could not be read",
+        Refusal::GraphqlParse => "the GraphQL document could not be read as one request",
+        Refusal::GraphqlUnknownMutation => "the GraphQL mutation is not on the list",
+        Refusal::GraphqlOtherRepo => "the GraphQL document reaches a repo that is not the chat's",
+        Refusal::CredentialInQuery => "a credential was in the query string",
+        Refusal::Multipart => "a multipart body is not allowed here",
+        Refusal::CredentialInBody => "a credential was in the request body",
+        Refusal::NoAdvertisement => "purlis does not know the repo's branches yet",
+        Refusal::OAuthFlow => "signing in at the forge is not allowed from a chat",
+        Refusal::Lfs => "Git LFS is not allowed from a chat",
+        Refusal::NotOnList => "that call is not on the list of what a chat may do",
+        Refusal::NoCredential => "purlis had no sign-in to use for it",
+        Refusal::Pinned => "an administrator's policy does not allow this forge for chats",
+    }
+}
+
 fn audit_line(record: &AuditRecord) -> String {
     format!(
-        "{} {} {} {} {:?}",
-        record.method,
-        record.host,
+        "{} {} {} {} {}",
+        shown_method(&record.method),
+        shown_host(&record.host),
         record.repo.as_deref().unwrap_or("-"),
-        record
-            .class
-            .as_ref()
-            .map_or_else(|| "-".to_owned(), |class| format!("{class:?}")),
-        record.verdict,
+        record.class.as_ref().map_or("-", class_words),
+        match record.verdict {
+            Verdict::Allowed => "allowed".to_owned(),
+            Verdict::Refused(why) => format!("blocked ({})", refusal_words(why)),
+        },
     )
 }
 

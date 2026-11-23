@@ -2,8 +2,8 @@
 
 - Asking GitHub for the CI-file permission, then cancelling, letting the code expire or quitting
   purlis, no longer leaves your everyday sign-in in use by chats while purlis cannot tell what it now
-  allows. The account is held back from chats as soon as the request starts, and is released again
-  only when purlis has read the sign-in's permissions back.
+  allows. The account is held back from chats as soon as the request starts. A retry that reads the
+  sign-in's permissions back, or a new sign-in once GitHub's code has lapsed, gives it back.
 - A sign-in made with a pasted fine-grained token now says that purlis cannot check what it may do
   and does not give it to chats, instead of suggesting you sign in again.
 

@@ -95,6 +95,15 @@ impl Scene {
     }
 
     fn second_sign_in(&self, access: &str, scope_said: &str) -> Result<Outcome, String> {
+        self.second_sign_in_for("ONLY", access, scope_said)
+    }
+
+    fn second_sign_in_for(
+        &self,
+        code: &str,
+        access: &str,
+        scope_said: &str,
+    ) -> Result<Outcome, String> {
         let keyring = self.keyring();
         let reach = self.tokens.reach();
         workflow::keep(
@@ -103,6 +112,7 @@ impl Scene {
             keyring.as_ref(),
             &reach,
             &self.account,
+            code,
             grant_that_does_not_expire(access, scope_said),
         )
     }
@@ -677,6 +687,7 @@ fn a_gitlab_account_has_no_second_token_and_its_one_serves_the_app_for_a_held_pu
         keyring.as_ref(),
         &reach,
         &account,
+        "ONLY",
         grant("canaryOTHER", "r", "api"),
     )
     .unwrap_err();
@@ -738,4 +749,259 @@ fn the_second_token_is_read_by_one_call_alone() {
         }
     }
     assert!(readers.is_empty(), "{readers:?}");
+}
+
+/// A fresh sign-in as the same login, whose token says `repo, read:org`: what a person does
+/// while a CI-permission code is still open on GitHub's page.
+fn sign_in_again(scene: &Scene) -> ForgeAccount {
+    scene
+        .tokens
+        .know("canaryAGAINtoken5", "octocat", "repo, read:org");
+    let keyring = scene.keyring();
+    let reach = scene.tokens.reach();
+    accounts::sign_in_with_grant(
+        &scope(),
+        scene.home.path(),
+        keyring.as_ref(),
+        &reach,
+        Kind::GitHub,
+        "github.com",
+        grant_that_does_not_expire("canaryAGAINtoken5", "repo,read:org"),
+        Method::Device,
+        "Ov23litEn94I5HXrpdsX",
+    )
+    .unwrap();
+    scene.listed()
+}
+
+#[test]
+fn a_sign_in_while_a_ci_code_is_still_approvable_records_the_scopes_as_not_known() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    // The person started the flow, then cancelled: GitHub's code still works for a quarter hour.
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        "ONLY",
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::Unknown,
+        "the old code could still fold `workflow` into this grant"
+    );
+    assert!(!served(&scene));
+}
+
+#[test]
+fn a_sign_in_after_the_code_is_dead_records_the_scopes_it_read() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        "ONLY",
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    // GitHub said the code expired, or the person refused it.
+    workflow::dead(&scope(), scene.home.path(), &scene.account, "ONLY").unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown,
+        "dead is not a read-back: the scopes stay unknown until one"
+    );
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::No
+    );
+    assert!(served(&scene));
+}
+
+#[test]
+fn a_sign_in_after_the_code_has_lapsed_by_the_clock_records_the_scopes_it_read() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        "ONLY",
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    // The app was quit and opened again long after: the record's time is behind us.
+    let file = accounts::path(scene.home.path());
+    let text = std::fs::read_to_string(&file).unwrap();
+    let mut json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    json["accounts"][0]["ci_flows"] = serde_json::json!({"ONLY": 1});
+    std::fs::write(&file, serde_json::to_string(&json).unwrap()).unwrap();
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::No
+    );
+}
+
+#[test]
+fn a_second_token_that_is_kept_ends_the_pending_record() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        "ONLY",
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    scene
+        .second_sign_in(SECOND, "repo,read:org,workflow")
+        .unwrap();
+    // The code was used: a later sign-in is believed.
+    let again = sign_in_again(&scene);
+    assert_eq!(
+        accounts::workflow_doubt(&again),
+        accounts::WorkflowDoubt::No
+    );
+}
+
+/// A second sign-in's code `code`, started (and then cancelled: it stays approvable) for a quarter hour.
+fn start_flow(scene: &Scene, code: &str) {
+    workflow::begin(&scope(), scene.home.path(), &scene.account).unwrap();
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        code,
+        std::time::Duration::from_secs(900),
+    )
+    .unwrap();
+}
+
+#[test]
+fn approving_a_later_code_while_an_earlier_one_is_live_leaves_the_account_unknown() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    start_flow(&scene, "A");
+    start_flow(&scene, "B");
+    scene
+        .tokens
+        .know(SECOND, "octocat", "repo, read:org, workflow");
+    let outcome = scene
+        .second_sign_in_for("B", SECOND, "repo,read:org,workflow")
+        .unwrap();
+    assert!(matches!(outcome, Outcome::KeptAccountHeld), "{outcome:?}");
+    assert_eq!(
+        accounts::workflow_doubt(&scene.listed()),
+        accounts::WorkflowDoubt::Unknown,
+        "code A could still fold `workflow` in unseen"
+    );
+    assert!(!served(&scene));
+    // A lapses (GitHub said so): the next sign-in is believed.
+    workflow::dead(&scope(), scene.home.path(), &scene.account, "A").unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&sign_in_again(&scene)),
+        accounts::WorkflowDoubt::No
+    );
+}
+
+#[test]
+fn a_denied_later_code_leaves_the_earlier_one_pending() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    start_flow(&scene, "A");
+    start_flow(&scene, "B");
+    workflow::dead(&scope(), scene.home.path(), &scene.account, "B").unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&sign_in_again(&scene)),
+        accounts::WorkflowDoubt::Unknown,
+        "code A is still live"
+    );
+}
+
+#[test]
+fn an_earlier_code_that_dies_after_a_later_one_started_leaves_the_later_one_pending() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    start_flow(&scene, "A");
+    start_flow(&scene, "B");
+    // A's poll, in flight, comes back Denied or Expired after B began.
+    workflow::dead(&scope(), scene.home.path(), &scene.account, "A").unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&sign_in_again(&scene)),
+        accounts::WorkflowDoubt::Unknown,
+        "code B is still live"
+    );
+}
+
+#[test]
+fn a_later_code_never_shortens_the_record_of_an_earlier_one() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    start_flow(&scene, "A");
+    workflow::pending(
+        &scope(),
+        scene.home.path(),
+        &scene.account,
+        "B",
+        std::time::Duration::from_secs(1),
+    )
+    .unwrap();
+    let said = workflow::waiting_said(scene.home.path(), &scene.account).unwrap();
+    assert!(
+        said.contains("about 1"),
+        "A's quarter hour still counts: {said}"
+    );
+    assert!(said.contains("Wait until it expires"), "{said}");
+}
+
+#[test]
+fn a_record_of_codes_that_cannot_be_read_counts_as_pending() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    start_flow(&scene, "A");
+    let file = accounts::path(scene.home.path());
+    let mut json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    json["accounts"][0]["ci_flows"] = serde_json::json!("soon");
+    std::fs::write(&file, serde_json::to_string(&json).unwrap()).unwrap();
+    // A retirement does not hide a code it cannot read.
+    workflow::dead(&scope(), scene.home.path(), &scene.account, "A").unwrap();
+    assert_eq!(
+        accounts::workflow_doubt(&sign_in_again(&scene)),
+        accounts::WorkflowDoubt::Unknown
+    );
+    assert!(workflow::waiting_said(scene.home.path(), &scene.account).is_some());
+}
+
+#[test]
+fn what_a_chat_is_told_while_a_code_is_live_says_wait_and_not_try_again() {
+    purlis_core::unsteered!();
+    let scene = scene();
+    start_flow(&scene, "A");
+    let said = workflow::scopes_unknown_said(scene.home.path(), &scene.account);
+    assert!(said.contains("Wait until it expires"), "{said}");
+    assert!(
+        said.contains("about 16 minutes") || said.contains("about 15 minutes"),
+        "{said}"
+    );
+    assert!(workflow::held_back(scene.home.path(), &scene.account).contains("Wait until"));
+    workflow::dead(&scope(), scene.home.path(), &scene.account, "A").unwrap();
+    assert_eq!(
+        workflow::held_back(scene.home.path(), &scene.account),
+        workflow::HELD_BACK
+    );
 }
