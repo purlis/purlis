@@ -705,3 +705,37 @@ fn a_quoted_or_escaped_dollar_brace_is_no_funsub() {
         Some(Held::Unreadable)
     );
 }
+
+/// A `gh api` / `glab api` read inside a substitution is read as one at the top of a line
+/// (#7092, #7195): the reported shape, two GETs in `$(...)` joined by `[ -z ] &&`, is no merge.
+#[test]
+fn a_plain_api_read_inside_a_substitution_is_no_merge() {
+    for cmd in [
+        r#"P=$(glab api "projects/:id/pipelines?ref=main&per_page=1" | head -1); [ -z "$P" ] && P=$(glab api "projects/:id/pipelines?per_page=1" | head -1); echo "$P""#,
+        "P=`glab api projects/:id/pipelines | head -1`; [ -z \"$P\" ] && P=`glab api projects/:id/pipelines | head -1`",
+        "P=$(gh api repos/o/r/actions/runs --jq '.workflow_runs[0].id'); [ -z \"$P\" ] && P=$(gh api -X GET repos/o/r/actions/runs)",
+        "for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api repos/o/r/pulls/$id; done",
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+    }
+}
+
+/// What a substitution holds stays held: a write whose endpoint the shell builds, a merge path or
+/// command, `eval` and `bash -c`.
+#[test]
+fn a_write_a_merge_or_an_unreadable_call_inside_a_substitution_is_held() {
+    for cmd in [
+        "P=$(gh api -X POST repos/o/r/issues/$N/comments -f body=x)",
+        "P=$(glab api -X POST projects/:id/pipeline/$X)",
+        "P=$(gh api -X $M repos/o/r/pulls/5)",
+        "P=$(gh api --input f.json repos/o/r/pulls/5)",
+        "glab api projects/:id/pipelines/$(glab api projects/:id/pipelines | jq -r '.[0].id')/jobs",
+        "P=$(glab api -X PUT projects/:id/merge_requests/5/merge)",
+        "P=$(gh api repos/o/r/pulls/5/merge -X PUT); echo $P",
+        "P=$(gh pr merge 5)",
+        "P=$(eval gh pr merge 5)",
+        "P=$(bash -c 'gh pr merge 5')",
+    ] {
+        assert!(held(cmd).is_some(), "{cmd}");
+    }
+}
