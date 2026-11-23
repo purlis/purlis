@@ -889,11 +889,14 @@ impl ChatPolicy {
 
     /// A push's commands against the repo: every ref a branch, none the default, a protected one,
     /// a deploy trigger or a pages branch; no ref deleted; a branch may be made if the proxy knows
-    /// from the repo's advertisement that it does not exist, and a branch may be moved only if it
-    /// is one the chat made (or was given). That refuses a force-push and a non-fast-forward on
-    /// anyone else's branch: the proxy sees old and new ids, never history. Push options are
-    /// refused. The branches this push makes are **returned, not recorded**: they are the chat's
-    /// own once the forge says it made them ([`Self::confirm_created`]).
+    /// from the repo's advertisement that it does not exist, and a branch may be moved only from
+    /// the tip this chat last put on it (the record's last line, read at every update). Any other
+    /// old id is refused: a branch someone else made or moved, or one made again after it was
+    /// gone. The forge refuses the old id if the ref is no longer there, so together the two
+    /// refuse a force-push and a non-fast-forward on anyone else's branch: the proxy sees old and
+    /// new ids, never history. Push options are refused. The branches this push makes and moves
+    /// are **returned, not recorded**: they are the chat's once the forge confirms the whole push
+    /// ([`Self::confirm_created`]).
     fn check_push(&self, repo: &AllowedRepo, body: &[u8]) -> Result<Vec<CreatedBranch>, Refusal> {
         let pushed = git::pushed_commands(body).map_err(|e| match e {
             PushError::Unreadable | PushError::PushCert => Refusal::BodyUnreadable,
