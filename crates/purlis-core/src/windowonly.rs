@@ -448,8 +448,8 @@ impl crate::forge::proxy::BranchAsk for PushAsks {
             )
         } else {
             format!(
-                "purlis: an ask is waiting in the window to let this chat push {}; try the push \
-                 again after the person answers it",
+                "purlis: the ask Let this chat push it is waiting in the window for {}; push \
+                 again once the person has pressed Allow",
                 names(&waiting)
             )
         })

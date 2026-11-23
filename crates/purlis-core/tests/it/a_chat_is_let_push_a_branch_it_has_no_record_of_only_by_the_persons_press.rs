@@ -94,7 +94,7 @@ fn refused_then_allow_then_the_retry_from_the_recorded_tip_is_allowed() {
 
     let text = refused(&w, "theirs", &claimed, &next).expect("an unowned branch is refused");
     assert!(
-        text.contains("an ask is waiting in the window"),
+        text.contains("Let this chat push it is waiting in the window"),
         "git says an ask is waiting: {text}"
     );
     assert!(w.fake.requests().is_empty(), "never sent");
@@ -128,7 +128,7 @@ fn refused_then_allow_then_the_retry_from_the_recorded_tip_is_allowed() {
     // The tip rule applies as usual: the chat's claimed id is stale and is refused, with no new ask;
     // the recorded tip is allowed, and the confirmed push moves it.
     let stale = refused(&w, "theirs", &claimed, &next).expect("a stale tip is refused");
-    assert!(!stale.contains("an ask is waiting"), "{stale}");
+    assert!(!stale.contains("is waiting in the window"), "{stale}");
     assert!(
         windowonly::every(&root).is_empty(),
         "a stale tip asks nothing"
@@ -198,7 +198,10 @@ fn a_protected_default_deploy_or_pages_branch_raises_no_ask() {
         "production/x",
     ] {
         let text = refused(&w, branch, &old, &new).unwrap_or_else(|| panic!("{branch} is refused"));
-        assert!(!text.contains("an ask is waiting"), "{branch}: {text}");
+        assert!(
+            !text.contains("is waiting in the window"),
+            "{branch}: {text}"
+        );
     }
     assert!(windowonly::every(&root).is_empty());
     assert!(w.fake.requests().is_empty(), "never sent");
@@ -214,7 +217,7 @@ fn a_branch_the_chat_owns_at_another_tip_raises_no_ask() {
     // The chat makes the branch (a create is no update), then pushes from a tip it did not leave.
     assert!(refused(&w, "mine", &"0".repeat(40), &"1".repeat(40)).is_none());
     let text = refused(&w, "mine", &"9".repeat(40), &"2".repeat(40)).expect("refused");
-    assert!(!text.contains("an ask is waiting"), "{text}");
+    assert!(!text.contains("is waiting in the window"), "{text}");
     assert!(windowonly::every(&root).is_empty());
     windowonly::project_ended(&root);
 }

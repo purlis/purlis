@@ -2489,7 +2489,10 @@ fn an_update_of_a_branch_the_open_chat_has_no_record_of_raises_one_ask_in_the_wi
     // A branch pushed before the route existed: the chat is told an ask is waiting, however
     // often it tries again, and the window has the one ask.
     let told = said(push_update(&scene, "run-1", &params.sentinel, "colleague"));
-    assert!(told.contains("an ask is waiting in the window"), "{told}");
+    assert!(
+        told.contains("Let this chat push it is waiting in the window"),
+        "{told}"
+    );
     said(push_update(&scene, "run-1", &params.sentinel, "colleague"));
     let raised = purlis_core::windowonly::every(Path::new(project));
     assert_eq!(raised.len(), 1, "{raised:?}");
