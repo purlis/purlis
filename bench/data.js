@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795408779345,
+  "lastUpdate": 1795412371480,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -52794,6 +52794,48 @@ window.BENCHMARK_DATA = {
             "value": 103.14409549999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.719, 102.921, 103.144, 104.014, 104.963 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5b99011bad2b2d78058cec0c12c077ff5b0ff222",
+          "message": "Scenarios: the fifty-sessions opening is judged as a set, and the strip test opens its own fifty (#7404)\n\nOne open over 8000 ms failed panes.e2e.ts on macos-latest four times on 2026-11-23, and the strip test then saw 6 or 8 tabs. Judge the opens by median, p90 and a 20 s hang line, and let the strip test top up its own sessions.\n\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M83943VQBSG9E2QMSVRKCQPD\nPurlis-Persona: steward\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T04:33:18Z",
+          "tree_id": "07f54b17f01844d636d131de780d8cffae4028ce",
+          "url": "https://github.com/purlis/purlis/commit/5b99011bad2b2d78058cec0c12c077ff5b0ff222"
+        },
+        "date": 1795412365810,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.355051,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.338, 0.339, 0.355, 0.360, 0.384 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3302895,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.184, 16.206, 16.330, 16.550, 16.728 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.6691125,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.267, 101.472, 101.669, 101.893, 102.683 ms"
           }
         ]
       }
