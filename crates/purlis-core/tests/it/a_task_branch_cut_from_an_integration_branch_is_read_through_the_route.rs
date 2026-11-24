@@ -522,12 +522,25 @@ fn pushed(
     tip: &HeadSha,
     pack: &[u8],
 ) -> Result<PushCheck, String> {
+    pushed_to(Kind::GitHub, s, forge, base, already, tip, pack)
+}
+
+/// [`pushed`], to a remote of `kind`: the gate reads a push the same way on every forge.
+fn pushed_to(
+    kind: Kind,
+    s: &Scene,
+    forge: &dyn BaseObjects,
+    base: &HeadSha,
+    already: bool,
+    tip: &HeadSha,
+    pack: &[u8],
+) -> Result<PushCheck, String> {
     let parent = tempfile::tempdir().unwrap();
     let quarantine = Quarantine::open(parent.path(), base, forge)?;
     quarantine.also_have(forge, &s.default_tip)?;
     quarantine.take_in_known(pack, tip, base, forge)?;
     Ok(check_push_since(
-        Kind::GitHub,
+        kind,
         None,
         &quarantine.trees(),
         &s.default_tip,
@@ -849,4 +862,52 @@ fn a_tip_a_branch_holds_is_still_read_where_the_object_cache_holds_it_too() {
         &empty_pack(&s),
     )
     .expect("read");
+}
+
+#[test]
+fn an_empty_pack_to_a_gitlab_remote_is_read_as_one_to_github_is() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let empty = empty_pack(&s);
+    // The gate reads by the remote's kind, not its host: gitlab.com and a self-hosted GitLab are one.
+    for kind in [Kind::GitLab, Kind::GitHub] {
+        let checked = pushed_to(
+            kind,
+            &s,
+            &forge_of(&s, false),
+            &s.default_tip,
+            false,
+            &s.integration,
+            &empty,
+        )
+        .expect("a branch the repo holds is read, not refused");
+        assert!(
+            matches!(checked, PushCheck::NoCiFiles),
+            "{kind:?}: {checked:?}"
+        );
+        // A CI file change over that pack is still held, as on GitHub.
+        let held = pushed_to(
+            kind,
+            &s,
+            &forge_of(&s, false),
+            &s.default_tip,
+            false,
+            &s.workflow_edit,
+            &empty,
+        )
+        .expect("it is read");
+        assert!(matches!(held, PushCheck::Hold(_)), "{kind:?}: {held:?}");
+        // A commit nothing has is refused.
+        let err = pushed_to(
+            kind,
+            &s,
+            &forge_of(&s, false),
+            &s.default_tip,
+            false,
+            &s.dangling,
+            &empty,
+        )
+        .expect_err("a dangling commit is refused");
+        assert!(err.contains(OUTSIDE), "{kind:?}: {err}");
+    }
 }

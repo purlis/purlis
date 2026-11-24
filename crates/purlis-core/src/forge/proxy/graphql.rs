@@ -688,6 +688,19 @@ impl<'d> Context<'_, 'd> {
                         return Err(Refusal::ProtectedPullHead);
                     }
                 }
+                // A merge request from the default branch is the wrong way round, as REST's is
+                // (#7585). `projectPath` is already tied to the chat's repos by the scope check,
+                // so the source is a branch of that project, as in REST.
+                if field.name == "mergeRequestCreate" {
+                    let mut sources = Vec::new();
+                    collect_named("sourceBranch", &val, &mut sources);
+                    if sources
+                        .iter()
+                        .any(|src| self.repos.iter().any(|r| rest::head_is_default(src, r)))
+                    {
+                        return Err(Refusal::ProtectedPullHead);
+                    }
+                }
             }
             self.check_scoped(&ids)?;
             if field.name == "updatePullRequestBranch" {
