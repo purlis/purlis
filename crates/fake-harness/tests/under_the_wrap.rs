@@ -322,10 +322,12 @@ fn play(given: &Given) -> Played {
                 .collect();
             panic!(
                 "the fake did not finish its script within {AT_MOST:?}, {typed} turn(s) typed; \
-                 the steps with a result: {:?}; the hooks heard: {heard:#?}; its screen:\n{screen}",
+                 the steps with a result: {:?}; the hooks heard: {heard:#?}; \
+                 {}\nits screen:\n{screen}",
                 done.iter()
                     .filter_map(|l| l["step"].as_str())
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>(),
+                waiting_for(&recorder_out, &steps, &done)
             );
         }
         if let Some(step) = &given.esc_step
@@ -457,6 +459,48 @@ fn settled(out: &Path, word: &str) -> bool {
                 .iter()
                 .all(|call| lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
     })
+}
+
+/// What a run that ran out of time was still waiting for: the first scripted step with no result,
+/// each hook call the recorder heard and never answered (how long ago, and whether the recorder
+/// held it on purpose, which the fake ends after the hook's own timeout, never after
+/// [`recorder::HELD`]), and the processes still running, so a hang names what it waited for
+/// whether the fake, a hook or the wrap's supervisor holds it.
+fn waiting_for(out: &Path, steps: &[String], done: &[Value]) -> String {
+    let next = steps
+        .iter()
+        .find(|s| !done.iter().any(|l| l["step"] == s.as_str()));
+    let lines = recorder::read(out).unwrap_or_default();
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    let unanswered: Vec<String> = lines
+        .iter()
+        .filter(|call| call.phase == "call")
+        .filter(|call| !lines.iter().any(|l| l.phase == "reply" && l.id == call.id))
+        .map(|call| {
+            format!(
+                "{} (heard {} s ago{})",
+                call.argv.join(" "),
+                now_ms.saturating_sub(call.at_ms) / 1000,
+                call.forced
+                    .as_ref()
+                    .map_or(String::new(), |f| format!(", held on purpose: {f}"))
+            )
+        })
+        .collect();
+    let processes = std::process::Command::new("ps")
+        .args(["-eo", "pid,ppid,pgid,stat,etimes,args", "--forest"])
+        .output()
+        .map_or_else(
+            |e| format!("ps did not run: {e}"),
+            |o| String::from_utf8_lossy(&o.stdout).into_owned(),
+        );
+    format!(
+        "it was waiting for the result of step {next:?}; the hook calls with no reply: \
+         {unanswered:?} (the recorder holds a stalled call for {:?}); the processes:\n{processes}",
+        recorder::HELD
+    )
 }
 
 /// Each step a script names, in order, sub-agents' own among them.
