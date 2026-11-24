@@ -404,11 +404,44 @@ pub fn vault_use(what: &str, vault: Option<&str>, to: &str) -> Risk {
 /// merges itself on the person's press. Both sentences name the short head (Q242), so the once
 /// more press says which commit it merges. Every name is the key's, and is data.
 pub fn merge_of(repo: &str, number: u64, head: &str, base: &str) -> Risk {
+    land_of(repo, number, head, base, crate::mergehold::LandAs::Merge)
+}
+
+/// **A held request landed by `act`** (#7543): [`merge_of`]'s sentences for a merge, and for a
+/// place in the merge queue or auto-merge the act the press performs, named as it is.
+pub fn land_of(
+    repo: &str,
+    number: u64,
+    head: &str,
+    base: &str,
+    act: crate::mergehold::LandAs,
+) -> Risk {
+    use crate::mergehold::LandAs;
     let short = head.get(..7).unwrap_or(head);
+    let (why, confirm) = match act {
+        LandAs::Merge => (
+            format!("Merges request {number} of {repo} at {short} into {base}, with no undo"),
+            format!("Merge request {number} of {repo} at {short} into {base}?"),
+        ),
+        LandAs::Enqueue => (
+            format!(
+                "Puts request {number} of {repo} at {short} in the merge queue for {base}, which \
+                 merges it in its turn"
+            ),
+            format!("Enqueue request {number} of {repo} at {short} in the merge queue for {base}?"),
+        ),
+        LandAs::AutoMerge => (
+            format!(
+                "Turns on auto-merge for request {number} of {repo} at {short} into {base}, \
+                 which merges it once its checks pass"
+            ),
+            format!("Turn on auto-merge for request {number} of {repo} at {short} into {base}?"),
+        ),
+    };
     Risk {
         class: Class::Merge,
-        why: format!("Merges request {number} of {repo} at {short} into {base}, with no undo"),
-        confirm: format!("Merge request {number} of {repo} at {short} into {base}?"),
+        why,
+        confirm,
     }
 }
 

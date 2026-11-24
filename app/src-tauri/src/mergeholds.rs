@@ -454,6 +454,7 @@ fn raise(project: &dyn Project, ask: &MergeAsk) -> Result<String, String> {
     let request = Request {
         repo: Some(repo.clone()),
         number: ask.request.number,
+        act: ask.request.act,
     };
     let holds = project.holds();
     let resolve = |request: &Request| -> Result<(MergeKey, mergehold::Facts), String> {

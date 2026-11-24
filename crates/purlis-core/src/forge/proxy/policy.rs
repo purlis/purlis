@@ -674,7 +674,8 @@ impl ChatPolicy {
     ///   not say its number): refused, and the chat is told why.
     /// - `Some(Ok(requested))` where it is one and the pull request is named.
     ///
-    /// Only the merge, auto-merge and merge-queue mutations are held; undoing one never is.
+    /// The merge, auto-merge and merge-queue mutations are each held as the act they name, which
+    /// the person's press performs and no other; undoing one never is.
     pub(super) fn held_graphql_merge(
         &self,
         head: &RequestHead,
@@ -694,16 +695,11 @@ impl ChatPolicy {
             .filter(|r| r.serves(&host, head.port))
             .collect();
         let kind = repos.first()?.kind;
-        if let Some(said) = graphql::unheld_merge_said(kind, name) {
-            return Some(Err(said));
-        }
-        if !graphql::holdable_merge(kind, name) {
-            return None;
-        }
+        graphql::merge_act(kind, name)?;
         let named = graphql::merge_target(kind, &repos, body, objects)
-            .and_then(|(path, number)| {
+            .and_then(|(path, number, act)| {
                 let repo = crate::mergehold::Repo::try_from(path).ok()?;
-                Some(crate::heldact::Requested::merge_of(repo, number))
+                Some(crate::heldact::Requested::land_of(repo, number, act))
             })
             .ok_or("purlis could not read which pull request of this repo the document merges (it reads one mutation with one field); ask the person to merge it");
         Some(named)

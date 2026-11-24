@@ -4,16 +4,17 @@
 //! **A chat's GraphQL merge or enqueue is held for the person, with an ask that names it**
 //! (#7543). Under `guards.merge` = `enforce` the route refuses a `mergePullRequest`,
 //! `enablePullRequestAutoMerge` or `enqueuePullRequest`; it used to do so with no ask, a dead end.
-//! Now it hands the pull request, named by number, to the [`HeldSink`], which raises one ask the
-//! person's Merge press answers, and the chat is told its number. **Nothing is forwarded**: the
-//! merge happens only on the press. Where the pull request cannot be named, or the document is
+//! Now it hands the pull request, named by number, **and the act the document names** (merge,
+//! enqueue or auto-merge) to the [`HeldSink`], which raises one ask the person's press answers by
+//! performing that act and no other, and the chat is told its number. **Nothing is forwarded**:
+//! the act happens only on the press. Where the pull request cannot be named, or the document is
 //! anything else, nobody is asked and the chat is refused as it was.
 
 use std::sync::{Arc, Mutex};
 
 use purlis_core::forge::proxy::{ChatId, HeldSink, Kind, ObjectRepo, Outcome, Refusal};
 use purlis_core::heldact::Requested;
-use purlis_core::mergehold::Repo;
+use purlis_core::mergehold::{LandAs, Repo};
 
 use crate::support::forge_proxy::{Auth, Scene, graphql};
 
@@ -73,7 +74,11 @@ fn mutate(s: &Scene, field: &str, id: &str) -> Outcome {
 }
 
 fn seven() -> Requested {
-    Requested::merge_of(Repo::try_from("acme/app".to_owned()).unwrap(), 7)
+    seven_by(LandAs::Merge)
+}
+
+fn seven_by(act: LandAs) -> Requested {
+    Requested::land_of(Repo::try_from("acme/app".to_owned()).unwrap(), 7, act)
 }
 
 #[test]
@@ -89,31 +94,37 @@ fn a_merge_raises_one_ask_and_names_it() {
     assert_eq!(*asked.0.lock().unwrap(), [seven()], "one ask");
 }
 
-/// Auto-merge and the merge queue are not held: the person's press merges at once, so holding
-/// them would turn "merge when green" or "through the queue" into "merge now". They are refused
-/// with a reason, and nobody is asked.
+/// Each of the three verbs raises one ask that names its own act, so the person's press
+/// performs the one the chat asked for: an enqueue is never held as a merge.
 #[test]
-fn auto_merge_and_the_merge_queue_are_refused_with_a_reason_and_ask_nobody() {
+fn each_verb_raises_one_ask_that_names_its_act() {
     purlis_core::unsteered!();
-    for field in ["enablePullRequestAutoMerge", "enqueuePullRequest"] {
+    for (field, act) in [
+        ("mergePullRequest", LandAs::Merge),
+        ("enqueuePullRequest", LandAs::Enqueue),
+        ("enablePullRequestAutoMerge", LandAs::AutoMerge),
+    ] {
         let (s, asked) = scene();
         let out = mutate(&s, field, "PR_kwDO_1");
         let Outcome::Held(held) = &out else {
-            panic!("{field}: not answered with a reason: {out:?}");
+            panic!("{field}: not held: {out:?}");
         };
         assert_eq!(held.refusal, Refusal::Merge, "{field}");
-        assert!(
-            held.said.contains("Nobody was asked"),
-            "{field}: {}",
-            held.said
+        assert_eq!(
+            *asked.0.lock().unwrap(),
+            [seven_by(act)],
+            "{field}: one ask"
         );
-        assert!(
-            held.said.contains("merges at once"),
-            "{field}: {}",
-            held.said
-        );
-        assert!(asked.0.lock().unwrap().is_empty(), "{field}: no ask");
     }
+}
+
+/// The same pull request asked about by a different verb is a different act, never equal to a
+/// merge of it.
+#[test]
+fn an_enqueue_and_an_auto_merge_are_not_a_merge() {
+    assert_ne!(seven_by(LandAs::Enqueue), seven());
+    assert_ne!(seven_by(LandAs::AutoMerge), seven());
+    assert_ne!(seven_by(LandAs::Enqueue), seven_by(LandAs::AutoMerge));
 }
 
 #[test]

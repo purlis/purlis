@@ -9,11 +9,20 @@
 //! in the chat is not.
 
 use super::{NOBODY_HERE, Refused, Requested, Shown, Why};
+use crate::mergehold::LandAs;
 
 /// The noun an act is told with, and the verb of its press.
 fn words(requested: &Requested) -> (&'static str, &'static str, &'static str) {
     match requested {
-        Requested::Merge(_) => ("merges", "merge", "the merge"),
+        Requested::Merge(request) => match request.act {
+            LandAs::Merge => ("merges", "merge", "the merge"),
+            LandAs::Enqueue => (
+                "merge-queue entries",
+                "enqueue",
+                "putting it in the merge queue",
+            ),
+            LandAs::AutoMerge => ("auto-merges", "turn on", "turning on auto-merge"),
+        },
         Requested::Tag { .. } => ("tags", "tag", "the tag"),
         Requested::Release { .. } => ("releases", "release", "the release"),
         Requested::CiPush { .. } => ("pushes that change CI files", "push", "the push"),

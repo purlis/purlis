@@ -115,7 +115,11 @@ impl Fake {
     fn ask(&self, number: u64) -> MergeAsk {
         MergeAsk {
             chat: 4,
-            request: Request { repo: None, number },
+            request: Request {
+                repo: None,
+                number,
+                act: Default::default(),
+            },
             cwd: self.clone.display().to_string(),
         }
     }

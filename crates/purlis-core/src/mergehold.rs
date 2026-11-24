@@ -193,6 +193,43 @@ pub struct Request {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<Repo>,
     pub number: u64,
+    /// **What the chat asked to happen to it** (#7543): a hook's merge command is always
+    /// [`LandAs::Merge`], and the line it sends then has no such field, as before.
+    #[serde(default, skip_serializing_if = "LandAs::is_merge")]
+    pub act: LandAs,
+}
+
+/// **The act a held request asks for**, which the person's press performs and nothing else
+/// (#7543): a merge now, a place in the repo's merge queue, or auto-merge. Dequeuing and turning
+/// auto-merge off undo one and are never held.
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum LandAs {
+    /// Merge it now, by the repo's own method (or into its queue, where the repo lands through
+    /// one, as it always has).
+    #[default]
+    Merge,
+    /// Put it in its base branch's merge queue. Never a merge: a repo with no queue is refused.
+    Enqueue,
+    /// Turn on the forge's auto-merge, which merges it at this head once its checks pass.
+    AutoMerge,
+}
+
+impl LandAs {
+    fn is_merge(&self) -> bool {
+        *self == LandAs::Merge
+    }
+
+    /// What a press does, as the ask says it (a verb phrase, without the request).
+    pub fn verb(self) -> &'static str {
+        match self {
+            LandAs::Merge => "Merge",
+            LandAs::Enqueue => "Enqueue",
+            LandAs::AutoMerge => "Turn on auto-merge for",
+        }
+    }
 }
 
 /// **A command the merge hold refuses.**
@@ -406,7 +443,11 @@ fn merge_of(toks: &[String]) -> Option<Option<Request>> {
             .parse::<u64>()
             .ok()
             .filter(|n| *n > 0 && number.bytes().all(|b| b.is_ascii_digit()))
-            .map(|number| Request { repo, number }),
+            .map(|number| Request {
+                repo,
+                number,
+                act: LandAs::Merge,
+            }),
         _ => None,
     })
 }
@@ -595,9 +636,19 @@ impl Request {
 /// **What the app tells the chat it holds the merge**, once it has read the request from the
 /// forge and an ask waits for it.
 pub fn handed_said(request: &Request) -> String {
+    let (does, not) = match request.act {
+        LandAs::Merge => ("merge", "do not merge it another way"),
+        LandAs::Enqueue => (
+            "put in the merge queue",
+            "do not merge it or queue it another way",
+        ),
+        LandAs::AutoMerge => (
+            "turn on auto-merge for",
+            "do not merge it or turn on auto-merge another way",
+        ),
+    };
     format!(
-        "The person is asked in Asks to merge {}{}. Carry on with other work; do not merge it \
-         another way.",
+        "The person is asked in Asks to {does} {}{}. Carry on with other work; {not}.",
         request.number_said(),
         request.repo_said()
     )
@@ -619,7 +670,7 @@ pub fn asked(
     now: u64,
 ) -> Result<(MergeKey, Raised), String> {
     let (key, facts) = resolve(request)?;
-    let raised = holds.raise(session, key.clone(), facts, now);
+    let raised = holds.raise_as(session, key.clone(), facts, request.act, now);
     Ok((key, raised))
 }
 
@@ -807,6 +858,8 @@ pub enum Merged {
     Now,
     /// Put in its base branch's merge queue or train, which merges it in its turn.
     Queued,
+    /// The forge will merge it at its head once its checks pass: auto-merge is on.
+    AutoMerge,
 }
 
 /// **Whether the project's inventory lists the repo at `path` on `forge`** (Q239): a row of the
@@ -841,6 +894,16 @@ pub trait MergeForge {
     fn at(&self, key: &MergeKey) -> Result<At, String>;
     /// Merges, by the repo's method (`squash`), or says why the forge refused, in its words.
     fn merge_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String>;
+    /// Puts the request in its base branch's merge queue or train, only while its head is
+    /// `key.head`, and **never merges it**: a repo with no queue is an error.
+    fn enqueue_at(&self, _key: &MergeKey, _squash: bool) -> Result<Merged, String> {
+        Err("this forge cannot put a request in a merge queue".to_owned())
+    }
+    /// Turns on the forge's auto-merge, only while its head is `key.head`, and never merges
+    /// it now: a forge that cannot say it will wait for this head is an error.
+    fn auto_merge_at(&self, _key: &MergeKey) -> Result<Merged, String> {
+        Err("this forge has no auto-merge".to_owned())
+    }
 }
 
 /// **A press, through a forge backend** (Q239): a repo that lands through a merge queue or
@@ -906,6 +969,50 @@ impl MergeForge for ByForge<'_> {
             )),
         }
     }
+
+    fn enqueue_at(&self, key: &MergeKey, squash: bool) -> Result<Merged, String> {
+        let pr = Self::pr(key);
+        let queued = self
+            .backend
+            .lands_through_queue(&self.caller, &self.path, &pr)
+            .map_err(|why| format!("purlis could not tell how it lands: {why}"))?;
+        if !queued {
+            return Err(format!(
+                "{} has no merge queue for its base branch, so nothing was done. It was not \
+                 merged instead",
+                self.path
+            ));
+        }
+        let how = crate::forge::pr::MergeAs {
+            squash,
+            title: format!("Merge request {} of {}", key.number, key.repo.as_str()),
+            message: "Merged in purlis on the person's press.".to_owned(),
+        };
+        self.backend
+            .enqueue_at(&self.caller, &self.path, &pr, key.head.as_str(), &how)
+            .map(|()| Merged::Queued)
+            .map_err(|why| why.to_string())
+    }
+
+    fn auto_merge_at(&self, key: &MergeKey) -> Result<Merged, String> {
+        use crate::forge::pr::AutoMerge;
+        match self
+            .backend
+            .request_auto_merge(&self.caller, &self.path, &Self::pr(key), key.head.as_str())
+            .map_err(|why| why.to_string())?
+        {
+            AutoMerge::Queued => Ok(Merged::AutoMerge),
+            AutoMerge::JoinedTrain => Ok(Merged::Queued),
+            AutoMerge::NotQueued(why) => Err(format!("{why}. Auto-merge was not turned on")),
+            AutoMerge::Unavailable(why) => Err(match why.reason {
+                crate::forge::backend::Reason::NotAllowed(words) => {
+                    format!("{words}. Auto-merge was not turned on")
+                }
+                _ => "the forge has no auto-merge for this repo. Auto-merge was not turned on"
+                    .to_owned(),
+            }),
+        }
+    }
 }
 
 /// The merge method a squash flag names, as an ask says it.
@@ -924,6 +1031,9 @@ pub struct Waits {
     pub session: u32,
     pub key: MergeKey,
     pub facts: Facts,
+    /// **What the person is asked to have done** (#7543), which a press performs at `key.head`
+    /// and nothing else. A moved head keeps it for the ask at the new head.
+    pub act: LandAs,
     pub since: u64,
     /// **Asked once more** (Q269): the window read the request again and asked the person once
     /// more, of these facts. Only [`Reread::AsksOnceMore`] sets it, a raise whose facts show
@@ -1098,12 +1208,30 @@ impl Holds {
     /// **an older read never replaces a newer** (Q269). Facts that show otherwise take the
     /// ask's asked mark away.
     pub fn raise(&self, session: u32, key: MergeKey, facts: Facts, now: u64) -> Raised {
+        self.raise_as(session, key, facts, LandAs::Merge, now)
+    }
+
+    /// [`Self::raise`] of the act `act` asks for. **A try again for another act at the same head
+    /// is the one ask, now for that act, and is asked of the person once more**: what they were
+    /// shown is never what a press performs.
+    pub fn raise_as(
+        &self,
+        session: u32,
+        key: MergeKey,
+        facts: Facts,
+        act: LandAs,
+        now: u64,
+    ) -> Raised {
         let mut held = self.lock();
         if let Some(at) = held
             .iter()
             .position(|one| one.session == session && one.key.same_request(&key))
         {
             if held[at].key == key {
+                if held[at].act != act {
+                    held[at].act = act;
+                    held[at].asked = false;
+                }
                 held[at].replace(facts);
                 return Raised::Already;
             }
@@ -1116,6 +1244,7 @@ impl Holds {
             session,
             key,
             facts,
+            act,
             since: now,
             asked: false,
             look: Look::NotViewed { since: None },
@@ -1161,6 +1290,7 @@ impl Holds {
             return Err(NotMerged::NotHeld);
         }
         let since = facts.read_at;
+        let act = held[at].act;
         held.remove(at);
         held.retain(|one| !(one.session == session && one.key.same_request(&now)));
         // The ask at the new head is on the forge the old one was raised on.
@@ -1174,6 +1304,7 @@ impl Holds {
             session,
             key: now,
             facts,
+            act,
             since,
             asked: false,
             look: Look::NotViewed { since: None },
@@ -1384,6 +1515,7 @@ impl Holds {
             held.remove(at)
         };
         let shown = taken.facts.squash;
+        let act = taken.act;
         let merged = forge
             .at(key)
             .map_err(NotMerged::Forge)
@@ -1410,7 +1542,16 @@ impl Holds {
                     })
                 }
             })
-            .and_then(|at| forge.merge_at(key, at.squash).map_err(NotMerged::Forge));
+            .and_then(|at| {
+                // Each act is performed by its own call, pinned to `key.head`; an enqueue or
+                // auto-merge never falls back to a merge.
+                match act {
+                    LandAs::Merge => forge.merge_at(key, at.squash),
+                    LandAs::Enqueue => forge.enqueue_at(key, at.squash),
+                    LandAs::AutoMerge => forge.auto_merge_at(key),
+                }
+                .map_err(NotMerged::Forge)
+            });
         match merged {
             Ok(merged) => Ok((by.scope(), merged)),
             Err(why) => {

@@ -158,24 +158,18 @@ fn merge_mutation(kind: Kind, name: &str) -> bool {
     }
 }
 
-/// The merge mutations a held merge can stand for: a merge now, which is what the person's press
-/// performs. Auto-merge and the merge queue are not: the press merges at once, so holding them
-/// would turn "merge when green" or "through the queue" into "merge now" ([`unheld_merge_said`]).
-/// Undoing one (`disablePullRequestAutoMerge`, `dequeuePullRequest`) is never held.
-pub(super) fn holdable_merge(kind: Kind, name: &str) -> bool {
-    match kind {
-        Kind::GitHub => name == "mergePullRequest",
-        Kind::GitLab => name == "mergeRequestAccept",
-    }
-}
-
-/// What a chat is told when it asks for auto-merge or the merge queue, which no press performs.
-pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
+/// **The act a merge mutation asks for**, which the person's press performs (#7543): a merge
+/// now, a place in the merge queue, or auto-merge. Each is held as the act it names and never as
+/// another: the press of an enqueue enqueues and never merges. Undoing one
+/// (`disablePullRequestAutoMerge`, `dequeuePullRequest`) is never held.
+pub(super) fn merge_act(kind: Kind, name: &str) -> Option<crate::mergehold::LandAs> {
+    use crate::mergehold::LandAs;
     match (kind, name) {
-        (Kind::GitHub, "enablePullRequestAutoMerge" | "enqueuePullRequest") => Some(
-            "auto-merge and the merge queue are not held for the person: their press merges at \
-             once. Ask the person to merge it, or ask for a merge now (gh pr merge without --auto)",
-        ),
+        (Kind::GitHub, "mergePullRequest") | (Kind::GitLab, "mergeRequestAccept") => {
+            Some(LandAs::Merge)
+        }
+        (Kind::GitHub, "enqueuePullRequest") => Some(LandAs::Enqueue),
+        (Kind::GitHub, "enablePullRequestAutoMerge") => Some(LandAs::AutoMerge),
         _ => None,
     }
 }
@@ -194,15 +188,16 @@ fn find_str<'v>(val: &'v Val, key: &str) -> Option<&'v str> {
 
 /// **The pull request a merge document is about**: the path of the one recorded repo of `repos`
 /// it is in and its number, for a document that is exactly one holdable merge mutation
-/// ([`holdable_merge`]). On GitHub the node id is resolved by `objects`; on GitLab the project
-/// path and `iid` are in the document. `None` where any of it is missing or not a plain number.
+/// ([`merge_act`]), with that act. On GitHub the node id is resolved by `objects`; on GitLab the
+/// project path and `iid` are in the document. `None` where any of it is missing or not a plain
+/// number.
 /// Never decides whether the request is allowed: [`decide`] does that.
 pub(super) fn merge_target(
     kind: Kind,
     repos: &[&AllowedRepo],
     body: &[u8],
     objects: &dyn ObjectRepo,
-) -> Option<(String, u64)> {
+) -> Option<(String, u64, crate::mergehold::LandAs)> {
     let json: Json = serde_json::from_slice(body).ok()?;
     let Json::Object(object) = &json else {
         return None;
@@ -230,9 +225,7 @@ pub(super) fn merge_target(
     let [Selection::Field(field)] = mutation.selection_set.items.as_slice() else {
         return None;
     };
-    if !holdable_merge(kind, &field.name) {
-        return None;
-    }
+    let act = merge_act(kind, &field.name)?;
     let vars = Vars {
         given,
         defaults: defaults(&mutation.variable_definitions),
@@ -249,6 +242,7 @@ pub(super) fn merge_target(
                 objects
                     .pull_of(r.kind, &r.host, id)
                     .filter(|(path, number)| *path == r.path && *number > 0)
+                    .map(|(path, number)| (path, number, act))
             })
         }
         Kind::GitLab => {
@@ -262,7 +256,7 @@ pub(super) fn merge_target(
             repos
                 .iter()
                 .find(|r| r.kind == kind && r.path == path)
-                .map(|r| (r.path.clone(), number))
+                .map(|r| (r.path.clone(), number, act))
         }
     }
 }

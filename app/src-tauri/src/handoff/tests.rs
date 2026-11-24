@@ -3465,6 +3465,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             request: purlis_core::mergehold::Request {
                 repo: None,
                 number: 12,
+                act: Default::default(),
             },
             cwd: "/nowhere".to_owned(),
         }),
