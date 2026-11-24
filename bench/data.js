@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795475767696,
+  "lastUpdate": 1795479527347,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53382,6 +53382,48 @@ window.BENCHMARK_DATA = {
             "value": 101.2996535,
             "unit": "ms",
             "extra": "median of 5 runs: 100.770, 100.969, 101.300, 101.825, 102.346 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dc5c5ee1d761b9c48a5921ec8354b18b7b72e010",
+          "message": "Browser engine: confirm page state before clearing sites during a login (#7477)\n\n* Base: #7475 as pushed\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M857R0X65EVS8DX14NK3SRYG\nPurlis-Persona: steward\n\n* Login: arm and freeze each frame through the session that owns it\n\nA held page's cross-site frames are out-of-process frames with sessions of their own; a world made for one on the page's session is refused (-32602). Arm and read each frame through its owner, attach to a frame's target when the engine never told of it, count a frame in no tree as gone, and freeze each frame's own session too.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M857R0X65EVS8DX14NK3SRYG\nPurlis-Persona: steward\n\n* Login: review fixes, stop frame sessions' loads, handler records the attach, a live target is never gone\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M857R0X65EVS8DX14NK3SRYG\nPurlis-Persona: steward\n\n* Name a frame count in whole words, not an inline plural suffix\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-23T23:37:31Z",
+          "tree_id": "b610e3755aa5df15fe903b5492c6c18fe82b45d6",
+          "url": "https://github.com/purlis/purlis/commit/dc5c5ee1d761b9c48a5921ec8354b18b7b72e010"
+        },
+        "date": 1795479522301,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5295065,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.518, 0.525, 0.530, 0.530, 0.539 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.2161915,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.169, 16.181, 16.216, 16.236, 16.266 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.9429475,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.389, 101.207, 101.943, 102.065, 102.152 ms"
           }
         ]
       }
