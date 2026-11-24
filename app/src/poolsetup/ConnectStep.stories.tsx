@@ -1424,8 +1424,7 @@ export const TheAddWasNotTaken: Story = {
     // The press is over: the button is back (it is disabled and `aria-busy` while the add runs),
     // so the picture is not of a frame WebKit drew before it (#7238).
     await waitFor(
-      () =>
-        expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeEnabled(),
+      () => expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeEnabled(),
       SETTLES,
     );
     await expect(canvas.queryByText("Connected")).toBeNull();
