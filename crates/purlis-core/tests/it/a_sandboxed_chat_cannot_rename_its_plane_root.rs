@@ -110,8 +110,8 @@ fn the_floors_profile_refuses_the_move_of_a_plane_root_and_writes_below_it() {
 #[cfg(target_os = "macos")]
 #[test]
 fn the_full_profile_refuses_to_start_osascript_and_launchctl() {
-    use purlis_core::enforcement::SandboxLevel;
     purlis_core::unsteered!();
+    use purlis_core::enforcement::SandboxLevel;
     if !can_apply() {
         assert!(
             std::env::var_os("CI").is_none(),
@@ -127,7 +127,12 @@ fn the_full_profile_refuses_to_start_osascript_and_launchctl() {
     let profile = seatbelt::profile(&[], &seatbelt::Own::default(), &cwd, &tmp, &[], None)
         .expect("a profile");
     let step = seatbelt::escape_step(SandboxLevel::Full);
-    assert!(profile.ends_with(step), "the step comes after every allow");
+    let after_the_step =
+        &profile[profile.rfind(step).expect("the step is in the profile") + step.len()..];
+    assert!(
+        !after_the_step.contains("(allow"),
+        "the step comes after every allow: {after_the_step}"
+    );
     let without = profile.replace(step, "");
     let code = |profile: &str, program: &str, args: &[&str]| {
         purlis_core::forklock::status(

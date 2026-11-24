@@ -887,13 +887,19 @@ pub fn profile(
     for rule in hook_socket_again(own, hook_socket)? {
         line(rule);
     }
+    // The escape step holds at full as at the floor (M75-11, round 2): `BASE` allows every
+    // `process-exec`, so the denies come after every allow, where the last match wins. Just
+    // before the vaults' rules, which stay the profile's last word: they deny file operations
+    // and this step denies starting programs and Apple events, so neither gives the other back.
+    line(
+        escape_step(crate::enforcement::SandboxLevel::Full)
+            .trim_end()
+            .to_owned(),
+    );
     // Last, so nothing given back reaches them: no project's vaults are read (#2071).
     for rule in vaults_everywhere_rules()? {
         line(rule);
     }
-    // The escape step holds at full as at the floor (M75-11, round 2): `BASE` allows every
-    // `process-exec`, so the denies come after every allow, where the last match wins.
-    out.push_str(escape_step(crate::enforcement::SandboxLevel::Full));
     if out.len() > MOST_PROFILE {
         return Err(TOO_LARGE);
     }

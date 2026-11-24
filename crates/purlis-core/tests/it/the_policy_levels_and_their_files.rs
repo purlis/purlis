@@ -1915,10 +1915,16 @@ fn the_escape_denies_are_a_step_of_their_own_not_a_fixed_thing() {
     for service in sandbox_level::MACH_SERVICES {
         assert!(step.contains(service), "{service}");
     }
-    // And the floor's profile is made of it, as the full profile is, last among its rules
+    // And the floor's profile is made of it, as the full profile is, after every allow of it
     // (Seatbelt takes the last match, and the full profile's `BASE` allows every `process-exec`).
+    // Only the vaults' denies of file operations follow it, which the step does not touch.
     assert!(floor_profile().contains(step));
-    assert!(full_profile().ends_with(step));
+    let full = full_profile();
+    let at = full.rfind(step).expect("the full profile holds the step");
+    assert!(
+        !full[at + step.len()..].contains("(allow"),
+        "an allow follows the step"
+    );
     holds_the_process_escapes(&full_profile());
     // No `[policy]` word takes it away: no family mode, template or level but `off` reaches it.
     for template in Template::ALL {
