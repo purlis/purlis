@@ -415,8 +415,11 @@ jobs:
       # `target/tmp` is the `CARGO_TARGET_TMPDIR` each test binary was compiled with, and an archive
       # does not carry it: without it every test that makes a folder there fails (NotFound).
       - name: The archive's flags, for the runs below
+        # A part compiles nothing, so cargo never downloaded the crates the lock names; the guards
+        # that read the workspace's resolution offline (`cargo metadata --offline`) need them.
         run: |
           mkdir -p target/tmp
+          cargo fetch --locked
           echo "ARCHIVE_RUN=--archive-file $RUNNER_TEMP/rust-tests/purlis-tests.tar.zst --extract-to . --extract-overwrite --workspace-remap ." >> "$GITHUB_ENV"
       # **The real harnesses' steps run before the suite, on the archive above, not after it** (Q324).
       # (Nothing here compiles the workspace any more, so that rebuild cannot happen from a
