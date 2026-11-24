@@ -12,7 +12,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use purlis_core::sshroute::Reach;
-use purlis_host::CommandConnector;
+use purlis_core::sshroute::connect::RemoteState;
+use purlis_host::{CommandConnector, NotChecked};
 use purlis_session_protocol::hostlink::{self, Handshake, Identity, Linked, Liveness, Pinned};
 use purlis_session_protocol::session::Client;
 
@@ -94,7 +95,35 @@ impl Kept {
         within: Duration,
     ) -> Kept {
         let (_folder, args) = bridge_args(reach, binary);
-        let connector = CommandConnector::new(reach.ssh.clone(), args, Arc::new(|| Ok(())));
+        // Before each dial after the first, as the app's check before a forward is (#7240): a
+        // machine whose key changed ends ssh before the link's first word, which the link can
+        // only read as a peer that is not a purlis host and retry. The check tells it as the
+        // changed key it is, which the keeper never retries.
+        let dials = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let held = reach.clone();
+        let connector = CommandConnector::checked(
+            reach.ssh.clone(),
+            args,
+            Arc::new(move || {
+                if dials.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                    return Ok(());
+                }
+                purlis_core::sshroute::connect::key_held(
+                    &held.ssh,
+                    &held.route,
+                    &held.pool,
+                    &held.key,
+                    &held.settings_in,
+                )
+                .map_err(|finding| {
+                    let why = purlis_core::poolsetup::connect_said(&finding);
+                    match finding.remote_state() {
+                        RemoteState::HostKeyChanged => NotChecked::HostKeyChanged(why),
+                        _ => NotChecked::Unreachable(why),
+                    }
+                })
+            }),
+        );
         let mut links = hostlink::keep_linked(
             connector,
             Handshake::THIS_BUILD,
