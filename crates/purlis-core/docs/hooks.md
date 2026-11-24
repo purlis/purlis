@@ -1004,10 +1004,17 @@ the harness's choice. Read from each harness's own source and changelog (2026-10
 So a guard that is still reading when the harness gives up is an allow on two of the three.
 purlis never lets it come to that:
 
-- **Every `PreToolUse` hook decides within one budget of two seconds**, counted from the moment
-  purlis's `hook` entry point starts: reading its payload, then every guard and gate it runs,
-  on a thread with a deep stack. Two seconds is well inside the smallest timeout purlis sets
-  (five), and far more than an ordinary command takes.
+- **Every `PreToolUse` hook decides within its budget**, counted from the moment purlis's
+  `hook` entry point starts: reading its payload, then every guard and gate it runs, on a thread
+  with a deep stack. The Read, Edit and dispatch hooks have two seconds, well inside their
+  five-second timeout and far more than an ordinary command takes. **The Bash hook has five**,
+  half of its ten-second timeout: it is the only hook that merges, and a merge waits on the
+  session host to take it, which reads who is asking and then the answer, each for at most 1.5 s.
+- **`purlis report` is never held up by the guard** (#7542): a Bash call that is purlis's own
+  `report` command and nothing else (`purlis report`, then words of letters, digits and
+  `._/:=@+,-`) is let through with no ask of the session host and no network. A quote, `$`, `;`,
+  `&`, `|`, a redirection, a substitution or a newline anywhere in the line sends it through the
+  whole guard, so `purlis report; gh pr merge 1` is judged as the merge it holds.
 - **The budget starts when `hook` does, not when the process does.** What comes before it,
   starting the process, is outside it, and on macOS the first run of a binary just installed or
   updated can wait seconds while the system assesses it. Nothing inside the process can bound
@@ -1015,7 +1022,10 @@ purlis never lets it come to that:
   still meet the harness's timeout.
 - **A decision not made in time is a refusal**: exit 2, with one sentence on stderr — purlis
   could not check the call in time because the check ran out of its time limit (a busy machine
-  can cause it), so try again, and split the command if it runs out of time again (#6962). The
+  can cause it), so try again (#6962). A line of several commands is told to run them one at a
+  time; a single program call is told there is nothing to split (#7542). **A merge the hook was
+  still waiting on the app to take** is not a timeout: it is told the merge is held for the
+  person's press of Merge in Asks, and to carry on, never to retry or split it. The
   words for a command too long or too deeply nested belong to the caps below, never to time.
   A payload that has not all arrived within the budget is refused the same way; it is never
   judged as an empty command.
