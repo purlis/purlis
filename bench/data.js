@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795539939287,
+  "lastUpdate": 1795540287712,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54012,6 +54012,48 @@ window.BENCHMARK_DATA = {
             "value": 101.1751845,
             "unit": "ms",
             "extra": "median of 5 runs: 100.453, 101.017, 101.175, 101.185, 101.789 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bc226329d104d9f0fa3a6a4d91c9472a3efa1e58",
+          "message": "CI flakes: purlis-app batch (#7431 #7432 #7434 #7442 #7443 #7444) (#7528)\n\n* Tests: a chat's noted strays are waited for, not slept 2 s on (#7431, #7432)\n\nBoth tests start a stand-in harness, tell the window its tool started a shell, and\nthen let the harness go. The window notes the shell on a thread of its own, and the\ntests gave that a fixed 2 s sleep. On a loaded runner (the failing run took 22.8 s)\nthe note had not landed when the harness exited, the shell was then nobody's\ndescendant and nothing ended it: 'precondition: the harness's own shell goes'.\n\nSessions now counts the notes in flight (cfg(test) only) and the tests wait on it\nthrough SessionHost::notes_have_settled. They still prove the same: a shell noted\nwhile its harness ran ends with it, and a process that was never the harness's runs on.\n\nCloses #7431\nCloses #7432\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* Sandbox asks: a raise landing while an ask leaves no longer stays listed beside its block (#7434)\n\nThe proxy raises an ask on a thread of its own. Blocks::stopped_waiting forgot the\nask (answered) before it recorded the echo guard (written), so a raise starved into\nthat gap was neither an echo nor withdrawn, and listed the ask again beside the block\nthe ask had just become: 'the ask is withdrawn' failed with left: 1, right: 0.\n\nThe ask is now forgotten last, after the echo is recorded: a raise before it goes with\nthe ask, one after is dropped as the echo it is. The test drives that gap with a\ncfg(test) hook; red before the fix, green after. The moved_on tests still prove a chat\nthat moved on gives its held connection up as one block with the ask withdrawn.\n\nCloses #7434\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* Tests: a rescan folded into the gap is timed from before the first was sent (#7444)\n\non_one_stream_a_rescan_soon_after_one_told_is_told_once_the_gap_is_over stamped its\nclock after it had received the first line, but the gap runs from the instant the app\ntold it, earlier than that. However late the test woke, the elapsed time came out\nshort of the gap: 'told 4.999920575s after the first, inside the gap'.\n\nIt now counts from before the first event is sent, which is never later than the\ngap's own start. Proven red first: a 50 ms delay after the receive made the old\nassertion fail at 4.953 s; with the fix and the same delay, 20/20 green, and 20/20\nwithout it. It still fails a rescan told before the gap is over.\n\nCloses #7444\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* Tests: the host is warmed before the touch test's bounded tool line (#7443)\n\nA tool line is given 250 ms to be taken (A_NOTICE_TAKES_AT_MOST), and the host's first\nline pays for what it sets up as a chat's run begins. a_touched_path_reaches_the_window...\nmade that first line the bounded one, so on a loaded runner it missed (the failing try\ntook 0.436 s: 'the app did not take the line in time'), and the spool fallback is refused\nunder /tmp, so the line was lost.\n\nAn earlier line that waits for no receipt now goes first, and the tool line is sent once it\nis in the log, as the sibling test above it does. The bound is unchanged and spent on\nthe line the test is about; the test still proves a touched path reaches the window and\nthat no file the host writes holds it.\n\nNot run here: the sandbox cannot bind the hooks socket, so this is compiled, not seen red\nor 20/20 green.\n\nCloses #7443\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* Tests: a killed host's twenty chats start again on the link that replaced it (#7442)\n\nAfter the host is killed the chats are told they ended when its process goes, but the\nsupervisor keeps answering the old link as ready until it has seen it close and dialled\nthe next. The test took 'every chat told, and the host serves' for the new host, so a\nchat started right after could go out on the dying link and be refused: 'it starts again:\nthe link ended before the host answered: the link is closed'.\n\nThe test now keeps the link the host was served on and waits for a different one. The\n30 s bound, the hibernated and failed states and the restart bound are as before.\n\nLinux-only test: not compiled or run on this macOS sandbox, so no red or 20/20 green.\n\nCloses #7442\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* Tests: rustfmt the regression test of #7434\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* Changelog: a sandbox ask given up on is not listed again (#7434)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PYWCHF94Q3AKYG02VGJG2\nPurlis-Persona: steward\n\n* The routing guard skips host methods that exist only in tests (notes_have_settled)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T16:22:58Z",
+          "tree_id": "59f8d239b69751bb4d7ad2b1df3b0c20cb9d833d",
+          "url": "https://github.com/purlis/purlis/commit/bc226329d104d9f0fa3a6a4d91c9472a3efa1e58"
+        },
+        "date": 1795540280420,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.707535,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.688, 0.700, 0.708, 0.708, 0.717 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.31458,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.200, 16.229, 16.315, 16.342, 16.359 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.2117015,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.858, 102.087, 102.212, 102.328, 103.018 ms"
           }
         ]
       }
