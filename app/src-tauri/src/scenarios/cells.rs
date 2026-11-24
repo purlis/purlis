@@ -46,6 +46,7 @@ use purlis_scenarios::model::{
 use purlis_scenarios::net::{Origin, Scheme, TestCa, Variant};
 use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
 use purlis_scenarios::play::{self, Counted, Hosts, Malformed, Query, Seen, Window};
+use purlis_scenarios::targets::{Places, Watch};
 use purlis_scenarios::timings::{CoreTimings, catalogue};
 
 use super::checks::{Check, Position, Scope, StepResult};
@@ -186,7 +187,7 @@ fn holds(scenario: &Scenario, word: Window, chat: u32) -> bool {
 
 /// **Whether `query` is what the window shows** for `chat`: a word that holds ([`holds`]), or a
 /// number the window's own query gives that equals the cell's.
-fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
+fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts, moved: u64) -> bool {
     match query {
         Query::Holds(word) => holds(scenario, *word, chat),
         Query::AskFor(key) => hosts.get(key).is_some_and(|name| {
@@ -199,12 +200,13 @@ fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
                 )
             })
         }),
-        Query::Equals(word, n) => counted_of(scenario, *word, chat) == *n,
+        Query::Equals(word, n) => counted_of(scenario, *word, chat, moved) == *n,
     }
 }
 
-/// **The number the window shows** for `word`, for `chat`.
-fn counted_of(scenario: &Scenario, word: Counted, chat: u32) -> u64 {
+/// **The number the window shows** for `word`, for `chat`. `moved` is how many of the batch's file
+/// targets the step changed (`targets.changed`: read from the files by the runner, not the window).
+fn counted_of(scenario: &Scenario, word: Counted, chat: u32, moved: u64) -> u64 {
     let queries = scenario.queries();
     match word {
         Counted::MarkerBlocked => u64::from(queries.blocks(chat, None).blocks),
@@ -214,6 +216,7 @@ fn counted_of(scenario: &Scenario, word: Counted, chat: u32) -> u64 {
             .finishes(chat)
             .last()
             .map_or(0, |finish| u64::from(finish.blocked)),
+        Counted::TargetsChanged => moved,
     }
 }
 
@@ -225,10 +228,11 @@ fn window_observed(
     forbid: bool,
     chat: u32,
     hosts: &Hosts,
+    moved: u64,
 ) -> Observed {
     match query {
         Query::Equals(word, n) => {
-            let seen = counted_of(scenario, *word, chat);
+            let seen = counted_of(scenario, *word, chat, moved);
             if (seen == *n) != forbid {
                 Observed::Pass
             } else {
@@ -236,7 +240,7 @@ fn window_observed(
             }
         }
         _ => {
-            let shown = shows(scenario, query, chat, hosts);
+            let shown = shows(scenario, query, chat, hosts, moved);
             if shown != forbid {
                 Observed::Pass
             } else {
@@ -287,6 +291,7 @@ fn call_name(cell: &Cell, step: usize, call: usize) -> String {
 fn script_of(
     cells: &[&Cell],
     hosts: &Hosts,
+    targets: &BTreeMap<String, std::path::PathBuf>,
     client: &std::path::Path,
     trust: &str,
     tag: &str,
@@ -304,7 +309,7 @@ fn script_of(
                         let command = call.input["command"].as_str().unwrap_or_default();
                         serde_json::json!({
                             "step": name, "tool": "bash",
-                            "run": format!("{trust}{}", bound(command, hosts, client, tag)),
+                            "run": format!("{trust}{}", bound(command, hosts, targets, client, tag)),
                         })
                     } else {
                         serde_json::json!({
@@ -335,7 +340,14 @@ fn script_of(
 
 /// `command` with the cell's hosts (`$h1`), the matrix's client and the chat's tag (`<chat>`,
 /// `<c>`: what the matrix names a chat's own files by) bound.
-fn bound(command: &str, hosts: &Hosts, client: &std::path::Path, tag: &str) -> String {
+fn bound(
+    command: &str,
+    hosts: &Hosts,
+    targets: &BTreeMap<String, std::path::PathBuf>,
+    client: &std::path::Path,
+    tag: &str,
+) -> String {
+    let command = purlis_scenarios::targets::bind(command, targets);
     let mut out = command
         .replace(CLIENT_PATH, &client.display().to_string())
         .replace("<chat>", tag)
@@ -503,7 +515,27 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         .map(|(name, value)| format!("export {name}='{}'; ", value.to_string_lossy()))
         .collect();
 
-    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch);
+    // The files the batch aims at, planted from outside the wrap before the chat starts. A target
+    // that cannot be planted fails the run: an attack aimed at nothing would pass.
+    let places = Places {
+        project: scenario.root.clone(),
+        home: scenario.homes.user.clone(),
+    };
+    let mut watch = Watch::plant(&batch.targets, &places)
+        .unwrap_or_else(|why| panic!("{}: the batch's targets: {why}", batch.batch));
+    let target_paths: BTreeMap<String, std::path::PathBuf> = batch
+        .targets
+        .iter()
+        .map(|(key, t)| (key.clone(), t.resolve(&places).expect("planted above")))
+        .collect();
+    let script = script_of(
+        &playable,
+        &hosts,
+        &target_paths,
+        &client,
+        &trust,
+        &batch.batch,
+    );
     let mut chat = None;
     let mut played: Vec<Played> = Vec::new();
     for cell in &playable {
@@ -550,12 +582,15 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 );
             }
             let outcome = names.first().map(|name| outcome_of(&scenario, id, name));
+            // Read once, after the step's log has gone quiet: what a step changed is what its
+            // files show now against how the step began.
+            let moved = watch.changed();
             let window = step
                 .window
                 .iter()
                 .map(|q| {
                     let (query, forbid) = play::window_of(q).expect("checked before the run");
-                    window_observed(&scenario, &query, forbid, id, &hosts)
+                    window_observed(&scenario, &query, forbid, id, &hosts, moved)
                 })
                 .collect();
             played.push(Played {

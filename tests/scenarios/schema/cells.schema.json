@@ -20,6 +20,21 @@
           "propertyNames": {"pattern": "^h[0-9]+[a-z]?$"},
           "additionalProperties": {"type": "string", "minLength": 1}
         },
+        "targets": {
+          "description": "$t1 and the like: files a file escape aims at. Planted before the chat starts, from outside the wrap; `targets.changed == N` counts those a step changed. `seed` null is a file that must stay absent.",
+          "type": "object",
+          "propertyNames": {"pattern": "^t[0-9]+[a-z]?$"},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at", "path"],
+            "properties": {
+              "at": {"enum": ["project", "home", "fs"]},
+              "path": {"type": "string", "minLength": 1},
+              "seed": {"type": ["string", "null"]}
+            }
+          }
+        },
         "deny_exempt_rules": {"type": "array", "items": {"type": "string"}},
         "cells": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/cell"}}
       }

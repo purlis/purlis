@@ -217,6 +217,10 @@ is told, is `tools/mutants-report.py notice`, tested in `tools/mutants-report.te
   (about 8 minutes cold) runs the checks' planted-fault tests.
 - `gh api -X PATCH repos/purlis/purlis/pulls/<n> -F body=@<file>` edits a pull request's body;
   `gh pr edit` fails on the classic-projects deprecation.
+- A cell that adds covers makes `cargo test -p purlis-scenarios --test legs` owe them too: its
+  green report is built from the gate's own "did not run" lines, so it needs no edit per suite.
+  macOS `sed -i` takes an argument (`sed -i ''`): a mutation probe that used GNU's form changed
+  nothing and read as green. `df -g /` swung from 16 to 7 GB during one app clippy: guard the wait.
 - In a sandboxed chat, `purlis-app`'s `projectsettings::` tests (FSEvent) and `purlis-core`'s keychain,
   socket and `no_sandbox` tests fail with "Operation not permitted": that is the sandbox, not the
   change. `settings::tests` and `sandbox::personal::tests` run here.

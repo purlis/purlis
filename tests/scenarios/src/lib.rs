@@ -28,6 +28,7 @@ pub mod model;
 pub mod net;
 pub mod plan;
 pub mod play;
+pub mod targets;
 pub mod timings;
 pub mod validate;
 

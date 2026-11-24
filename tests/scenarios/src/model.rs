@@ -25,6 +25,10 @@ pub struct Batch {
     pub persona: String,
     /// `$h1` and the like, bound to `.test` origins in the suite and to real hosts live.
     pub hosts: BTreeMap<String, String>,
+    /// `$t1` and the like: the files a file escape aims at, planted before the chat starts and
+    /// read after each step (`targets.changed == N`, T1.1-21).
+    #[serde(default)]
+    pub targets: crate::targets::Targets,
     /// Rule ids refused by design with no new block (matrix-check's black-hole exemption).
     #[serde(default)]
     pub deny_exempt_rules: Vec<String>,

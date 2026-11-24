@@ -108,12 +108,34 @@ fn the_run_result_gate_program_reads_a_job_s_reports_and_says_why_it_is_red() {
     // A job that ran only fixtures owes none of them: they are another pass's.
     let fixtures = gate(folder.path(), "pull_request", "fixture:linux:scaled");
     assert!(fixtures.status.success(), "{fixtures:?}");
-    // A pass for each row, as the runner writes one, and the gate is green.
-    let report: String = rows
+    // A pass for each entry the silent run was owed, as the runner writes one, and the gate is
+    // green. The owed entries are read from the gate's own words (`<row> <dialect> <os>[ at
+    // <protection>]: did not run`), so a suite that covers more cells does not make this test
+    // list them again.
+    let owed = said
+        .lines()
+        .filter_map(|line| {
+            line.split_once("::error title=run-result gate::")?
+                .1
+                .split_once(": did not run")
+        })
+        .filter_map(|(entry, _)| {
+            // An entry with a protection is an escape's cover; one without is a row's or a control.
+            let (head, protection) = entry.split_once(" at ").unwrap_or((entry, "full"));
+            let escape = head != entry;
+            let mut words = head.split(' ');
+            Some((words.next()?, words.next()?, protection, escape))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        owed.len() >= rows.len(),
+        "the silent run named its owed entries: {said}"
+    );
+    let report: String = owed
         .iter()
-        .map(|row| {
+        .map(|(row, dialect, protection, escape)| {
             serde_json::json!({
-                "kind": "cell", "row": row, "dialect": "claude", "protection": "full",
+                "kind": if *escape { "escape" } else { "cell" }, "refusal_expected": escape, "row": row, "dialect": dialect, "protection": protection,
                 "os": "linux", "leg": "fake", "timings": "scaled", "verdict": "pass",
             })
             .to_string()
