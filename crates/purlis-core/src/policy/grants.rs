@@ -7,8 +7,8 @@
 //! The person's sealed answers, applied to a decision [`super::decide`] made:
 //!
 //! - **A Never** ([`Never`]) is a sealed You rule for This workspace or Everywhere. It denies in
-//!   **every mode**, `open` included, and decides above every rule (`lock > never > deny > allow
-//!   > grant > ask`, spec §6.7). **A nevers store this build cannot read denies everything**: a
+//!   **every mode**, `open` included, and decides above every rule (spec §6.7: lock, then never,
+//!   then deny, allow, grant, ask). **A nevers store this build cannot read denies everything**: a
 //!   never of a shape it does not know forbids something unknown, so nothing is allowed
 //!   ([`apply`]). The nevers an earlier build kept (`asking -> target`) are the dispatch family's
 //!   and read as no concern of this module.

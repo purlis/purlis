@@ -137,9 +137,8 @@ fn a_grant_is_used_only_at_an_ask_and_never_lifts_a_deny() {
     let served = after(asked(&["processes-a"], None), &req, Some(ULID), &standing);
     assert_eq!(served.after_mode, Outcome::Allow, "{served:?}");
     assert!(served.grant.is_some(), "{served:?}");
-    assert_eq!(
-        served.would_have_blocked(),
-        false,
+    assert!(
+        !served.would_have_blocked(),
         "a served ask is no would-have-blocked line"
     );
     // A deny stays a deny, though the same rule's grant is sealed.
