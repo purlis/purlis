@@ -136,20 +136,23 @@ impl Window {
 /// | `blocks.marker_unverified` | `blocks`: the marker's unverified blocks |
 /// | `finishes.rows_for_turn` | `finishes`: how many finish rows the chat has |
 /// | `finishes.blocked` | `finishes`: the blocks its latest finish row counts |
+/// | `targets.changed` | the batch's file targets (`targets.rs`) this step changed |
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Counted {
     MarkerBlocked,
     MarkerUnverified,
     FinishRows,
     FinishBlocked,
+    TargetsChanged,
 }
 
 impl Counted {
-    pub const ALL: [Counted; 4] = [
+    pub const ALL: [Counted; 5] = [
         Counted::MarkerBlocked,
         Counted::MarkerUnverified,
         Counted::FinishRows,
         Counted::FinishBlocked,
+        Counted::TargetsChanged,
     ];
 
     pub fn word(self) -> &'static str {
@@ -158,6 +161,7 @@ impl Counted {
             Counted::MarkerUnverified => "blocks.marker_unverified",
             Counted::FinishRows => "finishes.rows_for_turn",
             Counted::FinishBlocked => "finishes.blocked",
+            Counted::TargetsChanged => "targets.changed",
         }
     }
 }
@@ -378,6 +382,29 @@ pub fn malformed_cell(cell: &Cell, batch: &Batch) -> Vec<Malformed> {
         found.push(Malformed(format!(
             "`template: {template}` is not played: a batch's chats all start under one policy"
         )));
+    }
+    // A name no target binds would reach the shell empty, and an attack aimed at nothing passes.
+    for (n, step) in cell.steps.iter().enumerate() {
+        for call in &step.calls {
+            let command = call.input["command"].as_str().unwrap_or_default();
+            for name in crate::targets::unbound(command, &batch.targets) {
+                found.push(Malformed(format!(
+                    "step {}: `${name}` names a target the batch does not bind",
+                    n + 1
+                )));
+            }
+        }
+        if batch.targets.is_empty()
+            && step
+                .window
+                .iter()
+                .any(|q| q.query.starts_with("targets.changed"))
+        {
+            found.push(Malformed(format!(
+                "step {}: `targets.changed` with no targets in the batch reads nothing",
+                n + 1
+            )));
+        }
     }
     if !batch.deny_exempt_rules.is_empty() {
         found.push(Malformed(format!(
@@ -1127,6 +1154,38 @@ mod tests {
         assert_eq!(malformed_cell(&templated.cells[0], &templated).len(), 1);
         let exempt = batch(json!({"id": "M-A", "steps": []}), json!(["R-1"]));
         assert_eq!(malformed_cell(&exempt.cells[0], &exempt).len(), 1);
+    }
+
+    #[test]
+    fn a_target_no_batch_binds_and_a_targets_word_with_no_targets_make_a_cell_malformed() {
+        let batch = |targets: Value, step: Value| {
+            let mut value = json!({
+                "batch": "T", "protection": "full", "persona": "steward", "hosts": {},
+                "targets": targets,
+                "cells": [{"id": "E-FILE-01", "steps": [step]}],
+            });
+            value["cells"][0]["dialects"] = json!(["claude"]);
+            Batch::from_value(value).expect("a batch")
+        };
+        let touch = |name: &str| {
+            json!({"calls": [{"tool": "Bash", "input": {"command": format!("touch ${name}")}}],
+                   "window": [{"query": "targets.changed == 0"}]})
+        };
+        let bound = json!({"t1": {"at": "home", "path": "x", "seed": null}});
+        let fine = batch(bound.clone(), touch("t1"));
+        assert_eq!(malformed_cell(&fine.cells[0], &fine), vec![]);
+        let typo = batch(bound, touch("t2"));
+        assert_eq!(malformed_cell(&typo.cells[0], &typo).len(), 1);
+        let none = batch(json!({}), touch("tmp"));
+        let found = malformed_cell(&none.cells[0], &none);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert!(found[0].0.contains("reads nothing"), "{found:?}");
+        // The word is one of the closed list, played as `word == N`.
+        let query = serde_json::from_value(json!({"query": "targets.changed == 1"})).unwrap();
+        assert_eq!(
+            window_of(&query).unwrap().0,
+            Query::Equals(Counted::TargetsChanged, 1)
+        );
     }
 
     #[test]
