@@ -311,9 +311,35 @@ fn read(words: &[Word], measured: bool, clobber: bool, piped: bool) -> Segment {
 /// and each round that kept a longer table found a hole in it. A name behind any other program
 /// is a call, held unless it passes the allowlist. `echo` and `printf` print their words.
 const NAMES_ONLY: &[&str] = &[
-    "cp", "mv", "ln", "rm", "ls", "stat", "file", "du", "cat", "head", "tail", "wc", "diff", "cmp",
-    "shasum", "md5", "md5sum", "sha256sum", "grep", "rg", "mkdir", "touch", "chmod", "chown",
-    "which", "type", "man", "echo", "printf",
+    "cp",
+    "mv",
+    "ln",
+    "rm",
+    "ls",
+    "stat",
+    "file",
+    "du",
+    "cat",
+    "head",
+    "tail",
+    "wc",
+    "diff",
+    "cmp",
+    "shasum",
+    "md5",
+    "md5sum",
+    "sha256sum",
+    "grep",
+    "rg",
+    "mkdir",
+    "touch",
+    "chmod",
+    "chown",
+    "which",
+    "type",
+    "man",
+    "echo",
+    "printf",
 ];
 
 /// `git`'s subcommands that run none of their operands: `git grep gh`, `git log -- crates/*`.
