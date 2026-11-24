@@ -683,7 +683,7 @@ fn a_pin_this_charter_does_not_meet_is_drift() {
 
 // ---- plane root and index lock ----------------------------------------------------------------
 
-fn repo_plane() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn repo_plane() -> (tempfile::TempDir, PathBuf) {
     let (d, root) = plane("schema = 1\n");
     git(&root, &["init", "-q", "-b", "main", "."]);
     git(&root, &["add", "charter.toml"]);
@@ -4257,4 +4257,57 @@ fn a_size_is_said_in_the_units_a_reader_expects() {
     assert_eq!(sandbox::bytes_said(4000), "4.0 KB");
     assert_eq!(sandbox::bytes_said(1_240_000), "1.2 MB");
     assert_eq!(sandbox::bytes_said(3_400_000_000), "3.4 GB");
+}
+
+// ---- inside a chat's sandbox (#7178) --------------------------------------------------------
+
+#[test]
+fn inside_a_chats_sandbox_no_row_looks_at_what_the_sandbox_denies_and_each_says_it_did_not() {
+    let (_d, root) = plane("schema = 1\n");
+    // A spool this build does not read, and a vault kept at a path outside the project, which a
+    // doctor outside the sandbox says.
+    let spool = root.join(".purlis/app/spool");
+    std::fs::create_dir_all(&spool).unwrap();
+    std::fs::write(spool.join("keys.json"), r#"{"v":3,"keys":[]}"#).unwrap();
+    let registry =
+        crate::secrets::Ctx::new(&root, crate::secrets::Env::from_process()).local_registry();
+    std::fs::create_dir_all(registry.parent().unwrap()).unwrap();
+    std::fs::write(
+        &registry,
+        r#"{"vaults":{"x":{"provider":"plain-file","persona":null,"config":{"file":"/x-7178-nowhere"}}}}"#,
+    )
+    .unwrap();
+    let outside = Doctor::at(&root, &root, false, false).run();
+    for name in ["hook spool", "vault files"] {
+        let said = row(&outside, name);
+        assert!(
+            !said.detail.starts_with("not checked"),
+            "{name}: outside the sandbox it looks: {}",
+            said.detail
+        );
+    }
+
+    let mut inside = Doctor::at(&root, &root, false, false);
+    inside.confined = true;
+    let rows = inside.run();
+    for name in ["hook spool", "vaults", "credential paths", "vault files"] {
+        let said = row(&rows, name);
+        assert_eq!(
+            said.status,
+            Status::Warn,
+            "{name}: a check that did not run is never green"
+        );
+        assert!(
+            said.detail
+                .starts_with("not checked (inside a chat's sandbox"),
+            "{name}: {}",
+            said.detail
+        );
+        assert!(said.hint.contains("outside the chat's sandbox"), "{name}");
+    }
+    assert_eq!(
+        exit_code(&rows),
+        exit_code(&outside),
+        "a skip blocks nothing"
+    );
 }

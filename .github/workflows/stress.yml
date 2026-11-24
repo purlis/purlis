@@ -139,9 +139,10 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: stress-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  group: stress-${{ github.event_name == 'schedule' && 'nightly' || (github.ref == 'refs/heads/main' && github.sha) || github.ref }}
   # `ci.yml`'s reason: a PR's newest push supersedes the last, and a merge's run on `main` is
-  # the only record that commit gets.
+  # the only record that commit gets. On `main` each commit has a group of its own, since a
+  # group's one pending run is cancelled by the next push (as in `ci.yml`).
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:

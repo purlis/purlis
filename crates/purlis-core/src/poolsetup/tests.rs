@@ -22,6 +22,7 @@ fn on_a_pool(runner: Runner, sign_ins: SignIns) -> Facts {
             name: "dev-box".into(),
             runner,
             sign_ins,
+            others: None,
             cluster: None,
         }),
         ..facts(Engine::Ready)
@@ -104,6 +105,21 @@ fn a_later_step_says_nothing_yet() {
     let later = setup.step(StepId::Identity).unwrap();
     assert!(later.findings.is_empty());
     assert!(later.next.is_none());
+}
+
+/// **Pool setup says how many runners on the pool's engine belong to another desktop** (#7192),
+/// under the Pool step and still done: it only says it.
+#[test]
+fn the_pool_step_says_how_many_runners_belong_to_another_desktop_and_stays_done() {
+    let mut facts = on_a_pool(Runner::Running, SignIns::Read(Vec::new()));
+    facts.pool.as_mut().unwrap().others = Some("2 runners belong to another desktop".to_owned());
+    let setup = answer(&facts);
+    let step = setup.step(StepId::Pool).unwrap();
+    assert_eq!(step.line.as_deref(), Some("dev-box"));
+    assert_eq!(step.findings, ["2 runners belong to another desktop"]);
+    assert!(step.next.is_none());
+    let none = answer(&on_a_pool(Runner::Running, SignIns::Read(Vec::new())));
+    assert!(none.step(StepId::Pool).unwrap().findings.is_empty());
 }
 
 #[test]
@@ -262,6 +278,7 @@ fn an_identity_read_from_the_plane_finishes_its_step_as_what_it_acts_through() {
     assert_eq!(next(&setup, StepId::Try), ActionId::StartTestChat);
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn repos_on_another_forge_host_are_said_plainly_with_the_tool_line_to_add_by_hand() {
     let mut set = on_a_pool(Runner::Running, signed_in());
@@ -314,6 +331,7 @@ fn repos_only_on_a_host_purlis_knows_no_forge_at_say_what_to_declare_and_give_no
     assert_eq!(next(&setup, StepId::Identity), ActionId::CheckAgain);
 }
 
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_gitlab_host_is_given_glab_s_line() {
     let mut set = on_a_pool(Runner::Running, signed_in());
@@ -1133,4 +1151,24 @@ fn a_runner_on_the_engine_trusted_before_is_made_again_on_the_one_trusted_now() 
         "{:?}",
         pool.findings
     );
+}
+
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_pool_s_identity_step_gives_no_tool_line_to_add_by_hand_once_the_sign_in_replaces_it() {
+    let mut set = on_a_pool(Runner::Running, signed_in());
+    set.identity = Identity::Elsewhere {
+        host: "git.acme.internal".into(),
+        program: Some("gh".into()),
+        persona: Some("steward".into()),
+    };
+    let setup = answer(&set);
+    let see = setup
+        .step(StepId::Identity)
+        .unwrap()
+        .see
+        .as_ref()
+        .expect("a note");
+    assert!(see.note.contains("holds no forge token"), "{}", see.note);
+    assert!(!see.text.contains("GH_ENTERPRISE_TOKEN"), "{}", see.text);
 }

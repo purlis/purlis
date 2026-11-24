@@ -8,6 +8,7 @@ import { READY } from "../harness.js";
 import { harnessesRunning, logLine } from "../processes.js";
 import { theWindowHoldsTheRail, WINDOW_1280, windowAt } from "../rail.js";
 import { KEPT_EMPTY } from "../reach.js";
+import { OPEN_HANG_MS, opensVerdict } from "../openTimes.js";
 
 /**
  * The skeleton, driven the way a person drives it: buttons, tabs and typing, against the real
@@ -19,14 +20,6 @@ const FIFTY = 50;
 
 /** The stress test's time for each session it opens: what its `describe` is given, per session. */
 const EACH_SESSION_MS = 20_000;
-
-/**
- * **The longest one New tab may take**, from the press to its own session running (#2157):
- * about 3.4 s on the macOS runner, where a sandbox compile is ~200 ms and an open compiles six
- * times. A start that grows past this fails here by its number, where a fixed total for all
- * fifty hid the slowdown until it crossed the line with nothing else wrong.
- */
-const OPEN_CEILING_MS = 8_000;
 
 /** One pane, as a found element. */
 type Pane = WebdriverIO.Element;
@@ -152,8 +145,8 @@ async function tabsOpen(): Promise<number> {
 interface Opening {
   /** Set once the test is over: the loop stops before its next press. */
   stopped: boolean;
-  /** The loop, settled once it has stopped or fifty sessions run. */
-  done: Promise<void>;
+  /** The loop, settled once it has stopped or fifty sessions run, with each open's time in ms. */
+  done: Promise<number[]>;
 }
 
 /** The opening the fifty-sessions test started, while it may still run: `null` when none. */
@@ -161,19 +154,21 @@ let opening: Opening | null = null;
 
 /**
  * **Opens tabs until fifty sessions run.** Each session is waited for on its own (#2157): every
- * tab opened must bring its own harness up within `OPEN_CEILING_MS`, and one that does not says
- * which open it was. Each open's time is written down (`logs/fifty-opens.jsonl`), so a slow run
- * shows where. It checks its run's `stopped` before every press, so a test that ran out of
+ * tab opened must bring its own harness up within `OPEN_HANG_MS`, and one that does not says
+ * which open it was. Each open's time is written down (`logs/fifty-opens.jsonl`) and handed back,
+ * for `opensVerdict` to judge as a set (`openTimes.ts`): one slow open on a loaded runner is not
+ * a failure, a slow start is. It checks its run's `stopped` before every press, so a test that ran out of
  * time opens no chat after it (#2367).
  */
 function openUntilFifty(): Opening {
-  const run: Opening = { stopped: false, done: Promise.resolve() };
+  const run: Opening = { stopped: false, done: Promise.resolve([]) };
   run.done = openFor(run);
   return run;
 }
 
 /** The loop of one {@link Opening}, stopped by that run's flag alone. */
-async function openFor(run: Opening): Promise<void> {
+async function openFor(run: Opening): Promise<number[]> {
+  const times: number[] = [];
   for (let opened = 1; harnessesRunning() < FIFTY; opened++) {
     if (run.stopped)
       throw new Error(
@@ -190,18 +185,15 @@ async function openFor(run: Opening): Promise<void> {
     const pressed = Date.now();
     await pressAndStart("New tab");
     await browser.waitUntil(() => harnessesRunning() > before, {
-      timeout: OPEN_CEILING_MS,
+      timeout: OPEN_HANG_MS,
       interval: 100,
-      timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_CEILING_MS / 1000} s`,
+      timeoutMsg: `open ${opened}, with ${before} sessions running, started no session of its own in ${OPEN_HANG_MS / 1000} s`,
     });
     const took = Date.now() - pressed;
     logLine("fifty-opens.jsonl", { open: opened, running: before + 1, ms: took });
-    if (took > OPEN_CEILING_MS) {
-      throw new Error(
-        `open ${opened} took ${took} ms, over the ${OPEN_CEILING_MS} ms one open may`,
-      );
-    }
+    times.push(took);
   }
+  return times;
 }
 
 /**
@@ -305,9 +297,12 @@ describe("the window", function () {
 
   it("keeps fifty sessions running at once, and stays usable", async () => {
     opening = openUntilFifty();
-    await opening.done;
+    const times = await opening.done;
 
     expect(harnessesRunning()).toBe(FIFTY);
+    // Judged as a set, once all fifty run: one slow open does not stop the rest from opening.
+    const trouble = opensVerdict(times);
+    if (trouble !== null) throw new Error(trouble);
     const [pane] = await panes();
     await until(pane, READY);
     await type(pane, "with fifty sessions running");
@@ -334,6 +329,11 @@ describe("the window", function () {
    * What replaced it reads `clientWidth` in a layout effect, and a layout is not a paint.
    */
   it("shows what fits, hides the rest behind one button, and does not scroll", async () => {
+    // **Its own fifty**: it does not lean on the test above having passed. A session short of
+    // fifty (that test failed, or was retried) is topped up here, with no judgment of the time it
+    // takes: how long an open takes is the test above's to say.
+    opening = openUntilFifty();
+    await opening.done;
     const drawn = await tabTexts();
     const open = await tabsOpen();
     expect(open).toBeGreaterThan(40);

@@ -649,7 +649,14 @@ fn a_chat_runs_its_minting_tool_in_its_sandbox_with_its_desktop_away() {
             )
         )
     };
-    assert!(said.contains("/tools/steward/bin/printenv"), "{}", shown());
+    // The chat's shims are in its persona's folder, or in one of its own beside it where it also
+    // holds a guard for an undeclared glab (#1349).
+    assert!(
+        said.contains("/tools/steward/bin/printenv")
+            || (said.contains("/tools/steward/guarded/") && said.contains("/bin/printenv")),
+        "{}",
+        shown()
+    );
     assert!(said.contains("tool 0"), "{}", shown());
     assert!(said.contains("handed-a-value"), "{}", shown());
     assert!(

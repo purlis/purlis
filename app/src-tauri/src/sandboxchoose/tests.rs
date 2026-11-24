@@ -44,6 +44,7 @@ fn told(plane: &PlaneId, block: Block, read_back: bool) -> ChatBlocked {
             target: None,
             read_back,
             suggested: None,
+            purlis_command: None,
         }),
     )
 }

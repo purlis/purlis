@@ -62,6 +62,9 @@ pub struct PolicyOverride {
     pub runs: String,
 }
 
+/// What the waiting row for the merge opt-in is named: the route changes, not the hook's mode.
+const MERGE_ROUTE_ROW: &str = "merges through the forge route";
+
 /// The project's `[policy]` as the window says it: one [`enforcement::standing`], so the template,
 /// the families set apart, what waits and the digest Accept names are all of one read of the
 /// file. Only reads: the core alone resolves the policy, and nothing here keeps anything.
@@ -82,10 +85,21 @@ fn state_of(root: &std::path::Path) -> PolicyState {
         waiting: standing
             .waiting
             .into_iter()
-            .map(|(family, accepted, committed)| PolicyWaiting {
-                family: family.key().to_owned(),
-                accepted: accepted.word().to_owned(),
-                committed: committed.word().to_owned(),
+            .map(|(family, accepted, committed)| {
+                // The merge opt-in's row has equal modes, because the hook already runs the
+                // mode (`watch` is `log`): what changes is the forge route, held until now.
+                if family == enforcement::Family::GuardsMerge && accepted == committed {
+                    return PolicyWaiting {
+                        family: MERGE_ROUTE_ROW.to_owned(),
+                        accepted: "held".to_owned(),
+                        committed: committed.word().to_owned(),
+                    };
+                }
+                PolicyWaiting {
+                    family: family.key().to_owned(),
+                    accepted: accepted.word().to_owned(),
+                    committed: committed.word().to_owned(),
+                }
             })
             // The sandbox waits by its level (the follow-up's item 1): `off`, `floor` or `full`.
             .chain(standing.level.map(|(accepted, committed)| PolicyWaiting {

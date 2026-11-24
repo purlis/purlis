@@ -22,6 +22,7 @@ import { forgetPaneBands } from "./noticeSettle";
 import { letGoOfKeptTerminals } from "./keptTerminals";
 import { PANE_NOTICES } from "./paneNoticesPref";
 import { forgetStandIn, whyNoPane } from "./storedLayoutGuard.testkit";
+import { isQuarantined } from "./quarantine.testkit";
 
 // **Every stand-in core is watched** (#4758, `storedLayoutGuard.testkit.ts`): a test that fails
 // after its stand-in reopened chats and laid none of them out is told why no pane came, and the
@@ -34,6 +35,11 @@ vi.mock("@tauri-apps/api/mocks", async (original) => {
     mockIPC: ((handler, options) =>
       mocks.mockIPC(watched(handler), options)) as typeof mocks.mockIPC,
   };
+});
+// **The quarantine** (`ci/quarantine.toml`, ADR 0127): a test that flaked three times in seven
+// days is skipped by every run but the nightly's, until its fix removes its entry.
+beforeEach((context) => {
+  if (isQuarantined(context.task)) context.skip("quarantined: see ci/quarantine.toml");
 });
 beforeEach(() => forgetStandIn());
 afterEach((context) => {

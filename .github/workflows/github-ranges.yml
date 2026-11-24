@@ -1,0 +1,69 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: github ranges
+
+# The snapshot of GitHub's published web, api and git ranges that a chat's egress proxy holds
+# beside SNI pinning (ADR 0128 D3g, #7292) is `crates/purlis-core/src/sandbox/forgedeny/
+# github-ranges.txt`. GitHub adds and moves those addresses, so once a week this runs
+# `tools/github-ranges-refresh.mjs` and, when what it writes differs from what is committed,
+# keeps one issue open that says so. It reports and changes nothing: the person runs the tool
+# and commits the diff. It gates nothing: no branch protection names it.
+
+on:
+  schedule:
+    # Mondays at 05:17 UTC.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: github-ranges
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Refresh the snapshot in the checkout
+        run: node tools/github-ranges-refresh.mjs
+      - name: Say so when it differs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: GitHub's published ranges differ from the vendored snapshot
+        run: |
+          if git diff --quiet -- crates/purlis-core/src/sandbox/forgedeny/github-ranges.txt; then
+            echo "The snapshot is current."
+            exit 0
+          fi
+          git diff -- crates/purlis-core/src/sandbox/forgedeny/github-ranges.txt | head -200 > diff.txt
+          {
+            echo "GitHub's \`/meta\` web, api and git ranges are not what \`github-ranges.txt\` holds."
+            echo
+            echo "Run \`node tools/github-ranges-refresh.mjs\` and commit the diff. Until then a new"
+            echo "GitHub address is held only by the SNI pin and by what the forge hosts resolve to."
+            echo
+            echo '```diff'
+            cat diff.txt
+            echo '```'
+          } > body.md
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label bot-maintained \
+            --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" \
+              --label bot-maintained --body-file body.md
+          fi

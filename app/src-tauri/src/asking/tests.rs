@@ -1622,6 +1622,7 @@ fn a_held_merge(session: u32) -> purlis_core::mergehold::Waits {
             },
             ruleset: purlis_core::mergehold::Ruleset::Protects,
             approved_by: None,
+            squash: false,
             read_at: 40,
         },
         since: 40,
@@ -2599,6 +2600,7 @@ fn a_runner_chats_browser_login_asks_whether_its_persona_may_log_in_on_the_pool(
             runner_image: "a".repeat(64),
             pod: String::new(),
             engine: "this machine's Docker".into(),
+            marked: false,
         },
         login: "shop-login".into(),
         identity: "id-shop-login".into(),
@@ -2644,6 +2646,7 @@ fn each_run_of_a_runner_chats_tool_asks_whether_its_values_may_be_sent_for_that_
             runner_image: "a".repeat(64),
             pod: String::new(),
             engine: "this machine's Docker".into(),
+            marked: false,
         },
         tool: "kubectl".into(),
         vault: "team".into(),
@@ -3762,6 +3765,7 @@ fn a_runner_chats_login_and_tool_are_vault_uses_naming_the_pool() {
         runner_image: "a".repeat(64),
         pod: String::new(),
         engine: "this machine's Docker".into(),
+        marked: false,
     };
     world.pool_logins = vec![crate::chatbrowsers::PoolLoginWaits {
         session: 6,
@@ -3839,6 +3843,7 @@ fn trust_this(session: u32, name: &str) -> purlis_core::windowonly::Refusal {
             place: format!("github.com/acme/{name}"),
         },
         since: 1_700_000_000,
+        owner: None,
     }
 }
 
@@ -3926,6 +3931,54 @@ fn the_clones_ask_offers_trust_all_and_choose_and_says_when_each_clone_was_made(
             ),
         ]
     );
+}
+
+/// **Let this chat push a branch is one ask per chat and branch, with Allow and Keep blocked**
+/// (ADR 0128, amended 2026-11-23): it stays a Blocking ask in Asks whatever its chat is doing,
+/// carries the repo and branch to the press and no tip, and is told apart from another branch's.
+#[test]
+fn letting_a_chat_push_a_branch_is_one_ask_with_allow_and_keep_blocked_and_carries_no_tip() {
+    let refused = |branch: &str| purlis_core::windowonly::Refusal {
+        root: std::path::PathBuf::from("/p"),
+        session: 4,
+        control: purlis_core::windowonly::Control::LetChatPush {
+            chat: "01J9ZQ3V5N8X4T2K7M6P0R1S2A".to_owned(),
+            host: "github.com".to_owned(),
+            repo: "acme/app".to_owned(),
+            repo_id: 41,
+            branch: branch.to_owned(),
+        },
+        since: 0,
+        owner: None,
+    };
+    let one = window_only(&refused("theirs"));
+    assert_eq!(one.source, AskSource::LetChatPush);
+    assert_eq!(
+        one.options
+            .iter()
+            .map(|option| (option.id.as_str(), option.label.as_str(), option.allows))
+            .collect::<Vec<_>>(),
+        [
+            ("press", "Allow", true),
+            ("keep-blocked", "Keep blocked", false)
+        ]
+    );
+    assert!(one.says.contains("theirs in acme/app"), "{}", one.says);
+    assert!(
+        matches!(
+            &one.answer,
+            AnswerPath::LetChatPush { repo, repo_id, branch, .. }
+                if repo == "acme/app" && repo_id == "41" && branch == "theirs"
+        ),
+        "{:?}",
+        one.answer
+    );
+    assert_ne!(one.ask, window_only(&refused("other")).ask);
+
+    // A chat whose turn has ended keeps it in Asks: only Trust this clone moves to a finish row.
+    let (blocking, on_finish_rows) = finish_rows_apart(vec![one], &|_| false);
+    assert_eq!(blocking.len(), 1);
+    assert!(on_finish_rows.is_empty());
 }
 
 /// **A window-only ask is Blocking while a chat waits on it, and otherwise on its chat's finish

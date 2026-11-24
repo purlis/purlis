@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";
+import { SETTINGS_LINK, type SettingsLinkAsk } from "./settings/links";
 import type { IdentitiesShown, IdentityRow, IdentityStand } from "./bindings";
 import { AgentIdentityTab } from "./AgentIdentityTab";
 
@@ -323,5 +324,19 @@ describe("Agent identity", () => {
     expect(screen.queryByRole("button", { name: "Remove" })).toBeNull();
     expect(screen.queryByText("Set up")).toBeNull();
     expect(screen.getByRole("button", { name: "Create the GitHub App" })).toBeTruthy();
+  });
+});
+
+describe("The one sign-in", () => {
+  it("points to Accounts, and says what is set up here keeps working until then", async () => {
+    fake({ agent_identities: NONE });
+    const heard: SettingsLinkAsk[] = [];
+    const hear = (event: Event) => heard.push((event as CustomEvent<SettingsLinkAsk>).detail);
+    window.addEventListener(SETTINGS_LINK, hear);
+    render(<AgentIdentityTab plane="p" />);
+    expect(await screen.findByText(/keeps working until then/)).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "Open accounts" }));
+    window.removeEventListener(SETTINGS_LINK, hear);
+    expect(heard).toEqual([{ plane: "p", link: { group: "you.accounts" } }]);
   });
 });

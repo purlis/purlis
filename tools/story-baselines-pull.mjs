@@ -71,6 +71,8 @@ export function runToTake(runs, head, from) {
       (run) =>
         run.head_sha === head &&
         run.event === "pull_request" &&
+        // A label other than `update-baselines` starts a run that skips every job (#7335).
+        run.conclusion !== "skipped" &&
         run.head_repository?.full_name === from,
     )
     .sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt)[0];

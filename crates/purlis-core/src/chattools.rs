@@ -421,6 +421,33 @@ pub struct CodexApprovals {
     pub unreadable: bool,
 }
 
+/// **Codex's config files for a chat working in `cwd`**, in the order Codex layers them:
+/// `config.toml` in `$CODEX_HOME` (else `~/.codex`), then `.codex/config.toml` in each folder
+/// from the root down to `cwd`. Read wide: a project file Codex would not load is listed anyway.
+pub fn codex_config_files(cwd: Option<&Path>) -> Vec<std::path::PathBuf> {
+    let var = |name: &str| {
+        std::env::var_os(name)
+            .filter(|value| !value.is_empty())
+            .map(std::path::PathBuf::from)
+    };
+    let home = var("CODEX_HOME")
+        .filter(|dir| dir.is_absolute())
+        .or_else(|| var("HOME").map(|home| home.join(".codex")));
+    let mut files: Vec<std::path::PathBuf> = home
+        .map(|home| home.join("config.toml"))
+        .into_iter()
+        .collect();
+    if let Some(cwd) = cwd {
+        let mut up: Vec<&Path> = cwd.ancestors().collect();
+        up.reverse();
+        files.extend(
+            up.into_iter()
+                .map(|folder| folder.join(".codex/config.toml")),
+        );
+    }
+    files
+}
+
 impl CodexApprovals {
     /// This machine's, for a chat working in `cwd`: `config.toml` in `$CODEX_HOME` (else
     /// `~/.codex`), then `.codex/config.toml` in each folder from the root down to `cwd`, a
@@ -428,27 +455,7 @@ impl CodexApprovals {
     /// Read wide: a project file Codex would not load is read anyway, since it can only keep
     /// an approval of purlis's out.
     pub fn here(cwd: Option<&Path>) -> Self {
-        let var = |name: &str| {
-            std::env::var_os(name)
-                .filter(|value| !value.is_empty())
-                .map(std::path::PathBuf::from)
-        };
-        let home = var("CODEX_HOME")
-            .filter(|dir| dir.is_absolute())
-            .or_else(|| var("HOME").map(|home| home.join(".codex")));
-        let mut files: Vec<std::path::PathBuf> = home
-            .map(|home| home.join("config.toml"))
-            .into_iter()
-            .collect();
-        if let Some(cwd) = cwd {
-            let mut up: Vec<&Path> = cwd.ancestors().collect();
-            up.reverse();
-            files.extend(
-                up.into_iter()
-                    .map(|folder| folder.join(".codex/config.toml")),
-            );
-        }
-        Self::read(&files)
+        Self::read(&codex_config_files(cwd))
     }
 
     /// What `files` set, in order. A file that is not there sets nothing; one that cannot be

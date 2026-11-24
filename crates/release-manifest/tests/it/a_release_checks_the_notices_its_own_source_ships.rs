@@ -113,10 +113,11 @@ fn a_dev_build_builds_its_own_commit_and_only_once_that_commits_ci_went_green() 
         "{steps:#?}"
     );
 
-    // `plan` runs only on the gate's green: for a dev build, that commit's own `ci`, on its
-    // push to `main`, ended `success`.
-    assert_eq!(plan.needs(), ["gate"]);
-    assert_eq!(plan.condition(), Some("needs.gate.outputs.green == 'true'"));
+    // `plan` does not wait for the gate (R2, #7381): it runs the commit's own tools, holds
+    // nothing, and the jobs that sign, upload or publish are the ones behind the gate's green:
+    // for a dev build, that commit's own `ci`, on its push to `main`, ended `success`.
+    assert!(plan.needs().is_empty(), "{:?}", plan.needs());
+    assert_eq!(plan.condition(), None);
     let gate = job(&jobs, "gate");
     let lines = run_lines(&step(gate, "Wait for this commit's ci on main"));
     let at = |want: &str| {
@@ -139,9 +140,15 @@ fn a_dev_build_builds_its_own_commit_and_only_once_that_commits_ci_went_green() 
         lines[success + 3..].contains(&"echo \"green=false\" >> \"$GITHUB_OUTPUT\"".to_owned())
     );
 
-    // And `skip` is what keeps every build from starting.
+    // And `skip` is what keeps every build from starting: `plan`'s (a commit that ships nothing,
+    // a dev build that is not newer) stops `keys`, and `keys`' (a dev build with no updater key)
+    // stops the build.
+    assert_eq!(
+        job(&jobs, "keys").condition(),
+        Some("needs.plan.outputs.skip != 'true'")
+    );
     assert_eq!(
         job(&jobs, "build").condition(),
-        Some("needs.plan.outputs.skip != 'true'")
+        Some("needs.keys.outputs.skip != 'true'")
     );
 }

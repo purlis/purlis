@@ -96,7 +96,7 @@ fn the_provenance_job_attests_what_the_build_made_whenever_the_run_publishes() {
     assert!(
         provenance
             .condition()
-            .is_some_and(|said| said.contains("needs.plan.outputs.publish == 'true'")),
+            .is_some_and(|said| said.contains("needs.keys.outputs.publish == 'true'")),
         "a published build is attested, and one published nowhere is not: {:?}",
         provenance.condition()
     );

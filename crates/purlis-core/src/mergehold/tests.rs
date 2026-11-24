@@ -603,3 +603,143 @@ fn a_glab_merge_is_read_to_its_request_under_each_of_its_flags() {
         assert_eq!(held(cmd), ask(repo, 7), "{cmd}");
     }
 }
+
+/// #7246: bash 5.3 runs `${ cmd; }` and `${| cmd; }` inside double quotes as it does outside
+/// them, so the merge in one is a merge the hold reads, as it reads one in `"$( … )"`.
+#[test]
+fn a_merge_in_a_double_quoted_bash_5_3_substitution_is_held() {
+    // A merge inside a quoted substitution is held as one purlis cannot name the request of, as
+    // `"$(gh pr merge 12)"` is.
+    assert_eq!(held(r#"echo "$(gh pr merge 12)""#), Some(Held::Unreadable));
+    for cmd in [
+        r#"echo "${ gh pr merge 12; }""#,
+        r#"x="${| gh pr merge 12; }""#,
+        "x=\"${\ngh pr merge 12\n}\"",
+        r#"echo "a ${ echo "b"; gh pr merge 12; } c""#,
+        r#"echo "${ { true; }; gh pr merge 12; }""#,
+        // Read widely: the shell refuses these, and a guard that reads them only holds more.
+        r#"echo "${;gh pr merge 12; }""#,
+        // A program the quoted substitution prints.
+        r#""${ echo gh; }" pr merge 12"#,
+        r#"echo "${ echo } ; gh pr merge 12; }""#,
+        r#"echo "$( echo "${ gh pr merge 12; }" )""#,
+        r#"echo "${ echo "${ gh pr merge 12; }"; }""#,
+        "x=$(cat <<EOF\n\"${ gh pr merge 12; }\"\nEOF\n)",
+        "echo \"$\\\n{ gh pr merge 12; }\"",
+    ] {
+        assert_eq!(held(cmd), Some(Held::Unreadable), "{cmd}");
+    }
+    // One that never closes is read as unreadable, not as nothing.
+    for cmd in [r#"echo "${ true; ""#, "echo \"${ true; \" x"] {
+        assert!(
+            crate::floorguard::release_floor_reason(cmd, true).is_some(),
+            "{cmd}"
+        );
+    }
+}
+
+/// A quoted parameter expansion is no substitution: nothing in it is read as a command.
+#[test]
+fn a_quoted_parameter_expansion_is_not_a_bash_5_3_substitution() {
+    for cmd in [
+        r#"echo "${TITLE}""#,
+        r#"echo "${#}${1}""#,
+        r#"echo "${TITLE:-x}""#,
+        r#"echo "${arr[@]}" "${!ref}" "${*}${@}${?}${$}${-}${_x}""#,
+        r#"echo '${ gh pr merge 12; }'"#,
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+        assert_eq!(
+            crate::floorguard::release_floor_reason(cmd, true),
+            None,
+            "{cmd}"
+        );
+    }
+}
+
+/// #7250, round 2: a `}` that is a plain word closes nothing, so the merge after it is read. The
+/// `&`, `|` and `(` of a redirection, an array or a `[[ … ]]` start no command.
+#[test]
+fn a_funsub_close_is_read_only_where_bash_closes_it() {
+    for cmd in [
+        r#"echo "${ echo >& } ; gh pr merge 12; }""#,
+        r#"echo "${ echo >| } ; gh pr merge 12; }""#,
+        r#"echo "${ a=( } ); gh pr merge 12; }""#,
+        r#"echo "${ [[ x == y || } == z ]]; gh pr merge 12; }""#,
+        // The neighbours: a `<&`, an `&>`, a subshell, a function body and a `[[ … ]]` that ends.
+        r#"echo "${ cat <& } ; gh pr merge 12; }""#,
+        r#"echo "${ echo &> } ; gh pr merge 12; }""#,
+        r#"echo "${ ( } ); gh pr merge 12; }""#,
+        r#"echo "${ f() { true; }; gh pr merge 12; }""#,
+        r#"echo "${ [[ a && b ]]; gh pr merge 12; }""#,
+        r#"echo "${ echo >&2; gh pr merge 12; }""#,
+        // One that does not close is refused, not half read.
+        r#"echo "${ [[ x == y ; gh pr merge 12; }""#,
+    ] {
+        assert_eq!(held(cmd), Some(Held::Unreadable), "{cmd}");
+    }
+}
+
+/// #7250, round 2: a `${` inside single quotes, or escaped, is text, so a regex that holds one is
+/// no substitution.
+#[test]
+fn a_quoted_or_escaped_dollar_brace_is_no_funsub() {
+    for cmd in [
+        "sed 's/${[a-z]*}/x/' f",
+        r"grep -E '\${[A-Z_]+}' f",
+        r"grep -rn '\${\*}' src",
+        "grep -c '${.*}' f",
+        r"grep -c \${.*} f",
+        "sed $'s/${[a-z]*}/x/' f",
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+        assert_eq!(
+            crate::floorguard::release_floor_reason(cmd, true),
+            None,
+            "{cmd}"
+        );
+    }
+    // Quoted by single quotes inside double quotes is not quoted at all.
+    assert_eq!(
+        held(r#"echo "'${ gh pr merge 12; }'""#),
+        Some(Held::Unreadable)
+    );
+}
+
+/// A `gh api` / `glab api` read inside a substitution is read as one at the top of a line
+/// (#7092, #7195): the reported shape, two GETs in `$(...)` joined by `[ -z ] &&`, is no merge.
+#[test]
+fn a_plain_api_read_inside_a_substitution_is_no_merge() {
+    for cmd in [
+        r#"P=$(glab api "projects/:id/pipelines?ref=main&per_page=1" | head -1); [ -z "$P" ] && P=$(glab api "projects/:id/pipelines?per_page=1" | head -1); echo "$P""#,
+        "P=`glab api projects/:id/pipelines | head -1`; [ -z \"$P\" ] && P=`glab api projects/:id/pipelines | head -1`",
+        "P=$(gh api repos/o/r/actions/runs --jq '.workflow_runs[0].id'); [ -z \"$P\" ] && P=$(gh api -X GET repos/o/r/actions/runs)",
+        // The variable is quoted: in bash and dash an unquoted variable from a forge answer is
+        // split and globbed (`mer*` can match a file named `merge -XPUT`), so only the quoted
+        // form is the readable one (round 9).
+        r#"for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api "repos/o/r/pulls/$id"; done"#,
+    ] {
+        assert_eq!(held(cmd), None, "{cmd}");
+    }
+}
+
+/// What a substitution holds stays held: a write whose endpoint the shell builds, a write whose
+/// method or body the guard cannot read, a merge path or command, and a merge run through `eval`
+/// or `bash -c`.
+#[test]
+fn a_write_or_a_merge_inside_a_substitution_is_held() {
+    for cmd in [
+        "P=$(gh api -X POST repos/o/r/issues/$N/comments -f body=x)",
+        "P=$(glab api -X POST projects/:id/pipeline/$X)",
+        "P=$(gh api -X $M repos/o/r/pulls/5)",
+        "P=$(gh api --input f.json repos/o/r/pulls/5)",
+        "P=$(gh api -X POST repos/o/r/issues/$(cat n)/comments -f body=x)",
+        "P=$(glab api -X PUT projects/:id/merge_requests/5/merge)",
+        "P=$(gh api repos/o/r/pulls/5/merge -X PUT); echo $P",
+        "P=$(gh pr merge 5)",
+        "P=$(eval gh pr merge 5)",
+        "P=$(bash -c 'gh pr merge 5')",
+    ] {
+        assert!(held(cmd).is_some(), "{cmd}");
+    }
+}

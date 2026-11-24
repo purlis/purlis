@@ -190,6 +190,16 @@ impl ToARunner {
             &local,
             kept.pool(),
         )?;
+        // A runner made before names carried a desktop's tag is adopted at its next link (#7192):
+        // its container renamed, so another desktop on the engine takes a name of its own. A
+        // refusal leaves it as it is, and the link goes on by the container's id.
+        let adopted =
+            purlis_core::pools::adopt_at_link(&machine.config, &docker, kept, &desktop.device)
+                .unwrap_or_else(|why| {
+                    tracing::warn!("purlis: runner {} was not adopted: {why}", kept.name());
+                    kept.clone()
+                });
+        let kept = &adopted;
         let made = kept.made.clone();
         let checking = docker.clone();
         let preparing = docker.clone();

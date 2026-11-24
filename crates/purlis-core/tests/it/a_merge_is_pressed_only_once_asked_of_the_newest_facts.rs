@@ -38,6 +38,7 @@ fn facts(ci: Ci, ruleset: Ruleset, read_at: u64) -> Facts {
         },
         ruleset,
         approved_by: None,
+        squash: false,
         read_at,
     }
 }

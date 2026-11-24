@@ -2632,7 +2632,7 @@ fn granted_ready(
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     (ready, ctx)
 }
@@ -2765,7 +2765,7 @@ fn reading_for(asker: &Asker) -> Ctx {
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     ctx.under_chain(asker.policy.as_deref())
 }
@@ -3021,7 +3021,7 @@ fn login_ready(
         Some(confines) => {
             Ctx::new(&asker.root, asker.env.clone()).chat(confines, asker.folder.as_deref())
         }
-        None => Ctx::new(&asker.root, asker.env.clone()),
+        None => Ctx::new(&asker.root, asker.env.clone()).for_a_chat(),
     };
     authorise(&ctx, asker.persona.as_deref(), &ready.tool.vault)?;
     Ok((ready, ctx))
@@ -3067,6 +3067,7 @@ fn refused_block(asker: &Asker, vault: &str, target: String) -> RunBlocked {
             target: Some(target),
             read_back: false,
             suggested: None,
+            purlis_command: None,
         },
         vault: vault.to_owned(),
     }
@@ -3621,7 +3622,7 @@ pub(crate) fn serve_recorded(
         }
         let _ = send(writer, &Frame::Refused { why, code });
     };
-    let ctx = Ctx::new(&asker.root, asker.env.clone());
+    let ctx = Ctx::new(&asker.root, asker.env.clone()).for_a_chat();
     let mut command = wanted.command.clone();
     if command.first().is_some_and(|c| c == "--") {
         command.remove(0);
@@ -4428,6 +4429,7 @@ pub(crate) fn serve_recorded(
         chat_writes: Vec::new(),
         kept: super::identity::Kept::default(),
         policy: asker.policy.clone(),
+        for_a_chat: true,
     };
     exec::record(
         &ctx_traced,

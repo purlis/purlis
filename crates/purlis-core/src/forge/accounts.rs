@@ -18,7 +18,7 @@
 //! pasted token. It checks the token with the forge (who it belongs to, and its scopes), refuses
 //! one missing a scope purlis needs and names that scope, then writes the keyring item and the
 //! account. Signing in again as the same login on the same host replaces the token and keeps the
-//! account. **Sign-out** ([`sign_out`]) deletes the keyring item and the account.
+//! account. **Sign-out** ([`sign_out`]) deletes the keyring item and keeps the account, signed out.
 //!
 //! **A browser sign-in** ([`sign_in_with_grant`], ADR 0077 §3) lands in the same two stores. What
 //! the forge granted (the device flow on github.com, [`super::device`]; PKCE on gitlab.com) is
@@ -53,6 +53,7 @@ use crate::names::KEYCHAIN_PREFIX;
 use crate::secrets::keyring::{FileStore, OsStore, Presence, STUB_FILE, Store};
 
 mod memory;
+pub mod workflow;
 use memory::Remembering;
 
 /// The accounts file, in purlis's directory of the config home (ADR 0077 §8).
@@ -106,6 +107,12 @@ pub struct ForgeAccount {
     /// The token's scopes when it was checked, or `None` when the forge does not say (a GitHub
     /// fine-grained token, whose permissions are set on GitHub).
     pub scopes: Option<Vec<String>>,
+    /// The client id of the application the account **signed in through**, pinned when it signed
+    /// in (ADR 0128 D1.3): a renewal uses this one, never whatever the registrations say now, and
+    /// stops when they say another. `None` for a token the person pasted or a forge CLI's login
+    /// copied in, which no application granted, and for a browser sign-in made before this was
+    /// kept (renewed with purlis's own registration of its host, where it has one).
+    pub client_id: Option<String>,
 }
 
 /// The keyring service an account's token is kept under: `purlis/@forge/<host>/<id>`.
@@ -159,6 +166,8 @@ fn granted_by(kind: Kind, scope: &str) -> &'static [&'static str] {
     match (kind, scope) {
         (Kind::GitHub, "read:org") => &["read:org", "write:org", "admin:org"],
         (Kind::GitHub, "repo") => &["repo"],
+        // The second token's scope (ADR 0128 D1.1): held by itself and no other.
+        (Kind::GitHub, "workflow") => &["workflow"],
         (Kind::GitHub, "user:email") => &["user:email", "user"],
         (Kind::GitHub, "admin:ssh_signing_key") => &["admin:ssh_signing_key"],
         (Kind::GitLab, "api") => &["api"],
@@ -625,6 +634,8 @@ struct Written {
     state: State,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     scopes: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    client_id: Option<String>,
     #[serde(flatten)]
     rest: Map<String, Value>,
 }
@@ -646,6 +657,7 @@ fn account_of(value: &Value) -> Option<ForgeAccount> {
         method: written.method,
         state: written.state,
         scopes: written.scopes,
+        client_id: written.client_id,
     })
 }
 
@@ -658,6 +670,7 @@ fn written(account: &ForgeAccount, rest: Map<String, Value>) -> Value {
         method: account.method,
         state: account.state,
         scopes: account.scopes.clone(),
+        client_id: account.client_id.clone(),
         rest,
     })
     .unwrap_or(Value::Null)
@@ -924,6 +937,7 @@ pub(super) fn sign_in(
         Held::Token(token.0),
         method,
         None,
+        None,
     )
 }
 
@@ -936,7 +950,9 @@ pub(super) fn sign_in(
 /// host. The account, as listed.
 ///
 /// `typed` is the host of the registration the grant came from, and the account is that host's
-/// alone: the token is checked with, and only ever sent to, the forge at that host.
+/// alone: the token is checked with, and only ever sent to, the forge at that host. `client_id`
+/// is that registration's, **pinned on the account** ([`ForgeAccount::client_id`]): the grant's
+/// refresh token belongs to that application alone.
 #[allow(clippy::too_many_arguments)]
 pub fn sign_in_with_grant(
     _host: &HostScope,
@@ -947,6 +963,7 @@ pub fn sign_in_with_grant(
     typed: &str,
     granted: Granted,
     method: Method,
+    client_id: &str,
 ) -> Result<ForgeAccount, String> {
     if !granted_by_a_flow(method) {
         return Err("A browser sign-in is by the device flow or by PKCE.".to_string());
@@ -965,6 +982,7 @@ pub fn sign_in_with_grant(
         host,
         Held::Grant(granted),
         method,
+        Some(client_id.to_string()),
         None,
     )
 }
@@ -994,6 +1012,53 @@ pub fn holds(account: &ForgeAccount, scopes: &[&str]) -> bool {
         .scopes
         .as_ref()
         .is_some_and(|held| scopes.iter().all(|scope| grants(account.kind, held, scope)))
+}
+
+/// Whether `account`'s everyday token holds `workflow`, the permission to push CI files (ADR 0128
+/// D1.1 and D8.3). **Such a token is never served to a chat's route**: the CI-file protection on
+/// GitHub is that the token a chat's route carries cannot push a workflow file. It holds it when
+/// GitHub folded the scope in from a second sign-in, when it was signed in again after that, or
+/// when a pasted token was made with it. The person's own press is the only way out: sign in again
+/// through a grant that lacks it ([`workflow::needs_narrower_sign_in`] says what to do).
+pub fn everyday_holds_workflow(account: &ForgeAccount) -> bool {
+    account.kind == Kind::GitHub && holds(account, &[workflow::SCOPE])
+}
+
+/// `account` with its scopes recorded as not known, for a test of what an account that is not
+/// known to be free of `workflow` is served.
+#[cfg(any(test, feature = "fenced"))]
+#[doc(hidden)]
+pub fn forget_scopes_for_a_test(
+    config_root: &Path,
+    account: &ForgeAccount,
+) -> Result<ForgeAccount, String> {
+    workflow::clear_scopes(config_root, account)
+}
+
+/// What is known of whether `account`'s everyday token can push CI files.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkflowDoubt {
+    /// The forge says what the token holds, and `workflow` is not among it (or the forge has no
+    /// such scope, as on GitLab).
+    No,
+    /// The token holds `workflow`.
+    Holds,
+    /// The forge never said what the token holds (a fine-grained token has no scopes header), or
+    /// a read-back after a second grant could not say: it **may** hold `workflow`.
+    Unknown,
+}
+
+/// [`WorkflowDoubt`] of `account`. A chat's route is given the token only when this is
+/// [`WorkflowDoubt::No`] (ADR 0128 D1.1): unknown scopes fail closed.
+pub fn workflow_doubt(account: &ForgeAccount) -> WorkflowDoubt {
+    if account.kind != Kind::GitHub {
+        return WorkflowDoubt::No;
+    }
+    match &account.scopes {
+        None => WorkflowDoubt::Unknown,
+        Some(held) if grants(account.kind, held, workflow::SCOPE) => WorkflowDoubt::Holds,
+        Some(_) => WorkflowDoubt::No,
+    }
 }
 
 /// **`account`'s token and scopes replaced with what a step-up `granted`** (#5627, ADR 0116 §5):
@@ -1031,6 +1096,7 @@ pub fn widened(
         account.host.clone(),
         Held::Grant(granted),
         Method::Device,
+        account.client_id.clone(),
         Some(StepUp { account, more }),
     )
 }
@@ -1059,6 +1125,7 @@ fn keep(
     host: String,
     held: Held,
     method: Method,
+    client_id: Option<String>,
     step_up: Option<StepUp<'_>>,
 ) -> Result<ForgeAccount, String> {
     let secret = match &held {
@@ -1084,14 +1151,42 @@ fn keep(
         .map_err(|e| e.to_string())
         .and_then(|transport| check(transport.as_ref(), &forge, granted))
         .map_err(|why| unechoed(why, &secret))?;
-    if let Held::Grant(Granted {
-        scopes: Some(scopes),
-        ..
-    }) = &held
-    {
-        // The grant's own word on its scopes, where the forge gave one.
-        checked.scopes = Some(scopes.clone());
-    }
+    // Two decisions, kept apart. **Whether the sign-in holds what purlis needs** asks every source
+    // that spoke: the grant's own word, and on GitHub the token's `X-OAuth-Scopes` read back as
+    // well, so a scope only one of them names is never taken as granted. **What is recorded** is,
+    // on GitHub, the union of the two, so `workflow` named by either stays in view of the check
+    // that keeps such a token from a chat's route.
+    let said: Option<Vec<String>> = match &held {
+        Held::Grant(Granted {
+            scopes: Some(scopes),
+            ..
+        }) => Some(scopes.clone()),
+        _ => None,
+    };
+    let back = checked.scopes.take();
+    let sources: Vec<Vec<String>> = match (kind, said, back) {
+        (Kind::GitHub, Some(said), Some(back)) => {
+            checked.scopes = Some(said.iter().chain(&back).fold(Vec::new(), |mut all, scope| {
+                if !all.contains(scope) {
+                    all.push(scope.clone());
+                }
+                all
+            }));
+            vec![said, back]
+        }
+        (_, Some(said), _) => {
+            checked.scopes = Some(said.clone());
+            vec![said]
+        }
+        (_, None, Some(back)) => {
+            checked.scopes = Some(back.clone());
+            vec![back]
+        }
+        (_, None, None) => Vec::new(),
+    };
+    // No source that spoke is no evidence: nothing is held, so a step-up is never waved through.
+    let held_by_all =
+        |want: &str| !sources.is_empty() && sources.iter().all(|scopes| grants(kind, scopes, want));
     if let Some(StepUp { account, more }) = &step_up {
         if account.login != checked.login {
             let login = &account.login;
@@ -1103,12 +1198,11 @@ fn keep(
                 forge.kind.display()
             ));
         }
-        // What the grant holds, as it says or the forge read it back: every scope asked for.
-        let held = checked.scopes.as_deref().unwrap_or_default();
+        // What the grant holds, as it says and the forge read it back: every scope asked for.
         let short: Vec<&str> = more
             .iter()
             .copied()
-            .filter(|want| !grants(kind, held, want))
+            .filter(|want| !held_by_all(want))
             .collect();
         if !short.is_empty() {
             return Err(format!(
@@ -1119,8 +1213,12 @@ fn keep(
             ));
         }
     }
-    if let Some(scopes) = &checked.scopes {
-        let missing = missing(kind, scopes);
+    if !sources.is_empty() {
+        let missing: Vec<&'static str> = needed(kind)
+            .iter()
+            .copied()
+            .filter(|want| !held_by_all(want))
+            .collect();
         if !missing.is_empty() {
             return Err(if granted {
                 lacks_granted(kind, &host, &missing)
@@ -1135,6 +1233,11 @@ fn keep(
     };
     drop(held);
 
+    // The machine's renewal lock first, then the file's: a renewal in another process holds the
+    // first while it compares and sets this item, so a sign-in never lands between its check and
+    // its write. The same order everywhere, so no two wait on each other. Best effort when the
+    // lock cannot be had: no renewal is made then either.
+    let _across = crate::machine::Lock::named(config_root, super::refresh::REFRESH_LOCK);
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let same = file.accounts.iter().position(|value| {
@@ -1142,12 +1245,12 @@ fn keep(
             .is_some_and(|a| a.kind == kind && a.host == host && a.login == checked.login)
     });
     // A step-up keeps the account it was asked for, by its id: one signed out or removed while
-    // the person was on the forge's page is not made again.
+    // the person was on the forge's page is not made again (a signed-out record is still listed).
     if let Some(StepUp { account, .. }) = &step_up {
         let still = same
             .and_then(|at| file.accounts.get(at))
             .and_then(account_of)
-            .is_some_and(|listed| listed.id == account.id);
+            .is_some_and(|listed| listed.id == account.id && listed.state == State::SignedIn);
         if !still {
             return Err(format!(
                 "{} on {} was removed from this machine while {} waited, so nothing was \
@@ -1173,11 +1276,20 @@ fn keep(
         login: checked.login,
         method,
         state: State::SignedIn,
-        scopes: checked.scopes,
+        // A CI-permission code still approvable on GitHub may widen this very grant: until it
+        // has expired the sign-in's scopes are not known, whatever this check read.
+        scopes: if workflow::flow_pending(&rest) {
+            None
+        } else {
+            checked.scopes
+        },
+        client_id,
     };
     keyring
         .set(&service(&account), ITEM_ACCOUNT, &item)
         .map_err(|e| unechoed(e.message.to_string(), &secret))?;
+    // A fresh sign-in makes the pair another process held, unkept, beside the point.
+    super::refresh::clear_held(config_root, &account.id);
     drop(item);
     drop(secret);
     let value = written(&account, rest);
@@ -1195,15 +1307,21 @@ fn keep(
     Ok(account)
 }
 
-/// Sign out of the account `id` (ADR 0077 §3): its keyring item deleted, then the account taken
-/// off the list. A token the person pasted is not revoked at the forge: it may be theirs for other
-/// uses, and they delete it there. The account as it was.
+/// Sign out of the account `id` (ADR 0077 §3): its keyring item deleted, and the account kept on
+/// the list, **signed out**, as [`signed_out_by_the_forge`] keeps it. The record is what a repo's
+/// confirmed account names by id: dropping it made a sign-in as the same login a new account, and
+/// left every repo it served served by nothing for good. [`keep`] reuses the id for the same kind,
+/// host and login. A token the person pasted is not revoked at the forge: it may be theirs for
+/// other uses, and they delete it there. The account as it was.
 pub fn sign_out(
     _host: &HostScope,
     config_root: &Path,
     keyring: &dyn Store,
     id: &str,
 ) -> Result<ForgeAccount, String> {
+    // The renewal lock first, as [`keep`] takes it: a renewal in another process never writes
+    // the item back between this delete and the account leaving the list.
+    let _across = crate::machine::Lock::named(config_root, super::refresh::REFRESH_LOCK);
     let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
     let mut file = read(config_root)?;
     let at = file
@@ -1221,7 +1339,15 @@ pub fn sign_out(
                 e.message
             )
         })?;
-    file.accounts.remove(at);
+    super::refresh::clear_held(config_root, &account.id);
+    // The second token (ADR 0128 D1.1) goes with the first: a signed-out account leaves none.
+    workflow::remove(keyring, &account)?;
+    if let Some(Value::Object(fields)) = file.accounts.get_mut(at) {
+        fields.insert(
+            "state".to_string(),
+            serde_json::to_value(State::SignedOut).unwrap_or(Value::Null),
+        );
+    }
     write(config_root, file)?;
     Ok(account)
 }
@@ -1238,10 +1364,25 @@ pub(super) fn keep_refreshed(
     granted: &Granted,
     was: Option<&SecretString>,
     now: u64,
-) -> Result<(), String> {
+) -> Result<KeepOutcome, String> {
     crate::applog::keep_out(&granted.access);
     if let Some(refresh) = &granted.refresh {
         crate::applog::keep_out(refresh);
+    }
+    // Compare and set: the item is written only while it still holds the refresh token `was`,
+    // the one this renewal spent. A fresh sign-in or another process's renewal since is never
+    // overwritten by a stale pair, and an item another process ended is never made again.
+    let _one = WRITING.lock().unwrap_or_else(|e| e.into_inner());
+    let current = kept_afresh(keyring, account)?;
+    let holds_it = current.as_ref().is_some_and(|now_kept| {
+        now_kept
+            .refresh
+            .as_ref()
+            .map(|r| r.expose_secret().to_string())
+            == was.map(|r| r.expose_secret().to_string())
+    });
+    if !holds_it {
+        return Ok(KeepOutcome::Superseded);
     }
     let item = pair_of(granted, was, now);
     keyring
@@ -1252,7 +1393,17 @@ pub(super) fn keep_refreshed(
                 unechoed(e.message.to_string(), &granted.access)
             )
         })
-        .map(|_| ())
+        .map(|_| KeepOutcome::Written)
+}
+
+/// How [`keep_refreshed`] ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum KeepOutcome {
+    /// The renewed pair is in the keyring item.
+    Written,
+    /// The item no longer holds the refresh token this renewal spent (it was signed in again,
+    /// renewed elsewhere, or ended): nothing was written.
+    Superseded,
 }
 
 /// The forge ended the sign-in of the account `id` (ADR 0077 §3: a refresh it refuses): the
@@ -1279,6 +1430,7 @@ pub(super) fn signed_out_by_the_forge(
     // The item first: an account listed signed in must never be left with a token that the
     // forge has ended.
     let _ = keyring.delete(&service(&account), ITEM_ACCOUNT);
+    let _ = workflow::remove(keyring, &account);
     if let Some(Value::Object(fields)) = file.accounts.get_mut(at) {
         fields.insert(
             "state".to_string(),

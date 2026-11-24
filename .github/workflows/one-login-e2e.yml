@@ -1,0 +1,109 @@
+# Copyright 2026 Purlis
+# SPDX-License-Identifier: Apache-2.0
+
+name: one-login-e2e
+
+# **One login, slice I: the end-to-end test that proves the scenario** (ADR 0128).
+#
+# Someone makes a repo. Anyone with access signs in to their own forge account once, clones the
+# repo as a project, and a chat runs `gh`, `glab` and `git` with no manual command. This runs that
+# on a runner of each OS (Linux and macOS, where the clients' trust and proxy handling differ):
+# real `gh`, `glab` and `git` against a local fake forge of each shape, and it FAILS if a step
+# does. The first step runs the harness itself, so a failure is the scenario's and fast; the
+# second is the `forge-wiring` Rust test that runs it from the core's own test tree.
+#
+# `tests/one-login-e2e/seams.mjs` stands in for the slices of the ADR that have not merged, each
+# marked `TODO(slice X)`. The live counterpart, with real accounts, is `tools/one-login-live.sh`
+# and is never run here.
+
+on:
+  pull_request:
+    paths:
+      - tests/one-login-e2e/**
+      - crates/purlis-core/tests/it/one_login_end_to_end.rs
+      - crates/purlis-core/Cargo.toml
+      - crates/purlis-core/src/forge/**
+      - .github/workflows/one-login-e2e.yml
+  # The merge queue's run, on the paths of the filter above (`workflow-scope`, #7420).
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+# Nothing by default: the job names what it needs.
+permissions: {}
+
+concurrency:
+  group: one-login-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # A merge group carries no `paths`, so its run is scoped by this workflow's own filter
+  # (`workflow-scope`, #7420): the jobs below run in the queue only when the change meets it.
+  scope:
+    name: does the change need this
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token stays: `change-base` fetches the group's base by its SHA.
+          fetch-depth: 2
+      - id: scope
+        uses: ./.github/actions/workflow-scope
+        with:
+          workflow: one-login-e2e.yml
+
+  e2e:
+    name: end to end (${{ matrix.os }})
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.scope.outputs.run != 'false') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # `gh` is on both images; `glab` is on neither. Built from one pinned release on both, so a
+      # runner image's `brew` bump cannot move what the test runs.
+      - name: glab
+        shell: bash
+        run: |
+          # macOS images carry no Go; Linux's has it.
+          if [ "$RUNNER_OS" = macOS ]; then brew install go; fi
+          go install gitlab.com/gitlab-org/cli/cmd/glab@v1.119.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: the scenario, on its own
+        timeout-minutes: 20
+        shell: bash
+        run: node tests/one-login-e2e/run.mjs --out "$RUNNER_TEMP/e2e-out"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: one-login-e2e-${{ matrix.os }}
+          path: ${{ runner.temp }}/e2e-out
+          if-no-files-found: warn
+      - uses: ./.github/actions/rust-toolchain
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: the same scenario, in the default build
+        timeout-minutes: 30
+        shell: bash
+        env:
+          # A client that is missing fails this run; everywhere else the test skips and says so.
+          PURLIS_PROXY_REAL_CLIENTS: "1"
+        run: cargo test -p purlis-core --locked --test it -- --nocapture one_login_end_to_end

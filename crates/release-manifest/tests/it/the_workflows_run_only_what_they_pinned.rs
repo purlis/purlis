@@ -306,7 +306,7 @@ fn no_release_job_that_holds_a_key_or_publishes_restores_a_cache() {
     assert_eq!(
         names,
         [
-            "plan",
+            "keys",
             "build",
             "runner-image",
             "runner-image-signature",

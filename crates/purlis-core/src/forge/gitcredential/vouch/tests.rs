@@ -219,3 +219,79 @@ fn a_clone_with_no_record_says_when_its_folder_was_made() {
     assert_eq!(listed.len(), 1, "{listed:?}");
     assert_eq!(listed[0].made, created);
 }
+
+/// Confirms `clone` for the forge's repo `path` (number 1), as `forge-repos.json` holds it.
+fn confirmed_as(home: &Path, clone: &Path, path: &str) {
+    use crate::forge::Kind;
+    use crate::forge::accounts::{ForgeAccount, Method, State};
+    use crate::forge::confirmed::{Candidate, confirm};
+    let account = ForgeAccount {
+        id: "01A".to_owned(),
+        kind: Kind::GitHub,
+        host: "github.com".to_owned(),
+        login: "octocat".to_owned(),
+        method: Method::Pat,
+        state: State::SignedIn,
+        scopes: Some(vec!["repo".to_owned()]),
+        client_id: None,
+    };
+    let candidate = Candidate {
+        kind: Kind::GitHub,
+        host: "github.com".to_owned(),
+        path: path.to_owned(),
+        repo_id: 1,
+    };
+    confirm(
+        &HostScope::for_a_test(),
+        home,
+        clone,
+        &candidate,
+        &account,
+        "client",
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_trusted_clone_with_no_confirmed_repo_is_listed_and_a_confirmed_one_is_not() {
+    let plane = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let old = a_clone(plane.path(), "ws", "old", "https://github.com/acme/old.git");
+    let done = a_clone(
+        plane.path(),
+        "ws",
+        "done",
+        "https://github.com/acme/done.git",
+    );
+    a_clone(
+        plane.path(),
+        "ws",
+        "untrusted",
+        "https://github.com/acme/u.git",
+    );
+    super::super::remote::record(home.path(), &old, "github.com/acme/old".to_owned()).unwrap();
+    super::super::remote::record(home.path(), &done, "github.com/acme/done".to_owned()).unwrap();
+    confirmed_as(home.path(), &done, "acme/done");
+
+    let listed = unconfirmed_clones(plane.path(), home.path());
+
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].folder, "workspaces/ws/old");
+    assert_eq!(listed[0].place, "github.com/acme/old");
+}
+
+#[test]
+fn a_clone_confirmed_at_one_address_and_trusted_again_at_another_is_listed() {
+    let plane = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let moved = a_clone(plane.path(), "ws", "moved", "https://github.com/acme/a.git");
+    super::super::remote::record(home.path(), &moved, "github.com/acme/a".to_owned()).unwrap();
+    confirmed_as(home.path(), &moved, "acme/a");
+    assert!(unconfirmed_clones(plane.path(), home.path()).is_empty());
+
+    super::super::remote::record(home.path(), &moved, "github.com/acme/b".to_owned()).unwrap();
+
+    let listed = unconfirmed_clones(plane.path(), home.path());
+    assert_eq!(listed.len(), 1, "{listed:?}");
+    assert_eq!(listed[0].place, "github.com/acme/b");
+}

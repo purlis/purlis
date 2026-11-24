@@ -171,6 +171,17 @@ export default defineConfig(async ({ command }) => ({
   // `stories`, every story run in real Chromium and WebKit in each cell of the theme matrix
   // (`npm run test:stories`, `.storybook/vitest.project.ts`, `docs/component-stories.md`).
   test: {
+    // A failed test is run once more in CI, and a pass on that retry is a flake: named as a
+    // warning, never silently green (ADR 0127, `tools/vitest-flaky-reporter.mjs`). Not locally,
+    // where a red is the answer a person is waiting for.
+    ...(process.env.CI
+      ? {
+          reporters: [
+            "default",
+            fileURLToPath(new URL("../tools/vitest-flaky-reporter.mjs", import.meta.url)),
+          ],
+        }
+      : {}),
     projects: [
       {
         extends: true,
@@ -194,6 +205,7 @@ export default defineConfig(async ({ command }) => ({
           // a runner whose cores are all busy with the other workers; one shared budget here
           // stands in for each file raising its own.
           testTimeout: 20_000,
+          retry: process.env.CI ? 1 : 0,
         },
       },
       // Loaded only when Vitest reads this file: `vite dev` and `vite build` never load

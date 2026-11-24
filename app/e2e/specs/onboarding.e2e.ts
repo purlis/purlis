@@ -81,14 +81,26 @@ function aRepo(name: string): string {
   return at;
 }
 
-/** Draws the steps from the strip's `+`, pressed from the page, and waits for the doors. */
+/** Draws the steps from the strip's `+`, pressed from the page, and waits for the doors. A welcome
+ *  drawn with no steps (the window's memory held a finished run, and the kept place's read was
+ *  late) gets the `+` once more: the second press mounts the steps afresh. */
 async function drawTheSteps(): Promise<void> {
-  const pressed = await browser.execute((css: string) => {
-    const button = document.querySelector<HTMLElement>(css);
-    button?.click();
-    return button !== null;
-  }, OPEN_ONE);
-  if (!pressed) throw new Error("the Projects strip offers no Open a project…");
+  const press = async () => {
+    const pressed = await browser.execute((css: string) => {
+      const button = document.querySelector<HTMLElement>(css);
+      button?.click();
+      return button !== null;
+    }, OPEN_ONE);
+    if (!pressed) throw new Error("the Projects strip offers no Open a project…");
+  };
+  await press();
+  const first = await $(STEPS)
+    .waitForExist({ timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (first) return;
+  const welcomeUp = await $(WELCOME).isExisting();
+  if (welcomeUp) await press();
   await $(STEPS).waitForExist({ timeout: 20_000, timeoutMsg: "the steps never came" });
 }
 

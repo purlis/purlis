@@ -28,6 +28,7 @@ function account(login: string, host: string, more: Partial<ForgeAccountRow> = {
     signed_in: true,
     scopes: [],
     wider: [],
+    ci_allowed: false,
     ...more,
   } satisfies ForgeAccountRow;
 }
@@ -80,6 +81,30 @@ describe("You › Accounts › Forge accounts", () => {
     expect(within(sam).getByText("token; wider than needed: api")).toBeTruthy();
     expect(
       within(sam).getByRole("button", { name: "Sign out of sam on gitlab.example.org" }),
+    ).toBeTruthy();
+  });
+
+  it("offers Allow CI files until the second sign-in is given, then says it is", async () => {
+    accounts = [account("octocat", "github.com")];
+    const first = render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(
+      within(table).getByRole("button", { name: "Allow CI files for octocat on github.com" }),
+    ).toBeTruthy();
+    first.unmount();
+    accounts = [account("octocat", "github.com", { ci_allowed: true })];
+    render(<Accounts />);
+    const again = await findGrid(screen, "Forge accounts");
+    expect(within(again).queryByRole("button", { name: /Allow CI files/ })).toBeNull();
+    expect(within(again).getByText("browser; CI files allowed")).toBeTruthy();
+  });
+
+  it("keeps the wider-than-needed note beside the CI files one", async () => {
+    accounts = [account("octocat", "github.com", { wider: ["gist"], ci_allowed: true })];
+    render(<Accounts />);
+    const table = await findGrid(screen, "Forge accounts");
+    expect(
+      within(table).getByText("browser; wider than needed: gist; CI files allowed"),
     ).toBeTruthy();
   });
 

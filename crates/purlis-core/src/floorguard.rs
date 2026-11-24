@@ -51,7 +51,9 @@
 //!   dropped from `words` before the table is read. The table entry alone would have been a
 //!   dead line: the lookup used to live under `elif base in ("gh", "glab")`.
 
+mod exact;
 mod merge;
+mod placed;
 mod token;
 
 use crate::credguard::git_subcommand;
@@ -192,6 +194,36 @@ impl Drop for OnlyMerges {
     }
 }
 
+std::thread_local! {
+    /// Whether the floor is reading a body line that is read as commands only as a hedge
+    /// ([`ReadingAHedge`]): the speculative checks of #7131 are not made on one.
+    static READING_A_HEDGE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the floor is reading a hedged body line.
+fn reading_a_hedge() -> bool {
+    READING_A_HEDGE.get()
+}
+
+/// **The floor reads a hedged body line while this lives**, and as it did before once dropped.
+struct ReadingAHedge {
+    outer: bool,
+}
+
+impl ReadingAHedge {
+    fn on() -> Self {
+        Self {
+            outer: READING_A_HEDGE.replace(true),
+        }
+    }
+}
+
+impl Drop for ReadingAHedge {
+    fn drop(&mut self) {
+        READING_A_HEDGE.set(self.outer);
+    }
+}
+
 /// The rows of [`PUBLISH_FORGE`] that merge a request rather than cut a release.
 const MERGE_ROWS: [(&str, &str, &str); 3] = [
     ("gh", "pr", "merge"),
@@ -209,6 +241,184 @@ fn only_merges() -> bool {
     ONLY_MERGES.get()
 }
 
+/// **Reads with `cwd`, the hook payload's working directory, as the directory a relative path in
+/// the line is opened against** (#7195): a request edit's `--input body.json` is the file gh
+/// opens in the shell's directory, which only the payload knows. Without it, or where the line
+/// is not one sole call ([`is_sole_call`]), a body is unread.
+pub fn in_directory<R>(cwd: &str, read: impl FnOnce() -> R) -> R {
+    let given = (!cwd.is_empty()).then(|| std::path::PathBuf::from(cwd));
+    let outer = DIRECTORY.replace(given);
+    let _restore = RestoreDirectory(outer);
+    read()
+}
+
+/// Puts the directory [`in_directory`] replaced back, a panic's unwinding included.
+struct RestoreDirectory(Option<std::path::PathBuf>);
+
+impl Drop for RestoreDirectory {
+    fn drop(&mut self) {
+        DIRECTORY.replace(self.0.take());
+    }
+}
+
+std::thread_local! {
+    /// The directory the hook's payload says the shell is in ([`in_directory`]).
+    static DIRECTORY: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+    /// Whether the line being read is one sole call ([`is_sole_call`], set by [`metered`]).
+    static SOLE_CALL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Where a relative path in the line is opened: the payload's directory. Only a line that is
+/// one sole call ([`is_sole_call`]) has its bodies read, and no `cd` can come before that.
+fn directory_the_line_runs_in() -> Option<std::path::PathBuf> {
+    DIRECTORY.with_borrow(Clone::clone)
+}
+
+/// Whether the line being read lets a request edit's body be read ([`is_sole_call`]).
+fn bodies_are_readable() -> bool {
+    SOLE_CALL.get()
+}
+
+/// **Whether `cmd` is one `gh` or `glab` call and nothing else** (#7195): one command line (a
+/// heredoc's body aside; a backslash and a newline join lines as the shell does), behind env
+/// assignments only, with no `;`, `&`, `|`, parenthesis, backtick, `$(`, `${` that is not a
+/// parameter's or `$'` outside a single quote, no quote left open and no backslash ending the
+/// line. An output redirection (`>f`, `2>&1`, `&>f`) is no command: only a `&` that is not part
+/// of one holds. A line that is anything else may run something first (a `cd`, an `eval`, a
+/// `source`, a function, an alias) or feed the call another stdin, so a request body is not read
+/// from it. Read off the text and failing closed: a doubt is `false`.
+fn is_sole_call(cmd: &str) -> bool {
+    let layout = crate::heredoc::heredoc_layout(cmd);
+    if !layout
+        .first()
+        .is_some_and(|l| !l.body && !l.text.trim().is_empty())
+    {
+        return false;
+    }
+    // The command's own lines, a heredoc's body aside, joined as the shell reads them. A line
+    // that ends on a backslash and runs into a body is not read: what joins it is not here.
+    let mut lines: Vec<&str> = Vec::new();
+    for (i, l) in layout.iter().enumerate() {
+        if l.body {
+            continue;
+        }
+        if l.text.ends_with('\\') && layout.get(i + 1).is_some_and(|n| n.body) {
+            return false;
+        }
+        lines.push(&l.text);
+    }
+    let text: Vec<char> = lines.join("\n").chars().collect();
+    let mut words: Vec<String> = Vec::new();
+    let mut word = String::new();
+    let mut quote: Option<char> = None;
+    // A newline outside a quote ends the command: only blanks may follow it.
+    let mut ended = false;
+    let mut i = 0usize;
+    while i < text.len() {
+        let c = text[i];
+        let next = text.get(i + 1).copied();
+        i += 1;
+        if ended && !c.is_whitespace() {
+            return false;
+        }
+        // `${` runs a command in the current shell in bash 5.3 (`${ cmd; }`, `${| cmd; }`),
+        // quoted or not: only a parameter's name or a special parameter may follow it.
+        if c == '$' && next == Some('{') && quote != Some('\'') {
+            let after = text.get(i + 1).copied();
+            if !after.is_some_and(|a| a.is_ascii_alphanumeric() || "_#?@*!$-".contains(a)) {
+                return false;
+            }
+        }
+        match quote {
+            Some('\'') => {
+                if c == '\n' {
+                    return false;
+                }
+                quote = (c != '\'').then_some('\'');
+                word.push(c);
+            }
+            Some(_) => match c {
+                '`' | '\n' => return false,
+                '$' if next == Some('(') => return false,
+                '\\' => {
+                    // A backslash and a newline are no text at all, in a quote or out of one.
+                    if next == Some('\n') {
+                        i += 1;
+                        continue;
+                    }
+                    word.push(c);
+                    let Some(n) = next else {
+                        return false;
+                    };
+                    i += 1;
+                    word.push(n);
+                }
+                '"' => {
+                    quote = None;
+                    word.push(c);
+                }
+                _ => word.push(c),
+            },
+            None => match c {
+                // An output redirection is harmless: `2>&1`, `>&2` and `&>file`, `&>>file`. Any
+                // other `&` backgrounds the call or chains it.
+                '&' if word.ends_with('>') && next.is_some_and(|n| n.is_ascii_digit()) => {
+                    word.push(c);
+                }
+                '&' if word.is_empty() && next == Some('>') => word.push(c),
+                ';' | '&' | '|' | '(' | ')' | '`' => return false,
+                '$' if next == Some('\'') => return false,
+                '\\' => {
+                    if next == Some('\n') {
+                        i += 1;
+                        continue;
+                    }
+                    word.push(c);
+                    let Some(n) = next else {
+                        return false;
+                    };
+                    i += 1;
+                    word.push(n);
+                }
+                '\'' | '"' => {
+                    quote = Some(c);
+                    word.push(c);
+                }
+                '\n' => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                    ended = true;
+                }
+                c if c.is_whitespace() => {
+                    if !word.is_empty() {
+                        words.push(std::mem::take(&mut word));
+                    }
+                }
+                _ => word.push(c),
+            },
+        }
+    }
+    if quote.is_some() {
+        return false;
+    }
+    if !word.is_empty() {
+        words.push(word);
+    }
+    let is_assignment = |w: &String| {
+        w.split_once('=').is_some_and(|(name, _)| {
+            !name.is_empty()
+                && !name.starts_with(|c: char| c.is_ascii_digit())
+                && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    };
+    words
+        .iter()
+        .find(|w| !is_assignment(w))
+        .is_some_and(|w| w == "gh" || w == "glab")
+}
+
 /// [`release_floor_reason`], and how many bytes of text the floor read on the way, every level
 /// counted ([`Work`]).
 fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
@@ -216,9 +426,55 @@ fn metered(cmd: &str, unattended: bool) -> (Option<String>, usize) {
         read: 0,
         allowed: cmd.len().saturating_mul(WORK_FACTOR) + WORK_SLACK,
     }));
+    let outer_cut = CUT_SHORT.replace(false);
+    // A level nested in a reading keeps the outer line's answer: a call inside `bash -c` is not
+    // the sole command of the line it stands in.
+    let sole = SOLE_CALL.replace(if outer.is_some() {
+        SOLE_CALL.get()
+    } else {
+        is_sole_call(cmd)
+    });
+    let outer_scripts = SCRIPTS_READ.take();
     let said = floor(cmd, unattended, 0);
+    SCRIPTS_READ.replace(outer_scripts);
+    SOLE_CALL.set(sole);
+    // **A reading cut short never ends as an allow** (#7245, round 4): whichever way a limit
+    // was crossed (the work meter, the depth, the nesting), it set this flag, and no one clears
+    // it but this function. A level that swallowed its own refusal still ends here as one.
+    let cut = CUT_SHORT.replace(outer_cut);
+    let said = closed_on_a_cutoff(said, cut, unattended);
     let read = WORK.replace(outer).map_or(0, |work| work.read);
     (said, read)
+}
+
+/// `said`, or the unreadable refusal where a limit cut the reading short and nothing said so.
+fn closed_on_a_cutoff(said: Option<String>, cut: bool, unattended: bool) -> Option<String> {
+    said.or_else(|| {
+        (unattended && cut).then(|| format!("{RELEASE_FLOOR_FIX}{}", merge::UNREADABLE))
+    })
+}
+
+std::thread_local! {
+    /// The scripts the floor has read in this reading, with the depth and whether as a hedge:
+    /// one that was read and let through is not read again ([`first_read_of_script`]).
+    static SCRIPTS_READ: std::cell::RefCell<std::collections::HashSet<(String, usize, bool)>> =
+        std::cell::RefCell::new(std::collections::HashSet::new());
+}
+
+/// Whether `script` is read now for the first time at `depth` in this reading. A script that
+/// refused is never asked about twice, since the reading ends at its refusal.
+fn first_read_of_script(script: &str, depth: usize) -> bool {
+    SCRIPTS_READ.with(|read| {
+        read.borrow_mut()
+            .insert((script.to_owned(), depth, reading_a_hedge()))
+    })
+}
+
+std::thread_local! {
+    /// Whether any reading on this thread was cut short by a limit since [`metered`] began it.
+    /// Set by every limit, cleared by none but `metered`, so a reading that did not finish can
+    /// never fall through to "nothing to refuse".
+    static CUT_SHORT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// How many times its own length the floor reads of one command, every level it reads in
@@ -248,14 +504,18 @@ std::thread_local! {
 
 /// Counts `text` as read at one more level, and whether the floor may still read it.
 fn may_read(text: &str) -> bool {
-    WORK.with(|work| match work.get() {
+    let may = WORK.with(|work| match work.get() {
         Some(mut now) => {
             now.read = now.read.saturating_add(text.len());
             work.set(Some(now));
             now.read <= now.allowed
         }
         None => true,
-    })
+    });
+    if !may {
+        CUT_SHORT.set(true);
+    }
+    may
 }
 
 /// How many commands deep the floor reads a command inside a command — a shell's script, an
@@ -268,27 +528,43 @@ fn may_read(text: &str) -> bool {
 pub const MAX_DEPTH: usize = crate::guardcaps::MAX_COMMAND_DEPTH;
 
 /// [`release_floor_reason`] at `depth` commands in.
+///
+/// Inside backticks the shell turns `\$` into `$`, so what the lexer kept as an escaped dollar is
+/// an expansion in the substitution it runs (#7423): where the line as written is let through,
+/// it is read as that shell reads it too. A refusal of the line as written is the one said.
 pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
+    let said = floor_as_written(cmd, unattended, depth);
+    if said.is_some() || !unattended || depth > MAX_DEPTH {
+        return said;
+    }
+    rewrite_backticks(cmd).and_then(|rewritten| floor(&rewritten, unattended, depth + 1))
+}
+
+/// [`floor`] of the line as written.
+fn floor_as_written(cmd: &str, unattended: bool, depth: usize) -> Option<String> {
     if !unattended {
         return None;
     }
     let fix = RELEASE_FLOOR_FIX;
     // What an earlier line left of the nesting flag is not this line's.
     nested_too_deep();
+    if depth > MAX_DEPTH {
+        CUT_SHORT.set(true);
+    }
     if depth > MAX_DEPTH || !may_read(cmd) {
         return Some(format!("{fix}{}", merge::UNREADABLE));
     }
     let inner_floor = |inner: &str| floor(inner, unattended, depth + 1);
     // A heredoc body nothing runs is data, and only the substitutions of one the shell
     // expands run (#6293).
-    let runs = crate::heredoc::commands_a_shell_runs(cmd);
+    let runs = crate::heredoc::commands_a_shell_runs_without_the_hedge(cmd);
     let mut segments = commands_of(&runs);
     // A `case` pattern's `)` ends the pattern and starts the arm's command (`x) gh pr merge`),
     // which the segment walk keeps as a word: read the line again with its patterns blanked, and
     // the arm's commands are segments of their own (#7131). Only the segments that are new are
     // added: a copy of each would be read again at every depth of an `eval` chain.
-    let shell_lines = crate::heredoc::lines_a_shell_runs(cmd);
-    let (lines, unparsed_case) = in_command_position(&shell_lines);
+    let shell_lines = crate::heredoc::lines_a_shell_runs_without_the_hedge(cmd);
+    let (lines, unparsed_case, mut time_option) = in_command_position(&shell_lines);
     if nested_too_deep() {
         return Some(too_nested(fix));
     }
@@ -301,15 +577,114 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
         }
     }
+    // The body lines read as commands only as bash 3.2's hedge (a `)` in a quoted substitution's
+    // heredoc body, `Enclosed::quoted_alone`) are read for a literal merge, and for that alone:
+    // both joined with the lines around them, as any line is, and each on its own, so that a
+    // quote an earlier line of the body left open cannot hide a merge on a later one. The
+    // segments they add are held below, in [`ReadingAHedge`]; the speculative checks of #7131
+    // (the program the shell builds, a substitution that could print a command, a `case` not
+    // read to its end) are made only on lines a shell runs on every reading (#7131, the ruling
+    // on the large commit body).
+    // Each line on its own, but a line that ends in a backslash is one with the next.
+    let mut hedged_lines: Vec<String> = Vec::new();
+    let mut continued = false;
+    for line in crate::heredoc::hedged_body_lines(cmd) {
+        match hedged_lines.last_mut().filter(|_| continued) {
+            Some(last) => {
+                last.push('\n');
+                last.push_str(&line);
+            }
+            None => hedged_lines.push(line.clone()),
+        }
+        continued = crate::heredoc::ends_in_line_continuation(&line);
+    }
+    // A line read twice reads the same, and a blank one holds no command: each distinct line is
+    // read once, however long the body that repeats it (a long body is mostly blank lines and
+    // the same few bullets), which keeps a 64 KB body well inside the hook's budget on a slow
+    // debug runner too (#7245, round 4).
+    let mut distinct = std::collections::HashSet::new();
+    hedged_lines.retain(|line| !line.trim().is_empty() && distinct.insert(line.clone()));
+    let mut hedge_segments: Vec<Vec<String>> = Vec::new();
+    // The segments of each hedged line, to feed a shell on that line and no other line.
+    let mut hedged_line_segments: Vec<Vec<Vec<String>>> = Vec::new();
+    // A residual, known: each hedged line is read on its own as if it began outside any quote,
+    // so a quote one line opens and the next closes is read wrongly by the line-by-line reading.
+    // The reading of the whole text above, which joins the lines, is what holds a merge after
+    // such a close.
+    let mut unparsed_hedge_case = false;
+    if !hedged_lines.is_empty() {
+        let mut read: std::collections::HashSet<Vec<String>> = segments.iter().cloned().collect();
+        let mut add = |toks: Vec<String>| {
+            if read.insert(toks.clone()) {
+                hedge_segments.push(toks);
+            }
+        };
+        for toks in commands_of(&crate::heredoc::commands_a_shell_runs(cmd)) {
+            add(toks);
+        }
+        let (all_lines, unparsed, time) =
+            in_command_position(&crate::heredoc::lines_a_shell_runs(cmd));
+        unparsed_hedge_case |= unparsed;
+        time_option |= time;
+        for toks in commands_of(&all_lines) {
+            add(toks);
+        }
+        for line in &hedged_lines {
+            // On its own a line has no `case` before it, so it is read as one of an arm's
+            // lines too: `x) gh pr merge 7` is an arm whose command is the merge.
+            let (blanked, unparsed, time) = in_command_position(line);
+            unparsed_hedge_case |= unparsed;
+            time_option |= time;
+            // The wrapper closes its own `case` (`esac`, #7245 round 4 ruling). Prose that is no
+            // arm (`$(echo gh) pr view 7`, `{gh,pr,view,7}`) cannot be read as one, so its flag
+            // is raised only for a line that names a `case` itself: a real one, read to its end.
+            let as_an_arm = if line.contains(')') || names_a_case(line) {
+                let (arm, unparsed, time) =
+                    in_command_position(&format!("case _ in\n{line}\nesac"));
+                unparsed_hedge_case |= unparsed && names_a_case(line);
+                time_option |= time;
+                arm
+            } else {
+                String::new()
+            };
+            let mut own = Vec::new();
+            // Read again only what differs from the line: nothing blanked, and no `)` to make
+            // an arm of, is the line's own reading over.
+            let blanked_again = (blanked != *line).then(|| commands_of(&blanked));
+            let arm_again = line.contains(')').then(|| commands_of(&as_an_arm));
+            for toks in commands_of(line)
+                .into_iter()
+                .chain(blanked_again.into_iter().flatten())
+                .chain(arm_again.into_iter().flatten())
+            {
+                own.push(toks.clone());
+                add(toks);
+            }
+            hedged_line_segments.push(own);
+        }
+        if nested_too_deep() {
+            return Some(too_nested(fix));
+        }
+    }
     // A shell that reads its script from stdin is fed by the rest of the line (#866).
     let a_shell_reads_stdin = segments
         .iter()
         .any(|toks| takes_its_script_from_stdin(toks));
+    // The hedged lines are fed by a shell on any line of the text, and feed one: a shell they
+    // hold reads the lines after it. Only their own segments are read as fed by it, so a shell
+    // they name never makes a line a shell runs outright be read as a script.
+    // Only a shell named outright counts: a program the shell builds, read as one, is the
+    // speculative reading the hedge is spared.
+    let the_hedge_reads_stdin = a_shell_reads_stdin
+        || hedge_segments.iter().any(|toks| {
+            let (prog, _env, argv) = shellwrap::split_env(toks);
+            shellwrap::takes_its_script_from_stdin(&prog, &argv)
+        });
     // A shell (or a program the shell builds, read as one) handed a process substitution reads
     // what its commands print as its script: `bash <(echo gh pr merge 12)`, `$SHELL < <(…)`.
     // Each body is read for what it could print, and only a merge among it is refused (round 7).
     if cmd.contains("<(") && segments.iter().any(|toks| hands_a_script_to_a_shell(toks)) {
-        let bodies = substitution_bodies(cmd, true);
+        let (bodies, _) = substitution_bodies(cmd, true);
         if nested_too_deep() {
             return Some(too_nested(fix));
         }
@@ -326,11 +701,15 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // A substitution the shell runs, wherever it stands, even inside double quotes, read from
     // the line as written: the words a substitution's own quotes split are not its body (#866).
     let mut unclosable = false;
-    if livesub::may_substitute(cmd) && livesub::live_substitution(cmd).is_some() {
-        let bodies = substitution_bodies(cmd, true);
+    let live = livesub::may_substitute(cmd) && livesub::live_substitution(cmd).is_some();
+    if live || contains_wide_funsub(cmd) {
+        let (bodies, unclosed_funsub) = substitution_bodies(cmd, true);
         if nested_too_deep() {
             return Some(too_nested(fix));
         }
+        // A `${ …;` that never closes (#7246): read to the line's end, and refused last like a
+        // body the reader cannot close.
+        unclosable |= unclosed_funsub;
         for body in bodies {
             // A `case` inside a substitution is held, parsed or not: its patterns' `)` are
             // what a substitution's own close is told from (#7131, round 6).
@@ -345,8 +724,11 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             }
             // A body with a comment, a heredoc or a `$'` quote is one the close of the
             // substitution is not reliably found in. It is refused last, so a refusal the line
-            // already earns is the one said (round 7).
-            unclosable |= body_the_reader_cannot_close(&body);
+            // already earns is the one said (round 7). Not in a hedge: that text is data in the
+            // real reading, whose own bodies were already read above, and the hedge's re-spelling
+            // of it (its quotes gone, so `<<'EOF'` is an unquoted `<<EOF` with no body) is no
+            // text of the line that must close (#7245, round 5).
+            unclosable |= !reading_a_hedge() && body_the_reader_cannot_close(&body);
         }
     }
     // A program the shell builds, from a substitution, a brace expansion or a glob, could be any
@@ -356,13 +738,29 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
     // arithmetic expansion or an array's words, nor in a body an interpreter runs.
     // A `case` the reader does not fully parse could hide any command in what it took for a
     // pattern, so it is unreadable outright (#7131, round 6).
-    if unparsed_case {
+    if time_option {
+        return Some(format!(
+            "{fix}{} `time` has an option here that purlis can't read. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
+    }
+    if unparsed_case || unparsed_hedge_case {
         return Some(format!(
             "{fix}{} A `case` here isn't one purlis can read to its end. {WRITE_IT_OUT}",
             merge::UNREADABLE
         ));
     }
-    for reading in shellseg::segment_readings(&lines) {
+    // The two speculative checks below read only lines a shell runs on every reading of the
+    // text: a body line that is read as commands merely as bash 3.2's hedge (a `)` in a
+    // quoted-substitution's heredoc body) is held for a literal merge by the segments above,
+    // never for "could print any command" (#7131, the ruling on the large commit body).
+    let mut filled = None;
+    // Each segment's words read once, exactly, with its redirections taken out (#7423).
+    let mut exact_segments: Vec<exact::Segment> = Vec::new();
+    for reading in shellseg::segment_readings(&lines)
+        .into_iter()
+        .filter(|_| !reading_a_hedge())
+    {
         // A definition's body is read as the commands it will run: its first program, if the
         // shell builds it, is as unreadable as one in the line itself (round 7).
         for toks in [&reading.outward, &reading.own] {
@@ -377,6 +775,18 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
                 }
             }
         }
+        // A forge API call whose arguments the shell fills in, read or not (#7416). Said after
+        // the segments' own reasons, which name more.
+        let exact = exact::of_reading(&reading);
+        if filled.is_none() {
+            filled = merge::shell_filled_api_reason(&exact, cmd).or_else(|| {
+                exact
+                    .clobber
+                    .as_deref()
+                    .and_then(|c| merge::shell_filled_api_reason(c, cmd))
+            });
+        }
+        exact_segments.push(exact);
         let (prog, ..) = shellwrap::split_env(&reading.own);
         if program_built_by_the_shell(&prog) {
             return Some(format!(
@@ -406,6 +816,87 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
             return said;
         }
     }
+    // The segments of the commands a shell runs, read as the lexer's facts say they are: the
+    // words past their redirections, and the call from its program on.
+    if runs != lines {
+        for reading in shellseg::segment_readings(&runs)
+            .into_iter()
+            .filter(|_| !reading_a_hedge())
+        {
+            exact_segments.push(exact::of_reading(&reading));
+        }
+    }
+    let read: std::collections::HashSet<&[String]> = segments.iter().map(Vec::as_slice).collect();
+    for exact in &exact_segments {
+        let said = exact_reason(exact, cmd, unattended, depth, a_shell_reads_stdin, &read);
+        if said.is_some() {
+            return said;
+        }
+    }
+    if let Some(why) = filled {
+        return Some(format!("{fix}{why}"));
+    }
+    // The hedged lines' own segments, and the substitutions on each line (the outer `$( … )`
+    // steps over a quoted body, so `echo "$(gh pr merge 7)"` in one is found line by line).
+    if !hedge_segments.is_empty() {
+        let _hedge = ReadingAHedge::on();
+        for toks in &hedge_segments {
+            let said = words_reason(toks, cmd, unattended, depth, the_hedge_reads_stdin);
+            if said.is_some() {
+                return said;
+            }
+        }
+        // A shell on a hedged line, named or built by the shell, is fed by the other segments of
+        // that line, and of no other line (so the cost stays off a long body).
+        for own in &hedged_line_segments {
+            if !own.iter().any(|toks| takes_its_script_from_stdin(toks)) {
+                continue;
+            }
+            for toks in own.iter().filter(|toks| !takes_its_script_from_stdin(toks)) {
+                for fed in fed_lines(toks) {
+                    if let Some(said) = floor(&fed, unattended, depth + 1) {
+                        return Some(said);
+                    }
+                }
+            }
+        }
+        // A line of a body is a piece of text, so what a substitution on it holds is read as the
+        // commands it holds (nested ones too, to the depth the floor reads), not as a text of
+        // its own that must close: prose with a lone backtick or quote is not refused for it.
+        let mut bodies: Vec<String> = hedged_lines
+            .iter()
+            .filter(|line| livesub::may_substitute(line))
+            .flat_map(|line| substitution_bodies(line, true).0)
+            .collect();
+        let mut levels = 0;
+        while !bodies.is_empty() && levels <= MAX_DEPTH {
+            let mut deeper = Vec::new();
+            for body in bodies {
+                // A `case` in a substitution is held here as on any line.
+                if names_a_case(&body) {
+                    return Some(format!(
+                        "{fix}{} A `case` inside a substitution can't be read reliably. {WRITE_IT_OUT}",
+                        merge::UNREADABLE
+                    ));
+                }
+                for toks in commands_of(&body) {
+                    let said = words_reason(&toks, cmd, unattended, depth, the_hedge_reads_stdin);
+                    if said.is_some() {
+                        return said;
+                    }
+                }
+                if livesub::may_substitute(&body) {
+                    deeper.extend(substitution_bodies(&body, true).0);
+                }
+            }
+            if nested_too_deep() {
+                return Some(too_nested(fix));
+            }
+            bodies = deeper;
+            levels += 1;
+        }
+    }
+    // Where a substitution ends is a reader limit that fails closed, not a speculative check.
     if unclosable {
         return Some(format!(
             "{fix}{} A substitution here holds a comment, a heredoc or a `$'` quote, so purlis \
@@ -414,6 +905,213 @@ pub(crate) fn floor(cmd: &str, unattended: bool, depth: usize) -> Option<String>
         ));
     }
     None
+}
+
+/// `text` with each backtick substitution written `$( … )` and its body as the shell reads it: a
+/// backslash before `$`, a backtick or another backslash is dropped.
+///
+/// Which backticks are live is the lexer's quoting ([`shellseg::backticks`], #7423): a quoted
+/// backtick (`'`'`) flips nothing, and `\\` before one is an escaped backslash, not an escaped
+/// backtick. A quoted backtick is respelled (`'$'\x60''`) so that no later pairing of backticks
+/// sees it. `None` where the text has no backtick the shell reads.
+fn rewrite_backticks(text: &str) -> Option<String> {
+    if !text.contains('`') {
+        return None;
+    }
+    let ticks = shellseg::backticks(text);
+    if ticks.is_empty() {
+        return None;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + 8);
+    // Where the body of the substitution being read starts in `out`.
+    let mut body_at: Option<usize> = None;
+    let mut at = 0;
+    for (i, kind) in ticks {
+        out.extend(&chars[at..i]);
+        at = i + 1;
+        match kind {
+            shellseg::Backtick::Live => match body_at.take() {
+                Some(start) => {
+                    let body = out.split_off(start);
+                    out.push_str(&unescape_in_backticks(&body));
+                    out.push(')');
+                }
+                None => {
+                    out.push_str("$(");
+                    body_at = Some(out.len());
+                }
+            },
+            shellseg::Backtick::Single => out.push_str("'$'\\x60''"),
+            shellseg::Backtick::Ansi => out.push_str("\\x60"),
+        }
+    }
+    out.extend(&chars[at..]);
+    if let Some(start) = body_at {
+        let body = out.split_off(start);
+        out.push_str(&unescape_in_backticks(&body));
+    }
+    Some(out)
+}
+
+/// A backtick body as the shell reads it: a backslash before `$`, a backtick or another
+/// backslash is dropped.
+fn unescape_in_backticks(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    let mut chars = body.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && matches!(next, '$' | '`' | '\\')
+        {
+            out.push(next);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// `text` as the inner shell reads what a double-quoted string left it: a backslash before `$`,
+/// a backtick, `"` or another backslash is dropped.
+fn unescape_double_quoted(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\'
+            && let Some(&next) = chars.peek()
+            && matches!(next, '$' | '`' | '"' | '\\')
+        {
+            out.push(next);
+            chars.next();
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// What a refusal of a forge call that words handed to it could complete says.
+fn fed_said(name: &str) -> String {
+    format!(
+        "{} A program in front of `{name}` may hand it words (a pipe, a file, a here-string, the \
+         names it finds) that could be its noun and verb, or a method. Write the whole command \
+         out, noun and verb on the line (`{name} pr view 12`), with the flags after them. Only a \
+         short list of programs (`cp`, `grep`, `which`, `git log` and the like) is known never to \
+         run a word: if `{name}` is only a name here (`brew install {name}`, `git commit -m fix \
+         {name}`), run the `{name}` command first, on its own, or say what you want done.",
+        merge::UNREADABLE
+    )
+}
+
+/// The floor's refusal of a segment whose words the lexer's facts were read for (#7423): its
+/// call from the program on, where a forge CLI runs, or else its words past their redirections,
+/// and, where a forge CLI is named and the words in front of it cannot be placed exactly, the
+/// refusal for that. A segment already read as it stands (`read`) is not read again.
+fn exact_reason(
+    seg: &exact::Segment,
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+    read: &std::collections::HashSet<&[String]>,
+) -> Option<String> {
+    let words = seg.call().unwrap_or(&seg.words);
+    if !read.contains(words)
+        && let Some(said) = segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
+    }
+    if let Some(also) = &seg.also
+        && !read.contains(also.as_slice())
+        && let Some(said) = segment_reason(also, cmd, unattended, depth, a_shell_reads_stdin)
+    {
+        return Some(said);
+    }
+    if let Some(said) = seg.refusal.as_ref() {
+        return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+    }
+    // **The one rule for the words up to the verb** (#7423, round 10), read on the call as the
+    // lexer spelled it: the direct call, and the call read without the digit word that stands
+    // apart from a redirection.
+    if let Some(call) = seg.call() {
+        let name = base_lower(&call[0]);
+        let spelled = seg.call_spelled();
+        if let Some(said) = placed::reason(&name, call, spelled) {
+            return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+        }
+    }
+    if let Some(also) = &seg.also {
+        let name = base_lower(&also[0]);
+        if let Some(said) = placed::reason(&name, also, &[]) {
+            return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+        }
+    }
+    // A forge call behind a program no table knows is the call it would be without the program
+    // (#7423, round 8), read by the same rule, and, where that program is handed words (a pipe,
+    // a here-string), one the words could complete is held.
+    for call in &seg.behind {
+        let words = call.call().unwrap_or(&call.words);
+        if let Some(forge) = call.call() {
+            let name = base_lower(&forge[0]);
+            let spelled = call.call_spelled();
+            if let Some(said) = placed::reason(&name, forge, spelled) {
+                return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+            }
+            // The program in front may append words (`fd -x gh pr`, `xargs -a f gh`): a call
+            // that could still be given a verb or a method is held (round 11).
+            if placed::may_be_completed(&name, forge, spelled) {
+                return Some(format!("{RELEASE_FLOOR_FIX}{}", fed_said(&name)));
+            }
+        }
+        // A bare `{}` is a placeholder for gh, but a program that is not gh (`fd -x`, `parallel`)
+        // fills it in with a name: read as an argument the shell fills in (rounds 9 and 10). Only
+        // where it is the endpoint itself (`fd . repos -x gh api {}`) is it a read of that name.
+        let filled: Vec<String> = words.iter().map(|w| w.replace("{}", "$X")).collect();
+        let held = (!read.contains(words)
+            && segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin).is_some())
+            || merge::shell_filled_api_reason(call, cmd).is_some()
+            || (filled != *words
+                && (segment_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin)
+                    .is_some()
+                    || (!merge::brace_is_the_endpoint(&filled)
+                        && merge::shell_filled_api_reason(&exact::of_words(&filled), cmd)
+                            .is_some())));
+        if held {
+            return Some(format!(
+                "{RELEASE_FLOOR_FIX}{} {}",
+                merge::UNREADABLE,
+                exact::WAY_OUT
+            ));
+        }
+    }
+    // The reading zsh's clobber operators make of the same words (#7423, round 7).
+    seg.clobber
+        .as_deref()
+        .and_then(|c| exact_reason(c, cmd, unattended, depth, a_shell_reads_stdin, read))
+}
+
+/// [`segment_reason`] of words nothing measured (what a `find` runs, a hedged line), and of those
+/// words read exactly as far as that can be done ([`exact::of_words`]).
+fn words_reason(
+    toks: &[String],
+    cmd: &str,
+    unattended: bool,
+    depth: usize,
+    a_shell_reads_stdin: bool,
+) -> Option<String> {
+    segment_reason(toks, cmd, unattended, depth, a_shell_reads_stdin).or_else(|| {
+        let read = std::iter::once(toks).collect();
+        exact_reason(
+            &exact::of_words(toks),
+            cmd,
+            unattended,
+            depth,
+            a_shell_reads_stdin,
+            &read,
+        )
+    })
 }
 
 /// The floor's refusal of one segment of `cmd` at `depth`, read as its program's command.
@@ -440,14 +1138,73 @@ fn segment_reason(
         Vec::new()
     };
     for inner in scripts.chain(fed) {
+        // A script read once at this depth, and let through, is let through again: the same
+        // string reached by the line as written and by the line read exactly is one read, which
+        // keeps a chain of nested shells linear (#7423).
+        if !first_read_of_script(&inner, depth) {
+            continue;
+        }
         if let Some(said) = inner_floor(&inner) {
             return Some(said);
+        }
+        // Inside double quotes the outer shell turns `\$` into `$`, so the inner shell expands
+        // what the lexer kept escaped (#7423).
+        let unescaped = unescape_double_quoted(&inner);
+        if unescaped != inner
+            && let Some(said) = inner_floor(&unescaped)
+        {
+            return Some(said);
+        }
+        // dash (`sh` on Linux) reads `&>` as `&` and then `>`: the command after it is a
+        // command of its own, with a redirection in front (#7423, round 7). Both readings.
+        if inner.contains("&>")
+            && matches!(base_lower(&prog).as_str(), "sh" | "dash" | "ash")
+            && let Some(said) = inner_floor(&inner.replace("&>", "& >"))
+        {
+            return Some(said);
+        }
+    }
+    // What a `find` runs for each file it finds is a command of its own (#7423).
+    for run in shellwrap::commands_a_find_runs(&prog, &argv) {
+        if let Some(said) = words_reason(&run, cmd, unattended, depth, a_shell_reads_stdin) {
+            return Some(said);
+        }
+        // `find` fills `{}` in with a file name, wherever it stands: a word the shell fills in
+        // (`-exec gh -R {} +`), not a plain value (#7423, round 12). And a forge run still short
+        // of its verb may be completed by the names `find` appends after a `+`, which the run no
+        // longer shows (`find pr merge 5 -maxdepth 0 -exec gh -R o/r +`): held.
+        let filled: Vec<String> = run.iter().map(|w| w.replace("{}", "$X")).collect();
+        if filled != run
+            && let Some(said) = words_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin)
+        {
+            return Some(said);
+        }
+        let (forge, _, inner) = shellwrap::split_env(&run);
+        let forge = base_lower(&forge);
+        if matches!(forge.as_str(), "gh" | "glab") && placed::may_be_completed(&forge, &inner, &[])
+        {
+            return Some(format!("{RELEASE_FLOOR_FIX}{}", fed_said(&forge)));
         }
     }
     if !only_merges()
         && let Some(said) = token::keychain_read_reason(&prog, &argv)
     {
         return Some(said);
+    }
+    // zsh expands a word that begins with `=` to a program's path before any wrapper runs, so
+    // `env =gh pr merge 5` runs `gh`, though the wrapper's own rule reads `=gh` as an assignment
+    // (#7423): the word, with what follows it, is the command.
+    if let Some(at) = env.iter().position(|e| e.starts_with('=') && e.len() > 1) {
+        let toks: Vec<String> = env[..at]
+            .iter()
+            .cloned()
+            .chain(std::iter::once(env[at][1..].to_owned()))
+            .chain(env[at + 1..].iter().cloned())
+            .chain(argv.iter().cloned())
+            .collect();
+        if let Some(said) = segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin) {
+            return Some(said);
+        }
     }
     // zsh reads `=gh` as the path of `gh`, so it is that program (#7131).
     if let Some(named) = prog.strip_prefix('=').filter(|named| !named.is_empty()) {
@@ -458,6 +1215,19 @@ fn segment_reason(
             .chain(argv.iter().skip(1).cloned())
             .collect();
         return segment_reason(&toks, cmd, unattended, depth, a_shell_reads_stdin);
+    }
+    // The words a script was handed, as the program (`"$@"`, `$*`), are any command (#7423,
+    // round 7), as the script's own name followed by them already is.
+    if prog.starts_with("$@")
+        || prog.starts_with("$*")
+        || prog.starts_with("${@")
+        || prog.starts_with("${*")
+    {
+        return Some(format!(
+            "{fix}{} The program `{prog}` is the words this script was handed, so purlis can't \
+             read which command this is. {WRITE_IT_OUT}",
+            merge::UNREADABLE
+        ));
     }
     // A program the shell fills in is read as each CLI it could be (#7124).
     // Only a word with `$` or a backtick: `[` is the test builtin, not a glob.
@@ -649,6 +1419,11 @@ fn segment_reason(
             if let Some(why) = why {
                 return Some(format!("{fix}{why}"));
             }
+            // A flag before the noun may take the noun for its value (#7423). Said after the
+            // reasons above, which name more.
+            if let Some(why) = merge::unplaced_flag_reason(args) {
+                return Some(format!("{fix}{why}"));
+            }
         }
     }
     None
@@ -675,21 +1450,25 @@ const NOUNS_THAT_MERGE: [&str; 4] = ["pr", "mr", "alias", "change"];
 fn filled_in_command_word<'a>(name: &str, words: &[&'a str]) -> Option<&'a str> {
     match words {
         [noun, ..] if merge::opaque(noun) => Some(noun),
-        [noun, verb, ..] if merge::opaque(verb) => {
-            let held = merge::held_commands(name)
-                .into_iter()
-                .chain(
-                    PUBLISH_SINCE
-                        .iter()
-                        .filter(|(cli, ..)| *cli == name)
-                        .map(|(_, noun, verb)| vec![*noun, *verb]),
-                )
-                .any(|command| command.len() > 1 && command[0] == *noun);
-            let matters = held && (!only_merges() || NOUNS_THAT_MERGE.contains(noun));
-            matters.then_some(verb)
-        }
+        [noun, verb, ..] if merge::opaque(verb) => noun_has_a_held_verb(name, noun).then_some(verb),
         _ => None,
     }
+}
+
+/// Whether `noun` begins a command of `name` that has a held verb, so a verb the shell fills in
+/// after it could be that verb: `pr` does, `issue` does not. With the merge half alone, only a
+/// noun that can merge counts ([`NOUNS_THAT_MERGE`]).
+fn noun_has_a_held_verb(name: &str, noun: &str) -> bool {
+    let held = merge::held_commands(name)
+        .into_iter()
+        .chain(
+            PUBLISH_SINCE
+                .iter()
+                .filter(|(cli, ..)| *cli == name)
+                .map(|(_, noun, verb)| vec![*noun, *verb]),
+        )
+        .any(|command| command.len() > 1 && command[0] == noun);
+    held && (!only_merges() || NOUNS_THAT_MERGE.contains(&noun))
 }
 
 /// Whether a `git push` flag is one the shell fills in, its name (`--$(echo tags)`, #7124) or
@@ -919,7 +1698,12 @@ fn substitution_that_could_print_a_command(
     // A process substitution (`<(…)`) is a path the shell hands the program, `/dev/fd/63`, and
     // never a command; its body is read as one by its own text.
     let command_substitution = format!("${}", shellseg::SUBSTITUTED);
-    if !(prog.contains(&command_substitution) || prog.contains("$(") || prog.contains('`')) {
+    let funsub = contains_funsub(prog);
+    if !(prog.contains(&command_substitution)
+        || prog.contains("$(")
+        || prog.contains('`')
+        || funsub)
+    {
         return None;
     }
     let source = reading
@@ -929,8 +1713,8 @@ fn substitution_that_could_print_a_command(
         .and_then(|at| reading.own_source.get(at))
         .filter(|source| !source.is_empty())
         .map_or(prog, String::as_str);
-    let bodies = substitution_bodies(&shellseg::unbacktick(source), false);
-    if bodies.is_empty() {
+    let (bodies, unclosed_funsub) = substitution_bodies(&shellseg::unbacktick(source), false);
+    if bodies.is_empty() || unclosed_funsub {
         return Some(prog.to_owned());
     }
     bodies.into_iter().find(|body| !prints_only_a_path(body))
@@ -1004,11 +1788,12 @@ fn prints_only_a_path(body: &str) -> bool {
 ///
 /// And whether a `case` was met that the reading did not parse whole: a header that is not
 /// `case WORD in` with the WORD read as the shell reads it, or a pattern that no `)` closes.
-/// Such a line is held, never read on (round 6).
-fn in_command_position(line: &str) -> (String, bool) {
+/// Such a line is held, never read on (round 6). The last is whether a `time` had an option
+/// other than `-p`, which is held too and says so.
+fn in_command_position(line: &str) -> (String, bool, bool) {
     let (line, unsure_arithmetic) = without_arithmetic(line);
     let Ok(toks) = shellseg::lex(&line) else {
-        return (line, unsure_arithmetic);
+        return (line, unsure_arithmetic, false);
     };
     let toks = shellseg::split_punctuation(toks);
     let source: Vec<char> = line.chars().collect();
@@ -1016,6 +1801,7 @@ fn in_command_position(line: &str) -> (String, bool) {
     // An arithmetic body with a backslash or a quote is one the reader cannot place the
     // parentheses of: held, never read on (round 7).
     let mut unparsed = unsure_arithmetic;
+    let mut time_option = false;
     // Where a `;` is put in the blanks before a `do` or `{` that follows its header with none.
     let mut breaks: Vec<usize> = Vec::new();
     let mut blank = |from: isize, to: isize| {
@@ -1226,6 +2012,7 @@ fn in_command_position(line: &str) -> (String, bool) {
             }
             if toks.get(i).is_some_and(|t| t.text.starts_with('-')) {
                 unparsed = true;
+                time_option = true;
             }
             continue;
         } else if at_command && reserved && (bare("for") || bare("select")) {
@@ -1247,7 +2034,7 @@ fn in_command_position(line: &str) -> (String, bool) {
             *slot = ';';
         }
     }
-    (chars.into_iter().collect(), unparsed)
+    (chars.into_iter().collect(), unparsed, time_option)
 }
 
 /// One past the `in` of the `case WORD in` whose `case` ends at `from`, with the WORD read as
@@ -1323,6 +2110,7 @@ fn too_nested(fix: &str) -> String {
 fn deeper(nest: usize) -> Option<usize> {
     if nest >= MAX_NEST {
         NESTED_TOO_DEEP.with(|flag| flag.set(true));
+        CUT_SHORT.set(true);
         return None;
     }
     Some(nest + 1)
@@ -1394,7 +2182,9 @@ fn body_the_reader_cannot_close(body: &str) -> bool {
                 }
                 let mut raw = String::new();
                 while let Some(&d) = chars.get(j) {
-                    if d.is_whitespace() || ";&|()<>".contains(d) {
+                    // Bash ends the word only at a blank, a newline or a metacharacter: a CR, FF,
+                    // VT or NBSP stays in it, so the delimiter is not the plain word it looks.
+                    if matches!(d, ' ' | '\t' | '\n') || ";&|()<>".contains(d) {
                         break;
                     }
                     raw.push(d);
@@ -1432,6 +2222,10 @@ fn skip_double_quoted(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
             '"' => return Some(p + 1),
             '`' => p = skip_backtick(s, p + 1)?,
             '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if funsub_opens(s, p) => {
+                let open = shellseg::spliced_end(s, p, "${").unwrap_or(p + 2);
+                p = skip_funsub(s, open, deeper(nest)?)?;
+            }
             '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
             _ => p += 1,
         }
@@ -1455,13 +2249,34 @@ fn skip_backtick(s: &[char], mut p: usize) -> Option<usize> {
 /// substitutions read whole, or `None` where nothing closes it.
 fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
     let mut depth = 0usize;
+    // The quoted heredocs opened on this line, whose bodies are data: a `)` in one closes nothing.
+    let mut pending: Vec<(String, bool)> = Vec::new();
     while let Some(&c) = s.get(p) {
         match c {
+            '\n' if !pending.is_empty() => {
+                p += 1;
+                for (delimiter, dash) in std::mem::take(&mut pending) {
+                    p = after_heredoc_body(s, p, &delimiter, dash)?;
+                }
+            }
+            // A here-string (`<<<'x'`) opens no heredoc: its three characters are read as one.
+            '<' if s.get(p + 1) == Some(&'<') && s.get(p + 2) == Some(&'<') => p += 3,
+            '<' if s.get(p + 1) == Some(&'<') => match quoted_heredoc_at(s, p) {
+                Some((delimiter, dash, after)) => {
+                    pending.push((delimiter, dash));
+                    p = after;
+                }
+                None => p += 2,
+            },
             '\\' => p += 2,
             '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
             '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
             '`' => p = skip_backtick(s, p + 1)?,
             '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if funsub_opens(s, p) => {
+                let open = shellseg::spliced_end(s, p, "${").unwrap_or(p + 2);
+                p = skip_funsub(s, open, deeper(nest)?)?;
+            }
             '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
             '(' => {
                 depth += 1;
@@ -1470,6 +2285,121 @@ fn skip_paren(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
             ')' if depth == 0 => return Some(p + 1),
             ')' => {
                 depth -= 1;
+                p += 1;
+            }
+            _ => p += 1,
+        }
+    }
+    None
+}
+
+/// A heredoc `<<[-]'WORD'` or `<<[-]"WORD"` (a plain word, wholly quoted, so its body is data)
+/// opened at `p`: its delimiter, whether it is `<<-`, and where the operator and word end.
+/// `None` for any other spelling, which the caller reads as it always did.
+fn quoted_heredoc_at(s: &[char], p: usize) -> Option<(String, bool, usize)> {
+    let mut j = p + 2;
+    let dash = s.get(j) == Some(&'-');
+    if dash {
+        j += 1;
+    }
+    while s.get(j).is_some_and(|c| *c == ' ' || *c == '\t') {
+        j += 1;
+    }
+    let quote = *s.get(j).filter(|c| matches!(c, '\'' | '"'))?;
+    let word_end = j + 1 + s.get(j + 1..)?.iter().position(|c| *c == quote)?;
+    let word: String = s[j + 1..word_end].iter().collect();
+    let plain = !word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    plain.then_some((word, dash, word_end + 1))
+}
+
+/// Where the body of a heredoc ends, starting at the line `from`: one past its delimiter's line,
+/// or `None` where no line is the delimiter.
+fn after_heredoc_body(s: &[char], mut from: usize, delimiter: &str, dash: bool) -> Option<usize> {
+    while from <= s.len() {
+        let end = s[from.min(s.len())..]
+            .iter()
+            .position(|c| *c == '\n')
+            .map_or(s.len(), |n| from + n);
+        let line: String = s[from.min(s.len())..end].iter().collect();
+        let line = if dash {
+            line.trim_start_matches('\t')
+        } else {
+            &line
+        };
+        if line == delimiter {
+            return Some(end);
+        }
+        from = end + 1;
+    }
+    None
+}
+
+/// One past the `}` that closes the bash 5.3 `${ …;` opened before `p` (#7246), or `None`.
+///
+/// Its body is commands, so the `}` that closes it is a word in command position: after `;`, `&`,
+/// `|` or a newline, or at the start. A `{` in command position opens a group of its own that a
+/// `}` of its own closes. Quotes and nested substitutions are read whole.
+///
+/// A command starts nowhere else, so these start none (#7250): the `&` of `>&`, `<&` and `&>` and
+/// the `|` of `>|`, which are redirections; a `(`, which is read whole to its `)` (a subshell, an
+/// array, a function's `()`, a `<(…)`), so a `}` inside it closes nothing; and a `[[ … ]]`, in
+/// whose `&&` and `||` a word is an operand. Read strictly, so a close the reader is unsure of is
+/// no close and the line is refused, never half read: an unclosed `(` or `[[` ends in `None`.
+fn skip_funsub(s: &[char], mut p: usize, nest: usize) -> Option<usize> {
+    let mut groups = 0usize;
+    let mut at_command = true;
+    let mut in_test = false;
+    let blank = |c: Option<&char>| c.is_none_or(|c| c.is_whitespace());
+    while let Some(&c) = s.get(p) {
+        let command = std::mem::replace(&mut at_command, false);
+        let before = p.checked_sub(1).and_then(|at| s.get(at));
+        match c {
+            '\\' => p += 2,
+            '\'' => p = s.get(p + 1..)?.iter().position(|q| *q == '\'')? + p + 2,
+            '"' => p = skip_double_quoted(s, p + 1, deeper(nest)?)?,
+            '`' => p = skip_backtick(s, p + 1)?,
+            '$' if s.get(p + 1) == Some(&'(') => p = skip_paren(s, p + 2, deeper(nest)?)?,
+            '$' if funsub_opens(s, p) => {
+                let open = shellseg::spliced_end(s, p, "${").unwrap_or(p + 2);
+                p = skip_funsub(s, open, deeper(nest)?)?;
+            }
+            '$' if s.get(p + 1) == Some(&'{') => p = skip_brace(s, p + 2, deeper(nest)?)?,
+            '[' if command && !in_test && s.get(p + 1) == Some(&'[') && blank(s.get(p + 2)) => {
+                in_test = true;
+                p += 2;
+            }
+            ']' if in_test
+                && s.get(p + 1) == Some(&']')
+                && blank(before)
+                && (blank(s.get(p + 2)) || matches!(s.get(p + 2), Some(';' | '&' | '|' | ')'))) =>
+            {
+                in_test = false;
+                p += 2;
+            }
+            '(' => {
+                p = skip_paren(s, p + 1, deeper(nest)?)?;
+                // A function's `()` is followed by its body.
+                at_command = true;
+            }
+            _ if in_test => p += 1,
+            '&' if matches!(before, Some('>' | '<')) || s.get(p + 1) == Some(&'>') => p += 1,
+            '|' if before == Some(&'>') => p += 1,
+            ';' | '&' | '|' | '\n' => {
+                at_command = true;
+                p += 1;
+            }
+            '{' if command && blank(s.get(p + 1)) => {
+                groups += 1;
+                at_command = true;
+                p += 1;
+            }
+            '}' if command && groups == 0 => return Some(p + 1),
+            '}' if command => {
+                groups -= 1;
+                p += 1;
+            }
+            c if c.is_whitespace() => {
+                at_command = command;
                 p += 1;
             }
             _ => p += 1,
@@ -1722,11 +2652,31 @@ pub(crate) fn fed_lines(toks: &[String]) -> Vec<String> {
 /// only ever refuses more; the caller asks only of a line where the shell runs one. Unbalanced, a
 /// body runs to the end of the line. A nested one is found when its body is read in turn.
 /// Without `with_process_substitutions`, only command substitutions are read.
-fn substitution_bodies(line: &str, with_process_substitutions: bool) -> Vec<String> {
+///
+/// **A bash 5.3 `${ …; }` or `${| …; }` is one too, in quotes or out** (#7246), read to the `}`
+/// that closes it as a command ([`skip_funsub`]); a `${` that never closes runs to the line's
+/// end, and the second answer says so, for the caller to refuse the line as one it cannot read.
+fn substitution_bodies(line: &str, with_process_substitutions: bool) -> (Vec<String>, bool) {
     let chars: Vec<char> = line.chars().collect();
     let mut out = Vec::new();
+    let mut unclosed_funsub = false;
     let mut i = 0;
     while i < chars.len() {
+        if funsub_opens(&chars, i) {
+            let open = shellseg::spliced_end(&chars, i, "${").unwrap_or(i + 2);
+            let (end, next) = match skip_funsub(&chars, open, 0) {
+                Some(after) => (after - 1, after),
+                None => {
+                    // One the shell would run (after a blank, a newline or `|`) and never closes
+                    // is a line to refuse; the wider spellings it refuses itself.
+                    unclosed_funsub |= livesub::funsub_at(&chars, i);
+                    (chars.len(), chars.len())
+                }
+            };
+            out.push(chars[open..end].iter().collect());
+            i = next;
+            continue;
+        }
         let opens = (chars[i] == '$'
             || (with_process_substitutions && matches!(chars[i], '<' | '>')))
             && chars.get(i + 1) == Some(&'(')
@@ -1752,12 +2702,109 @@ fn substitution_bodies(line: &str, with_process_substitutions: bool) -> Vec<Stri
         }
         i += 1;
     }
-    out
+    (out, unclosed_funsub)
+}
+
+/// Whether a bash 5.3 `${ …; }` or `${| …; }` opens at `i`, read as widely as the floor needs
+/// (#7246): `${` followed by anything that does not start a parameter expansion — a letter, a
+/// digit, `_`, or one of `#?@*!$-` — in quotes as out of them. The shell runs it only after a
+/// blank, a newline or `|` ([`livesub::funsub_at`]) and refuses the rest as a bad substitution, so
+/// the wider reading only ever holds more. It is the floor's own, because the leak and prose
+/// guards' answers are recorded against the narrower one.
+fn funsub_opens(chars: &[char], i: usize) -> bool {
+    livesub::funsub_at(chars, i)
+        || shellseg::spliced_end(chars, i, "${").is_some_and(|j| {
+            chars
+                .get(shellseg::past_continuations(chars, j))
+                .is_some_and(|c| {
+                    !(c.is_ascii_alphanumeric()
+                        || matches!(c, '_' | '#' | '?' | '@' | '*' | '!' | '$' | '-'))
+                })
+        })
+}
+
+/// Whether `text` holds a `${` that only the wide reading ([`funsub_opens`]) takes for a
+/// substitution. A `${` the shell reads as text is none (#7250): one escaped, or inside single
+/// quotes or `$'…'`, as in `grep -E '\${[A-Z_]+}'`. Double quotes run it, so they are read as
+/// open text; an unterminated single quote is read as none, which only holds more. The shell's
+/// own spellings are [`livesub::live_substitution`]'s, which reads quotes, so a literal
+/// `'${ x; }'` stays one.
+fn contains_wide_funsub(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    let mut in_double = false;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i += 2,
+            '"' => {
+                in_double = !in_double;
+                i += 1;
+            }
+            '\'' if !in_double => {
+                i = chars[i + 1..]
+                    .iter()
+                    .position(|c| *c == '\'')
+                    .map_or(i + 1, |at| i + at + 2);
+            }
+            '$' if !in_double && chars.get(i + 1) == Some(&'\'') => {
+                i = livesub::ansi_c_end(&chars, i + 2);
+            }
+            _ => {
+                if funsub_opens(&chars, i) && !livesub::funsub_at(&chars, i) {
+                    return true;
+                }
+                i += 1;
+            }
+        }
+    }
+    false
+}
+
+/// Whether `text` holds a bash 5.3 `${ …; }` as the shell runs it ([`livesub::funsub_at`]), not a
+/// parameter expansion. The wider spellings are left to [`contains_wide_funsub`]: a word the
+/// shell refuses is no program, and the recorded answers hold none of them held.
+fn contains_funsub(text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    (0..chars.len()).any(|i| livesub::funsub_at(&chars, i))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #7245: the floor's reading of a large commit body is linear in the body. The body is timed
+    /// at its size and at four times it, each run on text the others did not see (so no kept
+    /// reading answers), the least of three runs each; a reading that grows with the square of
+    /// the body costs sixteen times as much at four times the size, and the bound is ten.
+    #[test]
+    fn the_floor_reads_a_large_body_in_time_linear_in_its_size() {
+        use std::time::{Duration, Instant};
+        let paragraph = "## Why\n\nThe guard didn't read `\"$(cat <<'EOF'` the way bash does (see \
+                         #917), so `echo \"$(date)\"` was refused. It's fixed: `$((1+2))`, \
+                         `<(sort a)` and `${x:-y}` are read as substitutions.\n\n\
+                         - 1) the reader (shellseg)\n- 2) the floor's \"eval\" walk\n\n";
+        let least = |times: usize| {
+            (0..3)
+                .map(|n| {
+                    let body = paragraph.repeat(times * 16_384 / paragraph.len());
+                    let tag = times * 10 + n;
+                    let cmd = format!("git commit -m \"$(cat <<'EOF'\n{body}run {tag}\nEOF\n)\"");
+                    let began = Instant::now();
+                    let said = merge_reason(&cmd);
+                    (began.elapsed(), said)
+                })
+                .min_by_key(|(took, _)| *took)
+                .expect("three runs")
+        };
+        let (one, said_one) = least(1);
+        let (four, said_four) = least(4);
+        assert_eq!(said_one, None, "a body's prose is no merge");
+        assert_eq!(said_four, None, "a body's prose is no merge");
+        assert!(
+            four < one * 10 + Duration::from_millis(50),
+            "4x the body took {four:?}, 1x took {one:?}: more than linear"
+        );
+    }
 
     /// T1-11's review: the floor reads for merges alone only while a merge read lasts, and a
     /// panic inside one leaves the thread reading the whole floor again, tags and pushes too.
@@ -1956,6 +3003,231 @@ mod tests {
         assert_eq!(metered(&cmd, false), (None, 0));
     }
 
+    /// A `)` in the data of a quoted heredoc closes no substitution: a commit body's `1)` or
+    /// `(shellseg)` is text, so the line is read whole and passes, while the same line with a
+    /// merge beside it is still held.
+    #[test]
+    fn a_paren_in_a_quoted_heredoc_body_does_not_close_the_substitution() {
+        for body in ["- 1) the reader\n", "see (shellseg) and 2)\n", "a ) b\n"] {
+            for open in ["<<'EOF'", "<<\"EOF\"", "<<-'EOF'"] {
+                let cmd = format!("git commit -m \"$(cat {open}\n{body}EOF\n)\"");
+                assert_eq!(merge_reason(&cmd), None, "{cmd}");
+            }
+        }
+        let held = "git commit -m \"$(cat <<'EOF'\n- 1) x\nEOF\n)\"; gh pr merge 12";
+        assert!(merge_reason(held).is_some());
+        let inside = "x=\"$(cat <<'EOF'\n- 1) x\nEOF\n; gh pr merge 12)\"";
+        assert!(merge_reason(inside).is_some());
+    }
+
+    /// The ruling on #7131's checks: a body line read as commands only as bash 3.2's hedge is
+    /// never refused for "could print any command", but a literal merge in it stays held, and a
+    /// program built by the shell on an unhedged line is still refused.
+    #[test]
+    fn a_hedged_body_line_is_held_for_a_merge_but_not_for_what_it_could_print() {
+        let body = "The guard didn't read `\"$(cat <<'EOF'` the way (see #917)\n- 1) first\n";
+        let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+        assert_eq!(merge_reason(&ordinary), None, "{ordinary}");
+        let merged = format!("git commit -m \"$(cat <<'EOF'\n{body}gh pr merge 7\nEOF\n)\"");
+        assert!(merge_reason(&merged).is_some(), "{merged}");
+        assert!(merge_reason("\"$(echo gh)\" pr merge 7").is_some());
+        assert!(merge_reason("$(echo gh) pr merge 7").is_some());
+    }
+
+    /// A commit body whose `)` and quote make bash 3.2's hedge read its lines as commands.
+    fn hedged(lines: &str) -> String {
+        format!(
+            "git commit -m \"$(cat <<'EOF'\nThe guard didn't read `\"$(cat <<'EOF'` the way (see #917)\n{lines}\nEOF\n)\""
+        )
+    }
+
+    /// Whether `cmd` is refused for the program the shell builds on one of its lines, as
+    /// opposed to any other refusal it earns.
+    fn refused_for_a_built_program(cmd: &str) -> bool {
+        merge_reason(cmd).is_some_and(|said| {
+            said.contains("is built by the shell") || said.contains("could print any command")
+        })
+    }
+
+    /// Round 2 of #7245: only a line read as commands for the hedge and for no other reason is
+    /// spared the speculative checks. A line a shell runs outright is not, so what the shells
+    /// read as commands after an arithmetic shift, a heredoc closed on its line, or an earlier
+    /// body read both ways is refused when it builds its program.
+    #[test]
+    fn a_line_a_shell_runs_outright_is_refused_for_a_program_it_builds() {
+        for built in [
+            "g*h pr view 7",
+            "{gh,pr,view,7}",
+            "\"$(echo gh)\" pr view 7",
+        ] {
+            // A heredoc a shell closes on its header's line: the body is lines it runs.
+            let closed = format!("x=$(cat <<'EOF' ); echo\n{built}\ntrue\nEOF\n");
+            assert!(refused_for_a_built_program(&closed), "{closed}");
+            // A body after one the shells read differently, shaped as the hedge's.
+            let after = format!(
+                "x=$(cat <<'EOF' ); echo\nfoo\nEOF\ngit commit -m \"$(cat <<'EOF'\nsee `\"$(x)` (a)\n{built}\nEOF\n)\""
+            );
+            assert!(refused_for_a_built_program(&after), "{after}");
+            // A `<<` in an arithmetic expansion that a shell reads as a shift.
+            let shift = format!("echo $((1<<2))\n{built}\ntrue\n2\n");
+            assert!(refused_for_a_built_program(&shift), "{shift}");
+        }
+    }
+
+    /// Only the hedge is spared: the same shapes with a built program on a hedged line pass.
+    #[test]
+    fn a_built_program_on_a_hedged_line_is_not_refused() {
+        for built in ["{gh,pr,view,7}", "$(echo gh) pr view 7"] {
+            let text = hedged(built);
+            assert_eq!(merge_reason(&text), None, "{text}");
+        }
+        // Round 11 flipped this one to a hold: the lexer leaves a bare `gh` followed by a stray
+        // quote (`gh)"`, `"`) in the hedge's words, and a `gh` call whose noun is no command the
+        // allowlist knows is held, wherever it stands. A false hold, said in the refusal.
+        let text = hedged("\"$(echo gh)\" pr view 7");
+        assert!(merge_reason(&text).is_some(), "{text}");
+    }
+
+    /// A hedged line is read for a literal merge joined with its neighbours and on its own, with
+    /// a `case` arm's command in its place, in every merge form.
+    #[test]
+    fn a_literal_merge_on_a_hedged_line_is_held_in_every_form() {
+        let held = |cmd: &str| release_floor_reason(cmd, true);
+        for merge in [
+            "gh pr merge 7",
+            "gh pr \\\nmerge 7",
+            "x) gh pr merge 7",
+            "glab mr merge 7",
+            "gh pr merge --auto 7",
+            "gh api -X PUT repos/o/r/pulls/7/merge",
+            "git push --follow-tags origin main",
+            "echo \"$(gh pr merge 7)\"",
+            "echo `gh pr merge 7`",
+        ] {
+            // An arm's line stands in a `case` of its own.
+            let plain = if merge.starts_with("x)") {
+                format!("case y in\n{merge}\nesac")
+            } else {
+                merge.to_owned()
+            };
+            assert!(held(&plain).is_some(), "{plain}");
+            let text = hedged(&plain);
+            assert!(held(&text).is_some(), "{text}");
+            let unterminated = format!("git commit -m \"$(cat <<'EOF'\nsee `\"$(x)` (a)\n{plain}");
+            assert!(held(&unterminated).is_some(), "{unterminated}");
+        }
+    }
+
+    /// Round 3 of #7245: under the hedge only the two ruled checks are skipped. A shell a hedged
+    /// line builds is fed by that line, and a `case` in a substitution on one is held.
+    #[test]
+    fn a_hedged_line_is_held_for_a_built_shell_and_a_case_in_a_substitution() {
+        for held in [
+            "echo gh pr merge 7 | $SHELL",
+            "echo gh pr merge 7 | \"$(echo bash)\"",
+            "echo \"$(case y in (a) gh pr merge 7;; esac)\"",
+        ] {
+            let text = hedged(held);
+            assert!(merge_reason(&text).is_some(), "{text}");
+        }
+    }
+
+    /// A quote one hedged line opens and the next closes is read right by the joined reading.
+    #[test]
+    fn a_quote_closed_on_the_next_hedged_line_leaves_a_merge_held() {
+        let text = hedged("echo \"x\ny\"; gh pr merge 7");
+        assert!(merge_reason(&text).is_some(), "{text}");
+    }
+
+    /// An unquoted heredoc's substitutions are still read, hedge or not.
+    #[test]
+    fn an_unquoted_heredoc_substitution_is_still_read() {
+        let text = "cat <<EOF\nsee (a) `\"$(x)`\n$(gh pr merge 7)\nEOF";
+        assert!(merge_reason(text).is_some(), "{text}");
+    }
+
+    /// A here-string is not a heredoc: it hides nothing from `skip_paren`.
+    #[test]
+    fn a_here_string_in_a_substitution_opens_no_heredoc() {
+        let s: Vec<char> = "cat <<<'EOF'\n)\nEOF".chars().collect();
+        assert_eq!(
+            skip_paren(&s, 0, 0),
+            Some("cat <<<'EOF'\n)".chars().count())
+        );
+        let text = "x=$(cat <<<'EOF'\n)\ngh pr merge 7\nEOF";
+        assert!(merge_reason(text).is_some(), "{text}");
+    }
+
+    /// The hedge reading is only for as long as it lasts, a panic's unwinding included.
+    #[test]
+    fn a_panic_in_a_hedge_read_leaves_the_speculative_checks_on() {
+        let unwound = std::panic::catch_unwind(|| {
+            let _hedge = ReadingAHedge::on();
+            assert!(reading_a_hedge());
+            panic!("a hedge read that panics");
+        });
+        assert!(unwound.is_err());
+        assert!(!reading_a_hedge());
+        assert!(merge_reason("{gh,pr,merge,7}").is_some());
+    }
+
+    /// The large commit body of the CLI's budget test: a `)` and an odd quote in it, so it is read
+    /// as commands as bash 3.2's hedge, and optionally a merge on its last line.
+    fn a_large_hedged_commit(merging: bool) -> String {
+        let paragraph = "The guard didn't read `\"$(cat <<'EOF'` (see #917)\n- 1) the reader\n\n";
+        let body = paragraph.repeat(65_536 / paragraph.len());
+        let merge = if merging { "gh pr merge 7\n" } else { "" };
+        format!("git commit -m \"$(cat <<'EOF'\n{body}{merge}EOF\n)\"")
+    }
+
+    /// The floor itself, with no chat, plane or host in it, holds the merge on a line of a large
+    /// hedged body and passes the ordinary one: what a CI runner and a chat both get.
+    #[test]
+    fn a_merge_line_in_a_large_hedged_body_is_held_by_the_floor_alone() {
+        let merging = a_large_hedged_commit(true);
+        assert!(merge_reason(&merging).is_some());
+        assert!(release_floor_reason(&merging, true).is_some());
+        assert_eq!(
+            release_floor_reason(&a_large_hedged_commit(false), true),
+            None
+        );
+    }
+
+    /// **A cutoff refuses, whatever it cuts** (#7245, round 4): with a work budget forced tiny, the
+    /// large body with a merge line and the one without are both refused as unreadable, never
+    /// allowed; and a cutoff whose own refusal was swallowed still ends as one.
+    #[test]
+    fn a_reading_cut_short_by_a_tiny_budget_is_refused_never_allowed() {
+        for merging in [true, false] {
+            let cmd = a_large_hedged_commit(merging);
+            for allowed in [1, 100, 10_000, cmd.len() + 10] {
+                let outer = WORK.replace(Some(Work { read: 0, allowed }));
+                CUT_SHORT.set(false);
+                let said = floor(&cmd, true, 0);
+                CUT_SHORT.set(false);
+                WORK.set(outer);
+                assert!(
+                    said.is_some_and(|said| said.contains(merge::UNREADABLE)),
+                    "merging {merging}, budget {allowed}: not refused"
+                );
+            }
+        }
+        // A limit crossed whose refusal nothing returned still ends as a refusal.
+        assert!(closed_on_a_cutoff(None, true, true).is_some());
+        assert_eq!(closed_on_a_cutoff(None, false, true), None);
+    }
+
+    /// The ordinary hedged body (`- 1) first`, a brace-expanded `gh pr view`) still passes with the
+    /// per-line `case` wrapper closed, and a body line that is a real unparsed `case` is held.
+    #[test]
+    fn an_ordinary_hedged_body_passes_and_a_real_unparsed_case_in_it_is_held() {
+        let body = "see `\"$(x)` (a)\n- 1) first\n{gh,pr,view,7}\n";
+        let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+        assert_eq!(release_floor_reason(&ordinary, true), None, "{ordinary}");
+        let case = format!("git commit -m \"$(cat <<'EOF'\n{body}case x in a) echo $(\nEOF\n)\"");
+        assert!(release_floor_reason(&case, true).is_some(), "{case}");
+    }
+
     /// What a run really sends — a long pull request body in a substitution, a long script fed
     /// to a shell — is read whole, inside the budget, and not refused for its length.
     #[test]
@@ -1969,6 +3241,51 @@ mod tests {
             let (said, read) = metered(&cmd, true);
             assert_eq!(said, None, "{}", &cmd[..60]);
             assert!(read <= cmd.len() * WORK_FACTOR + WORK_SLACK, "read {read}");
+        }
+    }
+
+    /// **The ordinary large body passes where a chat runs it, and what truly can't be closed is
+    /// still held** (#7245, round 5): prose with `<<'EOF'` and `(see #917)` in a quoted heredoc is
+    /// data, so the hedge's re-spelling of it never refuses as an unclosed substitution.
+    #[test]
+    fn a_hedged_body_is_not_refused_as_unclosable_but_a_real_unclosable_one_is() {
+        let paragraph = "## Why\n\nThe guard didn't read `\"$(cat <<'EOF'` the way bash does (see \
+                         #917), so `echo \"$(date)\"` was refused. It's fixed: `$((1+2))`, \
+                         `<(sort a)` and `${x:-y}` are read as substitutions.\n\n\
+                         - 1) the reader (shellseg)\n- 2) the floor's \"eval\" walk\n\n";
+        let body = paragraph.repeat(65_536 / paragraph.len());
+        let ordinary = format!("git commit -m \"$(cat <<'EOF'\n{body}EOF\n)\"");
+        assert_eq!(release_floor_reason(&ordinary, true), None, "{ordinary}");
+        // An unquoted heredoc that never ends, and a quoted one with no delimiter line, are held.
+        for cmd in [
+            "echo \"$(cat <<EOF\nhello\n)\"",
+            "echo \"$(cat <<'EOF'\nhello\n)\"",
+            "echo \"$(cat <<'EOF'\n(see #917)\n",
+        ] {
+            let said = release_floor_reason(cmd, true);
+            assert!(
+                said.is_some_and(|said| said.contains("can't tell where it ends")),
+                "{cmd}"
+            );
+        }
+    }
+
+    /// **A hedged line with a real merge and an unclosable fragment is still held, for the
+    /// merge** (#7245, round 5 ruling): the unclosable check is skipped only for a line read as
+    /// commands solely by bash 3.2's hedge, after that line's merge readings found nothing.
+    #[test]
+    fn a_hedged_line_with_a_merge_and_an_unclosable_fragment_is_held_for_the_merge() {
+        let paragraph = "The guard didn't read `\"$(cat <<'EOF'` (see #917), so `echo \"$(date)\"` \
+                         was refused.\n- 1) the reader\n\n";
+        let body = paragraph.repeat(65_536 / paragraph.len());
+        for merge_line in ["gh pr merge 7", "gh pr merge 7 && echo \"$(cat <<EOF)"] {
+            let cmd = format!("git commit -m \"$(cat <<'EOF'\n{body}{merge_line}\nEOF\n)\"");
+            let said = release_floor_reason(&cmd, true)
+                .unwrap_or_else(|| panic!("not held: {merge_line}"));
+            assert!(
+                !said.contains("can't tell where it ends"),
+                "{merge_line}: {said}"
+            );
         }
     }
 }

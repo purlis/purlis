@@ -123,8 +123,13 @@ const WORDCHARS: &str = concat!(
 /// never reached the tokenizer, so the parsed and the unparseable paths cannot disagree about
 /// what a boundary is. The regex ends in the character class `[(){}]`, which is
 /// [`GROUPING_SPLIT`] here.
-const OPERATOR_ALTERNATION: [&str; 17] = [
-    "<<<", "<<", "<>", "<&", ">>", ">&", ">|", "<", ">", // the redirections, first
+const OPERATOR_ALTERNATION: [&str; 25] = [
+    // `&>>` and `&>` send both streams to a file: one redirection, and no `&` that ends the
+    // command before it (#7423). Before the `&` they begin with. zsh's clobber forms that end in
+    // a pipe (`>>|`, `&>|`, `>&|`) are one operator, and no `|` that ends the command (round 7),
+    // and so are the append-both forms `>>&`, `>>&|` and `&>>|` (round 8).
+    "&>>|", ">>&|", "&>>", "&>|", ">>&", ">>|", ">&|", "&>", "<<<", "<<", "<>", "<&", ">>", ">&",
+    ">|", "<", ">", // the redirections, first
     "||", "&&", ";;", ";", "|&", "|", "&", "\n", // the control operators
 ];
 
@@ -1099,6 +1104,16 @@ pub struct Reading {
     /// all (`$X$(echo gh)/y`, #7131), with each backtick pair written as `$(…)`; an empty string
     /// where the line did not lex and nothing measured the word.
     pub own_source: Vec<String>,
+    /// Whether each of [`Reading::own`]'s words stood unquoted and unescaped in the source (the
+    /// lexer's `bare`), so a quoted `'<'` is a word and never an operator.
+    pub own_bare: Vec<bool>,
+    /// Whether each of [`Reading::own`]'s words begins where the word before it ends, with no
+    /// blank between: the `2` of `2>f` is a descriptor, and the `2` of `2 >f` is a word. False
+    /// for every word where the line did not lex.
+    pub own_glued: Vec<bool>,
+    /// Whether a `|` or `|&` hands this segment its stdin: the segment before it writes what this
+    /// one reads, which may become words of a command it runs (`echo pr merge 5 | xe gh`).
+    pub own_piped: bool,
 }
 
 /// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well, both readings
@@ -1106,6 +1121,51 @@ pub struct Reading {
 /// one by the segment itself, never by position (#7092). A line that will not lex is read as
 /// [`segment_argv`] reads it, a logical line at a time, by the same walk.
 pub fn segment_readings(cmd: &str) -> Vec<Reading> {
+    if cmd.len() < LARGE_READING {
+        return read_segments(cmd);
+    }
+    // One hook reads a large body again and again: the floor, the merge reading, and the hold
+    // each walk the same text, and the walk is the cost of it (#7245). A reading is a pure
+    // function of the text, so the last few large ones are kept; the one effect it has, the
+    // report of a reading nested too deep, is made again on a hit.
+    if let Some((too_deep, readings)) = LARGE_READINGS.with(|kept| {
+        kept.borrow()
+            .iter()
+            .find(|(text, ..)| text == cmd)
+            .map(|(_, too_deep, readings)| (*too_deep, readings.clone()))
+    }) {
+        if too_deep {
+            TOO_DEEP.with(|flag| flag.set(true));
+        }
+        return readings;
+    }
+    let before = TOO_DEEP.with(|flag| flag.replace(false));
+    let readings = read_segments(cmd);
+    let too_deep = TOO_DEEP.with(|flag| flag.replace(before || flag.get()));
+    LARGE_READINGS.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        if kept.len() >= LARGE_READINGS_KEPT {
+            kept.remove(0);
+        }
+        kept.push((cmd.to_owned(), too_deep, readings.clone()));
+    });
+    readings
+}
+
+/// A text this long is read once however often it is asked for ([`segment_readings`]).
+const LARGE_READING: usize = 4096;
+/// How many large texts one thread keeps the reading of: the floor's two whole-text reads of a
+/// body, with room for the merge reading's.
+const LARGE_READINGS_KEPT: usize = 4;
+
+std::thread_local! {
+    /// The large texts [`segment_readings`] has read on this thread, each with whether its walk
+    /// met a nesting past [`MAX_NESTING`].
+    static LARGE_READINGS: std::cell::RefCell<Vec<(String, bool, Vec<Reading>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn read_segments(cmd: &str) -> Vec<Reading> {
     let cmd = unbacktick(cmd);
     let (walked, measured) = match lex(&cmd) {
         Ok(toks) => (walk_segments(toks).0, true),
@@ -1121,8 +1181,16 @@ pub fn segment_readings(cmd: &str) -> Vec<Reading> {
     walked
         .into_iter()
         .map(|w| Reading {
+            own_piped: matches!(w.joined.before.as_deref(), Some("|" | "|&")),
             outward: w.joined.argv,
             own_source: w.own.iter().map(source).collect(),
+            own_bare: w.own.iter().map(|t| t.bare).collect(),
+            own_glued: w
+                .own
+                .iter()
+                .enumerate()
+                .map(|(k, t)| measured && k > 0 && t.start >= 0 && w.own[k - 1].end == t.start)
+                .collect(),
             own: w.own.into_iter().map(|t| t.text).collect(),
         })
         .collect()
@@ -1392,6 +1460,30 @@ pub fn dollar_opens_quote(chars: &[char], i: usize) -> bool {
 /// The returned vector has one more entry than `line` has characters: the last is the state at
 /// end of input.
 pub fn quote_map(line: &str) -> Vec<bool> {
+    scan(line).0
+}
+
+/// Where a backtick stands, as the shell reads it (#7423).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Backtick {
+    /// Opens or closes a command substitution.
+    Live,
+    /// Inside `'…'`: an ordinary character.
+    Single,
+    /// Inside `$'…'`: an ordinary character, spelled `\x60` there.
+    Ansi,
+}
+
+/// The backticks of `line`, each with its character offset and what it is to the shell: the
+/// quoting of [`quote_map`], so a quoted backtick opens nothing and `\\` before one is an escaped
+/// backslash. A backtick the shell escapes (`\``) is none of them and is not listed.
+pub fn backticks(line: &str) -> Vec<(usize, Backtick)> {
+    scan(line).1
+}
+
+/// [`quote_map`]'s one pass, and the backticks it walks past.
+fn scan(line: &str) -> (Vec<bool>, Vec<(usize, Backtick)>) {
+    let mut ticks: Vec<(usize, Backtick)> = Vec::new();
     let chars: Vec<char> = line.chars().collect();
     let n = chars.len();
     let mut flags = vec![false; n + 1];
@@ -1413,10 +1505,16 @@ pub fn quote_map(line: &str) -> Vec<bool> {
             continue;
         }
         if top == "'" {
+            if c == '`' {
+                ticks.push((i, Backtick::Single));
+            }
             if c == '\'' {
                 stack.pop();
             }
         } else if top == "$'" {
+            if c == '`' {
+                ticks.push((i, Backtick::Ansi));
+            }
             // Closes on its own quote, and nothing else opens inside it: `$(` is literal there.
             if c == '\'' {
                 stack.pop();
@@ -1428,6 +1526,7 @@ pub fn quote_map(line: &str) -> Vec<bool> {
             i = end;
             continue;
         } else if c == '`' {
+            ticks.push((i, Backtick::Live));
             if top == "`" {
                 stack.pop();
             } else {
@@ -1463,7 +1562,7 @@ pub fn quote_map(line: &str) -> Vec<bool> {
         i += 1;
     }
     flags[n] = quoted_now(&stack);
-    flags
+    (flags, ticks)
 }
 
 /// `cmd` with each ACTIVE backslash-newline removed — bash's first transformation, before tokens

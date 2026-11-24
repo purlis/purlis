@@ -36,6 +36,9 @@ pub(super) fn hook_spool(d: &Doctor) -> Option<Row> {
     if !d.has_plane {
         return None;
     }
+    if d.confined {
+        return Some(Row::skipped(NAME, super::credentials::NOT_FROM_A_SANDBOX));
+    }
     row_for(&d.root)
 }
 

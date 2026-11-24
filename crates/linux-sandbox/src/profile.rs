@@ -175,6 +175,10 @@ enum Filter {
     },
     /// `remote unix-socket`, with its `path-literal` where it names one.
     Unix(Option<PathBuf>),
+    /// `remote unix-socket (path-regex …)`: the sockets whose path the pattern matches, as the
+    /// `ports` family off holds purlis's own (#7105). A socket with no path (an abstract or
+    /// unnamed one) matches none.
+    UnixRegex(Regex),
     /// `local unix-socket (path-literal …)` (#2019): the one socket a chat may bind.
     LocalUnix(PathBuf),
 }
@@ -201,8 +205,10 @@ const JUDGED: [&str; 14] = [
 
 /// Operations purlis writes rules for that this module does not judge. `file-read-xattr`, a
 /// file's extended attributes, is denied below a plane outside a Regenerate run's code (#6120);
-/// the supervisor judges no read of them, so that rule holds on macOS alone.
-const SET_ASIDE: [&str; 18] = [
+/// the supervisor judges no read of them, so that rule holds on macOS alone. `file-lock`, an
+/// `fcntl` lock (SQLite's, #7352), is Seatbelt's own: on Linux a lock needs nothing beyond
+/// opening the file and Landlock has no lock right, so the rule grants nothing here.
+const SET_ASIDE: [&str; 19] = [
     "process-fork",
     "process-info*",
     "signal",
@@ -221,6 +227,7 @@ const SET_ASIDE: [&str; 18] = [
     "file-write-setugid",
     "network-inbound",
     "file-read-xattr",
+    "file-lock",
 ];
 
 impl Profile {
@@ -455,6 +462,9 @@ impl Filter {
                 None => true,
                 Some(path) => *to == Some(path.as_path()),
             },
+            (Self::UnixRegex(regex), Op::Connect(Remote::Unix(to))) => {
+                to.is_some_and(|to| regex.is_match(&to.to_string_lossy()))
+            }
             _ => false,
         }
     }
@@ -607,6 +617,13 @@ fn remote(rest: &[Expr]) -> Result<Filter, Unread> {
         [Expr::Symbol(unix), Expr::List(path)] if unix == "unix-socket" => match &path[..] {
             [Expr::Symbol(head), Expr::Str(path)] if head == "path-literal" => {
                 Ok(Filter::Unix(Some(PathBuf::from(path))))
+            }
+            // Read as a file's `regex` is, and refused, never allowed, where it does not
+            // compile: a deny that cannot be read would otherwise be no deny.
+            [Expr::Symbol(head), Expr::Str(pattern)] if head == "path-regex" => {
+                Regex::new(&format!("(?s){pattern}"))
+                    .map(Filter::UnixRegex)
+                    .map_err(|why| Unread(format!("the socket pattern {pattern:?}: {why}")))
             }
             _ => Err(Unread(format!("the socket filter {path:?}"))),
         },

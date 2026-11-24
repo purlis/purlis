@@ -280,6 +280,7 @@ pub fn inherited(
                 && !crate::hookwire::NOT_INHERITED
                     .iter()
                     .any(|never| crate::envvar::same(never, text))
+                && !crate::forge::credential::is_connection_variable(text)
                 && passes(text, harness, operator)
         })
         .collect()
@@ -356,6 +357,7 @@ fn kept_from_every_chat(name: &OsStr, text: &str) -> bool {
             .spellings()
             .any(|prefix| upper.starts_with(prefix))
         || crate::envvar::same(text, SESSION_BUS_KEPT)
+        || crate::forge::credential::is_connection_variable(text)
         || crate::hookwire::NOT_INHERITED
             .iter()
             .any(|never| crate::envvar::same(never, text) || never.eq_ignore_ascii_case(text))
@@ -412,17 +414,28 @@ pub fn compose(
         .filter(|(name, _)| !strip(name) && !env.iter().any(|(kept, _)| kept == name))
         .collect();
     env.extend(reached);
+    // The forge lock's marker (#7205) says its pair is wanted, and is not itself the chat's.
+    let locked = chat
+        .set
+        .iter()
+        .any(|(name, _)| name == crate::forgelock::MARKER);
     env.extend(
         chat.set
             .iter()
-            .filter(|(name, _)| !strip(OsStr::new(name)))
+            .filter(|(name, _)| !strip(OsStr::new(name)) && name != crate::forgelock::MARKER)
             .map(|(name, value)| (name.into(), value.into())),
     );
     // Every product variable under both its names while the rename's window is open (V93k).
     let env = crate::envvar::twinned(env);
-    match chat.git_hooks {
+    let env = match chat.git_hooks {
         Some(hooks) => hooks.arm(env),
         None => env,
+    };
+    // After every pair there is, hooks' included, so the person's own survive (#7205).
+    if locked {
+        crate::forgelock::arm(env)
+    } else {
+        env
     }
 }
 
@@ -909,6 +922,37 @@ mod tests {
             of_namespace(&names, &["CLAUDE_*", internal]),
             ["CLAUDE_CONFIG_DIR"]
         );
+    }
+
+    #[test]
+    fn a_hosts_forge_connection_stays_out_of_a_chat_under_both_spellings_whoever_lists_it() {
+        let hex = "6769746875622e636f6d";
+        let names: Vec<String> = ["TOKEN", "TOKEN_FILE", "TOKEN_EXPIRES_AT", "KIND", "ACCEPT"]
+            .iter()
+            .flat_map(|family| {
+                ["PURLIS", "CHARTER"]
+                    .iter()
+                    .map(move |prefix| format!("{prefix}_FORGE_{family}__{hex}"))
+            })
+            .chain(["PURLIS_ROOT".to_string()])
+            .collect();
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        // Listed by exact name and by prefix, and neither brings one in.
+        assert_eq!(
+            kept(&refs, None, &refs, &nothing),
+            ["PURLIS_ROOT"],
+            "a connection variable reached a chat"
+        );
+        assert_eq!(
+            kept(&refs, None, &["PURLIS_*", "CHARTER_*"], &nothing),
+            ["PURLIS_ROOT"]
+        );
+        assert!(crate::forge::credential::is_connection_variable(
+            "charter_forge_token__6769746875622e636f6d"
+        ));
+        assert!(!crate::forge::credential::is_connection_variable(
+            "PURLIS_FORGE_API_URL"
+        ));
     }
 
     #[test]

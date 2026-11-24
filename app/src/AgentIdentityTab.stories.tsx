@@ -78,6 +78,9 @@ export const Start: Story = {
   play: async ({ canvasElement }) => {
     const page = within(canvasElement);
     const first = await page.findByRole("checkbox", { name: "steward" });
+    // The pointer to the one sign-in (ADR 0128) is the first stop; the first persona follows.
+    await userEvent.tab();
+    await expect(page.getByRole("button", { name: "Open accounts" })).toHaveFocus();
     await userEvent.tab();
     await expect(first).toHaveFocus();
   },

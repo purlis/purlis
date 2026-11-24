@@ -1920,6 +1920,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
             manifest: None,
             certificate_check: None,
             expects: None,
+            forge_replaced: None,
             team_off: None,
             level_held: None,
             yours: None,
@@ -1954,6 +1955,7 @@ fn taking_the_offer_turns_the_project_on_and_it_is_not_offered_again() {
                 widens: sandbox::Os::this() == sandbox::Os::MacOs,
             }),
             expects: None,
+            forge_replaced: None,
             team_off: None,
             level_held: None,
             yours: None,
@@ -1988,6 +1990,7 @@ fn keeping_it_off_leaves_the_project_as_it_was_and_asks_no_more() {
             manifest: None,
             certificate_check: None,
             expects: None,
+            forge_replaced: None,
             team_off: None,
             level_held: None,
             yours: None,
@@ -3605,6 +3608,104 @@ fn an_allow_next_time_waiting_is_listed_by_its_id_and_remove_takes_it_off_the_bo
     assert_eq!(seen.lock().unwrap().len(), 1, "nothing more audited");
 }
 
+/// A pool login opt-in as the Granted list's tests give it: the persona's login `identity`,
+/// declared as `name`, on pool `builds`.
+fn a_kept_opt_in(config: &std::path::Path, identity: &str, name: &str) {
+    purlis_core::poollogins::OptIns::stored_in(config).allow(
+        "steward",
+        identity,
+        name,
+        purlis_core::poollogins::Bound {
+            pool: "builds".into(),
+            definition: "d1".into(),
+            image: "i1".into(),
+            runner: "01JB0RUNNER0000000000000000".into(),
+            runner_key: "ab".repeat(32),
+            runner_image: "i1".into(),
+            pod: String::new(),
+            engine: "this machine's Docker".into(),
+            marked: false,
+        },
+    );
+}
+
+/// #7190: a pool login opt-in kept on this machine is listed with the other Allows by the login's
+/// declared name (never its identity hash), and Remove by the id the list gave audits and takes it
+/// away, so the next login asks.
+#[test]
+fn a_kept_pool_login_opt_in_is_listed_by_its_name_and_remove_audits_and_takes_it_away() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let browsers = crate::chatbrowsers::ChatBrowsers::default()
+        .keeping_answers(root.path(), Some(config.path()));
+    a_kept_opt_in(config.path(), "3f9c1d2e7a4b", "shop");
+
+    let rows = pool_login_rows(&browsers);
+
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].what, GrantWhat::PoolLogin);
+    assert_eq!(rows[0].persona.as_deref(), Some("steward"));
+    assert_eq!(
+        rows[0].target, "shop on builds",
+        "the declared login, not its identity"
+    );
+    assert!(!rows[0].target.contains("3f9c"), "no hash in the row");
+    assert_eq!(rows[0].level, GrantLevel::Machine);
+    let (persona, login, pool) = pool_login_of(&rows[0].id).expect("its id names it");
+    assert_eq!(login, "3f9c1d2e7a4b", "Remove still names it by identity");
+
+    let seen = std::sync::Mutex::new(Vec::new());
+    let audit = |chat: Option<u32>, audited: &sandbox::grant::Audited<'_>| {
+        seen.lock().unwrap().push((
+            chat,
+            audited.granted,
+            audited.what.to_owned(),
+            audited.target.to_owned(),
+            audited.level.word(),
+        ));
+        Ok(())
+    };
+    revoke_pool_login(&browsers, persona, login, pool, &audit).expect("removed");
+    assert!(pool_login_rows(&browsers).is_empty());
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![(
+            None,
+            false,
+            "pool-login".to_owned(),
+            "steward: shop on builds".to_owned(),
+            "machine"
+        )],
+        "audited as a revoke, the way other grants' removals are"
+    );
+    assert!(
+        revoke_pool_login(&browsers, persona, login, pool, &audit)
+            .unwrap_err()
+            .contains("no longer there"),
+        "a second Remove finds nothing"
+    );
+    assert_eq!(seen.lock().unwrap().len(), 1, "and audits nothing more");
+}
+
+#[test]
+fn a_pool_login_opt_in_whose_audit_could_not_be_written_is_not_removed() {
+    let (root, config) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let browsers = crate::chatbrowsers::ChatBrowsers::default()
+        .keeping_answers(root.path(), Some(config.path()));
+    a_kept_opt_in(config.path(), "id-shop", "shop");
+    let refused = |_: Option<u32>, _: &sandbox::grant::Audited<'_>| {
+        Err("the audit log could not be written".to_owned())
+    };
+
+    let failed = revoke_pool_login(&browsers, "steward", "id-shop", "builds", &refused);
+
+    assert!(failed.unwrap_err().contains("audit log"));
+    assert_eq!(
+        pool_login_rows(&browsers).len(),
+        1,
+        "nothing is taken before the audit is written"
+    );
+}
+
 /// **Which asks the project's `[policy]` answers itself** (the Q308 follow-up, item 3; ruling
 /// Q328): a folder under `asks` off or log, a socket under off alone, and nothing else.
 #[test]
@@ -3687,6 +3788,7 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
                 target: Some(target.to_owned()),
                 read_back: false,
                 suggested: None,
+                purlis_command: None,
             }),
         )
     };
@@ -3843,4 +3945,31 @@ fn under_watch_a_folder_of_the_project_is_allowed_and_a_held_folder_of_later_cod
         logged.last().and_then(|line| line.host.clone()),
         Some(elsewhere.display().to_string())
     );
+}
+
+/// With the one-login train's feature on, a project carrying old forge token lines hands the
+/// window the one Notice's text and a cause key that moves with the lines; one without says
+/// nothing (ADR 0128, "Migration").
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn a_project_with_old_forge_token_lines_hands_the_window_one_notice_and_a_clean_one_none() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        purlis_core::names::manifest(dir.path()),
+        "[sandbox.personas.dev.tools]\n\
+         gh = { vault = \"forge\", mint = \"github-app\", app = \"Iv1.abc\", key = \"k\" }\n",
+    )
+    .unwrap();
+    let shown = state_of(dir.path()).forge_replaced.expect("a notice");
+    assert!(
+        shown.cause.starts_with("forge-sign-in-replaces:"),
+        "{}",
+        shown.cause
+    );
+    assert!(shown.text.contains("Settings › Forges"), "{}", shown.text);
+    assert_eq!(state_of(dir.path()).forge_replaced, Some(shown));
+
+    let clean = tempfile::tempdir().unwrap();
+    std::fs::write(purlis_core::names::manifest(clean.path()), "schema = 1\n").unwrap();
+    assert_eq!(state_of(clean.path()).forge_replaced, None);
 }

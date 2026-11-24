@@ -384,6 +384,9 @@ pub struct Held {
     removal_asks: crate::removalasks::Asked,
     /// The merges its chats' hooks held, each an ask until the person answers (R-114).
     merge_holds: crate::mergeholds::MergeHolds,
+    /// The tags, releases, CI-file pushes and forks its chats asked for, each an ask until the
+    /// person answers (one login F2, ADR 0128 D8).
+    held_acts: crate::heldacts::HeldActState,
     /// Each chat's browsers, and what the person said they may reach (#2013).
     browsers: crate::chatbrowsers::ChatBrowsers,
     /// The person's Allows of a persona's tools on a pool, and the runner chats' commands that
@@ -844,6 +847,11 @@ impl Held {
     /// The merges its chats' hooks held, for the person's press (R-114, R-115).
     pub fn merge_holds(&self) -> &crate::mergeholds::MergeHolds {
         &self.merge_holds
+    }
+
+    /// The held forge acts its chats asked for, for the person's press (ADR 0128 D8).
+    pub fn held_acts(&self) -> &crate::heldacts::HeldActState {
+        &self.held_acts
     }
 
     /// Each chat's browsers, and what the person said they may reach (#2013).
@@ -1614,6 +1622,7 @@ impl Held {
         self.secret_fills.forget(session);
         self.removal_asks.forget(session);
         self.merge_holds.forget(session);
+        self.held_acts.forget(session);
         // And its refusals whose only way out was a press in the window (R-328).
         purlis_core::windowonly::forget(self.root(), session);
         // What its runner's commands wait on goes with it (#2047).
@@ -4008,6 +4017,12 @@ impl Planes {
                             &strong,
                             block.line.chat,
                             block.line.sandbox_blocked,
+                            // Checked again in the draft: a chat can send any words.
+                            block
+                                .line
+                                .purlis_command
+                                .as_deref()
+                                .and_then(purlis_core::sandboxblock::command::known),
                         );
                     }
                     // A folder or socket ask the project's `[policy]` answers itself (the Q308
@@ -5605,7 +5620,9 @@ impl Planes {
             secret_fills: crate::secretfills::Fills::default(),
             removal_asks: crate::removalasks::Asked::default(),
             merge_holds: crate::mergeholds::MergeHolds::default(),
+            held_acts: crate::heldacts::HeldActState::default(),
             browsers: crate::chatbrowsers::ChatBrowsers::default()
+                .keeping_answers(&browsers_root, self.config())
                 .noting(self.browser_driver.clone(), &browsers_root)
                 .telling(Arc::clone(&browsers_listed))
                 .limited_by(Arc::new(purlis_core::browserlimits::Limits::here)),
@@ -5739,6 +5756,11 @@ impl Planes {
             .get(plane)
             .map(Arc::clone)
             .ok_or_else(|| no_such(plane, "act on"))
+    }
+
+    /// The plane at `root`, where this process holds it open.
+    pub fn held_at(&self, root: &Path) -> Option<Arc<Held>> {
+        self.map().get(&PlaneId::of(root)).map(Arc::clone)
     }
 
     /// The folder of every plane this process holds: a project open in a window, which fetches

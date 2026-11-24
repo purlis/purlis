@@ -21,6 +21,7 @@ import StoryFailures, {
   REPORT,
   reportPath,
   shardOf,
+  browsersAsked,
   shardProblems,
   undrawn,
 } from "./story-failures.mjs";
@@ -680,6 +681,22 @@ test("every shard of every browser reported, or the check names the one missing"
     ]),
     ["chromium: its shards disagree on how many there are (2, 3)"],
   );
+});
+
+test("a pull request's run asks for WebKit's shards alone: a browser it did not run is not missing (#7335)", () => {
+  const webkit = ["report-webkit-1-of-2.json", "report-webkit-2-of-2.json"];
+  assert.deepEqual(shardProblems(webkit, ["webkit"]), []);
+  assert.deepEqual(shardProblems(webkit.slice(1), ["webkit"]), ["webkit 1 of 2 wrote no report"]);
+  // The queue's run names both, so a missing browser is still named there (the default).
+  assert.deepEqual(shardProblems(webkit), ["chromium: no shard wrote a report"]);
+  assert.deepEqual(shardProblems(webkit, ["chromium", "webkit"]), ["chromium: no shard wrote a report"]);
+});
+
+test("the browsers a run was asked for are read from STORY_BROWSERS, and a wrong list is refused", () => {
+  assert.deepEqual(browsersAsked({}), ["chromium", "webkit"]);
+  assert.deepEqual(browsersAsked({ STORY_BROWSERS: '["webkit"]' }), ["webkit"]);
+  assert.throws(() => browsersAsked({ STORY_BROWSERS: "[]" }), /STORY_BROWSERS/);
+  assert.throws(() => browsersAsked({ STORY_BROWSERS: '["firefox"]' }), /STORY_BROWSERS/);
 });
 
 test("each shard that failed drew its pictures, or the check names it", () => {

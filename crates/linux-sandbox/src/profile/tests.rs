@@ -344,3 +344,93 @@ fn a_chat_serves_only_where_its_profile_names_a_socket_to_serve_on() {
     ));
     assert!(!held.serves_at(Path::new(own)));
 }
+
+/// **`ports = "off"`, as purlis writes it** (#7105): every local socket and loopback port
+/// allowed, then purlis's own sockets denied by a `path-regex`, after them so they win.
+const PORTS_OFF: &str = r#"(version 1)
+(allow default)
+(deny network-outbound (remote unix-socket))
+(deny network-outbound (remote ip "localhost:*"))
+(allow network-outbound (remote unix-socket))
+(allow network-outbound (remote ip "localhost:*"))
+(deny network-outbound (remote unix-socket (path-regex #"/\.([pP][uU][rR][lL][iI][sS]|[cC][hH][aA][rR][tT][eE][rR])/")))
+(deny network-outbound (remote unix-socket (path-regex #"/([hH][oO][oO][kK][sS]|purlisd[^/]*)\.[sS][oO][cC][kK]$")))
+(deny network-outbound (remote ip "localhost:4100"))
+"#;
+
+#[test]
+fn with_ports_off_a_chat_reads_the_profile_and_reaches_other_sockets_but_not_purlis_own() {
+    let profile = read(PORTS_OFF);
+    let unix = |path: Option<&'static str>| Op::Connect(Remote::Unix(path.map(Path::new)));
+    // Another program's socket, an abstract one and a loopback port are reached. The abstract
+    // one is reached only at the profile level: the supervisor refuses an abstract or unnamed
+    // connect before the profile is asked, so a chat never gets one through.
+    assert!(profile.allows(&unix(Some("/var/run/docker.sock"))));
+    assert!(profile.allows(&unix(None)));
+    assert!(profile.allows(&tcp("127.0.0.1", 5432)));
+    // Purlis's own stay denied, by folder and by name, in any case.
+    for held in [
+        "/work/p/.purlis/hooks.sock",
+        "/work/p/.CHARTER/x/y.sock",
+        "/run/user/1000/hooks.sock",
+        "/run/user/1000/Hooks.SOCK",
+        "/run/user/1000/purlisd-7.sock",
+    ] {
+        assert!(!profile.allows(&unix(Some(held))), "{held}");
+    }
+    assert!(!profile.allows(&tcp("127.0.0.1", 4100)));
+    // A name that only looks like one is not held.
+    assert!(profile.allows(&unix(Some("/run/user/1000/purlisd-7.sock.bak"))));
+}
+
+/// **The forge-root deny** (#7302): ports off also holds the folder every run's forge route is made
+/// in, `(path-regex #"^<escaped root>/")`, then gives this chat's own `proxy.sock` back by name.
+/// The root is escaped as purlis writes it, so one with regex metacharacters must still match only
+/// itself.
+#[test]
+fn with_ports_off_the_forge_root_is_denied_and_only_this_chats_own_socket_is_given_back() {
+    let profile = read(
+        r#"(version 1)
+(allow default)
+(allow network-outbound (remote unix-socket))
+(deny network-outbound (remote unix-socket (path-regex #"^/run/user/1000/purlis\+\(x\)\.y\[1\]/")))
+(allow network-outbound (remote unix-socket (path-literal "/run/user/1000/purlis+(x).y[1]/4242/proxy.sock")))
+"#,
+    );
+    let unix = |path: &'static str| Op::Connect(Remote::Unix(Some(Path::new(path))));
+    // Another run's socket under the root is denied, and so is anything else beneath it.
+    assert!(!profile.allows(&unix("/run/user/1000/purlis+(x).y[1]/9999/proxy.sock")));
+    assert!(!profile.allows(&unix("/run/user/1000/purlis+(x).y[1]/other.sock")));
+    // This chat's own is given back.
+    assert!(profile.allows(&unix("/run/user/1000/purlis+(x).y[1]/4242/proxy.sock")));
+    // The metacharacters are literal: a look-alike root, or the root as a mere prefix, is not held.
+    assert!(profile.allows(&unix("/run/user/1000/purlisxxxyy1/9999/proxy.sock")));
+    assert!(profile.allows(&unix("/run/user/1000/purlis+(x).y[1]x/9999/proxy.sock")));
+    assert!(profile.allows(&unix(
+        "/other/run/user/1000/purlis+(x).y[1]/9999/proxy.sock"
+    )));
+}
+
+#[test]
+fn a_socket_pattern_that_does_not_compile_is_refused_never_allowed() {
+    let why = Profile::parse(
+        r#"(version 1)
+(allow default)
+(deny network-outbound (remote unix-socket (path-regex #"/(unclosed")))
+"#,
+    )
+    .expect_err("a pattern that does not compile is not read");
+    assert!(why.to_string().contains("the socket pattern"), "{why}");
+}
+
+/// #7352: Codex's profile allows `file-lock` on its state stores for SQLite under Seatbelt. A
+/// Linux lock needs nothing beyond opening the file, so the rule reads and grants no path.
+#[test]
+fn a_file_lock_rule_reads_and_grants_no_path() {
+    let profile = read(
+        "(version 1)\n(deny default)\n(allow file-lock (regex \"^/d/[a-z_]+_[0-9]+\\\\.sqlite(-wal|-shm|-journal)?$\"))\n",
+    );
+    assert!(!profile.allows(&reads("/d/state_5.sqlite")));
+    assert!(!profile.allows(&write("/d/state_5.sqlite")));
+    assert!(profile.reach().written.is_empty());
+}

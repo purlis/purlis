@@ -57,7 +57,9 @@
 //!   for the chat's persona on that pool, bound to the pool's definition and image
 //!   (`purlis_core::poollogins`): the first login asks, as one Ask in the registry
 //!   ([`PoolLoginWaits`]); a pool whose definition or image changed since asks again; Keep off
-//!   refuses its logins there until the pool changes. The opt-in lasts while the app runs. Its
+//!   refuses its logins there for this run, until the pool changes or another window of this
+//!   machine's person gives a yes, which the store shows first. The opt-in survives a restart on this
+//!   machine alone, listed in the Granted list with Remove (#7190). Its
 //!   values are read here, as the persona declares the login and this machine allowed it (the
 //!   runner armed its tools, of which this window holds no record), and go to the runner's
 //!   browser for that one login; a runner keeps no value, and no kept login (#2021).
@@ -66,10 +68,15 @@
 //!   here, read at each call, never the floor's reach (D-2011-10); its sites ask as any chat's
 //!   do, and its posture Ask says what each answer gives it.
 //!
-//! **In memory only**, like the other Asks a chat raises: a relaunch starts with none, and the
-//! chat's next call asks again. Nothing a chat sends decides any of it: the chat is the one
-//! whose token the line carries, its reach is the app's record of its sandbox, and only the
-//! person's press in the window answers the Ask (`ui::WINDOW_ONLY`).
+//! **The person's answer to the posture Ask is kept for that chat's life** (#7190): in this
+//! machine's state folder, never the plane, by the chat's identity, so a restart or a resumed
+//! chat keeps it, a new chat asks, and it ends with the chat. A kept answer is checked against
+//! the chat's current reach before it is used: where the reach narrowed meanwhile, the person is
+//! asked again. A reach narrowed since still ends the chat's browsers. The other Asks a chat
+//! raises are in memory only: a relaunch starts with none, and the chat's next call asks again.
+//! Nothing a chat sends decides any of it: the chat is the one whose token the line carries, its
+//! reach is the app's record of its sandbox, and only the person's press in the window answers
+//! the Ask (`ui::WINDOW_ONLY`).
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -267,6 +274,9 @@ struct Chat {
     posture: Posture,
     /// When the Ask began, while it waits.
     since: u64,
+    /// What the chat's browser reached when its Ask was raised: kept with the person's answer
+    /// (#7190), so a restored answer is checked against the reach the chat has by then.
+    asked_reach: purlis_core::browserposture::Reach,
     /// Each browser by the name the chat knows it by, and its program in the session host,
     /// oldest first.
     browsers: Vec<(String, String)>,
@@ -340,6 +350,7 @@ impl Default for Chat {
             id: None,
             posture: Posture::Unasked,
             since: 0,
+            asked_reach: purlis_core::browserposture::Reach::default(),
             browsers: Vec::new(),
             current: None,
             ended: Vec::new(),
@@ -502,8 +513,12 @@ pub struct ChatBrowsers {
     /// The browsers a window before this one showed in a view tab, taken back after its crash,
     /// until the window opens a view tab of each (#2025).
     theirs_back: Mutex<Vec<String>>,
-    /// The person's opt-ins of a persona's browser logins on a pool (#2050), for this run.
+    /// The person's opt-ins of a persona's browser logins on a pool (#2050): kept in this
+    /// machine's config folder where it has one (#7190), and for this run where it has none.
     pool_logins: purlis_core::poollogins::OptIns,
+    /// The project whose state folder keeps each chat's posture answer for the chat's life
+    /// (#7190), where it has one.
+    answers_in: Option<std::path::PathBuf>,
     /// The runner chats whose browser login waits on that opt-in, by chat (#2050).
     pool_asks: Mutex<HashMap<u32, PoolLoginWaits>>,
     /// The pool each browser started on a pool's runner runs on, by program (#2050).
@@ -638,6 +653,7 @@ impl Default for ChatBrowsers {
             viewed: Mutex::default(),
             theirs_back: Mutex::default(),
             pool_logins: purlis_core::poollogins::OptIns::default(),
+            answers_in: None,
             pool_asks: Mutex::default(),
             on_pools: Mutex::default(),
             says: std::sync::OnceLock::new(),
@@ -864,6 +880,68 @@ impl std::fmt::Display for EndWhy {
     }
 }
 
+/// What a chat's `reach` says, as a kept answer records it (#7190).
+fn kept_reach(reach: &BrowserReach) -> purlis_core::browserposture::Reach {
+    purlis_core::browserposture::Reach {
+        listed: reach.listed.iter().map(|one| one.host.clone()).collect(),
+        never: reach.never.iter().cloned().collect(),
+        withdrawn: reach.withdrawn.iter().copied().collect(),
+        open_web: reach.open_web,
+        answered: reach.answered.iter().cloned().collect(),
+    }
+}
+
+/// **Which chats purlis has a record of, for the project at `root`** (#7190): the chats the record
+/// of open chats names, as it is on disk now (another window of the project writes it too), the
+/// chats that closed and keep their card ([`purlis_core::chatrecords`]), `back` (the chats this
+/// launch put back) and those `open_here`. A closed chat is a chat that exists: its Reopen starts
+/// it again under its id, and it finds its kept answer. `None` where either record cannot be
+/// read: a record that does not read is never "no chats", and nothing is pruned on it.
+pub(crate) fn chats_that_exist<'a>(
+    root: &Path,
+    back: &'a [String],
+    open_here: &'a dyn Fn(&str) -> bool,
+) -> Option<impl Fn(&str) -> bool + 'a> {
+    let mut known: std::collections::BTreeSet<String> = back.iter().cloned().collect();
+    if let Some(open) = purlis_core::reopen::read_strictly(root).ok()? {
+        known.extend(open.chats.into_iter().filter_map(|chat| chat.identity.id));
+    }
+    known.extend(
+        purlis_core::chatrecords::every_strictly(root)?
+            .into_iter()
+            .map(|chat| chat.id),
+    );
+    Some(move |id: &str| known.contains(id) || open_here(id))
+}
+
+/// **The time before which an answer kept for a chat with no record is dropped** (#7190), in
+/// seconds since 1970: when the record of open chats was last written. An answer given after
+/// it may be a chat another window started that the record does not name yet, and is spared.
+/// Where the record has no time (none yet), the last ten minutes are spared.
+pub(crate) fn answers_spared_since(root: &Path) -> u64 {
+    let secs = |at: std::time::SystemTime| {
+        at.duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs())
+    };
+    std::fs::metadata(purlis_core::reopen::path(root))
+        .and_then(|record| record.modified())
+        .map_or_else(
+            |_| secs(std::time::SystemTime::now()).saturating_sub(600),
+            secs,
+        )
+}
+
+/// What of `posture` the person answered that is kept across a restart (#7190): their press,
+/// never the asking.
+fn answer_of(posture: Posture) -> Option<purlis_core::browserposture::Answer> {
+    use purlis_core::browserposture::Answer;
+    match posture {
+        Posture::Allowed { open_web } => Some(Answer::Allowed { open_web }),
+        Posture::Off => Some(Answer::Off),
+        Posture::Unasked | Posture::Asked => None,
+    }
+}
+
 /// **The person is about to take `program` over** (#5296): from before the host hands it to them,
 /// it is no browser a kept login closes as never used.
 pub fn person_will_drive(projects: &[Arc<crate::planes::Held>], program: &str) {
@@ -1019,6 +1097,78 @@ impl ChatBrowsers {
         if let Some(says) = self.says.get() {
             says(session, said);
         }
+    }
+
+    /// **These browsers, keeping what the person answers across a restart** (#7190): each chat's
+    /// posture answer in the project `root`'s state folder, for that chat's life, and the pool
+    /// login opt-ins in this machine's config folder `config`. Neither is the plane, and neither
+    /// is synced.
+    pub fn keeping_answers(self, root: &Path, config: Option<&Path>) -> Self {
+        ChatBrowsers {
+            answers_in: Some(root.to_path_buf()),
+            pool_logins: config.map_or_else(
+                purlis_core::poollogins::OptIns::default,
+                purlis_core::poollogins::OptIns::stored_in,
+            ),
+            ..self
+        }
+    }
+
+    /// **Drops the kept answers of chats purlis no longer has a record of** (`exists` says which
+    /// it has, [`chats_that_exist`]), at start, but not an answer given at `since` or after
+    /// ([`answers_spared_since`]). A chat that is closed is not one of them: it may be resumed,
+    /// and keeps its answer; it goes when purlis lets go of the chat's record.
+    pub fn prune_answers(&self, exists: &dyn Fn(&str) -> bool, since: u64) {
+        let Some(root) = &self.answers_in else {
+            return;
+        };
+        match purlis_core::browserposture::prune(root, exists, since) {
+            Ok(0) => {}
+            Ok(gone) => {
+                tracing::info!("purlis: {gone} kept browser answers of ended chats dropped")
+            }
+            Err(why) => tracing::warn!("purlis: kept browser answers of ended chats stay ({why})"),
+        }
+    }
+
+    /// **The pool login opt-ins in force** (#7190), for Settings' Granted list.
+    pub fn pool_login_grants(&self) -> Vec<purlis_core::poollogins::Granted> {
+        self.pool_logins.granted()
+    }
+
+    /// The name the Granted list shows `persona`'s login `login` on `pool` by, or the identity
+    /// where it is not listed.
+    fn pool_login_name(&self, persona: &str, login: &str, pool: &str) -> String {
+        self.pool_login_name_or(persona, login, pool, login)
+    }
+
+    /// [`Self::pool_login_name`], by `otherwise` where the Granted list has no such opt-in.
+    fn pool_login_name_or(
+        &self,
+        persona: &str,
+        login: &str,
+        pool: &str,
+        otherwise: &str,
+    ) -> String {
+        self.pool_logins
+            .granted()
+            .into_iter()
+            .find(|one| one.persona == persona && one.login == login && one.pool == pool)
+            .map_or_else(|| otherwise.to_owned(), |one| one.name)
+    }
+
+    /// **Remove** on the Granted list for `persona`'s login `login` on pool `pool` (#7190): the
+    /// next login there asks. Whether one was there, or why it could not be removed.
+    pub fn remove_pool_login_grant(
+        &self,
+        persona: &str,
+        login: &str,
+        pool: &str,
+    ) -> Result<bool, String> {
+        let name = self.pool_login_name(persona, login, pool);
+        self.pool_logins
+            .remove(persona, login, pool)
+            .map_err(|not| login_not_removed(&name, pool, &not))
     }
 
     /// These browsers, telling `listed` when a retry off every call's path ends one (#2283).
@@ -1180,8 +1330,8 @@ impl ChatBrowsers {
             .collect()
     }
 
-    /// **Where each open browser's page is** (#2022), as its last act answered, in the
-    /// listing's order: the chats' browsers, then those pinned past their chat. One that has
+    /// **Where each open browser's page is on this machine** (#2022), as its last act answered,
+    /// in the listing's order: the chats' browsers, then those pinned past their chat. One that has
     /// answered no act yet, or is not ended yet, is left out.
     pub fn open_addresses(&self) -> Vec<String> {
         let addresses = self
@@ -1194,10 +1344,18 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
+        // A runner's browser is none of these: it outlives the quit and is taken back at the
+        // next start (#7187 item 7), so there is nothing to offer as a button.
+        let on_runners = self
+            .on_pools
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         // None of a browser that holds a login or what the person typed.
         self.listed()
             .into_iter()
             .filter(|one| !one.unended && one.login.is_none() && !typed.contains(&one.program))
+            .filter(|one| !on_runners.contains_key(&one.program))
             .filter_map(|one| addresses.get(&one.program).cloned())
             .collect()
     }
@@ -2637,12 +2795,28 @@ impl ChatBrowsers {
     }
 
     fn answered(&self, session: u32, posture: Posture) -> bool {
-        match self.lock().get_mut(&session) {
+        let (id, reach) = match self.lock().get_mut(&session) {
             Some(chat) if chat.posture == Posture::Asked => {
                 chat.posture = posture;
-                true
+                (chat.id.clone(), chat.asked_reach.clone())
             }
-            _ => false,
+            _ => return false,
+        };
+        // The person's press is kept for this chat's life (#7190). A chat whose identity is not
+        // known yet is kept once it is ([`Self::identify`]).
+        if let Some(id) = id {
+            self.keep_answer(&id, posture, &reach);
+        }
+        true
+    }
+
+    /// Keeps the person's `posture` answer for chat `id`, where this holds a place for it.
+    fn keep_answer(&self, id: &str, posture: Posture, reach: &purlis_core::browserposture::Reach) {
+        let (Some(root), Some(answer)) = (&self.answers_in, answer_of(posture)) else {
+            return;
+        };
+        if let Err(why) = purlis_core::browserposture::keep(root, id, answer, reach) {
+            tracing::warn!("purlis: a chat's browser answer was not kept across a restart ({why})");
         }
     }
 
@@ -2755,13 +2929,21 @@ impl ChatBrowsers {
     }
 
     /// Every opt-in given on pool `pool`, and every Ask about one: its mark was taken back
-    /// (#4071).
-    pub fn forget_pool_logins(&self, pool: &str) {
-        self.pool_logins.forget_pool(pool);
+    /// (#4071), or it was forgotten. **A failed removal is reported and the opt-in no longer
+    /// applies**: the error says the store could not take it out, and it is not read again.
+    pub fn forget_pool_logins(&self, pool: &str) -> Result<(), String> {
+        let taken = self.pool_logins.forget_pool(pool);
         self.pool_asks
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .retain(|_, waits| waits.bound.pool != pool);
+        taken.map_err(|not| {
+            not_removed(
+                &format!("the kept logins for pool {pool}"),
+                Removed::Many,
+                &not,
+            )
+        })
     }
 
     /// **Every runner chat whose browser login waits on the person's opt-in** (#2050), longest
@@ -2780,23 +2962,48 @@ impl ChatBrowsers {
 
     /// **The person answers chat `session`'s pool login Ask** (#2050): `allow` opts the login it
     /// showed in, for its persona on the pool as the Ask showed it, Keep off keeps that login
-    /// off there, each until the pool or its runner changes. Every chat of that persona whose
+    /// off there, each until the pool or its runner changes (or another window's yes, which the
+    /// store shows before this run's memory). Every chat of that persona whose
     /// same login waits on the pool as it was shown is answered with it. Answers the chats
-    /// answered, `session`'s first, or none where it waits no more.
-    pub fn answer_pool_login(&self, session: u32, allow: bool) -> Vec<PoolLoginWaits> {
+    /// answered, `session`'s first, or none where it waits no more; and, for Keep off, the words
+    /// of a removal the machine could not take: the refusal stands, and the opt-in it replaced no
+    /// longer applies.
+    pub fn answer_pool_login_told(
+        &self,
+        session: u32,
+        allow: bool,
+    ) -> (Vec<PoolLoginWaits>, Option<String>) {
         let mut asks = self
             .pool_asks
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         let Some(asked) = asks.remove(&session) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
+        let mut not_taken = None;
         if allow {
-            self.pool_logins
-                .allow(&asked.persona, &asked.identity, asked.bound.clone());
+            self.pool_logins.allow(
+                &asked.persona,
+                &asked.identity,
+                &asked.login,
+                asked.bound.clone(),
+            );
         } else {
-            self.pool_logins
-                .keep_off(&asked.persona, &asked.identity, asked.bound.clone());
+            // The name the Granted list shows, read before the removal takes the entry away.
+            let granted_as = self.pool_login_name_or(
+                &asked.persona,
+                &asked.identity,
+                &asked.bound.pool,
+                &asked.login,
+            );
+            if let Err(why) = self.pool_logins.keep_off(
+                &asked.persona,
+                &asked.identity,
+                &asked.login,
+                asked.bound.clone(),
+            ) {
+                not_taken = Some(login_not_removed(&granted_as, &asked.bound.pool, &why));
+            }
         }
         let others: Vec<u32> = asks
             .values()
@@ -2809,7 +3016,7 @@ impl ChatBrowsers {
             .collect();
         let mut answered = vec![asked];
         answered.extend(others.into_iter().filter_map(|other| asks.remove(&other)));
-        answered
+        (answered, not_taken)
     }
 
     /// **Every chat whose browser's sites wait on the person** (#2018), longest waiting first.
@@ -3133,6 +3340,8 @@ impl ChatBrowsers {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(&session);
+        // Its kept answer stays (#7190): a closed chat that is resumed keeps the answer it was
+        // given. It goes when purlis lets go of the chat's record ([`chats_that_exist`]).
         let (programs, kept) = {
             let mut chats = self.lock();
             let (kept, programs): (Vec<ChatBrowser>, Vec<ChatBrowser>) = chats
@@ -3397,6 +3606,7 @@ impl ChatBrowsers {
             Posture::Unasked => {
                 chat.posture = Posture::Asked;
                 chat.since = now;
+                chat.asked_reach = kept_reach(&reach());
                 chat.as_persona = as_persona;
                 return (no(ASKED), true);
             }
@@ -4339,6 +4549,10 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
         return answer;
     }
     let pool = held.chats().pool_of(browse.chat);
+    // A forge's login is the person's own session (#7205): refused before anything else about it.
+    if let Some(why) = forge_login_refused(held, browse) {
+        return Answer::No { why };
+    }
     // Before any notice or vault read (#5121).
     if matches!(browse.asked, Browsing::LogIn { .. }) {
         let persona = as_persona_of(held, browse.chat).persona;
@@ -4388,7 +4602,9 @@ pub fn answered(held: &crate::planes::Held, browse: &BrowseAsk, connection: u64)
     let listing = held.browsers().listing();
     // Who the chat is, for its browsers' notes (#2025).
     held.browsers()
-        .identify(browse.chat, held.chats().id_of(browse.chat));
+        .identify_for(browse.chat, held.chats().id_of(browse.chat), &|| {
+            known_reach_of(held, browse.chat)
+        });
     let folder = || crate::browserfiles::chat_folder(held, browse.chat);
     // A secret fill asks the person, and reads its value once they allow it (#5115); its notice
     // goes where the call's asker hung up meanwhile.
@@ -4748,6 +4964,42 @@ fn waits_on_its_secret(
             && open.vault == tool.vault
             && (user_key == Some(open.key.as_str()) || open.key == pass_key)
     })
+}
+
+/// **Why `browse` is refused, a `browser_login` to a forge host from a chat on a repo that claims
+/// the lock** (#7205): a profile logged in to the forge is the person's own session, which would
+/// sign the chat in as them. A host is a forge's where [`purlis_core::forgelock::is_a_forge_host`]
+/// says so, or one a clone of the project has a remote on. An origin that cannot be known is
+/// refused: the lock fails closed.
+fn forge_login_refused(held: &crate::planes::Held, browse: &BrowseAsk) -> Option<String> {
+    if !matches!(browse.asked, Browsing::LogIn { .. }) {
+        return None;
+    }
+    if !held
+        .chats()
+        .confines_of(browse.chat)
+        .is_some_and(|confines| confines.forge_locked())
+    {
+        return None;
+    }
+    // An origin that is not known is refused too: the lock fails closed.
+    let Some(origin) = origin_asked(
+        held,
+        browse,
+        held.chats().secret_grants_of(browse.chat).as_deref(),
+    ) else {
+        return Some(purlis_core::forgelock::browser_login_refused(
+            "a site this chat did not name",
+        ));
+    };
+    let host = purlis_core::forgelock::host_of(&origin);
+    let known: Vec<String> = purlis_core::forge::agentidentity::hosts_of_the_project(held.root())
+        .into_iter()
+        .filter(|found| found.kind.is_some())
+        .map(|found| found.host)
+        .collect();
+    purlis_core::forgelock::is_a_forge_host(&host, &known)
+        .then(|| purlis_core::forgelock::browser_login_refused(&host))
 }
 
 /// **The origin a `browser_login` call is for, where that's known with no vault read** (#5121): the
@@ -5182,17 +5434,24 @@ pub(crate) fn as_persona_of(held: &crate::planes::Held, session: u32) -> AsPerso
 /// nothing. Its own
 /// sites, for this chat alone, are added by [`ChatBrowsers::answer`].
 pub(crate) fn reach_of(held: &crate::planes::Held, session: u32) -> BrowserReach {
+    known_reach_of(held, session).unwrap_or_default()
+}
+
+/// **[`reach_of`], where it is known**: `None` for a sandboxed chat reattached under a sandbox
+/// whose compile was not recorded (D-2006-11). Its browser lists nothing then, but that is no
+/// narrowing of what the person answered for: a kept answer is checked against what is known,
+/// never against nothing (#7190).
+pub(crate) fn known_reach_of(held: &crate::planes::Held, session: u32) -> Option<BrowserReach> {
     let Some(confines) = held.chats().confines_now(session) else {
-        // Held by a sandbox whose compile was not recorded (D-2006-11): nothing is listed.
         if !held.chats().started_unsandboxed(session) {
-            return BrowserReach::default();
+            return None;
         }
-        return listed_reach(held, persona_of(held, session).as_deref());
+        return Some(listed_reach(held, persona_of(held, session).as_deref()));
     };
-    with_browser_sites(
+    Some(with_browser_sites(
         held.root(),
         purlis_core::browsertools::browser_reach(&confines.decides(), false),
-    )
+    ))
 }
 
 /// **What a browser the person opens from the window reaches** (#2176): it has no chat, so no
@@ -5557,14 +5816,67 @@ pub fn kept_off(
     Ok(())
 }
 
+/// **Every opt-in given on pool `pool`, in every project in `projects`, forgotten** (#2050): each
+/// project is tried, and the first failed removal is answered
+/// ([`ChatBrowsers::forget_pool_logins`]).
+pub fn forget_pool_logins_in(
+    projects: &[Arc<crate::planes::Held>],
+    pool: &str,
+) -> Result<(), String> {
+    let mut first = Ok(());
+    for project in projects {
+        let one = project.browsers().forget_pool_logins(pool);
+        if first.is_ok() {
+            first = one;
+        }
+    }
+    first
+}
+
+/// How many kept logins a removal named, as its sentence refers to them.
+#[derive(Clone, Copy)]
+enum Removed {
+    /// One login: "It no longer applies."
+    One,
+    /// Every login of a pool: "They no longer apply."
+    Many,
+}
+
+/// What is told where this machine could not take a kept login out: `what` it was, and whether
+/// it was one or several. It no longer applies either way; where the removal was not written
+/// down, it holds for this run only. Never the filesystem's words: the log has them.
+fn not_removed(what: &str, which: Removed, not: &purlis_core::poollogins::NotTaken) -> String {
+    let (it, verb) = match which {
+        Removed::One => ("It", "applies"),
+        Removed::Many => ("They", "apply"),
+    };
+    if not.lasting {
+        format!("purlis could not remove {what}. {it} no longer {verb}.")
+    } else {
+        format!(
+            "purlis could not remove {what}. {it} no longer {verb} for this run only: the \
+             removal is lost when purlis restarts, so check Granted in Settings then."
+        )
+    }
+}
+
+/// [`not_removed`] for one login of a persona on a pool.
+fn login_not_removed(name: &str, pool: &str, not: &purlis_core::poollogins::NotTaken) -> String {
+    not_removed(
+        &format!("the kept login {name} on pool {pool}"),
+        Removed::One,
+        not,
+    )
+}
+
 /// What a pool login Ask answered by nothing any more says.
 const POOL_LOGIN_WAITS_NO_MORE: &str =
     "Nothing is asking about browser logins on a pool for that chat any more.";
 
 /// **Allow or Keep off on chat `session`'s pool login Ask** (#2050): with `allow`, its persona's
 /// browser logins may be filled on the pool's runner while the app runs and the pool stays as
-/// the Ask showed it; Keep off refuses them there until the pool changes, with the reason the
-/// person typed. Every chat of that persona that waits on that pool is answered with it, and
+/// the Ask showed it; Keep off refuses them there until the pool changes or another window of
+/// this machine gives a yes, with the reason the person typed. Every chat of that persona that waits on that pool is answered with it, and
 /// each is told on its next turn.
 #[tauri::command]
 #[specta::specta]
@@ -5589,7 +5901,7 @@ pub fn pool_login_answered(
     allow: bool,
     reason: Option<&str>,
 ) -> Result<(), String> {
-    let answered = held.browsers().answer_pool_login(session, allow);
+    let (answered, not_taken) = held.browsers().answer_pool_login_told(session, allow);
     if answered.is_empty() {
         return Err(POOL_LOGIN_WAITS_NO_MORE.to_owned());
     }
@@ -5614,7 +5926,8 @@ pub fn pool_login_answered(
         );
     }
     held.chats().asks_may_have_moved();
-    Ok(())
+    // The answer stands and each chat is told; the person is told what the store could not do.
+    not_taken.map_or(Ok(()), Err)
 }
 
 /// **Allow on chat `session`'s browser sites** (#2018): `sites`, the sites the Ask showed, are
@@ -6134,7 +6447,9 @@ pub fn handed(
     // The identity compared whole (#2699): persona, project and declaration.
     let may_log_in = |login: &HeldLogin| may_log_in(held, session, login);
     held.browsers()
-        .identify(session, held.chats().id_of(session));
+        .identify_for(session, held.chats().id_of(session), &|| {
+            known_reach_of(held, session)
+        });
     let listing = held.browsers().listing();
     let name = held.browsers().hand_over(
         held.browser_driver(),
