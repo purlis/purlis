@@ -36,7 +36,12 @@ const meta = {
   beforeEach: () => {
     triedNow = [];
     const down: RunnerLinkDown[] = [
-      { pool: "docker", why: WHY, since: Math.floor(Date.now() / 1000) - 6 * 60 },
+      {
+        pool: "docker",
+        why: WHY,
+        since: Math.floor(Date.now() / 1000) - 6 * 60,
+        state: "unreachable",
+      },
     ];
     mockIPC((cmd, args) => {
       if (cmd === "runner_links_down") return down;

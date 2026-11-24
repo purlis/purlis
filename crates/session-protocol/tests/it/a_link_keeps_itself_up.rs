@@ -178,3 +178,127 @@ async fn a_renewed_link_answers_what_was_in_flight_until_its_reader_has_moved_to
     }
     assert!(second.list().await.is_ok());
 }
+
+/// Try now (#7187): the connector's own memory of why its last try failed is let go of before
+/// the pause ends, so the try that follows is made and not answered from that memory.
+#[tokio::test(start_paused = true)]
+async fn try_now_lets_go_of_what_the_connector_remembers_before_the_next_try() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    let (b, _told) = serve_b(Board::default(), a_as_pinned(), Liveness::default());
+    let to_b = ToB::new(b);
+    let forgotten = Arc::new(AtomicU32::new(0));
+    let seen = Arc::clone(&forgotten);
+    let mut links = keep(&to_b, Liveness::default()).with_try_now(move || {
+        seen.fetch_add(1, Ordering::SeqCst);
+    });
+    let first = lists(up(&mut links).await).await;
+    to_b.set(Cable::Cut);
+    first
+        .list()
+        .await
+        .expect_err("the cut cable carries nothing");
+    down(&mut links).await;
+    assert_eq!(
+        forgotten.load(Ordering::SeqCst),
+        0,
+        "nothing is forgotten on its own"
+    );
+    links.try_now();
+    assert_eq!(forgotten.load(Ordering::SeqCst), 1);
+    lists(up(&mut links).await).await;
+}
+
+/// A connector whose far end answers and refuses (#7187): sign-in, Docker or forwarding fails.
+#[derive(Clone)]
+struct ToARefusingFarEnd {
+    tries: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl hostlink::Connector for ToARefusingFarEnd {
+    type Io = tokio::io::DuplexStream;
+
+    fn connect(&self) -> futures::future::BoxFuture<'static, std::io::Result<Self::Io>> {
+        self.tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndRefused(
+                "the machine refused the sign-in".into(),
+            )))
+        })
+    }
+}
+
+/// **Refused stops retrying** (#7187): a far end that answers and refuses is told once, as
+/// refused, and the kept link ends there instead of dialing it every pause. Another try is made
+/// only where something asks for it.
+#[tokio::test(start_paused = true)]
+async fn a_far_end_that_answers_and_refuses_is_told_once_and_not_tried_again() {
+    let tries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut links = hostlink::keep_linked(
+        ToARefusingFarEnd {
+            tries: std::sync::Arc::clone(&tries),
+        },
+        Handshake::THIS_BUILD,
+        host_a(),
+        b_as_pinned(),
+        Liveness::default(),
+    );
+    let Some(Linked::Down(down)) = links.next().await else {
+        panic!("a refused far end is told as down")
+    };
+    assert!(down.refused, "it said the far end refused: {down:?}");
+    assert!(!down.key_changed && !down.gone);
+    assert!(
+        down.why.contains("refused the sign-in"),
+        "its reason is shown: {down:?}"
+    );
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert!(links.next().await.is_none(), "the kept link ended");
+    assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// A connector whose far end presents another host key or engine than the pinned one (#7187).
+#[derive(Clone)]
+struct ToAFarEndWithAnotherKey {
+    tries: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl hostlink::Connector for ToAFarEndWithAnotherKey {
+    type Io = tokio::io::DuplexStream;
+
+    fn connect(&self) -> futures::future::BoxFuture<'static, std::io::Result<Self::Io>> {
+        self.tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async {
+            Err(std::io::Error::other(hostlink::FarEndHostKeyChanged(
+                "the machine presented another host key".into(),
+            )))
+        })
+    }
+}
+
+/// **A changed host key is its own state, and never retried** (#7187): it is told as
+/// `host_key_changed`, not as refused, and the kept link ends there until the person says it is
+/// all right in the pool's settings.
+#[tokio::test(start_paused = true)]
+async fn a_far_end_with_another_host_key_is_told_once_as_its_own_state_and_not_tried_again() {
+    let tries = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let mut links = hostlink::keep_linked(
+        ToAFarEndWithAnotherKey {
+            tries: std::sync::Arc::clone(&tries),
+        },
+        Handshake::THIS_BUILD,
+        host_a(),
+        b_as_pinned(),
+        Liveness::default(),
+    );
+    let Some(Linked::Down(down)) = links.next().await else {
+        panic!("a far end with another key is told as down")
+    };
+    assert!(down.host_key_changed, "{down:?}");
+    assert!(!down.refused && !down.key_changed && !down.gone, "{down:?}");
+    assert!(down.stops_retrying());
+    tokio::time::sleep(Duration::from_secs(600)).await;
+    assert!(links.next().await.is_none(), "the kept link ended");
+    assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

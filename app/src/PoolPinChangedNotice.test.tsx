@@ -91,6 +91,7 @@ describe("the notice that a pool's pin no longer holds", () => {
         name: "builds",
         elsewhere: true,
         discarding: [],
+        despiteItsCheck: false,
       }),
     );
     expect(await screen.findByText(/Runner builds's container stays on build-box/)).toBeVisible();
@@ -118,7 +119,7 @@ describe("the notice that a pool's pin no longer holds", () => {
     expect(screen.queryByText(/forgotten/)).toBeNull();
     expect(
       calls.filter((call) => call.cmd === "remove_docker_pool").map((call) => call.args),
-    ).toEqual([{ name: "other", elsewhere: false, discarding: [] }]);
+    ).toEqual([{ name: "other", elsewhere: false, discarding: [], despiteItsCheck: false }]);
     finish("");
     await other;
   });

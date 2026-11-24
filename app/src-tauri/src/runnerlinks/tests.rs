@@ -699,6 +699,8 @@ fn a_link_that_is_down_says_why_safely_in_the_pools_settings() {
         why: "anything".to_owned(),
         key_changed: true,
         gone: false,
+        refused: false,
+        host_key_changed: false,
     };
     assert_eq!(link_of(changed), PoolLink::KeyChanged);
 }
@@ -976,4 +978,106 @@ fn the_first_link_waits_out_the_checks_and_the_handshakes_own_deadlines() {
     assert!(FIRST_LINK_WITHIN > CHECK_WITHIN + handshake * 2);
     // A sign-in waits for the link's first word inside its own wait.
     assert!(SIGN_IN_STARTS_WITHIN > FIRST_LINK_WITHIN);
+}
+
+/// **A machine that answers and refuses is not dialled again on a timer** (#7187): the forward's
+/// failure is told as a refusal the link stops on, and a down link that says so is the pool
+/// settings' Refused. One that does not answer is retried as ever.
+#[test]
+fn a_forward_that_refuses_stops_the_link_and_one_that_is_silent_does_not() {
+    use crate::dockerpools::PoolLink;
+    use purlis_core::sshroute::connect::RemoteState;
+    assert_eq!(
+        not_checked_as("sign-in refused".into(), RemoteState::Refused),
+        purlis_host::NotChecked::Refused("sign-in refused".into())
+    );
+    assert_eq!(
+        not_checked_as("no answer".into(), RemoteState::Unreachable),
+        purlis_host::NotChecked::Unreachable("no answer".into())
+    );
+    let mut down = purlis_session_protocol::hostlink::Down::because("sign-in refused");
+    down.refused = true;
+    assert_eq!(
+        link_of(down),
+        PoolLink::Refused {
+            why: "sign-in refused".to_owned()
+        }
+    );
+}
+
+/// **A changed host key is its own state** (#7187): the forward's failure is told as a changed
+/// host key the link stops on, not as a refusal, and what a link that says so tells the person
+/// is to check the pool and trust it again.
+#[test]
+fn a_forward_that_finds_another_host_key_is_told_as_its_own_state() {
+    use purlis_core::sshroute::connect::RemoteState;
+    assert_eq!(
+        not_checked_as("another key".into(), RemoteState::HostKeyChanged),
+        purlis_host::NotChecked::HostKeyChanged("another key".into())
+    );
+    let mut down = purlis_session_protocol::hostlink::Down::because("another key");
+    down.host_key_changed = true;
+    assert!(down.stops_retrying());
+    let said = with_a_way_on("first", down).why;
+    assert!(said.contains("trust it again"), "{said}");
+}
+
+/// **A machine whose `sshd` is up before its `dockerd` recovers without a click** (#7187, steward
+/// decision 2026-11-19): after a reboot the forward opens, but Docker does not answer yet. That
+/// is Unreachable, so the kept link is told down without stopping, tries again on its own pause
+/// and, the second time Docker answers, gets past the check to the connection: nobody pressed
+/// Try now.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_machine_with_sshd_up_and_dockerd_late_is_linked_again_without_a_click() {
+    use purlis_core::sshroute::connect::Finding;
+    use purlis_session_protocol::hostlink::{
+        self, Handshake, Identity, LinkKey, Linked, Liveness, Pinned,
+    };
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let checks = Arc::new(AtomicUsize::new(0));
+    let connector = purlis_host::CommandConnector::checked("/bin/cat", Vec::new(), {
+        let checks = Arc::clone(&checks);
+        Arc::new(move || {
+            // The first try finds `dockerd` still starting; every later one finds it up.
+            if checks.fetch_add(1, Ordering::SeqCst) == 0 {
+                let finding = Finding::EngineSilent {
+                    host: "build-box".to_owned(),
+                    said: "Cannot connect to the Docker daemon".to_owned(),
+                };
+                return Err(not_checked_as(
+                    purlis_core::poolsetup::connect_said(&finding),
+                    finding.remote_state(),
+                ));
+            }
+            Ok(())
+        })
+    });
+    let mut links = hostlink::keep_linked(
+        connector,
+        Handshake::THIS_BUILD,
+        Identity {
+            device: "01JA0DESKT0P00000000000000".into(),
+            key: LinkKey::generate().unwrap(),
+        },
+        Pinned {
+            device: "01JB0RUNNER000000000000000".into(),
+            key: LinkKey::generate().unwrap().public(),
+        },
+        Liveness::default(),
+    );
+    match links.next().await {
+        Some(Linked::Down(down)) => {
+            assert!(!down.stops_retrying(), "{down:?}");
+            assert!(down.why.contains("isn't answering yet"), "{down:?}");
+        }
+        _ => panic!("the link came up with Docker down"),
+    }
+    // The second Down is the second try's: it got past the check, with nobody asking.
+    let second = tokio::time::timeout(Duration::from_secs(10), links.next())
+        .await
+        .expect("a second try was made on its own");
+    assert!(matches!(second, Some(Linked::Down(_))), "cat is no host");
+    assert!(checks.load(Ordering::SeqCst) >= 2);
 }
