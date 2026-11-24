@@ -53,6 +53,7 @@ export const NOT_SHIPPING = {
   "scale.yml": "the nightly scale run (#5497): its release builds measure a generated project and are never handed on",
   "artifact-isolation.yml": "ADR 0122 §3's isolation tests on each platform (#5949): it builds the probe app to run them and hands nothing on",
   "skill-grades.yml": "the CI grader of the built-in skills (spec #5714): it builds the grader to run trigger tests and proposes pins, never hands a build on",
+  "policy-nightly.yml": "the nightly proof of the generated policies (M75-42): its builds run the proof tests only and hand nothing on",
 };
 
 /** The name a crate gives the feature only another crate's tests turn on; each is in `TEST_ONLY`. */
