@@ -31,8 +31,12 @@ id = "stale-group"
 p50 = 42  # waits for the group it guards; 4 runs
 
 [[job]]
+id = "rust-build"
+p50 = 14  # an estimate, not yet measured: the 9.2-minute build p50 of the old parts, plus the archive's upload
+
+[[job]]
 id = "rust"
-p50 = 27  # pools its four parts
+p50 = 27  # pools its four parts; no longer builds, so lower it once the first runs are measured
 
 [[job]]
 id = "git-lfs"
