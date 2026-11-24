@@ -1736,8 +1736,8 @@ export const commands = {
 	/**
 	 *  **Notes an answer the person gave in Asks** (#6010): to request `request` of chat `session`,
 	 *  the option `option`, which `allows` it or not, to an ask raised at `raised` (seconds since
-	 *  1970) where its source knows. What offers a rule, starts a cool-off, and counts in the week's
-	 *  measures (#6021). `request` is empty where the ask names none: it counts in the measures alone.
+	 *  1970) where its source knows. What starts a cool-off, and counts in the week's measures
+	 *  (#6021). `request` is empty where the ask names none: it counts in the measures alone.
 	 */
 	askAnswered: (plane: PlaneId, session: number, request: string, option: string, allows: boolean, raised: number | null) => typedError<null, string>(__TAURI_INVOKE("ask_answered", { plane, session, request, option, allows, raised })),
 	/**
@@ -17282,31 +17282,13 @@ export type RuleMadeShown = {
 	undoes: boolean,
 };
 
-/**
- *  **A rule an ask offers** (#6010): the Allow given each time, how often, and its wider grants
- *  that a rule may be made of, the one suggested first.
- */
-export type RuleOffered = {
-	/**  The id of the Allow given each time. */
-	answered: string,
-	/**  How many times, in the last week. */
-	times: number,
-	/**
-	 *  The option ids of the grants a rule may be made of, the suggested one first: the
-	 *  narrowest that would have prevented every ask, else the widest there is.
-	 */
-	options: string[],
-};
-
 /**  **Who a rule is for** (ADR 0121 decision 7, #6010), narrowest first. */
 export type RuleScope = "chat" | "project" | "machine";
 
-/**  **An ask's request, and the rule it offers** (#6010). */
+/**  **An ask's request** (#6010): no rule is offered for it any more (M75 slice 19, Q314.15). */
 export type RuleShown = {
 	/**  The request's name: two asks with the same are the same request. */
 	request: string,
-	/**  The rule offered, where the same Allow was given it twice in a week. */
-	offer?: RuleOffered | null,
 };
 
 /**
@@ -18791,9 +18773,8 @@ export type Shown = {
 	 */
 	fill?: FillShown | null,
 	/**
-	 *  **What its request is called, and the rule it offers** (ADR 0121 decision 7, #6010):
-	 *  present where its request can be named, so its answer is noted against it. Absent on an
-	 *  ask that is never offered a rule nor cooled off.
+	 *  **What its request is called** (ADR 0121 decision 7, #6010): present where its request
+	 *  can be named, so its answer is noted against it. Absent on an ask that is never cooled off.
 	 */
 	rule?: RuleShown | null,
 };

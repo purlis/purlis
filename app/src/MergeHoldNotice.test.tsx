@@ -349,7 +349,7 @@ describe("a held merge on its chat's pane", () => {
         asks={[
           {
             ...hold,
-            rule: { request: "r", offer: { answered: "merge", times: 2, options: ["merge"] } },
+            rule: { request: "r" },
           },
         ]}
       />,

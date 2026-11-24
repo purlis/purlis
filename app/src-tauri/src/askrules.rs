@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! **Ask less, as the window answers** (ADR 0121 decision 7, #6010): the answers Asks notes,
-//! the rules made from an offer, Rules I made with each one's Undo, and End cool-off. The
-//! record is the core's (`purlis_core::askrules`), this machine's alone; which asks offer a
-//! rule, and which are held in a cool-off, is said where the ✋ counts them
+//! the rules the person made, Rules I made with each one's Undo, and End cool-off. The
+//! record is the core's (`purlis_core::askrules`), this machine's alone; which asks are held in
+//! a cool-off is said where the ✋ counts them
 //! ([`crate::asking::with_rules`]).
 //!
 //! **A rule is written by its ask's own answer.** Asks answers the ask with the grant the person
@@ -36,8 +36,8 @@ fn asked(plane: &PlaneId, session: u32, request: String) -> Asked {
 
 /// **Notes an answer the person gave in Asks** (#6010): to request `request` of chat `session`,
 /// the option `option`, which `allows` it or not, to an ask raised at `raised` (seconds since
-/// 1970) where its source knows. What offers a rule, starts a cool-off, and counts in the week's
-/// measures (#6021). `request` is empty where the ask names none: it counts in the measures alone.
+/// 1970) where its source knows. What starts a cool-off, and counts in the week's measures
+/// (#6021). `request` is empty where the ask names none: it counts in the measures alone.
 #[tauri::command]
 #[specta::specta]
 pub async fn ask_answered(

@@ -16,9 +16,11 @@ use std::io::Write as _;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-/// The hook's real budget (`guard::BUDGET`), and the most past it a refusal may take to arrive:
-/// a process to start and end on a loaded machine. Both well under the smallest `PreToolUse`
-/// timeout purlis registers, five seconds.
+/// The ceiling for a refusal out of time, and the most past it one may take to arrive: a process
+/// to start and end on a loaded machine. These tests force the budget to 300 ms
+/// (`PURLIS_TEST_GUARD_DEADLINE_MS`) for every word; the production ones are `guard::BUDGET`
+/// (2 s: the Read, Edit and dispatch hooks) and `guard::BASH_BUDGET` (5 s: the Bash hook), each
+/// held inside its hook's timeout by `guard`'s own tests.
 const BUDGET: Duration = Duration::from_secs(2);
 const SLACK: Duration = Duration::from_millis(2500);
 

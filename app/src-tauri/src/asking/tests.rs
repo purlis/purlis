@@ -1701,7 +1701,6 @@ fn a_held_merge_is_a_high_risk_ask() {
         .iter()
         .find(|ask| ask.source == AskSource::MergeHold)
         .expect("the merge ask");
-    assert!(high_risk(ask));
     let risk = ask.risk.as_ref().expect("its risk");
     assert_eq!(risk.class, RiskClass::Merge);
     assert_eq!(
@@ -3741,16 +3740,6 @@ fn a_run_that_hands_a_vaults_values_to_a_program_is_a_vault_use_and_a_fill_is_no
     );
     let tag = shown_run(&a_runs_notice(Offer::Vault { no_allow: None }), &none);
     assert_eq!(tag.risk, None, "a vault's own Allow hands no value over");
-}
-
-#[test]
-fn a_high_risk_ask_is_offered_no_rule() {
-    use purlis_core::secrets::ask::run::Offer;
-    let shown = shown_run(&a_runs_notice(Offer::Program), &Locks::none());
-    assert!(high_risk(&shown));
-    let mut plain = shown;
-    plain.risk = None;
-    assert!(!high_risk(&plain));
 }
 
 #[test]
