@@ -1,0 +1,21 @@
+{
+  "$comment": "T1.1-22: each process rule that crates/purlis-core/src/sandbox/seatbelt.rs writes (the floor's `FLOOR_PROCESSES`, one shape per bare deny, program and service, and the base's allows of signals and process info), and the escapes of escapes.json (ticket 22's) whose cells are aimed at it. `every_process_deny_rule_has_an_escape_cell` reads the source, so a new process rule fails the test until it is listed here; a rule with no cell aimed at it is listed under `debt`, with why, and leaves the list when its cell lands (`partial`: its escape has cells, aimed at another rule, so the escape's cover does not retire it). Linux's rules (crates/linux-sandbox) and the keys sandbox/claude.rs writes are not enumerated yet: see the pull request.",
+  "source": "crates/purlis-core/src/sandbox/seatbelt.rs",
+  "rules": [
+    {"shape": "(deny appleevent-send)", "what": "no Apple Event", "escapes": ["E-PROC-04"]},
+    {"shape": "(deny lsopen)", "what": "nothing opened through Launch Services", "escapes": ["E-PROC-03"]},
+    {"shape": "(deny job-creation)", "what": "no launchd job", "escapes": ["E-PROC-05"]},
+    {"shape": "(deny mach-lookup com.apple.coreservices.launchservicesd)", "what": "Launch Services' service", "escapes": ["E-PROC-03"]},
+    {"shape": "(deny mach-lookup com.apple.coreservices.appleevents)", "what": "the Apple Events service", "escapes": ["E-PROC-04"]},
+    {"shape": "(deny process-exec /usr/bin/open)", "what": "open", "escapes": ["E-PROC-03"]},
+    {"shape": "(deny process-exec /usr/bin/osascript)", "what": "osascript", "escapes": ["E-PROC-04"]},
+    {"shape": "(deny process-exec /bin/launchctl)", "what": "launchctl", "escapes": ["E-PROC-05"]},
+    {"shape": "(allow signal (target same-sandbox))", "what": "the rule just inside which a signal to the chat's own child works, and just outside which one to a process outside is refused", "escapes": ["E-PROC-01"]}
+  ],
+  "debt": [
+    {"shape": "(deny process-exec /usr/bin/crontab)", "partial": true, "what": "crontab", "escapes": ["E-PROC-05"], "why": "E-PROC-05's cell runs launchctl only: crontab exits 1 with no crontab even where it runs, so a command that is true only when it ran needs its own design"},
+    {"shape": "(deny process-exec /usr/bin/at)", "partial": true, "what": "at", "escapes": ["E-PROC-05"], "why": "as crontab: at fails without atrun where it runs, so a refusal cannot be told from it by the exit status"},
+    {"shape": "(deny process-exec /usr/bin/batch)", "partial": true, "what": "batch", "escapes": ["E-PROC-05"], "why": "as crontab and at"},
+    {"shape": "(allow process-info* (target same-sandbox))", "partial": true, "what": "inspecting a process of the chat's own sandbox", "escapes": ["E-PROC-01"], "why": "no cell inspects a process outside (proc_pidinfo of a planted process) yet: E-PROC-01 signals only"}
+  ]
+}

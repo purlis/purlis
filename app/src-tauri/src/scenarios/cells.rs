@@ -35,6 +35,7 @@
 //! and has no `hook.pretooluse` of its own in its window fails: it saw nothing to judge. A late
 //! line of a middle step is judged only where the next step's own forbids see it (#7364).
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
@@ -46,6 +47,7 @@ use purlis_scenarios::model::{
 use purlis_scenarios::net::{Origin, Scheme, TestCa, Variant};
 use purlis_scenarios::plan::{Scheduled, Trigger, schedule};
 use purlis_scenarios::play::{self, Counted, Hosts, Malformed, Query, Seen, Window};
+use purlis_scenarios::processes::Planted;
 use purlis_scenarios::timings::{CoreTimings, catalogue};
 
 use super::checks::{Check, Position, Scope, StepResult};
@@ -186,7 +188,13 @@ fn holds(scenario: &Scenario, word: Window, chat: u32) -> bool {
 
 /// **Whether `query` is what the window shows** for `chat`: a word that holds ([`holds`]), or a
 /// number the window's own query gives that equals the cell's.
-fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
+fn shows(
+    scenario: &Scenario,
+    query: &Query,
+    chat: u32,
+    hosts: &Hosts,
+    planted: &RefCell<Planted>,
+) -> bool {
     match query {
         Query::Holds(word) => holds(scenario, *word, chat),
         Query::AskFor(key) => hosts.get(key).is_some_and(|name| {
@@ -199,12 +207,12 @@ fn shows(scenario: &Scenario, query: &Query, chat: u32, hosts: &Hosts) -> bool {
                 )
             })
         }),
-        Query::Equals(word, n) => counted_of(scenario, *word, chat) == *n,
+        Query::Equals(word, n) => counted_of(scenario, *word, chat, planted) == *n,
     }
 }
 
 /// **The number the window shows** for `word`, for `chat`.
-fn counted_of(scenario: &Scenario, word: Counted, chat: u32) -> u64 {
+fn counted_of(scenario: &Scenario, word: Counted, chat: u32, planted: &RefCell<Planted>) -> u64 {
     let queries = scenario.queries();
     match word {
         Counted::MarkerBlocked => u64::from(queries.blocks(chat, None).blocks),
@@ -214,6 +222,7 @@ fn counted_of(scenario: &Scenario, word: Counted, chat: u32) -> u64 {
             .finishes(chat)
             .last()
             .map_or(0, |finish| u64::from(finish.blocked)),
+        Counted::ProcessesChanged => planted.borrow_mut().changed(),
     }
 }
 
@@ -225,10 +234,11 @@ fn window_observed(
     forbid: bool,
     chat: u32,
     hosts: &Hosts,
+    planted: &RefCell<Planted>,
 ) -> Observed {
     match query {
         Query::Equals(word, n) => {
-            let seen = counted_of(scenario, *word, chat);
+            let seen = counted_of(scenario, *word, chat, planted);
             if (seen == *n) != forbid {
                 Observed::Pass
             } else {
@@ -236,7 +246,7 @@ fn window_observed(
             }
         }
         _ => {
-            let shown = shows(scenario, query, chat, hosts);
+            let shown = shows(scenario, query, chat, hosts, planted);
             if shown != forbid {
                 Observed::Pass
             } else {
@@ -290,6 +300,7 @@ fn script_of(
     client: &std::path::Path,
     trust: &str,
     tag: &str,
+    pids: &BTreeMap<String, u32>,
 ) -> serde_json::Value {
     let mut turns = Vec::new();
     for cell in cells {
@@ -304,7 +315,7 @@ fn script_of(
                         let command = call.input["command"].as_str().unwrap_or_default();
                         serde_json::json!({
                             "step": name, "tool": "bash",
-                            "run": format!("{trust}{}", bound(command, hosts, client, tag)),
+                            "run": format!("{trust}{}", bound(command, hosts, client, tag, pids)),
                         })
                     } else {
                         serde_json::json!({
@@ -333,9 +344,16 @@ fn script_of(
     serde_json::json!({ "turns": turns })
 }
 
-/// `command` with the cell's hosts (`$h1`), the matrix's client and the chat's tag (`<chat>`,
+/// `command` with the cell's hosts (`$h1`), its planted processes (`$p1`), the matrix's client and the chat's tag (`<chat>`,
 /// `<c>`: what the matrix names a chat's own files by) bound.
-fn bound(command: &str, hosts: &Hosts, client: &std::path::Path, tag: &str) -> String {
+fn bound(
+    command: &str,
+    hosts: &Hosts,
+    client: &std::path::Path,
+    tag: &str,
+    pids: &BTreeMap<String, u32>,
+) -> String {
+    let command = purlis_scenarios::processes::bound(command, pids);
     let mut out = command
         .replace(CLIENT_PATH, &client.display().to_string())
         .replace("<chat>", tag)
@@ -422,6 +440,7 @@ fn classified<'a>(
     let mut malformed = Vec::new();
     for cell in &batch.cells {
         if !cell.dialects.contains(&dialect)
+            || !play::runs_on(cell, super::report::this_os())
             || !covered.contains(&(file.to_owned(), cell.id.clone()))
             || schedule(
                 cell,
@@ -503,7 +522,19 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
         .map(|(name, value)| format!("export {name}='{}'; ", value.to_string_lossy()))
         .collect();
 
-    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch);
+    // The batch's processes start outside the wrap, before the chat does; the chat's operator
+    // names the variables a chat may be handed (the sentinels are in the host's environment, which
+    // `every_cell_plays_and_is_reported` put there, and in no `pass`).
+    let planted = RefCell::new(
+        Planted::start(&batch.processes)
+            .unwrap_or_else(|why| panic!("the batch's processes: {why}")),
+    );
+    let pids = planted.borrow().pids();
+    if let Some(local) = batch.env.as_ref().and_then(|env| env.local_toml()) {
+        std::fs::write(scenario.root.join(purlis_core::profiles::LOCAL_FILE), local)
+            .expect("the project's local settings");
+    }
+    let script = script_of(&playable, &hosts, &client, &trust, &batch.batch, &pids);
     let mut chat = None;
     let mut played: Vec<Played> = Vec::new();
     for cell in &playable {
@@ -555,7 +586,7 @@ pub(crate) fn play_batch(homes: &Homes, batch: &Batch, dialect: CellDialect, pla
                 .iter()
                 .map(|q| {
                     let (query, forbid) = play::window_of(q).expect("checked before the run");
-                    window_observed(&scenario, &query, forbid, id, &hosts)
+                    window_observed(&scenario, &query, forbid, id, &hosts, &planted)
                 })
                 .collect();
             played.push(Played {
@@ -1058,7 +1089,9 @@ fn every_cell_plays_and_is_reported() {
                 continue;
             }
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                if let Some(homes) = Homes::of_this_scenario_with(&[(ONLY, &this)]) {
+                let mut more: Vec<(&str, &str)> = vec![(ONLY, &this)];
+                more.extend(batch.env.iter().flat_map(|env| env.host_vars()));
+                if let Some(homes) = Homes::of_this_scenario_with(&more) {
                     play_batch(&homes, batch, dialect, &playable);
                 }
             }));

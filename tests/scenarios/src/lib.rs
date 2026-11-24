@@ -16,6 +16,8 @@
 //! - [`plan`]: the derived production-timing set and which runs take a cell.
 //! - [`play`]: what a runner of the cells needs that touches no chat: the loader, the window
 //!   word list, a step's expectations against its events, and the verdict (#7322).
+//! - [`processes`]: the processes a batch plants outside the wrap, for a process escape's "saw
+//!   nothing" (T1.1-22).
 //! - [`livepass`]: the live pass's brief generator and its live-versus-suite diff (T1.1-37).
 //! - [`net`]: the suite's local origins, direct-connection target and test CA (T1.1-02).
 
@@ -28,6 +30,7 @@ pub mod model;
 pub mod net;
 pub mod plan;
 pub mod play;
+pub mod processes;
 pub mod timings;
 pub mod validate;
 
