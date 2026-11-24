@@ -4095,7 +4095,10 @@ fn a_curation_prompt_is_dropped_when_its_chat_ends_before_it_starts() {
     );
     let session = held
         .chats()
-        .start(&one_chat_on(&program.display().to_string()).chats[0], STARTING)
+        .start(
+            &one_chat_on(&program.display().to_string()).chats[0],
+            STARTING,
+        )
         .expect("the chat starts");
     held.typed().hold(session, "Compact steward.".to_owned());
     assert!(held.typed().waiting(session), "the prompt waits to start");
