@@ -313,28 +313,45 @@ fn a_node_id_of_another_repo_an_unplaced_id_and_a_forge_that_failed_are_refused_
 #[test]
 fn a_pull_requests_head_is_read_as_the_repo_and_branch_the_forge_names() {
     let answer = serde_json::json!({
-        "headRefName": "fix", "headRepository": {"nameWithOwner": "Acme/Widgets"}});
+        "headRefName": "fix", "headRefOid": "ab12",
+        "headRepository": {"nameWithOwner": "Acme/Widgets"}});
     assert_eq!(
         head_in(&answer),
         Ok(Some(PullHead {
             repo: "acme/widgets".to_owned(),
-            branch: "fix".to_owned()
+            branch: "fix".to_owned(),
+            oid: "ab12".to_owned()
         }))
     );
+    let mr = serde_json::json!({
+        "sourceBranch": "work", "diffHeadSha": "cd34",
+        "sourceProject": {"fullPath": "Group/Proj"}});
+    assert_eq!(
+        merge_request_head_in(&mr),
+        Ok(Some(PullHead {
+            repo: "group/proj".to_owned(),
+            branch: "work".to_owned(),
+            oid: "cd34".to_owned()
+        }))
+    );
+    // A head with no tip is no head: nothing to compare the record with.
+    let no_tip = serde_json::json!({
+        "headRefName": "fix", "headRepository": {"nameWithOwner": "acme/widgets"}});
+    assert_eq!(head_in(&no_tip), Ok(None));
 }
 
 #[test]
 fn a_pull_request_head_the_forge_does_not_name_is_none_and_one_of_another_shape_is_an_error() {
     // A deleted fork has a null head repository; a node that is no pull request has neither field.
     for gone in [
-        serde_json::json!({"headRefName": "fix", "headRepository": null}),
+        serde_json::json!({"headRefName": "fix", "headRefOid": "ab12", "headRepository": null}),
         serde_json::json!({}),
         serde_json::Value::Null,
     ] {
         assert_eq!(head_in(&gone), Ok(None), "{gone}");
     }
-    let odd =
-        serde_json::json!({"headRefName": "fix", "headRepository": {"nameWithOwner": "a/b/c"}});
+    let odd = serde_json::json!({
+        "headRefName": "fix", "headRefOid": "ab12", "headRepository": {"nameWithOwner": "a/b/c"}});
     assert!(head_in(&odd).is_err());
 }
 
@@ -354,6 +371,7 @@ fn a_run_asks_for_a_pull_requests_head_only_on_github_and_only_where_it_has_a_re
             Ok(Some(PullHead {
                 repo: "acme/widgets".to_owned(),
                 branch: "fix".to_owned(),
+                oid: "1".repeat(40),
             }))
         }
     }
@@ -378,7 +396,8 @@ fn a_run_asks_for_a_pull_requests_head_only_on_github_and_only_where_it_has_a_re
     assert!(
         objects
             .pull_head(Kind::GitLab, "github.com", number)
-            .is_none()
+            .is_none(),
+        "no GitLab repo of this run on that host"
     );
     assert!(
         objects
@@ -404,4 +423,94 @@ fn a_lookup_that_cannot_read_a_head_makes_the_head_unknown() {
             )
             .is_none()
     );
+}
+
+/// The production [`RunObjects`] under a [`ChatPolicy`], end to end (#7526): update-branch is
+/// decided by what the forge says the head is and by the record the push rule reads, with no
+/// test double for either.
+mod through_the_policy {
+    use super::*;
+    use purlis_core::forge::proxy::{ChatPolicy, Decision, Refusal, RequestHead};
+
+    const TIP: &str = "1111111111111111111111111111111111111111";
+
+    /// The forge's answer to a head: by number, one pull request per entry.
+    struct Heads(Vec<(u64, &'static str, &'static str)>);
+
+    impl NodeRepos for Heads {
+        fn repo_of_node(&self, _: &CredentialRequest, _: &str) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+        fn pull_head(
+            &self,
+            _: &CredentialRequest,
+            pull: PullRef<'_>,
+        ) -> Result<Option<PullHead>, String> {
+            let PullRef::Number { number, .. } = pull else {
+                return Ok(None);
+            };
+            Ok(self
+                .0
+                .iter()
+                .find(|(n, _, _)| *n == number)
+                .map(|(_, branch, oid)| PullHead {
+                    repo: "acme/widgets".to_owned(),
+                    branch: (*branch).to_owned(),
+                    oid: (*oid).to_owned(),
+                }))
+        }
+    }
+
+    /// The chat made `fix` (tip [`TIP`]); the person's `develop` and the default `main` are not
+    /// the chat's.
+    fn decide(number: u64, heads: Vec<(u64, &'static str, &'static str)>) -> Decision {
+        let repo = AllowedRepo::new(Kind::GitHub, "github.com", 443, "Acme/Widgets", "main")
+            .unwrap()
+            .with_forge_id(purlis_core::forge::proxy::ForgeRepoId::for_a_test(7));
+        let objects = RunObjects::new(
+            ChatId::new("run-1"),
+            vec![repo.clone()],
+            Arc::new(Heads(heads)),
+        );
+        let tips: purlis_core::forge::proxy::TipSource =
+            Arc::new(|_host, _repo_id, branch| (branch == "fix").then(|| TIP.to_owned()));
+        let policy = ChatPolicy::new(vec![repo]).with_tips(tips);
+        let head = RequestHead::new(
+            "PUT",
+            "api.github.com",
+            443,
+            &format!("/repos/acme/widgets/pulls/{number}/update-branch"),
+        );
+        policy.decide(&head, b"", &objects)
+    }
+
+    #[test]
+    fn update_branch_is_decided_by_the_forges_head_and_the_chats_own_record() {
+        let heads = || {
+            vec![
+                (1, "fix", TIP),
+                (2, "develop", TIP),
+                (3, "main", TIP),
+                (4, "fix", "2222222222222222222222222222222222222222"),
+            ]
+        };
+        assert!(
+            matches!(decide(1, heads()), Decision::Allow(_)),
+            "the chat's own branch"
+        );
+        for (number, why) in [
+            (2, "a branch the chat did not make"),
+            (3, "the default branch"),
+            (4, "a branch that moved since the chat pushed it"),
+            (5, "a pull request the forge does not know"),
+        ] {
+            assert!(
+                matches!(
+                    decide(number, heads()),
+                    Decision::Refuse(Refusal::ProtectedPullHead)
+                ),
+                "{why}"
+            );
+        }
+    }
 }

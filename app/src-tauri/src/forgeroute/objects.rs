@@ -27,9 +27,11 @@
 //!   twice (the hold and the merge stance read it again), and a chat repeats itself. A forge that
 //!   could not be asked is **not** cached, so the next request asks again.
 //!
-//! **A pull request's head** ([`ObjectRepo::pull_head`]) is asked the same way, for update-branch,
-//! which writes to the head (#7494): `headRefName` and `headRepository { nameWithOwner }`, by node id
-//! or by repo and number. Not cached, and fail closed: a pull request the forge does not know, a
+//! **A pull request's head** ([`ObjectRepo::pull_head`]) is asked the same way, for update-branch
+//! and a GitLab rebase, which write to the head (#7494, #7526): `headRefName`, `headRefOid` and
+//! `headRepository { nameWithOwner }` by node id or by repo and number; GitLab's `sourceBranch`,
+//! `diffHeadSha` and `sourceProject { fullPath }` by project path and iid. The core compares the
+//! tip with the record the push rule uses. Not cached, and fail closed: a pull request the forge does not know, a
 //! head repo that is gone (a deleted fork), an answer of another shape and a forge that could not
 //! be reached all answer `None`, and the core refuses the update.
 //!
@@ -64,14 +66,17 @@ const QUERY: &str = "query($id: ID!) { node(id: $id) { __typename \
     ... on Issue { repository { nameWithOwner } } } }";
 
 const HEAD_BY_NODE: &str = "query($id: ID!) { node(id: $id) { \
-    ... on PullRequest { headRefName headRepository { nameWithOwner } } } }";
+    ... on PullRequest { headRefName headRefOid headRepository { nameWithOwner } } } }";
+
+const HEAD_OF_MERGE_REQUEST: &str = "query($path: ID!, $iid: String!) { project(fullPath: $path) { \
+    mergeRequest(iid: $iid) { sourceBranch diffHeadSha sourceProject { fullPath } } } }";
 
 /// By number: `number` is a parsed integer, so it is written into the query, and the repo's owner
 /// and name go as variables.
 fn head_by_number(number: u64) -> String {
     format!(
         "query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ \
-         pullRequest(number: {number}) {{ headRefName headRepository {{ nameWithOwner }} }} }} }}"
+         pullRequest(number: {number}) {{ headRefName headRefOid headRepository {{ nameWithOwner }} }} }} }}"
     )
 }
 
@@ -136,7 +141,10 @@ impl ForgeLookup {
         variables: Vec<Field>,
     ) -> Result<String, String> {
         let forge = Forge {
-            kind: ForgeKind::GitHub,
+            kind: match request.kind {
+                purlis_core::forge::proxy::Kind::GitHub => ForgeKind::GitHub,
+                purlis_core::forge::proxy::Kind::GitLab => ForgeKind::GitLab,
+            },
             host: api_host(&request.host, request.port),
         };
         let tokens = Arc::new(RouteToken {
@@ -149,7 +157,7 @@ impl ForgeLookup {
             .send(&forge, &call)
             .map_err(|why| why.said().to_owned())?;
         if !reply.ok() {
-            return Err(reply.said(ForgeKind::GitHub));
+            return Err(reply.said(forge.kind));
         }
         Ok(reply.out)
     }
@@ -169,6 +177,22 @@ impl NodeRepos for ForgeLookup {
         request: &CredentialRequest,
         pull: PullRef<'_>,
     ) -> Result<Option<PullHead>, String> {
+        if request.kind == purlis_core::forge::proxy::Kind::GitLab {
+            let PullRef::Number { repo, number } = pull else {
+                return Ok(None);
+            };
+            let answer = self.ask(
+                request,
+                HEAD_OF_MERGE_REQUEST,
+                vec![
+                    Field::text("path", repo),
+                    Field::text("iid", &number.to_string()),
+                ],
+            )?;
+            let json: serde_json::Value = serde_json::from_str(&answer)
+                .map_err(|e| format!("the forge's answer was not JSON: {e}"))?;
+            return merge_request_head_in(&json["data"]["project"]["mergeRequest"]);
+        }
         let answer = match pull {
             PullRef::Node(id) => self.ask(request, HEAD_BY_NODE, vec![Field::text("id", id)])?,
             PullRef::Number { repo, number } => {
@@ -196,8 +220,9 @@ impl NodeRepos for ForgeLookup {
 /// The head a pull request's answer names: its branch and the lower-case repo it is in. `Ok(None)`
 /// where either is missing (a head repo that is gone, a node that is not a pull request).
 fn head_in(pull: &serde_json::Value) -> Result<Option<PullHead>, String> {
-    let (Some(branch), Some(repo)) = (
+    let (Some(branch), Some(oid), Some(repo)) = (
         pull["headRefName"].as_str(),
+        pull["headRefOid"].as_str(),
         pull["headRepository"]["nameWithOwner"].as_str(),
     ) else {
         return Ok(None);
@@ -208,6 +233,26 @@ fn head_in(pull: &serde_json::Value) -> Result<Option<PullHead>, String> {
     Ok(Some(PullHead {
         repo,
         branch: branch.to_owned(),
+        oid: oid.to_owned(),
+    }))
+}
+
+/// A GitLab merge request's source: its branch, tip and the lower-case project path it is in.
+fn merge_request_head_in(mr: &serde_json::Value) -> Result<Option<PullHead>, String> {
+    let (Some(branch), Some(oid), Some(repo)) = (
+        mr["sourceBranch"].as_str(),
+        mr["diffHeadSha"].as_str(),
+        mr["sourceProject"]["fullPath"].as_str(),
+    ) else {
+        return Ok(None);
+    };
+    let Some(repo) = repo_in_name(repo)? else {
+        return Ok(None);
+    };
+    Ok(Some(PullHead {
+        repo,
+        branch: branch.to_owned(),
+        oid: oid.to_owned(),
     }))
 }
 
@@ -373,9 +418,6 @@ impl ObjectRepo for RunObjects {
         host: &str,
         pull: PullRef<'_>,
     ) -> Option<PullHead> {
-        if kind != purlis_core::forge::proxy::Kind::GitHub {
-            return None;
-        }
         if matches!(pull, PullRef::Node(id) if !is_node_id(id)) {
             return None;
         }

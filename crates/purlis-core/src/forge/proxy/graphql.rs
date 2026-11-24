@@ -34,7 +34,7 @@ use graphql_parser::query::{
 use serde_json::Value as Json;
 
 use super::commands;
-use super::policy::{Class, ObjectRepo, PullRef, Refusal};
+use super::policy::{Class, ObjectRepo, OwnsHead, PullRef, Refusal};
 use super::repo::{AllowedRepo, Kind, normalise_repo_path};
 use super::rest;
 use super::schema::{self, Ty};
@@ -241,6 +241,7 @@ pub(crate) fn decide<'a>(
     repos: &[&'a AllowedRepo],
     body: &[u8],
     objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
     merging: bool,
 ) -> Result<Decided<'a>, Refusal> {
     if body.len() > MAX_BODY {
@@ -275,6 +276,7 @@ pub(crate) fn decide<'a>(
         kind,
         repos,
         objects,
+        owns,
         merging,
         fragments,
         touched: std::cell::RefCell::new(Vec::new()),
@@ -326,6 +328,8 @@ struct Context<'a, 'd> {
     kind: Kind,
     repos: &'a [&'a AllowedRepo],
     objects: &'a dyn ObjectRepo,
+    /// Whether the chat may write to a pull request's head (update-branch).
+    owns: OwnsHead<'a>,
     /// `guards.merge` lets a merge mutation ([`merge_mutation`]) through.
     merging: bool,
     fragments: HashMap<&'d str, &'d FragmentDefinition<'d, String>>,
@@ -675,11 +679,11 @@ impl<'d> Context<'_, 'd> {
                     {
                         return Err(Refusal::GraphqlOtherRepo);
                     }
-                    // A head that is the default or a protected branch makes update-branch merge
-                    // the base into it on the forge's side (#7494).
+                    // A head that is the default branch makes update-branch merge the base into
+                    // it on the forge's side (#7494).
                     if heads
                         .iter()
-                        .any(|head| self.repos.iter().any(|r| rest::head_is_protected(head, r)))
+                        .any(|head| self.repos.iter().any(|r| rest::head_is_default(head, r)))
                     {
                         return Err(Refusal::ProtectedPullHead);
                     }
@@ -696,9 +700,11 @@ impl<'d> Context<'_, 'd> {
         class.ok_or(Refusal::GraphqlUnknownMutation)
     }
 
-    /// `updatePullRequestBranch` merges the base into the pull request's **head**: that head must
-    /// be an unprotected branch of the repo the pull request is in, and one the forge cannot
-    /// place is refused (#7494). Every `pullRequestId` of the mutation is asked.
+    /// `updatePullRequestBranch` merges (or, with `updateMethod: REBASE`, rebases) the base into
+    /// the pull request's **head**: that head must be a branch of the repo the pull request is
+    /// in that this chat put its own tip on, at the tip the forge reports now ([`OwnsHead`], the
+    /// push rule's record; #7526). A head the forge cannot place is refused. Every
+    /// `pullRequestId` of the mutation is asked.
     fn check_update_branch_head(
         &self,
         arguments: &[(String, Value<'d, String>)],
@@ -726,8 +732,7 @@ impl<'d> Context<'_, 'd> {
                     .map(|head| (r, head))
             });
             match head {
-                Some((r, head))
-                    if head.repo.eq_ignore_ascii_case(&r.path) && !r.protects(&head.branch) => {}
+                Some((r, head)) if (self.owns)(r, &head) => {}
                 _ => return Err(Refusal::ProtectedPullHead),
             }
         }

@@ -12,7 +12,7 @@
 //! the refusal says why; they are never what lets a request through.
 
 use super::commands::{self, Body};
-use super::policy::{Class, ObjectRepo, PullRef, Refusal};
+use super::policy::{Class, ObjectRepo, OwnsHead, PullRef, Refusal};
 use super::repo::{AllowedRepo, Kind};
 use super::request::{Target, is_read};
 
@@ -475,23 +475,26 @@ pub(super) fn side_is_own(side: &str, repo: &AllowedRepo) -> bool {
     }
 }
 
-/// Whether a pull request's head, as written (`branch`, `owner:branch`, `refs/heads/branch`), is a
-/// branch the repo protects: the default, a protected one, a deploy or release name. A head that
-/// is a ref but not a branch (`refs/tags/…`) is read as protected: it is no feature branch.
-pub(super) fn head_is_protected(side: &str, repo: &AllowedRepo) -> bool {
+/// Whether a pull request's head, as written (`branch`, `owner:branch`, `refs/heads/branch`), is
+/// the repo's default branch: a pull request from it is the wrong way round, and nothing meant by
+/// it needs it (#7494). Every other unowned head is refused where it is written to, by
+/// [`head_is_owned`] (#7526), so a `release/*` head is a pull request like any other.
+pub(super) fn head_is_default(side: &str, repo: &AllowedRepo) -> bool {
     let branch = side.rsplit_once(':').map_or(side, |(_, branch)| branch);
     let branch = branch.strip_prefix("refs/heads/").unwrap_or(branch);
-    branch.is_empty() || branch.starts_with("refs/") || repo.protects(branch)
+    branch.eq_ignore_ascii_case(&repo.default_branch)
 }
 
-/// Update-branch merges the pull request's base into its **head**, so the head is what is written
-/// to: it must be an unprotected branch of this repo, and when the forge cannot say what it is,
-/// that is a refusal too (#7494). `number` is the pull request's number in `repo`.
-fn update_branch_head_is_ours(
+/// Update-branch (GitHub) and a rebase (GitLab) write to the pull request's **head**, so the head
+/// is what the chat must own: a branch of this repo that the push rule's record holds a tip of
+/// this chat's own on, equal to the head the forge reports now (#7526). When the forge cannot say
+/// what the head is, that is a refusal too. `number` is the pull request's number in `repo`.
+fn head_is_owned(
     kind: Kind,
     repo: &AllowedRepo,
     number: &str,
     objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
 ) -> bool {
     let Ok(number) = number.parse::<u64>() else {
         return false;
@@ -506,7 +509,7 @@ fn update_branch_head_is_ours(
                 number,
             },
         )
-        .is_some_and(|head| head.repo.eq_ignore_ascii_case(&path) && !repo.protects(&head.branch))
+        .is_some_and(|head| owns(repo, &head))
 }
 
 /// A compare head or base written `owner:branch` or `owner/repo:branch` reaches that fork's
@@ -688,7 +691,7 @@ fn check_body(
         // that branch into the default one on the forge's side (#7494).
         if body_values(body, "head")
             .iter()
-            .any(|v| head_is_protected(v, repo))
+            .any(|v| head_is_default(v, repo))
         {
             return Err(Refusal::ProtectedPullHead);
         }
@@ -711,6 +714,17 @@ fn check_body(
         let own = repo.project_id.map(|id| id.to_string());
         if named.iter().any(|n| Some(n) != own.as_ref()) {
             return Err(Refusal::OtherRepo);
+        }
+        // A merge request from the default branch is the wrong way round (#7494).
+        if method == "POST"
+            && rel.len() == 1
+            && body_values(body, "source_branch").iter().any(|v| {
+                v.strip_prefix("refs/heads/")
+                    .unwrap_or(v)
+                    .eq_ignore_ascii_case(&repo.default_branch)
+            })
+        {
+            return Err(Refusal::ProtectedPullHead);
         }
     }
     Ok(())
@@ -739,6 +753,7 @@ pub(crate) fn decide(
     body: Option<&Body>,
     repo: &AllowedRepo,
     objects: &dyn ObjectRepo,
+    owns: OwnsHead<'_>,
     merging: bool,
 ) -> Result<Class, Refusal> {
     if let Some(refusal) = named_refusal(kind, method, rel, target, merging) {
@@ -755,11 +770,12 @@ pub(crate) fn decide(
         .or_else(|| merging.then(|| merge_class(kind, method, rel)).flatten())
         .ok_or(Refusal::NotOnList)?;
     check_body(kind, method, rel, target, body, repo, merging)?;
-    if kind == Kind::GitHub
-        && method == "PUT"
-        && matches(rel, &["pulls", "#", "update-branch"])
-        && !update_branch_head_is_ours(kind, repo, &rel[1], objects)
-    {
+    let writes_head = method == "PUT"
+        && match kind {
+            Kind::GitHub => matches(rel, &["pulls", "#", "update-branch"]),
+            Kind::GitLab => matches(rel, &["merge_requests", "#", "rebase"]),
+        };
+    if writes_head && !head_is_owned(kind, repo, &rel[1], objects, owns) {
         return Err(Refusal::ProtectedPullHead);
     }
     if class == Class::CiWrite && body.is_some_and(|b| !is_empty_object(b)) {

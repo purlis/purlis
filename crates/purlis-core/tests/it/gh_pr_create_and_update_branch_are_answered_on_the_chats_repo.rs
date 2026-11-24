@@ -49,14 +49,15 @@ const UPDATE_BRANCH: &str = "mutation PullRequestUpdateBranch($input: UpdatePull
     updatePullRequestBranch(input: $input) { pullRequest { id } } }";
 
 fn scene() -> Scene {
-    // The pull request's head is what update-branch writes to: here a branch of the chat's repo.
+    // The pull request's head is what update-branch writes to: here a branch of the chat's repo
+    // that the chat made (its tip is `1` * 40, as the pull request's head is).
     let mut objects =
         ObjectsWithHeads::default().pull("acme/app", "PR_kwDO_app", 7, "acme/app", "fix");
     objects
         .objects
         .0
         .insert("PR_kwDO_other".into(), "acme/other".into());
-    Scene::tuned(objects, |proxy| proxy)
+    Scene::tuned_owning(objects, &[("fix", &"1".repeat(40))], |proxy| proxy)
 }
 
 fn send(s: &Scene, query: &str, variables: serde_json::Value) -> Outcome {
