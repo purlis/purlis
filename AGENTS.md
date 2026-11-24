@@ -240,3 +240,9 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   are the same TOML key, so one file cannot say both: a test of the mode and of the numbers
   loads two. `cargo test --lib --test it` stops at the lib's first (sandbox) failure and never
   runs `it`: run `--test it` alone.
+- A project rule on `start` needs an `@id` that starts with `trust-` (its family), or the whole
+  file reads as broken and the rule never fires. A `Command` resource is read by its program name
+  (the last path segment) before any rule sees it (`policy.rs::program_name`). In a sandboxed chat
+  `git checkout -- <file>` is refused (index.lock): restore a file with `git show HEAD:<path> > <path>`.
+  A cold lib-test build can pass the 10-minute tool limit: run it in the background and read its
+  output file, and print `^error` lines too, or a compile failure looks like a silent pass.
