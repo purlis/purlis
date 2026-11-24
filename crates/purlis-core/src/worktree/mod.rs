@@ -19,6 +19,7 @@ pub mod listing;
 pub mod name;
 pub mod pointer;
 pub mod porcelain;
+pub mod record;
 pub mod standing;
 
 use std::path::{Path, PathBuf};

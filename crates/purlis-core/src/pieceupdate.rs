@@ -93,7 +93,7 @@ const REBASE: [&str; 16] = [
     "-c",
     "core.editor=:",
     "-c",
-    "sequence.editor=:",
+    "sequence.editor=true",
     "-c",
     "commit.gpgSign=false",
     "-c",
@@ -116,6 +116,8 @@ pub fn update(piece: &Piece, step: &UpdateStep, reach: &Reach, say: &mut dyn FnM
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Before any git that writes runs in the folder (#7553).
+        worktree::record::refused(&here.git_dir)?;
         match step {
             UpdateStep::Start { base } => start(piece, &here, base.as_deref(), reach, say),
             UpdateStep::Merge {
@@ -242,6 +244,7 @@ pub fn push_sent(
         let _held = lock
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
+        worktree::record::refused(&here.git_dir)?;
         pushed(piece, &here, reach, say, &mut unsigned, &mut sent)
     });
     let code = ran.unwrap_or_else(|why| {
@@ -298,7 +301,7 @@ struct Here {
 /// whose git directory is `git_dir`: its own, named for that directory, so a branch folder and
 /// its clone never share one. Outside every git directory, under a state folder no sandboxed
 /// chat writes (`docs/plane-format.md`, `app/worktree-updates/`).
-fn notes_of(root: &Path, git_dir: &Path) -> PathBuf {
+pub(crate) fn notes_of(root: &Path, git_dir: &Path) -> PathBuf {
     use sha2::Digest as _;
     let named = std::fs::canonicalize(git_dir).unwrap_or_else(|_| git_dir.to_path_buf());
     let digest = sha2::Sha256::digest(named.to_string_lossy().as_bytes());
@@ -314,10 +317,16 @@ pub(crate) fn forget_notes(root: &Path, git_dir: &Path) {
 }
 
 /// One of purlis's notes written whole, under the project's state ([`crate::plane::write_private`]).
-fn note(root: &Path, notes: &Path, file: &str, text: &str) -> std::io::Result<()> {
+pub(crate) fn note(root: &Path, notes: &Path, file: &str, text: &str) -> std::io::Result<()> {
+    note_bytes(root, notes, file, text.as_bytes())
+}
+
+/// [`note`], where what is kept is bytes, not text: a rebase's plan, whose subjects are in any
+/// encoding.
+fn note_bytes(root: &Path, notes: &Path, file: &str, bytes: &[u8]) -> std::io::Result<()> {
     crate::contain::no_link_on_the_way(root, notes)?;
     std::fs::create_dir_all(notes)?;
-    crate::plane::write_private(root, &notes.join(file), text.as_bytes())
+    crate::plane::write_private(root, &notes.join(file), bytes)
 }
 
 impl Here {
@@ -561,6 +570,9 @@ fn stopped_said(here: &Here, git_said: &str, say: &mut dyn FnMut(Say)) -> u8 {
             } else {
                 format!(" on a conflict in {}", stopped.unmerged.join(", "))
             };
+            if !here.chat_resumes {
+                keep_the_plan(here);
+            }
             let next = if here.chat_resumes {
                 format!(
                     "Resolve them and `git add` them in the clone, then {GO_ON_YOURSELF}; or \
@@ -1067,6 +1079,14 @@ fn go_on(here: &Here, say: &mut dyn FnMut(Say)) -> Result<u8, String> {
         .filter(|onto| full_id(onto));
     let mut args: Vec<&str> = REBASE.to_vec();
     args.extend(["rebase", "--continue"]);
+    // Looked at again as late as it can be, with nothing between it and git: what git reads is
+    // what purlis left (#7553). A chat that writes it after this look is the window left.
+    only_the_plan_purlis_left(here).map_err(|odd| {
+        format!(
+            "the rebase stopped in {label} holds {odd}, which purlis's update does not plan, so \
+             purlis does not run it: finish it from your own terminal"
+        )
+    })?;
     let went = git::run_untimed(&here.folder, &args).map_err(|e| e.to_string())?;
     if !went.ok() && went.err.contains("no rebase in progress") {
         return Err(format!(
@@ -1766,6 +1786,49 @@ fn only_what_purlis_planned(git_dir: &Path, way: Resume) -> Result<(), String> {
             .find_map(a_step_not_planned)
     {
         return Err(format!("the step `{step}`"));
+    }
+    Ok(())
+}
+
+/// The file the plan of a stopped rebase is kept in, in the folder's notes ([`keep_the_plan`]).
+const PLAN: &str = "purlis-update-todo";
+
+/// The rebase's remaining plan as git left it when it stopped, kept in the folder's notes, which
+/// no chat writes (#7553): `--continue` goes on only with this very plan. Taken as soon as the
+/// run that stopped has ended. A plan that is not only commits to pick, or a rebase that is to
+/// move another ref (`update-refs`), keeps nothing, so nothing goes on.
+fn keep_the_plan(here: &Here) {
+    let kept = here.notes.join(PLAN);
+    let state = here.git_dir.join("rebase-merge");
+    let plan = state_bytes(&state, "git-rebase-todo").ok().filter(|plan| {
+        state.join("update-refs").symlink_metadata().is_err()
+            && plan
+                .split(|byte| *byte == b'\n')
+                .all(|line| a_step_not_planned(line).is_none())
+    });
+    match plan {
+        Some(plan) => {
+            if note_bytes(&here.root, &here.notes, PLAN, &plan).is_err() {
+                let _ = std::fs::remove_file(&kept);
+            }
+        }
+        None => {
+            let _ = std::fs::remove_file(&kept);
+        }
+    }
+}
+
+/// `Ok` where the plan of the rebase stopped in `here` is byte for byte the one purlis kept when
+/// it stopped, and no `update-refs` is there. Otherwise what is, as a sentence names it.
+fn only_the_plan_purlis_left(here: &Here) -> Result<(), String> {
+    let state = here.git_dir.join("rebase-merge");
+    if state.join("update-refs").symlink_metadata().is_ok() {
+        return Err("an `update-refs` file".to_owned());
+    }
+    let kept = std::fs::read(here.notes.join(PLAN))
+        .map_err(|_| "no plan that purlis kept when it stopped".to_owned())?;
+    if state_bytes(&state, "git-rebase-todo")? != kept {
+        return Err("a plan that is not the one purlis left".to_owned());
     }
     Ok(())
 }

@@ -7177,13 +7177,17 @@ down rather than read off the code.
 
 ### `app/worktree-updates/<id>/`
 - **Format:** one folder per git directory an update has run in, named by the SHA-256 of that
-  directory's real path, so a branch folder and its clone never share one. It holds up to four
-  text files, each replaced whole (`rewrite::replace`, mode 0600): `purlis-update`, while an update
+  directory's real path, so a branch folder and its clone never share one. It holds up to six
+  files, each replaced whole (`rewrite::replace`, mode 0600, written through no link): `purlis-update`, while an update
   is under way, and `purlis-updated`, for the update last left and not yet pushed, each with the
   branch, then the commit, then the remote and the commit it had where a push may go over it, a line
   each; `purlis-update-merge`, while a merge is stopped, with the branch, the commit it was at, what
-  it merged and that base's name, a line each; and `purlis-update-base`, the base to record once the
-  branch is on it.
+  it merged and that base's name, a line each; `purlis-update-base`, the base to record once the
+  branch is on it; `purlis-update-todo`, the bytes of the stopped rebase's remaining plan as git left
+  it, which `--continue` requires byte for byte before git reads the plan again (#7553); and
+  `purlis-brokered-commit`, while a brokered commit stages: empty, then the id of the tree it
+  staged (it was kept in the worktree's git directory, which a chat may write; that one is not
+  read, and a link where it was refuses the commit).
 - **Status:** **internal** — written and read by `purlis worktree update` and `push`, wherever they
   run. Earlier versions kept these in the git directory, and those are not read.
 - **Tier:** Clone state — what the app itself did to this clone's branches, never rebuilt from the

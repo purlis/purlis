@@ -976,13 +976,16 @@ fn a_chat_standing_below_the_top_is_held_to_the_checked_git_directory() {
 #[test]
 fn what_an_interrupted_commit_staged_is_put_back_and_the_next_ask_carries_on() {
     let t = tree();
+    let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
+    std::fs::create_dir_all(&notes).unwrap();
+    let noted = notes.join(NOTE);
     let top = &t.here.top;
     std::fs::write(top.join("README.md"), "changed\n").unwrap();
     std::fs::write(top.join("new.txt"), "new\n").unwrap();
     // An app that stopped after staging: the note names the tree it staged.
     t.git(&["add", "new.txt"]);
     let tree = t.git(&["write-tree"]);
-    std::fs::write(t.here.git_dir.join(NOTE), &tree).unwrap();
+    std::fs::write(&noted, &tree).unwrap();
 
     let lines = t.asked(Stage::Tracked).expect("committed");
 
@@ -995,22 +998,18 @@ fn what_an_interrupted_commit_staged_is_put_back_and_the_next_ask_carries_on() {
         "README.md"
     );
     assert_eq!(t.git(&["status", "--porcelain"]), "?? new.txt");
-    assert!(!t.here.git_dir.join(NOTE).exists());
+    assert!(!noted.exists());
 
     // One that stopped while staging left an empty note: whatever is staged is its own.
     std::fs::write(top.join("README.md"), "changed again\n").unwrap();
     t.git(&["add", "new.txt"]);
-    std::fs::write(t.here.git_dir.join(NOTE), "").unwrap();
+    std::fs::write(&noted, "").unwrap();
     t.asked(Stage::Tracked).expect("committed");
     assert_eq!(t.git(&["status", "--porcelain"]), "?? new.txt");
 
     // A note that names another tree: what is staged now is someone's, and stays.
     t.git(&["add", "new.txt"]);
-    std::fs::write(
-        t.here.git_dir.join(NOTE),
-        "0000000000000000000000000000000000000000",
-    )
-    .unwrap();
+    std::fs::write(&noted, "0000000000000000000000000000000000000000").unwrap();
     let theirs = t.asked(Stage::Tracked).expect_err("refused");
     assert!(theirs.contains("purlis did not stage"), "{theirs}");
     assert_eq!(t.git(&["diff", "--cached", "--name-only"]), "new.txt");
@@ -1370,4 +1369,126 @@ fn a_logged_finding_of_the_scan_is_kept_in_the_asking_chats_own_log() {
     assert_eq!(logged.len(), 1, "{logged:?}");
     assert_eq!(logged[0].family, "guards.credential");
     assert!(crate::enforcement::read_log(&held.1, crate::enforcement::UNKNOWN_CHAT).is_empty());
+}
+
+/// #7553: a file a chat planted as a link in the worktree's git record, with what it would
+/// have git write through it.
+#[cfg(unix)]
+fn planted(t: &Tree, name: &str) -> (PathBuf, String) {
+    let victim = t.root.join("victim.txt");
+    std::fs::write(&victim, "the person's own file\n").unwrap();
+    let at = t.here.git_dir.join(name);
+    std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+    let _ = std::fs::remove_file(&at);
+    std::os::unix::fs::symlink(&victim, &at).unwrap();
+    (victim, "the person's own file\n".to_owned())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_link_planted_in_the_worktrees_git_record_is_refused_and_what_it_points_at_is_untouched() {
+    for name in [
+        "COMMIT_EDITMSG",
+        "logs/HEAD",
+        "FETCH_HEAD",
+        "index",
+        "HEAD",
+        "MERGE_MSG",
+        "ORIG_HEAD",
+        "rebase-merge/git-rebase-todo",
+        NOTE,
+    ] {
+        let t = tree();
+        std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+        let (victim, kept) = planted(&t, name);
+
+        let said = t.asked(staging(&["README.md"])).expect_err(name);
+
+        assert!(said.contains("is a link"), "{name}: {said}");
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), kept, "{name}");
+        assert!(
+            std::fs::symlink_metadata(t.here.git_dir.join(name))
+                .unwrap()
+                .file_type()
+                .is_symlink(),
+            "{name}: the link was replaced"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_record_entry_that_is_not_a_file_or_a_folder_is_refused() {
+    let t = tree();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+    let pipe = t.here.git_dir.join("FETCH_HEAD");
+    assert!(
+        std::process::Command::new("mkfifo")
+            .arg(&pipe)
+            .status()
+            .unwrap()
+            .success()
+    );
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+    assert!(said.contains("neither a file nor a folder"), "{said}");
+}
+
+#[test]
+fn a_head_repointed_to_another_branch_is_refused_and_that_branch_does_not_move() {
+    let t = tree();
+    t.git(&["branch", "other"]);
+    let other = t.git(&["rev-parse", "refs/heads/other"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), "ref: refs/heads/other\n").unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+
+    assert!(said.contains("other") && said.contains("piece"), "{said}");
+    assert_eq!(t.git(&["rev-parse", "refs/heads/other"]), other);
+    assert!(t.nothing_staged());
+}
+
+#[test]
+fn a_detached_head_is_refused() {
+    let t = tree();
+    let id = t.git(&["rev-parse", "HEAD"]);
+    std::fs::write(t.here.git_dir.join("HEAD"), format!("{id}\n")).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+    let said = t.asked(staging(&["README.md"])).expect_err("refused");
+    assert!(said.contains("not on a branch"), "{said}");
+}
+
+#[cfg(unix)]
+#[test]
+fn the_apps_note_is_kept_outside_the_git_directory_and_written_through_no_link() {
+    let t = tree();
+    let notes = crate::pieceupdate::notes_of(&t.root, &t.here.git_dir);
+    let victim = t.root.join("victim.txt");
+    std::fs::write(&victim, "the person's own file\n").unwrap();
+    std::fs::create_dir_all(&notes).unwrap();
+    std::os::unix::fs::symlink(&victim, notes.join(NOTE)).unwrap();
+    std::fs::write(t.here.top.join("README.md"), "changed\n").unwrap();
+
+    let seen = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let seen_in = seen.clone();
+    let (git_dir, noted) = (t.here.git_dir.clone(), notes.join(NOTE));
+    swapping(
+        move |_| {
+            *seen_in.borrow_mut() = Some((
+                git_dir.join(NOTE).symlink_metadata().is_ok(),
+                std::fs::symlink_metadata(&noted).is_ok_and(|m| m.file_type().is_symlink()),
+            ));
+        },
+        || t.asked(staging(&["README.md"])).expect("committed"),
+    );
+
+    assert_eq!(
+        *seen.borrow(),
+        Some((false, false)),
+        "no note in git's directory, and the planted link replaced by the app's own file"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&victim).unwrap(),
+        "the person's own file\n"
+    );
 }
