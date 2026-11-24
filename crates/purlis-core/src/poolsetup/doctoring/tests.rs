@@ -974,6 +974,7 @@ fn connect_checks_the_engine_with_docker_info_alone() {
         Ok(Passed {
             checked: vec!["unconfined", "unsupported-architecture", "kernel-short"],
             disk_unmeasured: false,
+            timed: Vec::new(),
         })
     );
     stand.set("info", r#"{"OSType":"linux","Architecture":"riscv64"}"#);
@@ -1062,6 +1063,27 @@ fn an_image_that_cant_say_its_landlock_is_judged_by_the_hosts_release() {
     assert!(passed.checked.contains(&"disk-full"), "{passed:?}");
 }
 
+#[test]
+fn every_check_connect_ran_carries_its_time() {
+    let stand = Stand::new();
+    let passed = on_connect(&stand.docker(), "build-box").expect("passes");
+    let timed: Vec<&str> = passed.timed.iter().map(|one| one.cause).collect();
+    assert_eq!(
+        timed,
+        ["unconfined", "unsupported-architecture", "kernel-short"]
+    );
+    // What the window draws: one line per check, timed, and none of them waiting on anything,
+    // since a fast stand never runs past thirty seconds.
+    let lines = super::super::timing::lines(&passed.timed, "build-box");
+    assert_eq!(lines.iter().map(|one| one.cause).collect::<Vec<_>>(), timed);
+    assert!(
+        lines
+            .iter()
+            .all(|one| one.took_ms.is_some() && one.waiting_on.is_none()),
+        "{lines:?}"
+    );
+}
+
 /// **Connect says a short kernel up front, from `docker info` alone** (#7084): before an image
 /// is picked, the host's release is all there is to read, and nothing is run there.
 #[test]
@@ -1072,6 +1094,7 @@ fn connect_finds_a_short_kernel_from_docker_info_alone() {
         Ok(Passed {
             checked: vec!["unconfined", "unsupported-architecture", "kernel-short"],
             disk_unmeasured: false,
+            timed: Vec::new(),
         })
     );
     stand.set(

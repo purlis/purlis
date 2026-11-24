@@ -647,6 +647,30 @@ pub fn add_on(
     within: std::time::Duration,
 ) -> Result<ClusterPoolRow, String> {
     let kubeconfig = kubeconfig_of(adding.kubeconfig.as_deref(), home)?;
+    // The credential plugin the context signs in with (#7192): found in a usual install folder,
+    // or in the one the person named in Pool setup, its folder alone joins the `PATH` of every
+    // run of this add, and so of the plugin path the pool keeps.
+    let with_plugin = {
+        let base = kubectl
+            .clone()
+            .pointed_at(&kubeconfig, adding.context.trim());
+        let named = purlis_core::poolsetup::read_choices(config)
+            .ok()
+            .and_then(|choices| choices.plugin_dir);
+        match purlis_core::poolsetup::cluster::plugin_facts(
+            &base,
+            adding.context.trim(),
+            named.as_deref(),
+            home,
+        ) {
+            Some(purlis_core::poolsetup::cluster::PluginFacts {
+                found: Some(folder),
+                ..
+            }) => kubectl.clone().with_plugin_folder(&folder),
+            _ => kubectl.clone(),
+        }
+    };
+    let kubectl = &with_plugin;
     let pointed = kubectl
         .clone()
         .pointed_at(&kubeconfig, adding.context.trim());

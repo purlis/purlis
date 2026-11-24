@@ -30,6 +30,7 @@ const part = (
 });
 
 const install = (parts: PoolSetupPart[], undo = true): PoolSetupStep => ({
+  took_ms: null,
   id: "install",
   name: "Install",
   state: "current",
@@ -153,6 +154,7 @@ const CONTEXTS = (pools: string[]) => ({
   joining: false,
   pinned: null,
   key_changed: false,
+  kubeconfig: null,
 });
 
 const KEY = "ed25519:" + "b".repeat(64);
@@ -241,6 +243,64 @@ describe("The Pool step on a cluster (#4494)", () => {
       },
     });
     expect(sent).toContainEqual({ cmd: "pool_setup_pool", args: { name: "team" } });
+  });
+
+  it("adds the pool through the one kubeconfig file chosen on Where, never the default behind its back (#7192)", async () => {
+    const sent = cluster(true);
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={{ ...CONTEXTS(["team"]), kubeconfig: "/work/team.yaml" }}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    await screen.findByText("Check the cluster operator key");
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "add_cluster_pool",
+        args: {
+          adding: expect.objectContaining({ kubeconfig: "/work/team.yaml", context: "kind-team" }),
+        },
+      }),
+    );
+    expect(sent).toContainEqual({
+      cmd: "cluster_pool_key",
+      args: expect.objectContaining({ kubeconfig: "/work/team.yaml" }),
+    });
+  });
+});
+
+describe("The vouch wait is a pool option (#7191)", () => {
+  it("sends the minutes typed as the pool's own wait, and says the default where none is typed", async () => {
+    const sent = cluster(true);
+    render(
+      <ClusterPoolStep
+        step={poolStep("add-cluster-pool")}
+        contexts={CONTEXTS(["team"])}
+        image={IMAGE}
+        onNext={() => {}}
+        changed={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Options" }));
+    const wait = screen.getByRole("textbox", {
+      name: "Longest wait for a cluster runner to be vouched for",
+    });
+    expect(wait).toHaveAttribute("placeholder", "5");
+    await userEvent.type(wait, "10");
+    await userEvent.click(screen.getByRole("button", { name: "Add the pool here" }));
+    await screen.findByText("Check the cluster operator key");
+    await userEvent.click(screen.getByRole("button", { name: "Pin the key and add the pool" }));
+    await waitFor(() =>
+      expect(sent).toContainEqual({
+        cmd: "add_cluster_pool",
+        args: { adding: expect.objectContaining({ vouch_wait: 10 }) },
+      }),
+    );
   });
 });
 
@@ -454,5 +514,113 @@ describe("Send to your admin, and waiting (#4496)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Stop waiting" }));
     await waitFor(() => expect(recheck).toHaveBeenCalled());
     expect(sent.map((one) => one.cmd)).toContain("pool_setup_stop_waiting");
+  });
+});
+
+describe("A credential plugin the kubeconfig needs (#7192)", () => {
+  const missing = (): PoolSetupStep => ({
+    ...install([]),
+    id: "check",
+    name: "Check the cluster",
+    state: "attention",
+    undo: null,
+    see: null,
+    findings: [
+      "Needs gke-gcloud-auth-plugin, not found. Your kubeconfig signs in with it, and purlis looks in the usual install folders only. Name the folder it is in.",
+    ],
+    next: {
+      id: "use-plugin-folder",
+      label: "Use this folder",
+      does: "Adds only that folder.",
+      command: null,
+      url: null,
+    },
+  });
+
+  it("names the missing plugin and keeps only the folder typed, then checks again", async () => {
+    const sent: { cmd: string; args: unknown }[] = [];
+    mockIPC((cmd, args) => {
+      sent.push({ cmd, args });
+      return null;
+    });
+    const recheck = vi.fn();
+    render(<CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />);
+    expect(screen.getByText(/Needs gke-gcloud-auth-plugin, not found/)).toBeInTheDocument();
+    await userEvent.type(
+      screen.getByRole("textbox", { name: "Folder with the plugin" }),
+      "/Users/me/google-cloud-sdk/bin",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Use this folder" }));
+    await waitFor(() => expect(recheck).toHaveBeenCalled());
+    expect(sent).toContainEqual({
+      cmd: "pool_setup_plugin_folder",
+      args: { folder: "/Users/me/google-cloud-sdk/bin" },
+    });
+  });
+
+  it("keeps nothing and says why where the folder is refused", async () => {
+    mockIPC((cmd) =>
+      cmd === "pool_setup_plugin_folder" ? Promise.reject("there is no such folder") : null,
+    );
+    const recheck = vi.fn();
+    render(<CheckStep step={missing()} plane="/p" onNext={() => {}} onRecheck={recheck} />);
+    await userEvent.type(screen.getByRole("textbox", { name: "Folder with the plugin" }), "/nope");
+    await userEvent.click(screen.getByRole("button", { name: "Use this folder" }));
+    expect(await screen.findByText("there is no such folder")).toBeInTheDocument();
+    expect(recheck).not.toHaveBeenCalled();
+  });
+});
+
+describe("Every check line says how long it took (#7191)", () => {
+  const withChecks = (checks: PoolSetupStep["checks"]): PoolSetupStep => ({
+    ...install([]),
+    id: "check",
+    name: "Check the cluster",
+    state: "attention",
+    undo: null,
+    see: null,
+    checks,
+    next: null,
+  });
+  const line = (title: string, took_ms: number | null, waiting_on: string | null = null) => ({
+    about: "cluster",
+    verdict: "ok",
+    title,
+    more: null,
+    took_ms,
+    waiting_on,
+  });
+
+  it("shows each finished line's duration, and none where it wasn't timed", () => {
+    render(
+      <CheckStep
+        step={withChecks([line("Kubernetes v1.36", 300), line("API server", null)])}
+        plane="/p"
+        onNext={() => {}}
+        onRecheck={() => {}}
+      />,
+    );
+    expect(screen.getByText("0.3 s")).toBeInTheDocument();
+    // Only the line that was timed says a time: the other says none.
+    expect(screen.getAllByText(/^\d+(\.\d)? s$/)).toHaveLength(1);
+  });
+
+  it("says what a line past thirty seconds waited on, and why", () => {
+    render(
+      <CheckStep
+        step={withChecks([
+          line(
+            "The image is on the machine",
+            94_000,
+            "docker pull on build-box: the image is 1.2 GB",
+          ),
+        ])}
+        plane="/p"
+        onNext={() => {}}
+        onRecheck={() => {}}
+      />,
+    );
+    expect(screen.getByText("1 min 34 s")).toBeInTheDocument();
+    expect(screen.getByText(/docker pull on build-box: the image is 1.2 GB/)).toBeInTheDocument();
   });
 });
