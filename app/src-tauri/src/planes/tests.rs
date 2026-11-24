@@ -7730,6 +7730,7 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
             skills_added: Vec::new(),
             skills_gone: Vec::new(),
             skills_edited: Vec::new(),
+            policy: Vec::new(),
         }]
     );
     held.close_chat(session).expect("it closes");
@@ -7738,6 +7739,63 @@ fn a_chat_is_marked_when_the_instructions_it_started_on_change_under_it() {
         Vec::new(),
         "a closed chat is not marked"
     );
+    planes.close(&plane).expect("it closes");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chat_is_marked_out_of_date_when_the_policy_tightens_under_it_and_a_fresh_start_clears_it() {
+    // M75-23, spec §9.5: the sandbox a chat's shell commands run in is compiled at its start, so
+    // a path rule that tightens after it is a mark on the chat and an offer to start it fresh.
+    // What the policy forbids at its next decision needs no mark (`policy::running` tests).
+    let dir = tempfile::tempdir().expect("a directory");
+    let config = dir.path().join("config");
+    let root = a_plane(&dir.path().join("plane"));
+    let root = std::fs::canonicalize(root).expect("a real path");
+    std::fs::write(
+        root.join(purlis_core::plane::MANIFEST),
+        "[policy]\ntemplate = \"strict\"\n",
+    )
+    .expect("the project's settings");
+    std::fs::create_dir_all(root.join("workspaces/web/ledger")).expect("a workspace");
+    std::fs::write(root.join("workspaces/web/ledger/2026.csv"), "1\n").expect("a file");
+    a_record_naming(&root, "/bin/cat");
+    let planes = planes_keeping(&config);
+    let shown = asking(planes.open_if_approved(&root).expect("it is a plane")).contributes;
+    let plane = planes.approve_and_open(&root, &shown).expect("yes");
+    let held = planes.held(&plane).expect("it is held");
+    let session = held.chats().open_now()[0].session;
+    assert_eq!(held.plane_updated(), Vec::new(), "nothing has changed yet");
+
+    std::fs::write(
+        root.join("policy.cedar"),
+        format!(
+            "// purlis-policy 1\n@id(\"sandbox-no-ledger\") @level(\"project\")\n\
+             forbid (principal, action == Action::\"read\", resource) when {{ \
+             resource in Path::\"{}/workspaces/web/ledger\" }};\n",
+            root.display()
+        ),
+    )
+    .expect("a path rule");
+
+    let marked = held.plane_updated();
+    assert_eq!(marked.len(), 1, "{marked:?}");
+    assert_eq!(marked[0].session, session);
+    assert_eq!(marked[0].policy, vec!["a path rule tightened".to_owned()]);
+    assert!(marked[0].files.is_empty(), "no instruction file moved");
+
+    // Started fresh, the new chat is compiled with the rule, and is not marked.
+    let started = held
+        .start_chat_fresh(
+            session,
+            Size {
+                columns: 80,
+                rows: 24,
+            },
+        )
+        .expect("it starts again");
+    assert_ne!(started, session);
+    assert_eq!(held.plane_updated(), Vec::new(), "the new one started on it");
     planes.close(&plane).expect("it closes");
 }
 

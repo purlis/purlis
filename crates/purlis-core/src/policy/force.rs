@@ -935,6 +935,44 @@ fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     sides
 }
 
+/// **What the sandbox rules of every side in force forbid for `chat`** (M75-23): each side judged
+/// as [`judge`] reads it ([`decided_sides`]), compiled ([`super::sandbox_rules::compile`]), and
+/// every forbid of `read` and `write` named by its action, `@id`, whether it asks and its terms.
+/// The union is what the stricter-wins judgement forbids, so a forbid that is in the second
+/// reading and not the first is a tightening a running chat's compiled sandbox lacks, and one gone
+/// is a loosening that waits for the press. **Fails closed:** a side that does not read, a rule
+/// the compile refuses and a rule that errs each stand as a line of their own, so one that
+/// appears later counts as a tightening. The lines live in memory only and hold paths, so they are
+/// never recorded.
+pub(super) fn compiled_forbids(
+    sources: &Sources<'_>,
+    standing: &Standing,
+    chat: &super::sandbox_rules::Chat<'_>,
+) -> BTreeSet<String> {
+    let mut lines = BTreeSet::new();
+    for side in decided_sides(sources, standing) {
+        let LimitSide::Read(loaded) = side else {
+            lines.insert("a side that does not read".to_owned());
+            continue;
+        };
+        match super::sandbox_rules::compile(&loaded.policy, chat) {
+            Ok(compiled) => {
+                for (action, rules) in [("read", &compiled.read), ("write", &compiled.write)] {
+                    for forbid in &rules.forbids {
+                        lines.insert(format!(
+                            "{action} {} ask={} {:?}",
+                            forbid.id, forbid.ask, forbid.terms
+                        ));
+                    }
+                    lines.extend(rules.erred.iter().map(|id| format!("{action} errs {id}")));
+                }
+            }
+            Err(refused) => lines.extend(refused.iter().map(|one| format!("refused {one}"))),
+        }
+    }
+    lines
+}
+
 /// The accepted copy and every floor version, as sides.
 fn held_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     let entries: &[answers::Entry] = if standing.is_deny() {

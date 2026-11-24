@@ -810,6 +810,7 @@ fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
         sandboxed: false,
         level: None,
         attended: true,
+        harness_mode: None,
     };
     let floor = Resolved::parse("guards.merge=enforce");
     let mut context = base();
@@ -912,6 +913,7 @@ fn a_chat() -> decide::ChatFacts {
         sandboxed: false,
         level: None,
         attended: true,
+        harness_mode: None,
     }
 }
 

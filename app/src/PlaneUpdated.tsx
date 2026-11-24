@@ -46,8 +46,12 @@ export function usePlaneUpdated(plane: PlaneId, instructionsChanges: number): Pl
     void planeUpdatedAt(plane, instructionsChanges).then((all) => {
       if (gone) return;
       const now: PlaneUpdatedHere = {
+        // What moved under a chat is its files and, since its sandbox was compiled at its start,
+        // why the policy has tightened past it (M75-23): one mark, one way out, a start fresh.
         files: Object.fromEntries(
-          all.filter((one) => one.files.length > 0).map((one) => [one.session, one.files]),
+          all
+            .filter((one) => one.files.length > 0 || one.policy.length > 0)
+            .map((one) => [one.session, [...one.files, ...one.policy]]),
         ),
         skills: Object.fromEntries(
           all.filter((one) => one.skills).map((one) => [one.session, one]),

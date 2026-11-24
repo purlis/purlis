@@ -120,6 +120,23 @@ The window only says the policy; the app resolves it, as below.
 - **A value purlis cannot read never loosens anything**: an unknown template is `strict`, an
   unknown mode is `enforce`, and the window says which.
 
+## What a chat that is already running picks up
+
+A chat runs on the policy as it stood, and a change reaches it in one direction only (M75-23, spec
+§9.5):
+
+- **A tightening reaches it at its next decision**, with no restart: every hook and proxy ask reads
+  the committed project and your sealed answers afresh, and seals each tightening it sees into the
+  accepted floor.
+- **A loosening reaches it only at its next start after your press.** A rule you drop, a Never you
+  remove, a grant given while it runs: the chat runs on what it started on until it is started
+  again, and is not marked.
+- **The sandbox its shell commands run in is compiled at its start**, so a tightening cannot reach
+  it. The chat is marked **out of date**, as it is when its instructions change (**Plane updated**),
+  and its pane offers **Start fresh**, when a Never reaches it, a grant that served its reads or
+  writes is removed, a forbid on a path comes into force, a workspace is created after it started,
+  or purlis restarted under it. The mark's tooltip says which.
+
 ## When a guard is wrong about your case
 
 Set its family to `log` in `[policy]`, commit it, and press Accept in the window; the chat's

@@ -27,6 +27,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::engine::Size;
 use purlis_core::instructions::Stamp;
+use purlis_core::policy::running::AtStart;
 use purlis_core::machine;
 use purlis_core::planemodel::Model;
 use purlis_core::reopen;
@@ -338,6 +339,9 @@ pub struct Held {
     /// What each open chat read of the plane's instructions when it started (charter#369), so
     /// the window can mark a chat still running on ones that have since changed.
     started_on: StartedOn,
+    /// What each open chat's sandbox was compiled from when it started (M75-23), so the window
+    /// can mark a chat whose sandbox the policy has tightened past.
+    started_under: StartedUnder,
     /// Curation prompts waiting for their chat to be ready for them (ADR 0061).
     typed: Arc<crate::curation::Typed>,
     /// The chats being smart-closed (ADR 0064).
@@ -497,6 +501,14 @@ fn caught_up<W>(model: &Mutex<Model>, root: &Path, start: impl FnOnce() -> W) ->
 /// Each chat's [`Stamp`], by session, taken as it starts.
 type StartedOn = Arc<Mutex<HashMap<u32, Stamp>>>;
 
+/// Each chat's [`AtStart`], by session, taken as it starts or is reattached (M75-23).
+type StartedUnder = Arc<Mutex<HashMap<u32, AtStart>>>;
+
+/// [`lock_started`], for the policy each chat started under.
+fn lock_under(under: &StartedUnder) -> MutexGuard<'_, HashMap<u32, AtStart>> {
+    under.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 /// The stamps, through a poisoned lock too: a panic elsewhere must not cost the marks.
 fn lock_started(started_on: &StartedOn) -> MutexGuard<'_, HashMap<u32, Stamp>> {
     started_on.lock().unwrap_or_else(PoisonError::into_inner)
@@ -520,6 +532,10 @@ pub struct PlaneUpdated {
     pub skills_gone: Vec<String>,
     /// The skills it has that changed since it started, by name.
     pub skills_edited: Vec<String>,
+    /// Why its sandbox, compiled at its start, is out of date (M75-23, spec §9.5): a Never or a
+    /// path rule that tightened, a grant that was removed, a workspace created since, or purlis
+    /// restarted. Each as a short phrase; its pane offers a restart, which compiles it again.
+    pub policy: Vec<String>,
 }
 
 /// Why a task is not started fresh (#1489): what the window's question and the row say. Said
@@ -1221,6 +1237,26 @@ impl Held {
             .collect();
         let skills: HashMap<u32, purlis_core::skills::SkillsChanged> =
             self.chats.skills_changed().into_iter().collect();
+        // What the policy has tightened past, for each chat its sandbox was compiled for (M75-23).
+        // Read before the stamps' lock is taken: it loads the policy.
+        let out_of_date: HashMap<u32, Vec<String>> = {
+            let under: Vec<(u32, AtStart)> = lock_under(&self.started_under)
+                .iter()
+                .map(|(session, at)| (*session, at.clone()))
+                .collect();
+            under
+                .into_iter()
+                .filter_map(|(session, at)| {
+                    let why = at.out_of_date(&self.root);
+                    (!why.is_empty()).then(|| {
+                        (
+                            session,
+                            why.into_iter().map(|one| one.said().to_owned()).collect(),
+                        )
+                    })
+                })
+                .collect()
+        };
         let mut updated: Vec<PlaneUpdated> = lock_started(&self.started_on)
             .iter()
             .filter_map(|(session, then)| {
@@ -1228,14 +1264,18 @@ impl Held {
                 let files = now.changed_since(then, persona.as_deref());
                 let changed = skills.get(session);
                 let changed_skills = changed.cloned().unwrap_or_default();
-                (!files.is_empty() || changed.is_some()).then_some(PlaneUpdated {
-                    session: *session,
-                    files,
-                    skills: changed.is_some(),
-                    skills_added: changed_skills.added,
-                    skills_gone: changed_skills.gone,
-                    skills_edited: changed_skills.edited,
-                })
+                let policy = out_of_date.get(session).cloned().unwrap_or_default();
+                (!files.is_empty() || changed.is_some() || !policy.is_empty()).then_some(
+                    PlaneUpdated {
+                        session: *session,
+                        files,
+                        skills: changed.is_some(),
+                        skills_added: changed_skills.added,
+                        skills_gone: changed_skills.gone,
+                        skills_edited: changed_skills.edited,
+                        policy,
+                    },
+                )
             })
             .collect();
         updated.sort_by_key(|one| one.session);
@@ -1611,6 +1651,7 @@ impl Held {
         let worktree = crate::dispatches::worktree_to_look_at(self, session);
         let gone = self.board().closed(session);
         lock_started(&self.started_on).remove(&session);
+        lock_under(&self.started_under).remove(&session);
         self.typed.forget(session);
         self.noticed.forget(session);
         self.pauses.forget(session);
@@ -5174,6 +5215,18 @@ impl Planes {
         // What the chat will read of the plane's instructions is taken here too, before its
         // program can read them (charter#369).
         let started_on: StartedOn = Arc::default();
+        // What each chat's sandbox is compiled from (M75-23): taken at its start, before its
+        // program can run, and again for one reattached, which an app that is gone started.
+        let started_under: StartedUnder = Arc::default();
+        chats.when_one_starts_under(Box::new({
+            let started_under = Arc::clone(&started_under);
+            let root = root.clone();
+            move |session, facts, reattached| {
+                // Read before the lock is taken: it loads and compiles the policy.
+                let at = AtStart::take(&root, facts, reattached);
+                lock_under(&started_under).insert(session, at);
+            }
+        }));
         // When each chat began to start, for its MCP servers' starts (qw381).
         let mcp_failures: Arc<crate::mcpfailed::Failures> = Arc::default();
         // The chats whose program ends with their session host (#2007).
@@ -5214,10 +5267,12 @@ impl Planes {
             // And taken back if the program then fails to start: the announcement has to come
             // first, so it can be about a chat that never happens.
             let started_on = Arc::clone(&started_on);
+            let started_under = Arc::clone(&started_under);
             let mcp_failures = Arc::clone(&mcp_failures);
             chats.when_one_does_not_start(Box::new(move |session| {
                 hooks::held_board(&board).closed(session);
                 lock_started(&started_on).remove(&session);
+                lock_under(&started_under).remove(&session);
                 mcp_failures.did_not_start(session);
             }));
         }
@@ -5601,6 +5656,7 @@ impl Planes {
             start_answers,
             autosave: Mutex::new(Some(autosave)),
             started_on,
+            started_under,
             typed,
             closing,
             tasks,

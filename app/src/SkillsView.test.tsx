@@ -1349,6 +1349,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
           skills_added: ["triage"],
           skills_gone: ["old-deploy"],
           skills_edited: ["deploy"],
+          policy: [],
         },
         // Another chat's change is its own.
         {
@@ -1358,6 +1359,7 @@ describe("the chat in front's set as a whole (S8, #3694)", () => {
           skills_added: ["elsewhere"],
           skills_gone: [],
           skills_edited: [],
+          policy: [],
         },
       ],
     });

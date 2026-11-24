@@ -14590,6 +14590,12 @@ export type PlaneUpdated = {
 	skills_gone: string[],
 	/**  The skills it has that changed since it started, by name. */
 	skills_edited: string[],
+	/**
+	 *  Why its sandbox, compiled at its start, is out of date (M75-23, spec §9.5): a Never or a
+	 *  path rule that tightened, a grant that was removed, a workspace created since, or purlis
+	 *  restarted. Each as a short phrase; its pane offers a restart, which compiles it again.
+	 */
+	policy: string[],
 };
 
 /**  **A plugin on this machine a chat does not have** (#4477), as Left out says it. */

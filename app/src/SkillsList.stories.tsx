@@ -380,6 +380,7 @@ const WHOLE: ChatSkillsSaid = {
     skills_added: ["triage"],
     skills_gone: ["old-deploy"],
     skills_edited: [],
+    policy: [],
   },
 };
 

@@ -295,6 +295,11 @@ pub type Recorder = Box<dyn Fn(&Record) + Send + Sync>;
 /// report about it.
 pub type Starting = Box<dyn Fn(u32, Option<Harness>, Option<String>, bool) + Send + Sync>;
 
+/// Told as each chat starts or is reattached, BEFORE its program does, with the host's own record
+/// of it (M75-23): what the chat's sandbox is compiled for, and whether the app found it already
+/// running. The app keeps what the policy said then ([`purlis_core::policy::running::AtStart`]).
+pub type StartedUnder = Box<dyn Fn(u32, purlis_core::policy::running::Facts, bool) + Send + Sync>;
+
 /// [`Chats::named_while_starting`]: each chat starting, and what its harness has named so far.
 type NamedWhileStarting = HashMap<u32, Option<(SessionId, Option<String>)>>;
 
@@ -857,6 +862,8 @@ pub struct Chats {
     /// Told as each chat put back is reattached in the session host, before anything else is
     /// told of it (#2006).
     reattached: Mutex<Option<Starting>>,
+    /// Told what each chat's sandbox is compiled for, as it starts or is reattached (M75-23).
+    started_under: Mutex<Option<StartedUnder>>,
     /// Told of the run each start begins, before its program runs (ADR 0066).
     beginning: Mutex<Option<Beginning>>,
     /// Told the number of a run about to be replaced at once ([`Self::when_a_run_is_replaced`]).
@@ -1858,6 +1865,7 @@ impl Chats {
             sessions: Arc::from(host),
             starting: Mutex::new(None),
             reattached: Mutex::new(None),
+            started_under: Mutex::new(None),
             beginning: Mutex::new(None),
             replaced_told: Mutex::new(None),
             router: Mutex::new(None),
@@ -1989,6 +1997,13 @@ impl Chats {
     /// a report about it where it does not know the chat yet.
     pub fn when_one_is_reattached(&self, tell: Starting) {
         *lock(&self.reattached) = Some(tell);
+    }
+
+    /// Calls `tell` as each chat starts or is reattached, before its program does, with what its
+    /// sandbox is compiled for (M75-23): a chat is out of date when the policy tightens past it
+    /// ([`purlis_core::policy::running`]). `true` is a chat the app found already running.
+    pub fn when_one_starts_under(&self, tell: StartedUnder) {
+        *lock(&self.started_under) = Some(tell);
     }
 
     /// Calls `tell` as each chat starts, BEFORE its program does, with the run that start
@@ -6164,6 +6179,18 @@ impl Chats {
         let announced = std::sync::atomic::AtomicU32::new(0);
         // Why what a profile's sign-in hands the chat could not be named for its kept screen.
         let sign_in_unnamed: Mutex<Option<std::io::Error>> = Mutex::new(None);
+        // **What its sandbox is compiled for** (M75-23), from this app's own record of the start.
+        let compiled_for = purlis_core::policy::running::Facts {
+            chat: identity.id.clone(),
+            workspace: workspace.clone(),
+            persona: chat.persona.clone(),
+            sandbox: match confines.as_ref().map(|confines| confines.level) {
+                None => "off",
+                Some(purlis_core::sandbox::Level::Full) => "full",
+                Some(purlis_core::sandbox::Level::Floor) => "floor",
+            }
+            .to_owned(),
+        };
         let announce = |session: u32| {
             // Named on disk before its program exists (#6309): a crash after it starts leaves
             // what masks its screen, and where that fails the chat is ended below.
@@ -6208,6 +6235,9 @@ impl Chats {
                 );
             }
             untold.tell_untold();
+            if let Some(under) = lock(&self.started_under).as_ref() {
+                under(session, compiled_for.clone(), reattaching);
+            }
             // A chat reattached is where it was: its state, its model and its run are as the
             // host kept them (#2006).
             if reattaching {

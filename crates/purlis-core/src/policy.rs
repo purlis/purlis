@@ -49,6 +49,7 @@ pub mod needsyou;
 pub mod organisation;
 pub mod press;
 pub mod resolver;
+pub mod running;
 pub mod sandbox_level;
 pub mod sandbox_rules;
 pub mod selfchange;

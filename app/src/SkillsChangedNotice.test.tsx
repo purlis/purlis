@@ -22,6 +22,7 @@ const UPDATED: PlaneUpdated = {
   skills_added: [],
   skills_gone: [],
   skills_edited: [],
+  policy: [],
 };
 
 function core(updated: PlaneUpdated[] | (() => PlaneUpdated[])) {
