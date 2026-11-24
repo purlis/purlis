@@ -346,6 +346,46 @@ pub async fn forge_trust_clone_repo(
     .await
 }
 
+/// A clone the person trusted that is not confirmed with the forge, so no chat's route serves it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct UnconfirmedClone {
+    /// Its folder, relative to the project.
+    pub folder: String,
+    /// The `<host>/<owner>/<repo>` the trust list holds for it.
+    pub place: String,
+}
+
+/// The project's clones that are on the trust list and not confirmed with the forge: what Settings ›
+/// You › Accounts offers *Confirm* for. None in a fenced build, whose config home is not the
+/// person's.
+#[tauri::command]
+#[specta::specta]
+pub async fn forge_unconfirmed_clones(
+    planes: tauri::State<'_, Planes>,
+    plane: PlaneId,
+) -> Result<Vec<UnconfirmedClone>, String> {
+    let project = planes.held(&plane)?.root().to_path_buf();
+    blocking(move || {
+        host_scope()?;
+        Ok(unconfirmed_in(&project, &config_root()?))
+    })
+    .await
+}
+
+/// [`forge_unconfirmed_clones`] for `project`, against the config home `config_root`.
+pub(crate) fn unconfirmed_in(
+    project: &std::path::Path,
+    config_root: &std::path::Path,
+) -> Vec<UnconfirmedClone> {
+    purlis_core::forge::gitcredential::vouch::unconfirmed_clones(project, config_root)
+        .into_iter()
+        .map(|clone| UnconfirmedClone {
+            folder: clone.folder,
+            place: clone.place,
+        })
+        .collect()
+}
+
 /// The clone at `folder` of `project`: a child of the project, named relative to it, **as the
 /// canonical path that was checked** (so a link swapped in after the check is never followed).
 /// Refused when `folder` is empty, absolute, holds `..`, or (by a link) leads out of the project,

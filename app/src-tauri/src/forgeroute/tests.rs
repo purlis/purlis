@@ -282,13 +282,15 @@ impl Notices for FakeNotices {
 struct FakePairing {
     paired: RunnerPeer,
     runs: Mutex<HashMap<String, PathBuf>>,
+    /// The one chat the runner is paired for; none serves any chat.
+    chat: Mutex<Option<String>>,
 }
 impl RunnerLink for FakePairing {
     fn paired(&self, peer: &RunnerPeer) -> bool {
         *peer == self.paired
     }
-    fn project_of(&self, peer: &RunnerPeer, run: &str) -> Option<PathBuf> {
-        (*peer == self.paired)
+    fn project_of(&self, peer: &RunnerPeer, chat: &str, run: &str) -> Option<PathBuf> {
+        (*peer == self.paired && lock(&self.chat).as_deref().is_none_or(|own| own == chat))
             .then(|| lock(&self.runs).get(run).cloned())
             .flatten()
     }
@@ -348,6 +350,7 @@ impl Scene {
         let pairing = Arc::new(FakePairing {
             paired: runner(),
             runs: Mutex::new(HashMap::new()),
+            chat: Mutex::new(None),
         });
         recorded.record(
             "/p/one",
@@ -1451,6 +1454,110 @@ fn an_unpaired_caller_or_a_run_the_pairing_does_not_know_is_refused_and_no_route
 }
 
 #[test]
+fn a_paired_runner_of_one_chat_asking_as_another_is_refused_and_no_route_is_made() {
+    let scene = Scene::new();
+    lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+    *lock(&scene.pairing.chat) = Some("chat-x".to_owned());
+
+    let other = scene.routes.for_runner(&runner(), "chat-y", "job-1");
+    assert!(matches!(other, RunnerForward::Refused), "{other:?}");
+    assert!(!scene.routes.is_live("job-1"));
+
+    let own = scene.routes.for_runner(&runner(), "chat-x", "job-1");
+    assert!(matches!(own, RunnerForward::Desktop(_)), "{own:?}");
+}
+
+#[test]
+fn a_run_live_for_a_desktop_chat_or_another_peer_is_not_taken_over_by_a_runner() {
+    let scene = Scene::new();
+    lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+    lock(&scene.pairing.runs).insert("job-2".to_owned(), PathBuf::from("/p/one"));
+
+    // A desktop chat's run: the runner asking for its id is refused, and the route stays.
+    let desktop = scene
+        .routes
+        .start("chat-d", "job-1", Path::new("/p/one"))
+        .unwrap()
+        .expect("a route");
+    let taken = scene.routes.for_runner(&runner(), "chat-9", "job-1");
+    assert!(matches!(taken, RunnerForward::Refused), "{taken:?}");
+    assert!(scene.routes.is_live("job-1"));
+    assert!(matches!(
+        comment(&scene, "job-1", &desktop.sentinel),
+        Outcome::Forward(_)
+    ));
+
+    // Another peer's run, held live by a route of its own device.
+    scene
+        .routes
+        .start_for(
+            "chat-o",
+            "job-2",
+            Path::new("/p/one"),
+            Some("runner-2".to_owned()),
+            None,
+        )
+        .unwrap();
+    let taken = scene.routes.for_runner(&runner(), "chat-9", "job-2");
+    assert!(matches!(taken, RunnerForward::Refused), "{taken:?}");
+    scene.routes.stop_peer("runner-2");
+    assert!(!scene.routes.is_live("job-2"));
+
+    // Its own run, asked again, replaces its own route.
+    let first = scene.routes.for_runner(&runner(), "chat-9", "job-2");
+    assert!(matches!(first, RunnerForward::Desktop(_)), "{first:?}");
+    let again = scene.routes.for_runner(&runner(), "chat-9", "job-2");
+    assert!(matches!(again, RunnerForward::Desktop(_)), "{again:?}");
+}
+
+#[test]
+fn two_peers_asking_for_one_run_at_once_leave_it_to_exactly_one() {
+    // The check of who owns a run and the insert of its route are one step under `starting`: of
+    // two peers starting the same run together, one makes the route and the other finds it taken,
+    // and the route that stays is the winner's. Without the lock both pass the check.
+    for _ in 0..25 {
+        let scene = Scene::new();
+        lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/one"));
+        let barrier = std::sync::Barrier::new(2);
+        let outcomes: Vec<(&str, bool)> = std::thread::scope(|scope| {
+            let routes = &scene.routes;
+            let barrier = &barrier;
+            ["runner-a", "runner-b"]
+                .into_iter()
+                .map(|device| {
+                    scope.spawn(move || {
+                        barrier.wait();
+                        let started = routes
+                            .start_for(
+                                "chat-9",
+                                "job-1",
+                                Path::new("/p/one"),
+                                Some(device.to_owned()),
+                                None,
+                            )
+                            .unwrap();
+                        (device, matches!(started, Started::Route(Some(_))))
+                    })
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|handle| handle.join().unwrap())
+                .collect()
+        });
+        let made: Vec<&str> = outcomes
+            .iter()
+            .filter(|(_, made)| *made)
+            .map(|(device, _)| *device)
+            .collect();
+        assert_eq!(made.len(), 1, "{outcomes:?}");
+        assert_eq!(
+            scene.routes.live().get("job-1").unwrap().peer.as_deref(),
+            Some(made[0])
+        );
+    }
+}
+
+#[test]
 fn a_paired_runner_with_nothing_to_proxy_or_no_proxy_keeps_token_connections() {
     let scene = Scene::new();
     lock(&scene.pairing.runs).insert("job-1".to_owned(), PathBuf::from("/p/none"));
@@ -2218,10 +2325,17 @@ fn another_branch_the_default_branch_and_another_chats_branch_stay_protected() {
     scene.recorded.cut_for("/p/one", "chat-2", "task/other");
     let params = scene.start("chat-1", "run-1", "/p/one");
 
-    for branch in ["main", "task/other", "colleague"] {
+    // The default branch is protected. Another chat's branch and a colleague's are not this
+    // chat's: refused as such (and, where its chat is open, asked about in the window).
+    let pushed = push_update(&scene, "run-1", &params.sentinel, "main");
+    assert!(
+        matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+        "main: {pushed:?}"
+    );
+    for branch in ["task/other", "colleague"] {
         let pushed = push_update(&scene, "run-1", &params.sentinel, branch);
         assert!(
-            matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+            matches!(pushed, Outcome::Refused(Refusal::NotYourBranch)),
             "{branch}: {pushed:?}"
         );
     }
@@ -2240,7 +2354,7 @@ fn another_projects_chat_with_the_same_id_owns_none_of_a_branch_cut_in_this_one(
     let pushed = push_update(&scene, "run-1", &params.sentinel, "task/forms");
 
     assert!(
-        matches!(pushed, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(pushed, Outcome::Refused(Refusal::NotYourBranch)),
         "{pushed:?}"
     );
 }
@@ -2297,7 +2411,7 @@ fn a_branch_is_recorded_only_when_the_forge_confirms_the_chat_made_it_and_only_f
     let other = scene.start("chat-2", "run-3", "/p/one");
     let refused = push_update(&scene, "run-3", &other.sentinel, "task/new");
     assert!(
-        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(refused, Outcome::Refused(Refusal::NotYourBranch)),
         "{refused:?}"
     );
 }
@@ -2386,7 +2500,7 @@ fn a_live_run_may_not_push_a_branch_another_chat_made_again_through_the_route() 
         &"3".repeat(40),
     );
     assert!(
-        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(refused, Outcome::Refused(Refusal::NotYourBranch)),
         "{refused:?}"
     );
     // And chat 2, whose push is the last, moves it from the tip it left.
@@ -2459,7 +2573,60 @@ fn a_branch_the_forge_no_longer_lists_ends_its_record_and_the_next_update_is_ref
     assert!(scene.recorded.own_of("chat-1").is_empty());
     let refused = push_update(&scene, "run-1", &params.sentinel, "task/forms");
     assert!(
-        matches!(refused, Outcome::Refused(Refusal::ProtectedRef)),
+        matches!(refused, Outcome::Refused(Refusal::NotYourBranch)),
         "{refused:?}"
     );
+}
+
+#[test]
+fn an_update_of_a_branch_the_open_chat_has_no_record_of_raises_one_ask_in_the_window_and_the_chat_is_told()
+ {
+    let scene = Scene::new();
+    let project = "/p/let-chat-push";
+    scene
+        .recorded
+        .record(project, vec![(Kind::GitHub, "github.com", "acme/app")]);
+    scene.recorded.bind(project, "github.com", "alice");
+    let params = scene.open("chat-1", "run-1", project, 5);
+    // The forge lists the branch: an ask is raised only for a branch the repo's advertisement
+    // names.
+    lock_live(&scene, "run-1").note_advertised(
+        &ChatId::new("run-1"),
+        "github.com",
+        "acme/app",
+        vec!["main".into(), "colleague".into()],
+    );
+
+    let said = |pushed: Outcome| match pushed {
+        Outcome::Held(held) => held.said,
+        other => panic!("an ask is raised and the chat told: {other:?}"),
+    };
+    // A branch pushed before the route existed: the chat is told an ask is waiting, however
+    // often it tries again, and the window has the one ask.
+    let told = said(push_update(&scene, "run-1", &params.sentinel, "colleague"));
+    assert!(
+        told.contains("Let this chat push it is waiting in the window"),
+        "{told}"
+    );
+    said(push_update(&scene, "run-1", &params.sentinel, "colleague"));
+    let raised = purlis_core::windowonly::every(Path::new(project));
+    assert_eq!(raised.len(), 1, "{raised:?}");
+    assert_eq!(raised[0].session, 5);
+    assert!(
+        matches!(
+            &raised[0].control,
+            purlis_core::windowonly::Control::LetChatPush { chat, branch, .. }
+                if chat == "chat-1" && branch == "colleague"
+        ),
+        "{raised:?}"
+    );
+
+    // The default branch raises no ask, and no other is added.
+    let main = push_update(&scene, "run-1", &params.sentinel, "main");
+    assert!(
+        matches!(main, Outcome::Refused(Refusal::ProtectedRef)),
+        "{main:?}"
+    );
+    assert_eq!(purlis_core::windowonly::every(Path::new(project)).len(), 1);
+    purlis_core::windowonly::project_ended(Path::new(project));
 }

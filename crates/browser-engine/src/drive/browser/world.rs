@@ -115,13 +115,13 @@ impl Worlds {
         lock(&self.0).retain(|(_, of), _| of != frame);
     }
 
-    fn get(&self, session: &str, frame: &str) -> Option<World> {
+    pub(super) fn get(&self, session: &str, frame: &str) -> Option<World> {
         lock(&self.0)
             .get(&(session.to_owned(), frame.to_owned()))
             .cloned()
     }
 
-    fn forget(&self, session: &str, frame: &str, world: &World) {
+    pub(super) fn forget(&self, session: &str, frame: &str, world: &World) {
         let mut worlds = lock(&self.0);
         let key = (session.to_owned(), frame.to_owned());
         if worlds.get(&key) == Some(world) {

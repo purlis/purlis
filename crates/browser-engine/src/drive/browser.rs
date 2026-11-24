@@ -1935,6 +1935,34 @@ impl State {
         self.excluded.retain(|key| key.frame != frame);
     }
 
+    /// The session of a process of its own that holds `frame` of `target`'s page, if the engine
+    /// told of one.
+    fn session_of_frame(&self, target: &str, frame: &str, besides: &str) -> Option<String> {
+        self.sessions.iter().find_map(|(session, kind)| match kind {
+            Session::Frame { page, frame: of }
+                if page == target && of == frame && session != besides =>
+            {
+                Some(session.clone())
+            }
+            _ => None,
+        })
+    }
+
+    /// Every session that holds a frame of `target`'s page, the page's own first.
+    fn sessions_of_page(&self, target: &str) -> Vec<String> {
+        let mut own: Vec<String> = self
+            .sessions
+            .iter()
+            .filter(|(_, kind)| match kind {
+                Session::Page(page) => page == target,
+                Session::Frame { page, .. } => page == target,
+            })
+            .map(|(session, _)| session.clone())
+            .collect();
+        own.sort();
+        own
+    }
+
     /// Whether `session` may say `frame` of `target`'s page is gone: the frame's own session, or
     /// the session of the frame or page it sits in (#4472).
     fn may_remove(&self, target: &str, frame: &str, session: &str) -> bool {
@@ -6603,10 +6631,17 @@ impl Inner {
                     let target = text("/targetInfo/targetId");
                     let kind = text("/targetInfo/type").unwrap_or_default();
                     if let (Some(session), Some(target)) = (session, target) {
+                        // A frame's target the driver attached to itself is told of with no
+                        // session around it: it belongs to the page that holds the frame.
                         let parent_page = event
                             .session_id
                             .as_deref()
-                            .and_then(|s| state.page_of_session(s));
+                            .and_then(|s| state.page_of_session(s))
+                            .or_else(|| {
+                                (kind == "iframe")
+                                    .then(|| state.page_holding(&target))
+                                    .flatten()
+                            });
                         match (kind.as_str(), parent_page) {
                             ("page", _) if state.page(&target).is_some() => {
                                 if let Some(page) = state.page_mut(&target) {

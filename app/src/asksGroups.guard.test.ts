@@ -70,6 +70,9 @@ const GROUP_OF = {
   "trust-clone": "consent",
   // Trust these clones (T1-15): the project's unrecorded clones, trusted by one press.
   "trust-clones": "consent",
+  // Let this chat push a branch it has no record of (ADR 0128, amended 2026-11-23): Allow
+  // records the chat as the owner, which only the person's yes may.
+  "let-chat-push": "consent",
   confirmation: "consent",
   // Pool setup goes on (#4496): the admin gave what the install couldn't; the person's press goes on.
   "pool-setup": "consent",

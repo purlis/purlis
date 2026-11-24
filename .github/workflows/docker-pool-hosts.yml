@@ -27,6 +27,9 @@ on:
       - crates/purlis-core/tests/it/a_pool_container_is_checked_on_this_host.rs
   schedule:
     - cron: "41 3 * * *"
+  # The merge queue's run, on the paths of the filter above (`workflow-scope`, #7420).
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 concurrency:
@@ -40,8 +43,31 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # A merge group carries no `paths`, so its run is scoped by this workflow's own filter
+  # (`workflow-scope`, #7420): the jobs below run in the queue only when the change meets it.
+  scope:
+    name: does the change need this
+    if: github.event_name == 'merge_group'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The token stays: `change-base` fetches the group's base by its SHA.
+          fetch-depth: 2
+      - id: scope
+        uses: ./.github/actions/workflow-scope
+        with:
+          workflow: docker-pool-hosts.yml
+
   measure:
     name: ${{ matrix.host }}
+    needs: scope
+    if: ${{ !cancelled() && (github.event_name != 'merge_group' || needs.scope.outputs.run != 'false') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     strategy:
