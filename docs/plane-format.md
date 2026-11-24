@@ -8271,13 +8271,16 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
 - **A writer verifies as it opens** (`eventlog::chain::opened`): a chained log that does not
   match its seals keeps its lines chained but is never sealed again, so a forged tail is not
   adopted as the head and the break stays reported.
-- **Who reads it** (spec §10.5): the person reads all of it, a chat only its own rows
-  (`eventlog::read_rows`). A team or an organisation reads it through the Audit's export. Nothing
-  here sends the log anywhere.
+- **Who reads it** (spec §10.5): the person reads all of it. `eventlog::read_rows` is the reader
+  that narrows it to one chat's rows (by the chat's id, which the host maps from its token), but
+  **no command or tool serves a chat its rows yet**, and a sandboxed chat's profile denies it
+  writing `<data>/events/`, not reading it: until both are done (follow-up), the log is the
+  person's to read, and a chat's own rows are not a promise. A team or an organisation reads it
+  through the Audit's export. Nothing here sends the log anywhere.
 - **Tier:** Machine, device-bound — the event log's, never synced; the keyring item is Keyring.
   Not rebuildable: it is the record.
 - **Written by:** `purlis_core::eventlog::Recorder::stop`, `eventlog::Log::append`.
-- **Read by:** `purlis_core::eventlog::read_rows`, `eventlog::chain::check` (via `at_chat_start`
+- **Read by:** `eventlog::read`, `eventlog::chain::check` (via `at_chat_start`
   and doctor); the window's
   would-have-blocked count reads the chats it owns (`policypress::logged_at`).
 - **Git:** never committed.

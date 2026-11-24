@@ -172,10 +172,10 @@ pub fn pretooluse(payload: &str, now: Option<&str>) -> crate::hooks::Answered {
         Some(MergeJudged::Refused(verdict)) => {
             return crate::hooks::Answered::of(Answer::Deny(verdict));
         }
-        Some(MergeJudged::Logged(verdict)) => {
-            log_verdict(&root, chat.as_deref(), Family::GuardsMerge, &verdict)
-        }
-        None => {}
+        // The session host wrote the would-have-blocked event as it decided (`decisions::asked`,
+        // M75-13 round 2B, B6), naming the rules that decided it: a line from here would be a
+        // second event for the same merge.
+        Some(MergeJudged::Logged) | None => {}
     }
     // A11: plain git that writes a branch folder another live chat holds, from a chat that runs
     // git itself (#3931). After every refusal, because it is the one that asks the app.
@@ -268,8 +268,8 @@ const A_MERGE_IS_DECIDED_WITHIN: Duration = Duration::from_millis(1_250);
 enum MergeJudged {
     /// Refused to the chat: held for the person, denied, or not decided.
     Refused(toolgate::Verdict),
-    /// Let through under a mode that logs what it would have refused.
-    Logged(toolgate::Verdict),
+    /// Let through under a mode that logs what it would have refused: the host wrote the line.
+    Logged,
 }
 
 /// **A merge, judged by the project policy** (M75 slice 04, spec §6): the session host decides
@@ -307,12 +307,7 @@ fn judged_merge(command: &str, cwd: &str) -> Option<MergeJudged> {
     };
     match decision.after_mode {
         Outcome::Allow if decision.would_have_blocked() => {
-            Some(MergeJudged::Logged(toolgate::Verdict {
-                arm: None,
-                reason: mergehold::REASON.to_owned(),
-                shape: None,
-                denial: mergehold::held_by(&decision),
-            }))
+            Some(MergeJudged::Logged)
         }
         Outcome::Allow => None,
         Outcome::Deny => Some(refused(

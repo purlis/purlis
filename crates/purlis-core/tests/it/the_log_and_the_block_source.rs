@@ -18,7 +18,6 @@ use purlis_core::eventlog::{ArgsKey, Log, Reader, Recorder, read, read_rows};
 use purlis_core::policy::World;
 use purlis_core::policy::decide::{self, Outcome, Request};
 use purlis_core::policy::levels::{self, Chat, Loaded, Sources};
-use purlis_core::policy::limits::{self, Verdict};
 
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
 const PLANE: &str = "/planes/one";
@@ -346,42 +345,6 @@ fn no_code_reads_purlis_policy() {
     );
 }
 
-/// Under `limits = log` a cap that is exceeded writes one would-have-blocked event naming the
-/// limit's key; within the cap, or under `enforce` or `off`, nothing is written.
-#[test]
-fn under_limits_log_an_exceeded_cap_writes_one_would_have_blocked_event() {
-    let key = "dispatch.running-per-chat";
-    let logged = limits::verdict(Mode::Log, Some(6), 7);
-    assert_eq!(logged, Verdict::Counted);
-    let line = limits::would_block(key, logged).expect("a counted cap is a line");
-    assert_eq!(line.family, "limits");
-    assert_eq!(line.rules, [key]);
-    for verdict in [
-        limits::verdict(Mode::Log, Some(6), 6),
-        limits::verdict(Mode::Enforce, Some(6), 7),
-        limits::verdict(Mode::Off, Some(6), 7),
-    ] {
-        assert!(limits::would_block(key, verdict).is_none(), "{verdict:?}");
-    }
-    assert!(
-        limits::would_block("no.such-limit", logged).is_none(),
-        "an unknown key is no rule"
-    );
-
-    let dir = tempfile::tempdir().unwrap();
-    let mut host = recorder(dir.path());
-    host.stop(Path::new(PLANE), Some(2), &Stop::WouldBlock(line))
-        .unwrap();
-    let wrote: Vec<_> = read(dir.path())
-        .unwrap()
-        .into_iter()
-        .filter(|event| event.kind == WOULD_BLOCK)
-        .collect();
-    assert_eq!(wrote.len(), 1);
-    assert_eq!(wrote[0].body["family"], "limits");
-    assert_eq!(wrote[0].body["rules"][0], key);
-}
-
 /// A process outside every plane has no host to ask: it decides in itself, by the shipped default
 /// under `strict`, so a plane-less recorded scenario runs exactly that (spec §6, §14.1; review
 /// round 3, SEC3-SF3).
@@ -467,6 +430,34 @@ fn recorded_behaviour_selects_strict_from_strict_planes_committed_head() {
     let changed = committed(&strict_plane.replace("strict", "open"));
     assert_eq!(Settings::read(changed.path()).template, Template::Open);
 
+    // **The fixture's own HEAD, pinned** (round 2B, B9): `strict-plane` is `daily`'s project file
+    // and exactly one `[policy]` table, and nothing else is in the folder. A change to the fixture
+    // that moves what the replay reads at `HEAD` fails here, not as 34 scenarios that happen to
+    // agree with the all-enforce fallback (`enforcement::in_force` where no host answers).
+    assert_eq!(
+        strict_plane,
+        format!("{}\n\n[policy]\ntemplate = \"strict\"\n", daily.trim_end()),
+        "strict-plane's committed project file is daily's and one [policy] table"
+    );
+    let files: Vec<_> = std::fs::read_dir(fixtures.join("planes/strict-plane"))
+        .expect("the fixture folder")
+        .map(|entry| entry.expect("an entry").file_name())
+        .collect();
+    assert_eq!(files, ["charter.toml"], "nothing else is laid over daily's files");
+    // What a host answers for that HEAD is every family enforced, so the fallback a process gets
+    // where no host answers is the same answer by construction, not by luck.
+    let resolved = purlis_core::enforcement::Resolved::of(
+        &Settings::read(head.path()),
+        &purlis_core::sandbox::policy::Locks::of(head.path()),
+    );
+    for family in purlis_core::enforcement::Family::ALL {
+        assert_eq!(
+            resolved.mode(family),
+            Mode::Enforce,
+            "the strict template's overlay enforces {family:?}"
+        );
+    }
+
     // Every in-plane pretooluse scenario starts from it, and none sets the retired variable.
     let recorded =
         std::fs::read_to_string(fixtures.join("recorded/behaviour.jsonl")).expect("rows");
@@ -491,4 +482,112 @@ fn recorded_behaviour_selects_strict_from_strict_planes_committed_head() {
         moved, 34,
         "the 34 in-plane scenarios that set the variable moved"
     );
+}
+
+/// **The writer holds a would-have-blocked line to tokens and a bare host** (round 2B, S2): a rule
+/// id or a family that is no token is written changed, never dropped with its event, and a host
+/// that is a path, a URL or anything with a query is left off the line. The line never carries a
+/// command, a path or a URL, whoever built it.
+#[test]
+fn the_writer_holds_a_would_have_blocked_line_to_tokens_and_a_bare_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    let long = "r".repeat(300);
+    let lines = [
+        (vec![long.clone()], "guards.merge", Some("github.com:443")),
+        (vec!["a/b c?d".to_owned()], "guards/merge", Some("https://evil.example/p?q=1")),
+        (vec!["ok-rule".to_owned()], "guards.merge", Some("/home/me/.ssh/id_ed25519")),
+        (vec!["ok-rule".to_owned()], "guards.merge", Some("two words:80")),
+        (vec!["ok-rule".to_owned()], "guards.merge", Some("[::1]:8080")),
+        (Vec::new(), "guards.merge", None),
+    ];
+    for (rules, family, at) in &lines {
+        host.stop(
+            Path::new(PLANE),
+            Some(1),
+            &Stop::WouldBlock(WouldBlock {
+                rules: rules.clone(),
+                level: Some("project owner".to_owned()),
+                family: (*family).to_owned(),
+                host: at.map(str::to_owned),
+            }),
+        )
+        .expect("a line that is not a token is changed, never refused");
+    }
+    let wrote: Vec<_> = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == WOULD_BLOCK)
+        .collect();
+    assert_eq!(wrote.len(), lines.len(), "every line is written");
+    let is_token = |text: &str| {
+        (1..=64).contains(&text.len())
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+    };
+    for event in &wrote {
+        for rule in event.body["rules"].as_array().expect("rules") {
+            assert!(is_token(rule.as_str().unwrap()), "{event:?}");
+        }
+        assert!(is_token(event.body["family"].as_str().unwrap()), "{event:?}");
+        assert!(is_token(event.body["level"].as_str().unwrap()), "{event:?}");
+        if let Some(at) = event.body.get("host") {
+            let at = at.as_str().unwrap();
+            assert!(!at.contains('/') && !at.contains('?') && !at.contains(' '), "{at}");
+        }
+    }
+    let hosts: Vec<_> = wrote
+        .iter()
+        .map(|event| event.body.get("host").and_then(|at| at.as_str()))
+        .collect();
+    assert_eq!(
+        hosts,
+        [Some("github.com:443"), None, None, None, Some("[::1]:8080"), None]
+    );
+    assert_eq!(wrote[0].body["rules"][0], "r".repeat(64), "held to 64, not dropped");
+}
+
+/// **A deny whose rule `@id` is no token is still in the log** (round 2B, S1): a rule id over 64
+/// characters or outside `A-Za-z0-9._:-` is written changed. The block the host writes for it
+/// (`decisions::blocked`) names its source all the same, where it used to be refused and the
+/// deny vanished from the log with only a warning.
+#[test]
+fn a_deny_whose_rule_id_is_no_token_is_written_changed_never_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = recorder(dir.path());
+    for id in ["x".repeat(80), "has space/and:slash".to_owned(), String::new()] {
+        let decision: decide::Decision = serde_json::from_value(serde_json::json!({
+            "outcome": "deny",
+            "deciding": [{
+                "id": id, "level": "project", "owner": "this project",
+                "file": "policy.cedar", "line": 1
+            }],
+            "family": "guards.merge",
+            "mode_family": "guards.merge",
+            "mode": "enforce",
+            "after_mode": "deny"
+        }))
+        .unwrap();
+        let block = Block {
+            tool: "Bash".to_owned(),
+            source: Source::Policy,
+            qualifier: None,
+            target: None,
+            args: None,
+            policy: Some(Decided::from(&decision)),
+            compiled_from: None,
+        };
+        host.stop(Path::new(PLANE), Some(1), &Stop::Block(block))
+            .unwrap_or_else(|why| panic!("the deny of {id:?} was dropped: {why}"));
+    }
+    let blocks: Vec<_> = read(dir.path())
+        .unwrap()
+        .into_iter()
+        .filter(|event| event.kind == purlis_core::eventlog::stops::BLOCK)
+        .collect();
+    assert_eq!(blocks.len(), 3, "each deny has its event");
+    assert_eq!(blocks[0].body["policy"]["rules"][0], "x".repeat(64));
+    assert_eq!(blocks[1].body["policy"]["rules"][0], "has_space_and:slash");
+    assert_eq!(blocks[2].body["policy"]["rules"][0], "unnamed");
 }

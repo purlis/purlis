@@ -14,7 +14,9 @@
 //! says the old number, and the stricter wins. Tightening applies at once.
 //!
 //! Under `limits = log` a limit is counted, never applied ([`verdict`]). The would-have-blocked
-//! line it writes is slice 13's.
+//! line is written where each cap is enforced, through `enforcement::judged`: the commit rate
+//! (`gitbroker::commit::pace_under`) and every dispatch limit (`dispatchdecision`), each naming
+//! the limit and the `limits` family (round 2B, B7: there is no second writer here).
 
 use std::sync::OnceLock;
 
@@ -186,21 +188,6 @@ pub fn verdict(mode: Mode, cap: Option<i64>, used: i64) -> Verdict {
         Mode::Log => Verdict::Counted,
         Mode::Enforce => Verdict::Refuse,
     }
-}
-
-/// **The would-have-blocked line of a cap** (M75-13, review round 3, C3 S4): under `limits = log`
-/// an exceeded cap is counted and let through ([`Verdict::Counted`]), and the host writes one
-/// event naming the limit's key and the `limits` family. None for any other verdict, and for a
-/// key the table does not hold: nothing that is no rule's id is written.
-pub fn would_block(key: &str, verdict: Verdict) -> Option<crate::eventlog::stops::WouldBlock> {
-    (verdict == Verdict::Counted && spec(key).is_some()).then(|| {
-        crate::eventlog::stops::WouldBlock {
-            rules: vec![key.to_owned()],
-            level: None,
-            family: crate::enforcement::Family::Limits.key().to_owned(),
-            host: None,
-        }
-    })
 }
 
 #[cfg(test)]

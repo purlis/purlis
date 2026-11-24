@@ -1900,11 +1900,15 @@ pub fn log_in_the_app(writer: Writer) {
 
 /// The app's write of one would-have-blocked line ([`record`]) into the event log.
 pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Option<&str>) {
+    // The line as the event log would write it (S2): a rule id changed to a token, never dropped,
+    // and a host that is no `host[:port]` left out, so what a test reads is what the log holds.
     let line = crate::eventlog::stops::WouldBlock {
-        rules: vec![crate::shown::one_line(rule, MOST_CHARS)],
+        rules: vec![crate::eventlog::stops::token_of(rule)],
         level: None,
         family: family.key().to_owned(),
-        host: host.map(|host| crate::shown::one_line(host, MOST_CHARS)),
+        host: host
+            .filter(|host| crate::eventlog::stops::is_host(host))
+            .map(|host| crate::shown::one_line(host, MOST_CHARS)),
     };
     #[cfg(any(test, feature = "test-support"))]
     CAPTURED.with(|held| {

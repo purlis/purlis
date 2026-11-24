@@ -157,7 +157,7 @@ checked!(Host, "host", is_host);
 checked!(Folder, "folder", is_folder);
 checked!(Token, "service or guard arm", is_token);
 
-fn is_host(value: &str) -> bool {
+pub(crate) fn is_host(value: &str) -> bool {
     let (name, port) = if let Some(rest) = value.strip_prefix('[') {
         let Some((address, after)) = rest.split_once(']') else {
             return false;
@@ -218,6 +218,29 @@ fn is_token(value: &str) -> bool {
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'))
+}
+
+/// The word a rule id or a family is written as where it was not a [`Token`] (M75-13 round 2B, S1):
+/// every character outside `A-Z a-z 0-9 . _ : -` becomes `_`, held to [`TOKEN_CHARS`], and
+/// `unnamed` where nothing is left. **The event is written with the id changed, never dropped**:
+/// a rule whose `@id` is too long or spelt oddly still has its deny in the log.
+pub fn token_of(raw: &str) -> String {
+    let token: String = raw
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .take(TOKEN_CHARS)
+        .collect();
+    if token.is_empty() {
+        "unnamed".to_owned()
+    } else {
+        token
+    }
 }
 
 impl Target {
@@ -347,28 +370,32 @@ impl WouldBlock {
             return None;
         }
         Some(Self {
-            rules: decision.ids().into_iter().map(str::to_owned).collect(),
-            level: decision.deciding.first().map(|rule| rule.level.clone()),
-            family: decision.family.clone(),
+            rules: decision.ids().into_iter().map(token_of).collect(),
+            level: decision.deciding.first().map(|rule| token_of(&rule.level)),
+            family: token_of(&decision.family),
             host: host
                 .filter(|host| crate::enforcement::is_host_and_port(host))
                 .map(|host| crate::shown::one_line(host, TARGET_CHARS)),
         })
     }
 
-    /// The line as it is written: every id and the host held to the target's length.
-    fn shortened(&self) -> Self {
+    /// **The line as it is written** (S2): rules, level and family are tokens only (an id that is
+    /// none is changed by [`token_of`], never dropped), and `host` is a `host[:port]` and nothing
+    /// else: where it is a path, a URL or anything with a query, the line is written without one.
+    /// A would-have-blocked line never carries a command, a path or a URL.
+    fn checked(&self) -> Self {
         Self {
-            rules: self
-                .rules
-                .iter()
-                .map(|id| crate::shown::one_line(id, TOKEN_CHARS))
-                .collect(),
-            level: self.level.clone(),
-            family: self.family.clone(),
+            rules: if self.rules.is_empty() {
+                vec!["unnamed".to_owned()]
+            } else {
+                self.rules.iter().map(|id| token_of(id)).collect()
+            },
+            level: self.level.as_deref().map(token_of),
+            family: token_of(&self.family),
             host: self
                 .host
                 .as_deref()
+                .filter(|host| is_host(host))
                 .map(|host| crate::shown::one_line(host, TARGET_CHARS)),
         }
     }
@@ -390,7 +417,8 @@ pub struct Decided {
 impl From<&crate::policy::decide::Decision> for Decided {
     fn from(decision: &crate::policy::decide::Decision) -> Self {
         Decided {
-            rules: decision.ids().into_iter().map(str::to_owned).collect(),
+            // An id that is no token is written changed, never dropped with its event (S1).
+            rules: decision.ids().into_iter().map(token_of).collect(),
             level: decision.deciding.first().map(|rule| rule.level.clone()),
             family: decision.family.clone(),
             outcome: decision.outcome,
@@ -598,7 +626,7 @@ impl Recorder {
             Stop::LoopPause(pause) => serde_json::to_value(pause),
             Stop::AskAnswered(answered) => serde_json::to_value(answered),
             Stop::AskRaised(raised) => serde_json::to_value(raised),
-            Stop::WouldBlock(line) => serde_json::to_value(line.shortened()),
+            Stop::WouldBlock(line) => serde_json::to_value(line.checked()),
         }
         .map_err(io::Error::other)?;
         self.audited(plane, number, stop.kind(), body)
