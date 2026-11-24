@@ -92,6 +92,10 @@ pub(crate) fn parse_target(target: &str) -> Result<Target, Refusal> {
         None => (target, ""),
     };
     let rest = path.strip_prefix('/').ok_or(Refusal::MalformedRequest)?;
+    // A GHES API root is `/api/v3/` as `gh auth status` sends it, as `/` is github.com's: the one
+    // trailing slash that is read as the same path without it (the policy answers it as it does
+    // `/api/v3`). Any other trailing slash stays refused.
+    let rest = if rest == "api/v3/" { "api/v3" } else { rest };
     let mut segments = Vec::new();
     if !rest.is_empty() {
         for raw in rest.split('/') {

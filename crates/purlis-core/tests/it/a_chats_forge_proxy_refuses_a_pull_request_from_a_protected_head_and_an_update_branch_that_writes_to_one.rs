@@ -171,9 +171,13 @@ fn a_graphql_pull_request_from_main_is_refused_when_it_names_its_head_repository
     let out = gql(&s, CREATE, input("main", "R_acme_app"));
     assert!(is_refused(&out, Refusal::ProtectedPullHead), "{out:?}");
     // A head repository named by id is not one the route resolves (as before #7526), the chat's
-    // own included, so it is never forwarded.
+    // own included, so it is never forwarded. A `createPullRequest` is refused as
+    // `GraphqlPullRequestOtherRepo` (#7544), the kind that names the REST route.
     let out = gql(&s, CREATE, input("fix", "R_acme_app"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
     let out = gql(&s, CREATE, input("fix", "R_someone_else"));
     assert!(!forwarded(&out), "{out:?}");
 }
