@@ -34,109 +34,6 @@ fn record(answers: Vec<Answered>) -> Record {
     }
 }
 
-#[test]
-fn one_allow_offers_no_rule() {
-    let first = asked("p", 1);
-    let kept = record(vec![answered(&first, "chat", true, NOW - HOUR)]);
-    assert_eq!(offer(&kept, &asked("p", 2), NOW), None);
-}
-
-#[test]
-fn the_same_allow_twice_from_one_chat_offers_a_rule_for_that_chat() {
-    let here = asked("p", 1);
-    let kept = record(vec![
-        answered(&here, "once", true, NOW - 2 * HOUR),
-        answered(&here, "once", true, NOW - HOUR),
-    ]);
-    assert_eq!(
-        offer(&kept, &here, NOW),
-        Some(Offer {
-            answered: "once".to_owned(),
-            times: 2,
-            needs: Scope::Chat,
-        })
-    );
-}
-
-#[test]
-fn the_same_allow_from_two_chats_of_a_project_needs_the_project() {
-    let kept = record(vec![
-        answered(&asked("p", 1), "chat", true, NOW - 2 * HOUR),
-        answered(&asked("p", 2), "chat", true, NOW - HOUR),
-    ]);
-    assert_eq!(
-        offer(&kept, &asked("p", 3), NOW).map(|one| one.needs),
-        Some(Scope::Project)
-    );
-}
-
-#[test]
-fn the_same_allow_from_two_projects_needs_the_machine() {
-    let kept = record(vec![
-        answered(&asked("p", 1), "chat", true, NOW - 2 * HOUR),
-        answered(&asked("q", 1), "chat", true, NOW - HOUR),
-    ]);
-    assert_eq!(
-        offer(&kept, &asked("p", 1), NOW).map(|one| one.needs),
-        Some(Scope::Machine)
-    );
-}
-
-#[test]
-fn answers_older_than_the_window_offer_nothing() {
-    let here = asked("p", 1);
-    let kept = record(vec![
-        answered(&here, "chat", true, NOW - OFFER_WINDOW_SECS - 1),
-        answered(&here, "chat", true, NOW - HOUR),
-    ]);
-    assert_eq!(offer(&kept, &here, NOW), None);
-}
-
-#[test]
-fn two_different_allows_offer_nothing() {
-    let here = asked("p", 1);
-    let kept = record(vec![
-        answered(&here, "once", true, NOW - 2 * HOUR),
-        answered(&here, "chat", true, NOW - HOUR),
-    ]);
-    assert_eq!(offer(&kept, &here, NOW), None);
-}
-
-#[test]
-fn refusals_never_offer_a_rule() {
-    let here = asked("p", 1);
-    let kept = record(vec![
-        answered(&here, "keep", false, NOW - 2 * HOUR),
-        answered(&here, "keep", false, NOW - HOUR),
-    ]);
-    assert_eq!(offer(&kept, &here, NOW), None);
-}
-
-#[test]
-fn another_request_counts_for_nothing() {
-    let here = asked("p", 1);
-    let other = Asked {
-        request: "sandbox-host:other.example.com".to_owned(),
-        ..here.clone()
-    };
-    let kept = record(vec![
-        answered(&other, "chat", true, NOW - 2 * HOUR),
-        answered(&other, "chat", true, NOW - HOUR),
-    ]);
-    assert_eq!(offer(&kept, &here, NOW), None);
-}
-
-#[test]
-fn a_rule_made_for_the_request_starts_the_count_again() {
-    let here = asked("p", 1);
-    let mut kept = record(vec![
-        answered(&here, "once", true, NOW - 3 * HOUR),
-        answered(&here, "once", true, NOW - 2 * HOUR),
-    ]);
-    kept.rules.push(rule(&here, NOW - HOUR));
-    assert_eq!(offer(&kept, &here, NOW), None);
-}
-
 fn rule(asked: &Asked, at: u64) -> Rule {
     Rule {
         id: format!("rule-{at}"),
@@ -241,10 +138,7 @@ fn a_store_keeps_answers_rules_and_endings_and_undoes_a_rule() {
     store
         .answered(&here, "once", true, None, NOW - HOUR)
         .expect("noted");
-    assert_eq!(
-        offer(&store.read(), &here, NOW).map(|one| one.times),
-        Some(2)
-    );
+    assert_eq!(store.read().answered.len(), 2);
 
     let made = store.make(rule(&here, NOW)).expect("made");
     assert_eq!(store.read().rules, vec![made.clone()]);
@@ -261,7 +155,7 @@ fn a_store_lets_go_of_answers_past_the_window() {
     let store = Store::in_data(data.path());
     let here = asked("p", 1);
     store
-        .answered(&here, "once", true, None, NOW - OFFER_WINDOW_SECS - DAY)
+        .answered(&here, "once", true, None, NOW - ANSWERS_KEPT_SECS - DAY)
         .expect("noted");
     store
         .answered(&here, "once", true, None, NOW)
@@ -270,7 +164,7 @@ fn a_store_lets_go_of_answers_past_the_window() {
 }
 
 #[test]
-fn an_answer_without_a_request_offers_no_rule_and_starts_no_cool_off() {
+fn an_answer_without_a_request_starts_no_cool_off() {
     let unnamed = Asked {
         request: String::new(),
         ..asked("p", 1)
@@ -281,7 +175,6 @@ fn an_answer_without_a_request_offers_no_rule_and_starts_no_cool_off() {
         answered(&unnamed, "keep", false, NOW - 120),
         answered(&unnamed, "keep", false, NOW - 60),
     ]);
-    assert_eq!(offer(&kept, &unnamed, NOW), None);
     assert_eq!(cooling(&kept, &unnamed, NOW), None);
 }
 

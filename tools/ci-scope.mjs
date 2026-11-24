@@ -148,6 +148,8 @@ export const READ_BY_RUST = [
   "app/src/theme/theme.ts",
   "app/src/theme/geometry.css",
   "app/src/App.css",
+  "app/src/AskRules.tsx",
+  "app/src/InboxAsks.tsx",
   "app/src/ui/activity/activity.css",
   "app/src/ui/badge/badge.css",
   "app/src/ui/button/button.css",

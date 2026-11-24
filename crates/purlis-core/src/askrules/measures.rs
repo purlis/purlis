@@ -22,7 +22,7 @@ use super::{Record, Rule, Scope};
 use crate::sandboxblock::record::{Entry, Event, Outcome, Scope as Decided};
 
 /// **What "this week" is**: the seven days before now, as long as answers are kept.
-pub const WEEK_SECS: u64 = super::OFFER_WINDOW_SECS;
+pub const WEEK_SECS: u64 = super::ANSWERS_KEPT_SECS;
 
 /// A day, in seconds: a chat's need of a host is counted once over it.
 const DAY_SECS: u64 = 24 * 60 * 60;
