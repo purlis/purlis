@@ -471,6 +471,42 @@ fn consecutive_pushes_of_a_branch_the_chat_made_are_allowed_each_from_the_tip_be
 }
 
 #[test]
+fn a_chat_deletes_a_branch_it_made_at_the_tip_it_last_pushed_and_no_other() {
+    purlis_core::unsteered!();
+    let config = tempfile::tempdir().unwrap();
+    let w = World::recording_to(config.path().to_owned());
+    let (one, two, zero) = ("1".repeat(40), "2".repeat(40), "0".repeat(40));
+    push_through(&w, "mine", &zero, accepted("mine"));
+    assert_eq!(push_moving(&w, "mine", &one, &two, accepted("mine")), 200);
+
+    // Someone moved it since the chat's last push (the tip it names is not the recorded one):
+    // refused, and never sent.
+    let requests = w.fake.requests().len();
+    assert_eq!(
+        push_moving(&w, "mine", &"3".repeat(40), &zero, accepted("mine")),
+        403
+    );
+    // The tip the chat left before its last push is stale too.
+    assert_eq!(push_moving(&w, "mine", &one, &zero, accepted("mine")), 403);
+    assert_eq!(w.fake.requests().len(), requests, "never sent");
+
+    // A branch another chat made, or one with no record, is not the chat's to delete.
+    createdbranches::record(config.path(), PROJECT, OTHER, &[made("theirs")]).unwrap();
+    for branch in ["theirs", "colleague"] {
+        let old = "1".repeat(40);
+        assert_eq!(
+            push_moving(&w, branch, &old, &zero, accepted(branch)),
+            403,
+            "{branch}"
+        );
+    }
+    assert_eq!(w.fake.requests().len(), requests, "never sent");
+
+    // From the tip it last pushed, its own branch goes.
+    assert_eq!(push_moving(&w, "mine", &two, &zero, accepted("mine")), 200);
+}
+
+#[test]
 fn an_update_of_a_branch_someone_else_made_again_is_refused_though_the_advertisement_lists_it() {
     purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
