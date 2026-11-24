@@ -16,7 +16,7 @@ use purlis_core::floorguard::{merge_reason, release_floor_reason};
 use purlis_core::mergehold;
 
 /// The line the hold refused on 2026-11-17, as the chat ran it, its worktree's path shortened.
-const THE_REFUSED_LINE: &str = r#"H=$(cd /tmp/wt && git rev-parse HEAD); echo $H; until [ "$(gh api "repos/purlis/purlis/actions/runs?head_sha=$H" --jq '[.workflow_runs[] | select(.name=="sandbox scenarios")] | length' 2>/dev/null)" != "0" ]; do sleep 30; done; id=$(gh api "repos/purlis/purlis/actions/runs?head_sha=$H" --jq '.workflow_runs[] | select(.name=="sandbox scenarios") | .id' | head -1); echo "scen=$id"; until [ "$(gh run view $id -R purlis/purlis --json jobs --jq '[.jobs[] | select(.name=="sandbox-scenarios-linux") | select(.status=="completed")] | length')" = "1" ]; do sleep 90; done; j=$(gh run view $id -R purlis/purlis --json jobs --jq '.jobs[] | select(.name=="sandbox-scenarios-linux") | .databaseId'); gh api repos/purlis/purlis/actions/jobs/$j/logs 2>/dev/null | cut -c30- | sed 's/\x1b\[[0-9;]*m//g' > $TMPDIR/m2.log; grep -E "^\s+FAIL \[|Summary \[" $TMPDIR/m2.log | awk '{print $1,$NF}' | sort -u; grep -E -A1 "panicked at app" $TMPDIR/m2.log | grep -vE "panicked|^--" | sort -u | cut -c1-200 | head -10"#;
+const THE_REFUSED_LINE: &str = r#"H=$(cd /tmp/wt && git rev-parse HEAD); echo $H; until [ "$(gh api "repos/purlis/purlis/actions/runs?head_sha=$H" --jq '[.workflow_runs[] | select(.name=="sandbox scenarios")] | length' 2>/dev/null)" != "0" ]; do sleep 30; done; id=$(gh api "repos/purlis/purlis/actions/runs?head_sha=$H" --jq '.workflow_runs[] | select(.name=="sandbox scenarios") | .id' | head -1); echo "scen=$id"; until [ "$(gh run view $id -R purlis/purlis --json jobs --jq '[.jobs[] | select(.name=="sandbox-scenarios-linux") | select(.status=="completed")] | length')" = "1" ]; do sleep 90; done; j=$(gh run view $id -R purlis/purlis --json jobs --jq '.jobs[] | select(.name=="sandbox-scenarios-linux") | .databaseId'); gh api "repos/purlis/purlis/actions/jobs/$j/logs" 2>/dev/null | cut -c30- | sed 's/\x1b\[[0-9;]*m//g' > $TMPDIR/m2.log; grep -E "^\s+FAIL \[|Summary \[" $TMPDIR/m2.log | awk '{print $1,$NF}' | sort -u; grep -E -A1 "panicked at app" $TMPDIR/m2.log | grep -vE "panicked|^--" | sort -u | cut -c1-200 | head -10"#;
 
 /// Each passes the hold and the floor, unattended.
 fn passes(cmds: &[&str]) {
@@ -72,7 +72,7 @@ fn a_read_only_api_call_with_x_get_passes_the_hold() {
     purlis_core::unsteered!();
     passes(&[
         "gh api -X GET 'repos/o/r/actions/runs?head_sha=abc'",
-        "id=$(gh api -X GET repos/o/r/actions/runs -f head_sha=$H --jq '.workflow_runs[0].id' | head -1)",
+        "id=$(gh api -X GET repos/o/r/actions/runs -f head_sha=\"$H\" --jq '.workflow_runs[0].id' | head -1)",
         "id=$(gh api --method GET \"repos/o/r/pulls/$N/merge\" | head -1)",
     ]);
 }

@@ -34,7 +34,7 @@ fn a_read_only_glab_get_of_a_job_trace_in_a_pipeline_passes() {
     purlis_core::unsteered!();
     passes(&[
         "glab api projects/purlis%2Fpurlis/jobs/123/trace | sed 's/\\x1b\\[[0-9;]*m//g' | grep -E 'FAIL|error' | head -20",
-        "J=$(glab api 'projects/p/pipelines/9/jobs' | jq -r '.[0].id'); glab api projects/p/jobs/$J/trace | grep -c ok",
+        "J=$(glab api 'projects/p/pipelines/9/jobs' | jq -r '.[0].id'); glab api \"projects/p/jobs/$J/trace\" | grep -c ok",
         "glab api \"projects/p/jobs/$(glab api projects/p/pipelines/9/jobs | jq -r '.[0].id')/trace\" | tail -50",
         "glab api projects/p/jobs/123/trace 2>&1 | sed -n '1,40p' > $TMPDIR/trace.log; grep -n panicked $TMPDIR/trace.log",
     ]);
@@ -46,9 +46,9 @@ fn read_only_glab_gets_with_variables_and_substitutions_pass() {
     passes(&[
         "glab api \"projects/$P/jobs/$J/trace\" | sed 's/\\x1b\\[[0-9;]*m//g' | grep -E 'FAIL' | head",
         "glab api \"projects/$(echo $P | sed 's|/|%2F|g')/jobs/$J/trace\" | tail -n 40",
-        "P=purlis%2Fpurlis; J=$(glab api projects/$P/pipelines/$PL/jobs | jq -r '.[]|select(.name==\"x\")|.id'); glab api projects/$P/jobs/$J/trace 2>&1 | tail -30",
-        "glab api -X GET projects/$P/repository/commits/$SHA && glab api \"projects/$P/repository/files/a.md/raw?ref=$SHA\" | wc -l",
-        "glab api projects/$P/repository/commits/$SHA --jq .title; node -e 'console.log(process.argv[1])' \"$(glab api projects/$P/repository/files/a.md/raw?ref=main)\"",
+        "P=purlis%2Fpurlis; J=$(glab api \"projects/$P/pipelines/$PL/jobs\" | jq -r '.[]|select(.name==\"x\")|.id'); glab api \"projects/$P/jobs/$J/trace\" 2>&1 | tail -30",
+        "glab api -X GET \"projects/$P/repository/commits/$SHA\" && glab api \"projects/$P/repository/files/a.md/raw?ref=$SHA\" | wc -l",
+        "glab api \"projects/$P/repository/commits/$SHA\" --jq .title; node -e 'console.log(process.argv[1])' \"$(glab api \"projects/$P/repository/files/a.md/raw?ref=main\")\"",
     ]);
 }
 
@@ -707,10 +707,14 @@ fn a_quoted_funsub_is_no_sole_call_and_a_parameter_expansion_is_() {
         ),
         &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=${{ cd /elsewhere; }}"),
     ]);
-    passes(&[
-        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{TITLE}}\""),
-        &format!("gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{#}}${{1}}${{?}}\""),
-    ]);
+    passes(&[&format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{TITLE}}\""
+    )]);
+    // Special and positional parameters are not a plain name (#7423): `$1` or `$@` may be
+    // several words, or more than the reader can place, so these are held now.
+    held(&[&format!(
+        "gh api -X PATCH repos/o/r/pulls/7 --input {b} -f title=\"${{#}}${{1}}${{?}}\""
+    )]);
 }
 
 /// Round 9 (#7195): an output redirection is no other command, so a body is still read beside
@@ -793,4 +797,17 @@ fn the_refusal_of_an_unread_body_says_to_run_the_call_alone() {
     assert!(said.contains("alone on its line"), "{said}");
     assert!(said.contains("quoted heredoc"), "{said}");
     assert!(said.contains("absolute path"), "{said}");
+}
+
+/// What the shell fills in of a `gh api` / `glab api` call is held (#7416); these fill in nothing
+/// that adds a word or begins a flag, and pass.
+#[test]
+fn a_shell_filled_api_call_that_is_one_word_and_no_flag_passes() {
+    purlis_core::unsteered!();
+    passes(&[
+        "gh api repos/o/r/pulls/5",
+        "gh api \"repos/o/r/pulls/$N\" --jq .title",
+        "glab api \"projects/:id/pipelines/$(glab api projects/:id/pipelines | jq -r '.[0].id')/jobs\"",
+        "for id in 1 2; do gh api repos/o/r/pulls/$id; done",
+    ]);
 }
