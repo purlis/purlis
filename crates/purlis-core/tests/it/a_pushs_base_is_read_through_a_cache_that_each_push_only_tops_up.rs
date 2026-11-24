@@ -934,6 +934,7 @@ fn an_object_in_the_cache_under_no_finished_fetchs_ref_is_not_a_base_it_holds() 
 
 #[test]
 fn the_progress_reader_reads_the_lines_git_fetch_progress_writes() {
+    purlis_core::unsteered!();
     let mut reader = ProgressReader::default();
     // Lines end in a carriage return and may be cut anywhere by a read.
     assert_eq!(reader.feed("remote: Enumerating objects: 10000, done.\nremote: Counting objects: 100% (10000/10000), done.\n"), None);
@@ -943,6 +944,9 @@ fn the_progress_reader_reads_the_lines_git_fetch_progress_writes() {
         .unwrap();
     assert_eq!((seen.received, seen.total), (4500, 10000));
     assert_eq!(seen.bytes, 13_107_200);
+    // The cut line is finished by the next read, as git writes it, and the count starts over.
+    let cut = reader.feed(" MiB | 3.10 MiB/s\r").unwrap();
+    assert_eq!((cut.received, cut.bytes), (4600, 13_526_630));
     let first = reader.feed("Receiving objects:   0% (1/10000)\r").unwrap();
     assert_eq!((first.received, first.bytes), (1, 0), "no byte figure yet");
     let done = reader
