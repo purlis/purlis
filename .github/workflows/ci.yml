@@ -213,7 +213,7 @@ jobs:
   # carries the required check's name and passes when the build and every part did.
   #
   # **The linker is mold** (spec #7324), for this job, the parts, `rust-doctests` and `git-lfs`,
-  # which restore one Rust cache between them (`shared-key: rust`) and so build with the same
+  # which restore one Rust cache between them (`shared-key: rust`, as does `recorded`) and so build with the same
   # `RUSTFLAGS` (rust-cache keys on them). The version is the one Ubuntu 24.04 packages, 2.30.0,
   # from the package cache `linux-packages` keeps for the runner image; the step after the install
   # fails when the image ships another, so a new mold is a line here, not a surprise. The default
@@ -320,14 +320,14 @@ jobs:
           else
             echo "::warning title=Linker::target/debug/purlis carries no mold mark: the build did not use mold"
           fi
-      # One day is enough: the parts start when this ends. Already zstd, so no second compression.
+      # Three days, so a part re-run the next morning still finds it; the parts start when this ends. Already zstd, so no second compression.
       # `overwrite`: a re-run of this job replaces its own archive, and the parts that follow take it.
       - name: The archive, for the parts
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-tests-archive
           path: ${{ runner.temp }}/rust-tests/purlis-tests.tar.zst
-          retention-days: 1
+          retention-days: 3
           compression-level: 0
           if-no-files-found: error
           overwrite: true
@@ -1998,8 +1998,17 @@ jobs:
     needs: changes
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
+    env:
+      # `rust-build`'s: this job restores that cache, which is keyed on `RUSTFLAGS`.
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The linker
+        if: needs.changes.outputs.rust != 'false'
+        timeout-minutes: 11
+        uses: ./.github/actions/linux-packages
+        with:
+          packages: mold
       - name: Nothing Rust reads has changed
         if: needs.changes.outputs.rust == 'false'
         run: echo "::notice::nothing Rust reads has changed; the recorded behaviour is not replayed, and only the whole-tree and window guards run"
