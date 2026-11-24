@@ -169,7 +169,7 @@ fn a_word_the_shell_fills_in_where_it_cannot_merge_or_publish_stays_allowed() {
         "gh pr view $N",
         "gh pr checks ${N} --watch",
         "gh pr view 12 --json $(echo state)",
-        "gh -R $REPO pr view 12",
+        "gh -R \"$REPO\" pr view 12",
         "gh issue $(echo view) 3",
         "gh run watch $(gh run list -L1 --json databaseId -q '.[0].databaseId')",
         "gh api \"repos/o/r/pulls/$N\"",

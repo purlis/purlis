@@ -42,6 +42,11 @@ pub(super) struct Segment {
     /// the redirections that feed stdin and stand after `api` kept in place, since a body read
     /// from a heredoc or a here-string is part of the call (`--input - <<'EOF'`).
     call: Option<Vec<String>>,
+    /// Each word of the call as the source spells it, `""` where nothing measured it.
+    call_spelled: Vec<String>,
+    /// Whether the segment is handed words: it stands after a `|`, or has a redirection that
+    /// feeds its stdin (a file, a heredoc, a here-string).
+    pub fed: bool,
     /// The call again without a digit word that stands apart from the redirection after it
     /// (`gh 5 >f pr merge 5`): the shell makes it an argument, and a reader that took it for a
     /// descriptor would see another call. Read too, so that no earlier reading's refusal is lost.
@@ -67,6 +72,11 @@ impl Segment {
     pub fn call(&self) -> Option<&[String]> {
         self.call.as_deref()
     }
+
+    /// The words of [`Segment::call`] as the source spells them.
+    pub fn call_spelled(&self) -> &[String] {
+        &self.call_spelled
+    }
 }
 
 /// [`read`] of one segment of a measured line.
@@ -80,14 +90,15 @@ pub(super) fn of_reading(reading: &shellseg::Reading) -> Segment {
             glued: reading.own_glued.get(k).copied().unwrap_or(false),
         })
         .collect();
-    build(words, measured)
+    build(words, measured, reading.own_piped)
 }
 
-/// [`read`] of the words as they stand, and again as zsh's clobber operators read them.
-fn build(words: Vec<Word>, measured: bool) -> Segment {
-    let mut seg = read(&words, measured, false);
+/// [`read`] of the words as they stand, and again as zsh's clobber operators read them. `piped`
+/// is whether a `|` hands the segment its stdin.
+fn build(words: Vec<Word>, measured: bool, piped: bool) -> Segment {
+    let mut seg = read(&words, measured, false, piped);
     if words.windows(2).any(clobbers) {
-        seg.clobber = Some(Box::new(read(&words, measured, true)));
+        seg.clobber = Some(Box::new(read(&words, measured, true, piped)));
     }
     seg
 }
@@ -116,7 +127,7 @@ pub(super) fn of_words(toks: &[String]) -> Segment {
             glued: false,
         })
         .collect();
-    build(words, false)
+    build(words, false, false)
 }
 
 /// Whether a word is an all-digit file descriptor or a named one, `{fd}`.
@@ -150,7 +161,7 @@ fn feeds_stdin(op: &str) -> bool {
 /// The segment's redirections taken out as the shell reads them, and its program placed.
 ///
 /// With `clobber`, a `!` glued to a redirection operator is part of it (zsh).
-fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
+fn read(words: &[Word], measured: bool, clobber: bool, piped: bool) -> Segment {
     // A definition's header is no part of the command.
     let texts: Vec<String> = words.iter().map(|w| w.text.clone()).collect();
     let from = shellwrap::past_function_headers(&texts).unwrap_or(0);
@@ -200,6 +211,8 @@ fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
     let at = texts.len().saturating_sub(inv.argv.len());
     let placed = texts[at..] == inv.argv[..];
     let forge_at = (placed && !inv.argv.is_empty() && names_a_forge(&inv.prog)).then_some(at);
+    let fed = piped || stdin.iter().any(|feeds| *feeds);
+    let mut call_spelled: Vec<String> = Vec::new();
     let call = forge_at.map(|at| {
         // The `api` of an api call, read past its flags and `-R o/r`: a body read from stdin
         // follows it. No other call has one (an alias's `-` is stdin the call cannot read).
@@ -208,10 +221,11 @@ fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
             Some((k, "api")) => Some(kept[at + 1 + *k]),
             _ => None,
         };
-        let mut call: Vec<String> = (kept[at]..n)
+        let stands: Vec<usize> = (kept[at]..n)
             .filter(|j| !redirected[*j] || (stdin[*j] && cut.is_some_and(|c| *j > c)))
-            .map(|j| words[j].text.clone())
             .collect();
+        let mut call: Vec<String> = stands.iter().map(|j| words[*j].text.clone()).collect();
+        call_spelled = stands.iter().map(|j| words[*j].spelled.clone()).collect();
         if call[0].starts_with('=') {
             call[0].remove(0);
         }
@@ -271,13 +285,15 @@ fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
     } else {
         vec![String::new(); inv.argv.len()]
     };
-    let (shell_filled, behind) = behind_an_unknown_program(&inv, &spelled_argv);
+    let (shell_filled, behind) = behind_an_unknown_program(&inv, &spelled_argv, fed);
     let refusal =
         refusal.or_else(|| shell_filled.then(|| format!("{} {WAY_OUT}", super::merge::UNREADABLE)));
     Segment {
         words: texts,
         spelled,
         call,
+        call_spelled,
+        fed,
         also,
         refusal,
         clobber: None,
@@ -290,6 +306,13 @@ fn read(words: &[Word], measured: bool, clobber: bool) -> Segment {
 const TEXT_PROGRAMS: [&str; 15] = [
     "echo", "printf", "cat", "grep", "egrep", "fgrep", "rg", "ag", "sed", "awk", "head", "tail",
     "wc", "type", "whereis",
+];
+
+/// Programs that look a name up or install a package of that name, and never run it (`brew
+/// install gh $PKGS`, `which gh`, `man gh`).
+const NAMES_ONLY: [&str; 19] = [
+    "brew", "apt", "apt-get", "apk", "dnf", "yum", "pacman", "port", "choco", "scoop", "winget",
+    "dpkg", "rpm", "which", "man", "tldr", "apropos", "locate", "mdfind",
 ];
 
 /// **The general wrapper rule** (#7423, rounds 7 and 8). The program placed is not a forge CLI,
@@ -306,13 +329,15 @@ const TEXT_PROGRAMS: [&str; 15] = [
 fn behind_an_unknown_program(
     inv: &shellwrap::Invocation,
     spelled: &[String],
+    fed: bool,
 ) -> (bool, Vec<Segment>) {
     let argv = &inv.argv;
     let mut none = (false, Vec::new());
     if argv.len() < 2 || names_a_forge(&inv.prog) {
         return none;
     }
-    if TEXT_PROGRAMS.contains(&shellwrap::base_lower(&inv.prog).as_str()) {
+    let base = shellwrap::base_lower(&inv.prog);
+    if TEXT_PROGRAMS.contains(&base.as_str()) || NAMES_ONLY.contains(&base.as_str()) {
         return none;
     }
     let in_a_list = argv[1] == "in"
@@ -333,18 +358,29 @@ fn behind_an_unknown_program(
         let base = shellwrap::base_lower(word);
         if names_a_forge(word) || matches!(base.as_str(), "purlis" | "charter") {
             let a_path = word.contains('/') || word.starts_with('~');
-            let opaque_next = argv.get(k + 1).is_some_and(|w| super::merge::opaque(w));
-            // The skip holds only where nothing the shell fills in stands as the noun or the
-            // verb: then the call is read as the direct call is (round 9).
-            if (a_path || opaque_next)
-                && !later[k + 1]
-                && !(names_a_forge(word)
-                    && shell_filled_noun_or_verb(
+            let after_spelled = spelled.get(k + 1..).unwrap_or(&[]);
+            if names_a_forge(word) {
+                // A path that names a forge CLI is a call only where a literal noun of a held
+                // command follows it (`/opt/homebrew/bin/gh pr …`); `cp /usr/bin/gh ~` names a
+                // file. A bare `gh` is a call, read by the rule for the words up to the verb
+                // ([`super::placed`], round 10).
+                // A held verb later on the line (`/usr/bin/gh $A merge 5`) makes it one too.
+                if a_path
+                    && !later[k + 1]
+                    && !super::placed::names_a_held_noun(
+                        &shellwrap::base_lower(word),
                         &argv[k + 1..],
-                        spelled.get(k + 1..).unwrap_or(&[]),
-                    ))
-            {
-                continue;
+                        after_spelled,
+                    )
+                {
+                    continue;
+                }
+            } else {
+                // `purlis change land` and `charter change land`: read as before (round 8).
+                let opaque_next = argv.get(k + 1).is_some_and(|w| super::merge::opaque(w));
+                if (a_path || opaque_next) && !later[k + 1] {
+                    continue;
+                }
             }
             let mut call: Vec<Word> = (k..argv.len())
                 .map(|j| Word {
@@ -356,7 +392,7 @@ fn behind_an_unknown_program(
                 .collect();
             call[0].text = word.to_owned();
             let measured = call.iter().any(|w| !w.spelled.is_empty());
-            none.1.push(build(call, measured));
+            none.1.push(build(call, measured, fed));
         } else if super::merge::opaque(word) && fills_in_a_forge_call(word, &argv[k + 1..]) {
             none.0 = true;
         }
@@ -390,32 +426,4 @@ fn fills_in_a_forge_call(word: &str, after: &[String]) -> bool {
             .first()
             .is_some_and(|verb| rows.iter().any(|r| held(r.0, r.1, verb)));
     pair || completes
-}
-
-/// Whether a word the shell fills in stands where a forge CLI reads its noun or its verb: one of
-/// the first two words after the CLI that is no flag (`-R` takes the word after it). A word with a
-/// `/` is a path (`~/bin/`, `src/*.rs`, `pkg/*`), never a noun or a verb (round 9).
-fn shell_filled_noun_or_verb(after: &[String], spelled: &[String]) -> bool {
-    let mut seen = 0;
-    let mut words = after.iter().enumerate();
-    while let Some((i, word)) = words.next() {
-        // A word spelled whole in single quotes (`'*.json'`) is filled in by nothing.
-        let source = spelled.get(i).map_or("", String::as_str);
-        let literal = source.len() > 1 && source.starts_with('\'') && source.ends_with('\'');
-        if word == "-R" || word == "--repo" {
-            words.next();
-            continue;
-        }
-        if word.starts_with('-') {
-            continue;
-        }
-        if !literal && super::merge::opaque(word) && !word.contains('/') {
-            return true;
-        }
-        seen += 1;
-        if seen == 2 {
-            break;
-        }
-    }
-    false
 }

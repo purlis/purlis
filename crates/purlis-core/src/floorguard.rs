@@ -53,6 +53,7 @@
 
 mod exact;
 mod merge;
+mod placed;
 mod token;
 
 use crate::credguard::git_subcommand;
@@ -991,6 +992,15 @@ fn unescape_double_quoted(text: &str) -> String {
     out
 }
 
+/// What a refusal of a forge call that words handed to it could complete says.
+fn fed_said(name: &str) -> String {
+    format!(
+        "{} A program in front of `{name}` hands it words (a pipe, a here-string) that could be \
+         its noun and verb, or a method. Write the whole command out, with the words on the line.",
+        merge::UNREADABLE
+    )
+}
+
 /// The floor's refusal of a segment whose words the lexer's facts were read for (#7423): its
 /// call from the program on, where a forge CLI runs, or else its words past their redirections,
 /// and, where a forge CLI is named and the words in front of it cannot be placed exactly, the
@@ -1018,18 +1028,50 @@ fn exact_reason(
     if let Some(said) = seg.refusal.as_ref() {
         return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
     }
+    // **The one rule for the words up to the verb** (#7423, round 10), read on the call as the
+    // lexer spelled it: the direct call, and the call read without the digit word that stands
+    // apart from a redirection.
+    if let Some(call) = seg.call() {
+        let name = base_lower(&call[0]);
+        let spelled = seg.call_spelled();
+        if let Some(said) = placed::reason(&name, call, spelled) {
+            return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+        }
+    }
+    if let Some(also) = &seg.also {
+        let name = base_lower(&also[0]);
+        if let Some(said) = placed::reason(&name, also, &[]) {
+            return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+        }
+    }
     // A forge call behind a program no table knows is the call it would be without the program
-    // (#7423, round 8).
+    // (#7423, round 8), read by the same rule, and, where that program is handed words (a pipe,
+    // a here-string), one the words could complete is held.
     for call in &seg.behind {
         let words = call.call().unwrap_or(&call.words);
+        if let Some(forge) = call.call() {
+            let name = base_lower(&forge[0]);
+            let spelled = call.call_spelled();
+            if let Some(said) = placed::reason(&name, forge, spelled) {
+                return Some(format!("{RELEASE_FLOOR_FIX}{said}"));
+            }
+            if call.fed && placed::may_be_completed(&name, forge, spelled) {
+                return Some(format!("{RELEASE_FLOOR_FIX}{}", fed_said(&name)));
+            }
+        }
         // A bare `{}` is a placeholder for gh, but a program that is not gh (`fd -x`, `parallel`)
-        // fills it in with a name: read as an endpoint the shell fills in (round 9).
+        // fills it in with a name: read as an argument the shell fills in (rounds 9 and 10). Only
+        // where it is the endpoint itself (`fd . repos -x gh api {}`) is it a read of that name.
         let filled: Vec<String> = words.iter().map(|w| w.replace("{}", "$X")).collect();
         let held = (!read.contains(words)
             && segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin).is_some())
             || merge::shell_filled_api_reason(call, cmd).is_some()
             || (filled != *words
-                && segment_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin).is_some());
+                && (segment_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin)
+                    .is_some()
+                    || (!merge::brace_is_the_endpoint(&filled)
+                        && merge::shell_filled_api_reason(&exact::of_words(&filled), cmd)
+                            .is_some())));
         if held {
             return Some(format!(
                 "{RELEASE_FLOOR_FIX}{} {}",
@@ -1386,21 +1428,25 @@ const NOUNS_THAT_MERGE: [&str; 4] = ["pr", "mr", "alias", "change"];
 fn filled_in_command_word<'a>(name: &str, words: &[&'a str]) -> Option<&'a str> {
     match words {
         [noun, ..] if merge::opaque(noun) => Some(noun),
-        [noun, verb, ..] if merge::opaque(verb) => {
-            let held = merge::held_commands(name)
-                .into_iter()
-                .chain(
-                    PUBLISH_SINCE
-                        .iter()
-                        .filter(|(cli, ..)| *cli == name)
-                        .map(|(_, noun, verb)| vec![*noun, *verb]),
-                )
-                .any(|command| command.len() > 1 && command[0] == *noun);
-            let matters = held && (!only_merges() || NOUNS_THAT_MERGE.contains(noun));
-            matters.then_some(verb)
-        }
+        [noun, verb, ..] if merge::opaque(verb) => noun_has_a_held_verb(name, noun).then_some(verb),
         _ => None,
     }
+}
+
+/// Whether `noun` begins a command of `name` that has a held verb, so a verb the shell fills in
+/// after it could be that verb: `pr` does, `issue` does not. With the merge half alone, only a
+/// noun that can merge counts ([`NOUNS_THAT_MERGE`]).
+fn noun_has_a_held_verb(name: &str, noun: &str) -> bool {
+    let held = merge::held_commands(name)
+        .into_iter()
+        .chain(
+            PUBLISH_SINCE
+                .iter()
+                .filter(|(cli, ..)| *cli == name)
+                .map(|(_, noun, verb)| vec![*noun, *verb]),
+        )
+        .any(|command| command.len() > 1 && command[0] == noun);
+    held && (!only_merges() || NOUNS_THAT_MERGE.contains(&noun))
 }
 
 /// Whether a `git push` flag is one the shell fills in, its name (`--$(echo tags)`, #7124) or

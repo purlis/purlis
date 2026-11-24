@@ -748,9 +748,33 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
     looped.captures(cmd).is_some_and(|c| {
         let call = c.get(2).map_or("", |m| m.as_str());
         let from_a_list = c.get(1).is_some();
-        (!from_a_list || !call.split_whitespace().any(|w| w.starts_with('-')))
-            && lone_api_call(call, name, from_a_list)
+        (!from_a_list || !has_a_flag_word(call)) && lone_api_call(call, name, from_a_list)
     })
+}
+
+/// Whether any word of `call`, as the lexer reads it, begins with `-`. A flag is a flag however
+/// it is written: `'-XPUT'`, `-X"PUT"` and `--method=PUT` all begin with a `-` once the quotes
+/// are gone, and any method flag makes an api call a write (round 10).
+fn has_a_flag_word(call: &str) -> bool {
+    shellseg::segment_argv(call)
+        .iter()
+        .flatten()
+        .any(|word| word.starts_with('-'))
+}
+
+/// Whether the call is a `gh api` or `glab api` whose only endpoint is the `$X` that a bare `{}`
+/// was written as, and which has no other word with it (`fd . repos -x gh api {}`): a read of
+/// the name the program fills in. A `{}` beside an endpoint (`gh api repos/o/r/pulls/5/merge {}`)
+/// is a word the program may fill in as a flag (round 10).
+pub(super) fn brace_is_the_endpoint(words: &[String]) -> bool {
+    let Some(at) = words.iter().position(|w| w == "api") else {
+        return false;
+    };
+    let glab = words
+        .first()
+        .is_some_and(|w| shellwrap::base_lower(w) == "glab");
+    let call = ApiCall::parse(&words[at + 1..], glab);
+    call.positionals == ["$X"] && words.iter().filter(|w| w.contains("$X")).count() == 1
 }
 
 /// A `for` list made of one `gh api` or `glab api` call's substitution, of plain words and
@@ -938,7 +962,7 @@ fn expands(spelled: &str) -> bool {
 /// `spelled` with each line continuation the shell deletes taken out: a backslash and a newline,
 /// outside single quotes, where they are two plain characters. `"\<newline>$M"` is `"$M"`, so
 /// its literal start is not the one it looks to have (#7423).
-fn without_line_continuations(spelled: &str) -> String {
+pub(super) fn without_line_continuations(spelled: &str) -> String {
     let mut out = String::with_capacity(spelled.len());
     let mut chars = spelled.chars();
     let (mut single, mut double) = (false, false);
@@ -992,7 +1016,7 @@ fn unquoted_glob_char(spelled: &str) -> Option<char> {
 /// the quotes inside it, so a `(` or a `"` in a quoted string is no bracket, and a nested `$(`,
 /// `${` or backtick is read to its own end. `None` where it cannot be sure: no close, a comment
 /// or a heredoc (which hide a `)`), `$'`, or a `case`, whose patterns end in a `)`.
-fn closes_at(chars: &[char], mut i: usize, close: char) -> Option<usize> {
+pub(super) fn closes_at(chars: &[char], mut i: usize, close: char) -> Option<usize> {
     let opener = if close == ')' { '(' } else { '{' };
     let mut depth = 0usize;
     while let Some(&c) = chars.get(i) {
@@ -1041,7 +1065,7 @@ fn closes_at(chars: &[char], mut i: usize, close: char) -> Option<usize> {
 /// `$name`, `${name}` or `$(…)` (read to its true close, [`closes_at`]). A backtick, `$@`, `$*`,
 /// a digit or special parameter, a `${…}` with an operator, flag or subscript, and a `$name[…]`
 /// (zsh's subscript) are not.
-fn plain_expansions_only(body: &[char]) -> bool {
+pub(super) fn plain_expansions_only(body: &[char]) -> bool {
     let is_name = |c: char| c.is_ascii_alphanumeric() || c == '_';
     let mut i = 0;
     while i < body.len() {

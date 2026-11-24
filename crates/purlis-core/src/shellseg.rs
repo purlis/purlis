@@ -1111,6 +1111,9 @@ pub struct Reading {
     /// blank between: the `2` of `2>f` is a descriptor, and the `2` of `2 >f` is a word. False
     /// for every word where the line did not lex.
     pub own_glued: Vec<bool>,
+    /// Whether a `|` or `|&` hands this segment its stdin: the segment before it writes what this
+    /// one reads, which may become words of a command it runs (`echo pr merge 5 | xe gh`).
+    pub own_piped: bool,
 }
 
 /// [`segment_argv`]'s segments, each with its [`Reading::own`] words as well, both readings
@@ -1178,6 +1181,7 @@ fn read_segments(cmd: &str) -> Vec<Reading> {
     walked
         .into_iter()
         .map(|w| Reading {
+            own_piped: matches!(w.joined.before.as_deref(), Some("|" | "|&")),
             outward: w.joined.argv,
             own_source: w.own.iter().map(source).collect(),
             own_bare: w.own.iter().map(|t| t.bare).collect(),

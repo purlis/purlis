@@ -177,3 +177,11 @@ See `docs/agents/skills/landing-a-pr/SKILL.md`; `tools/land.mjs` does the mechan
 ### The daily Report intake routine
 
 See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does the mechanics.
+
+### Notes for a sandboxed chat
+
+- Build purlis-core with `RUSTC_WRAPPER= cargo test -p purlis-core` where sccache is refused
+  (`Operation not permitted`). The whole crate's tests take over ten minutes: run one file with
+  `--test it <name>`.
+- The merge guard also reads this chat's own commands: write Rust with the Edit tool, not a
+  heredoc that holds a command substitution.
