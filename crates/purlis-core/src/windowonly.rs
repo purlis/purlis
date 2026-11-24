@@ -413,8 +413,9 @@ pub fn keep_push_blocked(root: &Path, session: u32, control: &Control) -> Result
 ///
 /// **Refused** (and nothing recorded) unless the ask is waiting for `session` in the project at
 /// `root`: the control is a key to an ask this process raised, so another project's ask, one that
-/// was answered, or one a chat made up grants nothing; unless the project has its stable id; and
-/// unless the forge answers a full commit id. The project in the record is `root`'s own. Like
+/// was answered, or one a chat made up grants nothing; unless the project has an id to hold it by
+/// ([`crate::scaffold::planefile::id_to_hold_by`]: its stored one, else one derived from its path);
+/// and unless the forge answers a full commit id. The project in the record is `root`'s own. Like
 /// every provisioning act it takes the person's scope ([`HostScope`]), which no chat's process
 /// tree can claim.
 pub fn let_chat_push(

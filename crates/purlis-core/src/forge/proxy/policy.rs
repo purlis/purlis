@@ -937,7 +937,7 @@ impl ChatPolicy {
     }
 
     /// A push's commands against the repo: every ref a branch, none the default, a protected one,
-    /// a deploy trigger or a pages branch; a ref deleted only if it is a branch this chat owns at its tip; a branch may be made if the proxy knows
+    /// a deploy trigger or a pages branch; no ref deleted; a branch may be made if the proxy knows
     /// from the repo's advertisement that it does not exist, and a branch may be moved only from
     /// the tip this chat last put on it (the record's last line, read at every update). Any other
     /// old id is refused: a branch someone else made or moved, or one made again after it was
@@ -984,22 +984,6 @@ impl ChatPolicy {
         Ok(created)
     }
 
-    /// The tip this chat last put on `branch`: the app's record where there is one, read now, else
-    /// this run's own.
-    fn own_tip_of(
-        &self,
-        repo: &AllowedRepo,
-        branch: &str,
-        key: &(String, String, String),
-        own: &HashMap<(String, String, String), String>,
-    ) -> Option<String> {
-        match (&self.tips, repo.project_id) {
-            (Some(tips), Some(repo_id)) => tips(&repo.host, repo_id, branch),
-            (Some(_), None) => None,
-            (None, _) => own.get(key).cloned(),
-        }
-    }
-
     /// One push command against the repo: the branch it makes (if it makes one), or why it is
     /// refused.
     fn check_command(
@@ -1016,21 +1000,10 @@ impl ChatPolicy {
         let Some(branch) = name.strip_prefix("refs/heads/") else {
             return Err(Refusal::ProtectedRef);
         };
-        if branch.is_empty() || repo.protects(branch) {
+        if branch.is_empty() || repo.protects(branch) || command.delete {
             return Err(Refusal::ProtectedRef);
         }
         let key = (repo.host.clone(), repo.path.clone(), branch.to_string());
-        if command.delete {
-            // **A chat deletes only a branch it owns, at the tip it last put there**: the same
-            // record, read now, that lets it move one. Any other delete (no record, another
-            // chat's, or a branch someone moved since) is refused as it always was. A delete
-            // makes no branch, so nothing is returned to record; the next advertisement ends the
-            // record of a branch the forge no longer lists.
-            return match self.own_tip_of(repo, branch, &key, own) {
-                Some(tip) if tip.eq_ignore_ascii_case(&command.old_id) => Ok(None),
-                _ => Err(Refusal::ProtectedRef),
-            };
-        }
         if command.create {
             let known = known.ok_or(Refusal::NoAdvertisement)?;
             // Exact, and case-folded too: a `Fix` beside a colleague's `fix` is not made.
@@ -1049,7 +1022,11 @@ impl ChatPolicy {
             // now: a branch deleted and made again, pushed to by anyone else (another chat
             // through the route included), or never advertised to this chat has another tip.
             // Nothing here depends on an advertisement having been read.
-            let tip = self.own_tip_of(repo, branch, &key, own);
+            let tip = match (&self.tips, repo.project_id) {
+                (Some(tips), Some(repo_id)) => tips(&repo.host, repo_id, branch),
+                (Some(_), None) => None,
+                (None, _) => own.get(&key).cloned(),
+            };
             match tip {
                 Some(tip) if tip.eq_ignore_ascii_case(&command.old_id) => Ok(Some(CreatedBranch {
                     host: repo.host.clone(),

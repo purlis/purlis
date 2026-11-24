@@ -471,7 +471,7 @@ fn consecutive_pushes_of_a_branch_the_chat_made_are_allowed_each_from_the_tip_be
 }
 
 #[test]
-fn a_chat_deletes_a_branch_it_made_at_the_tip_it_last_pushed_and_no_other() {
+fn a_chat_deletes_no_branch_not_even_one_it_made_at_the_tip_it_last_pushed() {
     purlis_core::unsteered!();
     let config = tempfile::tempdir().unwrap();
     let w = World::recording_to(config.path().to_owned());
@@ -479,18 +479,14 @@ fn a_chat_deletes_a_branch_it_made_at_the_tip_it_last_pushed_and_no_other() {
     push_through(&w, "mine", &zero, accepted("mine"));
     assert_eq!(push_moving(&w, "mine", &one, &two, accepted("mine")), 200);
 
-    // Someone moved it since the chat's last push (the tip it names is not the recorded one):
-    // refused, and never sent.
+    // From the tip it last pushed, even its own branch is not deleted; a stale or foreign tip is
+    // refused alike, and none of them is sent.
     let requests = w.fake.requests().len();
-    assert_eq!(
-        push_moving(&w, "mine", &"3".repeat(40), &zero, accepted("mine")),
-        403
-    );
-    // The tip the chat left before its last push is stale too.
-    assert_eq!(push_moving(&w, "mine", &one, &zero, accepted("mine")), 403);
-    assert_eq!(w.fake.requests().len(), requests, "never sent");
+    for old in [&two, &one, &"3".repeat(40)] {
+        assert_eq!(push_moving(&w, "mine", old, &zero, accepted("mine")), 403);
+    }
 
-    // A branch another chat made, or one with no record, is not the chat's to delete.
+    // A branch another chat made, or one with no record, is not the chat's to delete either.
     createdbranches::record(config.path(), PROJECT, OTHER, &[made("theirs")]).unwrap();
     for branch in ["theirs", "colleague"] {
         let old = "1".repeat(40);
@@ -501,9 +497,6 @@ fn a_chat_deletes_a_branch_it_made_at_the_tip_it_last_pushed_and_no_other() {
         );
     }
     assert_eq!(w.fake.requests().len(), requests, "never sent");
-
-    // From the tip it last pushed, its own branch goes.
-    assert_eq!(push_moving(&w, "mine", &two, &zero, accepted("mine")), 200);
 }
 
 #[test]
