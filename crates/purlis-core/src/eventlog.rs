@@ -51,6 +51,7 @@ pub mod questions;
 pub mod reasons;
 pub mod secretasks;
 pub mod stops;
+pub mod web_repeats;
 pub use entry::Entry;
 
 /// One event, in ADR 0066's envelope.
@@ -2219,7 +2220,9 @@ impl Recorder {
             body["args"] = self.key.digest(args).into();
         }
         if let Some(rule) = &call.rule {
-            body["rule"] = rule.as_str().into();
+            // A web deny's rule carries its host on the line (for its block's target); the log
+            // tallies the rule, so one bucket holds every host's (#7465).
+            body["rule"] = crate::toolhooks::stable_rule(rule).into();
         }
         if let Some(id) = &call.call {
             body["call"] = id.as_str().into();

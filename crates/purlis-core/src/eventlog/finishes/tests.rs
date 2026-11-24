@@ -6,7 +6,7 @@ use std::path::Path;
 use super::*;
 use crate::eventlog::Log;
 use crate::eventlog::stops::{
-    Answer, AnsweredBy, AskAnswered, AskGroup, Block, Qualifier, Source, Stop,
+    Answer, AnsweredBy, AskAnswered, AskGroup, Block, Qualifier, Source, Stop, Target,
 };
 
 const DEVICE: &str = "01J9ZZDEVICE0000000000000";
@@ -17,6 +17,8 @@ const CHILD: &str = "01K6RUN0000000000000000009";
 
 /// A force push's arguments, as the log keys them.
 const PUSH: &str = "digest-of-git-push-force";
+/// A `WebFetch`'s.
+const WEB: &str = "digest-of-web-fetch";
 /// Another call's.
 const LIST: &str = "digest-of-ls";
 
@@ -61,6 +63,29 @@ impl<'a> Turns<'a> {
             source,
             qualifier,
             target: None,
+            args: Some(args.to_owned()),
+        }))
+        .unwrap();
+        self.write(None, crate::eventlog::stops::BLOCK, body)
+    }
+
+    /// The web judge's deny of a `WebFetch` of `host`, a guard's block aimed at the host.
+    fn web_deny(&mut self, host: &str) -> &mut Self {
+        self.host_block("WebFetch", Source::Guard, WEB, host)
+    }
+
+    /// A plain sandbox block of `host` written the way `became_a_block` writes a held refusal's:
+    /// the tool and arguments of the chat's latest call, whatever it was.
+    fn plain_block(&mut self, tool: &str, args: &str, host: &str) -> &mut Self {
+        self.host_block(tool, Source::Sandbox, args, host)
+    }
+
+    fn host_block(&mut self, tool: &str, source: Source, args: &str, host: &str) -> &mut Self {
+        let body = serde_json::to_value(Stop::Block(Block {
+            tool: tool.to_owned(),
+            source,
+            qualifier: None,
+            target: Some(Target::host(host).unwrap()),
             args: Some(args.to_owned()),
         }))
         .unwrap();
@@ -395,5 +420,77 @@ fn one_function_decides_what_an_allow_resolves_for_the_loop_and_the_finish_row()
                 "{ask:?} {source:?}"
             );
         }
+    }
+}
+
+/// **A held deny is resolved by its own call** (#7465): its plain block is written late by
+/// `became_a_block`, with the tool and arguments of the chat's latest call, a `Bash` command that
+/// ran after the fetch, say. That command coming back says nothing of the refused fetch.
+#[test]
+fn a_held_denys_refusal_is_not_resolved_by_the_late_blocks_own_call() {
+    // The deny first; the command comes back, the turn ends, the block is written after.
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .web_deny("held.example.com")
+        .came_back(LIST, false)
+        .stop()
+        .plain_block("Bash", LIST, "held.example.com");
+    assert_eq!(counted(dir.path(), CHAT), [1]);
+
+    // The block first, stamped with the command before the fetch; the command is rerun later.
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .plain_block("Bash", LIST, "held.example.com")
+        .web_deny("held.example.com")
+        .came_back(LIST, false)
+        .stop();
+    assert_eq!(counted(dir.path(), CHAT), [1]);
+
+    // Control: the fetch's own success resolves it, and a block of no pair keeps its own aim.
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .web_deny("held.example.com")
+        .plain_block("Bash", LIST, "held.example.com")
+        .write(
+            None,
+            "hook.posttooluse-blocked",
+            serde_json::json!({ "tool": "WebFetch", "args": WEB }),
+        )
+        .stop();
+    assert_eq!(counted(dir.path(), CHAT), [0]);
+    let dir = tempfile::tempdir().unwrap();
+    Turns::in_dir(dir.path(), CHAT)
+        .prompt()
+        .plain_block("Bash", LIST, "alone.example.com")
+        .came_back(LIST, false)
+        .stop();
+    assert_eq!(counted(dir.path(), CHAT), [0]);
+}
+
+/// A sandbox ask's Allow resolves a sandbox block and no other: the deny is a guard's, and the
+/// plain block it is held by lends its qualifier and source to the row, not its aim.
+#[test]
+fn a_sandbox_allow_after_a_held_deny_does_not_resolve_it_and_the_row_names_the_plain_block() {
+    for deny_first in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut turns = Turns::in_dir(dir.path(), CHAT);
+        turns.prompt();
+        if deny_first {
+            turns
+                .web_deny("allowed.example.com")
+                .plain_block("Bash", LIST, "allowed.example.com");
+        } else {
+            turns
+                .plain_block("Bash", LIST, "allowed.example.com")
+                .web_deny("allowed.example.com");
+        }
+        turns.answered(Answer::Allowed).stop();
+        let finished = finishes_in(dir.path(), CHAT).unwrap();
+        assert_eq!(finished[0].blocked, 1, "deny first: {deny_first}");
+        assert_eq!(finished[0].unresolved[0].source, Source::Sandbox);
+        assert_eq!(finished[0].unresolved[0].qualifier, None);
     }
 }

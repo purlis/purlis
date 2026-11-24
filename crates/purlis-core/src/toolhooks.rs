@@ -380,8 +380,42 @@ pub fn pretooluse_read(hook: &Hook) -> Answer {
 pub enum Tunnel {
     /// `200`: the proxy carries the host, as it would a command's connection to it.
     Open,
-    /// Any other status, or nothing: refused, with the proxy's word for it.
+    /// Any other status: the proxy answered and refused, with its word for it. It records the
+    /// refusal itself, as a sandbox block.
     Refused(String),
+    /// No answer at all (the hook could not connect, write or read within its wait): refused,
+    /// fail closed. The proxy heard nothing, so it recorded nothing, and the hook's deny is the
+    /// refusal's only record.
+    Unreached(String),
+}
+
+/// **The rule of a `WebFetch` deny the chat's proxy answered** (#7465): the proxy said no. The
+/// rule names the host (`<this>: <host>`, [`web_deny_host`]), so the block the host writes for
+/// the deny is aimed at the host, and a reader can pair it with the proxy's own sandbox block
+/// for the same host: the pair is one refusal, counted once
+/// ([`crate::eventlog::web_repeats`]).
+pub const WEB_PROXY_REFUSED: &str = "the chat's proxy refused the host of a WebFetch";
+
+/// **The rule of a `WebFetch` deny the chat's proxy never answered** (the hook could not connect
+/// or read in its wait), named as [`WEB_PROXY_REFUSED`] is. The proxy may still write a block
+/// for the host later (a held ask that ends), and a reader then counts the pair once.
+pub const WEB_PROXY_UNREACHED: &str = "the chat's proxy did not answer a WebFetch's host";
+
+/// The host a `WebFetch` deny's `rule` names, where it is one of the two above.
+pub fn web_deny_host(rule: &str) -> Option<&str> {
+    [WEB_PROXY_REFUSED, WEB_PROXY_UNREACHED]
+        .into_iter()
+        .find_map(|said| rule.strip_prefix(said)?.strip_prefix(": "))
+}
+
+/// **A deny's rule as the log tallies it**: the web judge's two rules without the host they name
+/// on the hook line ([`web_deny_host`]), any other rule as it is. The host goes only in the
+/// deny's block's target, so a model's choice of hostnames adds no buckets to the rule tallies.
+pub fn stable_rule(rule: &str) -> &str {
+    [WEB_PROXY_REFUSED, WEB_PROXY_UNREACHED]
+        .into_iter()
+        .find(|said| web_deny_host(rule).is_some() && rule.starts_with(*said))
+        .unwrap_or(rule)
 }
 
 /// How long the web tools' judge waits on the proxy, which holds a connection to a host nothing
@@ -438,10 +472,21 @@ pub fn pretooluse_web(hook: &Hook, tunnel: &dyn Fn(&str, &str, u16) -> Tunnel) -
     }
     match tunnel(&proxy, &host, port) {
         Tunnel::Open => Answer::Nothing,
-        Tunnel::Refused(said) => deny(format!(
-            "WebFetch of {host} was refused: this chat may not reach it ({said}). The person \
-             can allow the host if it is needed."
-        )),
+        Tunnel::Refused(said) => Answer::Deny(Verdict {
+            reason: format!("{WEB_PROXY_REFUSED}: {host}"),
+            ..refused(format!(
+                "WebFetch of {host} was refused: this chat may not reach it ({said}). The \
+                 person can allow the host if it is needed."
+            ))
+        }),
+        // No proxy heard it: this deny is its record until a block of the proxy's pairs with it.
+        Tunnel::Unreached(said) => Answer::Deny(Verdict {
+            reason: format!("{WEB_PROXY_UNREACHED}: {host}"),
+            ..refused(format!(
+                "WebFetch of {host} was refused: this chat may not reach it ({said}). The \
+                 person can allow the host if it is needed."
+            ))
+        }),
     }
 }
 
@@ -468,7 +513,7 @@ fn web_target(url: &str) -> Option<(String, u16)> {
 /// Any failure to connect, write or read an answer within `wait` is a refusal, never a pass.
 pub fn ask_proxy(proxy: &str, host: &str, port: u16, wait: std::time::Duration) -> Tunnel {
     use std::io::{BufRead, Read, Write};
-    let refused = |why: &str| Tunnel::Refused(why.to_owned());
+    let refused = |why: &str| Tunnel::Unreached(why.to_owned());
     let Some(address) = proxy
         .strip_prefix("http://")
         .map(|a| a.trim_end_matches('/'))
@@ -511,7 +556,12 @@ pub fn ask_proxy(proxy: &str, host: &str, port: u16, wait: std::time::Duration) 
     let mut words = status.split_whitespace();
     match (words.next(), words.next()) {
         (Some(version), Some("200")) if version.starts_with("HTTP/1.") => Tunnel::Open,
-        _ => Tunnel::Refused(status.trim().to_owned()),
+        // A status line the proxy wrote: it answered and recorded its own refusal.
+        (Some(version), Some(_)) if version.starts_with("HTTP/1.") => {
+            Tunnel::Refused(status.trim().to_owned())
+        }
+        // The connection closed or said something that is no status line: nothing was recorded.
+        _ => Tunnel::Unreached("the proxy did not answer with a status".to_owned()),
     }
 }
 

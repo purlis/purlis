@@ -27,6 +27,7 @@ use super::{Event, Recorder};
 
 /// A block: a refusal that does not stop the chat on its own.
 pub const BLOCK: &str = "stop.block";
+
 /// A hold: an action purlis refuses to the chat and raises as an ask.
 pub const HOLD: &str = "stop.hold";
 /// A loop pause: the chat paused for going round and round.
@@ -154,6 +155,12 @@ checked!(Folder, "folder", is_folder);
 checked!(Token, "service or guard arm", is_token);
 
 fn is_host(value: &str) -> bool {
+    // A host clipped as it was written ([`Target::shortened`]) is read back whole as the clip
+    // left it: its first characters, a port perhaps cut off, and the mark.
+    let clipped = value
+        .strip_suffix("...")
+        .filter(|_| value.len() == TARGET_CHARS + 3);
+    let value = clipped.map_or(value, |kept| kept.strip_suffix(':').unwrap_or(kept));
     let (name, port) = if let Some(rest) = value.strip_prefix('[') {
         let Some((address, after)) = rest.split_once(']') else {
             return false;
@@ -185,7 +192,7 @@ fn is_host(value: &str) -> bool {
             && name.len() <= 253
             && name
                 .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
     });
     let port_ok = port.is_none_or(|port| {
         !port.is_empty()
@@ -515,13 +522,34 @@ fn guard_block(call: &crate::hookwire::ToolCall, verified: bool) -> Option<Block
         tool: line_tool(call),
         source: Source::Guard,
         qualifier: (!verified).then_some(Qualifier::Unverified),
-        target: call
-            .arm
-            .as_deref()
-            .and_then(crate::toolgate::Arm::of_id)
-            .and_then(|arm| Target::guard_arm(arm.id()).ok()),
+        target: web_deny_host(call).map_or_else(
+            || {
+                call.arm
+                    .as_deref()
+                    .and_then(crate::toolgate::Arm::of_id)
+                    .and_then(|arm| Target::guard_arm(arm.id()).ok())
+            },
+            Some,
+        ),
         args: call.args.clone(),
     })
+}
+
+/// **The host a `WebFetch` deny of the web judge hook names** (#7465), as a guard block's target:
+/// only the `pretooluse-web` hook's own deny of a `WebFetch` ([`crate::toolhooks::web_deny_host`]).
+/// A guard block aimed at a host is this and nothing else, which is how
+/// [`super::web_repeats`] tells it from the proxy's own sandbox block for the same host. None
+/// where the rule names no host the log admits, so such a deny stays a plain, counted block.
+fn web_deny_host(call: &crate::hookwire::ToolCall) -> Option<Target> {
+    if call.tool_hook != crate::hookreg::WEB_JUDGE || call.tool.as_deref() != Some("WebFetch") {
+        return None;
+    }
+    let host = crate::toolhooks::web_deny_host(call.rule.as_deref()?)?;
+    // An IPv6 address is a host in brackets, as the sandbox names one.
+    if host.contains(':') {
+        return Target::host(&format!("[{host}]")).ok();
+    }
+    Target::host(host).ok()
 }
 
 /// **The block the harness's own check is** (R-094, R-325): for the line of the hook that hears
@@ -580,3 +608,7 @@ mod harness_check_tests;
 #[cfg(test)]
 #[path = "stops/guard_tests.rs"]
 mod guard_tests;
+
+#[cfg(test)]
+#[path = "stops/web_judge_tests.rs"]
+mod web_judge_tests;
