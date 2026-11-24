@@ -204,6 +204,11 @@ pub enum PushVerdict {
 /// [`PushVerdict::Forward`]: a push that changes CI files is never sent on by this door.
 pub trait PushGate: Send + Sync {
     fn check(&self, chat: &ChatId, push: &PushRead) -> PushVerdict;
+
+    /// A chat has opened on the repos this gate reads for: start reading them ahead of a push, so
+    /// the first push does not meet an empty object cache (#7532). Answers at once; the default
+    /// does nothing.
+    fn warm(&self) {}
 }
 
 /// Everything one chat's listener needs, as plain values.

@@ -35,6 +35,19 @@
 //! fetches of that push together; a top-up that does not finish in time is refused with that
 //! reason and finished on the same thread, so the next push finds it done.
 //!
+//! **Progress.** A fill's `git fetch --progress` is read as it runs ([`Progress`],
+//! [`ObjectCache::sink`]); the refusal a push gets names the objects and bytes received so far and
+//! an estimate of what is left, and the figure is logged at info level every [`LOG_EVERY`].
+//!
+//! **A fill does not block a push it need not block** ([`ObjectCache::update_having`]): where the
+//! objects a push is read against ([`ObjectCache::holds`]) are in the cache already and
+//! reachable from a ref a finished fetch wrote, the push goes on while the fill continues. A push
+//! whose base is not there is refused, with the progress. **Fail closed:** a push is let on only for
+//! commits git finds reachable from those refs, and every other answer is a refusal.
+//!
+//! **Early start.** [`ObjectCache::start_fill`] starts a fill before any push, when a chat opens
+//! on the repo, within the same bounds ([`FILL`], [`MOST`]).
+//!
 //! **Concurrency.** One lock per cache in the app (the app is one per user); git's own locks
 //! guard the rest. A push that arrives while a fill runs is refused at once, never left to time
 //! out; a push that arrives during a top-up waits for it, within its own bound.
@@ -89,6 +102,123 @@ const GC: Duration = Duration::from_secs(300);
 /// How often a push waiting for a top-up looks again.
 const LOOK_AGAIN: Duration = Duration::from_millis(50);
 
+/// How often a running fill's progress is logged.
+pub const LOG_EVERY: Duration = Duration::from_secs(30);
+
+/// **How far a fill has got**, from `git fetch --progress`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Progress {
+    /// Objects received so far, and in all.
+    pub received: u64,
+    pub total: u64,
+    /// Bytes received so far.
+    pub bytes: u64,
+    /// Once every object is received git resolves deltas: how many of how many.
+    pub resolving: Option<(u64, u64)>,
+}
+
+/// Reads `git fetch --progress`'s stderr as it comes in chunks: its lines end in `\r` (a status
+/// line rewritten in place) or `\n`, and a chunk may end in the middle of one.
+#[derive(Default)]
+pub struct ProgressReader {
+    carry: String,
+    last: Progress,
+}
+
+impl ProgressReader {
+    /// Takes in `chunk`; the progress after its last whole line, where it moved.
+    pub fn feed(&mut self, chunk: &str) -> Option<Progress> {
+        self.carry.push_str(chunk);
+        let mut moved = false;
+        while let Some(end) = self.carry.find(['\r', '\n']) {
+            let line: String = self.carry.drain(..=end).collect();
+            if let Some(seen) = parse_progress_line(&line) {
+                self.last = match seen {
+                    Seen::Receiving {
+                        received,
+                        total,
+                        bytes,
+                    } => Progress {
+                        received,
+                        total,
+                        bytes,
+                        resolving: None,
+                    },
+                    Seen::Resolving(done, of) => Progress {
+                        resolving: Some((done, of)),
+                        ..self.last
+                    },
+                };
+                moved = true;
+            }
+        }
+        moved.then_some(self.last)
+    }
+}
+
+enum Seen {
+    Receiving {
+        received: u64,
+        total: u64,
+        bytes: u64,
+    },
+    Resolving(u64, u64),
+}
+
+/// One line of git's progress: `Receiving objects:  45% (4500/10000), 12.00 MiB | 3.00 MiB/s` (the
+/// byte figure is absent on the first lines, and the last ends `, done.`) or
+/// `Resolving deltas:  10% (10/100)`. Anything else is `None`.
+fn parse_progress_line(line: &str) -> Option<Seen> {
+    // A pack of fewer than `transfer.unpackLimit` objects is unpacked, not indexed.
+    let counted = line
+        .split_once("Receiving objects:")
+        .or_else(|| line.split_once("Unpacking objects:"));
+    let (receiving, rest) = if let Some((_, rest)) = counted {
+        (true, rest)
+    } else {
+        (false, line.split_once("Resolving deltas:")?.1)
+    };
+    let open = rest.find('(')?;
+    let close = open + rest[open..].find(')')?;
+    let (done, of) = rest[open + 1..close].split_once('/')?;
+    let (done, of): (u64, u64) = (done.trim().parse().ok()?, of.trim().parse().ok()?);
+    if !receiving {
+        return Some(Seen::Resolving(done, of));
+    }
+    let after = rest[close + 1..].trim_start_matches([',', ' ']);
+    let size = after.split(['|', ',']).next().unwrap_or_default();
+    Some(Seen::Receiving {
+        received: done,
+        total: of,
+        bytes: parse_size(size).unwrap_or(0),
+    })
+}
+
+/// `12.00 MiB`, `340 bytes`, `1.50 GiB` as bytes.
+fn parse_size(text: &str) -> Option<u64> {
+    let mut parts = text.split_whitespace();
+    let number: f64 = parts.next()?.parse().ok()?;
+    let unit: f64 = match parts.next()? {
+        "bytes" | "byte" | "B" => 1.0,
+        "KiB" => 1024.0,
+        "MiB" => 1024.0 * 1024.0,
+        "GiB" => 1024.0 * 1024.0 * 1024.0,
+        "TiB" => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return None,
+    };
+    Some((number * unit) as u64)
+}
+
+/// A time as a person says it: "a minute", "12 minutes", "2 hours".
+fn about(left: Duration) -> String {
+    let minutes = left.as_secs().div_ceil(60).max(1);
+    match minutes {
+        1 => "a minute".to_owned(),
+        2..=89 => format!("{minutes} minutes"),
+        _ => format!("{} hours", minutes.div_ceil(60)),
+    }
+}
+
 /// What fetches into a cache: the repository it is given, and how long it may take. It is owned,
 /// so that a fill can go on after the push that began it has been answered.
 pub type Fetch = Arc<dyn Fn(&Path, Duration) -> Result<(), String> + Send + Sync>;
@@ -110,6 +240,8 @@ pub struct ObjectCache {
     /// is refused, not made again.
     rebuilt_for_history: AtomicBool,
     failure: Mutex<Option<String>>,
+    /// How far the running fill has got, and when it began.
+    progress: Mutex<Option<(Progress, Instant)>>,
 }
 
 /// Resets [`ObjectCache::filling`] when the cache's thread ends, however it ends: a panic or an
@@ -162,6 +294,11 @@ impl PushCache {
     pub fn update(&self, fetch: Fetch) -> Result<(), String> {
         self.cache.update(self.deadline, fetch)
     }
+
+    /// [`ObjectCache::update_having`] within what is left of this push's time.
+    pub fn update_having(&self, fetch: Fetch, have: &[String]) -> Result<(), String> {
+        self.cache.update_having(self.deadline, fetch, have)
+    }
 }
 
 impl ObjectCache {
@@ -198,6 +335,7 @@ impl ObjectCache {
                     tried: AtomicBool::new(false),
                     rebuilt_for_history: AtomicBool::new(false),
                     failure: Mutex::new(None),
+                    progress: Mutex::new(None),
                 })
             })
             .clone()
@@ -237,7 +375,7 @@ impl ObjectCache {
         self.filling.load(Ordering::Acquire)
     }
 
-    /// What a push is told while the cache is being filled.
+    /// What a push is told while the cache is being filled: how far it has got where git has said.
     fn reading(&self) -> String {
         let when = if self.tried.load(Ordering::Acquire) {
             "again"
@@ -251,10 +389,123 @@ impl ObjectCache {
             .clone()
             .map(|why| format!(" (the last read failed: {why})"))
             .unwrap_or_default();
-        format!(
-            "purlis is still reading {} from the forge {when}{last}; try the push again in a few minutes",
-            self.label
-        )
+        let progress = *self.progress.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some((seen, began)) = progress.filter(|(seen, _)| seen.total > 0) else {
+            return format!(
+                "purlis is still reading {} from the forge {when}{last}; try the push again in a few minutes",
+                self.label
+            );
+        };
+        let megabytes = seen.bytes as f64 / 1_000_000.0;
+        let wait = match seen.resolving {
+            Some((done, of)) => format!(
+                "all {} objects are in and git is resolving deltas ({done} of {of}); try again in a minute or two",
+                seen.total
+            ),
+            None if seen.received == 0 => {
+                format!("{} objects to read; try again in a few minutes", seen.total)
+            }
+            None => {
+                let rest = began.elapsed().as_secs_f64()
+                    * (seen.total - seen.received.min(seen.total)) as f64
+                    / seen.received as f64;
+                format!(
+                    "{} of {} objects ({megabytes:.0} MB); try again in about {}",
+                    seen.received,
+                    seen.total,
+                    about(Duration::from_secs_f64(rest))
+                )
+            }
+        };
+        format!("purlis is reading {} {when}{last}: {wait}", self.label)
+    }
+
+    /// What reads a fetch's `--progress` lines into this cache's state and, every [`LOG_EVERY`],
+    /// into the log. Given to the fill's `git fetch` ([`git::run_network_watching`]).
+    pub fn sink(self: &Arc<Self>) -> git::Watch {
+        let cache = self.clone();
+        let reader = Mutex::new(ProgressReader::default());
+        let logged = Mutex::new(Instant::now());
+        Arc::new(move |chunk: &str| {
+            let moved = reader
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .feed(chunk);
+            let Some(seen) = moved else { return };
+            let mut state = cache
+                .progress
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            let began = state.map_or_else(Instant::now, |(_, began)| began);
+            *state = Some((seen, began));
+            drop(state);
+            let mut logged = logged.lock().unwrap_or_else(PoisonError::into_inner);
+            if logged.elapsed() >= LOG_EVERY {
+                *logged = Instant::now();
+                tracing::info!(
+                    repo = %cache.label,
+                    received = seen.received,
+                    total = seen.total,
+                    bytes = seen.bytes,
+                    "reading a forge repo into the object cache"
+                );
+            }
+        })
+    }
+
+    /// The figure the running fill is at, where git has said one.
+    pub fn progress(&self) -> Option<Progress> {
+        self.progress
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .map(|(seen, _)| seen)
+    }
+
+    /// **Whether every commit of `ids` is in the cache and reachable from a ref a finished fetch
+    /// wrote** (`refs/quarantine/*`): git writes a ref only after the fetch's connectivity check,
+    /// so a commit under one has its whole history here, whatever a fill still running adds. Not
+    /// an id, nothing to ask, or a git that could not be asked is `false`: it fails closed.
+    pub fn holds(&self, ids: &[String]) -> bool {
+        if ids.is_empty() || !self.path.join(".git").is_dir() {
+            return false;
+        }
+        ids.iter().all(|id| {
+            if id.len() < 40 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+                return false;
+            }
+            let here = git::run(
+                &self.path,
+                &["cat-file", "-e", &format!("{id}^{{commit}}")],
+                git::READ,
+            )
+            .is_ok_and(|run| run.ok());
+            here && git::run(
+                &self.path,
+                &["rev-list", "-n1", id, "--not", "--glob=refs/quarantine/*"],
+                git::READ,
+            )
+            .is_ok_and(|run| run.ok() && run.out.trim().is_empty())
+        })
+    }
+
+    /// Starts a fill now, on the cache's own thread, unless the cache is filled or being filled:
+    /// for a chat that opens on the repo, before any push. Bounded as every fill is ([`FILL`], and
+    /// [`MOST`] by the cache's care). A thread that cannot start leaves the first push to start it.
+    pub fn start_fill(self: &Arc<Self>, fetch: Fetch) {
+        if self.is_filling() || self.is_filled() {
+            return;
+        }
+        let _ = self.fill_in_background(fetch);
+    }
+
+    /// A refusal for a push whose `have` the cache does not hold: `Ok` where it does, because a
+    /// fill running in the background is no reason to refuse a push that needs none of it.
+    fn refuse_unless_held(&self, have: &[String]) -> Result<(), String> {
+        if self.holds(have) {
+            Ok(())
+        } else {
+            Err(self.reading())
+        }
     }
 
     /// **Runs `fetch` into the cache and tidies it after**, for a push whose time ends at
@@ -266,30 +517,44 @@ impl ObjectCache {
     /// - A filled cache is topped up here, within what is left of the push's time. A top-up that
     ///   runs out of it is refused with that reason and finished on the cache's thread.
     pub fn update(self: &Arc<Self>, deadline: Instant, fetch: Fetch) -> Result<(), String> {
+        self.update_having(deadline, fetch, &[])
+    }
+
+    /// [`Self::update`] for a push that is read against the commits `have` (full ids): **where the
+    /// cache holds them all** ([`Self::holds`]) a fill that is running, or one that is only just
+    /// started, or a top-up that outran the push's time, is no refusal, and the push goes on
+    /// while the cache goes on filling. With none, or where one is not held, it is [`Self::update`].
+    pub fn update_having(
+        self: &Arc<Self>,
+        deadline: Instant,
+        fetch: Fetch,
+        have: &[String],
+    ) -> Result<(), String> {
         if self.is_filling() {
-            return Err(self.reading());
+            return self.refuse_unless_held(have);
         }
         let held = self.lock_until(deadline)?;
         // The lock may have been waited for while a fill was started.
         if self.is_filling() {
-            return Err(self.reading());
+            return self.refuse_unless_held(have);
         }
         // The quarantine being opened holds one lease already.
         self.make_ready(1)?;
         if !self.is_filled() {
             self.fill_in_background(fetch)?;
-            return Err(self.reading());
+            return self.refuse_unless_held(have);
         }
         let left = deadline.saturating_duration_since(Instant::now());
         if left.is_zero() {
-            return Err(self.timed_out(fetch));
+            let refusal = self.timed_out(fetch);
+            return self.holds(have).then_some(()).ok_or(refusal);
         }
         if let Err(why) = fetch(&self.path, left) {
-            return Err(if Instant::now() >= deadline {
-                self.timed_out(fetch)
-            } else {
-                self.scrub(why)
-            });
+            if Instant::now() >= deadline {
+                let refusal = self.timed_out(fetch);
+                return self.holds(have).then_some(()).ok_or(refusal);
+            }
+            return Err(self.scrub(why));
         }
         drop(held);
         self.tidy_later();
@@ -372,6 +637,10 @@ impl ObjectCache {
                     // No lease of this thread's own: one held is another push's quarantine.
                     cache.make_ready(0).and_then(|()| {
                         let first = !cache.is_filled();
+                        *cache
+                            .progress
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner) = None;
                         fetch(&cache.path, FILL).map_err(|why| cache.scrub(why))?;
                         if first {
                             cache.mark_filled()?;

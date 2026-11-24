@@ -220,18 +220,75 @@ fn fetch_into_refs(
     otherwise: &str,
     bound: Duration,
 ) -> Result<(), String> {
-    let specs: Vec<String> = tips
-        .iter()
+    fetch_specs(
+        url,
+        helper,
+        into,
+        &ref_specs(tips, ref_dir),
+        otherwise,
+        bound,
+        None,
+    )
+}
+
+fn ref_specs(tips: &[HeadSha], ref_dir: &str) -> Vec<String> {
+    tips.iter()
         .map(|tip| format!("+{0}:refs/quarantine/{ref_dir}/{0}", tip.as_str()))
-        .collect();
-    let mut args = vec!["fetch", "--quiet", "--no-tags", "--", url];
+        .collect()
+}
+
+/// One `git fetch` of `specs`. With `watch`, git is asked for its progress lines, which `watch`
+/// reads as they are written (a fill's: [`ObjectCache::sink`]); they are not an error's words, so
+/// a failure is told by git's `fatal:` or `error:` line.
+fn fetch_specs(
+    url: &str,
+    helper: Option<&str>,
+    into: &Path,
+    specs: &[String],
+    otherwise: &str,
+    bound: Duration,
+    watch: Option<git::Watch>,
+) -> Result<(), String> {
+    let mut args = vec![
+        "fetch",
+        if watch.is_some() {
+            "--progress"
+        } else {
+            "--quiet"
+        },
+        "--no-tags",
+        "--",
+        url,
+    ];
     args.extend(specs.iter().map(String::as_str));
-    let run = git::run_network_within(into, helper, &args, bound).map_err(|why| why.to_string())?;
+    let watched = watch.is_some();
+    let run = match watch {
+        Some(watch) => git::run_network_watching(into, helper, &args, bound, watch),
+        None => git::run_network_within(into, helper, &args, bound),
+    }
+    .map_err(|why| why.to_string())?;
     if run.ok() {
         Ok(())
     } else {
-        Err(first_line(&run.err, otherwise))
+        Err(if watched {
+            failure_line(&run.err, otherwise)
+        } else {
+            first_line(&run.err, otherwise)
+        })
     }
+}
+
+/// Why a fetch failed: its first `fatal:` or `error:` line, else its first line (the stopped-for-time
+/// sentence leads), else `otherwise`. Progress lines come first in a watched fetch's stderr.
+fn failure_line(said: &str, otherwise: &str) -> String {
+    said.split(['\r', '\n'])
+        .map(str::trim)
+        .find(|line| {
+            line.starts_with("fatal:")
+                || line.starts_with("error:")
+                || line.starts_with("git took longer")
+        })
+        .map_or_else(|| first_line(said, otherwise), str::to_owned)
 }
 
 /// The bytes under a repository's object store (links are not followed).
@@ -257,18 +314,20 @@ impl BaseObjects for FromForge {
             );
         };
         let (url, helper, tip) = (self.url.clone(), self.helper.clone(), base.clone());
+        let sink = cache.cache().sink();
         let fetch: Fetch = Arc::new(move |dir, bound| {
-            fetch_into_refs(
+            fetch_specs(
                 &url,
                 helper.as_deref(),
                 dir,
-                std::slice::from_ref(&tip),
-                "base",
+                &ref_specs(std::slice::from_ref(&tip), "base"),
                 OTHERWISE,
                 bound,
+                Some(sink.clone()),
             )
         });
-        cache.update(fetch)?;
+        // A base the cache holds already is read through it while a fill goes on.
+        cache.update_having(fetch, &[base.as_str().to_owned()])?;
         cache.cache().keep_base(base.as_str());
         Ok(())
     }
@@ -309,7 +368,9 @@ impl BaseObjects for FromForge {
             };
             alone.fetch_all_bounded(dir, &wanted, &limits, bound)
         });
-        cache.update(fetch)?;
+        // Tips the cache holds already are read through it while a fill goes on.
+        let ids: Vec<String> = tips.iter().map(|tip| tip.as_str().to_owned()).collect();
+        cache.update_having(fetch, &ids)?;
         let ids: Vec<String> = tips.iter().map(|tip| tip.as_str().to_owned()).collect();
         cache.cache().keep_tips(&ids);
         Ok(())
@@ -317,6 +378,33 @@ impl BaseObjects for FromForge {
 
     fn cache(&self) -> Option<Arc<ObjectCache>> {
         self.cache.as_ref().map(|cache| cache.cache().clone())
+    }
+}
+
+impl FromForge {
+    /// **Starts the object cache's first fill now** (#7532), as a chat opens on the repo, so that a
+    /// push does not meet an empty cache: the default branch with its history, on the cache's own
+    /// thread and within [`super::FILL`]. Nothing where there is no cache or it is filled or
+    /// filling already. It answers at once.
+    pub fn warm(&self) {
+        let Some(cache) = &self.cache else { return };
+        if self.url.contains('@') {
+            return;
+        }
+        let (url, helper) = (self.url.clone(), self.helper.clone());
+        let sink = cache.cache().sink();
+        let fetch: Fetch = Arc::new(move |dir, bound| {
+            fetch_specs(
+                &url,
+                helper.as_deref(),
+                dir,
+                &["+HEAD:refs/quarantine/default".to_owned()],
+                "git could not read the forge's default branch",
+                bound,
+                Some(sink.clone()),
+            )
+        });
+        cache.cache().start_fill(fetch);
     }
 }
 

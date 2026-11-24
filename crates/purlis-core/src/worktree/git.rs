@@ -2762,7 +2762,24 @@ pub fn run_network_within(
     args: &[&str],
     timeout: Duration,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, Vec::new(), false, timeout)
+    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, None)
+}
+
+/// What reads git's stderr as it is written: each chunk, as text. For the one fetch whose
+/// `--progress` lines say how far a first fill has got ([`run_network_watching`]).
+pub type Watch = std::sync::Arc<dyn Fn(&str) + Send + Sync>;
+
+/// [`run_network_within`], with `watch` given git's stderr as it is written, so a long fetch's
+/// `--progress` lines are seen while it runs and not after. Every other rule of [`run_network`]
+/// holds, and the whole of stderr is still in the answer.
+pub fn run_network_watching(
+    dir: &Path,
+    helper: Option<&str>,
+    args: &[&str],
+    timeout: Duration,
+    watch: Watch,
+) -> Result<Run, GitUnavailable> {
+    run_network_shaped(dir, helper, args, Vec::new(), false, timeout, Some(watch))
 }
 
 /// [`run_network`] in **no repository at all**, for a call that names its remote by address and
@@ -2799,6 +2816,7 @@ pub fn run_network_in_no_repository_trusting_the_system(
         vec![("GIT_DIR".to_owned(), "/dev/null".into())],
         true,
         NETWORK,
+        None,
     )
 }
 
@@ -2809,7 +2827,7 @@ fn run_network_with(
     args: &[&str],
     more: Vec<(String, std::ffi::OsString)>,
 ) -> Result<Run, GitUnavailable> {
-    run_network_shaped(dir, helper, args, more, false, NETWORK)
+    run_network_shaped(dir, helper, args, more, false, NETWORK, None)
 }
 
 /// [`run_network_with`], trusting only the system where `system_trust` says so ([`is_trust`]).
@@ -2820,6 +2838,7 @@ fn run_network_shaped(
     more: Vec<(String, std::ffi::OsString)>,
     system_trust: bool,
     timeout: Duration,
+    watch: Option<Watch>,
 ) -> Result<Run, GitUnavailable> {
     let mut config: Vec<String> = NETWORK_RULE.iter().map(|s| (*s).to_string()).collect();
     // Under a chat's route there is no helper but the sentinel one it names, and none of the
@@ -2850,7 +2869,13 @@ fn run_network_shaped(
     };
     let started = Instant::now();
     let run = counted(dir, args, || {
-        Ok::<_, GitUnavailable>(wait(spawn_with(dir, args, &extra)?, timeout)?)
+        let child = spawn_with(dir, args, &extra)?;
+        let raw = wait_raw_watched(child, timeout, None, watch)?;
+        Ok::<_, GitUnavailable>(Run {
+            code: raw.code,
+            out: String::from_utf8_lossy(&raw.out).into_owned(),
+            err: String::from_utf8_lossy(&raw.err).into_owned(),
+        })
     })?;
     // Listed once git has run (#959): a call refused before it started reached nobody. Each
     // place git sent it, read as git reads it (#1853, #1828).
@@ -3165,9 +3190,19 @@ fn wait_raw(child: Child, timeout: Duration) -> std::io::Result<RawRun> {
 
 /// [`wait_raw`], ending the child early too when `called_off` is raised.
 fn wait_raw_until(
+    child: Child,
+    timeout: Duration,
+    called_off: Option<&AtomicBool>,
+) -> std::io::Result<RawRun> {
+    wait_raw_watched(child, timeout, called_off, None)
+}
+
+/// [`wait_raw_until`], handing `watch` each chunk of stderr as the child writes it.
+fn wait_raw_watched(
     mut child: Child,
     timeout: Duration,
     called_off: Option<&AtomicBool>,
+    watch: Option<Watch>,
 ) -> std::io::Result<RawRun> {
     // A caller that reads the output as it comes ([`run_capped`]) took it already.
     let stdout = child.stdout.take();
@@ -3183,7 +3218,18 @@ fn wait_raw_until(
     });
     std::thread::spawn(move || {
         let mut buf = Vec::new();
-        let _ = stderr.read_to_end(&mut buf);
+        let mut chunk = [0u8; 4096];
+        loop {
+            match stderr.read(&mut chunk) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    buf.extend_from_slice(&chunk[..n]);
+                    if let Some(watch) = &watch {
+                        watch(&String::from_utf8_lossy(&chunk[..n]));
+                    }
+                }
+            }
+        }
         let _ = err_tx.send(buf);
     });
 
