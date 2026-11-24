@@ -237,7 +237,7 @@ fn harness_mode_comes_from_the_hosts_start_record_never_the_chat() {
     );
 
     // A start the host kept no mode for (a harness whose mode purlis does not read, a relaunch)
-    // reads as `unknown`, never as a mode a rule could have let through.
+    // reads as `unknown`, which `mode-task-above-auto` allows (a known gap, slice 37).
     let unread = Fact::at_start(Begun::Task, Some(Harness::Codex), &[]);
     assert_eq!(unread.start_mode(), None);
     assert_eq!(decide::harness_mode_word(unread.start_mode()), "unknown");
@@ -351,8 +351,9 @@ fn forwarding_to_a_runner_is_judged_by_runners_forward() {
     assert_eq!(held.outcome, Outcome::Ask, "held for the person: {held:#?}");
     assert_names(&held, "runners-forward");
     assert_eq!(held.keep.as_deref(), Some("once"));
-    // An unattended chat has nobody to ask, and a project's own forbid still beats the hold.
-    let denied = decide::decide(
+    // An unattended chat is held the same way, by the same rule: whether anyone is there to
+    // answer is the host's to say, not the rule's (the rule has no `attended` condition).
+    let unattended = decide::decide(
         &loaded(&format!("{STRICT}")),
         &Request {
             chat: "web/builder",
@@ -363,7 +364,9 @@ fn forwarding_to_a_runner_is_judged_by_runners_forward() {
         },
         &empty_world(),
     );
-    assert_ne!(denied.outcome, Outcome::Allow, "{denied:#?}");
+    assert_eq!(unattended.outcome, Outcome::Ask, "{unattended:#?}");
+    assert_names(&unattended, "runners-forward");
+    assert_eq!(unattended.keep.as_deref(), Some("once"));
 }
 
 // ── processes ──────────────────────────────────────────────────────────────────────────────
@@ -507,13 +510,19 @@ fn audit_retention_below_its_minimum_reads_as_the_minimum_with_a_notice() {
     purlis_core::unsteered!();
     // Said below the least by the project as committed and by what the person accepted, so no
     // other side holds it up: the number in force reads as the minimum.
-    let low = "[policy.limits]\n\"audit.event-log-days\" = 3\n\"audit.record-days\" = 7\n";
+    let low = "[policy.limits]\n\"audit.event-log-days\" = 3\n\"audit.record-days\" = 7\n\
+               \"audit.record-max-bytes\" = 1048576\n";
     let dir = plane(low);
     let loaded = levels::load(&sources(dir.path(), None, Some(low)));
     let retention = loaded.audit_retention();
     assert_eq!(retention.event_log_days, 7, "at least 7 days");
     assert_eq!(retention.record_days, 30, "at least 30 days");
-    for (key, least) in [("audit.event-log-days", 7), ("audit.record-days", 30)] {
+    assert_eq!(retention.record_max_bytes, 64 * 1024 * 1024, "at least 64 MiB");
+    for (key, least) in [
+        ("audit.event-log-days", 7),
+        ("audit.record-days", 30),
+        ("audit.record-max-bytes", 64 * 1024 * 1024),
+    ] {
         let notice = loaded
             .notices
             .iter()
@@ -574,4 +583,185 @@ fn no_policy_can_turn_the_audit_record_off() {
     assert_eq!(limits_off.mode_for("limits", chat()), Mode::Off);
     assert_eq!(limits_off.mode_for("audit", chat()), Mode::Enforce);
     assert_eq!(limits_off.audit_retention(), self::loaded(STRICT).audit_retention());
+}
+
+// ── round 2 of #7516 ───────────────────────────────────────────────────────────────────────
+
+#[test]
+fn a_task_whose_start_mode_the_host_cannot_read_is_allowed_as_unknown_for_now() {
+    purlis_core::unsteered!();
+    let dir = plane(STRICT);
+    // Opencode's mode is never read, and a Codex start with no bypass word records none: both
+    // read `unknown`, which `mode-task-above-auto` lets through. Known gap, owed to slice 37.
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let task = Fact::at_start(Begun::Task, Some(harness), &["a-harness".to_owned()]);
+        assert_eq!(decide::harness_mode_word(task.start_mode()), "unknown");
+        let entered = enter_for(dir.path(), &facts_of(task));
+        assert_eq!(entered.outcome, Outcome::Allow, "{harness:?}: {entered:#?}");
+    }
+    // Where the host does know the words are a bypass, a Codex task is refused as Claude Code's is.
+    let codex = Fact::at_start(
+        Begun::Task,
+        Some(Harness::Codex),
+        &["codex".to_owned(), "--dangerously-bypass-approvals-and-sandbox".to_owned()],
+    );
+    let refused = enter_for(dir.path(), &facts_of(codex));
+    assert_eq!(refused.after_mode, Outcome::Deny, "{refused:#?}");
+    assert_names(&refused, "mode-task-above-auto");
+    // And a Claude Code task started with the skip flag, not `--permission-mode`.
+    let claude = a_task_started_on(&["claude", "--dangerously-skip-permissions"]);
+    assert_eq!(
+        enter_for(dir.path(), &facts_of(claude)).after_mode,
+        Outcome::Deny
+    );
+}
+
+#[test]
+fn a_project_rule_on_start_reads_the_real_start_mode_and_attendance() {
+    purlis_core::unsteered!();
+    use purlis_core::knowngaps::{self, Declared, Facts, Judged, Ruling};
+    let plane = {
+        let dir = tempfile::tempdir().expect("a folder");
+        git(dir.path(), &["init", "-q"]);
+        std::fs::write(
+            dir.path().join("policy.cedar"),
+            "// purlis-policy 1\n\
+             @id(\"trust-no-start-in-bypass\") @level(\"project\")\n\
+             forbid (principal, action == Action::\"start\", resource)\n  \
+             when { context.harness_mode == \"bypassPermissions\" };\n\
+             @id(\"trust-no-attended-plan-start\") @level(\"project\")\n\
+             forbid (principal, action == Action::\"start\", resource)\n  \
+             when { context.attended && context.harness_mode == \"plan\" };\n",
+        )
+        .expect("a rule");
+        git(dir.path(), &["add", "-A"]);
+        git(dir.path(), &["commit", "-q", "-m", "c"]);
+        dir
+    };
+    let floor = Resolved::all(Mode::Enforce);
+    let facts = Facts::best(Harness::ClaudeCode, purlis_core::sandbox::Os::Linux);
+    let declared = Declared::at(&facts, &floor);
+    let judge = |attended, harness_mode| {
+        let judged = Judged {
+            root: plane.path(),
+            profile: "claude",
+            of: chat(),
+            sandbox: "floor",
+            attended,
+            harness_mode,
+        };
+        knowngaps::refusal(&judged, &facts, &declared, &floor)
+    };
+    let bypass = judge(false, Some(ClaudeCodeMode::BypassPermissions));
+    match bypass {
+        Some(Ruling::Refused(said)) => {
+            assert!(said.contains("trust-no-start-in-bypass"), "{said}")
+        }
+        other => panic!("a start in bypass is refused: {other:?}"),
+    }
+    assert_eq!(judge(false, Some(ClaudeCodeMode::Default)), None);
+    assert_eq!(judge(false, None), None, "unknown is no bypass");
+    // The attendance is the real one, not `true` for every start.
+    assert!(judge(true, Some(ClaudeCodeMode::Plan)).is_some());
+    assert_eq!(judge(false, Some(ClaudeCodeMode::Plan)), None);
+}
+
+#[test]
+fn elevation_is_refused_by_its_program_whatever_the_path_it_is_named_by() {
+    purlis_core::unsteered!();
+    let strict = loaded(STRICT);
+    for program in [
+        "/usr/bin/sudo",
+        "/usr/local/bin/doas",
+        "/usr/bin/pkexec",
+        "su",
+        "/bin/su",
+        "sudoedit",
+        "/usr/bin/sudoedit",
+        "run0",
+        "/usr/bin/run0",
+    ] {
+        let refused = decided(
+            &strict,
+            "exec",
+            ("Command", program),
+            context("floor", true, "default"),
+        );
+        assert_eq!(refused.outcome, Outcome::Deny, "{program}: {refused:#?}");
+        assert_names(&refused, "processes-elevation");
+    }
+    for program in ["/usr/bin/sudo-not", "/usr/bin/suffix", "/usr/bin/ls", "issue"] {
+        let ordinary = decided(
+            &strict,
+            "exec",
+            ("Command", program),
+            context("floor", true, "default"),
+        );
+        assert_eq!(ordinary.outcome, Outcome::Allow, "{program}: {ordinary:#?}");
+    }
+}
+
+#[test]
+fn elevation_is_refused_at_every_level_off_included() {
+    purlis_core::unsteered!();
+    // The rule has no condition on `context.sandbox`: the level only says whether a wrap also
+    // enforces the family (`not_in_force` is what the window reports at `off`), and a hook's
+    // answer for `exec` does not wait for one. Pinned so that changing it is a decision.
+    assert!(
+        purlis_core::policy::sandbox_level::not_in_force(purlis_core::enforcement::SandboxLevel::Off)
+            .contains(&"processes")
+    );
+    let strict = loaded(STRICT);
+    for sandbox in ["off", "floor", "full"] {
+        let held = decided(
+            &strict,
+            "exec",
+            ("Command", "sudo"),
+            context(sandbox, true, "default"),
+        );
+        assert_eq!(held.outcome, Outcome::Deny, "{sandbox}: {held:#?}");
+        assert_names(&held, "processes-elevation");
+    }
+    // The family's own mode is what lifts it.
+    let lifted = loaded("[policy]\ntemplate = \"strict\"\nprocesses = \"off\"\n");
+    let allowed = decided(
+        &lifted,
+        "exec",
+        ("Command", "sudo"),
+        context("floor", true, "default"),
+    );
+    assert_eq!(allowed.after_mode, Outcome::Allow, "{allowed:#?}");
+}
+
+#[test]
+fn audit_retention_has_a_most_so_no_consumer_overflows() {
+    purlis_core::unsteered!();
+    for key in ["audit.record-days", "audit.record-max-bytes"] {
+        let spec = purlis_core::policy::limits::spec(key).expect("a key of the table");
+        assert!(spec.most.is_some(), "{key} has a most");
+    }
+    let huge = format!(
+        "[policy.limits]\n\"audit.record-days\" = {}\n\"audit.record-max-bytes\" = {}\n",
+        i64::MAX,
+        i64::MAX
+    );
+    let dir = plane(&huge);
+    let loaded = levels::load(&sources(dir.path(), None, Some(&huge)));
+    let retention = loaded.audit_retention();
+    assert!(retention.record_days <= 36_500, "{retention:?}");
+    assert!(
+        retention.record_days.checked_mul(86_400).is_some(),
+        "{retention:?}"
+    );
+    assert!(retention.record_max_bytes <= 1 << 50, "{retention:?}");
+    for key in ["audit.record-days", "audit.record-max-bytes"] {
+        assert!(
+            loaded
+                .notices
+                .iter()
+                .any(|notice| notice.what.contains(key) && notice.what.contains("most")),
+            "{key}: {:#?}",
+            loaded.notices
+        );
+    }
 }

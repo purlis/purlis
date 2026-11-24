@@ -548,7 +548,7 @@ pub struct Asker<'a> {
     pub sandbox: &'a str,
     /// Whether the person is at it, by the fact the host holds.
     pub attended: bool,
-    /// Its harness's mode, from the host's start record (Q320e R6-1); slice 36 fills it.
+    /// Its harness's mode, from the host's start record (Q320e R6-1).
     pub harness_mode: &'a str,
     /// How deep in a dispatch chain it is: 0 for a chat the person started.
     pub depth: i64,
@@ -738,7 +738,10 @@ pub struct ChatFacts {
 
 /// **The word `context.harness_mode` carries for a start mode** (Q320e R6-1): Claude Code's own
 /// measured words (`default`, `acceptEdits`, `plan`, `auto`, `bypassPermissions`), and `unknown`
-/// for a mode the host holds no record of, which no rule written for a known mode lets through.
+/// for a mode the host holds no record of. **`unknown` is allowed** by `mode-task-above-auto`,
+/// which names only `bypassPermissions`: Codex and opencode start in a mode purlis does not read,
+/// so only a start whose words the host knows are a bypass ([`crate::attendance::Fact::start_mode`])
+/// is refused. Closing that gap is slice 37's (known gaps).
 pub fn harness_mode_word(mode: Option<crate::attendance::ClaudeCodeMode>) -> &'static str {
     mode.map_or("unknown", crate::attendance::ClaudeCodeMode::as_str)
 }

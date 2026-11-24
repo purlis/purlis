@@ -86,10 +86,12 @@ forbid (principal, action in [Action::"report", Action::"promote"], resource);
 
 // ── processes (M75-36): what the floor and the full sandbox add beyond the escape denies ───
 // The escape denies (`launchctl` and the rest) are the sandbox level's own step, never a rule
-// (§3.5). The host names a Command by its program's name, not its path.
+// (§3.5). A Command is read by its program's name, the last part of its path, so `/usr/bin/sudo`
+// is `sudo`. A wrapper (`env sudo`, `command sudo`, `sh -c sudo`) is not read: a known gap (slice 37).
 @id("processes-elevation") @level("project")
 forbid (principal, action == Action::"exec", resource)
-  when { resource == Command::"sudo" || resource == Command::"doas" || resource == Command::"pkexec" };
+  when { resource == Command::"sudo" || resource == Command::"doas" || resource == Command::"pkexec"
+         || resource == Command::"su" || resource == Command::"sudoedit" || resource == Command::"run0" };
 
 // ── the catch-all (Q316.1; its id, Q326) ──────────────────────────────────────────────────
 @id("policy-everything-else") @level("project")

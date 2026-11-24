@@ -326,17 +326,19 @@ inventory = "Other B #50"
 [[limit]]
 key = "audit.record-days"
 shipped = 365
-unit = "days (30 at least, proposed)"
+unit = "days (30 at least, proposed; 36500 at most, so no consumer's arithmetic overflows)"
 loosens = "lowered"
 min = 30
+max = 36500
 source = "Q313.4; review round 1, S5"
 inventory = ""
 
 [[limit]]
 key = "audit.record-max-bytes"
 shipped = 2147483648
-unit = "bytes (64 MiB at least: proposed, so a record cannot be sized to nothing)"
+unit = "bytes (64 MiB at least, proposed, so a record cannot be sized to nothing; 1 PiB at most)"
 loosens = "lowered"
 min = 67108864
+max = 1125899906842624
 source = "Q313.4; review round 1, S5"
 inventory = ""
