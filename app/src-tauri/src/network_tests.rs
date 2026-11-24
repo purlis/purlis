@@ -124,6 +124,7 @@ fn sandbox_host(host: &str, qualifier: Option<Qualifier>) -> StopBlock {
         qualifier,
         target: Some(Target::host(host).expect("a host")),
         args: None,
+        compiled_from: None,
     }
 }
 

@@ -1906,7 +1906,7 @@ pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Opt
         family: family.key().to_owned(),
         host: host.map(|host| crate::shown::one_line(host, MOST_CHARS)),
     };
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     CAPTURED.with(|held| {
         held.borrow_mut().push(Logged {
             at: jiff::Timestamp::now()
@@ -1930,7 +1930,7 @@ pub fn write_line(root: &Path, chat: &str, family: Family, rule: &str, host: Opt
     let _ = (root, &WRITER);
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// The lines this thread's test had written, standing in for the event log.
     static CAPTURED: std::cell::RefCell<Vec<Logged>> = const { std::cell::RefCell::new(Vec::new()) };
@@ -1938,8 +1938,8 @@ thread_local! {
 
 /// Chat `chat`'s would-have-blocked lines, oldest first, as this thread's test had them written:
 /// what a test of a choke point reads in place of the event log.
-#[cfg(test)]
-pub(crate) fn read_log(_root: &Path, chat: &str) -> Vec<Logged> {
+#[cfg(any(test, feature = "test-support"))]
+pub fn read_log(_root: &Path, chat: &str) -> Vec<Logged> {
     CAPTURED.with(|held| {
         held.borrow()
             .iter()

@@ -79,6 +79,7 @@ fn no_block_is_ever_the_source_of_an_ask() {
                         qualifier,
                         target: Some(a_target_of(source)),
                         args: None,
+                        compiled_from: None,
                     }),
                 )
                 .expect("the block is written");

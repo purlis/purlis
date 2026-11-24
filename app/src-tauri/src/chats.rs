@@ -10258,6 +10258,7 @@ fn became_a_block(
         qualifier: None,
         target,
         args: withdrawn.args,
+        compiled_from: None,
     });
     if let Err(why) = write(chat, stop, BlockWritten::Withdrawn(withdrawn.call)) {
         tracing::warn!("purlis: chat {chat}'s sandbox block was not written ({why})");

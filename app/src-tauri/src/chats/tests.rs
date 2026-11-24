@@ -12715,6 +12715,7 @@ fn a_timed_out_hold_is_written_to_the_event_log_as_one_sandbox_block() {
                     .expect("the same key")
                     .digest(HELD_CALLS_ARGS)
             ),
+            compiled_from: None,
         }],
         "one stop.block, from the sandbox"
     );
