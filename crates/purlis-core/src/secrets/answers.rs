@@ -1628,15 +1628,29 @@ pub fn commit(root: &Path, change: impl FnOnce(&mut Draft)) -> io::Result<u64> {
 /// grant's removal only narrows ([`Draft::remove_narrowing`]), so a host with no window may spend
 /// one, but where it cannot seal (no keyring, a locked key) the grant cannot be used there at all.
 pub fn use_once_grant(root: &Path, text: &str) -> io::Result<u64> {
-    let mut held = false;
+    use_once_grants(root, &[text])
+}
+
+/// **Spends several Once grants in one commit, all or none** (review round 2, F7): where an ask is
+/// decided by two rules, each with its own Once grant, a grant is lost only with the decision it
+/// serves. Every text must be held, or nothing is taken out and the call is a refusal.
+pub fn use_once_grants(root: &Path, texts: &[&str]) -> io::Result<u64> {
+    let mut all_held = false;
     let counter = commit(root, |draft| {
-        held = draft
-            .entries()
-            .iter()
-            .any(|e| e.kind == GRANT && e.text == text);
-        draft.remove_narrowing(GRANT, text);
+        all_held = !texts.is_empty()
+            && texts.iter().all(|text| {
+                draft
+                    .entries()
+                    .iter()
+                    .any(|e| e.kind == GRANT && e.text == *text)
+            });
+        if all_held {
+            for text in texts {
+                draft.remove_narrowing(GRANT, text);
+            }
+        }
     })?;
-    if held {
+    if all_held {
         Ok(counter)
     } else {
         Err(io::Error::other(

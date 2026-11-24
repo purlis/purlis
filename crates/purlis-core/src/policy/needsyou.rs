@@ -541,7 +541,7 @@ impl Allowed {
     /// **The line the sealed store is to keep for this Allow, if any** (review round 2, F9). A
     /// Once Allow is the deferred grant's alone: sealing it too would let one Allow serve twice.
     pub fn to_seal(&self) -> Option<String> {
-        Some(self.grant.text())
+        self.deferred.is_none().then(|| self.grant.text())
     }
 }
 
@@ -836,7 +836,9 @@ impl Record {
     /// keeps: otherwise nothing changes and none is answered, so what was shown is what is granted.
     pub fn allow(&mut self, _press: &Press, key: &Key, scope: Scope, now: u64) -> Option<Allowed> {
         let item = self.items.iter().find(|one| &one.key == key)?;
-        if digest_of(&item.action, &item.key.resource, &item.request) != item.key.digest {
+        if digest_of(&item.action, &item.key.resource, &item.request) != item.key.digest
+            || bound_of(&item.key.digest, &item.resource_kind, &item.narrowing) != item.bound
+        {
             return None;
         }
         if let Some(chat) = scope.chat()

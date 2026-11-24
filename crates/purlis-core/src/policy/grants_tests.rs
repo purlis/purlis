@@ -85,6 +85,8 @@ fn asked(ids: &[&str], keep: Option<&str>) -> Decision {
         unasked: None,
         keep: keep.map(str::to_owned),
         timed: None,
+        lifted_scopes: None,
+        asked_scopes: None,
         deny_state: None,
     }
 }
@@ -517,8 +519,8 @@ fn a_once_grant_is_spent_by_the_one_request_it_serves() {
         &req,
         Some(ULID),
         &standing,
-        &mut |text| {
-            spent.push(text.to_owned());
+        &mut |texts| {
+            spent.extend(texts.iter().map(|text| (*text).to_owned()));
             true
         },
     );
@@ -645,11 +647,9 @@ fn a_scope_lock_caps_an_ask_a_family_mode_left_enforced_beside_a_lifted_plain_fo
         "{HEADER}@id(\"processes-p\")\nforbid (principal, action == Action::\"exec\", resource);\n{}",
         exec_ask("processes-a", "")
     );
-    let settings = format!(
-        "[policy]\ntemplate = \"strict\"\nprocesses = \"log\"\n\n\
-         [policy.rules]\n\"processes-a\" = \"enforce\"\n\n[policy.locks]\nkeep = \"once\"\n"
-    );
-    let root = plane(&m, &[("purlis.toml", &settings), ("policy.cedar", &rules)]);
+    let settings = "[policy]\ntemplate = \"strict\"\nprocesses = \"log\"\n\n\
+         [policy.rules]\n\"processes-a\" = \"enforce\"\n\n[policy.locks]\nkeep = \"once\"\n";
+    let root = plane(&m, &[("purlis.toml", settings), ("policy.cedar", &rules)]);
     let req = exec("ls");
     let standing = holding(vec![grant("processes-a", &req, Scope::Everywhere, None)]);
     let decision = judge(&root, &sources(&root), &standing, &req, None).0;
@@ -800,13 +800,17 @@ fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
             ("Branch", "acme/web#main"),
         )
         .expect("a chat that is open");
-        assert_eq!(said.after_mode, Outcome::Allow, "{scope:?}: {said:?}");
-        assert!(said.grant.is_some(), "{scope:?}: {said:?}");
+        // The shipped hold is `@keep("once")`: only a Once grant serves, and it is spent by
+        // the decision it serves; a wider grant is no answer and stays where it is.
+        let served = scope == Scope::Once;
+        let expected = if served { Outcome::Allow } else { Outcome::Ask };
+        assert_eq!(said.after_mode, expected, "{scope:?}: {said:?}");
+        assert_eq!(said.grant.is_some(), served, "{scope:?}: {said:?}");
         let held = answers::standing(&root)
             .entries
             .iter()
             .any(|entry| entry.text == given.text);
-        assert_eq!(held, scope != Scope::Once, "{scope:?}: a Once grant is spent, no other is");
+        assert_eq!(held, !served, "{scope:?}: only a served Once grant is spent");
     }
 }
 

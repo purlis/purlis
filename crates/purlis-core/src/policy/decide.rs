@@ -129,6 +129,19 @@ pub struct Request<'a> {
     pub context: serde_json::Value,
 }
 
+/// **The grant scopes a set of deciding rules offers**: the narrowest `@keep` and the stricter
+/// `@timed` of them, under the scope locks.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Scopes {
+    /// The widest scope offered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keep: Option<String>,
+    /// The longest timed grant offered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timed: Option<String>,
+}
+
 /// **What [`decide`] answers** (spec §13.1).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -175,6 +188,13 @@ pub struct Decision {
     /// write one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timed: Option<String>,
+    /// What [`Decision::lifted`] would offer, were a floor to put those forbids back as the
+    /// deciding rules ([`Decision::held_to`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifted_scopes: Option<Scopes>,
+    /// What [`Decision::asked`] would offer, were a floor to put those asks back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asked_scopes: Option<Scopes>,
     /// Set where the plane's sealed answers are in the deny state and this is its refusal of an
     /// action but `start` (M75-07b): the causes, and the re-press that ends it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -215,6 +235,9 @@ impl Decision {
         if loosened && floor_enforces(floor, gate) {
             if self.outcome == Outcome::Deny && !self.lifted.is_empty() {
                 self.deciding = std::mem::take(&mut self.lifted);
+                if let Some(scopes) = self.lifted_scopes.take() {
+                    (self.keep, self.timed) = (scopes.keep, scopes.timed);
+                }
                 // The plain forbids that decide it run at their own family's mode, not `asks`'.
                 self.mode_family.clone_from(&self.family);
             }
@@ -227,6 +250,9 @@ impl Decision {
             && !floor_enforces(floor, &self.family)
         {
             self.deciding = std::mem::take(&mut self.asked);
+            if let Some(scopes) = self.asked_scopes.take() {
+                (self.keep, self.timed) = (scopes.keep, scopes.timed);
+            }
             self.mode_family = "asks".to_owned();
             self.mode = Mode::Enforce;
             self.after_mode = Outcome::Ask;
@@ -358,6 +384,8 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
                 unasked,
                 keep: None,
                 timed: None,
+                lifted_scopes: None,
+                asked_scopes: None,
                 deny_state: None,
             },
         )
@@ -453,51 +481,66 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
             unasked: None,
             keep: None,
             timed: None,
+            lifted_scopes: None,
+            asked_scopes: None,
             deny_state: None,
         },
     )
 }
 
-/// `decision` with the grant scopes its deciding rules write: the narrowest `@keep` and the
-/// stricter `@timed` of them.
-fn scoped(loaded: &Loaded, mut decision: Decision) -> Decision {
-    let rules: Vec<&super::Rule> = decision
-        .deciding
+/// **The scopes `rules` offer**: the narrowest `@keep` and the stricter `@timed` of them. The
+/// scope lock (`[policy.locks] keep`, for everything or per family) caps every ask: the narrowest
+/// of the rules' `@keep` and the locks' words is the widest scope offered (M75-20). It is applied
+/// whatever the outcome, since a floor can make an ask of a decision that was not one
+/// (review round 2, F2).
+fn scopes_of(loaded: &Loaded, rules: &[Deciding], families: [&str; 2]) -> Scopes {
+    let rules: Vec<&super::Rule> = rules
         .iter()
         .filter_map(|d| loaded.policy.rule(&d.id))
         .collect();
     let at = |w: &String| super::KEEPS.iter().position(|k| k == w).unwrap_or(0);
-    // The scope lock (`[policy.locks] keep`, for everything or per family) caps every ask: the
-    // narrowest of the rules' `@keep` and the locks' words is the widest scope offered (M75-20).
-    let locked: Vec<String> = if decision.outcome == Outcome::Ask {
-        [&loaded.organisation_locks, &loaded.project_locks]
-            .into_iter()
-            .flat_map(|locks| {
-                locks.keep.iter().chain(
-                    [&decision.family, &decision.mode_family]
-                        .into_iter()
-                        .filter_map(|family| locks.keep_per_family.get(family)),
-                )
-            })
-            .cloned()
-            .collect()
-    } else {
-        Vec::new()
-    };
-    decision.keep = rules
-        .iter()
-        .filter_map(|r| r.keep.clone())
-        .chain(locked)
-        .min_by_key(|w| at(w));
+    let locked: Vec<String> = [&loaded.organisation_locks, &loaded.project_locks]
+        .into_iter()
+        .flat_map(|locks| {
+            locks.keep.iter().chain(
+                families
+                    .iter()
+                    .filter_map(|family| locks.keep_per_family.get(*family)),
+            )
+        })
+        .cloned()
+        .collect();
     let rank = |w: &String| match super::TIMEDS.iter().position(|t| t == w).unwrap_or(0) {
         2 => 0,
         0 => 1,
         _ => 2,
     };
-    decision.timed = rules
-        .iter()
-        .filter_map(|r| r.timed.clone())
-        .min_by_key(|w| rank(w));
+    Scopes {
+        keep: rules
+            .iter()
+            .filter_map(|r| r.keep.clone())
+            .chain(locked)
+            .min_by_key(|w| at(w)),
+        timed: rules
+            .iter()
+            .filter_map(|r| r.timed.clone())
+            .min_by_key(|w| rank(w)),
+    }
+}
+
+/// `decision` with the grant scopes its deciding rules write, and those the rules a floor could
+/// put back would write (review round 2, F3).
+fn scoped(loaded: &Loaded, mut decision: Decision) -> Decision {
+    let now = scopes_of(
+        loaded,
+        &decision.deciding,
+        [&decision.family, &decision.mode_family],
+    );
+    (decision.keep, decision.timed) = (now.keep, now.timed);
+    decision.lifted_scopes = (!decision.lifted.is_empty())
+        .then(|| scopes_of(loaded, &decision.lifted, [&decision.family, &decision.family]));
+    decision.asked_scopes = (!decision.asked.is_empty())
+        .then(|| scopes_of(loaded, &decision.asked, [&decision.family, "asks"]));
     decision
 }
 
@@ -700,6 +743,24 @@ pub fn in_plane_held_to(
     sealed: &Sealed,
     floor: Option<&crate::enforcement::Resolved>,
 ) -> Decision {
+    judged_in_plane(root, asker, action, resource, sealed, floor, |decision, _| {
+        decision
+    })
+}
+
+/// **The policy in force's decision, then `settle`, then the person's answers** (M75-20): `settle`
+/// makes every change that can turn the answer into an ask (a floor put back, the shipped hold),
+/// so a Once grant is spent only on the decision that stands, never before a later step undoes it
+/// (review round 2, F5). In the deny state every action but `start` is refused first.
+fn judged_in_plane(
+    root: &std::path::Path,
+    asker: &Asker<'_>,
+    action: &str,
+    resource: (&str, &str),
+    sealed: &Sealed,
+    floor: Option<&crate::enforcement::Resolved>,
+    settle: impl FnOnce(Decision, &Request<'_>) -> Decision,
+) -> Decision {
     if let Some(refusal) = deny_state::refused(action, &sealed.standing) {
         return refusal;
     }
@@ -727,6 +788,7 @@ pub fn in_plane_held_to(
     // The policy in force: the project as committed now and what the person accepted, the
     // stricter winning, and what the app saw tighten sealed into the accepted floor (M75-14).
     let decision = force::in_force(root, &sources, &sealed.standing, &request, floor);
+    let decision = settle(decision, &request);
     // The person's answers: nevers in every mode, then a grant at an ask (M75-20). A Once grant's
     // use is recorded first, and a use that cannot be recorded does not serve.
     grants::apply(
@@ -734,7 +796,7 @@ pub fn in_plane_held_to(
         &request,
         sealed.chat.as_deref(),
         &sealed.standing,
-        &mut |text| answers::use_once_grant(root, text).is_ok(),
+        &mut |texts| answers::use_once_grants(root, texts).is_ok(),
     )
 }
 
@@ -789,30 +851,33 @@ pub fn for_chat(
         via: "hook",
         start: None,
     };
-    let decision =
-        in_plane_held_to(root, &asker, action, resource, sealed, Some(floor)).held_to(floor);
-    // A rule the project set `off` is not in its policy at all, so no mode brings it back: where
-    // the floor enforces the merge hold and the project's rules let the merge through, the
-    // shipped default under `strict`, which is the hold as it always ran, answers instead.
-    if decision.family != MERGE_FAMILY
-        || decision.after_mode != Outcome::Allow
-        || !floor_enforces(floor, &decision.family)
-    {
-        return Some(decision);
-    }
-    let chat = chat.to_string();
-    let shipped = decide_locally(&Request {
-        chat: &chat,
-        of: asker.of,
+    Some(judged_in_plane(
+        root,
+        &asker,
         action,
         resource,
-        context: asker.context(action, sealed.machine.as_deref()),
-    });
-    Some(if shipped.after_mode == Outcome::Allow {
-        decision
-    } else {
-        shipped
-    })
+        sealed,
+        Some(floor),
+        |decision, request| {
+            let decision = decision.held_to(floor);
+            // A rule the project set `off` is not in its policy at all, so no mode brings it
+            // back: where the floor enforces the merge hold and the project's rules let the
+            // merge through, the shipped default under `strict`, which is the hold as it always
+            // ran, answers instead. The person's grants apply to whichever of the two stands.
+            if decision.family != MERGE_FAMILY
+                || decision.after_mode != Outcome::Allow
+                || !floor_enforces(floor, &decision.family)
+            {
+                return decision;
+            }
+            let shipped = decide_locally(request);
+            if shipped.after_mode == Outcome::Allow {
+                decision
+            } else {
+                shipped
+            }
+        },
+    ))
 }
 
 /// The family whose hold a floor keeps whatever the project's rules say, until slices 06 and 14.

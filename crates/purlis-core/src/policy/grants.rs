@@ -391,20 +391,30 @@ fn you_denies(mut decision: Decision, id: &str) -> Decision {
 /// **Applies the person's answers to `decision`**: a never denies in every mode, an unreadable
 /// nevers store denies everything, and at an ask each deciding rule's grant, if every one has one,
 /// allows. `chat` is the asking chat's ULID. `spend` records a Once grant's use (given its text)
-/// and says whether it was recorded: a use that cannot be recorded does not serve.
+/// and says whether it was recorded: a use that cannot be recorded does not serve. `spend` is given
+/// every Once grant the answer needs together, so they are spent all or none.
 pub fn apply(
     decision: Decision,
     request: &Request<'_>,
     chat: Option<&str>,
     standing: &Standing,
-    spend: &mut dyn FnMut(&str) -> bool,
+    spend: &mut dyn FnMut(&[&str]) -> bool,
 ) -> Decision {
     // Nothing the deny state already refused is for these answers to change.
     if decision.deny_state.is_some() {
         return decision;
     }
-    let nevers = standing
-        .entries
+    // An Everywhere store that is there but not whole has no nevers to read, which is not "none".
+    if standing.everywhere_unreadable {
+        return you_denies(decision, UNREADABLE_ID);
+    }
+    // In the deny state the verified answers are the ones the store set aside, which still hold.
+    let own = if standing.is_deny() {
+        &standing.kept
+    } else {
+        &standing.entries
+    };
+    let nevers = own
         .iter()
         .chain(&standing.everywhere)
         .filter(|entry| entry.kind == answers::NEVER);
@@ -443,10 +453,14 @@ pub fn apply(
             None => return decision,
         }
     }
-    for (grant, text) in &chosen {
-        if grant.scope == Scope::Once && !spend(text) {
-            return decision;
-        }
+    let mut once: Vec<&str> = chosen
+        .iter()
+        .filter(|(grant, _)| grant.scope == Scope::Once)
+        .map(|(_, text)| text.as_str())
+        .collect();
+    once.dedup();
+    if !once.is_empty() && !spend(&once) {
+        return decision;
     }
     let said = chosen
         .iter()

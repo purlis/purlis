@@ -600,12 +600,32 @@ fn stricter(decisions: Vec<Decision>) -> Decision {
     let mut keep = None;
     let mut timed = None;
     let mut chosen: Option<Decision> = None;
+    // Where the top is an ask, every side that asks as strictly stands on its own rules, and a
+    // grant must cover each of them: the first side names the decision, the others' deciding
+    // asks join it (M75-20 review round 2, F1).
+    let mut also: Vec<super::decide::Deciding> = Vec::new();
     for decision in decisions.into_iter().filter(|d| d.after_mode == top) {
         keep = narrower_keep(keep, decision.keep.clone());
         timed = stricter_timed(timed, decision.timed.clone());
-        chosen.get_or_insert(decision);
+        match chosen.as_ref() {
+            None => chosen = Some(decision),
+            Some(first) if top == super::decide::Outcome::Ask => {
+                also.extend(
+                    decision
+                        .deciding
+                        .into_iter()
+                        .filter(|rule| !first.deciding.iter().any(|one| one.id == rule.id)),
+                );
+            }
+            Some(_) => {}
+        }
     }
     let mut chosen = chosen.expect("a side that decided at the top");
+    for rule in also {
+        if !chosen.deciding.iter().any(|one| one.id == rule.id) {
+            chosen.deciding.push(rule);
+        }
+    }
     chosen.keep = keep;
     chosen.timed = timed;
     chosen
@@ -643,7 +663,7 @@ pub fn retire_lost_grants(root: &Path, sources: &Sources<'_>, standing: &Standin
         return;
     }
     let mut known = BTreeSet::new();
-    for side in limit_sides(sources, standing) {
+    for side in decided_sides(sources, standing) {
         match side {
             LimitSide::Read(loaded) => known.extend(loaded.policy.rules()),
             LimitSide::Unread => return,
@@ -838,13 +858,35 @@ enum LimitSide {
 /// the store kept stand in for the ones it verified, as in [`judge`]. A side that does not read is
 /// [`LimitSide::Unread`], never silent.
 fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+    let mut sides = vec![LimitSide::Read(Box::new(levels::load(sources)))];
+    sides.extend(held_sides(sources, standing));
+    sides
+}
+
+/// The sides a decision reads, as [`limit_sides`] counts them, but with the current one read as
+/// [`judge`] reads it: the project at the one `HEAD` read ([`Version::at_head`]), never the
+/// working tree's own reading (review round 2, F8). A `HEAD` that was not read stably is an
+/// unread side, so nothing is purged on a guess.
+fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+    let first = match Version::at_head(sources.root) {
+        Head::Read(version) => LimitSide::Read(Box::new(loaded_for(sources, &version))),
+        Head::NoCommit => LimitSide::Read(Box::new(levels::load(sources))),
+        Head::Unread => LimitSide::Unread,
+    };
+    let mut sides = vec![first];
+    sides.extend(held_sides(sources, standing));
+    sides
+}
+
+/// The accepted copy and every floor version, as sides.
+fn held_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     let entries: &[answers::Entry] = if standing.is_deny() {
         &standing.kept
     } else {
         &standing.entries
     };
     let none = Version::default();
-    let mut sides = vec![LimitSide::Read(Box::new(levels::load(sources)))];
+    let mut sides = Vec::new();
     if standing.is_unverified_by_a_reachable_cause() {
         sides.push(LimitSide::Read(Box::new(loaded_for(sources, &none))));
     } else {

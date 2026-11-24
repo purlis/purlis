@@ -91,7 +91,12 @@ pub fn decision(
     let floor = purlis_core::enforcement::in_force(held.root());
     // What the app's sealed store says now: the deny state refuses every action but `start`, and
     // `context.machine` is the device id the person confirmed (M75-07b).
-    let sealed = decide::Sealed::of(held.root());
+    // and the chat's ULID, which a Once or This-chat grant is keyed on (M75-20): without it no
+    // grant of those scopes serves.
+    let sealed = decide::Sealed {
+        chat: chats.id_of(chat),
+        ..decide::Sealed::of(held.root())
+    };
     decide::for_chat(
         held.root(),
         chat,
