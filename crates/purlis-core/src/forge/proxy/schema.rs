@@ -145,6 +145,11 @@ pub(crate) fn narrow(kind: Kind, parent: &Ty, cond: &str) -> Option<Ty> {
     let Ty::Obj(parent) = parent else {
         return None;
     };
+    // A fragment on `Repository` spread on a fork's parent (`gh`'s `repo` fragment is) reads only
+    // what the parent's own table has: it narrows to that table, never to the whole repository.
+    if *parent == "RepoParent" && cond == "Repository" {
+        return Some(Obj("RepoParent"));
+    }
     let cond = type_named(kind, cond)?;
     let same = *parent == cond;
     let possible = POSSIBLE
@@ -250,6 +255,17 @@ const GITHUB: Table = &[
     // A repository named by a reference in text: what names it, not what the viewer may do to it
     // or whether it is private (that would say whether a repo a chat typed exists).
     ("RepoName", &["id", "name", "nameWithOwner", "url", "databaseId"], &[("owner", Obj("Actor"))]),
+    // The upstream a fork was made from, as `gh pr create` reads it (#7485): its `repo` fragment
+    // is asked of the repo and of its `parent` alike. What names it and what the viewer may do
+    // to it, as RepoRef, and the three settings that fragment holds; no connection, so nothing of
+    // the parent beyond that can be walked into.
+    ("RepoParent", &[
+        "id", "name", "nameWithOwner", "url", "isPrivate", "viewerPermission", "databaseId",
+        "description", "hasIssuesEnabled", "hasWikiEnabled",
+    ], &[
+        ("owner", Obj("Actor")),
+        ("defaultBranchRef", Obj("RefName")),
+    ]),
     ("RefName", &["id", "name", "prefix"], &[]),
     ("Repository", &[
         "id", "databaseId", "name", "nameWithOwner", "url", "resourcePath", "description",
@@ -286,7 +302,7 @@ const GITHUB: Table = &[
         ("ref", Obj("Ref")),
         ("refs", Conn("Ref")),
         ("object", Obj("GitObject")),
-        ("parent", Obj("RepoRef")),
+        ("parent", Obj("RepoParent")),
         ("templateRepository", Obj("RepoRef")),
         ("assignableUsers", Conn("Actor")),
         ("mentionableUsers", Conn("Actor")),

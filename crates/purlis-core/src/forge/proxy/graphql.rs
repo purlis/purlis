@@ -647,10 +647,15 @@ impl<'d> Context<'_, 'd> {
                 }) {
                     return Err(Refusal::MergeCommand);
                 }
-                if strings(&val)
-                    .iter()
-                    .any(|text| commands::has_merge_command(text))
-                {
+                // `updatePullRequestBranch`'s `updateMethod` is an enum (`MERGE` or `REBASE`) that
+                // says how the base is brought into the branch, not a command a bot reads: gh
+                // sends it for `gh pr update-branch`, and `MERGE` would read as a merge label.
+                let texts = if field.name == "updatePullRequestBranch" {
+                    strings(&without_update_method(&val))
+                } else {
+                    strings(&val)
+                };
+                if texts.iter().any(|text| commands::has_merge_command(text)) {
                     return Err(Refusal::MergeCommand);
                 }
                 if self.kind == Kind::GitLab
@@ -866,6 +871,24 @@ fn has_label_id_key(val: &Val) -> bool {
             .iter()
             .any(|(k, v)| commands::is_label_id_key(k) || has_label_id_key(v)),
         _ => false,
+    }
+}
+
+/// `val` without an `updateMethod` that is one of the two enum values the forge takes. Any other
+/// value under that key stays, and is read as text like the rest.
+fn without_update_method(val: &Val) -> Val {
+    match val {
+        Val::Obj(fields) => Val::Obj(
+            fields
+                .iter()
+                .filter(|(k, v)| {
+                    !(k == "updateMethod"
+                        && matches!(v, Val::Str(s) if s == "MERGE" || s == "REBASE"))
+                })
+                .map(|(k, v)| (k.clone(), without_update_method(v)))
+                .collect(),
+        ),
+        other => other.clone(),
     }
 }
 

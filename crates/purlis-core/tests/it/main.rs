@@ -281,6 +281,7 @@ mod forge_contract;
 mod forge_device_sign_in;
 mod forge_one_start_asks_the_keychain_once;
 mod forge_state_is_read_from_a_cache_and_never_fetched;
+mod gh_pr_create_and_update_branch_are_answered_on_the_chats_repo;
 mod harness_profiles;
 mod no_automatic_read_takes_the_index_lock;
 mod no_count_says_thing_s;
