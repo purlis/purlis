@@ -169,6 +169,10 @@ export function flakeEvidence(suites) {
 const TICKET_TITLE = "Flaky test: ";
 const TEST_MARKER = /<!-- flake-test: (.*?) -->/;
 const RUNS_MARKER = /<!-- flake-runs: ([\d,]*) -->/;
+// Runs from before a close that a reopen skipped: GitHub clears `closed_at` on a reopen, so the
+// ticket itself has to remember which runs its fix already answered.
+const ANSWERED_MARKER = /<!-- flake-answered: ([\d,]*) -->/;
+const idsOf = (marker, body) => (marker.exec(body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
 // Every ">" is escaped, so no test id can end the comment it sits in (`-->` or `--!>`).
 const safe = (test) => test.replace(/>/g, "&gt;");
 const marked = (test, ids) => `<!-- flake-test: ${safe(test)} -->\n<!-- flake-runs: ${ids.join(",")} -->`;
@@ -186,7 +190,7 @@ export function ticketFor(test, issues) {
 
 /**
  * The runs of `runs` that count against `ticket`. An open ticket is owed all of them. A closed
- * ticket was closed by a fix, so a run counts only if it STARTED after the ticket's last close
+ * ticket was closed by a fix, so a run counts only if it STARTED (was created) after the ticket's last close
  * (`closed_at`): an earlier run is history the fix already answered, and a run with no start time
  * is treated as history too, since reopening on a guess is the defect this rule exists for. Time,
  * not "the run's head contains the fixing commit": a close needs no commit to read back (a
@@ -195,7 +199,10 @@ export function ticketFor(test, issues) {
  * it is rare, and the next run on the fix's head tells the truth.
  */
 export function runsAfterClose(runs, ticket) {
-  if (ticket?.state !== "closed") return runs;
+  if (ticket?.state !== "closed") {
+    const answered = idsOf(ANSWERED_MARKER, ticket?.body);
+    return runs.filter((run) => !answered.includes(run.id));
+  }
   const closed = Date.parse(ticket.closed_at ?? "");
   // A closed ticket with no close time cannot be told from history: count nothing.
   if (Number.isNaN(closed)) return [];
@@ -234,18 +241,28 @@ export function planFlakeTickets(flakes, issues) {
       });
       continue;
     }
-    const known = (RUNS_MARKER.exec(ticket.body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
-    const fresh = runsAfterClose(flake.runs, ticket).filter((run) => !known.includes(run.id));
+    const known = idsOf(RUNS_MARKER, ticket.body);
+    const counted = runsAfterClose(flake.runs, ticket);
+    const fresh = counted.filter((run) => !known.includes(run.id));
     if (fresh.length === 0) continue;
     const ids = [...known, ...fresh.map((run) => run.id)];
+    const answered = [...new Set([...idsOf(ANSWERED_MARKER, ticket.body), ...flake.runs.filter((run) => !counted.includes(run)).map((run) => run.id)])];
+    const withAnswered = (text) =>
+      answered.length === 0
+        ? text
+        : ANSWERED_MARKER.test(text)
+          ? text.replace(ANSWERED_MARKER, `<!-- flake-answered: ${answered.join(",")} -->`)
+          : `<!-- flake-answered: ${answered.join(",")} -->\n${text}`;
     const body = ticket.body ?? "";
     comment.push({
       number: ticket.number,
       reopen: ticket.state === "closed",
       body: `Flaked again in ${plural(fresh.length, "run")}, in ${flake.jobs.map((job) => `\`${job}\``).join(", ")}:\n${runList(fresh)}`,
-      update: RUNS_MARKER.test(body)
-        ? body.replace(RUNS_MARKER, `<!-- flake-runs: ${ids.join(",")} -->`)
-        : `${marked(flake.test, ids)}\n${body}`,
+      update: withAnswered(
+        RUNS_MARKER.test(body)
+          ? body.replace(RUNS_MARKER, `<!-- flake-runs: ${ids.join(",")} -->`)
+          : `${marked(flake.test, ids)}\n${body}`,
+      ),
     });
   }
   return { create, comment };

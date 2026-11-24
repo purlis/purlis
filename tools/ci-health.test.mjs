@@ -385,6 +385,17 @@ test("a closed ticket and a run that started after its close: reopened, citing o
   assert.doesNotMatch(plan.comment[0].body, /actions\/runs\/20/);
 });
 
+test("a ticket reopened for a new run does not hear the pre-close runs the next day, nor count them for quarantine", () => {
+  const filed = planFlakeTickets(flakes, []).create[0];
+  const both = flakeEvidence([
+    flakeSuiteAt(20, "2026-11-20T08:00:00Z", "rust tests (part 1 of 4)", "purlis-core::it a_test"),
+    flakeSuiteAt(21, "2026-11-24T16:00:00Z", "rust tests (part 1 of 4)", "purlis-core::it a_test"),
+  ]);
+  const [one] = planFlakeTickets(both, [closedTicket(filed.body)]).comment;
+  const reopened = { ...closedTicket(one.update), state: "open", closed_at: null };
+  assert.deepEqual(planFlakeTickets(both, [reopened]), { create: [], comment: [] });
+});
+
 test("a closed ticket and a run with no start time is history, never a reopen", () => {
   const filed = planFlakeTickets(flakes, []).create[0];
   assert.deepEqual(planFlakeTickets(flakeAt(22, undefined), [closedTicket(filed.body)]), { create: [], comment: [] });
