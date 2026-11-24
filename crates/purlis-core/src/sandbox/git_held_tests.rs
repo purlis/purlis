@@ -229,3 +229,185 @@ fn every_wrapped_chat_records_the_project_roots_git_folder_as_held() {
         }
     }
 }
+
+// -------------------------------------------------------------------------------------
+// A chat writes the git record of the branch folder purlis cut for it, and no other (#7550)
+// -------------------------------------------------------------------------------------
+
+impl Project {
+    /// What the app writes when it cuts a branch folder: the record names the folder back, as
+    /// `git worktree add` leaves it, and a second record `q` of the same clone, with its folder.
+    fn recorded(&self, repo: &str, clone: &str) -> PathBuf {
+        let git = self.workspace.join(clone).join(".git");
+        let record = git.join("worktrees/p1");
+        std::fs::write(
+            record.join("gitdir"),
+            format!("{}\n", self.piece(repo).join(".git").display()),
+        )
+        .unwrap();
+        let other = git.join("worktrees/q");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("commondir"), "../..\n").unwrap();
+        let folder = self.workspace.join(".worktrees").join(repo).join("q");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(
+            folder.join(".git"),
+            format!("gitdir: {}\n", other.display()),
+        )
+        .unwrap();
+        std::fs::write(
+            other.join("gitdir"),
+            format!("{}\n", folder.join(".git").display()),
+        )
+        .unwrap();
+        git
+    }
+}
+
+#[test]
+fn a_wrapped_chat_writes_the_git_record_of_its_own_branch_folder_and_nothing_else_of_the_clone() {
+    let project = Project::new();
+    let git = project.recorded("a", "repos/a");
+    for harness in WRAPPED {
+        let linux = profile_in(&project.started(harness, Os::Linux), &project.piece("a"));
+        for mine in [
+            "worktrees/p1/index.lock",
+            "worktrees/p1/index",
+            "worktrees/p1/HEAD",
+            "worktrees/p1/FETCH_HEAD",
+            "worktrees/p1/ORIG_HEAD",
+            "worktrees/p1/MERGE_HEAD",
+            "worktrees/p1/logs/HEAD",
+            "worktrees/p1/refs/bisect/bad",
+        ] {
+            assert!(writes(&linux, &git.join(mine)), "{harness:?}: {mine}");
+        }
+        for not_mine in [
+            // Another worktree's record, and a name that only starts like this one's.
+            "worktrees/q/index.lock",
+            "worktrees/q/FETCH_HEAD",
+            "worktrees/p10/index.lock",
+            // What inside its own record points git elsewhere or runs code.
+            "worktrees/p1/commondir",
+            "worktrees/p1/gitdir",
+            "worktrees/p1/config.worktree",
+            "worktrees/p1/hooks/pre-commit",
+            "worktrees/p1/info/attributes",
+            // The clone's own: config, hooks, the refs a branch is, HEAD, objects.
+            "config",
+            "hooks/pre-commit",
+            "refs/heads/p1",
+            "refs/heads/main",
+            "refs/tags/v1",
+            "packed-refs",
+            "HEAD",
+            "objects/ab/cdef",
+            "objects/pack/pack-1.pack",
+            "index.lock",
+        ] {
+            assert!(
+                !writes(&linux, &git.join(not_mine)),
+                "{harness:?}: {not_mine}"
+            );
+        }
+        // Seatbelt is handed the same: the record allowed after the clone's folder is denied.
+        let mac = profile_in(&project.started(harness, Os::MacOs), &project.piece("a"));
+        let record = real(&git.join("worktrees/p1"));
+        let allow = format!("(allow file-write* (subpath \"{}\"))", record.display());
+        let deny = format!(
+            "(deny file-write* (subpath \"{}/commondir\"))",
+            record.display()
+        );
+        let (at_allow, at_deny) = (mac.rfind(&allow), mac.rfind(&deny));
+        assert!(
+            at_allow.is_some() && at_deny > at_allow,
+            "{harness:?}: {mac}"
+        );
+    }
+}
+
+#[test]
+fn a_wrapped_chat_is_given_no_git_record_that_does_not_name_its_folder_back() {
+    let project = Project::new();
+    let git = project.recorded("a", "repos/a");
+    let piece = project.piece("a");
+    let index = git.join("worktrees/p1/index.lock");
+    let given = |project: &Project| {
+        let linux = profile_in(&project.started(Harness::Codex, Os::Linux), &piece);
+        writes(&linux, &index)
+    };
+    assert!(given(&project), "the record as the app leaves it");
+    // `gitdir` naming another folder.
+    std::fs::write(
+        git.join("worktrees/p1/gitdir"),
+        format!("{}\n", project.piece("b").join(".git").display()),
+    )
+    .unwrap();
+    assert!(!given(&project), "a record that names another folder");
+    // No `gitdir` at all, as the other tests' records.
+    std::fs::remove_file(git.join("worktrees/p1/gitdir")).unwrap();
+    assert!(!given(&project), "a record that names no folder");
+    // A folder whose `.git` names the other worktree's record: that one names its own folder.
+    std::fs::write(
+        piece.join(".git"),
+        format!("gitdir: {}\n", git.join("worktrees/q").display()),
+    )
+    .unwrap();
+    let linux = profile_in(&project.started(Harness::Codex, Os::Linux), &piece);
+    assert!(!writes(&linux, &git.join("worktrees/q/index.lock")));
+    assert!(!writes(&linux, &index));
+}
+
+#[test]
+fn a_chat_that_is_not_in_a_branch_folder_is_given_no_git_record() {
+    let project = Project::new();
+    let git = project.recorded("a", "repos/a");
+    for cwd in [project.root.clone(), project.workspace.clone()] {
+        let linux = profile_in(&project.started(Harness::Codex, Os::Linux), &cwd);
+        assert!(
+            !writes(&linux, &git.join("worktrees/p1/index.lock")),
+            "{cwd:?}"
+        );
+    }
+}
+
+#[test]
+fn a_claude_code_chat_names_the_git_record_of_its_own_branch_folder_to_write() {
+    let project = Project::new();
+    let git = project.recorded("a", "repos/a");
+    let applied = project.started(Harness::ClaudeCode, Os::MacOs);
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&project.piece("a"))) else {
+        panic!("Claude Code's own sandbox");
+    };
+    let strings = |key: &str| -> Vec<String> {
+        settings.sandbox["filesystem"][key]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .filter_map(|it| it.as_str().map(str::to_owned))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let record = real(&git.join("worktrees/p1")).display().to_string();
+    assert!(
+        strings("allowWrite").contains(&record),
+        "{:?}",
+        strings("allowWrite")
+    );
+    for held in ["commondir", "gitdir", "config.worktree", "hooks", "info"] {
+        assert!(
+            strings("denyWrite").contains(&format!("{record}/{held}")),
+            "{held}"
+        );
+    }
+    // Never another record, and the clone's git folder stays denied whole.
+    let other = real(&git.join("worktrees/q")).display().to_string();
+    assert!(!strings("allowWrite").iter().any(|it| it.contains(&other)));
+    assert!(strings("denyWrite").contains(&real(&git).display().to_string()));
+    // In a chat of another folder: nothing.
+    let Form::ClaudeCode(settings) = applied.form_in(Some(&project.workspace)) else {
+        panic!("Claude Code's own sandbox");
+    };
+    assert!(!settings.sandbox["filesystem"].to_string().contains(&record));
+}

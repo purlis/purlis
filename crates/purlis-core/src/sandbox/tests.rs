@@ -4762,9 +4762,11 @@ fn a_chat_started_in_a_worktree_writes_that_folder_and_nothing_of_the_clone_it_w
     // #1453: a dispatch may start its persona chat in a worktree the app cut for it. The start
     // is the one every chat in a branch folder has, and this is what it compiles to: the
     // worktree is the ground, and the clone it was cut from, that clone's `.git` and the
-    // worktree's own git data there (`.git/worktrees/<piece>`) are not writable. That last one
-    // is why such a chat's own `git commit` is refused and the app commits for it (#1055,
-    // ruling V99h): the rule was kept, and a change to it fails here first.
+    // worktree's own git data there (`.git/worktrees/<piece>`) are not writable *by this
+    // profile*, which is built with nothing denied. In a real start the clone's git folder is
+    // denied whole and its record for this folder is given back (`ownrecord`, #7550, which moved
+    // ruling V99h); a commit is still the app's (`purlis worktree commit`), as the branch ref
+    // and the objects stay the clone's.
     let dir = tempfile::tempdir().expect("a directory");
     let root = std::fs::canonicalize(dir.path()).expect("resolved");
     let clone = root.join("workspaces/alpha/api");

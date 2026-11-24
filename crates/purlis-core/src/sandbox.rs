@@ -5428,7 +5428,7 @@ impl Applied {
         let mut line = self
             .harness
             .adapter()
-            .sandboxed_line(&self.with(chain), words, at)
+            .sandboxed_line(&self.with(chain, Some(cwd)), words, at)
             .map_err(under)?;
         // What a Claude Code chat's sandbox needs there before it starts (the home's git config
         // on Linux at the floor): made here, outside the sandbox.
@@ -5556,7 +5556,7 @@ impl Applied {
     /// each folder from `cwd` up to the project root denied too ([`manifests_held`], #1336).
     /// The one form a chat is armed with and opened under, so both name the same folders.
     pub fn form_in(&self, cwd: Option<&Path>) -> Form {
-        self.with(self.chain(cwd))
+        self.with(self.chain(cwd), cwd)
     }
 
     /// The manifests a chat in `cwd` is denied that the compiled form does not already deny.
@@ -5604,10 +5604,19 @@ impl Applied {
     }
 
     /// The compiled form with `more` denied too.
-    fn with(&self, more: Vec<Denial>) -> Form {
+    fn with(&self, more: Vec<Denial>, cwd: Option<&Path>) -> Form {
         let mut form = (*self.form).clone();
+        // The one git record of the branch folder purlis cut for this chat, given back inside
+        // the clone's git folder held whole (#7550). The wrapped harnesses' profile derives the
+        // same from what they are denied ([`seatbelt::profile`]).
+        let record = cwd.and_then(|cwd| ownrecord::of(cwd, &more));
         match &mut form {
-            Form::ClaudeCode(settings) => *settings = settings.denying(&more),
+            Form::ClaudeCode(settings) => {
+                *settings = settings.denying(&more);
+                if let Some(record) = &record {
+                    *settings = settings.opening_record(record);
+                }
+            }
             Form::ClaudeWrapped(wrap) => wrap.denying(more),
             Form::Codex(codex::Wrap { denied, .. })
             | Form::Opencode(opencode::Wrap { denied, .. }) => denied.extend(more),
@@ -8973,6 +8982,7 @@ pub mod local;
 pub mod localport;
 pub mod nat64;
 pub mod opencode;
+pub mod ownrecord;
 pub mod persona;
 pub mod personal;
 pub mod plan;

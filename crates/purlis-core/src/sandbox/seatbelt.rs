@@ -881,6 +881,13 @@ pub fn profile(
     for rule in held_socket_names_unwritten_but(&own.serving)? {
         line(rule);
     }
+    // The one git record of the branch folder purlis cut for this chat, given back after the
+    // clone's git folder is denied whole, with what is inside it held again (#7550).
+    if let Some(record) = super::ownrecord::of(cwd, denied) {
+        for rule in super::ownrecord::rules(&record)? {
+            line(rule);
+        }
+    }
     for rule in own.deny.iter().chain(&own.after) {
         line(rule.clone());
     }

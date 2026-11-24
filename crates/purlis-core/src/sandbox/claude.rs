@@ -794,6 +794,33 @@ impl Settings {
     /// and as the kernel names it where that differs, to the sandbox and to the Read and Edit
     /// tools, as [`settings`] writes the compiled ones. The manifests between the project root
     /// and the chat's folder, which only the place the chat opens knows (#1336).
+    /// These settings with the git record of the chat's own branch folder written
+    /// ([`super::ownrecord`], #7550): in `allowWrite`, by both its names, and what is inside it
+    /// that stays held in `denyWrite`. Claude Code holds `denyWrite` over `allowWrite`, so where
+    /// it still denies the clone's git folder whole (as [`Self::denying`] does) this gives
+    /// nothing: it fails closed.
+    pub fn opening_record(&self, record: &Path) -> Settings {
+        let mut out = self.clone();
+        let filesystem = &mut out.sandbox["filesystem"];
+        let mut push = |key: &str, path: String| {
+            if !filesystem[key].is_array() {
+                filesystem[key] = json!([]);
+            }
+            if let Some(list) = filesystem[key].as_array_mut() {
+                list.push(json!(path));
+            }
+        };
+        for name in both_names(record) {
+            push("allowWrite", name.display().to_string());
+        }
+        for held in super::ownrecord::HELD_INSIDE {
+            for name in both_names(&record.join(held)) {
+                push("denyWrite", name.display().to_string());
+            }
+        }
+        out
+    }
+
     pub fn denying(&self, denied: &[super::Denial]) -> Settings {
         let mut out = self.clone();
         for (denial, path) in names_of(denied) {
