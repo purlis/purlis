@@ -18,10 +18,10 @@ use std::path::Path;
 use purlis_core::attendance::{Begun, ClaudeCodeMode, Fact};
 use purlis_core::enforcement::{Mode, Resolved};
 use purlis_core::harness::Harness;
+use purlis_core::policy::World;
 use purlis_core::policy::decide::{self, ChatFacts, Decision, Outcome, Request};
 use purlis_core::policy::levels::{self, Accepted, Chat, Loaded, Organisation, Sources};
 use purlis_core::policy::limits::{Direction, Shipped, Verdict};
-use purlis_core::policy::World;
 
 const WORKSPACES: [&str; 1] = ["web"];
 const PERSONAS: [&str; 1] = ["builder"];
@@ -354,7 +354,7 @@ fn forwarding_to_a_runner_is_judged_by_runners_forward() {
     // An unattended chat is held the same way, by the same rule: whether anyone is there to
     // answer is the host's to say, not the rule's (the rule has no `attended` condition).
     let unattended = decide::decide(
-        &loaded(&format!("{STRICT}")),
+        &loaded(STRICT),
         &Request {
             chat: "web/builder",
             of: chat(),
@@ -408,12 +408,13 @@ fn a_process_deny_beyond_the_floor_names_its_rule() {
             "{program}: {escape:#?}"
         );
         assert!(
-            escape.deciding.iter().all(|rule| purlis_core::policy::sandbox_level::named_by(
-                "exec",
-                "Command",
-                &rule.id
-            )
-            .is_none()),
+            escape
+                .deciding
+                .iter()
+                .all(|rule| purlis_core::policy::sandbox_level::named_by(
+                    "exec", "Command", &rule.id
+                )
+                .is_none()),
             "{program}"
         );
     }
@@ -433,7 +434,11 @@ fn a_pool_cap_is_a_limit_and_log_counts_it() {
             .unwrap_or_else(|| panic!("{key} is a row of the limits key table"));
         let shipped = i64::try_from(limit.default).expect("a default fits");
         assert_eq!(spec.shipped, Shipped::Number(shipped), "{key}");
-        assert_eq!(spec.loosens, Direction::Raised, "{key}: a bigger cap loosens");
+        assert_eq!(
+            spec.loosens,
+            Direction::Raised,
+            "{key}: a bigger cap loosens"
+        );
         assert_eq!(strict.limit(key), Some(shipped), "{key}");
         assert_eq!(strict.limit_verdict(chat(), key, shipped), Verdict::Within);
         assert_eq!(
@@ -491,7 +496,11 @@ fn audit_retention_follows_the_project_limit_within_the_organisation_lock() {
 
     // The Organisation's lock binds the project below it, in both directions.
     let lock = "[policy.limits]\n\"audit.event-log-days\" = 60\n";
-    let below = said("\"audit.event-log-days\" = 45\n", Some(lock), Some("[policy.limits]\n\"audit.event-log-days\" = 45\n"));
+    let below = said(
+        "\"audit.event-log-days\" = 45\n",
+        Some(lock),
+        Some("[policy.limits]\n\"audit.event-log-days\" = 45\n"),
+    );
     assert_eq!(below.event_log_days, 60, "never below the Organisation's");
     let above = said("\"audit.event-log-days\" = 75\n", Some(lock), None);
     assert_eq!(above.event_log_days, 75, "a project may keep longer");
@@ -517,7 +526,11 @@ fn audit_retention_below_its_minimum_reads_as_the_minimum_with_a_notice() {
     let retention = loaded.audit_retention();
     assert_eq!(retention.event_log_days, 7, "at least 7 days");
     assert_eq!(retention.record_days, 30, "at least 30 days");
-    assert_eq!(retention.record_max_bytes, 64 * 1024 * 1024, "at least 64 MiB");
+    assert_eq!(
+        retention.record_max_bytes,
+        64 * 1024 * 1024,
+        "at least 64 MiB"
+    );
     for (key, least) in [
         ("audit.event-log-days", 7),
         ("audit.record-days", 30),
@@ -561,7 +574,11 @@ fn no_policy_can_turn_the_audit_record_off() {
                \"audit.record-max-bytes\" = 0\n";
     let dir = plane(off);
     let loaded = levels::load(&sources(dir.path(), None, Some(off)));
-    assert_eq!(loaded.limit("audit.record-days"), Some(30), "read, and held to its least");
+    assert_eq!(
+        loaded.limit("audit.record-days"),
+        Some(30),
+        "read, and held to its least"
+    );
     // The family never leaves `enforce`, in every template.
     for template in ["open", "watch", "hold", "team", "strict"] {
         let doc = format!("[policy]\ntemplate = \"{template}\"\naudit = \"off\"\n");
@@ -576,13 +593,19 @@ fn no_policy_can_turn_the_audit_record_off() {
     let retention = loaded.audit_retention();
     assert!(retention.event_log_days >= 7, "{retention:?}");
     assert!(retention.record_days >= 30, "{retention:?}");
-    assert!(retention.record_max_bytes >= 64 * 1024 * 1024, "{retention:?}");
+    assert!(
+        retention.record_max_bytes >= 64 * 1024 * 1024,
+        "{retention:?}"
+    );
     // `limits = off` (a file of its own: the key is `limits` either way) counts nothing against
     // retention: it is a floor, not a cap that was met.
     let limits_off = self::loaded("[policy]\nlimits = \"off\"\n");
     assert_eq!(limits_off.mode_for("limits", chat()), Mode::Off);
     assert_eq!(limits_off.mode_for("audit", chat()), Mode::Enforce);
-    assert_eq!(limits_off.audit_retention(), self::loaded(STRICT).audit_retention());
+    assert_eq!(
+        limits_off.audit_retention(),
+        self::loaded(STRICT).audit_retention()
+    );
 }
 
 // ── round 2 of #7516 ───────────────────────────────────────────────────────────────────────
@@ -603,7 +626,10 @@ fn a_task_whose_start_mode_the_host_cannot_read_is_allowed_as_unknown_for_now() 
     let codex = Fact::at_start(
         Begun::Task,
         Some(Harness::Codex),
-        &["codex".to_owned(), "--dangerously-bypass-approvals-and-sandbox".to_owned()],
+        &[
+            "codex".to_owned(),
+            "--dangerously-bypass-approvals-and-sandbox".to_owned(),
+        ],
     );
     let refused = enter_for(dir.path(), &facts_of(codex));
     assert_eq!(refused.after_mode, Outcome::Deny, "{refused:#?}");
@@ -690,7 +716,12 @@ fn elevation_is_refused_by_its_program_whatever_the_path_it_is_named_by() {
         assert_eq!(refused.outcome, Outcome::Deny, "{program}: {refused:#?}");
         assert_names(&refused, "processes-elevation");
     }
-    for program in ["/usr/bin/sudo-not", "/usr/bin/suffix", "/usr/bin/ls", "issue"] {
+    for program in [
+        "/usr/bin/sudo-not",
+        "/usr/bin/suffix",
+        "/usr/bin/ls",
+        "issue",
+    ] {
         let ordinary = decided(
             &strict,
             "exec",
@@ -708,8 +739,10 @@ fn elevation_is_refused_at_every_level_off_included() {
     // enforces the family (`not_in_force` is what the window reports at `off`), and a hook's
     // answer for `exec` does not wait for one. Pinned so that changing it is a decision.
     assert!(
-        purlis_core::policy::sandbox_level::not_in_force(purlis_core::enforcement::SandboxLevel::Off)
-            .contains(&"processes")
+        purlis_core::policy::sandbox_level::not_in_force(
+            purlis_core::enforcement::SandboxLevel::Off
+        )
+        .contains(&"processes")
     );
     let strict = loaded(STRICT);
     for sandbox in ["off", "floor", "full"] {

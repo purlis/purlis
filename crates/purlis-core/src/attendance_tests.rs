@@ -103,14 +103,30 @@ fn every_spelling_the_bypass_detector_knows_starts_claude_code_in_the_bypass_mod
         words(&["claude", &attached]),
         words(&["claude", "--permission-mode", "bypassPermissions"]),
         // Said beside a lower mode, the bypass still starts it.
-        words(&["claude", "--permission-mode", "plan", "--dangerously-skip-permissions"]),
+        words(&[
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--dangerously-skip-permissions",
+        ]),
     ] {
-        assert_eq!(ClaudeCodeMode::set_in(&line), ClaudeCodeMode::BypassPermissions, "{line:?}");
+        assert_eq!(
+            ClaudeCodeMode::set_in(&line),
+            ClaudeCodeMode::BypassPermissions,
+            "{line:?}"
+        );
         let task = Fact::at_start(Begun::Task, Some(Harness::ClaudeCode), &line);
-        assert_eq!(task.start_mode(), Some(ClaudeCodeMode::BypassPermissions), "{line:?}");
+        assert_eq!(
+            task.start_mode(),
+            Some(ClaudeCodeMode::BypassPermissions),
+            "{line:?}"
+        );
     }
     // What is not a bypass keeps the mode it names, or the default.
-    assert_eq!(ClaudeCodeMode::set_in(&words(&["claude"])), ClaudeCodeMode::Default);
+    assert_eq!(
+        ClaudeCodeMode::set_in(&words(&["claude"])),
+        ClaudeCodeMode::Default
+    );
     assert_eq!(in_plan_mode(), ClaudeCodeMode::Plan);
 }
 
@@ -130,14 +146,30 @@ fn a_codex_start_the_host_knows_is_a_bypass_is_recorded_as_one() {
         words(&["codex", "-c", "approval_policy=never"]),
     ] {
         let mut fact = Fact::at_start(Begun::Task, Some(Harness::Codex), &line);
-        assert_eq!(fact.start_mode(), Some(ClaudeCodeMode::BypassPermissions), "{line:?}");
+        assert_eq!(
+            fact.start_mode(),
+            Some(ClaudeCodeMode::BypassPermissions),
+            "{line:?}"
+        );
         fact.hear(Some(ClaudeCodeMode::Default));
-        assert_eq!(fact.start_mode(), Some(ClaudeCodeMode::BypassPermissions), "{line:?}");
-        assert_eq!(fact.mode_differs(), None, "a harness whose reports are not read");
+        assert_eq!(
+            fact.start_mode(),
+            Some(ClaudeCodeMode::BypassPermissions),
+            "{line:?}"
+        );
+        assert_eq!(
+            fact.mode_differs(),
+            None,
+            "a harness whose reports are not read"
+        );
     }
     for harness in [Harness::Codex, Harness::Opencode] {
         let plain = Fact::at_start(Begun::Task, Some(harness), &words(&["a-harness"]));
-        assert_eq!(plain.start_mode(), None, "{harness:?}: no record of a mode: unknown");
+        assert_eq!(
+            plain.start_mode(),
+            None,
+            "{harness:?}: no record of a mode: unknown"
+        );
     }
     assert_eq!(Fact::kept(Attendance::Attended).start_mode(), None);
 }

@@ -98,11 +98,12 @@ pub fn table() -> &'static [Spec] {
                         "limits.toml: {key}'s loosens is {other:?}, not \"raised\" or \"lowered\""
                     ),
                 };
-                let bound = |name: &str| match row.get(name) {
-                    None => None,
-                    Some(item) => Some(item.as_integer().unwrap_or_else(|| {
-                        panic!("limits.toml: {key}'s {name} is not a whole number")
-                    })),
+                let bound = |name: &str| {
+                    row.get(name).map(|item| {
+                        item.as_integer().unwrap_or_else(|| {
+                            panic!("limits.toml: {key}'s {name} is not a whole number")
+                        })
+                    })
                 };
                 Spec {
                     least: bound("min"),
