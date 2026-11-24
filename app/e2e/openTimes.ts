@@ -54,3 +54,76 @@ export function opensVerdict(samples: readonly number[]): string | null {
   if (p90 > OPEN_P90_MS) return `too many opens were slow, ${said}`;
   return null;
 }
+
+/** What the runner looked like at one open: what a swapping machine shows and a slow product does not. */
+export interface RunnerSample {
+  /** Swap in use, in MB; `null` when the platform would not say. */
+  swapMb: number | null;
+  /** Free memory, in MB. */
+  freeMb: number;
+  /** The one-minute load average. */
+  load: number;
+}
+
+/** One open: how long it took and the runner at that moment. */
+export interface Open {
+  ms: number;
+  runner: RunnerSample | null;
+}
+
+/** Swap that grew by more than this across the run (MB) says the runner was swapping, not the product. */
+export const SWAP_GROWTH_MB = 256;
+
+/** `sysctl vm.swapusage` on macOS: "vm.swapusage: total = 2048.00M  used = 1180.25M  free = 867.75M ...". */
+export function parseSwapUsedMb(text: string): number | null {
+  const found = /used\s*=\s*([\d.]+)\s*([KMG])/i.exec(text);
+  if (found === null) return null;
+  const unit = { K: 1 / 1024, M: 1, G: 1024 }[found[2].toUpperCase() as "K" | "M" | "G"];
+  return Math.round(Number.parseFloat(found[1]) * unit * 100) / 100;
+}
+
+/** Whether swap use grew across the opens by more than {@link SWAP_GROWTH_MB}. */
+export function runnerWasSwapping(opens: readonly Open[]): boolean {
+  const swaps = opens.flatMap((open) => (open.runner?.swapMb == null ? [] : [open.runner.swapMb]));
+  return swaps.length >= 2 && Math.max(...swaps) - swaps[0] > SWAP_GROWTH_MB;
+}
+
+/** The one line a failing or inconclusive run prints about the runner. */
+export function runnerSummary(opens: readonly Open[]): string {
+  const seen = opens.flatMap((open) => (open.runner === null ? [] : [open.runner]));
+  if (seen.length === 0) return "runner: not sampled";
+  const first = seen[0];
+  const last = seen[seen.length - 1];
+  const swap = (r: RunnerSample) => (r.swapMb === null ? "n/a" : `${r.swapMb} MB`);
+  return (
+    `runner: swap ${swap(first)} -> ${swap(last)}, free memory ${first.freeMb} -> ${last.freeMb} MB, ` +
+    `load ${first.load} -> ${last.load}`
+  );
+}
+
+/** How the opens fared: held, failed, or too disturbed by the runner to say about speed. */
+export interface OpensJudgment {
+  state: "held" | "failed" | "inconclusive";
+  said: string | null;
+}
+
+/**
+ * Judges the opens with the runner beside them. A hang fails always. A median or p90 over its
+ * limit fails on a runner that was not swapping, and is **inconclusive** on one that was: the
+ * slowdown then tracks the machine's memory, and a red `main` would blame the product for it.
+ */
+export function judgeOpens(opens: readonly Open[]): OpensJudgment {
+  const trouble = opensVerdict(opens.map((open) => open.ms));
+  if (trouble === null) return { state: "held", said: null };
+  const said = `${trouble}; ${runnerSummary(opens)}`;
+  if (trouble.startsWith("an open hung") || trouble.startsWith("no open")) {
+    return { state: "failed", said };
+  }
+  if (runnerWasSwapping(opens)) {
+    return {
+      state: "inconclusive",
+      said: `the runner was swapping, so the open times say nothing about the app: ${said}`,
+    };
+  }
+  return { state: "failed", said };
+}
