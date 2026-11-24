@@ -583,12 +583,21 @@ pub(crate) fn is_purlis_report(payload: &str) -> bool {
                 .bytes()
                 .all(|b| b.is_ascii_alphanumeric() || b"._/:=@+,-".contains(&b))
     };
-    let mut words = command.split([' ', '\t']).filter(|word| !word.is_empty());
-    words.next() == Some("purlis")
-        && words.next() == Some("report")
-        && command
-            .split([' ', '\t'])
-            .all(|word| word.is_empty() || plain(word))
+    // Exactly one space between words, none before or after: a spelling the consent rule
+    // `purlis report *--yes*` (A7b) and a person's own rules read the same way. A report that is
+    // filed (`--yes`, `-y`) or that reads a file (`--from-file`, `--stdin`) is not on the fast
+    // path: it goes through the whole guard, its consent arms included.
+    let words: Vec<&str> = command.split(' ').collect();
+    words.len() >= 2
+        && words[0] == "purlis"
+        && words[1] == "report"
+        && words.iter().all(|word| plain(word))
+        && !words.iter().any(|word| {
+            *word == "-y"
+                || word.starts_with("--yes")
+                || word.starts_with("--from-file")
+                || word.starts_with("--stdin")
+        })
 }
 
 /// The hook ran out of its budget: refused, by the panic hook ([`refuse_on_a_crash`]), which
@@ -772,7 +781,6 @@ mod budget_tests {
         for command in [
             "purlis report bug",
             "purlis report bug --title no-answer-in-time",
-            "purlis  report\tbug --file ./notes/report.md",
         ] {
             assert!(is_purlis_report(&a_payload(command)), "{command}");
         }
@@ -798,6 +806,17 @@ mod budget_tests {
             "purlis dispatch report",
             "purlis",
             "",
+            // Filed or read from a file: the consent arms (A7b, A7c) must read them.
+            "purlis report bug --yes d41d8cd9",
+            "purlis report bug --yes=d41d8cd9",
+            "purlis report bug -y d41d8cd9",
+            "purlis report bug --from-file /etc/hosts",
+            "purlis report bug --stdin",
+            // Spellings a person's `purlis report *` rule may not read the same way.
+            "purlis  report bug",
+            "purlis\treport bug",
+            " purlis report bug",
+            "purlis report bug ",
         ] {
             assert!(!is_purlis_report(&a_payload(command)), "{command:?}");
         }
@@ -818,7 +837,10 @@ mod budget_tests {
         waiting_on_a_merge(Some(purlis_core::mergehold::waiting(&request)));
         let said = out_of_time_said();
         waiting_on_a_merge(None);
-        assert!(said.contains("Merge in Asks"), "{said}");
+        // It cannot know the app took it, so it says so and points at Asks (Q239: a hold is
+        // said only where the app confirms it).
+        assert!(said.contains("could not confirm"), "{said}");
+        assert!(said.contains("Asks"), "{said}");
         assert!(said.contains("12"), "{said}");
         assert!(said.contains("Nothing was merged"), "{said}");
         for blamed in ["busy machine", "split", "time limit", "Try it again"] {

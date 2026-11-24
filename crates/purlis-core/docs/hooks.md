@@ -1012,9 +1012,12 @@ purlis never lets it come to that:
   session host to take it, which reads who is asking and then the answer, each for at most 1.5 s.
 - **`purlis report` is never held up by the guard** (#7542): a Bash call that is purlis's own
   `report` command and nothing else (`purlis report`, then words of letters, digits and
-  `._/:=@+,-`) is let through with no ask of the session host and no network. A quote, `$`, `;`,
-  `&`, `|`, a redirection, a substitution or a newline anywhere in the line sends it through the
-  whole guard, so `purlis report; gh pr merge 1` is judged as the merge it holds.
+  `._/:=@+,-`, one space apart and none before or after) is let through with no ask of the
+  session host and no network. A quote, `$`, `;`, `&`, `|`, a redirection, a substitution, a
+  newline, a tab or a doubled space anywhere in the line sends it through the whole guard, so
+  `purlis report; gh pr merge 1` is judged as the merge it holds. So does a report that is filed
+  (`--yes`, `-y`) or that reads a file (`--from-file`, `--stdin`): those keep their consent
+  rules (`purlis report *--yes*`) and the person's own rules.
 - **The budget starts when `hook` does, not when the process does.** What comes before it,
   starting the process, is outside it, and on macOS the first run of a binary just installed or
   updated can wait seconds while the system assesses it. Nothing inside the process can bound

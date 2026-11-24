@@ -598,9 +598,9 @@ impl Request {
 /// the person's (the app names the Ask's number only once it has answered).
 pub fn waiting(request: &Request) -> String {
     format!(
-        "{OPENS} The merge of {}{} is held for the person's press of Merge in Asks, not refused \
-         for time: purlis was still waiting for the app to take it when its check ended. Carry on \
-         with other work; do not run it again or merge it another way. {NO_YES}",
+        "{OPENS} The merge of {}{} did not run: purlis was still asking the app to hold it for \
+         the person's press of Merge when its check ended, and could not confirm the app took it. \
+         Look in Asks for it, or ask the person to merge it; do not merge it another way. {NO_YES}",
         request.number_said(),
         request.repo_said()
     )
