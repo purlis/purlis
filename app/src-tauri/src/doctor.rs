@@ -766,21 +766,43 @@ fn event_log(opened: Option<&Result<std::path::PathBuf, crate::EventLogRefused>>
         settings: None,
         fix: None,
     };
+    // Read once: the check reads the whole log.
+    let chained = opened
+        .and_then(|opened| opened.as_ref().ok())
+        .and_then(|dir| chain_state(dir));
     match opened {
         // A chained log (a chat ran with the sandbox off) that no longer matches its chain or the
-        // head purlis sealed is a failure of its own, before any word of health (M75-13).
-        Some(Ok(dir)) if chain_broken(dir).is_some() => row(
+        // seals purlis kept is a failure of its own, before any word of health (M75-13); one it
+        // could not check against a seal is a warning, never an OK.
+        Some(Ok(dir)) if chained.as_ref().is_some_and(|state| state.is_broken()) => row(
             DoctorStatus::Fail,
-            chain_broken(dir).unwrap_or_default(),
+            chained
+                .as_ref()
+                .and_then(|state| state.said(dir))
+                .unwrap_or_default(),
             "keep a copy of that folder, then look at what ran with the sandbox off; purlis never \
              rewrites the log, so it stays as it is"
                 .to_owned(),
         ),
+        Some(Ok(dir)) if chained.as_ref().is_some_and(|state| state.warned(dir).is_some()) => {
+            row(
+                DoctorStatus::Warn,
+                chained
+                    .as_ref()
+                    .and_then(|state| state.warned(dir))
+                    .unwrap_or_default(),
+                "open purlis's own app on this machine: it seals the log's head as it writes, and \
+                 doctor checks it from there. A chat that ran with the sandbox off could have \
+                 rewritten an unsealed chain"
+                    .to_owned(),
+            )
+        }
         Some(Ok(dir)) => row(
             DoctorStatus::Ok,
             format!(
-                "every hook call a chat makes is recorded in {}",
-                dir.display()
+                "every hook call a chat makes is recorded in {}{}",
+                dir.display(),
+                chained.as_ref().map_or(String::new(), sealed_words)
             ),
             "readable by your user on this machine and by a backup that carries it; a tool \
              call's arguments are never written, only a digest keyed to this device"
@@ -814,14 +836,30 @@ fn event_log(opened: Option<&Result<std::path::PathBuf, crate::EventLogRefused>>
     }
 }
 
-/// **What the event log's hash chain and sealed head say of `dir`** (spec §10.3): the sentence
-/// naming the log and the first line that no longer matches, or none where it holds, where it was
-/// never chained, and where it cannot be read (the row says that on its own).
-fn chain_broken(dir: &std::path::Path) -> Option<String> {
+/// **What the event log's hash chain and seals say of `dir`** (spec §10.3): how it checks, or
+/// none where it was never chained, and where it cannot be read (the row says that on its own).
+fn chain_state(dir: &std::path::Path) -> Option<purlis_core::eventlog::chain::Checked> {
+    use purlis_core::eventlog::chain::{Checked, check_if_chained};
     let device = dir.file_name()?.to_str()?;
-    purlis_core::eventlog::chain::check(dir, device)
-        .ok()?
-        .said(dir)
+    match check_if_chained(dir, device).ok()? {
+        Checked::NotChained => None,
+        checked => Some(checked),
+    }
+}
+
+/// What the OK row adds of a chained log that holds: that it is sealed, and, where the keyring is
+/// any of the person's programs' to read, how far that goes (S6).
+fn sealed_words(state: &purlis_core::eventlog::chain::Checked) -> String {
+    if !matches!(state, purlis_core::eventlog::chain::Checked::Sealed { .. }) {
+        return String::new();
+    }
+    if cfg!(target_os = "macos") {
+        "; its hash chain is sealed in the keychain".to_owned()
+    } else {
+        "; its hash chain is sealed, but on this system the seal is only as strong as the keyring: \
+         any program of yours can read it"
+            .to_owned()
+    }
 }
 
 /// `file events`: do the platform's file events keep the window up with the project (#756)?
@@ -1343,6 +1381,34 @@ mod tests {
             busy.hint
         );
         assert!(!busy.hint.contains("CHARTER_DATA_HOME"), "{}", busy.hint);
+    }
+
+    /// A chained log nothing sealed is a warning and a changed one a failure, never an OK
+    /// (M75-13 round 2A, B1): this test build cannot seal, as a host that is not the app.
+    #[test]
+    fn the_event_log_row_is_never_ok_for_a_chain_nothing_sealed() {
+        let machine = tempfile::tempdir().unwrap();
+        let device = "01J9ZZDEVICE0000000000000";
+        let dir = machine.path().join("events").join(device);
+        {
+            let mut log = purlis_core::eventlog::Log::open(&dir, device).unwrap();
+            log.chain().unwrap();
+            for n in 0..3 {
+                log.append(Some("c"), None, None, "tool.called", serde_json::json!({ "n": n }))
+                    .unwrap();
+            }
+        }
+
+        let unsealed = event_log(Some(&Ok(dir.clone())));
+        assert_eq!(unsealed.status, DoctorStatus::Warn, "{unsealed:?}");
+        assert!(unsealed.detail.contains("nothing could be checked"), "{unsealed:?}");
+
+        let file = dir.join("events.jsonl");
+        let text = std::fs::read_to_string(&file).unwrap();
+        std::fs::write(&file, text.replace("\"n\":1", "\"n\":99")).unwrap();
+        let changed = event_log(Some(&Ok(dir)));
+        assert_eq!(changed.status, DoctorStatus::Fail, "{changed:?}");
+        assert!(changed.detail.contains("line 2"), "{changed:?}");
     }
 
     #[test]

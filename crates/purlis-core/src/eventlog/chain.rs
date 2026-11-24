@@ -22,10 +22,35 @@
 //! stays chained when it is opened again, and a line with no chain after one that has it is a
 //! break, so turning the chain off is not a way to write unseen.
 //!
+//! **What is sealed** (M75-13 round 2A): two items, both kept by the app in the keyring and keyed
+//! by the device. The **head** ([`HEAD_KIND`]) is the last line's `seq` and chain, sealed again at
+//! each append. The **start** ([`START_KIND`]) is the first chained line's `seq` and chain, sealed
+//! once where the chain begins and again only where the log's own retention deletes its oldest
+//! segments ([`reanchor`]), the one legitimate way a chain's start moves. So deleting or
+//! rewriting the lines before the head reads as a break at the start, and a log deleted whole, or
+//! with every `chain` key stripped, reads as a break because a seal is kept for a chain that is
+//! gone.
+//!
+//! **Who seals.** Only the app's own binary can ([`crate::secrets::seal`]): the desktop's session
+//! host is that binary started again, and marks itself the app before it writes the log. A
+//! `purlis host` with no app beside it (a runner, a standalone host) cannot seal, and the check
+//! says [`Checked::Unsealed`] there, never that the log is sound.
+//!
+//! **A writer verifies before it carries on** ([`opened`]): a chained log opened again is read
+//! against the seals, and one that does not match keeps its lines chained but is never sealed
+//! again, so a forged tail is not adopted as the head and the check keeps reporting the break.
+//!
+//! **One seal per device covers the machine-wide log.** The log is one per device, whatever
+//! project or chat wrote a line, so the seals cover every project's events at once, and a
+//! rewrite of one project's lines breaks the chain for all of them.
+//!
 //! **Where it is weaker:** the keyring keeps one head, so a chain that was recomputed from a line
-//! on is told from the sealed head's line, not from the edited one; and the first line a prune
-//! left has no line before it to be chained to, so it is taken as the chain's start. Only the app
-//! can seal, and on Linux and Windows any of the person's programs can read the keyring.
+//! on is told from the sealed head's line, not from the edited one. A crash between an append
+//! and its seal leaves the sealed head one line behind the log's: that single line is told from
+//! tampering as [`Checked::Stale`] (a warning), at the price that a line forged onto the tail
+//! reads the same until the next append seals it. And on Linux and Windows any of the person's
+//! programs can read the keyring, so there the seal stops a hand edit and a sandboxed chat, no
+//! more.
 
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
@@ -36,6 +61,10 @@ use super::{Event, FILE, segments};
 
 /// The kind of the seal the app keeps of a chained log's head ([`crate::secrets::seal::keep`]).
 pub const HEAD_KIND: &str = "eventlog-head";
+
+/// The kind of the seal the app keeps of a chained log's start, its first chained line
+/// ([`crate::secrets::seal::keep`]).
+pub const START_KIND: &str = "eventlog-start";
 
 /// The key a chained line ends in.
 const KEY: &str = ",\"chain\":\"";
@@ -93,6 +122,44 @@ pub fn seal_head(device: &str, seq: u64, chain: &str) -> bool {
     crate::secrets::seal::keep(HEAD_KIND, device, &head_text(seq, chain))
 }
 
+/// **Seals the start**, the first chained line `chain` at `seq`, for the device's log: `false`
+/// where this process cannot seal.
+pub fn seal_start(device: &str, seq: u64, chain: &str) -> bool {
+    crate::secrets::seal::keep(START_KIND, device, &head_text(seq, chain))
+}
+
+/// **The `seq` and chain of the log's first chained line**, from the oldest segment on: where the
+/// chain starts as the log holds it now. `None` where no line is chained.
+pub fn first_chain(dir: &Path) -> io::Result<Option<(u64, String)>> {
+    let mut paths: Vec<std::path::PathBuf> = segments(dir)?.into_iter().map(|(_, p)| p).collect();
+    paths.push(dir.join(FILE));
+    for path in paths {
+        let text = match std::fs::read(&path) {
+            Ok(text) => text,
+            Err(why) if why.kind() == io::ErrorKind::NotFound => continue,
+            Err(why) => return Err(why),
+        };
+        for line in text.split(|byte| *byte == b'\n') {
+            if let (Ok(event), Some((_, chain))) = (serde_json::from_slice::<Event>(line), split(line))
+            {
+                return Ok(Some((event.seq, chain.to_owned())));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// **Moves the sealed start to where the log now starts**, after the log's own retention deleted
+/// its oldest segments: the one legitimate move of a chain's start. `false` where nothing was
+/// sealed (this process cannot, or no line is chained). Called only by the writer that deleted
+/// them ([`super::Log`]), never by a reader, so a deletion made by anyone else stays a break.
+pub fn reanchor(dir: &Path, device: &str) -> bool {
+    match first_chain(dir) {
+        Ok(Some((seq, chain))) => seal_start(device, seq, &chain),
+        _ => false,
+    }
+}
+
 /// **The chain and `seq` of the log's last chained line**, read from the end of the live
 /// segment or, where it holds none, of the newest sealed one: where a writer carries on.
 pub fn last_chain(dir: &Path) -> io::Result<Option<(u64, String)>> {
@@ -130,22 +197,29 @@ pub fn last_chain(dir: &Path) -> io::Result<Option<(u64, String)>> {
 /// **What [`check`] found.**
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Checked {
-    /// The log holds no chained line: nothing was chained, so nothing is claimed.
+    /// The log holds no chained line, and no seal is kept for one: nothing was chained, so
+    /// nothing is claimed.
     NotChained,
-    /// Every chain holds, and the head is the one the app sealed.
+    /// Every chain holds, and the start and head are the ones the app sealed.
     Sealed {
         /// The head's `seq`.
         seq: u64,
     },
+    /// Every chain holds, and the head is the line before the one the log ends in: a crash
+    /// between an append and its seal, or a line forged onto the tail. The next append seals.
+    Stale {
+        /// The log's last `seq`, one past the sealed head.
+        seq: u64,
+    },
     /// Every chain holds, and nothing could be checked against a seal: this process is not the
-    /// app, or none was ever kept.
+    /// app, or none was ever kept. **Never an all-clear.**
     Unsealed {
         /// The head's `seq`.
         seq: u64,
     },
     /// **The log is not as it was written**: the first line that no longer matches.
     Broken {
-        /// That line's `seq`.
+        /// That line's `seq`; 0 where the whole chain is gone ([`Why::ChainIsGone`]).
         seq: u64,
         /// What does not match.
         why: Why,
@@ -164,6 +238,12 @@ pub enum Why {
     /// Every chain holds, and the head is not the one the app sealed: the chain was recomputed,
     /// or the log's tail was cut or replaced.
     HeadIsNotTheSealed,
+    /// The chain's first line is not the one the app sealed as its start: the lines before the
+    /// head were deleted or rewritten.
+    StartIsNotTheSealed,
+    /// A seal is kept for a chained log and the log holds no chained line: it was deleted, or
+    /// every `chain` key was stripped from it.
+    ChainIsGone,
 }
 
 impl Checked {
@@ -178,6 +258,14 @@ impl Checked {
         let Checked::Broken { seq, why } = self else {
             return None;
         };
+        if *why == Why::ChainIsGone {
+            return Some(format!(
+                "The event log at {} was changed after purlis wrote it: purlis sealed its hash \
+                 chain, and the log holds none, so it was deleted or every chain was stripped. \
+                 Check what ran with the sandbox off.",
+                dir.display()
+            ));
+        }
         let what = match why {
             Why::ChainDoesNotHold => "its chain does not hold",
             Why::NotChained => "it carries no chain after one that does",
@@ -185,6 +273,12 @@ impl Checked {
             Why::HeadIsNotTheSealed => {
                 "the log's end is not the one purlis sealed, so the chain was rewritten or cut"
             }
+            Why::StartIsNotTheSealed => {
+                "the log's start is not the one purlis sealed, so the lines before the end were \
+                 deleted or rewritten"
+            }
+            // Said above, whole.
+            Why::ChainIsGone => "its chain is gone",
         };
         Some(format!(
             "The event log at {} was changed after purlis wrote it: line {seq} no longer \
@@ -192,14 +286,38 @@ impl Checked {
             dir.display()
         ))
     }
+
+    /// **What doctor and the start say where the log is not broken but is not proven either**:
+    /// a head one line behind the log's, and a chain no seal could be checked against. None for
+    /// a log that holds and one that was never chained.
+    pub fn warned(&self, dir: &Path) -> Option<String> {
+        match self {
+            Checked::Stale { seq } => Some(format!(
+                "The event log at {} ends at line {seq}, one past the head purlis sealed: \
+                 purlis stopped between writing that line and sealing it, or a line was added to \
+                 the end. The next line purlis writes seals it.",
+                dir.display()
+            )),
+            Checked::Unsealed { seq } => Some(format!(
+                "The event log at {} is hash-chained to line {seq}, and nothing could be checked \
+                 against a seal: only purlis's app seals the head, and it has not (or its \
+                 keyring could not be read). The chain alone can be rewritten.",
+                dir.display()
+            )),
+            _ => None,
+        }
+    }
 }
 
-/// **Checks the log in `dir`** (the device's own directory) against its chain and the head the
-/// app sealed for `device`: every chained line is read in order, and the first that no longer
-/// matches is named. A chat's start and doctor run it.
+/// **Checks the log in `dir`** (the device's own directory) against its chain and the start and
+/// head the app sealed for `device`: every chained line is read in order, and the first that no
+/// longer matches is named. A chat's start and doctor run it.
 pub fn check(dir: &Path, device: &str) -> io::Result<Checked> {
+    use crate::secrets::seal;
     let mut paths: Vec<std::path::PathBuf> = segments(dir)?.into_iter().map(|(_, p)| p).collect();
     paths.push(dir.join(FILE));
+    let mut first: Option<(u64, String)> = None;
+    let mut before_last: Option<(u64, String)> = None;
     let mut previous: Option<(u64, String)> = None;
     for path in paths {
         let text = match std::fs::read(&path) {
@@ -212,15 +330,16 @@ pub fn check(dir: &Path, device: &str) -> io::Result<Checked> {
                 continue;
             };
             let split = split(line);
-            let Some((before, seq_chain)) = previous.as_ref() else {
+            let Some((seq_before, chain_before)) = previous.clone() else {
                 // The chain starts at its first chained line, which has nothing before it to be
-                // checked against; a line before it is from before the chain.
+                // checked against: the sealed start is what vouches for it. A line before it is
+                // from before the chain.
                 if let Some((_, chain)) = split {
+                    first = Some((event.seq, chain.to_owned()));
                     previous = Some((event.seq, chain.to_owned()));
                 }
                 continue;
             };
-            let (seq_before, chain_before) = (*before, seq_chain.clone());
             if event.seq != seq_before + 1 {
                 return Ok(Checked::Broken {
                     seq: event.seq,
@@ -239,19 +358,123 @@ pub fn check(dir: &Path, device: &str) -> io::Result<Checked> {
                     why: Why::ChainDoesNotHold,
                 });
             }
+            before_last = Some((seq_before, chain_before));
             previous = Some((event.seq, chain.to_owned()));
         }
     }
-    let Some((seq, chain)) = previous else {
-        return Ok(Checked::NotChained);
+    let (Some((first_seq, first_chain)), Some((seq, chain))) = (first, previous) else {
+        // No chained line. A seal kept for one says the log was chained and is no longer.
+        return Ok(if seal::kept_exists(HEAD_KIND, device) {
+            Checked::Broken {
+                seq: 0,
+                why: Why::ChainIsGone,
+            }
+        } else {
+            Checked::NotChained
+        });
     };
-    match crate::secrets::seal::kept_holds(HEAD_KIND, device, &head_text(seq, &chain)) {
-        Some(false) => Ok(Checked::Broken {
-            seq,
-            why: Why::HeadIsNotTheSealed,
-        }),
+    if seal::kept_holds(START_KIND, device, &head_text(first_seq, &first_chain)) == Some(false) {
+        return Ok(Checked::Broken {
+            seq: first_seq,
+            why: Why::StartIsNotTheSealed,
+        });
+    }
+    match seal::kept_holds(HEAD_KIND, device, &head_text(seq, &chain)) {
         Some(true) => Ok(Checked::Sealed { seq }),
+        Some(false) => {
+            let stale = before_last.is_some_and(|(before, chain)| {
+                seal::kept_holds(HEAD_KIND, device, &head_text(before, &chain)) == Some(true)
+            });
+            Ok(if stale {
+                Checked::Stale { seq }
+            } else {
+                Checked::Broken {
+                    seq,
+                    why: Why::HeadIsNotTheSealed,
+                }
+            })
+        }
         None => Ok(Checked::Unsealed { seq }),
+    }
+}
+
+/// **[`check`], read only where the log is chained or a seal says it was**: the tail of the log
+/// and one keyring item are looked at first, so a log that was never chained costs a chat's start
+/// no more than that.
+pub fn check_if_chained(dir: &Path, device: &str) -> io::Result<Checked> {
+    if last_chain(dir)?.is_none() && !crate::secrets::seal::kept_exists(HEAD_KIND, device) {
+        return Ok(Checked::NotChained);
+    }
+    check(dir, device)
+}
+
+#[cfg(any(test, feature = "test-support"))]
+thread_local! {
+    /// A test's log folder, for what a chat's start looks at.
+    static TEST_DIR: std::cell::RefCell<Option<std::path::PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// **A test's machine log folder** for this thread: where [`at_chat_start`] looks.
+#[cfg(any(test, feature = "test-support"))]
+pub fn log_dir_for_this_thread(dir: Option<std::path::PathBuf>) {
+    TEST_DIR.with(|held| *held.borrow_mut() = dir);
+}
+
+/// This machine's log folder, where a chat's start looks.
+fn machine_log_dir() -> Option<std::path::PathBuf> {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(dir) = TEST_DIR.with(|held| held.borrow().clone()) {
+        return Some(dir);
+    }
+    super::Recorder::dir_on_this_machine()
+}
+
+/// **What a chat's start says of the machine's event log** (spec §10.3, M75-13 round 2A, B2): the
+/// sentence of a break, or of a head one line behind, to show on the chat's tab as a Notice; none
+/// where the log holds, was never chained, or cannot be read. [`crate::start::ready`] calls it
+/// for every chat it readies.
+pub fn at_chat_start() -> Option<String> {
+    let dir = machine_log_dir()?;
+    let device = dir.file_name()?.to_str()?.to_owned();
+    let checked = check_if_chained(&dir, &device).ok()?;
+    checked.said(&dir).or_else(|| match checked {
+        Checked::Stale { .. } => checked.warned(&dir),
+        _ => None,
+    })
+}
+
+/// **What a writer finds as it opens a chained log** ([`super::Log`]): the log is read against
+/// its seals, and one that is broken is not sealed again. `true` where the writer may seal.
+pub fn opened(dir: &Path, device: &str) -> bool {
+    match check_if_chained(dir, device) {
+        Ok(checked) if checked.is_broken() => {
+            tracing::warn!(
+                "purlis: {} The log keeps its lines chained and is not sealed again, so the \
+                 break stays reported.",
+                checked.said(dir).unwrap_or_default()
+            );
+            false
+        }
+        Ok(checked) => {
+            // A chain sealed before the start was (an older purlis, or one first sealed by an
+            // app that adopted an unsealed log) has its start sealed where it stands now.
+            if !matches!(checked, Checked::NotChained)
+                && !crate::secrets::seal::kept_exists(START_KIND, device)
+                && let Ok(Some((seq, chain))) = first_chain(dir)
+            {
+                seal_start(device, seq, &chain);
+            }
+            true
+        }
+        // A log that cannot be read to be checked is not one to vouch for.
+        Err(why) => {
+            tracing::warn!(
+                "purlis: the event log's chain could not be checked as it opened ({why}), so it \
+                 is not sealed again"
+            );
+            false
+        }
     }
 }
 

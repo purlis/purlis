@@ -718,3 +718,19 @@ fn a_managed_host_the_quit_never_reached_is_held_by_its_manager() {
         "with no link to tell it to quit, its manager stops it, so no chat outlives the quit"
     );
 }
+
+/// The session host the window starts is its own binary started again, and the log it writes is
+/// the machine's: it must hold the seal key as the app does, or no chain is ever sealed
+/// (M75-13 round 2A, B1). Asked through the host's own entry, the one `main` serves from.
+/// Run on its own (`-- the_session_host_holds_the_seal_key`) it is red without the mark, for the
+/// flag is the process's and another test of this binary may have set it.
+#[cfg(unix)]
+#[test]
+fn the_session_host_holds_the_seal_key_as_the_app_does() {
+    let home = tempfile::tempdir().unwrap();
+    let _hosting = crate::hosting_here(&a_place(home.path()));
+    assert!(
+        purlis_core::secrets::keyhold::is_the_app(),
+        "a host that is not the app cannot seal the event log's head"
+    );
+}

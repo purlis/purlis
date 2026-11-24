@@ -8240,23 +8240,45 @@ from then on it is recorded, and a relaunch runs `codex resume <id>` or `opencod
   of the compiled rule that held the path, absent where none did) or `harness_check` (no rule).
   A block that does not is refused before it is written.
 - **Hash chain:** once a chat runs with the sandbox `off`, which can reach the log's files, the
-  host chains the log, and a chained log stays chained. Each line then ends in a last key,
+  host chains the log, and a chained log stays chained. A chat is `off` where a `trust.sandbox.off`
+  event says so, **and where its `run.started` names no sandbox (`"sandbox":"none"`)**, which is
+  what a project's or template's level `off` writes. Each line then ends in a last key,
   `,"chain":"<64 hex>"`, the SHA-256 of the previous line's chain and this line as it was before
   the key, each length-prefixed. A reader that knows nothing of it reads the same event.
-  **The head is sealed at each append:** the app keeps the seal of the head, its `seq` and its
-  chain, in the keyring (kind `eventlog-head`, keyed by the device id), so a chain recomputed
-  after an edit still ends in a head the seal does not hold. The app checks the chain and the
-  sealed head at each chat's start and whenever doctor runs (`eventlog::chain::check`); a
-  mismatch names the log and the first line that no longer matches. A chain that was recomputed
-  is told from the sealed head's line, since the keyring keeps one head; the first line a prune
-  left is taken as the chain's start.
+- **Two seals, both kept by the app in the keyring** (service `purlis-seal`, keyed by the device
+  id, so **one seal per device covers the machine-wide log**: every project's and chat's lines
+  are in the one chain, and a rewrite of any of them breaks it for all):
+  - kind `eventlog-head`: the last line's `seq` and chain, sealed again **at each append**;
+  - kind `eventlog-start`: the first chained line's `seq` and chain, sealed where the chain
+    begins, and moved only by the writer whose retention deleted the log's oldest segments
+    (`eventlog::chain::reanchor`). A deletion by anyone else leaves the start where it was.
+- **Who seals:** only purlis's app binary can make a seal (the keychain lets that one program
+  read the key). The desktop's session host is that binary started again and marks itself the
+  app before it writes the log, so its appends seal. A `purlis host` with no app beside it (a
+  runner, a standalone host) cannot seal: it says so as a warning when it first fails, and the
+  check reports the chain **unsealed**, never sound. On Linux and Windows any program of the
+  person's can read the keyring, so the seal there stops a hand edit and a sandboxed chat only.
+- **What the check reports** (`eventlog::chain::check`, at each chat's start as a Notice and
+  whenever doctor runs): **broken**, naming the log and the first line that no longer matches,
+  for an edited, dropped, inserted or unchained line, a head or a start that is not the sealed
+  one (lines deleted from the front or the end, or the chain recomputed), and a seal kept for
+  a chain the log no longer holds (the log deleted, or every `chain` key stripped); **stale**
+  (a warning) for a sealed head one line behind the log's, which is what a crash between an
+  append and its seal leaves, and also what one line forged onto the tail reads as until the
+  next append seals it; **unsealed** (a warning) where nothing could be checked against a seal;
+  **sealed** otherwise. Doctor's OK for a sealed chain says on Linux and Windows that the seal is
+  only as strong as the keyring.
+- **A writer verifies as it opens** (`eventlog::chain::opened`): a chained log that does not
+  match its seals keeps its lines chained but is never sealed again, so a forged tail is not
+  adopted as the head and the break stays reported.
 - **Who reads it** (spec §10.5): the person reads all of it, a chat only its own rows
   (`eventlog::read_rows`). A team or an organisation reads it through the Audit's export. Nothing
   here sends the log anywhere.
 - **Tier:** Machine, device-bound — the event log's, never synced; the keyring item is Keyring.
   Not rebuildable: it is the record.
 - **Written by:** `purlis_core::eventlog::Recorder::stop`, `eventlog::Log::append`.
-- **Read by:** `purlis_core::eventlog::read_rows`, `eventlog::chain::check`; the window's
+- **Read by:** `purlis_core::eventlog::read_rows`, `eventlog::chain::check` (via `at_chat_start`
+  and doctor); the window's
   would-have-blocked count reads the chats it owns (`policypress::logged_at`).
 - **Git:** never committed.
 

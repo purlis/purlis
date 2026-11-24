@@ -265,3 +265,220 @@ fn a_chat_started_with_the_sandbox_off_chains_the_log_from_its_trust_event() {
         Checked::Sealed { seq: 3 }
     ));
 }
+
+/// A chain that is sealed, then loses the lines before its end (deleted or replaced and
+/// recomputed), no longer starts where the app sealed it: the start is the break, not a
+/// first line taken on trust (round 2A, B3).
+#[test]
+fn a_deleted_or_replaced_prefix_is_broken_at_the_start() {
+    let dir = tempfile::tempdir().unwrap();
+    chained_log(dir.path(), 5);
+    let written = lines(dir.path());
+
+    // Lines 1 and 2 deleted: every remaining chain holds, and the head is the sealed one.
+    write_lines(dir.path(), &written[2..]);
+    assert_eq!(
+        check(dir.path(), DEVICE).unwrap(),
+        Checked::Broken {
+            seq: 3,
+            why: Why::StartIsNotTheSealed
+        }
+    );
+
+    // Lines 1 to 4 replaced and every chain recomputed from the first on, ending in the real
+    // last line's text: the start differs from the sealed one.
+    let mut previous = String::new();
+    let mut forged = Vec::new();
+    for (at, line) in written.iter().enumerate() {
+        let (over, _) = split(line.as_bytes()).unwrap();
+        let mut over = String::from_utf8(over).unwrap();
+        if at < 4 {
+            over = over.replace(&format!("\"n\":{at}"), "\"n\":404");
+        }
+        let (line, chain) = chained(&previous, over.into_bytes());
+        previous = chain;
+        forged.push(String::from_utf8(line).unwrap());
+    }
+    write_lines(dir.path(), &forged);
+    assert!(
+        check(dir.path(), DEVICE).unwrap().is_broken(),
+        "a recomputed chain is told by the sealed start and head"
+    );
+}
+
+/// A seal is kept for a chain the log no longer holds: the log deleted, or every `chain` key
+/// stripped from it, is a break, never "nothing chained" (round 2A, B4).
+#[test]
+fn a_deleted_log_or_one_with_every_chain_key_stripped_is_broken() {
+    let gone = Checked::Broken {
+        seq: 0,
+        why: Why::ChainIsGone,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    chained_log(dir.path(), 3);
+    let written = lines(dir.path());
+
+    let stripped: Vec<String> = written
+        .iter()
+        .map(|line| String::from_utf8(split(line.as_bytes()).unwrap().0).unwrap())
+        .collect();
+    write_lines(dir.path(), &stripped);
+    assert_eq!(check(dir.path(), DEVICE).unwrap(), gone, "every chain key stripped");
+    assert!(gone.said(dir.path()).unwrap().contains("holds none"));
+
+    std::fs::remove_file(dir.path().join(FILE)).unwrap();
+    assert_eq!(check(dir.path(), DEVICE).unwrap(), gone, "the log deleted");
+
+    // A log that was never chained, on a machine that sealed one for another device, is
+    // still nothing chained.
+    let other = tempfile::tempdir().unwrap();
+    let mut log = Log::open(other.path(), "another-device").unwrap();
+    append(&mut log, "tool.called", 0);
+    assert_eq!(check(other.path(), "another-device").unwrap(), Checked::NotChained);
+}
+
+/// A writer that opens a log which no longer matches its seals carries on chained but never
+/// seals over the mismatch: the forged tail is not adopted as the head, and the check keeps
+/// reporting the break (round 2A, B5).
+#[test]
+fn a_reopen_after_tampering_refuses_to_reseal() {
+    use crate::secrets::seal;
+    let dir = tempfile::tempdir().unwrap();
+    chained_log(dir.path(), 3);
+    let written = lines(dir.path());
+    // A forged fourth line, chained properly from the third: every chain holds, the seal does
+    // not know it, and (as the tail is one past the head) the log reads as stale by one...
+    let (_, third) = split(written[2].as_bytes()).unwrap();
+    let forged_event = serde_json::json!({
+        "v": 1, "device_id": DEVICE, "seq": 4, "ulid": ulid::Ulid::generate().to_string(),
+        "chat": "chat", "kind": "tool.called", "body": {"n": 666}
+    });
+    let (forged, _) = chained(third, serde_json::to_vec(&forged_event).unwrap());
+    let mut more = written.clone();
+    more.push(String::from_utf8(forged).unwrap());
+    // ...so a rewritten line 2 as well makes it a break: the tamper under test.
+    more[1] = more[1].replace("\"n\":1", "\"n\":555");
+    write_lines(dir.path(), &more);
+    assert!(check(dir.path(), DEVICE).unwrap().is_broken());
+
+    let sealed_before = |text: &str| seal::kept_holds(HEAD_KIND, DEVICE, text);
+    let (_, head3) = split(written[2].as_bytes()).unwrap();
+    assert_eq!(sealed_before(&head_text(3, head3)), Some(true));
+    {
+        let mut log = Log::open(dir.path(), DEVICE).unwrap();
+        assert!(log.is_chained());
+        append(&mut log, "tool.called", 9);
+    }
+    assert_eq!(
+        sealed_before(&head_text(3, head3)),
+        Some(true),
+        "the seal still holds the head it held: nothing was sealed over the mismatch"
+    );
+    assert!(
+        check(dir.path(), DEVICE).unwrap().is_broken(),
+        "the break is still reported after the writer carried on"
+    );
+}
+
+/// A log whose head is one line behind the log's (a crash between an append and its seal) is a
+/// warning, not a break; the next append seals it (round 2A, S7).
+#[test]
+fn a_head_one_line_behind_is_a_warning_and_the_next_append_seals_it() {
+    let dir = tempfile::tempdir().unwrap();
+    chained_log(dir.path(), 3);
+    {
+        // The writer cannot seal for one line, as a keyring that failed.
+        crate::secrets::seal::set_for_this_test(None);
+        let mut log = Log::open(dir.path(), DEVICE).unwrap();
+        append(&mut log, "tool.called", 3);
+        crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    }
+    let checked = check(dir.path(), DEVICE).unwrap();
+    assert_eq!(checked, Checked::Stale { seq: 4 });
+    assert!(checked.warned(dir.path()).is_some());
+    assert!(!checked.is_broken());
+    let mut log = Log::open(dir.path(), DEVICE).unwrap();
+    append(&mut log, "tool.called", 4);
+    assert!(matches!(
+        check(dir.path(), DEVICE).unwrap(),
+        Checked::Sealed { seq: 5 }
+    ));
+}
+
+/// A chain no seal can be checked against is never an all-clear: it says so (round 2A, B1).
+#[test]
+fn a_chain_nothing_sealed_is_unsealed_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    crate::secrets::seal::set_for_this_test(None);
+    chained_log(dir.path(), 2);
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    crate::secrets::seal::forget_kept_for_this_test();
+    let checked = check(dir.path(), DEVICE).unwrap();
+    assert_eq!(checked, Checked::Unsealed { seq: 2 });
+    let said = checked.warned(dir.path()).expect("a warning");
+    assert!(said.contains("nothing could be checked"), "{said}");
+}
+
+/// A chat the project or a template set to level `off` writes no trust event, only a
+/// `run.started` that names no sandbox: that line chains the log too (round 2A, S4), and the
+/// start-time check reads it (B2).
+#[test]
+fn a_run_that_starts_with_no_sandbox_chains_the_log() {
+    use crate::eventlog::{ArgsKey, Recorder};
+    let dir = tempfile::tempdir().unwrap();
+    let mut host = Recorder::new(
+        Log::open(dir.path(), DEVICE).unwrap(),
+        ArgsKey::open(dir.path()).unwrap(),
+    );
+    let started = |sandbox: &str| serde_json::json!({ "sandbox": sandbox });
+    host.write(Some("c"), Some("r"), None, "run.started", started("seatbelt"))
+        .unwrap();
+    assert!(split(lines(dir.path())[0].as_bytes()).is_none(), "sandboxed: not chained");
+    host.write(Some("c"), Some("r2"), None, "run.started", started("none"))
+        .unwrap();
+    assert!(
+        split(lines(dir.path())[1].as_bytes()).is_some(),
+        "an unsandboxed run starts the chain"
+    );
+    assert!(matches!(
+        check(dir.path(), DEVICE).unwrap(),
+        Checked::Sealed { seq: 2 }
+    ));
+}
+
+/// Retention deleting the oldest segments is the one way the start moves legitimately: the
+/// writer that deleted them anchors the new start, so the log still reads sealed.
+#[test]
+fn a_prune_by_the_writer_moves_the_sealed_start_and_a_deletion_by_anyone_else_does_not() {
+    use crate::eventlog::Retention;
+    let dir = tempfile::tempdir().unwrap();
+    let mut log = Log::open_with(
+        dir.path(),
+        DEVICE,
+        Retention {
+            segment_bytes: 600,
+            keep: std::time::Duration::ZERO,
+            ..Retention::DEFAULT
+        },
+    )
+    .unwrap();
+    log.chain().unwrap();
+    for n in 0..30 {
+        append(&mut log, "tool.called", n);
+        // Retention keeps what is not older than the clock's millisecond.
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    drop(log);
+    assert!(
+        segments(dir.path()).unwrap().len() >= 1,
+        "segments were sealed"
+    );
+    assert!(
+        matches!(check(dir.path(), DEVICE).unwrap(), Checked::Sealed { .. }),
+        "{:?}",
+        check(dir.path(), DEVICE)
+    );
+    let (_, oldest) = segments(dir.path()).unwrap().remove(0);
+    std::fs::remove_file(oldest).unwrap();
+    assert!(check(dir.path(), DEVICE).unwrap().is_broken());
+}

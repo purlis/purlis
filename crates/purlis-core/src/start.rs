@@ -826,6 +826,10 @@ fn ready_given_on(
             None => {}
         }
     }
+    // The machine's event log, where a chat at the sandbox level `off` could have rewritten it
+    // (spec §10.3, M75-13 round 2A, B2): a chain or seal that no longer holds is the chat's tab's
+    // Notice, whichever chat the log was changed under.
+    notices.extend(crate::eventlog::chain::at_chat_start());
     // The profile's own words stay together and in front; charter's go after them and after
     // whatever arms the harness. [`Ready::command_line`] is where the order is decided.
     Ok(Ready {

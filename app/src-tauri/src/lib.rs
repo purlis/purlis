@@ -3814,6 +3814,12 @@ pub fn serve_as_a_login_item_if_asked() -> Option<i32> {
 #[cfg(unix)]
 fn hosting_here(place: &purlis_host::Place) -> purlis_host::Hosting {
     {
+        // This host is the app's own binary started again, so it holds what the app holds: the
+        // keychain lets it read the seal key without asking, and the event log it writes seals its
+        // hash chain's head at each append (M75-13 round 2A, B1). Marked before the log is
+        // opened, which is as the host first holds a project; `main` marks the window itself
+        // only after it has asked whether it was started as this host.
+        purlis_core::secrets::keyhold::this_process_is_the_app();
         // The core's warnings raised in this host go to its standard error, which the window
         // reads into its own log (#2745): this process installs no log of its own.
         purlis_core::applog::install_for_a_terminal();

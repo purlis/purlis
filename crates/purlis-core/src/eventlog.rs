@@ -311,6 +311,11 @@ pub struct Log {
     /// written ends in the chain of the one before it, and the app seals the head at each append
     /// ([`chain`]). `None` for a log that is not chained.
     chain: Option<String>,
+    /// Whether this writer seals the chain's head and start: false for a chained log that did not
+    /// match its seals as it was opened, which is never sealed over ([`chain::opened`]).
+    sealing: bool,
+    /// Whether a head that could not be sealed was said, once for this writer.
+    unsealed_said: bool,
     /// A test's way to make the next write fail after this many bytes.
     #[cfg(test)]
     fail_after: Option<usize>,
@@ -390,6 +395,17 @@ impl Log {
             Some(last) => after(last.seq)?,
             None => 1,
         };
+        // A chained log is read against its seals before this writer carries on from its end: a
+        // forged tail is never adopted as the head (M75-13 round 2A, B5).
+        let found = chain::last_chain(dir)?;
+        let sealing = chain::opened(dir, device);
+        let chain = match found {
+            Some((_, chain)) => Some(chain),
+            // A seal for a chain the log no longer holds: carry on chained, from nothing, never
+            // sealed.
+            None if !sealing => Some(String::new()),
+            None => None,
+        };
         let held_until_ms = match &last {
             None => 0,
             Some(last) => {
@@ -416,7 +432,9 @@ impl Log {
             seal_at: retention.segment_bytes,
             on_seal: None,
             // A log whose last line is chained stays chained: once chained, always chained.
-            chain: chain::last_chain(dir)?.map(|(_, chain)| chain),
+            chain,
+            sealing,
+            unsealed_said: false,
             #[cfg(test)]
             fail_after: None,
             #[cfg(test)]
@@ -464,8 +482,10 @@ impl Log {
             body,
         };
         let mut line = serde_json::to_vec(&event).map_err(io::Error::other)?;
+        let mut starts = false;
         let chain = match &self.chain {
             Some(previous) => {
+                starts = previous.is_empty();
                 let (chained, chain) = chain::chained(previous, line);
                 line = chained;
                 Some(chain)
@@ -490,12 +510,18 @@ impl Log {
             .appended
             .store(seq, std::sync::atomic::Ordering::SeqCst);
         if let Some(chain) = chain {
-            // The head the app seals is the line just written. A process that cannot seal keeps
-            // the chain alone, which a recomputation can beat: only the app's seal cannot.
-            if !chain::seal_head(&self.device, seq, &chain) {
-                tracing::debug!(
-                    "purlis: the event log's head was not sealed: this process cannot seal"
-                );
+            // The head the app seals is the line just written, and the start is sealed with the
+            // chain's first line. A process that cannot seal keeps the chain alone, which a
+            // recomputation can beat: only the app's seal cannot, so it is said.
+            if self.sealing {
+                let sealed = (!starts || chain::seal_start(&self.device, seq, &chain))
+                    && chain::seal_head(&self.device, seq, &chain);
+                if !sealed && !self.unsealed_said {
+                    self.unsealed_said = true;
+                    tracing::warn!(
+                        "purlis: the event log's hash chain is not sealed: this process cannot                          reach the seal key (only purlis's app seals), so doctor reports the                          chain as unsealed"
+                    );
+                }
             }
             self.chain = Some(chain);
         }
@@ -595,6 +621,18 @@ impl Log {
 
     /// [`prune`], with what it could not do and what its hard limit took logged.
     fn prune(&self) {
+        let held = |dir: &Path| segments(dir).map_or(0, |held| held.len());
+        let before = held(&self.dir);
+        self.prune_segments();
+        // Retention deleted the log's oldest segments: the chain's start moved with them, and
+        // this writer, which deleted them, anchors it where the log now starts.
+        if self.chain.is_some() && self.sealing && held(&self.dir) < before {
+            chain::reanchor(&self.dir, &self.device);
+        }
+    }
+
+    /// [`prune`]'s own call, with what it could not do logged.
+    fn prune_segments(&self) {
         let now = std::time::SystemTime::now();
         match prune(&self.dir, &self.retention, &self.consumers, now) {
             Ok(unread) => {
@@ -2765,7 +2803,12 @@ impl Recorder {
     ) -> io::Result<Event> {
         // A chat with the sandbox `off` can reach this log's files: from the line that records it,
         // the log is chained, and it stays so (spec §10.3, [`chain`]).
-        if kind == TRUST_SANDBOX_OFF {
+        // So is a run that starts under no sandbox backend, whoever chose that level: a project's
+        // or template's `off` writes no trust event, only a `run.started` that says `none`
+        // (M75-13 round 2A, S4).
+        if kind == TRUST_SANDBOX_OFF
+            || (kind == "run.started" && body.get("sandbox").and_then(|v| v.as_str()) == Some(NONE))
+        {
             self.log.chain()?;
         }
         if kind == "run.started"

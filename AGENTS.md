@@ -247,9 +247,11 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   (`eventlog::stops::WouldBlock`, written by `Recorder::stop`), never a file;
   `enforcement::record` hands it to the app's writer (`decisions::writes_would_have_blocked_lines`),
   and in a core lib test `enforcement::read_log` reads the thread's capture instead. The chain
-  (`eventlog::chain`) starts at the first `trust.sandbox.off` and seals its head with
-  `secrets::seal::keep`, so its tests are lib tests (the integration binary is not the app and
-  cannot seal). `no_code_reads_purlis_policy` fails on any Rust source naming the retired variable.
+  (`eventlog::chain`) starts at the first `trust.sandbox.off` or `run.started` naming no sandbox
+  and seals its start and head with `secrets::seal::keep`, so its tests are lib tests (the
+  integration binary is not the app and cannot seal; it can still reach a chain break, and
+  `chain::log_dir_for_this_thread` points a start's check at a test log). The session host is the
+  app's binary and marks itself the app in `hosting_here` so it can seal. `no_code_reads_purlis_policy` fails on any Rust source naming the retired variable.
 - A sandboxed chat cannot run the recorded replay at all: laying out a fixture plane copies
   `tests/fixtures/planes/daily/.charter/vaults`, which the sandbox denies ("the fixture plane
   copies: Operation not permitted"). Edit its rows with a text replace on the line (the file is
