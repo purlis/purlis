@@ -550,13 +550,31 @@ impl Model {
     /// **The next chat's script, one `WebFetch` call** of `url`: the tool a `permissions.deny`
     /// rule takes away at Full, asked for as its own step ([`Model::plays`] asks for Bash only).
     pub(crate) fn plays_a_fetch(&self, step: &str, url: &str) -> String {
+        self.plays_a_fetch_after(&[], step, url)
+    }
+
+    /// **The next chat's script: each of `before` as a Bash call, then one `WebFetch` of `url`**
+    /// ([`Model::plays_a_fetch`]). The proxy stamps a block with the chat's latest call, so a
+    /// fetch after a command is blocked as that command's (#7465).
+    pub(crate) fn plays_a_fetch_after(
+        &self,
+        before: &[(&str, String)],
+        step: &str,
+        url: &str,
+    ) -> String {
         let mut chats = self.chats.lock().expect("the chats");
+        let mut steps = before.to_vec();
+        steps.push((step, String::new()));
         let mut script = script_of(
             self.dialect,
             &format!("leg chat {}", chats.len() + 1),
-            &[(step, String::new())],
+            &steps,
         );
-        let call = &mut script.responses[0].calls[0];
+        let call = &mut script
+            .responses
+            .last_mut()
+            .expect("the fetch's response")
+            .calls[0];
         call.kind = "web".to_owned();
         call.command = None;
         call.url = Some(url.to_owned());
@@ -2354,15 +2372,33 @@ mod tests {
         let homes = the_claude_leg!(
             "a_web_fetch_of_a_refused_host_at_full_is_denied_by_the_hook_and_recorded"
         );
+        a_refused_web_fetch(&homes, "denied-fetch.example.test", &[]);
+    }
+
+    /// **The same refusal after another call** (#7465): the proxy stamps its block with the chat's
+    /// latest call, which the web hook has not yet told the host of while it holds the connection,
+    /// so the fetch's block is `Bash`'s. It is still one refusal, counted once.
+    #[test]
+    fn a_web_fetch_after_a_command_is_denied_and_counted_once() {
+        let homes = the_claude_leg!("a_web_fetch_after_a_command_is_denied_and_counted_once");
+        a_refused_web_fetch(
+            &homes,
+            "denied-after-bash.example.test",
+            &[("before-the-fetch", "echo before-the-fetch".to_owned())],
+        );
+    }
+
+    /// A `WebFetch` of `host` after the commands of `before`: held by the proxy, kept blocked by
+    /// the person, refused by the hook, and recorded and counted once.
+    fn a_refused_web_fetch(homes: &Homes, host: &str, before: &[(&str, String)]) {
         let model = Model::serve(Dialect::Claude);
         let Some(scenario) =
-            Scenario::for_real_harness(&homes, Protection::Full, Dialect::Claude, &model)
+            Scenario::for_real_harness(homes, Protection::Full, Dialect::Claude, &model)
         else {
             return;
         };
         let since = scenario.latest_seq();
-        let host = "denied-fetch.example.test";
-        let prompt = model.plays_a_fetch("denied-fetch", &format!("https://{host}/"));
+        let prompt = model.plays_a_fetch_after(before, "denied-fetch", &format!("https://{host}/"));
         let chat = scenario.starts_real(&model, &prompt);
         // The hook's tunnel request is held by the chat's proxy and the window lists its ask.
         let (_, kept) = scenario.person().when_listed(
@@ -2372,7 +2408,9 @@ mod tests {
             Duration::from_millis(50),
         );
         kept.unwrap_or_else(|why| panic!("{why}\n{}", scenario.said()));
-        scenario.until_played(chat, &["denied-fetch"]);
+        let mut played: Vec<&str> = before.iter().map(|(step, _)| *step).collect();
+        played.push("denied-fetch");
+        scenario.until_played(chat, &played);
 
         let guard_block = |event: &purlis_core::eventlog::Event| {
             event.kind == "stop.block"

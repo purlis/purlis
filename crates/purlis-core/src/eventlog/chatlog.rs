@@ -549,23 +549,30 @@ impl Blocks {
                         )
                     })
                     .unwrap_or(super::web_repeats::Fed::Counts);
-                // A deny a recorded block holds is the same refusal: held for its `seq` (the
-                // look's point), counting for nothing.
-                if fed != super::web_repeats::Fed::Repeat {
-                    one.add(&event);
-                }
                 let held = self.per_chat.entry(chat).or_default();
-                if let super::web_repeats::Fed::Retires(deny) = fed
-                    && let Some((_, counted)) = held.iter_mut().find(|(seq, _)| *seq == deny)
-                {
-                    *counted = Tally::default();
+                match fed {
+                    // A deny a recorded block holds is the same refusal: held for its `seq` (the
+                    // look's point), counting for nothing.
+                    super::web_repeats::Fed::Repeat => {}
+                    // The block that holds an earlier deny: the deny keeps the count, at its own
+                    // `seq`, so a refusal already looked at is not shown again as this later
+                    // block. The block counts itself only where the deny is no longer held.
+                    super::web_repeats::Fed::Retires(deny)
+                        if held.iter().any(|(seq, _)| *seq == deny) => {}
+                    super::web_repeats::Fed::Retires(_) | super::web_repeats::Fed::Counts => {
+                        one.add(&event);
+                    }
                 }
                 held.push_back((event.seq, one));
                 if held.len() > BLOCKS_HELD {
                     held.pop_front();
                 }
             }
-            super::Delivery::Ahead { .. } => self.per_chat.clear(),
+            // The denies and blocks waiting for their pair are let go with the rest.
+            super::Delivery::Ahead { .. } => {
+                self.per_chat.clear();
+                self.pairing = super::web_repeats::Pairing::default();
+            }
             super::Delivery::Missed { .. } => {}
         }
     }

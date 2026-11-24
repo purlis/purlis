@@ -7,7 +7,14 @@
 //! the same host. Both stay in the log (two causes). Whether the second *repeats* the first is
 //! decided here, from the log's own events, never from the proxy's reply: a deny repeats only
 //! when a sandbox block for the same chat and host is recorded near it, and each sandbox block
-//! absorbs at most one deny. A deny with no such block (the proxy answered 502 or 503, a host
+//! absorbs at most one deny.
+//!
+//! **What pairs is a plain sandbox block** (no qualifier: the proxy's own report, which only the
+//! app writes; a chat's own hook line can write an unverified one, and that must not absorb a
+//! verified refusal), **never the block's tool**: the proxy's block takes the tool of the chat's
+//! latest call, and the web hook tells the host of its own call only after its verdict, so a block
+//! held for a `WebFetch` is usually stamped with the call before it. The host is compared as
+//! [`host_key`] says, one spelling for both sides. A deny with no such block (the proxy answered 502 or 503, a host
 //! kept blocked that the proxy refuses without writing again, a refusal still an open ask) counts
 //! as the refusal it is, and counts the same once the block is written, so a fetch is counted at
 //! least once and at most once.
@@ -83,35 +90,47 @@ impl<K> Default for Pairing<K> {
     }
 }
 
-/// A host as two blocks compare it: lower case, without its port or brackets.
-fn bare(host: &str) -> String {
-    let host = host.to_ascii_lowercase();
-    if let Some(inner) = host.strip_prefix('[') {
-        return inner.split(']').next().unwrap_or(inner).to_owned();
-    }
-    match host.rsplit_once(':') {
-        // `host:port`; a bare IPv6 address holds more than one colon and is left whole.
-        Some((name, port)) if !name.contains(':') && port.chars().all(|c| c.is_ascii_digit()) => {
-            name.to_owned()
+/// How much of a host two blocks compare: a target is clipped to [`stops::TARGET_CHARS`] as it is
+/// written, and clips differently with a port than without, so only a prefix every spelling of
+/// the same host keeps whole is compared.
+const MATCHED_CHARS: usize = 100;
+
+/// **A host as both sides of a pair are compared**, from the target as a block holds it (the
+/// deny's, written bare by the web judge, and the proxy's, `host:port` as the sandbox names it):
+/// lower case, without a port, brackets, a trailing dot or the mark of a clipped target, an IPv6
+/// address as Rust writes it, and no more than [`MATCHED_CHARS`] of it.
+pub fn host_key(target: &str) -> String {
+    let lowered = target.trim().trim_end_matches("...").to_ascii_lowercase();
+    let name = if let Some(inner) = lowered.strip_prefix('[') {
+        inner.split(']').next().unwrap_or(inner)
+    } else if lowered.parse::<std::net::Ipv6Addr>().is_ok() {
+        lowered.as_str()
+    } else {
+        match lowered.rsplit_once(':') {
+            // `host:port`, or a port clipped away.
+            Some((name, port)) if port.chars().all(|c| c.is_ascii_digit()) => name,
+            _ => lowered.as_str(),
         }
-        _ => host,
-    }
+    };
+    let name = name.parse::<std::net::Ipv6Addr>().map_or_else(
+        |_| name.trim_end_matches('.').to_owned(),
+        |address| address.to_string(),
+    );
+    name.chars().take(MATCHED_CHARS).collect()
 }
 
-/// The host a block names, and whether it is the web judge's deny (`true`) or a sandbox block
-/// the proxy could have written for a `WebFetch` (`false`); `None` for any other block.
+/// The host a block names, and whether it is the web judge's deny (`true`) or a plain sandbox
+/// block the proxy could have written for a `WebFetch` (`false`); `None` for any other block.
 fn side(block: &Block) -> Option<(bool, String)> {
     let Some(Target::Host(host)) = &block.target else {
         return None;
     };
     match block.source {
         // A guard's block is aimed at a host only by the web judge's deny.
-        Source::Guard => Some((true, bare(host.as_str()))),
-        // The proxy's block for the call a `WebFetch` made (its tool, or none where no call was
-        // heard), never a command's connection that happens to name the same host.
-        Source::Sandbox if block.tool == "WebFetch" || block.tool.is_empty() => {
-            Some((false, bare(host.as_str())))
-        }
+        Source::Guard => Some((true, host_key(host.as_str()))),
+        // The proxy's own, verified block: its tool is whatever call the chat made last, so it
+        // says nothing of whether a `WebFetch` made the connection.
+        Source::Sandbox if block.qualifier.is_none() => Some((false, host_key(host.as_str()))),
         _ => None,
     }
 }
@@ -167,11 +186,31 @@ impl<K: Copy> Pairing<K> {
     }
 }
 
-/// **The events (by their place in `events`) that are a web judge's deny a recorded sandbox block
-/// holds**: left out of every count and list of blocks, still in the log.
-pub fn repeats(events: &[Event]) -> BTreeSet<usize> {
+/// **How a log's web denies and sandbox blocks pair**, by the events' places in the log.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Pairs {
+    /// Denies written after the block that holds them: they count for nothing.
+    pub after_block: BTreeSet<usize>,
+    /// Denies written before the block that holds them, by deny, with that block's place. The
+    /// deny counted when it was written, in its own turn.
+    pub before_block: BTreeMap<usize, usize>,
+}
+
+impl Pairs {
+    /// Every deny a recorded block holds, whichever was written first.
+    pub fn denies(&self) -> BTreeSet<usize> {
+        self.after_block
+            .iter()
+            .chain(self.before_block.keys())
+            .copied()
+            .collect()
+    }
+}
+
+/// **How the web judge's denies and the proxy's blocks of `events` pair.**
+pub fn pairs(events: &[Event]) -> Pairs {
     let mut pairing = Pairing::default();
-    let mut repeats = BTreeSet::new();
+    let mut pairs = Pairs::default();
     for (at, event) in events.iter().enumerate() {
         if event.kind != stops::BLOCK {
             continue;
@@ -185,12 +224,18 @@ pub fn repeats(events: &[Event]) -> BTreeSet<usize> {
         match pairing.feed(chat, at, super::written_at_ms(&event.ulid), &block) {
             Fed::Counts => {}
             Fed::Repeat => {
-                repeats.insert(at);
+                pairs.after_block.insert(at);
             }
             Fed::Retires(deny) => {
-                repeats.insert(deny);
+                pairs.before_block.insert(deny, at);
             }
         }
     }
-    repeats
+    pairs
+}
+
+/// **The events (by their place in `events`) that are a web judge's deny a recorded sandbox block
+/// holds**: left out of every count and list of blocks, still in the log.
+pub fn repeats(events: &[Event]) -> BTreeSet<usize> {
+    pairs(events).denies()
 }

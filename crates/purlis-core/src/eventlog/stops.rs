@@ -155,6 +155,12 @@ checked!(Folder, "folder", is_folder);
 checked!(Token, "service or guard arm", is_token);
 
 fn is_host(value: &str) -> bool {
+    // A host clipped as it was written ([`Target::shortened`]) is read back whole as the clip
+    // left it: its first characters, a port perhaps cut off, and the mark.
+    let clipped = value
+        .strip_suffix("...")
+        .filter(|_| value.len() == TARGET_CHARS + 3);
+    let value = clipped.map_or(value, |kept| kept.strip_suffix(':').unwrap_or(kept));
     let (name, port) = if let Some(rest) = value.strip_prefix('[') {
         let Some((address, after)) = rest.split_once(']') else {
             return false;
@@ -186,7 +192,7 @@ fn is_host(value: &str) -> bool {
             && name.len() <= 253
             && name
                 .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
     });
     let port_ok = port.is_none_or(|port| {
         !port.is_empty()
@@ -539,6 +545,10 @@ fn web_deny_host(call: &crate::hookwire::ToolCall) -> Option<Target> {
         return None;
     }
     let host = crate::toolhooks::web_deny_host(call.rule.as_deref()?)?;
+    // An IPv6 address is a host in brackets, as the sandbox names one.
+    if host.contains(':') {
+        return Target::host(&format!("[{host}]")).ok();
+    }
     Target::host(host).ok()
 }
 

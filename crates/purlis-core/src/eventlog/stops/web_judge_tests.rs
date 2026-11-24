@@ -73,12 +73,17 @@ fn web_fetch(n: u32, url: &str, tunnel: Tunnel) -> ToolCall {
 /// The proxy's block for a refused connection to `host`, written by the code the app writes it
 /// with (`sandboxblock::stop`), as the call the proxy heard.
 fn proxy_block(host: &str) -> Stop {
+    block_of(host, Some("WebFetch"), Reported::ByTheProxy)
+}
+
+/// A sandbox block for `host` stamped with `tool`, reported as `reported`.
+fn block_of(host: &str, tool: Option<&str>, reported: Reported) -> Stop {
     sandbox_block(
         Kind::Host,
         Some(host),
         Path::new("/project"),
-        Some("WebFetch"),
-        Reported::ByTheProxy,
+        tool,
+        reported,
     )
 }
 
@@ -120,6 +125,18 @@ impl Chat {
     fn proxy_blocks(&mut self, host: &str) -> &mut Self {
         self.host
             .stop(Path::new(PLANE), Some(CHAT), &proxy_block(host))
+            .unwrap();
+        self
+    }
+
+    /// A sandbox block for `host`, stamped `tool` and reported as `reported`.
+    fn blocks(&mut self, host: &str, tool: Option<&str>, reported: Reported) -> &mut Self {
+        self.host
+            .stop(
+                Path::new(PLANE),
+                Some(CHAT),
+                &block_of(host, tool, reported),
+            )
             .unwrap();
         self
     }
@@ -337,32 +354,15 @@ fn written_at_ms_after_the_deny(events: &mut [Event], after: u64) {
     written_at(events, 1, 1_800_000_000_000 + after);
 }
 
-/// What pairs is a block of the proxy's for the same host, for the web: not a block of another
-/// host, not a command's connection to the same host, and not one a long time away.
+/// What pairs is a plain sandbox block of the same chat and host near the deny: not a block of
+/// another host, and not one a long time away. Its tool is not asked: the proxy stamps a block
+/// with the chat's latest call, and the web hook's own call is not heard until after its verdict.
 #[test]
-fn only_a_web_fetchs_sandbox_block_of_the_same_host_and_time_pairs_with_its_deny() {
+fn only_a_sandbox_block_of_the_same_host_and_time_pairs_with_its_deny() {
     // Another host.
     let mut chat = Chat::begun();
     chat.proxy_blocks("one.example.com")
         .refuses("two.example.com");
-    everywhere(&chat.events(), 2);
-
-    // A command's connection to the same host.
-    let mut chat = Chat::begun();
-    chat.host
-        .stop(
-            Path::new(PLANE),
-            Some(CHAT),
-            &sandbox_block(
-                Kind::Host,
-                Some("same.example.com"),
-                Path::new("/project"),
-                Some("Bash"),
-                Reported::ByTheProxy,
-            ),
-        )
-        .unwrap();
-    chat.refuses("same.example.com");
     everywhere(&chat.events(), 2);
 
     // The same host an hour later.
@@ -372,6 +372,197 @@ fn only_a_web_fetchs_sandbox_block_of_the_same_host_and_time_pairs_with_its_deny
     let mut events = chat.events();
     written_at(&mut events, 1, 1_800_000_000_000 + 60 * 60_000);
     everywhere(&events, 2);
+}
+
+/// **The proxy's block is stamped with the chat's latest call**, which for a `WebFetch` after a
+/// `Bash` is `Bash`, or nothing where no call was heard: the deny pairs with it all the same.
+#[test]
+fn a_block_stamped_with_another_tool_still_pairs_with_the_web_fetchs_deny() {
+    for tool in [Some("Bash"), Some("Read"), Some("WebFetch"), None] {
+        let mut chat = Chat::begun();
+        chat.blocks("stamped.example.com", tool, Reported::ByTheProxy)
+            .refuses("stamped.example.com");
+        everywhere(&chat.events(), 1);
+
+        // And in the other order: the deny first, the block when the held ask leaves.
+        let mut chat = Chat::begun();
+        chat.refuses("stamped.example.com").blocks(
+            "stamped.example.com",
+            tool,
+            Reported::ByTheProxy,
+        );
+        everywhere(&chat.events(), 1);
+    }
+}
+
+/// A sandbox block the chat's own hook line wrote (unverified) is the chat's word: it must not
+/// absorb a refusal the proxy and the hook verified.
+#[test]
+fn an_unverified_sandbox_block_never_absorbs_a_deny() {
+    for tool in [None, Some("WebFetch")] {
+        let mut chat = Chat::begun();
+        chat.blocks("forged.example.com", tool, Reported::ByItsHook)
+            .refuses("forged.example.com");
+        let events = chat.events();
+        assert_eq!(
+            blocks_in(&events)[0].qualifier,
+            Some(Qualifier::Unverified),
+            "the block is the chat's own line"
+        );
+        everywhere(&events, 2);
+
+        // The deny first, the unverified block after it.
+        let mut chat = Chat::begun();
+        chat.refuses("forged.example.com")
+            .blocks("forged.example.com", tool, Reported::ByItsHook);
+        everywhere(&chat.events(), 2);
+    }
+}
+
+/// A block absorbs one deny, never two: the second fetch of the host counts for itself.
+#[test]
+fn one_sandbox_block_holds_one_deny_of_two() {
+    let mut chat = Chat::begun();
+    chat.proxy_blocks("two.example.com")
+        .refuses("two.example.com")
+        .refuses("two.example.com");
+    everywhere(&chat.events(), 2);
+
+    let mut chat = Chat::begun();
+    chat.refuses("two.example.com")
+        .refuses("two.example.com")
+        .proxy_blocks("two.example.com");
+    everywhere(&chat.events(), 2);
+}
+
+/// A block another chat's proxy wrote pairs with nothing of this chat's.
+#[test]
+fn a_block_of_another_chat_never_pairs() {
+    let blocks = |chat: &str, source, host: &str| {
+        let block = Block {
+            tool: String::new(),
+            source,
+            qualifier: None,
+            target: Some(Target::host(host).unwrap()),
+            args: None,
+        };
+        (chat.to_owned(), block)
+    };
+    let mut pairing = crate::eventlog::web_repeats::Pairing::default();
+    let fed = |pairing: &mut crate::eventlog::web_repeats::Pairing<u32>,
+               key: u32,
+               (chat, block): (String, Block)| {
+        pairing.feed(&chat, key, Some(1_800_000_000_000), &block)
+    };
+    use crate::eventlog::web_repeats::Fed;
+    assert_eq!(
+        fed(
+            &mut pairing,
+            1,
+            blocks("chat-a", Source::Sandbox, "x.example.com")
+        ),
+        Fed::Counts
+    );
+    assert_eq!(
+        fed(
+            &mut pairing,
+            2,
+            blocks("chat-b", Source::Guard, "x.example.com")
+        ),
+        Fed::Counts,
+        "the other chat's deny is no repeat of chat a's block"
+    );
+    assert_eq!(
+        fed(
+            &mut pairing,
+            3,
+            blocks("chat-a", Source::Guard, "x.example.com")
+        ),
+        Fed::Repeat,
+        "its own chat's deny is"
+    );
+}
+
+/// **One spelling of a host on both sides**: the deny names the host as the url crate writes it
+/// (lower case, trailing dot kept, a bare IPv6 address, `_` kept, the whole name), the proxy's
+/// block as the sandbox names it (a default port dropped or kept, an address in brackets, a
+/// target clipped at 120 characters with or without its port).
+#[test]
+fn a_hosts_spellings_on_the_deny_and_the_block_are_the_same_host() {
+    let long = |n: usize| {
+        let first = "a".repeat(60);
+        let rest = "b".repeat(n - 61);
+        format!("{first}.{rest}")
+    };
+    let hosts: Vec<(String, Vec<String>)> = vec![
+        (
+            "example.com.".to_owned(),
+            vec!["example.com".into(), "example.com:443".into()],
+        ),
+        ("EXAMPLE.com".to_owned(), vec!["example.com:443".into()]),
+        (
+            "[2001:db8::1]".to_owned(),
+            vec!["[2001:db8::1]".into(), "[2001:db8::1]:443".into()],
+        ),
+        (
+            "a_b.example.com".to_owned(),
+            vec!["a_b.example.com".into(), "a_b.example.com:443".into()],
+        ),
+    ]
+    .into_iter()
+    .chain([118, 119, 120, 121, 125, 200].map(|n| {
+        let host = long(n);
+        (host.clone(), vec![host.clone(), format!("{host}:443")])
+    }))
+    .collect();
+    for (denied, named) in hosts {
+        for named in named {
+            let mut chat = Chat::begun();
+            chat.proxy_blocks(&named).refuses(&denied);
+            let events = chat.events();
+            assert_eq!(
+                blocks_in(&events).len(),
+                2,
+                "{denied} / {named}: both are written"
+            );
+            assert!(
+                blocks_in(&events)
+                    .iter()
+                    .all(|block| block.target.is_some()),
+                "{denied} / {named}: both name a host: {:?}",
+                blocks_in(&events)
+            );
+            assert_eq!(counted(&events), 1, "{denied} refused, {named} blocked");
+        }
+    }
+}
+
+/// A rule with a host is no tally bucket of its own: the log's tool-call event holds the rule
+/// whole, whatever host the model asked for; the host is only in the deny's block's target.
+#[test]
+fn the_rule_the_log_tallies_is_one_whatever_the_host() {
+    let mut chat = Chat::begun();
+    chat.refuses("one.example.com")
+        .refuses("two.example.com")
+        .denies(
+            "three.example.com",
+            Tunnel::Unreached("the proxy did not answer".to_owned()),
+        );
+    let events = chat.events();
+    let rules: Vec<String> = events
+        .iter()
+        .filter(|event| event.kind.starts_with("hook.") && event.body.get("rule").is_some())
+        .map(|event| event.body["rule"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(rules.len(), 3, "{rules:?}");
+    assert_eq!(rules[0], crate::toolhooks::WEB_PROXY_REFUSED);
+    assert_eq!(rules[1], crate::toolhooks::WEB_PROXY_REFUSED);
+    assert_eq!(rules[2], crate::toolhooks::WEB_PROXY_UNREACHED);
+    let targets: Vec<_> = blocks_in(&events)
+        .iter()
+        .filter_map(|block| block.target.clone())
+        .collect();
+    assert_eq!(targets.len(), 3, "the hosts are the blocks' targets");
 }
 
 /// A turn's finish names the turn's blocks: a deny with no sandbox block behind it stays one of
@@ -484,5 +675,118 @@ fn a_guards_other_deny_is_never_taken_for_a_web_fetchs() {
         block_of_line(&call, true).unwrap().target,
         None,
         "another hook"
+    );
+}
+
+/// A block held for a quiet person comes in a later turn than its deny: the refusal stays counted
+/// in the turn of the deny, and the later turn counts nothing for it.
+#[test]
+fn a_late_block_keeps_the_count_in_the_denys_turn() {
+    let mut chat = Chat::begun();
+    chat.refuses("late.example.com")
+        .proxy_blocks("late.example.com");
+    let mut events = read(chat.dir.path()).unwrap();
+    let template = events[0].clone();
+    let mark = |kind: &str| Event {
+        kind: kind.to_owned(),
+        body: serde_json::json!({}),
+        ..template.clone()
+    };
+    // Turn 1: the prompt, the deny, the turn's end. Turn 2: a prompt, the block, its end.
+    let block = events.pop().unwrap();
+    events.insert(1, mark("hook.userpromptsubmit"));
+    events.push(mark("hook.stop"));
+    events.push(mark("hook.userpromptsubmit"));
+    events.push(block);
+    events.push(mark("hook.stop"));
+    let mut events = stamped(events);
+    let block_at = events
+        .iter()
+        .rposition(|event| event.kind == BLOCK)
+        .unwrap();
+    events[block_at].ulid = at_ms(1_800_000_000_000 + 13 * 60_000, block_at);
+    let chat_id = chat_of(&events);
+    let turns: Vec<_> = finishes::finishes(&events, &chat_id)
+        .iter()
+        .map(|finish| finish.blocked)
+        .collect();
+    assert_eq!(turns, [1, 0], "one block, in the deny's turn");
+    assert_eq!(counted(&events), 1);
+}
+
+/// A refusal already looked at is not shown again when its block follows: the deny was counted
+/// and looked at; the block that retires it adds nothing after the look.
+#[test]
+fn a_block_that_follows_a_looked_at_deny_does_not_show_it_again() {
+    let mut chat = Chat::begun();
+    chat.refuses("seen.example.com")
+        .proxy_blocks("seen.example.com");
+    let events = chat.events();
+    let (deny, block) = {
+        let at = |source| {
+            events
+                .iter()
+                .find(|event| {
+                    event.kind == BLOCK
+                        && serde_json::from_value::<Block>(event.body.clone())
+                            .is_ok_and(|one| one.source == source)
+                })
+                .unwrap()
+                .seq
+        };
+        (at(Source::Guard), at(Source::Sandbox))
+    };
+    assert!(block > deny);
+    let chat_id = chat_of(&events);
+    let mut blocks = Blocks::default();
+    for event in &events {
+        blocks.take(Delivery::Event(event.clone()));
+        if event.seq == deny {
+            let held = blocks.since(&chat_id, None);
+            assert_eq!(held.blocks + held.unverified, 1, "the deny counts");
+        }
+    }
+    assert_eq!(
+        blocks.since(&chat_id, None).tally.blocks
+            + blocks.since(&chat_id, None).tally.unverified_blocks,
+        1,
+        "still one in all"
+    );
+    let after_the_look = blocks.since(&chat_id, Some(deny));
+    assert_eq!(
+        after_the_look.blocks + after_the_look.unverified,
+        0,
+        "the refusal looked at is not shown again"
+    );
+}
+
+/// What the log lost with `Ahead` takes the held denies and blocks too: a block heard before it
+/// pairs with nothing after it, so the deny that follows counts.
+#[test]
+fn lines_the_log_lost_let_go_of_the_pairing_too() {
+    let mut chat = Chat::begun();
+    chat.proxy_blocks("lost.example.com")
+        .refuses("lost.example.com");
+    let events = chat.events();
+    let chat_id = chat_of(&events);
+    let [block, deny] = events
+        .iter()
+        .filter(|event| event.kind == BLOCK)
+        .collect::<Vec<_>>()[..]
+    else {
+        panic!("a block and a deny: {events:?}");
+    };
+    let mut blocks = Blocks::default();
+    blocks.take(Delivery::Event(block.clone()));
+    blocks.take(Delivery::Ahead {
+        cursor: 99,
+        log_ends_at: 0,
+    });
+    blocks.take(Delivery::Event(deny.clone()));
+    let tally = blocks.since(&chat_id, None);
+    assert_eq!(
+        tally.blocks + tally.unverified,
+        1,
+        "the deny is no repeat of a block the stream let go of"
     );
 }

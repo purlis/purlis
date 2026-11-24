@@ -180,9 +180,17 @@ pub fn finishes(events: &[Event], chat: &str) -> Vec<Finish> {
     let mut out = Vec::new();
     let mut turn = Turn::default();
     let mut harness = super::UNKNOWN.to_owned();
-    // A web judge's deny a recorded sandbox block holds already is no second block (#7465); one
-    // that no block holds stays the turn's block.
-    let repeats = super::web_repeats::repeats(events);
+    // A web judge's deny a recorded sandbox block holds is one block, in the turn the deny was
+    // written in (#7465): a block held for a quiet person comes up to 13 minutes after it, in a
+    // later turn, and must not move the count there. A deny written after its block is left out
+    // (the block is the turn's); a deny no block holds stays the turn's block.
+    let pairs = super::web_repeats::pairs(events);
+    let repeats: std::collections::BTreeSet<usize> = pairs
+        .after_block
+        .iter()
+        .chain(pairs.before_block.values())
+        .copied()
+        .collect();
     for (_, event) in events
         .iter()
         .enumerate()

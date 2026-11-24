@@ -408,6 +408,16 @@ pub fn web_deny_host(rule: &str) -> Option<&str> {
         .find_map(|said| rule.strip_prefix(said)?.strip_prefix(": "))
 }
 
+/// **A deny's rule as the log tallies it**: the web judge's two rules without the host they name
+/// on the hook line ([`web_deny_host`]), any other rule as it is. The host goes only in the
+/// deny's block's target, so a model's choice of hostnames adds no buckets to the rule tallies.
+pub fn stable_rule(rule: &str) -> &str {
+    [WEB_PROXY_REFUSED, WEB_PROXY_UNREACHED]
+        .into_iter()
+        .find(|said| web_deny_host(rule).is_some() && rule.starts_with(*said))
+        .unwrap_or(rule)
+}
+
 /// How long the web tools' judge waits on the proxy, which holds a connection to a host nothing
 /// lists while the person is asked: a little under the hook's own timeout
 /// ([`crate::hookreg::WEB_JUDGE`]), so a hook that waited too long refuses and is never cut off.
