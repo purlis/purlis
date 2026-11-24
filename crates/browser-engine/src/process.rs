@@ -173,6 +173,7 @@ impl Engine {
     /// Starts the engine `launch` describes, in a new process group led by `keeper`, and waits
     /// until it answers over its pipe.
     pub fn start(launch: &Launch, keeper: &Keeper) -> Result<Self, StartError> {
+        let step = purlis_session_protocol::steps::begin("browser_engine_start");
         launch.prepare_data_dir().map_err(StartError::DataFolder)?;
         let group = EngineGroup::start(keeper).map_err(StartError::Spawn)?;
         let (engine_reads, host_writes) = io::pipe().map_err(StartError::Spawn)?;
@@ -206,6 +207,7 @@ impl Engine {
             .devtools()
             .call_within("Browser.getVersion", json!({}), None, FIRST_ANSWER)
             .map_err(StartError::NoAnswer)?;
+        step.done();
         Ok(engine)
     }
 
