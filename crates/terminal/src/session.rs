@@ -2219,9 +2219,36 @@ mod tests {
         (session, shell, ends)
     }
 
+    /// Waits until `pid` leads a session of its own, which is what makes it out of reach of its
+    /// program's group. `a_program_with_a_shell_of_its_own` has the pid as soon as the program
+    /// has forked the shell, before the shell's `perl` has run `setsid`: on a loaded runner
+    /// that takes long enough for an end of the group to find it still inside, and the test
+    /// that says a person's own job survives it fails (#7441, #7461).
+    fn until_it_leads_a_session_of_its_own(pid: u32) {
+        let id = rustix::process::Pid::from_raw(pid as i32).expect("a pid");
+        let until = Instant::now() + PATIENCE;
+        loop {
+            match rustix::process::getsid(Some(id)) {
+                Ok(session) if session == id => return,
+                Ok(_) => {}
+                Err(error) => panic!("precondition: {pid}'s session cannot be read: {error}"),
+            }
+            assert!(
+                Instant::now() < until,
+                "precondition: {pid} never led a session of its own"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     /// Whether `pid` has gone within a few seconds.
     fn gone_soon(pid: u32) -> bool {
-        let until = Instant::now() + Duration::from_secs(5);
+        gone_within(pid, Duration::from_secs(5))
+    }
+
+    /// Whether `pid` has gone within `time`.
+    fn gone_within(pid: u32, time: Duration) -> bool {
+        let until = Instant::now() + time;
         while Instant::now() < until {
             if !alive(pid) {
                 return true;
@@ -2258,6 +2285,7 @@ mod tests {
         // `setsid` and `nohup` are how a job is meant to outlive a terminal tab; only a chat's
         // harness asks for its strays to end with it.
         let (session, shell, _ends) = a_program_with_a_shell_of_its_own_ending_it("", false);
+        until_it_leads_a_session_of_its_own(shell);
 
         session.end();
 
@@ -2311,16 +2339,22 @@ mod tests {
         // `setsid`s a job and exits leaves the job running, noted or not.
         let (session, shell, _ends) =
             a_program_with_a_shell_of_its_own_then("", "read _; exit 0", false);
+        until_it_leads_a_session_of_its_own(shell);
         session.program().note_strays();
 
         session.write(b"\r").unwrap();
 
+        // Whatever ends with the program ends inside this call, before it returns the exit
+        // (`Held::try_wait` ends what the group left first). A short bounded look after it
+        // still catches a kill that ever moves to another thread.
         assert!(
             session.wait(Duration::from_secs(5)).unwrap().is_some(),
             "precondition: the program exits"
         );
-        thread::sleep(Duration::from_millis(800));
-        assert!(alive(shell), "its shell {shell} was ended with the tab");
+        assert!(
+            !gone_within(shell, Duration::from_millis(300)),
+            "its shell {shell} was ended with the tab"
+        );
     }
 
     #[test]
