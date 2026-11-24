@@ -1879,6 +1879,32 @@ fn a_touched_path_reaches_the_window_and_no_file_the_host_writes() {
     let file = format!("/w/branch/{CANARY}.rs");
     let input = serde_json::json!({"file_path": file});
 
+    // The host's first line pays for what it sets up as a chat's run begins (#7443), and a tool
+    // line is given only 250 ms to be taken, so on a loaded runner that first line was the one
+    // that missed it. One that waits for no receipt goes first, and the tool line is sent once
+    // it is in the log: the bound is then spent on the line it is about.
+    purlis_core::hookwire::send(
+        socket,
+        Some(&token),
+        &Report {
+            chat: 3,
+            event: purlis_core::state::Event::UserPromptSubmit,
+            conversation: Default::default(),
+            pid: None,
+            agent: None,
+            detail: Default::default(),
+        },
+    )
+    .expect("sent");
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while eventlog::read(&logs).map_or(0, |events| events.len()) < 2 {
+        assert!(
+            std::time::Instant::now() < until,
+            "precondition: the first line is recorded"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
     purlis_core::hookwire::deliver_tool(
         socket,
         Some(&token),
