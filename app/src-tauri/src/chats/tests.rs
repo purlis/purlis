@@ -12315,14 +12315,16 @@ mod moved_on {
                 .collect()
         }
 
+        /// Waits for `done`, polling, and returns the moment it is true. The deadline is only
+        /// how long a thread behind it may go unscheduled before the wait calls it stuck: two
+        /// seconds was missed on a runner starting thousands of test processes (#7555, #7562),
+        /// where a retry a moment later took under a tenth of one.
         pub fn until(&self, done: impl Fn(&Self) -> bool, what: &str) {
-            for _ in 0..400 {
-                if done(self) {
-                    return;
-                }
+            let deadline = std::time::Instant::now() + Duration::from_secs(30);
+            while !done(self) {
+                assert!(std::time::Instant::now() < deadline, "never: {what}");
                 std::thread::sleep(Duration::from_millis(5));
             }
-            panic!("never: {what}");
         }
 
         /// Gives what is in flight time to go wrong.

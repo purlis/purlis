@@ -131,8 +131,10 @@ fn chat_env(person: &Person, harness: Harness, scratch: &Path) -> Vec<(String, S
             .map(|(_, v)| v.as_str())
     };
     assert_eq!(get("GIT_CONFIG_KEY_0"), Some("user.name"));
-    assert_eq!(get("GIT_CONFIG_COUNT"), Some("3"));
-    assert_eq!(get("GIT_CONFIG_KEY_2"), Some("credential.helper"));
+    assert_eq!(get("GIT_CONFIG_COUNT"), Some("5"));
+    assert_eq!(get("GIT_CONFIG_KEY_1"), Some("gc.auto"));
+    assert_eq!(get("GIT_CONFIG_KEY_2"), Some("maintenance.auto"));
+    assert_eq!(get("GIT_CONFIG_KEY_4"), Some("credential.helper"));
     env
 }
 
