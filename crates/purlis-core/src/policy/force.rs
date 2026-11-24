@@ -592,7 +592,7 @@ fn unread(request: &Request<'_>, floor: Option<&Resolved>) -> Decision {
 }
 
 /// The narrower of two `@keep` scopes.
-fn narrower_keep(a: Option<String>, b: Option<String>) -> Option<String> {
+pub(super) fn narrower_keep(a: Option<String>, b: Option<String>) -> Option<String> {
     let at = |w: &String| KEEPS.iter().position(|k| k == w).unwrap_or(0);
     match (a, b) {
         (Some(a), Some(b)) => Some(if at(&a) <= at(&b) { a } else { b }),
@@ -601,7 +601,7 @@ fn narrower_keep(a: Option<String>, b: Option<String>) -> Option<String> {
 }
 
 /// The stricter of two `@timed` scopes: `off`, then the shorter.
-fn stricter_timed(a: Option<String>, b: Option<String>) -> Option<String> {
+pub(super) fn stricter_timed(a: Option<String>, b: Option<String>) -> Option<String> {
     let rank = |w: &String| match TIMEDS.iter().position(|t| t == w).unwrap_or(0) {
         2 => 0,
         0 => 1,
@@ -625,12 +625,32 @@ fn stricter(decisions: Vec<Decision>) -> Decision {
     let mut keep = None;
     let mut timed = None;
     let mut chosen: Option<Decision> = None;
+    // Where the top is an ask, every side that asks as strictly stands on its own rules, and a
+    // grant must cover each of them: the first side names the decision, the others' deciding
+    // asks join it (M75-20 review round 2, F1).
+    let mut also: Vec<super::decide::Deciding> = Vec::new();
     for decision in decisions.into_iter().filter(|d| d.after_mode == top) {
         keep = narrower_keep(keep, decision.keep.clone());
         timed = stricter_timed(timed, decision.timed.clone());
-        chosen.get_or_insert(decision);
+        match chosen.as_ref() {
+            None => chosen = Some(decision),
+            Some(first) if top == super::decide::Outcome::Ask => {
+                also.extend(
+                    decision
+                        .deciding
+                        .into_iter()
+                        .filter(|rule| !first.deciding.iter().any(|one| one.id == rule.id)),
+                );
+            }
+            Some(_) => {}
+        }
     }
     let mut chosen = chosen.expect("a side that decided at the top");
+    for rule in also {
+        if !chosen.deciding.iter().any(|one| one.id == rule.id) {
+            chosen.deciding.push(rule);
+        }
+    }
     chosen.keep = keep;
     chosen.timed = timed;
     chosen
@@ -649,7 +669,75 @@ pub fn in_force(
     if let Some(seen) = seen {
         seal(root, &seen);
     }
+    retire_lost_grants(root, sources, standing, floor);
     decision
+}
+
+/// **Takes out of the store every grant whose rule is in no side in force** (M75-20, spec §8.7: a
+/// grant is lost when its rule is removed). The sides are the ones a decision is judged by: the
+/// project as committed now, the accepted copy and every floor version, so a rule one of them
+/// still holds still decides, and its grants stay. A rule written again after every side lost it
+/// then finds no grant to revive. Only a store that holds is touched, and only where it holds a
+/// grant (so a plane with none pays nothing); a side that does not read stops it, since a rule
+/// it holds cannot be told from one it lost. Best effort: a store that cannot be written changes
+/// nothing, and the grant then serves only where its rule still decides.
+///
+/// A shipped rule that no side holds still decides where `floor` enforces its family (the merge
+/// hold where every side has it off, [`super::decide::for_chat`]), so its grants stay (review round
+/// 3, N5).
+pub fn retire_lost_grants(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    floor: Option<&Resolved>,
+) {
+    if !matches!(standing.state, State::Holds)
+        || !standing.entries.iter().any(|e| e.kind == answers::GRANT)
+    {
+        return;
+    }
+    let mut known = BTreeSet::new();
+    for side in decided_sides(sources, standing) {
+        match side {
+            LimitSide::Read(loaded) => known.extend(loaded.policy.rules()),
+            LimitSide::Unread => return,
+        }
+    }
+    if let Some(floor) = floor {
+        known.extend(shipped_rules_held_by(floor));
+    }
+    let gone = super::grants::lost(&standing.entries, &known);
+    if gone.is_empty() {
+        return;
+    }
+    let taken = answers::commit(root, |draft| {
+        for entry in &gone {
+            draft.remove_narrowing(answers::GRANT, &entry.text);
+        }
+    });
+    if let Err(why) = taken {
+        tracing::debug!("purlis: a grant of a removed rule was not taken out ({why})");
+    }
+}
+
+/// **The shipped default's rules that a `floor` keeps in force** whatever the project says: those
+/// that name an action of a family the floor enforces.
+fn shipped_rules_held_by(floor: &Resolved) -> Vec<String> {
+    static SHIPPED: OnceLock<levels::Loaded> = OnceLock::new();
+    let shipped = SHIPPED.get_or_init(levels::Loaded::shipped_strict);
+    shipped
+        .policy
+        .rules()
+        .into_iter()
+        .filter(|id| {
+            shipped.policy.rule(id).is_some_and(|rule| {
+                rule.actions().iter().any(|action| {
+                    super::family_of(action)
+                        .is_some_and(|family| super::decide::floor_enforces(floor, family))
+                })
+            })
+        })
+        .collect()
 }
 
 /// **One decision by the policy in force, and the version the app saw that it should seal**
@@ -827,13 +915,35 @@ enum LimitSide {
 /// the store kept stand in for the ones it verified, as in [`judge`]. A side that does not read is
 /// [`LimitSide::Unread`], never silent.
 fn limit_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+    let mut sides = vec![LimitSide::Read(Box::new(levels::load(sources)))];
+    sides.extend(held_sides(sources, standing));
+    sides
+}
+
+/// The sides a decision reads, as [`limit_sides`] counts them, but with the current one read as
+/// [`judge`] reads it: the project at the one `HEAD` read ([`Version::at_head`]), never the
+/// working tree's own reading (review round 2, F8). A `HEAD` that was not read stably is an
+/// unread side, so nothing is purged on a guess.
+fn decided_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
+    let first = match Version::at_head(sources.root) {
+        Head::Read(version) => LimitSide::Read(Box::new(loaded_for(sources, &version))),
+        Head::NoCommit => LimitSide::Read(Box::new(levels::load(sources))),
+        Head::Unread => LimitSide::Unread,
+    };
+    let mut sides = vec![first];
+    sides.extend(held_sides(sources, standing));
+    sides
+}
+
+/// The accepted copy and every floor version, as sides.
+fn held_sides(sources: &Sources<'_>, standing: &Standing) -> Vec<LimitSide> {
     let entries: &[answers::Entry] = if standing.is_deny() {
         &standing.kept
     } else {
         &standing.entries
     };
     let none = Version::default();
-    let mut sides = vec![LimitSide::Read(Box::new(levels::load(sources)))];
+    let mut sides = Vec::new();
     if standing.is_unverified_by_a_reachable_cause() {
         sides.push(LimitSide::Read(Box::new(loaded_for(sources, &none))));
     } else {
