@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795540287712,
+  "lastUpdate": 1795548066213,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54054,6 +54054,48 @@ window.BENCHMARK_DATA = {
             "value": 102.2117015,
             "unit": "ms",
             "extra": "median of 5 runs: 100.858, 102.087, 102.212, 102.328, 103.018 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dc814d7e358177b4447076e02c223fb12b6f8a77",
+          "message": "Scenarios: the fifty-sessions test times the app, not its own polling, and names a swapping runner (#7577)\n\n* Fifty-sessions test: time the open, not the test's own ps; record the runner; judge a swapping run as inconclusive\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M878F9XQ1P46M26HKWY6B57E\nPurlis-Persona: steward\n\n* Fifty opens: judge hang by number, swap baseline before the run, annotate inconclusive\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M878F9XQ1P46M26HKWY6B57E\nPurlis-Persona: steward\n\n* CI: install mold for the whole-tree guards too\n\nThe recorded-behaviour job links with mold (RUSTFLAGS), but installed it only when Rust\nwas in scope, so on a change that leaves Rust out its whole-tree guards failed with\n\"collect2: cannot find ld\". The linker now installs on every change.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T18:35:14Z",
+          "tree_id": "82977f6e383c1ebc793c0a1351b8ed23630dbf44",
+          "url": "https://github.com/purlis/purlis/commit/dc814d7e358177b4447076e02c223fb12b6f8a77"
+        },
+        "date": 1795548058633,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.4569315,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.443, 0.456, 0.457, 0.462, 0.464 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3437925,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.233, 16.300, 16.344, 16.701, 16.873 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.469049,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.263, 101.346, 101.469, 102.487, 102.577 ms"
           }
         ]
       }
