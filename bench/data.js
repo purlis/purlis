@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795535400054,
+  "lastUpdate": 1795535817296,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53844,6 +53844,48 @@ window.BENCHMARK_DATA = {
             "value": 100.7799215,
             "unit": "ms",
             "extra": "median of 5 runs: 100.358, 100.474, 100.780, 101.061, 102.095 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "52d5362973ee4ad177bbdecdad202e63a5c3ea21",
+          "message": "Forge route: refuse a reversed PR, and update-branch onto a protected head (#7494) (#7526)\n\n* Forge route: refuse a pull request from a protected head and update-branch that writes to one (#7494)\n\nA chat could open a pull request from the default branch into its own\nfeature branch and call update-branch on it, which makes GitHub merge the\nfeature branch into the default branch, past the merge guard and the push\nrefusal.\n\n- createPullRequest and POST /pulls are refused when the head is the\n  default or a protected branch (owner: and refs/heads/ forms read, a\n  non-branch ref counts as protected).\n- updatePullRequestBranch and PUT /pulls/N/update-branch are forwarded\n  only when ObjectRepo::pull_head says the head is an unprotected branch\n  of the chat's own repo. A fork head, and a head that cannot be read, are\n  refused. The default pull_head knows nothing, so it fails closed.\n- The app's RunObjects asks GitHub for the head (headRefName and\n  headRepository), uncached.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86S3Z2Y0VYJNH69DZFD8RHT\nPurlis-Persona: steward\n\n* Forge route: update-branch and rebase write only to a head the chat owns (#7526)\n\nupdate-branch (GitHub, REST and GraphQL, merge or rebase) and a GitLab merge\nrequest rebase are forwarded only when the head is a branch of the chat's own\nrepo that the push rule's record holds a tip of this chat's own on, equal to\nthe head the forge reports now (headRefOid / diffHeadSha). Any other head is\nrefused, so an unprotected branch of the person's or another chat's, a base\nchanged by PATCH, or a rebase of someone else's branch no longer lands.\n\nThe create-time refusal narrows to the default branch (REST, GraphQL and\nGitLab merge requests): ownership now guards every other head.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86VS52JGV7JQM6AC21TWXPC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T15:16:28Z",
+          "tree_id": "3eade1a945c7247ff8910df39f995770aaf05a5c",
+          "url": "https://github.com/purlis/purlis/commit/52d5362973ee4ad177bbdecdad202e63a5c3ea21"
+        },
+        "date": 1795535809861,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.35163900000000003,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.329, 0.332, 0.352, 0.354, 0.383 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.3882245,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.272, 16.317, 16.388, 16.645, 16.692 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.447817,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.638, 101.323, 101.448, 101.617, 101.912 ms"
           }
         ]
       }
