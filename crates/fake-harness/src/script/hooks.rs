@@ -167,21 +167,33 @@ fn finish(route: &Route, started: Started) -> Fired {
         None => {
             // Past its timeout: the hook and whatever it started are ended, and what it wrote
             // is not read, as the harness reads nothing of a hook it cut off.
+            super::trace(format_args!(
+                "hook {} ({}) is past its {} s: ending its group {}",
+                route.word,
+                route.event,
+                route.timeout,
+                child.id()
+            ));
             kill_group(child.id());
             let _ = child.kill();
             let _ = child.wait();
+            super::trace(format_args!("hook {} ended", route.word));
             fired.exit = None;
         }
     }
     fired
 }
 
+/// Ends the hook's process group (it leads its own, `process_group(0)` in [`start`]) in this
+/// process: no external `kill` to find on the `PATH`, to start under the wrap, or to parse
+/// `-9 -<pid>` (the shell tool's path signals in-process for the same reason, `chat.rs`).
 fn kill_group(pid: u32) {
-    let _ = Command::new("kill")
-        .args(["-9", &format!("-{pid}")])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
+    if let Some(leader) = i32::try_from(pid)
+        .ok()
+        .and_then(rustix::process::Pid::from_raw)
+    {
+        let _ = rustix::process::kill_process_group(leader, rustix::process::Signal::KILL);
+    }
 }
 
 impl Fired {
@@ -250,4 +262,56 @@ pub struct Refusal {
     pub word: String,
     pub reason: String,
     pub by_exit_2: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn route(command: String, timeout: u64) -> Route {
+        Route {
+            event: "PostToolUse".to_owned(),
+            matcher: None,
+            word: "held".to_owned(),
+            timeout,
+            command,
+            tool: None,
+        }
+    }
+
+    #[test]
+    fn a_hook_past_its_timeout_is_ended_with_what_it_started_and_the_caller_goes_on() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let pidfile = dir.path().join("grandchild.pid");
+        let held = route(
+            format!("sleep 60 & echo $! > {}; wait", pidfile.display()),
+            1,
+        );
+        let started = Instant::now();
+        let fired = run_all(
+            &[&held],
+            Spawn::Shell("/bin/sh"),
+            &serde_json::json!({}),
+            &[],
+            dir.path(),
+        );
+        assert_eq!(fired.len(), 1);
+        assert_eq!(fired[0].exit, None, "a cut-off hook has no exit");
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the hook was waited on past its timeout: {:?}",
+            started.elapsed()
+        );
+        let grandchild: i32 = std::fs::read_to_string(&pidfile)
+            .expect("the hook said its child's pid")
+            .trim()
+            .parse()
+            .expect("a pid");
+        let pid = rustix::process::Pid::from_raw(grandchild).expect("a pid");
+        let gone = (0..50).any(|_| {
+            std::thread::sleep(Duration::from_millis(100));
+            rustix::process::test_kill_process(pid).is_err()
+        });
+        assert!(gone, "what the hook started is still running");
+    }
 }

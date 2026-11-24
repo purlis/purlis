@@ -259,6 +259,12 @@ fn play(given: &Given) -> Played {
         Some(tmp) => (tmp.join("transcript.jsonl"), tmp.join("fake-state")),
         None => (transcript, state),
     };
+    // What the fake says on standard error, where the chat may write: read back if it ends early.
+    let stderr_log = chat_tmp
+        .as_ref()
+        .map_or(base_path.join("fake-stderr.log"), |tmp| {
+            tmp.join("fake-stderr.log")
+        });
     let places = json!({
         "work": root.display().to_string(),
         "outside": outside.display().to_string(),
@@ -272,6 +278,8 @@ fn play(given: &Given) -> Played {
             ("FAKE_HARNESS_SCRIPT", given.script.display().to_string()),
             ("FAKE_HARNESS_TRANSCRIPT", transcript.display().to_string()),
             ("FAKE_HARNESS_STATE", state.display().to_string()),
+            ("FAKE_HARNESS_STDERR", stderr_log.display().to_string()),
+            ("FAKE_HARNESS_TRACE", "1".to_owned()),
             ("FAKE_HARNESS_PLACES", places.to_string()),
         ]
         .into_iter()
@@ -314,6 +322,41 @@ fn play(given: &Given) -> Played {
             continue;
         }
         let done = read_jsonl(&transcript);
+        // The fake ending before its script is played is the failure, and it never gets better
+        // by waiting: say how it ended and what it said last, at once.
+        if let Ok(Some(exit)) = session.wait(Duration::ZERO) {
+            let unanswered = steps
+                .iter()
+                .filter(|s| Some(*s) != given.esc_step.as_ref())
+                .any(|s| !done.iter().any(|l| l["step"] == s.as_str()));
+            let esc_heard = given
+                .esc_step
+                .as_ref()
+                .is_some_and(|step| heard_guard_of(&recorder_out, step, &first));
+            if unanswered && !esc_heard {
+                panic!(
+                    "the fake ENDED after {:?} with its script unplayed: {exit:?}; \
+                     {typed} turn(s) typed; the steps with a result: {:?}; \
+                     {}\nits standard error (last lines of {}):\n{}\nits screen (last lines):\n{}",
+                    started.elapsed(),
+                    done.iter()
+                        .filter_map(|l| l["step"].as_str())
+                        .collect::<Vec<_>>(),
+                    waiting_for(&recorder_out, &steps, &done),
+                    stderr_log.display(),
+                    tail(&stderr_log, 40),
+                    screen
+                        .lines()
+                        .rev()
+                        .take(40)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                );
+            }
+        }
         if started.elapsed() >= AT_MOST {
             let heard: Vec<String> = recorder::read(&recorder_out)
                 .unwrap_or_default()
@@ -547,6 +590,17 @@ fn heard_guard_of(out: &Path, step: &str, script: &Value) -> bool {
                 && l.stdin.as_deref().is_some_and(|s| s.contains(&needle))
         })
     })
+}
+
+/// The last `n` lines of a file, or what could not be read.
+fn tail(path: &Path, n: usize) -> String {
+    match fs::read_to_string(path) {
+        Ok(text) => {
+            let lines: Vec<&str> = text.lines().collect();
+            lines[lines.len().saturating_sub(n)..].join("\n")
+        }
+        Err(e) => format!("<not read: {e}>"),
+    }
 }
 
 fn read_jsonl(path: &Path) -> Vec<Value> {
