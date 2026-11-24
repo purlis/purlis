@@ -116,14 +116,6 @@
           "note": "fake leg (CI run 44962030981): the window holds the call's pre line and no post line; the post line is written in a later window"
         },
         {
-          "issue": 6674,
-          "leg": "live",
-          "step": 1,
-          "assertion": "require[0]",
-          "observed": 2,
-          "note": "chat 682 (test-matrix-phase-1.md §8): every held ask wrote ask.raised twice"
-        },
-        {
           "issue": 6673,
           "leg": "live",
           "step": 1,
@@ -231,14 +223,6 @@
           "note": "fake leg (CI run 44962030981): the chat's lines for this step are the prompt and the tool result; no later step's lines carry an Allowed sentence"
         },
         {
-          "issue": 6674,
-          "leg": "live",
-          "step": 1,
-          "assertion": "require[0]",
-          "observed": 2,
-          "note": "chat 682 (§8): every held ask wrote ask.raised twice"
-        },
-        {
           "issue": 6673,
           "leg": "live",
           "step": 1,
@@ -325,21 +309,6 @@
         "note": "fake leg (CI run 44992641994): the step's call returned (exit 1, tunnel 403) but its window holds no pre line: stop.block, ask.raised, ask.answered only; where the pre line was written was not read"
       },
         {
-          "issue": 6674,
-          "leg": "fake",
-          "step": 1,
-          "assertion": "require[0]",
-          "observed": 3,
-          "note": "fake leg (CI run 44962030981): three ask.raised in this step's window: the double raise the global check names (event 28) and one more raised in it, not attributed"
-        },
-        {
-          "issue": 6674,
-          "leg": "fake",
-          "check": "one_ask_one_raise",
-          "refusal": "step 1",
-          "note": "fake leg (CI run 44962030981): a held ask is raised twice with nothing between (event 28, inside this step's window)"
-        },
-        {
           "issue": 7353,
           "leg": "fake",
           "step": 1,
@@ -354,14 +323,6 @@
           "assertion": "transcript[0]",
           "observed": false,
           "note": "fake leg (CI run 44962030981): the Kept-blocked sentence is not in this step's chat lines: it is in the next step's context"
-        },
-        {
-          "issue": 6674,
-          "leg": "live",
-          "step": 1,
-          "assertion": "require[0]",
-          "observed": 2,
-          "note": "chat 682 (§8): every held ask wrote ask.raised twice; the rest of the cell passed"
         }
       ]
     },

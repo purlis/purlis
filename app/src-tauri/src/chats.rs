@@ -10356,9 +10356,12 @@ fn register_live(
     let Some(block) = live_block(target) else {
         return false;
     };
-    let raised = !blocks.holds(chat, &block);
     blocks.heard_waiting(chat, block.clone());
     blocks.held_live(chat, &block, target);
+    // One owner per ask (T1.1-27, Q262): the first report of it, from this road or the hook
+    // road's, writes its raise; a later one joins it. Decided under the claim's one lock, so the
+    // two roads racing cannot both write.
+    let raised = blocks.claim_raise(chat, &block);
     if raised && let Some(write) = lock(stops).clone() {
         let ask = Stop::AskRaised(AskRaised {
             ask: AskGroup::Sandbox,
@@ -10527,3 +10530,7 @@ mod windows_tests;
 #[cfg(test)]
 #[path = "chats/tests/switching.rs"]
 mod switching_tests;
+
+#[cfg(test)]
+#[path = "chats/tests/one_raise.rs"]
+mod one_raise_tests;

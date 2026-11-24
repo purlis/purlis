@@ -166,6 +166,12 @@ pub struct Blocks {
     calls: Mutex<HashMap<u32, Calls>>,
     /// Who is told each block an ask left as (T1-10): set once the project's hooks record.
     left: Mutex<Option<Left>>,
+    /// The asks of each open chat whose `ask.raised` is written already (T1.1-27, Q262): the one
+    /// owner of an ask's raise, keyed by the block it is held as. A second report of the same
+    /// ask, from either road, joins it and writes nothing ([`Self::claim_raise`]). Given up when
+    /// the ask leaves ([`Self::answered`], a newer ask pushing it out, the chat's end), so a
+    /// later ask for the same block raises again. Bounded as what is held is.
+    asked: Mutex<HashMap<u32, Vec<HeldBlock>>>,
 }
 
 /// **Who is told a held refusal left its ask as a block** (T1-10, Q154): its chat, and the block
@@ -382,6 +388,9 @@ impl Blocks {
             .into_iter()
             .filter(|one| !mine.contains(one) && !was_quiet.contains(one))
             .collect();
+        for one in &gone {
+            self.release_raise(session, one);
+        }
         let mut since = self.since();
         let was = since.remove(&session).unwrap_or_default();
         // A block heard again keeps when it was first heard, and the call it was first heard of.
@@ -405,6 +414,53 @@ impl Blocks {
             })
             .collect();
         self.left_as_blocks(session, gone);
+    }
+
+    fn asked(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
+        self.asked.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// **Whether this report of an ask is the first, and so the one that writes its
+    /// `ask.raised`** (T1.1-27, Q262): one owner per ask, decided under one lock, so two roads
+    /// reporting at once cannot both win. A second report of the same block joins the first. So
+    /// does a host named after the same refusal was reported unnamed (#1903), and, as
+    /// [`Self::echoes`] does, a host unnamed after it was reported named.
+    pub fn claim_raise(&self, session: u32, block: &HeldBlock) -> bool {
+        let mut asked = self.asked();
+        let mine = asked.entry(session).or_default();
+        if mine.contains(block) {
+            return false;
+        }
+        if block.names_a_host() {
+            let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
+            if let Some(at) = mine.iter().position(|one| *one == unnamed) {
+                mine[at] = block.clone();
+                return false;
+            }
+        } else if block.what == GrantWhat::Host
+            && mine.iter().any(|one| {
+                one.names_a_host() && one.operation == block.operation && one.kind == block.kind
+            })
+        {
+            return false;
+        }
+        mine.push(block.clone());
+        // Bounded as what is held is: a claim is only ever made for a held block.
+        if mine.len() > MOST_HELD_PER_CHAT * MOST_HOSTS_PER_BLOCK + MOST_WAITING_PER_CHAT {
+            mine.remove(0);
+        }
+        true
+    }
+
+    /// An ask for `block` of chat `session` left: the next one for it raises again.
+    fn release_raise(&self, session: u32, block: &HeldBlock) {
+        let mut asked = self.asked();
+        if let Some(mine) = asked.get_mut(&session) {
+            mine.retain(|one| one != block);
+            if mine.is_empty() {
+                asked.remove(&session);
+            }
+        }
     }
 
     fn quiet(&self) -> std::sync::MutexGuard<'_, HashMap<u32, Vec<HeldBlock>>> {
@@ -471,8 +527,15 @@ impl Blocks {
     /// ends. At most [`MOST_WAITING_PER_CHAT`] wait at once, the oldest going first.
     pub fn heard_waiting(&self, session: u32, block: HeldBlock) {
         // The same refusal, heard unnamed before, is this one now (#1903): one ask, never two.
+        // Its raise, if written already, is this one's (T1.1-27): taken over before the unnamed
+        // ask is answered, which gives its claim up.
         if block.names_a_host() {
             let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
+            if let Some(mine) = self.asked().get_mut(&session)
+                && let Some(at) = mine.iter().position(|one| *one == unnamed)
+            {
+                mine[at] = block.clone();
+            }
             if self.holds(session, &unnamed) {
                 self.answered(session, &unnamed);
             }
@@ -833,6 +896,7 @@ impl Blocks {
     /// go, found held and removed under one lock: of two answers racing for one block, only
     /// the one that did writes its answer (Q262 amended).
     pub fn answered(&self, session: u32, block: &HeldBlock) -> bool {
+        self.release_raise(session, block);
         self.no_longer_waits(session, block);
         if let Some(mine) = self.calls().get_mut(&session) {
             mine.held.retain(|one| one.block != *block);
@@ -863,6 +927,7 @@ impl Blocks {
     /// (T1-10), but a quiet line no ask listed.
     pub fn ended(&self, session: u32) {
         let held = self.held().remove(&session).unwrap_or_default();
+        self.asked().remove(&session);
         let quiet = self.quiet().remove(&session).unwrap_or_default();
         let waited = self.waiting().remove(&session).unwrap_or_default();
         self.noticed().remove(&session);
@@ -950,6 +1015,16 @@ pub fn heard(chats: &crate::chats::Chats, told: &crate::hooks::ChatBlocked) -> b
 pub(crate) fn turn_began(held: &crate::planes::Held, chat: u32) {
     if held.chats().blocks().turn_began(chat) {
         held.chats().asks_may_have_moved();
+    }
+}
+
+/// Whether this report of the ask `told` names is the first (T1.1-27, Q262): the hook road
+/// writes the ask's `ask.raised` only when it is.
+/// An ask no answer names has no key to join by, and is its own.
+pub fn first_report(blocks: &Blocks, told: &crate::hooks::ChatBlocked) -> bool {
+    match held_of(told) {
+        Some(block) => blocks.claim_raise(told.session, &block),
+        None => true,
     }
 }
 
