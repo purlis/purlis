@@ -1362,7 +1362,8 @@ pub async fn pool_setup_trust_again(
     pool: String,
     fingerprint: String,
 ) -> Result<PoolSetupShown, String> {
-    let root = planes.held(&plane)?.root().to_path_buf();
+    let held = planes.held(&plane)?;
+    let root = held.root().to_path_buf();
     #[cfg(unix)]
     {
         crate::off_the_window("checking the machine", move || {
@@ -1370,9 +1371,12 @@ pub async fn pool_setup_trust_again(
             let config = config_root()?;
             let docker = poolsetup::docker_here()
                 .ok_or_else(|| "purlis found no docker command on this machine.".to_owned())?;
-            match poolsetup::connecting::trust_pool(&config, &docker, &pool, &fingerprint)
-                .map_err(|why| why.to_string())?
-            {
+            let trusted = poolsetup::connecting::trust_pool(&config, &docker, &pool, &fingerprint)
+                .map_err(|why| why.to_string())?;
+            links_back_once_trusted(trusted.is_ok(), || {
+                held.chats().sessions().link_pool_now(&pool);
+            });
+            match trusted {
                 Ok(()) => read_shown(&config, &root, None),
                 Err(finding) => read_shown(&config, &root, Some(Pressed::Found(finding))),
             }
@@ -1381,8 +1385,18 @@ pub async fn pool_setup_trust_again(
     }
     #[cfg(not(unix))]
     {
-        let _ = (root, pool, fingerprint);
+        let _ = (root, held, pool, fingerprint);
         Err(crate::dockerpools::NOT_HERE.to_owned())
+    }
+}
+
+/// **A host key the person said is all right brings the link back** (#7187): Host key changed
+/// never retries on its own, so once the new key is kept the pool's link is taken at once
+/// (`link_now`), and the chats dimmed for it return without a Try now.
+#[cfg(unix)]
+fn links_back_once_trusted(trusted: bool, link_now: impl FnOnce()) {
+    if trusted {
+        link_now();
     }
 }
 
@@ -2532,9 +2546,22 @@ mod tests {
     use std::sync::mpsc::channel;
     use std::time::Duration;
 
-    use super::{NotStarted, said_as_time, step_of_a_refused_start, waited_for_its_start};
+    use super::{
+        NotStarted, links_back_once_trusted, said_as_time, step_of_a_refused_start,
+        waited_for_its_start,
+    };
     use crate::skillrun::Watched;
     use purlis_core::poolsetup::StepId;
+
+    /// #7187: a host key the person trusts brings the link back; one that does not hold does not.
+    #[test]
+    fn a_trusted_host_key_takes_the_link_at_once_and_a_failed_trust_does_not() {
+        let mut linked = 0;
+        links_back_once_trusted(true, || linked += 1);
+        assert_eq!(linked, 1);
+        links_back_once_trusted(false, || linked += 1);
+        assert_eq!(linked, 1);
+    }
 
     const RUNNING: fn() -> bool = || true;
     const NOT_CANCELLED: fn() -> bool = || false;

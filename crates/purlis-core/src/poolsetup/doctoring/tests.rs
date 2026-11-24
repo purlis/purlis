@@ -157,8 +157,8 @@ fn every() -> Vec<Row> {
             },
             ssh,
             "engine-silent",
-            "Docker on build-box didn't answer through SSH. Check that Docker is running there, \
-             then check again.",
+            "Docker on build-box isn't answering yet. purlis keeps trying; if Docker isn't running \
+             there, start it, then check again.",
             ActionId::CheckAgain,
         ),
         row(

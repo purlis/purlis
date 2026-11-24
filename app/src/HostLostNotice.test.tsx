@@ -27,6 +27,7 @@ const FAILED: LostChat = {
   left_in: "failed",
   resumable: true,
   with_the_runner: false,
+  pool_forgotten: false,
   ended: null,
 };
 const HIBERNATED: LostChat = { ...FAILED, left_in: "hibernated" };
@@ -67,6 +68,15 @@ describe("the Notice of a chat lost with its session host", () => {
       "This chat ended with its pool's runner, which this machine no longer keeps, and its conversation was on that runner. Start a new chat to go on.",
     );
     expect(said).not.toHaveTextContent("nothing was lost");
+    expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
+  });
+
+  it("says a chat on a forgotten pool ended with Pool forgotten, with no Resume (#7187)", async () => {
+    core({ ...HIBERNATED, resumable: false, pool_forgotten: true });
+    render(<HostLostNotice plane={PLANE} session={7} onRestart={() => {}} />);
+    const said = await screen.findByRole("status", { name: "Pool forgotten" });
+    expect(said).toHaveTextContent("its pool was forgotten on this machine");
+    expect(said).toHaveTextContent("Start a new chat to go on.");
     expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
   });
 
