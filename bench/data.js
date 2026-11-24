@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795556238206,
+  "lastUpdate": 1795557393782,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54138,6 +54138,48 @@ window.BENCHMARK_DATA = {
             "value": 101.155654,
             "unit": "ms",
             "extra": "median of 5 runs: 100.258, 100.671, 101.156, 101.884, 102.066 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "abf718ae40d215ca8c909112169e70c7a93a3ef5",
+          "message": "Forge route: gh auth status and own-repo issue search answered (#7544) (#7548)\n\n* Forge route: gh auth status, own-repo issue search, and scoped PR advice (#7544)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M870R92RGCJ7YXYQZZV6PVDD\nPurlis-Persona: steward\n\n* Search: a repo qualifier counts only when its token starts with repo: itself (a +repo: may be plain text to the forge), and a token of only | or & is refused (#7544 review)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward\n\n* Forge route: a GHES API root /api/v3/ is read as /api/v3; the pull request create refusal test names its own kind (#7544)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M875TN1V4BS9BEFF6RFN5HAX\nPurlis-Persona: steward\n\n* Forge route: a GraphQL pull request naming its head repository by id is refused as GraphqlPullRequestOtherRepo (#7544)\n\nThe #7526 test expected GraphqlOtherRepo; #7544 maps it to GraphqlPullRequestOtherRepo for createPullRequest. Still a refusal, same reason (the head repository is not one the route resolves).\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M87C6VAEDB5ZPSG0SX3BXF6Q\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T21:14:27Z",
+          "tree_id": "1bdf756e42847e53bfb13fb76f073f4126cb5c97",
+          "url": "https://github.com/purlis/purlis/commit/abf718ae40d215ca8c909112169e70c7a93a3ef5"
+        },
+        "date": 1795557387056,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.33340349999999996,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.328, 0.333, 0.333, 0.336, 0.336 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.6645415,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.375, 16.377, 16.665, 16.705, 16.891 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 100.90044700000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.854, 100.868, 100.900, 101.026, 102.692 ms"
           }
         ]
       }
