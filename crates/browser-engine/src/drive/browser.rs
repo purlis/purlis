@@ -2611,6 +2611,8 @@ impl Browser {
                 None => said,
             });
         }
+        // Taken even where every download is listed: it lets go of the untold ones, so the next
+        // answer does not tell again what this one lists.
         answer.downloads = state.downloads.untold();
         if every_download {
             answer.downloads = state.downloads.all();

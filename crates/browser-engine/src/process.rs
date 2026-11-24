@@ -178,7 +178,9 @@ impl Engine {
 
     /// [`Engine::start`], the engine given `first_answer` to answer over its pipe where
     /// [`FIRST_ANSWER`] is not what the caller wants: a test run on a starved runner, where one
-    /// cold start has taken most of a minute (#7445, #7446, #7447, #7448).
+    /// cold start has taken most of a minute (#7445, #7446, #7447, #7448). Public only because
+    /// the integration tests are outside the crate: the product starts with [`Engine::start`].
+    #[doc(hidden)]
     pub fn start_within(
         launch: &Launch,
         keeper: &Keeper,
