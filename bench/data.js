@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795479527347,
+  "lastUpdate": 1795506368008,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53424,6 +53424,48 @@ window.BENCHMARK_DATA = {
             "value": 101.9429475,
             "unit": "ms",
             "extra": "median of 5 runs: 100.389, 101.207, 101.943, 102.065, 102.152 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1e425f1e571dffa677e5134c3c601a7332875220",
+          "message": "Release R7: dev builds link without LTO (ADR 0092 amendment) (#7418) (#7490)\n\n* dev-release links without LTO; ADR 0092 amended (#7418)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8647DHNQSB9VTDM67Z83PMM\nPurlis-Persona: steward\n\n* R7 review: keep the macOS dev budget, seed Linux from the whole job, fix stale LTO comments (#7418)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M8647DHNQSB9VTDM67Z83PMM\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T07:15:28Z",
+          "tree_id": "f963334e302bc9701d42cd0fea8bd7d78b6ba9a3",
+          "url": "https://github.com/purlis/purlis/commit/1e425f1e571dffa677e5134c3c601a7332875220"
+        },
+        "date": 1795506358170,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.703219,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.666, 0.689, 0.703, 0.715, 0.721 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.703856000000002,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.492, 16.513, 16.704, 16.717, 16.817 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8640335,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.234, 101.487, 101.864, 102.104, 102.266 ms"
           }
         ]
       }
