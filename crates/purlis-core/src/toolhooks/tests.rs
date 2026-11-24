@@ -1821,7 +1821,19 @@ mod web {
                 443,
                 std::time::Duration::from_secs(1)
             ),
-            Tunnel::Refused(_)
+            Tunnel::Unreached(_)
         ));
+        // A connection closed with no status line is no answer either.
+        let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = silent.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || drop(silent.accept().unwrap()));
+        let said = ask_proxy(
+            &format!("http://127.0.0.1:{port}"),
+            "example.com",
+            443,
+            std::time::Duration::from_secs(5),
+        );
+        server.join().unwrap();
+        assert!(matches!(said, Tunnel::Unreached(_)), "{said:?}");
     }
 }

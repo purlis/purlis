@@ -530,7 +530,12 @@ pub fn ask_proxy(proxy: &str, host: &str, port: u16, wait: std::time::Duration) 
     let mut words = status.split_whitespace();
     match (words.next(), words.next()) {
         (Some(version), Some("200")) if version.starts_with("HTTP/1.") => Tunnel::Open,
-        _ => Tunnel::Refused(status.trim().to_owned()),
+        // A status line the proxy wrote: it answered and recorded its own refusal.
+        (Some(version), Some(_)) if version.starts_with("HTTP/1.") => {
+            Tunnel::Refused(status.trim().to_owned())
+        }
+        // The connection closed or said something that is no status line: nothing was recorded.
+        _ => Tunnel::Unreached("the proxy did not answer with a status".to_owned()),
     }
 }
 
