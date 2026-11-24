@@ -529,6 +529,35 @@ describe("the kept place, read before a door can be pressed (#2400)", () => {
     expect(screen.getByRole("radiogroup", { name: "Where it lives" })).toBeInTheDocument();
   });
 
+  it("swaps the steps in when a read that was late answers a first run, before any press", async () => {
+    // The e2e flake: memory said this machine had finished the steps (an earlier read), the read
+    // for this appearance is late, so the plain welcome is drawn from memory and held. The late
+    // answer says it is a first run: the steps must come, as nothing has been pressed.
+    // (The render is StrictMode, so the mount asks twice: every ask but the last answers at once
+    // with finished_once true, the last answers late with false.)
+    const pending: ((kept: OnboardingProgress) => void)[] = [];
+    machine({
+      answers: (cmd) => {
+        if (cmd === "plane_at_launch") return { plane: TEAM, from: TEAM, why: null };
+        if (cmd === "onboarding_progress")
+          return new Promise((resolve) => pending.push(resolve as (k: OnboardingProgress) => void));
+        return undefined;
+      },
+    });
+    render(<App />);
+    const person = userEvent.setup();
+    await person.click(await screen.findByRole("button", { name: "Open a project…" }));
+    await waitFor(() => expect(pending.length).toBeGreaterThan(1));
+    for (const resolve of pending.slice(0, -1)) resolve({ ...FRESH, finished_once: true });
+
+    // Past the deadline the plain welcome is drawn, with no steps.
+    await screen.findByRole("button", { name: "Create a project" }, { timeout: 2_000 });
+    expect(screen.queryByRole("navigation", { name: "Setting up" })).toBeNull();
+
+    pending.at(-1)?.(FRESH);
+    await stepSays("Step 1 of 2: Pick a project");
+  });
+
   it("opens a window with no project at once, and counts its steps once the read answers", async () => {
     const read = aSlowRead({ kept: FRESH });
     render(<App />);

@@ -28,6 +28,11 @@ const SANDBOX_SETTING: NoticeKind = { one: "Sandbox setting", many: "Sandbox set
 export const NOTICE_KINDS: Readonly<Record<string, NoticeKind>> = {
   "clone-vouch": { one: "Clone made outside purlis", many: "Clones made outside purlis" },
   "stale-clone": { one: "Stale repo", many: "Stale repos" },
+  "forge-sign-in-replaces": {
+    one: "Forge token lines replaced by sign-in",
+    many: "Forge token lines replaced by sign-in",
+  },
+  "forge-sign-in-needed": { one: "Forge sign-in needed", many: "Forge sign-ins needed" },
   "pin-dormant": { one: "Dormant workspace", many: "Dormant workspaces" },
   "chat-resumed": REOPENED,
   "chat-guessed": REOPENED,

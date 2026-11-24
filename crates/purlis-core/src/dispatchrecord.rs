@@ -2170,6 +2170,42 @@ pub fn read(root: &Path, id: &str) -> Option<Record> {
     parse(&text).filter(|record| record.id == id)
 }
 
+/// **Whether chat `asker` dispatched chat `worker`, directly or up the chain**, from the app's own
+/// records `records` ([`list`]): a task record whose worker is `worker` and whose asker is `asker`,
+/// or whose asker is itself a task of a chat `asker` dispatched, as deep as a chain can be
+/// ([`crate::dispatchlimits`]'s eight). Chats are matched by their ULIDs, never by their numbers,
+/// which are dealt again. **A handoff is not a link**: the work moved to that chat and the asker
+/// gave it up. A record that does not read as one the app would have written ([`sound`]) is no link.
+pub fn dispatched_by(records: &[Record], asker: &str, worker: &str) -> bool {
+    const DEEPEST: usize = 8;
+    let mut below = vec![worker.to_owned()];
+    for _ in 0..DEEPEST {
+        let mut above: Vec<String> = Vec::new();
+        for record in records
+            .iter()
+            .filter(|r| r.mode == Mode::Task && sound(r))
+            .filter(|r| {
+                r.worker
+                    .chat
+                    .id
+                    .as_deref()
+                    .is_some_and(|id| below.iter().any(|b| b == id))
+            })
+        {
+            match record.asker.chat.id.as_deref() {
+                Some(id) if id == asker => return true,
+                Some(id) => above.push(id.to_owned()),
+                None => {}
+            }
+        }
+        if above.is_empty() {
+            return false;
+        }
+        below = above;
+    }
+    false
+}
+
 /// The running dispatch whose persona chat is `chat`, where there is one: the newest. Read
 /// from the running records alone ([`running`], #5502).
 pub fn running_for(root: &Path, chat: &ChatRef) -> Option<Record> {

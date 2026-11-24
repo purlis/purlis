@@ -389,6 +389,7 @@ fn a_pool_on_another_machines_sign_ins_are_a_docker_pools() {
             name: "build-box".into(),
             runner: Runner::Running,
             sign_ins: SignIns::Read(Vec::new()),
+            others: None,
             cluster: None,
         }),
         ..remote_facts(Connecting {

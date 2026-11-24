@@ -824,7 +824,7 @@ pub(super) fn fingerprint_of(failure: &PurlisFailure, known: &Known) -> String {
     crash::fingerprint(&[
         "purlis-failure",
         crate::adopt::release_version(),
-        &failure.call(),
+        &failure.kind_of_call(),
         &class,
     ])
 }

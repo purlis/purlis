@@ -30,6 +30,8 @@ use purlis_core::hookwire::{
 use purlis_core::mergehold::{self, Facts, Holds, MergeKey, Raised};
 
 const CHAT: u32 = 4;
+/// The milliseconds a hook's line may take to be taken by the app here, [`Chat::denial_with`].
+const A_LINE_PATIENCE: &str = "10000";
 const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// A plane, a home that is not the operator's, and the app that started chat [`CHAT`] in it.
@@ -127,6 +129,7 @@ impl Chat {
                         },
                         ruleset: mergehold::Ruleset::Protects,
                         approved_by: None,
+                        squash: false,
                         read_at: 1_000,
                     };
                     Ok((key, facts))
@@ -235,6 +238,11 @@ impl Chat {
             .env("PATH", "/usr/bin:/bin")
             .env(SOCKET_ENV, &self.socket)
             .env(CHAT_ENV, CHAT.to_string())
+            // The hook's tool line is spooled, not sent, when the app does not take it in a
+            // quarter of a second, and `rule()` reads what the app was sent: on a loaded runner
+            // that misses, and the test reads no rule (#7436, #7452). Lifted, as the guard
+            // budget is for the large bodies.
+            .env("PURLIS_TEST_HOOK_LINE_DEADLINE_MS", A_LINE_PATIENCE)
             .envs(self.token.iter().map(|token| (TOKEN_ENV, token.expose())))
             .envs(env.iter().copied())
             .stdin(Stdio::piped())
@@ -363,6 +371,25 @@ fn a_merge_whose_request_cannot_be_read_is_refused_and_asks_nobody() {
     assert!(reason.contains("nobody was asked"), "{reason}");
     assert_eq!(chat.merges_asked(), 0);
     assert!(chat.holds.every().is_empty());
+}
+
+/// The hook's refusal of a line held as unreadable names the cause the floor read it by, so a
+/// chat learns which variable made the line a merge and how to write it (#7176): the switch of
+/// `guard.rs` to `mergehold::refusal_for`.
+#[test]
+fn a_held_line_names_the_variable_that_made_it_one_and_the_way_out() {
+    let chat = Chat::new();
+    let reason = chat
+        .denial(
+            "for j in $(glab api projects/p/pipelines/9/jobs | jq -r '.[].id'); do glab api -X POST \"projects/p/jobs/$j/play\"; done",
+            "default",
+        )
+        .expect("refused");
+    assert!(reason.contains("It took it for one because"), "{reason}");
+    assert!(reason.contains("projects/p/jobs/$j/play"), "{reason}");
+    assert!(reason.contains("for j in 101 102"), "{reason}");
+    assert!(reason.contains("nobody was asked"), "{reason}");
+    assert_eq!(chat.merges_asked(), 0);
 }
 
 #[test]

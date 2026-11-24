@@ -3308,6 +3308,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Attendance(_) => 25,
             Ask::Policy(_) => 26,
             Ask::PolicyLog(_) => 27,
+            Ask::RemoteRefs(_) => 28,
         }
     }
     let asks = vec![
@@ -3486,10 +3487,14 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             rule: "A3".to_owned(),
             host: None,
         }),
+        Ask::RemoteRefs(purlis_core::hookwire::RemoteRefsAsk {
+            chat,
+            url: "https://github.com/acme/app.git".to_owned(),
+        }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=27).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=28).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 
@@ -12981,6 +12986,9 @@ fn a_task_s_level_is_heard_only_from_its_asking_chat_s_own_harness() {
 /// A chat's open or dispatch heard from a pool waits for the person's Approve.
 mod heard_from_a_pool;
 
+/// A dispatched chat's vault checks in the window run under its chain's `[policy]` (#7153).
+mod chain_policy_checks;
+
 /// **A dispatch that names where the levels already put it starts at once, and follows them**
 /// (#4536): `--this-machine` in a workspace that runs here asks nobody, and the chat keeps no
 /// choice of its own, so a later change of the levels holds for it. A word purlis can't read is
@@ -14451,7 +14459,7 @@ fn keep_blocked_on_a_runs_notice_on_a_vault_its_persona_holds_says_what_the_noti
         matches!(ran, purlis_core::secrets::ask::run::RunHeld::Refused { .. }),
         "{ran:?}"
     );
-    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team")
+    let notice = crate::vaultroute::kept_blocked_but_held(&plane.root, Some("ops"), "team", None)
         .expect("ops holds team");
     assert_eq!(
         pressed.expect("pressed").expect("kept"),
@@ -16040,4 +16048,12 @@ fn no_grant_with_no_sandbox() -> String {
         },
     )
     .say()
+}
+
+#[test]
+fn a_hook_asking_for_the_refs_of_a_chat_with_no_route_is_told_no() {
+    assert!(matches!(
+        remote_refs_answer(987_654, "https://github.com/acme/app.git"),
+        Answer::No { .. }
+    ));
 }

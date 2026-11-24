@@ -661,10 +661,9 @@ pub async fn set_cluster_pool_owned(
         purlis_core::runners::set_cluster_owned(&config_root()?, &name, owned)
             .map_err(|why| why.to_string())?;
         if !owned {
-            for project in held {
-                project.browsers().forget_pool_logins(&name);
-            }
+            let logins = crate::chatbrowsers::forget_pool_logins_in(&held, &name);
             crate::poolprofiles::cancel_sign_ins_on(&name);
+            logins?;
         }
         Ok(())
     })

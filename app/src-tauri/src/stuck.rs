@@ -20,7 +20,7 @@
 //!
 //! **No notification is sent from here** (#6005 decides that). In memory only.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, Weak};
 use std::time::Duration;
 
@@ -43,6 +43,18 @@ pub struct ChatNoticed {
     /// T1-44): a standing fault its pane says in a Notice, never an ask. None on every harness
     /// whose adapter reports no mode purlis can check.
     pub mode: Option<ModeDiffers>,
+    /// The forge sign-ins its route found missing or ended (ADR 0128, #7290), one per host and
+    /// in host order: each a standing fault its pane says in a Notice with a way into Settings ›
+    /// You › Accounts. Empty until one is found.
+    pub sign_in: Vec<SignInNeeded>,
+}
+
+/// **A chat's forge route had no usable sign-in**: the host, and whether there never was one
+/// (`missing`) or it ended (`ended`). Never told for a forge that merely could not be reached.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, specta::Type)]
+pub struct SignInNeeded {
+    pub host: String,
+    pub ended: bool,
 }
 
 /// **A chat reported a mode purlis didn't set** (R-243): each mode as its own harness names it,
@@ -83,6 +95,8 @@ struct Said {
     stuck: Option<String>,
     left_work: Option<bool>,
     mode: Option<ModeDiffers>,
+    /// Each host's sign-in that is missing or ended, so one host's fix takes down only its own.
+    sign_in: BTreeMap<String, SignInNeeded>,
 }
 
 /// How long a turn's timer sleeps at most before it looks at the clock again: the machine's
@@ -239,6 +253,22 @@ impl Noticed {
         self.tell_if_changed(chat, |said| said.mode = Some(differs));
     }
 
+    /// Chat `chat`'s forge route found no usable sign-in (ADR 0128): the window is told where
+    /// that changed, and it stands until the chat closes.
+    pub fn sign_in_needed(&self, chat: u32, needed: SignInNeeded) {
+        self.tell_if_changed(chat, |said| {
+            said.sign_in.insert(needed.host.clone(), needed);
+        });
+    }
+
+    /// Chat `chat`'s forge route gave a credential for `host`: a missing or ended sign-in told
+    /// for that host no longer stands. A Notice about another host stays.
+    pub fn sign_in_ok(&self, chat: u32, host: &str) {
+        self.tell_if_changed(chat, |said| {
+            said.sign_in.remove(host);
+        });
+    }
+
     /// **"It's fine"**: chat `chat` is not stuck until it changes state.
     pub fn fine(&self, chat: u32) {
         held_lock(&self.watch).fine(chat);
@@ -276,6 +306,7 @@ impl Noticed {
             stuck: said.stuck.clone(),
             left_work: said.left_work,
             mode: said.mode.clone(),
+            sign_in: said.sign_in.values().cloned().collect(),
         }
     }
 
@@ -299,10 +330,21 @@ impl Noticed {
     fn tell_if_changed(&self, chat: u32, change: impl FnOnce(&mut Said)) {
         let told = {
             let mut all = held_lock(&self.said);
-            let said = all.entry(chat).or_default();
-            let was = said.clone();
-            change(said);
-            (*said != was).then(|| self.noticed(chat, said))
+            // A chat that has told nothing yet is changed from nothing; its entry is made only
+            // when something changes, so a closed chat's is not made again by a look or a fix.
+            let was = all.get(&chat).cloned().unwrap_or_default();
+            let mut said = was.clone();
+            change(&mut said);
+            (said != was).then(|| {
+                let told = self.noticed(chat, &said);
+                // An entry back to nothing is dropped, so a closed chat leaves none behind.
+                if said == Said::default() {
+                    all.remove(&chat);
+                } else {
+                    all.insert(chat, said);
+                }
+                told
+            })
         };
         if let (Some(told), Some(tell)) = (told, self.tell.get()) {
             tell(told);

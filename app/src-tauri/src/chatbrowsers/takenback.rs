@@ -33,12 +33,23 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
 
+use purlis_session_protocol::browsing::BrowserReach;
 use purlis_session_protocol::session::HeldProgram;
 use serde::{Deserialize, Serialize};
 
 use super::{
     AsPersona, Chat, ChatBrowser, ChatBrowsers, Driver, HeldLogin, Posture, browser_number,
+    kept_reach,
 };
+
+/// What a chat's reach is, as a kept answer is checked against it.
+enum ReachNow {
+    /// No answer was kept, or no reach was asked for: nothing to check.
+    NotChecked,
+    /// Asked for, and not known (its sandbox's compile was not recorded).
+    Unknown,
+    Known(purlis_core::browserposture::Reach),
+}
 
 /// **Whose a browser is, as its window note says** (#2025).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -156,9 +167,75 @@ impl ChatBrowsers {
     }
 
     /// **Chat `session` is `id`** (ADR 0066), as the app's record of it says: what its browsers'
-    /// notes name it by (#2025).
-    pub fn identify(&self, session: u32, id: Option<String>) {
-        self.lock().entry(session).or_default().id = id;
+    /// notes name it by (#2025), **restoring the answer the person gave this chat before a restart**
+    /// (#7190), checked against the chat's current reach (`reach`) before it is used: where the
+    /// reach narrowed since the chat was asked, the answer is not used and is removed, and the
+    /// chat's next call asks again. **Where the reach is not known** (`reach` answers `None`: its
+    /// sandbox's compile was not recorded), the answer is not used this time and is kept, to be
+    /// checked again at the chat's next call.
+    pub fn identify_for(
+        &self,
+        session: u32,
+        id: Option<String>,
+        reach: &dyn Fn() -> Option<BrowserReach>,
+    ) {
+        // Found by its identity alone, so only this chat's, and read before the chats' lock.
+        let kept = id
+            .as_deref()
+            .zip(self.answers_in.as_deref())
+            .and_then(|(id, root)| purlis_core::browserposture::kept(root, id));
+        let now = if kept.is_some() {
+            reach().map_or(ReachNow::Unknown, |reach| {
+                ReachNow::Known(kept_reach(&reach))
+            })
+        } else {
+            ReachNow::NotChecked
+        };
+        let (found, stale) = {
+            let mut chats = self.lock();
+            let chat = chats.entry(session).or_default();
+            chat.id = id.clone();
+            match (chat.posture, kept) {
+                // Only where it has not been asked since, and its reach is no narrower now.
+                (Posture::Unasked, Some(kept)) => {
+                    let narrowed = match &now {
+                        // Its reach is not known: the answer waits, kept, for a call that knows.
+                        ReachNow::Unknown => return,
+                        ReachNow::Known(now) => now.narrower_than(&kept.reach),
+                        ReachNow::NotChecked => false,
+                    };
+                    if narrowed {
+                        (false, true)
+                    } else {
+                        chat.posture = match kept.answer {
+                            purlis_core::browserposture::Answer::Allowed { open_web } => {
+                                Posture::Allowed { open_web }
+                            }
+                            purlis_core::browserposture::Answer::Off => Posture::Off,
+                        };
+                        chat.asked_reach = kept.reach;
+                        (false, false)
+                    }
+                }
+                // Answered before its identity was known: kept now it is.
+                (Posture::Allowed { .. } | Posture::Off, None) => (chat.rests_on.is_none(), false),
+                _ => (false, false),
+            }
+        };
+        if let (true, Some(id), Some(root)) = (stale, id.as_deref(), self.answers_in.as_deref())
+            && let Err(why) = purlis_core::browserposture::remove(root, id)
+        {
+            tracing::warn!("purlis: a narrowed chat's old browser answer stays on disk ({why})");
+        }
+        if let (true, Some(id)) = (found, id) {
+            let kept = self
+                .lock()
+                .get(&session)
+                .map(|chat| (chat.posture, chat.asked_reach.clone()));
+            if let Some((posture, reach)) = kept {
+                self.keep_answer(&id, posture, &reach);
+            }
+        }
     }
 
     /// **The person opened browser `program` in a view tab of its own** (#2176): theirs, noted

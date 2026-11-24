@@ -2111,6 +2111,7 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
     use purlis_core::sandbox::plan::{Beside, Hearing, Plan};
     use purlis_core::sandbox::reach::Reach;
     let refused_by = |heard: &Arc<Mutex<Vec<String>>>| Hearing {
+        network: None,
         refusals: Refusals::telling({
             let heard = Arc::clone(heard);
             Arc::new(move |host: &str, port: u16| {
@@ -2128,6 +2129,7 @@ fn a_chats_confinement_is_reattached_and_its_proxy_heard_by_the_window_that_came
         any_port: false,
         beside: Beside::Wrapped,
         given: Vec::new(),
+        forge: None,
     };
     let host = Comeback::new();
     let first = host.window();
@@ -2195,6 +2197,7 @@ fn what_a_chats_sandbox_held_of_the_pools_comes_back_with_it_to_a_window_that_ca
         any_port: false,
         beside: Beside::Wrapped,
         given: Vec::new(),
+        forge: None,
     };
     let held = vec![
         std::path::PathBuf::from("/home/op/.docker/ca.pem"),
@@ -2313,6 +2316,7 @@ impl purlis_host::Compose for ComposesConfined {
             any_port: false,
             beside: session::Beside::Wrapped,
             given: vec![5432],
+            forge: None,
         })?;
         Ok(purlis_core::session::Spec::new("/bin/true", starting.size))
     }
@@ -2363,6 +2367,7 @@ fn a_chat_the_host_composes_by_its_names_is_heard_by_the_window_and_answered_fro
     let refused = Arc::new(Mutex::new(Vec::new()));
     let asked = Arc::new(Mutex::new(Vec::new()));
     let hearing = Hearing {
+        network: None,
         refusals: Refusals::telling({
             let refused = Arc::clone(&refused);
             Arc::new(move |host: &str, port: u16| {
@@ -2998,6 +3003,7 @@ fn a_harness_chat_on_a_runner_is_started_there_by_its_names_and_its_asks_reach_t
     let (sessions, confines, runs, _dir, _runtime) = on_a_runner();
     let asked = Arc::new(Mutex::new(Vec::new()));
     let hearing = Hearing {
+        network: None,
         asks: Some(Asking {
             answered: None,
             tell: {

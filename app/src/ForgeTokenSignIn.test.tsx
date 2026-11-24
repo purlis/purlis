@@ -34,6 +34,7 @@ function row(login: string, host: string, more: Partial<ForgeAccountRow> = {}): 
     signed_in: true,
     scopes: ["repo", "read:org"],
     wider: [],
+    ci_allowed: false,
     ...more,
   };
 }

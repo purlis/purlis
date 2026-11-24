@@ -1482,6 +1482,7 @@ fn the_pin() -> PoolPin {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
     let last_run = |dir: &std::path::Path| std::fs::read_to_string(dir.join("args")).unwrap();
@@ -1500,6 +1501,7 @@ fn a_runner_is_told_of_the_port_only_on_a_pool_that_opts_in() {
 }
 
 #[cfg(unix)]
+#[cfg(not(feature = "forge-wiring"))]
 #[test]
 fn at_a_link_a_runner_is_told_again_only_on_a_pool_that_opts_in_and_by_the_pinned_key() {
     let dir = tempfile::tempdir().unwrap();
@@ -1715,4 +1717,28 @@ fn only_a_runner_on_its_way_has_a_stage() {
     );
     assert_eq!(stage_of(&a_claim_saying("True", "Pulling", "")), None);
     assert_eq!(stage_of(&serde_json::json!({})), None);
+}
+
+#[cfg(unix)]
+#[cfg(feature = "forge-wiring")]
+#[test]
+fn no_runner_is_told_of_a_port_once_the_sign_in_replaces_the_app_even_on_a_pool_that_opts_in() {
+    let dir = tempfile::tempdir().unwrap();
+    let every = std::time::Duration::from_millis(1);
+    let kubectl = says_where_to_ask(dir.path(), true, &operator_key().spelled());
+    let paired = a_paired_runner();
+    // The first tell sends nothing: kubectl was never run.
+    tell_the_mint_port(&kubectl, &the_pin(), "pool", &paired, every).unwrap();
+    assert!(!dir.path().join("args").exists());
+    // Nor does a link's: there is nothing to tell.
+    let seen = kubectl.pool("pool").unwrap();
+    assert_eq!(
+        to_tell_at_a_link(&seen, &kubectl, &the_pin(), &paired.claimed).unwrap(),
+        None
+    );
+    // And telling again reports it settled without running anything.
+    let told = told_of_the_port(&paired.claimed, &the_pin(), "10.0.0.1:1".to_owned());
+    assert!(tell_again(&kubectl, "ns", "pod", &told).unwrap());
+    let ran = std::fs::read_to_string(dir.path().join("args")).unwrap_or_default();
+    assert!(!ran.contains("--mint-port"), "{ran}");
 }

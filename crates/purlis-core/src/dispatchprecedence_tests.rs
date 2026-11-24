@@ -151,14 +151,14 @@ fn a_grant_never_lifts_a_policy_deny() {
     grants.denied = vec![pair("steward", "devops")];
     assert_eq!(
         judged(&grants, &Locks::none(), strict()),
-        Covers::Denied(DENY_RULE.to_owned())
+        Covers::Denied(Deny::Named)
     );
     // "Every other persona" denies the same, and no other asker.
     let mut any = every_allow();
     any.denied_any = vec!["steward".to_owned()];
     assert_eq!(
         judged(&any, &Locks::none(), strict()),
-        Covers::Denied(DENY_RULE.to_owned())
+        Covers::Denied(Deny::Named)
     );
     assert_eq!(
         covers(Some("qa"), "devops", &any, &Locks::none()),
@@ -178,7 +178,7 @@ fn a_grant_never_lifts_a_policy_deny() {
     let Answer::Refused(refusal) = refused else {
         panic!("refused")
     };
-    assert_eq!(refusal, Refusal::Denied("devops".to_owned()));
+    assert_eq!(refusal, Refusal::Denied("devops".to_owned(), Deny::Named));
     assert_eq!(crate::dispatchaway::pair_kept(&refusal), None);
     assert!(
         refusal.say().contains("No grant lifts it"),
@@ -744,7 +744,7 @@ fn under_log_a_deny_and_an_ask_go_ahead_and_the_asking_chat_s_log_names_the_rule
             covers(Some("steward"), "devops", &denied, &Locks::none()),
             strict()
         ),
-        Covers::Denied(DENY_RULE.to_owned())
+        Covers::Denied(Deny::Named)
     );
     assert_eq!(crate::enforcement::read_log(root, CHAT).len(), 2);
 }
@@ -797,6 +797,76 @@ fn committed(settings: &str) -> Project {
 }
 
 const DENIES: &str = "[dispatch.denies]\nsteward = [\"devops\"]\n";
+
+#[test]
+fn a_policy_that_does_not_read_denies_a_chat_on_no_persona_too() {
+    // #7153: a policy that does not read keeps every persona from every other, and a chat on no
+    // persona is not the target's persona either: no grant made for that chat lifts it.
+    let grants = InForce {
+        chat: vec![ChatPair {
+            asking: None,
+            target: "devops".to_owned(),
+        }],
+        denied_all: true,
+        ..InForce::default()
+    };
+    assert!(grants.denies(None, "devops"));
+    assert!(matches!(
+        covers(None, "devops", &grants, &Locks::none()),
+        Covers::Denied(_)
+    ));
+    // A deny the policy names names personas, so a chat on no persona is outside it still.
+    let named = InForce {
+        chat: grants.chat.clone(),
+        denied: vec![pair("steward", "devops")],
+        denied_any: vec!["steward".to_owned()],
+        ..InForce::default()
+    };
+    assert!(!named.denies(None, "devops"));
+    assert_eq!(
+        covers(None, "devops", &named, &Locks::none()),
+        Covers::Covered
+    );
+}
+
+#[test]
+fn a_policy_that_does_not_read_says_so_rather_than_that_only_a_committed_change_allows_it() {
+    // #7153: a git that timed out once denies every dispatch across personas until `[policy]`
+    // reads; telling the chat only a committed change allows it would send it the wrong way.
+    let said = |grants: &InForce| {
+        let answer = unattended::answer_on(
+            covers(Some("steward"), "devops", grants, &Locks::none()),
+            Some("steward"),
+            "devops",
+            false,
+            Reach {
+                sandboxed: true,
+                sealed_here: true,
+            },
+        );
+        let Answer::Refused(refusal) = answer else {
+            panic!("refused")
+        };
+        refusal.say()
+    };
+    let unread = said(&InForce {
+        denied_all: true,
+        ..InForce::default()
+    });
+    assert!(unread.contains("could not read"), "{unread}");
+    assert!(
+        !unread.contains("committed policy, made by a person"),
+        "{unread}"
+    );
+    let named = said(&InForce {
+        denied: vec![pair("steward", "devops")],
+        ..InForce::default()
+    });
+    assert!(
+        named.contains("committed policy, made by a person"),
+        "{named}"
+    );
+}
 
 #[test]
 fn a_deny_taken_out_of_the_working_tree_still_denies() {
@@ -969,4 +1039,198 @@ fn a_machine_with_no_keyring_has_no_nevers_rather_than_unknown_ones() {
     // And nothing is kept that would not hold.
     assert!(crate::sandbox::local::grant_dispatch(root, "steward", "devops").is_err());
     crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn a_keyring_that_failed_at_start_up_where_seals_were_kept_is_not_no_nevers() {
+    // #7153: keyring 4 says there is no keyring for the whole process once its one start-up of
+    // the keyring failed (a secret service that had not answered on D-Bus yet, say). Where a
+    // sealed record says this machine kept a seal, that is a keyring that failed: nevers taken
+    // away are unknown nevers, never none. (An acceptance of `[policy]` kept is broken without
+    // its key, which refuses already: these planes keep none.)
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    crate::sandbox::local::grant_dispatch(root, "steward", "qa").expect("granted");
+    assert!(crate::sandbox::local::policy_accepted(root).is_none());
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    std::fs::remove_file(crate::dispatchnever::path(root)).expect("deleted");
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Unread
+    );
+    assert_eq!(
+        covers(Some("steward"), "qa", &project.grants(), &Locks::none()),
+        Covers::Unread
+    );
+    assert!(!crate::sandbox::local::no_keyring_at(root));
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+    // The nevers file emptied by hand, where it is the only sealed record.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    let mut file: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(crate::dispatchnever::path(root)).expect("read"),
+    )
+    .expect("json");
+    file["never"] = serde_json::json!([]);
+    std::fs::write(crate::dispatchnever::path(root), file.to_string()).expect("written");
+    assert_eq!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Unread
+    );
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+/// A project with a `.git` folder and an acceptance of its `[policy]` kept, sealed.
+fn a_project_with_an_acceptance() -> Project {
+    let project = Project::new(STRICT);
+    std::fs::create_dir(project.root().join(".git")).expect("a .git");
+    crate::sandbox::local::accept_policy(
+        project.root(),
+        std::collections::BTreeMap::from([("guards.git".to_owned(), "enforce".to_owned())]),
+    )
+    .expect("accepted");
+    project
+}
+
+#[test]
+fn a_git_folder_moved_aside_and_back_does_not_take_the_evidence_a_seal_was_kept_away() {
+    // #7164: the clone key carries `.git`'s inode, so the machine's file is another one after
+    // `mv .git g && cp -a g .git`. The evidence that a seal was kept follows the plane's path
+    // alone, so a keyring that did not start still reads as one that failed: broken, never the
+    // shipped default.
+    use crate::sandbox::local::{PolicyAccepted, no_keyring_at, policy_accepted_record};
+    let project = a_project_with_an_acceptance();
+    let root = project.root();
+    let before = crate::sandbox::local::path(root);
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    assert_eq!(policy_accepted_record(root), PolicyAccepted::Broken);
+    std::fs::rename(root.join(".git"), root.join("g")).expect("moved aside");
+    std::fs::create_dir(root.join(".git")).expect("put back as another folder");
+    assert_ne!(
+        crate::sandbox::local::path(root),
+        before,
+        "the clone key moved"
+    );
+    assert!(!no_keyring_at(root), "a seal was kept here");
+    assert_eq!(policy_accepted_record(root), PolicyAccepted::Broken);
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn a_plane_with_no_readable_key_that_never_kept_a_seal_stays_on_the_shipped_default() {
+    // #7164 item 4: the complement. Nothing kept, nothing to be taken away.
+    use crate::sandbox::local::{PolicyAccepted, policy_accepted_record};
+    let project = Project::new(STRICT);
+    crate::secrets::seal::set_for_this_test(None);
+    assert_eq!(
+        policy_accepted_record(project.root()),
+        PolicyAccepted::Never
+    );
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+}
+
+#[test]
+fn no_keyring_with_an_acceptance_record_present_reads_broken_and_none_with_no_record_reads_never() {
+    use crate::sandbox::local::{PolicyAccepted, policy_accepted_record};
+    let project = a_project_with_an_acceptance();
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    assert_eq!(
+        policy_accepted_record(project.root()),
+        PolicyAccepted::Broken
+    );
+    let other = Project::new(STRICT);
+    assert_eq!(
+        policy_accepted_record(other.root()),
+        PolicyAccepted::Never,
+        "a machine that never used a keyring"
+    );
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+/// Whether the marker of the plane at `root` is there.
+fn marked(root: &Path) -> bool {
+    crate::sandbox::local::sealed_marker(root)
+        .is_some_and(|marker| matches!(marker.try_exists(), Ok(true)))
+}
+
+/// Takes the plane's marker away, as it was before this build made one.
+fn unmark(root: &Path) {
+    let marker = crate::sandbox::local::sealed_marker(root).expect("a config home");
+    std::fs::remove_file(marker).expect("removed");
+    assert!(!marked(root));
+}
+
+#[test]
+fn a_plane_sealed_before_markers_gets_one_at_its_first_verified_read_and_then_keeps_the_evidence() {
+    // #7164, the declared gap: an acceptance sealed by a build with no marker is read with the
+    // key once, and the marker is made, so a keyring that fails later is a failure wherever
+    // `.git` has been.
+    use crate::sandbox::local::{PolicyAccepted, no_keyring_at, policy_accepted_record};
+    let project = a_project_with_an_acceptance();
+    let root = project.root();
+    unmark(root);
+    assert!(matches!(
+        policy_accepted_record(root),
+        PolicyAccepted::Held(_)
+    ));
+    assert!(marked(root), "the verified read left the marker");
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    std::fs::rename(root.join(".git"), root.join("g")).expect("moved aside");
+    std::fs::create_dir(root.join(".git")).expect("put back as another folder");
+    assert!(!no_keyring_at(root));
+    assert_eq!(policy_accepted_record(root), PolicyAccepted::Broken);
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn a_dispatch_answer_sealed_before_markers_gets_one_at_its_first_verified_read() {
+    let project = Project::new(STRICT);
+    let root = project.root();
+    crate::sandbox::local::grant_dispatch(root, "steward", "qa").expect("granted");
+    unmark(root);
+    assert_eq!(crate::sandbox::local::dispatch_unsealed(root), Vec::new());
+    assert!(marked(root), "the verified read left the marker");
+}
+
+#[test]
+fn a_never_sealed_before_markers_gets_one_at_its_first_verified_read() {
+    let project = Project::new(STRICT);
+    let root = project.root();
+    never(root, &pair("steward", "devops")).expect("said");
+    unmark(root);
+    assert!(matches!(
+        crate::dispatchnever::read(root),
+        crate::dispatchnever::Nevers::Read(_)
+    ));
+    assert!(marked(root), "the verified read left the marker");
+}
+
+#[test]
+fn the_first_dispatch_answer_sealed_marks_the_plane_so_a_moved_git_folder_still_reads_as_a_failed_keyring()
+ {
+    // `change_sealing`'s own marker, with the plane's only seal a dispatch answer.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    std::fs::create_dir(root.join(".git")).expect("a .git");
+    assert!(!marked(root));
+    crate::sandbox::local::grant_dispatch(root, "steward", "qa").expect("granted");
+    assert!(marked(root), "sealed, so marked");
+    crate::secrets::seal::set_no_keyring_for_this_test(true);
+    std::fs::rename(root.join(".git"), root.join("g")).expect("moved aside");
+    std::fs::create_dir(root.join(".git")).expect("put back as another folder");
+    assert!(!crate::sandbox::local::no_keyring_at(root));
+    crate::secrets::seal::set_no_keyring_for_this_test(false);
+}
+
+#[test]
+fn the_first_never_sealed_marks_the_plane() {
+    // `seal_in_step`'s own marker: the nevers are the plane's only seal.
+    let project = Project::new(STRICT);
+    let root = project.root();
+    assert!(!marked(root));
+    never(root, &pair("steward", "devops")).expect("said");
+    assert!(marked(root), "sealed, so marked");
 }

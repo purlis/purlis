@@ -30,6 +30,7 @@ const TASKED: ChatCard = {
     asker: 0,
     name: "Signed commits #5607",
     chat: null,
+    chat_id: null,
     persona: null,
     how: "done",
     outcome: "done",

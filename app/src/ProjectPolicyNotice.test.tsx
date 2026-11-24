@@ -24,6 +24,7 @@ const PLANE = "/home/dev/plane";
 const QUIET: PolicyState = {
   waiting: [],
   refused: [],
+  not_in_force: [],
   unsealed: false,
   digest: "d1",
   template: "watch",
@@ -109,6 +110,30 @@ describe("the project's policy (Q308a)", () => {
     await userEvent.click(screen.getByRole("button", { name: "Accept" }));
     await waitFor(() =>
       expect(asked("accept_project_policy")).toEqual([{ plane: PLANE, shown: "d2" }]),
+    );
+  });
+
+  it("names the sandbox's level that waits, and says what runs without a sandbox leaves out", async () => {
+    core({
+      ...QUIET,
+      waiting: [{ family: "sandbox", accepted: "floor", committed: "off" }],
+      not_in_force: ["network", "ports", "processes"],
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() => expect(screen.getByText(/sandbox from floor to off/)).toBeTruthy());
+    expect(
+      screen.getByText(/Without a sandbox, network, ports and processes are not in force\./),
+    ).toBeTruthy();
+  });
+
+  it("says the merge opt-in as a change of the forge route, held until accepted", async () => {
+    core({
+      ...QUIET,
+      waiting: [{ family: "merges through the forge route", accepted: "held", committed: "log" }],
+    });
+    render(<ProjectPolicyNotice plane={PLANE} canAccept />);
+    await waitFor(() =>
+      expect(screen.getByText(/merges through the forge route from held to log/)).toBeTruthy(),
     );
   });
 });

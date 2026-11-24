@@ -1198,9 +1198,21 @@ fn both_ports_stop_listening_when_the_chat_ends() {
     let proxy = Proxy::start(vec!["example.com".to_owned()]).expect("a proxy");
     let (http, socks) = (proxy.port(), proxy.socks_port());
     drop(proxy);
-    std::thread::sleep(Duration::from_millis(200));
-    assert!(TcpStream::connect(("127.0.0.1", http)).is_err());
-    assert!(TcpStream::connect(("127.0.0.1", socks)).is_err());
+    // Each listener closes on its own thread once it has seen the stop, not before `drop`
+    // returns, and it carries nothing in between (it breaks on its first accept after the stop).
+    // So "stops listening" is a connection refused soon, waited for until it is rather than a
+    // fixed sleep a loaded runner outlasts; a listener that never closes fails at the deadline.
+    for (name, port) in [("http", http), ("socks", socks)] {
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        while TcpStream::connect_timeout(&addr, Duration::from_secs(1)).is_ok() {
+            assert!(
+                std::time::Instant::now() < until,
+                "the {name} port still listens 10 s after the chat ended"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
 }
 
 /// The connection limit is the chat's, over both its ports together.
@@ -1850,4 +1862,843 @@ fn a_timed_out_hold_tells_the_chat_it_is_a_block_and_a_retry_asks_again() {
         "purlis's sandbox does not allow api.example.com:443: nobody answered in time; this \
          is now a block. Run the command again to ask again."
     );
+}
+
+// ---- The Q308 follow-up, item 5: the `network` family ----------------------------------------
+
+/// A proxy whose project's `[policy]` does not enforce `network`, and what it was told.
+fn lifting() -> (Proxy, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let proxy = Proxy::serving(super::Serving {
+        network: Some({
+            let told = std::sync::Arc::clone(&told);
+            std::sync::Arc::new(move |host: &str, port: u16| {
+                told.lock().unwrap().push(super::host_and_port(host, port));
+            })
+        }),
+        ..super::Serving::of(none())
+    })
+    .expect("a proxy");
+    (proxy, told)
+}
+
+#[test]
+fn with_network_not_enforced_a_host_nothing_lists_is_carried_and_told_once() {
+    let (proxy, told) = lifting();
+    // Tried, so answered 502: `.invalid` never resolves. Refused would be 403, with no try.
+    for _ in 0..2 {
+        let said = status(
+            &mut to(&proxy),
+            "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
+        );
+        assert_eq!(said, "HTTP/1.1 502 Bad Gateway");
+    }
+    assert_eq!(*told.lock().unwrap(), ["unlisted.invalid:443"]);
+    // Enforced, as before: refused without a try.
+    let enforced = Proxy::serving(super::Serving::of(none())).expect("a proxy");
+    let said = status(
+        &mut to(&enforced),
+        "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+}
+
+#[test]
+fn with_network_not_enforced_this_machine_is_still_refused() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let (proxy, told) = lifting();
+    let said = status(
+        &mut to(&proxy),
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "the proxy reached this machine");
+    assert!(told.lock().unwrap().is_empty());
+}
+
+/// A proxy that lifts `network` over `reach`, with `serving`'s other parts, and what it was told.
+fn lifting_with(
+    reach: Reach,
+    serving: impl FnOnce(super::Serving) -> super::Serving,
+) -> (Proxy, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    let told = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let proxy = Proxy::serving(serving(super::Serving {
+        network: Some({
+            let told = std::sync::Arc::clone(&told);
+            std::sync::Arc::new(move |host: &str, port: u16| {
+                told.lock().unwrap().push(super::host_and_port(host, port));
+            })
+        }),
+        ..super::Serving::of(reach)
+    }))
+    .expect("a proxy");
+    (proxy, told)
+}
+
+/// A link-local or cloud metadata address is never carried by a lift of `network`: refused as
+/// this machine is, before any ask, and never told as lifted.
+#[test]
+fn with_network_not_enforced_a_metadata_address_is_still_refused() {
+    let (proxy, told) = lifting();
+    for target in [
+        "169.254.169.254:80",
+        "[fd00:ec2::254]:80",
+        "169.254.1.1:443",
+    ] {
+        let said = status(
+            &mut to(&proxy),
+            &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{target}");
+    }
+    let told = told.lock().unwrap().clone();
+    assert!(told.is_empty(), "{told:?}");
+}
+
+/// A host an administrator's policy pins as never allowed is refused under a lift of `network`,
+/// as it is with the family enforced.
+#[test]
+fn with_network_not_enforced_a_host_policy_pins_as_never_allowed_is_still_refused() {
+    let never = crate::sandbox::hosts::Host::parse("never.invalid").expect("a host");
+    let (proxy, told) = lifting_with(none().never(vec![never]), |serving| serving);
+    for target in ["never.invalid:443", "never.invalid:8443"] {
+        let said = status(
+            &mut to(&proxy),
+            &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{target}");
+    }
+    let told = told.lock().unwrap().clone();
+    assert!(told.is_empty(), "{told:?}");
+}
+
+/// **Keep blocked holds in every mode** (Q308b; the review of #7105, blocker 2): under `team`,
+/// whose `network` logs, a host the person kept blocked from its Notice is refused on the next
+/// attempt, and never told as lifted; another host is still carried.
+#[test]
+fn with_network_not_enforced_a_host_kept_blocked_is_refused_on_the_next_attempt() {
+    use crate::enforcement::{Family, Mode, Template};
+    assert_eq!(Template::Team.mode(Family::Network), Mode::Log);
+    let asks = std::sync::Arc::new(crate::sandbox::asks::Asks::timed(
+        std::sync::Arc::new(|_| {}),
+        Duration::from_millis(300),
+        Duration::from_millis(20),
+    ));
+    let (proxy, told) = lifting_with(none(), |serving| super::Serving {
+        asks: Some(std::sync::Arc::clone(&asks)),
+        ..serving
+    });
+    let connect = |target: &str| {
+        status(
+            &mut to(&proxy),
+            &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+        )
+    };
+    // Lifted, so tried: `.invalid` never resolves.
+    assert_eq!(connect("kept.invalid:443"), "HTTP/1.1 502 Bad Gateway");
+    asks.keep_blocked(&crate::sandbox::hosts::Host::parse("kept.invalid").expect("a host"));
+    assert_eq!(connect("kept.invalid:443"), "HTTP/1.1 403 Forbidden");
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "kept.invalid", 443), 2);
+    assert_eq!(connect("other.invalid:443"), "HTTP/1.1 502 Bad Gateway");
+    assert_eq!(
+        *told.lock().unwrap(),
+        ["kept.invalid:443", "other.invalid:443"]
+    );
+}
+
+/// A confined extension's proxy carries only what its question names: a lift of `network` never
+/// reaches it.
+#[test]
+fn with_network_not_enforced_a_confined_proxy_still_refuses_a_host_nothing_lists() {
+    // One of its questions is being answered, so it is not quiet: what it refuses, it refuses
+    // for what the question names.
+    let (proxy, told) = lifting_with(none(), |serving| super::Serving {
+        network: serving.network,
+        asking: Some(std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(1))),
+        ..super::Serving::confined(
+            Vec::new(),
+            std::sync::Arc::new(super::ProviderAddresses::of(Vec::new())),
+        )
+    });
+    let said = status(
+        &mut to(&proxy),
+        "CONNECT unlisted.invalid:443 HTTP/1.1\r\nHost: unlisted.invalid:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert!(told.lock().unwrap().is_empty());
+}
+
+/// A proxy whose layer lists `127.0.0.1:port` exactly, with `denied` as its forge hosts: the one
+/// way to show a listed host is refused is a host this machine's own server answers for.
+fn forging(heard: &Heard, port: u16, denied: &[&str]) -> Proxy {
+    Proxy::serving(super::Serving {
+        tunnel_ports: vec![port],
+        plain_ports: vec![port],
+        forge_denied: denied.iter().map(|host| (*host).to_owned()).collect(),
+        ..heard.serving(Reach::of(vec![(exactly(port), By::You)]))
+    })
+    .expect("a proxy")
+}
+
+#[test]
+fn a_forge_host_is_refused_as_a_tunnel_even_where_a_layer_lists_it() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = forging(&heard, port, &[LOOPBACK]);
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        listener.accept().is_err(),
+        "the proxy connected to a forge host it denied"
+    );
+    proxy.settled();
+    // Counted in the record as refused, never as carried.
+    assert_eq!(heard.reached(), [(Some(exactly(port)), "refused", 1)]);
+}
+
+#[test]
+fn a_forge_host_is_refused_as_a_plain_request_and_over_socks_too() {
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = forging(&heard, port, &["127.0.0.1"]);
+    let mut plain = to(&proxy);
+    let said = status(
+        &mut plain,
+        &format!("GET http://127.0.0.1:{port}/ HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    // SOCKS's own word for it: not allowed by the ruleset.
+    assert_eq!(socks_connect(&mut to_socks(&proxy), LOOPBACK, port), 2);
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(
+        listener.accept().is_err(),
+        "a denied forge host was connected to"
+    );
+}
+
+#[test]
+fn a_host_that_is_not_a_forge_is_still_tunnelled_where_forge_hosts_are_denied() {
+    let (listener, port) = an_echo_server();
+    let echoed = echo_once(listener);
+    let heard = Heard::default();
+    // A forge host elsewhere is denied; this server's is not one.
+    let proxy = forging(
+        &heard,
+        port,
+        &["github.com", "gitlab.com", "git.example.org"],
+    );
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    client.write_all(b"ping").expect("through the tunnel");
+    let mut back = [0u8; 4];
+    client.read_exact(&mut back).expect("echoed back");
+    assert_eq!(&back, b"ping");
+    assert_eq!(echoed.join().expect("the server"), b"ping");
+}
+
+#[test]
+fn a_denied_forge_host_is_matched_by_name_as_a_host_is_listed_whatever_its_case() {
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        forge_denied: vec!["github.com".to_owned()],
+        ..heard.serving(Reach::open(vec!["github.com".to_owned()]))
+    })
+    .expect("a proxy");
+    for host in ["github.com", "GitHub.COM", "github.com."] {
+        let mut client = to(&proxy);
+        let said = status(
+            &mut client,
+            &format!("CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n"),
+        );
+        assert_eq!(said, "HTTP/1.1 403 Forbidden", "{host}");
+    }
+    // Its answer tells the chat where a forge is reached, in words it can act on.
+    let refusal = super::refusal_said(
+        "github.com",
+        443,
+        &crate::sandbox::reach::Decision::Refused(crate::sandbox::reach::Refused::ForgeRoute),
+    );
+    assert_eq!(
+        refusal,
+        "purlis's sandbox does not allow github.com:443: a forge is reached only through purlis. \
+         Use gh, glab or git, which go through it; for a release, `gh release download`, or the \
+         release-assets.githubusercontent.com address the release redirects to"
+    );
+}
+
+/// A proxy that lists every forge name a chat might be allowed elsewhere, denying the forge hosts
+/// of a recorded GHES host as the chat's does ([`crate::forgewire::denied_hosts`]); nothing is
+/// looked up for addresses unless `resolves` says what a forge host resolves to.
+fn forge_proxy(heard: &Heard, resolves: &'static [(&'static str, &'static str)]) -> Proxy {
+    let denied = crate::forgewire::denied_hosts(&[crate::forgewire::Repo::new(
+        "ghe.corp.example",
+        "o",
+        "r",
+        crate::forgewire::ForgeKind::GitHub,
+    )
+    .expect("a repo")]);
+    let listed: Vec<String> = [
+        "github.com",
+        "*.github.com",
+        "*.githubusercontent.com",
+        "gitlab.com",
+        "*.gitlab.com",
+        "ghe.corp.example",
+        "*.ghe.corp.example",
+        "140.82.112.3",
+        "172.65.251.78",
+        "[2a0a:a440::1]",
+    ]
+    .iter()
+    .map(|host| (*host).to_owned())
+    .collect();
+    Proxy::serving(super::Serving {
+        forge_denied: denied,
+        forge_resolver: Some(std::sync::Arc::new(move |name: &str| {
+            resolves
+                .iter()
+                .filter(|(host, _)| *host == name)
+                .map(|(_, at)| at.parse().expect("an address"))
+                .collect()
+        })),
+        ..heard.serving(Reach::open(listed))
+    })
+    .expect("a proxy")
+}
+
+fn connect_status(proxy: &Proxy, target: &str) -> String {
+    status(
+        &mut to(proxy),
+        &format!("CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n"),
+    )
+}
+
+#[test]
+fn every_subdomain_of_a_forge_host_is_refused_even_where_a_layer_lists_it() {
+    let heard = Heard::default();
+    let proxy = forge_proxy(&heard, &[]);
+    for host in [
+        "evil.github.com",
+        "a.b.github.com",
+        "x.githubusercontent.com",
+        "foo.gitlab.com",
+        "api.ghe.corp.example",
+        "ghe.corp.example",
+        // Not tunnelled either: only the three download-only hosts are.
+        "ssh.github.com",
+        "altssh.gitlab.com",
+        "gist.github.com",
+        "raw.githubusercontent.com",
+        "uploads.github.com",
+        "raw.ghe.corp.example",
+        "uploads.ghe.corp.example",
+    ] {
+        assert_eq!(
+            connect_status(&proxy, &format!("{host}:443")),
+            "HTTP/1.1 403 Forbidden",
+            "{host}"
+        );
+    }
+}
+
+#[test]
+fn an_address_literal_a_forge_is_at_is_refused_as_a_tunnel_and_over_socks() {
+    let heard = Heard::default();
+    // A forge host that resolves to an address no snapshot lists.
+    let proxy = forge_proxy(&heard, &[("gitlab.com", "172.65.251.78")]);
+    for literal in ["140.82.112.3", "172.65.251.78", "[2a0a:a440::1]"] {
+        assert_eq!(
+            connect_status(&proxy, &format!("{literal}:443")),
+            "HTTP/1.1 403 Forbidden",
+            "{literal}"
+        );
+    }
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "140.82.112.3", 443), 2);
+}
+
+#[test]
+fn port_22_is_refused_to_every_forge_name_the_ssh_over_443_hosts_included() {
+    let heard = Heard::default();
+    let proxy = forge_proxy(&heard, &[]);
+    for host in [
+        "github.com",
+        "ssh.github.com",
+        "gitlab.com",
+        "altssh.gitlab.com",
+        "ghe.corp.example",
+        "x.ghe.corp.example",
+    ] {
+        assert_eq!(
+            connect_status(&proxy, &format!("{host}:22")),
+            "HTTP/1.1 403 Forbidden",
+            "{host}:22"
+        );
+    }
+    assert_eq!(socks_connect(&mut to_socks(&proxy), "github.com", 22), 2);
+}
+
+#[test]
+fn a_name_a_layer_lists_that_resolves_to_a_forge_address_is_never_connected_to() {
+    // This machine's own server stands for the forge: a forge host resolves to it, and a name
+    // that is no forge's is listed exactly, so only the address check can stop the connection.
+    let (listener, port) = an_echo_server();
+    listener.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        tunnel_ports: vec![port],
+        plain_ports: vec![port],
+        forge_denied: vec!["forge.invalid".to_owned()],
+        forge_resolver: Some(std::sync::Arc::new(|_| vec![LOOPBACK.parse().unwrap()])),
+        ..heard.serving(Reach::of(vec![(exactly(port), By::You)]))
+    })
+    .expect("a proxy");
+    let said = connect_status(&proxy, &format!("{LOOPBACK}:{port}"));
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(listener.accept().is_err(), "connected to a forge's address");
+}
+
+/// A TLS record holding a ClientHello naming `name` (none where `None`), carrying an encrypted
+/// ClientHello (ECH) where `ech`, as a client writes one.
+fn client_hello(name: Option<&str>, ech: bool) -> Vec<u8> {
+    let mut extensions = Vec::new();
+    if let Some(name) = name {
+        let name = name.as_bytes();
+        let mut list = Vec::new();
+        list.extend(u16::try_from(3 + name.len()).unwrap().to_be_bytes());
+        list.push(0);
+        list.extend(u16::try_from(name.len()).unwrap().to_be_bytes());
+        list.extend(name);
+        extensions.extend(0u16.to_be_bytes());
+        extensions.extend(u16::try_from(list.len()).unwrap().to_be_bytes());
+        extensions.extend(list);
+    }
+    if ech {
+        extensions.extend(0xfe0du16.to_be_bytes());
+        extensions.extend(4u16.to_be_bytes());
+        extensions.extend([0, 0, 1, 0]);
+    }
+    let mut hello = vec![3, 3];
+    hello.extend([7u8; 32]);
+    hello.push(0);
+    hello.extend(2u16.to_be_bytes());
+    hello.extend([0x13, 0x01]);
+    hello.extend([1, 0]);
+    hello.extend(u16::try_from(extensions.len()).unwrap().to_be_bytes());
+    hello.extend(extensions);
+    let mut handshake = vec![1, 0];
+    handshake.extend(u16::try_from(hello.len()).unwrap().to_be_bytes());
+    handshake.extend(hello);
+    let mut record = vec![0x16, 3, 1];
+    record.extend(u16::try_from(handshake.len()).unwrap().to_be_bytes());
+    record.extend(handshake);
+    record
+}
+
+#[test]
+fn a_hello_is_read_for_what_it_says_of_its_server() {
+    use super::{Hello, hello_of};
+    assert_eq!(
+        hello_of(&client_hello(Some("github.com"), false)),
+        Hello::Named("github.com".into())
+    );
+    assert_eq!(hello_of(&client_hello(None, false)), Hello::NoName);
+    assert_eq!(
+        hello_of(&client_hello(Some("a.example"), true)),
+        Hello::Ech(Some("a.example".into())),
+        "the outer name is kept beside the encrypted hello"
+    );
+    assert_eq!(hello_of(&client_hello(None, true)), Hello::Ech(None));
+    assert_eq!(hello_of(b"GET / HTTP/1.1\r\n"), Hello::NotTls);
+    assert_eq!(hello_of(b""), Hello::NotTls);
+    // A record cut short, or one that holds no whole hello: not read.
+    let whole = client_hello(Some("github.com"), false);
+    assert_eq!(hello_of(&whole[..whole.len() - 3]), Hello::Unreadable);
+    assert_eq!(hello_of(&[0x16, 3, 1]), Hello::Unreadable);
+}
+
+#[test]
+fn a_record_shaped_first_record_that_is_no_hello_is_unreadable_never_no_tls() {
+    use super::{Hello, hello_of};
+    // A warning alert, as OpenSSL and BoringSSL skip before a ClientHello.
+    assert_eq!(
+        hello_of(&[0x15, 3, 1, 0, 2, 1, 0x5a]),
+        Hello::Unreadable,
+        "an alert"
+    );
+    for kind in [0x14u8, 0x17, 0x18] {
+        for minor in 0..=9u8 {
+            assert_eq!(
+                hello_of(&[kind, 3, minor, 0, 1, 1]),
+                Hello::Unreadable,
+                "{kind:#x} 03 {minor:02x}"
+            );
+        }
+    }
+    // RFC 8446 says a ClientHello's record version is ignored: the content type alone says TLS.
+    for version in [[4u8, 1], [3, 5], [2, 0], [0, 0], [0xff, 0xff]] {
+        assert_eq!(
+            hello_of(&[0x15, version[0], version[1], 0, 2, 1, 0x5a]),
+            Hello::Unreadable,
+            "{version:?}"
+        );
+        let mut odd = client_hello(Some("github.com"), false);
+        odd[1..3].copy_from_slice(&version);
+        assert_eq!(
+            hello_of(&odd),
+            Hello::Named("github.com".into()),
+            "a hello in a record of version {version:?} is read as one"
+        );
+    }
+    // An SSLv2-compatible hello is unreadable, not no TLS; other first bytes with the high bit
+    // are not.
+    assert_eq!(hello_of(&[0x80, 0x2e, 1, 3, 1, 0, 0]), Hello::Unreadable);
+    assert_eq!(hello_of(&[0x80, 0x2e, 2, 3, 1, 0, 0]), Hello::NotTls);
+    // What is no TLS record at all is carried as such.
+    assert_eq!(hello_of(&[0x13, 3, 1, 0, 2]), Hello::NotTls);
+    assert_eq!(hello_of(&[0x19, 3, 1, 0, 2]), Hello::NotTls);
+    assert_eq!(hello_of(b"SSH-2.0-OpenSSH_9.6\r\n"), Hello::NotTls);
+}
+
+#[test]
+fn a_record_shape_is_known_from_the_content_type_alone() {
+    use super::{record_shaped, ssl2_shaped};
+    assert_eq!(record_shaped(b""), None);
+    for version in [&[][..], &[3], &[2], &[3, 1], &[3, 5], &[4, 1]] {
+        let mut bytes = vec![0x15];
+        bytes.extend(version);
+        assert_eq!(record_shaped(&bytes), Some(true), "{bytes:?}");
+    }
+    assert_eq!(record_shaped(&[0x13, 3, 1]), Some(false));
+    assert_eq!(record_shaped(&[0x19, 3, 1]), Some(false));
+    assert_eq!(record_shaped(b"S"), Some(false));
+    assert_eq!(ssl2_shaped(&[0x80]), None);
+    assert_eq!(ssl2_shaped(&[0x80, 0x2e]), None);
+    assert_eq!(ssl2_shaped(&[0x80, 0x2e, 1]), Some(true));
+    assert_eq!(ssl2_shaped(&[0x80, 0x2e, 2]), Some(false));
+    assert_eq!(ssl2_shaped(b"S"), Some(false));
+}
+
+/// What a server behind a proxy that denies `github.com` received of a tunnel whose client sent
+/// `first` after the `CONNECT`, up to the end of the connection: nothing where it was cut. The
+/// server echoes it back, and the client is shown to read what the server did.
+fn tunnelled_first(first: &[u8]) -> Vec<u8> {
+    let (listener, port) = an_echo_server();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("a connection");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(15)))
+            .expect("a timeout");
+        let mut got = Vec::new();
+        let _ = stream.read_to_end(&mut got);
+        let _ = stream.write_all(&got);
+        got
+    });
+    let heard = Heard::default();
+    let proxy = forging(
+        &heard,
+        port,
+        &["github.com", "githubusercontent.com", "gitlab.com"],
+    );
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        &format!("CONNECT 127.0.0.1:{port} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n\r\n"),
+    );
+    assert_eq!(said, "HTTP/1.1 200 Connection established");
+    client.write_all(first).expect("sent");
+    let _ = client.shutdown(std::net::Shutdown::Write);
+    let mut back = Vec::new();
+    let _ = client.read_to_end(&mut back);
+    let got = server.join().expect("the server");
+    assert_eq!(
+        back, got,
+        "what the client read back is what the server got"
+    );
+    got
+}
+
+#[test]
+fn a_tunnel_whose_sni_names_a_forge_is_cut_before_a_byte_reaches_the_server() {
+    // The address is one no list holds (a wildcard name that resolves to a GitHub address that
+    // is in no list): the name inside is what holds it.
+    for inside in [
+        "github.com",
+        "API.GitHub.com.",
+        "evil.github.com",
+        "gitlab.com",
+        "objects.githubusercontent.com",
+    ] {
+        assert!(
+            tunnelled_first(&client_hello(Some(inside), false)).is_empty(),
+            "{inside}"
+        );
+    }
+}
+
+#[test]
+fn a_tunnel_whose_hello_cannot_be_read_is_cut_and_one_that_names_another_host_is_carried() {
+    let whole = client_hello(Some("example.org"), false);
+    // A record that holds the start of a hello, the rest in another, hides its name from the
+    // proxy: not carried.
+    assert!(tunnelled_first(&[0x16, 3, 1, 0, 4, 1, 0, 0, 50]).is_empty());
+    // The same hello whole, another host's name, no name, and plain bytes, are carried.
+    assert_eq!(tunnelled_first(&whole), whole);
+    assert_eq!(tunnelled_first(b"ping"), b"ping");
+    assert_eq!(
+        tunnelled_first(b"SSH-2.0-OpenSSH_9.6\r\n"),
+        b"SSH-2.0-OpenSSH_9.6\r\n"
+    );
+}
+
+#[test]
+fn a_tunnel_to_an_address_literal_whose_hello_has_no_name_or_hides_it_is_cut() {
+    // 127.0.0.1 is the tunnel's address literal: nothing else names its server.
+    assert!(tunnelled_first(&client_hello(None, false)).is_empty());
+    assert!(tunnelled_first(&client_hello(Some("cover.example"), true)).is_empty());
+}
+
+#[test]
+fn a_forge_sni_beside_an_ech_extension_is_cut() {
+    // The outer name is what a server that does not speak ECH serves: it is not dropped. (Here
+    // the tunnel is to an address literal, which is cut either way; `forgedeny`'s own test holds
+    // the named-host case.)
+    for inside in ["github.com", "API.GitHub.com.", "gitlab.com"] {
+        assert!(
+            tunnelled_first(&client_hello(Some(inside), true)).is_empty(),
+            "{inside}"
+        );
+    }
+}
+
+#[test]
+fn a_hello_in_a_record_of_an_unusual_version_is_read_not_spliced() {
+    for version in [[3u8, 5], [4, 1], [2, 0]] {
+        let mut hello = client_hello(Some("github.com"), false);
+        hello[1..3].copy_from_slice(&version);
+        assert!(tunnelled_first(&hello).is_empty(), "{version:?}");
+        let mut hello = client_hello(Some("example.org"), false);
+        hello[1..3].copy_from_slice(&version);
+        assert_eq!(tunnelled_first(&hello), hello, "{version:?}");
+    }
+    // An SSLv2-compatible hello on a tunnel that is not exempt.
+    assert!(tunnelled_first(&[0x80, 0x2e, 1, 3, 1, 0, 0, 0, 0]).is_empty());
+}
+
+#[test]
+fn a_warning_alert_before_the_hello_does_not_skip_the_pin() {
+    let mut alerted = vec![0x15, 3, 1, 0, 2, 1, 0x5a];
+    alerted.extend(client_hello(Some("api.github.com"), false));
+    assert!(tunnelled_first(&alerted).is_empty());
+    // Whichever record starts it, and whichever name the hello after says.
+    let mut other = vec![0x14, 3, 3, 0, 1, 1];
+    other.extend(client_hello(Some("example.org"), false));
+    assert!(tunnelled_first(&other).is_empty());
+}
+
+/// A `git ls-remote` of a forge repo through `proxy` with `extra` set, and what it said.
+#[cfg(unix)]
+fn git_says(proxy: &Proxy, home: &std::path::Path, extra: &[(&str, &str)]) -> (bool, String) {
+    let repo = home.join("clone");
+    // A new clone each time: the cases share one home.
+    let _ = std::fs::remove_dir_all(&repo);
+    std::fs::create_dir_all(&repo).expect("a folder");
+    let git = |args: &[&str]| {
+        let out = crate::forklock::output(
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo)
+                .env_clear()
+                .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
+                .env("HOME", home)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1"),
+        )
+        .expect("git ran");
+        assert!(
+            out.status.success(),
+            "{args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["remote", "add", "origin", "https://github.com/o/r.git"]);
+    let mut command = std::process::Command::new("git");
+    command
+        .args(["ls-remote", "origin"])
+        .current_dir(&repo)
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin")
+        .env("HOME", home)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("HTTPS_PROXY", format!("http://127.0.0.1:{}", proxy.port()));
+    for (name, value) in extra {
+        command.env(name, value);
+    }
+    let out = crate::forklock::output(&mut command).expect("git ran");
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+#[cfg(unix)]
+#[test]
+fn a_chats_own_git_meets_the_denial_whatever_it_sets_for_itself() {
+    use std::os::unix::fs::PermissionsExt;
+    let heard = Heard::default();
+    let proxy = forge_proxy(&heard, &[]);
+    let home = tempfile::tempdir().unwrap();
+    // An askpass that answers with a password: git would send it to the forge if it got there.
+    let askpass = home.path().join("askpass");
+    std::fs::write(&askpass, "#!/bin/sh\necho leaked\n").unwrap();
+    std::fs::set_permissions(&askpass, std::fs::Permissions::from_mode(0o755)).unwrap();
+    // A helper reached through `includeIf`, which an empty `credential.helper` pair never sees
+    // before it, and a config that names no proxy.
+    std::fs::write(
+        home.path().join("helper.inc"),
+        "[credential]\n\thelper = !echo password=leaked\n",
+    )
+    .unwrap();
+    std::fs::write(
+        home.path().join(".gitconfig"),
+        format!(
+            "[includeIf \"hasconfig:remote.*.url:https://github.com/**\"]\n\tpath = {}\n",
+            home.path().join("helper.inc").display()
+        ),
+    )
+    .unwrap();
+    let askpass = askpass.to_str().unwrap().to_owned();
+    for (what, extra) in [
+        ("nothing", vec![]),
+        ("GIT_ASKPASS", vec![("GIT_ASKPASS", askpass.as_str())]),
+        ("GIT_CONFIG_COUNT=0", vec![("GIT_CONFIG_COUNT", "0")]),
+        ("GH_CONFIG_DIR", vec![("GH_CONFIG_DIR", "/nowhere")]),
+        (
+            "a token of its own",
+            vec![("GH_TOKEN", "ghp_x"), ("GITHUB_TOKEN", "ghp_x")],
+        ),
+    ] {
+        let (ok, said) = git_says(&proxy, home.path(), &extra);
+        assert!(!ok, "{what}: reached a forge");
+        assert!(
+            said.contains("403"),
+            "{what}: refused by something other than the proxy: {said}"
+        );
+    }
+}
+
+#[test]
+fn the_door_answer_is_given_to_the_chat_without_the_proof_that_is_for_the_egress_proxy() {
+    let head =
+        b"HTTP/1.1 200 Connection Established\r\nPurlis-Door: abc123\r\nX-Other: kept\r\n\r\nafter";
+    let shown = super::without_header(head, super::handoff::REPLY_HEADER);
+    assert_eq!(
+        String::from_utf8_lossy(&shown),
+        "HTTP/1.1 200 Connection Established\r\nX-Other: kept\r\n\r\nafter"
+    );
+    // Whatever its case, and a head without it is as it was.
+    let lower = b"HTTP/1.1 200 OK\r\npurlis-door: x\r\n\r\n";
+    assert_eq!(
+        String::from_utf8_lossy(&super::without_header(lower, super::handoff::REPLY_HEADER)),
+        "HTTP/1.1 200 OK\r\n\r\n"
+    );
+    let plain = b"HTTP/1.1 403 Forbidden\r\n\r\n";
+    assert_eq!(
+        super::without_header(plain, super::handoff::REPLY_HEADER),
+        plain
+    );
+}
+
+#[test]
+fn a_forge_host_policy_pins_is_refused_for_the_route_and_its_door_is_never_dialled() {
+    // A door that notes every connection it is given.
+    let door = std::net::TcpListener::bind("127.0.0.1:0").expect("a door");
+    let addr = door.local_addr().expect("its address");
+    door.set_nonblocking(true).expect("nonblocking");
+    let heard = Heard::default();
+    let proxy = Proxy::serving(super::Serving {
+        forge_route: Some(super::ForgeRoute {
+            addr,
+            hosts: vec!["github.com".to_owned()],
+            handoff: super::handoff::Secret::random().expect("a secret"),
+        }),
+        ..heard.serving(Reach::open(vec!["github.com".to_owned()]).never(vec![
+            crate::sandbox::hosts::Host::parse("github.com").expect("a host"),
+        ]))
+    })
+    .expect("a proxy");
+    let mut client = to(&proxy);
+    let said = status(
+        &mut client,
+        "CONNECT github.com:443 HTTP/1.1\r\nHost: github.com:443\r\n\r\n",
+    );
+    assert_eq!(said, "HTTP/1.1 403 Forbidden");
+    assert!(
+        door.accept().is_err(),
+        "the door was dialled for a host policy pins"
+    );
+    let said = super::refusal_said(
+        "github.com",
+        443,
+        &crate::sandbox::reach::Decision::Refused(crate::sandbox::reach::Refused::Policy),
+    );
+    assert!(
+        said.contains("administrator's policy pins it as never allowed"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_pin_on_a_forge_covers_every_name_the_route_serves_for_it_and_its_door_is_never_dialled() {
+    // github.com pinned covers the API host; a server and a GitLab are pinned by their one host.
+    for (pinned, served) in [
+        ("github.com", "api.github.com"),
+        ("github.com", "github.com"),
+        ("ghe.corp.example", "ghe.corp.example"),
+        ("gitlab.example", "gitlab.example"),
+    ] {
+        let door = std::net::TcpListener::bind("127.0.0.1:0").expect("a door");
+        let addr = door.local_addr().expect("its address");
+        door.set_nonblocking(true).expect("nonblocking");
+        let heard = Heard::default();
+        let proxy = Proxy::serving(super::Serving {
+            forge_route: Some(super::ForgeRoute {
+                addr,
+                hosts: vec![served.to_owned()],
+                handoff: super::handoff::Secret::random().expect("a secret"),
+            }),
+            ..heard.serving(Reach::open(vec![served.to_owned()]).never(vec![
+                crate::sandbox::hosts::Host::parse(pinned).expect("a host"),
+            ]))
+        })
+        .expect("a proxy");
+        let mut client = to(&proxy);
+        let said = status(
+            &mut client,
+            &format!("CONNECT {served}:443 HTTP/1.1\r\nHost: {served}:443\r\n\r\n"),
+        );
+        assert_eq!(
+            said, "HTTP/1.1 403 Forbidden",
+            "{pinned} pinned, {served} asked"
+        );
+        assert!(
+            door.accept().is_err(),
+            "the door was dialled for {served} with {pinned} pinned"
+        );
+    }
 }

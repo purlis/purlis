@@ -1,8 +1,8 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-//! The two channels differ in optimisation profile and bundle set, and in nothing else
-//! (ADR 0092, #1429).
+//! The two channels differ in optimisation profile (link-time optimisation and their dependencies'
+//! debug info) and bundle set, and in nothing else (ADR 0092, #1429, amended 2026-11-24).
 //!
 //! A **dev channel build** is compiled with `dev-release` and makes no `.dmg`. A **stable
 //! build** is compiled with `release` and makes every bundle. A build started by hand is a
@@ -49,7 +49,7 @@ fn profile(name: &str) -> Vec<String> {
 }
 
 #[test]
-fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
+fn dev_release_differs_from_release_in_lto_and_dependency_debug_info_and_nothing_else() {
     // The stable build's profile: thin LTO across sixteen units since one fat pass over one unit
     // stopped fitting the hosted runners (ADR 0092 amended 2026-11-06, #4833), and line tables in
     // a packed dSYM beside a still stripped binary, for the Report intake to symbolicate a native
@@ -66,15 +66,14 @@ fn release_links_as_dev_release_does_and_dev_release_changes_nothing_else() {
             "strip = true",
         ]
     );
-    // `opt-level`, `panic`, `strip` and the debug symbols are inherited. A third setting here is
-    // a second way the channels differ, which is the operator's to decide (ADR 0092).
+    // `dev-release` sets `lto = "off"` and inherits everything else: `codegen-units`, `opt-level`,
+    // `panic`, `strip` and the workspace's debug symbols; its one other difference is the
+    // dependency table held by the test below. A further setting here, or a restated copy of one of
+    // `release`'s, is another way the channels differ, which is the operator's to decide (ADR 0092
+    // amended 2026-11-24, #7418). The guard builds `release`, so thin LTO is still built nightly.
     assert_eq!(
         profile("dev-release"),
-        [
-            "codegen-units = 16",
-            r#"inherits = "release""#,
-            r#"lto = "thin""#,
-        ]
+        [r#"inherits = "release""#, r#"lto = "off""#]
     );
 }
 
@@ -85,7 +84,7 @@ fn both_channels_build_the_app_crate_at_opt_level_1_and_nothing_else_is_overridd
     assert_eq!(profile("release.package.purlis-app"), ["opt-level = 1"]);
 
     // On `release` alone, so `dev-release` carries it by inheritance. A table of the
-    // dev profile's own could make the channels differ in it; another crate's override is a
+    // dev profile's own could make the channels differ in it beyond LTO; another crate's override is a
     // new measurement and a new amendment.
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let overrides: Vec<String> = workflow::read(&path)
@@ -93,7 +92,30 @@ fn both_channels_build_the_app_crate_at_opt_level_1_and_nothing_else_is_overridd
         .filter(|l| l.starts_with("[profile.release.") || l.starts_with("[profile.dev-release."))
         .map(str::to_owned)
         .collect();
-    assert_eq!(overrides, ["[profile.release.package.purlis-app]"]);
+    assert_eq!(
+        overrides,
+        [
+            "[profile.release.package.purlis-app]",
+            r#"[profile.dev-release.package."*"]"#
+        ]
+    );
+}
+
+#[test]
+fn dev_release_gives_third_party_crates_no_debug_info_and_the_workspace_keeps_its_line_tables() {
+    // The one setting the dev profile has of its own below its two (ADR 0092 amended 2026-11-24):
+    // every crate that is not a workspace member is compiled with `debug = 0`, which cuts object
+    // size and the linker's peak memory on the 7.5 GB macOS runner. The `"*"` table never
+    // reaches a workspace member, so `release`'s `line-tables-only` and packed dSYM, which the
+    // `symbols` job and the Report intake read, are the workspace's still. `release` has no such
+    // table: a stable build keeps its dependencies' line tables.
+    assert_eq!(profile(r#"dev-release.package."*""#), ["debug = 0"]);
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
+    let text = workflow::read(&path);
+    assert!(
+        !text.contains(r#"[profile.release.package."*"]"#),
+        "a stable build's dependencies keep their line tables"
+    );
 }
 
 /// The lines of `plan`'s decision for one event: from its `case` arm to the next arm.
@@ -199,9 +221,14 @@ fn every_step_of_the_build_reads_the_one_profile_plan_chose() {
 
     // `target/release` written out is a step that builds, collects or checks the stable
     // profile's output whatever this run built.
+    // The one place it is written is the bundling step, which links it to this run's profile:
+    // `tauri bundle` has no `--profile` and reads `target/release` unless it is given `--debug`.
+    let bundling = step(build, "Bundle the app");
     let fixed: Vec<&String> = build
         .body
         .iter()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .filter(|l| !(bundling.contains(l) && l.contains("../target/release")))
         .filter(|l| l.contains("target/release") || l.contains("--release"))
         .collect();
     assert!(fixed.is_empty(), "{fixed:#?}");
@@ -238,8 +265,8 @@ fn a_required_extra_bundle_is_made_by_the_one_build_and_a_dev_build_makes_no_dmg
     let jobs = release_jobs();
     let build = job(&jobs, "build");
 
-    // One `tauri build` for both bundles when the AppImage is required, on both channels.
-    let app = step(build, "Build the app");
+    // One `tauri bundle` for both bundles when the AppImage is required, on both channels.
+    let app = step(build, "Bundle the app");
     assert_eq!(
         step_value(&app, "env", "BUNDLES"),
         Some(
@@ -249,7 +276,7 @@ fn a_required_extra_bundle_is_made_by_the_one_build_and_a_dev_build_makes_no_dmg
 
     // The second build is only ever the optional one: skipped when the first made the bundle,
     // and for the `.dmg` of a dev channel build. So it may always fail.
-    let extra = step(build, "Build the extra bundle");
+    let extra = step(build, "Bundle the extra bundle");
     let value = |key: &str| {
         let prefix = format!("        {key}:");
         extra
@@ -260,7 +287,7 @@ fn a_required_extra_bundle_is_made_by_the_one_build_and_a_dev_build_makes_no_dmg
     assert_eq!(
         value("if"),
         Some(
-            "${{ !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}"
+            "${{ steps.ci.outputs.green == 'true' && !(matrix.extra_required && needs.plan.outputs.appimage_required == 'true') && !(matrix.extra_bundles == 'dmg' && needs.plan.outputs.dmg != 'true') }}"
         )
     );
     assert_eq!(value("continue-on-error"), Some("true"));

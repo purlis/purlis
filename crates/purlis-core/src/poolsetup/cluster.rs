@@ -1170,6 +1170,7 @@ pub(super) fn pool_kept(
         name: name.to_owned(),
         runner,
         sign_ins,
+        others: None,
         cluster: Some(KeptHere {
             context: pool.context().to_owned(),
             pool: pool.pool().to_owned(),

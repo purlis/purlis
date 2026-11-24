@@ -70,6 +70,7 @@ const PLACES = {
     how: "Blocking in Asks while its chat is in its turn, and on its chat's finish row once the turn ends (R-329)",
   },
   "trust-clones": { at: "no-chat" },
+  "let-chat-push": { at: "pane" },
 } as const satisfies Record<AskSource, Place>;
 
 /** Each kind's place, as any place: a kind may move to or from Asks alone. */

@@ -607,8 +607,10 @@ fn planned() -> Confine {
             any_port: false,
             beside: Beside::Wrapped,
             given: Vec::new(),
+            forge: None,
         },
         asks: true,
+        lifted: Vec::new(),
     }
 }
 

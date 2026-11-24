@@ -1,10 +1,19 @@
 ---
 name: landing-a-pr
 title: Landing a pull request
-description: Land a purlis pull request on main through the merge queue. Use when a PR is green, when someone asks to merge or land one, or when the merge queue dropped one.
+description: Open a lane's purlis pull request as a draft, mark it ready once, and land it on main through the merge queue. Use when opening a PR, when a lane reports done, when a PR is green, when someone asks to merge or land one, or when the merge queue dropped one.
 ---
 
 `node tools/land.mjs <pr> --sha <reviewed sha> --watch` does every mechanical step, refuses whatever is not ready, and says why. Its header comment lists what it checks. This skill is the judgement around it. Each step ends on its **done** line.
+
+## Draft, then ready once
+
+A lane opens its pull request as a **draft**. A draft runs only the fast guards and web tests (the ready gate, [ADR 0127](../../../adr/0127-a-pr-run-is-a-subset-of-the-queue-run-gated-by-ready.md)), so iterating on it is quick. When the lane's local checks pass and it reports done, it marks the pull request ready **once** (`gh pr ready <pr>`), the one time the heavy jobs whose scope fires start. Never flip it back and forth: each ready starts them again.
+
+- **Marking ready starts more checks.** Wait for them to finish, green, before enqueueing (step 3). A `gh pr ready` is not the end of the checks.
+- **A chat cannot run `gh pr create`,** so the line it hands the operator is `gh pr create --draft …` while the lane has not reported done, and the same line without `--draft` when it has: a pull request opened after the report is born ready.
+
+**Done:** the pull request was a draft until the lane reported done, was marked ready once, and its heavy checks are green at the head you will land.
 
 ## 1. Reviewed
 
@@ -24,7 +33,7 @@ A small fix after approval lands on that approval when the new commits only answ
 
 ## 3. Landed
 
-Run `tools/land.mjs` with `--watch` and act on what it says.
+Run `tools/land.mjs` with `--watch` and act on what it says. A pull request still in draft is not landed: mark it ready first, and wait for the checks that starts.
 
 **Runs held for approval are the operator's.** When a run of the head waits on approval, the tool names each one (name, id and link), says the operator approves them, and exits with status 4 without reading a check or enqueueing anything. Never rerun or approve such a run yourself, and never start a fresh run some other way (an empty push, `gh pr update-branch`) to get past it. Hand the run ids to the operator, and land again once they have run (#3991).
 

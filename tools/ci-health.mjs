@@ -1,27 +1,27 @@
 // Copyright 2026 Purlis
 // SPDX-License-Identifier: Apache-2.0
 
-// The weekly CI health report (#3598): how the `ci` workflow did over the last seven days.
+// The daily CI health report (#3598, daily and acting from spec #7324): how the `ci` workflow did
+// over the last seven days, and a ticket for each flaky test it finds.
 //
 // CI got twice as slow and three times as flaky between 2026-10-14 and 10-27, and nobody saw it
-// for two weeks. The `ci-health` workflow runs this every Monday and writes the week's numbers
+// for two weeks. The `ci-health` workflow runs this every day and writes the week's numbers
 // into its job summary and into one issue labelled `area:ci`, so the next slowdown shows on its
 // first week: runs a day, how many went green, how many only on a rerun, the merge queue's wait,
 // each job's p50 and p90, every flaky test by name, and the slowest tests.
 
-import { appendFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, readFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 import { requiredDrift } from "./ci-push-jobs.mjs";
 import { requiredNames } from "./land.mjs";
+import { percentile } from "./percentile.mjs";
+import { BUDGETS_FILE, CI_FILE, OVER, ciJobs, overBudget, overReleaseBudget, parseBudgets } from "./job-budgets.mjs";
+import { CAP, QUARANTINE_FILE, parseQuarantine } from "./quarantine.mjs";
 
-/** The `p` (0..1) percentile of `values` by nearest rank, or null for none. */
-export function percentile(values, p) {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.max(0, Math.ceil(p * sorted.length) - 1)];
-}
+export { percentile };
 
 const seconds = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 1000);
 const spread = (values) => ({ n: values.length, p50: percentile(values, 0.5), p90: percentile(values, 0.9) });
@@ -140,6 +140,249 @@ export function flakyTests(suites) {
     .sort((a, b) => b.count - a.count || a.test.localeCompare(b.test));
 }
 
+/**
+ * Every flaky test of `suites` with where it flaked, for its ticket: `{ test, count, jobs, runs }`,
+ * the most often first. `jobs` are the suites (the job names) that ran it, `runs` the workflow runs
+ * it flaked in (`{ id, url }`, each once), read from each suite's `workflowRun`.
+ */
+export function flakeEvidence(suites) {
+  const found = new Map();
+  for (const suite of suites) {
+    for (const job of suite?.checkRuns?.nodes ?? []) {
+      for (const annotation of job.annotations?.nodes ?? []) {
+        const flaky = FLAKY.exec(annotation.title ?? "");
+        if (!flaky) continue;
+        const one = found.get(flaky[1]) ?? { test: flaky[1], count: 0, jobs: [], runs: [] };
+        one.count += 1;
+        if (!one.jobs.includes(job.name)) one.jobs.push(job.name);
+        const run = suite.workflowRun;
+        if (run && !one.runs.some((seen) => seen.id === run.databaseId)) {
+          one.runs.push({ id: run.databaseId, url: run.url });
+        }
+        found.set(flaky[1], one);
+      }
+    }
+  }
+  return [...found.values()].sort((a, b) => b.count - a.count || a.test.localeCompare(b.test));
+}
+
+const TICKET_TITLE = "Flaky test: ";
+const TEST_MARKER = /<!-- flake-test: (.*?) -->/;
+const RUNS_MARKER = /<!-- flake-runs: ([\d,]*) -->/;
+// Every ">" is escaped, so no test id can end the comment it sits in (`-->` or `--!>`).
+const safe = (test) => test.replace(/>/g, "&gt;");
+const marked = (test, ids) => `<!-- flake-test: ${safe(test)} -->\n<!-- flake-runs: ${ids.join(",")} -->`;
+const runList = (runs) => runs.map((run) => `- ${run.url}`).join("\n");
+
+const ticketTitle = (test) => `${TICKET_TITLE}${test}`.slice(0, 200);
+
+/** The issue of `issues` that is `test`'s flake ticket: by the test id in its body, then by its title. */
+export function ticketFor(test, issues) {
+  return (
+    issues.find((issue) => TEST_MARKER.exec(issue.body ?? "")?.[1] === safe(test)) ??
+    issues.find((issue) => issue.title === ticketTitle(test))
+  );
+}
+
+/**
+ * What to do with the flakes `flakes` (`flakeEvidence`) against the `area:ci` issues `issues` (any
+ * state): one new ticket for a test with none, and a comment, naming only the runs the ticket does
+ * not name yet, on the ticket it has. A ticket is found by the test id in its body (the title may
+ * be edited by hand), then by its title. `create` is `{ title, body, labels }`; `comment` is
+ * `{ number, body, update, reopen }`, `update` being the ticket's body with the new runs added.
+ */
+export function planFlakeTickets(flakes, issues) {
+  const create = [];
+  const comment = [];
+  for (const flake of flakes) {
+    const title = ticketTitle(flake.test);
+    const ticket = ticketFor(flake.test, issues);
+    if (!ticket) {
+      create.push({
+        title,
+        labels: [ISSUE_LABEL],
+        body: [
+          marked(flake.test, flake.runs.map((run) => run.id)),
+          `\`${flake.test}\` passed on a retry in ${plural(flake.runs.length, "run")}, in ${flake.jobs.map((job) => `\`${job}\``).join(", ")}.`,
+          "",
+          "A test that fails and then passes on its one retry is a flake (ADR 0127): green, and never silent. " +
+            "Three flakes in seven days put it in `ci/quarantine.toml`.",
+          "",
+          "Runs:",
+          runList(flake.runs),
+          "",
+          "Filed by `ci-health`. It adds each new run of this flake as a comment here.",
+        ].join("\n"),
+      });
+      continue;
+    }
+    const known = (RUNS_MARKER.exec(ticket.body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
+    const fresh = flake.runs.filter((run) => !known.includes(run.id));
+    if (fresh.length === 0) continue;
+    const ids = [...known, ...fresh.map((run) => run.id)];
+    const body = ticket.body ?? "";
+    comment.push({
+      number: ticket.number,
+      reopen: ticket.state === "closed",
+      body: `Flaked again in ${plural(fresh.length, "run")}, in ${flake.jobs.map((job) => `\`${job}\``).join(", ")}:\n${runList(fresh)}`,
+      update: RUNS_MARKER.test(body)
+        ? body.replace(RUNS_MARKER, `<!-- flake-runs: ${ids.join(",")} -->`)
+        : `${marked(flake.test, ids)}\n${body}`,
+    });
+  }
+  return { create, comment };
+}
+
+/**
+ * Ready to merged over the week's merged pull requests, as `{ n, p50, p90 }` in seconds: from the
+ * last time the pull request was marked ready for review (`ReadyForReviewEvent`), or from its
+ * opening when it never was a draft, to its merge. The number the spec #7324 is judged by.
+ */
+export function readyToMerged(prs) {
+  const waits = [];
+  for (const pr of prs) {
+    if (!pr.mergedAt) continue;
+    const readies = (pr.timelineItems?.nodes ?? [])
+      .filter((event) => event.__typename === "ReadyForReviewEvent" && event.createdAt <= pr.mergedAt)
+      .map((event) => event.createdAt)
+      .sort();
+    waits.push(seconds(readies.at(-1) ?? pr.createdAt, pr.mergedAt));
+  }
+  return spread(waits);
+}
+
+/**
+ * The one reason GitHub gives for a queue drop, as read on 60 merged pull requests of purlis/purlis:
+ * `failed_checks` (13), beside `merge_conflict` (2, which builds no queue run) and `merged` (27).
+ */
+export const DROP_REASON = "failed_checks";
+
+/**
+ * The queue drop rate over the week's merged pull requests: `{ entries, drops, rate }`. An entry is
+ * each time a pull request entered the queue; a drop is a removal for `failed_checks`, because its
+ * queue run failed. A merge conflict is not one (it builds no queue run), nor is a merge. As in
+ * `queueStats`, a pull request not merged by the week's end is not among `prs`.
+ */
+export function queueDrops(prs, { from, to } = {}) {
+  const inWeek = (at) => (!from || at.slice(0, 10) >= from) && (!to || at.slice(0, 10) <= to);
+  let entries = 0;
+  let drops = 0;
+  for (const pr of prs) {
+    for (const event of pr.timelineItems?.nodes ?? []) {
+      if (!inWeek(event.createdAt)) continue;
+      if (event.__typename === "AddedToMergeQueueEvent") entries += 1;
+      if (event.__typename === "RemovedFromMergeQueueEvent" && event.reason === DROP_REASON) {
+        drops += 1;
+      }
+    }
+  }
+  return { entries, drops, rate: entries === 0 ? null : drops / entries };
+}
+
+/** Flakes in this many runs of the week put a test in quarantine (spec #7324). */
+export const QUARANTINE_AFTER = 3;
+
+/** A quarantined test's ticket gets this label once the test has waited this many days. */
+export const PRIORITY_LABEL = "priority:p1";
+export const PRIORITY_AFTER_DAYS = 14;
+
+const wholeDays = (from, to) => Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
+
+/**
+ * The pull requests to open that add flaky tests to the quarantine: a test that flaked in
+ * `QUARANTINE_AFTER` runs of the week, with its ticket filed (`issues`), not in `entries` already,
+ * and with no such pull request open (`openBranches`). None once the list is at the cap (`CAP`). `{ id, ticket, added, branch, title, body }`.
+ * A test flaking in as many runs as it takes is read from the `--sample` of the week's runs, so a
+ * test flaking less often than that can still reach it: the proposal is a PR the steward reviews.
+ */
+export function planQuarantine({ flakes, entries, issues, openBranches, today }) {
+  const listed = new Set(entries.map((entry) => entry.id));
+  const proposals = [];
+  for (const flake of flakes) {
+    if (entries.length + proposals.length >= CAP) break;
+    if (flake.runs.length < QUARANTINE_AFTER || listed.has(flake.test)) continue;
+    const ticket = ticketFor(flake.test, issues);
+    if (!ticket) continue;
+    const branch = `ci-health/quarantine-${createHash("sha256").update(flake.test).digest("hex").slice(0, 12)}`;
+    if (openBranches.includes(branch)) continue;
+    proposals.push({
+      id: flake.test,
+      ticket: ticket.number,
+      added: today,
+      branch,
+      title: `Quarantine ${flake.test}`.slice(0, 200),
+      body: [
+        `\`${flake.test}\` passed on a retry in ${flake.runs.length} runs of the last seven days (#${ticket.number}), ` +
+          `which is a flake three times over (ADR 0127). Until its fix lands, only the nightly run runs it.`,
+        "",
+        "Runs:",
+        runList(flake.runs),
+        "",
+        `The pull request that fixes it removes this entry from \`ci/quarantine.toml\`. Opened by \`ci-health\`; review and enqueue it.`,
+      ].join("\n"),
+    });
+  }
+  return proposals;
+}
+
+/** `text` (the quarantine file) with one more entry at its end. */
+export function appendEntry(text, { id, ticket, added }) {
+  const quoted = id.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `${text.replace(/\n*$/, "\n")}\n[[test]]\nid = "${quoted}"\nticket = ${ticket}\nadded = "${added}"\n`;
+}
+
+/**
+ * The quarantine's verdict: `red` when more than `CAP` tests are in it, so it cannot become a
+ * graveyard, with the sentence that pings the operator; and `prioritise`, the ticket of each
+ * entry `PRIORITY_AFTER_DAYS` old or more, for the priority label.
+ */
+export function quarantineVerdict(entries, { today }) {
+  const red = entries.length > CAP;
+  return {
+    red,
+    message: red
+      ? `${entries.length} tests are quarantined, more than the ${CAP} the quarantine allows (ci/quarantine.toml): fix some before more are added.`
+      : "",
+    prioritise: entries
+      .map((entry) => ({ ticket: entry.ticket, label: PRIORITY_LABEL, days: wholeDays(entry.added, today) }))
+      .filter((entry) => entry.days >= PRIORITY_AFTER_DAYS),
+  };
+}
+
+const BUDGET_TITLE = "Job over budget: ";
+const BUDGET_MARKER = /<!-- budget-job: (.*?) -->/;
+
+/**
+ * The tickets for jobs over their budget (`overBudget`): `create` is `{ title, body, labels }`, one
+ * for each job that has no open ticket of its own (found by the job id in its body, then by its
+ * title). A closed ticket does not hold the job: its budget was raised or its time fixed, and it
+ * has gone over again.
+ */
+export function planBudgetTickets(over, issues) {
+  const open = issues.filter((issue) => issue.state !== "closed");
+  const create = [];
+  for (const job of over) {
+    const title = `${BUDGET_TITLE}${job.id}`;
+    const held = open.some((issue) => BUDGET_MARKER.exec(issue.body ?? "")?.[1] === job.id || issue.title === title);
+    if (held) continue;
+    create.push({
+      title,
+      labels: [ISSUE_LABEL],
+      body: [
+        `<!-- budget-job: ${job.id} -->`,
+        `The \`${job.id}\` job of \`${job.workflow ?? "ci"}.yml\`${job.profile ? ` (a \`${job.profile}\` profile build)` : ""} took a p50 of ${job.p50.toFixed(1)} min over ${plural(job.n, "passed run")} of the last seven days: ` +
+          `${Math.round(job.over * 100)}% over its budget of ${job.budget} min in \`ci/job-budgets.toml\`.`,
+        "",
+        `A job is filed when it runs more than ${Math.round(OVER * 100)}% over. Make the job faster, or raise its budget in a pull request that says why ` +
+          "(spec #7324, ADR 0127, ADR 0086).",
+        "",
+        "Filed by `ci-health`.",
+      ].join("\n"),
+    });
+  }
+  return { create };
+}
+
 /** How many tests, flaky tests and jobs the report lists. */
 export const LIMIT = 20;
 
@@ -220,13 +463,15 @@ export function sample(items, max) {
 }
 
 /** The issue the report is kept in: one, found by this title and the `area:ci` label. */
-export const ISSUE_TITLE = "CI health: the weekly report";
+export const ISSUE_TITLE = "CI health: the daily report";
+/** What the issue was called while the report was weekly: found, and renamed, never filed twice. */
+export const LEGACY_ISSUE_TITLE = "CI health: the weekly report";
 export const ISSUE_LABEL = "area:ci";
 
 /** The report's issue among `issues` (`GET /issues`), or undefined when there is none yet. */
 export function findIssue(issues) {
   return issues.find(
-    (issue) => issue.title === ISSUE_TITLE && issue.labels.some((label) => (label.name ?? label) === ISSUE_LABEL),
+    (issue) => [ISSUE_TITLE, LEGACY_ISSUE_TITLE].includes(issue.title) && issue.labels.some((label) => (label.name ?? label) === ISSUE_LABEL),
   );
 }
 
@@ -240,6 +485,12 @@ const days = (week) => Math.max(1, Math.round((Date.parse(week.to) - Date.parse(
 export function headline(week) {
   const { runs, queue, flaky } = week;
   return [
+    ...(week.ready && week.drops
+      ? [
+          `ready to merged p50 ${minutes(week.ready.p50)} min / p90 ${minutes(week.ready.p90)} min`,
+          `queue drop rate ${percent(week.drops.rate)} (${week.drops.drops} of ${week.drops.entries} entries)`,
+        ]
+      : []),
     `${runs.runs} runs (${(runs.runs / days(week)).toFixed(1)}/day)`,
     `${percent(runs.successRate)} green`,
     `${runs.greenOnRerun} green only on a rerun`,
@@ -306,6 +557,24 @@ export function report(week) {
     // The required-check gates and the jobs a change's paths skip take seconds: listed, they bury the rest.
     ...(jobs.some((job) => !long(job))
       ? [`${plural(jobs.filter((job) => !long(job)).length, "more job")} took under a minute at p90.`, ""]
+      : []),
+    ...(week.over
+      ? [
+          "### Budgets",
+          "",
+          week.over.length === 0
+            ? `No job is more than ${Math.round(OVER * 100)}% over its budget in \`ci/job-budgets.toml\`.`
+            : `Jobs whose p50 of the week is more than ${Math.round(OVER * 100)}% over their budget in \`ci/job-budgets.toml\`, in minutes:`,
+          "",
+          ...(week.over.length === 0
+            ? []
+            : [
+                "| job | p50 | budget | over |",
+                "| --- | ---: | ---: | ---: |",
+                ...week.over.map((job) => `| ${job.id} | ${job.p50.toFixed(1)} | ${job.budget} | +${Math.round(job.over * 100)}% |`),
+              ]),
+          "",
+        ]
       : []),
     "### Red on a green run",
     "",
@@ -393,6 +662,7 @@ async function graphql(query, variables, token) {
 
 const SUITES = `query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on CheckSuite {
+    workflowRun { databaseId url }
     checkRuns(first: 100, filterBy: { checkType: LATEST }) { nodes {
       databaseId name conclusion startedAt completedAt
       annotations(first: 50) { nodes { annotationLevel title } }
@@ -404,9 +674,10 @@ const MERGED = `query($q: String!, $after: String) {
   search(type: ISSUE, query: $q, first: 50, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes { ... on PullRequest {
-      number mergedAt
-      timelineItems(last: 20, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) { nodes {
+      number createdAt mergedAt
+      timelineItems(last: 30, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, READY_FOR_REVIEW_EVENT]) { nodes {
         __typename
+        ... on ReadyForReviewEvent { createdAt }
         ... on AddedToMergeQueueEvent { createdAt }
         ... on RemovedFromMergeQueueEvent { createdAt reason }
       } }
@@ -432,6 +703,32 @@ async function suitesOf(nodeIds, token) {
 }
 
 const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * The budgets' view of `release.yml`: the completed runs of the week, from `since` to `until` (UTC
+ * days), and their check suites. The nightly profile guards are listed on their own (there are
+ * seven a week), so a busy week of dev builds on push, of which the newest hundred are read, never
+ * pushes them out of the `release` profile's budgets. A failed read is a warning and no release
+ * verdict: it must not take the ci report down with it.
+ */
+async function releaseWeek({ repo, token, since, until }) {
+  try {
+    const list = async (event) =>
+      (
+        await call(
+          `/repos/${repo}/actions/workflows/release.yml/runs?created=${since}..${until}&event=${event}&status=completed&per_page=100`,
+          { token },
+        )
+      ).workflow_runs;
+    const runs = [...(await list("schedule")), ...(await list("push"))].filter(
+      (run) => run.conclusion === "success" || run.conclusion === "failure",
+    );
+    return { runs, suites: await suitesOf(runs.map((run) => run.check_suite_node_id), token) };
+  } catch (error) {
+    console.log(`::warning title=ci-health::release.yml budgets not read: ${error.message}`);
+    return { runs: [], suites: [] };
+  }
+}
 
 async function measure({ repo, token, dayCount, sampleSize }) {
   // Whole UTC days, ending yesterday: today's runs are still running.
@@ -468,6 +765,8 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     .filter((run) => run.event === "push" && run.head_branch === "main" && run.conclusion === "success")
     .slice(-SLOWEST_RUNS);
   const suites = await suitesOf(sampled.map((run) => run.check_suite_node_id), token);
+  const budgets = parseBudgets(readFileSync(BUDGETS_FILE, "utf8"));
+  const release = await releaseWeek({ repo, token, since: dayList[0], until: dayList.at(-1) });
   const mainSuites = await suitesOf(mainGreen.map((run) => run.check_suite_node_id), token);
   // The nightlies are few and the only runs of most evidence jobs, so all of them are read.
   const onMain = (run) => run.head_branch === "main" && run.conclusion === "success";
@@ -502,10 +801,17 @@ async function measure({ repo, token, dayCount, sampleSize }) {
     to: dayList.at(-1),
     runs: runStats(runs),
     queue: queueStats(prs, { from: dayList[0], to: dayList.at(-1) }),
+    ready: readyToMerged(prs),
+    drops: queueDrops(prs, { from: dayList[0], to: dayList.at(-1) }),
     unread,
     sampled: { runs: sampled.length, of: runs.length },
     jobs: jobStats(suites),
+    over: [
+      ...overBudget(suites, budgets, ciJobs(readFileSync(CI_FILE, "utf8"))),
+      ...overReleaseBudget(release.runs, release.suites, budgets),
+    ].sort((a, b) => b.over - a.over || a.id.localeCompare(b.id)),
     flaky: flakyTests(suites),
+    flakes: flakeEvidence(suites),
     slowest: slowestTests(lists),
     slowestFrom: mainGreen.length,
     red: { runs: greenRuns.length, jobs: evidenceRed(greenSuites) },
@@ -514,15 +820,29 @@ async function measure({ repo, token, dayCount, sampleSize }) {
   };
 }
 
+/** Every `area:ci` issue, any state, page by page: the report's own and the flake tickets. */
+async function ciIssues({ repo, token }) {
+  const all = [];
+  for (let page = 1; page <= 100; page += 1) {
+    const issues = await call(
+      `/repos/${repo}/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=all&per_page=100&page=${page}`,
+      { token },
+    );
+    all.push(...issues.filter((issue) => !issue.pull_request));
+    if (issues.length < 100) break;
+  }
+  return all;
+}
+
 /** Writes `body` into the report's one issue, made the first time, and comments `line` on it. */
-async function keepIssue({ repo, token, body, line }) {
-  let issue = await locateIssue((page) =>
-    call(`/repos/${repo}/issues?labels=${encodeURIComponent(ISSUE_LABEL)}&state=all&per_page=100&page=${page}`, {
-      token,
-    }),
-  );
+async function keepIssue({ repo, token, body, line, issues }) {
+  let issue = findIssue(issues);
   if (issue) {
-    await call(`/repos/${repo}/issues/${issue.number}`, { method: "PATCH", body: { body, state: "open" }, token });
+    await call(`/repos/${repo}/issues/${issue.number}`, {
+      method: "PATCH",
+      body: { title: ISSUE_TITLE, body, state: "open" },
+      token,
+    });
   } else {
     issue = await call(`/repos/${repo}/issues`, {
       method: "POST",
@@ -532,6 +852,109 @@ async function keepIssue({ repo, token, body, line }) {
   }
   await call(`/repos/${repo}/issues/${issue.number}/comments`, { method: "POST", body: { body: line }, token });
   return issue.number;
+}
+
+/** One ticket per flaky test, and a comment on the ticket a test already has (`planFlakeTickets`). */
+async function fileFlakes({ repo, token, flakes, issues }) {
+  const { create, comment } = planFlakeTickets(
+    flakes,
+    issues.filter((issue) => !findIssue([issue])),
+  );
+  const created = [];
+  for (const ticket of create) {
+    created.push(await call(`/repos/${repo}/issues`, { method: "POST", body: ticket, token }));
+  }
+  for (const one of comment) {
+    await call(`/repos/${repo}/issues/${one.number}/comments`, { method: "POST", body: { body: one.body }, token });
+    await call(`/repos/${repo}/issues/${one.number}`, {
+      method: "PATCH",
+      body: { body: one.update, ...(one.reopen ? { state: "open" } : {}) },
+      token,
+    });
+  }
+  return { filed: create.length, commented: comment.length, created };
+}
+
+/** Makes the label `name` if the repository has none (a 422 says it has): safe to ask every day. */
+async function ensureLabel({ repo, token, name }) {
+  try {
+    await call(`/repos/${repo}/labels`, { method: "POST", body: { name, color: "d93f0b", description: "a quarantined test waiting 14 days or more" }, token });
+  } catch (error) {
+    if (!/: 422 /.test(error.message)) throw error;
+  }
+}
+
+/**
+ * Quarantine, kept up (`planQuarantine`, `quarantineVerdict`): a pull request for each test that
+ * flaked three times this week, the priority label on a ticket 14 days quarantined, and the
+ * verdict, which is red past ten. The pull requests are made through the API (a branch off the
+ * default branch, one commit to `ci/quarantine.toml`), so the run needs no checkout it can push.
+ */
+async function keepQuarantine({ repo, token, flakes, issues, reportIssue, today }) {
+  const entries = parseQuarantine(readFileSync(QUARANTINE_FILE, "utf8"));
+  const verdict = quarantineVerdict(entries, { today });
+  // The verdict and the labels first: a pull request that cannot be opened must not hide them.
+  if (verdict.prioritise.length > 0) await ensureLabel({ repo, token, name: PRIORITY_LABEL });
+  for (const one of verdict.prioritise) {
+    await call(`/repos/${repo}/issues/${one.ticket}/labels`, { method: "POST", body: { labels: [one.label] }, token });
+  }
+  if (verdict.red) {
+    const operator = process.env.OPERATOR ? `@${process.env.OPERATOR.replace(/^@/, "")} ` : "";
+    await call(`/repos/${repo}/issues/${reportIssue}/comments`, {
+      method: "POST",
+      body: { body: `${operator}${verdict.message}` },
+      token,
+    });
+    process.exitCode = 1;
+  }
+  const pulls = await call(`/repos/${repo}/pulls?state=open&per_page=100`, { token });
+  const proposals = planQuarantine({
+    flakes,
+    entries,
+    issues,
+    openBranches: pulls.map((pull) => pull.head.ref),
+    today,
+  });
+  let opened = 0;
+  if (proposals.length > 0) {
+    const { default_branch: base } = await call(`/repos/${repo}`, { token });
+    for (const proposal of proposals) {
+      try {
+        const { object } = await call(`/repos/${repo}/git/ref/heads/${base}`, { token });
+        const file = await call(`/repos/${repo}/contents/ci/quarantine.toml?ref=${base}`, { token });
+        const text = appendEntry(Buffer.from(file.content, "base64").toString("utf8"), proposal);
+        await call(`/repos/${repo}/git/refs`, {
+          method: "POST",
+          body: { ref: `refs/heads/${proposal.branch}`, sha: object.sha },
+          token,
+        });
+        await call(`/repos/${repo}/contents/ci/quarantine.toml`, {
+          method: "PUT",
+          body: {
+            message: `${proposal.title} (#${proposal.ticket})`,
+            content: Buffer.from(text).toString("base64"),
+            sha: file.sha,
+            branch: proposal.branch,
+          },
+          token,
+        });
+        const pull = await call(`/repos/${repo}/pulls`, {
+          method: "POST",
+          body: { title: proposal.title, head: proposal.branch, base, body: proposal.body },
+          token,
+        });
+        await call(`/repos/${repo}/issues/${pull.number}/labels`, { method: "POST", body: { labels: [ISSUE_LABEL] }, token });
+        opened += 1;
+      } catch (error) {
+        // A branch left behind by a closed proposal answers 422 (it exists): that test waits for a
+        // person. Any other refusal (a token that cannot open pull requests) is named, and the rest go on.
+        const left = /git\/refs: 422 /.test(error.message);
+        console.log(`::${left ? "notice" : "warning"} title=ci-health quarantine::${proposal.id}: ${error.message.slice(0, 200)}`);
+        if (!left) process.exitCode = 1;
+      }
+    }
+  }
+  return { proposed: opened, prioritised: verdict.prioritise.length, red: verdict.red };
 }
 
 async function main(argv) {
@@ -557,8 +980,23 @@ async function main(argv) {
   if (args.issue) {
     const server = process.env.GITHUB_SERVER_URL ?? "https://github.com";
     const run = process.env.GITHUB_RUN_ID ? ` ([run](${server}/${repo}/actions/runs/${process.env.GITHUB_RUN_ID}))` : "";
-    const number = await keepIssue({ repo, token, body, line: `${week.from} to ${week.to}: ${headline(week)}${run}` });
+    const issues = await ciIssues({ repo, token });
+    const number = await keepIssue({ repo, token, body, issues, line: `${week.from} to ${week.to}: ${headline(week)}${run}` });
     console.log(`the report is in #${number}`);
+    const { filed, commented, created } = await fileFlakes({ repo, token, flakes: week.flakes, issues });
+    console.log(`flake tickets: ${filed} filed, ${commented} commented on`);
+    const { create: budgetTickets } = planBudgetTickets(week.over, issues);
+    for (const ticket of budgetTickets) await call(`/repos/${repo}/issues`, { method: "POST", body: ticket, token });
+    console.log(`budget tickets: ${budgetTickets.length} filed`);
+    const kept = await keepQuarantine({
+      repo,
+      token,
+      flakes: week.flakes,
+      issues: [...issues, ...created],
+      reportIssue: number,
+      today: isoDay(Date.now()),
+    });
+    console.log(`quarantine: ${kept.proposed} proposed, ${kept.prioritised} labelled for priority${kept.red ? ", RED" : ""}`);
   }
 }
 

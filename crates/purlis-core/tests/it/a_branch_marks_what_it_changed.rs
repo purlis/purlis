@@ -945,6 +945,14 @@ fn a_fifo_named_as_an_ignore_file_times_the_read_out_and_other_branches_still_re
     assert!(other.is_ok(), "{other:?}");
 }
 
+/// Reads of 20,000 untracked files, each in a child of this test binary. Measured in a debug build
+/// on a laptop (2026-11-24, two runs): 12.3 to 12.7 s a read, memory flat after the third read at
+/// under 2 MB over. The reader's 30 s deadline is the product's and has its own test (the FIFO
+/// one above), but at 2.4 times a read it failed this test on one of those two runs, at read 12;
+/// and fifteen reads took 215 s of nextest's 300 s. So: ten reads, which a leak per read still
+/// shows in, and a deadline of about ten times a read.
+const READS: usize = 10;
+
 #[test]
 fn many_reads_of_a_branch_with_many_untracked_files_leave_charters_memory_steady() {
     purlis_core::unsteered!();
@@ -960,12 +968,12 @@ fn many_reads_of_a_branch_with_many_untracked_files_leave_charters_memory_steady
             std::fs::write(at.join(format!("{file}.txt")), "").unwrap();
         }
     }
-    let reader = reader();
+    let reader = reader().deadline(std::time::Duration::from_secs(120));
     // One read first, so what the first read sets up once is not counted.
     files::status(&reader, &f.plane, branch(&f)).unwrap();
     let before = resident();
 
-    for _ in 0..15 {
+    for _ in 0..READS {
         let status = files::status(&reader, &f.plane, branch(&f)).unwrap();
         assert_eq!(status.changes.len() + status.more, 20_000);
     }
