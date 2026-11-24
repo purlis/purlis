@@ -189,7 +189,7 @@ impl Recorded for ConfirmedRecorded {
 
     /// The tip `chat` last put on `branch`: the app's own record under the machine config root
     /// ([`purlis_core::forge::createdbranches`]), read now, keyed by the project's stable id and
-    /// the forge's id of the repo. A project with no stored id owns none.
+    /// the forge's id of the repo. The id is the one the session host holds the project by, so a plane with no stored `[project] id` owns its chats' branches too.
     fn own_tip(
         &self,
         project: &Path,
@@ -327,9 +327,8 @@ mod tests {
             }],
         );
 
-        let own = |chat: &str, project: &Path| {
-            recorded.own_tip(project, chat, "github.com", 7, "mine")
-        };
+        let own =
+            |chat: &str, project: &Path| recorded.own_tip(project, chat, "github.com", 7, "mine");
         assert_eq!(own("chat-1", project.path()), Some(tip));
         assert_eq!(
             recorded.own_branches(project.path(), "chat-1", "github.com", 7),

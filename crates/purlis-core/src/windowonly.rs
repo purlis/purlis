@@ -439,9 +439,8 @@ pub fn let_chat_push(
         return Err("This ask is not waiting any more.".to_owned());
     }
     // The id the route reads the record by ([`crate::scaffold::planefile::id_to_hold_by`]).
-    let project_id = crate::scaffold::planefile::id_to_hold_by(root).map_err(|why| {
-        format!("This project has no id to record a branch under ({why}).")
-    })?;
+    let project_id = crate::scaffold::planefile::id_to_hold_by(root)
+        .map_err(|why| format!("This project has no id to record a branch under ({why})."))?;
     let tip = read_tip(host, repo, branch)?;
     if !crate::forge::createdbranches::is_commit_id(&tip) {
         return Err(format!("The forge did not give a commit for {branch}."));
