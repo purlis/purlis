@@ -376,9 +376,15 @@ fn a_raise_landing_while_an_ask_leaves_does_not_stay_listed_beside_its_block() {
         }
     }));
 
-    assert!(blocks.stopped_waiting(4, &block).is_some(), "an ask until now");
+    assert!(
+        blocks.stopped_waiting(4, &block).is_some(),
+        "an ask until now"
+    );
 
-    assert!(!blocks.holds(4, &block), "its ask is withdrawn, late raise or none");
+    assert!(
+        !blocks.holds(4, &block),
+        "its ask is withdrawn, late raise or none"
+    );
     assert!(
         blocks.echoes(4, &block),
         "and its block's echo is still dropped"
