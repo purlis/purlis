@@ -2010,9 +2010,8 @@ jobs:
       RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # On every change, as the toolchain below: `RUSTFLAGS` names mold, and the whole-tree guards
-      # compile and link the core's tests when `rust` is out of scope (every draft pull request,
-      # #7240: `collect2: cannot find 'ld'`).
+      # On every change: the whole-tree guards below link with mold too (`RUSTFLAGS` above), so a
+      # change that leaves Rust out of scope needs the linker as much as the replay does.
       - name: The linker
         timeout-minutes: 11
         uses: ./.github/actions/linux-packages
