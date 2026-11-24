@@ -123,7 +123,139 @@ pub enum Finding {
     /// **The Docker context the pool's route was read from now names another route** (#6268).
     ContextMoved { name: String },
     /// Something else went wrong on this machine (no ssh, a folder that couldn't be made).
+    ///
+    /// **Retried without end, on purpose** (#7187): unlike Refused it is not the pool's machine
+    /// saying no, and nothing is learned from it that the pool's own state could hold. It is
+    /// mended on this machine (ssh installed, a folder freed) with no word to the pool, so purlis
+    /// meets it again by itself rather than stopping on it. The wait grows to its longest, so it
+    /// costs one local `ssh` run every two minutes.
     Here(String),
+}
+
+/// **The states a pool on another machine, or a runner on it, is in when it is not reachable**
+/// (#7187, CONTEXT.md): what the person is told, and whether purlis tries again. Runner gone and
+/// Pool forgotten are the other two of CONTEXT.md's five: they end the chats rather than leave a
+/// link down, so no finding puts a pool in them; the chat-end paths say them
+/// (`Reconnection::RunnerGone`, `Reconnection::PoolForgotten`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RemoteState {
+    /// **Unreachable**: nothing answers, or not yet (a Docker engine still starting on a
+    /// machine whose `sshd` is up included). purlis retries on its own, and the person can press
+    /// Try now.
+    Unreachable,
+    /// **Refused**: the machine answers, but sign-in, Docker or forwarding fails, or its disk is
+    /// full. purlis stops retrying, shows the reason, and offers Check pool.
+    Refused,
+    /// **Host key changed**: the machine presents a key, or an engine, other than the one
+    /// pinned. A security stop: never retried, and the person's OK in pool settings ends it.
+    HostKeyChanged,
+}
+
+impl RemoteState {
+    /// Whether purlis tries again on its own.
+    #[must_use]
+    pub fn retries(self) -> bool {
+        self == RemoteState::Unreachable
+    }
+}
+
+impl Finding {
+    /// **Which state this finding puts the pool in** (#7187). A machine that does not answer is
+    /// [`RemoteState::Unreachable`]; one that answers and refuses is [`RemoteState::Refused`];
+    /// one that presents another key or engine than the pinned one is
+    /// [`RemoteState::HostKeyChanged`].
+    #[must_use]
+    pub fn remote_state(&self) -> RemoteState {
+        match self {
+            Finding::NoSuchName { .. }
+            | Finding::NoAnswer { .. }
+            | Finding::NotSsh { .. }
+            | Finding::NotMet { .. }
+            | Finding::NotMetThrough { .. }
+            | Finding::ImageUnreachable { .. }
+            | Finding::EngineSilent { .. }
+            | Finding::Here(_) => RemoteState::Unreachable,
+            Finding::KeyChanged { .. }
+            | Finding::EngineChanged { .. }
+            | Finding::CaChanged { .. } => RemoteState::HostKeyChanged,
+            Finding::SignInRefused { .. }
+            | Finding::NoEngine { .. }
+            | Finding::NotAllowed { .. }
+            | Finding::ForwardingRefused { .. }
+            | Finding::NeedsPodman { .. }
+            | Finding::TlsFile { .. }
+            | Finding::NotSignedByCa { .. }
+            | Finding::ServerExpired { .. }
+            | Finding::WrongName { .. }
+            | Finding::ClientRefused { .. }
+            | Finding::ClientExpired { .. }
+            | Finding::Unconfined { .. }
+            | Finding::Architecture { .. }
+            | Finding::DiskFull { .. }
+            | Finding::KernelShort { .. }
+            | Finding::ContextMoved { .. } => RemoteState::Refused,
+        }
+    }
+}
+
+#[cfg(test)]
+mod remote_state_tests {
+    use super::*;
+
+    fn host() -> String {
+        "box".to_owned()
+    }
+
+    #[test]
+    fn a_machine_that_does_not_answer_is_unreachable_and_is_retried() {
+        let finding = Finding::NoAnswer {
+            host: host(),
+            port: 22,
+        };
+        assert_eq!(finding.remote_state(), RemoteState::Unreachable);
+        assert!(finding.remote_state().retries());
+    }
+
+    #[test]
+    fn a_machine_that_answers_and_refuses_is_refused_and_is_not_retried() {
+        for finding in [
+            Finding::SignInRefused { host: host() },
+            Finding::ForwardingRefused { host: host() },
+            Finding::DiskFull {
+                host: host(),
+                free: Some(1_000_000),
+            },
+        ] {
+            assert_eq!(finding.remote_state(), RemoteState::Refused, "{finding:?}");
+            assert!(!finding.remote_state().retries());
+        }
+    }
+
+    /// **A Docker engine that does not answer yet is Unreachable, not Refused** (#7187,
+    /// steward decision 2026-11-19): `dockerd` still starting after a reboot while `sshd` is up
+    /// is what waiting mends, so purlis keeps retrying with backoff and the machine recovers
+    /// unattended.
+    #[test]
+    fn a_docker_engine_that_does_not_answer_yet_is_unreachable_and_is_retried() {
+        let finding = Finding::EngineSilent {
+            host: host(),
+            said: "Cannot connect to the Docker daemon".to_owned(),
+        };
+        assert_eq!(finding.remote_state(), RemoteState::Unreachable);
+        assert!(finding.remote_state().retries());
+    }
+
+    #[test]
+    fn a_machine_with_another_key_or_engine_is_a_security_stop_never_retried() {
+        let engine = Finding::EngineChanged {
+            host: host(),
+            pinned: "A".to_owned(),
+            now: "B".to_owned(),
+            podman: false,
+        };
+        assert_eq!(engine.remote_state(), RemoteState::HostKeyChanged);
+        assert!(!engine.remote_state().retries());
+    }
 }
 
 /// **What ssh makes of the route, from the person's own settings** (`ssh -G`): the machine's

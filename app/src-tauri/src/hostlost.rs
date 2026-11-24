@@ -55,6 +55,9 @@ pub struct LostChat {
     /// Its host was a pool's runner, gone for good, and its conversation went with that runner's
     /// home (#4350).
     pub with_the_runner: bool,
+    /// Its pool was forgotten on this machine (#7187, Pool forgotten): the chat ended, and the
+    /// runner may be there still, though no longer reached from here.
+    pub pool_forgotten: bool,
     /// **What it had left running of its own, which ended with its host** (#5752, spec #5743),
     /// in purlis's words ("1 background shell, 1 monitor"), from the record of its last turn's
     /// end ([`ended_with_it`]). None where it had nothing running: only then was nothing lost.
@@ -108,6 +111,7 @@ pub struct LostRun {
     pub left_in: LeftIn,
     pub resumable: bool,
     pub with_the_runner: bool,
+    pub pool_forgotten: bool,
 }
 
 /// The chats of a project whose program ended with their session host, by session, until the
@@ -152,6 +156,7 @@ pub fn chat_lost_with_the_host(
         left_in: lost.left_in,
         resumable: lost.resumable,
         with_the_runner: lost.with_the_runner,
+        pool_forgotten: lost.pool_forgotten,
         ended: ended_with_it(held.chats(), session),
     }))
 }
@@ -224,11 +229,13 @@ mod tests {
             left_in: LeftIn::Hibernated,
             resumable: true,
             with_the_runner: false,
+            pool_forgotten: false,
         };
         let failed = LostRun {
             left_in: LeftIn::Failed,
             resumable: false,
             with_the_runner: false,
+            pool_forgotten: false,
         };
         lost.note(3, hibernated);
         lost.note(4, failed);

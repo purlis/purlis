@@ -2128,9 +2128,12 @@ mod hosted {
     /// for each change, outside the hold.
     fn hear(dimming: &Mutex<Dimming>, link: u64, heard: Reconnect) {
         let (dim, now) = match heard {
-            Reconnect::Started(_) | Reconnect::KeyChanged | Reconnect::Gone => {
-                (true, Reconnection::Reconnecting)
-            }
+            Reconnect::Started(_)
+            | Reconnect::KeyChanged
+            | Reconnect::Gone
+            | Reconnect::Refused
+            | Reconnect::HostKeyChanged
+            | Reconnect::PoolForgotten => (true, Reconnection::Reconnecting),
             Reconnect::Over | Reconnect::Drawn(_) => (false, Reconnection::Reconnected),
         };
         let told: Vec<LinkSaid> = lock(dimming)

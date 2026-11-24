@@ -1146,6 +1146,7 @@ impl SessionHost for RoutedSessions {
                         pool,
                         why: down.why,
                         since: down.since,
+                        state: down.state,
                     })
             })
             .collect();
@@ -1175,6 +1176,13 @@ impl SessionHost for RoutedSessions {
         match self.host_of(id) {
             Some(host) => host.lost_with_its_runner(id),
             None => self.here.lost_with_its_runner(id),
+        }
+    }
+
+    fn lost_with_its_pool_forgotten(&self, id: u32) -> bool {
+        match self.host_of(id) {
+            Some(host) => host.lost_with_its_pool_forgotten(id),
+            None => self.here.lost_with_its_pool_forgotten(id),
         }
     }
 

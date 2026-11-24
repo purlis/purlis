@@ -78,10 +78,10 @@ export function RunnerGoneNotice({
       key={pool.name}
       cause={`runner-gone:${plane}:${pool.name}`}
       tone="trouble"
-      label="Runner removed"
+      label="Runner gone"
       fixes={[
         {
-          label: "Make the runner again",
+          label: "Start again on this pool",
           onPress: () => makeAgain(pool.name),
           busy: remaking === pool.name,
         },
