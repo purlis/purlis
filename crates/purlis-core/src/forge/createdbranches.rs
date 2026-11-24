@@ -27,16 +27,16 @@
 //! them, and neither does a chat of another project with the same id; the route refuses every
 //! update it makes to such a branch: the person pushes it.
 //!
-//! **One exception: the chat that asked for the work** (ADR 0128, amended 2026-11-23). A branch a
-//! *task* made is the dispatching chat's to follow up after the task ends, so an update is also
-//! let through when the branch's recorded owner is a chat the pusher dispatched, directly or up
-//! the chain ([`tip_for`]), from the same tip rule: the old id is the recorded tip. **The link is
-//! the app's own dispatch record** ([`crate::dispatchrecord`], which no sandboxed chat can write), never a
-//! session record or any file a chat writes; where the record shows no such link the update is
-//! refused. **The confirmed push is then recorded under the pusher** ([`record`]'s one line,
-//! which makes the last line the dispatcher's): the task, if it still runs, is no longer the
-//! owner and its next update is refused, so the task and the dispatcher cannot both keep moving
-//! the branch. The link runs one way: a task never moves a branch of the chat that dispatched it.
+//! **One exception: the parent of an ended task, on the branch purlis cut for it** (ADR 0128,
+//! amended 2026-11-24). The parent may take up the branch of its *direct* child, in the same
+//! workspace, run by the same persona, whose task has ended, and only the branch purlis cut for
+//! that task, where the last line is a route-confirmed push ([`Via::Route`], never the person's
+//! Allow), from the same tip rule ([`tip_for`]). **The link is the app's own dispatch record**
+//! ([`crate::dispatchrecord::lineage_allows`], which no sandboxed chat can write and which obeys
+//! `[policy]`'s `guards.forge`), never a session record or any file a chat writes. It never
+//! reaches a protected branch or a delete: the route refuses those before it reads an owner.
+//! **The confirmed push is then recorded under the pusher**, so the task can no longer move the
+//! branch. The link runs one way: a task never moves a branch of the chat that dispatched it.
 //!
 //! **A `gone` line is an earlier end of the record**, not the guard: the route reads the forge's
 //! advertisement of the repo before a push, and a recorded branch it does not list gets a `gone`
@@ -94,6 +94,21 @@ struct Line {
     /// The branch was seen gone from the forge: nobody owns it from here.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     gone: bool,
+    /// How the line came to be written; absent before the key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    via: Option<Via>,
+}
+
+/// **How a push line came to be written**: what lets a reader tell a push the forge confirmed
+/// through the route from the person's **Allow** (`docs/plane-format.md`). A line without it
+/// (written before the key, or by [`record`]) is neither, and is never taken for a route push.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Via {
+    /// The forge confirmed a push that went through the route.
+    Route,
+    /// The person pressed Allow on *Let this chat push it* ([`crate::windowonly::let_chat_push`]).
+    Allow,
 }
 
 fn append(config_root: &Path, lines: &[Line]) -> io::Result<()> {
@@ -124,6 +139,18 @@ pub fn record(
     chat: &str,
     created: &[CreatedBranch],
 ) -> io::Result<()> {
+    record_via(config_root, project_id, chat, created, None)
+}
+
+/// [`record`], saying how the lines came to be written ([`Via`]): the route's confirmed push
+/// is [`Via::Route`] (`forgeroute`'s `record_created`), the person's Allow [`Via::Allow`].
+pub fn record_via(
+    config_root: &Path,
+    project_id: &str,
+    chat: &str,
+    created: &[CreatedBranch],
+    via: Option<Via>,
+) -> io::Result<()> {
     let lines: Vec<Line> = created
         .iter()
         .filter(|c| c.repo_id.is_some())
@@ -136,6 +163,7 @@ pub fn record(
             branch: c.branch.clone(),
             tip: c.tip.clone(),
             gone: false,
+            via,
         })
         .collect();
     append(config_root, &lines)
@@ -155,6 +183,7 @@ pub fn forget(config_root: &Path, gone: &[CreatedBranch]) -> io::Result<()> {
             branch: c.branch.clone(),
             tip: String::new(),
             gone: true,
+            via: None,
         })
         .collect();
     append(config_root, &lines)
@@ -208,6 +237,21 @@ pub fn owner_of(
     repo_id: u64,
     branch: &str,
 ) -> Option<(String, String, String)> {
+    owner_line(config_root, host, repo_id, branch).map(|o| (o.project, o.chat, o.tip))
+}
+
+/// The last line for a branch, as [`owner_of`] reads it, with how it was written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Owner {
+    pub project: String,
+    pub chat: String,
+    /// Lower-case.
+    pub tip: String,
+    pub via: Option<Via>,
+}
+
+/// [`owner_of`], with the line's [`Via`].
+pub fn owner_line(config_root: &Path, host: &str, repo_id: u64, branch: &str) -> Option<Owner> {
     let text = std::fs::read_to_string(file_in(config_root)).ok()?;
     let mut last: Option<Line> = None;
     for line in text.lines() {
@@ -220,12 +264,19 @@ pub fn owner_of(
     }
     let line = last.filter(|l| !l.gone && is_commit_id(&l.tip))?;
     let project = line.project_id.filter(|p| !p.is_empty())?;
-    (!line.chat.is_empty()).then(|| (project, line.chat, line.tip.to_ascii_lowercase()))
+    (!line.chat.is_empty()).then(|| Owner {
+        project,
+        chat: line.chat,
+        tip: line.tip.to_ascii_lowercase(),
+        via: line.via,
+    })
 }
 
-/// [`tip_of`], or, where the branch is the record of a chat of the same project that `chat`
-/// dispatched, that chat's tip. `dispatched(owner)` says whether `chat` dispatched the chat `owner`,
-/// from the app's dispatch record (asked only when the branch is another chat's).
+/// [`tip_of`], or, where the branch's last line is a **route-confirmed push** ([`Via::Route`])
+/// of a chat of the same project and `lineage(owner)` says `chat` may take it up (a parent and
+/// its ended child's cut branch: [`crate::dispatchrecord::lineage_allows`], from the app's own
+/// dispatch records, asked only when the branch is another chat's), that line's tip. A line the
+/// person's Allow wrote, or one with no `via`, is never lineage.
 pub fn tip_for(
     config_root: &Path,
     project_id: &str,
@@ -233,13 +284,17 @@ pub fn tip_for(
     host: &str,
     repo_id: u64,
     branch: &str,
-    dispatched: &dyn Fn(&str) -> bool,
+    lineage: &dyn Fn(&str) -> bool,
 ) -> Option<String> {
     if let Some(tip) = tip_of(config_root, project_id, chat, host, repo_id, branch) {
         return Some(tip);
     }
-    let (project, owner, tip) = owner_of(config_root, host, repo_id, branch)?;
-    (project == project_id && owner != chat && dispatched(&owner)).then_some(tip)
+    let owner = owner_line(config_root, host, repo_id, branch)?;
+    (owner.project == project_id
+        && owner.chat != chat
+        && owner.via == Some(Via::Route)
+        && lineage(&owner.chat))
+    .then_some(owner.tip)
 }
 
 /// The tip `chat` of the project `project_id` last put on `branch` of the repo with forge id
@@ -294,6 +349,72 @@ mod tests {
 
     fn own(dir: &Path, project: &str, chat: &str) -> Vec<String> {
         created_by(dir, project, chat, "github.com", REPO_ID)
+    }
+
+    #[test]
+    fn lineage_is_asked_only_of_a_route_push_line_never_the_persons_allow_or_an_unmarked_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let yes = |_: &str| true;
+        for (via, lets) in [
+            (Some(Via::Route), true),
+            (Some(Via::Allow), false),
+            (None, false),
+        ] {
+            record_via(dir.path(), PROJECT, "child", &[made("cut")], via).unwrap();
+            let tip = tip_for(
+                dir.path(),
+                PROJECT,
+                "parent",
+                "github.com",
+                REPO_ID,
+                "cut",
+                &yes,
+            );
+            assert_eq!(tip.is_some(), lets, "{via:?}");
+        }
+    }
+
+    #[test]
+    fn lineage_is_not_asked_for_a_chat_of_another_project() {
+        let dir = tempfile::tempdir().unwrap();
+        record_via(
+            dir.path(),
+            OTHER_PROJECT,
+            "child",
+            &[made("cut")],
+            Some(Via::Route),
+        )
+        .unwrap();
+        let asked = std::cell::Cell::new(false);
+        let spy = |_: &str| {
+            asked.set(true);
+            true
+        };
+        let tip = tip_for(
+            dir.path(),
+            PROJECT,
+            "parent",
+            "github.com",
+            REPO_ID,
+            "cut",
+            &spy,
+        );
+        assert_eq!(tip, None);
+        assert!(!asked.get(), "another project's chat is never asked about");
+    }
+
+    #[test]
+    fn a_line_without_via_still_reads_and_a_marked_one_reads_back_its_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        record(dir.path(), PROJECT, "a", &[made("old")]).unwrap();
+        record_via(dir.path(), PROJECT, "a", &[made("new")], Some(Via::Allow)).unwrap();
+        let via =
+            |branch: &str| owner_line(dir.path(), "github.com", REPO_ID, branch).map(|o| o.via);
+        assert_eq!(via("old"), Some(None));
+        assert_eq!(via("new"), Some(Some(Via::Allow)));
+        let text = std::fs::read_to_string(file_in(dir.path())).unwrap();
+        assert!(text.lines().next().unwrap().find("via").is_none(), "{text}");
+        assert!(text.contains(r#""via":"allow""#), "{text}");
     }
 
     #[test]

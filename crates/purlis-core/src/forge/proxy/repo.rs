@@ -81,7 +81,9 @@ impl AllowedRepo {
         })
     }
 
-    /// Branches a push may never touch, besides the default one.
+    /// Branches a push may never touch, besides the default one and the built-in names
+    /// ([`Self::protects`]): each a name, or a pattern with `*`, as the project commits them
+    /// (`[risk] protected_branches`: [`crate::askrisk::committed_protected_branches`]).
     #[must_use]
     pub fn with_protected_branches(mut self, names: &[&str]) -> Self {
         self.protected_branches = names.iter().map(|n| (*n).to_string()).collect();
@@ -165,15 +167,36 @@ impl AllowedRepo {
             "release",
             "deploy",
         ];
-        const PREFIXES: &[&str] = &["release/", "release-", "deploy/", "prod/", "production/"];
+        const PREFIXES: &[&str] = &[
+            "release/",
+            "release-",
+            "deploy/",
+            "prod/",
+            "production/",
+            // Integration branches, which only the merge Ask lands on (ADR 0128, amended
+            // 2026-11-24): `phase-1-proven`, `integration/x`.
+            "phase-",
+            "integration/",
+            "integration-",
+        ];
         lower == self.default_branch.to_ascii_lowercase()
             || NAMES.contains(&lower.as_str())
             || PREFIXES.iter().any(|p| lower.starts_with(p))
+            || is_milestone_branch(&lower)
             || self
                 .protected_branches
                 .iter()
-                .any(|p| lower == p.to_ascii_lowercase())
+                .any(|p| crate::askrisk::matches(&p.to_ascii_lowercase(), &lower))
     }
+}
+
+/// A milestone's integration branch: `m`, one or more digits, a dash (`m75-policy`).
+fn is_milestone_branch(lower: &str) -> bool {
+    let Some(rest) = lower.strip_prefix('m') else {
+        return false;
+    };
+    let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
+    digits > 0 && rest[digits..].starts_with('-')
 }
 
 /// **A repo's numeric id as the forge said it** when the person pressed (ADR 0128 D4): what a
@@ -239,4 +262,42 @@ fn is_name_segment(s: &str) -> bool {
         && s != ".."
         && s.bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repo() -> AllowedRepo {
+        AllowedRepo::new(Kind::GitHub, "github.com", 443, "acme/app", "trunk").unwrap()
+    }
+
+    #[test]
+    fn integration_branches_are_protected_by_name_without_a_setting() {
+        let repo = repo();
+        for name in [
+            "trunk",
+            "m75-policy",
+            "M7-x",
+            "phase-1-proven",
+            "integration/policy",
+            "integration-x",
+        ] {
+            assert!(repo.protects(name), "{name}");
+        }
+        for name in ["my-fix", "m-x", "m75", "mod-75-x", "task/work", "phases"] {
+            assert!(!repo.protects(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn a_committed_pattern_protects_what_it_matches_and_a_plain_name_only_itself() {
+        let repo = repo().with_protected_branches(&["stable", "lts/*", "*-frozen"]);
+        for name in ["stable", "Stable", "lts/1", "lts/a/b", "x-frozen"] {
+            assert!(repo.protects(name), "{name}");
+        }
+        for name in ["stable2", "lts", "frozen", "x-frozen-y"] {
+            assert!(!repo.protects(name), "{name}");
+        }
+    }
 }

@@ -442,3 +442,18 @@ fn where_a_folder_pushes_is_read_from_git_itself() {
     let nowhere = tempfile::tempdir().expect("dir");
     assert_eq!(pushes_from(nowhere.path()), None);
 }
+
+#[test]
+fn the_committed_protected_branches_are_the_risk_tables_and_nothing_else() {
+    let dir = tempfile::tempdir().unwrap();
+    assert!(committed_protected_branches(dir.path()).is_empty());
+    std::fs::write(
+        dir.path().join(crate::profiles::COMMITTED_FILE),
+        "[risk]\nprotected_branches = [\"stable\", \"m*-policy\", 3]\nproduction_hosts = [\"shop.test\"]\n",
+    )
+    .unwrap();
+    assert_eq!(
+        committed_protected_branches(dir.path()),
+        ["stable", "m*-policy"]
+    );
+}

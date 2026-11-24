@@ -257,21 +257,23 @@ impl World {
                     branch,
                     &|owner| {
                         dispatches.as_ref().is_some_and(|project| {
-                            purlis_core::dispatchrecord::dispatched_by(
-                                &purlis_core::dispatchrecord::list(project),
+                            purlis_core::dispatchrecord::lineage_allows(
+                                project,
                                 "chat-listener",
                                 owner,
+                                branch,
                             )
                         })
                     },
                 )
             }));
             proxy = proxy.with_created(Box::new(move |created| {
-                purlis_core::forge::createdbranches::record(
+                purlis_core::forge::createdbranches::record_via(
                     &config,
                     PROJECT_ID,
                     "chat-listener",
                     created,
+                    Some(purlis_core::forge::createdbranches::Via::Route),
                 )
                 .expect("the record is written");
             }));

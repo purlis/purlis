@@ -2170,40 +2170,61 @@ pub fn read(root: &Path, id: &str) -> Option<Record> {
     parse(&text).filter(|record| record.id == id)
 }
 
-/// **Whether chat `asker` dispatched chat `worker`, directly or up the chain**, from the app's own
-/// records `records` ([`list`]): a task record whose worker is `worker` and whose asker is `asker`,
-/// or whose asker is itself a task of a chat `asker` dispatched, as deep as a chain can be
-/// ([`crate::dispatchlimits`]'s eight). Chats are matched by their ULIDs, never by their numbers,
-/// which are dealt again. **A handoff is not a link**: the work moved to that chat and the asker
-/// gave it up. A record that does not read as one the app would have written ([`sound`]) is no link.
-pub fn dispatched_by(records: &[Record], asker: &str, worker: &str) -> bool {
-    const DEEPEST: usize = 8;
-    let mut below = vec![worker.to_owned()];
-    for _ in 0..DEEPEST {
-        let mut above: Vec<String> = Vec::new();
-        for record in records
-            .iter()
-            .filter(|r| r.mode == Mode::Task && sound(r))
-            .filter(|r| {
-                r.worker
-                    .chat
-                    .id
-                    .as_deref()
-                    .is_some_and(|id| below.iter().any(|b| b == id))
-            })
-        {
-            match record.asker.chat.id.as_deref() {
-                Some(id) if id == asker => return true,
-                Some(id) => above.push(id.to_owned()),
-                None => {}
-            }
-        }
-        if above.is_empty() {
-            return false;
-        }
-        below = above;
+/// **Whether chat `parent` may take up `branch`, the branch purlis cut for the task its direct
+/// child `child` ran** (ADR 0128, amended 2026-11-24), from the app's own records `records`
+/// ([`list`]). All of: a task record whose asker is `parent` and whose worker is `child`, both
+/// by ULID (**a direct child only**: no grandchild, no handoff); the record has `ended`, and no
+/// record of `child` as a worker still runs; the asker's workspace is the task's
+/// (`asker.workspace` is `place.workspace`); the asker's persona is the persona dispatched to,
+/// both named; and `branch` is exactly the record's `place.worktree.branch`. What the owner line
+/// of the branch says (a route push, not the person's Allow) is [`crate::forge::createdbranches`]'s.
+/// A record that does not read as one the app would have written ([`sound`]) is no link.
+pub fn ended_child_branch(records: &[Record], parent: &str, child: &str, branch: &str) -> bool {
+    let of_child = |r: &&Record| {
+        r.mode == Mode::Task && sound(r) && r.worker.chat.id.as_deref() == Some(child)
+    };
+    if records.iter().filter(of_child).any(|r| r.ended.is_none()) {
+        return false;
     }
-    false
+    records.iter().filter(of_child).any(|r| {
+        r.asker.chat.id.as_deref() == Some(parent)
+            && r.ended.is_some()
+            && r.asker.workspace == r.place.workspace
+            && r.persona.is_some()
+            && r.asker.chat.persona == r.persona
+            && r.place
+                .worktree
+                .as_ref()
+                .and_then(|w| w.branch.as_deref())
+                .is_some_and(|cut| !cut.is_empty() && cut == branch)
+    })
+}
+
+/// **Whether the parent chat `parent` of the project at `project` may take up `branch`, the
+/// branch its ended direct child `child` was cut**: [`ended_child_branch`] over the project's
+/// dispatch records, **and only while `[policy]`'s `guards.forge` is not `off`** (rule
+/// [`crate::enforcement::RULE_FORGE_LINEAGE`]; an administrator's lock keeps it on). The
+/// production caller is the route's tip closure (`forgeroute`'s `own_tip`).
+pub fn lineage_allows(project: &Path, parent: &str, child: &str, branch: &str) -> bool {
+    lineage_allows_under(
+        crate::enforcement::mode(project, crate::enforcement::Family::GuardsForge),
+        &list(project),
+        parent,
+        child,
+        branch,
+    )
+}
+
+/// [`lineage_allows`] with the `guards.forge` mode and the records given: `off` is no lineage,
+/// `log` and `enforce` leave it on (an allowance has no refusal to log).
+pub fn lineage_allows_under(
+    mode: crate::enforcement::Mode,
+    records: &[Record],
+    parent: &str,
+    child: &str,
+    branch: &str,
+) -> bool {
+    mode != crate::enforcement::Mode::Off && ended_child_branch(records, parent, child, branch)
 }
 
 /// The running dispatch whose persona chat is `chat`, where there is one: the newest. Read

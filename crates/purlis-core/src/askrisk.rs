@@ -524,8 +524,22 @@ fn strings(table: Option<&toml::Table>, key: &str) -> Vec<String> {
         .collect()
 }
 
+/// **The protected-branch patterns the project commits** (`[risk] protected_branches` in
+/// `charter.toml`: names, or patterns with `*`), for the forge route's `AllowedRepo`
+/// ([`crate::forge::proxy::AllowedRepo::with_protected_branches`]), which also holds its own
+/// built-in ones (the default branch, release and deploy names, `phase-*`, `integration/*`, and
+/// milestone `m<N>-*` integration branches). Read from the plane root's committed file; a file
+/// that cannot be read adds nothing. The production caller is `forgeroute`'s `repos`.
+pub fn committed_protected_branches(root: &Path) -> Vec<String> {
+    let top = std::fs::read_to_string(root.join(crate::profiles::COMMITTED_FILE))
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok());
+    let table = top.as_ref().and_then(|top| top.get(TABLE)?.as_table());
+    strings(table, PROTECTED_BRANCHES)
+}
+
 /// Whether `pattern` (a name, `*` standing for any run of characters) matches `name` whole.
-fn matches(pattern: &str, name: &str) -> bool {
+pub(crate) fn matches(pattern: &str, name: &str) -> bool {
     let mut parts = pattern.split('*');
     let first = parts.next().unwrap_or_default();
     let Some(mut left) = name.strip_prefix(first) else {

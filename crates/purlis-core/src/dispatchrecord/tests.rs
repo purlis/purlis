@@ -3432,13 +3432,16 @@ fn a_drawing_hands_history_a_task_once_it_ended_after_it_was_drawn_running() {
     );
 }
 
-/// A task of `asker` to `worker`, opened in `root`.
-fn a_task(root: &Path, asker: ChatRef, worker: ChatRef) {
-    let mut opening = a_handoff();
-    opening.mode = Mode::Task;
-    opening.asker.chat = asker;
-    opening.worker.chat = worker;
-    open(root, opening, at("2026-10-07T12:00:00Z")).unwrap();
+const PARENT: &str = "01K6ASKER0000000000000000A";
+const CHILD: &str = "01K6W0RKER000000000000000B";
+const GRANDCHILD: &str = "01K6SUBTASK00000000000000C";
+const CUT: &str = "task/work-1";
+
+fn builder(id: &str) -> ChatRef {
+    ChatRef {
+        persona: Some("builder".to_owned()),
+        ..chat_of(id)
+    }
 }
 
 fn chat_of(id: &str) -> ChatRef {
@@ -3450,55 +3453,178 @@ fn chat_of(id: &str) -> ChatRef {
     }
 }
 
-const ASKER: &str = "01K6ASKER0000000000000000A";
-const TASK: &str = "01K6W0RKER000000000000000B";
-const SUBTASK: &str = "01K6SUBTASK00000000000000C";
-
-#[test]
-fn a_chat_dispatched_the_tasks_it_asked_for_directly_or_up_the_chain_and_no_others() {
-    let (_d, root) = project();
-    a_task(&root, chat_of(ASKER), chat_of(TASK));
-    a_task(&root, chat_of(TASK), chat_of(SUBTASK));
-    let records = list(&root);
-    assert!(dispatched_by(&records, ASKER, TASK));
-    assert!(dispatched_by(&records, ASKER, SUBTASK), "up the chain");
-    assert!(dispatched_by(&records, TASK, SUBTASK));
-    // One way only: a task never dispatched the chat that asked for it.
-    assert!(!dispatched_by(&records, TASK, ASKER));
-    assert!(!dispatched_by(&records, SUBTASK, ASKER));
-    // Nor a chat nothing links, nor a chat with another ULID, nor itself.
-    assert!(!dispatched_by(
-        &records,
-        "01K6UNRELATED0000000000000D",
-        TASK
-    ));
-    assert!(!dispatched_by(
-        &records,
-        ASKER,
-        "01K6UNRELATED0000000000000D"
-    ));
-    assert!(!dispatched_by(&records, ASKER, ASKER));
-    assert!(!dispatched_by(&[], ASKER, TASK));
-}
-
-#[test]
-fn a_handoff_is_no_link_because_the_work_moved() {
-    let (_d, root) = project();
+/// A task of `PARENT` to `CHILD` as lineage reads it: the same workspace and persona, a branch
+/// purlis cut. Each test breaks one condition.
+fn a_task_as_lineage_wants_it() -> Opening {
     let mut opening = a_handoff();
-    opening.asker.chat = chat_of(ASKER);
-    opening.worker.chat = chat_of(TASK);
-    open(&root, opening, at("2026-10-07T12:00:00Z")).unwrap();
-    assert!(!dispatched_by(&list(&root), ASKER, TASK));
+    opening.mode = Mode::Task;
+    opening.persona = Some("builder".to_owned());
+    opening.asker = Asker {
+        chat: builder(PARENT),
+        workspace: Some("alpha".to_owned()),
+        ..Asker::default()
+    };
+    opening.worker.chat = builder(CHILD);
+    opening.place = Place {
+        workspace: Some("alpha".to_owned()),
+        folder: None,
+        worktree: Some(Worktree {
+            repo: "app".to_owned(),
+            piece: "work-1".to_owned(),
+            branch: Some(CUT.to_owned()),
+            removed: None,
+        }),
+    };
+    opening
+}
+
+fn end_it(root: &Path, record: &Record) {
+    assert!(
+        close(
+            root,
+            &record.id,
+            Ending::default(),
+            at("2026-11-24T10:00:00Z")
+        )
+        .unwrap()
+    );
+}
+
+/// Whether `PARENT` may take up `branch` of `CHILD` under the records of `root`.
+fn lineage(root: &Path, branch: &str) -> bool {
+    ended_child_branch(&list(root), PARENT, CHILD, branch)
+}
+
+fn an_ended_task(root: &Path, change: impl FnOnce(&mut Opening)) {
+    let mut opening = a_task_as_lineage_wants_it();
+    change(&mut opening);
+    let record = open(root, opening, at("2026-11-24T09:00:00Z")).unwrap();
+    end_it(root, &record);
 }
 
 #[test]
-fn a_loop_of_records_ends_and_is_no_link() {
+fn a_parent_may_take_up_the_cut_branch_of_its_ended_direct_child() {
     let (_d, root) = project();
-    a_task(&root, chat_of(ASKER), chat_of(TASK));
-    a_task(&root, chat_of(TASK), chat_of(ASKER));
-    assert!(!dispatched_by(
+    an_ended_task(&root, |_| {});
+    assert!(lineage(&root, CUT));
+}
+
+#[test]
+fn a_running_child_is_no_lineage() {
+    let (_d, root) = project();
+    open(
+        &root,
+        a_task_as_lineage_wants_it(),
+        at("2026-11-24T09:00:00Z"),
+    )
+    .unwrap();
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn a_child_still_running_on_a_second_task_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    open(
+        &root,
+        a_task_as_lineage_wants_it(),
+        at("2026-11-24T11:00:00Z"),
+    )
+    .unwrap();
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn a_grandchild_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    // GRANDCHILD was asked for by CHILD, which PARENT asked for.
+    let mut opening = a_task_as_lineage_wants_it();
+    opening.asker.chat = builder(CHILD);
+    opening.worker.chat = builder(GRANDCHILD);
+    let record = open(&root, opening, at("2026-11-24T09:30:00Z")).unwrap();
+    end_it(&root, &record);
+    assert!(!ended_child_branch(&list(&root), PARENT, GRANDCHILD, CUT));
+    assert!(ended_child_branch(&list(&root), CHILD, GRANDCHILD, CUT));
+}
+
+#[test]
+fn another_persona_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |o| {
+        o.persona = Some("tester".to_owned());
+        o.worker.chat.persona = Some("tester".to_owned());
+    });
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn a_task_of_no_named_persona_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |o| {
+        o.persona = None;
+        o.asker.chat.persona = None;
+    });
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn another_workspace_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |o| o.place.workspace = Some("beta".to_owned()));
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn a_branch_other_than_the_cut_one_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    assert!(!lineage(&root, "task/other"));
+    assert!(!lineage(&root, "TASK/WORK-1"), "the name is exact");
+    assert!(!lineage(&root, ""));
+}
+
+#[test]
+fn a_task_with_no_cut_branch_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |o| o.place.worktree = None);
+    assert!(!lineage(&root, CUT));
+    assert!(!lineage(&root, ""));
+}
+
+#[test]
+fn a_handoff_is_no_lineage_because_the_work_moved() {
+    let (_d, root) = project();
+    an_ended_task(&root, |o| o.mode = Mode::Handoff);
+    assert!(!lineage(&root, CUT));
+}
+
+#[test]
+fn another_chat_than_the_asker_is_no_lineage() {
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    assert!(!ended_child_branch(
         &list(&root),
         "01K6UNRELATED0000000000000D",
-        TASK
+        CHILD,
+        CUT
     ));
+    // One way: a task is not the parent of the chat that asked for it.
+    assert!(!ended_child_branch(&list(&root), CHILD, PARENT, CUT));
+    assert!(!ended_child_branch(&[], PARENT, CHILD, CUT));
+}
+
+#[test]
+fn the_guards_forge_family_off_is_no_lineage_and_log_and_enforce_leave_it_on() {
+    use crate::enforcement::Mode;
+    let (_d, root) = project();
+    an_ended_task(&root, |_| {});
+    let records = list(&root);
+    for (mode, on) in [(Mode::Off, false), (Mode::Log, true), (Mode::Enforce, true)] {
+        assert_eq!(
+            lineage_allows_under(mode, &records, PARENT, CHILD, CUT),
+            on,
+            "{mode:?}"
+        );
+    }
 }
