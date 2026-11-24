@@ -211,6 +211,16 @@ jobs:
   # are `lint`'s; the doctests are `rust-doctests`'s). An optimised test build was tried and
   # dropped (#3553: 21 to 32 minutes to build cold, then the runners stopped). `rust-checks` below
   # carries the required check's name and passes when the build and every part did.
+  #
+  # **The linker is mold** (spec #7324), for this job, the parts, `rust-doctests` and `git-lfs`,
+  # which restore one Rust cache between them (`shared-key: rust`) and so build with the same
+  # `RUSTFLAGS` (rust-cache keys on them). The version is the one Ubuntu 24.04 packages, 2.30.0,
+  # from the package cache `linux-packages` keeps for the runner image; the step after the install
+  # fails when the image ships another, so a new mold is a line here, not a surprise. The default
+  # linker is `rust-lld` (Rust 1.90 and later on x86-64 Linux); the `-fuse-ld=mold` here is a user
+  # link argument, which rustc puts after its own `-fuse-ld=lld`, so it wins, and a step below says
+  # whether it did. `release.yml` keeps the toolchain's default linker: a release is not linked by
+  # a CI tool.
   rust-build:
     name: rust tests (build)
     needs: changes
@@ -218,6 +228,8 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # **Swap for the build's one large compile** (#7200). Compiling `purlis_app_lib`'s tests is
@@ -236,11 +248,16 @@ jobs:
           sudo mkswap /mnt/purlis-swap
           sudo swapon /mnt/purlis-swap
           free -m
-      - name: Tauri's Linux build dependencies
+      - name: Tauri's Linux build dependencies, and the linker
         timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
+          packages: mold
+      - name: The linker is the mold this workflow was written for
+        run: |
+          mold --version
+          mold --version | grep -q '^mold 2\.30\.0 ' || { echo "::error::the runner image's mold is not 2.30.0: pin the one it has, here and in the comment above this job"; exit 1; }
       - uses: ./.github/actions/rust-toolchain
       # Only `main` saves a Rust cache; a pull request restores `main`'s and saves none.
       # The repository holds 10 GB of caches, and each pull request's own 0.8-1.2 GB ones
@@ -292,6 +309,17 @@ jobs:
             echo "- archive: $(du -h "$RUNNER_TEMP/rust-tests/purlis-tests.tar.zst" 2>/dev/null | cut -f1)"
           } | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
+      # A report: the linker's own mark in the binary, so a build that quietly used another linker
+      # (and did not get the speed) says so on the run.
+      - name: Which linker linked the tests
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          if readelf -p .comment target/debug/purlis | grep -q mold; then
+            echo "::notice title=Linker::target/debug/purlis was linked by $(mold --version)"
+          else
+            echo "::warning title=Linker::target/debug/purlis carries no mold mark: the build did not use mold"
+          fi
       # One day is enough: the parts start when this ends. Already zstd, so no second compression.
       # `overwrite`: a re-run of this job replaces its own archive, and the parts that follow take it.
       - name: The archive, for the parts
@@ -315,6 +343,9 @@ jobs:
         part: [1, 2, 3, 4]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      # The build's, so the Rust cache below is keyed as its.
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # purlis's own Linux sandbox (#1040) needs Landlock ABI 6 (Linux 6.12), and its tests run
@@ -335,7 +366,7 @@ jobs:
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
-          packages: bubblewrap socat
+          packages: bubblewrap socat mold
       - uses: ./.github/actions/rust-toolchain
       # `rust-build` saves the Rust cache (on `main`) and a part only restores it, so what a test
       # builds for itself (a program that is not in the archive, `cargo metadata`'s registry)
@@ -543,6 +574,9 @@ jobs:
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
+    env:
+      # `rust-build`'s, which this job restores the cache of: see the comment above that job.
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -550,7 +584,7 @@ jobs:
         timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
-          packages: git-lfs
+          packages: git-lfs mold
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
@@ -646,13 +680,17 @@ jobs:
     if: ${{ !cancelled() && needs.changes.outputs.rust != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # `rust-build`'s, which this job restores the cache of: see the comment above that job.
+      RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Tauri's Linux build dependencies
+      - name: Tauri's Linux build dependencies, and the linker
         timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
           tauri: true
+          packages: mold
       - uses: ./.github/actions/rust-toolchain
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
