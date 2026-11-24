@@ -1528,7 +1528,9 @@ fn refusal_words(refusal: Refusal) -> &'static str {
         Refusal::BodyUnreadable => "the body was missing, too big or could not be read",
         Refusal::GraphqlParse => "the GraphQL document could not be read as one request",
         Refusal::GraphqlUnknownMutation => "the GraphQL mutation is not on the list",
-        Refusal::GraphqlOtherRepo => "the GraphQL document reaches a repo that is not the chat's",
+        Refusal::GraphqlOtherRepo | Refusal::GraphqlPullRequestOtherRepo => {
+            "the GraphQL document reaches a repo that is not the chat's"
+        }
         Refusal::CredentialInQuery => "a credential was in the query string",
         Refusal::Multipart => "a multipart body is not allowed here",
         Refusal::CredentialInBody => "a credential was in the request body",

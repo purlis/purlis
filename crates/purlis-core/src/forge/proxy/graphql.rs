@@ -300,7 +300,22 @@ pub(crate) fn decide<'a>(
                     defaults: defaults(defs),
                 };
                 if is_mutation {
-                    class = ctx.check_mutation(selection_set, &vars)?;
+                    class = ctx
+                        .check_mutation(selection_set, &vars)
+                        .map_err(|refusal| {
+                            // Only these two have a REST route to be told of (`Refusal::advice`).
+                            let names_one = selection_set.items.iter().any(|s| {
+                                matches!(s, Selection::Field(f) if matches!(
+                                    f.name.as_str(),
+                                    "createPullRequest" | "updatePullRequestBranch"
+                                ))
+                            });
+                            if refusal == Refusal::GraphqlOtherRepo && names_one {
+                                Refusal::GraphqlPullRequestOtherRepo
+                            } else {
+                                refusal
+                            }
+                        })?;
                 } else {
                     ctx.check_query(selection_set, &vars)?;
                 }
@@ -314,6 +329,54 @@ pub(crate) fn decide<'a>(
         .map(|at| repos[at])
         .collect();
     Ok(Decided { class, touched })
+}
+
+/// The index in `repos` of the one repo a search query names, or `None` when it is not a search
+/// of exactly one of them (GraphQL's `search(query:)` and REST's `GET /search/issues?q=`).
+pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> {
+    // A zero-width space or a control character is a separator or nothing to the forge and a
+    // letter of a word to this reading: only printable ASCII and the space are read.
+    if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
+        return None;
+    }
+    // A quote hides a qualifier from this reading and not from the forge's.
+    if query.contains(['"', '\'', '\\', '`']) {
+        return None;
+    }
+    // Without a boolean operator or a group, every other term only narrows the one repo's
+    // results; with one, `repo:a OR is:issue` widens them to the whole forge.
+    if query.contains(['(', ')']) {
+        return None;
+    }
+    let mut paths = Vec::new();
+    for token in query.split_whitespace() {
+        if ["or", "and", "not"]
+            .iter()
+            .any(|op| token.eq_ignore_ascii_case(op))
+        {
+            return None;
+        }
+        let lower = token
+            .trim_start_matches(['(', '-', '+', '!'])
+            .to_ascii_lowercase();
+        if let Some(path) = lower.strip_prefix("repo:") {
+            if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
+                return None;
+            }
+            paths.push(path.to_string());
+        } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
+            .iter()
+            .any(|q| lower.starts_with(q))
+        {
+            return None;
+        }
+    }
+    let [path] = paths.as_slice() else {
+        return None;
+    };
+    // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
+    // prefix or a `.git` suffix, which the forge's search does not read as the repo.
+    repos.iter().position(|r| r.path.eq_ignore_ascii_case(path))
 }
 
 fn defaults<'a>(defs: &[VariableDefinition<'a, String>]) -> Vec<(String, Value<'a, String>)> {
@@ -448,10 +511,18 @@ impl<'d> Context<'_, 'd> {
                 return Err(refuse);
             }
         }
-        let is_issue = field
-            .arguments
-            .iter()
-            .any(|(n, v)| n == "type" && matches!(v, Value::Enum(e) if e == "ISSUE"));
+        // `gh issue list --search` sends the type as a variable (`$type: SearchType!`, given
+        // `"ISSUE"`), which is read by its value like the query's.
+        let is_issue = field.arguments.iter().any(|(n, v)| {
+            n == "type"
+                && match v {
+                    Value::Enum(e) => e == "ISSUE",
+                    Value::Variable(_) => {
+                        matches!(vars.resolve(v), Ok(Val::Str(s)) if s == "ISSUE")
+                    }
+                    _ => false,
+                }
+        });
         if !is_issue {
             return Err(refuse);
         }
@@ -465,53 +536,7 @@ impl<'d> Context<'_, 'd> {
                 _ => None,
             })
             .ok_or(refuse)?;
-        // A zero-width space or a control character is a separator or nothing to the forge and a
-        // letter of a word to this reading: only printable ASCII and the space are read.
-        if !query.bytes().all(|b| b == b' ' || b.is_ascii_graphic()) {
-            return Err(refuse);
-        }
-        // A quote hides a qualifier from this reading and not from the forge's.
-        if query.contains(['"', '\'', '\\', '`']) {
-            return Err(refuse);
-        }
-        // Without a boolean operator or a group, every other term only narrows the one repo's
-        // results; with one, `repo:a OR is:issue` widens them to the whole forge.
-        if query.contains(['(', ')']) {
-            return Err(refuse);
-        }
-        let mut repos = Vec::new();
-        for token in query.split_whitespace() {
-            if ["or", "and", "not"]
-                .iter()
-                .any(|op| token.eq_ignore_ascii_case(op))
-            {
-                return Err(refuse);
-            }
-            let lower = token
-                .trim_start_matches(['(', '-', '+', '!'])
-                .to_ascii_lowercase();
-            if let Some(path) = lower.strip_prefix("repo:") {
-                if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
-                    return Err(refuse);
-                }
-                repos.push(path.to_string());
-            } else if ["org:", "user:", "owner:", "team:", "enterprise:"]
-                .iter()
-                .any(|q| lower.starts_with(q))
-            {
-                return Err(refuse);
-            }
-        }
-        let [path] = repos.as_slice() else {
-            return Err(refuse);
-        };
-        // The recorded path as it is, case aside: not what `normalise_repo_path` makes of a
-        // prefix or a `.git` suffix, which the forge's search does not read as the repo.
-        match self
-            .repos
-            .iter()
-            .position(|r| r.path.eq_ignore_ascii_case(path))
-        {
+        match search_repo(&query, self.repos) {
             Some(at) => {
                 self.touch(at);
                 Ok(())

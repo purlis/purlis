@@ -111,7 +111,10 @@ fn gh_pr_create_on_the_chats_repo_is_answered_and_on_another_is_refused() {
     let out = send(&s, CREATE, input("R_acme_app"));
     assert!(matches!(out, Outcome::Forward(_)), "{out:?}");
     let out = send(&s, CREATE, input("R_acme_other"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
 }
 
 #[test]
@@ -133,16 +136,24 @@ fn gh_pr_update_branch_on_the_chats_pull_request_is_answered_and_on_another_is_r
         assert!(matches!(out, Outcome::Forward(_)), "{method}: {out:?}");
     }
     let out = send(&s, UPDATE_BRANCH, input("PR_kwDO_other"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
     // An id the forge cannot place fails closed.
     let out = send(&s, UPDATE_BRANCH, input("PR_kwDO_nobody"));
-    assert!(is_refused(&out, Refusal::GraphqlOtherRepo), "{out:?}");
+    assert!(
+        is_refused(&out, Refusal::GraphqlPullRequestOtherRepo),
+        "{out:?}"
+    );
 }
 
 #[test]
 fn a_refusal_as_another_repo_names_the_rest_routes_that_work() {
     purlis_core::unsteered!();
-    let said = Refusal::GraphqlOtherRepo.advice().expect("advice");
+    let said = Refusal::GraphqlPullRequestOtherRepo
+        .advice()
+        .expect("advice");
     assert!(said.contains("repos/OWNER/REPO/pulls -X POST"), "{said}");
     assert!(said.contains("pulls/N/update-branch"), "{said}");
 }
