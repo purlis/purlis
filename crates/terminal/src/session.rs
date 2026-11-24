@@ -2219,6 +2219,23 @@ mod tests {
         (session, shell, ends)
     }
 
+    /// Waits until `pid` leads a session of its own, which is what makes it out of reach of its
+    /// program's group. `a_program_with_a_shell_of_its_own` has the pid as soon as the program
+    /// has forked the shell, before the shell's `perl` has run `setsid`: on a loaded runner
+    /// that takes long enough for an end of the group to find it still inside, and the test
+    /// that says a person's own job survives it fails (#7441, #7461).
+    fn until_it_leads_a_session_of_its_own(pid: u32) {
+        let id = rustix::process::Pid::from_raw(pid as i32).expect("a pid");
+        let until = Instant::now() + PATIENCE;
+        while rustix::process::getsid(Some(id)).ok() != Some(id) {
+            assert!(
+                Instant::now() < until,
+                "precondition: {pid} never led a session of its own"
+            );
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+
     /// Whether `pid` has gone within a few seconds.
     fn gone_soon(pid: u32) -> bool {
         let until = Instant::now() + Duration::from_secs(5);
@@ -2258,6 +2275,7 @@ mod tests {
         // `setsid` and `nohup` are how a job is meant to outlive a terminal tab; only a chat's
         // harness asks for its strays to end with it.
         let (session, shell, _ends) = a_program_with_a_shell_of_its_own_ending_it("", false);
+        until_it_leads_a_session_of_its_own(shell);
 
         session.end();
 
