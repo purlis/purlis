@@ -11,7 +11,7 @@
 //! as committed at the plane root's `HEAD` ([`purlis_core::policy::decide::in_plane`]), never a
 //! file the line names.
 
-use purlis_core::hookwire::{Answer, DecideAsk, WhyAsk};
+use purlis_core::hookwire::{Answer, DecideAsk, PersonWhyAsk, WhyAsk};
 use purlis_core::policy::decide;
 
 use crate::planes::Held;
@@ -32,7 +32,7 @@ pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
             ),
         };
     }
-    let id = with_its_repo(held, asked);
+    let id = with_its_repo(held, asked.chat, &asked.action, &asked.id, asked.cwd.as_deref());
     let Some(decision) = decision(held, chat, &asked.action, (&asked.kind, &id)) else {
         return Answer::No {
             why: format!("chat {chat} is not one this app has open, so nothing was decided."),
@@ -48,23 +48,26 @@ pub fn asked(held: &Held, asked: &DecideAsk) -> Answer {
 /// merge the command gave no repo (`#12`) is of the repo of the clone the hook ran in
 /// ([`crate::mergeholds::found`]). The id as it came where it cannot be found: the merge is
 /// refused later all the same, and nothing here decides on a guess.
-fn with_its_repo(held: &Held, asked: &DecideAsk) -> String {
+fn with_its_repo(
+    held: &Held,
+    chat: u32,
+    action: &str,
+    id: &str,
+    cwd: Option<&str>,
+) -> String {
     use purlis_core::hookwire::MergeAsk;
-    let number = asked
-        .id
-        .strip_prefix('#')
-        .and_then(|n| n.parse::<u64>().ok());
-    let (Some(number), Some(cwd), "merge") = (number, &asked.cwd, asked.action.as_str()) else {
-        return asked.id.clone();
+    let number = id.strip_prefix('#').and_then(|n| n.parse::<u64>().ok());
+    let (Some(number), Some(cwd), "merge") = (number, cwd, action) else {
+        return id.to_owned();
     };
     let ask = MergeAsk {
-        chat: asked.chat,
+        chat,
         request: purlis_core::mergehold::Request { repo: None, number },
-        cwd: cwd.clone(),
+        cwd: cwd.to_owned(),
     };
     match crate::mergeholds::found(held.root(), &ask) {
         Ok((_, repo)) => format!("{}#{number}", repo.as_str()),
-        Err(_) => asked.id.clone(),
+        Err(_) => id.to_owned(),
     }
 }
 
@@ -134,6 +137,9 @@ pub fn why(held: &Held, asked: &WhyAsk) -> Answer {
             why: format!("chat {chat} is not one this app has open, so nothing was decided."),
         };
     };
+    // As the merge the host raises is decided: an id with no repo is of the clone the command ran
+    // in (F6), so a `#12` is asked about the repo it would be decided for.
+    let id = with_its_repo(held, chat, &asked.action, &asked.id, asked.cwd.as_deref());
     let floor = purlis_core::enforcement::in_force(held.root());
     Answer::Why(Box::new(purlis_core::policy::why::for_chat(
         held.root(),
@@ -141,8 +147,92 @@ pub fn why(held: &Held, asked: &WhyAsk) -> Answer {
         &facts,
         &floor,
         &sealed_for(held, chat),
-        (&asked.action, (&asked.kind, &asked.id)),
+        (&asked.action, (&asked.kind, &id)),
     )))
+}
+
+/// **Answers the person's own `purlis policy why`** ([`PersonWhyAsk`]), asked in their terminal
+/// and in no chat: the listener has refused a sender that may be inside one. The app is the one
+/// that reads the sealed side, so the answer is made from the accepted copy, the accepted floor,
+/// the person's grants and nevers, and the dry run diffs against them (spec §10.2).
+///
+/// `--chat N` is **the app's own record of chat N**, never a word of the line: a chat this app
+/// does not have open is refused, and a flag that would also describe a chat is refused with it.
+/// Without `--chat` the flags describe the context. Nothing is sealed, spent or written.
+pub fn why_for_person(held: &Held, asked: &PersonWhyAsk) -> Answer {
+    use purlis_core::policy::decide::{Asker, Sealed};
+    use purlis_core::policy::levels::Chat;
+    use purlis_core::policy::why;
+    let root = held.root();
+    let floor = purlis_core::enforcement::in_force(root);
+    let no = |why: String| Answer::No { why };
+    let said = |answered: Result<why::Why, String>| match answered {
+        Ok(why) => Answer::Why(Box::new(why)),
+        Err(why) => no(why),
+    };
+    if let Some(chat) = asked.chat {
+        let context_flags = asked.workspace.is_some()
+            || asked.persona.is_some()
+            || asked.unattended
+            || asked.sandbox.is_some()
+            || asked.depth.is_some();
+        if context_flags {
+            return no(format!(
+                "--chat {chat} asks as that chat, whose facts are this app's own record: leave \
+                 --workspace, --persona, --unattended, --sandbox and --depth off"
+            ));
+        }
+        let Some(facts) = facts_of(held, chat) else {
+            return no(format!(
+                "chat {chat} is not one this app has open, so its facts are not known and \
+                 nothing was decided."
+            ));
+        };
+        let id = with_its_repo(held, chat, &asked.action, &asked.id, asked.cwd.as_deref());
+        let request = (asked.action.as_str(), (asked.kind.as_str(), id.as_str()));
+        let sealed = sealed_for(held, chat);
+        return match &asked.policy {
+            None => Answer::Why(Box::new(why::for_chat(
+                root, chat, &facts, &floor, &sealed, request,
+            ))),
+            Some(policy) => said(why::dry_run_for_chat(
+                root, chat, &facts, &floor, &sealed, request, policy,
+            )),
+        };
+    }
+    let id = with_its_repo(held, 0, &asked.action, &asked.id, asked.cwd.as_deref());
+    let request = (asked.action.as_str(), (asked.kind.as_str(), id.as_str()));
+    let asker = Asker {
+        chat: 0,
+        of: Chat {
+            workspace: asked.workspace.as_deref(),
+            persona: asked.persona.as_deref(),
+        },
+        sandbox: asked.sandbox.as_deref().unwrap_or("floor"),
+        attended: !asked.unattended,
+        harness_mode: "default",
+        depth: asked.depth.unwrap_or(0),
+        via: "hook",
+        start: None,
+    };
+    let sealed = Sealed::of(root);
+    match &asked.policy {
+        None => Answer::Why(Box::new(why::in_plane(
+            root,
+            &asker,
+            request,
+            &sealed,
+            Some(&floor),
+        ))),
+        Some(policy) => said(why::dry_run(
+            root,
+            &asker,
+            request,
+            &sealed,
+            Some(&floor),
+            policy,
+        )),
+    }
 }
 
 /// **Writes the block a deny is**, as the host decided it (Q313.3): source `policy`, aimed at

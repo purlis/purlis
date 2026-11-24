@@ -3311,6 +3311,7 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             Ask::Decide(_) => 28,
             Ask::RemoteRefs(_) => 29,
             Ask::Why(_) => 30,
+            Ask::PersonWhy(_) => 31,
         }
     }
     let asks = vec![
@@ -3508,11 +3509,26 @@ fn every_ask(chat: u32, ticket: &str) -> Vec<Ask> {
             action: "merge".to_owned(),
             kind: "Branch".to_owned(),
             id: "acme/web#12".to_owned(),
+            cwd: None,
+        }),
+        // The person's own, asked in no chat: moves nothing either.
+        Ask::PersonWhy(purlis_core::hookwire::PersonWhyAsk {
+            action: "merge".to_owned(),
+            kind: "Branch".to_owned(),
+            id: "acme/web#12".to_owned(),
+            cwd: None,
+            chat: None,
+            workspace: None,
+            persona: None,
+            unattended: false,
+            sandbox: None,
+            depth: None,
+            policy: None,
         }),
     ];
     let mut kinds: Vec<usize> = asks.iter().map(kind).collect();
     kinds.dedup();
-    assert_eq!(kinds, (0..=30).collect::<Vec<_>>(), "one of every kind");
+    assert_eq!(kinds, (0..=31).collect::<Vec<_>>(), "one of every kind");
     asks
 }
 

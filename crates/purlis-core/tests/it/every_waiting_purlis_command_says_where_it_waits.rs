@@ -101,6 +101,7 @@ fn hook_socket_waits(ask: &Ask) -> HookWait {
         | Ask::PolicyLog(_)
         | Ask::Decide(_)
         | Ask::Why(_)
+        | Ask::PersonWhy(_)
         | Ask::RemoteRefs(_) => HookWait::NotOnThePerson,
     }
 }

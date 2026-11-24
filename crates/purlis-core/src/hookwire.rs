@@ -1713,6 +1713,14 @@ pub enum Ask {
     /// has no workspace, persona or level to name, and what the policy reads of the chat is the
     /// host's record. Nothing is sealed, spent or written to answer it.
     Why(WhyAsk),
+    /// **The person's own `purlis policy why`**, run in their terminal and in no chat (M75 slice
+    /// 18, spec §10.1 and §10.2): the app alone reads the sealed side (grants, nevers, the
+    /// accepted copy and floor), so it answers the person's question, and the dry run's. **It is
+    /// not chat-bound**: it names no chat's token, and the listener answers it only for a sender
+    /// that runs inside none of the app's chats ([`ChatOf::InNone`]), so a chat can never ask it
+    /// to read the policy as another context. `--chat N` names a chat whose facts the app looks
+    /// up itself. Nothing is sealed, spent or written to answer it.
+    PersonWhy(PersonWhyAsk),
     /// **A hook's ask for the ref tips a remote has** (#7302): `pre-push`'s ask of the remote,
     /// which a chat's sandbox cannot make for itself under the one login. The app asks the remote
     /// outside the sandbox, on the chat's own run's route, and only for a repository recorded for
@@ -1756,7 +1764,54 @@ pub struct WhyAsk {
     pub kind: String,
     /// The resource's id (`acme/web#12`).
     pub id: String,
+    /// The folder the command ran in, where it can say which repo an id with none names (`#12`):
+    /// the app finds the repo as it does for a merge it raises ([`DecideAsk::cwd`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
 }
+
+/// **A person's ask why an action is decided as it is** ([`Ask::PersonWhy`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PersonWhyAsk {
+    /// The action, a verb of the policy's schema (`merge`).
+    pub action: String,
+    /// The resource's entity type (`Branch`).
+    pub kind: String,
+    /// The resource's id (`acme/web#12`).
+    pub id: String,
+    /// The folder the command ran in: the plane the question is about, and where an id with no
+    /// repo is found.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Ask as this chat: the app looks up the chat's own facts, and nothing else of the line
+    /// describes a chat then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat: Option<u32>,
+    /// Ask for a chat of this workspace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// Ask for a chat started as this persona.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub persona: Option<String>,
+    /// Ask for a chat nobody is at.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unattended: bool,
+    /// Ask for a chat at this sandbox level.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sandbox: Option<String>,
+    /// Ask for a chat this deep in a dispatch chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depth: Option<i64>,
+    /// Answer as this policy would: a branch or a file, as `--policy` names it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<String>,
+}
+
+/// What the app answers a [`PersonWhyAsk`] from a sender that may be inside a chat: a chat may
+/// read the policy only for itself ([`Ask::Why`]).
+pub const PERSON_ONLY: &str = "this question is the person's own, asked outside any chat: a chat \
+     asks `purlis policy why` about itself, with no flag that names another context";
 
 /// **A hook's ask for a remote's ref tips** ([`Ask::RemoteRefs`]).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -2981,6 +3036,9 @@ impl Ask {
             Self::PolicyLog(line) => line.chat,
             Self::Decide(asked) => asked.chat,
             Self::Why(asked) => asked.chat,
+            // The person's own: no chat's, and no token. The listener answers it before any
+            // token is looked for, and only for a sender in none of the app's chats.
+            Self::PersonWhy(_) => 0,
             Self::RemoteRefs(asked) => asked.chat,
         }
     }
@@ -4920,6 +4978,26 @@ fn serve(
                 if writer.write_all(&said).is_err() {
                     return;
                 }
+            }
+            continue;
+        }
+        // The person's own `policy why` names no chat and carries no token: it is answered only
+        // for a sender that runs inside none of the app's chats, by its ancestry, and refused
+        // for one that may be inside one (a chat that stripped its environment included).
+        if matches!(line, Line::Ask(Ask::PersonWhy(_))) {
+            let Line::Ask(ask) = line else { return };
+            let answer = match tokens.chat_of(&senders_of(peer, &writer)) {
+                ChatOf::InNone => (hearing.answer)(this, ask),
+                ChatOf::Named(..) | ChatOf::InDoubt => Answer::No {
+                    why: PERSON_ONLY.to_owned(),
+                },
+            };
+            let Ok(mut said) = serde_json::to_vec(&framed::on_a_line(answer)) else {
+                return;
+            };
+            said.push(b'\n');
+            if writer.write_all(&said).is_err() {
+                return;
             }
             continue;
         }

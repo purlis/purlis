@@ -148,13 +148,22 @@ impl Version {
         Head::Unread
     }
 
-    /// **The project as a branch, tag or commit holds it** (`policy why --policy <branch>`): read
-    /// from that one commit as `HEAD` is, with the local file as it is now. `Err` says why not: a
-    /// name that is no commit here, or a commit git could not read stably.
-    pub fn at_rev(root: &Path, rev: &str) -> Result<Self, String> {
+    /// **The commit `HEAD` names**, in full, where there is one: what a dry run says it was
+    /// computed for.
+    pub fn head_sha(root: &Path) -> Option<String> {
+        match head_commit(root) {
+            Tip::Commit(sha) => Some(sha),
+            Tip::None | Tip::Unread => None,
+        }
+    }
+
+    /// **The commit a branch, tag or commit name resolves to** (`policy why --policy <branch>`),
+    /// in full: `Ok(None)` where the name is no commit of this project, and `Err` where git did
+    /// not answer.
+    pub fn resolve_rev(root: &Path, rev: &str) -> Result<Option<String>, String> {
         // A name that starts with a dash would be read by git as an option.
         if rev.is_empty() || rev.starts_with('-') {
-            return Err(format!("`{rev}` is not a branch name"));
+            return Ok(None);
         }
         let spelled = format!("{rev}^{{commit}}");
         let run = crate::worktree::git::run_as_written(
@@ -163,13 +172,13 @@ impl Version {
             GIT_WAIT,
         )
         .map_err(|why| format!("git did not answer for `{rev}`: {why}"))?;
-        if !run.ok() {
-            return Err(format!(
-                "`{rev}` is neither a file nor a branch of this project"
-            ));
-        }
-        Self::read_head(root, run.out.trim())
-            .ok_or_else(|| format!("the project's files at `{rev}` could not be read"))
+        Ok(run.ok().then(|| run.out.trim().to_owned()))
+    }
+
+    /// **The project as the commit `sha` holds it**, with the local file as it is now: `None`
+    /// where git could not read it stably.
+    pub fn at_sha(root: &Path, sha: &str) -> Option<Self> {
+        Self::read_head(root, sha)
     }
 
     /// This version with `rules` as its `policy.cedar`: the project as it would be with that file.

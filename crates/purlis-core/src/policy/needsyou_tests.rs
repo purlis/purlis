@@ -915,6 +915,7 @@ fn asked_by_the_merge_hold() -> crate::policy::decide::Decision {
         lifted: Vec::new(),
         asked: Vec::new(),
         lock: None,
+        lock_level: None,
         grant: None,
         unasked: None,
         keep: None,

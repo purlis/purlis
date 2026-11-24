@@ -88,6 +88,8 @@ fn policy_why_names_the_deciding_rule_its_file_and_line_and_runs_nothing() {
         out.contains("the project level (this project): change or remove `guards-merge-ban`"),
         "{out}"
     );
+    // No app answered here, so the sealed side was not read, and the answer says so.
+    assert!(out.contains("note: the sealed side was not read"), "{out}");
     // Asked twice, it says the same, and the plane is as it was: nothing was written.
     assert_eq!(out, said(&why(dir.path(), &["merge", "acme/web#main"])));
     assert!(!dir.path().join(".purlis").exists());
@@ -110,6 +112,22 @@ fn policy_why_json_carries_the_same_answer() {
     assert_eq!(json["loosen"][0]["level"], "project", "{out}");
     assert_eq!(json["overrode"][0]["id"], "policy-everything-else", "{out}");
     assert!(json.get("dry_run").is_none(), "{out}");
+    assert!(
+        json["sealed_unread"]
+            .as_str()
+            .is_some_and(|said| said.contains("sealed side was not read")),
+        "{out}"
+    );
+}
+
+#[test]
+fn chat_n_from_outside_a_chat_is_refused_where_no_app_gives_its_facts() {
+    let dir = plane(&[("purlis.toml", STRICT)]);
+    let out = why(dir.path(), &["merge", "acme/web#main", "--chat", "3"]);
+    assert!(!out.status.success(), "answered with invented facts");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("chat 3"), "{err}");
+    assert!(out.stdout.is_empty(), "printed an answer");
 }
 
 #[test]
@@ -138,6 +156,10 @@ fn policy_why_with_a_branch_policy_answers_as_the_branch_would_through_the_binar
     )))
     .expect("JSON");
     assert_eq!(json["dry_run"]["policy"], "ban");
+    // It says which commits it was computed for and against.
+    assert!(json["dry_run"]["head"].as_str().is_some_and(|sha| sha.len() == 40));
+    assert!(json["dry_run"]["resolved"].as_str().is_some_and(|sha| sha.len() == 40));
+    assert!(branch.contains("computed for HEAD "), "{branch}");
     assert_eq!(json["dry_run"]["diff"]["rules"][0]["kind"], "tightens");
     // A name that is neither a file nor a branch is refused, and says so.
     let nope = why(dir.path(), &["merge", "acme/web#main", "--policy", "nope"]);

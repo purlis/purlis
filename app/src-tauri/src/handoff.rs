@@ -399,6 +399,9 @@ pub fn answer(
         // Why the session host decides an action as it does (M75 slice 18): a chat's own question
         // about itself, which moves nothing and writes nothing.
         Ask::Why(asked) => crate::decisions::why(held, &asked),
+        // The person's own `policy why`, asked in no chat (the listener refuses a sender that may
+        // be in one): the sealed side is read here, for the context the person names.
+        Ask::PersonWhy(asked) => crate::decisions::why_for_person(held, &asked),
         // The ref tips a remote has, for the pre-push scan (#7302): asked by the app, outside the
         // chat's sandbox, on the route of the run of the chat whose token the line carries, and
         // only of a repository recorded for that run. Never a route or a chat the line names.

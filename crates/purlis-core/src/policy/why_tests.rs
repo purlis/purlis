@@ -59,7 +59,7 @@ fn policy_why_names_every_deciding_rule_with_its_level_and_file_line() {
     assert_eq!(why.decision.after_mode, Outcome::Deny, "{why:?}");
     let ids: Vec<&str> = why.decision.ids();
     assert_eq!(ids, ["guards-merge-ban", "guards-merge-other"], "{why:?}");
-    let said = text(&why, None, ("merge", "acme/web#main"));
+    let said = text(&why, ("merge", "acme/web#main"));
     for rule in &why.decision.deciding {
         assert_eq!(rule.level, "project", "{rule:?}");
         assert_eq!(rule.owner, "this project", "{rule:?}");
@@ -84,7 +84,7 @@ fn policy_why_names_the_mode_when_it_changed_the_outcome() {
     let why = why_now(&root, standing);
     assert_eq!(why.decision.outcome, Outcome::Ask, "{why:?}");
     assert_eq!(why.decision.after_mode, Outcome::Allow, "{why:?}");
-    let said = text(&why, None, ("merge", "acme/web#main"));
+    let said = text(&why, ("merge", "acme/web#main"));
     assert!(
         said.contains("mode log; the rules say ask and the mode lets it through"),
         "{said}"
@@ -93,7 +93,6 @@ fn policy_why_names_the_mode_when_it_changed_the_outcome() {
     let root = plane(&machine(), &[("purlis.toml", STRICT)]);
     let said = text(
         &why_now(&root, Standing::fresh()),
-        None,
         ("merge", "acme/web#main"),
     );
     assert!(!said.contains("lets it through"), "{said}");
@@ -156,7 +155,7 @@ fn policy_why_lists_the_permits_a_forbid_overrode() {
         why.decision.ids().iter().all(|id| !permits.contains(id)),
         "a deciding rule is no overridden permit: {why:?}"
     );
-    let said = text(&why, None, ("merge", "acme/web#main"));
+    let said = text(&why, ("merge", "acme/web#main"));
     assert!(
         said.contains("permit overridden by a forbid: `policy-everything-else`"),
         "{said}"
@@ -184,7 +183,7 @@ fn policy_why_with_a_branch_policy_answers_as_the_branch_would() {
         why_now(&root, Standing::fresh()).decision.after_mode,
         Outcome::Ask
     );
-    let (why, dry) = dry_run(
+    let why = dry_run(
         &root,
         &asker(),
         MERGE,
@@ -193,11 +192,25 @@ fn policy_why_with_a_branch_policy_answers_as_the_branch_would() {
         "ban",
     )
     .expect("a branch of the project");
+    let dry = why.dry_run.clone().expect("a dry run");
     assert_eq!(why.decision.after_mode, Outcome::Deny, "{why:?}");
     assert_eq!(why.decision.ids(), ["guards-merge-ban"], "{why:?}");
     let row = dry.diff.rules.iter().find(|r| r.id == "guards-merge-ban");
     assert_eq!(row.map(|r| r.kind), Some(Kind::Tightens), "{dry:?}");
     assert_eq!(dry.policy, "ban");
+    // It says which commits it was computed for: HEAD, and the one the branch resolved to.
+    assert_eq!(dry.head.as_deref(), Some(git_out(&root, &["rev-parse", "HEAD"]).as_str()));
+    assert_eq!(
+        dry.resolved.as_deref(),
+        Some(git_out(&root, &["rev-parse", "ban"]).as_str())
+    );
+    assert_ne!(dry.head, dry.resolved);
+    let said = text(&why, ("merge", "acme/web#main"));
+    assert!(
+        said.contains(&format!("computed for HEAD {}", dry.head.clone().unwrap()))
+            && said.contains(&format!("`ban` at {}", dry.resolved.clone().unwrap())),
+        "{said}"
+    );
     // Nothing moved: main still holds no ban, and no file appeared.
     assert!(!root.join("policy.cedar").exists());
     assert_eq!(
@@ -223,7 +236,7 @@ fn a_policy_file_answers_as_the_project_with_that_file_would() {
     let root = plane(&m, &[("purlis.toml", STRICT)]);
     let file = m.dir.path().join("candidate.cedar");
     std::fs::write(&file, forbid_merge("guards-merge-ban", "")).expect("a candidate");
-    let (why, dry) = dry_run(
+    let why = dry_run(
         &root,
         &asker(),
         MERGE,
@@ -232,8 +245,25 @@ fn a_policy_file_answers_as_the_project_with_that_file_would() {
         file.to_str().expect("a path"),
     )
     .expect("a file");
+    let dry = why.dry_run.clone().expect("a dry run");
     assert_eq!(why.decision.ids(), ["guards-merge-ban"], "{why:?}");
     assert!(dry.diff.rules.iter().any(|r| r.id == "guards-merge-ban"));
+    // A file has no commit of its own to name, and says it was read as it is.
+    assert_eq!(dry.resolved, None);
+    assert!(text(&why, ("merge", "acme/web#main")).contains("as it reads now"));
+    // A relative name is the plane root's, never the folder the command runs in.
+    std::fs::write(root.join("candidate.cedar"), forbid_merge("guards-merge-rel", ""))
+        .expect("a candidate in the plane");
+    let relative = dry_run(
+        &root,
+        &asker(),
+        MERGE,
+        &sealed(Standing::fresh()),
+        None,
+        "candidate.cedar",
+    )
+    .expect("a file of the plane");
+    assert_eq!(relative.decision.ids(), ["guards-merge-rel"], "{relative:?}");
 }
 
 #[test]
@@ -246,8 +276,9 @@ fn a_loosening_branch_answers_loose_but_the_policy_in_force_waits_for_the_press(
     git(&root, &["checkout", "-q", "drop"]);
     commit(&root, &[("policy.cedar", "-")]);
     git(&root, &["checkout", "-q", "main"]);
-    let (why, dry) = dry_run(&root, &asker(), MERGE, &sealed(standing), None, "drop")
+    let why = dry_run(&root, &asker(), MERGE, &sealed(standing), None, "drop")
         .expect("a branch of the project");
+    let dry = why.dry_run.clone().expect("a dry run");
     assert_eq!(
         why.decision.after_mode,
         Outcome::Ask,
@@ -256,7 +287,7 @@ fn a_loosening_branch_answers_loose_but_the_policy_in_force_waits_for_the_press(
     assert_eq!(dry.enforced_until_pressed, Outcome::Deny, "{dry:?}");
     let row = dry.diff.rules.iter().find(|r| r.id == "guards-merge-ban");
     assert_eq!(row.map(|r| r.kind), Some(Kind::Loosens), "{dry:?}");
-    let said = text(&why, Some(&dry), ("merge", "acme/web#main"));
+    let said = text(&why, ("merge", "acme/web#main"));
     assert!(
         said.contains("until you press Accept the policy in force still enforces: deny"),
         "{said}"
@@ -273,7 +304,7 @@ fn a_dry_run_shows_the_diff_the_press_shows() {
     git(&root, &["checkout", "-q", "drop"]);
     commit(&root, &[("policy.cedar", "-")]);
     git(&root, &["checkout", "-q", "main"]);
-    let (_, dry) = dry_run(
+    let dry = dry_run(
         &root,
         &asker(),
         MERGE,
@@ -281,7 +312,9 @@ fn a_dry_run_shows_the_diff_the_press_shows() {
         None,
         "drop",
     )
-    .expect("a branch of the project");
+    .expect("a branch of the project")
+    .dry_run
+    .expect("a dry run");
     // The same change, landed on main: the press it raises shows the same rows.
     git(&root, &["merge", "-q", "--ff-only", "drop"]);
     let head = crate::policy::force::Version::at_head(&root);
@@ -336,4 +369,257 @@ fn a_request_names_its_resource_kind_from_the_schema() {
         none.contains("no action of the policy") && none.contains("merge"),
         "{none}"
     );
+}
+
+/// `git rev-parse` output, trimmed.
+fn git_out(root: &Path, args: &[&str]) -> String {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .expect("git runs");
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// A plain strict project, accepted under the shipped default of a later purlis that bans a merge.
+fn accepted_under_a_shipped_ban() -> Standing {
+    let shipped = format!(
+        "{}\n\n@id(\"guards-merge-shipped-ban\") @level(\"project\")\nforbid (principal, action == \
+         Action::\"merge\", resource);\n",
+        crate::policy::DEFAULT
+    );
+    holding(vec![accepted(&crate::policy::force::Version {
+        shipped: Some(shipped),
+        ..version(STRICT, None)
+    })])
+}
+
+#[test]
+fn a_dry_run_names_the_shipped_default_row_the_press_names() {
+    // The accepted copy is not the shipped default: it was sealed under one that banned a merge,
+    // and the one this build ships does not. The same project (a branch of main) loosens against
+    // it, and the cause is the shipped default's own change, which both name the same way.
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    git(&root, &["branch", "same"]);
+    let standing = accepted_under_a_shipped_ban();
+    let dry = dry_run(&root, &asker(), MERGE, &sealed(standing.clone()), None, "same")
+        .expect("a branch of the project")
+        .dry_run
+        .expect("a dry run");
+    let named = |diff: &Diff| {
+        diff.other
+            .iter()
+            .any(|one| one.part.starts_with("the shipped default, as purlis "))
+    };
+    assert!(named(&dry.diff), "{dry:?}");
+    let head = crate::policy::force::Version::at_head(&root);
+    let press = crate::policy::press::of_head(
+        &root,
+        &crate::policy::force::tests::sources(&root),
+        &standing,
+        &head,
+    )
+    .expect("a shipped default's change raises a press");
+    assert_eq!(dry.diff, press.diff, "the dry run and the press show one diff");
+}
+
+#[test]
+fn a_once_grant_is_shown_as_serving_and_left_unspent() {
+    use crate::policy::decide::Request;
+    use crate::policy::grants::{Grant, Scope};
+    const ULID: &str = "01M85WM43DT07ANNAQ6NQEJTXD";
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let me = asker();
+    let plain = why_now(&root, Standing::fresh());
+    assert_eq!(plain.decision.after_mode, Outcome::Ask, "{plain:?}");
+    let request = Request {
+        chat: "1",
+        of: me.of,
+        action: MERGE.0,
+        resource: MERGE.1,
+        context: me.context(MERGE.0, None),
+    };
+    let entries: Vec<_> = plain
+        .decision
+        .deciding
+        .iter()
+        .map(|rule| Grant::given(&rule.id, &request, Scope::Once, Some(ULID)).entry())
+        .collect();
+    let serving = Sealed {
+        standing: holding(entries),
+        machine: None,
+        chat: Some(ULID.to_owned()),
+    };
+    // It is shown as serving, however often it is asked: asking spends nothing.
+    for _ in 0..2 {
+        let why = in_plane(&root, &me, MERGE, &serving, None);
+        assert_eq!(why.decision.after_mode, Outcome::Allow, "{why:?}");
+        let said = text(&why, ("merge", "acme/web#main"));
+        assert!(said.contains("a grant decided: once grant for"), "{said}");
+    }
+    // And the grant a real store would hold is still unspent after the app asked.
+    let after = crate::secrets::answers::standing(&root);
+    assert!(after.entries.iter().all(|entry| entry.kind != crate::secrets::answers::GRANT));
+}
+
+#[test]
+fn a_chat_is_answered_by_what_the_app_records_of_it_and_held_to_its_floor() {
+    use crate::policy::decide::ChatFacts;
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let facts = ChatFacts {
+        workspace: Some("web".to_owned()),
+        persona: Some("builder".to_owned()),
+        sandboxed: true,
+        level: None,
+        attended: true,
+        harness_mode: None,
+    };
+    let floor = crate::enforcement::Resolved::strict();
+    let why = for_chat(&root, 3, &facts, &floor, &sealed(Standing::fresh()), MERGE);
+    assert_eq!(why.decision.after_mode, Outcome::Ask, "{why:?}");
+    assert_eq!(why.dry_run, None);
+    assert_eq!(why.sealed_unread, None);
+    // The same chat, as a dry run of a branch that bans the merge.
+    git(&root, &["branch", "ban"]);
+    git(&root, &["checkout", "-q", "ban"]);
+    commit(
+        &root,
+        &[("policy.cedar", &forbid_merge("guards-merge-ban", ""))],
+    );
+    git(&root, &["checkout", "-q", "main"]);
+    let dry = dry_run_for_chat(
+        &root,
+        3,
+        &facts,
+        &floor,
+        &sealed(Standing::fresh()),
+        MERGE,
+        "ban",
+    )
+    .expect("a branch");
+    assert_eq!(dry.decision.ids(), ["guards-merge-ban"], "{dry:?}");
+}
+
+#[test]
+fn a_why_and_its_dry_run_cross_the_wire_whole() {
+    use crate::hookwire::{Answer, Ask, PersonWhyAsk, WhyAsk};
+    let m = machine();
+    let ban = forbid_merge("guards-merge-ban", "");
+    let root = plane(&m, &[("purlis.toml", STRICT), ("policy.cedar", &ban)]);
+    let standing = holding(vec![accepted(&version(STRICT, Some(&ban)))]);
+    git(&root, &["branch", "drop"]);
+    git(&root, &["checkout", "-q", "drop"]);
+    commit(&root, &[("policy.cedar", "-")]);
+    git(&root, &["checkout", "-q", "main"]);
+    let why = dry_run(&root, &asker(), MERGE, &sealed(standing), None, "drop")
+        .expect("a branch of the project");
+    assert!(!why.dry_run.as_ref().expect("a dry run").diff.rules.is_empty());
+    let line = serde_json::to_string(&Answer::Why(Box::new(why.clone()))).expect("JSON");
+    let Ok(Answer::Why(back)) = serde_json::from_str::<Answer>(&line) else {
+        panic!("{line}");
+    };
+    assert_eq!(*back, why);
+    // A note on the sealed side travels too.
+    let mut unread = why_now(&root, Standing::fresh());
+    unread.sealed_unread = Some(SEALED_UNREAD.to_owned());
+    let line = serde_json::to_string(&unread).expect("JSON");
+    assert_eq!(serde_json::from_str::<Why>(&line).expect("read back"), unread);
+    // Both asks round-trip.
+    let asks = [
+        Ask::Why(WhyAsk {
+            chat: 4,
+            action: "merge".into(),
+            kind: "Branch".into(),
+            id: "#12".into(),
+            cwd: Some("/work/web".into()),
+        }),
+        Ask::PersonWhy(PersonWhyAsk {
+            action: "merge".into(),
+            kind: "Branch".into(),
+            id: "acme/web#main".into(),
+            cwd: Some("/work/web".into()),
+            chat: Some(4),
+            workspace: None,
+            persona: None,
+            unattended: false,
+            sandbox: None,
+            depth: None,
+            policy: Some("drop".into()),
+        }),
+    ];
+    for ask in asks {
+        let line = serde_json::to_string(&ask).expect("JSON");
+        assert_eq!(serde_json::from_str::<Ask>(&line).expect("read back"), ask, "{line}");
+    }
+}
+
+#[test]
+fn a_never_that_denies_is_said_as_the_persons_own_answer_with_no_file_and_line() {
+    use crate::policy::grants::{Never, Scope};
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    let me = asker();
+    let request = crate::policy::decide::Request {
+        chat: "1",
+        of: me.of,
+        action: MERGE.0,
+        resource: MERGE.1,
+        context: me.context(MERGE.0, None),
+    };
+    let standing = holding(vec![Never::of(&request, Scope::Everywhere).entry()]);
+    let why = why_now(&root, standing);
+    assert_eq!(why.decision.after_mode, Outcome::Deny, "{why:?}");
+    let said = text(&why, ("merge", "acme/web#main"));
+    assert!(said.contains("decided by: a never you gave"), "{said}");
+    assert!(!said.contains("sealed answers:0"), "{said}");
+    let first = why.loosen.first().expect("the person can remove it");
+    assert_eq!((first.level.as_str(), first.press), ("you", false), "{first:?}");
+    assert!(!first.how.contains("sealed answers"), "{first:?}");
+}
+
+#[test]
+fn a_project_lock_names_the_project_and_the_catch_all_names_the_chats_nearest_owner() {
+    let m = machine();
+    let locked = format!("{STRICT}[policy.locks]\nfamilies = [\"guards.merge\"]\n");
+    let root = plane(&m, &[("purlis.toml", &locked)]);
+    let why = why_now(&root, Standing::fresh());
+    let lock = why
+        .loosen
+        .iter()
+        .find(|one| one.how.contains("lift the lock"))
+        .expect("the lock is named");
+    assert_eq!((lock.level.as_str(), lock.owner.as_str()), ("project", "this project"));
+    // Where no permit applies the nearest level is the persona's, and its owner is named, not
+    // the owner of the shipped catch-all rule.
+    let open_ban = "[policy]\ntemplate = \"strict\"\n";
+    let root = plane(&machine(), &[("purlis.toml", open_ban)]);
+    let nothing = decide::explained(
+        &root,
+        &asker(),
+        ("exec", ("Command", "rm")),
+        &sealed(Standing::fresh()),
+        None,
+        How::Explain(Version::at_head(&root)),
+    );
+    let loosen = loosening(
+        &Decision {
+            deciding: vec![Deciding {
+                id: EVERYTHING_ELSE.to_owned(),
+                level: "project".to_owned(),
+                owner: "purlis default 1".to_owned(),
+                file: "default".to_owned(),
+                line: 1,
+                off: false,
+            }],
+            outcome: Outcome::Deny,
+            after_mode: Outcome::Deny,
+            ..nothing
+        },
+        asker().of,
+    );
+    assert_eq!(loosen[0].level, "persona", "{loosen:?}");
+    assert_eq!(loosen[0].owner, "persona builder", "{loosen:?}");
 }

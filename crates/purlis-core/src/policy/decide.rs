@@ -175,6 +175,11 @@ pub struct Decision {
     /// Who locks the family or the action, where a level does: the mode was then `enforce`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lock: Option<String>,
+    /// The level that holds [`Decision::lock`]. Not on the wire (a decision's wire is the one an
+    /// older hook parses): `policy why` reads it where it names the level that could lift the lock,
+    /// and carries the result itself ([`super::why::Why::loosen`]).
+    #[serde(skip)]
+    pub lock_level: Option<Level>,
     /// The sealed grant that decided, where one did (slice 20). Always empty here.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<String>,
@@ -438,6 +443,7 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
                 lifted: Vec::new(),
                 asked: Vec::new(),
                 lock: loaded.lock_on(&family, request.action),
+                lock_level: loaded.lock_level_on(&family, request.action),
                 grant: None,
                 unasked,
                 keep: None,
@@ -536,6 +542,12 @@ pub fn decide(loaded: &Loaded, request: &Request<'_>, world: &World) -> Decision
             lifted,
             asked,
             lock: reference.iter().find_map(|r| r.lock.clone()),
+            lock_level: reference.iter().find_map(|r| {
+                r.lock.as_ref()?;
+                loaded
+                    .lock_level_on(&family, request.action)
+                    .or_else(|| loaded.lock_level_on(&r.mode_family, request.action))
+            }),
             grant: None,
             unasked: None,
             keep: None,
@@ -704,7 +716,7 @@ impl Asker<'_> {
     /// The context of `action` as the host makes it: each field the action's context declares
     /// that the host knows. A field it does not know is left out, so the request does not fit
     /// the schema and is denied, never guessed (§6.3).
-    fn context(&self, action: &str, machine: Option<&str>) -> serde_json::Value {
+    pub(super) fn context(&self, action: &str, machine: Option<&str>) -> serde_json::Value {
         let mut context = serde_json::Map::new();
         for field in super::context_fields(action) {
             let value: serde_json::Value = match field.as_str() {

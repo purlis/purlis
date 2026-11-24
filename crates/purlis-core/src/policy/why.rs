@@ -23,7 +23,8 @@ use std::path::Path;
 
 use super::decide::{self, Asker, ChatFacts, Deciding, Decision, How, Outcome, Sealed};
 use super::force::{Head, Version};
-use super::levels::Chat;
+use super::grants::{NEVER_ID, UNREADABLE_ID};
+use super::levels::{Chat, PROJECT_OWNER, owner_for};
 use super::press::{self, Diff};
 use super::{EVERYTHING_ELSE, Level};
 use crate::enforcement::Resolved;
@@ -54,13 +55,32 @@ pub struct Why {
     /// The levels that could loosen it, nearest the chat first. **Every one of them must change**
     /// where several are named: each holds a rule that decides.
     pub loosen: Vec<Loosen>,
+    /// **What `--policy` adds** (spec §10.2), where it was asked for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dry_run: Option<DryRun>,
+    /// **Why the sealed side was not read**, where it was not: grants, nevers, the accepted copy
+    /// and the accepted floor are the app's to read, so an answer made with no app says so
+    /// ([`SEALED_UNREAD`]). Never set by the app.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_unread: Option<String>,
 }
 
+/// **What `purlis policy why` says when no app answered**: the sealed store reads as unverifiable
+/// outside the app (`Sealed::of` gives `NotTheApp`), so the answer is the committed project's alone.
+pub const SEALED_UNREAD: &str = "the sealed side was not read: no purlis app answered, and only \
+     the app can read what you accepted, so grants, nevers, the accepted copy and the accepted \
+     floor are not shown, and a dry run's diff is against the shipped default. Start the app \
+     and run this again";
+
 /// **What `--policy` adds** (spec §10.2).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DryRun {
     /// The branch or file the answer is for, as it was named.
     pub policy: String,
+    /// The commit `HEAD` named when this was computed: what the policy in force was read at.
+    pub head: Option<String>,
+    /// The commit the branch resolved to, in full; none for a file, which is read as it is.
+    pub resolved: Option<String>,
     /// What differs between the policy in force and that policy: the rows the press shows.
     pub diff: Diff,
     /// What the policy in force enforces until the press, were that policy committed: a
@@ -77,6 +97,8 @@ impl Why {
             overrode: decision.overrode.clone(),
             loosen: loosening(&decision, of),
             decision,
+            dry_run: None,
+            sealed_unread: None,
         }
     }
 }
@@ -124,25 +146,70 @@ pub fn for_chat(
     Why::of(decision, asker.of)
 }
 
-/// **The project as `policy` would make it**: a `policy.cedar` file laid over the project as
-/// committed, where `policy` names a file, else the project as that branch (or any commit) holds
-/// it. A name that is both is the file.
-pub fn policy_version(root: &Path, policy: &str) -> Result<Version, String> {
-    if Path::new(policy).is_file() {
-        let text = std::fs::read_to_string(policy)
-            .map_err(|why| format!("`{policy}` could not be read: {why}"))?;
-        return match Version::at_head(root) {
-            Head::Read(version) => Ok(version.with_rules(text)),
-            Head::NoCommit | Head::Unread => Err(format!(
-                "the project has no commit that reads, so `{policy}` has nothing to be laid over"
-            )),
-        };
-    }
-    Version::at_rev(root, policy)
+/// The most of a `policy.cedar` file a dry run reads: a policy file is text a person wrote, and
+/// the largest one the loader reads is far below this.
+const A_POLICY_FILE_IS_AT_MOST: u64 = 1 << 20;
+
+/// **The dry run for a chat about itself** ([`for_chat`], and [`dry_run`] as that chat would
+/// ask it): by what the app records of the chat, held to its floor.
+pub fn dry_run_for_chat(
+    root: &Path,
+    chat: u32,
+    facts: &ChatFacts,
+    floor: &Resolved,
+    sealed: &Sealed,
+    request: (&str, (&str, &str)),
+    policy: &str,
+) -> Result<Why, String> {
+    let asker = decide::asker_of(chat, facts);
+    dry_run(root, &asker, request, sealed, Some(floor), policy)
 }
 
-/// **The dry run** (spec §10.2): the answer as `policy` would give it, and how it differs from the
-/// policy in force. `Err` says why `policy` is no policy.
+/// **The project as `policy` would make it**, and the commit it resolved to where it named one: a
+/// branch (or any commit) as that commit holds it, else a `policy.cedar` file, a relative name
+/// being the plane root's, laid over the project as committed. **A name that is both is the
+/// branch**, so a stray file can never stand in for what a branch holds.
+pub fn policy_version(root: &Path, policy: &str) -> Result<(Version, Option<String>), String> {
+    if let Some(sha) = Version::resolve_rev(root, policy)? {
+        return Version::at_sha(root, &sha)
+            .map(|version| (version, Some(sha)))
+            .ok_or_else(|| format!("the project's files at `{policy}` could not be read"));
+    }
+    let path = root.join(policy);
+    if !path.is_file() {
+        return Err(format!(
+            "`{policy}` is neither a file nor a branch of this project"
+        ));
+    }
+    let text = read_bounded(&path)
+        .map_err(|why| format!("`{policy}` could not be read: {why}"))?;
+    match Version::at_head(root) {
+        Head::Read(version) => Ok((version.with_rules(text), None)),
+        Head::NoCommit | Head::Unread => Err(format!(
+            "the project has no commit that reads, so `{policy}` has nothing to be laid over"
+        )),
+    }
+}
+
+/// `path`'s text, refused past [`A_POLICY_FILE_IS_AT_MOST`].
+fn read_bounded(path: &Path) -> Result<String, String> {
+    use std::io::Read as _;
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .map_err(|why| why.to_string())?
+        .take(A_POLICY_FILE_IS_AT_MOST + 1)
+        .read_to_string(&mut text)
+        .map_err(|why| why.to_string())?;
+    if text.len() as u64 > A_POLICY_FILE_IS_AT_MOST {
+        return Err(format!(
+            "it is longer than {A_POLICY_FILE_IS_AT_MOST} bytes, which no policy file is"
+        ));
+    }
+    Ok(text)
+}
+
+/// **The dry run** (spec §10.2): the answer as `policy` would give it, with how it differs from the
+/// policy in force in [`Why::dry_run`]. `Err` says why `policy` is no policy.
 pub fn dry_run(
     root: &Path,
     asker: &Asker<'_>,
@@ -150,8 +217,11 @@ pub fn dry_run(
     sealed: &Sealed,
     floor: Option<&Resolved>,
     policy: &str,
-) -> Result<(Why, DryRun), String> {
-    let after = policy_version(root, policy)?;
+) -> Result<Why, String> {
+    let (after, resolved) = policy_version(root, policy)?;
+    // The commit the policy in force is read at, once: both sides below read it again, and the
+    // person is told which one this was computed for.
+    let head = Version::head_sha(root);
     // As the policy would answer once accepted: it alone, no accepted copy or floor beside it.
     let decision = decide::explained(
         root,
@@ -173,14 +243,15 @@ pub fn dry_run(
     let diff = press::with_sources(root, |sources| {
         press::dry_run(sources, &sealed.standing, &after)
     });
-    Ok((
-        Why::of(decision, asker.of),
-        DryRun {
-            policy: policy.to_owned(),
-            diff,
-            enforced_until_pressed: enforced.after_mode,
-        },
-    ))
+    let mut why = Why::of(decision, asker.of);
+    why.dry_run = Some(DryRun {
+        policy: policy.to_owned(),
+        head,
+        resolved,
+        diff,
+        enforced_until_pressed: enforced.after_mode,
+    });
+    Ok(why)
 }
 
 /// **The request a person typed**: the action, and the kind and id of its resource. The kind is
@@ -219,21 +290,24 @@ fn nearness(level: Level) -> usize {
         .map_or(0, |at| Level::ALL.len() - 1 - at)
 }
 
-/// The level that holds a lock, from its owner (Q310.5): the project's, else the Organisation's.
-fn lock_level(owner: &str) -> Level {
-    if owner == "this project" {
-        Level::Project
-    } else {
-        Level::Organisation
-    }
-}
-
 fn loosen_at(level: Level, owner: &str, how: String) -> Loosen {
     Loosen {
         level: level.word().to_owned(),
         owner: owner.to_owned(),
         how,
         press: level != Level::Organisation,
+    }
+}
+
+/// **The answers the person gave** decide in place of a rule of any file ([`NEVER_ID`],
+/// [`UNREADABLE_ID`]): what they are, in a sentence.
+fn answer_said(id: &str) -> Option<&'static str> {
+    match id {
+        NEVER_ID => Some("a never you gave: this action on this resource is not allowed"),
+        UNREADABLE_ID => Some(
+            "your sealed nevers, which this build cannot read, so nothing is allowed until they do",
+        ),
+        _ => None,
     }
 }
 
@@ -251,6 +325,19 @@ fn loosening(decision: &Decision, of: Chat<'_>) -> Vec<Loosen> {
         let Some(level) = Level::of_word(&rule.level) else {
             continue;
         };
+        if answer_said(&rule.id).is_some() {
+            // The person's own answer, which they remove themselves: no commit, no press.
+            found.push((
+                Level::You,
+                Loosen {
+                    level: Level::You.word().to_owned(),
+                    owner: rule.owner.clone(),
+                    how: "remove that answer in the window's list of your answers".to_owned(),
+                    press: false,
+                },
+            ));
+            continue;
+        }
         let how = if rule.id == EVERYTHING_ELSE {
             // No permit applies: the nearest level the chat has may add one.
             let nearest = if of.persona.is_some() {
@@ -264,7 +351,7 @@ fn loosening(decision: &Decision, of: Chat<'_>) -> Vec<Loosen> {
                 nearest,
                 loosen_at(
                     nearest,
-                    &rule.owner,
+                    &owner_for(nearest, of, ""),
                     format!(
                         "add a permit for {}, or turn `{EVERYTHING_ELSE}` off",
                         decision.family
@@ -281,7 +368,15 @@ fn loosening(decision: &Decision, of: Chat<'_>) -> Vec<Loosen> {
         found.push((level, loosen_at(level, &rule.owner, how)));
     }
     if let Some(owner) = &decision.lock {
-        let level = lock_level(owner);
+        // The level the loader said holds the lock. Only a decision built where it was not
+        // recorded falls back on its owner's name, which an Organisation may spell as it likes.
+        let level = decision.lock_level.unwrap_or_else(|| {
+            if owner == PROJECT_OWNER {
+                Level::Project
+            } else {
+                Level::Organisation
+            }
+        });
         // Below a lock nothing can loosen what it holds.
         found.retain(|(held, _)| nearness(*held) >= nearness(level));
         found.push((
@@ -307,31 +402,28 @@ fn loosening(decision: &Decision, of: Chat<'_>) -> Vec<Loosen> {
         .collect()
 }
 
-/// **The answer as JSON**: what [`Why`] holds, and the dry run beside it where one was asked for.
-pub fn json(why: &Why, dry: Option<&DryRun>) -> String {
-    #[derive(serde::Serialize)]
-    struct Shown<'a> {
-        #[serde(flatten)]
-        why: &'a Why,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        dry_run: Option<&'a DryRun>,
-    }
-    let mut out =
-        serde_json::to_string_pretty(&Shown { why, dry_run: dry }).expect("an answer is JSON");
+/// **The answer as JSON**: what [`Why`] holds, the dry run and the note on the sealed side
+/// included.
+pub fn json(why: &Why) -> String {
+    let mut out = serde_json::to_string_pretty(why).expect("an answer is JSON");
     out.push('\n');
     out
 }
 
 /// A rule as a line names it: `` `id` (level, owner) at file:line ``.
 fn named(rule: &Deciding) -> String {
-    format!("{} at {}:{}", rule.said(), rule.file, rule.line)
+    match answer_said(&rule.id) {
+        Some(said) => said.to_owned(),
+        None => format!("{} at {}:{}", rule.said(), rule.file, rule.line),
+    }
 }
 
 /// **The answer as the person reads it**: what [`Why`] holds, and the dry run's rows where one was
 /// asked for. `request` is the verb and the resource as the person typed them.
-pub fn text(why: &Why, dry: Option<&DryRun>, request: (&str, &str)) -> String {
+pub fn text(why: &Why, request: (&str, &str)) -> String {
     use std::fmt::Write as _;
     let decision = &why.decision;
+    let dry = why.dry_run.as_ref();
     let mut out = String::new();
     let _ = writeln!(out, "purlis policy why {} {}", request.0, request.1);
     let _ = writeln!(
@@ -394,6 +486,15 @@ pub fn text(why: &Why, dry: Option<&DryRun>, request: (&str, &str)) -> String {
             dry.policy,
             decision.after_mode.word()
         );
+        let _ = writeln!(
+            out,
+            "computed for HEAD {} against {}",
+            dry.head.as_deref().unwrap_or("(no commit)"),
+            match &dry.resolved {
+                Some(sha) => format!("`{}` at {sha}", dry.policy),
+                None => format!("the file `{}`, as it reads now", dry.policy),
+            }
+        );
         if dry.enforced_until_pressed != decision.after_mode {
             let _ = writeln!(
                 out,
@@ -441,6 +542,9 @@ pub fn text(why: &Why, dry: Option<&DryRun>, request: (&str, &str)) -> String {
         for row in &dry.diff.other {
             let _ = writeln!(out, "{} differs", row.part);
         }
+    }
+    if let Some(unread) = &why.sealed_unread {
+        let _ = writeln!(out, "note: {unread}");
     }
     out
 }
