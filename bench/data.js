@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795535817296,
+  "lastUpdate": 1795536267577,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53886,6 +53886,48 @@ window.BENCHMARK_DATA = {
             "value": 101.447817,
             "unit": "ms",
             "extra": "median of 5 runs: 100.638, 101.323, 101.448, 101.617, 101.912 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4f965b1a02bde33ee0ed20cbfd37bf4bd3f34eff",
+          "message": "Forge route: a branch a chat makes is its own, and it may delete it at its tip (#7529) (#7530)\n\n* A chat's own new branch is recorded as its own, in a plane too; it may delete it at its tip (#7529)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86Y96NJ4KENH8DXZCPDWSXK\nPurlis-Persona: steward\n\n* Format and doc comment for #7529\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86Y96NJ4KENH8DXZCPDWSXK\nPurlis-Persona: steward\n\n* A chat deletes no branch through the forge route: drop the own-tip delete allowance (#7530 round 2)\n\nThe ownership-record fix stays. The delete arm and own_tip_of are gone, so every\nbranch delete is refused as on main. plane-format.md and windowonly.rs say what\nis true about the derived project id; the changes fragment says no delete.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86ZHER167NFXEN5HT6GGZ7F\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T15:16:40Z",
+          "tree_id": "a6428bfb75de80d723c6cc0818fecddc62dbea32",
+          "url": "https://github.com/purlis/purlis/commit/4f965b1a02bde33ee0ed20cbfd37bf4bd3f34eff"
+        },
+        "date": 1795536260604,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.67116,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.664, 0.667, 0.671, 0.672, 0.679 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.5507095,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.464, 16.546, 16.551, 16.593, 16.793 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.8513305,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.107, 101.682, 101.851, 101.949, 102.433 ms"
           }
         ]
       }
