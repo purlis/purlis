@@ -384,13 +384,14 @@ impl Blocks {
             mine.retain(|one| !one.shares_a_notice(&oldest));
         }
         // Each ask a newer one took the place of, or pushed out, left: a block now (T1-10).
+        // Its raise's claim goes with it, a quiet line's too, under the lock of what is held.
+        for one in before.iter().filter(|one| !mine.contains(one)) {
+            self.release_raise(session, one);
+        }
         let gone: Vec<HeldBlock> = before
             .into_iter()
             .filter(|one| !mine.contains(one) && !was_quiet.contains(one))
             .collect();
-        for one in &gone {
-            self.release_raise(session, one);
-        }
         let mut since = self.since();
         let was = since.remove(&session).unwrap_or_default();
         // A block heard again keeps when it was first heard, and the call it was first heard of.
@@ -421,27 +422,21 @@ impl Blocks {
     }
 
     /// **Whether this report of an ask is the first, and so the one that writes its
-    /// `ask.raised`** (T1.1-27, Q262): one owner per ask, decided under one lock, so two roads
-    /// reporting at once cannot both win. A second report of the same block joins the first. So
-    /// does a host named after the same refusal was reported unnamed (#1903), and, as
-    /// [`Self::echoes`] does, a host unnamed after it was reported named.
+    /// `ask.raised`** (T1.1-27, Q262): the raise follows what the registry holds, one held block
+    /// and one raise. Decided under the lock of what is held, then the lock of what is asked
+    /// (the order [`Self::heard_at`] and [`Self::answered`] take them in), so two roads reporting
+    /// at once cannot both win, and an answer cannot land between the check and the claim. A
+    /// block that is not held (answered, pushed out at once, its chat ended) is no ask, and
+    /// claims nothing. A second report of the same held block, in the same turn or another,
+    /// joins the first: it is the same ask.
     pub fn claim_raise(&self, session: u32, block: &HeldBlock) -> bool {
+        let held = self.held();
+        if !held.get(&session).is_some_and(|mine| mine.contains(block)) {
+            return false;
+        }
         let mut asked = self.asked();
         let mine = asked.entry(session).or_default();
         if mine.contains(block) {
-            return false;
-        }
-        if block.names_a_host() {
-            let unnamed = HeldBlock::unnamed_host(&block.operation, &block.kind);
-            if let Some(at) = mine.iter().position(|one| *one == unnamed) {
-                mine[at] = block.clone();
-                return false;
-            }
-        } else if block.what == GrantWhat::Host
-            && mine.iter().any(|one| {
-                one.names_a_host() && one.operation == block.operation && one.kind == block.kind
-            })
-        {
             return false;
         }
         mine.push(block.clone());
@@ -453,7 +448,7 @@ impl Blocks {
     }
 
     /// An ask for `block` of chat `session` left: the next one for it raises again.
-    fn release_raise(&self, session: u32, block: &HeldBlock) {
+    pub(crate) fn release_raise(&self, session: u32, block: &HeldBlock) {
         let mut asked = self.asked();
         if let Some(mine) = asked.get_mut(&session) {
             mine.retain(|one| one != block);
@@ -549,7 +544,11 @@ impl Blocks {
                 mine.remove(0);
             }
         }
-        self.heard(session, block);
+        self.heard(session, block.clone());
+        // A raise taken over for a block pushed out at once is no one's.
+        if !self.holds(session, &block) {
+            self.release_raise(session, &block);
+        }
     }
 
     /// `block` of chat `session` waits on the person no longer (its connection gave up): it is
@@ -896,7 +895,6 @@ impl Blocks {
     /// go, found held and removed under one lock: of two answers racing for one block, only
     /// the one that did writes its answer (Q262 amended).
     pub fn answered(&self, session: u32, block: &HeldBlock) -> bool {
-        self.release_raise(session, block);
         self.no_longer_waits(session, block);
         if let Some(mine) = self.calls().get_mut(&session) {
             mine.held.retain(|one| one.block != *block);
@@ -913,6 +911,10 @@ impl Blocks {
                 held.remove(&session);
             }
         }
+        // Gone from what is held and from what is asked in one step: no report can claim it
+        // between the two.
+        self.release_raise(session, block);
+        drop(held);
         let mut since = self.since();
         if let Some(mine) = since.get_mut(&session) {
             mine.retain(|(one, ..)| one != block);
@@ -926,8 +928,11 @@ impl Blocks {
     /// Chat `session` ended: nothing is held for it, and each ask it still had is a block now
     /// (T1-10), but a quiet line no ask listed.
     pub fn ended(&self, session: u32) {
-        let held = self.held().remove(&session).unwrap_or_default();
-        self.asked().remove(&session);
+        let held = {
+            let mut held = self.held();
+            self.asked().remove(&session);
+            held.remove(&session).unwrap_or_default()
+        };
         let quiet = self.quiet().remove(&session).unwrap_or_default();
         let waited = self.waiting().remove(&session).unwrap_or_default();
         self.noticed().remove(&session);
@@ -1018,14 +1023,19 @@ pub(crate) fn turn_began(held: &crate::planes::Held, chat: u32) {
     }
 }
 
-/// Whether this report of the ask `told` names is the first (T1.1-27, Q262): the hook road
-/// writes the ask's `ask.raised` only when it is.
-/// An ask no answer names has no key to join by, and is its own.
-pub fn first_report(blocks: &Blocks, told: &crate::hooks::ChatBlocked) -> bool {
-    match held_of(told) {
+/// **Writes the raise of the ask `told` names, if this report of it is the first** (T1.1-27,
+/// Q262): `raise` runs only then. The hook road's closure calls this and the tests call it, so
+/// the one decision has one copy. An ask no answer names has no block to join by, and is its
+/// own. Whether `raise` ran.
+pub fn raise_once(blocks: &Blocks, told: &crate::hooks::ChatBlocked, raise: impl FnOnce()) -> bool {
+    let first = match held_of(told) {
         Some(block) => blocks.claim_raise(told.session, &block),
         None => true,
+    };
+    if first {
+        raise();
     }
+    first
 }
 
 /// The block a chat is held on for what the window is `told`, or none where no answer names it.

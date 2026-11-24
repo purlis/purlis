@@ -313,7 +313,9 @@ pub(crate) fn judge(observed: &Observed<'_>) -> Vec<Violation> {
 
     // One ask, one raise (Q262): a chat's `ask.raised` is written once for an ask. Two of its raises
     // with no new call (`hook.pretooluse`), prompt or answer between them are one ask raised twice,
-    // by two writers (#6674); a second call that is refused raises an ask of its own.
+    // by two writers (#6674). The raise is keyed by the block held, not by the call: a second
+    // refused call for the same held block in the same turn is the same ask and raises nothing
+    // new (T1.1-27); a refusal that is held as a block of its own raises its own.
     let mut open: BTreeMap<&str, usize> = BTreeMap::new();
     // (A real harness's own start-up raises asks the check cannot tell from one raised twice.)
     let one_raise_each: &[Event] = if observed.real_harness {

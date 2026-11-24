@@ -4065,13 +4065,13 @@ impl Planes {
                         // R-229: an ask raised, in the chat's Chat log, once per ask: the
                         // proxy's raise of a held ask also came by `register_live`, which
                         // wrote it if it was first (T1.1-27, Q262).
-                        if crate::taskblocks::first_report(strong.chats().blocks(), &told) {
+                        crate::taskblocks::raise_once(strong.chats().blocks(), &told, || {
                             crate::chatlog::raised(
                                 strong.hooks(),
                                 told.session,
                                 purlis_core::eventlog::stops::AskGroup::Sandbox,
                             );
-                        }
+                        });
                         let turn = strong.board().glance(told.session).turns;
                         strong.chats().blocks().raised(told.session, turn);
                         // A block heard while it waits on its own work is an ask (#3878).

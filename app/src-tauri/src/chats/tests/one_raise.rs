@@ -4,11 +4,11 @@
 //! One `ask.raised` per ask (T1.1-27, Q262, #6874): an ask a chat's proxy holds is reported on
 //! two roads, `register_live` and the hook road's block closure, and writes its raise once. Driven
 //! at both writers with a recording stop writer, so no chat is started: the hook road's part is
-//! [`crate::taskblocks::first_report`], the one question its closure asks before it writes.
+//! [`crate::taskblocks::raise_once`], the one function its closure calls to decide and write.
 
 use super::*;
 use crate::hooks::{HeardBlock, blocked};
-use crate::taskblocks::{Blocks, first_report};
+use crate::taskblocks::{Blocks, HeldBlock, raise_once};
 use purlis_core::eventlog::stops::{AskGroup, AskRaised, Stop};
 use purlis_core::hookwire::SandboxBlocked;
 use purlis_core::sandboxblock::{Block, Kind, Operation};
@@ -60,13 +60,16 @@ fn told(plane: &crate::planes::PlaneId, target: Option<&str>) -> crate::hooks::C
 }
 
 /// The hook road's closure, as far as the ask's raise: what `Planes::open` does once the block
-/// is held (`planes.rs`, "R-229: an ask raised, in the chat's Chat log").
+/// is told (`taskblocks::heard`, then `raise_once`): an echo of a held connection's block is
+/// dropped, the rest is held as the road hears it, and the first report of it writes its raise.
 fn hook_road(blocks: &Blocks, stops: &Mutex<Option<StopWriter>>, told: &crate::hooks::ChatBlocked) {
-    // The block is held as the road hears it, as `taskblocks::heard` does.
     if let Some(held) = crate::taskblocks::held_of(told) {
+        if blocks.echoes(told.session, &held) {
+            return;
+        }
         blocks.heard(told.session, held);
     }
-    if first_report(blocks, told) {
+    raise_once(blocks, told, || {
         let write = lock(stops).clone().expect("a writer");
         write(
             told.session,
@@ -76,7 +79,7 @@ fn hook_road(blocks: &Blocks, stops: &Mutex<Option<StopWriter>>, told: &crate::h
             BlockWritten::Raised,
         )
         .expect("written");
-    }
+    });
 }
 
 fn raises(written: &Written) -> usize {
@@ -86,6 +89,26 @@ fn raises(written: &Written) -> usize {
         .iter()
         .filter(|(chat, stop)| *chat == CHAT && matches!(stop, Stop::AskRaised(_)))
         .count()
+}
+
+/// The asks the registry lists for [`CHAT`]: what the raises must equal, one for each.
+fn listed(blocks: &Blocks) -> usize {
+    blocks
+        .every_since()
+        .iter()
+        .filter(|(chat, ..)| *chat == CHAT)
+        .count()
+}
+
+/// One held block, one raise: the raises written are the asks the registry holds.
+#[track_caller]
+fn assert_the_raises_follow_the_registry(blocks: &Blocks, written: &Written, held: usize) {
+    assert_eq!(listed(blocks), held, "the asks the registry holds");
+    assert_eq!(raises(written), held, "one raise for each");
+}
+
+fn host_block(host: &str) -> HeldBlock {
+    live_block(&format!("{host}:443")).expect("a host block")
 }
 
 /// A held ask, however many times its proxy and its hook say so, writes one raise.
@@ -100,7 +123,7 @@ fn a_held_ask_writes_exactly_one_ask_raised() {
     assert!(register_live(&blocks, &stops, CHAT, &target), "told again");
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
-    assert_eq!(raises(&written), 1, "one ask, one raise");
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
 
     // Its answer ends it: the same host asked about later is a new ask, and raises again.
     let block = crate::taskblocks::held_of(&told(&plane, Some(&target))).expect("a block");
@@ -121,14 +144,14 @@ fn the_same_ask_heard_on_both_roads_is_one_ask() {
     let (stops, written) = writer();
     assert!(register_live(&blocks, &stops, CHAT, &target));
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
-    assert_eq!(raises(&written), 1, "live first");
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
 
     // The hooks road first.
     let blocks = Blocks::default();
     let (stops, written) = writer();
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
     assert!(register_live(&blocks, &stops, CHAT, &target));
-    assert_eq!(raises(&written), 1, "hooks first");
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
 
     // Another host is another ask.
     assert!(register_live(
@@ -137,34 +160,161 @@ fn the_same_ask_heard_on_both_roads_is_one_ask() {
         CHAT,
         "other.example.test:443"
     ));
-    assert_eq!(raises(&written), 2, "a second ask raises its own");
+    assert_the_raises_follow_the_registry(&blocks, &written, 2);
 }
 
 /// M-BRK-01 (chat 680's shape): one call's refusal is told named by the proxy and unnamed by the
-/// hook's detector. It is one ask, in either order.
+/// hook's detector. Where the registry ends up holding one block for it, it is one raise.
 #[test]
 fn a_brokered_call_raises_one_ask_not_a_named_and_an_unnamed() {
     let target = format!("{HOST}:443");
     let (_dir, plane) = plane();
 
-    // Named first, then unnamed.
+    // Named by the proxy first, then unnamed by the hook: the unnamed one is the named one's
+    // echo (`Blocks::echoes`), dropped.
     let blocks = Blocks::default();
     let (stops, written) = writer();
     assert!(register_live(&blocks, &stops, CHAT, &target));
     hook_road(&blocks, &stops, &told(&plane, None));
-    assert_eq!(raises(&written), 1, "named, then unnamed");
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
 
-    // Unnamed first, then named by the live road.
+    // Unnamed by the hook first, then named by the proxy: the named, held as waiting, takes the
+    // unnamed one's place and its raise.
     let blocks = Blocks::default();
     let (stops, written) = writer();
     hook_road(&blocks, &stops, &told(&plane, None));
     assert!(register_live(&blocks, &stops, CHAT, &target));
-    assert_eq!(raises(&written), 1, "unnamed, then named by the live road");
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
+}
 
-    // Unnamed first, then named down the hooks road.
+/// F2: named down the hooks road after the same refusal was heard unnamed there, the registry
+/// holds both blocks (`Blocks::heard` retires neither), so each is an ask and raises its own.
+#[test]
+fn a_named_and_an_unnamed_block_the_registry_holds_both_raise_one_each() {
+    let target = format!("{HOST}:443");
+    let (_dir, plane) = plane();
     let blocks = Blocks::default();
     let (stops, written) = writer();
     hook_road(&blocks, &stops, &told(&plane, None));
     hook_road(&blocks, &stops, &told(&plane, Some(&target)));
-    assert_eq!(raises(&written), 1, "unnamed, then named by the hook");
+    assert_the_raises_follow_the_registry(&blocks, &written, 2);
+}
+
+/// F1: host A named on the hook road is raised; unnamed host B, refused after it, is not A's
+/// echo (A does not wait), is held as its own block and listed, so it raises too.
+#[test]
+fn an_unnamed_host_held_beside_a_named_one_gets_its_own_raise() {
+    let target = format!("{HOST}:443");
+    let (_dir, plane) = plane();
+    let blocks = Blocks::default();
+    let (stops, written) = writer();
+    hook_road(&blocks, &stops, &told(&plane, Some(&target)));
+    hook_road(&blocks, &stops, &told(&plane, None));
+    assert_the_raises_follow_the_registry(&blocks, &written, 2);
+}
+
+/// F3: no writer yet, or a write that fails, leaves no claim: the next report of the ask raises.
+#[test]
+fn an_ask_whose_raise_was_not_written_raises_when_next_told() {
+    let target = format!("{HOST}:443");
+    let blocks = Blocks::default();
+
+    let none: Mutex<Option<StopWriter>> = Mutex::new(None);
+    assert!(register_live(&blocks, &none, CHAT, &target));
+    let (stops, written) = writer();
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
+
+    let blocks = Blocks::default();
+    let failing: StopWriter = Arc::new(|_, _, _| Err(std::io::Error::other("disk full")));
+    assert!(register_live(
+        &blocks,
+        &Mutex::new(Some(failing)),
+        CHAT,
+        &target
+    ));
+    let (stops, written) = writer();
+    assert!(register_live(&blocks, &stops, CHAT, &target));
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
+}
+
+/// F4: only a held block is claimed, so an ask that left (answered, or pushed out at once)
+/// leaves no claim to swallow the next one's raise.
+#[test]
+fn a_claim_is_made_only_on_a_held_block_and_goes_with_it() {
+    let blocks = Blocks::default();
+    let block = host_block(HOST);
+    assert!(!blocks.claim_raise(CHAT, &block), "not held: no claim");
+    blocks.heard(CHAT, block.clone());
+    assert!(blocks.claim_raise(CHAT, &block));
+    assert!(!blocks.claim_raise(CHAT, &block), "the same ask joins");
+    blocks.answered(CHAT, &block);
+    assert!(!blocks.claim_raise(CHAT, &block), "answered: no claim");
+    blocks.heard(CHAT, block.clone());
+    assert!(blocks.claim_raise(CHAT, &block), "a new ask raises again");
+}
+
+/// An ask pushed out by newer ones, and an ended chat's, give their claims up.
+#[test]
+fn a_claim_goes_when_its_ask_is_pushed_out_or_the_chat_ends() {
+    let blocks = Blocks::default();
+    let first = host_block("host-0.example.test");
+    blocks.heard(CHAT, first.clone());
+    assert!(blocks.claim_raise(CHAT, &first));
+    for at in 1..=10 {
+        blocks.heard(CHAT, host_block(&format!("host-{at}.example.test")));
+    }
+    assert!(!blocks.holds(CHAT, &first), "pushed out");
+    blocks.heard(CHAT, first.clone());
+    assert!(blocks.claim_raise(CHAT, &first), "pushed out: claim gone");
+
+    blocks.ended(CHAT);
+    assert!(!blocks.claim_raise(CHAT, &first), "ended: nothing held");
+    blocks.heard(CHAT, first.clone());
+    assert!(blocks.claim_raise(CHAT, &first), "ended: claim gone");
+}
+
+/// Two reports landing together: one wins.
+#[test]
+fn two_threads_claiming_one_ask_at_once_raise_it_once() {
+    for _ in 0..50 {
+        let blocks = Arc::new(Blocks::default());
+        let block = host_block(HOST);
+        blocks.heard(CHAT, block.clone());
+        let gate = Arc::new(std::sync::Barrier::new(8));
+        let wins: usize = (0..8)
+            .map(|_| {
+                let (blocks, block, gate) = (blocks.clone(), block.clone(), gate.clone());
+                std::thread::spawn(move || {
+                    gate.wait();
+                    blocks.claim_raise(CHAT, &block)
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|one| usize::from(one.join().expect("a thread")))
+            .sum();
+        assert_eq!(wins, 1);
+    }
+}
+
+/// A runner's service by its port is keyed as a host is: one ask, one raise, a new one after its
+/// answer.
+#[test]
+fn a_runner_service_ask_raises_once_by_its_port() {
+    let blocks = Blocks::default();
+    let (stops, written) = writer();
+    assert!(register_live(&blocks, &stops, CHAT, "127.0.0.1:5432"));
+    assert!(register_live(&blocks, &stops, CHAT, "127.0.0.1:5432"));
+    assert_the_raises_follow_the_registry(&blocks, &written, 1);
+    let block = live_block("127.0.0.1:5432").expect("a port block");
+    assert_eq!(block.what, crate::sandboxing::GrantWhat::Port);
+    // A newer service ask takes the place of the one before in the registry (one block per
+    // operation and kind, a host aside), and raises its own.
+    assert!(register_live(&blocks, &stops, CHAT, "127.0.0.1:5433"));
+    assert_eq!(listed(&blocks), 1);
+    assert_eq!(raises(&written), 2);
+    blocks.answered(CHAT, &block);
+    assert!(register_live(&blocks, &stops, CHAT, "127.0.0.1:5432"));
+    assert_eq!(raises(&written), 3);
 }
