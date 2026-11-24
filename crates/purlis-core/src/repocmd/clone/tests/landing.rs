@@ -674,18 +674,33 @@ fn a_chats_clone_lands_through_the_hidden_folder_too() {
     );
 }
 
+/// The stall limit is wall-clock silence, so what this judges is the ratio of the limit to the
+/// longest silence the script leaves. Every silence is a gap of `GAP` between two lines: the
+/// work around the lines (the shell's start, `git init`) is done before the first one is said,
+/// so a runner slow at it is not a stall, and nothing runs after the last. The limit is ten
+/// gaps, and the clone runs fifteen of them, so it ends well past the limit only by saying
+/// something every gap.
 #[test]
 fn a_chats_clone_that_keeps_making_progress_outlasts_the_stall_limit() {
+    const GAP: &str = "0.1";
+    const LIMIT: Duration = Duration::from_millis(1000);
     let world = World::holding(&["widget"]);
-    let script = "i=0; while [ $i -lt 10 ]; do i=$((i+1)); \
-         printf 'Receiving objects: %d%% (%d/10)\r' $((i*10)) $i >&2; sleep 0.1; done; \
-         git init -q \"$1\"";
+    let script = format!(
+        "git init -q \"$1\"; i=0; while [ $i -lt 15 ]; do i=$((i+1)); \
+         printf 'Receiving objects: %d%% (%d/15)\\r' $((i*100/15)) $i >&2; sleep {GAP}; done"
+    );
     let off = AtomicBool::new(false);
     let heard = |_: Stage, _: u8| {};
-    let watch = world.watching(&heard, &off, Duration::from_millis(400), Some(script));
+    let watch = world.watching(&heard, &off, LIMIT, Some(&script));
+    let started = std::time::Instant::now();
     let (code, said) = world.clone_for_a_chat(&["widget"], &watch);
     assert_eq!(code, 0, "{said:?}");
     assert!(world.dest("widget").join(".git").is_dir(), "{said:?}");
+    assert!(
+        started.elapsed() > LIMIT,
+        "the clone ended inside the limit, so it proved nothing: {:?}",
+        started.elapsed()
+    );
 }
 
 #[test]
