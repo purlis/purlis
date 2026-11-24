@@ -6,7 +6,8 @@
   Approve, once and never "always" (`runners-offload`, `runners-forward`), `consents` refuses a
   chat's report or promote, which only the window's press makes (`consents-window-only`), and
   `processes` refuses `sudo`, `doas`, `pkexec`, `su`, `sudoedit` and `run0`, by program name
-  whatever the path they are started by, at every sandbox level, beyond the escape denies
+  whatever the path they are started by, at the floor and the full sandbox (at no sandbox the
+  family is not in force), beyond the escape denies
   (`processes-elevation`; a wrapper such as `env sudo` is not read yet). Each refusal names its
   rule, level and owner (M75-36, #7045).
 - **A pool's cap is a limit.** Each of a pool's twelve caps is a `runners.pool-*` key of

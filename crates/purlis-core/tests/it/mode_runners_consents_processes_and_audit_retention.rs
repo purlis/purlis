@@ -733,11 +733,11 @@ fn elevation_is_refused_by_its_program_whatever_the_path_it_is_named_by() {
 }
 
 #[test]
-fn elevation_is_refused_at_every_level_off_included() {
+fn elevation_is_refused_at_the_floor_and_full_and_not_at_off() {
     purlis_core::unsteered!();
-    // The rule has no condition on `context.sandbox`: the level only says whether a wrap also
-    // enforces the family (`not_in_force` is what the window reports at `off`), and a hook's
-    // answer for `exec` does not wait for one. Pinned so that changing it is a decision.
+    // `processes` is only what the `floor` or `full` sandbox adds (spec §3, the families table),
+    // and at `off` there is no wrap, so the family is reported as not in force (spec §6, Q308a).
+    // The rule says the same: it holds at `floor` and `full`, and not at `off`.
     assert!(
         purlis_core::policy::sandbox_level::not_in_force(
             purlis_core::enforcement::SandboxLevel::Off
@@ -745,7 +745,14 @@ fn elevation_is_refused_at_every_level_off_included() {
         .contains(&"processes")
     );
     let strict = loaded(STRICT);
-    for sandbox in ["off", "floor", "full"] {
+    let at_off = decided(
+        &strict,
+        "exec",
+        ("Command", "sudo"),
+        context("off", true, "default"),
+    );
+    assert_ne!(at_off.outcome, Outcome::Deny, "off: {at_off:#?}");
+    for sandbox in ["floor", "full"] {
         let held = decided(
             &strict,
             "exec",

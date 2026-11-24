@@ -90,8 +90,9 @@ forbid (principal, action in [Action::"report", Action::"promote"], resource);
 // is `sudo`. A wrapper (`env sudo`, `command sudo`, `sh -c sudo`) is not read: a known gap (slice 37).
 @id("processes-elevation") @level("project")
 forbid (principal, action == Action::"exec", resource)
-  when { resource == Command::"sudo" || resource == Command::"doas" || resource == Command::"pkexec"
-         || resource == Command::"su" || resource == Command::"sudoedit" || resource == Command::"run0" };
+  when { context.sandbox != "off"
+         && (resource == Command::"sudo" || resource == Command::"doas" || resource == Command::"pkexec"
+             || resource == Command::"su" || resource == Command::"sudoedit" || resource == Command::"run0") };
 
 // ── the catch-all (Q316.1; its id, Q326) ──────────────────────────────────────────────────
 @id("policy-everything-else") @level("project")
