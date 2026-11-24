@@ -192,15 +192,19 @@ fn every_harnesss_git_pairs_reset_the_helper_list_before_purlis_s_helper_and_not
         // The profile's own pair first; then the window's composition's (hooks), wherever it put
         // them; then purlis's wiring last of all.
         assert_eq!(got[0], ("user.name".to_owned(), "a profile".to_owned()));
-        // The window's composition adds its hooks pair after every pair there is, so purlis's
-        // block is found by its reset, and only that pair follows it.
+        // The window's composition adds its no-gc pairs (#7531) and its hooks pair after every
+        // pair there is, so purlis's block is found by its reset, and only those follow it:
+        // none of them is a credential key, so none can empty the helper list.
         let at = got
             .iter()
             .position(|(k, v)| k == "credential.helper" && v.is_empty())
             .unwrap_or_else(|| panic!("{harness:?}: no reset in {got:?}"));
         let tail = &got[at..at + 15];
         assert!(
-            got[at + 15..].iter().all(|(k, _)| k == "core.hooksPath"),
+            got[at + 15..].iter().all(|(k, _)| matches!(
+                k.as_str(),
+                "gc.auto" | "maintenance.auto" | "core.hooksPath"
+            )),
             "{harness:?}: {got:?}"
         );
         let helper =
