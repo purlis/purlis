@@ -2330,12 +2330,16 @@ mod tests {
         let windows = Windows::new();
         let (_watch, told) = looking_in::<Raw>(&root, &windows, SOON, Mode::OneStream);
 
+        // The gap runs from the instant the first is told, which is after this one and before
+        // the test hears it: counted from either of those later it is shorter than the gap by
+        // however long the test was woken late, and 4.99992 s "inside the gap" was the CI
+        // run of #7444. From before the event it is never shorter.
+        let sent = Instant::now();
         event(notify::Event::new(EventKind::Other).set_flag(Flag::Rescan));
         let first = told
             .recv_timeout(PATIENCE)
             .expect("the first is told at once");
         assert_eq!(first.1, None);
-        let heard = Instant::now();
         // Two more, each a burst of its own, both well inside the gap.
         for _ in 0..2 {
             std::thread::sleep(LONGEST);
@@ -2346,9 +2350,9 @@ mod tests {
             .expect("the ones folded are told");
         assert_eq!(what, None);
         assert!(
-            heard.elapsed() >= UNKNOWN_EVERY,
-            "told {:?} after the first, inside the gap",
-            heard.elapsed()
+            sent.elapsed() >= UNKNOWN_EVERY,
+            "told {:?} after the first was sent, inside the gap",
+            sent.elapsed()
         );
         assert!(
             told.recv_timeout(TOLD_BY_NOW).is_err(),

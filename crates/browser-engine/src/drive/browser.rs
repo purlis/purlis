@@ -2566,13 +2566,9 @@ impl Browser {
             self.reads_once_settled()?;
             let _one = lock(&self.acting);
             let every = matches!(call, Call::Downloads);
-            return self.run_at(epoch, call).map(|answer| {
-                let mut answer = self.with_asked(answer);
-                if every {
-                    answer.downloads = lock(&self.inner.state).downloads.all();
-                }
-                answer
-            });
+            return self
+                .run_at(epoch, call)
+                .map(|answer| self.with_asked_as(answer, every));
         }
         match self.ledger.begin(id, &call) {
             Begin::Fresh(ticket) => {
@@ -2598,7 +2594,15 @@ impl Browser {
 
     /// `answer`, with the sites the judge asked about since the last answer (#2018).
     /// And the downloads that began or moved on since (#2020).
-    fn with_asked(&self, mut answer: Answer) -> Answer {
+    fn with_asked(&self, answer: Answer) -> Answer {
+        self.with_asked_as(answer, false)
+    }
+
+    /// [`Browser::with_asked`], and where `every_download` is set, the downloads it tells are
+    /// every one the browser has, taken in the same hold of its state as those still untold are
+    /// let go of: a download that moves on between the two would be listed as it now is and
+    /// told again by the next answer.
+    fn with_asked_as(&self, mut answer: Answer, every_download: bool) -> Answer {
         let mut state = lock(&self.inner.state);
         answer.asked = std::mem::take(&mut state.asked);
         for said in std::mem::take(&mut state.leaving_said) {
@@ -2607,7 +2611,12 @@ impl Browser {
                 None => said,
             });
         }
+        // Taken even where every download is listed: it lets go of the untold ones, so the next
+        // answer does not tell again what this one lists.
         answer.downloads = state.downloads.untold();
+        if every_download {
+            answer.downloads = state.downloads.all();
+        }
         if let Some(refused) = state.downloads.refused_since() {
             let said = format!(
                 "purlis cancelled {refused} more {} the page began: a browser makes at most {} \

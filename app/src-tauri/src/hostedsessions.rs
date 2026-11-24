@@ -489,6 +489,9 @@ pub type Dial = Arc<
 struct LostChat {
     /// That host was a runner gone for good, then or since (#4350, #4421).
     with_the_runner: bool,
+    /// The pool it ran on was forgotten here (#7187, Pool forgotten): the runner and its home
+    /// may be there still, but this machine no longer reaches them.
+    pool_forgotten: bool,
     /// The runner it ended on, as [`HostLink::reached_runner`] names it, where its host said.
     on: Option<String>,
 }
@@ -561,10 +564,18 @@ impl Connection {
     /// runner ends, each chat on it told it ended with that runner (#4350), and whatever comes
     /// next is dialled anew, by the name, to the runner kept under it now. What the window held
     /// against that name goes too: a pool added under it is a new runner.
-    pub fn pool_removed(&self, pool: &str) {
+    ///
+    /// `forgotten` is a pool the person only forgot here (#7187): its runner and its home may be
+    /// there still, so its chats end as **Pool forgotten**, and not with the runner.
+    pub fn pool_removed(&self, pool: &str, forgotten: bool) {
         lock(&self.untrusted).remove(pool);
+        purlis_core::sshroute::pool::pool_gone(pool);
         for link in self.links_of_pool(pool) {
-            link.end_with_its_runner();
+            if forgotten {
+                link.end_with_its_pool_forgotten();
+            } else {
+                link.end_with_its_runner();
+            }
         }
         let of_it = lock(&self.pools).get(pool).cloned();
         if let Some(of_it) = of_it {
@@ -1342,6 +1353,9 @@ pub struct HostLink {
     /// Whether it ended because its runner is gone for good ([`HostLink::end_with_its_runner`]):
     /// its chats' conversations went with that runner's home (#4350).
     runner_gone: Arc<std::sync::atomic::AtomicBool>,
+    /// Whether it ended because its pool was forgotten here ([`HostLink::end_with_its_pool_forgotten`],
+    /// #7187).
+    pool_forgotten: Arc<std::sync::atomic::AtomicBool>,
     /// Why the host did not take the window's name on it, where it was named and did not
     /// (#2623): said by whoever opened it, never with the name.
     unnamed: Option<String>,
@@ -1622,6 +1636,16 @@ pub(crate) enum Reconnect {
     /// The host says the runner was removed outside purlis (`gone`, #4149): it does not link to
     /// it again until it is made again.
     Gone,
+    /// The host says the runner's machine answers and refuses (`refused`, #7187): its sign-in,
+    /// Docker or forwarding fails, and it does not link to it again on its own.
+    Refused,
+    /// The host says the runner's machine presents another host key, CA or engine than the
+    /// pinned one (`host_key_changed`, #7187): never linked again on its own; the person says it
+    /// is all right in the pool's settings.
+    HostKeyChanged,
+    /// The pool was forgotten on this machine (#7187): every link to its runner ends, and each
+    /// chat on it with them.
+    PoolForgotten,
 }
 
 /// Told what a link hears of the runner its host relays it to.
@@ -1813,6 +1837,7 @@ impl HostLink {
             hearing,
             ended: std::sync::atomic::AtomicBool::new(false),
             runner_gone: Arc::default(),
+            pool_forgotten: Arc::default(),
             unnamed,
             most_bundle_bytes: purlis_session_protocol::code::MOST_BUNDLE_BYTES,
             pool: relaying.map(str::to_owned),
@@ -1840,6 +1865,15 @@ impl HostLink {
     /// runner, not that nothing was lost (#4350).
     pub(crate) fn end_with_its_runner(&self) {
         self.runner_gone.store(true, Ordering::SeqCst);
+        self.end();
+    }
+
+    /// [`Self::end`], **its pool being forgotten on this machine** (#7187): each chat on it says
+    /// the pool was forgotten, and the link's chats are told so before it ends. The runner may
+    /// be there still: its home is not lost, only no longer reached from here.
+    pub(crate) fn end_with_its_pool_forgotten(&self) {
+        self.pool_forgotten.store(true, Ordering::SeqCst);
+        reconnect(&self.shared, Reconnect::PoolForgotten);
         self.end();
     }
 
@@ -3341,6 +3375,8 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 why,
                 key_changed,
                 gone,
+                refused,
+                host_key_changed,
             }) => {
                 // The runner let go of every line it handed on over the link that went: each
                 // command of its that waits here has gone, its Ask with it (#3408).
@@ -3355,6 +3391,12 @@ async fn hear(mut events: Events, client: Arc<Client>, shared: Arc<Shared>, line
                 }
                 if gone {
                     reconnect(&shared, Reconnect::Gone);
+                }
+                if refused {
+                    reconnect(&shared, Reconnect::Refused);
+                }
+                if host_key_changed {
+                    reconnect(&shared, Reconnect::HostKeyChanged);
                 }
             }
             Told::Pushed(Pushed::LinkBack {}) => {
@@ -3808,9 +3850,11 @@ fn reconnects_of(
                     .down
                     .as_ref()
                     .map_or_else(crate::reconnecting::now_secs, |was| was.since);
+                // Unreachable until the host says it refused (#7187): it says so next.
                 dimmed.down = Some(crate::reconnecting::LinkDown {
                     why: why.to_string(),
                     since,
+                    state: crate::reconnecting::LinkState::Unreachable,
                 });
                 (chats, Reconnection::Reconnecting)
             }
@@ -3819,19 +3863,43 @@ fn reconnects_of(
                 let chats = std::mem::take(&mut lock(&dimmed).chats);
                 (chats.into_iter().collect(), Reconnection::Reconnected)
             }
-            // Said whatever chats there are: the window says it once for the project.
-            Reconnect::KeyChanged | Reconnect::Gone => {
+            // A changed key is said whatever chats there are: the window says it once for the
+            // project, and its chats stay dimmed.
+            Reconnect::KeyChanged => {
                 lock(&dimmed).down = None;
                 let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
-                let said = if heard == Reconnect::Gone {
-                    Reconnection::RunnerGone
-                } else {
-                    Reconnection::KeyChanged
-                };
                 if let Some(tell) = lock(&dimmed).tell.clone() {
-                    tell(chats, said);
+                    tell(chats, Reconnection::KeyChanged);
                 }
                 return;
+            }
+            // **A runner gone ends its chats** (#7187, CONTEXT.md: Start again on this pool),
+            // as a forgotten pool does: nothing is left to reconnect, so they are not dimmed.
+            Reconnect::Gone => {
+                lock(&dimmed).down = None;
+                let chats = std::mem::take(&mut lock(&dimmed).chats);
+                (chats.into_iter().collect(), Reconnection::RunnerGone)
+            }
+            // The chats stay dimmed, and the reason stays in the link's down: the window shows
+            // it as refused, with Check pool (#7187).
+            Reconnect::Refused => {
+                let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                if let Some(down) = lock(&dimmed).down.as_mut() {
+                    down.state = crate::reconnecting::LinkState::Refused;
+                }
+                (chats, Reconnection::Refused)
+            }
+            Reconnect::HostKeyChanged => {
+                let chats: Vec<u32> = lock(&dimmed).chats.iter().copied().collect();
+                if let Some(down) = lock(&dimmed).down.as_mut() {
+                    down.state = crate::reconnecting::LinkState::HostKeyChanged;
+                }
+                (chats, Reconnection::HostKeyChanged)
+            }
+            Reconnect::PoolForgotten => {
+                lock(&dimmed).down = None;
+                let chats = std::mem::take(&mut lock(&dimmed).chats);
+                (chats.into_iter().collect(), Reconnection::PoolForgotten)
             }
             Reconnect::Drawn(view) => {
                 let chat = lock(&running)
@@ -5287,6 +5355,12 @@ impl SessionHost for HostedSessions {
             .is_some_and(|lost| lost.with_the_runner)
     }
 
+    fn lost_with_its_pool_forgotten(&self, id: u32) -> bool {
+        lock(&self.lost)
+            .get(&id)
+            .is_some_and(|lost| lost.pool_forgotten)
+    }
+
     fn running(&self) -> Vec<u32> {
         let mut ids: Vec<u32> = lock(&self.running).keys().copied().collect();
         ids.sort_unstable();
@@ -5885,6 +5959,7 @@ impl HostedSessions {
         let running = Arc::clone(&self.running);
         let lost = Arc::clone(&self.lost);
         let runner_gone = Arc::clone(&link.runner_gone);
+        let pool_forgotten = Arc::clone(&link.pool_forgotten);
         let on = link.reached_runner().map(str::to_owned);
         let ended = program.to_owned();
         link.when_it_ends(
@@ -5910,6 +5985,7 @@ impl HostedSessions {
                             id,
                             LostChat {
                                 with_the_runner: runner_gone.load(Ordering::SeqCst),
+                                pool_forgotten: pool_forgotten.load(Ordering::SeqCst),
                                 on: on.clone(),
                             },
                         );

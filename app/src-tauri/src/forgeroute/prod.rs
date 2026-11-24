@@ -169,6 +169,11 @@ impl Recorded for ConfirmedRecorded {
                 purlis_core::forge::Kind::GitHub => Kind::GitHub,
                 purlis_core::forge::Kind::GitLab => Kind::GitLab,
             };
+            // The default branch is read here, once, when the route is built (#7526): a repo whose
+            // default is renamed mid-run keeps the old name until the next route. The ownership gate
+            // on update-branch and rebase does not rest on it, so a stale name only widens what
+            // `protects` names. `with_protected_branches` has no caller: the forge read carries no
+            // branch-protection rules, and the gate refuses every branch the chat has no tip on.
             let Ok(allowed) = AllowedRepo::new(kind, &host, port, &repo.path, &read.default_branch)
             else {
                 continue;

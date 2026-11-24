@@ -166,6 +166,10 @@ pub struct Blocks {
     calls: Mutex<HashMap<u32, Calls>>,
     /// Who is told each block an ask left as (T1-10): set once the project's hooks record.
     left: Mutex<Option<Left>>,
+    /// Run by a test while an ask is leaving, after it stopped waiting and before its echo is
+    /// recorded: where a proxy's raise of that ask, landing late, got in (#7434).
+    #[cfg(test)]
+    in_withdrawal: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
 }
 
 /// **Who is told a held refusal left its ask as a block** (T1-10, Q154): its chat, and the block
@@ -527,7 +531,14 @@ impl Blocks {
                 .position(|one| one.block == *block)
                 .map(|at| mine.held.remove(at))
         });
-        self.answered(session, block);
+        #[cfg(test)]
+        if let Some(late) = &*self
+            .in_withdrawal
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+        {
+            late();
+        }
         let mut calls = self.calls();
         let mine = calls.entry(session).or_default();
         let (tool, args, call) = match under.as_ref().and_then(Under::tool) {
@@ -550,6 +561,11 @@ impl Blocks {
         if mine.written.len() > MOST_WAITING_PER_CHAT {
             mine.written.remove(0);
         }
+        drop(calls);
+        // Forgotten last (#7434): the proxy raises an ask on a thread of its own, and a raise that
+        // lands before the echo above is recorded is no echo yet, so it listed the ask again. One
+        // landing before this forgets it goes with it; one after is dropped as the echo it is.
+        self.answered(session, block);
         Some(Withdrawn { tool, args, call })
     }
 
