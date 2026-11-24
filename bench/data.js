@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795557393782,
+  "lastUpdate": 1795557630070,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -54180,6 +54180,48 @@ window.BENCHMARK_DATA = {
             "value": 100.90044700000001,
             "unit": "ms",
             "extra": "median of 5 runs: 100.854, 100.868, 100.900, 101.026, 102.692 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "62bbc0c7e41a85b1b420fd10a62f7511b91718ea",
+          "message": "A chat's git never runs automatic gc or maintenance (#7531) (#7545)\n\n* A chat's git never runs automatic gc: gc.auto=0, maintenance.auto=false (#7531)\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M870RSVRBEB42PREY9VTP5YN\nPurlis-Persona: steward\n\n* Chat git config tests expect the no-gc pairs (#7531)\n\nThe gc.auto/maintenance.auto pairs sit after the chat's own pairs and before the hooks and the forge lock's pair, so the lock's pair is still last and the helper reset still comes first; only counts, indexes and exact lists moved.\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M875RD7HWC9KDR76GFMFE5Y8\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T21:14:39Z",
+          "tree_id": "346c4dac5f3f3e2acb0edd39e4939dded1e94be1",
+          "url": "https://github.com/purlis/purlis/commit/62bbc0c7e41a85b1b420fd10a62f7511b91718ea"
+        },
+        "date": 1795557625201,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.704216,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.697, 0.701, 0.704, 0.711, 0.735 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.644200500000004,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.598, 16.605, 16.644, 16.684, 16.712 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.39179899999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.918, 102.279, 102.392, 103.929, 104.009 ms"
           }
         ]
       }
