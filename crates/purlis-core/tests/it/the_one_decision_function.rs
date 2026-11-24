@@ -426,6 +426,7 @@ mod for_a_chat {
             sandboxed: false,
             level: None,
             attended: true,
+            harness_mode: None,
         }
     }
 
@@ -1088,6 +1089,33 @@ fn a_floor_that_enforces_asks_puts_an_ask_back_on_a_connect_the_family_does_not_
     );
 }
 
+/// M75-20 review round 2, F3: the scope a deciding ask writes (`@keep`) follows the rules that
+/// decide after the floor puts the ask back, not the ones that decided before it.
+#[test]
+fn a_keep_an_ask_writes_still_caps_its_scope_where_the_floor_puts_the_ask_back() {
+    purlis_core::unsteered!();
+    use purlis_core::enforcement::Resolved;
+    let rules = format!(
+        "{SHADOW}@id(\"network-ask-once\") @ask(\"you\") @keep(\"once\")\n\
+         forbid (principal, action == Action::\"connect\", resource == Host::\"other.example\");\n"
+    );
+    let floor = Resolved::parse("network=off,asks=enforce");
+    let loaded = loaded(&asks_off("log"), Some(&rules));
+    let decided = decide::decide(&loaded, &unknown_host(), &empty_world());
+    assert_eq!(
+        (decided.outcome, decided.after_mode),
+        (Outcome::Deny, Outcome::Allow),
+        "{decided:?}"
+    );
+    let held = decided.held_to(&floor);
+    assert_eq!(held.after_mode, Outcome::Ask, "{held:?}");
+    assert!(
+        ids(&held).contains(&"network-ask-once"),
+        "the ask with the keep decides: {held:?}"
+    );
+    assert_eq!(held.keep.as_deref(), Some("once"), "{held:?}");
+}
+
 #[test]
 fn a_known_host_and_an_unknown_one_are_held_alike_by_a_floor() {
     purlis_core::unsteered!();
@@ -1165,6 +1193,7 @@ mod a_floor_holds_a_chats_merge {
             sandboxed: false,
             level: None,
             attended: true,
+            harness_mode: None,
         };
         let merge = |floor: &str| {
             decide::for_chat(
@@ -1191,6 +1220,91 @@ mod a_floor_holds_a_chats_merge {
     }
 }
 
+// ── M75-20 review round 3 ───────────────────────────────────────────────────────────────────
+
+/// The shipped ask on an unknown host, a plain forbid `network` lifted, and an ask with a `@keep`.
+fn lifted_deny_beside_an_ask_with_a_keep() -> Decision {
+    let rules = format!(
+        "{SHADOW}@id(\"network-ask-once\") @ask(\"you\") @keep(\"once\")\n\
+         forbid (principal, action == Action::\"connect\", resource == Host::\"other.example\");\n"
+    );
+    let loaded = loaded(PLAIN_LIFTED_ASK_ENFORCED, Some(&rules));
+    decide::decide(&loaded, &unknown_host(), &empty_world())
+}
+
+/// F3, the `lifted` side: where a floor puts the plain forbids back as the deciding rules, the
+/// scope offered is theirs, not the ask's that decided before.
+#[test]
+fn a_keep_an_ask_writes_does_not_cap_the_plain_forbids_a_floor_puts_back_in_its_place() {
+    purlis_core::unsteered!();
+    use purlis_core::enforcement::Resolved;
+    let decided = lifted_deny_beside_an_ask_with_a_keep();
+    assert_eq!(
+        (decided.outcome, decided.after_mode),
+        (Outcome::Deny, Outcome::Ask),
+        "{decided:?}"
+    );
+    assert_eq!(decided.keep.as_deref(), Some("once"), "{decided:?}");
+    assert!(!decided.lifted.is_empty(), "{decided:?}");
+    let held = decided.held_to(&Resolved::parse("network=enforce,asks=enforce"));
+    assert_eq!(held.after_mode, Outcome::Deny, "{held:?}");
+    assert_eq!(ids(&held), ["network-shadow"], "{held:?}");
+    assert_eq!(
+        held.keep, None,
+        "the plain forbid writes no @keep: {held:?}"
+    );
+}
+
+/// N6: the wire format is what it was before M75-20, so an older hook or CLI, whose `Decision`
+/// refuses unknown fields, still parses a newer app's answer.
+#[test]
+fn a_decision_goes_on_the_wire_as_it_always_did() {
+    purlis_core::unsteered!();
+    let decided = lifted_deny_beside_an_ask_with_a_keep();
+    assert!(
+        decided.lifted_scopes.is_some(),
+        "the scopes are there to hold a floor to"
+    );
+    let wire = serde_json::to_value(&decided).expect("a decision is JSON");
+    let keys: Vec<&str> = wire
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
+    for internal in ["lifted_scopes", "asked_scopes"] {
+        assert!(
+            !keys.contains(&internal),
+            "{internal} is not on the wire: {keys:?}"
+        );
+    }
+    // An ask carries its `keep`, as before.
+    assert_eq!(wire["keep"], "once", "{wire}");
+    // It reads back, and what it lost is only what is internal.
+    let back: Decision = serde_json::from_value(wire).expect("a newer answer still parses");
+    assert_eq!(back.keep, decided.keep);
+    assert!(back.lifted_scopes.is_none() && back.asked_scopes.is_none());
+
+    // A decision that is no ask carries no `keep`, though a scope lock caps it internally.
+    let locked = format!("{STRICT}[policy.locks]\nkeep = \"once\"\n");
+    let allowed = decide::decide(
+        &loaded(&locked, None),
+        &request("exec", ("Command", "ls"), context(false)),
+        &empty_world(),
+    );
+    assert_eq!(allowed.after_mode, Outcome::Allow, "{allowed:?}");
+    assert_eq!(
+        allowed.keep.as_deref(),
+        Some("once"),
+        "the lock caps it in process: {allowed:?}"
+    );
+    let wire = serde_json::to_value(&allowed).expect("JSON");
+    assert!(
+        wire.get("keep").is_none() && wire.get("timed").is_none(),
+        "{wire}"
+    );
+}
+
 mod the_level_a_start_applied {
     use super::*;
     use purlis_core::enforcement::{Resolved, SandboxLevel};
@@ -1210,6 +1324,7 @@ mod the_level_a_start_applied {
             sandboxed,
             level,
             attended: true,
+            harness_mode: None,
         };
         decide::for_chat(
             dir.path(),

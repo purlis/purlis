@@ -250,3 +250,15 @@ See `docs/agents/skills/report-intake/SKILL.md`; `tools/report-intake.mjs` does 
   is `policy-nightly.yml`; `tools/cedar-bump.sh <base> <head>` says whether a cedar crate moved.
   The equality test takes about 50 s; `df -g /` fell to 2 GB after three cold test builds, so
   remove `target/` between runs.
+- A limits-table key may carry `min` and `max` (`limits.toml`; `Spec::bounded`): a number outside
+  reads as the nearest end, with a Notice. `[policy] limits = "off"` and a `[policy.limits]` table
+  are the same TOML key, so one file cannot say both: a test of the mode and of the numbers
+  loads two. `cargo test --lib --test it` stops at the lib's first (sandbox) failure and never
+  runs `it`: run `--test it` alone.
+- A project rule on `start` needs an `@id` that starts with `trust-` (its family), or the whole
+  file reads as broken and the rule never fires. A `Command` resource is read by its program name
+  (the last path segment) before any rule sees it (`policy.rs::program_name`). In a sandboxed chat
+  `git checkout -- <file>` is refused (index.lock): restore a file with `git show HEAD:<path> > <path>`.
+  A cold lib-test build can pass the 10-minute tool limit: run it in the background and read its
+  output file, and print `^error` lines too, or a compile failure looks like a silent pass.
+- A wall-clock test (`every_guard_reads_a_hostile_command_in_linear_time::the_whole_verdict_…`) is run alone and last under nextest (`threads-required = "num-cpus"`, `.config/nextest.toml`, #7514). In a loaded sandbox its release run reads 0.9 to 1.0 s on the two slowest shapes against a 1 s bound, on `main` as on `m75-policy`: judge a regression by comparing both on one machine, and set `TIMING_OUT`-style file logging, because this test binary swallows stdout and stderr even with `--nocapture`.

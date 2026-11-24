@@ -72,6 +72,7 @@ fn in_the_deny_state() -> Sealed {
             ..Standing::fresh()
         },
         machine: None,
+        chat: None,
     }
 }
 

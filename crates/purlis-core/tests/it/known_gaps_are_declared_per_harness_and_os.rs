@@ -77,6 +77,8 @@ fn judged(root: &Path) -> Judged<'_> {
             persona: None,
         },
         sandbox: "floor",
+        attended: true,
+        harness_mode: Some(purlis_core::attendance::ClaudeCodeMode::Default),
     }
 }
 

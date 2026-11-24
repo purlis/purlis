@@ -697,7 +697,7 @@ fn read_tables(
             }
             // `[policy.limits]` is typed against the limits key table (slice 12).
             "limits" if item.is_table_like() => {
-                read_limits(item, name, &at, &mut problem, &mut tables.limits);
+                read_limits(item, name, &at, &mut problem, &mut warn, &mut tables.limits);
             }
             _ => read_default(
                 name,
@@ -792,6 +792,7 @@ fn read_limits(
     prefix: &str,
     at: &dyn Fn(&toml_edit::Key, &toml_edit::Item) -> usize,
     problem: &mut dyn FnMut(usize, String),
+    warn: &mut dyn FnMut(usize, String),
     into: &mut BTreeMap<String, i64>,
 ) {
     let Some(table) = item.as_table_like() else {
@@ -806,7 +807,7 @@ fn read_limits(
             format!("{prefix}.{k}")
         };
         if v.is_table_like() {
-            read_limits(v, &name, at, problem, into);
+            read_limits(v, &name, at, problem, warn, into);
             continue;
         }
         if super::limits::spec(&name).is_none() {
@@ -829,6 +830,19 @@ fn read_limits(
         }
         match v.as_integer().filter(|n| *n >= 0) {
             Some(n) => {
+                // A number outside the key's least and most reads as the nearest end, and the
+                // file is not broken by it (spec §5.1).
+                let spec = super::limits::spec(&name).expect("a key the table names");
+                let read = spec.bounded(n);
+                if read != n {
+                    let bound = if read > n { "least" } else { "most" };
+                    warn(
+                        line,
+                        format!(
+                            "[policy.limits] \"{name}\" is {n}, past its {bound} ({read}): it reads as {read}"
+                        ),
+                    );
+                }
                 into.insert(name, n);
             }
             None => problem(

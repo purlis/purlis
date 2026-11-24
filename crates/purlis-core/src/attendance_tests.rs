@@ -82,3 +82,94 @@ fn a_persons_chat_on_a_profile_with_inline_hooks_is_unattended() {
     }
     assert_eq!(on(r#"{"model":"x"}"#), Attendance::Attended);
 }
+
+fn words(line: &[&str]) -> Vec<String> {
+    line.iter().map(|word| (*word).to_owned()).collect()
+}
+
+/// M75-36 round 2, F1: the mode a Claude Code task starts in is read the way
+/// [`crate::dispatchunattended::bypass_in`] reads it, so each spelling that starts the harness
+/// with its prompts off (or its guards) is the bypass, not the default `mode-task-above-auto`
+/// would let through.
+#[test]
+fn every_spelling_the_bypass_detector_knows_starts_claude_code_in_the_bypass_mode() {
+    let inline = r#"{"permissions":{"defaultMode":"bypassPermissions"}}"#;
+    let attached = format!("--settings={inline}");
+    for line in [
+        words(&["claude", "--dangerously-skip-permissions"]),
+        words(&["claude", "--yolo"]),
+        words(&["claude", "--safe-mode"]),
+        words(&["claude", "--settings", inline]),
+        words(&["claude", &attached]),
+        words(&["claude", "--permission-mode", "bypassPermissions"]),
+        // Said beside a lower mode, the bypass still starts it.
+        words(&[
+            "claude",
+            "--permission-mode",
+            "plan",
+            "--dangerously-skip-permissions",
+        ]),
+    ] {
+        assert_eq!(
+            ClaudeCodeMode::set_in(&line),
+            ClaudeCodeMode::BypassPermissions,
+            "{line:?}"
+        );
+        let task = Fact::at_start(Begun::Task, Some(Harness::ClaudeCode), &line);
+        assert_eq!(
+            task.start_mode(),
+            Some(ClaudeCodeMode::BypassPermissions),
+            "{line:?}"
+        );
+    }
+    // What is not a bypass keeps the mode it names, or the default.
+    assert_eq!(
+        ClaudeCodeMode::set_in(&words(&["claude"])),
+        ClaudeCodeMode::Default
+    );
+    assert_eq!(in_plan_mode(), ClaudeCodeMode::Plan);
+}
+
+fn in_plan_mode() -> ClaudeCodeMode {
+    ClaudeCodeMode::set_in(&in_plan())
+}
+
+/// M75-36 round 2, F2: a harness whose mode purlis does not read still has its start recorded as
+/// the bypass where the host knows its words are one; any other start of it stays unrecorded
+/// (`unknown`). What the chat later reports moves neither.
+#[test]
+fn a_codex_start_the_host_knows_is_a_bypass_is_recorded_as_one() {
+    for line in [
+        words(&["codex", "--dangerously-bypass-approvals-and-sandbox"]),
+        words(&["codex", "--full-auto"]),
+        words(&["codex", "--ask-for-approval", "never"]),
+        words(&["codex", "-c", "approval_policy=never"]),
+    ] {
+        let mut fact = Fact::at_start(Begun::Task, Some(Harness::Codex), &line);
+        assert_eq!(
+            fact.start_mode(),
+            Some(ClaudeCodeMode::BypassPermissions),
+            "{line:?}"
+        );
+        fact.hear(Some(ClaudeCodeMode::Default));
+        assert_eq!(
+            fact.start_mode(),
+            Some(ClaudeCodeMode::BypassPermissions),
+            "{line:?}"
+        );
+        assert_eq!(
+            fact.mode_differs(),
+            None,
+            "a harness whose reports are not read"
+        );
+    }
+    for harness in [Harness::Codex, Harness::Opencode] {
+        let plain = Fact::at_start(Begun::Task, Some(harness), &words(&["a-harness"]));
+        assert_eq!(
+            plain.start_mode(),
+            None,
+            "{harness:?}: no record of a mode: unknown"
+        );
+    }
+    assert_eq!(Fact::kept(Attendance::Attended).start_mode(), None);
+}
