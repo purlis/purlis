@@ -160,6 +160,10 @@ struct Limit {
     shipped: toml::Value,
     unit: String,
     loosens: String,
+    #[serde(default)]
+    min: Option<i64>,
+    #[serde(default)]
+    max: Option<i64>,
     source: String,
     #[serde(default)]
     inventory: String,
@@ -515,6 +519,19 @@ fn the_limits_key_table_names_every_key_with_no_wildcard() {
             !limit.unit.is_empty() && !limit.source.is_empty(),
             "{key}: unit and source"
         );
+        // A least and a most are a range the shipped number sits in.
+        if let (Some(least), Some(most)) = (limit.min, limit.max) {
+            assert!(least <= most, "{key}: min {least} is above max {most}");
+        }
+        if let Some(shipped) = limit.shipped.as_integer() {
+            assert!(
+                limit.min.is_none_or(|least| least <= shipped)
+                    && limit.max.is_none_or(|most| shipped <= most),
+                "{key}: shipped {shipped} is outside its min {:?} and max {:?}",
+                limit.min,
+                limit.max
+            );
+        }
     }
     for key in &SPEC_KEYS {
         assert!(

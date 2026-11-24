@@ -1365,8 +1365,8 @@ fn an_entry_that_does_not_read_counts_as_the_strictest_limit_never_as_silent() {
             assert_eq!(limit_in(&root, &standing, NO_CAP), Some(0), "{entry:?}");
             assert_eq!(
                 limit_in(&root, &standing, "audit.record-days"),
-                Some(i64::MAX),
-                "a retention's strictest is the longest"
+                Some(36_500),
+                "a retention's strictest is the longest it may be: its most, never an overflow"
             );
             assert_eq!(
                 verdict_in(&root, &standing, 0),

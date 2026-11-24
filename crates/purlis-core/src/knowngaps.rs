@@ -755,6 +755,12 @@ pub struct Judged<'a> {
     pub of: crate::policy::levels::Chat<'a>,
     /// The sandbox level's word: `off`, `floor` or `full`.
     pub sandbox: &'a str,
+    /// Whether the person is at the chat being started: the attendance fact its start sets
+    /// ([`crate::attendance::Fact::at_start`]).
+    pub attended: bool,
+    /// The mode the host starts the harness in ([`crate::attendance::Fact::start_mode`]); `None`
+    /// where it holds none, which `context.harness_mode` reads as `unknown`.
+    pub harness_mode: Option<crate::attendance::ClaudeCodeMode>,
 }
 
 /// **What a project's own rule on `start` makes of a start with known gaps.**
@@ -797,10 +803,10 @@ pub fn refusal(
         chat: 0,
         of: judged.of,
         sandbox: judged.sandbox,
-        // The attendance fact is held from the chat's start on (slice 36), so a start is
-        // judged as the person's own.
-        attended: true,
-        harness_mode: "default",
+        // The attendance and mode the host's own fact for this start holds
+        // ([`crate::attendance::Fact::at_start`]), never a default.
+        attended: judged.attended,
+        harness_mode: crate::policy::decide::harness_mode_word(judged.harness_mode),
         depth: 0,
         via: "start",
         start: Some(crate::policy::decide::StartFacts {

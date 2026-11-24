@@ -477,6 +477,27 @@ impl LimitId {
     pub fn limit(self) -> &'static Limit {
         &ALL[self as usize]
     }
+
+    /// **The `[policy.limits]` key this pool limit is** (M75-36, spec §5.1): a pool's cap is one
+    /// `runners.pool-*` row of the limits key table, whose shipped value is [`Limit::default`].
+    /// A test reads every row of both, so a limit added here with no key fails it.
+    #[must_use]
+    pub fn policy_key(self) -> &'static str {
+        match self {
+            LimitId::ProfileSize => "runners.pool-profile-size-mib",
+            LimitId::ProfileFiles => "runners.pool-profile-files",
+            LimitId::CodeSize => "runners.pool-code-size-mib",
+            LimitId::CodeSendTime => "runners.pool-code-send-minutes",
+            LimitId::SignInWait => "runners.pool-sign-in-wait-minutes",
+            LimitId::VouchWait => "runners.pool-vouch-wait-minutes",
+            LimitId::AnswerWait => "runners.pool-answer-wait-seconds",
+            LimitId::Cpus => "runners.pool-cpus-thousandths",
+            LimitId::Memory => "runners.pool-memory-mib",
+            LimitId::Processes => "runners.pool-processes",
+            LimitId::Tmp => "runners.pool-tmp-mib",
+            LimitId::SuspendAfter => "runners.pool-suspend-after-minutes",
+        }
+    }
 }
 
 impl Limit {

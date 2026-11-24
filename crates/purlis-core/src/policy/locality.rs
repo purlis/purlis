@@ -256,7 +256,8 @@ pub fn process_request<'a>(action: &'a str, resource: (&'a str, &'a str)) -> Req
         let value: serde_json::Value = match field.as_str() {
             "sandbox" => "off".into(),
             "attended" => false.into(),
-            "harness_mode" => "default".into(),
+            // No chat started it, so the host holds no start record of a mode.
+            "harness_mode" => "unknown".into(),
             "depth" => 0.into(),
             "via" => "hook".into(),
             _ => continue,

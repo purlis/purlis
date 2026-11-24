@@ -426,6 +426,7 @@ mod for_a_chat {
             sandboxed: false,
             level: None,
             attended: true,
+            harness_mode: None,
         }
     }
 
@@ -1192,6 +1193,7 @@ mod a_floor_holds_a_chats_merge {
             sandboxed: false,
             level: None,
             attended: true,
+            harness_mode: None,
         };
         let merge = |floor: &str| {
             decide::for_chat(
@@ -1322,6 +1324,7 @@ mod the_level_a_start_applied {
             sandboxed,
             level,
             attended: true,
+            harness_mode: None,
         };
         decide::for_chat(
             dir.path(),
