@@ -26,6 +26,33 @@ fn caps() -> Caps {
     Caps::shipped()
 }
 
+const RULE: &[&str] = &["guards-merge-hold"];
+
+/// No narrowing.
+fn none() -> serde_json::Map<String, serde_json::Value> {
+    serde_json::Map::new()
+}
+
+/// The kind and narrowing the narrowed tests raise a push with.
+fn narrowing_of_the_push(force: bool) -> (String, serde_json::Map<String, serde_json::Value>) {
+    (
+        "Branch".to_owned(),
+        serde_json::json!({"force": force, "via": "hook"})
+            .as_object()
+            .cloned()
+            .expect("an object"),
+    )
+}
+
+/// The key of the push raised by [`raised_narrowed`]: its narrowing is in it.
+fn narrowed_key(force: bool) -> Key {
+    let (kind, narrowing) = narrowing_of_the_push(force);
+    Key {
+        narrowed: narrowed_of(&kind, &narrowing),
+        ..key("git push origin a")
+    }
+}
+
 /// `raise` with its digest made again, after a test changed the action or the resource.
 fn rekeyed(mut raise: Raise<'_>) -> Raise<'_> {
     raise.key.digest = digest_of(raise.action, &raise.key.resource, raise.request);
@@ -190,8 +217,8 @@ fn a_late_answer_counts_once_within_thirty_minutes() {
 
     let digest = key("a").digest;
     // The chat asks again within the half hour: it counts, once.
-    assert!(late.spend("c1", &digest, NOW + 60 + LATE_FOR_SECS));
-    assert!(!late.spend("c1", &digest, NOW + 61), "spent once");
+    assert!(late.spend("c1", RULE, &digest, "", &none(), NOW + 60 + LATE_FOR_SECS));
+    assert!(!late.spend("c1", RULE, &digest, "", &none(), NOW + 61), "spent once");
 
     // One that waited past the half hour counts for nothing.
     let mut record = Record::default();
@@ -201,7 +228,7 @@ fn a_late_answer_counts_once_within_thirty_minutes() {
         .expect("the item is there");
     let mut late = Late::default();
     late.hold(allowed.deferred.expect("deferred"));
-    assert!(!late.spend("c1", &key("b").digest, NOW + LATE_FOR_SECS + 1));
+    assert!(!late.spend("c1", RULE, &key("b").digest, "", &none(), NOW + LATE_FOR_SECS + 1));
 }
 
 #[test]
@@ -215,10 +242,10 @@ fn a_deferred_once_grant_serves_only_its_chat_and_request() {
     late.hold(allowed.deferred.expect("deferred"));
 
     // Another chat's same request, and the same chat's other request, are not served.
-    assert!(!late.spend("c2", &key("a").digest, NOW + 1));
-    assert!(!late.spend("c1", &key("other").digest, NOW + 1));
+    assert!(!late.spend("c2", RULE, &key("a").digest, "", &none(), NOW + 1));
+    assert!(!late.spend("c1", RULE, &key("other").digest, "", &none(), NOW + 1));
     // And neither spent it: its own chat and request still can.
-    assert!(late.spend("c1", &key("a").digest, NOW + 2));
+    assert!(late.spend("c1", RULE, &key("a").digest, "", &none(), NOW + 2));
 }
 
 #[test]
@@ -846,12 +873,12 @@ fn no_rule_offer_after_two_allows() {
 fn raised_narrowed(record: &mut Record, force: bool) {
     record.raise_narrowed(
         raising("git push origin a", "c1", Why::Unattended),
-        Narrowed {
-            resource_kind: "Branch".to_owned(),
-            narrowing: serde_json::json!({"force": force, "via": "hook"})
-                .as_object()
-                .cloned()
-                .expect("an object"),
+        {
+            let (resource_kind, narrowing) = narrowing_of_the_push(force);
+            Narrowed {
+                resource_kind,
+                narrowing,
+            }
         },
         NOW,
         caps(),
@@ -898,7 +925,7 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
     let mut record = Record::default();
     raised_narrowed(&mut record, false);
     let allowed = record
-        .allow(&press(), &key("git push origin a"), Scope::Workspace, NOW + 1)
+        .allow(&press(), &narrowed_key(false), Scope::Workspace, NOW + 1)
         .expect("there");
     // The text is what the store would seal, and it reads as the store's own grant.
     let sealed = grants::Grant::parse(&allowed.grant.text()).expect("the store's own format");
@@ -958,7 +985,7 @@ fn a_grant_given_in_the_inbox_serves_the_same_ask_through_the_sealed_store_s_app
 fn an_item_whose_narrowing_or_kind_was_edited_in_the_file_grants_nothing() {
     // Review round 2, F4: a chat that can write the needs-you folder must not turn a calm push
     // into a force-push grant. The digest binds what a grant covers, not only what was shown.
-    let ask = || key("git push origin a");
+    let ask = || narrowed_key(false);
     let mut calm = Record::default();
     raised_narrowed(&mut calm, false);
     assert!(
@@ -1002,7 +1029,7 @@ fn an_item_from_a_file_that_binds_nothing_grants_nothing() {
     record.items[0].bound.clear();
     assert!(
         record
-            .allow(&press(), &key("git push origin a"), Scope::Workspace, NOW + 1)
+            .allow(&press(), &narrowed_key(false), Scope::Workspace, NOW + 1)
             .is_none()
     );
 }
@@ -1016,7 +1043,7 @@ fn an_inbox_once_allow_is_served_once_by_the_deferred_grant_and_seals_no_grant_o
     let once = record
         .allow(
             &press(),
-            &key("git push origin a"),
+            &narrowed_key(false),
             Scope::Once("c1".to_owned()),
             NOW + 1,
         )
@@ -1025,14 +1052,156 @@ fn an_inbox_once_allow_is_served_once_by_the_deferred_grant_and_seals_no_grant_o
     let mut late = Late::default();
     late.hold(once.deferred.expect("deferred"));
     let digest = digest_of("merge", "acme/web#main", "git push origin a");
-    assert!(late.spend("c1", &digest, NOW + 2));
-    assert!(!late.spend("c1", &digest, NOW + 3), "served once");
+    let (kind, narrowing) = narrowing_of_the_push(false);
+    assert!(late.spend("c1", RULE, &digest, &kind, &narrowing, NOW + 2));
+    assert!(
+        !late.spend("c1", RULE, &digest, &kind, &narrowing, NOW + 3),
+        "served once"
+    );
     // The wider scopes are sealed, and only they.
     let mut record = Record::default();
     raised_narrowed(&mut record, false);
     let wide = record
-        .allow(&press(), &key("git push origin a"), Scope::Workspace, NOW + 1)
+        .allow(&press(), &narrowed_key(false), Scope::Workspace, NOW + 1)
         .expect("there");
     assert_eq!(wide.to_seal(), Some(wide.grant.text()));
     assert!(wide.deferred.is_none());
+}
+
+// ── M75-20 review round 3 ────────────────────────────────────────────────────────────────────
+
+#[test]
+fn an_item_edited_with_its_plain_hash_recomputed_is_refused() {
+    // N2: the item's bound is sealed with the app's key, so a chat that can write the file and
+    // recompute every plain hash it can think of still cannot make a force push an allowed ask.
+    let mut calm = Record::default();
+    raised_narrowed(&mut calm, false);
+    let mut forced = calm.clone();
+    forced.items[0]
+        .narrowing
+        .insert("force".to_owned(), true.into());
+    let item = &forced.items[0];
+    for plain in [
+        bound_text(&item.key, &item.resource_kind, &item.narrowing),
+        ask_bound(
+            &item.key.rule,
+            &item.key.digest,
+            &item.resource_kind,
+            &item.narrowing,
+        ),
+        digest_parts(&[&item.key.digest, &item.resource_kind]),
+    ] {
+        let mut attempt = forced.clone();
+        attempt.items[0].bound = plain;
+        assert!(
+            attempt
+                .allow(&press(), &narrowed_key(false), Scope::Everywhere, NOW + 1)
+                .is_none(),
+            "a plain hash is no seal"
+        );
+    }
+    // The same edit with the key's narrowing part edited too, as a forger would, is no better.
+    let mut rekeyed_item = forced;
+    let narrowed = narrowed_of(&rekeyed_item.items[0].resource_kind, &rekeyed_item.items[0].narrowing);
+    rekeyed_item.items[0].key.narrowed = narrowed.clone();
+    let key = rekeyed_item.items[0].key.clone();
+    assert!(
+        rekeyed_item
+            .allow(&press(), &key, Scope::Everywhere, NOW + 1)
+            .is_none()
+    );
+    // And the unedited item still allows, so the refusal is the seal's.
+    assert!(
+        calm.allow(&press(), &narrowed_key(false), Scope::Everywhere, NOW + 1)
+            .is_some()
+    );
+}
+
+#[test]
+fn an_item_raised_where_nothing_can_seal_is_kept_but_never_allowed() {
+    // A process that is not the app has no seal key: its item can be denied and dismissed.
+    crate::secrets::seal::set_for_this_test(None);
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    assert_eq!(record.items().len(), 1);
+    assert!(record.items()[0].bound.is_empty());
+    crate::secrets::seal::set_for_this_test(Some(vec![7; 32]));
+    assert!(
+        record
+            .allow(&press(), &narrowed_key(false), Scope::Everywhere, NOW + 1)
+            .is_none()
+    );
+}
+
+#[test]
+fn the_same_ask_under_another_narrowing_is_another_item() {
+    // N7: a re-raise with the same key merged into one item and never refreshed its bound; the
+    // narrowing is in the key now, so a calm push and a force push are two items, each shown.
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    raised_narrowed(&mut record, true);
+    assert_eq!(record.items().len(), 2, "{:?}", record.items());
+    assert_ne!(record.items()[0].key.id(), record.items()[1].key.id());
+    // Each is allowed on its own key, and grants what it showed.
+    let forced = record
+        .allow(&press(), &narrowed_key(true), Scope::Everywhere, NOW + 1)
+        .expect("the force push item");
+    assert_eq!(forced.grant.narrowing["force"], serde_json::json!(true));
+    assert_eq!(record.items().len(), 1);
+    assert_eq!(record.items()[0].narrowing["force"], serde_json::json!(false));
+    // A re-raise of the same narrowing is still one item, the chat added once.
+    raised_narrowed(&mut record, false);
+    assert_eq!(record.items().len(), 1);
+}
+
+/// A deferred Once grant for the calm push, held.
+fn held_once_for_the_calm_push() -> Late {
+    let mut record = Record::default();
+    raised_narrowed(&mut record, false);
+    let once = record
+        .allow(
+            &press(),
+            &narrowed_key(false),
+            Scope::Once("c1".to_owned()),
+            NOW + 1,
+        )
+        .expect("there");
+    let mut late = Late::default();
+    late.hold(once.deferred.expect("deferred"));
+    late
+}
+
+#[test]
+fn a_deferred_once_grant_serves_only_its_rule_kind_and_narrowing() {
+    // N3: it was bound to the chat and the digest alone, so it served any rule, kind or narrowing
+    // of the same digest.
+    let digest = key("git push origin a").digest;
+    let (kind, calm) = narrowing_of_the_push(false);
+    let (_, forced) = narrowing_of_the_push(true);
+    let rule: &[&str] = &["guards-merge-hold"];
+    let mut late = held_once_for_the_calm_push();
+    assert!(!late.spend("c1", &["another-rule"], &digest, &kind, &calm, NOW + 2), "its rule only");
+    assert!(!late.spend("c1", rule, &digest, "Repo", &calm, NOW + 2), "its kind only");
+    assert!(!late.spend("c1", rule, &digest, &kind, &forced, NOW + 2), "its narrowing only");
+    assert!(!late.spend("c1", rule, &digest, "", &none(), NOW + 2), "no narrowing is another");
+    // None of those spent it.
+    assert!(late.spend("c1", rule, &digest, &kind, &calm, NOW + 3));
+    assert!(!late.spend("c1", rule, &digest, &kind, &calm, NOW + 4), "once");
+}
+
+#[test]
+fn a_deferred_once_grant_serves_one_deciding_rule_and_an_ask_needs_one_for_each() {
+    let digest = key("git push origin a").digest;
+    let (kind, calm) = narrowing_of_the_push(false);
+    let mut late = held_once_for_the_calm_push();
+    // Two deciding rules, one grant: not served, and the grant is not spent by the failure.
+    assert!(!late.spend(
+        "c1",
+        &["guards-merge-hold", "project-ask"],
+        &digest,
+        &kind,
+        &calm,
+        NOW + 2
+    ));
+    assert!(late.spend("c1", &["guards-merge-hold"], &digest, &kind, &calm, NOW + 3));
 }

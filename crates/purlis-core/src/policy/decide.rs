@@ -130,20 +130,22 @@ pub struct Request<'a> {
 }
 
 /// **The grant scopes a set of deciding rules offers**: the narrowest `@keep` and the stricter
-/// `@timed` of them, under the scope locks.
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
+/// `@timed` of them, under the scope locks. Internal to a decision ([`Decision::held_to`]): it is
+/// never on the wire.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Scopes {
     /// The widest scope offered.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keep: Option<String>,
     /// The longest timed grant offered.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timed: Option<String>,
 }
 
 /// **What [`decide`] answers** (spec §13.1).
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+///
+/// The wire format is the one it had before M75-20: [`Decision::lifted_scopes`] and
+/// [`Decision::asked_scopes`] never travel (a hook or CLI that is older than the app still parses
+/// every answer), and `keep` and `timed` travel only on an ask, as the rules wrote them.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Decision {
     /// Cedar's outcome, before the mode.
@@ -189,16 +191,67 @@ pub struct Decision {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timed: Option<String>,
     /// What [`Decision::lifted`] would offer, were a floor to put those forbids back as the
-    /// deciding rules ([`Decision::held_to`]).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// deciding rules ([`Decision::held_to`]). Not on the wire.
+    #[serde(skip)]
     pub lifted_scopes: Option<Scopes>,
-    /// What [`Decision::asked`] would offer, were a floor to put those asks back.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// What [`Decision::asked`] would offer, were a floor to put those asks back. Not on the wire.
+    #[serde(skip)]
     pub asked_scopes: Option<Scopes>,
     /// Set where the plane's sealed answers are in the deny state and this is its refusal of an
     /// action but `start` (M75-07b): the causes, and the re-press that ends it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deny_state: Option<DenyState>,
+}
+
+impl serde::Serialize for Decision {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        /// The fields a decision has always sent, in their order.
+        #[derive(serde::Serialize)]
+        struct Wire<'a> {
+            outcome: Outcome,
+            deciding: &'a [Deciding],
+            family: &'a str,
+            mode_family: &'a str,
+            mode: Mode,
+            after_mode: Outcome,
+            #[serde(skip_serializing_if = "<[Deciding]>::is_empty")]
+            lifted: &'a [Deciding],
+            #[serde(skip_serializing_if = "<[Deciding]>::is_empty")]
+            asked: &'a [Deciding],
+            #[serde(skip_serializing_if = "Option::is_none")]
+            lock: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            grant: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            unasked: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            keep: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            timed: Option<&'a str>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            deny_state: Option<&'a DenyState>,
+        }
+        // The scopes are an ask's: the lock caps and the rules' words are carried on every
+        // decision so a floor can make an ask of it, but only an ask offers them.
+        let asks = self.outcome == Outcome::Ask || self.after_mode == Outcome::Ask;
+        Wire {
+            outcome: self.outcome,
+            deciding: &self.deciding,
+            family: &self.family,
+            mode_family: &self.mode_family,
+            mode: self.mode,
+            after_mode: self.after_mode,
+            lifted: &self.lifted,
+            asked: &self.asked,
+            lock: self.lock.as_deref(),
+            grant: self.grant.as_deref(),
+            unasked: self.unasked.as_deref(),
+            keep: self.keep.as_deref().filter(|_| asks),
+            timed: self.timed.as_deref().filter(|_| asks),
+            deny_state: self.deny_state.as_ref(),
+        }
+        .serialize(serializer)
+    }
 }
 
 impl Decision {
@@ -859,19 +912,31 @@ pub fn for_chat(
         sealed,
         Some(floor),
         |decision, request| {
-            let decision = decision.held_to(floor);
+            let mut decision = decision.held_to(floor);
             // A rule the project set `off` is not in its policy at all, so no mode brings it
             // back: where the floor enforces the merge hold and the project's rules let the
             // merge through, the shipped default under `strict`, which is the hold as it always
-            // ran, answers instead. The person's grants apply to whichever of the two stands.
+            // ran, answers instead. Where the project's own ask stands (its own rule, accepted),
+            // the hold it set aside is asked beside it, so a grant for the project's ask alone
+            // never lets the merge through (review round 3, N1). The person's grants apply to
+            // whichever stands.
             if decision.family != MERGE_FAMILY
-                || decision.after_mode != Outcome::Allow
+                || !matches!(decision.after_mode, Outcome::Allow | Outcome::Ask)
                 || !floor_enforces(floor, &decision.family)
             {
                 return decision;
             }
             let shipped = decide_locally(request);
-            if shipped.after_mode == Outcome::Allow {
+            if shipped.after_mode == Outcome::Ask && decision.after_mode == Outcome::Ask {
+                for rule in shipped.deciding {
+                    if !decision.deciding.iter().any(|one| one.id == rule.id) {
+                        decision.deciding.push(rule);
+                    }
+                }
+                decision.keep = force::narrower_keep(decision.keep.take(), shipped.keep);
+                decision.timed = force::stricter_timed(decision.timed.take(), shipped.timed);
+                decision
+            } else if shipped.after_mode == Outcome::Allow {
                 decision
             } else {
                 shipped
@@ -884,7 +949,7 @@ pub fn for_chat(
 const MERGE_FAMILY: &str = "guards.merge";
 
 /// Whether `floor` enforces the family keyed `key`.
-fn floor_enforces(floor: &crate::enforcement::Resolved, key: &str) -> bool {
+pub(super) fn floor_enforces(floor: &crate::enforcement::Resolved, key: &str) -> bool {
     crate::enforcement::Family::ALL
         .into_iter()
         .find(|family| family.key() == key)

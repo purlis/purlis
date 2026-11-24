@@ -6,7 +6,7 @@
 //! that answers needs-you from a terminal can refuse and clear, never allow.
 
 use crate::support;
-use purlis_core::policy::needsyou::{Caps, Key, Raise, Store, Why, digest_of};
+use purlis_core::policy::needsyou::{Caps, Key, Narrowed, Raise, Store, Why, digest_of};
 
 const NOW: u64 = 1_800_000_000;
 
@@ -63,6 +63,47 @@ fn purlis_inbox_lists_what_is_waiting_with_its_chat_count() {
     // What an Allow would cover is shown: the resource and the request, on one line each.
     assert!(stdout.contains("resource: acme/web#main"), "{stdout}");
     assert!(stdout.contains("request: merge acme/web#7"), "{stdout}");
+}
+
+#[test]
+fn purlis_inbox_shows_the_kind_and_narrowing_an_allow_would_cover() {
+    // M75-20 round 3, N2: a grant is matched on the resource's kind and the request's narrowing,
+    // so the person sees both before they allow, and a force push is not shown as a calm one.
+    let data = tempfile::tempdir().expect("data");
+    let store = Store::in_data(data.path());
+    for force in [false, true] {
+        let request = "git push origin main";
+        let digest = digest_of("merge", "acme/web#main", request);
+        store
+            .raise_narrowed(
+                Raise {
+                    key: Key::new("guards-merge-hold", "acme/web#main", "web", &digest),
+                    action: "merge",
+                    said: request,
+                    request,
+                    why: Why::NoWindow,
+                    chat: "c1",
+                },
+                Narrowed {
+                    resource_kind: "Branch".to_owned(),
+                    narrowing: serde_json::json!({"force": force})
+                        .as_object()
+                        .cloned()
+                        .expect("an object"),
+                },
+                NOW,
+                Caps::shipped(),
+            )
+            .expect("raised");
+    }
+    let (stdout, stderr) = said(&inbox(data.path(), &["list"]));
+    assert!(stdout.contains("covers: kind Branch; narrowing force=false"), "{stdout}{stderr}");
+    assert!(stdout.contains("covers: kind Branch; narrowing force=true"), "{stdout}{stderr}");
+    // An item with neither says so, rather than saying nothing.
+    let plain = tempfile::tempdir().expect("data");
+    raise(&Store::in_data(plain.path()), "merge acme/web#7", "c1");
+    let (stdout, _) = said(&inbox(plain.path(), &["list"]));
+    assert!(stdout.contains("covers: kind unknown; narrowing none"), "{stdout}");
 }
 
 #[test]

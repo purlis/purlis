@@ -567,7 +567,7 @@ fn unread(request: &Request<'_>, floor: Option<&Resolved>) -> Decision {
 }
 
 /// The narrower of two `@keep` scopes.
-fn narrower_keep(a: Option<String>, b: Option<String>) -> Option<String> {
+pub(super) fn narrower_keep(a: Option<String>, b: Option<String>) -> Option<String> {
     let at = |w: &String| KEEPS.iter().position(|k| k == w).unwrap_or(0);
     match (a, b) {
         (Some(a), Some(b)) => Some(if at(&a) <= at(&b) { a } else { b }),
@@ -576,7 +576,7 @@ fn narrower_keep(a: Option<String>, b: Option<String>) -> Option<String> {
 }
 
 /// The stricter of two `@timed` scopes: `off`, then the shorter.
-fn stricter_timed(a: Option<String>, b: Option<String>) -> Option<String> {
+pub(super) fn stricter_timed(a: Option<String>, b: Option<String>) -> Option<String> {
     let rank = |w: &String| match TIMEDS.iter().position(|t| t == w).unwrap_or(0) {
         2 => 0,
         0 => 1,
@@ -644,7 +644,7 @@ pub fn in_force(
     if let Some(seen) = seen {
         seal(root, &seen);
     }
-    retire_lost_grants(root, sources, standing);
+    retire_lost_grants(root, sources, standing, floor);
     decision
 }
 
@@ -656,7 +656,16 @@ pub fn in_force(
 /// grant (so a plane with none pays nothing); a side that does not read stops it, since a rule
 /// it holds cannot be told from one it lost. Best effort: a store that cannot be written changes
 /// nothing, and the grant then serves only where its rule still decides.
-pub fn retire_lost_grants(root: &Path, sources: &Sources<'_>, standing: &Standing) {
+///
+/// A shipped rule that no side holds still decides where `floor` enforces its family (the merge
+/// hold where every side has it off, [`super::decide::for_chat`]), so its grants stay (review round
+/// 3, N5).
+pub fn retire_lost_grants(
+    root: &Path,
+    sources: &Sources<'_>,
+    standing: &Standing,
+    floor: Option<&Resolved>,
+) {
     if !matches!(standing.state, State::Holds)
         || !standing.entries.iter().any(|e| e.kind == answers::GRANT)
     {
@@ -668,6 +677,9 @@ pub fn retire_lost_grants(root: &Path, sources: &Sources<'_>, standing: &Standin
             LimitSide::Read(loaded) => known.extend(loaded.policy.rules()),
             LimitSide::Unread => return,
         }
+    }
+    if let Some(floor) = floor {
+        known.extend(shipped_rules_held_by(floor));
     }
     let gone = super::grants::lost(&standing.entries, &known);
     if gone.is_empty() {
@@ -681,6 +693,26 @@ pub fn retire_lost_grants(root: &Path, sources: &Sources<'_>, standing: &Standin
     if let Err(why) = taken {
         tracing::debug!("purlis: a grant of a removed rule was not taken out ({why})");
     }
+}
+
+/// **The shipped default's rules that a `floor` keeps in force** whatever the project says: those
+/// that name an action of a family the floor enforces.
+fn shipped_rules_held_by(floor: &Resolved) -> Vec<String> {
+    static SHIPPED: OnceLock<levels::Loaded> = OnceLock::new();
+    let shipped = SHIPPED.get_or_init(levels::Loaded::shipped_strict);
+    shipped
+        .policy
+        .rules()
+        .into_iter()
+        .filter(|id| {
+            shipped.policy.rule(id).is_some_and(|rule| {
+                rule.actions().iter().any(|action| {
+                    super::family_of(action)
+                        .is_some_and(|family| super::decide::floor_enforces(floor, family))
+                })
+            })
+        })
+        .collect()
 }
 
 /// **One decision by the policy in force, and the version the app saw that it should seal**

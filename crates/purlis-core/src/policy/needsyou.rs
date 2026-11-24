@@ -10,7 +10,7 @@
 //! not a rule of its own. Otherwise the chat gets a refusal ([`refusal`]) and one item in
 //! needs-you ([`Record::raise`]).
 //!
-//! - **One item per rule, resource, workspace and request digest** ([`Key`]), with a count of the
+//! - **One item per rule, resource, workspace, request digest and narrowing** ([`Key`]), with a count of the
 //!   chats that asked and the last time. The digest is in the key, and the item keeps the request
 //!   it is the digest of, so an Allow recomputes it and grants only what the item showed (review
 //!   round 2, S2-SF4): a file whose digest no longer matches its request grants nothing.
@@ -19,7 +19,10 @@
 //!   digest catches damage, not a forger who writes a consistent
 //!   item with a benign `said`: the defence against that is the sandbox, which denies a chat
 //!   reading and writing the folder. So what the person is shown to Allow is made from the
-//!   item's action, resource and request, never from `said`.
+//!   item's action, resource and request, never from `said`. What an Allow covers beyond the digest
+//!   (the rule, the workspace, the resource's kind and the narrowing) is bound by a **seal** the
+//!   app makes at raise time with its seal key ([`bound_of`]), so a chat that can write the file
+//!   cannot edit it and recompute a plain hash (review round 3, N2).
 //! - **The wait is capped below the harness's hook timeout, less what the hook already ran**
 //!   ([`cap`], through [`Deadline::below_hook_timeout`], as `harness/hooked.rs` does for a hook
 //!   that says `ran_for`, #1063). An ask unanswered at the cap, or with no time left at all, is
@@ -310,27 +313,93 @@ pub fn digest_of(action: &str, resource: &str, request: &str) -> String {
     digest_parts(&[action, resource, request])
 }
 
-/// **What binds an item's digest to what a sealed grant is matched on besides it** (review round 2,
-/// F4): the resource's kind and the narrowing context, with the digest of the request, each part
-/// length-prefixed and the narrowing's fields in name order. The digest catches damage, not a
-/// forger who writes a consistent item (the sandbox is the defence against that).
-pub fn bound_of(
-    digest: &str,
-    resource_kind: &str,
-    narrowing: &serde_json::Map<String, serde_json::Value>,
-) -> String {
+/// The narrowing's fields in name order, each as a name and its JSON.
+fn narrowing_parts(narrowing: &serde_json::Map<String, serde_json::Value>) -> Vec<String> {
     let mut fields: Vec<(&String, String)> = narrowing
         .iter()
         .map(|(name, value)| (name, value.to_string()))
         .collect();
     fields.sort();
-    let mut parts: Vec<String> = vec![digest.to_owned(), resource_kind.to_owned()];
-    for (name, value) in fields {
-        parts.push(name.clone());
-        parts.push(value);
-    }
+    fields
+        .into_iter()
+        .flat_map(|(name, value)| [name.clone(), value])
+        .collect()
+}
+
+/// **What an ask is bound to besides its digest** (review round 2, F4; round 3, N3): the rule, the
+/// digest of the request, the resource's kind and the narrowing context, each part length-prefixed
+/// and the narrowing's fields in name order. A deferred Once grant is held to it in memory
+/// ([`Late::spend`]), and the item's seal covers it ([`bound_of`]).
+fn ask_bound(
+    rule: &str,
+    digest: &str,
+    resource_kind: &str,
+    narrowing: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    let mut parts: Vec<String> = vec![rule.to_owned(), digest.to_owned(), resource_kind.to_owned()];
+    parts.extend(narrowing_parts(narrowing));
     let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
     digest_parts(&parts)
+}
+
+/// **The narrowing part of a key** ([`Key::narrowed`]): empty where a request carried neither a kind
+/// nor a narrowing, else a digest of both, so asks that differ in either are different items
+/// (review round 3, N7).
+fn narrowed_of(
+    resource_kind: &str,
+    narrowing: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    if resource_kind.is_empty() && narrowing.is_empty() {
+        return String::new();
+    }
+    let mut parts: Vec<String> = vec![resource_kind.to_owned()];
+    parts.extend(narrowing_parts(narrowing));
+    let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
+    digest_parts(&parts)
+}
+
+/// The seal's kind, for [`crate::secrets::seal`]: an item's bound is sealed to this machine.
+const BOUND_SEAL: &str = "needs-you/item";
+
+/// What the item's seal is over: the ask's binding, the whole key (the workspace is what a This
+/// workspace grant is for) and so what the person was shown.
+fn bound_text(
+    key: &Key,
+    resource_kind: &str,
+    narrowing: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    digest_parts(&[
+        &ask_bound(&key.rule, &key.digest, resource_kind, narrowing),
+        &key.resource,
+        &key.workspace,
+        &key.narrowed,
+    ])
+}
+
+/// **What binds an item to what a sealed grant is matched on** (review round 2, F4; round 3, N2):
+/// the seal of the key, the digest, the resource's kind and the narrowing, made with the app's seal
+/// key ([`crate::secrets::seal`]), the way the answer store's entries are. A plain hash would let a
+/// chat that can write the file edit the narrowing and recompute it; the seal can be made only by
+/// the app, at raise time, and is checked at the Allow. Empty where this process cannot seal (it is
+/// not the app): the item is then kept to be denied or dismissed and is never allowed.
+pub fn bound_of(
+    key: &Key,
+    resource_kind: &str,
+    narrowing: &serde_json::Map<String, serde_json::Value>,
+) -> String {
+    crate::secrets::seal::sealed(BOUND_SEAL, "machine", &bound_text(key, resource_kind, narrowing))
+        .unwrap_or_default()
+}
+
+/// Whether `item`'s seal is the app's seal of what it says.
+fn bound_holds(item: &Item) -> bool {
+    !item.bound.is_empty()
+        && crate::secrets::seal::holds(
+            &item.bound,
+            BOUND_SEAL,
+            "machine",
+            &bound_text(&item.key, &item.resource_kind, &item.narrowing),
+        )
 }
 
 /// **What one needs-you item is for**: a rule, a resource, a workspace and a request digest.
@@ -344,6 +413,10 @@ pub struct Key {
     pub workspace: String,
     /// The digest of the request ([`digest_of`]).
     pub digest: String,
+    /// What the request's resource kind and narrowing add: empty for a request that carried
+    /// neither, else a digest, so the same ask under another narrowing is its own item.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub narrowed: String,
 }
 
 impl Key {
@@ -354,12 +427,19 @@ impl Key {
             resource: resource.to_owned(),
             workspace: workspace.to_owned(),
             digest: digest.to_owned(),
+            narrowed: String::new(),
         }
     }
 
     /// **The id `purlis inbox` names it by**: the start of a digest of the whole key.
     pub fn id(&self) -> String {
-        digest_parts(&[&self.rule, &self.resource, &self.workspace, &self.digest])[..12].to_owned()
+        digest_parts(&[
+            &self.rule,
+            &self.resource,
+            &self.workspace,
+            &self.digest,
+            &self.narrowed,
+        ])[..12].to_owned()
     }
 }
 
@@ -545,11 +625,16 @@ impl Allowed {
     }
 }
 
-/// **A Once grant, deferred**: bound to a chat and a request digest, spent once, until a time.
+/// **A Once grant, deferred**: bound to a chat, one rule and what the ask was (its request's
+/// digest, the resource's kind and the narrowing: [`ask_bound`]), spent once, until a time. It is
+/// made only from an item whose seal held, and kept in memory, so no plain hash of it is written
+/// anywhere a chat could edit. Once is the narrowest scope there is, so any `@keep` or lock offers
+/// it, and no cap needs checking here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deferred {
     chat: String,
-    digest: String,
+    rule: String,
+    bound: String,
     until: u64,
 }
 
@@ -565,21 +650,39 @@ impl Late {
         self.held.push(grant);
     }
 
-    /// **Whether `chat`'s request with `digest`, at `now`, is served by a grant**, which is spent:
-    /// one grant serves one request of the chat it was given to, within [`LATE_FOR_SECS`].
-    pub fn spend(&mut self, chat: &str, digest: &str, now: u64) -> bool {
+    /// **Whether `chat`'s ask, at `now`, is served by deferred grants**, which are spent: each of
+    /// the deciding `rules` needs a grant of its own, for that rule, that request's digest, that
+    /// resource kind and that narrowing, given to this chat and within [`LATE_FOR_SECS`]. One grant
+    /// serves one rule once; they are spent all or none.
+    pub fn spend(
+        &mut self,
+        chat: &str,
+        rules: &[&str],
+        digest: &str,
+        resource_kind: &str,
+        narrowing: &serde_json::Map<String, serde_json::Value>,
+        now: u64,
+    ) -> bool {
         self.held.retain(|one| one.until >= now);
-        match self
-            .held
-            .iter()
-            .position(|one| one.chat == chat && one.digest == digest)
-        {
-            Some(at) => {
-                self.held.remove(at);
-                true
-            }
-            None => false,
+        if rules.is_empty() {
+            return false;
         }
+        let mut chosen: Vec<usize> = Vec::new();
+        for rule in rules {
+            let bound = ask_bound(rule, digest, resource_kind, narrowing);
+            let found = self.held.iter().enumerate().position(|(at, one)| {
+                !chosen.contains(&at) && one.chat == chat && one.rule == *rule && one.bound == bound
+            });
+            match found {
+                Some(at) => chosen.push(at),
+                None => return false,
+            }
+        }
+        chosen.sort_unstable_by(|a, b| b.cmp(a));
+        for at in chosen {
+            self.held.remove(at);
+        }
+        true
     }
 }
 
@@ -699,6 +802,9 @@ impl Record {
         let mut key = raise.key;
         key.rule = crate::shown::one_line(&key.rule, MOST_FIELD);
         key.workspace = crate::shown::one_line(&key.workspace, MOST_FIELD);
+        // The narrowing is in the key: the same ask under another narrowing is its own item, with
+        // its own seal, shown on its own (review round 3, N7).
+        key.narrowed = narrowed_of(&narrowed.resource_kind, &narrowed.narrowing);
         let said = crate::shown::one_line(raise.said, MOST_SAID);
         match self.items.iter_mut().find(|one| one.key == key) {
             Some(one) => {
@@ -715,11 +821,11 @@ impl Record {
             }
             None => {
                 let item = Item {
-                    key: key.clone(),
                     action: raise.action.to_owned(),
                     said,
                     request: raise.request.to_owned(),
-                    bound: bound_of(&key.digest, &narrowed.resource_kind, &narrowed.narrowing),
+                    bound: bound_of(&key, &narrowed.resource_kind, &narrowed.narrowing),
+                    key: key.clone(),
                     resource_kind: narrowed.resource_kind,
                     narrowing: narrowed.narrowing,
                     why: raise.why,
@@ -837,7 +943,7 @@ impl Record {
     pub fn allow(&mut self, _press: &Press, key: &Key, scope: Scope, now: u64) -> Option<Allowed> {
         let item = self.items.iter().find(|one| &one.key == key)?;
         if digest_of(&item.action, &item.key.resource, &item.request) != item.key.digest
-            || bound_of(&item.key.digest, &item.resource_kind, &item.narrowing) != item.bound
+            || !bound_holds(item)
         {
             return None;
         }
@@ -850,7 +956,13 @@ impl Record {
         let deferred = match &scope {
             Scope::Once(chat) => Some(Deferred {
                 chat: chat.clone(),
-                digest: item.key.digest.clone(),
+                rule: item.key.rule.clone(),
+                bound: ask_bound(
+                    &item.key.rule,
+                    &item.key.digest,
+                    &item.resource_kind,
+                    &item.narrowing,
+                ),
                 until: now.saturating_add(LATE_FOR_SECS),
             }),
             _ => None,
@@ -946,6 +1058,22 @@ impl Store {
     pub fn raise(&self, raise: Raise<'_>, now: u64, caps: Caps) -> io::Result<bool> {
         let mut kept = false;
         self.change(now, caps, |record| kept = record.raise(raise, now, caps))?;
+        Ok(kept)
+    }
+
+    /// [`Store::raise`], with the resource's kind and the narrowing context
+    /// ([`Record::raise_narrowed`]).
+    pub fn raise_narrowed(
+        &self,
+        raise: Raise<'_>,
+        narrowed: Narrowed,
+        now: u64,
+        caps: Caps,
+    ) -> io::Result<bool> {
+        let mut kept = false;
+        self.change(now, caps, |record| {
+            kept = record.raise_narrowed(raise, narrowed, now, caps);
+        })?;
         Ok(kept)
     }
 

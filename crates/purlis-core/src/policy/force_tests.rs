@@ -1550,3 +1550,51 @@ fn shipped_default_updates_count_toward_the_floor_cap() {
     host(&root, &merge(false));
     assert!(past_the_cap(&root), "an update counts as a version");
 }
+
+// ---- M75-20 review round 3 ----------------------------------------------------------------
+
+#[test]
+fn a_head_that_was_not_read_stably_purges_no_grant() {
+    // `decided_sides` on `Head::Unread`: a rule the current side may hold cannot be told from one
+    // it lost, so no grant is taken out of the store on that guess.
+    use crate::policy::grants::{Grant, Scope};
+    let m = machine();
+    let root = plane(&m, &[("purlis.toml", STRICT)]);
+    answers::register(&root).expect("registered");
+    let given = Grant::given("guards-merge-gone", &merge(true), Scope::Everywhere, None).entry();
+    #[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
+    let press = answers::Press::of_the_persons_press();
+    answers::commit(&root, |draft| draft.add(&press, answers::GRANT, &given.text))
+        .expect("sealed");
+    let holds = || {
+        answers::standing(&root)
+            .entries
+            .iter()
+            .any(|entry| entry.text == given.text)
+    };
+    assert!(holds());
+    // HEAD keeps moving between the reads: there is no read of it.
+    let first = git(&root, &["rev-parse", "HEAD"]);
+    commit(&root, &[("README.md", "two\n")]);
+    let second = git(&root, &["rev-parse", "HEAD"]);
+    let (at, turn) = (root.clone(), std::rc::Rc::new(std::cell::Cell::new(false)));
+    seam::set(Some(Box::new(move || {
+        let to = if turn.replace(!turn.get()) {
+            &second
+        } else {
+            &first
+        };
+        git(&at, &["update-ref", "HEAD", to]);
+    })));
+    let sides = decided_sides(&sources(&root), &answers::standing(&root));
+    assert!(
+        matches!(sides.first(), Some(LimitSide::Unread)),
+        "the current side is unread"
+    );
+    retire_lost_grants(&root, &sources(&root), &answers::standing(&root), None);
+    seam::set(None);
+    assert!(holds(), "nothing is purged on a guess");
+    // Control: HEAD read, no side holds the rule, and the grant goes.
+    retire_lost_grants(&root, &sources(&root), &answers::standing(&root), None);
+    assert!(!holds(), "a grant of a rule in no side is lost");
+}
