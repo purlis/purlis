@@ -272,7 +272,7 @@ function core() {
       if (cmd === "opened_chats") return [chat(1), chat(2)];
       // The layout stored gives both a tab on alpha (#4758).
       if (cmd === "reopened_layout") return aTabForEachChat([chat(1), chat(2)], () => "alpha");
-      if (cmd === "chats_plane_updated") return [{ session: 1, files: ["CLAUDE.md"] }];
+      if (cmd === "chats_plane_updated") return [{ session: 1, files: ["CLAUDE.md"], policy: [] }];
       if (cmd === "chats_that_would_not_start") return [];
       if (cmd === "running_sessions") return [];
       if (cmd === "chat_states") return [];

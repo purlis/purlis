@@ -7795,7 +7795,11 @@ fn a_chat_is_marked_out_of_date_when_the_policy_tightens_under_it_and_a_fresh_st
         )
         .expect("it starts again");
     assert_ne!(started, session);
-    assert_eq!(held.plane_updated(), Vec::new(), "the new one started on it");
+    assert_eq!(
+        held.plane_updated(),
+        Vec::new(),
+        "the new one started on it"
+    );
     planes.close(&plane).expect("it closes");
 }
 

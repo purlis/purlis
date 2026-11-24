@@ -27,9 +27,9 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
 use purlis_core::engine::Size;
 use purlis_core::instructions::Stamp;
-use purlis_core::policy::running::AtStart;
 use purlis_core::machine;
 use purlis_core::planemodel::Model;
+use purlis_core::policy::running::AtStart;
 use purlis_core::reopen;
 use purlis_core::reopen::Choice;
 

@@ -114,6 +114,7 @@ fn a_grant(scope: Scope) -> Grant {
 
 fn give(root: &Path, entry: &Entry) {
     // A never or a grant is the person's answer, given by their press.
+    #[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
     let press = answers::Press::of_the_persons_press();
     answers::commit(root, |draft| draft.add(&press, &entry.kind, &entry.text))
         .expect("the answer is sealed");
