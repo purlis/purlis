@@ -3773,18 +3773,29 @@ fn a_host_killed_outright_brings_twenty_chats_back_within_thirty_seconds() {
         Pane::on(&target, id).shows(&format!("CHAT-{n}-READY"));
         id
     }));
+    let host = target.host.as_ref().expect("the host's target");
+    // The link the killed host was served on. The chats are told they ended when the host's
+    // process goes, and the supervisor still answers that link as ready until it has seen it
+    // close, so "the host serves" is a different link than this one: a chat started on the
+    // old one is refused with "the link is closed" (#7442).
+    let old = host
+        .wait(Duration::from_secs(10))
+        .expect("the host serves before it is killed");
     let killed = Instant::now();
 
     (target.kill_the_host.as_ref().expect("a host process"))();
 
     let within = Duration::from_secs(30);
-    let host = target.host.as_ref().expect("the host's target");
-    while !(ends.lock().expect("the ends").len() == CHATS && host.wait(Duration::ZERO).is_ok()) {
+    let serves_anew = || {
+        host.wait(Duration::ZERO)
+            .is_ok_and(|link| !std::sync::Arc::ptr_eq(&link, &old))
+    };
+    while !(ends.lock().expect("the ends").len() == CHATS && serves_anew()) {
         assert!(
             killed.elapsed() < within,
-            "after {within:?}, {} of {CHATS} chats were told they ended, and the host serves: {}",
+            "after {within:?}, {} of {CHATS} chats were told they ended, and a new host serves: {}",
             ends.lock().expect("the ends").len(),
-            host.wait(Duration::ZERO).is_ok()
+            serves_anew()
         );
         std::thread::sleep(Duration::from_millis(50));
     }

@@ -49,15 +49,42 @@ pub struct Down {
     /// lists, removed outside purlis. The kept link is not tried again; a new one is taken only
     /// when something asks for it, and its check says so again.
     pub gone: bool,
+    /// The far end answers, but refuses (#7187): its sign-in, its Docker or its forwarding
+    /// fails, and trying again on a timer would only be told the same. The kept link is not
+    /// tried again on its own; a new one is taken when something asks for it, and Check pool
+    /// says what changed. Not a changed key, which is its own stop ([`Down::key_changed`]).
+    pub refused: bool,
+    /// The machine the far end is reached through presents another host key, CA or engine than
+    /// the one pinned (#7187, Host key changed): a security stop, its own state. It is never
+    /// tried again on its own; the person says it is all right in the pool's settings.
+    pub host_key_changed: bool,
 }
 
 impl Down {
+    /// Whether the kept link is not tried again on its own: a changed key, a far end gone for
+    /// good, or one that answers and refuses (#7187). What waiting would mend, none of them is.
+    #[must_use]
+    pub fn stops_retrying(&self) -> bool {
+        self.key_changed || self.ends_its_links()
+    }
+
+    /// Whether the kept link ends with this: a far end gone for good, one that answers and
+    /// refuses, or one with another host key, CA or engine (#7187). A changed key does not: its
+    /// link goes on trying after each pause, so it comes back should the far end's key return,
+    /// though no command waits for it ([`Down::stops_retrying`]).
+    #[must_use]
+    pub fn ends_its_links(&self) -> bool {
+        self.gone || self.refused || self.host_key_changed
+    }
+
     /// Down for `why`, with the same key at the far end, as far as anyone knows.
     pub fn because(why: impl Into<String>) -> Down {
         Down {
             why: why.into(),
             key_changed: false,
             gone: false,
+            refused: false,
+            host_key_changed: false,
         }
     }
 }
@@ -85,6 +112,23 @@ pub struct KeyNoLongerHeld(pub String);
 #[error("{0}")]
 pub struct FarEndGone(pub String);
 
+/// **A connector's refusal by a far end that answers** (#7187), in words a person reads: a
+/// connector's `connect` that fails with this, inside its [`std::io::Error`], is told as a
+/// [`Down`] that is [`Down::refused`], and the kept link ends there rather than trying again.
+/// A Docker pool's connector refuses so where its machine answers but the sign-in, the engine
+/// or the forward fails.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct FarEndRefused(pub String);
+
+/// **A connector's refusal by a machine whose host key, CA or engine is no longer the pinned
+/// one** (#7187), in words a person reads: told as a [`Down`] that is [`Down::host_key_changed`],
+/// its own state, which is never tried again on its own. A Docker pool's connector refuses so
+/// where its forward finds the pin no longer holds.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct FarEndHostKeyChanged(pub String);
+
 /// A kept link's [`Linked`]s. Dropping it lets the link go.
 pub struct Links {
     told: mpsc::Receiver<Linked>,
@@ -94,6 +138,9 @@ pub struct Links {
     ups: u64,
     /// How many of them the reader has moved to.
     moved: watch::Sender<u64>,
+    /// What else Try now does before it wakes the pause (#7187): a connector's own memory of
+    /// why its last try failed is let go of, so the try is made, not answered from memory.
+    on_try_now: Option<std::sync::Arc<dyn Fn() + Send + Sync>>,
 }
 
 impl Links {
@@ -116,7 +163,17 @@ impl Links {
     /// pause between tries has passed. A try under way finishes first; one asked for while a
     /// link is up skips the first pause after it next goes down.
     pub fn try_now(&self) {
+        if let Some(on_try_now) = &self.on_try_now {
+            on_try_now();
+        }
         self.wake.notify_one();
+    }
+
+    /// These links, with `on_try_now` run first each time Try now is pressed (#7187).
+    #[must_use]
+    pub fn with_try_now(mut self, on_try_now: impl Fn() + Send + Sync + 'static) -> Links {
+        self.on_try_now = Some(std::sync::Arc::new(on_try_now));
+        self
     }
 }
 
@@ -151,6 +208,12 @@ pub fn keep_linked<C: Connector>(
                     .get_ref()
                     .is_some_and(|inner| inner.is::<KeyNoLongerHeld>()),
                 gone: why.get_ref().is_some_and(|inner| inner.is::<FarEndGone>()),
+                refused: why
+                    .get_ref()
+                    .is_some_and(|inner| inner.is::<FarEndRefused>()),
+                host_key_changed: why
+                    .get_ref()
+                    .is_some_and(|inner| inner.is::<FarEndHostKeyChanged>()),
                 why: format!("the connector did not connect: {why}"),
             })?;
             connect_kept(io, handshake, &ours, &answering, liveness)
@@ -158,6 +221,8 @@ pub fn keep_linked<C: Connector>(
                 .map_err(|why| Down {
                     key_changed: matches!(why, super::LinkRefused::NotThePinnedHost { .. }),
                     gone: false,
+                    refused: false,
+                    host_key_changed: false,
                     why: why.to_string(),
                 })
         };
@@ -166,9 +231,10 @@ pub fn keep_linked<C: Connector>(
             let (link, mut ends) = match dial().await {
                 Ok(linked) => linked,
                 Err(why) => {
-                    // A far end gone for good is said once, and the kept link ends.
-                    let gone = why.gone;
-                    if tell.send(Linked::Down(why)).await.is_err() || gone {
+                    // A far end gone for good, or one that answers and refuses (#7187), is said
+                    // once, and the kept link ends.
+                    let stops = why.ends_its_links();
+                    if tell.send(Linked::Down(why)).await.is_err() || stops {
                         return;
                     }
                     tokio::select! {
@@ -208,6 +274,7 @@ pub fn keep_linked<C: Connector>(
         wake,
         ups: 0,
         moved,
+        on_try_now: None,
     }
 }
 

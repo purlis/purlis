@@ -510,10 +510,14 @@ fn started_on_limited(
         ReachProxy(site.address),
     );
     let keeper = Keeper::program(env!("CARGO_BIN_EXE_purlis-engine-keeper"));
-    let engine = Engine::start(&launch, &keeper).unwrap_or_else(|why| {
-        let log = std::fs::read_to_string(folder.join("engine.log")).unwrap_or_default();
-        panic!("{why}\nthe engine's log:\n{log}")
-    });
+    // A cold start of a real engine on a starved runner has taken most of a minute, four tests
+    // at once (run 44828845306): the bound is the product's to keep at a minute, and a test's
+    // to give more. A hung engine still fails by name, well inside nextest's five minutes.
+    let engine =
+        Engine::start_within(&launch, &keeper, Duration::from_secs(150)).unwrap_or_else(|why| {
+            let log = std::fs::read_to_string(folder.join("engine.log")).unwrap_or_default();
+            panic!("{why}\nthe engine's log:\n{log}")
+        });
     let limits = limits(Limits {
         settle_within: Duration::from_secs(20),
         ..Limits::default()
