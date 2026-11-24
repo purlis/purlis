@@ -373,4 +373,21 @@ mod tests {
             started.elapsed()
         );
     }
+
+    #[test]
+    fn a_hook_fired_after_the_interrupt_runs_to_completion() {
+        let dir = tempfile::tempdir().expect("a folder");
+        let quick = route("sleep 0.3; echo done".to_owned(), 600);
+        // The Esc was spent before this hook started: nothing new is heard while it runs.
+        let fired = run_all(
+            &[&quick],
+            Spawn::Shell("/bin/sh"),
+            &serde_json::json!({}),
+            &[],
+            dir.path(),
+            &|| false,
+        );
+        assert_eq!(fired[0].exit, Some(0), "the hook was cut short");
+        assert!(fired[0].stdout.contains("done"), "{:?}", fired[0].stdout);
+    }
 }
