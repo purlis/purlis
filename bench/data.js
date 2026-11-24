@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795539767606,
+  "lastUpdate": 1795539939287,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53970,6 +53970,48 @@ window.BENCHMARK_DATA = {
             "value": 101.75342599999999,
             "unit": "ms",
             "extra": "median of 5 runs: 101.294, 101.296, 101.753, 102.052, 102.494 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "024a78bfc2cfad477145229b5ae849fb534ca505",
+          "message": "CI flakes: browser-engine batch (#7438 #7445-#7448; refusal reason printed) (#7554)\n\n* Browser engine: a downloads listing takes the untold ones and lists every download in one hold of the state\n\nA download that moved on between the two holds was listed as it then was and\ntold again by the next answer. Reproduced under load: 2 failures in 1500 runs of\nthe told-once test before, none in 6000 after.\n\nCloses #7438\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M871AMA7K9M4FECS80FM7KAC\nPurlis-Persona: steward\n\n* Browser-engine tests: a real engine's first answer is given two and a half minutes, not one\n\nRun 44828845306 started four real engines at once on one runner; none answered\nover its pipe in 60 s (Chrome logged its first line 35 s in), and each passed\non its retry, which itself took 47 to 66 s. The runner was starved; nothing in\nlogin or page navigation was involved. Engine::start_within lets the test\nharness give the start more time, and the product's FIRST_ANSWER stays a\nminute. A hung engine still fails by name inside nextest's five minutes.\n\nOne cause for the four tickets, so one commit.\n\nCloses #7445\nCloses #7446\nCloses #7447\nCloses #7448\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M871AMA7K9M4FECS80FM7KAC\nPurlis-Persona: steward\n\n* Login tests: a red run says why the login was refused\n\nended_as named a refused login only as 'not logged in', so three flakes in\nseven days (#7435, #7439, #7450) could not be told from the log whether the old\n'would not hold still' refusal or something else ended them. A login's\nrefusal is worded to name no value, so its reason is printed now.\n\nRefs #7435, #7439, #7450\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M871AMA7K9M4FECS80FM7KAC\nPurlis-Persona: steward\n\n* Review fixes: print only a NotLoggedIn reason, say why untold() is taken, mark start_within test-only\n\nRefs #7438, #7435, #7439, #7450, #7445\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M871AMA7K9M4FECS80FM7KAC\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T16:19:13Z",
+          "tree_id": "f1ccc709b151ec958fd20fec77a4e6a98eecff8c",
+          "url": "https://github.com/purlis/purlis/commit/024a78bfc2cfad477145229b5ae849fb534ca505"
+        },
+        "date": 1795539931898,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5591740000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.544, 0.553, 0.559, 0.562, 0.564 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.177256,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.144, 16.154, 16.177, 16.257, 16.312 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.1751845,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.453, 101.017, 101.175, 101.185, 101.789 ms"
           }
         ]
       }
