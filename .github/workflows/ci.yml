@@ -2010,8 +2010,10 @@ jobs:
       RUSTFLAGS: -D warnings -C link-arg=-fuse-ld=mold
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # On every change, as the toolchain below: `RUSTFLAGS` names mold, and the whole-tree guards
+      # compile and link the core's tests when `rust` is out of scope (every draft pull request,
+      # #7240: `collect2: cannot find 'ld'`).
       - name: The linker
-        if: needs.changes.outputs.rust != 'false'
         timeout-minutes: 11
         uses: ./.github/actions/linux-packages
         with:
