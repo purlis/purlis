@@ -1,0 +1,3 @@
+### Fixed
+
+- **A chat's merge or enqueue through the forge route is held for you, not refused.** `gh pr merge`, `gh pr merge --auto` and a merge-queue enqueue (GraphQL `mergePullRequest`, `enablePullRequestAutoMerge`, `enqueuePullRequest`) raise one Ask that names the pull request and answers to your Merge press, as a REST merge already did. Nothing is sent to the forge until you press, and `guards.merge` = `enforce` still needs your press. Where purlis cannot name the pull request, the chat is told why nobody was asked. A push to a branch the chat did not make now says in git's output why no Let this chat push ask was raised (#7543).
