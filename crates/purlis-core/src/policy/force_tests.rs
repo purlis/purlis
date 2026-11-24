@@ -1564,8 +1564,10 @@ fn a_head_that_was_not_read_stably_purges_no_grant() {
     let given = Grant::given("guards-merge-gone", &merge(true), Scope::Everywhere, None).entry();
     #[allow(clippy::disallowed_methods, reason = "a test plays the person's press")]
     let press = answers::Press::of_the_persons_press();
-    answers::commit(&root, |draft| draft.add(&press, answers::GRANT, &given.text))
-        .expect("sealed");
+    answers::commit(&root, |draft| {
+        draft.add(&press, answers::GRANT, &given.text)
+    })
+    .expect("sealed");
     let holds = || {
         answers::standing(&root)
             .entries

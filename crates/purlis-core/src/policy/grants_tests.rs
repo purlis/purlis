@@ -203,7 +203,12 @@ fn a_grant_does_not_match_a_different_narrowing_context() {
     // Neither do another action, another resource, nor another rule.
     let mut elsewhere = connect(443);
     elsewhere.resource = ("Host", "other.example.com");
-    let said = after(asked(&["network-a"], None), &elsewhere, Some(ULID), &standing);
+    let said = after(
+        asked(&["network-a"], None),
+        &elsewhere,
+        Some(ULID),
+        &standing,
+    );
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
     let said = after(asked(&["network-b"], None), &given, Some(ULID), &standing);
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
@@ -300,7 +305,12 @@ fn the_scope_offered_is_the_narrowest_keep_among_the_deciding_asks() {
     assert_eq!(said.keep, None, "{said:?}");
     assert_eq!(
         offer(&said).scopes,
-        [Scope::Once, Scope::Chat, Scope::Workspace, Scope::Everywhere]
+        [
+            Scope::Once,
+            Scope::Chat,
+            Scope::Workspace,
+            Scope::Everywhere
+        ]
     );
 }
 
@@ -470,12 +480,22 @@ fn an_unreadable_nevers_store_denies_in_every_mode() {
     // The Everywhere entry too.
     let mut standing = holding(Vec::new());
     standing.everywhere = vec![broken.clone()];
-    let said = after(lifted_by_open(&["processes-a"]), &req, Some(ULID), &standing);
+    let said = after(
+        lifted_by_open(&["processes-a"]),
+        &req,
+        Some(ULID),
+        &standing,
+    );
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
     // The nevers an earlier build kept (`asking -> target`) read fine and are not this store's
     // concern: they do not deny an unrelated action.
     let old = Entry::new(answers::NEVER, "qa -> prod");
-    let fine = after(lifted_by_open(&["processes-a"]), &req, Some(ULID), &holding(vec![old]));
+    let fine = after(
+        lifted_by_open(&["processes-a"]),
+        &req,
+        Some(ULID),
+        &holding(vec![old]),
+    );
     assert_eq!(fine.after_mode, Outcome::Allow, "{fine:?}");
     // End to end, under `open`: the host's own decision denies.
     let sealed = Sealed {
@@ -490,12 +510,7 @@ fn an_unreadable_nevers_store_denies_in_every_mode() {
 #[test]
 fn a_this_chat_grant_is_keyed_on_the_chats_ulid() {
     let req = exec("ls");
-    let standing = holding(vec![grant(
-        "processes-a",
-        &req,
-        Scope::Chat,
-        Some(ULID),
-    )]);
+    let standing = holding(vec![grant("processes-a", &req, Scope::Chat, Some(ULID))]);
     let said = asked(&["processes-a"], None);
     let mine = after(said.clone(), &req, Some(ULID), &standing);
     assert_eq!(mine.after_mode, Outcome::Allow, "{mine:?}");
@@ -553,8 +568,10 @@ fn a_removed_and_then_re_added_rule_does_not_revive_an_everywhere_grant() {
     answers::register(&root).expect("registered");
     let req = exec("ls");
     let given = grant("processes-a", &req, Scope::Everywhere, None);
-    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &given.text))
-        .expect("sealed");
+    answers::commit(&root, |draft| {
+        draft.add(&press(), answers::GRANT, &given.text)
+    })
+    .expect("sealed");
     let ask = || {
         let sealed = Sealed {
             chat: Some(ULID.to_owned()),
@@ -672,7 +689,12 @@ fn a_never_on_a_start_holds_where_the_deny_state_set_the_stores_answers_aside() 
         kept: vec![never(&start, Scope::Workspace)],
         ..Standing::fresh()
     };
-    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &denied);
+    let said = after(
+        lifted_by_open(&["processes-a"]),
+        &start,
+        Some(ULID),
+        &denied,
+    );
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
     assert_eq!(said.deciding[0].level, "you", "{said:?}");
     // A kept never that does not read denies too.
@@ -680,7 +702,12 @@ fn a_never_on_a_start_holds_where_the_deny_state_set_the_stores_answers_aside() 
         kept: vec![Entry::new(answers::NEVER, "{\"v\":99}")],
         ..denied
     };
-    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &broken);
+    let said = after(
+        lifted_by_open(&["processes-a"]),
+        &start,
+        Some(ULID),
+        &broken,
+    );
     assert_eq!(said.deciding[0].id, UNREADABLE_ID, "{said:?}");
 }
 
@@ -693,14 +720,23 @@ fn an_unreadable_everywhere_store_denies_a_start() {
         everywhere_unreadable: true,
         ..Standing::fresh()
     };
-    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &denied);
+    let said = after(
+        lifted_by_open(&["processes-a"]),
+        &start,
+        Some(ULID),
+        &denied,
+    );
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
     assert_eq!(said.deciding[0].id, UNREADABLE_ID, "{said:?}");
 }
 
 /// A plane of two asks on `exec`, registered, and the grants in the real store.
 fn two_asks(m: &crate::policy::force::tests::Machine) -> std::path::PathBuf {
-    let rules = format!("{HEADER}{}{}", exec_ask("processes-a", ""), exec_ask("processes-b", ""));
+    let rules = format!(
+        "{HEADER}{}{}",
+        exec_ask("processes-a", ""),
+        exec_ask("processes-b", "")
+    );
     let root = plane(m, &[("purlis.toml", STRICT), ("policy.cedar", &rules)]);
     answers::register(&root).expect("registered");
     root
@@ -715,8 +751,7 @@ fn two_once_grants_are_spent_together_or_not_at_all() {
     let req = exec("ls");
     let ga = grant("processes-a", &req, Scope::Once, Some(ULID));
     let gb = grant("processes-b", &req, Scope::Once, Some(ULID));
-    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &ga.text))
-        .expect("sealed");
+    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &ga.text)).expect("sealed");
     let sealed = Sealed {
         standing: holding(vec![ga.clone(), gb]),
         machine: None,
@@ -784,8 +819,10 @@ fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
         let root = plane(&m, &[("purlis.toml", STRICT)]);
         answers::register(&root).expect("registered");
         let given = grant("guards-merge-hold", &merge, scope, Some(ULID));
-        answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &given.text))
-            .expect("sealed");
+        answers::commit(&root, |draft| {
+            draft.add(&press(), answers::GRANT, &given.text)
+        })
+        .expect("sealed");
         let sealed = Sealed {
             chat: Some(ULID.to_owned()),
             ..Sealed::of(&root)
@@ -810,7 +847,10 @@ fn a_grant_given_for_the_merge_hold_serves_a_chat_the_floor_enforces_it_for() {
             .entries
             .iter()
             .any(|entry| entry.text == given.text);
-        assert_eq!(held, !served, "{scope:?}: only a served Once grant is spent");
+        assert_eq!(
+            held, !served,
+            "{scope:?}: only a served Once grant is spent"
+        );
     }
 }
 
@@ -833,8 +873,10 @@ fn a_grant_of_a_rule_an_uncommitted_edit_took_from_the_tree_is_not_taken_out_of_
     answers::register(&root).expect("registered");
     let req = exec("ls");
     let given = grant("processes-a", &req, Scope::Everywhere, None);
-    answers::commit(&root, |draft| draft.add(&press(), answers::GRANT, &given.text))
-        .expect("sealed");
+    answers::commit(&root, |draft| {
+        draft.add(&press(), answers::GRANT, &given.text)
+    })
+    .expect("sealed");
     std::fs::remove_dir_all(root.join("workspaces/web")).expect("removed, uncommitted");
     let no_workspaces: [&str; 0] = [];
     let sources = crate::policy::levels::Sources {
@@ -902,10 +944,7 @@ fn a_grant_for_the_projects_own_merge_ask_does_not_serve_while_the_floor_holds_t
     let x = "@id(\"guards-merge-x\") @ask(\"you\") @keep(\"everywhere\")\n\
              forbid (principal, action == Action::\"merge\", resource);\n";
     let rules = format!("{HEADER}{x}");
-    let root = plane(
-        &m,
-        &[("purlis.toml", HOLD_OFF), ("policy.cedar", &rules)],
-    );
+    let root = plane(&m, &[("purlis.toml", HOLD_OFF), ("policy.cedar", &rules)]);
     let merge = merge_asked_of_a_hook();
     let accepted = accepted_entry(&version(HOLD_OFF, Some(&rules)));
     let floor = Resolved::parse("guards.merge=enforce");
@@ -915,9 +954,16 @@ fn a_grant_for_the_projects_own_merge_ask_does_not_serve_while_the_floor_holds_t
         machine: None,
         chat: Some(ULID.to_owned()),
     };
-    let said = for_the_merge(&root, &floor, &sealed(vec![accepted.clone(), given_x.clone()]));
+    let said = for_the_merge(
+        &root,
+        &floor,
+        &sealed(vec![accepted.clone(), given_x.clone()]),
+    );
     assert_eq!(said.after_mode, Outcome::Ask, "{said:?}");
-    assert!(said.grant.is_none(), "X's grant is not the hold's: {said:?}");
+    assert!(
+        said.grant.is_none(),
+        "X's grant is not the hold's: {said:?}"
+    );
     let mut ids = said.ids();
     ids.sort_unstable();
     assert_eq!(ids, ["guards-merge-hold", "guards-merge-x"], "{said:?}");
@@ -931,7 +977,10 @@ fn a_grant_for_the_projects_own_merge_ask_does_not_serve_while_the_floor_holds_t
 
 /// A plane whose project, and the accepted copy, have the merge hold off, with the app's store
 /// registered and `entries` committed to it.
-fn hold_off_everywhere(m: &crate::policy::force::tests::Machine, entries: &[&Entry]) -> std::path::PathBuf {
+fn hold_off_everywhere(
+    m: &crate::policy::force::tests::Machine,
+    entries: &[&Entry],
+) -> std::path::PathBuf {
     let root = plane(m, &[("purlis.toml", HOLD_OFF)]);
     answers::register(&root).expect("registered");
     let accepted = accepted_entry(&version(HOLD_OFF, None));
@@ -946,7 +995,8 @@ fn hold_off_everywhere(m: &crate::policy::force::tests::Machine, entries: &[&Ent
 }
 
 #[test]
-fn a_once_grant_for_the_shipped_hold_serves_where_every_side_has_it_off_and_the_floor_enforces_it() {
+fn a_once_grant_for_the_shipped_hold_serves_where_every_side_has_it_off_and_the_floor_enforces_it()
+{
     // N1 (the override with a grant) and N5: the hold the floor keeps is the shipped rule, which
     // no side holds, so its grant must not be purged before it is spent.
     use crate::enforcement::Resolved;
@@ -962,7 +1012,10 @@ fn a_once_grant_for_the_shipped_hold_serves_where_every_side_has_it_off_and_the_
     assert_eq!(said.after_mode, Outcome::Allow, "{said:?}");
     assert!(said.grant.is_some(), "{said:?}");
     assert!(
-        answers::standing(&root).entries.iter().all(|e| e.kind != answers::GRANT),
+        answers::standing(&root)
+            .entries
+            .iter()
+            .all(|e| e.kind != answers::GRANT),
         "the Once grant was spent by the decision it served"
     );
 }
@@ -990,7 +1043,8 @@ fn a_grant_for_the_shipped_hold_is_kept_only_while_the_floor_enforces_the_hold()
 }
 
 #[test]
-fn an_ask_held_by_the_floor_version_and_the_accepted_copy_needs_a_grant_for_each_at_the_narrowest_keep() {
+fn an_ask_held_by_the_floor_version_and_the_accepted_copy_needs_a_grant_for_each_at_the_narrowest_keep()
+ {
     // F1 with a floor-version side, and `keep` narrowed across the union: HEAD asks by X
     // (everywhere); the accepted copy by X and Y (this chat); a floor version by Z (once). The
     // grants needed are all three, offered at the narrowest scope any of them writes.
@@ -1032,13 +1086,25 @@ fn an_ask_held_by_the_floor_version_and_the_accepted_copy_needs_a_grant_for_each
     assert_eq!(only_x.after_mode, Outcome::Ask, "{only_x:?}");
     let mut ids = only_x.ids();
     ids.sort_unstable();
-    assert_eq!(ids, ["processes-x", "processes-y", "processes-z"], "{only_x:?}");
+    assert_eq!(
+        ids,
+        ["processes-x", "processes-y", "processes-z"],
+        "{only_x:?}"
+    );
     assert_eq!(only_x.keep.as_deref(), Some("once"), "{only_x:?}");
     // Every rule has a grant, but a wider one than the narrowest keep serves none of them.
-    let too_wide = judged(vec![wide("processes-x"), wide("processes-y"), wide("processes-z")]);
+    let too_wide = judged(vec![
+        wide("processes-x"),
+        wide("processes-y"),
+        wide("processes-z"),
+    ]);
     assert_eq!(too_wide.after_mode, Outcome::Ask, "{too_wide:?}");
     // A Once grant for each serves.
-    let all = judged(vec![once("processes-x"), once("processes-y"), once("processes-z")]);
+    let all = judged(vec![
+        once("processes-x"),
+        once("processes-y"),
+        once("processes-z"),
+    ]);
     assert_eq!(all.after_mode, Outcome::Allow, "{all:?}");
 }
 
@@ -1057,7 +1123,12 @@ fn a_workspace_never_on_a_start_is_not_applied_where_the_sealed_store_cannot_be_
         kept: Vec::new(),
         ..Standing::fresh()
     };
-    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &unreadable);
+    let said = after(
+        lifted_by_open(&["processes-a"]),
+        &start,
+        Some(ULID),
+        &unreadable,
+    );
     assert_eq!(said.after_mode, Outcome::Allow, "{said:?}");
     assert!(said.deny_state.is_none(), "{said:?}");
     // Control: the same Never, in what a verified store set aside, does hold (F6).
@@ -1065,6 +1136,11 @@ fn a_workspace_never_on_a_start_is_not_applied_where_the_sealed_store_cannot_be_
         kept: vec![given],
         ..unreadable
     };
-    let said = after(lifted_by_open(&["processes-a"]), &start, Some(ULID), &verified);
+    let said = after(
+        lifted_by_open(&["processes-a"]),
+        &start,
+        Some(ULID),
+        &verified,
+    );
     assert_eq!(said.after_mode, Outcome::Deny, "{said:?}");
 }

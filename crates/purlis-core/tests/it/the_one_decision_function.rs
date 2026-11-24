@@ -1245,7 +1245,10 @@ fn a_keep_an_ask_writes_does_not_cap_the_plain_forbids_a_floor_puts_back_in_its_
     let held = decided.held_to(&Resolved::parse("network=enforce,asks=enforce"));
     assert_eq!(held.after_mode, Outcome::Deny, "{held:?}");
     assert_eq!(ids(&held), ["network-shadow"], "{held:?}");
-    assert_eq!(held.keep, None, "the plain forbid writes no @keep: {held:?}");
+    assert_eq!(
+        held.keep, None,
+        "the plain forbid writes no @keep: {held:?}"
+    );
 }
 
 /// N6: the wire format is what it was before M75-20, so an older hook or CLI, whose `Decision`
@@ -1254,11 +1257,22 @@ fn a_keep_an_ask_writes_does_not_cap_the_plain_forbids_a_floor_puts_back_in_its_
 fn a_decision_goes_on_the_wire_as_it_always_did() {
     purlis_core::unsteered!();
     let decided = lifted_deny_beside_an_ask_with_a_keep();
-    assert!(decided.lifted_scopes.is_some(), "the scopes are there to hold a floor to");
+    assert!(
+        decided.lifted_scopes.is_some(),
+        "the scopes are there to hold a floor to"
+    );
     let wire = serde_json::to_value(&decided).expect("a decision is JSON");
-    let keys: Vec<&str> = wire.as_object().expect("an object").keys().map(String::as_str).collect();
+    let keys: Vec<&str> = wire
+        .as_object()
+        .expect("an object")
+        .keys()
+        .map(String::as_str)
+        .collect();
     for internal in ["lifted_scopes", "asked_scopes"] {
-        assert!(!keys.contains(&internal), "{internal} is not on the wire: {keys:?}");
+        assert!(
+            !keys.contains(&internal),
+            "{internal} is not on the wire: {keys:?}"
+        );
     }
     // An ask carries its `keep`, as before.
     assert_eq!(wire["keep"], "once", "{wire}");
@@ -1275,7 +1289,14 @@ fn a_decision_goes_on_the_wire_as_it_always_did() {
         &empty_world(),
     );
     assert_eq!(allowed.after_mode, Outcome::Allow, "{allowed:?}");
-    assert_eq!(allowed.keep.as_deref(), Some("once"), "the lock caps it in process: {allowed:?}");
+    assert_eq!(
+        allowed.keep.as_deref(),
+        Some("once"),
+        "the lock caps it in process: {allowed:?}"
+    );
     let wire = serde_json::to_value(&allowed).expect("JSON");
-    assert!(wire.get("keep").is_none() && wire.get("timed").is_none(), "{wire}");
+    assert!(
+        wire.get("keep").is_none() && wire.get("timed").is_none(),
+        "{wire}"
+    );
 }

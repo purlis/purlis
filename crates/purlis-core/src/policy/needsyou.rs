@@ -387,8 +387,12 @@ pub fn bound_of(
     resource_kind: &str,
     narrowing: &serde_json::Map<String, serde_json::Value>,
 ) -> String {
-    crate::secrets::seal::sealed(BOUND_SEAL, "machine", &bound_text(key, resource_kind, narrowing))
-        .unwrap_or_default()
+    crate::secrets::seal::sealed(
+        BOUND_SEAL,
+        "machine",
+        &bound_text(key, resource_kind, narrowing),
+    )
+    .unwrap_or_default()
 }
 
 /// Whether `item`'s seal is the app's seal of what it says.
@@ -439,7 +443,8 @@ impl Key {
             &self.workspace,
             &self.digest,
             &self.narrowed,
-        ])[..12].to_owned()
+        ])[..12]
+            .to_owned()
     }
 }
 
@@ -594,8 +599,7 @@ impl Grant {
             narrowing: self.narrowing.clone(),
             scope,
             chat,
-            workspace: matches!(self.scope, Scope::Workspace)
-                .then(|| self.key.workspace.clone()),
+            workspace: matches!(self.scope, Scope::Workspace).then(|| self.key.workspace.clone()),
         }
     }
 

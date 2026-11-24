@@ -218,7 +218,10 @@ fn a_late_answer_counts_once_within_thirty_minutes() {
     let digest = key("a").digest;
     // The chat asks again within the half hour: it counts, once.
     assert!(late.spend("c1", RULE, &digest, "", &none(), NOW + 60 + LATE_FOR_SECS));
-    assert!(!late.spend("c1", RULE, &digest, "", &none(), NOW + 61), "spent once");
+    assert!(
+        !late.spend("c1", RULE, &digest, "", &none(), NOW + 61),
+        "spent once"
+    );
 
     // One that waited past the half hour counts for nothing.
     let mut record = Record::default();
@@ -228,7 +231,14 @@ fn a_late_answer_counts_once_within_thirty_minutes() {
         .expect("the item is there");
     let mut late = Late::default();
     late.hold(allowed.deferred.expect("deferred"));
-    assert!(!late.spend("c1", RULE, &key("b").digest, "", &none(), NOW + LATE_FOR_SECS + 1));
+    assert!(!late.spend(
+        "c1",
+        RULE,
+        &key("b").digest,
+        "",
+        &none(),
+        NOW + LATE_FOR_SECS + 1
+    ));
 }
 
 #[test]
@@ -1102,7 +1112,10 @@ fn an_item_edited_with_its_plain_hash_recomputed_is_refused() {
     }
     // The same edit with the key's narrowing part edited too, as a forger would, is no better.
     let mut rekeyed_item = forced;
-    let narrowed = narrowed_of(&rekeyed_item.items[0].resource_kind, &rekeyed_item.items[0].narrowing);
+    let narrowed = narrowed_of(
+        &rekeyed_item.items[0].resource_kind,
+        &rekeyed_item.items[0].narrowing,
+    );
     rekeyed_item.items[0].key.narrowed = narrowed.clone();
     let key = rekeyed_item.items[0].key.clone();
     assert!(
@@ -1148,7 +1161,10 @@ fn the_same_ask_under_another_narrowing_is_another_item() {
         .expect("the force push item");
     assert_eq!(forced.grant.narrowing["force"], serde_json::json!(true));
     assert_eq!(record.items().len(), 1);
-    assert_eq!(record.items()[0].narrowing["force"], serde_json::json!(false));
+    assert_eq!(
+        record.items()[0].narrowing["force"],
+        serde_json::json!(false)
+    );
     // A re-raise of the same narrowing is still one item, the chat added once.
     raised_narrowed(&mut record, false);
     assert_eq!(record.items().len(), 1);
@@ -1180,13 +1196,28 @@ fn a_deferred_once_grant_serves_only_its_rule_kind_and_narrowing() {
     let (_, forced) = narrowing_of_the_push(true);
     let rule: &[&str] = &["guards-merge-hold"];
     let mut late = held_once_for_the_calm_push();
-    assert!(!late.spend("c1", &["another-rule"], &digest, &kind, &calm, NOW + 2), "its rule only");
-    assert!(!late.spend("c1", rule, &digest, "Repo", &calm, NOW + 2), "its kind only");
-    assert!(!late.spend("c1", rule, &digest, &kind, &forced, NOW + 2), "its narrowing only");
-    assert!(!late.spend("c1", rule, &digest, "", &none(), NOW + 2), "no narrowing is another");
+    assert!(
+        !late.spend("c1", &["another-rule"], &digest, &kind, &calm, NOW + 2),
+        "its rule only"
+    );
+    assert!(
+        !late.spend("c1", rule, &digest, "Repo", &calm, NOW + 2),
+        "its kind only"
+    );
+    assert!(
+        !late.spend("c1", rule, &digest, &kind, &forced, NOW + 2),
+        "its narrowing only"
+    );
+    assert!(
+        !late.spend("c1", rule, &digest, "", &none(), NOW + 2),
+        "no narrowing is another"
+    );
     // None of those spent it.
     assert!(late.spend("c1", rule, &digest, &kind, &calm, NOW + 3));
-    assert!(!late.spend("c1", rule, &digest, &kind, &calm, NOW + 4), "once");
+    assert!(
+        !late.spend("c1", rule, &digest, &kind, &calm, NOW + 4),
+        "once"
+    );
 }
 
 #[test]

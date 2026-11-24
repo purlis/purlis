@@ -97,13 +97,22 @@ fn purlis_inbox_shows_the_kind_and_narrowing_an_allow_would_cover() {
             .expect("raised");
     }
     let (stdout, stderr) = said(&inbox(data.path(), &["list"]));
-    assert!(stdout.contains("covers: kind Branch; narrowing force=false"), "{stdout}{stderr}");
-    assert!(stdout.contains("covers: kind Branch; narrowing force=true"), "{stdout}{stderr}");
+    assert!(
+        stdout.contains("covers: kind Branch; narrowing force=false"),
+        "{stdout}{stderr}"
+    );
+    assert!(
+        stdout.contains("covers: kind Branch; narrowing force=true"),
+        "{stdout}{stderr}"
+    );
     // An item with neither says so, rather than saying nothing.
     let plain = tempfile::tempdir().expect("data");
     raise(&Store::in_data(plain.path()), "merge acme/web#7", "c1");
     let (stdout, _) = said(&inbox(plain.path(), &["list"]));
-    assert!(stdout.contains("covers: kind unknown; narrowing none"), "{stdout}");
+    assert!(
+        stdout.contains("covers: kind unknown; narrowing none"),
+        "{stdout}"
+    );
 }
 
 #[test]

@@ -590,8 +590,13 @@ fn scoped(loaded: &Loaded, mut decision: Decision) -> Decision {
         [&decision.family, &decision.mode_family],
     );
     (decision.keep, decision.timed) = (now.keep, now.timed);
-    decision.lifted_scopes = (!decision.lifted.is_empty())
-        .then(|| scopes_of(loaded, &decision.lifted, [&decision.family, &decision.family]));
+    decision.lifted_scopes = (!decision.lifted.is_empty()).then(|| {
+        scopes_of(
+            loaded,
+            &decision.lifted,
+            [&decision.family, &decision.family],
+        )
+    });
     decision.asked_scopes = (!decision.asked.is_empty())
         .then(|| scopes_of(loaded, &decision.asked, [&decision.family, "asks"]));
     decision
@@ -796,9 +801,15 @@ pub fn in_plane_held_to(
     sealed: &Sealed,
     floor: Option<&crate::enforcement::Resolved>,
 ) -> Decision {
-    judged_in_plane(root, asker, action, resource, sealed, floor, |decision, _| {
-        decision
-    })
+    judged_in_plane(
+        root,
+        asker,
+        action,
+        resource,
+        sealed,
+        floor,
+        |decision, _| decision,
+    )
 }
 
 /// **The policy in force's decision, then `settle`, then the person's answers** (M75-20): `settle`
