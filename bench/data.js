@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795536267577,
+  "lastUpdate": 1795539767606,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53928,6 +53928,48 @@ window.BENCHMARK_DATA = {
             "value": 101.8513305,
             "unit": "ms",
             "extra": "median of 5 runs: 101.107, 101.682, 101.851, 101.949, 102.433 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "dd8f876e0ffe8e01a004aec39b74beb73b5a5059",
+          "message": "Guard: the Bash hook's own budget on main, a held merge says so, and purlis report's fast path (#7542) (#7546)\n\n* Guard: Bash hook gets a 5 s budget; a merge waiting for the person is not a timeout; purlis report skips the guard (#7542)\n\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M870Q95HYNPDVGA0BEER3VQW\nPurlis-Persona: steward\n\n* Guard review fixes: purlis report's fast path refuses --yes, -y, --from-file, --stdin and any spelling but single spaces; a merge whose wait ran out says purlis could not confirm the app took it (#7542 review)\n\nAssisted-by: claude-code\nPurlis-Chat: 01M77RHDV9A4J8DP58V09TC1HA\nPurlis-Persona: steward",
+          "timestamp": "2026-11-24T16:18:57Z",
+          "tree_id": "50d23d77cb1372f976cf63e69d6ded7bd4720c35",
+          "url": "https://github.com/purlis/purlis/commit/dd8f876e0ffe8e01a004aec39b74beb73b5a5059"
+        },
+        "date": 1795539759393,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.5463815000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.540, 0.544, 0.546, 0.554, 0.558 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.273602,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.176, 16.187, 16.274, 16.308, 16.589 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.75342599999999,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.294, 101.296, 101.753, 102.052, 102.494 ms"
           }
         ]
       }
