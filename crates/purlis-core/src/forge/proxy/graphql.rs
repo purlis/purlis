@@ -356,11 +356,21 @@ pub(crate) fn search_repo(query: &str, repos: &[&AllowedRepo]) -> Option<usize> 
         {
             return None;
         }
+        // `|`, `||`, `&` and `&&` are not the forge's operators as far as is known, but a token
+        // of nothing else is refused rather than guessed at.
+        if token.chars().all(|c| c == '|' || c == '&') {
+            return None;
+        }
         let lower = token
             .trim_start_matches(['(', '-', '+', '!'])
             .to_ascii_lowercase();
         if let Some(path) = lower.strip_prefix("repo:") {
-            if token.starts_with(['-', '!']) || path.contains(['(', ')', ',', '*']) {
+            // The qualifier is read only as the forge surely reads it: the token starts with
+            // `repo:` itself. A prefix (`+repo:`, `-repo:`, `!repo:`) may make it plain text to
+            // the forge, which would leave the search unscoped.
+            if !token.to_ascii_lowercase().starts_with("repo:")
+                || path.contains(['(', ')', ',', '*'])
+            {
                 return None;
             }
             paths.push(path.to_string());

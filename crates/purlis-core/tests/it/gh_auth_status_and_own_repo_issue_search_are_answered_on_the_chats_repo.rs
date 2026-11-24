@@ -157,6 +157,11 @@ fn a_rest_issue_search_of_another_repo_or_none_or_two_is_refused() {
         "/search/issues?q=repo:acme/app+repo:acme/other",
         "/search/issues?q=repo:acme/app+OR+repo:acme/other",
         "/search/issues?q=repo:acme/app+OR+is:issue",
+        // a prefixed qualifier the forge may read as plain text, leaving the search unscoped
+        "/search/issues?q=%2Brepo:acme/app+password",
+        "/search/issues?q=-repo:acme/app",
+        // a pipe the forge is not known to read as OR, refused rather than guessed at
+        "/search/issues?q=repo:acme/app+%7C%7C+is:private",
         // no q, two q, a key the proxy does not know
         "/search/issues",
         "/search/issues?q=repo:acme/app&q=repo:acme/other",
