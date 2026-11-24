@@ -113,6 +113,8 @@ struct Scene {
     default_tip: HeadSha,
     /// `phase-1-proven`'s tip: a commit of its own on `main`, which edits `src/big.txt`.
     integration: HeadSha,
+    /// `workflow-edit`'s tip: a commit of its own on `main`, which edits the workflow.
+    workflow_edit: HeadSha,
 }
 
 fn lines(n: usize) -> String {
@@ -138,6 +140,12 @@ fn scene() -> Scene {
     );
     let integration = commit(&forge, "integration work");
     git(&forge, &["checkout", "-q", "main"]);
+    // A forge serves a commit by its id, whether or not a branch is at it (GitHub does).
+    git(&forge, &["config", "uploadpack.allowAnySHA1InWant", "true"]);
+    git(&forge, &["checkout", "-q", "-b", "workflow-edit"]);
+    write(&forge, WORKFLOW, "name: ci\non: push\njobs: { edited: {} }\n");
+    let workflow_edit = commit(&forge, "edit the workflow");
+    git(&forge, &["checkout", "-q", "main"]);
     let chat = root.join("chat");
     git(
         &root,
@@ -154,6 +162,7 @@ fn scene() -> Scene {
         chat,
         default_tip,
         integration,
+        workflow_edit,
     }
 }
 
@@ -462,5 +471,94 @@ fn the_tips_fetched_are_distinct_full_ids_and_at_most_the_cap() {
         asked.iter().filter(|t| t.as_str() == real).count(),
         1,
         "a tip listed in two cases is one"
+    );
+}
+
+/// What the gate does for a push that sends no new objects: a quarantine on `base`, the empty pack
+/// git sends, and the tree read against the default branch. `forge_has` is the forge's answer to
+/// "do you have this commit?".
+fn an_empty_pack_through_the_route(
+    s: &Scene,
+    forge: &LocalForge,
+    tip: &HeadSha,
+    forge_has: &dyn Fn(&HeadSha) -> bool,
+) -> Result<PushCheck, String> {
+    let parent = tempfile::tempdir().unwrap();
+    let quarantine = Quarantine::open(parent.path(), &s.default_tip, forge)?;
+    let pack = pack_of(&s.chat, tip, tip);
+    quarantine.take_in_known_or_on_forge(&pack, tip, &s.default_tip, forge, forge_has)?;
+    Ok(check_push_since(
+        Kind::GitHub,
+        None,
+        &quarantine.trees(),
+        &s.default_tip,
+        None,
+        tip,
+    ))
+}
+
+#[test]
+fn a_push_of_a_commit_the_forge_has_sends_an_empty_pack_and_is_read_not_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // A branch made at `phase-1-proven`'s tip: every object is on the forge, so the pack is empty.
+    let checked = an_empty_pack_through_the_route(&s, &forge_of(&s, true), &s.integration, &|_| true)
+        .expect("it is read");
+    assert!(matches!(checked, PushCheck::NoCiFiles), "{checked:?}");
+}
+
+#[test]
+fn a_push_of_a_commit_the_forge_has_that_changes_ci_files_is_held() {
+    purlis_core::unsteered!();
+    let s = scene();
+    match an_empty_pack_through_the_route(&s, &forge_of(&s, true), &s.workflow_edit, &|_| true)
+        .expect("it is read")
+    {
+        PushCheck::Hold(diff) => {
+            assert_eq!(diff.files, vec![WORKFLOW.to_owned()]);
+            assert_eq!(diff.against, s.default_tip);
+        }
+        other => panic!("held, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_push_of_a_commit_neither_the_pack_nor_the_forge_has_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    let tip = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let refused = an_empty_pack_through_the_route(&s, &forge_of(&s, true), &tip, &|_| false);
+    let why = refused.expect_err("an unknown commit is refused");
+    assert!(why.contains("neither the push nor the forge has"), "{why}");
+}
+
+#[test]
+fn a_commit_the_forge_says_it_has_but_cannot_serve_is_refused() {
+    purlis_core::unsteered!();
+    let s = scene();
+    // The forge claims it, but a fetch of it brings nothing: the tip is not here, and not let by.
+    struct Silent(PathBuf);
+    impl BaseObjects for Silent {
+        fn fetch(&self, into: &Path, base: &HeadSha) -> Result<(), String> {
+            if base.as_str() == git_rev(&self.0, "main") {
+                git(into, &["fetch", "--quiet", "--no-tags", &self.0.to_string_lossy(), base.as_str()]);
+                Ok(())
+            } else {
+                Err("the forge has no such commit".to_owned())
+            }
+        }
+    }
+    fn git_rev(root: &Path, rev: &str) -> String {
+        sha_of(root, rev).as_str().to_owned()
+    }
+    let tip = task_commit(&s, |chat| write(chat, "src/new.txt", "new\n"));
+    let parent = tempfile::tempdir().unwrap();
+    let forge = Silent(s.forge.clone());
+    let quarantine = Quarantine::open(parent.path(), &s.default_tip, &forge).unwrap();
+    let pack = pack_of(&s.chat, &tip, &tip);
+    assert!(
+        quarantine
+            .take_in_known_or_on_forge(&pack, &tip, &s.default_tip, &forge, &|_| true)
+            .is_err()
     );
 }

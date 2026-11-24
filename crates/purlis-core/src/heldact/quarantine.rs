@@ -322,6 +322,9 @@ impl BaseObjects for FromForge {
 
 enum Refused {
     ForWantOfObjects(String),
+    /// git took the pack in, and the pushed tip is still not here: the pack sent nothing of it,
+    /// as git sends when the forge has every object already (an empty pack).
+    TipNotHere,
     Otherwise(String),
 }
 
@@ -360,7 +363,7 @@ impl Quarantine {
             quarantine.read_through(cache)?;
         }
         from.fetch(&quarantine.path, base)?;
-        quarantine.has(base)?;
+        quarantine.has(base).map_err(|why| missing(base, why))?;
         Ok(quarantine)
     }
 
@@ -380,7 +383,7 @@ impl Quarantine {
     /// and whose objects its pack leaves out because the forge has them.
     pub fn also_have(&self, from: &dyn BaseObjects, extra: &HeadSha) -> Result<(), String> {
         from.fetch(&self.path, extra)?;
-        self.has(extra)
+        self.has(extra).map_err(|why| missing(extra, why))
     }
 
     /// **Takes in the pack the chat pushed**, whose tip is `tip`: every object hashed and checked by
@@ -390,6 +393,7 @@ impl Quarantine {
         self.read_in(pack, tip, base)
             .map_err(|refused| match refused {
                 Refused::ForWantOfObjects(why) | Refused::Otherwise(why) => why,
+                Refused::TipNotHere => format!("the quarantine has no commit {}", short(tip)),
             })
     }
 
@@ -418,7 +422,13 @@ impl Quarantine {
                 },
             );
         }
-        self.has(tip).map_err(Refused::Otherwise)?;
+        // A tip that is not here is Refused::TipNotHere, which the caller may answer; any other
+        // failure to look is not.
+        match self.has(tip) {
+            Ok(()) => {}
+            Err(Some(why)) => return Err(Refused::Otherwise(why)),
+            Err(None) => return Err(Refused::TipNotHere),
+        }
         // Every object of the push is here: a tip whose tree or blobs are missing has no diff.
         // `--quiet` lists nothing, so a pack of millions of objects needs no cap: only the exit
         // code is read.
@@ -472,9 +482,29 @@ impl Quarantine {
         base: &HeadSha,
         from: &dyn BaseObjects,
     ) -> Result<(), String> {
+        self.take_in_known_or_on_forge(pack, tip, base, from, &|_| false)
+    }
+
+    /// **[`Self::take_in_known`], where a push may send no new objects** because the forge has
+    /// them all: a fast-forward to a commit that is on the forge, or a branch made at one, is an
+    /// empty pack. When git took the pack in and `tip` is still not here, `forge_has` is asked
+    /// whether the forge has that commit, and only if it does is the commit fetched, with its
+    /// history, into the object cache the quarantine reads through, and the range from `base` read
+    /// as for any push. **Nothing is let by**: a commit the forge does not have is refused, the
+    /// fetched commit's objects are checked whole like a pack's, and the caller's scans still
+    /// run on `tip` against `base`.
+    pub fn take_in_known_or_on_forge(
+        &self,
+        pack: &[u8],
+        tip: &HeadSha,
+        base: &HeadSha,
+        from: &dyn BaseObjects,
+        forge_has: &dyn Fn(&HeadSha) -> bool,
+    ) -> Result<(), String> {
         let first = match self.read_in(pack.to_vec(), tip, base) {
             Ok(()) => return Ok(()),
             Err(Refused::Otherwise(why)) => return Err(why),
+            Err(Refused::TipNotHere) => return self.take_in_from_forge(tip, base, from, forge_has),
             Err(Refused::ForWantOfObjects(why)) => why,
         };
         let Some(advertised) = from.advertised(&self.path) else {
@@ -494,21 +524,46 @@ impl Quarantine {
         self.take_in(pack.to_vec(), tip, base)
     }
 
-    fn has(&self, commit: &HeadSha) -> Result<(), String> {
+    /// The pushed tip is no object of the pack: take it from the forge, if the forge has it.
+    fn take_in_from_forge(
+        &self,
+        tip: &HeadSha,
+        base: &HeadSha,
+        from: &dyn BaseObjects,
+        forge_has: &dyn Fn(&HeadSha) -> bool,
+    ) -> Result<(), String> {
+        let unknown = || {
+            format!(
+                "it names commit {}, which neither the push nor the forge has",
+                short(tip)
+            )
+        };
+        if !forge_has(tip) {
+            return Err(unknown());
+        }
+        from.fetch(&self.path, tip)?;
+        if self.has(tip).is_err() {
+            return Err(unknown());
+        }
+        // The same check a pack's objects get: the range from the base is whole.
+        match self.walk(tip, base, "error") {
+            Ok(walked) if walked.ok() => Ok(()),
+            Ok(walked) => Err(first_line(&walked.err, "the commit's objects are not whole")),
+            Err(Refused::ForWantOfObjects(why) | Refused::Otherwise(why)) => Err(why),
+            Err(Refused::TipNotHere) => Err(unknown()),
+        }
+    }
+
+    /// `Ok` where `commit` is here; `Err(None)` where it is not, `Err(Some(why))` where git could
+    /// not be asked.
+    fn has(&self, commit: &HeadSha) -> Result<(), Option<String>> {
         let found = git::run(
             &self.path,
             &["cat-file", "-e", &format!("{}^{{commit}}", commit.as_str())],
             git::READ,
         )
-        .map_err(|why| why.to_string())?;
-        if found.ok() {
-            Ok(())
-        } else {
-            Err(format!(
-                "the quarantine has no commit {}",
-                &commit.as_str()[..12]
-            ))
-        }
+        .map_err(|why| Some(why.to_string()))?;
+        if found.ok() { Ok(()) } else { Err(None) }
     }
 
     /// **The trees of the quarantine**, and no other repository's.
@@ -539,6 +594,15 @@ impl Drop for Quarantine {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.path);
     }
+}
+
+fn short(commit: &HeadSha) -> &str {
+    &commit.as_str()[..12]
+}
+
+/// The message of a `has` that found no commit, for the callers that return a string.
+fn missing(commit: &HeadSha, why: Option<String>) -> String {
+    why.unwrap_or_else(|| format!("the quarantine has no commit {}", short(commit)))
 }
 
 fn first_line(said: &str, otherwise: &str) -> String {
