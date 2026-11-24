@@ -13,7 +13,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use purlis_core::forge::proxy::{
     AllowedRepo, ChatId, Credential, CredentialError, CredentialRequest, CredentialSource,
-    ForgeProxy, Inbound, Kind, ObjectRepo, Outcome, RequestHead, Sentinel, TokenKind,
+    ForgeProxy, Inbound, Kind, ObjectRepo, Outcome, PullHead, PullRef, RequestHead, Sentinel,
+    TokenKind,
 };
 use purlis_core::secrets::keyring::Secret;
 
@@ -46,6 +47,51 @@ pub struct Objects(pub HashMap<String, String>);
 impl ObjectRepo for Objects {
     fn repo_of(&self, _: Kind, _: &str, id: &str) -> Option<String> {
         self.0.get(id).cloned()
+    }
+}
+
+/// [`Objects`] that also say what each pull request's head is, by node id (`Node`) and by
+/// `owner/repo#number` (`Number`): the forge's answer to update-branch's lookup. A pull request
+/// not listed is one the forge could not place.
+#[derive(Default)]
+pub struct ObjectsWithHeads {
+    pub objects: Objects,
+    /// Keyed by node id, or `owner/repo#number`; the value is (repo, branch).
+    pub heads: HashMap<String, (String, String)>,
+}
+
+impl ObjectsWithHeads {
+    /// A pull request of `repo` with this node id and number, whose head is `head_repo`:`branch`.
+    pub fn pull(
+        mut self,
+        repo: &str,
+        id: &str,
+        number: u64,
+        head_repo: &str,
+        branch: &str,
+    ) -> Self {
+        self.objects.0.insert(id.into(), repo.into());
+        let head = (head_repo.to_string(), branch.to_string());
+        self.heads.insert(id.into(), head.clone());
+        self.heads.insert(format!("{repo}#{number}"), head);
+        self
+    }
+}
+
+impl ObjectRepo for ObjectsWithHeads {
+    fn repo_of(&self, kind: Kind, host: &str, id: &str) -> Option<String> {
+        self.objects.repo_of(kind, host, id)
+    }
+
+    fn pull_head(&self, _: Kind, _: &str, pull: PullRef<'_>) -> Option<PullHead> {
+        let key = match pull {
+            PullRef::Node(id) => id.to_string(),
+            PullRef::Number { repo, number } => format!("{repo}#{number}"),
+        };
+        self.heads.get(&key).map(|(repo, branch)| PullHead {
+            repo: repo.clone(),
+            branch: branch.clone(),
+        })
     }
 }
 

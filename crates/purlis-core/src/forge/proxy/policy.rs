@@ -76,6 +76,11 @@ pub enum Refusal {
     BodyUnreadable,
     /// A GraphQL document that does not parse as one request.
     GraphqlParse,
+    /// A pull request whose head is the default branch or a protected one (opened that way, or
+    /// updated from its base), or an update-branch on a pull request whose head is not known to be
+    /// an unprotected branch of the chat's own repo. GitHub merges the base into the head, so
+    /// either would land the chat's branch in a protected one on the forge's side (#7494).
+    ProtectedPullHead,
     /// A GraphQL mutation that is not on the list.
     GraphqlUnknownMutation,
     /// A GraphQL document that reaches a repo, or an object, that is not the chat's.
@@ -114,6 +119,9 @@ impl Refusal {
             Self::LabelById => Some("name labels in the API's labels field, not by id"),
             Self::GraphqlOtherRepo => Some(
                 "if the repo is this chat's own, the REST route for the same act is answered: `gh api repos/OWNER/REPO/pulls -X POST -f title=... -f head=BRANCH -f base=main` for gh pr create, `gh api -X PUT repos/OWNER/REPO/pulls/N/update-branch` for gh pr update-branch",
+            ),
+            Self::ProtectedPullHead => Some(
+                "open the pull request from your feature branch into the default branch, never the other way round, and run update-branch only on a pull request whose head is one of this chat's own branches in this repo",
             ),
             _ => None,
         }
@@ -233,6 +241,30 @@ pub enum BodyNeed {
 pub trait ObjectRepo: Send + Sync {
     /// The normalised `owner/repo` path of the repo `node_id` is in, on `host`.
     fn repo_of(&self, kind: Kind, host: &str, node_id: &str) -> Option<String>;
+
+    /// The head of the pull request `pull` names, on `host`, or `None` when the forge cannot say.
+    /// **`None` refuses**: update-branch writes to the head, so a head that is not known is not
+    /// written to (#7494). A resolver that does not implement it refuses every update-branch.
+    fn pull_head(&self, _kind: Kind, _host: &str, _pull: PullRef<'_>) -> Option<PullHead> {
+        None
+    }
+}
+
+/// A pull request's head as the forge says it: the repo it is in (lower-case `owner/repo`, which
+/// is not the base's when the pull request is from a fork) and the branch's short name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullHead {
+    pub repo: String,
+    pub branch: String,
+}
+
+/// How a pull request is named when its head is asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PullRef<'a> {
+    /// A GraphQL node id.
+    Node(&'a str),
+    /// A number in the repo `repo` (lower-case `owner/repo`), as REST names it.
+    Number { repo: &'a str, number: u64 },
 }
 
 /// The resolver that knows nothing, so every mutation on an object is refused.
@@ -837,7 +869,16 @@ impl ChatPolicy {
             } else {
                 commands::parse(body, head.content_type.as_deref())?
             };
-            let class = rest::decide(kind, method, &rel, &target, parsed.as_ref(), repo, merging)?;
+            let class = rest::decide(
+                kind,
+                method,
+                &rel,
+                &target,
+                parsed.as_ref(),
+                repo,
+                objects,
+                merging,
+            )?;
             let mut answer = allowed(repo, class, Surface::Api, segments, &target);
             if let Some(b) = parsed {
                 answer.canonical_media = Some(b.media);

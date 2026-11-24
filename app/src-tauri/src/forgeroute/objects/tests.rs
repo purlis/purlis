@@ -309,3 +309,99 @@ fn a_node_id_of_another_repo_an_unplaced_id_and_a_forge_that_failed_are_refused_
         }
     }
 }
+
+#[test]
+fn a_pull_requests_head_is_read_as_the_repo_and_branch_the_forge_names() {
+    let answer = serde_json::json!({
+        "headRefName": "fix", "headRepository": {"nameWithOwner": "Acme/Widgets"}});
+    assert_eq!(
+        head_in(&answer),
+        Ok(Some(PullHead {
+            repo: "acme/widgets".to_owned(),
+            branch: "fix".to_owned()
+        }))
+    );
+}
+
+#[test]
+fn a_pull_request_head_the_forge_does_not_name_is_none_and_one_of_another_shape_is_an_error() {
+    // A deleted fork has a null head repository; a node that is no pull request has neither field.
+    for gone in [
+        serde_json::json!({"headRefName": "fix", "headRepository": null}),
+        serde_json::json!({}),
+        serde_json::Value::Null,
+    ] {
+        assert_eq!(head_in(&gone), Ok(None), "{gone}");
+    }
+    let odd =
+        serde_json::json!({"headRefName": "fix", "headRepository": {"nameWithOwner": "a/b/c"}});
+    assert!(head_in(&odd).is_err());
+}
+
+#[test]
+fn a_run_asks_for_a_pull_requests_head_only_on_github_and_only_where_it_has_a_repo() {
+    struct Heads(AtomicUsize);
+    impl NodeRepos for Heads {
+        fn repo_of_node(&self, _: &CredentialRequest, _: &str) -> Result<Option<String>, String> {
+            Ok(None)
+        }
+        fn pull_head(
+            &self,
+            _: &CredentialRequest,
+            _: PullRef<'_>,
+        ) -> Result<Option<PullHead>, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(PullHead {
+                repo: "acme/widgets".to_owned(),
+                branch: "fix".to_owned(),
+            }))
+        }
+    }
+    let lookup = Arc::new(Heads(AtomicUsize::new(0)));
+    let objects = run(lookup.clone());
+    let number = PullRef::Number {
+        repo: "acme/widgets",
+        number: 3,
+    };
+
+    assert_eq!(
+        objects
+            .pull_head(Kind::GitHub, "github.com", number)
+            .map(|h| h.branch),
+        Some("fix".to_owned())
+    );
+    assert!(
+        objects
+            .pull_head(Kind::GitHub, "elsewhere.example", number)
+            .is_none()
+    );
+    assert!(
+        objects
+            .pull_head(Kind::GitLab, "github.com", number)
+            .is_none()
+    );
+    assert!(
+        objects
+            .pull_head(Kind::GitHub, "github.com", PullRef::Node("not a node id!"))
+            .is_none()
+    );
+    assert_eq!(lookup.0.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_lookup_that_cannot_read_a_head_makes_the_head_unknown() {
+    // The default `pull_head` is an error, which the run reads as no head: update-branch refused.
+    let objects = run(Answers::of(&[]));
+    assert!(
+        objects
+            .pull_head(
+                Kind::GitHub,
+                "github.com",
+                PullRef::Number {
+                    repo: "acme/widgets",
+                    number: 3
+                }
+            )
+            .is_none()
+    );
+}

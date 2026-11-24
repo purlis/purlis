@@ -9,9 +9,9 @@
 //! builds them. A mutation on another repo's pull request or repository stays refused, and so
 //! does the write of an id nobody can place.
 
-use purlis_core::forge::proxy::{Outcome, Refusal, TokenKind};
+use purlis_core::forge::proxy::{Outcome, Refusal};
 
-use crate::support::forge_proxy::{Objects, Scene, graphql, is_refused};
+use crate::support::forge_proxy::{ObjectsWithHeads, Scene, graphql, is_refused};
 
 /// What `gh pr create --repo OWNER/REPO` sends first, captured from gh 2.69.0 (the repository and
 /// its fork parent, which are the same fragment).
@@ -49,12 +49,14 @@ const UPDATE_BRANCH: &str = "mutation PullRequestUpdateBranch($input: UpdatePull
     updatePullRequestBranch(input: $input) { pullRequest { id } } }";
 
 fn scene() -> Scene {
-    let mut objects = Objects::default();
-    objects.0.insert("PR_kwDO_app".into(), "acme/app".into());
+    // The pull request's head is what update-branch writes to: here a branch of the chat's repo.
+    let mut objects =
+        ObjectsWithHeads::default().pull("acme/app", "PR_kwDO_app", 7, "acme/app", "fix");
     objects
+        .objects
         .0
         .insert("PR_kwDO_other".into(), "acme/other".into());
-    Scene::with(TokenKind::Oauth, objects)
+    Scene::tuned(objects, |proxy| proxy)
 }
 
 fn send(s: &Scene, query: &str, variables: serde_json::Value) -> Outcome {
