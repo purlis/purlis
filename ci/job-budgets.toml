@@ -167,14 +167,20 @@ p50 = 30  # added on main after seeding, no runs measured: seeded above its Linu
 # slower, ADR 0092); R0's run 45069887140 measured the old two-run job at 101 min on dev-release,
 # which no longer exists. Reset each on the median of its first clean runs once R1's pull
 # requests have landed.
+#
+# The two dev build jobs below are lowered for `lto = "off"` (R7, #7418, ADR 0092 amended
+# 2026-11-24). Run 45137164155 built `dev-release` on the one-cargo-run job with each LTO setting:
+# macOS compiled in 111.2 and 91.3 min with LTO off against 114.6 and 107.2 with thin (dsymutil
+# 1.5 against 10), Linux in 24.0 and 18.7 against 32.2 and 31.2. Each is cut by about the ten
+# minutes R7 measured and is a ceiling until a dev publish with the new profile has run.
 
 [[job]]
 id = "release-macos-dev"
 workflow = "release"
 profile = "dev-release"
 check = "macOS (.app)"
-run = 45069994116  # 90.2 min, `release` profile: a ceiling for dev-release
-p50 = 91
+run = 45137164155  # R7, LTO off: about 10 min under the 90.2 of run 45069994116 (`release`, thin)
+p50 = 81
 
 [[job]]
 id = "release-macos-release"
@@ -189,8 +195,8 @@ id = "release-linux-dev"
 workflow = "release"
 profile = "dev-release"
 check = "Linux (.deb, AppImage)"
-run = 45069887140  # R0's linux-base, dev-release: 35 min
-p50 = 35
+run = 45137164155  # R7, LTO off: about 10 min under the 35 of R0's run 45069887140 (thin)
+p50 = 25
 
 [[job]]
 id = "release-linux-release"

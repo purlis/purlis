@@ -32,10 +32,10 @@ run-name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 
 #                             that same keyless path. Published nowhere. A red night keeps one
 #                             issue open (see the `profile-guard` job).
 #
-# **The two channels differ in optimisation profile and bundle set, and in nothing else**
-# (ADR 0092). A stable build uses Cargo's `release` profile and makes every bundle. A dev
-# channel build uses `dev-release` (the same profile with thin LTO over sixteen codegen units)
-# and makes no `.dmg`, which takes its macOS job from about 34 minutes to about 17. Signing,
+# **The two channels differ in optimisation profile, bundle set and link-time optimisation, and
+# in nothing else** (ADR 0092 amended 2026-11-24). A stable build uses Cargo's `release` profile
+# (thin LTO) and makes every bundle. A dev channel build uses `dev-release` (the same profile
+# with LTO off) and makes no `.dmg`, which takes its macOS job from about 34 minutes to about 17. Signing,
 # the no-cache rule and one runner per platform are the same on both. `plan` decides all of it
 # once, in its `profile`, `dmg` and `appimage_required` outputs.
 #
