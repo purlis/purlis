@@ -143,7 +143,7 @@ export function flakyTests(suites) {
 /**
  * Every flaky test of `suites` with where it flaked, for its ticket: `{ test, count, jobs, runs }`,
  * the most often first. `jobs` are the suites (the job names) that ran it, `runs` the workflow runs
- * it flaked in (`{ id, url }`, each once), read from each suite's `workflowRun`.
+ * it flaked in (`{ id, url, createdAt }`, each once), read from each suite's `workflowRun`.
  */
 export function flakeEvidence(suites) {
   const found = new Map();
@@ -157,7 +157,7 @@ export function flakeEvidence(suites) {
         if (!one.jobs.includes(job.name)) one.jobs.push(job.name);
         const run = suite.workflowRun;
         if (run && !one.runs.some((seen) => seen.id === run.databaseId)) {
-          one.runs.push({ id: run.databaseId, url: run.url });
+          one.runs.push({ id: run.databaseId, url: run.url, createdAt: run.createdAt });
         }
         found.set(flaky[1], one);
       }
@@ -182,6 +182,24 @@ export function ticketFor(test, issues) {
     issues.find((issue) => TEST_MARKER.exec(issue.body ?? "")?.[1] === safe(test)) ??
     issues.find((issue) => issue.title === ticketTitle(test))
   );
+}
+
+/**
+ * The runs of `runs` that count against `ticket`. An open ticket is owed all of them. A closed
+ * ticket was closed by a fix, so a run counts only if it STARTED after the ticket's last close
+ * (`closed_at`): an earlier run is history the fix already answered, and a run with no start time
+ * is treated as history too, since reopening on a guess is the defect this rule exists for. Time,
+ * not "the run's head contains the fixing commit": a close needs no commit to read back (a
+ * ticket can be closed by hand, or by a PR that only mentions it), and a run in flight at the
+ * close, on a head from before the fix, is the one case that rule would catch and this does not;
+ * it is rare, and the next run on the fix's head tells the truth.
+ */
+export function runsAfterClose(runs, ticket) {
+  if (ticket?.state !== "closed") return runs;
+  const closed = Date.parse(ticket.closed_at ?? "");
+  // A closed ticket with no close time cannot be told from history: count nothing.
+  if (Number.isNaN(closed)) return [];
+  return runs.filter((run) => Date.parse(run.createdAt ?? "") > closed);
 }
 
 /**
@@ -217,7 +235,7 @@ export function planFlakeTickets(flakes, issues) {
       continue;
     }
     const known = (RUNS_MARKER.exec(ticket.body ?? "")?.[1] ?? "").split(",").filter(Boolean).map(Number);
-    const fresh = flake.runs.filter((run) => !known.includes(run.id));
+    const fresh = runsAfterClose(flake.runs, ticket).filter((run) => !known.includes(run.id));
     if (fresh.length === 0) continue;
     const ids = [...known, ...fresh.map((run) => run.id)];
     const body = ticket.body ?? "";
@@ -303,6 +321,9 @@ export function planQuarantine({ flakes, entries, issues, openBranches, today })
     if (flake.runs.length < QUARANTINE_AFTER || listed.has(flake.test)) continue;
     const ticket = ticketFor(flake.test, issues);
     if (!ticket) continue;
+    // Only the runs since the ticket's last close count: a fixed flake's old runs are answered.
+    const counted = runsAfterClose(flake.runs, ticket);
+    if (counted.length < QUARANTINE_AFTER) continue;
     const branch = `ci-health/quarantine-${createHash("sha256").update(flake.test).digest("hex").slice(0, 12)}`;
     if (openBranches.includes(branch)) continue;
     proposals.push({
@@ -312,11 +333,11 @@ export function planQuarantine({ flakes, entries, issues, openBranches, today })
       branch,
       title: `Quarantine ${flake.test}`.slice(0, 200),
       body: [
-        `\`${flake.test}\` passed on a retry in ${flake.runs.length} runs of the last seven days (#${ticket.number}), ` +
+        `\`${flake.test}\` passed on a retry in ${counted.length} runs of the last seven days (#${ticket.number}), ` +
           `which is a flake three times over (ADR 0127). Until its fix lands, only the nightly run runs it.`,
         "",
         "Runs:",
-        runList(flake.runs),
+        runList(counted),
         "",
         `The pull request that fixes it removes this entry from \`ci/quarantine.toml\`. Opened by \`ci-health\`; review and enqueue it.`,
       ].join("\n"),
@@ -662,7 +683,7 @@ async function graphql(query, variables, token) {
 
 const SUITES = `query($ids: [ID!]!) {
   nodes(ids: $ids) { ... on CheckSuite {
-    workflowRun { databaseId url }
+    workflowRun { databaseId url createdAt }
     checkRuns(first: 100, filterBy: { checkType: LATEST }) { nodes {
       databaseId name conclusion startedAt completedAt
       annotations(first: 50) { nodes { annotationLevel title } }
