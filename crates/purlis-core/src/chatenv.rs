@@ -1472,6 +1472,12 @@ mod tests {
                 pair("CHARTER_SKILLS_DIR", "/new"),
                 pair("PURLIS_ROOT", "/plane"),
                 pair("CHARTER_ROOT", "/plane"),
+                // Then the chat's git never runs automatic gc (#7531), as its last pairs.
+                pair("GIT_CONFIG_COUNT", "2"),
+                pair("GIT_CONFIG_KEY_0", "gc.auto"),
+                pair("GIT_CONFIG_VALUE_0", "0"),
+                pair("GIT_CONFIG_KEY_1", "maintenance.auto"),
+                pair("GIT_CONFIG_VALUE_1", "false"),
             ]
         );
     }
@@ -1508,6 +1514,7 @@ mod tests {
         let mut names: Vec<String> = composed
             .into_iter()
             .map(|(name, _)| name.into_string().unwrap())
+            .filter(|name| !name.starts_with("GIT_CONFIG_")) // #7531's gc pairs, not a namespace's
             .collect();
         names.sort();
         assert_eq!(names, ["PATH", "SHELLY_HOME", "SHELLY_MODE"]);
@@ -1531,6 +1538,7 @@ mod tests {
         let names: Vec<String> = composed
             .into_iter()
             .map(|(name, _)| name.into_string().unwrap())
+            .filter(|name| !name.starts_with("GIT_CONFIG_")) // #7531's gc pairs, not a namespace's
             .collect();
         assert_eq!(names, ["PATH"]);
     }
