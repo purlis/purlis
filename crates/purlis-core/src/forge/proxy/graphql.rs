@@ -158,15 +158,25 @@ fn merge_mutation(kind: Kind, name: &str) -> bool {
     }
 }
 
-/// The merge mutations a held merge can stand for: the merge, auto-merge on and the merge queue.
+/// The merge mutations a held merge can stand for: a merge now, which is what the person's press
+/// performs. Auto-merge and the merge queue are not: the press merges at once, so holding them
+/// would turn "merge when green" or "through the queue" into "merge now" ([`unheld_merge_said`]).
 /// Undoing one (`disablePullRequestAutoMerge`, `dequeuePullRequest`) is never held.
 pub(super) fn holdable_merge(kind: Kind, name: &str) -> bool {
     match kind {
-        Kind::GitHub => matches!(
-            name,
-            "mergePullRequest" | "enablePullRequestAutoMerge" | "enqueuePullRequest"
-        ),
+        Kind::GitHub => name == "mergePullRequest",
         Kind::GitLab => name == "mergeRequestAccept",
+    }
+}
+
+/// What a chat is told when it asks for auto-merge or the merge queue, which no press performs.
+pub(super) fn unheld_merge_said(kind: Kind, name: &str) -> Option<&'static str> {
+    match (kind, name) {
+        (Kind::GitHub, "enablePullRequestAutoMerge" | "enqueuePullRequest") => Some(
+            "auto-merge and the merge queue are not held for the person: their press merges at \
+             once. Ask the person to merge it, or ask for a merge now (gh pr merge without --auto)",
+        ),
+        _ => None,
     }
 }
 

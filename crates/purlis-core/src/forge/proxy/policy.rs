@@ -694,6 +694,9 @@ impl ChatPolicy {
             .filter(|r| r.serves(&host, head.port))
             .collect();
         let kind = repos.first()?.kind;
+        if let Some(said) = graphql::unheld_merge_said(kind, name) {
+            return Some(Err(said));
+        }
         if !graphql::holdable_merge(kind, name) {
             return None;
         }
@@ -702,7 +705,7 @@ impl ChatPolicy {
                 let repo = crate::mergehold::Repo::try_from(path).ok()?;
                 Some(crate::heldact::Requested::merge_of(repo, number))
             })
-            .ok_or("the forge did not say which pull request it is, so purlis cannot ask about it; ask the person to merge it");
+            .ok_or("purlis could not read which pull request of this repo the document merges (it reads one mutation with one field); ask the person to merge it");
         Some(named)
     }
 

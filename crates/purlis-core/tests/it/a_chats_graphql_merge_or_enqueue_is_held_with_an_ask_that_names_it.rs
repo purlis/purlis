@@ -77,21 +77,42 @@ fn seven() -> Requested {
 }
 
 #[test]
-fn a_merge_auto_merge_or_enqueue_raises_one_ask_each_and_names_it() {
+fn a_merge_raises_one_ask_and_names_it() {
     purlis_core::unsteered!();
-    for field in [
-        "mergePullRequest",
-        "enablePullRequestAutoMerge",
-        "enqueuePullRequest",
-    ] {
+    let (s, asked) = scene();
+    let out = mutate(&s, "mergePullRequest", "PR_kwDO_1");
+    let Outcome::Held(held) = &out else {
+        panic!("not held, so refused or forwarded: {out:?}");
+    };
+    assert_eq!(held.refusal, Refusal::Merge);
+    assert!(held.said.contains("Ask 41"), "{}", held.said);
+    assert_eq!(*asked.0.lock().unwrap(), [seven()], "one ask");
+}
+
+/// Auto-merge and the merge queue are not held: the person's press merges at once, so holding
+/// them would turn "merge when green" or "through the queue" into "merge now". They are refused
+/// with a reason, and nobody is asked.
+#[test]
+fn auto_merge_and_the_merge_queue_are_refused_with_a_reason_and_ask_nobody() {
+    purlis_core::unsteered!();
+    for field in ["enablePullRequestAutoMerge", "enqueuePullRequest"] {
         let (s, asked) = scene();
         let out = mutate(&s, field, "PR_kwDO_1");
         let Outcome::Held(held) = &out else {
-            panic!("{field}: not held, so refused or forwarded: {out:?}");
+            panic!("{field}: not answered with a reason: {out:?}");
         };
         assert_eq!(held.refusal, Refusal::Merge, "{field}");
-        assert!(held.said.contains("Ask 41"), "{field}: {}", held.said);
-        assert_eq!(*asked.0.lock().unwrap(), [seven()], "{field}: one ask");
+        assert!(
+            held.said.contains("Nobody was asked"),
+            "{field}: {}",
+            held.said
+        );
+        assert!(
+            held.said.contains("merges at once"),
+            "{field}: {}",
+            held.said
+        );
+        assert!(asked.0.lock().unwrap().is_empty(), "{field}: no ask");
     }
 }
 
@@ -99,9 +120,13 @@ fn a_merge_auto_merge_or_enqueue_raises_one_ask_each_and_names_it() {
 fn a_held_merge_is_never_forwarded() {
     purlis_core::unsteered!();
     let (s, _) = scene();
-    for _ in 0..3 {
-        let out = mutate(&s, "enqueuePullRequest", "PR_kwDO_1");
-        assert!(!matches!(out, Outcome::Forward(_)), "{out:?}");
+    for field in [
+        "mergePullRequest",
+        "enablePullRequestAutoMerge",
+        "enqueuePullRequest",
+    ] {
+        let out = mutate(&s, field, "PR_kwDO_1");
+        assert!(!matches!(out, Outcome::Forward(_)), "{field}: {out:?}");
     }
 }
 
