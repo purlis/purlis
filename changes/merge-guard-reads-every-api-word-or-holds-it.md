@@ -13,3 +13,4 @@
   A `gh api` read behind such a program, or a mistyped `gh push`, is now held too. The refusal
   says to write the noun and the verb out and put the flags after them. The text guard is an
   early warning; under `guards.merge = enforce` the forge route is the boundary (#7423).
+  A flag before a package manager's or `git`'s subcommand (`git --namespace log bisect run gh …`, `npm --loglevel info exec -- gh …`) no longer makes the call names-only, and a `find -exec gh -R o/r +` that `find` may complete with file names is held.

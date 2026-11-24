@@ -355,23 +355,26 @@ fn never_executes(base: &str, argv: &[String]) -> bool {
     if base == "find" {
         return true;
     }
+    // **Names only when the subcommand is the first word** (round 12): any other flag before it
+    // may take a value that is itself a listed subcommand (`git --namespace log bisect run gh …`,
+    // `npm --loglevel info exec -- gh …`), so the real subcommand is behind it and the call is read.
     let mut rest = argv.iter().skip(1);
     if base == "git" {
-        // Its options that take a value apart (`-C dir`, `-c k=v`) come first.
+        // Only `-C <dir>` and `-c <k=v>` pairs may come first: each is known to take one value.
         let sub = loop {
             match rest.next().map(String::as_str) {
                 Some("-C" | "-c") => {
                     rest.next();
                 }
-                Some(flag) if flag.starts_with('-') => {}
                 other => break other,
             }
         };
         return sub.is_some_and(|s| GIT_SUBCOMMANDS.contains(&s));
     }
     if PACKAGE_MANAGERS.contains(&base) {
-        let sub = rest.find(|w| !w.starts_with('-'));
-        return sub.is_some_and(|s| PACKAGE_SUBCOMMANDS.contains(&s.as_str()));
+        return rest
+            .next()
+            .is_some_and(|s| PACKAGE_SUBCOMMANDS.contains(&s.as_str()));
     }
     false
 }

@@ -1166,6 +1166,22 @@ fn segment_reason(
         if let Some(said) = words_reason(&run, cmd, unattended, depth, a_shell_reads_stdin) {
             return Some(said);
         }
+        // `find` fills `{}` in with a file name, wherever it stands: a word the shell fills in
+        // (`-exec gh -R {} +`), not a plain value (#7423, round 12). And a forge run still short
+        // of its verb may be completed by the names `find` appends after a `+`, which the run no
+        // longer shows (`find pr merge 5 -maxdepth 0 -exec gh -R o/r +`): held.
+        let filled: Vec<String> = run.iter().map(|w| w.replace("{}", "$X")).collect();
+        if filled != run
+            && let Some(said) = words_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin)
+        {
+            return Some(said);
+        }
+        let (forge, _, inner) = shellwrap::split_env(&run);
+        let forge = base_lower(&forge);
+        if matches!(forge.as_str(), "gh" | "glab") && placed::may_be_completed(&forge, &inner, &[])
+        {
+            return Some(format!("{RELEASE_FLOOR_FIX}{}", fed_said(&forge)));
+        }
     }
     if !only_merges()
         && let Some(said) = token::keychain_read_reason(&prog, &argv)
