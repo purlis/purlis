@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795527509038,
+  "lastUpdate": 1795528169757,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53760,6 +53760,48 @@ window.BENCHMARK_DATA = {
             "value": 101.7727775,
             "unit": "ms",
             "extra": "median of 5 runs: 101.581, 101.742, 101.773, 101.782, 103.999 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "a27bfdf0ccd22d3b6f569c55f3dc34ad9c1fb039",
+          "message": "CI flakes: purlis-core batch (#7437 #7455 #7456 #7457 #7458 #7459 #7460) (#7521)\n\n* Test: a lock set while a fill waits no longer depends on the ask still being open\n\nThe run's moved hook fires after the ask is raised, on the run's thread. The test set the\nrun-grants lock only if an open ask was still listed, but the person's thread can fill and answer\n(closing the ask) first, so the lock was skipped and the run went on. The hook now sets the lock\nunconditionally; the guarantee (a lock set while a fill waits stops the run, the value stays\nstored) is unchanged.\n\nCloses #7437\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: two drains at once count a drain that waited out the lock as one that found nothing\n\nA drain waits for the spool's lock at most 2 s and, past it, reads nothing and answers TimedOut\n(#1426). On a slow runner the second drain waited out the first, still fsyncing its sixty lines,\nand the test's expect failed on the bound working as designed. The test now takes a TimedOut\ndrain that read no line as one that found nothing; any other error, or a line read before a\ntimeout, still fails, and every line is still handed on once between the two.\n\nCloses #7456\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: a key the spool's lock kept out no longer fails on how late the runner woke the test\n\nThe test bounded the lock wait from above by wall clock (the 2 s bound plus 3 s), so a stalled\nrunner failed it. It keeps the lower bound (the whole wait was spent) and the TimedOut with the\nholder still on the lock, which is what shows the wait ends; the upper line is dropped.\n\nCloses #7455\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: a chat's clone that keeps making progress leaves no silence but its gaps\n\nThe stall limit is wall-clock silence (cloning::follow). The test's script had 100 ms gaps against\na 400 ms limit and ran git init after its last line, so a loaded runner slow at either read as a\nstall. git init now runs before the first line, nothing runs after the last, the limit is ten\ngaps (1 s) and the clone runs fifteen, and the test asserts it outlasted the limit. A slow git\ninit (0.5 s) before the first line no longer fails it; the silent-clone test still proves a\nstalled clone is stopped.\n\nCloses #7457\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: both ports stop listening is waited for, not slept for\n\nDrop wakes each accept with a connection; the listener thread then sees the stop and closes its\nsocket, off the dropping thread. The test slept 200 ms and expected connections refused, which a\nloaded runner can outlast. A stopped listener carries nothing in between (it breaks on its first\naccept after the stop), so this is timing, not an egress gap: the test now polls until each port\nrefuses, failing at 10 s if one never does.\n\nNot run here: the sandbox refuses to bind a port. Compiles; unverified locally.\n\nCloses #7458\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: allow once reaching one of two runs reads the ask and its waiters under one lock\n\nThe wait loop listed the open asks, then counted the waiters in a second lock, and took the ask's\nid from the first list. If both runs registered between the two reads, the list was empty beside\na count of two and open[0] panicked. One read now yields the id and the count together. Shown\nred with a 200 ms pause between the reads (index out of bounds); the guarantee (one of two runs\nholding on an Allow once is told to go, the other is told it was taken, nothing is left over) is\nunchanged.\n\nCloses #7459\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: many reads of a branch with many untracked files no longer rides the reader's 30 s deadline\n\nNot memory: charter grew under 2 MB over the reads in both measured runs. Each read of the 20,000\nfiles takes 12.3 to 12.7 s in a debug build, against the reader's 30 s deadline (product, with its\nown FIFO test) and, for fifteen reads, 215 s of nextest's 300 s. One of two runs here failed at\nread 12, 34 s into it (deadline plus grace). Ten reads, which a per-read leak still shows in, and a\ndeadline of about ten reads' worth (120 s) for this reader.\n\nCloses #7460\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* Test: correct the stall comment of the chat clone test, and run it twice the limit\n\nReview of the batch: the stall clock starts at the clone's start, so shell start and git init\ncount as silence before the first line; the comment said they did not. Corrected (a 0.5 s git init\npassed). The clone now runs twenty gaps, twice the limit, instead of fifteen.\n\nRefs #7457\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86KHRQ36NH45QHN7692BZDP\nPurlis-Persona: steward\n\n* rustfmt the spool test (#7455)\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T13:04:11Z",
+          "tree_id": "6e0b9be9dcecbf087509b37709d5b5d1658aaa18",
+          "url": "https://github.com/purlis/purlis/commit/a27bfdf0ccd22d3b6f569c55f3dc34ad9c1fb039"
+        },
+        "date": 1795528163426,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.7122280000000001,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.689, 0.704, 0.712, 0.722, 0.737 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.553286,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.445, 16.484, 16.553, 16.754, 16.755 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 102.11605,
+            "unit": "ms",
+            "extra": "median of 5 runs: 100.816, 101.665, 102.116, 102.384, 103.156 ms"
           }
         ]
       }
