@@ -4039,12 +4039,15 @@ const A_NOTICE_TAKES_AT_MOST: std::time::Duration = std::time::Duration::from_mi
 pub const A_LINE_DEADLINE_ON_PURPOSE_ENV: &str = "PURLIS_TEST_HOOK_LINE_DEADLINE_MS";
 
 /// How long a line's delivery waits for the app to take it: [`A_NOTICE_TAKES_AT_MOST`], or in
-/// a debug build what [`A_LINE_DEADLINE_ON_PURPOSE_ENV`] says.
+/// a debug build what [`A_LINE_DEADLINE_ON_PURPOSE_ENV`] says (a number of milliseconds above
+/// zero; anything else reads as unset). [`A_TOOL_HOOK_TELLS_WITHIN`] is computed from the
+/// constant, so a hook run with the knob set is outside that bound, on purpose.
 #[cfg(unix)]
 fn a_line_is_taken_within() -> std::time::Duration {
     #[cfg(debug_assertions)]
-    if let Some(ms) =
-        crate::envvar::var(A_LINE_DEADLINE_ON_PURPOSE_ENV).and_then(|ms| ms.parse().ok())
+    if let Some(ms) = crate::envvar::var(A_LINE_DEADLINE_ON_PURPOSE_ENV)
+        .and_then(|ms| ms.parse::<u64>().ok())
+        .filter(|ms| *ms > 0)
     {
         return std::time::Duration::from_millis(ms);
     }
