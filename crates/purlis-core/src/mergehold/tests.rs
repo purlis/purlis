@@ -714,7 +714,10 @@ fn a_plain_api_read_inside_a_substitution_is_no_merge() {
         r#"P=$(glab api "projects/:id/pipelines?ref=main&per_page=1" | head -1); [ -z "$P" ] && P=$(glab api "projects/:id/pipelines?per_page=1" | head -1); echo "$P""#,
         "P=`glab api projects/:id/pipelines | head -1`; [ -z \"$P\" ] && P=`glab api projects/:id/pipelines | head -1`",
         "P=$(gh api repos/o/r/actions/runs --jq '.workflow_runs[0].id'); [ -z \"$P\" ] && P=$(gh api -X GET repos/o/r/actions/runs)",
-        "for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api repos/o/r/pulls/$id; done",
+        // The variable is quoted: in bash and dash an unquoted variable from a forge answer is
+        // split and globbed (`mer*` can match a file named `merge -XPUT`), so only the quoted
+        // form is the readable one (round 9).
+        r#"for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api "repos/o/r/pulls/$id"; done"#,
     ] {
         assert_eq!(held(cmd), None, "{cmd}");
     }

@@ -334,7 +334,16 @@ fn behind_an_unknown_program(
         if names_a_forge(word) || matches!(base.as_str(), "purlis" | "charter") {
             let a_path = word.contains('/') || word.starts_with('~');
             let opaque_next = argv.get(k + 1).is_some_and(|w| super::merge::opaque(w));
-            if (a_path || opaque_next) && !later[k + 1] {
+            // The skip holds only where nothing the shell fills in stands as the noun or the
+            // verb: then the call is read as the direct call is (round 9).
+            if (a_path || opaque_next)
+                && !later[k + 1]
+                && !(names_a_forge(word)
+                    && shell_filled_noun_or_verb(
+                        &argv[k + 1..],
+                        spelled.get(k + 1..).unwrap_or(&[]),
+                    ))
+            {
                 continue;
             }
             let mut call: Vec<Word> = (k..argv.len())
@@ -381,4 +390,32 @@ fn fills_in_a_forge_call(word: &str, after: &[String]) -> bool {
             .first()
             .is_some_and(|verb| rows.iter().any(|r| held(r.0, r.1, verb)));
     pair || completes
+}
+
+/// Whether a word the shell fills in stands where a forge CLI reads its noun or its verb: one of
+/// the first two words after the CLI that is no flag (`-R` takes the word after it). A word with a
+/// `/` is a path (`~/bin/`, `src/*.rs`, `pkg/*`), never a noun or a verb (round 9).
+fn shell_filled_noun_or_verb(after: &[String], spelled: &[String]) -> bool {
+    let mut seen = 0;
+    let mut words = after.iter().enumerate();
+    while let Some((i, word)) = words.next() {
+        // A word spelled whole in single quotes (`'*.json'`) is filled in by nothing.
+        let source = spelled.get(i).map_or("", String::as_str);
+        let literal = source.len() > 1 && source.starts_with('\'') && source.ends_with('\'');
+        if word == "-R" || word == "--repo" {
+            words.next();
+            continue;
+        }
+        if word.starts_with('-') {
+            continue;
+        }
+        if !literal && super::merge::opaque(word) && !word.contains('/') {
+            return true;
+        }
+        seen += 1;
+        if seen == 2 {
+            break;
+        }
+    }
+    false
 }

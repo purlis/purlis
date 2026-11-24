@@ -736,16 +736,20 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
     if let Some(c) = one.captures(cmd) {
         return c
             .get(1)
-            .is_some_and(|call| lone_api_call(call.as_str(), name));
+            .is_some_and(|call| lone_api_call(call.as_str(), name, false));
     }
     // The variable of a `for` over a list the shell makes (`for id in $(gh api … --jq
     // '.[].number')`) is one word with no space in it, whatever it holds: the shell splits the
     // list, and does not split the variable. It need not be digits, so only a call with no flag
     // is read as one: a call without `-X`, `-f` or `--input` cannot write (round 8).
+    // Bash and dash split an unquoted variable and glob it: with a planted file named `merge
+    // -XPUT`, `$id` holding `mer*` is two words, one of them a flag. Only the quoted form is one
+    // word, so only it is read (round 9).
     looped.captures(cmd).is_some_and(|c| {
         let call = c.get(2).map_or("", |m| m.as_str());
-        (c.get(1).is_none() || !call.split_whitespace().any(|w| w.starts_with('-')))
-            && lone_api_call(call, name)
+        let from_a_list = c.get(1).is_some();
+        (!from_a_list || !call.split_whitespace().any(|w| w.starts_with('-')))
+            && lone_api_call(call, name, from_a_list)
     })
 }
 
@@ -755,8 +759,10 @@ fn digit_bound(cmd: &str, name: &str) -> bool {
 const LOOP_SUBSTITUTION: &str = r#"\$\((?:gh|glab)[ \t]+api[ \t](?:[^()'"`$\\\n]|'[^']*')*\)"#;
 
 /// True when `call` is one `gh api` or `glab api` call whose only variable is `name`, as plain
-/// whole-segment references (see [`digit_bound`]).
-fn lone_api_call(call: &str, name: &str) -> bool {
+/// whole-segment references (see [`digit_bound`]). With `quoted`, every reference stands inside a
+/// double-quoted span (`"repos/o/r/pulls/$id"`, `repos/o/r/pulls/"$id"`): a `for` variable that
+/// holds a forge answer is split and globbed where it is not.
+fn lone_api_call(call: &str, name: &str, quoted: bool) -> bool {
     let call = call.trim_matches([' ', '\t']);
     let mut words = call.split_whitespace();
     if !matches!(
@@ -795,6 +801,7 @@ fn lone_api_call(call: &str, name: &str) -> bool {
     let braced = format!("{{{name}}}");
     let mut rest = String::new();
     let mut at = 0;
+    let (mut in_single, mut in_double) = (false, false);
     while let Some(off) = call[at..].find('$') {
         let dollar = at + off;
         rest.push_str(&call[at..dollar]);
@@ -807,9 +814,27 @@ fn lone_api_call(call: &str, name: &str) -> bool {
         } else {
             return false;
         };
-        let before = call[..dollar].chars().next_back();
+        let mut before = call[..dollar].chars().next_back();
         let after = tail[len..].chars().next();
-        if before != Some('/') || !matches!(after, None | Some('/' | ' ' | '\t')) {
+        if quoted {
+            // The quote state at the reference, from the text since the last one.
+            for c in call[at..dollar].chars() {
+                if c == '"' && !in_single {
+                    in_double = !in_double;
+                } else if c == '\'' && !in_double {
+                    in_single = !in_single;
+                }
+            }
+            if !in_double {
+                return false;
+            }
+            // `pulls/"$id"`: the quote that opens the span stands between the `/` and the name.
+            if call[..dollar].ends_with("/\"") {
+                before = Some('/');
+            }
+        }
+        let ends = matches!(after, None | Some('/' | ' ' | '\t')) || (quoted && after == Some('"'));
+        if before != Some('/') || !ends {
             return false;
         }
         rest.push(' ');

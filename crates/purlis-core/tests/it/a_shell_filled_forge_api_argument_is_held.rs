@@ -539,18 +539,29 @@ fn the_refusal_for_a_glob_names_the_character_and_says_to_quote_the_word() {
 #[test]
 fn sixty_thousand_references_to_one_digit_variable_are_read_in_time() {
     purlis_core::unsteered!();
-    let mut cmd = String::from("N=5; gh api repos/o/r/pulls/5");
-    for _ in 0..60_000 {
-        cmd.push_str(" repos/o/r/pulls/$N/c");
-    }
-    let start = std::time::Instant::now();
-    assert_eq!(merge_reason(&cmd), None);
-    assert_eq!(release_floor_reason(&cmd, true), None);
-    let took = start.elapsed();
-    let bound = if cfg!(debug_assertions) { 8 } else { 3 };
+    let read = |n: usize| {
+        let mut cmd = String::from("N=5; gh api repos/o/r/pulls/5");
+        for _ in 0..n {
+            cmd.push_str(" repos/o/r/pulls/$N/c");
+        }
+        let start = std::time::Instant::now();
+        assert_eq!(merge_reason(&cmd), None);
+        assert_eq!(release_floor_reason(&cmd, true), None);
+        start.elapsed()
+    };
+    let (small, large) = (read(15_000), read(60_000));
+    // Four times the references may take a little over four times as long; a reading that grew
+    // with its square would take sixteen. Ten, as the linear-time test for every guard has it,
+    // is robust on a loaded runner (round 9).
     assert!(
-        took < std::time::Duration::from_secs(bound),
-        "60,000 references took {took:?}"
+        large < small * 10 + std::time::Duration::from_millis(100),
+        "15,000 references took {small:?}, 60,000 took {large:?}"
+    );
+    // A ceiling for a runner that is slow all through: the optimised build keeps its bound.
+    let bound = if cfg!(debug_assertions) { 30 } else { 3 };
+    assert!(
+        large < std::time::Duration::from_secs(bound),
+        "60,000 references took {large:?}"
     );
 }
 

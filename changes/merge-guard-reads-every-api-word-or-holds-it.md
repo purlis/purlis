@@ -48,6 +48,15 @@
   behind a program, are held. zsh's append-both operators (`>>&`, `>>&|`, `>>&!`, `&>>|`, `&>>!`)
   are one operator. A note whose words are a merge call (`purlis memory add never run gh pr merge
   yourself`) is still held.
-  A `for` over `$(gh api … --jq …)` may use its variable in a flag-less `gh api` read
-  (`for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api repos/o/r/pulls/$id; done`);
-  any other list, quoted list or flag still holds.
+  A `for` over `$(gh api … --jq …)` may use its variable in a flag-less `gh api` read when the
+  variable is quoted
+  (`for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api "repos/o/r/pulls/$id"; done`);
+  any other list, quoted list or flag still holds. In bash and dash an unquoted variable from a
+  forge answer is split and globbed (`mer*` can match a file named `merge -XPUT`), so the quoted
+  form is the readable one.
+  The skip for a forge word that is a path, or is followed by a word the shell fills in, applies
+  only where no such word stands as the noun or the verb after it: `chronic /opt/homebrew/bin/gh
+  pr $V 5`, `chronic gh $ARGS`, `chronic gh "$@"` and `chronic gh *` are held, and `cp
+  /opt/homebrew/bin/gh ~/bin/` and `git add crates/gh src/*.rs` still pass. A bare `{}` in a write
+  behind a program that is not gh (`fd . repos -x gh api -X PUT {}`) is a filled-in endpoint and
+  is held.

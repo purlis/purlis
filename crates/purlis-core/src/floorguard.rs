@@ -1022,9 +1022,14 @@ fn exact_reason(
     // (#7423, round 8).
     for call in &seg.behind {
         let words = call.call().unwrap_or(&call.words);
+        // A bare `{}` is a placeholder for gh, but a program that is not gh (`fd -x`, `parallel`)
+        // fills it in with a name: read as an endpoint the shell fills in (round 9).
+        let filled: Vec<String> = words.iter().map(|w| w.replace("{}", "$X")).collect();
         let held = (!read.contains(words)
             && segment_reason(words, cmd, unattended, depth, a_shell_reads_stdin).is_some())
-            || merge::shell_filled_api_reason(call, cmd).is_some();
+            || merge::shell_filled_api_reason(call, cmd).is_some()
+            || (filled != *words
+                && segment_reason(&filled, cmd, unattended, depth, a_shell_reads_stdin).is_some());
         if held {
             return Some(format!(
                 "{RELEASE_FLOOR_FIX}{} {}",

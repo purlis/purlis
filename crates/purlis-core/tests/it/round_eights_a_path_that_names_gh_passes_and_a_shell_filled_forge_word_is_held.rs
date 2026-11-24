@@ -146,8 +146,9 @@ fn a_note_whose_words_are_a_merge_call_is_held_as_a_wrapper_would_be() {
 #[test]
 fn a_plain_api_read_in_a_for_loop_is_no_merge() {
     purlis_core::unsteered!();
+    // Round 9: the variable is quoted; an unquoted one is split and globbed.
     passes(&[
-        "for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api repos/o/r/pulls/$id; done",
+        r#"for id in $(gh api repos/o/r/pulls --jq '.[].number'); do gh api "repos/o/r/pulls/$id"; done"#,
     ]);
 }
 
