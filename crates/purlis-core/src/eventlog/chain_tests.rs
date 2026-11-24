@@ -118,6 +118,8 @@ fn a_chain_carries_on_across_a_restart_and_a_log_never_chained_claims_nothing() 
         Checked::Sealed { seq: 3 }
     ));
 
+    // The first log's seals are another log's: a new folder for the device would read as deleted.
+    crate::secrets::seal::forget_kept_for_this_test();
     let plain = tempfile::tempdir().unwrap();
     let mut log = Log::open(plain.path(), DEVICE).unwrap();
     append(&mut log, "tool.called", 0);
@@ -161,6 +163,7 @@ fn a_recomputed_hash_chain_is_still_reported() {
     assert!(said.contains(&dir.path().display().to_string()), "{said}");
 
     // The tail cut off, with the chain intact to where it stops, is the same break.
+    crate::secrets::seal::forget_kept_for_this_test();
     let cut = tempfile::tempdir().unwrap();
     chained_log(cut.path(), 5);
     let mut kept = lines(cut.path());
