@@ -7,7 +7,7 @@
  * cell. The core is faked at its command boundary; the words are the core's.
  */
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, within } from "storybook/test";
+import { expect, waitFor, within } from "storybook/test";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import type {
   PoolSetupDockerContext,
@@ -1396,6 +1396,9 @@ export const NameThePoolBesideTheKey: Story = {
   },
 };
 
+/** How long a press may take to settle: WebKit draws the next frame late in a busy run (as Select's own stories). */
+const SETTLES = { timeout: 3_000 };
+
 /** The add was not taken: the page says why, and never says the machine is connected. */
 export const TheAddWasNotTaken: Story = {
   beforeEach: () => {
@@ -1415,7 +1418,16 @@ export const TheAddWasNotTaken: Story = {
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(canvas.getByRole("button", { name: "Trust and create the pool" }));
-    await expect(await canvas.findByText("the disk on build-box is full")).toBeVisible();
+    await expect(
+      await canvas.findByText("the disk on build-box is full", undefined, SETTLES),
+    ).toBeVisible();
+    // The press is over: the button is back (it is disabled and `aria-busy` while the add runs),
+    // so the picture is not of a frame WebKit drew before it (#7238).
+    await waitFor(
+      () =>
+        expect(canvas.getByRole("button", { name: "Trust and create the pool" })).toBeEnabled(),
+      SETTLES,
+    );
     await expect(canvas.queryByText("Connected")).toBeNull();
     await expect(canvas.queryByText(/is ready to run your chats/)).toBeNull();
   },
