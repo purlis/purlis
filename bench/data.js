@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795525667395,
+  "lastUpdate": 1795527509038,
   "repoUrl": "https://github.com/purlis/purlis",
   "entries": {
     "session layer (ubuntu-24.04)": [
@@ -53718,6 +53718,48 @@ window.BENCHMARK_DATA = {
             "value": 102.371465,
             "unit": "ms",
             "extra": "median of 5 runs: 101.308, 101.801, 102.371, 102.579, 102.904 ms"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "aaron.yor@gmail.com",
+            "name": "Aaron Yordanyan",
+            "username": "diazoxide"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "05a6a5deedcdc1e374acf8c10c6d422d5dc9cb0a",
+          "message": "CI flakes: terminal stray-job tests wait until the job leads its own session (#7441, #7461) (#7518)\n\n* A person's own shell test waits for its job to lead a session before ending the tab\n\nThe test announced the job's pid as soon as the program had forked it, before its perl had\nrun setsid. On a loaded runner an end of the program's group then found the job still inside\nit and ended it with the tab. The test now waits, bounded, until the pid leads a session of\nits own (getsid), the state the test's claim is about.\n\nNot run here: the sandbox cannot open a pty. A pty-less reproduction was also blocked (ps is\ndenied), so the red-first proof is the reasoning in the PR, not a run.\n\nCloses #7441\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PZFXFKK9ZXNDE4CED6XFR\nPurlis-Persona: steward\n\n* A person's own shell test waits for its job to lead a session, and no longer sleeps after the exit\n\nSame cause as #7441: the job's pid was taken before its perl ran setsid, so the program's\nexit could end the job with its group. The test now waits, bounded, for the pid to lead a\nsession of its own. The fixed 800 ms sleep after the exit goes: Held::try_wait ends what the\ngroup left before wait returns the exit, so the job's fate is settled when the assertion\nreads it.\n\nNot run here: the sandbox cannot open a pty.\n\nCloses #7461\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PZFXFKK9ZXNDE4CED6XFR\nPurlis-Persona: steward\n\n* Review of #7441 and #7461: the session wait names a gone pid, and the negative check keeps a short look\n\nuntil_it_leads_a_session_of_its_own panics at once with the error when the pid's session\ncannot be read, instead of timing out for 10 s. The #7461 test looks at the job for 300 ms\nafter the exit, so a kill moved to another thread would still fail it.\n\nCo-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>\nAssisted-by: claude-code:claude-sonnet-5-5\nPurlis-Chat: 01M86PZFXFKK9ZXNDE4CED6XFR\nPurlis-Persona: steward\n\n---------\n\nCo-authored-by: Claude Sonnet 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T12:39:16Z",
+          "tree_id": "6d6ec4b289ba723c43f118f7b46a6a264cb5048a",
+          "url": "https://github.com/purlis/purlis/commit/05a6a5deedcdc1e374acf8c10c6d422d5dc9cb0a"
+        },
+        "date": 1795527501123,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "keystroke under ten flooding panes",
+            "value": 0.6633035,
+            "unit": "ms",
+            "extra": "median of 5 runs: 0.640, 0.663, 0.663, 0.672, 0.701 ms"
+          },
+          {
+            "name": "2 MB burst, asked to drawn",
+            "value": 16.7402705,
+            "unit": "ms",
+            "extra": "median of 5 runs: 16.592, 16.615, 16.740, 16.750, 16.819 ms"
+          },
+          {
+            "name": "13 MB burst, asked to drawn",
+            "value": 101.7727775,
+            "unit": "ms",
+            "extra": "median of 5 runs: 101.581, 101.742, 101.773, 101.782, 103.999 ms"
           }
         ]
       }
