@@ -427,6 +427,8 @@ pub fn compose(
     );
     // Every product variable under both its names while the rename's window is open (V93k).
     let env = crate::envvar::twinned(env);
+    // No automatic gc in a chat's git (#7531), after the chat's own pairs so it wins over them.
+    let env = without_auto_gc(env);
     let env = match chat.git_hooks {
         Some(hooks) => hooks.arm(env),
         None => env,
@@ -437,6 +439,49 @@ pub fn compose(
     } else {
         env
     }
+}
+
+/// The git config a chat's git never runs automatic maintenance under (#7531): `gc.auto=0` and
+/// `maintenance.auto=false`.
+///
+/// An automatic `gc` walks the refs and reflogs of every worktree in the shared `.git`, and a
+/// sandboxed chat can write only its own worktree's git directory, so a plain `git fetch` ended
+/// in `cannot lock ref 'worktrees/<other>/HEAD'` and `task 'gc' failed`. The app's own git (the
+/// fetch behind `purlis worktree update`) is not started from this environment and gcs as before.
+/// `fetch.writeFetchHead` is left alone: `git pull` reads FETCH_HEAD, and a chat's own worktree
+/// is writable.
+const NO_AUTO_GC: [(&str, &str); 2] = [("gc.auto", "0"), ("maintenance.auto", "false")];
+
+/// `env` with [`NO_AUTO_GC`] as the next `GIT_CONFIG_KEY_<n>`/`GIT_CONFIG_VALUE_<n>` pairs after
+/// the pairs it already has, and `GIT_CONFIG_COUNT` raised to include them (as
+/// [`crate::githooks::GitHooks::arm`] does for its one).
+fn without_auto_gc(env: Vec<(OsString, OsString)>) -> Vec<(OsString, OsString)> {
+    const COUNT: &str = "GIT_CONFIG_COUNT";
+    let n: usize = env
+        .iter()
+        .rev()
+        .find(|(name, _)| name == COUNT)
+        .and_then(|(_, value)| value.to_str()?.trim().parse().ok())
+        .unwrap_or(0);
+    let ours = |name: &OsStr| {
+        (n..n + NO_AUTO_GC.len()).any(|i| {
+            name == OsStr::new(&format!("GIT_CONFIG_KEY_{i}"))
+                || name == OsStr::new(&format!("GIT_CONFIG_VALUE_{i}"))
+        })
+    };
+    let mut out: Vec<(OsString, OsString)> = env
+        .into_iter()
+        .filter(|(name, _)| name != COUNT && !ours(name))
+        .collect();
+    out.push((COUNT.into(), (n + NO_AUTO_GC.len()).to_string().into()));
+    for (i, (key, value)) in NO_AUTO_GC.iter().enumerate() {
+        out.push((format!("GIT_CONFIG_KEY_{}", n + i).into(), (*key).into()));
+        out.push((
+            format!("GIT_CONFIG_VALUE_{}", n + i).into(),
+            (*value).into(),
+        ));
+    }
+    out
 }
 
 /// Puts a program the app starts on the session bus the app was given, when the app is running
@@ -1327,7 +1372,60 @@ mod tests {
                 .all(|(name, _)| name.starts_with("GIT_CONFIG_")),
             "{said:?}"
         );
-        assert!(said.contains(&pair("GIT_CONFIG_COUNT", "1")), "{said:?}");
+        assert!(said.contains(&pair("GIT_CONFIG_COUNT", "3")), "{said:?}");
+    }
+
+    fn git_pairs(composed: &[(OsString, OsString)]) -> Vec<(String, String)> {
+        let get = |name: String| {
+            composed
+                .iter()
+                .rev()
+                .find(|(n, _)| *n == *name)
+                .map(|(_, v)| v.to_string_lossy().into_owned())
+        };
+        let count: usize = get("GIT_CONFIG_COUNT".to_owned())
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0);
+        (0..count)
+            .map(|i| {
+                (
+                    get(format!("GIT_CONFIG_KEY_{i}")).unwrap(),
+                    get(format!("GIT_CONFIG_VALUE_{i}")).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_chat_s_git_never_runs_automatic_gc_whatever_pairs_it_already_has() {
+        let set = [
+            ("GIT_CONFIG_COUNT".to_owned(), "1".to_owned()),
+            ("GIT_CONFIG_KEY_0".to_owned(), "gc.auto".to_owned()),
+            ("GIT_CONFIG_VALUE_0".to_owned(), "6700".to_owned()),
+        ];
+        let hooks = crate::githooks::GitHooks::at("/app/git-hooks");
+        for git_hooks in [None, Some(&hooks)] {
+            let composed = compose(
+                env(&["PATH"]),
+                &Starting {
+                    harness: None,
+                    operator: &[],
+                    strip: &[],
+                    set: &set,
+                    git_hooks,
+                    declared: &[],
+                },
+            );
+            let pairs = git_pairs(&composed);
+            let last = |key: &str| pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v);
+            assert_eq!(last("gc.auto").map(String::as_str), Some("0"), "{pairs:?}");
+            assert_eq!(
+                last("maintenance.auto").map(String::as_str),
+                Some("false"),
+                "{pairs:?}"
+            );
+            assert_eq!(last("fetch.writeFetchHead"), None, "{pairs:?}");
+        }
     }
 
     /// The rename's window (V93k): a chat is given each of the product's variables under both
